@@ -1,0 +1,32 @@
+# Unity specific files to ignore
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+UserSettings/
+Packages/com.unity.package-manager*
+.vs/
+.vscode/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Ignore build folders
+[Bb]uilds/
+[Bb]uild/
+Assets/StreamingAssets/
+
+# Ignore third-party assets (Unity Asset Store)
+Assets/SoftLeitner/
