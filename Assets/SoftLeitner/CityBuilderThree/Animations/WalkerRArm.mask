@@ -1,0 +1,79 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!319 &31900000
+AvatarMask:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: WalkerRArm
+  m_Mask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+  m_Elements:
+  - m_Path: 
+    m_Weight: 1
+  - m_Path: Armature
+    m_Weight: 0
+  - m_Path: Armature/IKLegPole.L
+    m_Weight: 0
+  - m_Path: Armature/IKLegPole.L/IKLegPole.L_end
+    m_Weight: 0
+  - m_Path: Armature/IKLegPole.R
+    m_Weight: 0
+  - m_Path: Armature/IKLegPole.R/IKLegPole.R_end
+    m_Weight: 0
+  - m_Path: Armature/IKLegTarget.L
+    m_Weight: 0
+  - m_Path: Armature/IKLegTarget.L/IKLegTarget.L_end
+    m_Weight: 0
+  - m_Path: Armature/IKLegTarget.R
+    m_Weight: 0
+  - m_Path: Armature/IKLegTarget.R/IKLegTarget.R_end
+    m_Weight: 0
+  - m_Path: Armature/Root
+    m_Weight: 0
+  - m_Path: Armature/Root/SpineLow
+    m_Weight: 0
+  - m_Path: Armature/Root/SpineLow/SpineHigh
+    m_Weight: 0
+  - m_Path: Armature/Root/SpineLow/SpineHigh/Head
+    m_Weight: 0
+  - m_Path: Armature/Root/SpineLow/SpineHigh/Head/Head_end
+    m_Weight: 0
+  - m_Path: Armature/Root/SpineLow/SpineHigh/Shoulder.L
+    m_Weight: 0
+  - m_Path: Armature/Root/SpineLow/SpineHigh/Shoulder.L/UpperArm.L
+    m_Weight: 0
+  - m_Path: Armature/Root/SpineLow/SpineHigh/Shoulder.L/UpperArm.L/LowerArm.L
+    m_Weight: 0
+  - m_Path: Armature/Root/SpineLow/SpineHigh/Shoulder.L/UpperArm.L/LowerArm.L/Hand.L
+    m_Weight: 0
+  - m_Path: Armature/Root/SpineLow/SpineHigh/Shoulder.L/UpperArm.L/LowerArm.L/Hand.L/Hand.L_end
+    m_Weight: 0
+  - m_Path: Armature/Root/SpineLow/SpineHigh/Shoulder.R
+    m_Weight: 0
+  - m_Path: Armature/Root/SpineLow/SpineHigh/Shoulder.R/UpperArm.R
+    m_Weight: 1
+  - m_Path: Armature/Root/SpineLow/SpineHigh/Shoulder.R/UpperArm.R/LowerArm.R
+    m_Weight: 1
+  - m_Path: Armature/Root/SpineLow/SpineHigh/Shoulder.R/UpperArm.R/LowerArm.R/Hand.R
+    m_Weight: 1
+  - m_Path: Armature/Root/SpineLow/SpineHigh/Shoulder.R/UpperArm.R/LowerArm.R/Hand.R/Hand.R_end
+    m_Weight: 0
+  - m_Path: Armature/Root/UpperLeg.L
+    m_Weight: 0
+  - m_Path: Armature/Root/UpperLeg.L/LowerLeg.L
+    m_Weight: 0
+  - m_Path: Armature/Root/UpperLeg.L/LowerLeg.L/Foot.L
+    m_Weight: 0
+  - m_Path: Armature/Root/UpperLeg.L/LowerLeg.L/Foot.L/Foot.L_end
+    m_Weight: 0
+  - m_Path: Armature/Root/UpperLeg.R
+    m_Weight: 0
+  - m_Path: Armature/Root/UpperLeg.R/LowerLeg.R
+    m_Weight: 0
+  - m_Path: Armature/Root/UpperLeg.R/LowerLeg.R/Foot.R
+    m_Weight: 0
+  - m_Path: Armature/Root/UpperLeg.R/LowerLeg.R/Foot.R/Foot.R_end
+    m_Weight: 0
+  - m_Path: Walker
+    m_Weight: 0

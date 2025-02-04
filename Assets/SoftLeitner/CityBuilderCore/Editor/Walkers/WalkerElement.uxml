@@ -1,0 +1,16 @@
+﻿<UXML xmlns="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+  <VisualElement class="walker horizontal">
+    <Image name="PreviewImage"/>
+    <VisualElement class="grow shrink">
+      <Label name="WalkerNameLabel"/>
+      <VisualElement class="walkerComponent horizontal">
+        <Label name="ComponentNameLabel"/>
+        <Button name="FilterButton"/>
+      </VisualElement>
+    </VisualElement>
+    <VisualElement class="actions">
+      <Button name="CopyButton" text="‎" />
+      <Button name="DeleteButton" text="‎" />
+    </VisualElement>    
+  </VisualElement>
+</UXML>

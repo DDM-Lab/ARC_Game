@@ -1,0 +1,14 @@
+﻿<UXML xmlns="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+  <VisualElement class="building horizontal">
+    <Image name="PreviewImage"/>
+    <VisualElement class="grow shrink">
+      <Label name="BuildingNameLabel"/>
+      <VisualElement name="ComponentsContainer"/>      
+    </VisualElement>
+    <VisualElement name="CategoriesContainer"/>
+    <VisualElement class="actions">
+      <Button name="CopyButton" text="‎" />
+      <Button name="DeleteButton" text="‎" />
+    </VisualElement>    
+  </VisualElement>
+</UXML>
