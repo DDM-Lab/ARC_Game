@@ -1,0 +1,49 @@
+.building {
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+.building *{
+    flex-shrink: 0;
+}
+
+.grow {
+    flex-grow: 1;
+}
+
+.shrink {
+    flex-shrink: 1;
+}
+
+.horizontal {
+    flex-direction: row;
+}
+
+#BuildingNameLabel {
+    font-size: 30px;
+    -unity-text-align: middle-left;
+    width: 150px;
+    height: 43px;
+}
+#ComponentNameLabel {
+    -unity-text-align: middle-left;
+}
+#CategoryNameLabel {
+    -unity-text-align: middle-left;
+}
+
+#PreviewImage {
+    margin-left: 5px;
+    margin-right: 5px;
+    width: 65px;
+}
+
+#ComponentsContainer {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+#FilterElement{
+    align-items: center;
+    justify-content: center;
+}

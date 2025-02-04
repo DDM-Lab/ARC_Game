@@ -1,0 +1,32 @@
+.item {
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+.item *{
+    flex-shrink: 0;
+}
+
+.grow {
+    flex-grow: 1;
+}
+
+.shrink {
+    flex-shrink: 1;
+}
+
+.horizontal {
+    flex-direction: row;
+}
+
+#ItemNameLabel {
+    font-size: 30px;
+    -unity-text-align: middle-left;
+    width: 150px;
+    height: 43px;
+}
+
+#PreviewImage {
+    margin-left: 5px;
+    margin-right: 5px;
+    width: 45px;
+}

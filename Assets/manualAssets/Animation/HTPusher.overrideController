@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!221 &22100000
+AnimatorOverrideController:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: HTPusher
+  m_Controller: {fileID: 9100000, guid: 938d2ac672e8c9c4a9b3421b84ec6a50, type: 2}
+  m_Clips:
+  - m_OriginalClip: {fileID: 7400000, guid: d0ade520194900e42a516fc6880da672, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: d2b85fb7db281804dbefbb3085aee9cb, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: ba00c10d6465c274cab2fc7680e22ea2, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 3f0898ffe41752e42a6ef116fef143b2, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 2e5a52902e48c5e42bb92a493ab6c612, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: d1634e9741626fe4fa24d95a0eaabcc1, type: 2}
+  - m_OriginalClip: {fileID: 7400000, guid: 09044f2dcfc8c754fa0f74ac2a5b2542, type: 2}
+    m_OverrideClip: {fileID: 7400000, guid: 1704c4cd5b0c60a4a8bd788fa2c765a7, type: 2}

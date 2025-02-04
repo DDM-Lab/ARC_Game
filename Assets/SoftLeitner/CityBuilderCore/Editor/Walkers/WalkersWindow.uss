@@ -1,0 +1,40 @@
+.walker {
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+.walker *{
+    flex-shrink: 0;
+}
+
+.grow {
+    flex-grow: 1;
+}
+
+.shrink {
+    flex-shrink: 1;
+}
+
+.horizontal {
+    flex-direction: row;
+}
+
+#WalkerNameLabel {
+    font-size: 30px;
+    -unity-text-align: middle-left;
+    width: 150px;
+    height: 43px;
+}
+#ComponentNameLabel {
+    -unity-text-align: middle-left;
+}
+
+#PreviewImage {
+    margin-left: 5px;
+    margin-right: 5px;
+    width: 65px;
+}
+
+#FilterElement{
+    align-items: center;
+    justify-content: center;
+}
