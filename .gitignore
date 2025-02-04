@@ -74,3 +74,11 @@ crashlytics-build.properties
 
 # Ignore third-party assets (Unity Asset Store)
 Assets/TextMesh Pro/
+
+# Custom ignore assets
+# Assets/ModernUI/
+# Assets/ModernUI.meta
+Assets/ModernExteriors/
+Assets/ModernExteriors.meta
+.vscode
+.idea
