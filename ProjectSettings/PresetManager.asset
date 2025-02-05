@@ -1,3 +1,33 @@
+<<<<<<< HEAD
 version https://git-lfs.github.com/spec/v1
-oid sha256:1af91558a9f8eaf5816241a1c65cee98e30c753fb9b1f549c8f5282bbd7f432d
+oid sha256:3665333960e0bb271214789c15dede2a0ece06aaab19a73d6a45e536a6157a9a
 size 995
+=======
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1386491679 &1
+PresetManager:
+  m_ObjectHideFlags: 0
+  m_DefaultList:
+  - type:
+      m_NativeTypeID: 108
+      m_ManagedTypePPtr: {fileID: 0}
+      m_ManagedTypeFallback: 
+    defaultPresets:
+    - m_Preset: {fileID: 2655988077585873504, guid: 463065d4f17d1d94d848aa127b94dd43,
+        type: 2}
+  - type:
+      m_NativeTypeID: 1020
+      m_ManagedTypePPtr: {fileID: 0}
+      m_ManagedTypeFallback: 
+    defaultPresets:
+    - m_Preset: {fileID: 2655988077585873504, guid: e7689051185d12f4298e1ebb2693a29f,
+        type: 2}
+  - type:
+      m_NativeTypeID: 1006
+      m_ManagedTypePPtr: {fileID: 0}
+      m_ManagedTypeFallback: 
+    defaultPresets:
+    - m_Preset: {fileID: 2655988077585873504, guid: e8537455c6c08bd4e8bf0be3707da685,
+        type: 2}
+>>>>>>> b7d5a783d8edf217dfb6a58f30fc7fdb0f6a5654

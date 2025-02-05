@@ -1,3 +1,18 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:10b779a130c55542a6cdff2e6c0ef5ddd4406cc59da3591b866c0aa0c9b30b59
-size 468
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 53b62867fd0be3f479ad130bd457fdb8, type: 3}
+  m_Name: TownYear
+  m_EditorClassIdentifier: 
+  Name: Year
+  Amount: 0
+  Duration: 240
+  Names: []

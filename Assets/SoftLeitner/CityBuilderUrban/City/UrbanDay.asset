@@ -1,3 +1,18 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4ce9888affa5c68f1a20f1d93ab01abfa00c3031f5ca0f15e627ebaaca1fe9bb
-size 466
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 53b62867fd0be3f479ad130bd457fdb8, type: 3}
+  m_Name: UrbanDay
+  m_EditorClassIdentifier: 
+  Name: Day
+  Amount: 0
+  Duration: 10
+  Names: []

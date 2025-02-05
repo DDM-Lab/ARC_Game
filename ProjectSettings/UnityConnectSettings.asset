@@ -1,3 +1,40 @@
+<<<<<<< HEAD
 version https://git-lfs.github.com/spec/v1
-oid sha256:a5d357db91216f994042097f1b2ce152716f044faa62a1fa9f21c22dfa2c3a8b
-size 1052
+oid sha256:a358c616a18ae4f88f301363da3ee76b23b44d5737791dbf9eb645df5d5aaa09
+size 1051
+=======
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!310 &1
+UnityConnectSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 1
+  m_Enabled: 0
+  m_TestMode: 0
+  m_EventOldUrl: https://api.uca.cloud.unity3d.com/v1/events
+  m_EventUrl: https://cdp.cloud.unity3d.com/v1/events
+  m_ConfigUrl: https://config.uca.cloud.unity3d.com
+  m_TestInitMode: 0
+  CrashReportingSettings:
+    m_EventUrl: https://perf-events.cloud.unity3d.com
+    m_Enabled: 0
+    m_LogBufferSize: 10
+    m_CaptureEditorExceptions: 1
+  UnityPurchasingSettings:
+    m_Enabled: 0
+    m_TestMode: 0
+  UnityAnalyticsSettings:
+    m_Enabled: 0
+    m_TestMode: 0
+    m_InitializeOnStartup: 1
+  UnityAdsSettings:
+    m_Enabled: 0
+    m_InitializeOnStartup: 1
+    m_TestMode: 0
+    m_IosGameId: 
+    m_AndroidGameId: 
+    m_GameIds: {}
+    m_GameId: 
+  PerformanceReportingSettings:
+    m_Enabled: 0
+>>>>>>> b7d5a783d8edf217dfb6a58f30fc7fdb0f6a5654

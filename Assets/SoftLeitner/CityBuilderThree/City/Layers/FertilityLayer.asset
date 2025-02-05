@@ -1,3 +1,16 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:36aef4765117c2014c5fc888c1a1d3929815da71ab0061a9b61426abe2e394d3
-size 455
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d158e521371a6f346ae87966a8832ca6, type: 3}
+  m_Name: FertilityLayer
+  m_EditorClassIdentifier: 
+  Name: Fertility
+  IsCumulative: 0
