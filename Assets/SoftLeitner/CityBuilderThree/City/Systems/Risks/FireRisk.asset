@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a6b36988cc36fb74db703d9621e6a894, type: 3}
+  m_Name: FireRisk
+  m_EditorClassIdentifier: 
+  Key: FIR
+  Name: Fire
+  Icon: {fileID: 0}
+  ExecuteNotification: A {0} is on fire!
+  ResolveNotification: The fire in {0} has been put out!
+  MultiplierLayer: {fileID: 11400000, guid: 65d3e7a0707db154f8d816c8e5e6cc6a, type: 2}
+  MultiplierLayerBottom: -100
+  MultiplierLayerTop: 100
+  Prefab: {fileID: 2188798687884523751, guid: af35dba1a0e7ea04ea365d24f48addef, type: 3}
+  Remove: 0

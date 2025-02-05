@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 11f98b364e13cc940a28c59bb55693cc, type: 3}
+  m_Name: PlacementBedInfo
+  m_EditorClassIdentifier: 
+  Key: BED
+  Name: Bed
+  Description: 
+  Size: {x: 6, y: 4}
+  IsDestructible: 1
+  IsWalkable: 0
+  Prefab: {fileID: 7291946579080419325, guid: 6297e1add3debf9498da342b918f57f4, type: 3}
+  PrefabAlternatives: []
+  Ghost: {fileID: 8914585163385598145, guid: 7cf7fd89f0a4f8d4fa836cdd6eb96d9b, type: 3}
+  GhostAlternatives: []
+  AccessType: 0
+  AccessPoint: {x: 0, y: 0}
+  Cost: []
+  BuildingRequirements: []
+  RoadRequirements: []
+  Level:
+    Value: 2

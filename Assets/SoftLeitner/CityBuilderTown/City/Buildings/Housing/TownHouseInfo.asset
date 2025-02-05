@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 11f98b364e13cc940a28c59bb55693cc, type: 3}
+  m_Name: TownHouseInfo
+  m_EditorClassIdentifier: 
+  Key: HUS
+  Name: House
+  Description: houses town folk
+  Size: {x: 5, y: 5}
+  IsDestructible: 1
+  IsWalkable: 0
+  Prefab: {fileID: 8745087151817180438, guid: aad926c743367b646904e9aecb3376ab, type: 3}
+  PrefabAlternatives:
+  - {fileID: 8745087151817180438, guid: f2972018a659c2b4b81a54131b7b727e, type: 3}
+  - {fileID: 8745087151817180438, guid: d4fbfa1e91899ac43ad9bda5970c61be, type: 3}
+  Ghost: {fileID: 7482747618712560170, guid: addf24b429b4b454dbd07625dc1bab49, type: 3}
+  GhostAlternatives:
+  - {fileID: 7482747618712560170, guid: eada4b8083c14004897d479feb6bdf22, type: 3}
+  - {fileID: 7482747618712560170, guid: ee51740efab4536419f62e3bcb134bc2, type: 3}
+  AccessType: 0
+  AccessPoint: {x: 0, y: 0}
+  Cost: []
+  BuildingRequirements: []
+  RoadRequirements: []
+  Level:
+    Value: 0

@@ -1,0 +1,13 @@
+﻿<UXML xmlns="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+  <VisualElement class="header horizontal">
+    <VisualElement name="SetsElement"/>
+    <VisualElement class="grow">
+      <VisualElement name="FilterElement" class="horizontal">
+        <Label name="FilterLabel"/>
+        <Button name="FilterButton" text="‎" />
+      </VisualElement>
+    </VisualElement>
+    <Button name="ReloadButton"/>
+  </VisualElement>
+  <ListView class="items grow"/>
+</UXML>

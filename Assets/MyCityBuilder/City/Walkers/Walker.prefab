@@ -1,0 +1,116 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1001 &8060368401229938619
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1133033772311275104, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+        type: 3}
+      propertyPath: m_Name
+      value: Walker
+      objectReference: {fileID: 0}
+    - target: {fileID: 1133033772311275108, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+        type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1133033772311275108, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+        type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1133033772311275108, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+        type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1133033772311275108, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+        type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1133033772311275108, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+        type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1133033772311275108, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+        type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1133033772311275108, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+        type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1133033772311275108, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1133033772311275108, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1133033772311275108, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 1133033772311275104, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+        type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 5810867878461100659}
+  m_SourcePrefab: {fileID: 100100000, guid: f845dcb0624253a498c2a5a5e6cb9a65, type: 3}
+--- !u!4 &5443215406320192942 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2618282193674433045, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+    type: 3}
+  m_PrefabInstance: {fileID: 8060368401229938619}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &6946088208920058331 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 1133033772311275104, guid: f845dcb0624253a498c2a5a5e6cb9a65,
+    type: 3}
+  m_PrefabInstance: {fileID: 8060368401229938619}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &5810867878461100659
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6946088208920058331}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f0f221e30fee5c84486b88497d8f6590, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ForwardReceiver: {fileID: 0}
+  MessageReceived:
+    m_PersistentCalls:
+      m_Calls: []
+  MessageEvents: []
+  Info: {fileID: 11400000, guid: 59c6bf1940a601346874872ae40a7243, type: 2}
+  Pivot: {fileID: 5443215406320192942}
+  Animator: {fileID: 0}
+  Agent: {fileID: 0}
+  IsWalkingChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  DirectionChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  Memory: 64
+  Range: 16
+  ReturnHome: 1

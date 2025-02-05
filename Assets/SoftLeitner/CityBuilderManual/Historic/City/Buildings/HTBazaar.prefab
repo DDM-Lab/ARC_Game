@@ -1,0 +1,91 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &1903641665017470745
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2412674858193918865}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 386f5a8ec12530f42880c6e55814ae0c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Storage:
+    Mode: 3
+    StackCount: 0
+    Capacity: 5
+    ItemCapacities: []
+  Orders:
+  - Item: {fileID: 11400000, guid: 08a53322bc8bc6e48a7257f35b0ba033, type: 2}
+    Ratio: 1
+  - Item: {fileID: 11400000, guid: 4b79c1179cc6e2f49b5c530f6e2f0a64, type: 2}
+    Ratio: 1
+  PurchaseWalkers:
+    Prefab: {fileID: -322406539451315638, guid: 29c26ef75fadcf442974f25b3bfed969,
+      type: 3}
+    Count: 1
+  SaleWalkers:
+    Prefab: {fileID: 4669643860698791137, guid: 7722fcf2a90bc6544ab09dab814cf17c,
+      type: 3}
+    Count: 1
+    Downtime: 5
+  MinimumOrder: 2
+--- !u!1001 &2102274628878480243
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 4348028226436906567, guid: bfe93dccfc6a5cd4791ee1785044a4a0,
+        type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: -2393419395243334306, guid: 96913f3db2c9dfd46b4f0b17484786c7,
+        type: 3}
+    - target: {fileID: 4348028226436906567, guid: bfe93dccfc6a5cd4791ee1785044a4a0,
+        type: 3}
+      propertyPath: m_WasSpriteAssigned
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4348028227469715682, guid: bfe93dccfc6a5cd4791ee1785044a4a0,
+        type: 3}
+      propertyPath: m_Name
+      value: HTBazaar
+      objectReference: {fileID: 0}
+    - target: {fileID: 4348028227469715683, guid: bfe93dccfc6a5cd4791ee1785044a4a0,
+        type: 3}
+      propertyPath: m_RootOrder
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4348028227469715683, guid: bfe93dccfc6a5cd4791ee1785044a4a0,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4348028227469715683, guid: bfe93dccfc6a5cd4791ee1785044a4a0,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4348028227469715683, guid: bfe93dccfc6a5cd4791ee1785044a4a0,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4348028227469715692, guid: bfe93dccfc6a5cd4791ee1785044a4a0,
+        type: 3}
+      propertyPath: Info
+      value: 
+      objectReference: {fileID: 11400000, guid: 5f14bc2d9592f4d40ae5527280e046a5,
+        type: 2}
+    m_RemovedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: bfe93dccfc6a5cd4791ee1785044a4a0, type: 3}
+--- !u!1 &2412674858193918865 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 4348028227469715682, guid: bfe93dccfc6a5cd4791ee1785044a4a0,
+    type: 3}
+  m_PrefabInstance: {fileID: 2102274628878480243}
+  m_PrefabAsset: {fileID: 0}

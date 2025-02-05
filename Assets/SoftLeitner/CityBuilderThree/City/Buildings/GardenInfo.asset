@@ -1,0 +1,34 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 11f98b364e13cc940a28c59bb55693cc, type: 3}
+  m_Name: GardenInfo
+  m_EditorClassIdentifier: 
+  Key: GRD
+  Name: Garden
+  Description: raises the desirability around it
+  Size: {x: 1, y: 1}
+  IsDestructible: 1
+  IsWalkable: 0
+  Prefab: {fileID: 6911026778637673142, guid: 0b9f50740812798488b6c2f0e9d1765a, type: 3}
+  PrefabAlternatives:
+  - {fileID: 6911026778637673142, guid: 0da9b71306c7300488e1bd44f669b116, type: 3}
+  Ghost: {fileID: 8551466529553138210, guid: 76c52e92ed9fcb54cac29a4e4bfb87e8, type: 3}
+  GhostAlternatives: []
+  AccessType: 0
+  AccessPoint: {x: 0, y: 0}
+  Cost:
+  - Item: {fileID: 11400000, guid: 66d7c05d0410fb340a18c097d9f96e9a, type: 2}
+    Quantity: 10
+  BuildingRequirements: []
+  RoadRequirements: []
+  Level:
+    Value: 0

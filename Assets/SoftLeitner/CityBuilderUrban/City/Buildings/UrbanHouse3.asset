@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 11f98b364e13cc940a28c59bb55693cc, type: 3}
+  m_Name: UrbanHouse3
+  m_EditorClassIdentifier: 
+  Key: UH3
+  Name: House
+  Description: 
+  Size: {x: 1, y: 1}
+  IsDestructible: 1
+  Prefab: {fileID: 347579044570470061, guid: e56caabaf1bdac049a7ed2bf62785609, type: 3}
+  Ghost: {fileID: 0}
+  AccessType: 0
+  AccessPoint: {x: 0, y: 0}
+  Cost: []
+  LayerRequirements: []
+  Level:
+    Value: 6

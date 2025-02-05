@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 11f98b364e13cc940a28c59bb55693cc, type: 3}
+  m_Name: UrbanTunnelExit
+  m_EditorClassIdentifier: 
+  Key: UTE
+  Name: Tunnel Entry
+  Description: 
+  Size: {x: 3, y: 1}
+  IsDestructible: 1
+  IsWalkable: 0
+  Prefab: {fileID: 347579044570470061, guid: b991bb65697ee7f4f8c625a02d553fe6, type: 3}
+  Ghost: {fileID: 0}
+  AccessType: 0
+  AccessPoint: {x: 0, y: 0}
+  Cost:
+  - Item: {fileID: 11400000, guid: 9d69c70aa178f074a80aef871ea163a1, type: 2}
+    Quantity: 50
+  BuildingRequirements: []
+  RoadRequirements:
+  - Point: {x: 2, y: 0}
+    Road: {fileID: 11400000, guid: 6c2f57d1791ac6748b2c2f61e958debd, type: 2}
+    Stage: 
+    Amend: 1
+  - Point: {x: 0, y: 0}
+    Road: {fileID: 11400000, guid: 15a5808d42229d542bac82ed56608d20, type: 2}
+    Stage: 
+    Amend: 1
+  Level:
+    Value: 4

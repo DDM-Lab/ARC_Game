@@ -1,0 +1,6 @@
+<UXML xmlns="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+  <VisualElement class="buildingComponent horizontal">
+    <Label name="CategoryNameLabel"/>
+    <Button name="FilterButton"/>    
+  </VisualElement>
+</UXML>

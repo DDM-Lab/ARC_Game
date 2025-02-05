@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f5c8a6af23a9d72448bd656db3640b3c, type: 3}
+  m_Name: GraniteItem
+  m_EditorClassIdentifier: 
+  Key: GRT
+  Name: Granite
+  Priority: 0
+  UnitSize: 1
+  Icon: {fileID: 21300000, guid: c75a274a81855564b920ed0cd6a50b54, type: 3}
+  Material: {fileID: 2100000, guid: 9d403d49660e6174d99a291eae14ac6b, type: 2}
+  Visuals:
+  - {fileID: 498140434663082342, guid: 3960aaf99b599b74a8c444c466f10049, type: 3}

@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b225e672a71d5d4b9c86bd89b1f0c16, type: 3}
+  m_Name: HappinessScore
+  m_EditorClassIdentifier: 
+  Name: Happiness
+  BaseValue: 50
+  Scores:
+  - {fileID: 11400000, guid: ea0519f0fd32f1d4b96a2027c461d09d, type: 2}
+  - {fileID: 11400000, guid: 95c650ae093a5ef41854e4e046135ea0, type: 2}
+  - {fileID: 11400000, guid: da3dd15e0b89c6f45bf25524779c09ee, type: 2}

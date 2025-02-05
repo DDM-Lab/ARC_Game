@@ -1,0 +1,7 @@
+This asset is governed by the Asset Store EULA; however, the following components are governed by the licenses indicated below:
+A. Defense Demo Sprites
+CC0
+https://kenney.nl/
+B. Urban Demo Sprites
+CC0
+https://opengameart.org/users/pixel32

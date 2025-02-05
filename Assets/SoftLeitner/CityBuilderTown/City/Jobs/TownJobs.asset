@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 10062ddd3e2009b4281d095bece3f968, type: 3}
+  m_Name: TownJobs
+  m_EditorClassIdentifier: 
+  Objects:
+  - {fileID: 11400000, guid: 11ee916ace644c7479b7e1318b1b0e3d, type: 2}
+  - {fileID: 11400000, guid: e06e459893ed30240bf7ac5c432bb4ed, type: 2}
+  - {fileID: 11400000, guid: f7ac8d1a2f8e14148ba6c12beaca5b69, type: 2}
+  - {fileID: 11400000, guid: 8550b928474a8db4a8c1fe37ab28b685, type: 2}
+  - {fileID: 11400000, guid: abad3e0825e2be04588275f1a2fa4774, type: 2}
+  - {fileID: 11400000, guid: 648356f02e4b3e742b0aa7d166d3eaa7, type: 2}

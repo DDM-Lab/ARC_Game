@@ -1,0 +1,16 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8645e1db564637d43b7777cd32e45f28, type: 3}
+  m_Name: TownWalkerViewActionBar
+  m_EditorClassIdentifier: 
+  Name: Action
+  Bar: {fileID: 3204807044015035338, guid: af8aef6eb1d556341b713f9dd49f6bbf, type: 3}

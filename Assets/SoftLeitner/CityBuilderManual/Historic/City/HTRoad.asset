@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 09bf8cd25dfb20646b4141579c09ef30, type: 3}
+  m_Name: HTRoad
+  m_EditorClassIdentifier: 
+  Key: 
+  Name: 
+  Stages:
+  - LayerRequirements: []
+    Key: ROD
+    Tile: {fileID: 11400000, guid: 2ff85a62a49aa3646a85366b16a3827c, type: 2}
+  Cost:
+  - Item: {fileID: 11400000, guid: 4317f7116bd32544d8a45c9c221e51bc, type: 2}
+    Quantity: 5
+  Level:
+    Value: 0
+  IsDestructible: 1

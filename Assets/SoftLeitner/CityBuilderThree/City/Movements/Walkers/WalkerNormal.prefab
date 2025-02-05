@@ -1,0 +1,60 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &1482206184012540242
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7215254117109992002}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dfc7dc14fb8efdc498c945c2ee040641, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Parameter: walk
+--- !u!1001 &7557271853090813715
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: fcafbae0769761a42954680f5f2dcf89,
+        type: 3}
+      propertyPath: m_RootOrder
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: fcafbae0769761a42954680f5f2dcf89,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: fcafbae0769761a42954680f5f2dcf89,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: fcafbae0769761a42954680f5f2dcf89,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: fcafbae0769761a42954680f5f2dcf89,
+        type: 3}
+      propertyPath: m_Name
+      value: WalkerNormal
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: fcafbae0769761a42954680f5f2dcf89,
+        type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 4ecd8f8186b55c34092e6bda3920a6ef, type: 2}
+    m_RemovedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: fcafbae0769761a42954680f5f2dcf89, type: 3}
+--- !u!1 &7215254117109992002 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: fcafbae0769761a42954680f5f2dcf89,
+    type: 3}
+  m_PrefabInstance: {fileID: 7557271853090813715}
+  m_PrefabAsset: {fileID: 0}

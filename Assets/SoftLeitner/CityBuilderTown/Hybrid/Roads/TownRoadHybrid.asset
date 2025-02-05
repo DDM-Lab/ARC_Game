@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 84e323355567cf046bb377b1c67e3d0c, type: 3}
+  m_Name: TownRoadHybrid
+  m_EditorClassIdentifier: 
+  IsColored: 1
+  Color: {r: 0.44313726, g: 0.3529412, b: 0.25882354, a: 1}
+  ConnectedTiles: []
+  Sprites:
+  - {fileID: -1396483287286313306, guid: bab0bf736c978214ba1d4c1fa623bab9, type: 3}
+  - {fileID: -2656324371522367893, guid: bab0bf736c978214ba1d4c1fa623bab9, type: 3}
+  - {fileID: 4369560171034777531, guid: bab0bf736c978214ba1d4c1fa623bab9, type: 3}
+  - {fileID: 1783640835874756645, guid: bab0bf736c978214ba1d4c1fa623bab9, type: 3}
+  - {fileID: 7562056680135774178, guid: bab0bf736c978214ba1d4c1fa623bab9, type: 3}
+  - {fileID: -2056183421091898765, guid: bab0bf736c978214ba1d4c1fa623bab9, type: 3}
+  Prefabs: []

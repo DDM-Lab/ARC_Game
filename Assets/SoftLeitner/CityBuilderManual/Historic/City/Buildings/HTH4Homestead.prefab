@@ -1,0 +1,105 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1001 &7682382462439020329
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 758342279397668382, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: PopulationHousings.Array.data[0].Capacity
+      value: 65
+      objectReference: {fileID: 0}
+    - target: {fileID: 3453821415929864979, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: ItemsRecipients.Array.size
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 3453821415929864979, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: ItemsRecipients.Array.data[0].Item
+      value: 
+      objectReference: {fileID: 11400000, guid: 08a53322bc8bc6e48a7257f35b0ba033,
+        type: 2}
+    - target: {fileID: 3453821415929864979, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: ItemsRecipients.Array.data[1].Item
+      value: 
+      objectReference: {fileID: 11400000, guid: 4b79c1179cc6e2f49b5c530f6e2f0a64,
+        type: 2}
+    - target: {fileID: 3453821415929864979, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: ItemsRecipients.Array.data[0].Storage.Mode
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 3453821415929864979, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: ItemsRecipients.Array.data[1].Storage.Mode
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 3453821415929864979, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: ItemsRecipients.Array.data[0].Storage.Capacity
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 3453821415929864979, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: ItemsRecipients.Array.data[1].Storage.Capacity
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 3453821415929864979, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: ItemsRecipients.Array.data[0].ConsumptionInterval
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 3453821415929864979, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: ItemsRecipients.Array.data[1].ConsumptionInterval
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 5296911564984953914, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: -9141071142257869592, guid: 96913f3db2c9dfd46b4f0b17484786c7,
+        type: 3}
+    - target: {fileID: 5296911564984953914, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: m_WasSpriteAssigned
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5296911565965408913, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: Info
+      value: 
+      objectReference: {fileID: 11400000, guid: e96eefce88a470042967f63efd90b105,
+        type: 2}
+    - target: {fileID: 5296911565965408926, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: m_RootOrder
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5296911565965408926, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5296911565965408926, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5296911565965408926, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5296911565965408927, guid: d908f36bd4698f74cb76bb230d1b960f,
+        type: 3}
+      propertyPath: m_Name
+      value: HTH4Homestead
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: d908f36bd4698f74cb76bb230d1b960f, type: 3}

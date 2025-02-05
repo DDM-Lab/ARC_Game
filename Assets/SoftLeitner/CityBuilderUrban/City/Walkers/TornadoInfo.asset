@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 077da190cfd7a67459c8d56a8cd6e383, type: 3}
+  m_Name: TornadoInfo
+  m_EditorClassIdentifier: 
+  Key: TND
+  Name: Tornado
+  Descriptions:
+  - destruction
+  Prefab: {fileID: 1924049503727326264, guid: 8d0d0ba8d0db4314590f75783b899fff, type: 3}
+  PathType: 100
+  PathTag: {fileID: 11400000, guid: 6c2f57d1791ac6748b2c2f61e958debd, type: 2}
+  Speed: 3
+  MaxWait: 10
+  Delay: 0

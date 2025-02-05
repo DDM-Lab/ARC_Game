@@ -1,0 +1,8 @@
+to upgrade the THREE demo to URP follow these steps
+
+-install Universal RP
+-assign pipeline settings (in Project Settings/Graphics assign the UniversalRenderPipelineAsset from this folder)
+-upgrade project materials (Edit/Render Pipeline/Universal Render Pipeline/Upgrade Project Materials to UniversalRP Materials)
+-switch the materials in Materials/Road and Materials/Map to "Universal Render Pipeline/Lit"
+
+the TerrainRoad material in the Materials/Special folder is only used in the DebugTerrain scene, without changes the shader works but can not receive shadows, it can be switched to the HeightMappedGraph shader to support shadows but the depth offset is not yet supported in shader graph

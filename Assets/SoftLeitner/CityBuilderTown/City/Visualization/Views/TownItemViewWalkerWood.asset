@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c3f6e3df72ce3aa4ebfa36df7dde203a, type: 3}
+  m_Name: TownItemViewWalkerWood
+  m_EditorClassIdentifier: 
+  Name: Walker Wood
+  Bar: {fileID: 2891085538038412524, guid: b2cda6fa4c23c1448b955024f70bd065, type: 3}
+  Value: {fileID: 11400000, guid: 887318e57bd32c544beda75373669f09, type: 2}

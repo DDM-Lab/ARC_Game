@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f5c8a6af23a9d72448bd656db3640b3c, type: 3}
+  m_Name: TownLog
+  m_EditorClassIdentifier: 
+  Key: LOG
+  Name: Log
+  Priority: 0
+  UnitSize: 1
+  Icon: {fileID: 21300000, guid: 06efa27b68d12544ab8b2099099635fc, type: 3}
+  Material: {fileID: 2100000, guid: ba77354325761b141b5a321173fc2bb8, type: 2}
+  Visuals:
+  - {fileID: 498140434663082342, guid: 852fa4a9a2024bb46a1f6fff16484e72, type: 3}

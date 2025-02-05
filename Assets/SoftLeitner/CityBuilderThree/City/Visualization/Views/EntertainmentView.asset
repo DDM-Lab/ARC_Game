@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b65f218987f6b2540a12d632d139589b, type: 3}
+  m_Name: EntertainmentView
+  m_EditorClassIdentifier: 
+  Name: Entertainment
+  Views:
+  - {fileID: 11400000, guid: 6207ac86308a4074a971c25a1be9a999, type: 2}
+  - {fileID: 11400000, guid: 35d6e084010902f48afeb34227ae2c30, type: 2}

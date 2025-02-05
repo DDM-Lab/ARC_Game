@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 895fb399175922d4eb3cfc5ce0098e16, type: 3}
+  m_Name: UrbanPower
+  m_EditorClassIdentifier: 
+  ConnectedTiles: []
+  Connection: {fileID: 11400000, guid: bafd690b0507ca64eb8752ed49dee977, type: 2}
+  Sprites:
+  - {fileID: -6743024233415356852, guid: 42b9f5e56ab3d2e46b6951bffcd5cec1, type: 3}
+  - {fileID: -1263086640487881106, guid: 42b9f5e56ab3d2e46b6951bffcd5cec1, type: 3}
+  - {fileID: -6395972835822954575, guid: 42b9f5e56ab3d2e46b6951bffcd5cec1, type: 3}
+  - {fileID: -4870673783934581298, guid: 42b9f5e56ab3d2e46b6951bffcd5cec1, type: 3}

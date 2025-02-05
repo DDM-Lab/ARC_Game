@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 604c06c40ad5df24ebfb90c43ebc1e2b, type: 3}
+  m_Name: TownItems
+  m_EditorClassIdentifier: 
+  Objects:
+  - {fileID: 11400000, guid: 7b306576b8d88e34a8ab71bd4280e160, type: 2}
+  - {fileID: 11400000, guid: 2227c30862663644a9718336b0deb361, type: 2}
+  - {fileID: 11400000, guid: 9a6254fa4e14b9e43a28857291e436cf, type: 2}
+  - {fileID: 11400000, guid: 8b63f06ac5235eb40ad0cc1ba762d4d7, type: 2}
+  - {fileID: 11400000, guid: 887318e57bd32c544beda75373669f09, type: 2}

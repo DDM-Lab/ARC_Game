@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 61637d3e1804fe84d97f2d769aab4dcd, type: 3}
+  m_Name: SetupGenerator
+  m_EditorClassIdentifier: 
+  Scene: {fileID: 102900000, guid: 5d00004250aa2444fbcb9ee684cedbf6, type: 3}
+  GroundPalette: {fileID: 5513913893714223939, guid: 52fb7fbc466e58349a6af70c551703af,
+    type: 3}
+  RectBlank: {fileID: 21300000, guid: 6184a4f4b80a82e4ea7315fb042689f7, type: 3}
+  HexBlank: {fileID: 21300000, guid: c5e8ef0266066dd439950868414ceebd, type: 3}
+  IsoBlank: {fileID: 21300000, guid: 7671b1bfde1bd4e4aab310ae03e583f1, type: 3}
+  InfoTile: {fileID: 11400000, guid: e53505f0ee236b24cb0525c8550b2bee, type: 2}
+  ValidTile: {fileID: 11400000, guid: eec97820050dc744895a4dd6726dd8bc, type: 2}
+  InvalidTile: {fileID: 11400000, guid: e069091824a1c464887dda905aa46659, type: 2}
+  GroundTile: {fileID: 11400000, guid: 20300272660a79c4799c8b825350eade, type: 2}
+  GroundBlockedTile: {fileID: 11400000, guid: d3b8262a82637de4f99a93dcfe294118, type: 2}
+  RoadTile: {fileID: 11400000, guid: bb25fedd69789a946835c801e334aa20, type: 2}
+  RoadObjectTile: {fileID: 11400000, guid: d1c71ad928e9d394193b249f53e0f8a2, type: 2}
+  RoadHexMeshXY: {fileID: 4300000, guid: 5430f51a23180d945a72be0aff3eff1b, type: 2}
+  Building: {fileID: 1242321732015227228, guid: 9123014be3413794d9266d9f2d9d3c77,
+    type: 3}
+  BuildingInfo: {fileID: 11400000, guid: 3bb48930b6940d146ab41ef77ade4e82, type: 2}
+  BuildingMesh: {fileID: 4753397016139609436, guid: cb93d0733cbc95447a8adc5f6770294e,
+    type: 3}
+  BuildingSprite: {fileID: 21300000, guid: b33427924d6303840b8a3dde93e4f571, type: 3}
+  BuildingSpriteIso: {fileID: 21300000, guid: e58143d6de8fce040b38e58e71c904c2, type: 3}
+  Walker: {fileID: 1133033772311275104, guid: ef56e4ad365a27c45af70134c545615b, type: 3}
+  WalkerInfo: {fileID: 11400000, guid: a5bbca3d3398f604ab4f702448dffb62, type: 2}
+  WalkerMesh: {fileID: 2485991212416148155, guid: 1d81ce8ff3488ff4aa6980c0bf219685,
+    type: 3}
+  WalkerSprite: {fileID: 21300000, guid: 9795d3355e5a3434dac17b7fdef227de, type: 3}
+  WalkerSpriteIso: {fileID: 21300000, guid: 1773a39c11ee1b8488e5b99f371e4ec1, type: 3}
+  MinimapTexture: {fileID: 8400000, guid: 803ce32cddb858541b81664a9c0efcd5, type: 2}
+  Font: {fileID: 11400000, guid: 8caa56126c867fe42950fdb012c59e62, type: 2}
+  GroundMaterial: {fileID: 2100000, guid: 7262738e1c3910c4bbdcd7427c4be412, type: 2}
+  BlockedMaterial: {fileID: 2100000, guid: fbc89a68b7910474ea5ef9977fae23a4, type: 2}
+  OverlayMaterial: {fileID: 2100000, guid: 38edb7f754d33e5439534051f2bb6c8e, type: 2}
+  RoadMaterial: {fileID: 2100000, guid: cc85e4911e17c734c9ab97f568e231ed, type: 2}
+  GroundLayer: {fileID: 8574412962073106934, guid: fde4f0f8da2d72a46a7693b51aea8179,
+    type: 2}
+  RoadLayer: {fileID: 8574412962073106934, guid: 52ebd1fe5990e49459188f7dffbed9ca,
+    type: 2}

@@ -1,0 +1,34 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6d2987e2774f1e74d870d1803de19ca2, type: 3}
+  m_Name: TownTasks
+  m_EditorClassIdentifier: 
+  Objects:
+  - {fileID: 7844537041149953868, guid: 0f986894dd55a474ebbb975e235f0a53, type: 3}
+  - {fileID: 7844537041149953868, guid: fa7e413f932653a4697b0779dc3929e3, type: 3}
+  - {fileID: 7844537041149953868, guid: 6a343d9c225452a4a90c1dc2111f1583, type: 3}
+  - {fileID: 7844537041149953868, guid: c440b78ae7f601542b5b64574c30e770, type: 3}
+  - {fileID: 7844537041149953868, guid: c0fd0566ad60d5b47b4c508091ff65f0, type: 3}
+  - {fileID: 7844537041149953868, guid: d14ec22d16e22e44ab110a8e5c205b1c, type: 3}
+  - {fileID: 7844537041149953868, guid: a273ebef008cdce4f8909b8f11720c3b, type: 3}
+  - {fileID: 7844537041149953868, guid: e8b05de36a922ed46ba328f10d359e04, type: 3}
+  - {fileID: 8214619103832312169, guid: 0ad127a7d50ae4e48944f890ba041c8c, type: 3}
+  - {fileID: 4708772294018939017, guid: edee3d80c903a75469515ed3fa79ed84, type: 3}
+  - {fileID: -488819107151338767, guid: b94800907c507314b9a7f9c899326555, type: 3}
+  - {fileID: -5775687270231468369, guid: 9b15d1c9555fee34986e9bdd688b4da7, type: 3}
+  - {fileID: 6388350368314552323, guid: dffe6c24dfaba67419f576a3ea3024df, type: 3}
+  - {fileID: 7844537041149953868, guid: cc538d08006614847aa0766c35916fc9, type: 3}
+  - {fileID: 6388350368314552323, guid: a11199c44c85e2f41a1b5ff78b555913, type: 3}
+  - {fileID: 6388350368314552323, guid: f2afb6163068e604c8d392233b1e28a0, type: 3}
+  - {fileID: 2693741868137304671, guid: 0462be8f5dd3eab4c951310a92939e98, type: 3}
+  - {fileID: 5432391748963227728, guid: 5d50bd4fe37456c43957f5ec97dbec11, type: 3}
+  - {fileID: 3916272182394402018, guid: 6294c4da42779f54b8659651d10e778c, type: 3}

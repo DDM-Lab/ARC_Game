@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d7dfc866673a4c540b2aebef6fc2610c, type: 3}
+  m_Name: FoodScore
+  m_EditorClassIdentifier: 
+  Name: Food
+  Mode: 1
+  Building: {fileID: 0}
+  BuildingCategory: {fileID: 11400000, guid: 7438dbd3379f0db449e80b9bd175e965, type: 2}
+  Item: {fileID: 0}
+  ItemCategory: {fileID: 11400000, guid: 20ab68c3f45112243a9c7b7254a0f42d, type: 2}

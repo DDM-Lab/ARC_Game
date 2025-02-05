@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: df7b70f3ce801ea40b31473749ffa3df, type: 3}
+  m_Name: DebugServiceEvolution
+  m_EditorClassIdentifier: 
+  Stages:
+  - BuildingInfo: {fileID: 11400000, guid: a6d9222a4d20b5846b9fb34daa5dffd3, type: 2}
+    Services: []
+    Items: []
+    ItemCategoryRequirements: []
+    LayerRequirements: []
+  - BuildingInfo: {fileID: 11400000, guid: 024bd0b051b22b2419117f069340420e, type: 2}
+    Services:
+    - {fileID: 11400000, guid: e794d2ffa02140d46866d3e63c24d188, type: 2}
+    Items: []
+    ItemCategoryRequirements: []
+    LayerRequirements: []
+  EvolvedDescription: 
+  EvolutionDescription: 
+  Description: 
+  DevolutionDescription: 

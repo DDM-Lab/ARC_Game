@@ -1,0 +1,63 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &6740823492734306287
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6740823492734306281}
+  - component: {fileID: 6740823492734306286}
+  m_Layer: 0
+  m_Name: PlebMigration
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6740823492734306281
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6740823492734306287}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_RootOrder: 0
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &6740823492734306286
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6740823492734306287}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 645a7e5754d3b7c46b87c553e427d4e8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ImmigrationWalkers:
+    Prefab: {fileID: 7605116228980120196, guid: 6b6f68837d9a7114eafd940ffb0876a4,
+      type: 3}
+    Count: -1
+  EmigrationWalkers:
+    Prefab: {fileID: 4702480623059077582, guid: 0de6439b6ceb39f43949a178b7fd9f15,
+      type: 3}
+    Count: -1
+  HomelessWalkers:
+    Prefab: {fileID: 5398595691004091711, guid: 60ad69545ee8d22459c4bce50dd35bdd,
+      type: 3}
+    Count: -1
+  Entry: {fileID: 6740823492734306281}
+  Population: {fileID: 11400000, guid: 1e6c53444c7156143a871e89037aafe2, type: 2}
+  Interval: 1
+  Sentiment: 1
+  SentimentScore: {fileID: 11400000, guid: 4c14dacb0d9495240bde6f53a09c8ae1, type: 2}
+  Minimum: 50

@@ -1,0 +1,40 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 11f98b364e13cc940a28c59bb55693cc, type: 3}
+  m_Name: HTFarm
+  m_EditorClassIdentifier: 
+  Key: FAM
+  Name: farm
+  Description: 
+  Size: {x: 3, y: 3}
+  IsDestructible: 1
+  IsWalkable: 0
+  Prefab: {fileID: 2412674858193918879, guid: 5d5ffc8a20735f94899687e8d3535b14, type: 3}
+  Ghost: {fileID: 0}
+  AccessType: 0
+  AccessPoint: {x: 0, y: 0}
+  Cost:
+  - Item: {fileID: 11400000, guid: 4317f7116bd32544d8a45c9c221e51bc, type: 2}
+    Quantity: 40
+  BuildingRequirements:
+  - Mode: 1
+    Points: []
+    Count: 0
+    LayerRequirement:
+      Layer: {fileID: 0}
+      MinValue: 0
+      MaxValue: 0
+    GroundOptions:
+    - {fileID: 11400000, guid: 3ea5a85dd3cddf74bb6505f33d4c4bcb, type: 2}
+  RoadRequirements: []
+  Level:
+    Value: 0

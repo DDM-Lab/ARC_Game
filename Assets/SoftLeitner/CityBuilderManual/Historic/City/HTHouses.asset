@@ -1,0 +1,49 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: df7b70f3ce801ea40b31473749ffa3df, type: 3}
+  m_Name: HTHouses
+  m_EditorClassIdentifier: 
+  Stages:
+  - BuildingInfo: {fileID: 11400000, guid: e5fb516ad5504c74584b4d4a1c5fde8d, type: 2}
+    Services: []
+    Items: []
+    ItemCategoryRequirements: []
+    LayerRequirements: []
+  - BuildingInfo: {fileID: 11400000, guid: a8ad1cc7fa5ce754da21a27e10085924, type: 2}
+    Services:
+    - {fileID: 11400000, guid: c05add106932f784fbc6906779fd4596, type: 2}
+    Items: []
+    ItemCategoryRequirements: []
+    LayerRequirements: []
+  - BuildingInfo: {fileID: 11400000, guid: 670cc56b578bb9842aa13c242b317962, type: 2}
+    Services: []
+    Items:
+    - {fileID: 11400000, guid: 08a53322bc8bc6e48a7257f35b0ba033, type: 2}
+    ItemCategoryRequirements: []
+    LayerRequirements: []
+  - BuildingInfo: {fileID: 11400000, guid: e96eefce88a470042967f63efd90b105, type: 2}
+    Services:
+    - {fileID: 11400000, guid: a9d9857598b34d346ae5e0460848ba62, type: 2}
+    Items: []
+    ItemCategoryRequirements: []
+    LayerRequirements: []
+  - BuildingInfo: {fileID: 11400000, guid: 3bf00f0b1beaff14a8259cc3e1fe1e41, type: 2}
+    Services:
+    - {fileID: 11400000, guid: a9d9857598b34d346ae5e0460848ba62, type: 2}
+    Items:
+    - {fileID: 11400000, guid: 4b79c1179cc6e2f49b5c530f6e2f0a64, type: 2}
+    ItemCategoryRequirements: []
+    LayerRequirements: []
+  EvolvedDescription: Fully Evolved
+  EvolutionDescription: Evolving
+  Description: Needs {0}
+  DevolutionDescription: Devolving because {0}

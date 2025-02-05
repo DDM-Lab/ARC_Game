@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a6b36988cc36fb74db703d9621e6a894, type: 3}
+  m_Name: DebugBuildingAddon
+  m_EditorClassIdentifier: 
+  Key: DBGA
+  Name: DebugBuildingAdon
+  MultiplierLayer: {fileID: 0}
+  MultiplierLayerBottom: 0
+  MultiplierLayerTop: 0
+  Prefab: {fileID: 5539070367712606430, guid: b8bc2702f51e8d84381dedf5bd22beee, type: 3}
+  Remove: 0

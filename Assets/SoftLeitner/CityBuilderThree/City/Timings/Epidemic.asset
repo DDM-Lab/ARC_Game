@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 519fcfb7af4135d4fa20debd77b8267e, type: 3}
+  m_Name: Epidemic
+  m_EditorClassIdentifier: 
+  Name: Epidemic
+  StartTitle: Epidemic Outbreak!
+  StartDescription: oh no
+  EndTitle: 
+  EndDescription: 
+  Addon: {fileID: -1001259798782101303, guid: 6ce3ed9e22da4214fb0cb7f69ffff283, type: 3}
+  Building: {fileID: 0}
+  BuildingCategory: {fileID: 11400000, guid: 7438dbd3379f0db449e80b9bd175e965, type: 2}
+  Count: 3
+  Remove: 0

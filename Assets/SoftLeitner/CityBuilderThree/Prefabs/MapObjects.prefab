@@ -1,0 +1,430 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &2489100926366147458
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4016455239263876324}
+  - component: {fileID: 7666724347702339985}
+  - component: {fileID: 9104082801079117167}
+  m_Layer: 0
+  m_Name: Pebbles
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4016455239263876324
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2489100926366147458}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2803596894117827969}
+  m_RootOrder: 4
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &7666724347702339985
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2489100926366147458}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4260cf7cf0338874cb3349d60d2e87d6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Key: PBS
+  Name: Pebbles
+  Level:
+    Value: 0
+  Prefabs:
+  - {fileID: 6485981238731976593, guid: c383fc10b964b024783893c84421f230, type: 3}
+  RotationMode: 2
+  ScaleMinimum: 0.4
+  ScaleMaximum: 0.6
+--- !u!114 &9104082801079117167
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2489100926366147458}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f965e09d5290bf428007dbf80f804f9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  TileRequirements:
+  - Tilemap: {fileID: 0}
+    Tiles:
+    - {fileID: 11400000, guid: c43030d8e82b47942b3bd7c8bb90f9fd, type: 2}
+  TileBlockers:
+  - Tilemap: {fileID: 0}
+    Tiles: []
+  StructureBlockers:
+  - {fileID: 2803596892833684468}
+  DecoratorBlockers: []
+  Method: 0
+  NoiseScale: {x: 0.2, y: 0.2}
+  NoiseOffset: {x: 0, y: 0}
+  RandomSeed: 0
+  Objects:
+  - Threshold: 0.98
+    BaseScale: {x: 0.5, y: 0.5, z: 0.5}
+    Prefab: {fileID: 6485981238731976593, guid: c383fc10b964b024783893c84421f230,
+      type: 3}
+  Corner: 0
+  Rotate: 1
+  RotateStepped: 0
+  Scale: 1
+  ScaleMinimum: 0.8
+  ScaleMaximum: 1.2
+--- !u!1 &2803596892512252518
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2803596892512252517}
+  - component: {fileID: 2803596892512252516}
+  m_Layer: 0
+  m_Name: Rubble
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2803596892512252517
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2803596892512252518}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2803596894117827969}
+  m_RootOrder: 2
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2803596892512252516
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2803596892512252518}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba2016e550ed09b43ae148814ca3d1d8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Key: RUB
+  Name: Rubble
+  IsDestructible: 1
+  IsMovable: 1
+  IsDecorator: 1
+  IsWalkable: 0
+  Level:
+    Value: 0
+  Prefab: {fileID: 2723573814983608844, guid: 737c6989996b24347af91d28c253292f, type: 3}
+  ObjectSize: {x: 1, y: 1}
+  AddInCenter: 0
+--- !u!1 &2803596892833684470
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2803596892833684469}
+  - component: {fileID: 2803596892833684468}
+  - component: {fileID: 2803596892833684459}
+  m_Layer: 0
+  m_Name: Trees
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2803596892833684469
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2803596892833684470}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2803596894117827969}
+  m_RootOrder: 0
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2803596892833684468
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2803596892833684470}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba2016e550ed09b43ae148814ca3d1d8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Key: TRE
+  Name: Trees
+  IsDestructible: 1
+  IsMovable: 0
+  IsDecorator: 0
+  IsWalkable: 0
+  Level:
+    Value: 0
+  Prefab: {fileID: 7647879578983773836, guid: 25c781dd20ec72a4ca6ff91d63bc8ca8, type: 3}
+  ObjectSize: {x: 1, y: 1}
+  AddInCenter: 0
+--- !u!114 &2803596892833684459
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2803596892833684470}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7ed0cbc06bc5f3a4c97e2aeecd9e705b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Layer: {fileID: 11400000, guid: 8fc7ce7b23f16784a8a16e3a040763ca, type: 2}
+  Value: 5
+  Range: 2
+  Falloff: 2
+--- !u!1 &2803596894117827970
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2803596894117827969}
+  m_Layer: 0
+  m_Name: MapObjects
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2803596894117827969
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2803596894117827970}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 2803596892833684469}
+  - {fileID: 2803596894120781355}
+  - {fileID: 2803596892512252517}
+  - {fileID: 6050610916607791522}
+  - {fileID: 4016455239263876324}
+  m_Father: {fileID: 0}
+  m_RootOrder: 0
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2803596894120781364
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2803596894120781355}
+  - component: {fileID: 2803596894120781353}
+  - component: {fileID: 2803596894120781354}
+  m_Layer: 0
+  m_Name: Ores
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2803596894120781355
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2803596894120781364}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2803596894117827969}
+  m_RootOrder: 1
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2803596894120781353
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2803596894120781364}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba2016e550ed09b43ae148814ca3d1d8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Key: ORE
+  Name: Ores
+  IsDestructible: 0
+  IsMovable: 0
+  IsDecorator: 0
+  IsWalkable: 0
+  Level:
+    Value: 0
+  Prefab: {fileID: 4186528166038993464, guid: b700ad00730c26a488b87bb78aaf172d, type: 3}
+  ObjectSize: {x: 2, y: 2}
+  AddInCenter: 0
+--- !u!114 &2803596894120781354
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2803596894120781364}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7ed0cbc06bc5f3a4c97e2aeecd9e705b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Layer: {fileID: 11400000, guid: bf79f86eae50deb40bb145cffa7061cd, type: 2}
+  Value: 10
+  Range: 1
+  Falloff: 0
+--- !u!1 &5058934973621281992
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6050610916607791522}
+  - component: {fileID: 8033316770668671252}
+  - component: {fileID: 135547495262382267}
+  m_Layer: 0
+  m_Name: Bushes
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6050610916607791522
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5058934973621281992}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2803596894117827969}
+  m_RootOrder: 3
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &8033316770668671252
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5058934973621281992}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4260cf7cf0338874cb3349d60d2e87d6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Key: BSH
+  Name: Bushes
+  Level:
+    Value: 0
+  Prefabs:
+  - {fileID: 4608365316738328138, guid: 704073f285ed58b4ebb341260f804018, type: 3}
+  - {fileID: 1087258914411882491, guid: a62ce9dbd859c354f8b373294f147a02, type: 3}
+  - {fileID: 5080959977850358231, guid: a15aae008abbe7048875c75473a3db07, type: 3}
+  RotationMode: 2
+  ScaleMinimum: 0.4
+  ScaleMaximum: 0.75
+--- !u!114 &135547495262382267
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5058934973621281992}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f965e09d5290bf428007dbf80f804f9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  TileRequirements:
+  - Tilemap: {fileID: 0}
+    Tiles:
+    - {fileID: 11400000, guid: b70b4951f28d1ad44acf06dcc3c9ced8, type: 2}
+    - {fileID: 11400000, guid: a544701369ea5044992dd1a9a5e8d115, type: 2}
+  TileBlockers:
+  - Tilemap: {fileID: 0}
+    Tiles: []
+  StructureBlockers:
+  - {fileID: 2803596892833684468}
+  DecoratorBlockers: []
+  Method: 0
+  NoiseScale: {x: 0.2, y: 0.2}
+  NoiseOffset: {x: 0, y: 0}
+  RandomSeed: 0
+  Objects:
+  - Threshold: 0.95
+    BaseScale: {x: 0.65, y: 0.65, z: 0.65}
+    Prefab: {fileID: 4608365316738328138, guid: 704073f285ed58b4ebb341260f804018,
+      type: 3}
+  - Threshold: 0.975
+    BaseScale: {x: 0.5, y: 0.5, z: 0.5}
+    Prefab: {fileID: 1087258914411882491, guid: a62ce9dbd859c354f8b373294f147a02,
+      type: 3}
+  - Threshold: 0.985
+    BaseScale: {x: 0.65, y: 0.65, z: 0.65}
+    Prefab: {fileID: 5080959977850358231, guid: a15aae008abbe7048875c75473a3db07,
+      type: 3}
+  Corner: 0
+  Rotate: 1
+  RotateStepped: 0
+  Scale: 1
+  ScaleMinimum: 0.8
+  ScaleMaximum: 1.2

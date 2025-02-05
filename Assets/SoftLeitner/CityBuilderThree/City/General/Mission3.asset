@@ -1,0 +1,41 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d955e1161b84eaf46aab1715fd2217e3, type: 3}
+  m_Name: Mission3
+  m_EditorClassIdentifier: 
+  Key: THREE
+  Name: Monument
+  Description: build the mighty obelisk
+  SceneName: StageThree
+  Happenings:
+  - Happening: {fileID: 11400000, guid: 16e9330c911bcc94b918668d21e1f91e, type: 2}
+    Conditions:
+    - Unit: {fileID: 11400000, guid: a7478ad0c27226943ade002474374cbc, type: 2}
+      Number: 1
+      NumberFrom: 0
+      NumberTill: 0
+      Chance: 1
+    - Unit: {fileID: 11400000, guid: f0c0d3b174ecf5b45b9f26f6f5c035ef, type: 2}
+      Number: 3
+      NumberFrom: 0
+      NumberTill: 0
+      Chance: 1
+  - Happening: {fileID: 11400000, guid: 16e9330c911bcc94b918668d21e1f91e, type: 2}
+    Conditions:
+    - Unit: {fileID: 11400000, guid: a7478ad0c27226943ade002474374cbc, type: 2}
+      Number: 3
+      NumberFrom: 0
+      NumberTill: 0
+      Chance: 1
+  WinConditions:
+  - Score: {fileID: 11400000, guid: 5aaec7a4803985148a42962045003ab8, type: 2}
+    Value: 100

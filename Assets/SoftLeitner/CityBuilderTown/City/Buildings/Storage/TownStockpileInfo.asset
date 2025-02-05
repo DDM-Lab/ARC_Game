@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f57f6614d18efa94592fad1845e3b3c7, type: 3}
+  m_Name: TownStockpileInfo
+  m_EditorClassIdentifier: 
+  Key: STK
+  Name: Stockpile
+  Description: stores stone and wood
+  Size: {x: 0, y: 0}
+  IsDestructible: 1
+  IsWalkable: 1
+  Prefab: {fileID: 8745087151817180438, guid: 21cb1d6b0db09274abeeb16854ca58ac, type: 3}
+  PrefabAlternatives: []
+  Ghost: {fileID: 7482747618712560170, guid: 3ee76991ad995874c8a6d8b0e44bb4a8, type: 3}
+  GhostAlternatives: []
+  AccessType: 0
+  AccessPoint: {x: 0, y: 0}
+  Cost: []
+  BuildingRequirements: []
+  RoadRequirements: []
+  Level:
+    Value: 0
+  ExpansionMinimum: {x: 1, y: 1}
+  ExpansionMaximum: {x: 6, y: 6}
+  ExpansionCost: []
+  SizePost: {x: 0, y: 0}

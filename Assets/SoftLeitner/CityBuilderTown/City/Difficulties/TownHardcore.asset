@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e5723ced62dbca64d94452289a95b9b4, type: 3}
+  m_Name: TownHardcore
+  m_EditorClassIdentifier: 
+  Key: HDC
+  Name: Hardcore
+  RiskMultiplier: 0
+  ServiceMultiplier: 0
+  ItemsMultiplier: 0
+  FoodModifier: 1.2
+  WarmModifier: 1.2
+  ColdModifier: 1.2
+  AgeModifier: 1
+  GrowthModifier: 1

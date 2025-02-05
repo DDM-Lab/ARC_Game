@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 22f12f18d3a890f46b2a9f94778b4703, type: 3}
+  m_Name: UrbanPipe
+  m_EditorClassIdentifier: 
+  IsColored: 0
+  Color: {r: 0, g: 0, b: 0, a: 0}
+  ConnectedTiles: []
+  Sprites:
+  - {fileID: 3624413539235301459, guid: 780dabebbbc7c924ba741c2691907eaf, type: 3}
+  - {fileID: 7631404538767374335, guid: 780dabebbbc7c924ba741c2691907eaf, type: 3}
+  - {fileID: -4752754735582442470, guid: 780dabebbbc7c924ba741c2691907eaf, type: 3}
+  - {fileID: -2120189714087908947, guid: 780dabebbbc7c924ba741c2691907eaf, type: 3}
+  - {fileID: -8507936627233245176, guid: 780dabebbbc7c924ba741c2691907eaf, type: 3}
+  - {fileID: -2508138221163281763, guid: 780dabebbbc7c924ba741c2691907eaf, type: 3}
+  - {fileID: -9264146362022084, guid: 780dabebbbc7c924ba741c2691907eaf, type: 3}
+  Prefabs: []
+  Connection: {fileID: 11400000, guid: f4030f81f9107774d9bf8e20a9e28c0b, type: 2}

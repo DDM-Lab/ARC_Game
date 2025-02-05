@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b65f218987f6b2540a12d632d139589b, type: 3}
+  m_Name: TownWarmthView
+  m_EditorClassIdentifier: 
+  Name: Warmth
+  Views:
+  - {fileID: 11400000, guid: 296ff338110bac243b9ee59700e29c0e, type: 2}
+  - {fileID: 11400000, guid: 675e5813f6a6f294585e6633fbc31436, type: 2}
+  - {fileID: 11400000, guid: d0ec6329f974d9a4da9e82057d569520, type: 2}

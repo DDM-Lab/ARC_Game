@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e63ad4e1116ac7840b2c3b30de924c48, type: 3}
+  m_Name: hexRoadObjectEQ
+  m_EditorClassIdentifier: 
+  IsColored: 0
+  Color: {r: 0, g: 0, b: 0, a: 0}
+  ConnectedTiles: []
+  Sprites:
+  - {fileID: 5085180706738558299, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  - {fileID: 2037381136847324865, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  - {fileID: -983150035834710551, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  - {fileID: -3846005325532315905, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  - {fileID: -6784181722479015888, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  - {fileID: 6743104730738595799, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  - {fileID: 3232151788780550297, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  - {fileID: 4819959437598227278, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  - {fileID: -5774408049775256975, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  - {fileID: 4649122715509432013, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  - {fileID: 791166248370712931, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  - {fileID: 2786672602461924917, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  - {fileID: 4942243036280633344, guid: 0352407dd16a0da44a8a4352e574252a, type: 3}
+  Prefabs:
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}

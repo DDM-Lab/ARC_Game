@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d588b40b4a868094aa0ac0e92f8bacce, type: 3}
+  m_Name: UrbanRoad
+  m_EditorClassIdentifier: 
+  IsColored: 0
+  Color: {r: 0, g: 0, b: 0, a: 0}
+  ConnectedTiles: []
+  Sprites:
+  - {fileID: -6043416981284610355, guid: 81b74871692dc0542a4b4e790bb3f49b, type: 3}
+  - {fileID: 1281697204898358490, guid: 81b74871692dc0542a4b4e790bb3f49b, type: 3}
+  - {fileID: -8960007918963773294, guid: 81b74871692dc0542a4b4e790bb3f49b, type: 3}
+  - {fileID: -7130687603060568676, guid: 81b74871692dc0542a4b4e790bb3f49b, type: 3}
+  - {fileID: 5161056296627223491, guid: 81b74871692dc0542a4b4e790bb3f49b, type: 3}
+  - {fileID: 3202382630132030130, guid: 81b74871692dc0542a4b4e790bb3f49b, type: 3}
+  - {fileID: 1877546711585232530, guid: 81b74871692dc0542a4b4e790bb3f49b, type: 3}
+  Prefabs: []

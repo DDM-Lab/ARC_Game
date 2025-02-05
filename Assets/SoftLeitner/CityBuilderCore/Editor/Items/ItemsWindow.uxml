@@ -1,0 +1,8 @@
+<UXML xmlns="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+  <VisualElement class="header horizontal">
+    <VisualElement name="SetsElement"/>
+    <VisualElement class="grow"/>
+    <Button name="ReloadButton"/>
+  </VisualElement>
+  <ListView class="items grow"/>
+</UXML>

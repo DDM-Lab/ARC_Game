@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f96bdd2be6c4119479735aa09c47cf70, type: 3}
+  m_Name: TownItemViewBuildingWood
+  m_EditorClassIdentifier: 
+  Name: Building Wood
+  Bar: {fileID: 4087044775582499362, guid: 7a15102b18cf42e4f830c190fcff57e2, type: 3}
+  Value: {fileID: 11400000, guid: 887318e57bd32c544beda75373669f09, type: 2}

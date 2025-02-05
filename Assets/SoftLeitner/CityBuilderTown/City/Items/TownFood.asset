@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0b5884490de334742aeabdb057861e81, type: 3}
+  m_Name: TownFood
+  m_EditorClassIdentifier: 
+  Key: FOD
+  NameSingular: Food
+  NamePlural: Food
+  Items:
+  - {fileID: 11400000, guid: 9a6254fa4e14b9e43a28857291e436cf, type: 2}
+  - {fileID: 11400000, guid: 7b306576b8d88e34a8ab71bd4280e160, type: 2}

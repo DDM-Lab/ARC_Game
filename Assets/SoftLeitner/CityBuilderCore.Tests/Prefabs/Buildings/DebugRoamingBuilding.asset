@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 11f98b364e13cc940a28c59bb55693cc, type: 3}
+  m_Name: DebugRoamingBuilding
+  m_EditorClassIdentifier: 
+  Key: DBGR
+  Name: DebugRoamer
+  Description: 
+  Size: {x: 1, y: 1}
+  IsDestructible: 1
+  IsWalkable: 0
+  Prefab: {fileID: 7652710909308936555, guid: 15ebbcc425e9d1147b61f86f0e020f33, type: 3}
+  PrefabAlternatives: []
+  Ghost: {fileID: 2654815812166875454, guid: 7aad03a87e8a95442aaba016234e7cc2, type: 3}
+  GhostAlternatives: []
+  AccessType: 0
+  AccessPoint: {x: 0, y: 0}
+  Cost: []
+  BuildingRequirements: []
+  RoadRequirements: []
+  Level:
+    Value: 0

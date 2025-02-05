@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 09bf8cd25dfb20646b4141579c09ef30, type: 3}
+  m_Name: DefaultRoadModeled
+  m_EditorClassIdentifier: 
+  Key: RODM
+  Name: Road
+  Stages:
+  - LayerRequirements: []
+    Key: PTHM
+    Tile: {fileID: 11400000, guid: 05ca272ea0477304588f53f4c037c568, type: 2}
+    Index: 0
+  - LayerRequirements:
+    - Layer: {fileID: 11400000, guid: 8fc7ce7b23f16784a8a16e3a040763ca, type: 2}
+      MinValue: 10
+      MaxValue: 1000
+    Key: STRM
+    Tile: {fileID: 11400000, guid: ffb95ff5b35bd46468de59271a0787d8, type: 2}
+    Index: 0
+  Cost:
+  - Item: {fileID: 11400000, guid: 66d7c05d0410fb340a18c097d9f96e9a, type: 2}
+    Quantity: 1
+  Level:
+    Value: 1
+  IsDestructible: 1
+  IsMovable: 1

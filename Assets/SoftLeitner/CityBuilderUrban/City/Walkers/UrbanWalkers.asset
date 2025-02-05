@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9f671131c0f3a5f47863f5bbbd19fe89, type: 3}
+  m_Name: UrbanWalkers
+  m_EditorClassIdentifier: 
+  Objects:
+  - {fileID: 11400000, guid: 1eb55066f789b59419f7701bd1d7385b, type: 2}
+  - {fileID: 11400000, guid: 9e91805bb152ae540b9c68587d7b2057, type: 2}
+  - {fileID: 11400000, guid: 11d22c7afae9a4749bc45b051a5d8dd3, type: 2}
+  - {fileID: 11400000, guid: a04cef86b6e1e154fae5772987bc6145, type: 2}
+  - {fileID: 11400000, guid: 57baf5a39888cc444b8dfa3997b07a9a, type: 2}

@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 84fc53877df150c42a8ca85c2dbfc8b2, type: 3}
+  m_Name: TownItemViewBuildingFood
+  m_EditorClassIdentifier: 
+  Name: Building Food
+  Bar: {fileID: 4087044775582499362, guid: 7a15102b18cf42e4f830c190fcff57e2, type: 3}
+  Value: {fileID: 11400000, guid: 32a2e89db56c1974ca74e8ef5690afea, type: 2}

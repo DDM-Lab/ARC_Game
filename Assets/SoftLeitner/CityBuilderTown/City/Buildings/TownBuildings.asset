@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c7389f614ec791c42a03c8da97217fdb, type: 3}
+  m_Name: TownBuildings
+  m_EditorClassIdentifier: 
+  Objects:
+  - {fileID: 11400000, guid: 0b348c026e390d941aae73fb9c4599dd, type: 2}
+  - {fileID: 11400000, guid: 86b6601c3b87afd41b5a3cf732103b7e, type: 2}
+  - {fileID: 11400000, guid: 9adbd1476a5985a42ba883893d56fc06, type: 2}
+  - {fileID: 11400000, guid: dea389e7a7bfc1e4d9ab892e69df74ca, type: 2}
+  - {fileID: 11400000, guid: 302504f4ed563e5429be2d7e51634ec9, type: 2}
+  - {fileID: 11400000, guid: 344dc8a8468dfdd4f9794882451cb5a1, type: 2}
+  - {fileID: 11400000, guid: b12b345cb33baae4ebd94e769cb8cca4, type: 2}
+  - {fileID: 11400000, guid: 09da57329c311d84198c555c97db1c89, type: 2}
+  - {fileID: 11400000, guid: 94865712af96e7d4b9318aa68ae88fcb, type: 2}
+  - {fileID: 11400000, guid: ed889880fb2039b4a96ebf486e0412d8, type: 2}
+  - {fileID: 11400000, guid: d894a94f7416958498ceb4a5b55d9186, type: 2}
+  - {fileID: 11400000, guid: 7725a93ff29ad91469fd3920f2ef757b, type: 2}
+  - {fileID: 11400000, guid: 03379b52c7441e449a37c9ad66bc3b6f, type: 2}
+  - {fileID: 11400000, guid: 8cd66dbd2cc9f084abad95fdbe14e090, type: 2}
+  - {fileID: 11400000, guid: 91602215cfb7feb4588a73c13c68e70b, type: 2}
+  - {fileID: 11400000, guid: 8e5b90750da6c03448216b4d73248b25, type: 2}

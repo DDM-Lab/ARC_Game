@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 21a54a0a2907cc843ac2555a85b8b2c7, type: 3}
+  m_Name: DefenseAttackWalkerSlowHappening
+  m_EditorClassIdentifier: 
+  Name: Freeze
+  StartTitle: 
+  StartDescription: 
+  EndTitle: 
+  EndDescription: 
+  Addon: {fileID: 1055713374696137392, guid: e4861dfe762a3264981ecb4813c709a8, type: 3}
+  Walker: {fileID: 11400000, guid: 9868dcb496cb3214bb4a9abdd3fae208, type: 2}
+  Count: 0
+  Remove: 0

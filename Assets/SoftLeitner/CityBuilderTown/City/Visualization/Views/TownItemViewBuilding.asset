@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fc3b2bf64beae8141a65b539667d5ef5, type: 3}
+  m_Name: TownItemViewBuilding
+  m_EditorClassIdentifier: 
+  Name: Building Items
+  Bar: {fileID: 4087044775582499362, guid: 7a15102b18cf42e4f830c190fcff57e2, type: 3}
+  Value: {fileID: 11400000, guid: d5533881f028a634b8732e483c2e994f, type: 2}
