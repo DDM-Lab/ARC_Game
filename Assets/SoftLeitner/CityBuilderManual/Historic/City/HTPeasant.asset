@@ -1,3 +1,16 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d4a7476e80e9a56a70ef47400d5fee5498bdfa6940af98158d8a877822fe4962
-size 450
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9cd31e824a1ba814e8af93196a572fdf, type: 3}
+  m_Name: HTPeasant
+  m_EditorClassIdentifier: 
+  Name: Peasant
+  Icon: {fileID: 0}

@@ -1,3 +1,22 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f403862eb43087495171568165f45de9e7a5d01824c4fd463f1fba22a4d52862
-size 606
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5175eab7b12074f4dab8913e674c6dd2, type: 3}
+  m_Name: RainWater
+  m_EditorClassIdentifier: 
+  Name: Rain
+  StartTitle: 
+  StartDescription: 
+  EndTitle: 
+  EndDescription: 
+  Layer: {fileID: 11400000, guid: a094edcd16f1ff147b4c541ab8e87899, type: 2}
+  Multiplier: 2
+  Addend: 0

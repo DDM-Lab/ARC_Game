@@ -1,3 +1,28 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:66e4c8d561fe05cd6d686c16ea147f1a0691e390a11a89bffd7ff48a5868cdc7
-size 713
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 09bf8cd25dfb20646b4141579c09ef30, type: 3}
+  m_Name: Road
+  m_EditorClassIdentifier: 
+  Key: ROD
+  Name: Road
+  Stages:
+  - LayerRequirements: []
+    Key: 
+    Tile: {fileID: 11400000, guid: 2f710cb754e58404580b4830d5eabb4b, type: 2}
+    Index: 1
+  Cost:
+  - Item: {fileID: 11400000, guid: f86fac5b20ad04a44a3307c416738cc4, type: 2}
+    Quantity: 1
+  Level:
+    Value: 0
+  IsDestructible: 1
+  IsMovable: 1

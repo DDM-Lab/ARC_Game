@@ -1,3 +1,460 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5884fd05ae358c619aa6b91152d6a274d1c4badcd284b3abba4405234069a569
-size 11461
+fileFormatVersion: 2
+guid: 0352407dd16a0da44a8a4352e574252a
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: 5085180706738558299
+    second: hexRoadsEQ_01
+  - first:
+      213: 2786672602461924917
+    second: hexRoadsEQ_51
+  - first:
+      213: -983150035834710551
+    second: hexRoadsEQ_21
+  - first:
+      213: -3846005325532315905
+    second: hexRoadsEQ_22
+  - first:
+      213: -6784181722479015888
+    second: hexRoadsEQ_23
+  - first:
+      213: 6743104730738595799
+    second: hexRoadsEQ_31
+  - first:
+      213: 3232151788780550297
+    second: hexRoadsEQ_32
+  - first:
+      213: 4819959437598227278
+    second: hexRoadsEQ_33
+  - first:
+      213: -5774408049775256975
+    second: hexRoadsEQ_41
+  - first:
+      213: 4649122715509432013
+    second: hexRoadsEQ_42
+  - first:
+      213: 791166248370712931
+    second: hexRoadsEQ_43
+  - first:
+      213: 2037381136847324865
+    second: hexRoadsEQ_51
+  - first:
+      213: 4942243036280633344
+    second: hexRoadsEQ_61
+  externalObjects: {}
+  serializedVersion: 12
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMasterTextureLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 0
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 128
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  cookieLightType: 1
+  platformSettings:
+  - serializedVersion: 3
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 3
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 3
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 3
+    buildTarget: Server
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: hexRoadsEQ_01
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 888
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b5552db09e0329640800000000000000
+      internalID: 5085180706738558299
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hexRoadsEQ_11
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 740
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 53e6e0fa7ff3ca620800000000000000
+      internalID: 2037381136847324865
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hexRoadsEQ_21
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 592
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 9e5d82950462b52f0800000000000000
+      internalID: -983150035834710551
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hexRoadsEQ_22
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 592
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ffeb26f888e30aac0800000000000000
+      internalID: -3846005325532315905
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hexRoadsEQ_23
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 592
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 038c0f3eaaeb9d1a0800000000000000
+      internalID: -6784181722479015888
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hexRoadsEQ_31
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 444
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 7d71eeea602549d50800000000000000
+      internalID: 6743104730738595799
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hexRoadsEQ_32
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 444
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 998786e5de8eadc20800000000000000
+      internalID: 3232151788780550297
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hexRoadsEQ_33
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 444
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: e4b75dd329fe3e240800000000000000
+      internalID: 4819959437598227278
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hexRoadsEQ_41
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 296
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 17a5dfc097e2ddfa0800000000000000
+      internalID: -5774408049775256975
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hexRoadsEQ_42
+      rect:
+        serializedVersion: 2
+        x: 128
+        y: 296
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: dce93274a70058040800000000000000
+      internalID: 4649122715509432013
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hexRoadsEQ_43
+      rect:
+        serializedVersion: 2
+        x: 256
+        y: 296
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3613a68d289cafa00800000000000000
+      internalID: 791166248370712931
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hexRoadsEQ_51
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 148
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1c6cdd5795b364c10800000000000000
+      internalID: 2786672602461924917
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hexRoadsEQ_61
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 128
+        height: 148
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 008b72b3bdf569440800000000000000
+      internalID: 4942243036280633344
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    physicsShape: []
+    bones: []
+    spriteID: 5e97eb03825dee720800000000000000
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    nameFileIdTable:
+      hexRoadsEQ_01: 5085180706738558299
+      hexRoadsEQ_11: 2037381136847324865
+      hexRoadsEQ_21: -983150035834710551
+      hexRoadsEQ_22: -3846005325532315905
+      hexRoadsEQ_23: -6784181722479015888
+      hexRoadsEQ_31: 6743104730738595799
+      hexRoadsEQ_32: 3232151788780550297
+      hexRoadsEQ_33: 4819959437598227278
+      hexRoadsEQ_41: -5774408049775256975
+      hexRoadsEQ_42: 4649122715509432013
+      hexRoadsEQ_43: 791166248370712931
+      hexRoadsEQ_51: 2786672602461924917
+      hexRoadsEQ_61: 4942243036280633344
+  spritePackingTag: 
+  pSDRemoveMatte: 0
+  pSDShowRemoveMatteOption: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

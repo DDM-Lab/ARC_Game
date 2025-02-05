@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c3cc4e8aba47d22f15ecc5f05a9dd0d0d5f7863e1c062deeaee3aa4888c4d624
-size 494
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 53b62867fd0be3f479ad130bd457fdb8, type: 3}
+  m_Name: TownPart
+  m_EditorClassIdentifier: 
+  Name: Part
+  Amount: 3
+  Duration: 20
+  Names:
+  - Early
+  - Mid
+  - Late

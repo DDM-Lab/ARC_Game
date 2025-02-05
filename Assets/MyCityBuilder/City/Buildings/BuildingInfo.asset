@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ee39febb166529cfcbf184260202ed53ad0ae1ebe083aed4bfc0180cd0f1b29e
-size 894
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 11f98b364e13cc940a28c59bb55693cc, type: 3}
+  m_Name: BuildingInfo
+  m_EditorClassIdentifier: 
+  Key: BDG
+  Name: Building
+  Description: 
+  Size: {x: 2, y: 2}
+  IsDestructible: 1
+  IsMovable: 1
+  IsWalkable: 0
+  Prefab: {fileID: 8960978035646634263, guid: 53796e51bfe683a498c7368c9ae89749, type: 3}
+  PrefabAlternatives: []
+  Ghost: {fileID: 0}
+  GhostAlternatives: []
+  AccessType: 0
+  AccessPoint: {x: 0, y: 0}
+  Cost:
+  - Item: {fileID: 11400000, guid: f86fac5b20ad04a44a3307c416738cc4, type: 2}
+    Quantity: 10
+  BuildingRequirements: []
+  RoadRequirements: []
+  Level:
+    Value: 0

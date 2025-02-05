@@ -1,3 +1,56 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:63d13e721b5785c73f5ef851a24e13e996d954e436c83f6de465a16de2689890
-size 808
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!78 &1
+TagManager:
+  serializedVersion: 2
+  tags:
+  - Walker
+  layers:
+  - Default
+  - TransparentFX
+  - Ignore Raycast
+  - 
+  - Water
+  - UI
+  - 
+  - 
+  - Foundation
+  - Housing
+  - Food
+  - Storage
+  - Distribution
+  - 
+  - WaterService
+  - 
+  - 
+  - 
+  - 
+  - 
+  - CollapseRisk
+  - FireRisk
+  - DiseaseRisk
+  - 
+  - 
+  - 
+  - DesirabilityLayer
+  - IronLayer
+  - EntertainmentLayer
+  - 
+  - Ground
+  - Roads
+  m_SortingLayers:
+  - name: Ground
+    uniqueID: 3538454939
+    locked: 0
+  - name: Roads
+    uniqueID: 2300570723
+    locked: 0
+  - name: Default
+    uniqueID: 0
+    locked: 0
+  - name: Overlays
+    uniqueID: 890372405
+    locked: 0
+  - name: Highlights
+    uniqueID: 1287106125
+    locked: 0
