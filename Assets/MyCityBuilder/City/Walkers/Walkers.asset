@@ -13,4 +13,4 @@ MonoBehaviour:
   m_Name: Walkers
   m_EditorClassIdentifier: 
   Objects:
-  - {fileID: 11400000, guid: 59c6bf1940a601346874872ae40a7243, type: 2}
+  - {fileID: 11400000, guid: 4e53eca6a8b592243862cb13c58f986c, type: 2}

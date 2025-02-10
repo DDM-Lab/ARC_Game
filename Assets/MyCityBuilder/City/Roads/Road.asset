@@ -17,7 +17,7 @@ MonoBehaviour:
   Stages:
   - LayerRequirements: []
     Key: 
-    Tile: {fileID: 11400000, guid: 2f710cb754e58404580b4830d5eabb4b, type: 2}
+    Tile: {fileID: 11400000, guid: 59decb8702c2d6248a788deb2b183a87, type: 2}
     Index: 1
   Cost:
   - Item: {fileID: 11400000, guid: f86fac5b20ad04a44a3307c416738cc4, type: 2}

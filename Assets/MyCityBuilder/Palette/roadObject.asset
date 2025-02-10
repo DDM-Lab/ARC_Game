@@ -9,8 +9,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c7389f614ec791c42a03c8da97217fdb, type: 3}
-  m_Name: Buildings
+  m_Script: {fileID: 11500000, guid: ff3f81fa33b24b045aa66b6e480d11d3, type: 3}
+  m_Name: roadObject
   m_EditorClassIdentifier: 
-  Objects:
-  - {fileID: 11400000, guid: fd9788fa12edc5d4384264d2d66082d9, type: 2}
+  Prefab: {fileID: 1466558423029657393, guid: 7cfabcb933ecff147b4c5500bfcd5be3, type: 3}

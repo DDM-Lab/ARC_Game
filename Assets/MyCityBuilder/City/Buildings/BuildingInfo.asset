@@ -19,7 +19,7 @@ MonoBehaviour:
   IsDestructible: 1
   IsMovable: 1
   IsWalkable: 0
-  Prefab: {fileID: 8960978035646634263, guid: 53796e51bfe683a498c7368c9ae89749, type: 3}
+  Prefab: {fileID: 5855632169447185084, guid: 53796e51bfe683a498c7368c9ae89749, type: 3}
   PrefabAlternatives: []
   Ghost: {fileID: 0}
   GhostAlternatives: []
