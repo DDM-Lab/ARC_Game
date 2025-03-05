@@ -11,7 +11,7 @@ PrefabInstance:
     - target: {fileID: 1133033772311275104, guid: fe1e121a021b980469040ecfb566f54a,
         type: 3}
       propertyPath: m_Name
-      value: Building
+      value: Kitchen
       objectReference: {fileID: 0}
     - target: {fileID: 1133033772311275108, guid: fe1e121a021b980469040ecfb566f54a,
         type: 3}
@@ -67,37 +67,16 @@ PrefabInstance:
         type: 3}
       propertyPath: Info
       value: 
-      objectReference: {fileID: 11400000, guid: ceea9cef9c66e7845b51d31f2bce9b0a,
+      objectReference: {fileID: 11400000, guid: 0ab38ccb963dec44ea98fb742b26a037,
         type: 2}
+    - target: {fileID: 6489920781985288643, guid: fe1e121a021b980469040ecfb566f54a,
+        type: 3}
+      propertyPath: m_Sprite
+      value: 
+      objectReference: {fileID: 21300000, guid: 95b59371f7a4eab42ae14a8d73673e15,
+        type: 3}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents:
-    - targetCorrespondingSourceObject: {fileID: 1133033772311275104, guid: fe1e121a021b980469040ecfb566f54a,
-        type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 1250639614721385000}
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: fe1e121a021b980469040ecfb566f54a, type: 3}
---- !u!1 &8639739997645451277 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 1133033772311275104, guid: fe1e121a021b980469040ecfb566f54a,
-    type: 3}
-  m_PrefabInstance: {fileID: 8673895459632600685}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &1250639614721385000
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8639739997645451277}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3f520b2527bb69348a2c501fced926c1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  CyclicRoamingWalkers:
-    Prefab: {fileID: 4327082813928230315, guid: 21fda184ef9095c42907ebecc8640a50,
-      type: 3}
-    Count: 1
-    Downtime: 0
