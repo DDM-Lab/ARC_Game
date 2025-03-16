@@ -7,11 +7,13 @@ using UnityEngine.EventSystems;
 public class TileHoverInfo : MonoBehaviour
 {
     public Tilemap groundTilemap;   // Assign your Ground tilemap
+    public Tilemap riverTilemap;     // Assign your River tilemap
     public Tilemap roadTilemap;     // Assign your Road tilemap
     public Tilemap forestTilemap; // Assign your Tree tilemap
     public Tilemap mountainTilemap; // Assign your Mountain tilemap
     public TextMeshProUGUI infoText; // Assign a UI Text to display terrain type
 
+    public bool Hover_Text_Debug = false; // Set to true to enable debug logs
     private Camera mainCamera;
 
     void Start()
@@ -25,7 +27,7 @@ public class TileHoverInfo : MonoBehaviour
         if (!Application.isFocused)
         {
             infoText.gameObject.SetActive(false);
-            Debug.Log("Game window is not focused");
+            DebugLog("Game window is not focused");
             return;
         }
 
@@ -33,7 +35,7 @@ public class TileHoverInfo : MonoBehaviour
         if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
         {
             infoText.gameObject.SetActive(false);
-            Debug.Log("Mouse is over UI");
+            DebugLog("Mouse is over UI");
             return;
         }
 
@@ -44,7 +46,7 @@ public class TileHoverInfo : MonoBehaviour
             mouseScreenPos.x > Screen.width || mouseScreenPos.y > Screen.height)
         {
             infoText.gameObject.SetActive(false);
-            //Debug.Log("Mouse is out of screen bounds");
+            DebugLog("Mouse is out of screen bounds");
             return;
         }
 
@@ -67,16 +69,25 @@ public class TileHoverInfo : MonoBehaviour
 
     string GetTerrainType(Vector3Int cellPosition)
     {
+        string x = cellPosition.x.ToString();
+        string y = cellPosition.y.ToString();
         // Check tilemap layers in order of priority
         if (mountainTilemap.HasTile(cellPosition))
-            return "Mountain\nCannot pass";
+            return "Mountain\nCannot pass\n x: " + x + "  y: " + y;
         if (forestTilemap.HasTile(cellPosition))
-            return "Forests\nCannot pass";
+            return "Forests\nCannot pass\n x: " + x + "  y: " + y;
         if (roadTilemap.HasTile(cellPosition))
-            return "Road\nCan pass, speed up";
+            return "Road\nCan pass, speed up\n x: " + x + "  y: " + y;
+        if (riverTilemap.HasTile(cellPosition))
+            return "River\nCannot pass\n x: " + x + "  y: " + y;
         if (groundTilemap.HasTile(cellPosition))
-            return "Plain\nCan pass";
+            return "Plain\nCan pass\n x: " + x + "  y: " + y;
 
         return ""; // No tile found, return empty string
+    }
+    private void DebugLog(string message)
+    {
+        if (Hover_Text_Debug)
+            Debug.Log(message);
     }
 }
