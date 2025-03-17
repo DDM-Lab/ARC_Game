@@ -19926,6 +19926,9 @@ MonoBehaviour:
   - Tile: {fileID: 11400000, guid: a224371e6412d944b9399106ee40a973, type: 2}
     Level:
       Value: 0
+  - Tile: {fileID: 11400000, guid: 03026d176d0d6d24bbb1445d8faa6f78, type: 2}
+    Level:
+      Value: 0
   TaggedBuildingTiles: []
 --- !u!1 &1239367948
 GameObject:
@@ -19937,6 +19940,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1239367950}
   - component: {fileID: 1239367949}
+  - component: {fileID: 1239367951}
   m_Layer: 0
   m_Name: UIManager
   m_TagString: Untagged
@@ -19972,6 +19976,27 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1239367951
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1239367948}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b1e32575adb44514b8c814e5c61e50ce, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  groundTilemap: {fileID: 61096115}
+  riverTilemap: {fileID: 1031687895}
+  roadTilemap: {fileID: 1893894463}
+  forestTilemap: {fileID: 1058180468}
+  mountainTilemap: {fileID: 2118753753}
+  floodedTilemap: {fileID: 336290445}
+  infoText: {fileID: 1815007455}
+  floodManager: {fileID: 1800671404}
+  Hover_Text_Debug: 0
 --- !u!1 &1243494121
 GameObject:
   m_ObjectHideFlags: 0
@@ -20836,7 +20861,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 177.4, y: 248.7}
+  m_AnchoredPosition: {x: 181, y: 224.8}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &1371154815
@@ -21260,7 +21285,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1481492380}
   - component: {fileID: 1481492381}
-  - component: {fileID: 1481492379}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -21268,25 +21292,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1481492379
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1481492378}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b1e32575adb44514b8c814e5c61e50ce, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  groundTilemap: {fileID: 61096115}
-  riverTilemap: {fileID: 1031687895}
-  roadTilemap: {fileID: 1893894463}
-  forestTilemap: {fileID: 1058180468}
-  mountainTilemap: {fileID: 2118753753}
-  infoText: {fileID: 1815007455}
-  Hover_Text_Debug: 0
 --- !u!4 &1481492380
 Transform:
   m_ObjectHideFlags: 0
@@ -21794,6 +21799,9 @@ MonoBehaviour:
   round2Day: 9
   dayCount: 1
   debugMode: 0
+  currentWeather: 0
+  SunnyChance: 0.3
+  RainyChance: 0.4
 --- !u!4 &1717813019
 Transform:
   m_ObjectHideFlags: 0
@@ -22167,7 +22175,9 @@ MonoBehaviour:
   riverTilemap: {fileID: 1031687895}
   floodedTilemap: {fileID: 336290445}
   floodedTile: {fileID: 11400000, guid: 03026d176d0d6d24bbb1445d8faa6f78, type: 2}
-  floodChance: 0.05
+  mountainTilemap: {fileID: 2118753753}
+  forestTilemap: {fileID: 1058180468}
+  floodChance: 0.01
   recedeChance: 0.1
   Flood_Debug: 1
 --- !u!4 &1800671405
@@ -22295,7 +22305,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -346.9, y: 282}
+  m_AnchoredPosition: {x: -247, y: 228.43}
   m_SizeDelta: {x: 200, y: 42.7376}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1815007455
@@ -22318,7 +22328,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 
+  m_text: terrain display
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -22345,8 +22355,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 16
-  m_fontSizeBase: 16
+  m_fontSize: 13
+  m_fontSizeBase: 13
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -28512,7 +28522,6 @@ GameObject:
   - component: {fileID: 5863481451020618339}
   - component: {fileID: 6131822172178925207}
   - component: {fileID: 4572659658331919977}
-  - component: {fileID: 8204634943285697916}
   m_Layer: 0
   m_Name: EventSystem
   m_TagString: Untagged
@@ -28520,25 +28529,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &8204634943285697916
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8204634943285697915}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b1e32575adb44514b8c814e5c61e50ce, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  groundTilemap: {fileID: 61096115}
-  riverTilemap: {fileID: 1031687895}
-  roadTilemap: {fileID: 1893894463}
-  forestTilemap: {fileID: 1058180468}
-  mountainTilemap: {fileID: 2118753753}
-  infoText: {fileID: 1815007455}
-  Hover_Text_Debug: 0
 --- !u!1 &8621702313729476275
 GameObject:
   m_ObjectHideFlags: 0
