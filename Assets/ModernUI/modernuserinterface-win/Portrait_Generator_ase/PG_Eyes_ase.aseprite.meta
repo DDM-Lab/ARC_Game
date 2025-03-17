@@ -1,0 +1,335 @@
+fileFormatVersion: 2
+guid: 52c1f8371f1d30d4dbb74f8640f5efb4
+ScriptedImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 2
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+  script: {fileID: 11500000, guid: 62a9f0aa5b59740cfbadc7e5f9823bb0, type: 3}
+  textureImporterSettings:
+    alphaSource: 1
+    mipMapMode: 0
+    enableMipMap: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+    convertToNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+    swizzle: 50462976
+    isReadable: 0
+    streamingMipmaps: 0
+    streamingMipmapsPriority: 0
+    vTOnly: 0
+    ignoreMipmapLimit: 0
+    nPOTScale: 1
+    sRGBTexture: 1
+    spriteMode: 2
+    spriteExtrude: 1
+    spriteMeshType: 1
+    alignment: 0
+    spritePivot: {x: 0.5, y: 0.5}
+    spritePixelsToUnits: 100
+    spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+    spriteGenerateFallbackPhysicsShape: 0
+    generateCubemap: 6
+    cubemapConvolution: 0
+    seamlessCubemap: 0
+    alphaIsTransparency: 1
+    spriteTessellationDetail: -1
+    textureType: 8
+    textureShape: 1
+    singleChannelComponent: 0
+    flipbookRows: 0
+    flipbookColumns: 0
+    ignorePngGamma: 0
+    cookieMode: 0
+    filterMode: 0
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+    normalMap: 0
+    textureFormat: 0
+    maxTextureSize: 0
+    lightmap: 0
+    compressionQuality: 0
+    linearTexture: 0
+    grayScaleToAlpha: 0
+    rGBM: 0
+    cubemapConvolutionSteps: 0
+    cubemapConvolutionExponent: 0
+    maxTextureSizeSet: 0
+    compressionQualitySet: 0
+    textureFormatSet: 0
+    applyGammaDecoding: 0
+  previousAsepriteImporterSettings:
+    fileImportMode: 1
+    importHiddenLayers: 0
+    layerImportMode: 1
+    defaultPivotSpace: 0
+    defaultPivotAlignment: 7
+    customPivotPosition: {x: 0.5, y: 0.5}
+    mosaicPadding: 4
+    spritePadding: 0
+    generateModelPrefab: 1
+    generateAnimationClips: 1
+    addSortingGroup: 1
+    addShadowCasters: 0
+  asepriteImporterSettings:
+    fileImportMode: 1
+    importHiddenLayers: 0
+    layerImportMode: 1
+    defaultPivotSpace: 0
+    defaultPivotAlignment: 7
+    customPivotPosition: {x: 0.5, y: 0.5}
+    mosaicPadding: 4
+    spritePadding: 0
+    generateModelPrefab: 1
+    generateAnimationClips: 1
+    addSortingGroup: 1
+    addShadowCasters: 0
+  importFileNodeState: 1
+  platformSettingsDirtyTick: 0
+  textureAssetName: 
+  singleSpriteImportData:
+  - name: 
+    originalName: 
+    pivot: {x: 0, y: 0}
+    alignment: 0
+    border: {x: 0, y: 0, z: 0, w: 0}
+    rect:
+      serializedVersion: 2
+      x: 0
+      y: 0
+      width: 0
+      height: 0
+    spriteID: 
+    spriteBone: []
+    spriteOutline: []
+    vertices: []
+    spritePhysicsOutline: []
+    indices: 
+    edges: []
+    tessellationDetail: 0
+    uvTransform: {x: 0, y: 0}
+  animatedSpriteImportData:
+  - name: PG_Eyes_ase_Frame_0
+    originalName: 
+    pivot: {x: 0.49488056, y: -0.1969697}
+    alignment: 9
+    border: {x: 0, y: 0, z: 0, w: 0}
+    rect:
+      serializedVersion: 2
+      x: 4
+      y: 4
+      width: 293
+      height: 66
+    spriteID: cf3d8d84c39e9274b899f3874e994892
+    spriteBone: []
+    spriteOutline: []
+    vertices: []
+    spritePhysicsOutline: []
+    indices: 
+    edges: []
+    tessellationDetail: 0
+    uvTransform: {x: 4, y: 4}
+  - name: PG_Eyes_ase_Frame_1
+    originalName: 
+    pivot: {x: 0.49488056, y: -0.1969697}
+    alignment: 9
+    border: {x: 0, y: 0, z: 0, w: 0}
+    rect:
+      serializedVersion: 2
+      x: 4
+      y: 78
+      width: 293
+      height: 66
+    spriteID: da610cd14afa45b4da1493374d380231
+    spriteBone: []
+    spriteOutline: []
+    vertices: []
+    spritePhysicsOutline: []
+    indices: 
+    edges: []
+    tessellationDetail: 0
+    uvTransform: {x: 4, y: 78}
+  - name: PG_Eyes_ase_Frame_2
+    originalName: 
+    pivot: {x: 0.49488056, y: -0.1969697}
+    alignment: 9
+    border: {x: 0, y: 0, z: 0, w: 0}
+    rect:
+      serializedVersion: 2
+      x: 4
+      y: 152
+      width: 293
+      height: 66
+    spriteID: 38139b934e5533c4c94762d622c00b29
+    spriteBone: []
+    spriteOutline: []
+    vertices: []
+    spritePhysicsOutline: []
+    indices: 
+    edges: []
+    tessellationDetail: 0
+    uvTransform: {x: 4, y: 152}
+  - name: PG_Eyes_ase_Frame_3
+    originalName: 
+    pivot: {x: 0.49488056, y: -0.1969697}
+    alignment: 9
+    border: {x: 0, y: 0, z: 0, w: 0}
+    rect:
+      serializedVersion: 2
+      x: 4
+      y: 226
+      width: 293
+      height: 66
+    spriteID: d97fbc2eb73f3ca419b109f913ee4234
+    spriteBone: []
+    spriteOutline: []
+    vertices: []
+    spritePhysicsOutline: []
+    indices: 
+    edges: []
+    tessellationDetail: 0
+    uvTransform: {x: 4, y: 226}
+  - name: PG_Eyes_ase_Frame_4
+    originalName: 
+    pivot: {x: 0.49488056, y: -0.1969697}
+    alignment: 9
+    border: {x: 0, y: 0, z: 0, w: 0}
+    rect:
+      serializedVersion: 2
+      x: 4
+      y: 300
+      width: 293
+      height: 66
+    spriteID: e90884e1045f0e24cb70e72b6f000dee
+    spriteBone: []
+    spriteOutline: []
+    vertices: []
+    spritePhysicsOutline: []
+    indices: 
+    edges: []
+    tessellationDetail: 0
+    uvTransform: {x: 4, y: 300}
+  - name: PG_Eyes_ase_Frame_5
+    originalName: 
+    pivot: {x: 0.49488056, y: -0.1969697}
+    alignment: 9
+    border: {x: 0, y: 0, z: 0, w: 0}
+    rect:
+      serializedVersion: 2
+      x: 4
+      y: 374
+      width: 293
+      height: 66
+    spriteID: 76dc63a3f05be124281789c43b212170
+    spriteBone: []
+    spriteOutline: []
+    vertices: []
+    spritePhysicsOutline: []
+    indices: 
+    edges: []
+    tessellationDetail: 0
+    uvTransform: {x: 4, y: 374}
+  - name: PG_Eyes_ase_Frame_6
+    originalName: 
+    pivot: {x: 0.49488056, y: -0.1969697}
+    alignment: 9
+    border: {x: 0, y: 0, z: 0, w: 0}
+    rect:
+      serializedVersion: 2
+      x: 4
+      y: 448
+      width: 293
+      height: 66
+    spriteID: 6ed99b7618775b4428f2aad2d744c382
+    spriteBone: []
+    spriteOutline: []
+    vertices: []
+    spritePhysicsOutline: []
+    indices: 
+    edges: []
+    tessellationDetail: 0
+    uvTransform: {x: 4, y: 448}
+  spriteSheetImportData: []
+  asepriteLayers:
+  - layerIndex: 0
+    guid: 1179690530
+    name: PG_Eyes_ase
+    layerFlags: 0
+    layerType: 0
+    blendMode: 0
+    cells:
+    - name: PG_Eyes_ase_Frame_0
+      frameIndex: 0
+      cellRect:
+        x: 15
+        y: 13
+        width: 293
+        height: 66
+      spriteId: cf3d8d84c39e9274b899f3874e994892
+    - name: PG_Eyes_ase_Frame_1
+      frameIndex: 1
+      cellRect:
+        x: 15
+        y: 13
+        width: 293
+        height: 66
+      spriteId: da610cd14afa45b4da1493374d380231
+    - name: PG_Eyes_ase_Frame_2
+      frameIndex: 2
+      cellRect:
+        x: 15
+        y: 13
+        width: 293
+        height: 66
+      spriteId: 38139b934e5533c4c94762d622c00b29
+    - name: PG_Eyes_ase_Frame_3
+      frameIndex: 3
+      cellRect:
+        x: 15
+        y: 13
+        width: 293
+        height: 66
+      spriteId: d97fbc2eb73f3ca419b109f913ee4234
+    - name: PG_Eyes_ase_Frame_4
+      frameIndex: 4
+      cellRect:
+        x: 15
+        y: 13
+        width: 293
+        height: 66
+      spriteId: e90884e1045f0e24cb70e72b6f000dee
+    - name: PG_Eyes_ase_Frame_5
+      frameIndex: 5
+      cellRect:
+        x: 15
+        y: 13
+        width: 293
+        height: 66
+      spriteId: 76dc63a3f05be124281789c43b212170
+    - name: PG_Eyes_ase_Frame_6
+      frameIndex: 6
+      cellRect:
+        x: 15
+        y: 13
+        width: 293
+        height: 66
+      spriteId: 6ed99b7618775b4428f2aad2d744c382
+    linkedCells: []
+    parentIndex: -1
+  platformSettings: []
+  generatePhysicsShape: 0
+  secondarySpriteTextures: []
+  spritePackingTag: 
+  canvasSize: {x: 320, y: 96}
