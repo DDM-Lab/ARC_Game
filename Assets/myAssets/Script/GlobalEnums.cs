@@ -22,4 +22,11 @@ public static class GlobalEnums
         Kitchen,
         CaseworkSite
     }
+
+    public enum WeatherType
+    {
+        Sunny,
+        Rainy,
+        Stormy
+    }
 }

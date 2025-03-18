@@ -8,6 +8,6 @@ public class UIManager : MonoBehaviour
 
     public void UpdateRoundText(int roundNumber, int dayNumber)
     {
-        roundText.text = "Round: " + roundNumber + " Day: " + dayNumber;
+        roundText.text = "Round: " + roundNumber + " Day: " + dayNumber + " Weather: " + GlobalManager.Instance.currentWeather;
     }
 }
