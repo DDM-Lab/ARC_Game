@@ -22,7 +22,7 @@ public class FloodManager : MonoBehaviour
     public HashSet<Vector3Int> largeWaterBodies = new HashSet<Vector3Int>(); // Large water body tiles
 
     private const int TERRAIN_RADIUS = 5; // Radius to check for mountains/forests
-    private const float MAX_TERRAIN_WEIGHT = 0.6f; // Max reduction from terrain (e.g., 60%)
+    private const float MAX_TERRAIN_WEIGHT = 0.99f; // Max reduction from terrain (e.g., 60%)
 
     private void Start()
     {
@@ -99,24 +99,24 @@ public class FloodManager : MonoBehaviour
         switch (currentWeather)
         {
             case GlobalEnums.WeatherType.Sunny:
-                baseFloodChance = 0.1f;
-                baseSpreadChance = 0.05f;
-                baseRecedeChance = 0.6f;
+                baseFloodChance = 0.01f;
+                baseSpreadChance = 0.01f;
+                baseRecedeChance = 0.65f;
                 break;
             case GlobalEnums.WeatherType.Rainy:
                 baseFloodChance = 0.2f;
                 baseSpreadChance = 0.2f;
-                baseRecedeChance = 0.1f;
+                baseRecedeChance = 0.05f;
                 break;
             case GlobalEnums.WeatherType.Stormy:
                 baseFloodChance = 0.3f;
                 baseSpreadChance = 0.3f;
-                baseRecedeChance = 0.05f;
+                baseRecedeChance = 0.01f;
                 break;
             default:
-                baseFloodChance = 0.2f;
+                baseFloodChance = 0.1f;
                 baseSpreadChance = 0.1f;
-                baseRecedeChance = 0.3f;
+                baseRecedeChance = 0.1f;
                 break;
         }
 
@@ -126,21 +126,34 @@ public class FloodManager : MonoBehaviour
         if (isLargeWaterBody)
         {
             baseFloodChance *= 2.0f;  // Higher flood chance
-            baseSpreadChance *= 3.0f;
+            baseSpreadChance *= 2.0f;
         }
         else
         {
-            baseFloodChance *= 0.5f;  // Lower flood chance
-            baseSpreadChance *= 0.5f;
+            baseFloodChance *= 0.1f;  // Lower flood chance
+            baseSpreadChance *= 0.1f;
         }
 
         int nearbyMountainForestTiles = CountNearbyMountainsForests(tilePosition, TERRAIN_RADIUS);
-        float terrainWeight = Mathf.Clamp01(nearbyMountainForestTiles / 2f) * MAX_TERRAIN_WEIGHT; // Scale impact
-
-        float adjustedFloodChance = baseFloodChance * (isLargeWaterBody ? 2.0f : 1.0f) * (1.0f - terrainWeight);
-        float adjustedSpreadChance = baseSpreadChance;// * (1.0f - terrainWeight);
-
-        return (baseRecedeChance, adjustedSpreadChance, adjustedFloodChance);
+        float terrainWeight = Mathf.Clamp01(nearbyMountainForestTiles / 3f) * MAX_TERRAIN_WEIGHT; // Scale impact
+        /*bool unsafeTerrain = IsFarFromMountainsOrForests(tilePosition, TERRAIN_RADIUS);
+        if (unsafeTerrain)
+        {
+            DebugLog("Unsafe terrain detected at " + tilePosition);
+            baseFloodChance = baseFloodChance * 5.0f;
+            baseSpreadChance = baseSpreadChance * 5.0f; 
+            baseRecedeChance = baseRecedeChance * 0.5f; 
+        }
+        else
+        {
+            baseFloodChance = baseFloodChance * 0.01f;
+            baseSpreadChance = baseSpreadChance * 0.01f;
+            baseRecedeChance = baseRecedeChance * 3.0f;
+        }*/
+        float adjustedFloodChance = baseFloodChance * (1.0f - terrainWeight);
+        float adjustedSpreadChance = baseSpreadChance * (1.0f - terrainWeight);
+        float adjustedRecedeChance = baseRecedeChance * (nearbyMountainForestTiles > 3 ? 1f : 3.0f);
+        return (adjustedRecedeChance, adjustedSpreadChance, adjustedFloodChance);
     }
 
     private int CountNearbyMountainsForests(Vector3Int tilePosition, int radius)
@@ -181,82 +194,98 @@ public class FloodManager : MonoBehaviour
     {
         DebugLog("Flooding is being simulated for this round...");
 
-        // Flood propagation chance based on weather
-        float floodChance, spreadChance, recedeChance;
-        (recedeChance, spreadChance, floodChance) = GetFloodChances(Vector3Int.zero);
+        HashSet<Vector3Int> newFloodTiles = new HashSet<Vector3Int>();
 
-        List<Vector3Int> newFloodTiles = new List<Vector3Int>();
-
+        // --- Phase 1: Generate new floods from river-adjacent tiles ---
         foreach (var riverTile in riverTiles)
         {
-            List<Vector3Int> neighbors = GetNeighbors(riverTile);
-
-            foreach (Vector3Int neighbor in neighbors)
+            foreach (Vector3Int neighbor in GetNeighbors(riverTile))
             {
-                if (!floodedTiles.ContainsKey(neighbor) && Random.value < floodChance)
+                if (!floodedTiles.ContainsKey(neighbor))
                 {
-                    newFloodTiles.Add(neighbor);
+                    var (_, _, floodChance) = GetFloodChances(neighbor);
+                    if (Random.value < floodChance)
+                    {
+                        newFloodTiles.Add(neighbor);
+                    }
                 }
             }
         }
 
-        // Flood spreading logic
-        List<Vector3Int> spreadFloodTiles = new List<Vector3Int>();
-        foreach (var floodTile in floodedTiles.Keys)
+        // --- Phase 2: Spread flooding outward (chained spreading) ---
+        GlobalEnums.WeatherType currentWeather = GlobalManager.Instance.currentWeather;
+        int spreadIterations; //Allows the flood to push deeper into vulnerable terrain according to weather
+
+        switch (currentWeather)
         {
-            List<Vector3Int> neighbors = GetNeighbors(floodTile);
+            case GlobalEnums.WeatherType.Sunny:
+                spreadIterations = 1;
+                break;
+            case GlobalEnums.WeatherType.Rainy:
+                spreadIterations = 2;
+                break;
+            case GlobalEnums.WeatherType.Stormy:
+                spreadIterations = 4;
+                break;
+            default:
+                spreadIterations = 2;
+                break;
+        }
+        HashSet<Vector3Int> frontier = new HashSet<Vector3Int>(floodedTiles.Keys);
 
-            foreach (Vector3Int neighbor in neighbors)
+        for (int i = 0; i < spreadIterations; i++)
+        {
+            HashSet<Vector3Int> nextFrontier = new HashSet<Vector3Int>();
+
+            foreach (var tile in frontier)
             {
-                if (!floodedTiles.ContainsKey(neighbor) && Random.value < spreadChance)
+                foreach (Vector3Int neighbor in GetNeighbors(tile))
                 {
-                    spreadFloodTiles.Add(neighbor);
+                    if (!floodedTiles.ContainsKey(neighbor) && !newFloodTiles.Contains(neighbor))
+                    {
+                        var (_, spreadChance, _) = GetFloodChances(neighbor);
+                        if (Random.value < spreadChance)
+                        {
+                            newFloodTiles.Add(neighbor);
+                            nextFrontier.Add(neighbor); // Spread further from here in next iteration
+                        }
+                    }
                 }
             }
+
+            frontier = nextFrontier;
         }
 
-        // Apply new flood tiles
-        foreach (Vector3Int tile in newFloodTiles)
+        // --- Phase 3: Apply new flooded tiles ---
+        foreach (var tile in newFloodTiles)
         {
             floodedTilemap.SetTile(tile, floodedTile);
             floodedTiles[tile] = 1;
-            //DisableBuildingsOnTile(tile);
+            DebugLog("Flooded: " + tile);
         }
 
-        // Chance to recede floods
+        // --- Phase 4: Recede logic ---
         List<Vector3Int> recedeTiles = new List<Vector3Int>();
-
         foreach (var tile in floodedTiles.Keys)
         {
+            var (recedeChance, _, _) = GetFloodChances(tile);
             if (Random.value < recedeChance)
             {
                 recedeTiles.Add(tile);
             }
         }
 
-        foreach (Vector3Int tile in recedeTiles)
+        foreach (var tile in recedeTiles)
         {
             floodedTilemap.SetTile(tile, null);
             floodedTiles.Remove(tile);
+            DebugLog("Receded: " + tile);
         }
 
-        // Flood propagation
-        foreach (var riverTile in riverTiles)
-        {
-            List<Vector3Int> neighbors = GetNeighbors(riverTile);
-
-            foreach (Vector3Int neighbor in neighbors)
-            {
-                if (!floodedTiles.ContainsKey(neighbor) && Random.value < floodChance)
-                {
-                    newFloodTiles.Add(neighbor);
-                }
-            }
-        }
-
-        Debug.Log($"Flood Simulation: {newFloodTiles.Count} new floods, {spreadFloodTiles.Count} spread, {recedeTiles.Count} receded.");
-
+        // --- Summary ---
+        Debug.Log($"Flood Summary: {newFloodTiles.Count} new flooded, {recedeTiles.Count} receded.");
     }
+
 
     private List<Vector3Int> GetNeighbors(Vector3Int tile)
     {
@@ -265,7 +294,11 @@ public class FloodManager : MonoBehaviour
             new Vector3Int(tile.x + 1, tile.y, tile.z),
             new Vector3Int(tile.x - 1, tile.y, tile.z),
             new Vector3Int(tile.x, tile.y + 1, tile.z),
-            new Vector3Int(tile.x, tile.y - 1, tile.z)
+            new Vector3Int(tile.x, tile.y - 1, tile.z),
+            new Vector3Int(tile.x + 1, tile.y + 1, tile.z),
+            new Vector3Int(tile.x - 1, tile.y - 1, tile.z),
+            new Vector3Int(tile.x - 1, tile.y + 1, tile.z),
+            new Vector3Int(tile.x + 1, tile.y - 1, tile.z)
         };
         return neighbors;
     }

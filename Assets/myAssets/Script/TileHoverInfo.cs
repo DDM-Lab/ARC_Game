@@ -115,7 +115,11 @@ public class TileHoverInfo : MonoBehaviour
             new Vector3Int(tilePosition.x + 1, tilePosition.y, tilePosition.z),
             new Vector3Int(tilePosition.x - 1, tilePosition.y, tilePosition.z),
             new Vector3Int(tilePosition.x, tilePosition.y + 1, tilePosition.z),
-            new Vector3Int(tilePosition.x, tilePosition.y - 1, tilePosition.z)
+            new Vector3Int(tilePosition.x, tilePosition.y - 1, tilePosition.z),
+            new Vector3Int(tilePosition.x + 1, tilePosition.y + 1, tilePosition.z),
+            new Vector3Int(tilePosition.x - 1, tilePosition.y + 1, tilePosition.z),
+            new Vector3Int(tilePosition.x - 1, tilePosition.y + 1, tilePosition.z),
+            new Vector3Int(tilePosition.x + 1, tilePosition.y - 1, tilePosition.z)
         };
 
         foreach (Vector3Int neighbor in neighbors)
