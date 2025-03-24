@@ -77,6 +77,9 @@ public class GameManager : MonoBehaviour
 
         // Trigger flood disaster based on probability
         floodManager.SimulateFlooding();
+        
+        BuildingManager.Instance.CheckFloodingAndTriggerEvents();
+
 
         // Other disasters can be added here later
         yield return new WaitForSeconds(2f);

@@ -18,9 +18,11 @@ public static class GlobalEnums
 
     public enum BuildingType
     {
+        Community,
+        Motel,
         Shelter,
-        Kitchen,
-        CaseworkSite
+        CaseworkSite,
+        Kitchen
     }
 
     public enum WeatherType

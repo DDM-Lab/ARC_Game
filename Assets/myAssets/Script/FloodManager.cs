@@ -261,7 +261,7 @@ public class FloodManager : MonoBehaviour
         {
             floodedTilemap.SetTile(tile, floodedTile);
             floodedTiles[tile] = 1;
-            DebugLog("Flooded: " + tile);
+            //DebugLog("Flooded: " + tile);
         }
 
         // --- Phase 4: Recede logic ---
@@ -279,7 +279,7 @@ public class FloodManager : MonoBehaviour
         {
             floodedTilemap.SetTile(tile, null);
             floodedTiles.Remove(tile);
-            DebugLog("Receded: " + tile);
+            //DebugLog("Receded: " + tile);
         }
 
         // --- Summary ---
