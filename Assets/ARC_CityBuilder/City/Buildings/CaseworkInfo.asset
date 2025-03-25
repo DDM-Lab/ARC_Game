@@ -18,7 +18,7 @@ MonoBehaviour:
   Size: {x: 2, y: 2}
   IsDestructible: 1
   IsMovable: 1
-  IsWalkable: 0
+  IsWalkable: 1
   Prefab: {fileID: 7593703384180479793, guid: 97bc733cd1c36c54dbfed73c10171fac, type: 3}
   PrefabAlternatives: []
   Ghost: {fileID: 0}
@@ -28,7 +28,17 @@ MonoBehaviour:
   Cost:
   - Item: {fileID: 11400000, guid: f12f9dfdcecc8d646b797931f079af3f, type: 2}
     Quantity: 10
-  BuildingRequirements: []
+  BuildingRequirements:
+  - Mode: 3
+    Points: []
+    Count: 0
+    LayerRequirement:
+      Layer: {fileID: 11400000, guid: 9bf9d1e96c9d4454d96f0e79b40596a3, type: 2}
+      MinValue: 0
+      MaxValue: 100
+    GroundOptions: []
+    Building: {fileID: 0}
+    BuildingPoints: []
   RoadRequirements: []
   Level:
     Value: 0
