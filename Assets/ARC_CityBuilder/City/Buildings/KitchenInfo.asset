@@ -28,7 +28,17 @@ MonoBehaviour:
   Cost:
   - Item: {fileID: 11400000, guid: f12f9dfdcecc8d646b797931f079af3f, type: 2}
     Quantity: 10
-  BuildingRequirements: []
+  BuildingRequirements:
+  - Mode: 0
+    Points: []
+    Count: 0
+    LayerRequirement:
+      Layer: {fileID: 0}
+      MinValue: 0
+      MaxValue: 0
+    GroundOptions: []
+    Building: {fileID: 0}
+    BuildingPoints: []
   RoadRequirements: []
   Level:
     Value: 0
