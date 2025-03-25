@@ -42,6 +42,9 @@ GameObject:
   m_Component:
   - component: {fileID: 598208859821302311}
   - component: {fileID: 6489920781985288643}
+  - component: {fileID: 5849419639788398249}
+  - component: {fileID: 3080290226893680419}
+  - component: {fileID: 3430251099270069431}
   m_Layer: 0
   m_Name: Sprite
   m_TagString: Untagged
@@ -116,6 +119,56 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 0
+--- !u!95 &5849419639788398249
+Animator:
+  serializedVersion: 5
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7488460649012054723}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: 9073dc3bb69816a4098835f01dcaef53, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
+--- !u!114 &3080290226893680419
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7488460649012054723}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dfc7dc14fb8efdc498c945c2ee040641, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Parameter: walking
+--- !u!114 &3430251099270069431
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7488460649012054723}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 131ca7d4ba05fc84686500ea8f4a3bb1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Parameter: direction
+  SetX: 0
+  SetY: 1
+  SetZ: 0
 --- !u!1 &8641552890565099512
 GameObject:
   m_ObjectHideFlags: 0

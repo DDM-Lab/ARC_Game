@@ -17,12 +17,12 @@ MonoBehaviour:
   Stages:
   - LayerRequirements: []
     Key: 
-    Tile: {fileID: 11400000, guid: 9cb7c75f68630884ebe5308160640688, type: 2}
+    Tile: {fileID: 11400000, guid: 3f3b6ea2b3cec834c8416723d93c8e05, type: 2}
     Index: 1
   Cost:
   - Item: {fileID: 11400000, guid: f12f9dfdcecc8d646b797931f079af3f, type: 2}
     Quantity: 1
   Level:
     Value: 0
-  IsDestructible: 1
-  IsMovable: 1
+  IsDestructible: 0
+  IsMovable: 0
