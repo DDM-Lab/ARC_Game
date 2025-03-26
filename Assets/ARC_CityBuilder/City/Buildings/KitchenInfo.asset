@@ -16,8 +16,8 @@ MonoBehaviour:
   Name: Kitchen
   Description: 
   Size: {x: 2, y: 2}
-  IsDestructible: 1
-  IsMovable: 1
+  IsDestructible: 0
+  IsMovable: 0
   IsWalkable: 0
   Prefab: {fileID: 7593703384180479793, guid: aad477e05cb5969439c8acf9f5831d3a, type: 3}
   PrefabAlternatives: []
@@ -28,17 +28,7 @@ MonoBehaviour:
   Cost:
   - Item: {fileID: 11400000, guid: f12f9dfdcecc8d646b797931f079af3f, type: 2}
     Quantity: 10
-  BuildingRequirements:
-  - Mode: 0
-    Points: []
-    Count: 0
-    LayerRequirement:
-      Layer: {fileID: 0}
-      MinValue: 0
-      MaxValue: 0
-    GroundOptions: []
-    Building: {fileID: 0}
-    BuildingPoints: []
+  BuildingRequirements: []
   RoadRequirements: []
   Level:
     Value: 0

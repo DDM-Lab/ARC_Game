@@ -15,7 +15,7 @@ MonoBehaviour:
   Key: FOO
   Name: FoodPack
   Priority: 0
-  UnitSize: 100
+  UnitSize: 4
   Icon: {fileID: 0}
   Material: {fileID: 0}
   Visuals:
