@@ -160,12 +160,12 @@ MonoBehaviour:
         m_CallState: 2
   Storage:
     Mode: 3
-    StackCount: 0
+    StackCount: 1
     Capacity: 1
     ItemCapacities: []
     Store: {fileID: 0}
     PersistStore: 0
-  MaxDistance: 100
+  MaxDistance: 300
   ReturnHome: 1
 --- !u!4 &6935780850064421744 stripped
 Transform:
