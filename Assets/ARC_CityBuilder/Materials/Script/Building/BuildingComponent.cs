@@ -9,7 +9,7 @@ public class BuildingComponent : MonoBehaviour
     [HideInInspector] public bool isFlooded = false;
     [HideInInspector] public bool isEvacuated = false;
     public readonly System.Collections.Generic.List<string> assignedTasks = new();
-    
+
     public void TriggerEvent(DisasterEvent disasterEvent)
     {
         disasterEvent.Execute(this);

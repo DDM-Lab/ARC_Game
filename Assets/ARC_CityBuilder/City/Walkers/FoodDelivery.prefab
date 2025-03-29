@@ -86,6 +86,21 @@ PrefabInstance:
       value: 
       objectReference: {fileID: -1183961001116135941, guid: 00316a0fdabf4b14086c90a7277f55c4,
         type: 3}
+    - target: {fileID: 6489920781985288643, guid: ac696a42106546c40b8429b1ada08952,
+        type: 3}
+      propertyPath: m_SortingLayer
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 6489920781985288643, guid: ac696a42106546c40b8429b1ada08952,
+        type: 3}
+      propertyPath: m_SortingOrder
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 6489920781985288643, guid: ac696a42106546c40b8429b1ada08952,
+        type: 3}
+      propertyPath: m_SortingLayerID
+      value: -1467037377
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
