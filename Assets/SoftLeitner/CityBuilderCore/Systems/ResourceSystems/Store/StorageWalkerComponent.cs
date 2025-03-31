@@ -64,6 +64,10 @@ namespace CityBuilderCore
                 if (giverPath == null)
                     continue;
 
+                if (giverPath == null || giverPath.Component.Instance.Building.Key != "COM")
+                {
+                    continue; // Not a community
+                }
                 StorageWalkers.Spawn(walker => walker.StartGet(giverPath, new ItemQuantity(order.Item, capacity)));
                 yield break;
             }

@@ -19,7 +19,6 @@ namespace CityBuilderCore
 
         public void SetToolActive(bool active)
         {
-            Debug.Log($"🧪 ToolsActivator called with active = {active}, tool = {_tool}");
             if (active)
                 Dependencies.Get<IToolsManager>().ActivateTool(_tool);
             else

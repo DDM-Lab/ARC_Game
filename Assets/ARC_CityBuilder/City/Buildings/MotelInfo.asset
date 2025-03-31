@@ -9,7 +9,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 11f98b364e13cc940a28c59bb55693cc, type: 3}
+  m_Script: {fileID: 11500000, guid: c1cdd021c6ecd5c4582a984b3ddcaf01, type: 3}
   m_Name: MotelInfo
   m_EditorClassIdentifier: 
   Key: MOT
@@ -25,9 +25,7 @@ MonoBehaviour:
   GhostAlternatives: []
   AccessType: 0
   AccessPoint: {x: 0, y: 0}
-  Cost:
-  - Item: {fileID: 11400000, guid: f12f9dfdcecc8d646b797931f079af3f, type: 2}
-    Quantity: 10
+  Cost: []
   BuildingRequirements: []
   RoadRequirements: []
   Level:

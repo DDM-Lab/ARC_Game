@@ -2,6 +2,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using System.Linq;
+
 
 namespace CityBuilderCore
 {
@@ -41,7 +43,6 @@ namespace CityBuilderCore
                 _deliveryRoutines.Add(itemsProducer, StartCoroutine(deliver(itemsProducer)));
             }
         }
-
         private IEnumerator deliver(ItemProducer itemsProducer)
         {
             yield return null;
@@ -94,6 +95,70 @@ namespace CityBuilderCore
 
             DeliveryWalkers.LoadData(data.SpawnerData);
         }
+
+        /*public void TriggerDeliveryCheck()
+        {
+            onItemsChanged(); // for starting delivery coroutines
+        }
+        public void RestartDeliveryRoutine()
+        {
+            foreach (var itemProducer in ItemsProducers)
+            {
+                // Always restart, even if currently no item, to trigger future deliveries
+                if (_deliveryRoutines.ContainsKey(itemProducer))
+                {
+                    StopCoroutine(_deliveryRoutines[itemProducer]);
+                    _deliveryRoutines.Remove(itemProducer);
+                }
+
+                _deliveryRoutines.Add(itemProducer, StartCoroutine(deliver(itemProducer)));
+                Debug.Log($"[ProductionWalker] 🌀 Restarted delivery coroutine");
+            }
+        }
+        public void ForceTryDelivery()
+        {
+            if (DeliveryWalkers == null || DeliveryWalkers.Prefab == null)
+                return;
+
+            foreach (var producer in ItemsProducers)
+            {
+                if (!producer.HasItem)
+                    continue;
+
+                var firstItem = producer.Storage.GetItemQuantities().FirstOrDefault();
+                if (firstItem.Item == null || firstItem.Quantity <= 0)
+                    continue;
+
+                foreach (var shelterBuilding in GameDatabase.Instance.GetAllShelters())
+                {
+                    if (!shelterBuilding.TryGetComponent<StorageComponent>(out var shelterStorage))
+                        continue;
+
+                    // Check if this shelter still needs the item
+                    var remainingCapacity = shelterStorage.GetReceiveCapacityRemaining(firstItem.Item);
+                    if (remainingCapacity <= 0)
+                        continue;
+
+                    var path = DeliveryWalkers.Prefab.GetReceiverPath(
+                        firstItem,
+                        Building,
+                        Building.GetAccessPoint(DeliveryWalkers.Prefab.PathType, DeliveryWalkers.Prefab.PathTag)
+                    );
+
+                    if (path == null)
+                        continue;
+
+                    DeliveryWalkers.Spawn(w =>
+                    {
+                        w.StartDelivery(producer.Storage, firstItem.Item, path);
+                        Debug.Log($"[Kitchen] 🍱 Delivering {firstItem.Item.Key} to {shelterBuilding.name}");
+                    }, Building.GetAccessPoint(DeliveryWalkers.Prefab.PathType, DeliveryWalkers.Prefab.PathTag));
+                }
+            }
+        }*/
         #endregion
     }
+
+    
+
 }

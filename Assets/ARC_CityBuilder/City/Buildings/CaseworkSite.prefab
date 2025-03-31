@@ -92,7 +92,7 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1133033772311275104, guid: fe1e121a021b980469040ecfb566f54a,
         type: 3}
       insertIndex: -1
-      addedObject: {fileID: 1432586273131513792}
+      addedObject: {fileID: -3360920937765505901}
   m_SourcePrefab: {fileID: 100100000, guid: fe1e121a021b980469040ecfb566f54a, type: 3}
 --- !u!1 &8639739997645451277 stripped
 GameObject:
@@ -100,7 +100,7 @@ GameObject:
     type: 3}
   m_PrefabInstance: {fileID: 8673895459632600685}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &1432586273131513792
+--- !u!114 &-3360920937765505901
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -109,11 +109,17 @@ MonoBehaviour:
   m_GameObject: {fileID: 8639739997645451277}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6a39ad6f953264c478de3b57b9c04b48, type: 3}
+  m_Script: {fileID: 11500000, guid: 86cf807170d038a408ab6f353edb6456, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  ServiceWalkers:
-    Prefab: {fileID: 8243067766436800556, guid: 21fda184ef9095c42907ebecc8640a50,
-      type: 3}
-    Count: 1
-    Downtime: 0
+  Storage:
+    Mode: 2
+    StackCount: 0
+    Capacity: 100
+    ItemCapacities: []
+    Store: {fileID: 0}
+    PersistStore: 0
+  Orders:
+  - Item: {fileID: 11400000, guid: fc302c0ea89b93347b65d0b8a8ac9ad8, type: 2}
+    Mode: 0
+    Ratio: 1
