@@ -42,8 +42,11 @@ public class GameManager : MonoBehaviour
             yield return StartCoroutine(PlayerTurn());
 
             yield return StartCoroutine(DisasterEvents());
+            GameDatabase.Instance.NotifyCommunitiesOfFloodChange();// Notify communities of flood changes   
 
             yield return StartCoroutine(EndRound());
+
+            
         }
     }
 
@@ -103,7 +106,6 @@ public class GameManager : MonoBehaviour
         if (currentPhase == GlobalEnums.GamePhase.PlayerTurn)
         {
             DebugLog("Ending player's turn...");
-            StartCoroutine(DisasterEvents()); // Proceed to disaster phase
         }
         else
         {

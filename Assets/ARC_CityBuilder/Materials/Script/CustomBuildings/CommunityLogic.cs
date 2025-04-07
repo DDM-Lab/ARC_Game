@@ -2,15 +2,18 @@ using CityBuilderCore;
 using UnityEngine;
 using System.Linq;
 
-
 public class CommunityLogic : MonoBehaviour
 {
     private StorageComponent _peopleStorage;
     private IMap _map;
     private IGridPositions _grid;
-    
+
     public Item peopleItem;
-    public float evacuationRatePerSecond = 5f; // people per second
+    [Range(0f, 1f)]
+    public float floodEvacuationRatio = 0.3f;
+    public float evacuationRatePerSecond = 5f;
+
+    private bool _isFloodedMode = false;
 
     private void Awake()
     {
@@ -19,39 +22,27 @@ public class CommunityLogic : MonoBehaviour
             Debug.LogError("[CommunityLogic] No StorageComponent found!");
         else
             Debug.Log("[CommunityLogic] StorageComponent found and ready.");
+
         _map = Dependencies.Get<IMap>();
         _grid = Dependencies.Get<IGridPositions>();
-        // Initialize people
+
+        // Initialize with full population
         _peopleStorage.Storage.AddItems(new ItemQuantity(peopleItem, _peopleStorage.Storage.GetItemCapacity(peopleItem)));
     }
 
-    private bool IsFlooded()
-    {  
-        if (_map == null || _grid == null || _peopleStorage == null)
-            return false;
-
-        var buildingPoints = _peopleStorage.Building.GetPoints();
-        foreach (var point in buildingPoints)
-        {
-            if (_map is CustomMap customMap && customMap.IsFlood(point))
-                return true;
-        }
-        return false;
-    }
-    
-    public void CheckFlooded()
+    public bool CheckFlooded()
     {
         var map = Dependencies.Get<IMap>() as CustomMap;
         if (map == null)
         {
             Debug.LogError("[CommunityLogic] Map is not CustomMap!");
-            return;
+            return false;
         }
 
         if (_peopleStorage == null)
         {
             Debug.LogWarning("[CommunityLogic] No people storage found.");
-            return;
+            return false;
         }
 
         var building = _peopleStorage.Building as Building;
@@ -63,20 +54,68 @@ public class CommunityLogic : MonoBehaviour
         {
             if (map.IsFlood(pos))
             {
-                Debug.Log($"[CommunityLogic] Flood detected at {pos}, starting evacuation.");
-                EvacuatePeople(Time.deltaTime);
-                return;
+                Debug.Log($"[CommunityLogic] Flood detected at {pos}.");
+                return true;
             }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Call this externally when flood tiles are updated to add/remove evacuation orders.
+    /// </summary>
+    public void CheckFloodStatusAndUpdateOrder()
+    {
+        if (_peopleStorage == null || _map == null || _grid == null)
+            return;
+
+        var building = _peopleStorage.Building as Building;
+        if (building == null)
+            return;
+
+        var center = building.Point;
+        var size = building.Info.Size;
+        var positions = PositionHelper.GetStructurePositions(center, size);
+
+        bool isFlooded = CheckFlooded();
+
+        if (isFlooded && !_isFloodedMode)
+        {
+            _isFloodedMode = true;
+            EnterFloodedMode();
+        }
+        else if (!isFlooded && _isFloodedMode)
+        {
+            _isFloodedMode = false;
+            ExitFloodedMode();
         }
     }
 
-    public void EvacuatePeople(float deltaTime)
+    public void EnterFloodedMode()
     {
-        int toEvacuate = Mathf.FloorToInt(evacuationRatePerSecond * deltaTime);
-        int remaining = _peopleStorage.Storage.RemoveItems(peopleItem, toEvacuate);
-        if (toEvacuate > remaining)
+        if (!_peopleStorage.Orders.Any(o => o.Item == peopleItem && o.Mode == StorageOrderMode.Empty))
         {
-            Debug.Log($"[CommunityLogic] Evacuated {toEvacuate - remaining} people.");
+            var orders = _peopleStorage.Orders.ToList();
+            orders.Add(new StorageOrder
+            {
+                Item = peopleItem,
+                Ratio = floodEvacuationRatio,
+                Mode = StorageOrderMode.Empty
+            });
+            _peopleStorage.Orders = orders.ToArray();
+            _peopleStorage.InitializeComponent();
+            Debug.Log($"[CommunityLogic] {name} entered flooded mode. Evacuation order added.");
         }
+    }
+
+    public void ExitFloodedMode()
+    {
+        var orders = _peopleStorage.Orders
+            .Where(o => !(o.Item == peopleItem && o.Mode == StorageOrderMode.Empty))
+            .ToArray();
+
+        _peopleStorage.Orders = orders;
+        _peopleStorage.InitializeComponent();
+        Debug.Log($"[CommunityLogic] {name} exited flooded mode. Evacuation order removed.");
     }
 }

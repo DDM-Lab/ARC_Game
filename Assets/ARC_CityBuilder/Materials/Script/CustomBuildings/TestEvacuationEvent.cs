@@ -12,8 +12,8 @@ public class TestEvacuationEvent : MonoBehaviour
             var logic = building.GetComponent<CommunityLogic>();
             if (logic != null)
             {
-                logic.EvacuatePeople(Time.deltaTime); // manually trigger evacuation logic
-                Debug.Log($"[DebugEvacuation] Triggered evacuation for {building.name}");
+                logic.EnterFloodedMode(); // manually trigger evacuation logic
+                Debug.Log($"[DebugEvacuation] Triggered flooded mode for {building.name}");
             }
         }
     }

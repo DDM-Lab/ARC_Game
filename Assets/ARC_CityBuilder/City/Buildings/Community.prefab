@@ -148,10 +148,7 @@ MonoBehaviour:
     ItemCapacities: []
     Store: {fileID: 0}
     PersistStore: 0
-  Orders:
-  - Item: {fileID: 11400000, guid: fc302c0ea89b93347b65d0b8a8ac9ad8, type: 2}
-    Mode: 20
-    Ratio: 0.1
+  Orders: []
   StorageWalkers:
     Prefab: {fileID: 7814047207128233763, guid: 540ac7447d4ed334c90a40dbf1d0a71b,
       type: 3}
@@ -169,4 +166,5 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   peopleItem: {fileID: 11400000, guid: fc302c0ea89b93347b65d0b8a8ac9ad8, type: 2}
+  floodEvacuationRatio: 0.5
   evacuationRatePerSecond: 5

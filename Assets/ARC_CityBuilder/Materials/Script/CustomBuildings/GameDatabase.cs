@@ -89,14 +89,31 @@ public class GameDatabase : MonoBehaviour
             }
         }
 
-        foreach (var community in _communities)
-        {
-            var logic = community.GetComponent<CommunityLogic>();
-            logic?.CheckFlooded(); // Trigger flood check
-        }
+        NotifyCommunitiesOfFloodChange();  // Check flood status and notify communities
 
         Debug.Log("[GameDatabase] Day advanced, food cleared and new orders placed. Community flood checks initiated.");
     }
+
+    public void NotifyCommunitiesOfFloodChange()
+    {
+        foreach (var community in _communities)  // make sure _communities is your list of community buildings
+        {
+            if (community == null)
+                continue;
+
+            if (community.TryGetComponent<CommunityLogic>(out var logic))
+            {
+                logic.CheckFloodStatusAndUpdateOrder();
+            }
+            else
+            {
+                Debug.LogWarning($"[GameDatabase] Community {community.name} has no CommunityLogic component.");
+            }
+        }
+
+        Debug.Log("[GameDatabase] Notified all communities of flood tile changes.");
+    }
+
 
     public void NotifyKitchensOfNewOrder()
     {
