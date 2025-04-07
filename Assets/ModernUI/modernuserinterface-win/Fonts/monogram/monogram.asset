@@ -12,9 +12,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 71c1514a6bd24e1e882cebbe1904ce04, type: 3}
   m_Name: monogram
   m_EditorClassIdentifier: 
-  hashCode: 0
+  hashCode: -2040238342
   material: {fileID: 4326561243881586088}
-  materialHashCode: 0
+  materialHashCode: 1611401498
   m_Version: 1.1.0
   m_SourceFontFileGUID: b204765494079474c84b956338d5174e
   m_SourceFontFile_EditorRef: {fileID: 12800000, guid: b204765494079474c84b956338d5174e,
