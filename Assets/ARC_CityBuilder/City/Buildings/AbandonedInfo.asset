@@ -15,7 +15,7 @@ MonoBehaviour:
   Key: ABA
   Name: Abandoned
   Description: 
-  Size: {x: 3, y: 3}
+  Size: {x: 2, y: 2}
   IsDestructible: 1
   IsMovable: 1
   IsWalkable: 1

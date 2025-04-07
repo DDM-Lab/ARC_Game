@@ -117,7 +117,7 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1133033772311275104, guid: fe1e121a021b980469040ecfb566f54a,
         type: 3}
       insertIndex: -1
-      addedObject: {fileID: 2260674829847920133}
+      addedObject: {fileID: -272181523841346072}
     - targetCorrespondingSourceObject: {fileID: 1133033772311275104, guid: fe1e121a021b980469040ecfb566f54a,
         type: 3}
       insertIndex: -1
@@ -129,7 +129,7 @@ GameObject:
     type: 3}
   m_PrefabInstance: {fileID: 8673895459632600685}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &2260674829847920133
+--- !u!114 &-272181523841346072
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -138,20 +138,24 @@ MonoBehaviour:
   m_GameObject: {fileID: 8639739997645451277}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 86cf807170d038a408ab6f353edb6456, type: 3}
+  m_Script: {fileID: 11500000, guid: 54b4d656b69249349a3c3bcb166e5275, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   Storage:
     Mode: 2
     StackCount: 0
-    Capacity: 1000
+    Capacity: 100
     ItemCapacities: []
     Store: {fileID: 0}
     PersistStore: 0
   Orders:
   - Item: {fileID: 11400000, guid: fc302c0ea89b93347b65d0b8a8ac9ad8, type: 2}
     Mode: 20
-    Ratio: 1
+    Ratio: 0.1
+  StorageWalkers:
+    Prefab: {fileID: 7814047207128233763, guid: 540ac7447d4ed334c90a40dbf1d0a71b,
+      type: 3}
+    Count: 1
 --- !u!114 &323542520898388721
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -98,16 +98,19 @@ public class GameDatabase : MonoBehaviour
         Debug.Log("[GameDatabase] Day advanced, food cleared and new orders placed. Community flood checks initiated.");
     }
 
-    /*public void NotifyKitchensOfNewOrder()
+    public void NotifyKitchensOfNewOrder()
     {
         foreach (var kitchen in _kitchens)
         {
             if (kitchen.TryGetComponent<ProductionWalkerComponent>(out var productionWalker))
             {
-                productionWalker.ForceTryDelivery();
+                productionWalker.TryRestartDelivery();
             }
         }
-    }*/
+
+        Debug.Log("[GameDatabase] Notified kitchens to retry delivery.");
+    }
+
     public void PlaceStartingBuildings()
     {
         var buildingManager = Dependencies.Get<IBuildingManager>();

@@ -174,14 +174,14 @@ MonoBehaviour:
           m_BoolArgument: 0
         m_CallState: 2
   Storage:
-    Mode: 3
+    Mode: 2
     StackCount: 1
-    Capacity: 1
+    Capacity: 5
     ItemCapacities: []
     Store: {fileID: 0}
     PersistStore: 0
-  MaxDistance: 300
-  ReturnHome: 1
+  MaxDistance: 200
+  ReturnHome: 0
 --- !u!4 &6935780850064421744 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 2618282193674433045, guid: ac696a42106546c40b8429b1ada08952,

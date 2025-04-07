@@ -156,6 +156,23 @@ namespace CityBuilderCore
                 }
             }
         }*/
+        public void TryRestartDelivery()
+        {
+            foreach (var itemsProducer in ItemsProducers)
+            {
+                if (!itemsProducer.HasItem)
+                    continue;
+
+                // Skip if already delivering
+                if (_deliveryRoutines.ContainsKey(itemsProducer))
+                    continue;
+
+                _deliveryRoutines.Add(itemsProducer, StartCoroutine(deliver(itemsProducer)));
+
+                Debug.Log($"[ProductionWalker] ♻️ Retried delivery");
+            }
+        }
+
         #endregion
     }
 

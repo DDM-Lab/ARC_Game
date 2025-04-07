@@ -176,12 +176,12 @@ MonoBehaviour:
   Storage:
     Mode: 3
     StackCount: 0
-    Capacity: 100
+    Capacity: 10
     ItemCapacities: []
     Store: {fileID: 0}
     PersistStore: 0
   MaxDistance: 300
-  ReturnHome: 1
+  ReturnHome: 0
 --- !u!4 &6935780850064421744 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 2618282193674433045, guid: ac696a42106546c40b8429b1ada08952,

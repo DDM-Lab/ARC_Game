@@ -132,19 +132,15 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1133033772311275104, guid: fe1e121a021b980469040ecfb566f54a,
         type: 3}
       insertIndex: -1
-      addedObject: {fileID: 1080567289050678810}
-    - targetCorrespondingSourceObject: {fileID: 1133033772311275104, guid: fe1e121a021b980469040ecfb566f54a,
-        type: 3}
-      insertIndex: -1
       addedObject: {fileID: 8012310468807992559}
     - targetCorrespondingSourceObject: {fileID: 1133033772311275104, guid: fe1e121a021b980469040ecfb566f54a,
         type: 3}
       insertIndex: -1
-      addedObject: {fileID: 9049890793512996077}
+      addedObject: {fileID: 7681931472332972866}
     - targetCorrespondingSourceObject: {fileID: 1133033772311275104, guid: fe1e121a021b980469040ecfb566f54a,
         type: 3}
       insertIndex: -1
-      addedObject: {fileID: -2549335537573185485}
+      addedObject: {fileID: 9049890793512996077}
   m_SourcePrefab: {fileID: 100100000, guid: fe1e121a021b980469040ecfb566f54a, type: 3}
 --- !u!4 &8075691075339400266 stripped
 Transform:
@@ -158,26 +154,6 @@ GameObject:
     type: 3}
   m_PrefabInstance: {fileID: 8673895459632600685}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &1080567289050678810
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8639739997645451277}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 86cf807170d038a408ab6f353edb6456, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Storage:
-    Mode: 0
-    StackCount: 1
-    Capacity: 4
-    ItemCapacities: []
-    Store: {fileID: 0}
-    PersistStore: 0
-  Orders: []
 --- !u!114 &8012310468807992559
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -193,6 +169,33 @@ MonoBehaviour:
   Origins:
   - {fileID: 561715788787856529}
   VisualIndex: 0
+--- !u!114 &7681931472332972866
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8639739997645451277}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86cf807170d038a408ab6f353edb6456, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Storage:
+    Mode: 5
+    StackCount: 0
+    Capacity: 10
+    ItemCapacities:
+    - Item: {fileID: 11400000, guid: fc302c0ea89b93347b65d0b8a8ac9ad8, type: 2}
+      Quantity: 10
+    - Item: {fileID: 11400000, guid: f12f9dfdcecc8d646b797931f079af3f, type: 2}
+      Quantity: 10
+    Store: {fileID: 0}
+    PersistStore: 0
+  Orders:
+  - Item: {fileID: 11400000, guid: fc302c0ea89b93347b65d0b8a8ac9ad8, type: 2}
+    Mode: 0
+    Ratio: 1
 --- !u!114 &9049890793512996077
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -206,30 +209,4 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   foodItem: {fileID: 11400000, guid: f12f9dfdcecc8d646b797931f079af3f, type: 2}
---- !u!114 &-2549335537573185485
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8639739997645451277}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 54b4d656b69249349a3c3bcb166e5275, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Storage:
-    Mode: 2
-    StackCount: 0
-    Capacity: 10
-    ItemCapacities: []
-    Store: {fileID: 0}
-    PersistStore: 0
-  Orders:
-  - Item: {fileID: 11400000, guid: fc302c0ea89b93347b65d0b8a8ac9ad8, type: 2}
-    Mode: 10
-    Ratio: 1
-  StorageWalkers:
-    Prefab: {fileID: 7814047207128233763, guid: 540ac7447d4ed334c90a40dbf1d0a71b,
-      type: 3}
-    Count: 1
+  peopleItem: {fileID: 11400000, guid: fc302c0ea89b93347b65d0b8a8ac9ad8, type: 2}
