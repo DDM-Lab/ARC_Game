@@ -14,13 +14,22 @@ public class TileHoverInfo : MonoBehaviour
     public Tilemap mountainTilemap; // Assign your Mountain tilemap
     public Tilemap floodedTilemap; // Assign your Flooded tilemap
     public TextMeshProUGUI infoText; // Assign a UI Text to display terrain type
+    public GameObject buildingInfoPanel;// Assign a UI Panel for building info
+    public TextMeshProUGUI buildingInfoText; // Assign a UI Text to display building info
     public FloodManager floodManager; // Reference to FloodManager
-    public bool Hover_Text_Debug = false; // Set to true to enable debug logs
+    public bool Hover_Text_Debug = true; // Set to true to enable debug logs
+    private CityBuilderCore.Building selectedBuilding; // Store the selected building
+    public float baseOrthographicSize = 5f; // Default orthographic size
+    public float basePanelScale = 1f;       // Default panel scale at baseOrthographicSize
+    public float defaultPanelScaleFactor = 2.0f; // Default scale factor for the panel
+    private Vector3 originalPanelScale;
     private Camera mainCamera;
 
     void Start()
     {
         mainCamera = Camera.main;
+        originalPanelScale = buildingInfoPanel.transform.localScale * defaultPanelScaleFactor;
+        DebugBuildings();
     }
 
     void Update()
@@ -68,6 +77,22 @@ public class TileHoverInfo : MonoBehaviour
         {
             infoText.gameObject.SetActive(false);
         }
+
+        if (Input.GetMouseButtonDown(0))  // Left-click
+        {
+            TrySelectBuilding();
+        }
+
+        // Update building info panel position if active
+        if (buildingInfoPanel.activeSelf && selectedBuilding != null)
+        {
+
+            PositionInfoPanelAboveBuilding(selectedBuilding);
+            ScalePanelBasedOnZoom(); // Scale the panel after positioning it
+        
+        }
+        
+
     }
 
     string GetTerrainType(Vector3Int cellPosition)
@@ -117,7 +142,7 @@ public class TileHoverInfo : MonoBehaviour
             new Vector3Int(tilePosition.x, tilePosition.y + 1, tilePosition.z),
             new Vector3Int(tilePosition.x, tilePosition.y - 1, tilePosition.z),
             new Vector3Int(tilePosition.x + 1, tilePosition.y + 1, tilePosition.z),
-            new Vector3Int(tilePosition.x - 1, tilePosition.y + 1, tilePosition.z),
+            new Vector3Int(tilePosition.x - 1, tilePosition.y - 1, tilePosition.z),
             new Vector3Int(tilePosition.x - 1, tilePosition.y + 1, tilePosition.z),
             new Vector3Int(tilePosition.x + 1, tilePosition.y - 1, tilePosition.z)
         };
@@ -128,6 +153,210 @@ public class TileHoverInfo : MonoBehaviour
                 return true;
         }
         return false;
+    }
+
+    private void TrySelectBuilding()
+    {
+        Vector3 mouseWorldPos = mainCamera.ScreenToWorldPoint(Input.mousePosition);
+        mouseWorldPos.z = 0;
+        Vector2 mouseWorld2D = new Vector2(mouseWorldPos.x, mouseWorldPos.y);
+
+        DebugLog($"[TileHoverInfo] Mouse world position: {mouseWorld2D}");
+
+        // Use a simpler raycast first
+        RaycastHit2D hit = Physics2D.Raycast(mouseWorld2D, Vector2.zero);
+
+        if (hit.collider != null)
+        {
+            DebugLog($"[TileHoverInfo] Raycast hit: {hit.collider.gameObject.name}");
+
+            // First try to get Building directly from hit object
+            var building = hit.collider.GetComponent<CityBuilderCore.Building>();
+            
+            // If not found, try parent
+            if (building == null)
+            {
+                building = hit.collider.GetComponentInParent<CityBuilderCore.Building>();
+            }
+
+            if (building != null)
+            {
+                DebugLog($"[TileHoverInfo] Building detected: {building.name}");
+                selectedBuilding = building;
+                ShowBuildingInfo(building);
+                return;
+            }
+            else
+            {
+                DebugLog($"[TileHoverInfo] No Building component found on hit object or parents");
+            }
+        }
+        else
+        {
+            DebugLog($"[TileHoverInfo] Raycast did not hit any collider");
+        }
+
+        // Hide panel if no building was hit
+        buildingInfoPanel.SetActive(false);
+        selectedBuilding = null;
+    }
+
+    private void ShowBuildingInfo(CityBuilderCore.Building building)
+    {
+        // Build info text
+        string info = $"<b>{building.name}</b>\nPosition: {building.Point}\n";
+        
+        // Add component info as before...
+        var storage = building.GetBuildingComponent<CityBuilderCore.IStorageComponent>();
+        if (storage != null)
+        {
+            foreach (var item in storage.Storage.GetItemQuantities())
+            {
+                info += $"{item.Item.Key}: {item.Quantity}\n";
+            }
+        }
+
+        var community = building.GetComponent<CommunityLogic>();
+        if (community != null)
+        {
+            info += $"Flooded: {community.CheckFlooded()}\n";
+        }
+
+        var shelter = building.GetComponent<ShelterLogic>();
+        if (shelter != null)
+        {
+            info += $"Shelter component active.\n";
+        }
+
+        // Set the text and activate the panel
+        buildingInfoText.text = info;
+        buildingInfoPanel.SetActive(true);
+        
+        // Position the panel above the building
+        PositionInfoPanelAboveBuilding(building);
+    }
+
+    private void PositionInfoPanelAboveBuilding(CityBuilderCore.Building building)
+    {
+        Collider2D collider = building.GetComponentInChildren<Collider2D>();
+        if (collider == null) return;
+        
+        // Get the center of the building
+        Vector3 center = collider.bounds.center;
+        
+        // Base vertical offset
+        float baseOffset = collider.bounds.extents.y;
+        
+        // Get zoom factor (inverse relationship - larger value when zoomed out)
+        float currentZoom = mainCamera.orthographicSize;
+        float referenceZoom = 5.0f; // Reference zoom level
+        
+        // Calculate position above the building
+        Vector3 worldPos = center + new Vector3(0, baseOffset, 0);
+        
+        // Convert to screen position
+        Vector3 screenPos = mainCamera.WorldToScreenPoint(worldPos);
+        
+        // Get the panel's RectTransform
+        RectTransform panelRect = buildingInfoPanel.GetComponent<RectTransform>();
+        if (panelRect != null)
+        {
+            // Set the pivot to be at the bottom center
+            panelRect.pivot = new Vector2(0.5f, 0);
+            
+            // For screen space overlay canvas
+            if (buildingInfoPanel.transform.parent.GetComponent<Canvas>().renderMode == RenderMode.ScreenSpaceOverlay)
+            {
+                panelRect.position = screenPos;
+                
+                // Scale the panel based on zoom level
+                // Use inverse relationship for scaling too
+                // When zoomed in, panel should be larger
+                // When zoomed out, panel should be smaller
+                float scaleFactor = Mathf.Clamp(referenceZoom / currentZoom, 0.5f, 2.0f);
+                
+                // Apply the scale
+                buildingInfoPanel.transform.localScale = originalPanelScale * scaleFactor;
+            }
+        }
+    }
+
+    // Debugging function to check buildings and colliders
+    private void DebugBuildings()
+    {
+        var buildings = FindObjectsOfType<CityBuilderCore.Building>();
+        Debug.Log($"Found {buildings.Length} buildings in scene");
+        
+        foreach (var building in buildings)
+        {
+            var colliders = building.GetComponentsInChildren<Collider2D>();
+            Debug.Log($"Building '{building.name}' has {colliders.Length} colliders");
+        }
+    }
+
+
+    private void AdjustPanelToStayOnScreen(RectTransform panelRect)
+    {
+        // Get panel dimensions
+        Vector2 panelSize = panelRect.rect.size;
+        Vector2 screenSize = new Vector2(Screen.width, Screen.height);
+        
+        // Current position
+        Vector3 position = panelRect.position;
+        
+        // Adjust horizontally if needed
+        if (position.x + panelSize.x/2 > screenSize.x)
+            position.x = screenSize.x - panelSize.x/2;
+        else if (position.x - panelSize.x/2 < 0)
+            position.x = panelSize.x/2;
+            
+        // Adjust vertically if needed
+        if (position.y + panelSize.y/2 > screenSize.y)
+            position.y = screenSize.y - panelSize.y/2;
+        else if (position.y - panelSize.y/2 < 0)
+            position.y = panelSize.y/2;
+        
+        // Apply adjusted position
+        panelRect.position = position;
+    }
+    void OnDrawGizmos()
+    {
+        // Draw a small sphere at each building position
+        var buildings = FindObjectsOfType<CityBuilderCore.Building>();
+        foreach (var building in buildings)
+        {
+            Gizmos.color = Color.blue;
+            Gizmos.DrawSphere(building.transform.position, 0.5f);
+            
+            // Draw collider bounds
+            var colliders = building.GetComponentsInChildren<Collider2D>();
+            Gizmos.color = Color.green;
+            foreach (var collider in colliders)
+            {
+                Gizmos.DrawWireCube(collider.bounds.center, collider.bounds.size);
+            }
+        }
+    }
+    private void ScalePanelBasedOnZoom()
+    {
+        if (mainCamera.orthographic)
+        {
+            // Calculate scale factor based on orthographic size
+            float currentOrthoSize = mainCamera.orthographicSize;
+            float zoomRatio = baseOrthographicSize / currentOrthoSize;
+            
+            // Apply scale - when zoomed in (smaller ortho size), scale will be larger
+            Vector3 newScale = originalPanelScale * zoomRatio * basePanelScale;
+            buildingInfoPanel.transform.localScale = newScale;
+            
+            // Optional: Limit the min/max scale to prevent too big/small
+            float minScale = 0.5f;
+            float maxScale = 2.0f;
+            if (newScale.x < minScale)
+                buildingInfoPanel.transform.localScale = new Vector3(minScale, minScale, minScale);
+            else if (newScale.x > maxScale)
+                buildingInfoPanel.transform.localScale = new Vector3(maxScale, maxScale, maxScale);
+        }
     }
     private void DebugLog(string message)
     {
