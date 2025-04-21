@@ -42,7 +42,7 @@ public class GameManager : MonoBehaviour
             yield return StartCoroutine(PlayerTurn());
 
             yield return StartCoroutine(DisasterEvents());
-            GameDatabase.Instance.NotifyCommunitiesOfFloodChange();// Notify communities of flood changes   
+            BuildingSystem.Instance.NotifyCommunitiesOfFloodChange();// Notify communities of flood changes   
 
             yield return StartCoroutine(EndRound());
 

@@ -55,17 +55,17 @@ public class CustomBuildingBuilder : BuildingBuilder
             // Register based on type
             if (building.TryGetComponent<ShelterLogic>(out var shelterLogic))
             {
-                GameDatabase.Instance.RegisterShelter(building);
+                BuildingSystem.Instance.RegisterShelter(building);
                 Debug.Log($"[CustomBuilder] Registered shelter at {building.transform.position}");
             }
             else if (building.name.Contains("Kitchen")) // You can add tags or identifiers instead
             {
-                GameDatabase.Instance.RegisterKitchen(building);
+                BuildingSystem.Instance.RegisterKitchen(building);
                 Debug.Log($"[CustomBuilder] Registered kitchen at {building.transform.position}");
             }
             else
             {
-                GameDatabase.Instance.RegisterGeneric(building);
+                BuildingSystem.Instance.RegisterGeneric(building);
                 Debug.Log($"[CustomBuilder] Registered generic building at {building.transform.position}");
             }
 

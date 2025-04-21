@@ -71,7 +71,7 @@ public class ShelterLogic : MonoBehaviour
         }
 
         Debug.Log($"[ShelterLogic] Food order {(found ? "updated" : "added")} for {name}.");
-        GameDatabase.Instance?.NotifyKitchensOfNewOrder();
+        BuildingSystem.Instance?.NotifyKitchensOfNewOrder();
     }
 
 }

@@ -27804,54 +27804,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1455672390}
   m_CullTransparentMesh: 0
---- !u!1 &1481492378
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1481492380}
-  - component: {fileID: 1481492381}
-  m_Layer: 0
-  m_Name: GameManager
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1481492380
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1481492378}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1481492381
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1481492378}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a00e6c0d993fd2a4b89af93ce8a6a87b, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  currentPhase: 0
-  floodManager: {fileID: 1800671404}
-  uiManager: {fileID: 1239367949}
-  Game_Debug: 1
 --- !u!1 &1527086876
 GameObject:
   m_ObjectHideFlags: 0
@@ -29472,6 +29424,9 @@ GameObject:
   - component: {fileID: 1753128382}
   - component: {fileID: 1753128379}
   - component: {fileID: 1753128381}
+  - component: {fileID: 1753128391}
+  - component: {fileID: 1753128390}
+  - component: {fileID: 1753128389}
   m_Layer: 0
   m_Name: Logic
   m_TagString: Untagged
@@ -29659,6 +29614,54 @@ MonoBehaviour:
   buildingSystem: {fileID: 0}
   turnBasedMode: 1
   simulationSecondsPerRound: 10
+--- !u!114 &1753128389
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1753128377}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 32598ec39d23ea641866b9520703ad0b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  motelInfo: {fileID: 11400000, guid: 89703692bf7549c4eae47d8934d760fe, type: 2}
+  communityInfo: {fileID: 11400000, guid: 4b89926becbdc1749b12e910e95b93fd, type: 2}
+  motelPosition: {x: 5, y: 13}
+  communityPositions:
+  - {x: 14, y: 26}
+  - {x: 36, y: 23}
+  - {x: 32, y: 11}
+  - {x: 16, y: 3}
+--- !u!114 &1753128390
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1753128377}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dc6bb17f4423da047a9b159b14086e87, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  floodManager: {fileID: 1800671404}
+  disasterPhaseDelay: 2
+--- !u!114 &1753128391
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1753128377}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c53c114e332128042858c07587f223b8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  startRoundDelay: 1
+  endRoundDelay: 1
 --- !u!1 &1753671300
 GameObject:
   m_ObjectHideFlags: 0
@@ -30500,52 +30503,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1815007453}
   m_CullTransparentMesh: 1
---- !u!1 &1818223371
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1818223373}
-  - component: {fileID: 1818223372}
-  m_Layer: 0
-  m_Name: GameDatabase
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1818223372
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1818223371}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2a5c8dae237ac554abde649bac21d930, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  motelInfo: {fileID: 11400000, guid: 89703692bf7549c4eae47d8934d760fe, type: 2}
-  communityInfo: {fileID: 11400000, guid: 4b89926becbdc1749b12e910e95b93fd, type: 2}
---- !u!4 &1818223373
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1818223371}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1835256052
 GameObject:
   m_ObjectHideFlags: 0
@@ -35871,34 +35828,10 @@ MonoBehaviour:
   BuildingSelection: 2
   BuildingSelected:
     m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 0}
-        m_TargetAssemblyTypeName: 
-        m_MethodName: Activate
-        m_Mode: 0
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
   WalkerSelected:
     m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 0}
-        m_TargetAssemblyTypeName: 
-        m_MethodName: Activate
-        m_Mode: 0
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
   PointSelected:
     m_PersistentCalls:
       m_Calls: []
@@ -37818,9 +37751,7 @@ SceneRoots:
   - {fileID: 1142770242}
   - {fileID: 1753128378}
   - {fileID: 4922780270866706269}
-  - {fileID: 1481492380}
   - {fileID: 1717813019}
   - {fileID: 1800671405}
-  - {fileID: 1818223373}
   - {fileID: 1239367950}
   - {fileID: 1162929535}

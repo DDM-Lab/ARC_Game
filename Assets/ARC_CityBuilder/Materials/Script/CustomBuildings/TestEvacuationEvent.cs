@@ -6,7 +6,7 @@ public class TestEvacuationEvent : MonoBehaviour
 {
     public void OnClickEvacuateAllCommunities()
     {
-        var communities = GameDatabase.Instance.GetAllCommunities();
+        var communities = BuildingSystem.Instance.GetAllCommunities();
         foreach (var building in communities)
         {
             var logic = building.GetComponent<CommunityLogic>();
