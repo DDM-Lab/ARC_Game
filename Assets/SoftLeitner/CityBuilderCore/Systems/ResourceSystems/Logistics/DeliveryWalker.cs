@@ -82,7 +82,7 @@ namespace CityBuilderCore
             Walk(componentPath.Path, finished: deliver);
         }
 
-        private void deliver()
+        /*private void deliver()
         {
             _start = _current;
             _receiver.Instance.ReceiveAll(Storage);
@@ -102,7 +102,53 @@ namespace CityBuilderCore
                     onFinished();
                 }
             }
+        }*/
+
+        private void deliver()
+        {
+            _start = _current;
+
+            // 🧠 Check before delivering
+            int quantityToDeliver = Storage.GetItemQuantities().Sum(iq => iq.Quantity);
+
+
+            // Check if receiver has capacity
+            if (_receiver.Instance is IItemReceiver receiver)
+            {
+                foreach (var itemQuantity in Storage.GetItemQuantities())
+                {
+                    int capacity = receiver.GetReceiveCapacityRemaining(itemQuantity.Item);
+
+                    if (capacity <= 0)
+                    {
+                        Debug.Log($"[DeliveryWalker] Receiver full for {itemQuantity.Item.Key}, canceling delivery.");
+
+                        // Option 1: return home
+                        tryReturn();
+
+                        // Option 2 (alternative): just end walker
+                        // onFinished();
+                        return;
+                    }
+                }
+            }
+
+            // ✅ Proceed with delivery
+            _receiver.Instance.ReceiveAll(Storage);
+
+            if (Storage.HasItems())
+            {
+                tryDeliver(); // Try again
+            }
+            else
+            {
+                if (ReturnHome)
+                    tryReturn();
+                else
+                    onFinished();
+            }
         }
+
 
         private void tryDeliver()
         {

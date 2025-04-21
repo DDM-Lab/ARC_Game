@@ -19,9 +19,7 @@ MonoBehaviour:
     Key: 
     Tile: {fileID: 11400000, guid: 3f3b6ea2b3cec834c8416723d93c8e05, type: 2}
     Index: 1
-  Cost:
-  - Item: {fileID: 11400000, guid: f12f9dfdcecc8d646b797931f079af3f, type: 2}
-    Quantity: 1
+  Cost: []
   Level:
     Value: 0
   IsDestructible: 0

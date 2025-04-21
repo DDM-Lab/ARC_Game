@@ -14,8 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Key: FOO
   Name: FoodPack
-  Priority: 0
-  UnitSize: 4
+  Priority: 1
+  UnitSize: 1
   Icon: {fileID: 0}
   Material: {fileID: 0}
   Visuals:

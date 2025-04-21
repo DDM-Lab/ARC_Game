@@ -7,7 +7,7 @@ namespace CityBuilderCore
     /// </summary>
     /// <remarks><see href="https://citybuilder.softleitner.com/manual">https://citybuilder.softleitner.com/manual</see></remarks>
     [HelpURL("https://citybuilderapi.softleitner.com/class_city_builder_core_1_1_tools_activator.html")]
-    [RequireComponent(typeof(BaseTool))]
+    //[RequireComponent(typeof(BaseTool))]
     public class ToolsActivator : MonoBehaviour
     {
         private BaseTool _tool;

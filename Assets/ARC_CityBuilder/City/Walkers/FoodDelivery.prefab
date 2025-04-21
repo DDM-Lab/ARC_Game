@@ -86,6 +86,21 @@ PrefabInstance:
       value: 
       objectReference: {fileID: -1183961001116135941, guid: 00316a0fdabf4b14086c90a7277f55c4,
         type: 3}
+    - target: {fileID: 6489920781985288643, guid: ac696a42106546c40b8429b1ada08952,
+        type: 3}
+      propertyPath: m_SortingLayer
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 6489920781985288643, guid: ac696a42106546c40b8429b1ada08952,
+        type: 3}
+      propertyPath: m_SortingOrder
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 6489920781985288643, guid: ac696a42106546c40b8429b1ada08952,
+        type: 3}
+      propertyPath: m_SortingLayerID
+      value: -1467037377
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -159,14 +174,14 @@ MonoBehaviour:
           m_BoolArgument: 0
         m_CallState: 2
   Storage:
-    Mode: 3
+    Mode: 2
     StackCount: 1
-    Capacity: 1
+    Capacity: 5
     ItemCapacities: []
     Store: {fileID: 0}
     PersistStore: 0
-  MaxDistance: 300
-  ReturnHome: 1
+  MaxDistance: 200
+  ReturnHome: 0
 --- !u!4 &6935780850064421744 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 2618282193674433045, guid: ac696a42106546c40b8429b1ada08952,
