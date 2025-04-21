@@ -13,6 +13,9 @@ public class RoundManager : MonoBehaviour
     [Header("Round Settings")]
     public float startRoundDelay = 1f;
     public float endRoundDelay = 1f;
+
+    [Header("References")]
+    public MonoBehaviour uiManager;
     
     /// <summary>
     /// Handle start of round behaviors
@@ -21,11 +24,19 @@ public class RoundManager : MonoBehaviour
     {
         Debug.Log($"Round {roundNumber} (Day {dayNumber}) begins!");
         
-        // Update UI
-        var uiManager = FindObjectOfType<UIManager>();
+        // Update UI if available
         if (uiManager != null)
         {
-            uiManager.UpdateRoundText(roundNumber, dayNumber);
+            // Use reflection to call the method if it exists
+            var method = uiManager.GetType().GetMethod("UpdateRoundText");
+            if (method != null)
+            {
+                method.Invoke(uiManager, new object[] { roundNumber, dayNumber });
+            }
+            else
+            {
+                Debug.LogWarning("[RoundManager] UIManager doesn't have UpdateRoundText method");
+            }
         }
         
         // Add any other start of round logic here

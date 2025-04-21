@@ -90,7 +90,7 @@ public class FloodManager : MonoBehaviour
 
     public (float recedeChance, float spreadChance, float floodChance) GetFloodChances(Vector3Int tilePosition)
     {
-        GlobalEnums.WeatherType currentWeather = GlobalManager.Instance.currentWeather;
+        GlobalEnums.WeatherType currentWeather = MasterGameManager.Instance.CurrentWeather;
 
         float baseFloodChance, baseSpreadChance, baseRecedeChance;
 
@@ -211,7 +211,7 @@ public class FloodManager : MonoBehaviour
         }
 
         // --- Phase 2: Spread flooding outward (chained spreading) ---
-        GlobalEnums.WeatherType currentWeather = GlobalManager.Instance.currentWeather;
+        GlobalEnums.WeatherType currentWeather = MasterGameManager.Instance.CurrentWeather;
         int spreadIterations; //Allows the flood to push deeper into vulnerable terrain according to weather
 
         switch (currentWeather)

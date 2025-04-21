@@ -15,7 +15,7 @@ MonoBehaviour:
   Key: MOT
   Name: Motel
   Description: 
-  Size: {x: 5, y: 2}
+  Size: {x: 2, y: 5}
   IsDestructible: 1
   IsMovable: 1
   IsWalkable: 0

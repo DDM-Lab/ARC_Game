@@ -31,6 +31,12 @@ public class MasterGameManager : DefaultGameManager
     public float SimulationTimer => _simulationTimer;
     public float SimulationSecondsPerRound => simulationSecondsPerRound;
     public float SimulationRemainingTime => Mathf.Max(0, simulationSecondsPerRound - _simulationTimer);
+
+    // Weather settings
+    public GlobalEnums.WeatherType CurrentWeather { get; private set; } = GlobalEnums.WeatherType.Stormy;
+    public float SunnyChance = 0.0f;
+    public float RainyChance = 0.4f;
+    public int RoundsPerDay = 9;
     
     // Events
      public event Action OnRoundStarted;
@@ -41,6 +47,7 @@ public class MasterGameManager : DefaultGameManager
     public event Action<int, int> OnRoundAdvanced; // (roundNum, dayNum)
     public event Action<GlobalEnums.GamePhase> OnPhaseChanged; // To track phase changes
     public event Action<float> OnSimulationTick; // To update UI with simulation progress
+    public event Action<GlobalEnums.WeatherType> OnWeatherChanged;
     
     
     // Private variables
@@ -79,6 +86,9 @@ public class MasterGameManager : DefaultGameManager
     protected override void Start()
     {
         base.Start();
+
+        // Initialize weather
+        UpdateWeather();
         
         // Start the first round
         _roundCoroutine = StartCoroutine(RoundLoop());
@@ -259,9 +269,10 @@ public class MasterGameManager : DefaultGameManager
         if (_currentRound % 4 == 0)
         {
             _currentDay++;
+            UpdateWeather(); // Update weather on new day
         }
         
-        Debug.Log($"[MasterGameManager] Advanced to Round {_currentRound}, Day {_currentDay}");
+        Debug.Log($"[MasterGameManager] Advanced to Round {_currentRound}, Day {_currentDay}, Weather: {CurrentWeather}");
         OnRoundAdvanced?.Invoke(_currentRound, _currentDay);
     }
     
@@ -288,6 +299,42 @@ public class MasterGameManager : DefaultGameManager
         _roundCoroutine = StartCoroutine(RoundLoop());
         
         Debug.Log("[MasterGameManager] Force ended current round");
+    }
+
+    /// <summary>
+    /// Updates the current weather based on probability settings
+    /// </summary>
+    private void UpdateWeather()
+    {
+        GlobalEnums.WeatherType previousWeather = CurrentWeather;
+        float randomValue = UnityEngine.Random.value;
+
+        if (randomValue < SunnyChance)
+            CurrentWeather = GlobalEnums.WeatherType.Sunny;
+        else if (randomValue < SunnyChance + RainyChance)
+            CurrentWeather = GlobalEnums.WeatherType.Rainy;
+        else
+            CurrentWeather = GlobalEnums.WeatherType.Stormy;
+        
+        // Only trigger event if weather actually changed
+        if (previousWeather != CurrentWeather)
+        {
+            Debug.Log($"[MasterGameManager] Weather changed to {CurrentWeather}");
+            OnWeatherChanged?.Invoke(CurrentWeather);
+        }
+    }
+
+    /// <summary>
+    /// Manually set the current weather
+    /// </summary>
+    public void SetWeather(GlobalEnums.WeatherType newWeather)
+    {
+        if (CurrentWeather != newWeather)
+        {
+            CurrentWeather = newWeather;
+            Debug.Log($"[MasterGameManager] Weather manually set to {CurrentWeather}");
+            OnWeatherChanged?.Invoke(CurrentWeather);
+        }
     }
 }
 
