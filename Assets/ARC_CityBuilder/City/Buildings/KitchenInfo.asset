@@ -16,8 +16,8 @@ MonoBehaviour:
   Name: Kitchen
   Description: 
   Size: {x: 2, y: 2}
-  IsDestructible: 1
-  IsMovable: 1
+  IsDestructible: 0
+  IsMovable: 0
   IsWalkable: 0
   Prefab: {fileID: 7593703384180479793, guid: aad477e05cb5969439c8acf9f5831d3a, type: 3}
   PrefabAlternatives: []

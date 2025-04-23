@@ -51,6 +51,9 @@ TagManager:
   - name: Overlays
     uniqueID: 890372405
     locked: 0
+  - name: Vehicles
+    uniqueID: 2827929919
+    locked: 0
   - name: Highlights
     uniqueID: 1287106125
     locked: 0
