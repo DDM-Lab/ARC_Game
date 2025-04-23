@@ -269,7 +269,7 @@ public class MasterGameManager : DefaultGameManager
         if (_currentRound % 4 == 0)
         {
             _currentDay++;
-            if _currentDay  == 2)
+            if (_currentDay  == 2)
             {
                 Debug.Log($"[MasterGameManager] Day = {_currentDay}, Demo ends here.");
             }
