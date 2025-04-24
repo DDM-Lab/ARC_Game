@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 
 namespace CityBuilderCore
 {
@@ -10,9 +11,9 @@ namespace CityBuilderCore
     {
         [Header("UI References")]
         public Button endTurnButton;
-        public Text phaseText;
-        public Text roundDayText;
-        public Text simulationStatusText;
+        public TextMeshProUGUI phaseText;
+        public TextMeshProUGUI roundDayText;
+        public TextMeshProUGUI simulationStatusText;
         public Slider gameSpeedSlider;
         
         [Header("Debug Options")]
@@ -184,7 +185,7 @@ namespace CityBuilderCore
         {
             if (roundDayText != null)
             {
-                roundDayText.text = $"Round: {round} | Day: {day}";
+                roundDayText.text = $"Day {day}, Round {round}";
             }
         }
         
