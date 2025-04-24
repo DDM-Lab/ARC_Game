@@ -38,7 +38,13 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/SoftLeitner/CityBuilderCore.Tests/Playgrounds/MissionSelector/MissionSelectorStage.unity
     guid: debef48a0b559b84b8a20aff6db4e484
-  - enabled: 1
-    path: Assets/ARC_CityBuilder/Scenes/Main.unity
+  - enabled: 0
+    path: Assets/Scenes/Main.unity
     guid: 8fa6f9edf5b5ddf45bfe2f5e19fb2c9c
+  - enabled: 1
+    path: Assets/Scenes/MainMenu.unity
+    guid: 9e69306479442a54bb0960c47b883348
+  - enabled: 1
+    path: Assets/Scenes/Main - Test.unity
+    guid: 3d356a0b789fc3d48a085e0c5e5cc6c6
   m_configObjects: {}
