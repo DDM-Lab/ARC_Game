@@ -204,7 +204,7 @@ public class TileHoverInfo : MonoBehaviour
     private void ShowBuildingInfo(CityBuilderCore.Building building)
     {
         // Build info text
-        string info = $"<b>{building.name}</b>\nPosition: {building.Point}\n";
+        string info = $"<b>{building.name.Replace("(Clone)", "")}</b>\n";
         
         // Add component info as before...
         var storage = building.GetBuildingComponent<CityBuilderCore.IStorageComponent>();
@@ -225,7 +225,7 @@ public class TileHoverInfo : MonoBehaviour
         var shelter = building.GetComponent<ShelterLogic>();
         if (shelter != null)
         {
-            info += $"Shelter component active.\n";
+            info += $"Component is active.\n";
         }
 
         // Set the text and activate the panel
