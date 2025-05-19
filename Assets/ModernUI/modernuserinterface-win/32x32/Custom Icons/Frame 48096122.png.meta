@@ -110,7 +110,7 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Frame 48096122_0
+      name: disaster_officer
       rect:
         serializedVersion: 2
         x: 8
@@ -131,7 +131,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Frame 48096122_1
+      name: logistics_officer
       rect:
         serializedVersion: 2
         x: 8
@@ -152,7 +152,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Frame 48096122_2
+      name: workforce_officer
       rect:
         serializedVersion: 2
         x: 8
@@ -173,7 +173,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Frame 48096122_4
+      name: masscare_officer
       rect:
         serializedVersion: 2
         x: 8
@@ -194,7 +194,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: Frame 48096122_5
+      name: external_officer
       rect:
         serializedVersion: 2
         x: 8
@@ -225,14 +225,14 @@ TextureImporter:
     weights: []
     secondaryTextures: []
     nameFileIdTable:
-      Frame 48096122_0: -226655047
-      Frame 48096122_1: -568890799
-      Frame 48096122_2: 1067699276
       Frame 48096122_3: -1768526860
-      Frame 48096122_4: -1047859575
-      Frame 48096122_5: 1678510307
       Frame 48096122_6: 148977033
       Frame 48096122_7: 54982988
+      disaster_officer: -226655047
+      external_officer: 1678510307
+      logistics_officer: -568890799
+      masscare_officer: -1047859575
+      workforce_officer: 1067699276
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
