@@ -414,15 +414,63 @@ public class MasterGameManager : DefaultGameManager
         {
             _activeEmergencyTasks.Remove(taskId);
             Debug.Log($"Emergency task completed: {taskId}. Remaining tasks: {_activeEmergencyTasks.Count}");
-            
+        
             // Handle specific task completion logic
             if (taskId.StartsWith("food_delivery_"))
             {
                 string shelterId = taskId.Substring("food_delivery_".Length);
-                DeliverFoodToShelter(shelterId, 10);
+            
+                // ADD: Trigger worker animation before delivering food
+                StartCoroutine(DeliverFoodWithAnimation(shelterId, 10));
             }
         }
     }
+    
+    /// <summary>
+    /// Deliver food with worker animation
+    /// </summary>
+    /// <summary>
+    /// Deliver food with worker animation
+    /// </summary>
+    private IEnumerator DeliverFoodWithAnimation(string shelterId, int amount)
+    {
+        Debug.Log($"Starting food delivery animation for shelter {shelterId}");
+    
+        // Find and trigger the worker animation
+        var shelter = buildingSystem?.GetShelterById(shelterId);
+        if (shelter != null)
+        {
+            // Look for animation components on the shelter or nearby workers
+            var animators = shelter.GetComponentsInChildren<Animator>();
+            foreach (var animator in animators)
+            {
+                if (animator.gameObject.name.Contains("Worker") || animator.gameObject.name.Contains("ERV"))
+                {
+                    animator.SetTrigger("DeliverFood"); // Adjust trigger name as needed
+                    break;
+                }
+            }
+        
+            // Alternative: Trigger kitchen/delivery system animation
+            var kitchens = buildingSystem.GetAllKitchens();
+            foreach (var kitchen in kitchens)
+            {
+                var productionWalker = kitchen.GetComponent<ProductionWalkerComponent>();
+                if (productionWalker != null)
+                {
+                    productionWalker.TryRestartDelivery(); // This might trigger the animation
+                    break;
+                }
+            }
+        }
+    
+        // Wait for animation to complete (adjust time based on your animation length)
+        yield return new WaitForSeconds(2f);
+    
+        // Then deliver the food using your existing function
+        DeliverFoodToShelter(shelterId, amount);
+    }
+
     
     /// <summary>
     /// Deliver food to a specific shelter with error handling
@@ -690,6 +738,19 @@ public class MasterGameManager : DefaultGameManager
         {
             CurrentPhase = phase;
             Debug.Log($"[MasterGameManager] Phase changed to: {phase}");
+        
+            // Ensure proper time scale for animations
+            if (phase == GlobalEnums.GamePhase.Simulation)
+            {
+                Time.timeScale = Speed; // Use game speed during simulation
+            }
+            else if (phase == GlobalEnums.GamePhase.WorkerAssignment || 
+                     phase == GlobalEnums.GamePhase.Construction ||
+                     phase == GlobalEnums.GamePhase.EmergencyTasks)
+            {
+                Time.timeScale = 1f; // Normal time for UI phases
+            }
+        
             OnPhaseChanged?.Invoke(phase);
         }
     }
@@ -702,7 +763,18 @@ public class MasterGameManager : DefaultGameManager
         _isSimulating = true;
         _simulationTimer = 0f;
         IsPaused = false;
-        
+    
+        // ADD THIS: Trigger flood simulation when simulation phase starts
+        if (disasterManager != null && disasterManager.floodManager != null)
+        {
+            disasterManager.floodManager.SimulateFlooding();
+            Debug.Log("[MasterGameManager] Flood simulation triggered");
+        }
+        else
+        {
+            Debug.LogWarning("[MasterGameManager] DisasterManager or FloodManager not found!");
+        }
+    
         Debug.Log("[MasterGameManager] Starting flood simulation phase");
     }
     

@@ -101,7 +101,7 @@ namespace CityBuilderCore
                                 buttonText.text = "Finish Construction";
                                 break;
                             case GlobalEnums.GamePhase.WorkerAssignment:
-                                buttonText.text = "Assign Workers";
+                                buttonText.text = "Complete Assignment";
                                 break;
                             case GlobalEnums.GamePhase.PlayerTurn:
                                 buttonText.text = "End Turn";
@@ -118,6 +118,14 @@ namespace CityBuilderCore
                 if (endTurnButton != null)
                 {
                     endTurnButton.interactable = false;
+                    
+                    // Reset button text to default during non-interactive phases
+                    var buttonText = endTurnButton.GetComponentInChildren<TextMeshProUGUI>();
+                    if (buttonText != null)
+                    {
+                        buttonText.text = "End Turn";
+                    }
+                    
                     DebugLog($"End Turn button DISABLED due to {newPhase} phase");
                 }
             }
