@@ -1095,7 +1095,7 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 64.6
+  m_fontSize: 54.5
   m_fontSizeBase: 36
   m_fontWeight: 400
   m_enableAutoSizing: 1
@@ -1169,7 +1169,7 @@ GameObject:
   - component: {fileID: 3565945769179327378}
   - component: {fileID: 8235380987174725998}
   m_Layer: 5
-  m_Name: InteractionTemplate
+  m_Name: WorkerAssignmentTemplate
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -2198,6 +2198,11 @@ PrefabInstance:
       propertyPath: m_enableAutoSizing
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 2707573989311490930, guid: 3b224c59b44279242aa93e6fcbfb2e23,
+        type: 3}
+      propertyPath: m_Name
+      value: CompleteButton
+      objectReference: {fileID: 0}
     - target: {fileID: 3397452500180185165, guid: 3b224c59b44279242aa93e6fcbfb2e23,
         type: 3}
       propertyPath: m_AnchorMax.y
@@ -2328,6 +2333,21 @@ PrefabInstance:
       propertyPath: m_AnchoredPosition.y
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 6255384265258772183, guid: 3b224c59b44279242aa93e6fcbfb2e23,
+        type: 3}
+      propertyPath: m_Name
+      value: TitleText
+      objectReference: {fileID: 0}
+    - target: {fileID: 6502196867908797797, guid: 3b224c59b44279242aa93e6fcbfb2e23,
+        type: 3}
+      propertyPath: m_Name
+      value: TaskIcon
+      objectReference: {fileID: 0}
+    - target: {fileID: 6733424498372156484, guid: 3b224c59b44279242aa93e6fcbfb2e23,
+        type: 3}
+      propertyPath: m_Name
+      value: DescriptionText
+      objectReference: {fileID: 0}
     - target: {fileID: 7140007977623601286, guid: 3b224c59b44279242aa93e6fcbfb2e23,
         type: 3}
       propertyPath: m_PreferredWidth
@@ -2401,7 +2421,7 @@ PrefabInstance:
     - target: {fileID: 9061780784668418740, guid: 3b224c59b44279242aa93e6fcbfb2e23,
         type: 3}
       propertyPath: m_Name
-      value: Card
+      value: TaskEntry
       objectReference: {fileID: 0}
     - target: {fileID: 9142125502420719436, guid: 3b224c59b44279242aa93e6fcbfb2e23,
         type: 3}

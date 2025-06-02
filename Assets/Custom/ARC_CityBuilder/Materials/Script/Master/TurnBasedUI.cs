@@ -48,7 +48,7 @@ namespace CityBuilderCore
             // Subscribe to game events
             _gameManager.OnPhaseChanged += OnPhaseChanged;
             _gameManager.OnRoundAdvanced += (round, day) => UpdateRoundDayText(round, day);
-            _gameManager.OnSimulationTick += UpdateSimulationTimer; // Add this line
+            _gameManager.OnSimulationTick += UpdateSimulationTimer;
             
             // Initial update
             UpdateUI();
@@ -60,17 +60,17 @@ namespace CityBuilderCore
             {
                 // Unsubscribe from events
                 _gameManager.OnPhaseChanged -= OnPhaseChanged;
-                _gameManager.OnSimulationTick -= UpdateSimulationTimer; // Add this line
+                _gameManager.OnSimulationTick -= UpdateSimulationTimer;
             }
         }
 
-        // Add this method to handle simulation timer updates
+        // Handle simulation timer updates
         private void UpdateSimulationTimer(float currentTime)
         {
             if (simulationStatusText != null && _gameManager.CurrentPhase == GlobalEnums.GamePhase.Simulation)
             {
                 float timeRemaining = _gameManager.SimulationRemainingTime;
-                simulationStatusText.text = $"Simulating: {timeRemaining:F1} sec remaining";
+                simulationStatusText.text = $"Flood Simulation: {timeRemaining:F1} sec remaining";
             }
         }
         
@@ -81,19 +81,40 @@ namespace CityBuilderCore
         {
             UpdateUI();
             
-            // Handle specific phase updates
-            if (newPhase == GlobalEnums.GamePhase.PlayerTurn)
+            // Handle specific phase updates - Enable button for interactive phases
+            if (newPhase == GlobalEnums.GamePhase.Construction || 
+                newPhase == GlobalEnums.GamePhase.WorkerAssignment || 
+                newPhase == GlobalEnums.GamePhase.PlayerTurn)
             {
-                // Always enable end turn button during player turn
+                // Enable end turn button during interactive phases
                 if (endTurnButton != null)
                 {
                     endTurnButton.interactable = true;
-                    DebugLog("End Turn button ENABLED due to player turn phase");
+                    
+                    // Update button text based on phase
+                    var buttonText = endTurnButton.GetComponentInChildren<TextMeshProUGUI>();
+                    if (buttonText != null)
+                    {
+                        switch (newPhase)
+                        {
+                            case GlobalEnums.GamePhase.Construction:
+                                buttonText.text = "Finish Construction";
+                                break;
+                            case GlobalEnums.GamePhase.WorkerAssignment:
+                                buttonText.text = "Assign Workers";
+                                break;
+                            case GlobalEnums.GamePhase.PlayerTurn:
+                                buttonText.text = "End Turn";
+                                break;
+                        }
+                    }
+                    
+                    DebugLog($"End Turn button ENABLED for {newPhase} phase");
                 }
             }
             else
             {
-                // Disable button during other phases
+                // Disable button during automatic phases
                 if (endTurnButton != null)
                 {
                     endTurnButton.interactable = false;
@@ -125,13 +146,25 @@ namespace CityBuilderCore
             if (_gameManager == null)
                 return;
                 
-            // Update phase text
+            // Update phase text with all new phases
             if (phaseText != null)
             {
                 switch (_gameManager.CurrentPhase)
                 {
                     case GlobalEnums.GamePhase.Start:
                         phaseText.text = "Phase: Round Start";
+                        break;
+                    case GlobalEnums.GamePhase.Construction:
+                        phaseText.text = "Phase: Construction";
+                        break;
+                    case GlobalEnums.GamePhase.WorkerAssignment:
+                        phaseText.text = "Phase: Worker Assignment";
+                        break;
+                    case GlobalEnums.GamePhase.Simulation:
+                        phaseText.text = "Phase: Flood Simulation";
+                        break;
+                    case GlobalEnums.GamePhase.EmergencyTasks:
+                        phaseText.text = "Phase: Emergency Tasks";
                         break;
                     case GlobalEnums.GamePhase.PlayerTurn:
                         phaseText.text = "Phase: Player Turn";
@@ -141,6 +174,12 @@ namespace CityBuilderCore
                         break;
                     case GlobalEnums.GamePhase.End:
                         phaseText.text = "Phase: Round End";
+                        break;
+                    case GlobalEnums.GamePhase.GameComplete:
+                        phaseText.text = "Phase: Game Complete";
+                        break;
+                    default:
+                        phaseText.text = $"Phase: {_gameManager.CurrentPhase}";
                         break;
                 }
             }
@@ -162,9 +201,18 @@ namespace CityBuilderCore
                 case GlobalEnums.GamePhase.Start:
                     simulationStatusText.text = "Starting new round...";
                     break;
+                case GlobalEnums.GamePhase.Construction:
+                    simulationStatusText.text = "Build facilities for the community";
+                    break;
+                case GlobalEnums.GamePhase.WorkerAssignment:
+                    simulationStatusText.text = "Assign workers to facilities";
+                    break;
                 case GlobalEnums.GamePhase.Simulation:
                     float timeRemaining = _gameManager.SimulationRemainingTime;
-                    simulationStatusText.text = $"Simulating: {timeRemaining:F1} sec remaining";
+                    simulationStatusText.text = $"Simulating flood: {timeRemaining:F1} sec remaining";
+                    break;
+                case GlobalEnums.GamePhase.EmergencyTasks:
+                    simulationStatusText.text = "Complete emergency food delivery tasks";
                     break;
                 case GlobalEnums.GamePhase.PlayerTurn:
                     simulationStatusText.text = "Your turn - Make your moves";
@@ -174,6 +222,9 @@ namespace CityBuilderCore
                     break;
                 case GlobalEnums.GamePhase.End:
                     simulationStatusText.text = "Ending round...";
+                    break;
+                case GlobalEnums.GamePhase.GameComplete:
+                    simulationStatusText.text = "Game completed successfully!";
                     break;
                 default:
                     simulationStatusText.text = $"Current phase: {_gameManager.CurrentPhase}";

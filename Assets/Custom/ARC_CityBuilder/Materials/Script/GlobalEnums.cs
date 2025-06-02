@@ -6,10 +6,14 @@ public static class GlobalEnums
     public enum GamePhase
     {
         Start,
-        Simulation,// the phase for real-time simulation
+        Construction,
+        WorkerAssignment,
+        Simulation,
+        EmergencyTasks,
         PlayerTurn,
         DisasterEvents,
-        End
+        End,
+        GameComplete
     }
 
     public enum DisasterType

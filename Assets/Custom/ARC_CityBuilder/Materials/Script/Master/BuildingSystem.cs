@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using CityBuilderCore;
 
-
 /// <summary>
 /// --------------Manages building-related systems and communication------------
 /// </summary>
@@ -34,6 +33,7 @@ public class BuildingSystem : MonoBehaviour
     // References
     private IBuildingManager _buildingManager;
     private IGridPositions _gridPositions;
+    
     public void DiagnoseBuildingPlacement()
     {
         Debug.Log("=== BUILDING SYSTEM DIAGNOSTICS ===");
@@ -57,6 +57,7 @@ public class BuildingSystem : MonoBehaviour
             
         Debug.Log("=== END DIAGNOSTICS ===");
     }
+    
     private void Awake()
     {
         // Don't try to get dependencies in Awake. Do it in start instead.
@@ -73,7 +74,6 @@ public class BuildingSystem : MonoBehaviour
         
         // Place initial buildings
         StartCoroutine(WaitAndPlaceInitialBuildings());
-        
     }
     
     private IEnumerator WaitAndPlaceInitialBuildings()
@@ -173,6 +173,190 @@ public class BuildingSystem : MonoBehaviour
     public void RegisterKitchen(Building kitchen) => RegisterBuilding(kitchen, "kitchen");
     public void RegisterCommunity(Building community) => RegisterBuilding(community, "community");
     public void RegisterGeneric(Building building) => RegisterBuilding(building, "other");
+    
+    // ===== NEW METHODS FOR TASK MANAGER AND WORKER MANAGER INTEGRATION =====
+    
+    /// <summary>
+    /// Get a facility by its ID (supports both name and instance ID)
+    /// </summary>
+    public Building GetFacilityById(string facilityId)
+    {
+        // Search through all building types
+        foreach (var building in _shelters)
+        {
+            if (building != null && (building.name == facilityId || building.GetInstanceID().ToString() == facilityId))
+                return building;
+        }
+        
+        foreach (var building in _kitchens)
+        {
+            if (building != null && (building.name == facilityId || building.GetInstanceID().ToString() == facilityId))
+                return building;
+        }
+        
+        foreach (var building in _communities)
+        {
+            if (building != null && (building.name == facilityId || building.GetInstanceID().ToString() == facilityId))
+                return building;
+        }
+        
+        foreach (var building in _others)
+        {
+            if (building != null && (building.name == facilityId || building.GetInstanceID().ToString() == facilityId))
+                return building;
+        }
+        
+        return null;
+    }
+    
+    /// <summary>
+    /// Get shelter by ID (supports both name and instance ID)
+    /// </summary>
+    public Building GetShelterById(string shelterId)
+    {
+        foreach (var shelter in _shelters)
+        {
+            if (shelter != null && (shelter.name == shelterId || shelter.GetInstanceID().ToString() == shelterId))
+                return shelter;
+        }
+        return null;
+    }
+    
+    /// <summary>
+    /// Get all active shelters (shelters that are operational and have ShelterLogic)
+    /// </summary>
+    public List<Building> GetActiveShelters()
+    {
+        List<Building> activeShelters = new List<Building>();
+        
+        foreach (var shelter in _shelters)
+        {
+            if (shelter != null && shelter.gameObject.activeInHierarchy)
+            {
+                // Check if shelter has ShelterLogic and is operational
+                var shelterLogic = shelter.GetComponent<ShelterLogic>();
+                if (shelterLogic == null || shelterLogic.IsOperational())
+                {
+                    activeShelters.Add(shelter);
+                }
+            }
+        }
+        
+        return activeShelters;
+    }
+    
+    /// <summary>
+    /// Get all facilities (all building types combined)
+    /// </summary>
+    public List<Building> GetAllFacilities()
+    {
+        List<Building> allFacilities = new List<Building>();
+        
+        // Add all non-null buildings from each category
+        foreach (var building in _shelters)
+        {
+            if (building != null) allFacilities.Add(building);
+        }
+        
+        foreach (var building in _kitchens)
+        {
+            if (building != null) allFacilities.Add(building);
+        }
+        
+        foreach (var building in _communities)
+        {
+            if (building != null) allFacilities.Add(building);
+        }
+        
+        foreach (var building in _others)
+        {
+            if (building != null) allFacilities.Add(building);
+        }
+        
+        return allFacilities;
+    }
+    
+    /// <summary>
+    /// Check if a building can accept workers (basic implementation)
+    /// </summary>
+    public bool CanBuildingAcceptWorkers(string buildingId, int workerCount)
+    {
+        var building = GetFacilityById(buildingId);
+        if (building == null) return false;
+        
+        // Check if building has worker assignment capability
+        var workerAssignable = building.GetComponent<IWorkerAssignable>();
+        if (workerAssignable != null)
+        {
+            return workerAssignable.CanAcceptWorkers(workerCount);
+        }
+        
+        // Default implementation - most buildings can accept 1-5 workers
+        return workerCount > 0 && workerCount <= 5;
+    }
+    
+    /// <summary>
+    /// Get buildings that need food delivery
+    /// </summary>
+    public List<Building> GetBuildingsNeedingFood()
+    {
+        List<Building> needingFood = new List<Building>();
+        
+        foreach (var shelter in _shelters)
+        {
+            if (shelter != null)
+            {
+                var shelterLogic = shelter.GetComponent<ShelterLogic>();
+                if (shelterLogic != null && shelterLogic.NeedsFood())
+                {
+                    needingFood.Add(shelter);
+                }
+            }
+        }
+        
+        return needingFood;
+    }
+    
+    /// <summary>
+    /// Enable or disable a facility based on worker assignment
+    /// </summary>
+    public void SetFacilityEnabled(string facilityId, bool enabled)
+    {
+        var facility = GetFacilityById(facilityId);
+        if (facility != null)
+        {
+            // Enable/disable the building's functionality
+            var components = facility.GetComponents<MonoBehaviour>();
+            foreach (var component in components)
+            {
+                // Skip essential components
+                if (component is Transform || component is Building) continue;
+                
+                component.enabled = enabled;
+            }
+            
+            Debug.Log($"[BuildingSystem] Set facility {facilityId} enabled: {enabled}");
+        }
+    }
+    
+    /// <summary>
+    /// Get building statistics for UI display
+    /// </summary>
+    public BuildingStatistics GetBuildingStatistics()
+    {
+        return new BuildingStatistics
+        {
+            totalBuildings = GetAllFacilities().Count,
+            shelters = _shelters.Count,
+            kitchens = _kitchens.Count,
+            communities = _communities.Count,
+            others = _others.Count,
+            activeShelters = GetActiveShelters().Count,
+            buildingsNeedingFood = GetBuildingsNeedingFood().Count
+        };
+    }
+    
+    // ===== END NEW METHODS =====
     
     /// <summary>
     /// Update all buildings after disaster events or at end of day
@@ -280,4 +464,19 @@ public class BuildingSystem : MonoBehaviour
     public IReadOnlyList<Building> GetAllShelters() => _shelters;
     public IReadOnlyList<Building> GetAllKitchens() => _kitchens;
     public IReadOnlyList<Building> GetAllGenericBuildings() => _others;
+}
+
+/// <summary>
+/// Data structure for building statistics
+/// </summary>
+[System.Serializable]
+public class BuildingStatistics
+{
+    public int totalBuildings;
+    public int shelters;
+    public int kitchens;
+    public int communities;
+    public int others;
+    public int activeShelters;
+    public int buildingsNeedingFood;
 }
