@@ -441,6 +441,28 @@ public class BuildingSystem : MonoBehaviour
         Debug.Log("[BuildingSystem] Notified kitchens to retry delivery.");
     }
     
+    // Add this to BuildingSystem when facilities are destroyed
+    public void OnFacilityDestroyed(Building facility)
+    {
+        if (facility != null)
+        {
+            string facilityId = facility.GetInstanceID().ToString();
+        
+            // Notify WorkerManager to clean up assignments
+            var workerManager = FindObjectOfType<WorkerManager>();
+            if (workerManager != null)
+            {
+                // Remove workers from this specific facility
+                int assignedWorkers = workerManager.GetCurrentWorkerCount(facilityId);
+                if (assignedWorkers > 0)
+                {
+                    workerManager.RemoveWorkersFromFacility(facilityId, assignedWorkers);
+                    Debug.Log($"[BuildingSystem] Removed {assignedWorkers} workers from destroyed facility {facilityId}");
+                }
+            }
+        }
+    }
+    
     /// <summary>
     /// Get all buildings of a specific type
     /// </summary>

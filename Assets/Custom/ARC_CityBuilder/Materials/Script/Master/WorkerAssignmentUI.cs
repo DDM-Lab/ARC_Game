@@ -119,32 +119,58 @@ public class WorkerAssignmentUI : MonoBehaviour
     {
         // Show/hide this UI based on phase
         bool shouldShow = newPhase == GlobalEnums.GamePhase.WorkerAssignment;
-        
+    
         DebugLog($"Phase changed to {newPhase}, showing worker UI: {shouldShow}");
-        
-        // Handle worker assignment panel
+    
         if (workerAssignmentPanel != null)
         {
             workerAssignmentPanel.SetActive(shouldShow);
         }
 
-        // Handle other UI elements with smooth transition
-        if (_transitionCoroutine != null)
-        {
-            StopCoroutine(_transitionCoroutine);
-        }
-        _transitionCoroutine = StartCoroutine(TransitionOtherUIElements(!shouldShow));
-
         if (shouldShow)
         {
-            PopulateFacilityList();
+            // Only populate if we don't have entries or if facilities changed
+            if (_workerEntries.Count == 0 || FacilitiesChanged())
+            {
+                PopulateFacilityList();
+            }
+            else
+            {
+                // Just refresh existing entries with current data
+                RefreshExistingEntries();
+            }
             UpdateTotalAvailableWorkersDisplay();
         }
-        else
+    }
+    
+    /// <summary>
+    /// Check if facilities have changed since last population
+    /// </summary>
+    private bool FacilitiesChanged()
+    {
+        if (_gameManager?.buildingSystem == null) return false;
+    
+        var currentFacilities = _gameManager.buildingSystem.GetAllFacilities();
+        return currentFacilities.Count != _workerEntries.Count;
+    }
+    
+    /// <summary>
+    /// Refresh existing entries with current worker counts
+    /// </summary>
+    private void RefreshExistingEntries()
+    {
+        foreach (var entry in _workerEntries)
         {
-            // Clear entries when hiding to prevent memory leaks
-            ClearWorkerEntries();
+            if (entry != null && _workerManager != null)
+            {
+                string facilityId = entry.GetFacilityId();
+                int currentWorkerCount = _workerManager.GetCurrentWorkerCount(facilityId);
+                entry.SetWorkerCount(currentWorkerCount);
+            }
         }
+    
+        UpdateAllWorkerEntries();
+        DebugLog("Refreshed existing worker entries with current data");
     }
 
     /// <summary>
@@ -365,11 +391,11 @@ public class WorkerAssignmentUI : MonoBehaviour
     {
         DebugLog($"Worker count changed for {facilityId}: {newCount}");
 
-        // Use WorkerManager instead of MasterGameManager directly
+        // Use WorkerManager directly (no need to go through MasterGameManager)
         if (_workerManager != null)
         {
             bool success = _workerManager.SetWorkersForFacility(facilityId, newCount);
-            
+        
             if (!success)
             {
                 Debug.LogWarning($"Failed to assign {newCount} workers to {facilityId}");
@@ -387,17 +413,11 @@ public class WorkerAssignmentUI : MonoBehaviour
                 DebugLog($"Successfully assigned {newCount} workers to {facilityId}");
             }
         }
-        else if (_gameManager != null)
-        {
-            // Fallback to MasterGameManager
-            _gameManager.AssignWorkersToFacility(facilityId, newCount);
-        }
 
         // Update available workers count
         UpdateTotalAvailableWorkersDisplay();
         UpdateAllWorkerEntries();
     }
-
     private void UpdateTotalAvailableWorkersDisplay()
     {
         if (_workerManager != null)
@@ -426,6 +446,9 @@ public class WorkerAssignmentUI : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Only clear entries when actually needed (facilities destroyed)
+    /// </summary>
     private void ClearWorkerEntries()
     {
         foreach (var entry in _workerEntries)
@@ -437,7 +460,7 @@ public class WorkerAssignmentUI : MonoBehaviour
             }
         }
         _workerEntries.Clear();
-        
+    
         DebugLog("Cleared all worker entries");
     }
 
@@ -539,7 +562,7 @@ public class WorkerAssignmentUI : MonoBehaviour
             DebugLog($"Added {uiElement.name} to UI elements to hide");
         }
     }
-
+    
     private void DebugLog(string message)
     {
         if (showDebugMessages)

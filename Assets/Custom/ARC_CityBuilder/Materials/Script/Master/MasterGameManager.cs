@@ -25,8 +25,6 @@ public class MasterGameManager : DefaultGameManager
     [Header("Worker Settings")]
     [Tooltip("Total workers available per round")]
     public int totalWorkersPerRound = 20;
-    [Tooltip("Workers currently assigned")]
-    public int assignedWorkers = 0;
     
     // Game state
     public static MasterGameManager Instance { get; private set; }
@@ -47,8 +45,8 @@ public class MasterGameManager : DefaultGameManager
     public int RoundsPerDay = 9;
     
     // Worker and facility management
-    public bool AllFacilitiesStaffed => CheckAllFacilitiesStaffed();
-    public int AvailableWorkers => totalWorkersPerRound - assignedWorkers;
+    public bool AllFacilitiesStaffed => workerManager?.AreAllCriticalFacilitiesStaffed() ?? true;
+    public int AvailableWorkers => workerManager?.AvailableWorkers ?? totalWorkersPerRound;
     
     // Events
     public event Action OnRoundStarted;
@@ -107,29 +105,30 @@ public class MasterGameManager : DefaultGameManager
             taskManager = FindObjectOfType<TaskManager>();
     }
     
-    protected override void Start()
+    private void Start()
     {
         base.Start();
 
         // Initialize weather
         UpdateWeather();
-        
-        // Initialize worker system
-        InitializeWorkerSystem();
-        
+    
+        // Initialize worker system explicitly
+        if (workerManager != null)
+        {
+            workerManager.InitializeForNewGame();
+        }
+    
+        InitializeWorkerSystem(); // This handles task event subscriptions
+    
         // Start the first round
         _roundCoroutine = StartCoroutine(RoundLoop());
-        
-        // Log initial state
+    
         Debug.Log($"[MasterGameManager] Game started with {simulationSecondsPerRound}s simulation time per turn.");
     }
     
     private void InitializeWorkerSystem()
     {
-        assignedWorkers = 0;
-    
         // Subscribe to task completion events from TaskManager
-        // TaskManager triggers GameEvents.OnTaskCompleted when users complete tasks
         if (taskManager != null)
         {
             GameEvents.OnTaskCompleted += OnEmergencyTaskCompleted;
@@ -139,6 +138,24 @@ public class MasterGameManager : DefaultGameManager
         {
             Debug.LogError("[MasterGameManager] TaskManager reference not found!");
         }
+    
+        // Let WorkerManager handle its own initialization
+        if (workerManager != null)
+        {
+            Debug.Log("[MasterGameManager] WorkerManager found and ready");
+        }
+        else
+        {
+            Debug.LogError("[MasterGameManager] WorkerManager reference not found!");
+        }
+    }
+    
+    /// <summary>
+    /// Check if all facilities are properly staffed - delegate to WorkerManager
+    /// </summary>
+    private bool CheckAllFacilitiesStaffed()
+    {
+        return workerManager?.AreAllCriticalFacilitiesStaffed() ?? true;
     }
 
     
@@ -581,140 +598,18 @@ public class MasterGameManager : DefaultGameManager
     }
     
     /// <summary>
-    /// Assign workers to a facility with error handling
-    /// </summary>
-    public bool AssignWorkersToFacility(string facilityId, int workerCount)
-    {
-        if (AvailableWorkers < workerCount)
-        {
-            Debug.LogWarning($"Cannot assign {workerCount} workers to {facilityId}. Available: {AvailableWorkers}");
-            return false;
-        }
-        
-        if (buildingSystem == null)
-        {
-            Debug.LogWarning("[MasterGameManager] BuildingSystem not available for worker assignment");
-            // For testing, just update the worker count
-            assignedWorkers += workerCount;
-            OnWorkersAssigned?.Invoke();
-            return true;
-        }
-        
-        try
-        {
-            var facility = buildingSystem.GetFacilityById(facilityId);
-            if (facility != null)
-            {
-                // Try to assign workers using reflection
-                var canAssignMethod = facility.GetType().GetMethod("CanAssignWorkers");
-                var assignMethod = facility.GetType().GetMethod("AssignWorkers");
-                
-                bool canAssign = true;
-                if (canAssignMethod != null)
-                {
-                    canAssign = (bool)canAssignMethod.Invoke(facility, new object[] { workerCount });
-                }
-                
-                if (canAssign)
-                {
-                    if (assignMethod != null)
-                    {
-                        assignMethod.Invoke(facility, new object[] { workerCount });
-                    }
-                    
-                    assignedWorkers += workerCount;
-                    OnWorkersAssigned?.Invoke();
-                    
-                    Debug.Log($"Assigned {workerCount} workers to {facilityId}. Available workers: {AvailableWorkers}");
-                    return true;
-                }
-            }
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning($"[MasterGameManager] Error assigning workers: {e.Message}");
-        }
-        
-        Debug.LogWarning($"Cannot assign {workerCount} workers to {facilityId}");
-        return false;
-    }
-    
-    /// <summary>
-    /// Check if all facilities are properly staffed with error handling
-    /// </summary>
-    private bool CheckAllFacilitiesStaffed()
-    {
-        if (buildingSystem == null)
-        {
-            Debug.LogWarning("[MasterGameManager] BuildingSystem not available, assuming facilities are staffed");
-            return true; // Assume staffed for testing
-        }
-        
-        try
-        {
-            var facilities = buildingSystem.GetAllFacilities();
-            if (facilities == null || facilities.Count == 0)
-            {
-                return true; // No facilities to check
-            }
-            
-            foreach (var facility in facilities)
-            {
-                if (facility == null) continue;
-                
-                // Try to check IsStaffed property with reflection
-                var isStaffedProperty = facility.GetType().GetProperty("IsStaffed");
-                if (isStaffedProperty != null)
-                {
-                    bool isStaffed = (bool)isStaffedProperty.GetValue(facility);
-                    if (!isStaffed) return false;
-                }
-            }
-            return true;
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning($"[MasterGameManager] Error checking facility staffing: {e.Message}");
-            return true; // Assume staffed for testing
-        }
-    }
-    
-    /// <summary>
     /// Enable facilities that have workers assigned with error handling
     /// </summary>
     private void EnableFacilitiesWithWorkers()
     {
-        if (buildingSystem == null)
+        if (workerManager != null)
         {
-            Debug.LogWarning("[MasterGameManager] BuildingSystem not available for enabling facilities");
-            return;
+            workerManager.UpdateFacilityStates();
+            Debug.Log("[MasterGameManager] Updated facility states based on worker assignments");
         }
-        
-        try
+        else
         {
-            var facilities = buildingSystem.GetAllFacilities();
-            if (facilities == null) return;
-            
-            foreach (var facility in facilities)
-            {
-                if (facility == null) continue;
-                
-                // Try to check IsStaffed and SetEnabled with reflection
-                var isStaffedProperty = facility.GetType().GetProperty("IsStaffed");
-                var setEnabledMethod = facility.GetType().GetMethod("SetEnabled");
-                
-                if (isStaffedProperty != null && setEnabledMethod != null)
-                {
-                    bool isStaffed = (bool)isStaffedProperty.GetValue(facility);
-                    setEnabledMethod.Invoke(facility, new object[] { isStaffed });
-                }
-            }
-            
-            Debug.Log("Enabled facilities with assigned workers");
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning($"[MasterGameManager] Error enabling facilities: {e.Message}");
+            Debug.LogWarning("[MasterGameManager] WorkerManager not available for enabling facilities");
         }
     }
     
@@ -863,27 +758,30 @@ public class MasterGameManager : DefaultGameManager
         _isSimulating = false;
         Debug.Log("[MasterGameManager] Flood simulation phase completed");
     }
-    
+
     /// <summary>
     /// Advances the round and day counters
     /// </summary>
     private void AdvanceRound()
     {
         _currentRound++;
-        
-        // Reset worker assignments for new round
-        assignedWorkers = 0;
-        
+
+        // DON'T reset worker assignments every round - only clean up destroyed facilities
+        if (workerManager != null)
+        {
+            workerManager.ResetWorkerAssignments(); // This now only cleans up destroyed facilities
+        }
+
         if (_currentRound % 4 == 0)
         {
             _currentDay++;
             UpdateWeather();
         }
-        
+
         Debug.Log($"[MasterGameManager] Advanced to Round {_currentRound}, Day {_currentDay}");
         OnRoundAdvanced?.Invoke(_currentRound, _currentDay);
     }
-    
+
     /// <summary>
     /// Updates the current weather based on probability settings
     /// </summary>

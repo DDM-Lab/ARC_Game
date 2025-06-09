@@ -28,11 +28,68 @@ public class WorkerManager : MonoBehaviour
     public int AssignedWorkers => currentlyAssignedWorkers;
     public int AvailableWorkers => totalWorkersPerRound - currentlyAssignedWorkers;
     
-    private void Start()
+    /// <summary>
+    /// Initialize worker system for a new game
+    /// </summary>
+    public void InitializeForNewGame()
     {
+        // Initialize worker types first
         InitializeWorkerTypes();
-        ResetWorkerAssignments();
+    
+        // Then reset all assignments
+        ResetForNewGame(); 
+    
+        Debug.Log("[WorkerManager] Initialized for new game");
     }
+    
+    /// <summary>
+    /// Check if all critical facilities are properly staffed
+    /// </summary>
+    public bool AreAllCriticalFacilitiesStaffed()
+    {
+        if (BuildingSystem.Instance == null) return true;
+    
+        var allFacilities = BuildingSystem.Instance.GetAllFacilities();
+    
+        foreach (var facility in allFacilities)
+        {
+            if (facility != null && IsCriticalFacility(facility))
+            {
+                string facilityId = facility.GetInstanceID().ToString();
+                if (!IsFacilityStaffed(facilityId))
+                {
+                    Debug.LogWarning($"[WorkerManager] Critical facility {facility.name} is not properly staffed");
+                    return false;
+                }
+            }
+        }
+    
+        return true;
+    }
+    
+    /// <summary>
+    /// Determine if a facility is critical for operations
+    /// </summary>
+    private bool IsCriticalFacility(Building facility)
+    {
+        // Define which facilities are critical for game progression
+        string facilityName = facility.name.ToLower();
+        return facilityName.Contains("shelter") || 
+               facilityName.Contains("kitchen") || 
+               facilityName.Contains("community");
+    }
+    
+    /// <summary>
+    /// Get worker assignment summary for game state
+    /// </summary>
+    public string GetWorkerAssignmentSummary()
+    {
+        var stats = GetWorkerStatistics();
+        return $"Workers: {stats.assignedWorkers}/{stats.totalWorkers} assigned " +
+               $"({stats.facilitiesStaffed}/{stats.totalFacilities} facilities staffed)";
+    }
+    
+    
     
     /// <summary>
     /// Initialize available worker types and their counts
@@ -63,13 +120,62 @@ public class WorkerManager : MonoBehaviour
     /// <summary>
     /// Reset all worker assignments for a new round
     /// </summary>
+    /// <summary>
+    /// Reset worker assignments only when facilities are destroyed
+    /// </summary>
     public void ResetWorkerAssignments()
+    {
+        // Only clear assignments for facilities that no longer exist
+        var existingFacilities = new HashSet<string>();
+    
+        if (BuildingSystem.Instance != null)
+        {
+            var allFacilities = BuildingSystem.Instance.GetAllFacilities();
+            foreach (var facility in allFacilities)
+            {
+                if (facility != null)
+                {
+                    existingFacilities.Add(facility.GetInstanceID().ToString());
+                }
+            }
+        }
+    
+        // Remove assignments for non-existent facilities
+        var facilitiesToRemove = new List<string>();
+        foreach (var facilityId in _facilityAssignments.Keys)
+        {
+            if (!existingFacilities.Contains(facilityId))
+            {
+                facilitiesToRemove.Add(facilityId);
+            }
+        }
+    
+        foreach (var facilityId in facilitiesToRemove)
+        {
+            var assignment = _facilityAssignments[facilityId];
+            foreach (var workerCount in assignment.assignedWorkers.Values)
+            {
+                currentlyAssignedWorkers -= workerCount;
+            }
+            _facilityAssignments.Remove(facilityId);
+            Debug.Log($"[WorkerManager] Removed assignment for destroyed facility: {facilityId}");
+        }
+    
+        // Don't reset worker types - they should persist
+        Debug.Log("[WorkerManager] Cleaned up assignments for destroyed facilities");
+        OnWorkerAssignmentChanged?.Invoke();
+    }
+    
+    /// <summary>
+    /// Add method to completely reset for new game only
+    /// </summary>
+    public void ResetForNewGame()
     {
         _facilityAssignments.Clear();
         currentlyAssignedWorkers = 0;
         InitializeWorkerTypes();
         
-        Debug.Log("[WorkerManager] Reset worker assignments for new round");
+        Debug.Log("[WorkerManager] Reset all worker assignments for new game");
         OnWorkerAssignmentChanged?.Invoke();
     }
     
@@ -178,6 +284,37 @@ public class WorkerManager : MonoBehaviour
         OnWorkerAssignmentChanged?.Invoke();
         
         return true;
+    }
+    
+    /// <summary>
+    /// Enable/disable facilities based on worker assignments
+    /// </summary>
+    public void UpdateFacilityStates()
+    {
+        if (BuildingSystem.Instance == null) return;
+    
+        var allFacilities = BuildingSystem.Instance.GetAllFacilities();
+    
+        foreach (var facility in allFacilities)
+        {
+            if (facility != null)
+            {
+                string facilityId = facility.GetInstanceID().ToString();
+                bool isStaffed = IsFacilityStaffed(facilityId);
+            
+                // Enable/disable facility based on staffing
+                var facilityComponents = facility.GetComponents<MonoBehaviour>();
+                foreach (var component in facilityComponents)
+                {
+                    if (component is IWorkerAssignable)
+                    {
+                        component.enabled = isStaffed;
+                    }
+                }
+            
+                Debug.Log($"[WorkerManager] Facility {facility.name} enabled: {isStaffed}");
+            }
+        }
     }
     
     /// <summary>
@@ -449,7 +586,7 @@ public class WorkerManager : MonoBehaviour
 /// <summary>
 /// Data structure for worker assignments to facilities
 /// </summary>
-[System.Serializable]
+[Serializable]
 public class FacilityWorkerAssignment
 {
     public string facilityId;
@@ -460,7 +597,7 @@ public class FacilityWorkerAssignment
 /// <summary>
 /// Worker type configuration
 /// </summary>
-[System.Serializable]
+[Serializable]
 public class WorkerType
 {
     public string typeName = "General Worker";
@@ -473,7 +610,7 @@ public class WorkerType
 /// <summary>
 /// Worker statistics data structure
 /// </summary>
-[System.Serializable]
+[Serializable]
 public class WorkerStatistics
 {
     public int totalWorkers;
