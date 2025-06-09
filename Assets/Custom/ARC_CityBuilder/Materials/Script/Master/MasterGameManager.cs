@@ -127,14 +127,20 @@ public class MasterGameManager : DefaultGameManager
     private void InitializeWorkerSystem()
     {
         assignedWorkers = 0;
-        
-        // Subscribe to task completion events
+    
+        // Subscribe to task completion events from TaskManager
+        // TaskManager triggers GameEvents.OnTaskCompleted when users complete tasks
         if (taskManager != null)
         {
-            // Assuming you have a task completion event in TaskManager
             GameEvents.OnTaskCompleted += OnEmergencyTaskCompleted;
+            Debug.Log("[MasterGameManager] Subscribed to task completion events");
+        }
+        else
+        {
+            Debug.LogError("[MasterGameManager] TaskManager reference not found!");
         }
     }
+
     
     protected override void Update()
     {
@@ -408,23 +414,38 @@ public class MasterGameManager : DefaultGameManager
     /// <summary>
     /// Called when an emergency task is completed
     /// </summary>
+    /// <summary>
+    /// Called when an emergency task is completed
+    /// </summary>
     private void OnEmergencyTaskCompleted(string taskId)
     {
+        Debug.Log($"[MasterGameManager] OnEmergencyTaskCompleted called for: {taskId}");
+        Debug.Log($"[MasterGameManager] Active tasks before removal: {_activeEmergencyTasks.Count}");
+    
         if (_activeEmergencyTasks.Contains(taskId))
         {
             _activeEmergencyTasks.Remove(taskId);
-            Debug.Log($"Emergency task completed: {taskId}. Remaining tasks: {_activeEmergencyTasks.Count}");
+            Debug.Log($"[MasterGameManager] Task {taskId} removed. Remaining: {_activeEmergencyTasks.Count}");
         
-            // Handle specific task completion logic
+            // // Handle specific task completion logic
+            // if (taskId.StartsWith("food_delivery_"))
+            // {
+            //     string shelterId = taskId.Substring("food_delivery_".Length);
+            //     StartCoroutine(DeliverFoodWithAnimation(shelterId, 10));
+            // }
+            // Instead, just deliver the food directly without animation for now:
             if (taskId.StartsWith("food_delivery_"))
             {
                 string shelterId = taskId.Substring("food_delivery_".Length);
-            
-                // ADD: Trigger worker animation before delivering food
-                StartCoroutine(DeliverFoodWithAnimation(shelterId, 10));
+                DeliverFoodToShelter(shelterId, 10);
             }
         }
+        else
+        {
+            Debug.LogWarning($"[MasterGameManager] Task {taskId} not found in active tasks!");
+        }
     }
+
     
     /// <summary>
     /// Deliver food with worker animation

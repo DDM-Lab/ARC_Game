@@ -8,6 +8,11 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Manages emergency tasks and task UI
+/// 
+/// IMPORTANT: This class only TRIGGERS GameEvents.OnTaskCompleted when tasks are completed.
+/// It does NOT listen to GameEvents.OnTaskCompleted to avoid circular event loops.
+/// External systems (like MasterGameManager) should subscribe to GameEvents.OnTaskCompleted
+/// to receive notifications when tasks are finished.
 /// </summary>
 public class TaskManager : MonoBehaviour
 {
@@ -39,18 +44,12 @@ public class TaskManager : MonoBehaviour
     private void Start()
     {
         ClearTaskList();
-        
-        // Subscribe to game events
-        if (GameEvents.OnTaskCompleted == null)
-            GameEvents.OnTaskCompleted = OnTaskCompletedHandler;
-        else
-            GameEvents.OnTaskCompleted += OnTaskCompletedHandler;
     }
     
     private void OnDestroy()
     {
         if (GameEvents.OnTaskCompleted != null)
-            GameEvents.OnTaskCompleted -= OnTaskCompletedHandler;
+            GameEvents.OnTaskCompleted -= ProcessTaskCompletion;
     }
     
     /// <summary>
@@ -160,7 +159,7 @@ public class TaskManager : MonoBehaviour
             if (newStatus == TaskStatus.Complete && !_completedTasks.Contains(taskId))
             {
                 _completedTasks.Add(taskId);
-                OnTaskCompletedHandler(taskId);
+                ProcessTaskCompletion(taskId);
             }
         }
     }
@@ -170,33 +169,75 @@ public class TaskManager : MonoBehaviour
     /// </summary>
     private void OnTaskCompletedByUser(string taskId)
     {
-        UpdateTaskStatus(taskId, TaskStatus.Complete);
+        Debug.Log($"[TaskManager] User completed task: {taskId}");
+    
+        if (_allTasks.TryGetValue(taskId, out TaskData task))
+        {
+            task.status = TaskStatus.Complete;
+        
+            if (_taskEntries.TryGetValue(taskId, out TaskEntryController entry))
+            {
+                entry.UpdateStatus(TaskStatus.Complete);
+            }
+        
+            if (!_completedTasks.Contains(taskId))
+            {
+                _completedTasks.Add(taskId);
+            }
+        
+            // Process the completion and notify external systems
+            ProcessTaskCompletion(taskId);  // Updated method name
+        }
     }
+
+    
+    // Add this field at the top of your class
+    private HashSet<string> _processingTasks = new HashSet<string>();
     
     /// <summary>
     /// Handle task completion
     /// </summary>
-    private void OnTaskCompletedHandler(string taskId)
+    /// <summary>
+    /// Handle task completion and notify external systems
+    /// </summary>
+    private void ProcessTaskCompletion(string taskId)
     {
-        if (!_allTasks.ContainsKey(taskId)) return;
-        
-        var task = _allTasks[taskId];
-        
-        Debug.Log($"[TaskManager] Task completed: {task.title}");
-        
-        // Handle specific task types
-        HandleTaskCompletion(task);
-        
-        // Trigger events
-        OnTaskCompleted?.Invoke(taskId);
-        
-        // Check if all tasks are completed
-        if (ActiveTaskCount == 0)
+        // Prevent recursive processing of the same task
+        if (_processingTasks.Contains(taskId))
         {
-            Debug.Log("[TaskManager] All tasks completed!");
-            OnAllTasksCompleted?.Invoke();
+            Debug.LogWarning($"[TaskManager] Task {taskId} already being processed, skipping");
+            return;
+        }
+    
+        _processingTasks.Add(taskId);
+    
+        try
+        {
+            if (!_allTasks.ContainsKey(taskId)) return;
+
+            var task = _allTasks[taskId];
+            Debug.Log($"[TaskManager] Task completed: {task.title} (ID: {taskId})");
+
+            // Handle task-specific completion logic (animations, etc.)
+            HandleTaskCompletion(task);
+
+            // Notify external systems (like MasterGameManager)
+            GameEvents.OnTaskCompleted?.Invoke(taskId);
+            Debug.Log($"[TaskManager] Notified external systems of task completion: {taskId}");
+
+            // Check if all tasks are completed
+            if (ActiveTaskCount == 0)
+            {
+                Debug.Log("[TaskManager] All tasks completed!");
+                OnAllTasksCompleted?.Invoke();
+            }
+        }
+        finally
+        {
+            _processingTasks.Remove(taskId);
         }
     }
+
     
     /// <summary>
     /// Handle completion logic for specific task types
