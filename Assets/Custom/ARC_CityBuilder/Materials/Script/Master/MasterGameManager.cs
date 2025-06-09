@@ -251,21 +251,84 @@ public class MasterGameManager : DefaultGameManager
     }
     
     /// <summary>
-    /// Handle emergency tasks phase
+    /// Handle emergency tasks phase - wait for player to end turn
     /// </summary>
     private IEnumerator HandleEmergencyTasks()
     {
         _emergencyTasksActive = true;
         _activeEmergencyTasks.Clear();
-        
+    
         // Generate food delivery tasks
         GenerateFoodDeliveryTasks();
-        
-        // Wait for all emergency tasks to be completed
-        yield return new WaitUntil(() => _activeEmergencyTasks.Count == 0);
-        
+    
+        Debug.Log($"[MasterGameManager] Starting emergency tasks phase with {_activeEmergencyTasks.Count} tasks");
+    
+        // NEW: Wait for player to click End Turn instead of auto-advancing
+        bool playerEndedTurn = false;
+        System.Action endTurnAction = () => { playerEndedTurn = true; };
+        OnEndTurnRequested += endTurnAction;
+    
+        // Pause the game and wait for player input
+        IsPaused = true;
+    
+        // Wait until player clicks End Turn
+        yield return new WaitUntil(() => playerEndedTurn);
+    
+        // Clean up event listener
+        OnEndTurnRequested -= endTurnAction;
+    
+        // Now trigger animations and delivery for completed tasks
+        yield return StartCoroutine(ProcessCompletedTasks());
+    
         _emergencyTasksActive = false;
+        Debug.Log("[MasterGameManager] Emergency tasks phase completed by player");
         OnAllTasksCompleted?.Invoke();
+    }
+    
+    /// <summary>
+    /// Process completed tasks with animations when player ends turn
+    /// </summary>
+    private IEnumerator ProcessCompletedTasks()
+    {
+        Debug.Log("[MasterGameManager] Processing completed tasks with animations");
+    
+        // Get all completed tasks from TaskManager
+        var completedTasks = GetCompletedEmergencyTasks();
+    
+        foreach (var taskId in completedTasks)
+        {
+            if (taskId.StartsWith("food_delivery_"))
+            {
+                string shelterId = taskId.Substring("food_delivery_".Length);
+            
+                // Play animation and deliver food
+                yield return StartCoroutine(DeliverFoodWithAnimation(shelterId, 10));
+            }
+        }
+    
+        Debug.Log("[MasterGameManager] All completed task animations finished");
+    }
+
+    /// <summary>
+    /// Get list of completed emergency tasks
+    /// </summary>
+    private List<string> GetCompletedEmergencyTasks()
+    {
+        List<string> completedTasks = new List<string>();
+    
+        if (taskManager != null)
+        {
+            var activeTasks = taskManager.GetActiveTasks();
+            foreach (var task in activeTasks)
+            {
+                if (task.status == TaskStatus.Complete)
+                {
+                    completedTasks.Add(task.taskId);
+                }
+            }
+        }
+    
+        return completedTasks;
     }
     
     /// <summary>
@@ -420,25 +483,11 @@ public class MasterGameManager : DefaultGameManager
     private void OnEmergencyTaskCompleted(string taskId)
     {
         Debug.Log($"[MasterGameManager] OnEmergencyTaskCompleted called for: {taskId}");
-        Debug.Log($"[MasterGameManager] Active tasks before removal: {_activeEmergencyTasks.Count}");
     
         if (_activeEmergencyTasks.Contains(taskId))
         {
             _activeEmergencyTasks.Remove(taskId);
             Debug.Log($"[MasterGameManager] Task {taskId} removed. Remaining: {_activeEmergencyTasks.Count}");
-        
-            // // Handle specific task completion logic
-            // if (taskId.StartsWith("food_delivery_"))
-            // {
-            //     string shelterId = taskId.Substring("food_delivery_".Length);
-            //     StartCoroutine(DeliverFoodWithAnimation(shelterId, 10));
-            // }
-            // Instead, just deliver the food directly without animation for now:
-            if (taskId.StartsWith("food_delivery_"))
-            {
-                string shelterId = taskId.Substring("food_delivery_".Length);
-                DeliverFoodToShelter(shelterId, 10);
-            }
         }
         else
         {
@@ -734,7 +783,7 @@ public class MasterGameManager : DefaultGameManager
     public void EndPlayerTurn()
     {
         Debug.Log("[MasterGameManager] End Turn requested");
-        
+    
         if (CurrentPhase == GlobalEnums.GamePhase.PlayerTurn)
         {
             IsPaused = false;
@@ -747,6 +796,13 @@ public class MasterGameManager : DefaultGameManager
         else if (CurrentPhase == GlobalEnums.GamePhase.WorkerAssignment)
         {
             CompleteWorkerAssignmentPhase();
+        }
+        else if (CurrentPhase == GlobalEnums.GamePhase.EmergencyTasks)
+        {
+            // Player wants to end the emergency tasks phase
+            Debug.Log("[MasterGameManager] Player ending emergency tasks phase");
+            IsPaused = false;
+            OnEndTurnRequested?.Invoke();
         }
     }
     
