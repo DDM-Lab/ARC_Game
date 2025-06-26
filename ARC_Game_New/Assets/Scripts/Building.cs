@@ -8,13 +8,20 @@ public enum BuildingType
     CaseworkSite
 }
 
+public enum BuildingStatus
+{
+    UnderConstruction,
+    NeedWorker,
+    InUse,
+    Disabled
+}
+
 public class Building : MonoBehaviour
 {
     [Header("Building Information")]
     [SerializeField] private BuildingType buildingType;
     [SerializeField] private int originalSiteId;
-    [SerializeField] private bool isOperational = false; // Start as non-operational during construction
-    [SerializeField] private bool isUnderConstruction = true;
+    [SerializeField] private BuildingStatus currentStatus = BuildingStatus.UnderConstruction;
     
     [Header("Building Stats")]
     public int capacity = 10;
@@ -24,9 +31,11 @@ public class Building : MonoBehaviour
     public SpriteRenderer buildingRenderer;
     public GameObject constructionProgressBar;
     
-    [Header("Construction Settings")]
+    [Header("Status Colors")]
     public Color constructionColor = Color.yellow;
-    public Color operationalColor = Color.green;
+    public Color needWorkerColor = Color.white;
+    public Color inUseColor = Color.green;
+    public Color disabledColor = Color.grey;
     
     private float constructionProgress = 0f;
     private Coroutine constructionCoroutine;
@@ -44,8 +53,7 @@ public class Building : MonoBehaviour
     {
         buildingType = type;
         originalSiteId = siteId;
-        isUnderConstruction = true;
-        isOperational = false;
+        currentStatus = BuildingStatus.UnderConstruction;
         
         // Set building-specific properties
         SetBuildingTypeProperties();
@@ -67,7 +75,7 @@ public class Building : MonoBehaviour
             StopCoroutine(constructionCoroutine);
         }
         
-        isUnderConstruction = true;
+        currentStatus = BuildingStatus.UnderConstruction;
         constructionProgress = 0f;
         
         // Show progress bar
@@ -123,8 +131,7 @@ public class Building : MonoBehaviour
     
     void CompleteConstruction()
     {
-        isUnderConstruction = false;
-        isOperational = true;
+        currentStatus = BuildingStatus.NeedWorker;
         constructionProgress = 1f;
         
         // Hide progress bar
@@ -132,8 +139,64 @@ public class Building : MonoBehaviour
             constructionProgressBar.SetActive(false);
         
         UpdateBuildingVisual();
+        NotifyStatsUpdate();
         
-        Debug.Log($"{buildingType} construction completed at site {originalSiteId}");
+        Debug.Log($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment");
+    }
+    
+    public void AssignWorker()
+    {
+        if (currentStatus == BuildingStatus.NeedWorker)
+        {
+            currentStatus = BuildingStatus.InUse;
+            UpdateBuildingVisual();
+            NotifyStatsUpdate();
+            Debug.Log($"{buildingType} at site {originalSiteId} is now in use");
+        }
+        else
+        {
+            Debug.LogWarning($"Cannot assign worker to {buildingType} - current status: {currentStatus}");
+        }
+    }
+    
+    public void DisableBuilding()
+    {
+        if (currentStatus == BuildingStatus.InUse)
+        {
+            currentStatus = BuildingStatus.Disabled;
+            UpdateBuildingVisual();
+            NotifyStatsUpdate();
+            Debug.Log($"{buildingType} at site {originalSiteId} has been disabled");
+        }
+        else
+        {
+            Debug.LogWarning($"Cannot disable {buildingType} - current status: {currentStatus}");
+        }
+    }
+    
+    public void RepairBuilding()
+    {
+        if (currentStatus == BuildingStatus.Disabled)
+        {
+            currentStatus = BuildingStatus.InUse;
+            UpdateBuildingVisual();
+            NotifyStatsUpdate();
+            Debug.Log($"{buildingType} at site {originalSiteId} has been repaired and is back in use");
+        }
+        else
+        {
+            Debug.LogWarning($"Cannot repair {buildingType} - current status: {currentStatus}");
+        }
+    }
+    
+    void NotifyStatsUpdate()
+    {
+        // Find and notify BuildingStatsUI to update
+        BuildingStatsUI statsUI = FindObjectOfType<BuildingStatsUI>();
+        if (statsUI != null)
+        {
+            statsUI.ForceUpdateStats();
+        }
     }
     
     void SetBuildingTypeProperties()
@@ -142,15 +205,12 @@ public class Building : MonoBehaviour
         {
             case BuildingType.Kitchen:
                 capacity = 20; // Can serve 20 people
-                operationalColor = Color.red;
                 break;
             case BuildingType.Shelter:
                 capacity = 15; // Can house 15 people
-                operationalColor = Color.blue;
                 break;
             case BuildingType.CaseworkSite:
                 capacity = 8; // Can handle 8 cases simultaneously
-                operationalColor = Color.green;
                 break;
         }
     }
@@ -159,43 +219,55 @@ public class Building : MonoBehaviour
     {
         if (buildingRenderer == null) return;
         
-        if (isUnderConstruction)
+        switch (currentStatus)
         {
-            // Lerp between construction color and final color based on progress
-            buildingRenderer.color = Color.Lerp(constructionColor, operationalColor, constructionProgress);
-        }
-        else if (isOperational)
-        {
-            buildingRenderer.color = operationalColor;
-        }
-        else
-        {
-            // Building exists but not operational (shouldn't happen normally)
-            Color disabledColor = operationalColor;
-            disabledColor.a = 0.5f;
-            buildingRenderer.color = disabledColor;
+            case BuildingStatus.UnderConstruction:
+                // Lerp between construction color and need worker color based on progress
+                buildingRenderer.color = Color.Lerp(constructionColor, needWorkerColor, constructionProgress);
+                break;
+            case BuildingStatus.NeedWorker:
+                buildingRenderer.color = needWorkerColor;
+                break;
+            case BuildingStatus.InUse:
+                buildingRenderer.color = inUseColor;
+                break;
+            case BuildingStatus.Disabled:
+                buildingRenderer.color = disabledColor;
+                break;
         }
     }
     
     void OnMouseDown()
     {
-        // Handle building interaction
-        if (isOperational)
+        // Handle building interaction based on current status
+        switch (currentStatus)
         {
-            Debug.Log($"Clicked on operational {buildingType} (Site {originalSiteId}) - Capacity: {capacity}");
-            PerformBuildingFunction();
-        }
-        else if (isUnderConstruction)
-        {
-            Debug.Log($"{buildingType} is still under construction ({constructionProgress:P0} complete)");
+            case BuildingStatus.UnderConstruction:
+                Debug.Log($"{buildingType} is still under construction ({constructionProgress:P0} complete)");
+                break;
+            case BuildingStatus.NeedWorker:
+                Debug.Log($"Assigning worker to {buildingType}");
+                AssignWorker();
+                break;
+            case BuildingStatus.InUse:
+                Debug.Log($"Disabling {buildingType} (simulating event)");
+                DisableBuilding();
+                break;
+            case BuildingStatus.Disabled:
+                Debug.Log($"Repairing {buildingType}");
+                RepairBuilding();
+                break;
         }
     }
     
     // Getters
     public BuildingType GetBuildingType() => buildingType;
     public int GetOriginalSiteId() => originalSiteId;
-    public bool IsOperational() => isOperational;
-    public bool IsUnderConstruction() => isUnderConstruction;
+    public BuildingStatus GetCurrentStatus() => currentStatus;
+    public bool IsOperational() => currentStatus == BuildingStatus.InUse;
+    public bool IsUnderConstruction() => currentStatus == BuildingStatus.UnderConstruction;
+    public bool NeedsWorker() => currentStatus == BuildingStatus.NeedWorker;
+    public bool IsDisabled() => currentStatus == BuildingStatus.Disabled;
     public float GetConstructionProgress() => constructionProgress;
     public int GetCapacity() => capacity;
     public float GetEfficiency() => operationalEfficiency;
@@ -203,7 +275,7 @@ public class Building : MonoBehaviour
     // Building functionality methods (to be expanded later)
     public virtual void PerformBuildingFunction()
     {
-        if (!isOperational) return;
+        if (currentStatus != BuildingStatus.InUse) return;
         
         switch (buildingType)
         {
@@ -237,18 +309,4 @@ public class Building : MonoBehaviour
         // Casework processing logic will be implemented later
     }
     
-    // Debug visualization
-    void OnDrawGizmosSelected()
-    {
-        Gizmos.color = isOperational ? Color.cyan : Color.yellow;
-        Gizmos.DrawWireCube(transform.position, Vector3.one * 0.7f);
-        
-        if (Application.isPlaying)
-        {
-            Vector3 labelPos = transform.position + Vector3.up * 1.2f;
-            string status = isUnderConstruction ? $"Building ({constructionProgress:P0})" : 
-                           isOperational ? "Operational" : "Inactive";
-            UnityEditor.Handles.Label(labelPos, $"{buildingType}\nCapacity: {capacity}\n{status}");
-        }
-    }
 }

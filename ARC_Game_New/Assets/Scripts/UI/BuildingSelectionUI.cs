@@ -10,8 +10,18 @@ public class BuildingSelectionUI : MonoBehaviour
     public Button caseworkButton;
     public Button cancelButton;
     
+    [Header("Confirmation Panel")]
+    public GameObject confirmationPanel;
+    public TMPro.TextMeshProUGUI buildingNameText;
+    public TMPro.TextMeshProUGUI buildingDescriptionText;
+    public Button buildButton;
+    public Button backButton;
+    
     [Header("Building System")]
     public BuildingSystem buildingSystem;
+    
+    [Header("Stats UI")]
+    public BuildingStatsUI buildingStatsUI;
     
     [Header("UI Positioning")]
     public Canvas uiCanvas;
@@ -20,26 +30,34 @@ public class BuildingSelectionUI : MonoBehaviour
     private Camera mainCamera;
     private Vector3 currentSitePosition;
     private float lastActivationTime;
+    private BuildingType selectedBuildingType;
     
     void Start()
     {
         mainCamera = Camera.main;
         
-        // Setup button listeners
+        // Setup selection button listeners
         if (kitchenButton != null)
-            kitchenButton.onClick.AddListener(() => OnBuildingSelected(BuildingType.Kitchen));
+            kitchenButton.onClick.AddListener(() => OnBuildingTypeSelected(BuildingType.Kitchen));
         
         if (shelterButton != null)
-            shelterButton.onClick.AddListener(() => OnBuildingSelected(BuildingType.Shelter));
+            shelterButton.onClick.AddListener(() => OnBuildingTypeSelected(BuildingType.Shelter));
         
         if (caseworkButton != null)
-            caseworkButton.onClick.AddListener(() => OnBuildingSelected(BuildingType.CaseworkSite));
+            caseworkButton.onClick.AddListener(() => OnBuildingTypeSelected(BuildingType.CaseworkSite));
         
         if (cancelButton != null)
             cancelButton.onClick.AddListener(OnCancelSelected);
         
-        // Hide panel initially
-        HideSelectionUI();
+        // Setup confirmation button listeners
+        if (buildButton != null)
+            buildButton.onClick.AddListener(OnConfirmBuild);
+            
+        if (backButton != null)
+            backButton.onClick.AddListener(OnBackToSelection);
+        
+        // Hide panels initially
+        HideAllPanels();
         
         Debug.Log("BuildingSelectionUI initialized");
     }
@@ -47,26 +65,33 @@ public class BuildingSelectionUI : MonoBehaviour
     public void ShowSelectionUI(Vector3 worldPosition)
     {
         currentSitePosition = worldPosition;
-        lastActivationTime = Time.time; // Record activation time
+        lastActivationTime = Time.time;
         
+        // Show selection panel, hide confirmation panel
         if (selectionPanel != null)
-        {
             selectionPanel.SetActive(true);
-            Debug.Log("Building selection UI panel activated");
-        }
-        else
-        {
-            Debug.LogError("Selection panel is null!");
-        }
+            
+        if (confirmationPanel != null)
+            confirmationPanel.SetActive(false);
+        
+        // Show stats panel
+        if (buildingStatsUI != null)
+            buildingStatsUI.ShowStatsPanel();
+        
+        Debug.Log("Building selection UI panel activated");
     }
     
-    public void HideSelectionUI()
+    public void HideAllPanels()
     {
         if (selectionPanel != null)
-        {
             selectionPanel.SetActive(false);
-            Debug.Log("Building selection UI panel deactivated");
-        }
+            
+        if (confirmationPanel != null)
+            confirmationPanel.SetActive(false);
+        
+        // Hide stats panel
+        if (buildingStatsUI != null)
+            buildingStatsUI.HideStatsPanel();
     }
     
     void PositionUIPanel(Vector3 worldPosition)
@@ -119,19 +144,101 @@ public class BuildingSelectionUI : MonoBehaviour
         panelRect.localPosition = localPos;
     }
     
-    void OnBuildingSelected(BuildingType buildingType)
+    void OnBuildingTypeSelected(BuildingType buildingType)
     {
-        Debug.Log($"Player selected building type: {buildingType}");
-        
-        // Notify building system
-        if (buildingSystem != null)
+        selectedBuildingType = buildingType;
+        // if confirmation panel is already active, update info only
+        if (confirmationPanel != null && confirmationPanel.activeInHierarchy)
         {
-            buildingSystem.OnBuildingTypeSelected(buildingType);
+            UpdateBuildingInfo(buildingType);
+        }else
+        {
+            ShowConfirmationPanel(buildingType);
+        }
+    }
+    
+    void ShowConfirmationPanel(BuildingType buildingType)
+    {
+        // Hide selection panel, show confirmation panel
+        //if (selectionPanel != null)
+        //    selectionPanel.SetActive(false);
+            
+        if (confirmationPanel != null)
+            confirmationPanel.SetActive(true);
+        
+        // Update building info
+        UpdateBuildingInfo(buildingType);
+        
+        Debug.Log($"Showing confirmation panel for: {buildingType}");
+    }
+    
+    void UpdateBuildingInfo(BuildingType buildingType)
+    {
+        string buildingName = "";
+        string buildingDescription = "";
+        
+        switch (buildingType)
+        {
+            case BuildingType.Kitchen:
+                buildingName = "Kitchen";
+                buildingDescription = "Provides food for survivors.\nCapacity: 20 people\nFunction: Food production and distribution";
+                break;
+            case BuildingType.Shelter:
+                buildingName = "Shelter";
+                buildingDescription = "Provides housing for survivors.\nCapacity: 15 people\nFunction: Safe accommodation and rest";
+                break;
+            case BuildingType.CaseworkSite:
+                buildingName = "Casework Site";
+                buildingDescription = "Handles administrative tasks.\nCapacity: 8 cases\nFunction: Case management and support services";
+                break;
         }
         
-        // Hide UI
-        HideSelectionUI();
+        if (buildingNameText != null)
+            buildingNameText.text = buildingName;
+            
+        if (buildingDescriptionText != null)
+            buildingDescriptionText.text = buildingDescription;
     }
+    
+    void OnConfirmBuild()
+    {
+        Debug.Log($"Player confirmed building: {selectedBuildingType}");
+        
+        // Notify building system to actually build
+        if (buildingSystem != null)
+        {
+            buildingSystem.OnBuildingTypeSelected(selectedBuildingType);
+        }
+        
+        // Force update stats after building is created
+        if (buildingStatsUI != null)
+        {
+            // Wait a frame then update stats to ensure building is created
+            StartCoroutine(UpdateStatsAfterDelay());
+        }
+        
+        // Hide all panels
+        HideAllPanels();
+    }
+    
+    System.Collections.IEnumerator UpdateStatsAfterDelay()
+    {
+        yield return new WaitForEndOfFrame();
+        if (buildingStatsUI != null)
+        {
+            buildingStatsUI.ForceUpdateStats();
+        }
+    }
+
+    void OnBackToSelection()
+    {
+        if (confirmationPanel != null)
+        {
+            confirmationPanel.SetActive(false);
+        }
+        // Go back to selection panel
+            //ShowSelectionUI(currentSitePosition);
+        }
     
     void OnCancelSelected()
     {
@@ -143,14 +250,17 @@ public class BuildingSelectionUI : MonoBehaviour
             buildingSystem.CancelBuildingSelection();
         }
         
-        // Hide UI
-        HideSelectionUI();
+        // Hide all panels
+        HideAllPanels();
     }
     
     // Handle clicking outside the panel to cancel
     void Update()
     {
-        if (selectionPanel != null && selectionPanel.activeInHierarchy)
+        bool anyPanelActive = (selectionPanel != null && selectionPanel.activeInHierarchy) || 
+                             (confirmationPanel != null && confirmationPanel.activeInHierarchy);
+        
+        if (anyPanelActive)
         {
             if (Input.GetMouseButtonDown(0))
             {
@@ -158,11 +268,25 @@ public class BuildingSelectionUI : MonoBehaviour
                 if (Time.time - lastActivationTime < 0.1f)
                     return;
                     
-                // Check if click is outside the panel
+                // Check if click is outside any active panel
                 Vector2 mousePosition = Input.mousePosition;
-                RectTransform panelRect = selectionPanel.GetComponent<RectTransform>();
+                bool clickedOutside = true;
                 
-                if (!RectTransformUtility.RectangleContainsScreenPoint(panelRect, mousePosition, uiCanvas.worldCamera))
+                if (selectionPanel != null && selectionPanel.activeInHierarchy)
+                {
+                    RectTransform selectionRect = selectionPanel.GetComponent<RectTransform>();
+                    if (RectTransformUtility.RectangleContainsScreenPoint(selectionRect, mousePosition, uiCanvas.worldCamera))
+                        clickedOutside = false;
+                }
+                
+                if (confirmationPanel != null && confirmationPanel.activeInHierarchy)
+                {
+                    RectTransform confirmationRect = confirmationPanel.GetComponent<RectTransform>();
+                    if (RectTransformUtility.RectangleContainsScreenPoint(confirmationRect, mousePosition, uiCanvas.worldCamera))
+                        clickedOutside = false;
+                }
+                
+                if (clickedOutside)
                 {
                     OnCancelSelected();
                 }

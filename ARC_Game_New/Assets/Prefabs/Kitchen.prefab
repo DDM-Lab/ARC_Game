@@ -263,14 +263,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   buildingType: 0
   originalSiteId: 0
-  isOperational: 0
-  isUnderConstruction: 1
+  currentStatus: 0
   capacity: 10
   operationalEfficiency: 1
   buildingRenderer: {fileID: 4763019351772881222}
   constructionProgressBar: {fileID: 1677385142500821285}
-  constructionColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
-  operationalColor: {r: 0, g: 1, b: 0, a: 1}
+  constructionColor: {r: 0.8037735, g: 0.8037735, b: 0.8037735, a: 0.53333336}
+  needWorkerColor: {r: 1, g: 0.9166349, b: 0.4509434, a: 1}
+  inUseColor: {r: 1, g: 1, b: 1, a: 1}
+  disabledColor: {r: 0.335849, g: 0.335849, b: 0.335849, a: 0.60784316}
 --- !u!1 &5476352552116117338
 GameObject:
   m_ObjectHideFlags: 0
