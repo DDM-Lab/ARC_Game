@@ -22,96 +22,114 @@ public class Building : MonoBehaviour
     [SerializeField] private BuildingType buildingType;
     [SerializeField] private int originalSiteId;
     [SerializeField] private BuildingStatus currentStatus = BuildingStatus.UnderConstruction;
-    
+
     [Header("Building Stats")]
     public int capacity = 10;
     public float operationalEfficiency = 1.0f;
-    
+
+    [Header("Worker Requirements")]
+    public int requiredWorkforce = 4; // Each building needs 4 workforce to operate
+
     [Header("Visual Components")]
     public SpriteRenderer buildingRenderer;
     public GameObject constructionProgressBar;
-    
+    public GameObject workerButton; // Button to open worker assignment UI
+
     [Header("Status Colors")]
     public Color constructionColor = Color.yellow;
     public Color needWorkerColor = Color.white;
     public Color inUseColor = Color.green;
     public Color disabledColor = Color.grey;
-    
+
+    [Header("System References")]
+    public WorkerSystem workerSystem;
+
     private float constructionProgress = 0f;
     private Coroutine constructionCoroutine;
-    
+
     void Start()
     {
         if (buildingRenderer == null)
             buildingRenderer = GetComponent<SpriteRenderer>();
-        
-        // Don't hide progress bar in Start() - let Initialize() handle it
-        // Progress bar visibility will be controlled by construction state
+
+        // Find WorkerSystem if not assigned
+        if (workerSystem == null)
+            workerSystem = FindObjectOfType<WorkerSystem>();
+
+        // Hide worker button initially (will be shown when construction completes)
+        if (workerButton != null)
+            workerButton.SetActive(false);
     }
-    
+
     public void Initialize(BuildingType type, int siteId)
     {
         buildingType = type;
         originalSiteId = siteId;
         currentStatus = BuildingStatus.UnderConstruction;
-        
+
         // Set building-specific properties
         SetBuildingTypeProperties();
-        
+
         // Ensure progress bar is visible for construction
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(true);
-        
+
+        // Hide worker button during construction
+        if (workerButton != null)
+            workerButton.SetActive(false);
+
         // Start construction immediately
         StartConstruction();
-        
+
         Debug.Log($"Building initialized: {buildingType} at original site {siteId}");
     }
-    
+
     public void StartConstruction(float constructionTime = 5f)
     {
         if (constructionCoroutine != null)
         {
             StopCoroutine(constructionCoroutine);
         }
-        
+
         currentStatus = BuildingStatus.UnderConstruction;
         constructionProgress = 0f;
-        
-        // Show progress bar
+
+        // Show progress bar, hide worker button
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(true);
-        
+        if (workerButton != null)
+            workerButton.SetActive(false);
+
         // Start construction
         constructionCoroutine = StartCoroutine(ConstructionCoroutine(constructionTime));
-        
+
         UpdateBuildingVisual();
     }
-    
+
     IEnumerator ConstructionCoroutine(float constructionTime)
     {
         float elapsedTime = 0f;
-        
+
         while (elapsedTime < constructionTime)
         {
             elapsedTime += Time.deltaTime;
             constructionProgress = elapsedTime / constructionTime;
-            
+
             // Update progress bar
             UpdateConstructionProgress(constructionProgress);
             UpdateBuildingVisual();
-            
+
             yield return null;
         }
-        
+
         // Construction completed
         CompleteConstruction();
     }
-    
+
     void UpdateConstructionProgress(float progress)
     {
         constructionProgress = Mathf.Clamp01(progress);
-        
+
         // Update progress bar visual if exists
         if (constructionProgressBar != null)
         {
@@ -120,7 +138,7 @@ public class Building : MonoBehaviour
             {
                 // Scale from left edge instead of center
                 progressFill.localScale = new Vector3(constructionProgress, 1f, 1f);
-                
+
                 // Adjust position to make it grow from left edge
                 float offset = (1f - constructionProgress) * 0.5f; // Half of the missing width
                 Vector3 originalPos = progressFill.localPosition;
@@ -128,67 +146,118 @@ public class Building : MonoBehaviour
             }
         }
     }
-    
+
     void CompleteConstruction()
     {
         currentStatus = BuildingStatus.NeedWorker;
         constructionProgress = 1f;
-        
-        // Hide progress bar
+
+        // Hide progress bar, show worker button
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(false);
-        
+        if (workerButton != null)
+            workerButton.SetActive(true);
+
         UpdateBuildingVisual();
         NotifyStatsUpdate();
-        
+
         Debug.Log($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment");
     }
-    
+
     public void AssignWorker()
     {
         if (currentStatus == BuildingStatus.NeedWorker)
         {
-            currentStatus = BuildingStatus.InUse;
-            UpdateBuildingVisual();
-            NotifyStatsUpdate();
-            Debug.Log($"{buildingType} at site {originalSiteId} is now in use");
+            // Check if we have enough workforce assigned through WorkerSystem
+            if (workerSystem != null)
+            {
+                var assignedWorkers = workerSystem.GetWorkersByBuildingId(originalSiteId);
+                int totalWorkforce = 0;
+                foreach (var worker in assignedWorkers)
+                {
+                    totalWorkforce += worker.WorkforceValue;
+                }
+
+                if (totalWorkforce >= requiredWorkforce)
+                {
+                    currentStatus = BuildingStatus.InUse;
+
+                    // Hide worker button when in use
+                    if (workerButton != null)
+                        workerButton.SetActive(false);
+
+                    UpdateBuildingVisual();
+                    NotifyStatsUpdate();
+                    Debug.Log($"{buildingType} at site {originalSiteId} is now in use with {totalWorkforce} workforce");
+                }
+                else
+                {
+                    Debug.LogWarning($"Cannot activate {buildingType} - insufficient workforce. Required: {requiredWorkforce}, Available: {totalWorkforce}");
+                }
+            }
+            else
+            {
+                // Fallback for when WorkerSystem is not available
+                currentStatus = BuildingStatus.InUse;
+                if (workerButton != null)
+                    workerButton.SetActive(false);
+                UpdateBuildingVisual();
+                NotifyStatsUpdate();
+                Debug.LogWarning($"{buildingType} activated without WorkerSystem validation");
+            }
         }
         else
         {
             Debug.LogWarning($"Cannot assign worker to {buildingType} - current status: {currentStatus}");
         }
     }
-    
+
     public void DisableBuilding()
     {
         if (currentStatus == BuildingStatus.InUse)
         {
             currentStatus = BuildingStatus.Disabled;
+
+            // Show worker button when disabled (for potential reassignment)
+            if (workerButton != null)
+                workerButton.SetActive(true);
+
+            // Release workers from this building
+            if (workerSystem != null)
+            {
+                workerSystem.ReleaseWorkersFromBuilding(originalSiteId);
+            }
+
             UpdateBuildingVisual();
             NotifyStatsUpdate();
-            Debug.Log($"{buildingType} at site {originalSiteId} has been disabled");
+            Debug.Log($"{buildingType} at site {originalSiteId} has been disabled and workers released");
         }
         else
         {
             Debug.LogWarning($"Cannot disable {buildingType} - current status: {currentStatus}");
         }
     }
-    
+
     public void RepairBuilding()
     {
         if (currentStatus == BuildingStatus.Disabled)
         {
-            currentStatus = BuildingStatus.InUse;
+            currentStatus = BuildingStatus.NeedWorker;
+
+            // Keep worker button visible for reassignment
+            if (workerButton != null)
+                workerButton.SetActive(true);
+
             UpdateBuildingVisual();
             NotifyStatsUpdate();
-            Debug.Log($"{buildingType} at site {originalSiteId} has been repaired and is back in use");
+            Debug.Log($"{buildingType} at site {originalSiteId} has been repaired and needs worker reassignment");
         }
         else
         {
             Debug.LogWarning($"Cannot repair {buildingType} - current status: {currentStatus}");
         }
     }
-    
+
     void NotifyStatsUpdate()
     {
         // Find and notify BuildingStatsUI to update
@@ -198,7 +267,7 @@ public class Building : MonoBehaviour
             statsUI.ForceUpdateStats();
         }
     }
-    
+
     void SetBuildingTypeProperties()
     {
         switch (buildingType)
@@ -214,11 +283,11 @@ public class Building : MonoBehaviour
                 break;
         }
     }
-    
+
     void UpdateBuildingVisual()
     {
         if (buildingRenderer == null) return;
-        
+
         switch (currentStatus)
         {
             case BuildingStatus.UnderConstruction:
@@ -237,6 +306,7 @@ public class Building : MonoBehaviour
         }
     }
     
+    /*
     void OnMouseDown()
     {
         // Handle building interaction based on current status
@@ -246,8 +316,8 @@ public class Building : MonoBehaviour
                 Debug.Log($"{buildingType} is still under construction ({constructionProgress:P0} complete)");
                 break;
             case BuildingStatus.NeedWorker:
-                Debug.Log($"Assigning worker to {buildingType}");
-                AssignWorker();
+                Debug.Log($"Opening worker assignment UI for {buildingType}");
+                OpenWorkerAssignmentUI();
                 break;
             case BuildingStatus.InUse:
                 Debug.Log($"Disabling {buildingType} (simulating event)");
@@ -259,7 +329,19 @@ public class Building : MonoBehaviour
                 break;
         }
     }
-    
+
+    public void OpenWorkerAssignmentUI()
+    {
+        if (workerSystem != null)
+        {
+            workerSystem.ShowWorkerAssignmentUI(this);
+        }
+        else
+        {
+            Debug.LogWarning("WorkerSystem not found - cannot open worker assignment UI");
+        }
+    }*/
+
     // Getters
     public BuildingType GetBuildingType() => buildingType;
     public int GetOriginalSiteId() => originalSiteId;
@@ -271,12 +353,34 @@ public class Building : MonoBehaviour
     public float GetConstructionProgress() => constructionProgress;
     public int GetCapacity() => capacity;
     public float GetEfficiency() => operationalEfficiency;
-    
+    public int GetRequiredWorkforce() => requiredWorkforce;
+
+    // Worker-related getters
+    public int GetAssignedWorkforce()
+    {
+        if (workerSystem != null)
+        {
+            var assignedWorkers = workerSystem.GetWorkersByBuildingId(originalSiteId);
+            int totalWorkforce = 0;
+            foreach (var worker in assignedWorkers)
+            {
+                totalWorkforce += worker.WorkforceValue;
+            }
+            return totalWorkforce;
+        }
+        return 0;
+    }
+
+    public bool HasSufficientWorkforce()
+    {
+        return GetAssignedWorkforce() >= requiredWorkforce;
+    }
+
     // Building functionality methods (to be expanded later)
     public virtual void PerformBuildingFunction()
     {
         if (currentStatus != BuildingStatus.InUse) return;
-        
+
         switch (buildingType)
         {
             case BuildingType.Kitchen:
@@ -290,23 +394,23 @@ public class Building : MonoBehaviour
                 break;
         }
     }
-    
+
     protected virtual void ProduceFood()
     {
-        Debug.Log($"Kitchen producing food for {capacity} people");
+        Debug.Log($"Kitchen producing food for {capacity} people with {GetAssignedWorkforce()} workforce");
         // Food production logic will be implemented later
     }
-    
+
     protected virtual void ProvideShelter()
     {
-        Debug.Log($"Shelter housing {capacity} people");
+        Debug.Log($"Shelter housing {capacity} people with {GetAssignedWorkforce()} workforce");
         // Shelter management logic will be implemented later
     }
-    
+
     protected virtual void HandleCasework()
     {
-        Debug.Log($"Casework site handling {capacity} cases");
+        Debug.Log($"Casework site handling {capacity} cases with {GetAssignedWorkforce()} workforce");
         // Casework processing logic will be implemented later
     }
-    
+
 }
