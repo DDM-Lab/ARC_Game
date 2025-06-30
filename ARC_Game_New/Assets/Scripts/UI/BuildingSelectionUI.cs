@@ -22,6 +22,9 @@ public class BuildingSelectionUI : MonoBehaviour
     
     [Header("Stats UI")]
     public BuildingStatsUI buildingStatsUI;
+
+    [Header("System References")]
+    private bool isUIOpen = false;
     
     [Header("UI Positioning")]
     public Canvas uiCanvas;
@@ -66,6 +69,7 @@ public class BuildingSelectionUI : MonoBehaviour
     {
         currentSitePosition = worldPosition;
         lastActivationTime = Time.time;
+        isUIOpen = true;
         
         // Show selection panel, hide confirmation panel
         if (selectionPanel != null)
@@ -83,6 +87,8 @@ public class BuildingSelectionUI : MonoBehaviour
     
     public void HideAllPanels()
     {
+        isUIOpen = false;
+        
         if (selectionPanel != null)
             selectionPanel.SetActive(false);
             
@@ -252,6 +258,11 @@ public class BuildingSelectionUI : MonoBehaviour
         
         // Hide all panels
         HideAllPanels();
+    }
+
+    public bool IsUIOpen()
+    {
+        return isUIOpen;
     }
     
     // Handle clicking outside the panel to cancel

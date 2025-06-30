@@ -65,7 +65,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
     private bool isUIOpen = false;
     private List<GameObject> currentBuildingItems = new List<GameObject>();
     
-    void Start()
+    void Awake()
     {
         // Find system references if not assigned
         if (workerSystem == null)
@@ -76,15 +76,27 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         // Setup button listeners
         SetupButtonListeners();
         
-        // Initialize UI state
-        HideUI();
-        SetActiveTab(BuildingType.Shelter);
-        
         // Subscribe to worker system events
         if (workerSystem != null)
             workerSystem.OnWorkerStatsChanged += OnWorkerStatsChanged;
+    }
+
+    void Start()
+    {
+        // Only ensure proper initial state if the panel is already active
+        // Don't force hide if something else activated it
+        if (mainPanel != null && mainPanel.activeInHierarchy && !isUIOpen)
+        {
+            // Panel is active but our state says it shouldn't be - fix the state
+            isUIOpen = true;
+            UpdateWorkerStatsDisplay();
+            UpdateBuildingList();
+        }
         
-        Debug.Log("GlobalWorkerManagementUI initialized");
+        // Initialize UI state
+        SetActiveTab(BuildingType.Shelter);
+        
+        Debug.Log("GlobalWorkerManagementUI Start() called, isUIOpen: " + isUIOpen);
     }
     
     void SetupButtonListeners()

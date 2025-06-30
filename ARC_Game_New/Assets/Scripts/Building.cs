@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using System.Collections;
 
 public enum BuildingType
@@ -43,6 +44,8 @@ public class Building : MonoBehaviour
 
     [Header("System References")]
     public WorkerSystem workerSystem;
+    [Header("UI Components")]
+    public SpriteWorkforceIndicator mapWorkforceIndicator;
 
     private float constructionProgress = 0f;
     private Coroutine constructionCoroutine;
@@ -212,6 +215,17 @@ public class Building : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Force update the workforce indicator display (called from external systems)
+    /// </summary>
+    public void UpdateWorkforceDisplay()
+    {
+        if (mapWorkforceIndicator != null && workerSystem != null)
+        {
+            mapWorkforceIndicator.UpdateFromBuilding(this, workerSystem);
+        }
+    }
+
     public void DisableBuilding()
     {
         if (currentStatus == BuildingStatus.InUse)
@@ -266,6 +280,12 @@ public class Building : MonoBehaviour
         {
             statsUI.ForceUpdateStats();
         }
+
+        // update the workforce indicator on the map
+        if (mapWorkforceIndicator != null && workerSystem != null)
+        {
+            mapWorkforceIndicator.UpdateFromBuilding(this, workerSystem);
+        }
     }
 
     void SetBuildingTypeProperties()
@@ -309,6 +329,11 @@ public class Building : MonoBehaviour
     /*
     void OnMouseDown()
     {
+        // Check if pointer is over UI - if so, ignore map input
+        if (EventSystem.current.IsPointerOverGameObject())
+        {
+            return;
+        }
         // Handle building interaction based on current status
         switch (currentStatus)
         {

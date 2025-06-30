@@ -18,7 +18,7 @@ public class GlobalWorkerButton : MonoBehaviour
     
     private Image buttonImage;
     
-    void Start()
+    void Awake()
     {
         // Get components
         if (workerButton == null)
@@ -27,18 +27,21 @@ public class GlobalWorkerButton : MonoBehaviour
         if (buttonImage == null)
             buttonImage = GetComponent<Image>();
         
+        // Setup button listener early
+        if (workerButton != null)
+        {
+            workerButton.onClick.AddListener(OnWorkerButtonClicked);
+        }
+    }
+
+    void Start()
+    {
         // Find system references if not assigned
         if (globalWorkerUI == null)
             globalWorkerUI = FindObjectOfType<GlobalWorkerManagementUI>();
         
         if (workerSystem == null)
             workerSystem = FindObjectOfType<WorkerSystem>();
-        
-        // Setup button listener
-        if (workerButton != null)
-        {
-            workerButton.onClick.AddListener(OnWorkerButtonClicked);
-        }
         
         // Subscribe to worker system events
         if (workerSystem != null)

@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using System;
 
 public class AbandonedSite : MonoBehaviour
@@ -46,11 +47,45 @@ public class AbandonedSite : MonoBehaviour
     
     void OnMouseDown()
     {
-        // Handle site selection - show building selection UI
+        // Only block if pointer is over interactive UI elements, not just any UI
+        if (IsPointerOverInteractiveUI())
+        {
+            return;
+        }
+        
+        // Handle site selection
         if (isAvailable)
         {
             OnSiteSelected?.Invoke(this);
         }
+    }
+
+    bool IsPointerOverInteractiveUI()
+    {
+        // Check if over blocking UIs (not building selection UI)
+        GlobalWorkerManagementUI globalUI = FindObjectOfType<GlobalWorkerManagementUI>();
+        if (globalUI != null && globalUI.IsUIOpen())
+        {
+            return true;
+        }
+        
+        IndividualBuildingManageUI manageUI = FindObjectOfType<IndividualBuildingManageUI>();
+        if (manageUI != null && manageUI.IsUIOpen())
+        {
+            return true;
+        }
+
+        BuildingSelectionUI selectionUI = FindObjectOfType<BuildingSelectionUI>();
+        if (selectionUI != null && selectionUI.IsUIOpen())
+        {
+            // Only block if pointer is actually over the UI panels
+            if (EventSystem.current.IsPointerOverGameObject())
+            {
+                return true;
+            }
+        }
+        
+        return false;
     }
     
     public void Initialize(int id)

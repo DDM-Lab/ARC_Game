@@ -40,8 +40,14 @@ public class IndividualBuildingManageUI : MonoBehaviour
     public Color errorColor = Color.red;
     public Color warningColor = Color.yellow;
 
+    [Header("Interaction")]
+    public bool enableClick = true;
+    public Building parentBuilding; // Reference to the building this indicator belongs to
+
+
     [Header("System References")]
     public WorkerSystem workerSystem;
+    public GlobalWorkerManagementUI globalWorkerUI;
 
     private Building currentBuilding;
     private bool isUIOpen = false;
@@ -61,8 +67,9 @@ public class IndividualBuildingManageUI : MonoBehaviour
         // Setup button listeners
         SetupButtonListeners();
 
-        // Hide panel initially
-        HideManageUI();
+        // Don't call HideManageUI() here - let the initial state be handled by the Inspector
+        // The panel should be set to inactive in the Inspector by default
+        // Otherwise, Start() will be called when ShowManageUI() is called, and therefore hide the UI
     }
 
     void SetupButtonListeners()
@@ -179,9 +186,13 @@ public class IndividualBuildingManageUI : MonoBehaviour
         UpdateTextWithColor(currentWorkforceText, $"Current: {currentWorkforce}/{requiredWorkforce}", workforceColor);
 
         // Individual worker counts
-        List<Worker> currentWorkers = workerSystem.GetWorkersByBuildingId(currentBuilding.GetOriginalSiteId());
+        /*List<Worker> currentWorkers = workerSystem.GetWorkersByBuildingId(currentBuilding.GetOriginalSiteId());
         int trainedCount = currentWorkers.Count(w => w.Type == WorkerType.Trained);
-        int untrainedCount = currentWorkers.Count(w => w.Type == WorkerType.Untrained);
+        int untrainedCount = currentWorkers.Count(w => w.Type == WorkerType.Untrained);*/
+
+        WorkerStatistics stats = workerSystem.GetWorkerStatistics();
+        int trainedCount = stats.trainedFree;
+        int untrainedCount = stats.untrainedFree;
 
         UpdateTextSafe(trainedWorkersText, $"{trainedCount}");
         UpdateTextSafe(untrainedWorkersText, $"{untrainedCount}");
@@ -306,6 +317,7 @@ public class IndividualBuildingManageUI : MonoBehaviour
             }
 
             // Refresh displays
+            currentBuilding.UpdateWorkforceDisplay();
             UpdateCurrentWorkforceDisplay();
             UpdateButtonStates();
         }

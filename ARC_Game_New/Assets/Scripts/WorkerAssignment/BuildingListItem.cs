@@ -23,7 +23,10 @@ public class BuildingListItem : MonoBehaviour
     public Color sufficientWorkforceColor = Color.green;
     public Color insufficientWorkforceColor = Color.red;
     public Color noWorkforceColor = Color.gray;
-    
+
+    [Header("Workforce Indicator")]
+    public WorkforceIndicator workforceIndicator;
+
     private Building assignedBuilding;
     private GlobalWorkerManagementUI parentUI;
     private Image backgroundImage;
@@ -105,22 +108,28 @@ public class BuildingListItem : MonoBehaviour
         int index = buildingsOfSameType.FindIndex(b => b == assignedBuilding);
         return index + 1; // 1-based numbering
     }
-    
+
     void UpdateDisplay()
     {
         if (assignedBuilding == null) return;
-        
+
         // Update worker description
         UpdateWorkerDescription();
-        
+
         // Update workforce number
         UpdateWorkforceNumber();
-        
+
         // Update background color based on building status
         UpdateBackgroundColor();
-        
+
         // Update manage button state
         UpdateManageButtonState();
+        
+        // Update workforce indicator
+        if (workforceIndicator != null && workerSystem != null)
+        {
+            workforceIndicator.UpdateFromBuilding(assignedBuilding, workerSystem);
+        }
     }
     
     void UpdateWorkerDescription()
