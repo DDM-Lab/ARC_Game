@@ -6,7 +6,9 @@ public enum BuildingType
 {
     Kitchen,
     Shelter,
-    CaseworkSite
+    CaseworkSite,
+    Community,
+    Motel
 }
 
 public enum BuildingStatus

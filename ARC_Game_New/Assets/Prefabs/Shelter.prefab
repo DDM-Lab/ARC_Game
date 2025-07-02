@@ -96,6 +96,7 @@ GameObject:
   - component: {fileID: 1066164610131185795}
   - component: {fileID: 7890226621980547004}
   - component: {fileID: 2907281250948645668}
+  - component: {fileID: 1693157771992400789}
   m_Layer: 0
   m_Name: Shelter
   m_TagString: Untagged
@@ -244,6 +245,30 @@ MonoBehaviour:
   disabledColor: {r: 0.335849, g: 0.335849, b: 0.335849, a: 0.60784316}
   workerSystem: {fileID: 0}
   mapWorkforceIndicator: {fileID: 1497958618288529501}
+--- !u!114 &1693157771992400789
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 842235218019612437}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c248833a0fc07c438e16f3bcb4d7169, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  resourceCapacities:
+  - resourceType: 0
+    maxCapacity: 10
+  - resourceType: 1
+    maxCapacity: 10
+  initialResources: []
+  resourceProduction: []
+  resourceConsumption:
+  - resourceType: 1
+    amountPerInterval: 1
+    consumptionInterval: 10
+  showDebugInfo: 1
 --- !u!1 &1250931121665781494
 GameObject:
   m_ObjectHideFlags: 0

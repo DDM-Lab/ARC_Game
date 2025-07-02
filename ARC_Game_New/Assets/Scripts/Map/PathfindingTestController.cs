@@ -56,6 +56,11 @@ public class PathfindingTestController : MonoBehaviour
             ShowRoadStatistics();
         }
         
+        // Mouse click pathfinding (for manual testing)
+        if (Input.GetMouseButtonDown(1)) // Right click
+        {
+            HandleMousePathfinding();
+        }
     }
     
     /// <summary>
@@ -124,6 +129,42 @@ public class PathfindingTestController : MonoBehaviour
         pathfindingSystem.FindPathBetweenBuildings(startBuilding, endBuilding);
     }
     
+    /// <summary>
+    /// Handle mouse click pathfinding
+    /// </summary>
+    void HandleMousePathfinding()
+    {
+        Vector3 mouseWorldPos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        mouseWorldPos.z = 0; // Ensure Z is 0 for 2D
+        
+        // Find nearest building to mouse position
+        Building nearestBuilding = FindNearestBuilding(mouseWorldPos);
+        
+        if (nearestBuilding != null)
+        {
+            RoadConnection connection = nearestBuilding.GetComponent<RoadConnection>();
+            if (connection != null && connection.IsConnectedToRoad)
+            {
+                // If we have a start building selected, find path to this building
+                if (startBuilding != null && startBuilding != nearestBuilding)
+                {
+                    Debug.Log($"Finding path from {startBuilding.name} to {nearestBuilding.name}");
+                    pathfindingSystem.FindPathBetweenBuildings(startBuilding, nearestBuilding);
+                    startBuilding = null; // Reset for next selection
+                }
+                else
+                {
+                    // Set as start building
+                    startBuilding = nearestBuilding;
+                    Debug.Log($"Start building set to: {startBuilding.name}. Right-click another building to find path.");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"Building {nearestBuilding.name} is not connected to road network");
+            }
+        }
+    }
     
     /// <summary>
     /// Find the nearest building to a world position
@@ -169,12 +210,16 @@ public class PathfindingTestController : MonoBehaviour
             roadManager.PrintRoadStatistics();
         }
         
-        // Show building connection status
+        // Show building connection status for all types
         Building[] buildings = FindObjectsOfType<Building>();
+        PrebuiltBuilding[] prebuiltBuildings = FindObjectsOfType<PrebuiltBuilding>();
+        
         int connectedBuildings = 0;
-        int totalBuildings = buildings.Length;
+        int totalBuildings = buildings.Length + prebuiltBuildings.Length;
         
         Debug.Log("=== BUILDING CONNECTION STATUS ===");
+        
+        // Check regular buildings
         foreach (Building building in buildings)
         {
             RoadConnection connection = building.GetComponent<RoadConnection>();
@@ -196,6 +241,28 @@ public class PathfindingTestController : MonoBehaviour
             }
         }
         
+        // Check prebuilt buildings
+        foreach (PrebuiltBuilding prebuilt in prebuiltBuildings)
+        {
+            RoadConnection connection = prebuilt.GetComponent<RoadConnection>();
+            if (connection != null)
+            {
+                if (connection.IsConnectedToRoad)
+                {
+                    connectedBuildings++;
+                    Debug.Log($"{prebuilt.name}: CONNECTED to road at {connection.NearestRoadPosition}");
+                }
+                else
+                {
+                    Debug.Log($"{prebuilt.name}: NOT CONNECTED to road network");
+                }
+            }
+            else
+            {
+                Debug.Log($"{prebuilt.name}: No RoadConnection component");
+            }
+        }
+        
         Debug.Log($"Total Buildings: {totalBuildings}, Connected: {connectedBuildings}");
     }
     
@@ -206,10 +273,20 @@ public class PathfindingTestController : MonoBehaviour
     public void TestAllBuildingConnections()
     {
         Building[] buildings = FindObjectsOfType<Building>();
+        PrebuiltBuilding[] prebuiltBuildings = FindObjectsOfType<PrebuiltBuilding>();
         
         foreach (Building building in buildings)
         {
             RoadConnection connection = building.GetComponent<RoadConnection>();
+            if (connection != null)
+            {
+                connection.ForceCheckConnection();
+            }
+        }
+        
+        foreach (PrebuiltBuilding prebuilt in prebuiltBuildings)
+        {
+            RoadConnection connection = prebuilt.GetComponent<RoadConnection>();
             if (connection != null)
             {
                 connection.ForceCheckConnection();
