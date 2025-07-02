@@ -31,6 +31,9 @@ public class Vehicle : MonoBehaviour
     public bool enableDirectionRotation = true;
     public float rotationSpeed = 10f; // turn speed
     public float defaultAngle = 180f; // default angle when idle
+
+    [Header("Info Display")]
+    public InfoDisplay infoDisplay;
     
     [Header("Debug")]
     public bool showDebugInfo = true;
@@ -58,10 +61,81 @@ public class Vehicle : MonoBehaviour
     public event Action<Vehicle> OnDeliveryCompleted;
     public event Action<Vehicle, VehicleStatus> OnStatusChanged;
     public event Action<Vehicle> OnCargoChanged;
-    
+
     void Start()
     {
         InitializeVehicle();
+        if (infoDisplay == null)
+            infoDisplay = GetComponent<InfoDisplay>();
+    
+        UpdateInfoDisplay();
+        
+    }
+
+    public void UpdateInfoDisplay()
+    {
+        if (infoDisplay == null) return;
+        
+        string displayText = "";
+        Color displayColor = Color.white;
+        
+        // Show cargo information
+        int totalCargo = GetTotalCargo();
+        if (totalCargo > 0)
+        {
+            ResourceType cargoType = GetPrimaryCargoType();
+            string cargoIcon = cargoType == ResourceType.Population ? "👥" : "📦";
+            displayText += $"{cargoIcon} {totalCargo}/{maxCargoCapacity}\n";
+        }
+        else
+        {
+            displayText += $"🚚 {totalCargo}/{maxCargoCapacity}\n";
+        }
+        
+        // Show vehicle status
+        switch (currentStatus)
+        {
+            case VehicleStatus.Idle:
+                displayText += "Idle";
+                displayColor = Color.white;
+                break;
+            case VehicleStatus.Loading:
+                displayText += "Loading";
+                displayColor = Color.yellow;
+                break;
+            case VehicleStatus.InTransit:
+                displayText += "In Transit";
+                displayColor = Color.green;
+                break;
+            case VehicleStatus.Unloading:
+                displayText += "Unloading";
+                displayColor = Color.cyan;
+                break;
+        }
+        
+        infoDisplay.UpdateDisplay(displayText, displayColor);
+    }
+
+    ResourceType GetPrimaryCargoType()
+    {
+        foreach (var kvp in currentCargo)
+        {
+            if (kvp.Value > 0)
+                return kvp.Key;
+        }
+        return ResourceType.Population;
+    }
+
+    // Call UpdateInfoDisplay() whenever the status changes
+    void SetStatus(VehicleStatus newStatus)
+    {
+        if (currentStatus != newStatus)
+        {
+            currentStatus = newStatus;
+            UpdateVisualState();
+            UpdateInfoDisplay();
+            OnStatusChanged?.Invoke(this, currentStatus);
+        }
     }
     
     void InitializeVehicle()
@@ -346,19 +420,6 @@ public class Vehicle : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} completed delivery and returned to idle");
-    }
-    
-    /// <summary>
-    /// Set vehicle status and notify listeners
-    /// </summary>
-    void SetStatus(VehicleStatus newStatus)
-    {
-        if (currentStatus != newStatus)
-        {
-            currentStatus = newStatus;
-            UpdateVisualState();
-            OnStatusChanged?.Invoke(this, currentStatus);
-        }
     }
     
     /// <summary>

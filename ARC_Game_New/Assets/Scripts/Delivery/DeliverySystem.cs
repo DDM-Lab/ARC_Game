@@ -447,16 +447,24 @@ public class DeliverySystem : MonoBehaviour
     }
     
     /// <summary>
+    /// Get all active delivery tasks (for UI display)
+    /// </summary>
+    public List<DeliveryTask> GetActiveTasks()
+    {
+        return new List<DeliveryTask>(activeTasks);
+    }
+    
+    /// <summary>
     /// Print delivery system statistics
     /// </summary>
     public void PrintDeliveryStatistics()
     {
         DeliveryStatistics stats = GetDeliveryStatistics();
-        
+
         Debug.Log("=== DELIVERY SYSTEM STATISTICS ===");
         Debug.Log($"Vehicles: {stats.availableVehicles}/{stats.totalVehicles} available");
         Debug.Log($"Tasks: {stats.pendingTasks} pending, {stats.activeTasks} active, {stats.completedTasks} completed");
-        
+
         if (showDebugInfo)
         {
             Debug.Log("Active Tasks:");

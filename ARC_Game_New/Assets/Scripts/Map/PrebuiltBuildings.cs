@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 
 public enum PrebuiltBuildingType
 {
@@ -19,13 +20,96 @@ public class PrebuiltBuilding : MonoBehaviour
     [Header("System References")]
     public BuildingResourceStorage resourceStorage;
     public RoadConnection roadConnection;
+    [Header("Info Display")]
+    public InfoDisplay infoDisplay;
     
     // Building functionality
     private bool isInitialized = false;
-    
+
     void Start()
     {
         InitializePrebuiltBuilding();
+        
+        if (infoDisplay == null)
+            infoDisplay = GetComponent<InfoDisplay>();
+        
+        // make sure the display is initialized after all components are ready
+        StartCoroutine(InitializeInfoDisplayAfterFrame());
+    }
+
+    IEnumerator InitializeInfoDisplayAfterFrame()
+    {
+        // Wait for a frame to ensure all components are initialized
+        yield return new WaitForEndOfFrame();
+        UpdateInfoDisplay();
+    }
+
+    public void UpdateInfoDisplay()
+    {
+        if (infoDisplay == null) return;
+        
+        string displayText = "";
+        Color displayColor = Color.white;
+        
+        int currentPop = GetCurrentPopulation();
+        int maxPop = GetPopulationCapacity();
+        displayText += $"👥 {currentPop}/{maxPop}\n";
+        
+        string taskStatus = GetTransportTaskStatus();
+        if (!string.IsNullOrEmpty(taskStatus))
+        {
+            displayText += taskStatus;
+            displayColor = Color.yellow;
+        }
+        else
+        {
+            displayText += GetBuildingStatusText();
+            displayColor = GetStatusColor();
+        }
+        
+        infoDisplay.UpdateDisplay(displayText, displayColor);
+    }
+
+    string GetTransportTaskStatus()
+    {
+        // check if there are any active delivery tasks involving this building
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem != null)
+        {
+            var activeTasks = deliverySystem.GetActiveTasks();
+            
+            foreach (var task in activeTasks)
+            {
+                if (task.sourceBuilding == this)
+                    return "📤 Sending";
+                if (task.destinationBuilding == this)
+                    return "📥 Receiving";
+            }
+        }
+        return "";
+    }
+
+    string GetBuildingStatusText()
+    {
+        switch (prebuiltType)
+        {
+            case PrebuiltBuildingType.Community:
+                return GetCurrentPopulation() > 0 ? "Has People" : "Vacant";
+            case PrebuiltBuildingType.Motel:
+                return GetCurrentPopulation() > 0 ? "Has People" : "Vacant";
+            default:
+                return "Normal";
+        }
+    }
+
+    Color GetStatusColor()
+    {
+        int currentPop = GetCurrentPopulation();
+        int maxPop = GetPopulationCapacity();
+        
+        if (currentPop == 0) return Color.gray;
+        if (currentPop >= maxPop) return Color.red;
+        return Color.green;
     }
     
     void InitializePrebuiltBuilding()
@@ -111,11 +195,12 @@ public class PrebuiltBuilding : MonoBehaviour
             roadConnection.requiresRoadConnection = true;
         }
     }
-    
+
     void OnResourceChanged(ResourceType type, int newAmount, int capacity)
     {
         // Update visual indicators when resources change
         UpdateVisualState();
+        UpdateInfoDisplay();
     
     }
     
@@ -151,7 +236,7 @@ public class PrebuiltBuilding : MonoBehaviour
         }
         else if (population >= capacity)
         {
-            buildingRenderer.color = Color.red; // Full community
+            buildingRenderer.color = Color.yellow; // Full community
         }
         else
         {

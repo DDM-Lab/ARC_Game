@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 2532640550238867969}
   - component: {fileID: 7589427587040128936}
   - component: {fileID: 54471681103590263}
+  - component: {fileID: 5994618856707954557}
   m_Layer: 0
   m_Name: Vehicle
   m_TagString: Untagged
@@ -105,8 +106,31 @@ MonoBehaviour:
   allowedCargoTypes: 0000000001000000
   vehicleRenderer: {fileID: 7589427587040128936}
   cargoIndicator: {fileID: 7159830015408954970}
+  enableDirectionRotation: 1
+  rotationSpeed: 10
+  defaultAngle: 180
+  infoDisplay: {fileID: 5994618856707954557}
   showDebugInfo: 1
   showPathGizmos: 1
+--- !u!114 &5994618856707954557
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3280325347640237369}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 557eb08cf7d84574e8ee5a7ad11f8d90, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  worldCanvas: {fileID: 0}
+  infoText: {fileID: 0}
+  offset: {x: 0, y: 1, z: 0}
+  showWhenEmpty: 1
+  normalColor: {r: 1, g: 1, b: 1, a: 1}
+  warningColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  errorColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!1 &7159830015408954970
 GameObject:
   m_ObjectHideFlags: 0
