@@ -66,7 +66,7 @@ public class DeliverySystem : MonoBehaviour
     public float taskAssignmentInterval = 1f; // Check for new assignments every second
     
     [Header("Auto-Task Generation")]
-    public bool enableAutoTasks = true;
+    public bool enableAutoTasks = false;
     public float autoTaskInterval = 10f; // Generate tasks every 10 seconds
     public bool prioritizeFoodDelivery = true;
     
@@ -86,7 +86,7 @@ public class DeliverySystem : MonoBehaviour
     public event Action<DeliveryTask> OnTaskCreated;
     public event Action<DeliveryTask, Vehicle> OnTaskAssigned;
     public event Action<DeliveryTask> OnTaskCompleted;
-    
+
     void Start()
     {
         // Find vehicles if not assigned
@@ -95,14 +95,16 @@ public class DeliverySystem : MonoBehaviour
             Vehicle[] foundVehicles = FindObjectsOfType<Vehicle>();
             availableVehicles.AddRange(foundVehicles);
         }
-        
+
         // Subscribe to vehicle events
         foreach (Vehicle vehicle in availableVehicles)
         {
             vehicle.OnDeliveryCompleted += OnVehicleDeliveryCompleted;
         }
-        
+
         Debug.Log($"Delivery System initialized with {availableVehicles.Count} vehicles");
+        
+        pendingTasks.Clear();
     }
     
     void Update()
@@ -115,11 +117,11 @@ public class DeliverySystem : MonoBehaviour
         }
         
         // Generate automatic tasks
-        if (enableAutoTasks && Time.time - lastAutoTaskGeneration > autoTaskInterval)
+        /*if (enableAutoTasks && Time.time - lastAutoTaskGeneration > autoTaskInterval)
         {
             GenerateAutoTasks();
             lastAutoTaskGeneration = Time.time;
-        }
+        }*/
     }
     
     /// <summary>

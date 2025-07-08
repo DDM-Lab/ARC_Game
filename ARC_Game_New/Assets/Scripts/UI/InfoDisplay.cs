@@ -1,39 +1,25 @@
 using UnityEngine;
-using System.Collections;
+
 public class InfoDisplay : MonoBehaviour
 {
     [Header("Display Settings")]
     public bool showInfo = true;
     public Vector3 worldOffset = Vector3.up * 1f;
-    public int fontSize = 18;
+    public int fontSize = 12;
     public bool showBackground = true;
     public Color backgroundColor = new Color(1f, 1f, 1f, 0.8f); // Semi-transparent white
+    
+    [Header("Rendering Order")]
+    public int guiDepth = 1; // GUI depth for layering (higher numbers render on top)
     
     private string displayText = "";
     private Color displayColor = Color.black; // Changed to black for better contrast on white background
     private GUIStyle textStyle;
     private GUIStyle backgroundStyle;
+    
     void Start()
     {
         SetupGUIStyles();
-        // Delayed initialization to ensure other components are ready
-        Invoke(nameof(DelayedInitialization), 0.1f);
-    }
-
-    void DelayedInitialization()
-    {
-        // Trigger an update to get the correct initial state
-        var prebuiltBuilding = GetComponent<PrebuiltBuilding>();
-        if (prebuiltBuilding != null)
-        {
-            prebuiltBuilding.UpdateInfoDisplay();
-        }
-        
-        var vehicle = GetComponent<Vehicle>();
-        if (vehicle != null)
-        {
-            vehicle.UpdateInfoDisplay();
-        }
     }
     
     /// <summary>
@@ -90,12 +76,27 @@ public class InfoDisplay : MonoBehaviour
     }
     
     /// <summary>
+    /// Set the GUI rendering depth/layer
+    /// </summary>
+    /// <param name="depth">GUI depth (higher numbers render on top)</param>
+    public void SetGUIDepth(int depth)
+    {
+        guiDepth = depth;
+    }
+    
+    /// <summary>
     /// OnGUI is called for rendering and handling GUI events
     /// This method converts world position to screen coordinates and draws the text
+    /// GUI.depth controls the rendering order - lower numbers render on top
     /// </summary>
     void OnGUI()
     {
         if (!showInfo || string.IsNullOrEmpty(displayText)) return;
+        
+        // Set GUI depth for layering control
+        // Note: Lower GUI.depth values render ON TOP of higher values
+        // So if you want this to render behind UI, use positive values
+        GUI.depth = guiDepth;
         
         // Convert world position to screen coordinates
         Vector3 worldPosition = transform.position + worldOffset;
@@ -136,6 +137,9 @@ public class InfoDisplay : MonoBehaviour
             // Draw text on top of background
             GUI.Label(textRect, displayText, textStyle);
         }
+        
+        // Reset GUI depth to default after rendering
+        GUI.depth = 0;
     }
     
     /// <summary>

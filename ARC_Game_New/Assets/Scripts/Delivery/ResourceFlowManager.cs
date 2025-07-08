@@ -9,7 +9,7 @@ public class ResourceFlowManager : MonoBehaviour
     public ResourceManager resourceManager;
     
     [Header("Flow Control")]
-    public bool enableAutomaticFlow = true;
+    public bool enableAutomaticFlow = false;
     public float flowCheckInterval = 5f; // Check resource flows every 5 seconds
     
     [Header("Flow Priorities")]
@@ -242,6 +242,8 @@ public class ResourceFlowManager : MonoBehaviour
     /// </summary>
     void ManagePopulationTransportation()
     {
+        if (!enableAutomaticFlow) return;
+        
         PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>().Where(pb => pb.GetPrebuiltType() == PrebuiltBuildingType.Community).ToArray();
         
         foreach (PrebuiltBuilding community in communities)

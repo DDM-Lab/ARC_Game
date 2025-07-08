@@ -247,7 +247,7 @@ public class RoadTilemapManager : MonoBehaviour
             // If we found a road, return it
             if (nearestDistance < float.MaxValue)
             {
-                Debug.Log($"Found road at distance {nearestDistance} from {worldPosition}");
+                //Debug.Log($"Found road at distance {nearestDistance} from {worldPosition}");
                 break;
             }
         }
