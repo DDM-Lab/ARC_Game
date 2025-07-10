@@ -28,7 +28,7 @@ public class GlobalClock : MonoBehaviour
     public int currentTimeSegment = 0; // 0-3 for 9:00, 12:00, 15:00, 18:00
     
     [Header("UI References")]
-    public Button executeButton;
+    public Button executeButton;    
     public TMP_Dropdown speedDropdown;
     public Image[] timeSegmentImages = new Image[4]; // 4 time segments
     
@@ -39,6 +39,7 @@ public class GlobalClock : MonoBehaviour
     
     [Header("Day Display")]
     public TextMeshProUGUI dayText;
+    public TextMeshProUGUI roundText;
     
     [Header("Debug")]
     public bool showDebugInfo = true;
@@ -119,9 +120,15 @@ public class GlobalClock : MonoBehaviour
         // Update day text
         if (dayText != null)
         {
-            dayText.text = $"Day {currentDay}";
+            dayText.text = $"Day   {currentDay}";
         }
-        
+
+        // Update round text
+        if (roundText != null)
+        {
+            roundText.text = $"Round   {currentTimeSegment + 1}";
+        }
+
         // Update time segment sprites
         UpdateTimeSegmentSprites();
     }

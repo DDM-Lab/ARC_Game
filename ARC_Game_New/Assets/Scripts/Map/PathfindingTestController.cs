@@ -294,7 +294,7 @@ public class PathfindingTestController : MonoBehaviour
         }
     }
     
-    void OnGUI()
+    /*void OnGUI()
     {
         // Simple on-screen instructions
         GUI.Label(new Rect(10, 10, 300, 20), $"Press {testPathKey} - Test Random Path");
@@ -306,5 +306,5 @@ public class PathfindingTestController : MonoBehaviour
         {
             GUI.Label(new Rect(10, 90, 300, 20), $"Start: {startBuilding.name} (right-click end building)");
         }
-    }
+    }*/
 }

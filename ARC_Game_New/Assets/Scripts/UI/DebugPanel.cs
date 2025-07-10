@@ -8,8 +8,8 @@ public class DebugPanel : MonoBehaviour
 {
     [Header("Debug Panel Settings")]
     [SerializeField] private GameObject debugPanelUI;
-    [SerializeField] private Toggle debugPanelToggle;
     [SerializeField] private bool startVisible = false;
+    [SerializeField] private KeyCode toggleKey = KeyCode.F1;
 
     [Header("Game Log Debug Section")]
     [SerializeField] private TMP_InputField messageInputField;
@@ -60,29 +60,20 @@ public class DebugPanel : MonoBehaviour
         InitializeDebugPanel();
         SetPanelVisibility(startVisible);
         
-        // Set toggle to match initial state
-        if (debugPanelToggle != null)
-        {
-            debugPanelToggle.isOn = startVisible;
-        }
     }
 
-    private void Update()
+    void Update()
     {
-        // Removed keyboard input - now using toggle only
+        // Toggle debug panel with F1 key
+        if (Input.GetKeyDown(toggleKey))
+        {
+            SetPanelVisibility(!isPanelVisible);
+            Debug.Log("F1 key pressed!");
+        }
     }
 
     private void InitializeDebugPanel()
     {
-        // Setup debug panel toggle
-        if (debugPanelToggle != null)
-        {
-            debugPanelToggle.onValueChanged.AddListener(OnDebugPanelToggleChanged);
-        }
-        else
-        {
-            Debug.LogWarning("DebugPanel: debugPanelToggle not assigned! Please assign a Toggle component.");
-        }
 
         // Initialize color dropdown
         if (colorDropdown != null)
@@ -111,27 +102,11 @@ public class DebugPanel : MonoBehaviour
         if (messageInputField != null)
             messageInputField.text = "Test message";
     }
-
-    public void TogglePanel()
-    {
-        SetPanelVisibility(!isPanelVisible);
-        
-        // Update toggle to match panel state (without triggering the event)
-        if (debugPanelToggle != null)
-        {
-            debugPanelToggle.SetIsOnWithoutNotify(isPanelVisible);
-        }
-    }
-
-    private void OnDebugPanelToggleChanged(bool isOn)
-    {
-        SetPanelVisibility(isOn);
-    }
-
+    
     public void SetPanelVisibility(bool visible)
     {
         isPanelVisible = visible;
-        
+
         if (debugPanelUI != null)
         {
             debugPanelUI.SetActive(visible);
@@ -228,6 +203,11 @@ public class DebugPanel : MonoBehaviour
         {
             GameLogPanel.Instance.ClearLog();
         }
+    }
+
+    public bool IsUIOpen()
+    {
+        return isPanelVisible;
     }
 
     // Simple public methods for external use
