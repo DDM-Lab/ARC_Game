@@ -25,6 +25,9 @@ public class SatisfactionAndBudget : MonoBehaviour
     public int budgetMediumAmount = 2000;
     public int budgetLargeAmount = 5000;
     
+    [Header("Feedback Effects")]
+    public BudgetSatisfactionFeedbackEffects feedbackEffects;
+    
     [Header("UI References")]
     public Slider satisfactionSlider;
     public TextMeshProUGUI budgetText;
@@ -39,7 +42,7 @@ public class SatisfactionAndBudget : MonoBehaviour
     
     // Singleton for easy access
     public static SatisfactionAndBudget Instance { get; private set; }
-
+    
     void Awake()
     {
         // Singleton setup
@@ -58,10 +61,24 @@ public class SatisfactionAndBudget : MonoBehaviour
     void Start()
     {
         InitializeValues();
+        SetupFeedbackEffects();
         UpdateUI();
         
         if (showDebugInfo)
             Debug.Log($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
+    }
+    
+    void SetupFeedbackEffects()
+    {
+        // Find feedback effects if not assigned
+        if (feedbackEffects == null)
+            feedbackEffects = FindObjectOfType<BudgetSatisfactionFeedbackEffects>();
+        
+        // Set UI references for feedback effects
+        if (feedbackEffects != null)
+        {
+            feedbackEffects.SetUIReferences(satisfactionSlider, budgetText);
+        }
     }
     
     void InitializeValues()
@@ -80,13 +97,13 @@ public class SatisfactionAndBudget : MonoBehaviour
     
     void UpdateUI()
     {
-        // Update satisfaction slider
-        if (satisfactionSlider != null)
+        // Don't update slider if feedback effects are handling it
+        if (feedbackEffects == null && satisfactionSlider != null)
         {
             satisfactionSlider.value = currentSatisfaction;
         }
         
-        // Update budget text
+        // Always update budget text
         if (budgetText != null)
         {
             budgetText.text = budgetPrefix + currentBudget.ToString("N0");
@@ -103,7 +120,26 @@ public class SatisfactionAndBudget : MonoBehaviour
         float previousValue = currentSatisfaction;
         currentSatisfaction = Mathf.Clamp(currentSatisfaction + amount, minSatisfaction, maxSatisfaction);
         
-        UpdateUI();
+        // Show feedback effects
+        if (feedbackEffects != null && Mathf.Abs(amount) > 0.01f)
+        {
+            feedbackEffects.ShowSatisfactionChange(previousValue, currentSatisfaction, maxSatisfaction);
+        }
+        
+        // Update UI (but don't update slider directly if using feedback effects)
+        if (feedbackEffects == null)
+        {
+            UpdateUI();
+        }
+        else
+        {
+            // Only update budget text, slider will be animated by feedback effects
+            if (budgetText != null)
+            {
+                budgetText.text = budgetPrefix + currentBudget.ToString("N0");
+            }
+        }
+        
         OnSatisfactionChanged?.Invoke(currentSatisfaction);
         
         if (showDebugInfo)
@@ -191,7 +227,18 @@ public class SatisfactionAndBudget : MonoBehaviour
         int previousValue = currentBudget;
         currentBudget = Mathf.Clamp(currentBudget + amount, minBudget, maxBudget);
         
-        UpdateUI();
+        // Show feedback effects
+        if (feedbackEffects != null && amount != 0)
+        {
+            feedbackEffects.ShowBudgetChange(previousValue, currentBudget);
+        }
+        
+        // Update UI
+        if (budgetText != null)
+        {
+            budgetText.text = budgetPrefix + currentBudget.ToString("N0");
+        }
+        
         OnBudgetChanged?.Invoke(currentBudget);
         
         if (showDebugInfo)
@@ -339,7 +386,28 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         RemoveSatisfactionSmall();
     }
-    
+
+    [ContextMenu("Add Satisfaction Medium")]
+    public void DebugAddSatisfactionMedium()
+    {
+        AddSatisfactionMedium();
+    }
+    [ContextMenu("Remove Satisfaction Medium")]
+    public void DebugRemoveSatisfactionMedium()
+    {
+        RemoveSatisfactionMedium();
+    }
+    [ContextMenu("Add Satisfaction Large")]
+    public void DebugAddSatisfactionLarge()
+    {
+        AddSatisfactionLarge();
+    }
+    [ContextMenu("Remove Satisfaction Large")] 
+    public void DebugRemoveSatisfactionLarge()
+    {
+        RemoveSatisfactionLarge();
+    }
+
     [ContextMenu("Add Budget Small")]
     public void DebugAddBudgetSmall()
     {
@@ -350,6 +418,26 @@ public class SatisfactionAndBudget : MonoBehaviour
     public void DebugRemoveBudgetSmall()
     {
         RemoveBudgetSmall();
+    }
+    [ContextMenu("Add Budget Medium")]
+    public void DebugAddBudgetMedium()
+    {
+        AddBudgetMedium();
+    }
+    [ContextMenu("Remove Budget Medium")]
+    public void DebugRemoveBudgetMedium()
+    {
+        RemoveBudgetMedium();
+    }
+    [ContextMenu("Add Budget Large")]
+    public void DebugAddBudgetLarge()
+    {
+        AddBudgetLarge();
+    }
+    [ContextMenu("Remove Budget Large")]
+    public void DebugRemoveBudgetLarge()
+    {
+        RemoveBudgetLarge();
     }
     
     [ContextMenu("Print Current Values")]
