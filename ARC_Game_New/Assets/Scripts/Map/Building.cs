@@ -1,12 +1,14 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 using System.Collections;
-
+using System.Linq;
 public enum BuildingType
 {
     Kitchen,
     Shelter,
-    CaseworkSite
+    CaseworkSite,
+    Community,
+    Motel
 }
 
 public enum BuildingStatus
@@ -325,7 +327,7 @@ public class Building : MonoBehaviour
                 break;
         }
     }
-    
+
     /*
     void OnMouseDown()
     {
@@ -436,6 +438,149 @@ public class Building : MonoBehaviour
     {
         Debug.Log($"Casework site handling {capacity} cases with {GetAssignedWorkforce()} workforce");
         // Casework processing logic will be implemented later
+    }
+    
+    [Header("Manual Task Debug")]
+    public bool enableManualTasks = true;
+
+    [ContextMenu("Manual: Request Food Delivery")]
+    public void DebugRequestFoodDelivery()
+    {
+        if (!enableManualTasks) return;
+        
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null)
+        {
+            Debug.LogError("DeliverySystem not found!");
+            return;
+        }
+        
+        // Find a kitchen with food
+        Building[] kitchens = FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Kitchen).ToArray();
+        Building sourceKitchen = null;
+        
+        foreach (Building kitchen in kitchens)
+        {
+            BuildingResourceStorage storage = kitchen.GetComponent<BuildingResourceStorage>();
+            if (storage != null && storage.GetResourceAmount(ResourceType.FoodPacks) > 0)
+            {
+                sourceKitchen = kitchen;
+                break;
+            }
+        }
+        
+        if (sourceKitchen != null)
+        {
+            int requestAmount = 5; // Request 5 food packs
+            deliverySystem.CreateDeliveryTask(sourceKitchen, this, ResourceType.FoodPacks, requestAmount, 5);
+            Debug.Log($"{name} requested {requestAmount} food packs from {sourceKitchen.name}");
+        }
+        else
+        {
+            Debug.LogWarning($"{name} cannot request food - no kitchens with food available");
+        }
+    }
+
+    [ContextMenu("Manual: Send Food to Shelter")]
+    public void DebugSendFoodToShelter()
+    {
+        if (!enableManualTasks || GetBuildingType() != BuildingType.Kitchen) return;
+        
+        BuildingResourceStorage storage = GetComponent<BuildingResourceStorage>();
+        if (storage == null || storage.GetResourceAmount(ResourceType.FoodPacks) <= 0)
+        {
+            Debug.LogWarning($"{name} has no food to send");
+            return;
+        }
+        
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null) return;
+        
+        // Find a shelter that needs food
+        Building[] shelters = FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Shelter).ToArray();
+        Building targetShelter = null;
+        
+        foreach (Building shelter in shelters)
+        {
+            BuildingResourceStorage shelterStorage = shelter.GetComponent<BuildingResourceStorage>();
+            if (shelterStorage != null && shelterStorage.GetAvailableSpace(ResourceType.FoodPacks) > 0)
+            {
+                targetShelter = shelter;
+                break;
+            }
+        }
+        
+        if (targetShelter != null)
+        {
+            int sendAmount = Mathf.Min(storage.GetResourceAmount(ResourceType.FoodPacks), 3);
+            deliverySystem.CreateDeliveryTask(this, targetShelter, ResourceType.FoodPacks, sendAmount, 5);
+            Debug.Log($"{name} sending {sendAmount} food packs to {targetShelter.name}");
+        }
+        else
+        {
+            Debug.LogWarning($"{name} cannot send food - no shelters available");
+        }
+    }
+
+    [ContextMenu("Manual: Request Population")]
+    public void DebugRequestPopulation()
+    {
+        if (!enableManualTasks) return;
+        
+        BuildingResourceStorage storage = GetComponent<BuildingResourceStorage>();
+        if (storage == null || storage.GetAvailableSpace(ResourceType.Population) <= 0)
+        {
+            Debug.LogWarning($"{name} has no space for more population");
+            return;
+        }
+        
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null) return;
+        
+        // Find a community with people
+        PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>().Where(pb => pb.GetPrebuiltType() == PrebuiltBuildingType.Community).ToArray();
+        PrebuiltBuilding sourceCommunity = null;
+        
+        foreach (PrebuiltBuilding community in communities)
+        {
+            if (community.GetCurrentPopulation() > 0)
+            {
+                sourceCommunity = community;
+                break;
+            }
+        }
+        
+        if (sourceCommunity != null)
+        {
+            int requestAmount = Mathf.Min(3, storage.GetAvailableSpace(ResourceType.Population), sourceCommunity.GetCurrentPopulation());
+            deliverySystem.CreateDeliveryTask(sourceCommunity, this, ResourceType.Population, requestAmount, 5);
+            Debug.Log($"{name} requested {requestAmount} people from {sourceCommunity.GetBuildingName()}");
+        }
+        else
+        {
+            Debug.LogWarning($"{name} cannot request population - no communities with people available");
+        }
+    }
+
+    [ContextMenu("Manual: Print Building Status")]
+    public void DebugPrintBuildingStatus()
+    {
+        Debug.Log($"=== {name} DEBUG STATUS ===");
+        Debug.Log($"Building Type: {GetBuildingType()}");
+        Debug.Log($"Current Status: {GetCurrentStatus()}");
+        Debug.Log($"Workforce: {GetAssignedWorkforce()}/{GetRequiredWorkforce()}");
+        
+        BuildingResourceStorage storage = GetComponent<BuildingResourceStorage>();
+        if (storage != null)
+        {
+            Debug.Log($"Resources: {storage.GetResourceSummary()}");
+        }
+        
+        RoadConnection roadConn = GetComponent<RoadConnection>();
+        if (roadConn != null)
+        {
+            Debug.Log($"Road Connected: {roadConn.IsConnectedToRoad}");
+        }
     }
 
 }

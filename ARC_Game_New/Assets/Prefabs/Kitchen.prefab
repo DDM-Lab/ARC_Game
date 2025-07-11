@@ -129,6 +129,8 @@ GameObject:
   - component: {fileID: 4763019351772881222}
   - component: {fileID: 448863744255144593}
   - component: {fileID: 8345538019718537329}
+  - component: {fileID: 6498728743623324658}
+  - component: {fileID: 4091106044236679633}
   m_Layer: 0
   m_Name: Kitchen
   m_TagString: Untagged
@@ -277,6 +279,47 @@ MonoBehaviour:
   disabledColor: {r: 0.335849, g: 0.335849, b: 0.335849, a: 0.60784316}
   workerSystem: {fileID: 0}
   mapWorkforceIndicator: {fileID: 9018560120933606691}
+--- !u!114 &6498728743623324658
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3148448816884366733}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c248833a0fc07c438e16f3bcb4d7169, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  resourceCapacities:
+  - resourceType: 1
+    maxCapacity: 20
+  initialResources: []
+  resourceProduction:
+  - resourceType: 1
+    amountPerInterval: 2
+    productionInterval: 5
+    requiredResources: []
+  resourceConsumption: []
+  showDebugInfo: 1
+--- !u!114 &4091106044236679633
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3148448816884366733}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5c3b7c97e4542a54884c592a47e0cd29, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  connectionRadius: 1.5
+  requiresRoadConnection: 1
+  showConnectionStatus: 1
+  connectedColor: {r: 0, g: 1, b: 0, a: 1}
+  disconnectedColor: {r: 1, g: 0, b: 0, a: 1}
+  gizmoSize: 0.5
 --- !u!1 &4981539560606526617
 GameObject:
   m_ObjectHideFlags: 0
