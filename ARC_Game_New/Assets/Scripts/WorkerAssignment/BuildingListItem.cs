@@ -274,6 +274,11 @@ public class BuildingListItem : MonoBehaviour
     
     void OnManageButtonClicked()
     {
+        if (GlobalClock.Instance != null && GlobalClock.Instance.IsSimulationRunning())
+        {
+            Debug.Log("Cannot manage during simulation");
+            return;
+        }
         if (assignedBuilding != null && parentUI != null)
         {
             parentUI.OnManageButtonClicked(assignedBuilding);

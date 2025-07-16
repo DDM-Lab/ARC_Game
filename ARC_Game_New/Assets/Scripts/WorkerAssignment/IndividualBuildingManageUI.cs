@@ -98,6 +98,12 @@ public class IndividualBuildingManageUI : MonoBehaviour
 
     public void ShowManageUI(Building building)
     {
+
+        if (GlobalClock.Instance != null && !GlobalClock.Instance.CanPlayerInteract())
+        {
+            Debug.Log("Cannot open manage UI - simulation is running");
+            return;
+        }
         currentBuilding = building;
         isUIOpen = true;
 
