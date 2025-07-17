@@ -1,0 +1,421 @@
+using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+using System.Collections.Generic;
+using System.Linq;
+
+public class TaskCenterUI : MonoBehaviour
+{
+    [Header("Main Panel")]
+    public GameObject taskCenterPanel;
+    public Button openTaskCenterButton;
+    public Button closeButton;
+    
+    [Header("Filter Buttons")]
+    public Button allTasksButton;
+    public Button emergencyTasksButton;
+    public Button demandTasksButton;
+    public Button advisoryTasksButton;
+    public Button alertTasksButton;
+    
+    [Header("Task List")]
+    public ScrollRect taskScrollView;
+    public Transform taskListContent;
+    public GameObject taskItemPrefab;
+    
+    [Header("Task Detail")]
+    public TaskDetailUI taskDetailUI;
+    
+    [Header("Filter Colors")]
+    public Color activeFilterColor = Color.green;
+    public Color inactiveFilterColor = Color.white;
+    
+    [Header("Debug")]
+    public bool showDebugInfo = true;
+    
+    private TaskType? currentFilter = null;
+    private List<GameObject> currentTaskItems = new List<GameObject>();
+    
+    void Start()
+    {
+        SetupUI();
+        
+        // Subscribe to task system events
+        if (TaskSystem.Instance != null)
+        {
+            TaskSystem.Instance.OnTaskCreated += OnTaskCreated;
+            TaskSystem.Instance.OnTaskCompleted += OnTaskUpdated;
+            TaskSystem.Instance.OnTaskExpired += OnTaskUpdated;
+        }
+        
+        // Hide panel initially
+        if (taskCenterPanel != null)
+            taskCenterPanel.SetActive(false);
+    }
+    
+    void SetupUI()
+    {
+        // Setup main buttons
+        if (openTaskCenterButton != null)
+            openTaskCenterButton.onClick.AddListener(OpenTaskCenter);
+        
+        if (closeButton != null)
+            closeButton.onClick.AddListener(CloseTaskCenter);
+        
+        // Setup filter buttons
+        if (allTasksButton != null)
+            allTasksButton.onClick.AddListener(() => SetFilter(null));
+        
+        if (emergencyTasksButton != null)
+            emergencyTasksButton.onClick.AddListener(() => SetFilter(TaskType.Emergency));
+        
+        if (demandTasksButton != null)
+            demandTasksButton.onClick.AddListener(() => SetFilter(TaskType.Demand));
+        
+        if (advisoryTasksButton != null)
+            advisoryTasksButton.onClick.AddListener(() => SetFilter(TaskType.Advisory));
+        
+        if (alertTasksButton != null)
+            alertTasksButton.onClick.AddListener(() => SetFilter(TaskType.Alert));
+    }
+    
+    public void OpenTaskCenter()
+    {
+        if (taskCenterPanel != null)
+        {
+            taskCenterPanel.SetActive(true);
+            RefreshTaskList();
+            UpdateFilterButtons();
+            
+            if (showDebugInfo)
+                Debug.Log("Task Center opened");
+        }
+    }
+    
+    public void CloseTaskCenter()
+    {
+        if (taskCenterPanel != null)
+        {
+            taskCenterPanel.SetActive(false);
+            
+            if (showDebugInfo)
+                Debug.Log("Task Center closed");
+        }
+    }
+    
+    void SetFilter(TaskType? filter)
+    {
+        currentFilter = filter;
+        RefreshTaskList();
+        UpdateFilterButtons();
+        
+        string filterName = filter?.ToString() ?? "All";
+        if (showDebugInfo)
+            Debug.Log($"Task filter set to: {filterName}");
+    }
+    
+    void UpdateFilterButtons()
+    {
+        // Reset all button colors
+        SetButtonColor(allTasksButton, currentFilter == null ? activeFilterColor : inactiveFilterColor);
+        SetButtonColor(emergencyTasksButton, currentFilter == TaskType.Emergency ? activeFilterColor : inactiveFilterColor);
+        SetButtonColor(demandTasksButton, currentFilter == TaskType.Demand ? activeFilterColor : inactiveFilterColor);
+        SetButtonColor(advisoryTasksButton, currentFilter == TaskType.Advisory ? activeFilterColor : inactiveFilterColor);
+        SetButtonColor(alertTasksButton, currentFilter == TaskType.Alert ? activeFilterColor : inactiveFilterColor);
+    }
+    
+    void SetButtonColor(Button button, Color color)
+    {
+        if (button != null)
+        {
+            Image buttonImage = button.GetComponent<Image>();
+            if (buttonImage != null)
+                buttonImage.color = color;
+        }
+    }
+    
+    void RefreshTaskList()
+    {
+        if (TaskSystem.Instance == null || taskListContent == null)
+            return;
+        
+        // Clear existing items
+        ClearTaskList();
+        
+        // Get filtered tasks
+        List<GameTask> tasksToShow = GetFilteredTasks();
+        
+        // Create task items
+        foreach (GameTask task in tasksToShow)
+        {
+            CreateTaskItem(task);
+        }
+        
+        if (showDebugInfo)
+            Debug.Log($"Refreshed task list: {tasksToShow.Count} tasks shown");
+    }
+    
+    List<GameTask> GetFilteredTasks()
+    {
+        List<GameTask> allTasks = new List<GameTask>();
+        
+        // Get active tasks
+        allTasks.AddRange(TaskSystem.Instance.GetAllActiveTasks());
+        
+        // Get completed tasks that are incomplete
+        allTasks.AddRange(TaskSystem.Instance.GetTasksByStatus(TaskStatus.Incomplete));
+        
+        // Apply filter
+        if (currentFilter.HasValue)
+        {
+            allTasks = allTasks.Where(t => t.taskType == currentFilter.Value).ToList();
+        }
+        
+        // Sort by priority: Emergency > Demand > Alert > Advisory
+        allTasks = allTasks.OrderBy(t => GetTaskPriority(t.taskType)).ThenBy(t => t.timeCreated).ToList();
+        
+        return allTasks;
+    }
+    
+    int GetTaskPriority(TaskType type)
+    {
+        switch (type)
+        {
+            case TaskType.Emergency: return 1;
+            case TaskType.Demand: return 2;
+            case TaskType.Alert: return 3;
+            case TaskType.Advisory: return 4;
+            default: return 5;
+        }
+    }
+    
+    void CreateTaskItem(GameTask task)
+    {
+        if (taskItemPrefab == null)
+        {
+            Debug.LogError("Task item prefab is not assigned!");
+            return;
+        }
+        
+        GameObject taskItem = Instantiate(taskItemPrefab, taskListContent);
+        TaskItemUI taskItemUI = taskItem.GetComponent<TaskItemUI>();
+        
+        if (taskItemUI != null)
+        {
+            taskItemUI.Initialize(task, this);
+        }
+        
+        currentTaskItems.Add(taskItem);
+    }
+    
+    void ClearTaskList()
+    {
+        foreach (GameObject item in currentTaskItems)
+        {
+            if (item != null)
+                Destroy(item);
+        }
+        currentTaskItems.Clear();
+    }
+    
+    public void OnTaskItemClicked(GameTask task)
+    {
+        if (taskDetailUI != null)
+        {
+            taskDetailUI.ShowTaskDetail(task);
+            CloseTaskCenter(); // Close task center when opening detail
+            
+            if (showDebugInfo)
+                Debug.Log($"Opening task detail for: {task.taskTitle}");
+        }
+        else
+        {
+            Debug.LogError("TaskDetailUI reference not set!");
+        }
+    }
+    
+    void OnTaskCreated(GameTask task)
+    {
+        // Refresh the list if the task center is open
+        if (taskCenterPanel != null && taskCenterPanel.activeInHierarchy)
+        {
+            RefreshTaskList();
+        }
+    }
+    
+    void OnTaskUpdated(GameTask task)
+    {
+        // Refresh the list if the task center is open
+        if (taskCenterPanel != null && taskCenterPanel.activeInHierarchy)
+        {
+            RefreshTaskList();
+        }
+    }
+    
+    void OnDestroy()
+    {
+        // Unsubscribe from events
+        if (TaskSystem.Instance != null)
+        {
+            TaskSystem.Instance.OnTaskCreated -= OnTaskCreated;
+            TaskSystem.Instance.OnTaskCompleted -= OnTaskUpdated;
+            TaskSystem.Instance.OnTaskExpired -= OnTaskUpdated;
+        }
+    }
+    
+    // Public method to toggle task center
+    public void ToggleTaskCenter()
+    {
+        if (taskCenterPanel != null)
+        {
+            if (taskCenterPanel.activeInHierarchy)
+                CloseTaskCenter();
+            else
+                OpenTaskCenter();
+        }
+    }
+}
+
+// Task Item UI Component
+public class TaskItemUI : MonoBehaviour
+{
+    [Header("UI Components")]
+    public TextMeshProUGUI taskTitleText;
+    public TextMeshProUGUI taskTypeText;
+    public TextMeshProUGUI statusText;
+    public TextMeshProUGUI facilityText;
+    public Button viewButton;
+    public Image taskTypeIcon;
+    public Image statusIndicator;
+    
+    [Header("Status Colors")]
+    public Color activeColor = Color.green;
+    public Color incompleteColor = Color.red;
+    public Color expiredColor = Color.gray;
+    
+    [Header("Type Colors")]
+    public Color emergencyColor = Color.red;
+    public Color demandColor = Color.magenta;
+    public Color advisoryColor = Color.blue;
+    public Color alertColor = Color.yellow;
+    
+    private GameTask assignedTask;
+    private TaskCenterUI parentUI;
+    
+    public void Initialize(GameTask task, TaskCenterUI parent)
+    {
+        assignedTask = task;
+        parentUI = parent;
+        
+        UpdateDisplay();
+        
+        // Setup view button
+        if (viewButton != null)
+        {
+            viewButton.onClick.RemoveAllListeners();
+            viewButton.onClick.AddListener(OnViewButtonClicked);
+        }
+    }
+    
+    void UpdateDisplay()
+    {
+        if (assignedTask == null) return;
+        
+        // Update text components
+        if (taskTitleText != null)
+            taskTitleText.text = assignedTask.taskTitle;
+        
+        if (taskTypeText != null)
+            taskTypeText.text = assignedTask.taskType.ToString();
+        
+        if (facilityText != null)
+            facilityText.text = assignedTask.affectedFacility;
+        
+        if (statusText != null)
+        {
+            string statusDisplay = assignedTask.status.ToString();
+            if (assignedTask.status == TaskStatus.Active && assignedTask.isExpired)
+                statusDisplay = "Expired";
+            
+            statusText.text = statusDisplay;
+        }
+        
+        // Update colors
+        UpdateStatusColor();
+        UpdateTypeColor();
+        
+        // Update button state
+        if (viewButton != null)
+        {
+            viewButton.interactable = true; // Always allow viewing
+        }
+    }
+    
+    void UpdateStatusColor()
+    {
+        Color statusColor = activeColor;
+        
+        switch (assignedTask.status)
+        {
+            case TaskStatus.Active:
+                statusColor = assignedTask.isExpired ? expiredColor : activeColor;
+                break;
+            case TaskStatus.Incomplete:
+                statusColor = incompleteColor;
+                break;
+            case TaskStatus.Expired:
+                statusColor = expiredColor;
+                break;
+        }
+        
+        if (statusIndicator != null)
+            statusIndicator.color = statusColor;
+        
+        if (statusText != null)
+            statusText.color = statusColor;
+    }
+    
+    void UpdateTypeColor()
+    {
+        Color typeColor = advisoryColor;
+        
+        switch (assignedTask.taskType)
+        {
+            case TaskType.Emergency:
+                typeColor = emergencyColor;
+                break;
+            case TaskType.Demand:
+                typeColor = demandColor;
+                break;
+            case TaskType.Advisory:
+                typeColor = advisoryColor;
+                break;
+            case TaskType.Alert:
+                typeColor = alertColor;
+                break;
+        }
+        
+        if (taskTypeIcon != null)
+            taskTypeIcon.color = typeColor;
+        
+        if (taskTypeText != null)
+            taskTypeText.color = typeColor;
+    }
+    
+    void OnViewButtonClicked()
+    {
+        if (parentUI != null && assignedTask != null)
+        {
+            parentUI.OnTaskItemClicked(assignedTask);
+        }
+    }
+    
+    void Update()
+    {
+        // Update display periodically for real-time countdowns
+        if (assignedTask != null && assignedTask.status == TaskStatus.Active)
+        {
+            UpdateDisplay();
+        }
+    }
+}
