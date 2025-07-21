@@ -30,7 +30,7 @@ public class TaskDetailUI : MonoBehaviour
     public ScrollRect conversationScrollView;
     public Transform conversationContent;
     public GameObject agentMessagePrefab;
-    public GameObject playerChoicePrefab;
+    public GameObject agentChoicePrefab;
     public GameObject numericalInputPrefab;
     public GameObject playerMessagePrefab;
     
@@ -43,7 +43,7 @@ public class TaskDetailUI : MonoBehaviour
     public Button sendButton;
     
     [Header("Typing Effect")]
-    public float typingSpeed = 0.05f;
+    public float typingSpeed = 0.3f;
     public AudioClip typingSound;
     
     [Header("Debug")]
@@ -254,8 +254,8 @@ public class TaskDetailUI : MonoBehaviour
     {
         foreach (AgentChoice choice in currentTask.agentChoices)
         {
-            GameObject choiceItem = Instantiate(playerChoicePrefab, conversationContent);
-            PlayerChoiceUI choiceUI = choiceItem.GetComponent<PlayerChoiceUI>();
+            GameObject choiceItem = Instantiate(agentChoicePrefab, conversationContent);
+            AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
             
             if (choiceUI != null)
             {
@@ -302,7 +302,7 @@ public class TaskDetailUI : MonoBehaviour
         // Deselect other choices
         foreach (GameObject item in currentConversationItems)
         {
-            PlayerChoiceUI choiceUI = item.GetComponent<PlayerChoiceUI>();
+            AgentChoiceUI choiceUI = item.GetComponent<AgentChoiceUI>();
             if (choiceUI != null && choiceUI.GetChoice() != choice)
             {
                 choiceUI.SetSelected(false);
@@ -445,179 +445,4 @@ public class TaskDetailUI : MonoBehaviour
     }
 }
 
-// Impact Item UI Component
-public class ImpactItemUI : MonoBehaviour
-{
-    [Header("UI Components")]
-    public Image iconImage;
-    public TextMeshProUGUI labelText;
-    public TextMeshProUGUI valueText;
-    
-    private TaskImpact impact;
-    
-    public void Initialize(TaskImpact taskImpact)
-    {
-        impact = taskImpact;
-        UpdateDisplay();
-    }
-    
-    void UpdateDisplay()
-    {
-        if (impact == null) return;
-        
-        // Set icon (could use sprite instead of text)
-        if (iconImage != null)
-        {
-            // For now, we'll set the icon as text - you can replace with sprite lookup
-            string iconText = TaskSystem.GetImpactIcon(impact.impactType);
-            // iconImage.sprite = GetImpactSprite(impact.impactType);
-        }
-        
-        // Set label
-        if (labelText != null)
-        {
-            string label = !string.IsNullOrEmpty(impact.customLabel) 
-                ? impact.customLabel 
-                : TaskSystem.GetImpactLabel(impact.impactType);
-            labelText.text = label;
-        }
-        
-        // Set value
-        if (valueText != null)
-        {
-            if (impact.isCountdown)
-            {
-                valueText.text = FormatCountdown(impact.value);
-            }
-            else
-            {
-                string prefix = impact.value > 0 ? "+" : "";
-                valueText.text = prefix + impact.value.ToString();
-            }
-        }
-    }
-    
-    string FormatCountdown(int seconds)
-    {
-        if (seconds <= 0) return "00:00";
-        
-        int minutes = seconds / 60;
-        int remainingSeconds = seconds % 60;
-        return $"{minutes:D2}:{remainingSeconds:D2}";
-    }
-    
-    void Update()
-    {
-        // Update countdown values in real-time
-        if (impact != null && impact.isCountdown)
-        {
-            UpdateDisplay();
-        }
-    }
-}
 
-// Agent Message UI Component
-public class AgentMessageUI : MonoBehaviour
-{
-    [Header("UI Components")]
-    public Image agentAvatar;
-    public TextMeshProUGUI messageText;
-    public Image speechBubble;
-    
-    private AgentMessage message;
-    private string fullMessage;
-    
-    public void Initialize(AgentMessage agentMessage)
-    {
-        message = agentMessage;
-        fullMessage = agentMessage.messageText;
-        
-        // Set avatar
-        if (agentAvatar != null && agentMessage.agentAvatar != null)
-            agentAvatar.sprite = agentMessage.agentAvatar;
-        
-        // Initially hide text for typing effect
-        if (messageText != null)
-            messageText.text = "";
-    }
-    
-    public IEnumerator PlayTypingEffect(float typingSpeed)
-    {
-        if (messageText == null || string.IsNullOrEmpty(fullMessage))
-            yield break;
-        
-        messageText.text = "";
-        
-        for (int i = 0; i <= fullMessage.Length; i++)
-        {
-            messageText.text = fullMessage.Substring(0, i);
-            yield return new WaitForSeconds(typingSpeed);
-        }
-    }
-    
-    public void ShowFullMessage()
-    {
-        if (messageText != null)
-            messageText.text = fullMessage;
-    }
-}
-
-// Player Choice UI Component
-public class PlayerChoiceUI : MonoBehaviour
-{
-    [Header("UI Components")]
-    public Button choiceButton;
-    public TextMeshProUGUI choiceText;
-    public Image selectedIndicator;
-    
-    [Header("Colors")]
-    public Color normalColor = Color.white;
-    public Color selectedColor = Color.green;
-    
-    private AgentChoice choice;
-    private TaskDetailUI parentUI;
-    private bool isSelected = false;
-    
-    public void Initialize(AgentChoice agentChoice, TaskDetailUI parent)
-    {
-        choice = agentChoice;
-        parentUI = parent;
-        
-        if (choiceText != null)
-            choiceText.text = agentChoice.choiceText;
-        
-        if (choiceButton != null)
-        {
-            choiceButton.onClick.RemoveAllListeners();
-            choiceButton.onClick.AddListener(OnChoiceClicked);
-        }
-        
-        SetSelected(false);
-    }
-    
-    void OnChoiceClicked()
-    {
-        SetSelected(true);
-        parentUI?.OnChoiceSelected(choice);
-    }
-    
-    public void SetSelected(bool selected)
-    {
-        isSelected = selected;
-        
-        if (selectedIndicator != null)
-            selectedIndicator.gameObject.SetActive(selected);
-        
-        if (choiceButton != null)
-        {
-            Image buttonImage = choiceButton.GetComponent<Image>();
-            if (buttonImage != null)
-                buttonImage.color = selected ? selectedColor : normalColor;
-        }
-    }
-    
-    public AgentChoice GetChoice()
-    {
-        return choice;
-    }
-}

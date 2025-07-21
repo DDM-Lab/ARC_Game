@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 2329521916989297156}
   - component: {fileID: 4900767164305734857}
   - component: {fileID: 4899205916920590810}
+  - component: {fileID: -1420724189439587227}
   m_Layer: 5
   m_Name: DecisionImpactPrefab
   m_TagString: Untagged
@@ -105,6 +106,21 @@ MonoBehaviour:
   m_ChildScaleWidth: 0
   m_ChildScaleHeight: 0
   m_ReverseArrangement: 0
+--- !u!114 &-1420724189439587227
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 398010829360617856}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 75202010e142f2f44b97b6cbd28d1298, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  iconImage: {fileID: 2977446580904940374}
+  labelText: {fileID: 8474328024734214137}
+  valueText: {fileID: 4467367125712437337}
 --- !u!1 &6154918671393543088
 GameObject:
   m_ObjectHideFlags: 0

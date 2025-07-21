@@ -410,6 +410,7 @@ GameObject:
   m_Component:
   - component: {fileID: 8631846890883501223}
   - component: {fileID: 622633684938933224}
+  - component: {fileID: 7121515592063792191}
   m_Layer: 5
   m_Name: AgentMessagePrefab
   m_TagString: Untagged
@@ -464,3 +465,18 @@ MonoBehaviour:
   m_ChildScaleWidth: 0
   m_ChildScaleHeight: 0
   m_ReverseArrangement: 0
+--- !u!114 &7121515592063792191
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7763281807692673508}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a3d98a325e4d6cf4ab905c0ed9a358a8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  agentAvatar: {fileID: 1293560822448405639}
+  messageText: {fileID: 5103711188828765442}
+  speechBubble: {fileID: 6394702250370943178}
