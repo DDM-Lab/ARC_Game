@@ -43,7 +43,7 @@ public class TaskDetailUI : MonoBehaviour
     public Button sendButton;
     
     [Header("Typing Effect")]
-    public float typingSpeed = 0.3f;
+    public float typingSpeed = 0.5f;
     public AudioClip typingSound;
     
     [Header("Debug")]
@@ -211,7 +211,7 @@ public class TaskDetailUI : MonoBehaviour
         foreach (AgentMessage message in currentTask.agentMessages)
         {
             yield return StartCoroutine(DisplayAgentMessage(message));
-            yield return new WaitForSeconds(0.5f); // Brief pause between messages
+            yield return new WaitForSecondsRealtime(0.5f); // Brief pause between messages, use real time
         }
         
         // Display choices if available

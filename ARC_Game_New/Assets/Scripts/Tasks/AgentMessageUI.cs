@@ -39,7 +39,7 @@ public class AgentMessageUI : MonoBehaviour
         for (int i = 0; i <= fullMessage.Length; i++)
         {
             messageText.text = fullMessage.Substring(0, i);
-            yield return new WaitForSeconds(typingSpeed);
+            yield return new WaitForSecondsRealtime (typingSpeed);
         }
     }
 
