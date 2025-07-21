@@ -204,6 +204,10 @@ public class TaskCenterUI : MonoBehaviour
         {
             taskItemUI.Initialize(task, this);
         }
+        else
+        {
+            Debug.LogError("TaskItemUI component not found on task item prefab!");
+        }
         
         currentTaskItems.Add(taskItem);
     }
@@ -220,17 +224,20 @@ public class TaskCenterUI : MonoBehaviour
     
     public void OnTaskItemClicked(GameTask task)
     {
+        if (showDebugInfo)
+            Debug.Log($"Task item clicked: {task.taskTitle}");
+        
         if (taskDetailUI != null)
         {
             taskDetailUI.ShowTaskDetail(task);
-            CloseTaskCenter(); // Close task center when opening detail
+            // Note: Don't close task center automatically - let user decide
             
             if (showDebugInfo)
                 Debug.Log($"Opening task detail for: {task.taskTitle}");
         }
         else
         {
-            Debug.LogError("TaskDetailUI reference not set!");
+            Debug.LogError("TaskDetailUI reference not set! Please assign it in the inspector.");
         }
     }
     
@@ -276,146 +283,3 @@ public class TaskCenterUI : MonoBehaviour
     }
 }
 
-// Task Item UI Component
-public class TaskItemUI : MonoBehaviour
-{
-    [Header("UI Components")]
-    public TextMeshProUGUI taskTitleText;
-    public TextMeshProUGUI taskTypeText;
-    public TextMeshProUGUI statusText;
-    public TextMeshProUGUI facilityText;
-    public Button viewButton;
-    public Image taskTypeIcon;
-    public Image statusIndicator;
-    
-    [Header("Status Colors")]
-    public Color activeColor = Color.green;
-    public Color incompleteColor = Color.red;
-    public Color expiredColor = Color.gray;
-    
-    [Header("Type Colors")]
-    public Color emergencyColor = Color.red;
-    public Color demandColor = Color.magenta;
-    public Color advisoryColor = Color.blue;
-    public Color alertColor = Color.yellow;
-    
-    private GameTask assignedTask;
-    private TaskCenterUI parentUI;
-    
-    public void Initialize(GameTask task, TaskCenterUI parent)
-    {
-        assignedTask = task;
-        parentUI = parent;
-        
-        UpdateDisplay();
-        
-        // Setup view button
-        if (viewButton != null)
-        {
-            viewButton.onClick.RemoveAllListeners();
-            viewButton.onClick.AddListener(OnViewButtonClicked);
-        }
-    }
-    
-    void UpdateDisplay()
-    {
-        if (assignedTask == null) return;
-        
-        // Update text components
-        if (taskTitleText != null)
-            taskTitleText.text = assignedTask.taskTitle;
-        
-        if (taskTypeText != null)
-            taskTypeText.text = assignedTask.taskType.ToString();
-        
-        if (facilityText != null)
-            facilityText.text = assignedTask.affectedFacility;
-        
-        if (statusText != null)
-        {
-            string statusDisplay = assignedTask.status.ToString();
-            if (assignedTask.status == TaskStatus.Active && assignedTask.isExpired)
-                statusDisplay = "Expired";
-            
-            statusText.text = statusDisplay;
-        }
-        
-        // Update colors
-        UpdateStatusColor();
-        UpdateTypeColor();
-        
-        // Update button state
-        if (viewButton != null)
-        {
-            viewButton.interactable = true; // Always allow viewing
-        }
-    }
-    
-    void UpdateStatusColor()
-    {
-        Color statusColor = activeColor;
-        
-        switch (assignedTask.status)
-        {
-            case TaskStatus.Active:
-                statusColor = assignedTask.isExpired ? expiredColor : activeColor;
-                break;
-            case TaskStatus.Incomplete:
-                statusColor = incompleteColor;
-                break;
-            case TaskStatus.Expired:
-                statusColor = expiredColor;
-                break;
-        }
-        
-        if (statusIndicator != null)
-            statusIndicator.color = statusColor;
-        
-        if (statusText != null)
-            statusText.color = statusColor;
-    }
-    
-    void UpdateTypeColor()
-    {
-        Color typeColor = advisoryColor;
-        
-        switch (assignedTask.taskType)
-        {
-            case TaskType.Emergency:
-                typeColor = emergencyColor;
-                break;
-            case TaskType.Demand:
-                typeColor = demandColor;
-                break;
-            case TaskType.Advisory:
-                typeColor = advisoryColor;
-                break;
-            case TaskType.Alert:
-                typeColor = alertColor;
-                break;
-        }
-        
-        if (taskTypeIcon != null)
-            taskTypeIcon.color = typeColor;
-        
-        if (taskTypeText != null)
-            taskTypeText.color = typeColor;
-    }
-    
-    void OnViewButtonClicked()
-    {
-        if (parentUI != null && assignedTask != null)
-        {
-            parentUI.OnTaskItemClicked(assignedTask);
-        }
-    }
-    
-    void Update()
-    {
-        // Update display periodically for real-time countdowns
-        if (assignedTask != null && assignedTask.status == TaskStatus.Active)
-        {
-            UpdateDisplay();
-        }
-    }
-}

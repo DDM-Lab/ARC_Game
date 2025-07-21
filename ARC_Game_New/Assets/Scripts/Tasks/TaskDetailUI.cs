@@ -13,18 +13,26 @@ public class TaskDetailUI : MonoBehaviour
     [Header("Left Panel - Task Description")]
     public Image taskImage;
     public TextMeshProUGUI taskTitleText;
-    public TextMeshProUGUI taskTypeText;
     public TextMeshProUGUI facilityText;
     public TextMeshProUGUI descriptionText;
-    public Transform impactContainer;
+    public Transform ImpactHorizontalchoiceLayout1;
+    public Transform ImpactHorizontalchoiceLayout2;
     public GameObject impactItemPrefab;
-    
+
+    [Header("Task Type Sprites")]
+    public Image taskTypeImage;
+    public Sprite emergencySprite;
+    public Sprite demandSprite;
+    public Sprite advisorySprite;
+    public Sprite alertSprite;
+
     [Header("Right Panel - Agent Conversation")]
     public ScrollRect conversationScrollView;
     public Transform conversationContent;
     public GameObject agentMessagePrefab;
     public GameObject playerChoicePrefab;
     public GameObject numericalInputPrefab;
+    public GameObject playerMessagePrefab;
     
     [Header("Action Buttons")]
     public Button laterButton;
@@ -119,36 +127,53 @@ public class TaskDetailUI : MonoBehaviour
         if (taskTitleText != null)
             taskTitleText.text = currentTask.taskTitle;
         
-        if (taskTypeText != null)
-            taskTypeText.text = currentTask.taskType.ToString();
-        
         if (facilityText != null)
             facilityText.text = currentTask.affectedFacility;
         
         if (descriptionText != null)
             descriptionText.text = currentTask.description;
-        
+
+        if (taskTypeImage != null)
+        {
+            switch (currentTask.taskType)
+            {
+                case TaskType.Emergency:
+                    taskTypeImage.sprite = emergencySprite;
+                    break;
+                case TaskType.Demand:
+                    taskTypeImage.sprite = demandSprite;
+                    break;
+                case TaskType.Advisory:
+                    taskTypeImage.sprite = advisorySprite;
+                    break;
+                case TaskType.Alert:
+                    taskTypeImage.sprite = alertSprite;
+                    break;
+            }
+        }
         // Update impacts
         UpdateImpactDisplay();
     }
-    
+
     void UpdateImpactDisplay()
     {
-        if (impactContainer == null || impactItemPrefab == null) return;
-        
+        if (ImpactHorizontalchoiceLayout1 == null || ImpactHorizontalchoiceLayout2 == null || impactItemPrefab == null) return;
+
         // Clear existing impact items
         ClearImpactItems();
-        
-        // Create impact items
-        foreach (TaskImpact impact in currentTask.impacts)
+
+        // Create impact items and put them in the correct layout
+        for (int i = 0; i < currentTask.impacts.Count; i++)
         {
-            CreateImpactItem(impact);
+            TaskImpact impact = currentTask.impacts[i];
+            Transform layout = (i % 2 == 0) ? ImpactHorizontalchoiceLayout1 : ImpactHorizontalchoiceLayout2;
+            CreateImpactItem(impact, layout);
         }
     }
-    
-    void CreateImpactItem(TaskImpact impact)
+
+    void CreateImpactItem(TaskImpact impact, Transform layout)
     {
-        GameObject impactItem = Instantiate(impactItemPrefab, impactContainer);
+        GameObject impactItem = Instantiate(impactItemPrefab, layout);
         ImpactItemUI impactUI = impactItem.GetComponent<ImpactItemUI>();
         
         if (impactUI != null)
@@ -386,11 +411,19 @@ public class TaskDetailUI : MonoBehaviour
         if (playerInputField != null && !string.IsNullOrEmpty(playerInputField.text))
         {
             string message = playerInputField.text;
-            playerInputField.text = "";
             
-            // For now, just log player messages (could be extended for dynamic conversations)
-            if (showDebugInfo)
-                Debug.Log($"Player message: {message}");
+            // create player message item
+            GameObject messageItem = Instantiate(playerMessagePrefab, conversationContent);
+            
+            // Set message text
+            TextMeshProUGUI messageText = messageItem.GetComponentInChildren<TextMeshProUGUI>();
+            if (messageText != null)
+            {
+                messageText.text = message;
+            }
+
+            playerInputField.text = "";
+            ScrollToBottom();
         }
     }
     

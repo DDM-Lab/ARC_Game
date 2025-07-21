@@ -444,7 +444,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
   m_AnchoredPosition: {x: 63.85, y: -10.42}
-  m_SizeDelta: {x: 0, y: 0}
+  m_SizeDelta: {x: 103.7, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &6034968743433832812
 CanvasRenderer:
@@ -808,6 +808,7 @@ GameObject:
   - component: {fileID: 2883036316360415282}
   - component: {fileID: 715563567576487333}
   - component: {fileID: 4609389161127034817}
+  - component: {fileID: 7766880807029532400}
   m_Layer: 5
   m_Name: TaskListItemPrefab
   m_TagString: Untagged
@@ -901,6 +902,33 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8044078603879433423}
   m_CullTransparentMesh: 1
+--- !u!114 &7766880807029532400
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8044078603879433423}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0b690702393b7ed46a2be473ade9532a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  agentIcon: {fileID: 8471126988889014896}
+  statLayout: {fileID: 277110949011197999}
+  viewButton: {fileID: 1023411962018730672}
+  taskDescriptionText: {fileID: 0}
+  taskTypeLabelContainer: {fileID: 0}
+  taskTypeLabelText: {fileID: 0}
+  additionalInfoText: {fileID: 0}
+  activeColor: {r: 0, g: 1, b: 0, a: 1}
+  incompleteColor: {r: 1, g: 0, b: 0, a: 1}
+  expiredColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  emergencyColor: {r: 1, g: 0, b: 0, a: 1}
+  demandColor: {r: 1, g: 0, b: 1, a: 1}
+  advisoryColor: {r: 0, g: 0, b: 1, a: 1}
+  alertColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  showDebugInfo: 1
 --- !u!1 &8756387264088803388
 GameObject:
   m_ObjectHideFlags: 0
