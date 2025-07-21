@@ -23011,7 +23011,7 @@ MonoBehaviour:
   conversationScrollView: {fileID: 1385006560}
   conversationContent: {fileID: 537774155}
   agentMessagePrefab: {fileID: 7763281807692673508, guid: d6f24b31012ba124eafa91c295c65c08, type: 3}
-  agentChoicePrefab: {fileID: 0}
+  agentChoicePrefab: {fileID: 3689961598307848804, guid: 72a3ad1c507ebe74f9aab817763efaa6, type: 3}
   numericalInputPrefab: {fileID: 7478889527933163167, guid: 6669ca8554c6ce54da83cf31b79e81d7, type: 3}
   playerMessagePrefab: {fileID: 8827655810818551537, guid: 4316cf8f54d537a4b9ce187419922f47, type: 3}
   laterButton: {fileID: 702295558}
@@ -27600,7 +27600,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: 3c3a592e563ca2f4694c50e31cd83504, type: 3}
+  m_Sprite: {fileID: 21300000, guid: abd1516f01e06774f97e30e3e2cd7d96, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
