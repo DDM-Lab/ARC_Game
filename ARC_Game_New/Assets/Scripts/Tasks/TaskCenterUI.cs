@@ -162,9 +162,11 @@ public class TaskCenterUI : MonoBehaviour
         // Get active tasks
         allTasks.AddRange(TaskSystem.Instance.GetAllActiveTasks());
         
-        // Get completed tasks that are incomplete
+        // Get inactive tasks
         allTasks.AddRange(TaskSystem.Instance.GetTasksByStatus(TaskStatus.Incomplete));
-        
+        allTasks.AddRange(TaskSystem.Instance.GetTasksByStatus(TaskStatus.Completed));
+        allTasks.AddRange(TaskSystem.Instance.GetTasksByStatus(TaskStatus.Expired));
+
         // Apply filter
         if (currentFilter.HasValue)
         {

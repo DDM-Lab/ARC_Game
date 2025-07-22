@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
+using UnityEngine.EventSystems;
 
 public class TaskDetailUI : MonoBehaviour
 {
@@ -43,7 +44,7 @@ public class TaskDetailUI : MonoBehaviour
     public Button sendButton;
     
     [Header("Typing Effect")]
-    public float typingSpeed = 0.5f;
+    public float typingSpeed = 0.05f;
     public AudioClip typingSound;
     
     [Header("Debug")]
@@ -55,6 +56,7 @@ public class TaskDetailUI : MonoBehaviour
     private AgentChoice selectedChoice;
     private Dictionary<int, AgentNumericalInput> numericalInputs = new Dictionary<int, AgentNumericalInput>();
     private bool isTyping = false;
+    private AgentMessageUI currentTypingMessage;
     
     void Start()
     {
@@ -64,41 +66,61 @@ public class TaskDetailUI : MonoBehaviour
         if (taskDetailPanel != null)
             taskDetailPanel.SetActive(false);
     }
-    
+
     void SetupUI()
     {
         // Setup main buttons
         if (closeButton != null)
             closeButton.onClick.AddListener(CloseTaskDetail);
-        
+
         if (laterButton != null)
             laterButton.onClick.AddListener(OnLaterButtonClicked);
-        
+
         if (confirmButton != null)
             confirmButton.onClick.AddListener(OnConfirmButtonClicked);
-        
+
         if (sendButton != null)
             sendButton.onClick.AddListener(OnSendPlayerMessage);
-        
-        // Setup input field
+
         if (playerInputField != null)
         {
             playerInputField.onSubmit.AddListener(OnPlayerInputSubmit);
+        }
+        
+        if (conversationScrollView != null)
+        {
+            // add event trigger directly to scroll view of conversation
+            EventTrigger trigger = conversationScrollView.GetComponent<EventTrigger>();
+            if (trigger == null)
+                trigger = conversationScrollView.gameObject.AddComponent<EventTrigger>();
+            
+            EventTrigger.Entry entry = new EventTrigger.Entry();
+            entry.eventID = EventTriggerType.PointerClick;
+            entry.callback.AddListener((data) => OnConversationAreaClicked());
+            trigger.triggers.Add(entry);
+        }
+    }
+    
+    void OnConversationAreaClicked()
+    {
+        if (isTyping && currentTypingMessage != null)
+        {
+            currentTypingMessage.SkipTyping();
         }
     }
     
     public void ShowTaskDetail(GameTask task)
     {
         currentTask = task;
-        
+
         if (taskDetailPanel != null)
         {
             taskDetailPanel.SetActive(true);
-            
+
             UpdateTaskDescription();
             StartAgentConversation();
             UpdateActionButtons();
-            
+
             if (showDebugInfo)
                 Debug.Log($"Showing task detail for: {task.taskTitle}");
         }
@@ -211,7 +233,7 @@ public class TaskDetailUI : MonoBehaviour
         foreach (AgentMessage message in currentTask.agentMessages)
         {
             yield return StartCoroutine(DisplayAgentMessage(message));
-            yield return new WaitForSecondsRealtime(0.5f); // Brief pause between messages, use real time
+            //yield return new WaitForSecondsRealtime(0.5f); // Brief pause between messages, use real time
         }
         
         // Display choices if available
@@ -232,10 +254,14 @@ public class TaskDetailUI : MonoBehaviour
         if (messageUI != null)
         {
             messageUI.Initialize(message);
-            
-            if (message.useTypingEffect)
+
+            if (message.useTypingEffect && currentTask.status == TaskStatus.Active && !currentTask.isExpired)
             {
+                isTyping = true;
+                currentTypingMessage = messageUI;
                 yield return StartCoroutine(messageUI.PlayTypingEffect(typingSpeed));
+                isTyping = false;
+                currentTypingMessage = null;
             }
             else
             {
@@ -349,7 +375,7 @@ public class TaskDetailUI : MonoBehaviour
     
     void OnConfirmButtonClicked()
     {
-        if (currentTask == null) return;
+        if (currentTask == null || TaskSystem.Instance == null) return;
         
         if (currentTask.isExpired)
         {
@@ -369,7 +395,7 @@ public class TaskDetailUI : MonoBehaviour
         CloseTaskDetail();
         
         if (showDebugInfo)
-            Debug.Log($"Task confirmed and completed: {currentTask.taskTitle}");
+            Debug.Log($"Task confirmed and completed");
     }
     
     void ApplyChoiceImpacts(AgentChoice choice)
@@ -441,6 +467,28 @@ public class TaskDetailUI : MonoBehaviour
         if (currentTask != null && taskDetailPanel.activeInHierarchy)
         {
             UpdateActionButtons();
+
+            // control player input field status
+            if (playerInputField != null)
+            {
+                playerInputField.interactable = !isTyping;
+            }
+            if (sendButton != null)
+            {
+                sendButton.interactable = !isTyping;
+            }
+            if (currentTask != null && !currentTask.status.Equals(TaskStatus.Active))
+            {
+                if (laterButton != null)
+                    laterButton.interactable = false;
+                if (confirmButton != null)
+                    confirmButton.interactable = false;
+                if (playerInputField != null)
+                    playerInputField.interactable = false;
+                if (sendButton != null)
+                    sendButton.interactable = false;
+            }
+
         }
     }
 }

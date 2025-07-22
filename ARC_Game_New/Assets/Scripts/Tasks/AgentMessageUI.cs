@@ -14,6 +14,7 @@ public class AgentMessageUI : MonoBehaviour
 
     private AgentMessage message;
     private string fullMessage;
+    private bool isSkipped = false;
 
     public void Initialize(AgentMessage agentMessage)
     {
@@ -38,15 +39,27 @@ public class AgentMessageUI : MonoBehaviour
 
         for (int i = 0; i <= fullMessage.Length; i++)
         {
+            if (isSkipped)
+            {
+                ShowFullMessage();
+                yield break;
+            }
             messageText.text = fullMessage.Substring(0, i);
-            yield return new WaitForSecondsRealtime (typingSpeed);
+            yield return new WaitForSecondsRealtime(typingSpeed);
         }
+
     }
 
     public void ShowFullMessage()
     {
         if (messageText != null)
             messageText.text = fullMessage;
+    }
+
+    public void SkipTyping()
+    {
+        isSkipped = true;
+        ShowFullMessage();
     }
 }
 

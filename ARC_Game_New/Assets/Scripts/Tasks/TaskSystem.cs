@@ -13,10 +13,10 @@ public enum TaskType
 
 public enum TaskStatus
 {
-    Active,
-    Incomplete,
-    Expired,
-    Completed
+    Active, // Task is currently active
+    Incomplete, // Task failed to complete (e.g., lack of resource, didn't deliver on time)
+    Expired, // Task expired without being completed (e.g., no action taken)
+    Completed // Task completed successfully
 }
 
 public enum ImpactType
@@ -92,7 +92,7 @@ public class AgentMessage
     public string messageText;
     public Sprite agentAvatar;
     public bool useTypingEffect = true;
-    public float typingSpeed = 0.05f;
+    public float typingSpeed = 0.5f;
     
     public AgentMessage(string text, Sprite avatar = null)
     {
