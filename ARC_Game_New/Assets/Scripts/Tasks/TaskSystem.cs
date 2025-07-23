@@ -14,6 +14,7 @@ public enum TaskType
 public enum TaskStatus
 {
     Active, // Task is currently active
+    InProgress, // Task is being worked on
     Incomplete, // Task failed to complete (e.g., lack of resource, didn't deliver on time)
     Expired, // Task expired without being completed (e.g., no action taken)
     Completed // Task completed successfully
@@ -362,6 +363,33 @@ public class TaskSystem : MonoBehaviour
                 Debug.Log($"Ignored advisory task: {task.taskTitle}");
         }
     }
+    
+    public void SetTaskInProgress(GameTask task)
+    {
+        if (activeTasks.Contains(task))
+        {
+            task.status = TaskStatus.InProgress;
+
+            if (showDebugInfo)
+                Debug.Log($"Task set to in progress: {task.taskTitle}");
+        }
+    }
+
+    public void SetTaskIncomplete(GameTask task)
+    {
+        if (activeTasks.Contains(task))
+        {
+            task.status = TaskStatus.Incomplete;
+            activeTasks.Remove(task);
+            completedTasks.Add(task);
+            
+            ApplyTaskPenalties(task);
+            OnTaskCompleted?.Invoke(task);
+            
+            if (showDebugInfo)
+                Debug.Log($"Task marked as incomplete: {task.taskTitle}");
+        }
+    }
 
     // Methods for getting filtered task lists
     public List<GameTask> GetTasksByType(TaskType type)
@@ -385,6 +413,69 @@ public class TaskSystem : MonoBehaviour
         if (task == null)
             task = completedTasks.FirstOrDefault(t => t.taskId == taskId);
         return task;
+    }
+
+    public GameTask CreateTaskFromData(TaskData taskData)
+    {
+        GameTask newTask = new GameTask(nextTaskId++, taskData.taskTitle, taskData.taskType, taskData.affectedFacility);
+        
+        // copy basic info
+        newTask.description = taskData.description;
+        newTask.taskImage = taskData.taskImage;
+
+        // copy time settings
+        newTask.roundsRemaining = taskData.roundsRemaining;
+        newTask.realTimeRemaining = taskData.realTimeRemaining;
+        newTask.hasRealTimeLimit = taskData.hasRealTimeLimit;
+
+        // copy impact list
+        newTask.impacts = new List<TaskImpact>();
+        foreach (TaskImpact impact in taskData.impacts)
+        {
+            newTask.impacts.Add(new TaskImpact(impact.impactType, impact.value, impact.isCountdown, impact.customLabel));
+        }
+
+        // copy agent messages
+        newTask.agentMessages = new List<AgentMessage>();
+        foreach (AgentMessage message in taskData.agentMessages)
+        {
+            newTask.agentMessages.Add(new AgentMessage(message.messageText, message.agentAvatar)
+            {
+                useTypingEffect = message.useTypingEffect,
+                typingSpeed = message.typingSpeed
+            });
+        }
+
+        // copy choices
+        newTask.agentChoices = new List<AgentChoice>();
+        foreach (AgentChoice choice in taskData.agentChoices)
+        {
+            AgentChoice newChoice = new AgentChoice(choice.choiceId, choice.choiceText);
+            newChoice.choiceImpacts = new List<TaskImpact>();
+            foreach (TaskImpact impact in choice.choiceImpacts)
+            {
+                newChoice.choiceImpacts.Add(new TaskImpact(impact.impactType, impact.value, impact.isCountdown, impact.customLabel));
+            }
+            newTask.agentChoices.Add(newChoice);
+        }
+
+        // copy numerical inputs
+        newTask.numericalInputs = new List<AgentNumericalInput>();
+        foreach (AgentNumericalInput input in taskData.numericalInputs)
+        {
+            newTask.numericalInputs.Add(new AgentNumericalInput(input.inputId, input.inputLabel, input.currentValue, input.minValue, input.maxValue)
+            {
+                stepSize = input.stepSize
+            });
+        }
+        
+        activeTasks.Add(newTask);
+        OnTaskCreated?.Invoke(newTask);
+        
+        if (showDebugInfo)
+            Debug.Log($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
+        
+        return newTask;
     }
 
     // Utility methods for impact display

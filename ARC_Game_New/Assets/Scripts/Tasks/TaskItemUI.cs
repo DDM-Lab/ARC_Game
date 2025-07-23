@@ -10,6 +10,9 @@ public class TaskItemUI : MonoBehaviour
     public Image agentIcon;
     public GameObject statLayout; // The vertical layout group
     public Button viewButton;
+    [Header("Status Indicators")]
+    public Image statusBackground; // Background for status color
+    public Image incompleteIcon; // Icon for incomplete tasks
     
     [Header("Stat Layout Children - Auto-found")]
     [SerializeField] private TextMeshProUGUI taskDescriptionText;
@@ -19,8 +22,10 @@ public class TaskItemUI : MonoBehaviour
     
     [Header("Status Colors")]
     public Color activeColor = Color.green;
+    public Color inProgressColor = Color.yellow;
     public Color incompleteColor = Color.red;
     public Color expiredColor = Color.gray;
+    public Color completedColor = Color.blue;
     
     [Header("Type Colors")]
     public Color emergencyColor = Color.red;
@@ -149,12 +154,13 @@ public class TaskItemUI : MonoBehaviour
         {
             Debug.LogWarning("Task type label text component not found!");
         }
-        
+
         // Update additional info
         if (additionalInfoText != null)
         {
             string additionalInfo = GenerateAdditionalInfo();
             additionalInfoText.text = additionalInfo;
+            Debug.Log($"Generated additional info: {additionalInfo}");
         }
         
         // Update agent icon if available
@@ -205,20 +211,20 @@ public class TaskItemUI : MonoBehaviour
         
         return info;
     }
-    
     string GetTaskStatusText()
     {
-        if (assignedTask.isExpired)
-            return "EXPIRED";
-        
         switch (assignedTask.status)
         {
             case TaskStatus.Active:
                 return "Active";
+            case TaskStatus.InProgress:
+                return "IN PROGRESS";
             case TaskStatus.Incomplete:
                 return "INCOMPLETE";
             case TaskStatus.Expired:
                 return "EXPIRED";
+            case TaskStatus.Completed:
+                return "COMPLETED";
             default:
                 return "";
         }
@@ -227,20 +233,39 @@ public class TaskItemUI : MonoBehaviour
     void UpdateStatusIndicators()
     {
         Color statusColor = activeColor;
+        bool showIncompleteIcon = false;
         
-        if (assignedTask.isExpired || assignedTask.status == TaskStatus.Expired)
+        switch (assignedTask.status)
         {
-            statusColor = expiredColor;
-        }
-        else if (assignedTask.status == TaskStatus.Incomplete)
-        {
-            statusColor = incompleteColor;
+            case TaskStatus.Active:
+                statusColor = activeColor;
+                break;
+            case TaskStatus.InProgress:
+                statusColor = inProgressColor;
+                break;
+            case TaskStatus.Incomplete:
+                statusColor = incompleteColor;
+                showIncompleteIcon = true;
+                break;
+            case TaskStatus.Expired:
+                statusColor = expiredColor;
+                break;
+            case TaskStatus.Completed:
+                statusColor = completedColor;
+                break;
         }
         
-        // Apply status color to additional info text
-        if (additionalInfoText != null)
+        // Apply status color to background
+        if (statusBackground != null)
         {
-            additionalInfoText.color = statusColor;
+            Color bgColor = statusColor;
+            statusBackground.color = bgColor;
+        }
+        
+        // Show/Hide Incomplete Icon
+        if (incompleteIcon != null)
+        {
+            incompleteIcon.gameObject.SetActive(showIncompleteIcon);
         }
     }
     

@@ -77,7 +77,7 @@ GameObject:
   - component: {fileID: 5102516153934382591}
   - component: {fileID: 3352026430316930551}
   m_Layer: 5
-  m_Name: NumOfPeople
+  m_Name: AdditionalInfoText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -199,6 +199,102 @@ MonoBehaviour:
   m_hasFontAssetChanged: 0
   m_baseMaterial: {fileID: 0}
   m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
+--- !u!1 &1477268927741547675
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2360913563031346975}
+  - component: {fileID: 7779645822204296769}
+  - component: {fileID: 1412983896008065622}
+  - component: {fileID: 3034463604271834260}
+  m_Layer: 5
+  m_Name: IncompleteLabel
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &2360913563031346975
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1477268927741547675}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 6839861020193450644}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 1}
+  m_AnchoredPosition: {x: 942, y: -18}
+  m_SizeDelta: {x: 100, y: 39}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!222 &7779645822204296769
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1477268927741547675}
+  m_CullTransparentMesh: 1
+--- !u!114 &1412983896008065622
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1477268927741547675}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Material: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_RaycastTarget: 1
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Sprite: {fileID: 21300000, guid: 67e3626da7a83ef49a8997cc57b8533b, type: 3}
+  m_Type: 0
+  m_PreserveAspect: 0
+  m_FillCenter: 1
+  m_FillMethod: 4
+  m_FillAmount: 1
+  m_FillClockwise: 1
+  m_FillOrigin: 0
+  m_UseSpriteMesh: 0
+  m_PixelsPerUnitMultiplier: 1
+--- !u!114 &3034463604271834260
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1477268927741547675}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 306cc8c2b49d7114eaa3623786fc2126, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_IgnoreLayout: 1
+  m_MinWidth: -1
+  m_MinHeight: -1
+  m_PreferredWidth: -1
+  m_PreferredHeight: -1
+  m_FlexibleWidth: -1
+  m_FlexibleHeight: -1
+  m_LayoutPriority: 1
 --- !u!1 &2521009332790560142
 GameObject:
   m_ObjectHideFlags: 0
@@ -831,6 +927,7 @@ RectTransform:
   - {fileID: 1925426319380722856}
   - {fileID: 1244947614802691800}
   - {fileID: 2544253776469276055}
+  - {fileID: 2360913563031346975}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -917,13 +1014,17 @@ MonoBehaviour:
   agentIcon: {fileID: 8471126988889014896}
   statLayout: {fileID: 277110949011197999}
   viewButton: {fileID: 1023411962018730672}
-  taskDescriptionText: {fileID: 0}
-  taskTypeLabelContainer: {fileID: 0}
-  taskTypeLabelText: {fileID: 0}
-  additionalInfoText: {fileID: 0}
-  activeColor: {r: 0, g: 1, b: 0, a: 1}
-  incompleteColor: {r: 1, g: 0, b: 0, a: 1}
-  expiredColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  statusBackground: {fileID: 2883036316360415282}
+  incompleteIcon: {fileID: 1412983896008065622}
+  taskDescriptionText: {fileID: 4335005222222492213}
+  taskTypeLabelContainer: {fileID: 5094737472468844852}
+  taskTypeLabelText: {fileID: 3998709339356812478}
+  additionalInfoText: {fileID: 3352026430316930551}
+  activeColor: {r: 1, g: 1, b: 1, a: 1}
+  inProgressColor: {r: 0.9098039, g: 0.81960785, b: 0.6117647, a: 1}
+  incompleteColor: {r: 0.9098039, g: 0.81960785, b: 0.6117647, a: 1}
+  expiredColor: {r: 0.9098039, g: 0.81960785, b: 0.6117647, a: 1}
+  completedColor: {r: 0.9098039, g: 0.81960785, b: 0.6117647, a: 1}
   emergencyColor: {r: 1, g: 0, b: 0, a: 1}
   demandColor: {r: 1, g: 0, b: 1, a: 1}
   advisoryColor: {r: 0, g: 0, b: 1, a: 1}
