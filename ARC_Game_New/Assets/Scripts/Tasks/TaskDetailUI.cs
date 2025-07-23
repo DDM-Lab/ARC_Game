@@ -425,13 +425,91 @@ public class TaskDetailUI : MonoBehaviour
             ApplyChoiceImpacts(selectedChoice);
         }
         
-        // Complete the task
-        TaskSystem.Instance?.CompleteTask(currentTask);
+        // check if task requires delivery
+        if (currentTask.requiresDelivery)
+        {
+            CreateDeliveryTask();
+            TaskSystem.Instance.SetTaskInProgress(currentTask);
+        }
+        else
+        {
+            // Complete the task
+            TaskSystem.Instance.CompleteTask(currentTask);
+        }
+
         CloseTaskDetail();
         
         if (showDebugInfo)
             Debug.Log($"Task confirmed and completed");
     }
+
+    void CreateDeliveryTask()
+    {
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem != null && currentTask.deliverySource != null && currentTask.deliveryDestination != null)
+        {
+            // check if there is a vehicle that can handle this delivery
+            Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+            bool hasCapableVehicle = false;
+            
+            foreach (Vehicle vehicle in vehicles)
+            {
+                if (vehicle.GetAllowedCargoTypes().Contains(currentTask.deliveryCargoType) && 
+                    vehicle.GetMaxCapacity() >= currentTask.deliveryQuantity)
+                {
+                    hasCapableVehicle = true;
+                    break;
+                }
+            }
+            
+            if (!hasCapableVehicle)
+            {
+                Debug.LogError($"No vehicle available with capacity {currentTask.deliveryQuantity} for {currentTask.deliveryCargoType}");
+                return;
+            }
+            
+            DeliveryTask deliveryTask = deliverySystem.CreateDeliveryTask(
+                currentTask.deliverySource,
+                currentTask.deliveryDestination, 
+                currentTask.deliveryCargoType,
+                currentTask.deliveryQuantity,
+                3 // High priority
+            );
+            
+            if (deliveryTask != null)
+            {
+                currentTask.linkedDeliveryTaskId = deliveryTask.taskId;
+                StartCoroutine(MonitorDeliveryProgress());
+                
+                if (showDebugInfo)
+                    Debug.Log($"Created delivery task for game task: {currentTask.taskTitle}. Task ID: {deliveryTask.taskId}");
+            }
+            else
+            {
+                Debug.LogError("Failed to create delivery task");
+            }
+        }
+    }
+
+    IEnumerator MonitorDeliveryProgress()
+    {
+        float timeRemaining = currentTask.deliveryTimeLimit;
+        
+        while (timeRemaining > 0 && currentTask.status == TaskStatus.InProgress)
+        {
+            timeRemaining -= Time.deltaTime;
+            yield return null;
+        }
+
+        // Check delivery status
+        if (currentTask.status == TaskStatus.InProgress)
+        {
+            // Timed out, mark as incomplete
+            TaskSystem.Instance.HandleDeliveryFailure(currentTask);
+        }
+    }
+
+
     
     void ApplyChoiceImpacts(AgentChoice choice)
     {

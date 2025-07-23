@@ -24,3 +24,10 @@ MonoBehaviour:
   agentMessages: []
   agentChoices: []
   numericalInputs: []
+  requiresDelivery: 0
+  deliveryCargoType: 1
+  deliveryQuantity: 0
+  deliverySource: {fileID: 0}
+  deliveryDestination: {fileID: 0}
+  deliveryTimeLimit: 300
+  deliveryFailureSatisfactionPenalty: 10

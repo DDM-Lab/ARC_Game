@@ -73,7 +73,17 @@ public class GameTask
     public List<AgentMessage> agentMessages = new List<AgentMessage>();
     public List<AgentChoice> agentChoices = new List<AgentChoice>();
     public List<AgentNumericalInput> numericalInputs = new List<AgentNumericalInput>();
-    
+
+    [Header("Delivery Link")]
+    public bool requiresDelivery = false;
+    public ResourceType deliveryCargoType = ResourceType.FoodPacks;
+    public int deliveryQuantity = 0;
+    public MonoBehaviour deliverySource;
+    public MonoBehaviour deliveryDestination;
+    public float deliveryTimeLimit = 300f;
+    public float deliveryFailureSatisfactionPenalty = 10f;
+    public int linkedDeliveryTaskId = -1;
+
     public float timeCreated;
     public bool isExpired => roundsRemaining <= 0 || (hasRealTimeLimit && realTimeRemaining <= 0);
     
@@ -201,6 +211,13 @@ public class TaskSystem : MonoBehaviour
             GlobalClock.Instance.OnTimeSegmentChanged += OnTimeSegmentAdvanced;
         }
 
+        // Listen for delivery task completion events
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem != null)
+        {
+            deliverySystem.OnTaskCompleted += OnDeliveryTaskCompleted;
+        }
+
         if (showDebugInfo)
             Debug.Log("Task System initialized");
     }
@@ -251,6 +268,38 @@ public class TaskSystem : MonoBehaviour
                 if (showDebugInfo)
                     Debug.Log($"Task '{task.taskTitle}' rounds remaining: {task.roundsRemaining}");
             }
+        }
+    }
+
+    void OnDeliveryTaskCompleted(DeliveryTask deliveryTask)
+    {
+        // find the linked game task
+        GameTask gameTask = activeTasks.FirstOrDefault(t => t.linkedDeliveryTaskId == deliveryTask.taskId);
+        
+        if (gameTask != null && gameTask.status == TaskStatus.InProgress)
+        {
+            CompleteTask(gameTask);
+        }
+    }
+
+    public void HandleDeliveryFailure(GameTask task)
+    {
+        if (task.status == TaskStatus.InProgress)
+        {
+            task.status = TaskStatus.Incomplete;
+            activeTasks.Remove(task);
+            completedTasks.Add(task);
+            
+            // apply penalties for delivery failure
+            if (SatisfactionAndBudget.Instance != null && task.deliveryFailureSatisfactionPenalty > 0)
+            {
+                SatisfactionAndBudget.Instance.RemoveSatisfaction(task.deliveryFailureSatisfactionPenalty);
+            }
+            
+            OnTaskCompleted?.Invoke(task);
+            
+            if (showDebugInfo)
+                Debug.Log($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
         }
     }
 
@@ -583,6 +632,75 @@ public class TaskSystem : MonoBehaviour
         numericalTask.impacts.Add(new TaskImpact(ImpactType.Workforce, 0)); // 动态计算
         numericalTask.impacts.Add(new TaskImpact(ImpactType.Budget, 0)); // 动态计算
     }
+
+    [ContextMenu("Create Test Population Transport Task")]
+    public void CreateTestPopulationTransportTask()
+    {
+        PrebuiltBuilding community = null;
+        PrebuiltBuilding motel = null;
+        
+        PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>();
+        foreach (var pb in prebuilts)
+        {
+            if (pb.GetPrebuiltType() == PrebuiltBuildingType.Community && pb.GetCurrentPopulation() > 0)
+                community = pb;
+            else if (pb.GetPrebuiltType() == PrebuiltBuildingType.Motel)
+                motel = pb;
+        }
+        
+        if (community == null || motel == null)
+        {
+            Debug.LogError("Cannot create transport task - missing Community with population or Motel");
+            return;
+        }
+        
+        // check vehicle capacity
+        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+        int maxVehicleCapacity = vehicles.Length > 0 ? vehicles.Max(v => v.GetMaxCapacity()) : 10;
+        
+        // compute transport amount
+        int availablePopulation = community.GetCurrentPopulation();
+        int motelSpace = motel.GetPopulationCapacity() - motel.GetCurrentPopulation();
+        int transportAmount = Mathf.Min(availablePopulation, motelSpace, maxVehicleCapacity);
+        
+        if (transportAmount <= 0)
+        {
+            Debug.LogError($"Cannot create transport task - no available population or space. Population: {availablePopulation}, Motel space: {motelSpace}");
+            return;
+        }
+        
+        GameTask transportTask = CreateTask("Emergency Population Transport", TaskType.Emergency, community.name,
+            $"We have {transportAmount} displaced families that need immediate transport to temporary housing at the motel.");
+        
+        transportTask.requiresDelivery = true;
+        transportTask.deliveryCargoType = ResourceType.Population;
+        transportTask.deliveryQuantity = transportAmount; // use calculated transport amount
+        transportTask.deliverySource = community;
+        transportTask.deliveryDestination = motel;
+        transportTask.deliveryTimeLimit = 180f; // 3 minutes limit
+        transportTask.deliveryFailureSatisfactionPenalty = 15f; // -15 sat Penalty for failure
+        
+        transportTask.impacts.Add(new TaskImpact(ImpactType.Clients, transportAmount, false, "People to Transport"));
+        transportTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, 180, true, "Time Limit"));
+        transportTask.impacts.Add(new TaskImpact(ImpactType.Satisfaction, -15, false, "Failure Penalty"));
+        
+        transportTask.agentMessages.Add(new AgentMessage("We have an urgent situation!", defaultAgentAvatar));
+        transportTask.agentMessages.Add(new AgentMessage($"{transportAmount} families at {community.name} need immediate transport to {motel.name}."));
+        transportTask.agentMessages.Add(new AgentMessage("We must get them relocated within 3 minutes or they'll lose faith in our response."));
+        transportTask.agentMessages.Add(new AgentMessage("Are you ready to dispatch a vehicle?"));
+        
+        AgentChoice confirmChoice = new AgentChoice(1, "Confirm - Dispatch vehicle immediately");
+        confirmChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5, false, "Quick Response Bonus"));
+        transportTask.agentChoices.Add(confirmChoice);
+        
+        AgentChoice delayChoice = new AgentChoice(2, "Wait - Check vehicle availability first");
+        delayChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -3, false, "Delayed Response"));
+        transportTask.agentChoices.Add(delayChoice);
+        
+        if (showDebugInfo)
+            Debug.Log($"Created test population transport task: {transportAmount} people from {community.name} to {motel.name}. Max vehicle capacity: {maxVehicleCapacity}");
+    }
+
     [ContextMenu("Print Task Statistics")]
     public void PrintTaskStatistics()
     {
