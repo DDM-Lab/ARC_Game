@@ -121,6 +121,14 @@ MonoBehaviour:
   iconImage: {fileID: 2977446580904940374}
   labelText: {fileID: 8474328024734214137}
   valueText: {fileID: 4467367125712437337}
+  SatisfactionImpactIcon: {fileID: 21300000, guid: 0446833dda854d84c947982f643e9a89, type: 3}
+  BudgetImpactIcon: {fileID: 21300000, guid: e4de1fb906dbecb41a6a7fde44ee1270, type: 3}
+  TotalTimeImpactIcon: {fileID: 21300000, guid: 39d8a1b3ad74431459645cc8962cb1d6, type: 3}
+  TrainingTimeImpactIcon: {fileID: 21300000, guid: 2a34ee689630e224f8fceb38955e11a5, type: 3}
+  FoodPacksImpactIcon: {fileID: 21300000, guid: 877e89b9825e1164cb8ec30fefeeb922, type: 3}
+  ClientsImpactIcon: {fileID: 21300000, guid: abf1b74d814b72840b6865d2abcd2c31, type: 3}
+  WorkforceImpactIcon: {fileID: 21300000, guid: 58522748c38d1b84b843417fc731a8fb, type: 3}
+  TotalLodgingImpactIcon: {fileID: 21300000, guid: 3fab874f93435a441b647c5b3b38201c, type: 3}
 --- !u!1 &6154918671393543088
 GameObject:
   m_ObjectHideFlags: 0

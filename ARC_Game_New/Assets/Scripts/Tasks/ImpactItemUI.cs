@@ -11,6 +11,15 @@ public class ImpactItemUI : MonoBehaviour
     public Image iconImage;
     public TextMeshProUGUI labelText;
     public TextMeshProUGUI valueText;
+    [Header("Impact Icons")]
+    public Sprite SatisfactionImpactIcon;
+    public Sprite BudgetImpactIcon;
+    public Sprite TotalTimeImpactIcon;
+    public Sprite TrainingTimeImpactIcon;
+    public Sprite FoodPacksImpactIcon;
+    public Sprite ClientsImpactIcon;
+    public Sprite WorkforceImpactIcon;
+    public Sprite TotalLodgingImpactIcon;
     
     private TaskImpact impact;
     
@@ -24,12 +33,9 @@ public class ImpactItemUI : MonoBehaviour
     {
         if (impact == null) return;
         
-        // Set icon (could use sprite instead of text)
         if (iconImage != null)
         {
-            // For now, we'll set the icon as text - you can replace with sprite lookup
-            string iconText = TaskSystem.GetImpactIcon(impact.impactType);
-            // iconImage.sprite = GetImpactSprite(impact.impactType);
+            iconImage.sprite = GetImpactSprite(impact.impactType);
         }
         
         // Set label
@@ -53,6 +59,32 @@ public class ImpactItemUI : MonoBehaviour
                 string prefix = impact.value > 0 ? "+" : "";
                 valueText.text = prefix + impact.value.ToString();
             }
+        }
+    }
+
+    Sprite GetImpactSprite(ImpactType impactType)
+    {
+        switch (impactType)
+        {
+            case ImpactType.Satisfaction:
+                return SatisfactionImpactIcon;
+            case ImpactType.Budget:
+            case ImpactType.TotalCosts:
+                return BudgetImpactIcon;
+            case ImpactType.TotalTime:
+                return TotalTimeImpactIcon;
+            case ImpactType.TrainingTime:
+                return TrainingTimeImpactIcon;
+            case ImpactType.FoodPacks:
+                return FoodPacksImpactIcon;
+            case ImpactType.Clients:
+                return ClientsImpactIcon;
+            case ImpactType.Workforce:
+                return WorkforceImpactIcon;
+            case ImpactType.TotalLodging:
+                return TotalLodgingImpactIcon;
+            default:
+                return null; // or a default sprite
         }
     }
     
