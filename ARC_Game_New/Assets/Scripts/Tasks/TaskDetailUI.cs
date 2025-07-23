@@ -241,6 +241,11 @@ public class TaskDetailUI : MonoBehaviour
         {
             DisplayAgentChoices();
         }
+        // Display numerical inputs if available
+        if (currentTask.numericalInputs.Count > 0)
+        {
+            DisplayNumericalInputs();
+        }
         
         // Auto-scroll to bottom
         ScrollToBottom();
@@ -292,6 +297,28 @@ public class TaskDetailUI : MonoBehaviour
         }
         
         ScrollToBottom();
+    }
+
+    void DisplayNumericalInputs()
+    {
+        if (currentTask.numericalInputs.Count > 0)
+        {
+            foreach (AgentNumericalInput input in currentTask.numericalInputs)
+            {
+                GameObject inputItem = Instantiate(numericalInputPrefab, conversationContent);
+                NumericalInputUI inputUI = inputItem.GetComponent<NumericalInputUI>();
+                
+                if (inputUI != null)
+                {
+                    inputUI.Initialize(input, this);
+                    numericalInputs[input.inputId] = input;
+                }
+                
+                currentConversationItems.Add(inputItem);
+            }
+            
+            ScrollToBottom();
+        }
     }
     
     void ClearConversation()

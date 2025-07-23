@@ -300,8 +300,8 @@ public class TaskItemUI : MonoBehaviour
     
     void Update()
     {
-        // Update display periodically for real-time countdowns and status changes
-        if (assignedTask != null && assignedTask.status == TaskStatus.Active)
+        // Update display periodically
+        if (assignedTask != null)
         {
             UpdateDisplay();
         }

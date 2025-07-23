@@ -71,6 +71,7 @@ public class GameTask
     [Header("Agent Conversation")]
     public List<AgentMessage> agentMessages = new List<AgentMessage>();
     public List<AgentChoice> agentChoices = new List<AgentChoice>();
+    public List<AgentNumericalInput> numericalInputs = new List<AgentNumericalInput>();
     
     public float timeCreated;
     public bool isExpired => roundsRemaining <= 0 || (hasRealTimeLimit && realTimeRemaining <= 0);
@@ -469,6 +470,28 @@ public class TaskSystem : MonoBehaviour
         advisoryTask.agentMessages.Add(new AgentMessage("We could upgrade our equipment to serve more people efficiently."));
     }
 
+    [ContextMenu("Create Test Numerical Task")]
+    public void CreateTestNumericalTask()
+    {
+        GameTask numericalTask = CreateTask("Worker Assignment", TaskType.Advisory, "Kitchen 1",
+            "We need to assign workers to this facility. Please specify how many workers to assign.");
+        
+        // add numerical inputs
+        AgentNumericalInput workerInput = new AgentNumericalInput(1, "Workers to Assign", 2, 0, 8);
+        numericalTask.numericalInputs.Add(workerInput);
+        
+        AgentNumericalInput budgetInput = new AgentNumericalInput(2, "Budget Allocation", 1000, 500, 5000);
+        budgetInput.stepSize = 500;
+        numericalTask.numericalInputs.Add(budgetInput);
+        
+        // add agent messages
+        numericalTask.agentMessages.Add(new AgentMessage("We need to configure this facility.", defaultAgentAvatar));
+        numericalTask.agentMessages.Add(new AgentMessage("Please use the controls below to set the parameters."));
+        
+        // add impacts
+        numericalTask.impacts.Add(new TaskImpact(ImpactType.Workforce, 0)); // 动态计算
+        numericalTask.impacts.Add(new TaskImpact(ImpactType.Budget, 0)); // 动态计算
+    }
     [ContextMenu("Print Task Statistics")]
     public void PrintTaskStatistics()
     {
