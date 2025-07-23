@@ -125,7 +125,7 @@ public class AgentNumericalInput
     public int minValue;
     public int maxValue;
     public int stepSize = 1;
-    
+
     public AgentNumericalInput(int id, string label, int current, int min, int max)
     {
         inputId = id;
@@ -136,34 +136,47 @@ public class AgentNumericalInput
     }
 }
 
+[System.Serializable]
+public class PlayerMessage
+{
+    public string messageText;
+    public float timeStamp;
+    
+    public PlayerMessage(string text)
+    {
+        messageText = text;
+        timeStamp = Time.time;
+    }
+}
+
 public class TaskSystem : MonoBehaviour
 {
     [Header("Task Management")]
     public List<GameTask> activeTasks = new List<GameTask>();
     public List<GameTask> completedTasks = new List<GameTask>();
-    
+
     [Header("UI References")]
     public TaskCenterUI taskCenterUI;
     public TaskDetailUI taskDetailUI;
-    
+
     [Header("Default Assets")]
     public Sprite defaultTaskImage;
     public Sprite defaultAgentAvatar;
-    
+
     [Header("Debug")]
     public bool showDebugInfo = true;
-    
+
     // Task ID counter
     private int nextTaskId = 1;
-    
+
     // Events
     public event Action<GameTask> OnTaskCreated;
     public event Action<GameTask> OnTaskCompleted;
     public event Action<GameTask> OnTaskExpired;
-    
+
     // Singleton
     public static TaskSystem Instance { get; private set; }
-    
+
     void Awake()
     {
         if (Instance == null)
@@ -177,7 +190,7 @@ public class TaskSystem : MonoBehaviour
             return;
         }
     }
-    
+
     void Start()
     {
         // Subscribe to global clock for round-based countdown
@@ -185,20 +198,20 @@ public class TaskSystem : MonoBehaviour
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnTimeSegmentAdvanced;
         }
-        
+
         if (showDebugInfo)
             Debug.Log("Task System initialized");
     }
-    
+
     void Update()
     {
         // Update real-time countdowns
         UpdateRealTimeCountdowns();
-        
+
         // Check for expired tasks
         CheckExpiredTasks();
     }
-    
+
     void UpdateRealTimeCountdowns()
     {
         foreach (GameTask task in activeTasks)
@@ -213,17 +226,17 @@ public class TaskSystem : MonoBehaviour
             }
         }
     }
-    
+
     void CheckExpiredTasks()
     {
         List<GameTask> expiredTasks = activeTasks.Where(t => t.isExpired && t.status == TaskStatus.Active).ToList();
-        
+
         foreach (GameTask task in expiredTasks)
         {
             ExpireTask(task);
         }
     }
-    
+
     void OnTimeSegmentAdvanced(int newSegment)
     {
         // Reduce rounds remaining for all active tasks
@@ -232,19 +245,19 @@ public class TaskSystem : MonoBehaviour
             if (task.roundsRemaining > 0)
             {
                 task.roundsRemaining--;
-                
+
                 if (showDebugInfo)
                     Debug.Log($"Task '{task.taskTitle}' rounds remaining: {task.roundsRemaining}");
             }
         }
     }
-    
+
     public GameTask CreateTask(string title, TaskType type, string facility, string description)
     {
         GameTask newTask = new GameTask(nextTaskId++, title, type, facility);
         newTask.description = description;
         newTask.taskImage = defaultTaskImage;
-        
+
         // Set default timing based on task type
         switch (type)
         {
@@ -265,16 +278,16 @@ public class TaskSystem : MonoBehaviour
                 newTask.realTimeRemaining = 600f; // 10 minutes
                 break;
         }
-        
+
         activeTasks.Add(newTask);
         OnTaskCreated?.Invoke(newTask);
-        
+
         if (showDebugInfo)
             Debug.Log($"Created task: {title} ({type}) for {facility}");
-        
+
         return newTask;
     }
-    
+
     public void CompleteTask(GameTask task)
     {
         if (activeTasks.Contains(task))
@@ -282,37 +295,37 @@ public class TaskSystem : MonoBehaviour
             task.status = TaskStatus.Completed;
             activeTasks.Remove(task);
             completedTasks.Add(task);
-            
+
             OnTaskCompleted?.Invoke(task);
-            
+
             if (showDebugInfo)
                 Debug.Log($"Completed task: {task.taskTitle}");
         }
     }
-    
+
     public void ExpireTask(GameTask task)
     {
         if (activeTasks.Contains(task))
         {
-            task.status = task.taskType == TaskType.Emergency || task.taskType == TaskType.Demand 
+            task.status = task.taskType == TaskType.Emergency || task.taskType == TaskType.Demand
                 ? TaskStatus.Incomplete : TaskStatus.Expired;
-            
+
             activeTasks.Remove(task);
             completedTasks.Add(task);
-            
+
             // Apply penalties for incomplete emergency/demand tasks
             if (task.status == TaskStatus.Incomplete)
             {
                 ApplyTaskPenalties(task);
             }
-            
+
             OnTaskExpired?.Invoke(task);
-            
+
             if (showDebugInfo)
                 Debug.Log($"Expired task: {task.taskTitle} (Status: {task.status})");
         }
     }
-    
+
     void ApplyTaskPenalties(GameTask task)
     {
         // Apply penalties based on task impacts
@@ -330,11 +343,11 @@ public class TaskSystem : MonoBehaviour
                     break;
             }
         }
-        
+
         if (showDebugInfo)
             Debug.Log($"Applied penalties for incomplete task: {task.taskTitle}");
     }
-    
+
     public void IgnoreTask(GameTask task)
     {
         // For advisory tasks, this removes them without penalty
@@ -343,28 +356,28 @@ public class TaskSystem : MonoBehaviour
             task.status = TaskStatus.Completed;
             activeTasks.Remove(task);
             completedTasks.Add(task);
-            
+
             if (showDebugInfo)
                 Debug.Log($"Ignored advisory task: {task.taskTitle}");
         }
     }
-    
+
     // Methods for getting filtered task lists
     public List<GameTask> GetTasksByType(TaskType type)
     {
         return activeTasks.Where(t => t.taskType == type).ToList();
     }
-    
+
     public List<GameTask> GetTasksByStatus(TaskStatus status)
     {
         return completedTasks.Where(t => t.status == status).ToList();
     }
-    
+
     public List<GameTask> GetAllActiveTasks()
     {
         return new List<GameTask>(activeTasks);
     }
-    
+
     public GameTask GetTaskById(int taskId)
     {
         GameTask task = activeTasks.FirstOrDefault(t => t.taskId == taskId);
@@ -372,7 +385,7 @@ public class TaskSystem : MonoBehaviour
             task = completedTasks.FirstOrDefault(t => t.taskId == taskId);
         return task;
     }
-    
+
     // Utility methods for impact display
     public static string GetImpactIcon(ImpactType type)
     {
@@ -390,7 +403,7 @@ public class TaskSystem : MonoBehaviour
             default: return "❓";
         }
     }
-    
+
     public static string GetImpactLabel(ImpactType type)
     {
         switch (type)
@@ -407,62 +420,62 @@ public class TaskSystem : MonoBehaviour
             default: return "Unknown";
         }
     }
-    
+
     // Debug methods for testing
     [ContextMenu("Create Test Food Demand Task")]
     public void CreateTestFoodDemandTask()
     {
-        GameTask foodTask = CreateTask("Food Shortage", TaskType.Demand, "Kitchen 1", 
+        GameTask foodTask = CreateTask("Food Shortage", TaskType.Demand, "Kitchen 1",
             "Multiple families have reported running out of food supplies. Immediate food distribution is required.");
-        
+
         // Add impacts
         foodTask.impacts.Add(new TaskImpact(ImpactType.FoodPacks, 50));
         foodTask.impacts.Add(new TaskImpact(ImpactType.Budget, 2000));
         foodTask.impacts.Add(new TaskImpact(ImpactType.Satisfaction, -10));
-        
+
         // Add agent messages
         foodTask.agentMessages.Add(new AgentMessage("Hello! We have an urgent food shortage situation.", defaultAgentAvatar));
         foodTask.agentMessages.Add(new AgentMessage("Several families in Shelter 1 have completely run out of food supplies."));
         foodTask.agentMessages.Add(new AgentMessage("We need to decide how to respond quickly. What would you like to do?"));
-        
+
         // Add agent choices
         AgentChoice choice1 = new AgentChoice(1, "Emergency food distribution (50 food packs, $2000)");
         choice1.choiceImpacts.Add(new TaskImpact(ImpactType.FoodPacks, -50));
         choice1.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -2000));
         choice1.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 15));
         foodTask.agentChoices.Add(choice1);
-        
+
         AgentChoice choice2 = new AgentChoice(2, "Limited food distribution (25 food packs, $1000)");
         choice2.choiceImpacts.Add(new TaskImpact(ImpactType.FoodPacks, -25));
         choice2.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1000));
         choice2.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5));
         foodTask.agentChoices.Add(choice2);
-        
+
         AgentChoice choice3 = new AgentChoice(3, "Delay until next shipment arrives");
         choice3.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -20));
         foodTask.agentChoices.Add(choice3);
     }
-    
+
     [ContextMenu("Create Test Advisory Task")]
     public void CreateTestAdvisoryTask()
     {
         GameTask advisoryTask = CreateTask("Equipment Upgrade", TaskType.Advisory, "Kitchen 2",
             "Kitchen equipment could be upgraded to improve efficiency. This is not urgent but would provide long-term benefits.");
-        
+
         advisoryTask.impacts.Add(new TaskImpact(ImpactType.Budget, 5000));
         advisoryTask.impacts.Add(new TaskImpact(ImpactType.Satisfaction, 25));
-        
+
         advisoryTask.agentMessages.Add(new AgentMessage("I've been reviewing our kitchen operations.", defaultAgentAvatar));
         advisoryTask.agentMessages.Add(new AgentMessage("We could upgrade our equipment to serve more people efficiently."));
     }
-    
+
     [ContextMenu("Print Task Statistics")]
     public void PrintTaskStatistics()
     {
         Debug.Log("=== TASK STATISTICS ===");
         Debug.Log($"Active Tasks: {activeTasks.Count}");
         Debug.Log($"Completed Tasks: {completedTasks.Count}");
-        
+
         foreach (TaskType type in Enum.GetValues(typeof(TaskType)))
         {
             int count = GetTasksByType(type).Count;

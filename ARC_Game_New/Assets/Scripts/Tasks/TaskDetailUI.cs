@@ -314,13 +314,21 @@ public class TaskDetailUI : MonoBehaviour
         numericalInputs.Clear();
     }
     
+    // doesn't work for now
     void ScrollToBottom()
     {
         if (conversationScrollView != null)
         {
-            Canvas.ForceUpdateCanvases();
-            conversationScrollView.verticalNormalizedPosition = 0f;
+            StartCoroutine(ScrollToBottomCoroutine());
         }
+    }
+
+    IEnumerator ScrollToBottomCoroutine()
+    {
+        yield return new WaitForEndOfFrame();
+        Canvas.ForceUpdateCanvases();
+        yield return new WaitForEndOfFrame();
+        conversationScrollView.verticalNormalizedPosition = 0f;
     }
     
     public void OnChoiceSelected(AgentChoice choice)
