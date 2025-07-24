@@ -125,39 +125,101 @@ public class DeliverySystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Create a new delivery task
+    /// Create delivery task(s) - automatically splits large tasks
     /// </summary>
-    public DeliveryTask CreateDeliveryTask(MonoBehaviour source, MonoBehaviour destination, ResourceType cargoType, int quantity, int priority = 1)
+    public List<DeliveryTask> CreateDeliveryTask(MonoBehaviour source, MonoBehaviour destination, ResourceType cargoType, int quantity, int priority = 1)
     {
+        List<DeliveryTask> createdTasks = new List<DeliveryTask>();
+        
         if (source == null || destination == null)
         {
             Debug.LogError("Cannot create delivery task with null buildings");
-            return null;
+            return createdTasks;
         }
-
+        
         if (quantity <= 0)
         {
             Debug.LogError("Cannot create delivery task with zero or negative quantity");
-            return null;
+            return createdTasks;
         }
-
-        DeliveryTask newTask = new DeliveryTask(source, destination, cargoType, quantity, nextTaskId++);
-        newTask.priority = priority;
-
-        // Check if we have space in queue
-        if (pendingTasks.Count >= maxQueuedTasks)
+        
+        // 找到能处理此货物类型的最大vehicle capacity
+        int maxCapacity = GetMaxVehicleCapacityForCargo(cargoType);
+        
+        if (maxCapacity <= 0)
         {
-            Debug.LogWarning("Delivery task queue is full - cannot add new task");
-            return null;
+            Debug.LogError($"No vehicle available for cargo type {cargoType}");
+            return createdTasks;
         }
+        
+        // 计算需要多少个任务
+        int remainingQuantity = quantity;
+        int taskNumber = 1;
+        
+        while (remainingQuantity > 0)
+        {
+            int currentTaskQuantity = Mathf.Min(remainingQuantity, maxCapacity);
+            
+            // 检查queue空间
+            if (pendingTasks.Count >= maxQueuedTasks)
+            {
+                Debug.LogWarning("Delivery task queue is full - cannot add more tasks");
+                break;
+            }
+            
+            DeliveryTask newTask = new DeliveryTask(source, destination, cargoType, currentTaskQuantity, nextTaskId++);
+            newTask.priority = priority;
+            
+            pendingTasks.Enqueue(newTask);
+            createdTasks.Add(newTask);
+            OnTaskCreated?.Invoke(newTask);
+            
+            if (showDebugInfo)
+                Debug.Log($"Created delivery task {taskNumber}/{Mathf.CeilToInt((float)quantity / maxCapacity)}: {newTask}");
+            
+            remainingQuantity -= currentTaskQuantity;
+            taskNumber++;
+        }
+        
+        if (showDebugInfo && createdTasks.Count > 1)
+            Debug.Log($"Split delivery into {createdTasks.Count} tasks for total quantity {quantity}");
+        
+        return createdTasks;
+    }
 
-        pendingTasks.Enqueue(newTask);
-        OnTaskCreated?.Invoke(newTask);
+    /// <summary>
+    /// Create single delivery task (backward compatibility)
+    /// </summary>
+    public DeliveryTask CreateSingleDeliveryTask(MonoBehaviour source, MonoBehaviour destination, ResourceType cargoType, int quantity, int priority = 1)
+    {
+        List<DeliveryTask> tasks = CreateDeliveryTask(source, destination, cargoType, quantity, priority);
+        return tasks.Count > 0 ? tasks[0] : null;
+    }
 
-        if (showDebugInfo)
-            Debug.Log($"Created delivery task: {newTask}");
+    /// <summary>
+    /// Get maximum vehicle capacity for specific cargo type
+    /// </summary>
+    int GetMaxVehicleCapacityForCargo(ResourceType cargoType)
+    {
+        int maxCapacity = 0;
+        
+        foreach (Vehicle vehicle in availableVehicles)
+        {
+            if (vehicle.GetAllowedCargoTypes().Contains(cargoType))
+            {
+                maxCapacity = Mathf.Max(maxCapacity, vehicle.GetMaxCapacity());
+            }
+        }
+        
+        return maxCapacity;
+    }
 
-        return newTask;
+    /// <summary>
+    /// Get completed delivery tasks
+    /// </summary>
+    public List<DeliveryTask> GetCompletedTasks()
+    {
+        return new List<DeliveryTask>(completedTasks);
     }
 
     /// <summary>

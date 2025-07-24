@@ -4,6 +4,7 @@ using TMPro;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.EventSystems;
+using System.Linq;
 
 public class TaskDetailUI : MonoBehaviour
 {
@@ -448,45 +449,27 @@ public class TaskDetailUI : MonoBehaviour
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
         if (deliverySystem != null && currentTask.deliverySource != null && currentTask.deliveryDestination != null)
         {
-            // check if there is a vehicle that can handle this delivery
-            Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-            bool hasCapableVehicle = false;
-            
-            foreach (Vehicle vehicle in vehicles)
-            {
-                if (vehicle.GetAllowedCargoTypes().Contains(currentTask.deliveryCargoType) && 
-                    vehicle.GetMaxCapacity() >= currentTask.deliveryQuantity)
-                {
-                    hasCapableVehicle = true;
-                    break;
-                }
-            }
-            
-            if (!hasCapableVehicle)
-            {
-                Debug.LogError($"No vehicle available with capacity {currentTask.deliveryQuantity} for {currentTask.deliveryCargoType}");
-                return;
-            }
-            
-            DeliveryTask deliveryTask = deliverySystem.CreateDeliveryTask(
+            // create delivery tasks that may involve multiple deliveries
+            List<DeliveryTask> deliveryTasks = deliverySystem.CreateDeliveryTask(
                 currentTask.deliverySource,
                 currentTask.deliveryDestination, 
                 currentTask.deliveryCargoType,
                 currentTask.deliveryQuantity,
-                3 // High priority
+                3 // high priority
             );
             
-            if (deliveryTask != null)
+            if (deliveryTasks.Count > 0)
             {
-                currentTask.linkedDeliveryTaskId = deliveryTask.taskId;
+                // Store all related delivery task IDs
+                currentTask.linkedDeliveryTaskIds = deliveryTasks.Select(dt => dt.taskId).ToList();
                 StartCoroutine(MonitorDeliveryProgress());
                 
                 if (showDebugInfo)
-                    Debug.Log($"Created delivery task for game task: {currentTask.taskTitle}. Task ID: {deliveryTask.taskId}");
+                    Debug.Log($"Created {deliveryTasks.Count} delivery tasks for game task: {currentTask.taskTitle}");
             }
             else
             {
-                Debug.LogError("Failed to create delivery task");
+                Debug.LogError("Failed to create delivery tasks");
             }
         }
     }
@@ -497,16 +480,44 @@ public class TaskDetailUI : MonoBehaviour
         
         while (timeRemaining > 0 && currentTask.status == TaskStatus.InProgress)
         {
-            timeRemaining -= Time.deltaTime;
+            timeRemaining -= Time.unscaledDeltaTime;
+            
+            // 检查是否所有delivery都完成了
+            if (AreAllDeliveriesCompleted())
+            {
+                TaskSystem.Instance.CompleteTask(currentTask);
+                yield break;
+            }
+            
             yield return null;
         }
-
-        // Check delivery status
+        
+        // 超时处理
         if (currentTask.status == TaskStatus.InProgress)
         {
-            // Timed out, mark as incomplete
             TaskSystem.Instance.HandleDeliveryFailure(currentTask);
         }
+    }
+
+    bool AreAllDeliveriesCompleted()
+    {
+        if (currentTask.linkedDeliveryTaskIds == null || currentTask.linkedDeliveryTaskIds.Count == 0)
+            return false;
+        
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null) return false;
+        
+        List<DeliveryTask> completedTasks = deliverySystem.GetCompletedTasks();
+        
+        foreach (int taskId in currentTask.linkedDeliveryTaskIds)
+        {
+            if (!completedTasks.Any(ct => ct.taskId == taskId))
+            {
+                return false; // 还有未完成的delivery
+            }
+        }
+        
+        return true; // 所有delivery都完成了
     }
 
 

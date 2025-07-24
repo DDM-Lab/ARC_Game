@@ -130,7 +130,7 @@ public class ResourceFlowManager : MonoBehaviour
         
         if (bestKitchen != null)
         {
-            DeliveryTask emergencyTask = deliverySystem.CreateDeliveryTask(
+            DeliveryTask emergencyTask = deliverySystem.CreateSingleDeliveryTask(
                 bestKitchen, shelter, ResourceType.FoodPacks, urgentAmount, foodDeliveryPriority + 2);
             
             if (emergencyTask != null)

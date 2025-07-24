@@ -82,7 +82,7 @@ public class GameTask
     public MonoBehaviour deliveryDestination;
     public float deliveryTimeLimit = 300f;
     public float deliveryFailureSatisfactionPenalty = 10f;
-    public int linkedDeliveryTaskId = -1;
+    public List<int> linkedDeliveryTaskIds = new List<int>(); // support multiple linked delivery tasks
 
     public float timeCreated;
     public bool isExpired => roundsRemaining <= 0 || (hasRealTimeLimit && realTimeRemaining <= 0);
@@ -273,12 +273,26 @@ public class TaskSystem : MonoBehaviour
 
     void OnDeliveryTaskCompleted(DeliveryTask deliveryTask)
     {
-        // find the linked game task
-        GameTask gameTask = activeTasks.FirstOrDefault(t => t.linkedDeliveryTaskId == deliveryTask.taskId);
+        // find any active tasks that are linked to this delivery task
+        GameTask gameTask = activeTasks.FirstOrDefault(t => 
+            t.linkedDeliveryTaskIds != null && t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
         
         if (gameTask != null && gameTask.status == TaskStatus.InProgress)
         {
-            CompleteTask(gameTask);
+            // check if all deliveries are completed
+            DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+            List<DeliveryTask> completedTasks = deliverySystem.GetCompletedTasks();
+            
+            bool allCompleted = gameTask.linkedDeliveryTaskIds.All(id => 
+                completedTasks.Any(ct => ct.taskId == id));
+            
+            if (allCompleted)
+            {
+                CompleteTask(gameTask);
+                
+                if (showDebugInfo)
+                    Debug.Log($"All deliveries completed for task: {gameTask.taskTitle}");
+            }
         }
     }
 
@@ -629,8 +643,8 @@ public class TaskSystem : MonoBehaviour
         numericalTask.agentMessages.Add(new AgentMessage("Please use the controls below to set the parameters."));
         
         // add impacts
-        numericalTask.impacts.Add(new TaskImpact(ImpactType.Workforce, 0)); // 动态计算
-        numericalTask.impacts.Add(new TaskImpact(ImpactType.Budget, 0)); // 动态计算
+        numericalTask.impacts.Add(new TaskImpact(ImpactType.Workforce, 0));
+        numericalTask.impacts.Add(new TaskImpact(ImpactType.Budget, 0));
     }
 
     [ContextMenu("Create Test Population Transport Task")]
@@ -661,8 +675,9 @@ public class TaskSystem : MonoBehaviour
         // compute transport amount
         int availablePopulation = community.GetCurrentPopulation();
         int motelSpace = motel.GetPopulationCapacity() - motel.GetCurrentPopulation();
-        int transportAmount = Mathf.Min(availablePopulation, motelSpace, maxVehicleCapacity);
-        
+        //int transportAmount = Mathf.Min(availablePopulation, motelSpace, maxVehicleCapacity);
+        int transportAmount = 30;
+
         if (transportAmount <= 0)
         {
             Debug.LogError($"Cannot create transport task - no available population or space. Population: {availablePopulation}, Motel space: {motelSpace}");
