@@ -584,7 +584,7 @@ public class TaskDetailUI : MonoBehaviour
             OnSendPlayerMessage();
         }
     }
-    
+
     void Update()
     {
         // Update task status and buttons in real-time
@@ -614,6 +614,8 @@ public class TaskDetailUI : MonoBehaviour
             }
 
         }
+        
+        
     }
 }
 

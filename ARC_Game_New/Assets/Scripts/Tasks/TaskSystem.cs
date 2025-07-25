@@ -62,9 +62,9 @@ public class GameTask
     public Sprite taskImage;
     
     [Header("Timing")]
-    public int roundsRemaining = 1; // Rounds until expiry
+    public int roundsRemaining = 3; // Rounds until expiry
     public float realTimeRemaining = 300f; // Real-time countdown in seconds
-    public bool hasRealTimeLimit = true;
+    public bool hasRealTimeLimit = false;
     
     [Header("Impacts")]
     public List<TaskImpact> impacts = new List<TaskImpact>();
@@ -216,6 +216,11 @@ public class TaskSystem : MonoBehaviour
         if (deliverySystem != null)
         {
             deliverySystem.OnTaskCompleted += OnDeliveryTaskCompleted;
+            Debug.Log("TaskSystem subscribed to DeliverySystem events");
+        }
+        else
+        {
+            Debug.LogError("DeliverySystem not found! Delivery tasks will not be tracked.");
         }
 
         if (showDebugInfo)
@@ -362,6 +367,11 @@ public class TaskSystem : MonoBehaviour
             completedTasks.Add(task);
 
             OnTaskCompleted?.Invoke(task);
+
+            if (taskCenterUI != null && taskCenterUI.taskCenterPanel.activeInHierarchy)
+            {
+                taskCenterUI.RefreshTaskList();
+            }
 
             if (showDebugInfo)
                 Debug.Log($"Completed task: {task.taskTitle}");
@@ -675,21 +685,18 @@ public class TaskSystem : MonoBehaviour
         // compute transport amount
         int availablePopulation = community.GetCurrentPopulation();
         int motelSpace = motel.GetPopulationCapacity() - motel.GetCurrentPopulation();
-        //int transportAmount = Mathf.Min(availablePopulation, motelSpace, maxVehicleCapacity);
-        int transportAmount = 30;
-
+        int transportAmount = Mathf.Min(availablePopulation, motelSpace, 30);
         if (transportAmount <= 0)
         {
-            Debug.LogError($"Cannot create transport task - no available population or space. Population: {availablePopulation}, Motel space: {motelSpace}");
+            Debug.LogError("Cannot create transport task - no available population or motel space");
             return;
         }
-        
         GameTask transportTask = CreateTask("Emergency Population Transport", TaskType.Emergency, community.name,
             $"We have {transportAmount} displaced families that need immediate transport to temporary housing at the motel.");
-        
+
         transportTask.requiresDelivery = true;
         transportTask.deliveryCargoType = ResourceType.Population;
-        transportTask.deliveryQuantity = transportAmount; // use calculated transport amount
+        transportTask.deliveryQuantity = transportAmount;
         transportTask.deliverySource = community;
         transportTask.deliveryDestination = motel;
         transportTask.deliveryTimeLimit = 180f; // 3 minutes limit

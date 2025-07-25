@@ -58,7 +58,7 @@ public class Vehicle : MonoBehaviour
     private Coroutine movementCoroutine;
     
     // Events
-    public event Action<Vehicle> OnDeliveryCompleted;
+    public event Action<Vehicle, DeliveryTask> OnDeliveryCompleted;
     public event Action<Vehicle, VehicleStatus> OnStatusChanged;
     public event Action<Vehicle> OnCargoChanged;
 
@@ -204,33 +204,41 @@ public class Vehicle : MonoBehaviour
     /// </summary>
     IEnumerator ExecuteDeliveryTask()
     {
+        Debug.Log($"Vehicle {vehicleName} starting delivery task");
+        
         // Step 1: Move to source building
         SetStatus(VehicleStatus.InTransit);
         Vector3 sourcePos = currentTask.GetSourceRoadConnection();
+        Debug.Log($"Vehicle {vehicleName} moving to source: {sourcePos}");
         yield return StartCoroutine(MoveToPosition(sourcePos));
         
         // Step 2: Load cargo
         SetStatus(VehicleStatus.Loading);
+        Debug.Log($"Vehicle {vehicleName} loading cargo");
         yield return StartCoroutine(LoadCargo());
         
         // Step 3: Move to destination building
         SetStatus(VehicleStatus.InTransit);
         Vector3 destPos = currentTask.GetDestinationRoadConnection();
+        Debug.Log($"Vehicle {vehicleName} moving to destination: {destPos}");
         yield return StartCoroutine(MoveToPosition(destPos));
         
         // Step 4: Unload cargo
         SetStatus(VehicleStatus.Unloading);
+        Debug.Log($"Vehicle {vehicleName} unloading cargo");
         yield return StartCoroutine(UnloadCargo());
         
         // Step 5: Complete delivery
+        Debug.Log($"Vehicle {vehicleName} completing delivery");
         CompleteDelivery();
     }
-    
+
     /// <summary>
     /// Move vehicle to target position using pathfinding
     /// </summary>
     IEnumerator MoveToPosition(Vector3 targetPos)
     {
+        Debug.Log($"Vehicle {vehicleName} pathfinding to {targetPos}");
         // Find path using pathfinding system
         PathfindingSystem pathfinder = FindObjectOfType<PathfindingSystem>();
         if (pathfinder != null)
@@ -242,31 +250,33 @@ public class Vehicle : MonoBehaviour
             // Fallback: direct movement
             currentPath = new List<Vector3> { transform.position, targetPos };
         }
-        
+
         if (currentPath.Count == 0)
         {
             if (showDebugInfo)
                 Debug.LogError($"Vehicle {vehicleName} could not find path to {targetPos}");
             yield break;
         }
-        
+
+        Debug.Log($"Vehicle {vehicleName} found path with {currentPath.Count} points");
+
         // Move along the path
         currentPathIndex = 0;
         while (currentPathIndex < currentPath.Count - 1)
         {
             Vector3 startPos = currentPath[currentPathIndex];
             Vector3 endPos = currentPath[currentPathIndex + 1];
-            
+
             // compute direction and rotation
             if (enableDirectionRotation)
             {
                 UpdateVehicleDirection(startPos, endPos);
             }
-            
+
             float journeyLength = Vector3.Distance(startPos, endPos);
             float journeyTime = journeyLength / moveSpeed;
             float elapsedTime = 0f;
-            
+
             while (elapsedTime < journeyTime)
             {
                 elapsedTime += Time.deltaTime;
@@ -278,17 +288,19 @@ public class Vehicle : MonoBehaviour
                 {
                     UpdateVehicleDirection(startPos, endPos);
                 }
-                
+
                 pathProgress = (currentPathIndex + fractionOfJourney) / (currentPath.Count - 1);
                 yield return null;
             }
-            
+
             currentPathIndex++;
         }
-        
+
         // Ensure we're exactly at the target
         transform.position = currentPath[currentPath.Count - 1];
         pathProgress = 1f;
+        
+        Debug.Log($"Vehicle {vehicleName} reached destination {targetPos}");
     }
     
     /// <summary>
@@ -410,13 +422,15 @@ public class Vehicle : MonoBehaviour
     /// </summary>
     void CompleteDelivery()
     {
+        DeliveryTask taskToComplete = currentTask;
+
         currentTask = null;
         sourceBuilding = null;
         destinationBuilding = null;
         currentPath.Clear();
         
         SetStatus(VehicleStatus.Idle);
-        OnDeliveryCompleted?.Invoke(this);
+        OnDeliveryCompleted?.Invoke(this, taskToComplete); // pass completed task to event directly
         
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} completed delivery and returned to idle");

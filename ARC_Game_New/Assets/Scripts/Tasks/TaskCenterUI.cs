@@ -134,7 +134,7 @@ public class TaskCenterUI : MonoBehaviour
         }
     }
     
-    void RefreshTaskList()
+    public void RefreshTaskList()
     {
         if (TaskSystem.Instance == null || taskListContent == null)
             return;

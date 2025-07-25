@@ -100,6 +100,7 @@ public class DeliverySystem : MonoBehaviour
         foreach (Vehicle vehicle in availableVehicles)
         {
             vehicle.OnDeliveryCompleted += OnVehicleDeliveryCompleted;
+            Debug.Log($"DeliverySystem subscribed to vehicle {vehicle.GetVehicleName()} events");
         }
 
         Debug.Log($"Delivery System initialized with {availableVehicles.Count} vehicles");
@@ -317,21 +318,13 @@ public class DeliverySystem : MonoBehaviour
     /// <summary>
     /// Handle vehicle delivery completion
     /// </summary>
-    void OnVehicleDeliveryCompleted(Vehicle vehicle)
+    void OnVehicleDeliveryCompleted(Vehicle vehicle, DeliveryTask completedTask)
     {
-        // Find and complete the task
-        DeliveryTask completedTask = activeTasks.FirstOrDefault(t => t == vehicle.GetCurrentTask());
-
-        if (completedTask != null)
-        {
-            activeTasks.Remove(completedTask);
-            completedTasks.Add(completedTask);
-
-            OnTaskCompleted?.Invoke(completedTask);
-
-            if (showDebugInfo)
-                Debug.Log($"Completed delivery task: {completedTask}");
-        }
+        Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
+    
+        activeTasks.Remove(completedTask);
+        completedTasks.Add(completedTask);
+        OnTaskCompleted?.Invoke(completedTask);
     }
 
     /// <summary>
