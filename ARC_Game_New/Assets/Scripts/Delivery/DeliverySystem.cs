@@ -198,6 +198,54 @@ public class DeliverySystem : MonoBehaviour
     }
 
     /// <summary>
+    /// Cancel specific delivery task
+    /// </summary>
+    public bool CancelDeliveryTask(int taskId)
+    {
+        // remove from pending tasks
+        var pendingArray = pendingTasks.ToArray();
+        pendingTasks.Clear();
+        
+        bool cancelled = false;
+        foreach (DeliveryTask task in pendingArray)
+        {
+            if (task.taskId == taskId)
+            {
+                cancelled = true;
+                if (showDebugInfo)
+                    Debug.Log($"Cancelled pending delivery task: {task}");
+            }
+            else
+            {
+                pendingTasks.Enqueue(task);
+            }
+        }
+
+        // remove from active tasks and stop vehicle
+        DeliveryTask activeTask = activeTasks.FirstOrDefault(t => t.taskId == taskId);
+        if (activeTask != null)
+        {
+            activeTasks.Remove(activeTask);
+
+            // find the vehicle executing this task and cancel it
+            Vehicle workingVehicle = availableVehicles.FirstOrDefault(v =>
+                v.GetCurrentTask() != null && v.GetCurrentTask().taskId == taskId);
+            
+            if (workingVehicle != null)
+            {
+                workingVehicle.CancelCurrentTask();
+            }
+            
+            cancelled = true;
+            if (showDebugInfo)
+                Debug.Log($"Cancelled active delivery task: {activeTask}");
+        }
+        
+        return cancelled;
+    }
+
+
+    /// <summary>
     /// Get maximum vehicle capacity for specific cargo type
     /// </summary>
     int GetMaxVehicleCapacityForCargo(ResourceType cargoType)

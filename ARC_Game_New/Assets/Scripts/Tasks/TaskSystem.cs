@@ -85,8 +85,24 @@ public class GameTask
     public List<int> linkedDeliveryTaskIds = new List<int>(); // support multiple linked delivery tasks
 
     public float timeCreated;
-    public bool isExpired => roundsRemaining <= 0 || (hasRealTimeLimit && realTimeRemaining <= 0);
-    
+    public bool isExpired 
+    { 
+        get 
+        {
+            // rounds remaining check
+            if (roundsRemaining <= 0) return true;
+            
+            // realtime check, only if has real-time limit and is in simulation
+            if (hasRealTimeLimit && GlobalClock.Instance != null && 
+                GlobalClock.Instance.IsSimulationRunning() && realTimeRemaining <= 0)
+            {
+                return true;
+            }
+            
+            return false;
+        }
+    }
+
     public GameTask(int id, string title, TaskType type, string facility)
     {
         taskId = id;
@@ -253,12 +269,50 @@ public class TaskSystem : MonoBehaviour
 
     void CheckExpiredTasks()
     {
-        List<GameTask> expiredTasks = activeTasks.Where(t => t.isExpired && t.status == TaskStatus.Active).ToList();
-
+        List<GameTask> expiredTasks = activeTasks.Where(t => t.roundsRemaining <= 0 || 
+            (t.hasRealTimeLimit && t.realTimeRemaining <= 0)).ToList();
+        
         foreach (GameTask task in expiredTasks)
         {
-            ExpireTask(task);
+            // check if task has delivery unfinished
+            if (task.requiresDelivery && task.status == TaskStatus.InProgress)
+            {
+                // cancel related delivery tasks
+                CancelTaskDeliveries(task);
+
+                // mark as incomplete (has delivery but not finished)
+                SetTaskIncomplete(task);
+            }
+            else
+            {
+                // regular expiration handling
+                ExpireTask(task);
+            }
         }
+    }
+
+    /// <summary>
+    /// Cancel all delivery tasks related to a game task
+    /// </summary>
+    void CancelTaskDeliveries(GameTask task)
+    {
+        if (task.linkedDeliveryTaskIds == null || task.linkedDeliveryTaskIds.Count == 0)
+            return;
+        
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null) return;
+        
+        int cancelledCount = 0;
+        foreach (int taskId in task.linkedDeliveryTaskIds)
+        {
+            if (deliverySystem.CancelDeliveryTask(taskId))
+            {
+                cancelledCount++;
+            }
+        }
+        
+        if (showDebugInfo)
+            Debug.Log($"Cancelled {cancelledCount} delivery tasks for expired game task: {task.taskTitle}");
     }
 
     void OnTimeSegmentAdvanced(int newSegment)
@@ -333,11 +387,11 @@ public class TaskSystem : MonoBehaviour
         {
             case TaskType.Emergency:
                 newTask.roundsRemaining = 1;
-                newTask.realTimeRemaining = 180f; // 3 minutes
+                newTask.hasRealTimeLimit = false;
                 break;
             case TaskType.Demand:
-                newTask.roundsRemaining = 1;
-                newTask.realTimeRemaining = 300f; // 5 minutes
+                newTask.roundsRemaining = 2;
+                newTask.hasRealTimeLimit = false;
                 break;
             case TaskType.Advisory:
                 newTask.roundsRemaining = 3;
@@ -345,7 +399,7 @@ public class TaskSystem : MonoBehaviour
                 break;
             case TaskType.Alert:
                 newTask.roundsRemaining = 2;
-                newTask.realTimeRemaining = 600f; // 10 minutes
+                newTask.hasRealTimeLimit = false;
                 break;
         }
 
@@ -699,16 +753,18 @@ public class TaskSystem : MonoBehaviour
         transportTask.deliveryQuantity = transportAmount;
         transportTask.deliverySource = community;
         transportTask.deliveryDestination = motel;
-        transportTask.deliveryTimeLimit = 180f; // 3 minutes limit
+        transportTask.roundsRemaining = 2;
+        transportTask.hasRealTimeLimit = false;
         transportTask.deliveryFailureSatisfactionPenalty = 15f; // -15 sat Penalty for failure
         
         transportTask.impacts.Add(new TaskImpact(ImpactType.Clients, transportAmount, false, "People to Transport"));
-        transportTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, 180, true, "Time Limit"));
+        transportTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, 2, false, "Rounds Remaining"));
         transportTask.impacts.Add(new TaskImpact(ImpactType.Satisfaction, -15, false, "Failure Penalty"));
-        
+        transportTask.impacts.Add(new TaskImpact(ImpactType.Budget, -15, false, "Cost of Transport"));
+
         transportTask.agentMessages.Add(new AgentMessage("We have an urgent situation!", defaultAgentAvatar));
         transportTask.agentMessages.Add(new AgentMessage($"{transportAmount} families at {community.name} need immediate transport to {motel.name}."));
-        transportTask.agentMessages.Add(new AgentMessage("We must get them relocated within 3 minutes or they'll lose faith in our response."));
+        transportTask.agentMessages.Add(new AgentMessage("We must get them relocated within 4 hours or they'll lose faith in our response."));
         transportTask.agentMessages.Add(new AgentMessage("Are you ready to dispatch a vehicle?"));
         
         AgentChoice confirmChoice = new AgentChoice(1, "Confirm - Dispatch vehicle immediately");

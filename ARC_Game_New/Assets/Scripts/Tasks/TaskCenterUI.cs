@@ -173,8 +173,10 @@ public class TaskCenterUI : MonoBehaviour
             allTasks = allTasks.Where(t => t.taskType == currentFilter.Value).ToList();
         }
         
-        // Sort by priority: Emergency > Demand > Alert > Advisory
-        allTasks = allTasks.OrderBy(t => GetTaskPriority(t.taskType)).ThenBy(t => t.timeCreated).ToList();
+        // sort by：Active > InProgress > Incomplete > Expired > Completed
+        allTasks = allTasks.OrderBy(t => GetTaskStatusPriority(t.status))
+                     .ThenBy(t => GetTaskPriority(t.taskType))
+                     .ThenBy(t => t.timeCreated).ToList();
         
         return allTasks;
     }
@@ -188,6 +190,19 @@ public class TaskCenterUI : MonoBehaviour
             case TaskType.Alert: return 3;
             case TaskType.Advisory: return 4;
             default: return 5;
+        }
+    }
+
+    int GetTaskStatusPriority(TaskStatus status)
+    {
+        switch (status)
+        {
+            case TaskStatus.Active: return 1;
+            case TaskStatus.InProgress: return 2;
+            case TaskStatus.Incomplete: return 3;
+            case TaskStatus.Expired: return 4;
+            case TaskStatus.Completed: return 5;
+            default: return 6;
         }
     }
     

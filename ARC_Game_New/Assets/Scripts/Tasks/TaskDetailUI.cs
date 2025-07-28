@@ -11,7 +11,7 @@ public class TaskDetailUI : MonoBehaviour
     [Header("Main Panel")]
     public GameObject taskDetailPanel;
     public Button closeButton;
-    
+
     [Header("Left Panel - Task Description")]
     public Image taskImage;
     public TextMeshProUGUI taskTitleText;
@@ -35,22 +35,22 @@ public class TaskDetailUI : MonoBehaviour
     public GameObject agentChoicePrefab;
     public GameObject numericalInputPrefab;
     public GameObject playerMessagePrefab;
-    
+
     [Header("Action Buttons")]
     public Button laterButton;
     public Button confirmButton;
-    
+
     [Header("Player Input")]
     public TMP_InputField playerInputField;
     public Button sendButton;
-    
+
     [Header("Typing Effect")]
     public float typingSpeed = 0.05f;
     public AudioClip typingSound;
-    
+
     [Header("Debug")]
     public bool showDebugInfo = true;
-    
+
     private GameTask currentTask;
     private List<GameObject> currentImpactItems = new List<GameObject>();
     private List<GameObject> currentConversationItems = new List<GameObject>();
@@ -58,11 +58,11 @@ public class TaskDetailUI : MonoBehaviour
     private Dictionary<int, AgentNumericalInput> numericalInputs = new Dictionary<int, AgentNumericalInput>();
     private bool isTyping = false;
     private AgentMessageUI currentTypingMessage;
-    
+
     void Start()
     {
         SetupUI();
-        
+
         // Hide panel initially
         if (taskDetailPanel != null)
             taskDetailPanel.SetActive(false);
@@ -87,21 +87,21 @@ public class TaskDetailUI : MonoBehaviour
         {
             playerInputField.onSubmit.AddListener(OnPlayerInputSubmit);
         }
-        
+
         if (conversationScrollView != null)
         {
             // add event trigger directly to scroll view of conversation
             EventTrigger trigger = conversationScrollView.GetComponent<EventTrigger>();
             if (trigger == null)
                 trigger = conversationScrollView.gameObject.AddComponent<EventTrigger>();
-            
+
             EventTrigger.Entry entry = new EventTrigger.Entry();
             entry.eventID = EventTriggerType.PointerClick;
             entry.callback.AddListener((data) => OnConversationAreaClicked());
             trigger.triggers.Add(entry);
         }
     }
-    
+
     void OnConversationAreaClicked()
     {
         if (isTyping && currentTypingMessage != null)
@@ -109,7 +109,7 @@ public class TaskDetailUI : MonoBehaviour
             currentTypingMessage.SkipTyping();
         }
     }
-    
+
     public void ShowTaskDetail(GameTask task)
     {
         currentTask = task;
@@ -126,33 +126,33 @@ public class TaskDetailUI : MonoBehaviour
                 Debug.Log($"Showing task detail for: {task.taskTitle}");
         }
     }
-    
+
     public void CloseTaskDetail()
     {
         if (taskDetailPanel != null)
         {
             taskDetailPanel.SetActive(false);
             ClearDisplay();
-            
+
             if (showDebugInfo)
                 Debug.Log("Task detail closed");
         }
     }
-    
+
     void UpdateTaskDescription()
     {
         if (currentTask == null) return;
-        
+
         // Update task info
         if (taskImage != null)
             taskImage.sprite = currentTask.taskImage;
-        
+
         if (taskTitleText != null)
             taskTitleText.text = currentTask.taskTitle;
-        
+
         if (facilityText != null)
             facilityText.text = currentTask.affectedFacility;
-        
+
         if (descriptionText != null)
             descriptionText.text = currentTask.description;
 
@@ -198,15 +198,15 @@ public class TaskDetailUI : MonoBehaviour
     {
         GameObject impactItem = Instantiate(impactItemPrefab, layout);
         ImpactItemUI impactUI = impactItem.GetComponent<ImpactItemUI>();
-        
+
         if (impactUI != null)
         {
             impactUI.Initialize(impact);
         }
-        
+
         currentImpactItems.Add(impactItem);
     }
-    
+
     void ClearImpactItems()
     {
         foreach (GameObject item in currentImpactItems)
@@ -216,18 +216,18 @@ public class TaskDetailUI : MonoBehaviour
         }
         currentImpactItems.Clear();
     }
-    
+
     void StartAgentConversation()
     {
         if (currentTask == null) return;
-        
+
         // Clear existing conversation
         ClearConversation();
-        
+
         // Start conversation coroutine
         StartCoroutine(PlayAgentConversation());
     }
-    
+
     IEnumerator PlayAgentConversation()
     {
         // Display agent messages with typing effect
@@ -236,7 +236,7 @@ public class TaskDetailUI : MonoBehaviour
             yield return StartCoroutine(DisplayAgentMessage(message));
             //yield return new WaitForSecondsRealtime(0.5f); // Brief pause between messages, use real time
         }
-        
+
         // Display choices if available
         if (currentTask.agentChoices.Count > 0)
         {
@@ -247,16 +247,16 @@ public class TaskDetailUI : MonoBehaviour
         {
             DisplayNumericalInputs();
         }
-        
+
         // Auto-scroll to bottom
         ScrollToBottom();
     }
-    
+
     IEnumerator DisplayAgentMessage(AgentMessage message)
     {
         GameObject messageItem = Instantiate(agentMessagePrefab, conversationContent);
         AgentMessageUI messageUI = messageItem.GetComponent<AgentMessageUI>();
-        
+
         if (messageUI != null)
         {
             messageUI.Initialize(message);
@@ -274,29 +274,29 @@ public class TaskDetailUI : MonoBehaviour
                 messageUI.ShowFullMessage();
             }
         }
-        
+
         currentConversationItems.Add(messageItem);
-        
+
         // Auto-scroll as messages appear
         Canvas.ForceUpdateCanvases();
         ScrollToBottom();
     }
-    
+
     void DisplayAgentChoices()
     {
         foreach (AgentChoice choice in currentTask.agentChoices)
         {
             GameObject choiceItem = Instantiate(agentChoicePrefab, conversationContent);
             AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
-            
+
             if (choiceUI != null)
             {
                 choiceUI.Initialize(choice, this);
             }
-            
+
             currentConversationItems.Add(choiceItem);
         }
-        
+
         ScrollToBottom();
     }
 
@@ -308,20 +308,20 @@ public class TaskDetailUI : MonoBehaviour
             {
                 GameObject inputItem = Instantiate(numericalInputPrefab, conversationContent);
                 NumericalInputUI inputUI = inputItem.GetComponent<NumericalInputUI>();
-                
+
                 if (inputUI != null)
                 {
                     inputUI.Initialize(input, this);
                     numericalInputs[input.inputId] = input;
                 }
-                
+
                 currentConversationItems.Add(inputItem);
             }
-            
+
             ScrollToBottom();
         }
     }
-    
+
     void ClearConversation()
     {
         foreach (GameObject item in currentConversationItems)
@@ -332,7 +332,7 @@ public class TaskDetailUI : MonoBehaviour
         currentConversationItems.Clear();
         selectedChoice = null;
     }
-    
+
     void ClearDisplay()
     {
         ClearImpactItems();
@@ -341,7 +341,7 @@ public class TaskDetailUI : MonoBehaviour
         selectedChoice = null;
         numericalInputs.Clear();
     }
-    
+
     // doesn't work for now
     void ScrollToBottom()
     {
@@ -358,7 +358,7 @@ public class TaskDetailUI : MonoBehaviour
         yield return new WaitForEndOfFrame();
         conversationScrollView.verticalNormalizedPosition = 0f;
     }
-    
+
     public void OnChoiceSelected(AgentChoice choice)
     {
         // Deselect other choices
@@ -370,62 +370,62 @@ public class TaskDetailUI : MonoBehaviour
                 choiceUI.SetSelected(false);
             }
         }
-        
+
         selectedChoice = choice;
         UpdateActionButtons();
-        
+
         if (showDebugInfo)
             Debug.Log($"Selected choice: {choice.choiceText}");
     }
-    
+
     void UpdateActionButtons()
     {
         if (currentTask == null) return;
-        
+
         // Later button availability
         if (laterButton != null)
         {
             laterButton.interactable = currentTask.taskType == TaskType.Advisory;
         }
-        
+
         // Confirm button availability
         if (confirmButton != null)
         {
-            bool canConfirm = !currentTask.isExpired && 
+            bool canConfirm = !currentTask.isExpired &&
                              (selectedChoice != null || currentTask.agentChoices.Count == 0);
             confirmButton.interactable = canConfirm;
         }
     }
-    
+
     void OnLaterButtonClicked()
     {
         if (currentTask != null && currentTask.taskType == TaskType.Advisory)
         {
             TaskSystem.Instance?.IgnoreTask(currentTask);
             CloseTaskDetail();
-            
+
             if (showDebugInfo)
                 Debug.Log($"Task postponed: {currentTask.taskTitle}");
         }
     }
-    
+
     void OnConfirmButtonClicked()
     {
         if (currentTask == null || TaskSystem.Instance == null) return;
-        
+
         if (currentTask.isExpired)
         {
             if (showDebugInfo)
                 Debug.LogWarning("Cannot confirm expired task");
             return;
         }
-        
+
         // Apply selected choice impacts
         if (selectedChoice != null)
         {
             ApplyChoiceImpacts(selectedChoice);
         }
-        
+
         // check if task requires delivery
         if (currentTask.requiresDelivery)
         {
@@ -439,7 +439,7 @@ public class TaskDetailUI : MonoBehaviour
         }
 
         CloseTaskDetail();
-        
+
         if (showDebugInfo)
             Debug.Log($"Task confirmed and completed");
     }
@@ -452,18 +452,19 @@ public class TaskDetailUI : MonoBehaviour
             // create delivery tasks that may involve multiple deliveries
             List<DeliveryTask> deliveryTasks = deliverySystem.CreateDeliveryTask(
                 currentTask.deliverySource,
-                currentTask.deliveryDestination, 
+                currentTask.deliveryDestination,
                 currentTask.deliveryCargoType,
                 currentTask.deliveryQuantity,
                 3 // high priority
             );
-            
+
             if (deliveryTasks.Count > 0)
             {
                 // Store all related delivery task IDs
                 currentTask.linkedDeliveryTaskIds = deliveryTasks.Select(dt => dt.taskId).ToList();
-                StartCoroutine(MonitorDeliveryProgress());
-                
+
+                StartCoroutine(MonitorDeliveryCompletion());
+
                 if (showDebugInfo)
                     Debug.Log($"Created {deliveryTasks.Count} delivery tasks for game task: {currentTask.taskTitle}");
             }
@@ -473,55 +474,61 @@ public class TaskDetailUI : MonoBehaviour
             }
         }
     }
-
-    IEnumerator MonitorDeliveryProgress()
+    IEnumerator MonitorDeliveryCompletion()
     {
-        float timeRemaining = currentTask.deliveryTimeLimit;
-        
-        while (timeRemaining > 0 && currentTask.status == TaskStatus.InProgress)
+        while (currentTask != null && currentTask.status == TaskStatus.InProgress)
         {
-            timeRemaining -= Time.unscaledDeltaTime;
-            
-            // 检查是否所有delivery都完成了
+            // only check if task is still in progress, do not apply expiration check here
             if (AreAllDeliveriesCompleted())
             {
                 TaskSystem.Instance.CompleteTask(currentTask);
                 yield break;
             }
-            
-            yield return null;
-        }
-        
-        // 超时处理
-        if (currentTask.status == TaskStatus.InProgress)
-        {
-            TaskSystem.Instance.HandleDeliveryFailure(currentTask);
+
+            yield return new WaitForSeconds(1f); // Check every second
         }
     }
+
+    void CancelLinkedDeliveryTasks()
+    {
+        if (currentTask.linkedDeliveryTaskIds == null) return;
+
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null) return;
+
+        foreach (int taskId in currentTask.linkedDeliveryTaskIds)
+        {
+            deliverySystem.CancelDeliveryTask(taskId);
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"Cancelled {currentTask.linkedDeliveryTaskIds.Count} delivery tasks due to timeout");
+    }
+
 
     bool AreAllDeliveriesCompleted()
     {
         if (currentTask.linkedDeliveryTaskIds == null || currentTask.linkedDeliveryTaskIds.Count == 0)
             return false;
-        
+
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
         if (deliverySystem == null) return false;
-        
+
         List<DeliveryTask> completedTasks = deliverySystem.GetCompletedTasks();
-        
+
         foreach (int taskId in currentTask.linkedDeliveryTaskIds)
         {
             if (!completedTasks.Any(ct => ct.taskId == taskId))
             {
-                return false; // 还有未完成的delivery
+                return false; // There are unfinished deliveries
             }
         }
-        
-        return true; // 所有delivery都完成了
+
+        return true; // All deliveries are completed
     }
 
 
-    
+
     void ApplyChoiceImpacts(AgentChoice choice)
     {
         foreach (TaskImpact impact in choice.choiceImpacts)
@@ -537,7 +544,7 @@ public class TaskDetailUI : MonoBehaviour
                             SatisfactionAndBudget.Instance.RemoveSatisfaction(-impact.value);
                     }
                     break;
-                    
+
                 case ImpactType.Budget:
                     if (SatisfactionAndBudget.Instance != null)
                     {
@@ -547,24 +554,24 @@ public class TaskDetailUI : MonoBehaviour
                             SatisfactionAndBudget.Instance.RemoveBudget(-impact.value);
                     }
                     break;
-                    
-                // Add other impact types as needed
+
+                    // Add other impact types as needed
             }
         }
-        
+
         if (showDebugInfo)
             Debug.Log($"Applied impacts for choice: {choice.choiceText}");
     }
-    
+
     void OnSendPlayerMessage()
     {
         if (playerInputField != null && !string.IsNullOrEmpty(playerInputField.text))
         {
             string message = playerInputField.text;
-            
+
             // create player message item
             GameObject messageItem = Instantiate(playerMessagePrefab, conversationContent);
-            
+
             // Set message text
             TextMeshProUGUI messageText = messageItem.GetComponentInChildren<TextMeshProUGUI>();
             if (messageText != null)
@@ -576,7 +583,7 @@ public class TaskDetailUI : MonoBehaviour
             ScrollToBottom();
         }
     }
-    
+
     void OnPlayerInputSubmit(string message)
     {
         if (!string.IsNullOrEmpty(message))
@@ -614,9 +621,10 @@ public class TaskDetailUI : MonoBehaviour
             }
 
         }
-        
-        
+
+
     }
+    
 }
 
 

@@ -213,6 +213,12 @@ public class TaskItemUI : MonoBehaviour
     }
     string GetTaskStatusText()
     {
+        if (assignedTask.isExpired && assignedTask.status == TaskStatus.Active)
+        {
+            // just expired, not been processed by system yet
+            return assignedTask.requiresDelivery ? "INCOMPLETE" : "EXPIRED";
+        }
+        
         switch (assignedTask.status)
         {
             case TaskStatus.Active:

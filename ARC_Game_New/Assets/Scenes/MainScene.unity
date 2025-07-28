@@ -7539,17 +7539,6 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 2532640550238867969, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
   m_PrefabInstance: {fileID: 1872329517}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &465606559 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 54471681103590263, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
-  m_PrefabInstance: {fileID: 1872329517}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 66e296507cfbf794b8955ebe13c1276a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &466517944
 GameObject:
   m_ObjectHideFlags: 0
@@ -26567,7 +26556,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   availableVehicles:
   - {fileID: 425027104}
-  - {fileID: 465606559}
+  - {fileID: 1565131446}
   vehiclePrefab: {fileID: 3280325347640237369, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
   maxQueuedTasks: 50
   taskAssignmentInterval: 1
@@ -34047,6 +34036,17 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1560922986}
   m_CullTransparentMesh: 1
+--- !u!114 &1565131446 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 54471681103590263, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
+  m_PrefabInstance: {fileID: 1872329517}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 66e296507cfbf794b8955ebe13c1276a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1567516230
 GameObject:
   m_ObjectHideFlags: 0
@@ -37321,6 +37321,10 @@ PrefabInstance:
     m_TransformParent: {fileID: 2085978411}
     m_Modifications:
     - target: {fileID: 54471681103590263, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
+      propertyPath: moveSpeed
+      value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 54471681103590263, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
       propertyPath: showDebugInfo
       value: 1
       objectReference: {fileID: 0}
@@ -37374,7 +37378,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5994618856707954557, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
       propertyPath: m_Enabled
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 5994618856707954557, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
       propertyPath: backgroundColor.b
@@ -40331,6 +40335,10 @@ PrefabInstance:
     m_TransformParent: {fileID: 2085978411}
     m_Modifications:
     - target: {fileID: 54471681103590263, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
+      propertyPath: vehicleName
+      value: Vehicle 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 54471681103590263, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
       propertyPath: showDebugInfo
       value: 1
       objectReference: {fileID: 0}
@@ -40384,7 +40392,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5994618856707954557, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
       propertyPath: m_Enabled
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 5994618856707954557, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
       propertyPath: backgroundColor.b
