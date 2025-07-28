@@ -18,7 +18,7 @@ public class TaskData : ScriptableObject
     [Header("Timing")]
     public int roundsRemaining = 1;
     public float realTimeRemaining = 300f;
-    public bool hasRealTimeLimit = true;
+    public bool hasRealTimeLimit = false;
 
     [Header("Impacts")]
     public List<TaskImpact> impacts = new List<TaskImpact>();

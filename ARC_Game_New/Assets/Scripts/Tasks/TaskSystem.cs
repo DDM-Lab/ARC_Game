@@ -259,7 +259,7 @@ public class TaskSystem : MonoBehaviour
             if (task.hasRealTimeLimit && task.realTimeRemaining > 0)
             {
                 // Only countdown when game is not paused
-                if (GlobalClock.Instance == null || GlobalClock.Instance.CanPlayerInteract())
+                if (GlobalClock.Instance != null && GlobalClock.Instance.IsSimulationRunning())
                 {
                     task.realTimeRemaining -= Time.unscaledDeltaTime;
                 }
