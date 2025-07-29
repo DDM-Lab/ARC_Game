@@ -8948,6 +8948,8 @@ MonoBehaviour:
   messageTypeDropdown: {fileID: 0}
   addMessageButton: {fileID: 0}
   clearLogButton: {fileID: 0}
+  taskIdDropdown: {fileID: 0}
+  spawnTaskButton: {fileID: 0}
 --- !u!4 &536388037
 Transform:
   m_ObjectHideFlags: 0
@@ -22928,6 +22930,8 @@ MonoBehaviour:
   taskDetailUI: {fileID: 978748999}
   defaultTaskImage: {fileID: 21300000, guid: c939145498029214ab7fc047d1938e25, type: 3}
   defaultAgentAvatar: {fileID: 21300000, guid: 38d210d0a91802541b8bd5e68aa95d92, type: 3}
+  taskDatabase: {fileID: 11400000, guid: 4c32bdbe0f0fd32418cc002f82665d98, type: 2}
+  enableAutoTaskGeneration: 1
   showDebugInfo: 1
 --- !u!4 &978748997
 Transform:
@@ -37378,7 +37382,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5994618856707954557, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
       propertyPath: m_Enabled
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5994618856707954557, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
       propertyPath: backgroundColor.b
@@ -40392,7 +40396,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5994618856707954557, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
       propertyPath: m_Enabled
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5994618856707954557, guid: 431ce553fd9ba2242ac9322b55b02f39, type: 3}
       propertyPath: backgroundColor.b

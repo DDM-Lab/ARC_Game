@@ -18,6 +18,11 @@ public class DebugPanel : MonoBehaviour
     [SerializeField] private Button addMessageButton;
     [SerializeField] private Button clearLogButton;
 
+    [Header("Task System Debug")]
+    [SerializeField] private TMP_Dropdown taskIdDropdown;
+    [SerializeField] private Button spawnTaskButton;
+
+
     // Singleton
     public static DebugPanel Instance { get; private set; }
 
@@ -59,7 +64,7 @@ public class DebugPanel : MonoBehaviour
     {
         InitializeDebugPanel();
         SetPanelVisibility(startVisible);
-        
+
     }
 
     void Update()
@@ -83,6 +88,12 @@ public class DebugPanel : MonoBehaviour
             colorDropdown.value = 0;
         }
 
+        if (taskIdDropdown != null && spawnTaskButton != null)
+        {
+            UpdateTaskDropdown();
+            spawnTaskButton.onClick.AddListener(SpawnSelectedTask);
+        }
+
         // Initialize message type dropdown
         if (messageTypeDropdown != null)
         {
@@ -102,7 +113,7 @@ public class DebugPanel : MonoBehaviour
         if (messageInputField != null)
             messageInputField.text = "Test message";
     }
-    
+
     public void SetPanelVisibility(bool visible)
     {
         isPanelVisible = visible;
@@ -116,6 +127,35 @@ public class DebugPanel : MonoBehaviour
         {
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+        }
+    }
+
+    void UpdateTaskDropdown()
+    {
+        TaskSystem taskSystem = FindObjectOfType<TaskSystem>();
+        if (taskSystem?.taskDatabase == null) return;
+        
+        List<string> taskIds = taskSystem.taskDatabase.GetAllTaskIds();
+        taskIdDropdown.ClearOptions();
+        taskIdDropdown.AddOptions(taskIds);
+    }
+
+    void SpawnSelectedTask()
+    {
+        TaskSystem taskSystem = FindObjectOfType<TaskSystem>();
+        if (taskSystem?.taskDatabase == null) return;
+        
+        string selectedTaskId = taskIdDropdown.options[taskIdDropdown.value].text;
+        TaskData taskData = taskSystem.taskDatabase.GetTaskById(selectedTaskId);
+        
+        if (taskData != null)
+        {
+            taskSystem.CreateTaskFromDatabase(taskData);
+            LogSuccess($"Spawned task: {selectedTaskId}");
+        }
+        else
+        {
+            LogError($"Task not found: {selectedTaskId}");
         }
     }
 
@@ -234,4 +274,6 @@ public class DebugPanel : MonoBehaviour
             GameLogPanel.Instance.AddColoredMessage($"[SUCCESS] {success}", Color.green);
         }
     }
+    
+
 }

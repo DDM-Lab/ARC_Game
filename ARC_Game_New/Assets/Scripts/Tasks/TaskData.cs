@@ -8,12 +8,27 @@ using TMPro;
 public class TaskData : ScriptableObject
 {
     [Header("Basic Info")]
+    public string taskId; // Unique identifier for debug panel
     public string taskTitle;
     public TaskType taskType;
-    public string affectedFacility;
+
     [TextArea(3, 5)]
     public string description;
     public Sprite taskImage;
+
+    [Header("Task Triggers")]
+    public List<TaskTrigger> allTriggers = new List<TaskTrigger>();
+    public List<RoundTrigger> roundTriggers = new List<RoundTrigger>();
+    public List<PopulationTrigger> populationTriggers = new List<PopulationTrigger>();
+    public List<ResourceTrigger> resourceTriggers = new List<ResourceTrigger>();
+    public List<ProbabilityTrigger> probabilityTriggers = new List<ProbabilityTrigger>();
+    public bool requireAllTriggers = true; // AND vs OR logic
+
+    [Header("Facility Targeting")]
+    public bool isGlobalTask = false; // Weather advisory, general announcements
+    public BuildingType targetFacilityType = BuildingType.Shelter; // Which facility type to associate with
+    public bool autoSelectFacility = true; // Auto-find suitable facility or use specific one
+    public MonoBehaviour specificFacility; // Manual facility assignment (optional). Only used if autoSelectFacility = false
 
     [Header("Timing")]
     public int roundsRemaining = 1;
@@ -32,8 +47,11 @@ public class TaskData : ScriptableObject
     public bool requiresDelivery = false;
     public ResourceType deliveryCargoType = ResourceType.FoodPacks;
     public int deliveryQuantity = 0;
-    public MonoBehaviour deliverySource; // Kitchen1/Community2/etc.
-    public MonoBehaviour deliveryDestination; // Shelter1/Motel/etc.
+    public MonoBehaviour deliverySource; // Kitchen1/Community2/etc. Will be auto-assigned if null
+    public MonoBehaviour deliveryDestination; // Shelter1/Motel/etc. Will be auto-assigned if null
     public float deliveryTimeLimit = 300f; // 5 minutes limit to finish delivery
     public float deliveryFailureSatisfactionPenalty = 10f;
+
+
+
 }

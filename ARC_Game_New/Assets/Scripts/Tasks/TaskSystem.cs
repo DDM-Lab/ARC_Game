@@ -191,6 +191,12 @@ public class TaskSystem : MonoBehaviour
     public Sprite defaultTaskImage;
     public Sprite defaultAgentAvatar;
 
+    [Header("Task Database")]
+    public TaskDatabase taskDatabase;
+
+    [Header("Auto Task Generation")]
+    public bool enableAutoTaskGeneration = true;
+
     [Header("Debug")]
     public bool showDebugInfo = true;
 
@@ -225,6 +231,11 @@ public class TaskSystem : MonoBehaviour
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnTimeSegmentAdvanced;
+        }
+        // Subscribe to round changes for task generation
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
         }
 
         // Listen for delivery task completion events
@@ -374,6 +385,140 @@ public class TaskSystem : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
         }
+    }
+
+    void OnRoundChanged(int newSegment)
+    {
+        // Check for new tasks at the start of each round (segment 0)
+        if (newSegment == 0 && enableAutoTaskGeneration)
+        {
+            GenerateTasksFromDatabase();
+        }
+    }
+
+    void GenerateTasksFromDatabase()
+    {
+        if (taskDatabase == null) return;
+        
+        List<TaskData> triggeredTasks = taskDatabase.CheckTriggeredTasks();
+        
+        foreach (TaskData taskData in triggeredTasks)
+        {
+            // Check if task already exists to avoid duplicates
+            if (activeTasks.Any(t => t.taskTitle == taskData.taskTitle)) continue;
+            
+            CreateTaskFromDatabase(taskData);
+        }
+    }
+
+    public GameTask CreateTaskFromDatabase(TaskData taskData)
+    {
+        // Find suitable facility
+        MonoBehaviour targetFacility = taskDatabase.FindSuitableFacility(taskData);
+        
+        GameTask newTask = CreateTaskFromData(taskData);
+        
+        // Set facility name from actual facility or use global
+        if (taskData.isGlobalTask)
+        {
+            newTask.affectedFacility = "Global"; // Or leave empty
+        }
+        else if (targetFacility != null)
+        {
+            newTask.affectedFacility = targetFacility.name;
+        }
+        else
+        {
+            newTask.affectedFacility = $"No {taskData.targetFacilityType} Available";
+        }
+        
+        // Set delivery source/destination if auto-selecting
+        if (newTask.requiresDelivery)
+        {
+            if (taskData.deliverySource == null)
+                newTask.deliverySource = FindDeliverySource(taskData.deliveryCargoType);
+            if (taskData.deliveryDestination == null)
+                newTask.deliveryDestination = FindDeliveryDestination(taskData.deliveryCargoType);
+        }
+        
+        if (showDebugInfo)
+            Debug.Log($"Generated task from database: {taskData.taskId} for facility {newTask.affectedFacility}");
+        
+        return newTask;
+    }
+
+    // Helper methods for auto delivery setup
+    MonoBehaviour FindDeliverySource(ResourceType cargoType)
+    {
+        if (cargoType == ResourceType.FoodPacks)
+        {
+            // Find kitchen with food
+            Building[] kitchens = FindObjectsOfType<Building>().Where(b => 
+                b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational()).ToArray();
+            
+            foreach (Building kitchen in kitchens)
+            {
+                BuildingResourceStorage storage = kitchen.GetComponent<BuildingResourceStorage>();
+                if (storage != null && storage.GetResourceAmount(ResourceType.FoodPacks) > 0)
+                    return kitchen;
+            }
+        }
+        else if (cargoType == ResourceType.Population)
+        {
+            // Find community with people
+            PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>().Where(pb =>
+                pb.GetPrebuiltType() == PrebuiltBuildingType.Community).ToArray();
+            
+            foreach (PrebuiltBuilding community in communities)
+            {
+                if (community.GetCurrentPopulation() > 0)
+                    return community;
+            }
+        }
+        
+        return null;
+    }
+
+    MonoBehaviour FindDeliveryDestination(ResourceType cargoType)
+    {
+        if (cargoType == ResourceType.FoodPacks)
+        {
+            // Find shelter with space
+            Building[] shelters = FindObjectsOfType<Building>().Where(b =>
+                b.GetBuildingType() == BuildingType.Shelter && b.IsOperational()).ToArray();
+            
+            foreach (Building shelter in shelters)
+            {
+                BuildingResourceStorage storage = shelter.GetComponent<BuildingResourceStorage>();
+                if (storage != null && storage.GetAvailableSpace(ResourceType.FoodPacks) > 0)
+                    return shelter;
+            }
+        }
+        else if (cargoType == ResourceType.Population)
+        {
+            // Find shelter with space, then motel
+            Building[] shelters = FindObjectsOfType<Building>().Where(b =>
+                b.GetBuildingType() == BuildingType.Shelter && b.IsOperational()).ToArray();
+            
+            foreach (Building shelter in shelters)
+            {
+                BuildingResourceStorage storage = shelter.GetComponent<BuildingResourceStorage>();
+                if (storage != null && storage.GetAvailableSpace(ResourceType.Population) > 0)
+                    return shelter;
+            }
+            
+            // Fallback to motel
+            PrebuiltBuilding[] motels = FindObjectsOfType<PrebuiltBuilding>().Where(pb =>
+                pb.GetPrebuiltType() == PrebuiltBuildingType.Motel).ToArray();
+            
+            foreach (PrebuiltBuilding motel in motels)
+            {
+                if (motel.CanAcceptPopulation(1))
+                    return motel;
+            }
+        }
+        
+        return null;
     }
 
     public GameTask CreateTask(string title, TaskType type, string facility, string description)
@@ -544,7 +689,7 @@ public class TaskSystem : MonoBehaviour
 
     public GameTask CreateTaskFromData(TaskData taskData)
     {
-        GameTask newTask = new GameTask(nextTaskId++, taskData.taskTitle, taskData.taskType, taskData.affectedFacility);
+        GameTask newTask = new GameTask(nextTaskId++, taskData.taskTitle, taskData.taskType, taskData.targetFacilityType.ToString());
         
         // copy basic info
         newTask.description = taskData.description;
