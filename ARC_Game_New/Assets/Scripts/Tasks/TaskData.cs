@@ -43,15 +43,12 @@ public class TaskData : ScriptableObject
     public List<AgentChoice> agentChoices = new List<AgentChoice>();
     public List<AgentNumericalInput> numericalInputs = new List<AgentNumericalInput>();
 
-    [Header("Delivery Configuration")]
-    public bool requiresDelivery = false;
-    public ResourceType deliveryCargoType = ResourceType.FoodPacks;
-    public int deliveryQuantity = 0;
-    public MonoBehaviour deliverySource; // Kitchen1/Community2/etc. Will be auto-assigned if null
-    public MonoBehaviour deliveryDestination; // Shelter1/Motel/etc. Will be auto-assigned if null
-    public float deliveryTimeLimit = 300f; // 5 minutes limit to finish delivery
+    [Header("General Delivery Settings")]
     public float deliveryFailureSatisfactionPenalty = 10f;
+    public float deliveryTimeLimit = 300f;
 
+
+    // delivery source/destination settings moved to individual agent choices
 
 
 }

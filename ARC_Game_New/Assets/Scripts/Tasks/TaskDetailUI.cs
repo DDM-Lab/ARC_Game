@@ -412,99 +412,98 @@ public class TaskDetailUI : MonoBehaviour
     void OnConfirmButtonClicked()
     {
         if (currentTask == null || TaskSystem.Instance == null) return;
-
+        
         if (currentTask.isExpired)
         {
-            if (showDebugInfo)
-                Debug.LogWarning("Cannot confirm expired task");
+            Debug.LogWarning("Cannot confirm expired task");
             return;
         }
-
-        // Apply selected choice impacts
+        
+        // Apply choice impacts first
         if (selectedChoice != null)
         {
             ApplyChoiceImpacts(selectedChoice);
-        }
-
-        // check if task requires delivery
-        if (currentTask.requiresDelivery)
-        {
-            CreateDeliveryTask();
-            TaskSystem.Instance.SetTaskInProgress(currentTask);
-        }
-        else
-        {
-            // Complete the task
-            TaskSystem.Instance.CompleteTask(currentTask);
-        }
-
-        CloseTaskDetail();
-
-        if (showDebugInfo)
-            Debug.Log($"Task confirmed and completed");
-    }
-
-    void CreateDeliveryTask()
-    {
-        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
-        if (deliverySystem != null && currentTask.deliverySource != null && currentTask.deliveryDestination != null)
-        {
-            // create delivery tasks that may involve multiple deliveries
-            List<DeliveryTask> deliveryTasks = deliverySystem.CreateDeliveryTask(
-                currentTask.deliverySource,
-                currentTask.deliveryDestination,
-                currentTask.deliveryCargoType,
-                currentTask.deliveryQuantity,
-                3 // high priority
-            );
-
-            if (deliveryTasks.Count > 0)
+            
+            // Check if this choice triggers a delivery
+            if (selectedChoice.triggersDelivery)
             {
-                // Store all related delivery task IDs
-                currentTask.linkedDeliveryTaskIds = deliveryTasks.Select(dt => dt.taskId).ToList();
-
-                StartCoroutine(MonitorDeliveryCompletion());
-
-                if (showDebugInfo)
-                    Debug.Log($"Created {deliveryTasks.Count} delivery tasks for game task: {currentTask.taskTitle}");
+                CreateChoiceDeliveryTask(selectedChoice);
+                TaskSystem.Instance.SetTaskInProgress(currentTask);
             }
             else
             {
-                Debug.LogError("Failed to create delivery tasks");
+                TaskSystem.Instance.CompleteTask(currentTask);
             }
         }
+        else
+        {
+            // No choice selected, complete task normally
+            TaskSystem.Instance.CompleteTask(currentTask);
+        }
+        
+        CloseTaskDetail();
+
     }
-    IEnumerator MonitorDeliveryCompletion()
+
+    void CreateChoiceDeliveryTask(AgentChoice choice)
+    {
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null) return;
+        
+        // Find triggering facility
+        MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
+        
+        // Determine source and destination based on choice
+        MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
+        MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+        
+        if (source == null || destination == null)
+        {
+            Debug.LogError($"Could not determine delivery route for choice: {choice.choiceText}");
+            return;
+        }
+        
+        // Create delivery tasks
+        DeliveryTask deliveryTask = deliverySystem.CreateSingleDeliveryTask(
+            source, destination, choice.deliveryCargoType, choice.deliveryQuantity, 3);
+
+        if (deliveryTask != null)
+        {
+            currentTask.linkedDeliveryTaskIds.Add(deliveryTask.taskId);
+
+            // Use task's default time limit
+            currentTask.deliveryTimeLimit = currentTask.deliveryTimeLimit;
+            
+            // Start monitoring delivery completion (without time segment monitoring)
+            StartCoroutine(MonitorChoiceDeliveryCompletion());
+            
+            if (showDebugInfo)
+                Debug.Log($"Created delivery from choice: {source.name} → {destination.name} " +
+                        $"({choice.deliveryQuantity} {choice.deliveryCargoType})");
+        }
+    }
+
+    // Replace the old MonitorDeliveryProgress with this simpler version:
+    IEnumerator MonitorChoiceDeliveryCompletion()
     {
         while (currentTask != null && currentTask.status == TaskStatus.InProgress)
         {
-            // only check if task is still in progress, do not apply expiration check here
+            // Check if all deliveries are completed
             if (AreAllDeliveriesCompleted())
             {
                 TaskSystem.Instance.CompleteTask(currentTask);
                 yield break;
             }
-
+            
+            // Check if task has expired (this will be handled by TaskSystem automatically)
+            if (currentTask.isExpired)
+            {
+                yield break; // TaskSystem will handle the expiration
+            }
+            
             yield return new WaitForSeconds(1f); // Check every second
         }
     }
-
-    void CancelLinkedDeliveryTasks()
-    {
-        if (currentTask.linkedDeliveryTaskIds == null) return;
-
-        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
-        if (deliverySystem == null) return;
-
-        foreach (int taskId in currentTask.linkedDeliveryTaskIds)
-        {
-            deliverySystem.CancelDeliveryTask(taskId);
-        }
-
-        if (showDebugInfo)
-            Debug.Log($"Cancelled {currentTask.linkedDeliveryTaskIds.Count} delivery tasks due to timeout");
-    }
-
 
     bool AreAllDeliveriesCompleted()
     {

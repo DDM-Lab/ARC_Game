@@ -10,47 +10,42 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4c182747abbcaae4ab5183b8a6d24a10, type: 3}
-  m_Name: Test Task
+  m_Name: TestDeliveryTask
   m_EditorClassIdentifier: 
-  taskId: test_task
-  taskTitle: Task for Testing Purpose
-  taskType: 2
-  description: This is a task for testing only
-  taskImage: {fileID: 21300000, guid: 20fa474254e6b8c4dbd8da2b2f82a4fa, type: 3}
-  roundTriggers:
-  - targetRound: 0
-    exactMatch: 1
+  taskId: 
+  taskTitle: 
+  taskType: 0
+  description: 
+  taskImage: {fileID: 0}
+  roundTriggers: []
   populationTriggers: []
   resourceTriggers: []
   probabilityTriggers: []
   requireAllTriggers: 1
-  isGlobalTask: 1
+  isGlobalTask: 0
   targetFacilityType: 1
   autoSelectFacility: 1
   specificFacility: {fileID: 0}
-  roundsRemaining: 2
+  roundsRemaining: 1
   realTimeRemaining: 300
   hasRealTimeLimit: 0
-  impacts:
-  - impactType: 0
-    value: 10
-    isCountdown: 0
-    customLabel: 
-  - impactType: 1
-    value: 100
-    isCountdown: 0
-    customLabel: 
-  agentMessages:
-  - messageText: Hi, here is a task for testing purpose only
-    agentAvatar: {fileID: 0}
-    useTypingEffect: 1
-    typingSpeed: 0.05
+  impacts: []
+  agentMessages: []
   agentChoices: []
   numericalInputs: []
   requiresDelivery: 0
   deliveryCargoType: 1
   deliveryQuantity: 0
-  deliverySource: {fileID: 0}
-  deliveryDestination: {fileID: 0}
-  deliveryTimeLimit: 300
   deliveryFailureSatisfactionPenalty: 10
+  sourceType: 0
+  sourceBuilding: 0
+  sourcePrebuilt: 0
+  specificSource: {fileID: 0}
+  useRequestingFacilityAsSource: 0
+  destinationType: 0
+  destinationBuilding: 1
+  destinationPrebuilt: 1
+  specificDestination: {fileID: 0}
+  useRequestingFacilityAsDestination: 1
+  prioritizeNearestSource: 1
+  prioritizeNearestDestination: 1

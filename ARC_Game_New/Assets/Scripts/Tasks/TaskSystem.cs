@@ -33,6 +33,24 @@ public enum ImpactType
     TotalLodging
 }
 
+public enum DeliverySourceType
+{
+    AutoFind,
+    SpecificBuilding,
+    SpecificPrebuilt,
+    RequestingFacility,
+    ManualAssignment
+}
+
+public enum DeliveryDestinationType
+{
+    AutoFind,
+    SpecificBuilding,
+    SpecificPrebuilt,
+    RequestingFacility,
+    ManualAssignment
+}
+
 [System.Serializable]
 public class TaskImpact
 {
@@ -75,11 +93,6 @@ public class GameTask
     public List<AgentNumericalInput> numericalInputs = new List<AgentNumericalInput>();
 
     [Header("Delivery Link")]
-    public bool requiresDelivery = false;
-    public ResourceType deliveryCargoType = ResourceType.FoodPacks;
-    public int deliveryQuantity = 0;
-    public MonoBehaviour deliverySource;
-    public MonoBehaviour deliveryDestination;
     public float deliveryTimeLimit = 300f;
     public float deliveryFailureSatisfactionPenalty = 10f;
     public List<int> linkedDeliveryTaskIds = new List<int>(); // support multiple linked delivery tasks
@@ -136,6 +149,27 @@ public class AgentChoice
     public string choiceText;
     public List<TaskImpact> choiceImpacts = new List<TaskImpact>();
     public bool isSelected = false;
+    
+    [Header("Delivery Configuration")]
+    public bool triggersDelivery = false;
+    public ResourceType deliveryCargoType = ResourceType.Population;
+    public int deliveryQuantity = 0;
+    
+    [Header("Delivery Source")]
+    public DeliverySourceType sourceType = DeliverySourceType.RequestingFacility;
+    public BuildingType sourceBuilding = BuildingType.Community;
+    public PrebuiltBuildingType sourcePrebuilt = PrebuiltBuildingType.Community;
+    public string specificSourceName = ""; // Use name instead of direct reference
+    
+    [Header("Delivery Destination")]
+    public DeliveryDestinationType destinationType = DeliveryDestinationType.SpecificPrebuilt;
+    public BuildingType destinationBuilding = BuildingType.Shelter;
+    public PrebuiltBuildingType destinationPrebuilt = PrebuiltBuildingType.Motel;
+    public string specificDestinationName = ""; // Use name instead of direct reference
+    
+    [Header("Distance Priority")]
+    public bool prioritizeNearestSource = true;
+    public bool prioritizeNearestDestination = true;
     
     public AgentChoice(int id, string text)
     {
@@ -286,7 +320,7 @@ public class TaskSystem : MonoBehaviour
         foreach (GameTask task in expiredTasks)
         {
             // check if task has delivery unfinished
-            if (task.requiresDelivery && task.status == TaskStatus.InProgress)
+            if (task.status == TaskStatus.InProgress)
             {
                 // cancel related delivery tasks
                 CancelTaskDeliveries(task);
@@ -413,38 +447,171 @@ public class TaskSystem : MonoBehaviour
 
     public GameTask CreateTaskFromDatabase(TaskData taskData)
     {
-        // Find suitable facility
-        MonoBehaviour targetFacility = taskDatabase.FindSuitableFacility(taskData);
+        // Find suitable facility that triggered the task
+        MonoBehaviour triggeringFacility = taskDatabase.FindSuitableFacility(taskData);
+        string facilityName = triggeringFacility?.name ?? taskData.targetFacilityType.ToString();
         
         GameTask newTask = CreateTaskFromData(taskData);
+        newTask.affectedFacility = facilityName;
         
-        // Set facility name from actual facility or use global
-        if (taskData.isGlobalTask)
+        // No need to set up delivery here - it's handled by choices now
+        
+        if (showDebugInfo)
+            Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
+        
+        return newTask;
+    }
+
+    // Enhanced facility finding methods
+    MonoBehaviour FindNearestBuilding(BuildingType buildingType, Vector3? referencePosition, 
+                                    ResourceType cargoType, bool isSource)
+    {
+        Building[] buildings = FindObjectsOfType<Building>().Where(b => 
+            b.GetBuildingType() == buildingType && b.IsOperational()).ToArray();
+        
+        Building bestBuilding = null;
+        float closestDistance = float.MaxValue;
+        
+        foreach (Building building in buildings)
         {
-            newTask.affectedFacility = "Global"; // Or leave empty
+            // Check if building can provide/accept the cargo
+            if (!CanBuildingHandleCargo(building, cargoType, isSource))
+                continue;
+            
+            if (referencePosition.HasValue)
+            {
+                float distance = Vector3.Distance(building.transform.position, referencePosition.Value);
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    bestBuilding = building;
+                }
+            }
+            else
+            {
+                return building; // Return first suitable if no reference position
+            }
         }
-        else if (targetFacility != null)
+        
+        return bestBuilding;
+    }
+
+    MonoBehaviour FindNearestPrebuiltBuilding(PrebuiltBuildingType prebuiltType, Vector3? referencePosition,
+                                            ResourceType cargoType, bool isSource)
+    {
+        PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>().Where(pb =>
+            pb.GetPrebuiltType() == prebuiltType).ToArray();
+        
+        PrebuiltBuilding bestPrebuilt = null;
+        float closestDistance = float.MaxValue;
+        
+        foreach (PrebuiltBuilding prebuilt in prebuilts)
         {
-            newTask.affectedFacility = targetFacility.name;
+            // Check if prebuilt can provide/accept the cargo
+            if (!CanPrebuiltHandleCargo(prebuilt, cargoType, isSource))
+                continue;
+            
+            if (referencePosition.HasValue)
+            {
+                float distance = Vector3.Distance(prebuilt.transform.position, referencePosition.Value);
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    bestPrebuilt = prebuilt;
+                }
+            }
+            else
+            {
+                return prebuilt; // Return first suitable if no reference position
+            }
+        }
+        
+        return bestPrebuilt;
+    }
+
+    bool CanBuildingHandleCargo(Building building, ResourceType cargoType, bool isSource)
+    {
+        BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
+        if (storage == null) return false;
+        
+        if (isSource)
+        {
+            // Check if building has resources to give
+            return storage.GetResourceAmount(cargoType) > 0;
         }
         else
         {
-            newTask.affectedFacility = $"No {taskData.targetFacilityType} Available";
+            // Check if building has space to receive
+            return storage.GetAvailableSpace(cargoType) > 0;
         }
-        
-        // Set delivery source/destination if auto-selecting
-        if (newTask.requiresDelivery)
+    }
+
+    bool CanPrebuiltHandleCargo(PrebuiltBuilding prebuilt, ResourceType cargoType, bool isSource)
+    {
+        if (cargoType == ResourceType.Population)
         {
-            if (taskData.deliverySource == null)
-                newTask.deliverySource = FindDeliverySource(taskData.deliveryCargoType);
-            if (taskData.deliveryDestination == null)
-                newTask.deliveryDestination = FindDeliveryDestination(taskData.deliveryCargoType);
+            if (isSource)
+            {
+                return prebuilt.GetCurrentPopulation() > 0;
+            }
+            else
+            {
+                return prebuilt.CanAcceptPopulation(1);
+            }
         }
         
-        if (showDebugInfo)
-            Debug.Log($"Generated task from database: {taskData.taskId} for facility {newTask.affectedFacility}");
+        // For other resource types, check storage
+        BuildingResourceStorage storage = prebuilt.GetResourceStorage();
+        if (storage == null) return false;
         
-        return newTask;
+        if (isSource)
+        {
+            return storage.GetResourceAmount(cargoType) > 0;
+        }
+        else
+        {
+            return storage.GetAvailableSpace(cargoType) > 0;
+        }
+    }
+
+    // Improved auto-find methods
+    MonoBehaviour FindBestDeliverySource(ResourceType cargoType, Vector3? referencePosition)
+    {
+        switch (cargoType)
+        {
+            case ResourceType.FoodPacks:
+                return FindNearestBuilding(BuildingType.Kitchen, referencePosition, cargoType, true);
+                
+            case ResourceType.Population:
+                // Prefer communities, then shelters with people
+                MonoBehaviour communitySource = FindNearestPrebuiltBuilding(PrebuiltBuildingType.Community, 
+                                                                        referencePosition, cargoType, true);
+                if (communitySource != null) return communitySource;
+                
+                return FindNearestBuilding(BuildingType.Shelter, referencePosition, cargoType, true);
+                
+            default:
+                return null;
+        }
+    }
+
+    MonoBehaviour FindBestDeliveryDestination(ResourceType cargoType, Vector3? referencePosition)
+    {
+        switch (cargoType)
+        {
+            case ResourceType.FoodPacks:
+                return FindNearestBuilding(BuildingType.Shelter, referencePosition, cargoType, false);
+                
+            case ResourceType.Population:
+                // Prefer shelters, then motels
+                MonoBehaviour shelterDest = FindNearestBuilding(BuildingType.Shelter, referencePosition, cargoType, false);
+                if (shelterDest != null) return shelterDest;
+                
+                return FindNearestPrebuiltBuilding(PrebuiltBuildingType.Motel, referencePosition, cargoType, false);
+                
+            default:
+                return null;
+        }
     }
 
     // Helper methods for auto delivery setup
@@ -691,23 +858,23 @@ public class TaskSystem : MonoBehaviour
     {
         GameTask newTask = new GameTask(nextTaskId++, taskData.taskTitle, taskData.taskType, taskData.targetFacilityType.ToString());
         
-        // copy basic info
+        // Copy basic info
         newTask.description = taskData.description;
         newTask.taskImage = taskData.taskImage;
 
-        // copy time settings
+        // Copy time settings
         newTask.roundsRemaining = taskData.roundsRemaining;
         newTask.realTimeRemaining = taskData.realTimeRemaining;
         newTask.hasRealTimeLimit = taskData.hasRealTimeLimit;
 
-        // copy impact list
+        // Copy impact list
         newTask.impacts = new List<TaskImpact>();
         foreach (TaskImpact impact in taskData.impacts)
         {
             newTask.impacts.Add(new TaskImpact(impact.impactType, impact.value, impact.isCountdown, impact.customLabel));
         }
 
-        // copy agent messages
+        // Copy agent messages
         newTask.agentMessages = new List<AgentMessage>();
         foreach (AgentMessage message in taskData.agentMessages)
         {
@@ -718,20 +885,38 @@ public class TaskSystem : MonoBehaviour
             });
         }
 
-        // copy choices
+        // Copy choices with delivery configuration
         newTask.agentChoices = new List<AgentChoice>();
         foreach (AgentChoice choice in taskData.agentChoices)
         {
             AgentChoice newChoice = new AgentChoice(choice.choiceId, choice.choiceText);
+            
+            // Copy choice impacts
             newChoice.choiceImpacts = new List<TaskImpact>();
             foreach (TaskImpact impact in choice.choiceImpacts)
             {
                 newChoice.choiceImpacts.Add(new TaskImpact(impact.impactType, impact.value, impact.isCountdown, impact.customLabel));
             }
+            
+            // Copy delivery configuration
+            newChoice.triggersDelivery = choice.triggersDelivery;
+            newChoice.deliveryCargoType = choice.deliveryCargoType;
+            newChoice.deliveryQuantity = choice.deliveryQuantity;
+            newChoice.sourceType = choice.sourceType;
+            newChoice.sourceBuilding = choice.sourceBuilding;
+            newChoice.sourcePrebuilt = choice.sourcePrebuilt;
+            newChoice.specificSourceName = choice.specificSourceName;
+            newChoice.destinationType = choice.destinationType;
+            newChoice.destinationBuilding = choice.destinationBuilding;
+            newChoice.destinationPrebuilt = choice.destinationPrebuilt;
+            newChoice.specificDestinationName = choice.specificDestinationName;
+            newChoice.prioritizeNearestSource = choice.prioritizeNearestSource;
+            newChoice.prioritizeNearestDestination = choice.prioritizeNearestDestination;
+            
             newTask.agentChoices.Add(newChoice);
         }
 
-        // copy numerical inputs
+        // Copy numerical inputs
         newTask.numericalInputs = new List<AgentNumericalInput>();
         foreach (AgentNumericalInput input in taskData.numericalInputs)
         {
@@ -741,6 +926,10 @@ public class TaskSystem : MonoBehaviour
             });
         }
         
+        // Set delivery time limit from task data
+        newTask.deliveryTimeLimit = taskData.deliveryTimeLimit;
+        newTask.deliveryFailureSatisfactionPenalty = taskData.deliveryFailureSatisfactionPenalty;
+        
         activeTasks.Add(newTask);
         OnTaskCreated?.Invoke(newTask);
         
@@ -748,6 +937,88 @@ public class TaskSystem : MonoBehaviour
             Debug.Log($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
         
         return newTask;
+    }
+
+    public MonoBehaviour FindTriggeringFacility(GameTask task)
+    {
+        // This should return the facility that originally triggered this task
+        // For now, we can find by name or implement a better tracking system
+        
+        if (string.IsNullOrEmpty(task.affectedFacility)) return null;
+        
+        return FindFacilityByName(task.affectedFacility);
+    }
+
+
+    MonoBehaviour FindFacilityByName(string facilityName)
+    {
+        if (string.IsNullOrEmpty(facilityName)) return null;
+        
+        // Search in Buildings
+        Building[] buildings = FindObjectsOfType<Building>();
+        foreach (Building building in buildings)
+        {
+            if (building.name.Contains(facilityName) || building.name == facilityName)
+                return building;
+        }
+        
+        // Search in PrebuiltBuildings
+        PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>();
+        foreach (PrebuiltBuilding prebuilt in prebuilts)
+        {
+            if (prebuilt.name.Contains(facilityName) || prebuilt.name == facilityName)
+                return prebuilt;
+        }
+        
+        return null;
+    }
+
+    public MonoBehaviour DetermineChoiceDeliverySource(AgentChoice choice, MonoBehaviour triggeringFacility)
+    {
+        switch (choice.sourceType)
+        {
+            case DeliverySourceType.RequestingFacility:
+                return triggeringFacility;
+                
+            case DeliverySourceType.ManualAssignment:
+                return FindFacilityByName(choice.specificSourceName);
+                
+            case DeliverySourceType.SpecificBuilding:
+                return FindNearestBuilding(choice.sourceBuilding, triggeringFacility?.transform.position, 
+                                        choice.deliveryCargoType, true);
+                
+            case DeliverySourceType.SpecificPrebuilt:
+                return FindNearestPrebuiltBuilding(choice.sourcePrebuilt, triggeringFacility?.transform.position,
+                                                choice.deliveryCargoType, true);
+                
+            case DeliverySourceType.AutoFind:
+            default:
+                return FindBestDeliverySource(choice.deliveryCargoType, triggeringFacility?.transform.position);
+        }
+    }
+
+    public MonoBehaviour DetermineChoiceDeliveryDestination(AgentChoice choice, MonoBehaviour triggeringFacility)
+    {
+        switch (choice.destinationType)
+        {
+            case DeliveryDestinationType.RequestingFacility:
+                return triggeringFacility;
+                
+            case DeliveryDestinationType.ManualAssignment:
+                return FindFacilityByName(choice.specificDestinationName);
+                
+            case DeliveryDestinationType.SpecificBuilding:
+                return FindNearestBuilding(choice.destinationBuilding, triggeringFacility?.transform.position,
+                                        choice.deliveryCargoType, false);
+                
+            case DeliveryDestinationType.SpecificPrebuilt:
+                return FindNearestPrebuiltBuilding(choice.destinationPrebuilt, triggeringFacility?.transform.position,
+                                                choice.deliveryCargoType, false);
+                
+            case DeliveryDestinationType.AutoFind:
+            default:
+                return FindBestDeliveryDestination(choice.deliveryCargoType, triggeringFacility?.transform.position);
+        }
     }
 
     // Utility methods for impact display
@@ -856,72 +1127,49 @@ public class TaskSystem : MonoBehaviour
         numericalTask.impacts.Add(new TaskImpact(ImpactType.Budget, 0));
     }
 
-    [ContextMenu("Create Test Population Transport Task")]
-    public void CreateTestPopulationTransportTask()
+    [ContextMenu("Create Test Delivery Choice Task")]
+    public void CreateTestDeliveryChoiceTask()
     {
-        PrebuiltBuilding community = null;
-        PrebuiltBuilding motel = null;
-        
-        PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>();
-        foreach (var pb in prebuilts)
-        {
-            if (pb.GetPrebuiltType() == PrebuiltBuildingType.Community && pb.GetCurrentPopulation() > 0)
-                community = pb;
-            else if (pb.GetPrebuiltType() == PrebuiltBuildingType.Motel)
-                motel = pb;
-        }
-        
-        if (community == null || motel == null)
-        {
-            Debug.LogError("Cannot create transport task - missing Community with population or Motel");
-            return;
-        }
-        
-        // check vehicle capacity
-        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-        int maxVehicleCapacity = vehicles.Length > 0 ? vehicles.Max(v => v.GetMaxCapacity()) : 10;
-        
-        // compute transport amount
-        int availablePopulation = community.GetCurrentPopulation();
-        int motelSpace = motel.GetPopulationCapacity() - motel.GetCurrentPopulation();
-        int transportAmount = Mathf.Min(availablePopulation, motelSpace, 30);
-        if (transportAmount <= 0)
-        {
-            Debug.LogError("Cannot create transport task - no available population or motel space");
-            return;
-        }
-        GameTask transportTask = CreateTask("Emergency Population Transport", TaskType.Emergency, community.name,
-            $"We have {transportAmount} displaced families that need immediate transport to temporary housing at the motel.");
+        GameTask choiceTask = CreateTask("Population Relocation Decision", TaskType.Demand, "Community Center",
+            "A family needs relocation. Choose where to send them.");
 
-        transportTask.requiresDelivery = true;
-        transportTask.deliveryCargoType = ResourceType.Population;
-        transportTask.deliveryQuantity = transportAmount;
-        transportTask.deliverySource = community;
-        transportTask.deliveryDestination = motel;
-        transportTask.roundsRemaining = 2;
-        transportTask.hasRealTimeLimit = false;
-        transportTask.deliveryFailureSatisfactionPenalty = 15f; // -15 sat Penalty for failure
-        
-        transportTask.impacts.Add(new TaskImpact(ImpactType.Clients, transportAmount, false, "People to Transport"));
-        transportTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, 2, false, "Rounds Remaining"));
-        transportTask.impacts.Add(new TaskImpact(ImpactType.Satisfaction, -15, false, "Failure Penalty"));
-        transportTask.impacts.Add(new TaskImpact(ImpactType.Budget, -15, false, "Cost of Transport"));
+        // Add agent messages
+        choiceTask.agentMessages.Add(new AgentMessage("We have a family that needs immediate relocation.", defaultAgentAvatar));
+        choiceTask.agentMessages.Add(new AgentMessage("We have two options available. Where would you like to send them?"));
 
-        transportTask.agentMessages.Add(new AgentMessage("We have an urgent situation!", defaultAgentAvatar));
-        transportTask.agentMessages.Add(new AgentMessage($"{transportAmount} families at {community.name} need immediate transport to {motel.name}."));
-        transportTask.agentMessages.Add(new AgentMessage("We must get them relocated within 4 hours or they'll lose faith in our response."));
-        transportTask.agentMessages.Add(new AgentMessage("Are you ready to dispatch a vehicle?"));
-        
-        AgentChoice confirmChoice = new AgentChoice(1, "Confirm - Dispatch vehicle immediately");
-        confirmChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5, false, "Quick Response Bonus"));
-        transportTask.agentChoices.Add(confirmChoice);
-        
-        AgentChoice delayChoice = new AgentChoice(2, "Wait - Check vehicle availability first");
-        delayChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -3, false, "Delayed Response"));
-        transportTask.agentChoices.Add(delayChoice);
-        
+        // Choice 1: Send to Shelter
+        AgentChoice shelterChoice = new AgentChoice(1, "Send to Shelter (Free, limited space)");
+        shelterChoice.triggersDelivery = true;
+        shelterChoice.deliveryCargoType = ResourceType.Population;
+        shelterChoice.deliveryQuantity = 2;
+        shelterChoice.sourceType = DeliverySourceType.SpecificPrebuilt;
+        shelterChoice.sourcePrebuilt = PrebuiltBuildingType.Community;
+        shelterChoice.destinationType = DeliveryDestinationType.SpecificBuilding;
+        shelterChoice.destinationBuilding = BuildingType.Shelter;
+        shelterChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5));
+        choiceTask.agentChoices.Add(shelterChoice);
+
+        // Choice 2: Send to Motel
+        AgentChoice motelChoice = new AgentChoice(2, "Send to Motel ($500, always available)");
+        motelChoice.triggersDelivery = true;
+        motelChoice.deliveryCargoType = ResourceType.Population;
+        motelChoice.deliveryQuantity = 2;
+        motelChoice.sourceType = DeliverySourceType.SpecificPrebuilt;
+        motelChoice.sourcePrebuilt = PrebuiltBuildingType.Community;
+        motelChoice.destinationType = DeliveryDestinationType.SpecificPrebuilt;
+        motelChoice.destinationPrebuilt = PrebuiltBuildingType.Motel;
+        motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -500));
+        motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10));
+        choiceTask.agentChoices.Add(motelChoice);
+
+        // Choice 3: Keep them (no delivery)
+        AgentChoice keepChoice = new AgentChoice(3, "Keep them here for now");
+        keepChoice.triggersDelivery = false;
+        keepChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5));
+        choiceTask.agentChoices.Add(keepChoice);
+
         if (showDebugInfo)
-            Debug.Log($"Created test population transport task: {transportAmount} people from {community.name} to {motel.name}. Max vehicle capacity: {maxVehicleCapacity}");
+            Debug.Log("Created test delivery choice task");
     }
 
     [ContextMenu("Print Task Statistics")]
