@@ -423,24 +423,38 @@ public class TaskSystem : MonoBehaviour
 
     void OnRoundChanged(int newSegment)
     {
-        // Check for new tasks at the start of each round (segment 0)
-        if (newSegment == 0 && enableAutoTaskGeneration)
+        Debug.Log($"OnRoundChanged called: segment {newSegment}, auto generation: {enableAutoTaskGeneration}");
+        // Check for new tasks at the start of each round
+        if (enableAutoTaskGeneration)
         {
+            Debug.Log("Attempting to generate tasks from database...");
             GenerateTasksFromDatabase();
         }
     }
 
     void GenerateTasksFromDatabase()
     {
-        if (taskDatabase == null) return;
-        
+        if (taskDatabase == null)
+        {
+            Debug.LogError("TaskDatabase is null! Cannot generate tasks.");
+            return;
+        }
+
+        Debug.Log("Checking for triggered tasks...");
         List<TaskData> triggeredTasks = taskDatabase.CheckTriggeredTasks();
+        Debug.Log($"Found {triggeredTasks.Count} triggered tasks");
         
         foreach (TaskData taskData in triggeredTasks)
         {
             // Check if task already exists to avoid duplicates
-            if (activeTasks.Any(t => t.taskTitle == taskData.taskTitle)) continue;
-            
+            if (activeTasks.Any(t => t.taskTitle == taskData.taskTitle))
+            {
+                Debug.Log($"Task {taskData.taskTitle} already exists, skipping");
+                continue;
+            }
+
+            Debug.Log($"Creating task: {taskData.taskTitle}");
+
             CreateTaskFromDatabase(taskData);
         }
     }
@@ -464,35 +478,49 @@ public class TaskSystem : MonoBehaviour
 
     // Enhanced facility finding methods
     MonoBehaviour FindNearestBuilding(BuildingType buildingType, Vector3? referencePosition, 
-                                    ResourceType cargoType, bool isSource)
+                                ResourceType cargoType, bool isSource)
     {
+        Debug.Log($"=== FIND NEAREST BUILDING DEBUG ===");
+        Debug.Log($"Looking for: {buildingType}, Cargo: {cargoType}, IsSource: {isSource}");
+        
         Building[] buildings = FindObjectsOfType<Building>().Where(b => 
             b.GetBuildingType() == buildingType && b.IsOperational()).ToArray();
+        
+        Debug.Log($"Found {buildings.Length} operational {buildingType} buildings");
         
         Building bestBuilding = null;
         float closestDistance = float.MaxValue;
         
         foreach (Building building in buildings)
         {
+            Debug.Log($"Checking building: {building.name}");
+            
             // Check if building can provide/accept the cargo
-            if (!CanBuildingHandleCargo(building, cargoType, isSource))
+            bool canHandle = CanBuildingHandleCargo(building, cargoType, isSource);
+            Debug.Log($"  Can handle cargo: {canHandle}");
+            
+            if (!canHandle)
                 continue;
             
             if (referencePosition.HasValue)
             {
                 float distance = Vector3.Distance(building.transform.position, referencePosition.Value);
+                Debug.Log($"  Distance: {distance}");
                 if (distance < closestDistance)
                 {
                     closestDistance = distance;
                     bestBuilding = building;
+                    Debug.Log($"  New best building: {building.name}");
                 }
             }
             else
             {
-                return building; // Return first suitable if no reference position
+                Debug.Log($"  No reference position, returning first suitable: {building.name}");
+                return building;
             }
         }
         
+        Debug.Log($"Final result: {bestBuilding?.name}");
         return bestBuilding;
     }
 
@@ -531,18 +559,29 @@ public class TaskSystem : MonoBehaviour
 
     bool CanBuildingHandleCargo(Building building, ResourceType cargoType, bool isSource)
     {
+        Debug.Log($"=== CAN HANDLE CARGO DEBUG ===");
+        Debug.Log($"Building: {building.name}, Cargo: {cargoType}, IsSource: {isSource}");
+        
         BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
-        if (storage == null) return false;
+        if (storage == null)
+        {
+            Debug.Log($"❌ No BuildingResourceStorage component on {building.name}");
+            return false;
+        }
         
         if (isSource)
         {
-            // Check if building has resources to give
-            return storage.GetResourceAmount(cargoType) > 0;
+            int available = storage.GetResourceAmount(cargoType);
+            Debug.Log($"📦 {building.name} has {available} {cargoType} available (need > 0)");
+            return available > 0;
         }
         else
         {
-            // Check if building has space to receive
-            return storage.GetAvailableSpace(cargoType) > 0;
+            int space = storage.GetAvailableSpace(cargoType);
+            int capacity = storage.GetResourceCapacity(cargoType);
+            int current = storage.GetResourceAmount(cargoType);
+            Debug.Log($"🏠 {building.name} space check: Current={current}, Capacity={capacity}, Available={space} (need > 0)");
+            return space > 0;
         }
     }
 
@@ -941,84 +980,136 @@ public class TaskSystem : MonoBehaviour
 
     public MonoBehaviour FindTriggeringFacility(GameTask task)
     {
-        // This should return the facility that originally triggered this task
-        // For now, we can find by name or implement a better tracking system
+        Debug.Log("=== FIND TRIGGERING FACILITY ===");
+        Debug.Log($"Task affected facility: {task.affectedFacility}");
         
-        if (string.IsNullOrEmpty(task.affectedFacility)) return null;
+        if (string.IsNullOrEmpty(task.affectedFacility))
+        {
+            Debug.Log("Affected facility is null or empty");
+            return null;
+        }
         
-        return FindFacilityByName(task.affectedFacility);
+        MonoBehaviour result = FindFacilityByName(task.affectedFacility);
+        Debug.Log($"FindFacilityByName result: {(result != null ? result.name : "NULL")}");
+        return result;
     }
 
 
     MonoBehaviour FindFacilityByName(string facilityName)
     {
+        Debug.Log($"=== FIND FACILITY BY NAME ===");
+        Debug.Log($"Looking for: '{facilityName}'");
+        
         if (string.IsNullOrEmpty(facilityName)) return null;
         
         // Search in Buildings
         Building[] buildings = FindObjectsOfType<Building>();
+        Debug.Log($"Found {buildings.Length} buildings:");
         foreach (Building building in buildings)
         {
+            Debug.Log($"  Building: {building.name}");
             if (building.name.Contains(facilityName) || building.name == facilityName)
+            {
+                Debug.Log($"  ✅ MATCH: {building.name}");
                 return building;
+            }
         }
         
         // Search in PrebuiltBuildings
         PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>();
+        Debug.Log($"Found {prebuilts.Length} prebuilt buildings:");
         foreach (PrebuiltBuilding prebuilt in prebuilts)
         {
+            Debug.Log($"  Prebuilt: {prebuilt.name}");
             if (prebuilt.name.Contains(facilityName) || prebuilt.name == facilityName)
+            {
+                Debug.Log($"  ✅ MATCH: {prebuilt.name}");
                 return prebuilt;
+            }
         }
         
+        Debug.Log("❌ No facility found");
         return null;
     }
 
     public MonoBehaviour DetermineChoiceDeliverySource(AgentChoice choice, MonoBehaviour triggeringFacility)
     {
+        Debug.Log($"Determining source: Type={choice.sourceType}");
+    
         switch (choice.sourceType)
         {
             case DeliverySourceType.RequestingFacility:
+                Debug.Log($"Using requesting facility as source: {triggeringFacility?.name}");
                 return triggeringFacility;
                 
             case DeliverySourceType.ManualAssignment:
+                Debug.Log($"Looking for facility by name: {choice.specificSourceName}");
                 return FindFacilityByName(choice.specificSourceName);
                 
             case DeliverySourceType.SpecificBuilding:
-                return FindNearestBuilding(choice.sourceBuilding, triggeringFacility?.transform.position, 
+                Debug.Log($"Looking for specific building type: {choice.sourceBuilding}");
+                MonoBehaviour foundBuilding = FindNearestBuilding(choice.sourceBuilding, triggeringFacility?.transform.position, 
                                         choice.deliveryCargoType, true);
+                Debug.Log($"Found building: {foundBuilding?.name}");
+                return foundBuilding;
                 
             case DeliverySourceType.SpecificPrebuilt:
+                Debug.Log($"Looking for specific prebuilt type: {choice.sourcePrebuilt}");
                 return FindNearestPrebuiltBuilding(choice.sourcePrebuilt, triggeringFacility?.transform.position,
                                                 choice.deliveryCargoType, true);
                 
             case DeliverySourceType.AutoFind:
             default:
+                Debug.Log($"Auto-finding source for cargo type: {choice.deliveryCargoType}");
                 return FindBestDeliverySource(choice.deliveryCargoType, triggeringFacility?.transform.position);
         }
     }
 
     public MonoBehaviour DetermineChoiceDeliveryDestination(AgentChoice choice, MonoBehaviour triggeringFacility)
     {
+        Debug.Log($"=== DESTINATION DEBUG ===");
+        Debug.Log($"Destination Type: {choice.destinationType}");
+        Debug.Log($"Destination Building: {choice.destinationBuilding}");
+        Debug.Log($"Cargo Type: {choice.deliveryCargoType}");
+
         switch (choice.destinationType)
         {
             case DeliveryDestinationType.RequestingFacility:
+                Debug.Log($"Using requesting facility as destination: {triggeringFacility?.name}");
                 return triggeringFacility;
-                
+
             case DeliveryDestinationType.ManualAssignment:
+                Debug.Log($"Looking for facility by name: {choice.specificDestinationName}");
                 return FindFacilityByName(choice.specificDestinationName);
-                
+
             case DeliveryDestinationType.SpecificBuilding:
-                return FindNearestBuilding(choice.destinationBuilding, triggeringFacility?.transform.position,
+                Debug.Log($"Looking for specific building type: {choice.destinationBuilding}");
+
+                // Debug: List all buildings
+                Building[] allBuildings = FindObjectsOfType<Building>();
+                Debug.Log($"Found {allBuildings.Length} total buildings:");
+                foreach (Building b in allBuildings)
+                {
+                    Debug.Log($"  - {b.name}: Type={b.GetBuildingType()}, Status={b.GetCurrentStatus()}, Operational={b.IsOperational()}");
+                }
+
+                MonoBehaviour foundBuilding = FindNearestBuilding(choice.destinationBuilding, triggeringFacility?.transform.position,
                                         choice.deliveryCargoType, false);
-                
+                Debug.Log($"Found building result: {foundBuilding?.name}");
+                return foundBuilding;
+
             case DeliveryDestinationType.SpecificPrebuilt:
+                Debug.Log($"Looking for specific prebuilt type: {choice.destinationPrebuilt}");
                 return FindNearestPrebuiltBuilding(choice.destinationPrebuilt, triggeringFacility?.transform.position,
                                                 choice.deliveryCargoType, false);
-                
+
             case DeliveryDestinationType.AutoFind:
             default:
+                Debug.Log($"Auto-finding destination for cargo type: {choice.deliveryCargoType}");
                 return FindBestDeliveryDestination(choice.deliveryCargoType, triggeringFacility?.transform.position);
         }
+
+        return null;
     }
 
     // Utility methods for impact display
@@ -1056,11 +1147,12 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
-    // Debug methods for testing
+    // Update all existing test methods in TaskSystem.cs
+
     [ContextMenu("Create Test Food Demand Task")]
     public void CreateTestFoodDemandTask()
     {
-        GameTask foodTask = CreateTask("Food Shortage", TaskType.Demand, "Kitchen 1",
+        GameTask foodTask = CreateTask("Food Shortage", TaskType.Demand, "Shelter Complex",
             "Multiple families have reported running out of food supplies. Immediate food distribution is required.");
 
         // Add impacts
@@ -1070,23 +1162,36 @@ public class TaskSystem : MonoBehaviour
 
         // Add agent messages
         foodTask.agentMessages.Add(new AgentMessage("Hello! We have an urgent food shortage situation.", defaultAgentAvatar));
-        foodTask.agentMessages.Add(new AgentMessage("Several families in Shelter 1 have completely run out of food supplies."));
+        foodTask.agentMessages.Add(new AgentMessage("Several families in our shelter have completely run out of food supplies."));
         foodTask.agentMessages.Add(new AgentMessage("We need to decide how to respond quickly. What would you like to do?"));
 
-        // Add agent choices
-        AgentChoice choice1 = new AgentChoice(1, "Emergency food distribution (50 food packs, $2000)");
+        // Add agent choices with delivery options
+        AgentChoice choice1 = new AgentChoice(1, "Emergency food distribution from nearby kitchen (50 food packs, $2000)");
+        choice1.triggersDelivery = true;
+        choice1.deliveryCargoType = ResourceType.FoodPacks;
+        choice1.deliveryQuantity = 50;
+        choice1.sourceType = DeliverySourceType.SpecificBuilding;
+        choice1.sourceBuilding = BuildingType.Kitchen;
+        choice1.destinationType = DeliveryDestinationType.AutoFind;
         choice1.choiceImpacts.Add(new TaskImpact(ImpactType.FoodPacks, -50));
         choice1.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -2000));
         choice1.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 15));
         foodTask.agentChoices.Add(choice1);
 
-        AgentChoice choice2 = new AgentChoice(2, "Limited food distribution (25 food packs, $1000)");
-        choice2.choiceImpacts.Add(new TaskImpact(ImpactType.FoodPacks, -25));
+        AgentChoice choice2 = new AgentChoice(2, "Limited food distribution (10 food packs, $1000)");
+        choice2.triggersDelivery = true;
+        choice2.deliveryCargoType = ResourceType.FoodPacks;
+        choice2.deliveryQuantity = 10;
+        choice2.sourceType = DeliverySourceType.SpecificBuilding;
+        choice2.sourceBuilding = BuildingType.Kitchen;
+        choice2.destinationType = DeliveryDestinationType.RequestingFacility;
+        choice2.choiceImpacts.Add(new TaskImpact(ImpactType.FoodPacks, -10));
         choice2.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1000));
         choice2.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5));
         foodTask.agentChoices.Add(choice2);
 
-        AgentChoice choice3 = new AgentChoice(3, "Delay until next shipment arrives");
+        AgentChoice choice3 = new AgentChoice(3, "Delay until next shipment arrives (no delivery)");
+        choice3.triggersDelivery = false;
         choice3.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -20));
         foodTask.agentChoices.Add(choice3);
     }
@@ -1094,7 +1199,7 @@ public class TaskSystem : MonoBehaviour
     [ContextMenu("Create Test Advisory Task")]
     public void CreateTestAdvisoryTask()
     {
-        GameTask advisoryTask = CreateTask("Equipment Upgrade", TaskType.Advisory, "Kitchen 2",
+        GameTask advisoryTask = CreateTask("Equipment Upgrade", TaskType.Advisory, "Kitchen Operations",
             "Kitchen equipment could be upgraded to improve efficiency. This is not urgent but would provide long-term benefits.");
 
         advisoryTask.impacts.Add(new TaskImpact(ImpactType.Budget, 5000));
@@ -1102,15 +1207,28 @@ public class TaskSystem : MonoBehaviour
 
         advisoryTask.agentMessages.Add(new AgentMessage("I've been reviewing our kitchen operations.", defaultAgentAvatar));
         advisoryTask.agentMessages.Add(new AgentMessage("We could upgrade our equipment to serve more people efficiently."));
+        advisoryTask.agentMessages.Add(new AgentMessage("This would cost $5000 but improve long-term satisfaction."));
+
+        // Add choices without delivery
+        AgentChoice upgradeChoice = new AgentChoice(1, "Approve equipment upgrade ($5000)");
+        upgradeChoice.triggersDelivery = false;
+        upgradeChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -5000));
+        upgradeChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 25));
+        advisoryTask.agentChoices.Add(upgradeChoice);
+
+        AgentChoice delayChoice = new AgentChoice(2, "Delay upgrade for now");
+        delayChoice.triggersDelivery = false;
+        delayChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5));
+        advisoryTask.agentChoices.Add(delayChoice);
     }
 
     [ContextMenu("Create Test Numerical Task")]
     public void CreateTestNumericalTask()
     {
-        GameTask numericalTask = CreateTask("Worker Assignment", TaskType.Advisory, "Kitchen 1",
+        GameTask numericalTask = CreateTask("Worker Assignment", TaskType.Advisory, "Kitchen Operations",
             "We need to assign workers to this facility. Please specify how many workers to assign.");
         
-        // add numerical inputs
+        // Add numerical inputs
         AgentNumericalInput workerInput = new AgentNumericalInput(1, "Workers to Assign", 2, 0, 8);
         numericalTask.numericalInputs.Add(workerInput);
         
@@ -1118,24 +1236,123 @@ public class TaskSystem : MonoBehaviour
         budgetInput.stepSize = 500;
         numericalTask.numericalInputs.Add(budgetInput);
         
-        // add agent messages
+        // Add agent messages
         numericalTask.agentMessages.Add(new AgentMessage("We need to configure this facility.", defaultAgentAvatar));
         numericalTask.agentMessages.Add(new AgentMessage("Please use the controls below to set the parameters."));
+        numericalTask.agentMessages.Add(new AgentMessage("Confirm your settings when ready."));
         
-        // add impacts
-        numericalTask.impacts.Add(new TaskImpact(ImpactType.Workforce, 0));
-        numericalTask.impacts.Add(new TaskImpact(ImpactType.Budget, 0));
+        // Add impacts
+        numericalTask.impacts.Add(new TaskImpact(ImpactType.Workforce, 0, false, "Workers to Assign"));
+        numericalTask.impacts.Add(new TaskImpact(ImpactType.Budget, 0, false, "Budget Allocation"));
+
+        // Add simple confirmation choice
+        AgentChoice confirmChoice = new AgentChoice(1, "Confirm worker assignment");
+        confirmChoice.triggersDelivery = false;
+        confirmChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5));
+        numericalTask.agentChoices.Add(confirmChoice);
+    }
+
+    [ContextMenu("Create Test Population Transport Task")]
+    public void CreateTestPopulationTransportTask()
+    {
+        PrebuiltBuilding community = null;
+        PrebuiltBuilding motel = null;
+        
+        PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>();
+        foreach (var pb in prebuilts)
+        {
+            if (pb.GetPrebuiltType() == PrebuiltBuildingType.Community && pb.GetCurrentPopulation() > 0)
+                community = pb;
+            else if (pb.GetPrebuiltType() == PrebuiltBuildingType.Motel)
+                motel = pb;
+        }
+        
+        if (community == null || motel == null)
+        {
+            Debug.LogError("Cannot create transport task - missing Community with population or Motel");
+            return;
+        }
+        
+        // Check vehicle capacity and available resources
+        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+        int maxVehicleCapacity = vehicles.Length > 0 ? vehicles.Max(v => v.GetMaxCapacity()) : 10;
+        
+        int availablePopulation = community.GetCurrentPopulation();
+        int motelSpace = motel.GetPopulationCapacity() - motel.GetCurrentPopulation();
+        int transportAmount = Mathf.Min(availablePopulation, motelSpace, maxVehicleCapacity, 3);
+        
+        if (transportAmount <= 0)
+        {
+            Debug.LogError("Cannot create transport task - no available population or space");
+            return;
+        }
+
+        GameTask transportTask = CreateTask("Emergency Population Transport", TaskType.Emergency, community.name,
+            $"We have {transportAmount} displaced families that need immediate transport to temporary housing.");
+
+        // Set timing
+        transportTask.roundsRemaining = 2;
+        transportTask.hasRealTimeLimit = false;
+        transportTask.deliveryTimeLimit = 300f;
+        transportTask.deliveryFailureSatisfactionPenalty = 15f;
+        
+        // Add impacts
+        transportTask.impacts.Add(new TaskImpact(ImpactType.Clients, transportAmount, false, "People to Transport"));
+        transportTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, 2, false, "Rounds Remaining"));
+        transportTask.impacts.Add(new TaskImpact(ImpactType.Satisfaction, -15, false, "Failure Penalty"));
+
+        // Add agent messages
+        transportTask.agentMessages.Add(new AgentMessage("We have an urgent situation!", defaultAgentAvatar));
+        transportTask.agentMessages.Add(new AgentMessage($"{transportAmount} families at {community.name} need immediate transport."));
+        transportTask.agentMessages.Add(new AgentMessage("We must get them relocated within 2 rounds or they'll lose faith in our response."));
+        transportTask.agentMessages.Add(new AgentMessage("Where should we send them?"));
+        
+        // Add transport choices
+        AgentChoice shelterChoice = new AgentChoice(1, "Send to Shelter (Free, but limited space)");
+        shelterChoice.triggersDelivery = true;
+        shelterChoice.deliveryCargoType = ResourceType.Population;
+        shelterChoice.deliveryQuantity = transportAmount;
+        shelterChoice.sourceType = DeliverySourceType.RequestingFacility;
+        shelterChoice.destinationType = DeliveryDestinationType.SpecificBuilding;
+        shelterChoice.destinationBuilding = BuildingType.Shelter;
+        shelterChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5, false, "Quick Response"));
+        transportTask.agentChoices.Add(shelterChoice);
+
+        AgentChoice motelChoice = new AgentChoice(2, "Send to Motel ($200, always available)");
+        motelChoice.triggersDelivery = true;
+        motelChoice.deliveryCargoType = ResourceType.Population;
+        motelChoice.deliveryQuantity = transportAmount;
+        motelChoice.sourceType = DeliverySourceType.RequestingFacility;
+        motelChoice.destinationType = DeliveryDestinationType.SpecificPrebuilt;
+        motelChoice.destinationPrebuilt = PrebuiltBuildingType.Motel;
+        motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -200));
+        motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10, false, "Premium Housing"));
+        transportTask.agentChoices.Add(motelChoice);
+
+        AgentChoice delayChoice = new AgentChoice(3, "Wait for better options (Risk satisfaction loss)");
+        delayChoice.triggersDelivery = false;
+        delayChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -8, false, "Delayed Response"));
+        transportTask.agentChoices.Add(delayChoice);
+        
+        if (showDebugInfo)
+            Debug.Log($"Created test population transport task: {transportAmount} people from {community.name}. " +
+                    $"Max vehicle capacity: {maxVehicleCapacity}");
     }
 
     [ContextMenu("Create Test Delivery Choice Task")]
     public void CreateTestDeliveryChoiceTask()
     {
         GameTask choiceTask = CreateTask("Population Relocation Decision", TaskType.Demand, "Community Center",
-            "A family needs relocation. Choose where to send them.");
+            "A family needs relocation. Choose where to send them based on available options and budget.");
+
+        // Add impacts to show the stakes
+        choiceTask.impacts.Add(new TaskImpact(ImpactType.Clients, 2, false, "Family Members"));
+        choiceTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, 2, false, "Rounds Remaining"));
 
         // Add agent messages
         choiceTask.agentMessages.Add(new AgentMessage("We have a family that needs immediate relocation.", defaultAgentAvatar));
-        choiceTask.agentMessages.Add(new AgentMessage("We have two options available. Where would you like to send them?"));
+        choiceTask.agentMessages.Add(new AgentMessage("They've been displaced and need somewhere to stay tonight."));
+        choiceTask.agentMessages.Add(new AgentMessage("We have several options available. Where would you like to send them?"));
 
         // Choice 1: Send to Shelter
         AgentChoice shelterChoice = new AgentChoice(1, "Send to Shelter (Free, limited space)");
@@ -1163,15 +1380,15 @@ public class TaskSystem : MonoBehaviour
         choiceTask.agentChoices.Add(motelChoice);
 
         // Choice 3: Keep them (no delivery)
-        AgentChoice keepChoice = new AgentChoice(3, "Keep them here for now");
+        AgentChoice keepChoice = new AgentChoice(3, "Keep them here for now (overcrowding risk)");
         keepChoice.triggersDelivery = false;
         keepChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5));
         choiceTask.agentChoices.Add(keepChoice);
 
         if (showDebugInfo)
-            Debug.Log("Created test delivery choice task");
+            Debug.Log("Created test delivery choice task with multiple transport options");
     }
-
+    
     [ContextMenu("Print Task Statistics")]
     public void PrintTaskStatistics()
     {

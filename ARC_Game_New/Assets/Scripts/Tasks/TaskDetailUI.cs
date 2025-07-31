@@ -36,6 +36,7 @@ public class TaskDetailUI : MonoBehaviour
     public GameObject numericalInputPrefab;
     public GameObject playerMessagePrefab;
 
+
     [Header("Action Buttons")]
     public Button laterButton;
     public Button confirmButton;
@@ -412,18 +413,29 @@ public class TaskDetailUI : MonoBehaviour
     void OnConfirmButtonClicked()
     {
         if (currentTask == null || TaskSystem.Instance == null) return;
-        
+
         if (currentTask.isExpired)
         {
-            Debug.LogWarning("Cannot confirm expired task");
+            ShowAgentErrorMessage("This task has expired and can no longer be completed.");
             return;
         }
-        
+
+        // Validate selected choice if it involves delivery
+        if (selectedChoice != null && selectedChoice.triggersDelivery)
+        {
+            string errorMessage;
+            if (!ValidateChoiceDelivery(selectedChoice, out errorMessage))
+            {
+                ShowAgentErrorMessage($"Cannot complete this action: {errorMessage}");
+                return;
+            }
+        }
+
         // Apply choice impacts first
         if (selectedChoice != null)
         {
             ApplyChoiceImpacts(selectedChoice);
-            
+
             // Check if this choice triggers a delivery
             if (selectedChoice.triggersDelivery)
             {
@@ -440,29 +452,204 @@ public class TaskDetailUI : MonoBehaviour
             // No choice selected, complete task normally
             TaskSystem.Instance.CompleteTask(currentTask);
         }
-        
+
         CloseTaskDetail();
 
+        if (showDebugInfo)
+            Debug.Log($"Task confirmed: {currentTask.taskTitle}");
     }
+
+    //  ---------CHOICE DELIVERY VALIDATION ---------
+    bool ValidateChoiceDelivery(AgentChoice choice, out string errorMessage)
+    {
+        errorMessage = "";
+
+        if (!choice.triggersDelivery)
+            return true; // Non-delivery choices are always valid
+
+        // Find source and destination
+        MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
+        MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
+        MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+
+        if (source == null)
+        {
+            Debug.Log($"No source found for choice: {choice.choiceText}");
+            errorMessage = $"No suitable source found for {choice.deliveryCargoType}";
+            return false;
+        }
+
+        if (destination == null)
+        {
+            Debug.Log($"No destination found for choice: {choice.choiceText}");
+            errorMessage = $"No suitable destination found for {choice.deliveryCargoType}";
+            return false;
+        }
+
+        // Check if source has enough resources
+        int availableAmount = GetAvailableResourceAmount(source, choice.deliveryCargoType);
+        if (availableAmount < choice.deliveryQuantity)
+        {
+            Debug.Log($"Insufficient resources at source: {source.name} for {choice.deliveryCargoType}");
+            string sourceName = source.name;
+            errorMessage = $"Insufficient resources at {sourceName}. Required: {choice.deliveryQuantity}, Available: {availableAmount}";
+            return false;
+        }
+
+        // Check if destination has enough space
+        int availableSpace = GetAvailableSpace(destination, choice.deliveryCargoType);
+        if (availableSpace < choice.deliveryQuantity)
+        {
+            Debug.Log($"Insufficient space at destination: {destination.name} for {choice.deliveryCargoType}");
+            string destName = destination.name;
+            errorMessage = $"Insufficient space at {destName}. Required: {choice.deliveryQuantity}, Available space: {availableSpace}";
+            return false;
+        }
+
+        // Check if any vehicle can handle this cargo type and quantity
+        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+        bool hasCapableVehicle = false;
+
+        foreach (Vehicle vehicle in vehicles)
+        {
+            if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
+                vehicle.GetMaxCapacity() >= Mathf.Min(choice.deliveryQuantity, 10)) // Check for reasonable batch size
+            {
+                hasCapableVehicle = true;
+                break;
+            }
+        }
+
+        if (!hasCapableVehicle)
+        {
+            Debug.Log($"No vehicle available to transport {choice.deliveryCargoType}");
+            errorMessage = $"No vehicle available to transport {choice.deliveryCargoType}";
+            return false;
+        }
+
+        return true;
+    }
+
+    // Helper methods for resource checking
+    int GetAvailableResourceAmount(MonoBehaviour facility, ResourceType resourceType)
+    {
+        // Check Building
+        Building building = facility.GetComponent<Building>();
+        if (building != null)
+        {
+            BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
+            if (storage != null)
+                return storage.GetResourceAmount(resourceType);
+        }
+
+        // Check PrebuiltBuilding
+        PrebuiltBuilding prebuilt = facility.GetComponent<PrebuiltBuilding>();
+        if (prebuilt != null)
+        {
+            if (resourceType == ResourceType.Population)
+                return prebuilt.GetCurrentPopulation();
+
+            BuildingResourceStorage storage = prebuilt.GetResourceStorage();
+            if (storage != null)
+                return storage.GetResourceAmount(resourceType);
+        }
+
+        return 0;
+    }
+
+    int GetAvailableSpace(MonoBehaviour facility, ResourceType resourceType)
+    {
+        // Check Building
+        Building building = facility.GetComponent<Building>();
+        if (building != null)
+        {
+            BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
+            if (storage != null)
+                return storage.GetAvailableSpace(resourceType);
+        }
+
+        // Check PrebuiltBuilding
+        PrebuiltBuilding prebuilt = facility.GetComponent<PrebuiltBuilding>();
+        if (prebuilt != null)
+        {
+            if (resourceType == ResourceType.Population)
+                return prebuilt.GetPopulationCapacity() - prebuilt.GetCurrentPopulation();
+
+            BuildingResourceStorage storage = prebuilt.GetResourceStorage();
+            if (storage != null)
+                return storage.GetAvailableSpace(resourceType);
+        }
+
+        return 0;
+    }
+
+    void ShowAgentErrorMessage(string errorText)
+    {
+        // Create a temporary agent message to show the error
+        GameObject errorMessageItem = Instantiate(agentMessagePrefab, conversationContent);
+        AgentMessageUI messageUI = errorMessageItem.GetComponent<AgentMessageUI>();
+
+        if (messageUI != null)
+        {
+            AgentMessage errorMessage = new AgentMessage(errorText);
+            messageUI.Initialize(errorMessage);
+            messageUI.ShowFullMessage();
+
+            // Make the error message visually distinct
+            if (messageUI.messageText != null)
+            {
+                messageUI.messageText.color = Color.red;
+            }
+        }
+
+        currentConversationItems.Add(errorMessageItem);
+        ScrollToBottom();
+
+        if (showDebugInfo)
+            Debug.Log($"Showed error message: {errorText}");
+    }
+    //  --------- END OF SECTION ---------
 
     void CreateChoiceDeliveryTask(AgentChoice choice)
     {
+        Debug.Log("=== STARTING CreateChoiceDeliveryTask ===");
+        Debug.Log($"Choice: {choice.choiceText}");
+        Debug.Log($"Triggers Delivery: {choice.triggersDelivery}");
+        Debug.Log($"Cargo Type: {choice.deliveryCargoType}");
+        Debug.Log($"Quantity: {choice.deliveryQuantity}");
+        Debug.Log($"Source Type: {choice.sourceType}");
+        Debug.Log($"Destination Type: {choice.destinationType}");
+        Debug.Log($"Destination Building: {choice.destinationBuilding}");
+
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
-        if (deliverySystem == null) return;
-        
+        if (deliverySystem == null)
+        {
+            Debug.LogError("DeliverySystem not found!");
+            return;
+        }
+
         // Find triggering facility
         MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
-        
-        // Determine source and destination based on choice
+        Debug.Log($"Current Task: {currentTask?.taskTitle}");
+        Debug.Log($"Affected Facility: {currentTask?.affectedFacility}");
+        Debug.Log($"Triggering facility: {(triggeringFacility != null ? triggeringFacility.name : "NULL")}");
+
+        // Try calling the methods directly to see if they're reached
+        Debug.Log("About to call DetermineChoiceDeliverySource...");
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
+        Debug.Log($"Source result: {(source != null ? source.name : "NULL")}");
+
+        Debug.Log("About to call DetermineChoiceDeliveryDestination...");
         MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
-        
+        Debug.Log($"Destination result: {(destination != null ? destination.name : "NULL")}");
+
         if (source == null || destination == null)
         {
             Debug.LogError($"Could not determine delivery route for choice: {choice.choiceText}");
+            Debug.LogError($"Source: {(source != null ? "Found" : "NOT FOUND")}, Destination: {(destination != null ? "Found" : "NOT FOUND")}");
             return;
         }
-        
+
         // Create delivery tasks
         DeliveryTask deliveryTask = deliverySystem.CreateSingleDeliveryTask(
             source, destination, choice.deliveryCargoType, choice.deliveryQuantity, 3);
@@ -473,10 +660,10 @@ public class TaskDetailUI : MonoBehaviour
 
             // Use task's default time limit
             currentTask.deliveryTimeLimit = currentTask.deliveryTimeLimit;
-            
+
             // Start monitoring delivery completion (without time segment monitoring)
             StartCoroutine(MonitorChoiceDeliveryCompletion());
-            
+
             if (showDebugInfo)
                 Debug.Log($"Created delivery from choice: {source.name} → {destination.name} " +
                         $"({choice.deliveryQuantity} {choice.deliveryCargoType})");
@@ -494,13 +681,13 @@ public class TaskDetailUI : MonoBehaviour
                 TaskSystem.Instance.CompleteTask(currentTask);
                 yield break;
             }
-            
+
             // Check if task has expired (this will be handled by TaskSystem automatically)
             if (currentTask.isExpired)
             {
                 yield break; // TaskSystem will handle the expiration
             }
-            
+
             yield return new WaitForSeconds(1f); // Check every second
         }
     }
@@ -597,6 +784,7 @@ public class TaskDetailUI : MonoBehaviour
         if (currentTask != null && taskDetailPanel.activeInHierarchy)
         {
             UpdateActionButtons();
+            UpdateChoiceValidation();
 
             // control player input field status
             if (playerInputField != null)
@@ -618,10 +806,27 @@ public class TaskDetailUI : MonoBehaviour
                 if (sendButton != null)
                     sendButton.interactable = false;
             }
-
         }
-
-
+    }
+    
+    void UpdateChoiceValidation()
+    {
+        foreach (GameObject item in currentConversationItems)
+        {
+            AgentChoiceUI choiceUI = item.GetComponent<AgentChoiceUI>();
+            if (choiceUI != null)
+            {
+                AgentChoice choice = choiceUI.GetChoice();
+                if (choice.triggersDelivery)
+                {
+                    string errorMessage;
+                    bool isValid = ValidateChoiceDelivery(choice, out errorMessage);
+                    
+                    // Update choice appearance based on validity
+                    choiceUI.SetValidationState(isValid, errorMessage);
+                }
+            }
+        }
     }
     
 }

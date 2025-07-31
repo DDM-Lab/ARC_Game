@@ -16,9 +16,15 @@ public class AgentChoiceUI : MonoBehaviour
     public Color normalColor = Color.white;
     public Color selectedColor = Color.green;
 
+    [Header("Validation Colors")]
+    public Color invalidColor = Color.gray;
+    public TextMeshProUGUI validationText;
+
     private AgentChoice choice;
     private TaskDetailUI parentUI;
     private bool isSelected = false;
+    private bool isValid = true;
+    private string validationMessage = "";
 
     public void Initialize(AgentChoice agentChoice, TaskDetailUI parent)
     {
@@ -61,5 +67,30 @@ public class AgentChoiceUI : MonoBehaviour
     public AgentChoice GetChoice()
     {
         return choice;
+    }
+
+    public void SetValidationState(bool valid, string message)
+    {
+        isValid = valid;
+        validationMessage = message;
+        
+        // Update button appearance
+        if (choiceButton != null)
+        {
+            //choiceButton.interactable = valid;
+            
+            Image buttonImage = choiceButton.GetComponent<Image>();
+            if (buttonImage != null)
+            {
+                buttonImage.color = valid ? normalColor : invalidColor;
+            }
+        }
+        
+        // Show validation message
+        if (validationText != null)
+        {
+            validationText.text = valid ? "" : message;
+            validationText.color = Color.red;
+        }
     }
 }

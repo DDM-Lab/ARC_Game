@@ -10,42 +10,34 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4c182747abbcaae4ab5183b8a6d24a10, type: 3}
-  m_Name: TestDeliveryTask
+  m_Name: Test_Task_Advisory
   m_EditorClassIdentifier: 
-  taskId: 
-  taskTitle: 
-  taskType: 0
-  description: 
-  taskImage: {fileID: 0}
-  roundTriggers: []
+  taskId: Test_Task_Advisory
+  taskTitle: Test Task for Advisory Task
+  taskType: 2
+  description: Just for a test.
+  taskImage: {fileID: 21300000, guid: c939145498029214ab7fc047d1938e25, type: 3}
+  roundTriggers:
+  - targetRound: 1
+    exactMatch: 1
   populationTriggers: []
   resourceTriggers: []
   probabilityTriggers: []
   requireAllTriggers: 1
-  isGlobalTask: 0
+  isGlobalTask: 1
   targetFacilityType: 1
   autoSelectFacility: 1
   specificFacility: {fileID: 0}
-  roundsRemaining: 1
+  roundsRemaining: 2
   realTimeRemaining: 300
   hasRealTimeLimit: 0
   impacts: []
-  agentMessages: []
+  agentMessages:
+  - messageText: A simple test for the task
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 0
+    typingSpeed: 0
   agentChoices: []
   numericalInputs: []
-  requiresDelivery: 0
-  deliveryCargoType: 1
-  deliveryQuantity: 0
   deliveryFailureSatisfactionPenalty: 10
-  sourceType: 0
-  sourceBuilding: 0
-  sourcePrebuilt: 0
-  specificSource: {fileID: 0}
-  useRequestingFacilityAsSource: 0
-  destinationType: 0
-  destinationBuilding: 1
-  destinationPrebuilt: 1
-  specificDestination: {fileID: 0}
-  useRequestingFacilityAsDestination: 1
-  prioritizeNearestSource: 1
-  prioritizeNearestDestination: 1
+  deliveryTimeLimit: 300
