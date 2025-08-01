@@ -27,7 +27,24 @@ public class FloodParameters : ScriptableObject
     
     [Range(0f, 1f)]
     [Tooltip("Spread chance multiplier when blocked by terrain (forests, mountains)")]
-    public float terrainBlockMultiplier = 0.2f;
+    public float terrainBlockMultiplier = 0.1f;
+    
+    [Range(1, 5)]
+    [Tooltip("Radius around blocking tiles that are affected by blocking")]
+    public int blockingRadius = 1;
+    
+    [Header("Rain-Based Spawning")]
+    [Tooltip("Minimum rain intensity required to spawn flood (0=Sunny, 0.3=SmallRain, etc.)")]
+    [Range(0f, 1f)]
+    public float minimumRainForSpawning = 0.3f;
+    
+    [Range(0f, 1f)]
+    [Tooltip("Chance per river tile to spawn flood when it starts raining")]
+    public float floodSpawnChance = 0.7f;
+    
+    [Range(0f, 1f)]
+    [Tooltip("Additional spawn chance per rain intensity level")]
+    public float rainIntensitySpawnBonus = 0.2f;
     
     [Header("Shrinkage Parameters")]
     [Range(0f, 1f)]

@@ -27,7 +27,9 @@ public class FloodSystem : MonoBehaviour
     // Flood state tracking
     private HashSet<Vector3Int> currentFloodTiles = new HashSet<Vector3Int>();
     private HashSet<Vector3Int> riverTiles = new HashSet<Vector3Int>();
+    private HashSet<Vector3Int> blockedPositions = new HashSet<Vector3Int>(); // Positions affected by blocking tiles
     private Queue<Vector3Int> floodExpansionQueue = new Queue<Vector3Int>();
+    private WeatherType lastWeatherType = WeatherType.Sunny;
     
     // Events
     public event Action<Vector3Int> OnFloodTileAdded;
@@ -61,14 +63,18 @@ public class FloodSystem : MonoBehaviour
         if (!ValidateReferences())
             return;
         
-        // Find all river tiles as flood sources
+        // Find all river tiles as potential flood sources
         CacheRiverTiles();
         
-        // Initialize flood from existing river tiles
-        InitializeFloodFromRivers();
+        // Cache blocking positions
+        CacheBlockingPositions();
+        
+        // Start with no flood - only spawn when it rains
+        currentFloodTiles.Clear();
+        floodTilemap.SetTilesBlock(floodTilemap.cellBounds, new TileBase[floodTilemap.cellBounds.size.x * floodTilemap.cellBounds.size.y]);
         
         if (floodParameters.enableDebugLogs)
-            Debug.Log($"Flood System initialized with {riverTiles.Count} river tiles and {currentFloodTiles.Count} initial flood tiles");
+            Debug.Log($"Flood System initialized with {riverTiles.Count} river tiles, {blockedPositions.Count} blocked positions. Starting with no flood.");
     }
     
     bool ValidateReferences()
@@ -106,6 +112,67 @@ public class FloodSystem : MonoBehaviour
         return true;
     }
     
+    void CacheBlockingPositions()
+    {
+        blockedPositions.Clear();
+        
+        if (terrainBlockingTilemap == null || terrainBlockingTiles == null || terrainBlockingTiles.Length == 0)
+        {
+            if (floodParameters.enableDebugLogs)
+                Debug.Log("No terrain blocking configured");
+            return;
+        }
+        
+        BoundsInt bounds = terrainBlockingTilemap.cellBounds;
+        Debug.Log($"=== CACHING BLOCKING POSITIONS ===");
+        Debug.Log($"Terrain blocking tilemap bounds: {bounds}");
+        Debug.Log($"Blocking radius: {floodParameters.blockingRadius}");
+        
+        int blockingTileCount = 0;
+        
+        // Find all blocking tiles first
+        List<Vector3Int> blockingTilePositions = new List<Vector3Int>();
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            for (int y = bounds.yMin; y < bounds.yMax; y++)
+            {
+                Vector3Int position = new Vector3Int(x, y, 0);
+                TileBase tile = terrainBlockingTilemap.GetTile(position);
+                
+                if (tile != null && IsBlockingTile(tile))
+                {
+                    blockingTilePositions.Add(position);
+                    blockingTileCount++;
+                }
+            }
+        }
+        
+        // For each blocking tile, mark positions within radius as blocked
+        foreach (Vector3Int blockingPos in blockingTilePositions)
+        {
+            for (int dx = -floodParameters.blockingRadius; dx <= floodParameters.blockingRadius; dx++)
+            {
+                for (int dy = -floodParameters.blockingRadius; dy <= floodParameters.blockingRadius; dy++)
+                {
+                    Vector3Int affectedPos = blockingPos + new Vector3Int(dx, dy, 0);
+                    blockedPositions.Add(affectedPos);
+                }
+            }
+        }
+        
+        Debug.Log($"Found {blockingTileCount} blocking tiles, affecting {blockedPositions.Count} positions total");
+    }
+    
+    bool IsBlockingTile(TileBase tile)
+    {
+        foreach (TileBase blockingTile in terrainBlockingTiles)
+        {
+            if (tile == blockingTile)
+                return true;
+        }
+        return false;
+    }
+
     void CacheRiverTiles()
     {
         riverTiles.Clear();
@@ -127,7 +194,6 @@ public class FloodSystem : MonoBehaviour
                 {
                     riverTiles.Add(position);
                     foundRivers++;
-                    //Debug.Log($"Found river tile at: {position}");
                 }
             }
         }
@@ -190,34 +256,44 @@ public class FloodSystem : MonoBehaviour
         
         WeatherType currentWeather = WeatherSystem.Instance.GetCurrentWeather();
         WeatherFloodData weatherData = GetWeatherFloodData(currentWeather);
+        float rainIntensity = WeatherSystem.Instance.GetRainIntensity();
         
-        Debug.Log($"Current weather: {currentWeather}");
-        Debug.Log($"Expansion rate: {weatherData.expansionRate}");
-        Debug.Log($"Spread multiplier: {weatherData.spreadChanceMultiplier}");
-        Debug.Log($"Shrinkage chance: {weatherData.shrinkageChance}");
+        Debug.Log($"Current weather: {currentWeather}, Rain intensity: {rainIntensity}");
+        
+        // Check if weather changed from non-raining to raining
+        bool wasRaining = WeatherSystem.Instance.IsRaining();
+        bool weatherChanged = lastWeatherType != currentWeather;
+        lastWeatherType = currentWeather;
+        
+        // Handle flood spawning when rain starts or intensifies
+        if (rainIntensity >= floodParameters.minimumRainForSpawning)
+        {
+            if (currentFloodTiles.Count == 0 || (weatherChanged && rainIntensity > 0))
+            {
+                Debug.Log("Spawning flood due to rain");
+                SpawnFloodFromRain(rainIntensity);
+            }
+        }
         
         int floodCountBefore = currentFloodTiles.Count;
         
         // Handle flood expansion
-        if (weatherData.expansionRate > 0)
+        if (weatherData.expansionRate > 0 && currentFloodTiles.Count > 0)
         {
             Debug.Log("Attempting flood expansion...");
             ExpandFlood(weatherData);
         }
-        else
-        {
-            Debug.Log("No flood expansion (expansion rate is 0)");
-        }
         
-        // Handle flood shrinkage
-        if (weatherData.shrinkageChance > 0)
+        // Handle flood shrinkage (including complete drying up during sunny weather)
+        if (rainIntensity < floodParameters.minimumRainForSpawning)
+        {
+            Debug.Log("Rain stopped - flood will shrink/disappear");
+            ShrinkFlood(weatherData);
+        }
+        else if (weatherData.shrinkageChance > 0)
         {
             Debug.Log("Attempting flood shrinkage...");
             ShrinkFlood(weatherData);
-        }
-        else
-        {
-            Debug.Log("No flood shrinkage (shrinkage chance is 0)");
         }
         
         int floodCountAfter = currentFloodTiles.Count;
@@ -227,6 +303,34 @@ public class FloodSystem : MonoBehaviour
         OnFloodSizeChanged?.Invoke(currentFloodTiles.Count);
         
         Debug.Log("=== FLOOD UPDATE COMPLETED ===");
+    }
+    
+    void SpawnFloodFromRain(float rainIntensity)
+    {
+        Debug.Log($"--- SPAWNING FLOOD FROM RAIN (intensity: {rainIntensity}) ---");
+        
+        float spawnChance = floodParameters.floodSpawnChance + 
+                           (rainIntensity * floodParameters.rainIntensitySpawnBonus);
+        
+        Debug.Log($"Flood spawn chance: {spawnChance:F2}");
+        
+        int spawned = 0;
+        foreach (Vector3Int riverPos in riverTiles)
+        {
+            if (UnityEngine.Random.value < spawnChance)
+            {
+                AddFloodTile(riverPos, false);
+                spawned++;
+            }
+        }
+        
+        Debug.Log($"Spawned flood at {spawned}/{riverTiles.Count} river positions");
+        
+        // Trigger events after spawning
+        if (spawned > 0)
+        {
+            OnFloodSizeChanged?.Invoke(currentFloodTiles.Count);
+        }
     }
     
     WeatherFloodData GetWeatherFloodData(WeatherType weather)
@@ -320,23 +424,31 @@ public class FloodSystem : MonoBehaviour
     
     void ShrinkFlood(WeatherFloodData weatherData)
     {
+        Debug.Log($"--- FLOOD SHRINKAGE START ---");
         List<Vector3Int> tilesToRemove = new List<Vector3Int>();
+        
+        // Get rain intensity to determine shrinkage behavior
+        float rainIntensity = WeatherSystem.Instance.GetRainIntensity();
+        
+        // If no rain, dramatically increase shrinkage (flood dries up)
+        float shrinkChance = weatherData.shrinkageChance + floodParameters.baseShrinkageChance;
+        if (rainIntensity < floodParameters.minimumRainForSpawning)
+        {
+            shrinkChance += 0.8f; // Heavy shrinkage when not raining
+            Debug.Log("No rain - applying heavy shrinkage");
+        }
         
         foreach (Vector3Int floodPos in currentFloodTiles)
         {
-            // Don't shrink river tiles (permanent flood sources)
-            if (riverTiles.Contains(floodPos))
-                continue;
-            
-            float shrinkChance = weatherData.shrinkageChance + floodParameters.baseShrinkageChance;
+            float tileShrinkChance = shrinkChance;
             
             // Edge tiles have higher chance to shrink
             if (IsFloodEdgeTile(floodPos))
             {
-                shrinkChance += floodParameters.edgeShrinkageBonus;
+                tileShrinkChance += floodParameters.edgeShrinkageBonus;
             }
             
-            if (UnityEngine.Random.value < shrinkChance)
+            if (UnityEngine.Random.value < tileShrinkChance)
             {
                 tilesToRemove.Add(floodPos);
             }
@@ -348,8 +460,8 @@ public class FloodSystem : MonoBehaviour
             RemoveFloodTile(pos);
         }
         
-        if (floodParameters.enableDebugLogs && tilesToRemove.Count > 0)
-            Debug.Log($"Flood shrinkage: Removed {tilesToRemove.Count} tiles");
+        Debug.Log($"Flood shrinkage: Removed {tilesToRemove.Count} tiles (shrink chance: {shrinkChance:F2})");
+        Debug.Log($"--- FLOOD SHRINKAGE END ---");
     }
     
     bool CanFloodSpreadTo(Vector3Int position, WeatherFloodData weatherData)
@@ -408,20 +520,7 @@ public class FloodSystem : MonoBehaviour
     
     bool IsTerrainBlocked(Vector3Int position)
     {
-        if (terrainBlockingTilemap == null || terrainBlockingTiles == null || terrainBlockingTiles.Length == 0)
-            return false;
-        
-        TileBase tileAtPosition = terrainBlockingTilemap.GetTile(position);
-        if (tileAtPosition == null)
-            return false;
-        
-        foreach (TileBase blockingTile in terrainBlockingTiles)
-        {
-            if (tileAtPosition == blockingTile)
-                return true;
-        }
-        
-        return false;
+        return blockedPositions.Contains(position);
     }
     
     bool IsFloodEdgeTile(Vector3Int position)
