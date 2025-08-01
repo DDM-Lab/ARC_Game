@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 48fb19d5635af434793e37d36b02dd1d, type: 3}
+  m_Name: FloodParametersConfig
+  m_EditorClassIdentifier: 
+  weatherFloodRates:
+  - weatherType: 0
+    expansionRate: 0
+    spreadChanceMultiplier: 0.5
+    shrinkageChance: 0.3
+  - weatherType: 1
+    expansionRate: 2
+    spreadChanceMultiplier: 0.5
+    shrinkageChance: 0.3
+  - weatherType: 2
+    expansionRate: 3
+    spreadChanceMultiplier: 0.5
+    shrinkageChance: 0.3
+  - weatherType: 3
+    expansionRate: 4
+    spreadChanceMultiplier: 0.5
+    shrinkageChance: 0.3
+  - weatherType: 4
+    expansionRate: 5
+    spreadChanceMultiplier: 0.5
+    shrinkageChance: 0.3
+  baseSpreadChance: 0.7
+  randomExpansionChance: 0.4
+  maxRandomExpansionDistance: 5
+  landSpreadMultiplier: 1
+  terrainBlockMultiplier: 0.2
+  baseShrinkageChance: 0.1
+  edgeShrinkageBonus: 0.2
+  enableDebugLogs: 1
+  showFloodSpreadVisualization: 0
