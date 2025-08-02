@@ -34,7 +34,7 @@ MonoBehaviour:
   targetFacilityType: 1
   autoSelectFacility: 1
   specificFacility: {fileID: 0}
-  roundsRemaining: 2
+  roundsRemaining: 3
   realTimeRemaining: 300
   hasRealTimeLimit: 0
   impacts:
@@ -58,12 +58,12 @@ MonoBehaviour:
   - messageText: We have an urgent food shortage situation at this shelter! There
       are people here but no food packs remaining.
     agentAvatar: {fileID: 0}
-    useTypingEffect: 0
+    useTypingEffect: 1
     typingSpeed: 0
   - messageText: We need to request emergency food delivery. How much and from whereshould
       we order?
     agentAvatar: {fileID: 0}
-    useTypingEffect: 0
+    useTypingEffect: 1
     typingSpeed: 0
   agentChoices:
   - choiceId: 0
@@ -88,7 +88,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 0
-    choiceText: Request 10 food packs (Full supply)
+    choiceText: Request 50 food packs (Full supply)
     choiceImpacts:
     - impactType: 0
       value: 10
@@ -97,7 +97,7 @@ MonoBehaviour:
     isSelected: 0
     triggersDelivery: 1
     deliveryCargoType: 1
-    deliveryQuantity: 10
+    deliveryQuantity: 50
     sourceType: 0
     sourceBuilding: 0
     sourcePrebuilt: 0

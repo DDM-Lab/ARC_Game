@@ -402,13 +402,20 @@ public class TaskSystem : MonoBehaviour
 
     public void HandleDeliveryFailure(GameTask task)
     {
+        if (task == null)
+        {
+            if (showDebugInfo)
+                Debug.LogWarning("HandleDeliveryFailure called with null task - skipping");
+            return;
+        }
+        
         if (task.status == TaskStatus.InProgress)
         {
             task.status = TaskStatus.Incomplete;
             activeTasks.Remove(task);
             completedTasks.Add(task);
             
-            // apply penalties for delivery failure
+            // Apply penalties for delivery failure
             if (SatisfactionAndBudget.Instance != null && task.deliveryFailureSatisfactionPenalty > 0)
             {
                 SatisfactionAndBudget.Instance.RemoveSatisfaction(task.deliveryFailureSatisfactionPenalty);
@@ -1387,6 +1394,38 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log("Created test delivery choice task with multiple transport options");
+    }
+
+    [ContextMenu("Test: Simple Road Blockage (No GameTask)")]
+    public void TestSimpleRoadBlockage()
+    {
+        Vehicle testVehicle = FindObjectOfType<Vehicle>();
+        if (testVehicle == null)
+        {
+            Debug.LogWarning("No vehicle found");
+            return;
+        }
+        
+        // Create simple fake delivery without GameTask
+        Building[] buildings = FindObjectsOfType<Building>();
+        if (buildings.Length < 2)
+        {
+            Debug.LogWarning("Need at least 2 buildings");
+            return;
+        }
+        
+        DeliveryTask fakeDelivery = new DeliveryTask(
+            buildings[0], buildings[1], 
+            ResourceType.FoodPacks, 5, 999);
+        
+        // Assign to vehicle for testing
+        testVehicle.currentTask = fakeDelivery;
+        testVehicle.SetStatus(VehicleStatus.InTransit);
+        
+        // Force flood stop - this should create road blockage task only
+        testVehicle.StopVehicleDueToFlood();
+        
+        Debug.Log("Created simple road blockage test (no GameTask failure)");
     }
     
     [ContextMenu("Print Task Statistics")]

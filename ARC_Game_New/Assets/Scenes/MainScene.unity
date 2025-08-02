@@ -2175,6 +2175,7 @@ MonoBehaviour:
   futureTimeSprite: {fileID: 21300000, guid: a888c16908c541642878ddff7b167ea8, type: 3}
   dayText: {fileID: 2029635976}
   roundText: {fileID: 1944830172}
+  TaskCenterDayRoundText: {fileID: 0}
   showDebugInfo: 1
 --- !u!4 &146349967
 Transform:
@@ -4811,6 +4812,10 @@ PrefabInstance:
     - target: {fileID: 6498728743623324658, guid: c10842c1cd305b943a7eb39b11656deb, type: 3}
       propertyPath: resourceCapacities.Array.data[0].maxCapacity
       value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 6498728743623324658, guid: c10842c1cd305b943a7eb39b11656deb, type: 3}
+      propertyPath: resourceProduction.Array.data[0].requiredResources.Array.size
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8345538019718537329, guid: c10842c1cd305b943a7eb39b11656deb, type: 3}
       propertyPath: currentStatus
@@ -23213,6 +23218,7 @@ GameObject:
   m_Component:
   - component: {fileID: 978748997}
   - component: {fileID: 978748996}
+  - component: {fileID: 978749000}
   - component: {fileID: 978748999}
   - component: {fileID: 978748998}
   m_Layer: 0
@@ -23323,6 +23329,21 @@ MonoBehaviour:
   sendButton: {fileID: 822630684}
   typingSpeed: 0.05
   typingSound: {fileID: 0}
+  showDebugInfo: 1
+--- !u!114 &978749000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 978748995}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 66720790f2f4b5b42a4bf5007fcb1589, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  enableFloodTasks: 1
+  emergencyTaskDatabase: {fileID: 11400000, guid: d773dce99ee24314cadca581debfc3db, type: 2}
   showDebugInfo: 1
 --- !u!1 &1001303809
 GameObject:
@@ -43392,12 +43413,20 @@ PrefabInstance:
       value: Shelter
       objectReference: {fileID: 0}
     - target: {fileID: 1693157771992400789, guid: f69c0c22978cd5948ba85f4fdc12376e, type: 3}
+      propertyPath: resourceProduction.Array.size
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1693157771992400789, guid: f69c0c22978cd5948ba85f4fdc12376e, type: 3}
       propertyPath: resourceCapacities.Array.data[0].maxCapacity
       value: 50
       objectReference: {fileID: 0}
     - target: {fileID: 1693157771992400789, guid: f69c0c22978cd5948ba85f4fdc12376e, type: 3}
       propertyPath: resourceCapacities.Array.data[1].maxCapacity
-      value: 30
+      value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 1693157771992400789, guid: f69c0c22978cd5948ba85f4fdc12376e, type: 3}
+      propertyPath: resourceProduction.Array.data[0].resourceType
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 2907281250948645668, guid: f69c0c22978cd5948ba85f4fdc12376e, type: 3}
       propertyPath: currentStatus

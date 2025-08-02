@@ -131,60 +131,66 @@ public class DeliverySystem : MonoBehaviour
     public List<DeliveryTask> CreateDeliveryTask(MonoBehaviour source, MonoBehaviour destination, ResourceType cargoType, int quantity, int priority = 1)
     {
         List<DeliveryTask> createdTasks = new List<DeliveryTask>();
-        
+
         if (source == null || destination == null)
         {
             Debug.LogError("Cannot create delivery task with null buildings");
             return createdTasks;
         }
-        
+
         if (quantity <= 0)
         {
             Debug.LogError("Cannot create delivery task with zero or negative quantity");
             return createdTasks;
         }
-        
-        // 找到能处理此货物类型的最大vehicle capacity
+
+        // Check if route is flood-free
+        Vector3 sourcePos = source.transform.position;
+        Vector3 destPos = destination.transform.position;
+
+        if (FloodSystem.Instance != null && !FloodSystem.Instance.IsRouteClearOfFlood(sourcePos, destPos))
+        {
+            Debug.LogWarning($"Cannot create delivery task - route is blocked by flood from {source.name} to {destination.name}");
+            return createdTasks;
+        }
+
+        // Rest of existing method...
         int maxCapacity = GetMaxVehicleCapacityForCargo(cargoType);
-        
+
         if (maxCapacity <= 0)
         {
             Debug.LogError($"No vehicle available for cargo type {cargoType}");
             return createdTasks;
         }
-        
-        // 计算需要多少个任务
+
+        // Continue with existing task creation logic...
         int remainingQuantity = quantity;
         int taskNumber = 1;
-        
+
         while (remainingQuantity > 0)
         {
             int currentTaskQuantity = Mathf.Min(remainingQuantity, maxCapacity);
-            
-            // 检查queue空间
+
             if (pendingTasks.Count >= maxQueuedTasks)
             {
                 Debug.LogWarning("Delivery task queue is full - cannot add more tasks");
                 break;
             }
-            
+
             DeliveryTask newTask = new DeliveryTask(source, destination, cargoType, currentTaskQuantity, nextTaskId++);
             newTask.priority = priority;
-            
+
             pendingTasks.Enqueue(newTask);
             createdTasks.Add(newTask);
             OnTaskCreated?.Invoke(newTask);
-            
+
             if (showDebugInfo)
-                Debug.Log($"Created delivery task {taskNumber}/{Mathf.CeilToInt((float)quantity / maxCapacity)}: {newTask}");
-            
+                Debug.Log($"Created delivery task {taskNumber}: {newTask}");
+
             remainingQuantity -= currentTaskQuantity;
             taskNumber++;
         }
-        
-        if (showDebugInfo && createdTasks.Count > 1)
-            Debug.Log($"Split delivery into {createdTasks.Count} tasks for total quantity {quantity}");
-        
+
         return createdTasks;
     }
 
@@ -205,7 +211,7 @@ public class DeliverySystem : MonoBehaviour
         // remove from pending tasks
         var pendingArray = pendingTasks.ToArray();
         pendingTasks.Clear();
-        
+
         bool cancelled = false;
         foreach (DeliveryTask task in pendingArray)
         {
@@ -230,17 +236,17 @@ public class DeliverySystem : MonoBehaviour
             // find the vehicle executing this task and cancel it
             Vehicle workingVehicle = availableVehicles.FirstOrDefault(v =>
                 v.GetCurrentTask() != null && v.GetCurrentTask().taskId == taskId);
-            
+
             if (workingVehicle != null)
             {
                 workingVehicle.CancelCurrentTask();
             }
-            
+
             cancelled = true;
             if (showDebugInfo)
                 Debug.Log($"Cancelled active delivery task: {activeTask}");
         }
-        
+
         return cancelled;
     }
 
@@ -251,7 +257,7 @@ public class DeliverySystem : MonoBehaviour
     int GetMaxVehicleCapacityForCargo(ResourceType cargoType)
     {
         int maxCapacity = 0;
-        
+
         foreach (Vehicle vehicle in availableVehicles)
         {
             if (vehicle.GetAllowedCargoTypes().Contains(cargoType))
@@ -259,7 +265,7 @@ public class DeliverySystem : MonoBehaviour
                 maxCapacity = Mathf.Max(maxCapacity, vehicle.GetMaxCapacity());
             }
         }
-        
+
         return maxCapacity;
     }
 
@@ -369,7 +375,7 @@ public class DeliverySystem : MonoBehaviour
     void OnVehicleDeliveryCompleted(Vehicle vehicle, DeliveryTask completedTask)
     {
         Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
-    
+
         activeTasks.Remove(completedTask);
         completedTasks.Add(completedTask);
         OnTaskCompleted?.Invoke(completedTask);
@@ -600,7 +606,7 @@ public class DeliverySystem : MonoBehaviour
         {
             Debug.Log($"{vehicle.GetVehicleName()}: Capacity {vehicle.GetMaxCapacity()}, Available: {vehicle.IsAvailable()}, Cargo Types: {string.Join(", ", vehicle.GetAllowedCargoTypes())}");
         }
-        
+
         Debug.Log($"Pending tasks: {pendingTasks.Count}");
         foreach (DeliveryTask task in pendingTasks)
         {
@@ -615,6 +621,82 @@ public class DeliverySystem : MonoBehaviour
         foreach (DeliveryTask task in activeTasks)
         {
             Debug.Log($"  Active: {task}");
+        }
+    }
+    
+    [ContextMenu("Test: Create Flood-Blocked Delivery")]
+    public void TestCreateFloodBlockedDelivery()
+    {
+        // Find kitchen and shelter
+        Building kitchen = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Kitchen);
+        Building shelter = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Shelter);
+        
+        if (kitchen == null || shelter == null)
+        {
+            Debug.LogWarning("Need kitchen and shelter for flood-blocked delivery test");
+            return;
+        }
+        
+        // First create flood between them
+        if (FloodSystem.Instance != null)
+        {
+            FloodSystem.Instance.TestCreateFloodPath();
+        }
+        
+        // Wait a frame for flood to be created
+        StartCoroutine(CreateBlockedDeliveryAfterFlood(kitchen, shelter));
+    }
+
+    System.Collections.IEnumerator CreateBlockedDeliveryAfterFlood(Building kitchen, Building shelter)
+    {
+        yield return new WaitForEndOfFrame();
+        
+        // Try to create delivery - should fail due to flood
+        List<DeliveryTask> tasks = CreateDeliveryTask(kitchen, shelter, ResourceType.FoodPacks, 5, 3);
+        
+        if (tasks.Count == 0)
+        {
+            Debug.Log("SUCCESS: Delivery creation blocked by flood as expected");
+        }
+        else
+        {
+            Debug.LogWarning("UNEXPECTED: Delivery was created despite flood blocking");
+        }
+    }
+
+    [ContextMenu("Test: Create Delivery Then Add Flood")]
+    public void TestCreateDeliveryThenFlood()
+    {
+        // Create normal delivery first
+        Building kitchen = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Kitchen);
+        Building shelter = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Shelter);
+        
+        if (kitchen == null || shelter == null)
+        {
+            Debug.LogWarning("Need kitchen and shelter for delivery-then-flood test");
+            return;
+        }
+        
+        // Create delivery
+        List<DeliveryTask> tasks = CreateDeliveryTask(kitchen, shelter, ResourceType.FoodPacks, 5, 3);
+        
+        if (tasks.Count > 0)
+        {
+            Debug.Log($"Created delivery task: {tasks[0]}");
+            
+            // Wait a few seconds then create flood
+            StartCoroutine(CreateFloodAfterDelay());
+        }
+    }
+
+    System.Collections.IEnumerator CreateFloodAfterDelay()
+    {
+        yield return new WaitForSeconds(3f);
+        
+        if (FloodSystem.Instance != null)
+        {
+            FloodSystem.Instance.TestCreateFloodAtVehicle();
+            Debug.Log("Added flood to block moving vehicle");
         }
     }
 }

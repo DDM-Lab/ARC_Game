@@ -454,79 +454,79 @@ public class TaskDetailUI : MonoBehaviour
         }
 
         CloseTaskDetail();
-
-        if (showDebugInfo)
-            Debug.Log($"Task confirmed: {currentTask.taskTitle}");
     }
 
     //  ---------CHOICE DELIVERY VALIDATION ---------
     bool ValidateChoiceDelivery(AgentChoice choice, out string errorMessage)
     {
         errorMessage = "";
-
+        
         if (!choice.triggersDelivery)
-            return true; // Non-delivery choices are always valid
-
+            return true;
+        
         // Find source and destination
         MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
         MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
-
+        
         if (source == null)
         {
-            Debug.Log($"No source found for choice: {choice.choiceText}");
             errorMessage = $"No suitable source found for {choice.deliveryCargoType}";
             return false;
         }
-
+        
         if (destination == null)
         {
-            Debug.Log($"No destination found for choice: {choice.choiceText}");
             errorMessage = $"No suitable destination found for {choice.deliveryCargoType}";
             return false;
         }
-
+        
+        // NEW: Check if route is blocked by flood
+        if (FloodSystem.Instance != null && !FloodSystem.Instance.IsRouteClearOfFlood(source.transform.position, destination.transform.position))
+        {
+            errorMessage = $"Route from {source.name} to {destination.name} is blocked by flood";
+            return false;
+        }
+        
         // Check if source has enough resources
         int availableAmount = GetAvailableResourceAmount(source, choice.deliveryCargoType);
         if (availableAmount < choice.deliveryQuantity)
         {
-            Debug.Log($"Insufficient resources at source: {source.name} for {choice.deliveryCargoType}");
             string sourceName = source.name;
             errorMessage = $"Insufficient resources at {sourceName}. Required: {choice.deliveryQuantity}, Available: {availableAmount}";
             return false;
         }
-
+        
         // Check if destination has enough space
         int availableSpace = GetAvailableSpace(destination, choice.deliveryCargoType);
         if (availableSpace < choice.deliveryQuantity)
         {
-            Debug.Log($"Insufficient space at destination: {destination.name} for {choice.deliveryCargoType}");
             string destName = destination.name;
             errorMessage = $"Insufficient space at {destName}. Required: {choice.deliveryQuantity}, Available space: {availableSpace}";
             return false;
         }
-
-        // Check if any vehicle can handle this cargo type and quantity
+        
+        // Check vehicle availability (unchanged)
         Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
         bool hasCapableVehicle = false;
-
+        
         foreach (Vehicle vehicle in vehicles)
         {
-            if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
-                vehicle.GetMaxCapacity() >= Mathf.Min(choice.deliveryQuantity, 10)) // Check for reasonable batch size
+            if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) && 
+                vehicle.GetMaxCapacity() >= Mathf.Min(choice.deliveryQuantity, 10) &&
+                vehicle.GetCurrentStatus() != VehicleStatus.Damaged) // NEW: Check not damaged
             {
                 hasCapableVehicle = true;
                 break;
             }
         }
-
+        
         if (!hasCapableVehicle)
         {
-            Debug.Log($"No vehicle available to transport {choice.deliveryCargoType}");
-            errorMessage = $"No vehicle available to transport {choice.deliveryCargoType}";
+            errorMessage = $"No available undamaged vehicle to transport {choice.deliveryCargoType}";
             return false;
         }
-
+        
         return true;
     }
 
@@ -745,8 +745,40 @@ public class TaskDetailUI : MonoBehaviour
             }
         }
 
+        // NEW: Handle vehicle repair completion
+        if (currentTask.taskTitle.Contains("Vehicle Repair") && choice.choiceId == 1) // Immediate repair choice
+        {
+            // Extract vehicle ID from task description
+            string[] parts = currentTask.description.Split('|');
+            foreach (string part in parts)
+            {
+                if (part.StartsWith("VEHICLE_ID:"))
+                {
+                    string vehicleIdStr = part.Replace("VEHICLE_ID:", "");
+                    if (int.TryParse(vehicleIdStr, out int vehicleId))
+                    {
+                        RepairVehicleById(vehicleId);
+                    }
+                    break;
+                }
+            }
+        }
+
         if (showDebugInfo)
             Debug.Log($"Applied impacts for choice: {choice.choiceText}");
+    }
+    void RepairVehicleById(int vehicleId)
+    {
+        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+        Vehicle targetVehicle = vehicles.FirstOrDefault(v => v.GetVehicleId() == vehicleId);
+        
+        if (targetVehicle != null)
+        {
+            targetVehicle.RepairVehicle();
+            
+            if (showDebugInfo)
+                Debug.Log($"Repaired vehicle: {targetVehicle.GetVehicleName()}");
+        }
     }
 
     void OnSendPlayerMessage()

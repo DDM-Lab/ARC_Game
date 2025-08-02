@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Linq;
 
 [System.Serializable]
 public abstract class TaskTrigger
@@ -173,5 +174,120 @@ public class ProbabilityTrigger : TaskTrigger
     public override string GetDescription()
     {
         return $"{probability * 100:F0}% chance";
+    }
+}
+
+[System.Serializable]
+public class FloodTrigger : TaskTrigger
+{
+    [Header("Flood Condition")]
+    public FloodCondition condition = FloodCondition.FloodExists;
+    public int floodTileThreshold = 5;
+    
+    public enum FloodCondition
+    {
+        FloodExists,        // Any flood tiles exist
+        FloodAboveThreshold, // Flood tiles > threshold
+        NoFloodTiles        // No flood tiles exist
+    }
+    
+    public override bool CheckCondition()
+    {
+        if (FloodSystem.Instance == null) return false;
+        
+        int currentFloodTiles = FloodSystem.Instance.GetFloodTileCount();
+        
+        switch (condition)
+        {
+            case FloodCondition.FloodExists:
+                return currentFloodTiles > 0;
+            case FloodCondition.FloodAboveThreshold:
+                return currentFloodTiles > floodTileThreshold;
+            case FloodCondition.NoFloodTiles:
+                return currentFloodTiles == 0;
+            default:
+                return false;
+        }
+    }
+    
+    public override string GetDescription()
+    {
+        switch (condition)
+        {
+            case FloodCondition.FloodExists:
+                return "Flood tiles exist";
+            case FloodCondition.FloodAboveThreshold:
+                return $"Flood tiles > {floodTileThreshold}";
+            case FloodCondition.NoFloodTiles:
+                return "No flood tiles";
+            default:
+                return "Unknown flood condition";
+        }
+    }
+}
+
+[System.Serializable]
+public class VehicleDamagedTrigger : TaskTrigger
+{
+    [Header("Vehicle Damage Condition")]
+    public int minimumDamagedVehicles = 1;
+    
+    public override bool CheckCondition()
+    {
+        Vehicle[] vehicles = Object.FindObjectsOfType<Vehicle>();
+        int damagedCount = 0;
+        
+        foreach (Vehicle vehicle in vehicles)
+        {
+            if (vehicle.GetCurrentStatus() == VehicleStatus.Damaged)
+            {
+                damagedCount++;
+            }
+        }
+        
+        return damagedCount >= minimumDamagedVehicles;
+    }
+    
+    public override string GetDescription()
+    {
+        return $"At least {minimumDamagedVehicles} vehicles damaged";
+    }
+}
+
+[System.Serializable]
+public class FloodBlockedRouteTrigger : TaskTrigger
+{
+    [Header("Route Blocking")]
+    public BuildingType sourceType = BuildingType.Kitchen;
+    public BuildingType destinationType = BuildingType.Shelter;
+    
+    public override bool CheckCondition()
+    {
+        if (FloodSystem.Instance == null) return false;
+        
+        // Find buildings of specified types
+        Building[] sources = Object.FindObjectsOfType<Building>()
+            .Where(b => b.GetBuildingType() == sourceType && b.IsOperational()).ToArray();
+        Building[] destinations = Object.FindObjectsOfType<Building>()
+            .Where(b => b.GetBuildingType() == destinationType && b.IsOperational()).ToArray();
+        
+        // Check if any routes are blocked
+        foreach (Building source in sources)
+        {
+            foreach (Building dest in destinations)
+            {
+                if (!FloodSystem.Instance.IsRouteClearOfFlood(source.transform.position, dest.transform.position))
+                {
+                    return true; // At least one route is blocked
+                }
+            }
+        }
+        
+        return false; // All routes are clear
+    }
+    
+    public override string GetDescription()
+    {
+        return $"Flood blocking {sourceType} to {destinationType} routes";
     }
 }
