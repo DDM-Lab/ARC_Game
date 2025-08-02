@@ -12,6 +12,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7e498589dead6f540ac89e2b5af7900d, type: 3}
   m_Name: FloodTaskGeneratorDatabase
   m_EditorClassIdentifier: 
-  allTasks:
-  - {fileID: 11400000, guid: d24d7a43aae8f6e40baf96eae58457a7, type: 2}
+  allTasks: []
   showDebugInfo: 1
