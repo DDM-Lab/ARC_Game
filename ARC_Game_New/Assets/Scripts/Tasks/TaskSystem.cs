@@ -373,6 +373,53 @@ public class TaskSystem : MonoBehaviour
                     Debug.Log($"Task '{task.taskTitle}' rounds remaining: {task.roundsRemaining}");
             }
         }
+        CheckForUnrepairedVehicles();
+    }
+
+    /// <summary>
+    /// Check for damaged vehicles that don't have repair tasks and create them
+    /// </summary>
+    void CheckForUnrepairedVehicles()
+    {
+        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+        
+        foreach (Vehicle vehicle in vehicles)
+        {
+            if (vehicle.GetCurrentStatus() == VehicleStatus.Damaged)
+            {
+                // Check if this vehicle already has a repair task
+                bool hasRepairTask = HasVehicleRepairTask(vehicle);
+                
+                if (!hasRepairTask)
+                {
+                    // Create repair task for this vehicle
+                    if (FloodTaskGenerator.Instance != null)
+                    {
+                        FloodTaskGenerator.Instance.CreateVehicleRepairTask(vehicle);
+                        
+                        if (showDebugInfo)
+                            Debug.Log($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Check if a vehicle already has an active repair task
+    /// </summary>
+    bool HasVehicleRepairTask(Vehicle vehicle)
+    {
+        foreach (GameTask task in activeTasks)
+        {
+            if (task.taskTitle.Contains("Vehicle Repair") && 
+                task.description.Contains(vehicle.GetVehicleName()))
+            {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     void OnDeliveryTaskCompleted(DeliveryTask deliveryTask)
