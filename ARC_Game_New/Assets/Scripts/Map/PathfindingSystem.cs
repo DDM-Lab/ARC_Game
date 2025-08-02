@@ -314,6 +314,154 @@ public class PathfindingSystem : MonoBehaviour
             pathVisualizer.ClearPath();
         }
     }
+
+    /// <summary>
+    /// Find path that avoids flood tiles
+    /// </summary>
+    public List<Vector3> FindFloodAwarePath(Vector3 startWorld, Vector3 endWorld)
+    {
+        if (roadManager == null)
+        {
+            Debug.LogError("RoadManager not found!");
+            return new List<Vector3>();
+        }
+        
+        // Convert world positions to grid positions
+        Vector3Int startGrid = roadManager.FindNearestRoadPosition(startWorld);
+        Vector3Int endGrid = roadManager.FindNearestRoadPosition(endWorld);
+        
+        if (showDebugInfo)
+            Debug.Log($"Flood-aware pathfinding: {startWorld} -> {endWorld}");
+        
+        // Find path using flood-aware A*
+        List<Vector3Int> gridPath = FindPathAStarFloodAware(startGrid, endGrid);
+        
+        // Convert grid path to world positions
+        List<Vector3> worldPath = new List<Vector3>();
+        foreach (Vector3Int gridPos in gridPath)
+        {
+            worldPath.Add(roadManager.CellToWorld(gridPos));
+        }
+        
+        return worldPath;
+    }
+
+    /// <summary>
+    /// A* pathfinding that avoids flood tiles
+    /// </summary>
+    List<Vector3Int> FindPathAStarFloodAware(Vector3Int startPos, Vector3Int endPos)
+    {
+        // Similar to FindPathAStar but with flood checking
+        searchedNodes = new Dictionary<Vector3Int, PathNode>();
+        
+        if (!roadManager.HasRoadAt(startPos) || !roadManager.HasRoadAt(endPos))
+        {
+            Debug.LogWarning("Start or end position is not on a road!");
+            return new List<Vector3Int>();
+        }
+        
+        List<PathNode> openList = new List<PathNode>();
+        HashSet<Vector3Int> closedList = new HashSet<Vector3Int>();
+        
+        PathNode startNode = new PathNode(startPos, null, 0, CalculateHeuristic(startPos, endPos));
+        openList.Add(startNode);
+        searchedNodes[startPos] = startNode;
+        
+        int iterations = 0;
+        int maxIterations = 1000;
+        
+        while (openList.Count > 0 && iterations < maxIterations)
+        {
+            iterations++;
+            
+            PathNode currentNode = openList.OrderBy(n => n.FCost).ThenBy(n => n.HCost).First();
+            openList.Remove(currentNode);
+            closedList.Add(currentNode.position);
+            
+            if (currentNode.position == endPos)
+            {
+                if (showDebugInfo)
+                    Debug.Log($"Flood-aware path found in {iterations} iterations");
+                return ReconstructPath(currentNode);
+            }
+            
+            List<Vector3Int> neighbors = GetFloodAwareNeighbors(currentNode.position);
+            
+            foreach (Vector3Int neighborPos in neighbors)
+            {
+                if (closedList.Contains(neighborPos))
+                    continue;
+                
+                float newGCost = currentNode.GCost + CalculateDistance(currentNode.position, neighborPos);
+                
+                PathNode neighborNode = null;
+                bool isInOpenList = searchedNodes.TryGetValue(neighborPos, out neighborNode);
+                
+                if (!isInOpenList || newGCost < neighborNode.GCost)
+                {
+                    if (neighborNode == null)
+                    {
+                        neighborNode = new PathNode(neighborPos, currentNode, newGCost, CalculateHeuristic(neighborPos, endPos));
+                        searchedNodes[neighborPos] = neighborNode;
+                    }
+                    else
+                    {
+                        neighborNode.parent = currentNode;
+                        neighborNode.GCost = newGCost;
+                        neighborNode.HCost = CalculateHeuristic(neighborPos, endPos);
+                    }
+                    
+                    if (!isInOpenList)
+                    {
+                        openList.Add(neighborNode);
+                    }
+                }
+            }
+        }
+        
+        Debug.LogWarning($"No flood-free path found after {iterations} iterations");
+        return new List<Vector3Int>();
+    }
+
+    /// <summary>
+    /// Get neighbors that avoid flood tiles
+    /// </summary>
+    List<Vector3Int> GetFloodAwareNeighbors(Vector3Int position)
+    {
+        List<Vector3Int> neighbors = new List<Vector3Int>();
+        
+        Vector3Int[] directions = {
+            Vector3Int.up, Vector3Int.down, Vector3Int.left, Vector3Int.right
+        };
+        
+        if (allowDiagonalMovement)
+        {
+            Vector3Int[] diagonalDirections = {
+                new Vector3Int(1, 1, 0), new Vector3Int(-1, 1, 0),
+                new Vector3Int(1, -1, 0), new Vector3Int(-1, -1, 0)
+            };
+            directions = directions.Concat(diagonalDirections).ToArray();
+        }
+        
+        foreach (Vector3Int direction in directions)
+        {
+            Vector3Int neighborPos = position + direction;
+            
+            if (roadManager.HasRoadAt(neighborPos))
+            {
+                // Check if this position is flooded
+                Vector3 worldPos = roadManager.CellToWorld(neighborPos);
+                bool isFlooded = FloodSystem.Instance != null && FloodSystem.Instance.IsFloodedAt(worldPos);
+                
+                if (!isFlooded)
+                {
+                    neighbors.Add(neighborPos);
+                }
+            }
+        }
+        
+        return neighbors;
+    }
     
     /// <summary>
     /// Test pathfinding between two random buildings

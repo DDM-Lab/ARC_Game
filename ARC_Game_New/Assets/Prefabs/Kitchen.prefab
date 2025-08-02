@@ -279,6 +279,7 @@ MonoBehaviour:
   disabledColor: {r: 0.335849, g: 0.335849, b: 0.335849, a: 0.60784316}
   workerSystem: {fileID: 0}
   mapWorkforceIndicator: {fileID: 9018560120933606691}
+  enableManualTasks: 1
 --- !u!114 &6498728743623324658
 MonoBehaviour:
   m_ObjectHideFlags: 0

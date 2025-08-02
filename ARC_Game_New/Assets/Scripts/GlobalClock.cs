@@ -40,6 +40,7 @@ public class GlobalClock : MonoBehaviour
     [Header("Day Display")]
     public TextMeshProUGUI dayText;
     public TextMeshProUGUI roundText;
+    public TextMeshProUGUI TaskCenterDayRoundText;
     
     [Header("Debug")]
     public bool showDebugInfo = true;
@@ -127,6 +128,11 @@ public class GlobalClock : MonoBehaviour
         if (roundText != null)
         {
             roundText.text = $"Round   {currentTimeSegment + 1}";
+        }
+
+        if (TaskCenterDayRoundText != null)
+        {
+            TaskCenterDayRoundText.text = $"Day {currentDay} Round {currentTimeSegment + 1}";
         }
 
         // Update time segment sprites

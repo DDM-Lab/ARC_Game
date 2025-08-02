@@ -158,7 +158,7 @@ public class PathVisualizer : MonoBehaviour
                 float segmentDistance = Vector3.Distance(currentPath[i], currentPath[i + 1]);
                 currentDistance += segmentDistance;
                 float waitTime = (segmentDistance / totalDistance) * (1f / animationSpeed);
-                yield return new WaitForSeconds(waitTime);
+                yield return new WaitForSecondsRealtime(waitTime);
             }
         }
         
@@ -307,7 +307,7 @@ public class PathVisualizer : MonoBehaviour
     /// </summary>
     IEnumerator ClearPathAfterDelay()
     {
-        yield return new WaitForSeconds(pathDisplayDuration);
+        yield return new WaitForSecondsRealtime(pathDisplayDuration);
         ClearPath();
     }
     
