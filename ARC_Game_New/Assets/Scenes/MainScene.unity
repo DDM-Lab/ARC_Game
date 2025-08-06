@@ -4802,6 +4802,10 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6498728743623324658, guid: c10842c1cd305b943a7eb39b11656deb, type: 3}
+      propertyPath: resourceProduction.Array.size
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6498728743623324658, guid: c10842c1cd305b943a7eb39b11656deb, type: 3}
       propertyPath: initialResources.Array.data[0].type
       value: 1
       objectReference: {fileID: 0}
@@ -4812,6 +4816,18 @@ PrefabInstance:
     - target: {fileID: 6498728743623324658, guid: c10842c1cd305b943a7eb39b11656deb, type: 3}
       propertyPath: resourceCapacities.Array.data[0].maxCapacity
       value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 6498728743623324658, guid: c10842c1cd305b943a7eb39b11656deb, type: 3}
+      propertyPath: resourceProduction.Array.data[0].resourceType
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6498728743623324658, guid: c10842c1cd305b943a7eb39b11656deb, type: 3}
+      propertyPath: resourceProduction.Array.data[0].amountPerInterval
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 6498728743623324658, guid: c10842c1cd305b943a7eb39b11656deb, type: 3}
+      propertyPath: resourceProduction.Array.data[0].productionInterval
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 6498728743623324658, guid: c10842c1cd305b943a7eb39b11656deb, type: 3}
       propertyPath: resourceProduction.Array.data[0].requiredResources.Array.size
@@ -26153,6 +26169,14 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 2408109077865379310, guid: 392b6c3b8fe6c014d8762918ba8f08b2, type: 3}
+      propertyPath: resourceConsumption.Array.size
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2408109077865379310, guid: 392b6c3b8fe6c014d8762918ba8f08b2, type: 3}
+      propertyPath: resourceConsumption.Array.data[0].resourceType
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 3516501749260054639, guid: 392b6c3b8fe6c014d8762918ba8f08b2, type: 3}
       propertyPath: currentStatus
       value: 2
@@ -43426,7 +43450,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1693157771992400789, guid: f69c0c22978cd5948ba85f4fdc12376e, type: 3}
       propertyPath: resourceProduction.Array.data[0].resourceType
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 2907281250948645668, guid: f69c0c22978cd5948ba85f4fdc12376e, type: 3}
       propertyPath: currentStatus

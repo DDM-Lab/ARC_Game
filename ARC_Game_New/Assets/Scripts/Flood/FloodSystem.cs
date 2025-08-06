@@ -724,6 +724,19 @@ public class FloodSystem : MonoBehaviour
         Debug.Log("Flood reset to river positions only");
     }
 
+    [ContextMenu("Add Flood Tiles at Left Part of Map")]
+    public void AddFloodTilesAtLeftPart()
+    {
+        for (int x = -5; x <= -1; x++)
+        {
+            for (int y = -2; y <= 2; y++)
+            {
+                Vector3Int floodPos = new Vector3Int(x, y, 0);
+                AddFloodTile(floodPos);
+            }
+        }
+    }
+
     void OnDrawGizmos()
     {
         if (!showDebugGizmos) return;

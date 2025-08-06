@@ -460,75 +460,92 @@ public class TaskDetailUI : MonoBehaviour
     bool ValidateChoiceDelivery(AgentChoice choice, out string errorMessage)
     {
         errorMessage = "";
-        
+
         if (!choice.triggersDelivery)
             return true;
-        
-        // Find source and destination
+
         MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
         MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
-        
+
         if (source == null)
         {
             errorMessage = $"No suitable source found for {choice.deliveryCargoType}";
             return false;
         }
-        
+
         if (destination == null)
         {
             errorMessage = $"No suitable destination found for {choice.deliveryCargoType}";
             return false;
         }
-        
-        // NEW: Check if route is blocked by flood
-        if (FloodSystem.Instance != null && !FloodSystem.Instance.IsRouteClearOfFlood(source.transform.position, destination.transform.position))
+
+        // NEW: Get detailed route analysis
+        PathfindingSystem pathfinder = FindObjectOfType<PathfindingSystem>();
+        if (pathfinder != null)
         {
-            errorMessage = $"Route from {source.name} to {destination.name} is blocked by flood";
-            return false;
+            PathAnalysis analysis = pathfinder.AnalyzePath(source.transform.position, destination.transform.position);
+            DeliveryTimeEstimate estimate = pathfinder.EstimateDeliveryTime(source.transform.position, destination.transform.position);
+
+            if (!estimate.pathExists)
+            {
+                if (estimate.isFloodBlocked)
+                {
+                    errorMessage = $"All routes from {source.name} to {destination.name} are blocked by flood";
+                }
+                else
+                {
+                    errorMessage = $"No route available from {source.name} to {destination.name}";
+                }
+                return false;
+            }
+
+            // Show route information in choice text (optional enhancement)
+            if (analysis.isFloodAffected && analysis.hasAlternativeRoute)
+            {
+                if (showDebugInfo)
+                    Debug.Log($"Choice uses alternative route (+{analysis.routeLengthDifference} tiles) due to flood");
+            }
         }
-        
-        // Check if source has enough resources
+
+        // Rest of existing validation...
         int availableAmount = GetAvailableResourceAmount(source, choice.deliveryCargoType);
         if (availableAmount < choice.deliveryQuantity)
         {
-            string sourceName = source.name;
-            errorMessage = $"Insufficient resources at {sourceName}. Required: {choice.deliveryQuantity}, Available: {availableAmount}";
+            errorMessage = $"Insufficient resources at {source.name}. Required: {choice.deliveryQuantity}, Available: {availableAmount}";
             return false;
         }
-        
-        // Check if destination has enough space
+
         int availableSpace = GetAvailableSpace(destination, choice.deliveryCargoType);
         if (availableSpace < choice.deliveryQuantity)
         {
-            string destName = destination.name;
-            errorMessage = $"Insufficient space at {destName}. Required: {choice.deliveryQuantity}, Available space: {availableSpace}";
+            errorMessage = $"Insufficient space at {destination.name}. Required: {choice.deliveryQuantity}, Available space: {availableSpace}";
             return false;
         }
-        
-        // Check vehicle availability (unchanged)
+
         Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
         bool hasCapableVehicle = false;
-        
+
         foreach (Vehicle vehicle in vehicles)
         {
-            if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) && 
+            if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
                 vehicle.GetMaxCapacity() >= Mathf.Min(choice.deliveryQuantity, 10) &&
-                vehicle.GetCurrentStatus() != VehicleStatus.Damaged) // NEW: Check not damaged
+                vehicle.GetCurrentStatus() != VehicleStatus.Damaged)
             {
                 hasCapableVehicle = true;
                 break;
             }
         }
-        
+
         if (!hasCapableVehicle)
         {
             errorMessage = $"No available undamaged vehicle to transport {choice.deliveryCargoType}";
             return false;
         }
-        
+
         return true;
     }
+
 
     // Helper methods for resource checking
     int GetAvailableResourceAmount(MonoBehaviour facility, ResourceType resourceType)

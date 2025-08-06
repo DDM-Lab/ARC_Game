@@ -14,7 +14,8 @@ public class DeliveryTask
     public int priority = 1; // Higher number = higher priority
     public bool isUrgent = false;
     public float timeCreated;
-    
+    public float estimatedTimeSeconds = 0f;
+
     public DeliveryTask(MonoBehaviour source, MonoBehaviour destination, ResourceType cargo, int qty, int taskId)
     {
         this.taskId = taskId;
@@ -24,34 +25,43 @@ public class DeliveryTask
         this.quantity = qty;
         this.timeCreated = Time.time;
     }
-    
+
     public override string ToString()
     {
         return $"Task {taskId}: {quantity} {cargoType} from {sourceBuilding.name} to {destinationBuilding.name}";
     }
-    
+
     // Helper methods to get positions
     public Vector3 GetSourcePosition()
     {
         return sourceBuilding.transform.position;
     }
-    
+
     public Vector3 GetDestinationPosition()
     {
         return destinationBuilding.transform.position;
     }
-    
+
     // Helper methods to get road connection points
     public Vector3 GetSourceRoadConnection()
     {
         RoadConnection roadConnection = sourceBuilding.GetComponent<RoadConnection>();
         return roadConnection != null ? roadConnection.GetRoadConnectionPoint() : sourceBuilding.transform.position;
     }
-    
+
     public Vector3 GetDestinationRoadConnection()
     {
         RoadConnection roadConnection = destinationBuilding.GetComponent<RoadConnection>();
         return roadConnection != null ? roadConnection.GetRoadConnectionPoint() : destinationBuilding.transform.position;
+    }
+    
+    public string GetEstimatedTimeString()
+    {
+        if (estimatedTimeSeconds <= 0) return "Unknown";
+        
+        int minutes = Mathf.FloorToInt(estimatedTimeSeconds / 60);
+        int seconds = Mathf.FloorToInt(estimatedTimeSeconds % 60);
+        return $"{minutes:D2}:{seconds:D2}";
     }
 }
 
@@ -125,6 +135,36 @@ public class DeliverySystem : MonoBehaviour
         }*/
     }
 
+    public bool CanCreateDeliveryWithEstimate(MonoBehaviour source, MonoBehaviour destination, out DeliveryTimeEstimate estimate)
+    {
+        estimate = new DeliveryTimeEstimate();
+
+        if (source == null || destination == null)
+        {
+            estimate.pathExists = false;
+            return false;
+        }
+
+        PathfindingSystem pathfinder = FindObjectOfType<PathfindingSystem>();
+        if (pathfinder == null)
+        {
+            estimate.pathExists = false;
+            return false;
+        }
+
+        Vector3 sourcePos = source.transform.position;
+        Vector3 destPos = destination.transform.position;
+
+        estimate = pathfinder.EstimateDeliveryTime(sourcePos, destPos);
+
+        if (showDebugInfo && estimate.pathExists)
+        {
+            Debug.Log($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
+        }
+
+        return estimate.pathExists;
+    }
+
     /// <summary>
     /// Create delivery task(s) - automatically splits large tasks
     /// </summary>
@@ -144,17 +184,27 @@ public class DeliverySystem : MonoBehaviour
             return createdTasks;
         }
 
-        // Check if route is flood-free
-        Vector3 sourcePos = source.transform.position;
-        Vector3 destPos = destination.transform.position;
-
-        if (FloodSystem.Instance != null && !FloodSystem.Instance.IsRouteClearOfFlood(sourcePos, destPos))
+        // Check if route is available with time estimation
+        DeliveryTimeEstimate estimate;
+        if (!CanCreateDeliveryWithEstimate(source, destination, out estimate))
         {
-            Debug.LogWarning($"Cannot create delivery task - route is blocked by flood from {source.name} to {destination.name}");
+            if (estimate.isFloodBlocked)
+            {
+                Debug.LogWarning($"Cannot create delivery task - route blocked by flood from {source.name} to {destination.name}");
+            }
+            else
+            {
+                Debug.LogWarning($"Cannot create delivery task - no route available from {source.name} to {destination.name}");
+            }
             return createdTasks;
         }
 
-        // Rest of existing method...
+        if (showDebugInfo)
+        {
+            Debug.Log($"Creating delivery with estimate: {estimate.GetSummary()}");
+        }
+
+        // Continue with existing task creation logic...
         int maxCapacity = GetMaxVehicleCapacityForCargo(cargoType);
 
         if (maxCapacity <= 0)
@@ -163,7 +213,6 @@ public class DeliverySystem : MonoBehaviour
             return createdTasks;
         }
 
-        // Continue with existing task creation logic...
         int remainingQuantity = quantity;
         int taskNumber = 1;
 
@@ -180,12 +229,15 @@ public class DeliverySystem : MonoBehaviour
             DeliveryTask newTask = new DeliveryTask(source, destination, cargoType, currentTaskQuantity, nextTaskId++);
             newTask.priority = priority;
 
+            // Store time estimate in the task for reference
+            newTask.estimatedTimeSeconds = estimate.estimatedTimeSeconds;
+
             pendingTasks.Enqueue(newTask);
             createdTasks.Add(newTask);
             OnTaskCreated?.Invoke(newTask);
 
             if (showDebugInfo)
-                Debug.Log($"Created delivery task {taskNumber}: {newTask}");
+                Debug.Log($"Created delivery task {taskNumber}: {newTask} (Est: {estimate.GetFormattedTime()})");
 
             remainingQuantity -= currentTaskQuantity;
             taskNumber++;
@@ -193,6 +245,7 @@ public class DeliverySystem : MonoBehaviour
 
         return createdTasks;
     }
+
 
     /// <summary>
     /// Create single delivery task (backward compatibility)

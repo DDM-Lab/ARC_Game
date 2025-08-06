@@ -22,7 +22,7 @@ MonoBehaviour:
   populationTriggers: []
   resourceTriggers: []
   probabilityTriggers:
-  - probability: 0.2
+  - probability: 0.5
   requireAllTriggers: 1
   isGlobalTask: 0
   targetFacilityType: 3

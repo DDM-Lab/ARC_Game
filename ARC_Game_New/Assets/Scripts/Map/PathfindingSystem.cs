@@ -2,6 +2,48 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
+
+[System.Serializable]
+public class DeliveryTimeEstimate
+{
+    public bool pathExists;
+    public int roadTileCount;
+    public float totalDistance;
+    public float estimatedTimeSeconds;
+    public bool isFloodBlocked;
+    
+    public string GetFormattedTime()
+    {
+        if (!pathExists) return "No route available";
+        
+        int minutes = Mathf.FloorToInt(estimatedTimeSeconds / 60);
+        int seconds = Mathf.FloorToInt(estimatedTimeSeconds % 60);
+        return $"{minutes:D2}:{seconds:D2}";
+    }
+    
+    public string GetSummary()
+    {
+        if (!pathExists)
+        {
+            return isFloodBlocked ? "Route blocked by flood" : "No route available";
+        }
+        
+        return $"{roadTileCount} tiles, {GetFormattedTime()}";
+    }
+}
+
+[System.Serializable]
+public class PathAnalysis
+{
+    public bool normalPathExists;
+    public int normalPathLength;
+    public bool floodAwarePathExists;
+    public int floodAwarePathLength;
+    public bool isFloodAffected;
+    public bool hasAlternativeRoute;
+    public int routeLengthDifference;
+}
+
 public class PathfindingSystem : MonoBehaviour
 {
     [Header("System References")]
@@ -318,6 +360,7 @@ public class PathfindingSystem : MonoBehaviour
     /// <summary>
     /// Find path that avoids flood tiles
     /// </summary>
+    // Replace the existing FindFloodAwarePath method in PathfindingSystem.cs
     public List<Vector3> FindFloodAwarePath(Vector3 startWorld, Vector3 endWorld)
     {
         if (roadManager == null)
@@ -343,7 +386,137 @@ public class PathfindingSystem : MonoBehaviour
             worldPath.Add(roadManager.CellToWorld(gridPos));
         }
         
+        if (showDebugInfo)
+        {
+            if (worldPath.Count > 0)
+                Debug.Log($"Found flood-aware path with {worldPath.Count} waypoints");
+            else
+                Debug.Log("No flood-free path available");
+        }
+        
         return worldPath;
+    }
+
+
+    List<Vector3Int> GetFloodAwareNeighbors(Vector3Int position)
+    {
+        List<Vector3Int> neighbors = new List<Vector3Int>();
+        
+        Vector3Int[] directions = {
+            Vector3Int.up, Vector3Int.down, Vector3Int.left, Vector3Int.right
+        };
+        
+        if (allowDiagonalMovement)
+        {
+            Vector3Int[] diagonalDirections = {
+                new Vector3Int(1, 1, 0), new Vector3Int(-1, 1, 0),
+                new Vector3Int(1, -1, 0), new Vector3Int(-1, -1, 0)
+            };
+            directions = directions.Concat(diagonalDirections).ToArray();
+        }
+        
+        foreach (Vector3Int direction in directions)
+        {
+            Vector3Int neighborPos = position + direction;
+            
+            // Must have road AND not be flooded
+            if (roadManager.HasRoadAt(neighborPos))
+            {
+                Vector3 worldPos = roadManager.CellToWorld(neighborPos);
+                bool isFlooded = FloodSystem.Instance != null && FloodSystem.Instance.IsFloodedAt(worldPos);
+                
+                // Only add if not flooded - treat flooded tiles as if they don't exist
+                if (!isFlooded)
+                {
+                    neighbors.Add(neighborPos);
+                }
+            }
+        }
+        
+        return neighbors;
+    }
+
+    /// <summary>
+    /// Estimate delivery time for a path
+    /// </summary>
+    public DeliveryTimeEstimate EstimateDeliveryTime(Vector3 startPos, Vector3 endPos, float vehicleSpeed = 5f)
+    {
+        List<Vector3> path = FindFloodAwarePath(startPos, endPos);
+        
+        DeliveryTimeEstimate estimate = new DeliveryTimeEstimate();
+        estimate.pathExists = path.Count > 0;
+        
+        if (!estimate.pathExists)
+        {
+            estimate.roadTileCount = 0;
+            estimate.estimatedTimeSeconds = -1f; // Invalid
+            estimate.isFloodBlocked = !FloodSystem.Instance.IsRouteClearOfFlood(startPos, endPos);
+            return estimate;
+        }
+        
+        // Calculate path distance and tiles
+        estimate.roadTileCount = path.Count - 1; // Number of segments
+        estimate.totalDistance = CalculatePathDistance(path);
+        estimate.estimatedTimeSeconds = estimate.totalDistance / vehicleSpeed;
+        
+        // Add loading/unloading time
+        estimate.estimatedTimeSeconds += 2f; // 1 second each for loading and unloading
+        
+        // Check if path avoids flood
+        estimate.isFloodBlocked = false;
+        
+        if (showDebugInfo)
+        {
+            Debug.Log($"Delivery estimate: {estimate.roadTileCount} tiles, {estimate.totalDistance:F1} distance, {estimate.estimatedTimeSeconds:F1} seconds");
+        }
+        
+        return estimate;
+    }
+
+    /// <summary>
+    /// Calculate total distance of a path
+    /// </summary>
+    float CalculatePathDistance(List<Vector3> path)
+    {
+        if (path.Count < 2) return 0f;
+        
+        float totalDistance = 0f;
+        for (int i = 0; i < path.Count - 1; i++)
+        {
+            totalDistance += Vector3.Distance(path[i], path[i + 1]);
+        }
+        
+        return totalDistance;
+    }
+
+    /// <summary>
+    /// Get detailed path analysis
+    /// </summary>
+    public PathAnalysis AnalyzePath(Vector3 startPos, Vector3 endPos)
+    {
+        PathAnalysis analysis = new PathAnalysis();
+        
+        // Try normal pathfinding first
+        List<Vector3> normalPath = FindPath(startPos, endPos);
+        analysis.normalPathExists = normalPath.Count > 0;
+        analysis.normalPathLength = normalPath.Count - 1;
+        
+        // Try flood-aware pathfinding
+        List<Vector3> floodPath = FindFloodAwarePath(startPos, endPos);
+        analysis.floodAwarePathExists = floodPath.Count > 0;
+        analysis.floodAwarePathLength = floodPath.Count - 1;
+        
+        // Check if flood is blocking
+        analysis.isFloodAffected = analysis.normalPathExists && !analysis.floodAwarePathExists;
+        analysis.hasAlternativeRoute = !analysis.normalPathExists && analysis.floodAwarePathExists;
+        analysis.routeLengthDifference = analysis.floodAwarePathLength - analysis.normalPathLength;
+        
+        if (showDebugInfo)
+        {
+            Debug.Log($"Path Analysis: Normal={analysis.normalPathLength} tiles, Flood-aware={analysis.floodAwarePathLength} tiles, Difference={analysis.routeLengthDifference}");
+        }
+        
+        return analysis;
     }
 
     /// <summary>
@@ -423,45 +596,37 @@ public class PathfindingSystem : MonoBehaviour
         return new List<Vector3Int>();
     }
 
-    /// <summary>
-    /// Get neighbors that avoid flood tiles
-    /// </summary>
-    List<Vector3Int> GetFloodAwareNeighbors(Vector3Int position)
+    public bool CanCreateDeliveryWithEstimate(MonoBehaviour source, MonoBehaviour destination, out DeliveryTimeEstimate estimate)
     {
-        List<Vector3Int> neighbors = new List<Vector3Int>();
+        estimate = new DeliveryTimeEstimate();
         
-        Vector3Int[] directions = {
-            Vector3Int.up, Vector3Int.down, Vector3Int.left, Vector3Int.right
-        };
-        
-        if (allowDiagonalMovement)
+        if (source == null || destination == null)
         {
-            Vector3Int[] diagonalDirections = {
-                new Vector3Int(1, 1, 0), new Vector3Int(-1, 1, 0),
-                new Vector3Int(1, -1, 0), new Vector3Int(-1, -1, 0)
-            };
-            directions = directions.Concat(diagonalDirections).ToArray();
+            estimate.pathExists = false;
+            return false;
         }
         
-        foreach (Vector3Int direction in directions)
+        PathfindingSystem pathfinder = FindObjectOfType<PathfindingSystem>();
+        if (pathfinder == null)
         {
-            Vector3Int neighborPos = position + direction;
-            
-            if (roadManager.HasRoadAt(neighborPos))
-            {
-                // Check if this position is flooded
-                Vector3 worldPos = roadManager.CellToWorld(neighborPos);
-                bool isFlooded = FloodSystem.Instance != null && FloodSystem.Instance.IsFloodedAt(worldPos);
-                
-                if (!isFlooded)
-                {
-                    neighbors.Add(neighborPos);
-                }
-            }
+            estimate.pathExists = false;
+            return false;
         }
         
-        return neighbors;
+        Vector3 sourcePos = source.transform.position;
+        Vector3 destPos = destination.transform.position;
+        
+        estimate = pathfinder.EstimateDeliveryTime(sourcePos, destPos);
+        
+        if (showDebugInfo && estimate.pathExists)
+        {
+            Debug.Log($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
+        }
+        
+        return estimate.pathExists;
     }
+
+
     
     /// <summary>
     /// Test pathfinding between two random buildings
@@ -522,6 +687,30 @@ public class PathfindingSystem : MonoBehaviour
             }
         }
     }
+
+    [ContextMenu("Test: Analyze Current Paths")]
+    public void TestAnalyzeCurrentPaths()
+    {
+        Building[] buildings = FindObjectsOfType<Building>();
+        if (buildings.Length < 2)
+        {
+            Debug.LogWarning("Need at least 2 buildings for path analysis");
+            return;
+        }
+
+        Vector3 start = buildings[0].transform.position;
+        Vector3 end = buildings[1].transform.position;
+
+        PathAnalysis analysis = AnalyzePath(start, end);
+        DeliveryTimeEstimate estimate = EstimateDeliveryTime(start, end);
+
+        Debug.Log($"=== PATH ANALYSIS ===");
+        Debug.Log($"From: {buildings[0].name} To: {buildings[1].name}");
+        Debug.Log($"Normal path: {(analysis.normalPathExists ? analysis.normalPathLength + " tiles" : "None")}");
+        Debug.Log($"Flood-aware path: {(analysis.floodAwarePathExists ? analysis.floodAwarePathLength + " tiles" : "None")}");
+        Debug.Log($"Delivery estimate: {estimate.GetSummary()}");
+    }
+
     
     /// <summary>
     /// Get readable direction name for debugging
