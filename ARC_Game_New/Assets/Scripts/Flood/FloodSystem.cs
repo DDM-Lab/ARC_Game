@@ -20,6 +20,10 @@ public class FloodSystem : MonoBehaviour
     [Header("Flood Configuration")]
     public FloodParameters floodParameters;
 
+    [Header("Change Tracking")]
+    private int previousFloodCount = 0;
+    private int floodChangeThisRound = 0;
+
     [Header("Debug")]
     public bool showDebugGizmos = true;
     public Color floodGizmoColor = Color.blue;
@@ -36,6 +40,9 @@ public class FloodSystem : MonoBehaviour
     public event Action<Vector3Int> OnFloodTileAdded;
     public event Action<Vector3Int> OnFloodTileRemoved;
     public event Action<int> OnFloodSizeChanged;
+    public event System.Action<int> OnFloodExpanded; // Parameter: tiles expanded
+    public event System.Action<int> OnFloodShrank;   // Parameter: tiles shrank
+    public event System.Action<int> OnFloodChanged;  // Parameter: net change
 
     // Singleton for easy access
     public static FloodSystem Instance { get; private set; }
@@ -247,26 +254,25 @@ public class FloodSystem : MonoBehaviour
     void UpdateFlood()
     {
         Debug.Log("=== FLOOD UPDATE STARTED ===");
-        Debug.Log($"Current flood tiles count: {currentFloodTiles.Count}");
-
-        if (WeatherSystem.Instance == null)
+        int floodCountBefore = currentFloodTiles.Count;
+        Debug.Log($"Current flood tiles count: {floodCountBefore}");
+        
+        if (WeatherSystem.Instance == null) 
         {
             Debug.LogError("WeatherSystem.Instance is null!");
             return;
         }
-
+        
         WeatherType currentWeather = WeatherSystem.Instance.GetCurrentWeather();
         WeatherFloodData weatherData = GetWeatherFloodData(currentWeather);
         float rainIntensity = WeatherSystem.Instance.GetRainIntensity();
-
+        
         Debug.Log($"Current weather: {currentWeather}, Rain intensity: {rainIntensity}");
-
-        // Check if weather changed from non-raining to raining
+        
         bool wasRaining = WeatherSystem.Instance.IsRaining();
         bool weatherChanged = lastWeatherType != currentWeather;
         lastWeatherType = currentWeather;
-
-        // Handle flood spawning when rain starts or intensifies
+        
         if (rainIntensity >= floodParameters.minimumRainForSpawning)
         {
             if (currentFloodTiles.Count == 0 || (weatherChanged && rainIntensity > 0))
@@ -275,17 +281,13 @@ public class FloodSystem : MonoBehaviour
                 SpawnFloodFromRain(rainIntensity);
             }
         }
-
-        int floodCountBefore = currentFloodTiles.Count;
-
-        // Handle flood expansion
+        
         if (weatherData.expansionRate > 0 && currentFloodTiles.Count > 0)
         {
             Debug.Log("Attempting flood expansion...");
             ExpandFlood(weatherData);
         }
-
-        // Handle flood shrinkage (including complete drying up during sunny weather)
+        
         if (rainIntensity < floodParameters.minimumRainForSpawning)
         {
             Debug.Log("Rain stopped - flood will shrink/disappear");
@@ -296,15 +298,42 @@ public class FloodSystem : MonoBehaviour
             Debug.Log("Attempting flood shrinkage...");
             ShrinkFlood(weatherData);
         }
-
+        
         int floodCountAfter = currentFloodTiles.Count;
-        Debug.Log($"Flood tiles before: {floodCountBefore}, after: {floodCountAfter}, change: {floodCountAfter - floodCountBefore}");
-
-        // Trigger size changed event
+        int floodChange = floodCountAfter - floodCountBefore;
+        
+        Debug.Log($"Flood tiles before: {floodCountBefore}, after: {floodCountAfter}, change: {floodChange}");
+        
+        // NEW: Track and trigger flood change events
+        if (floodChange > 0)
+        {
+            OnFloodExpanded?.Invoke(floodChange);
+            Debug.Log($"🌊 Flood expanded by {floodChange} tiles");
+        }
+        else if (floodChange < 0)
+        {
+            OnFloodShrank?.Invoke(-floodChange);
+            Debug.Log($"🌅 Flood shrank by {-floodChange} tiles");
+        }
+        
+        if (floodChange != 0)
+        {
+            OnFloodChanged?.Invoke(floodChange);
+        }
+        
+        // Update previous count for triggers
+        previousFloodCount = floodCountBefore;
+        floodChangeThisRound = floodChange;
+        
         OnFloodSizeChanged?.Invoke(currentFloodTiles.Count);
-
+        
         Debug.Log("=== FLOOD UPDATE COMPLETED ===");
     }
+
+    // Add getter methods for triggers
+    public int GetPreviousFloodCount() => previousFloodCount;
+    public int GetFloodChangeThisRound() => floodChangeThisRound;
+
 
     void SpawnFloodFromRain(float rainIntensity)
     {

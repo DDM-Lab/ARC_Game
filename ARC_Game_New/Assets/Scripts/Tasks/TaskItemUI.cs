@@ -31,7 +31,7 @@ public class TaskItemUI : MonoBehaviour
     public Color emergencyColor = Color.red;
     public Color demandColor = Color.magenta;
     public Color advisoryColor = Color.blue;
-    public Color alertColor = Color.yellow;
+    public Color alertColor = Color.black;
     
     [Header("Debug")]
     public bool showDebugInfo = true;

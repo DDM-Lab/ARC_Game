@@ -245,6 +245,8 @@ public class TaskSystem : MonoBehaviour
     // Singleton
     public static TaskSystem Instance { get; private set; }
 
+    private HashSet<string> shownAlertIds = new HashSet<string>();
+
     void Awake()
     {
         if (Instance == null)
@@ -500,6 +502,21 @@ public class TaskSystem : MonoBehaviour
         
         foreach (TaskData taskData in triggeredTasks)
         {
+
+            // Skip if this alert was already shown
+            if (taskData.taskType == TaskType.Alert)
+            {
+                if (shownAlertIds.Contains(taskData.taskId))
+                {
+                    Debug.Log($"Alert {taskData.taskTitle} already shown, skipping");
+                    continue;
+                }
+                else
+                {
+                    shownAlertIds.Add(taskData.taskId);
+                }
+            }
+
             // Check if task already exists to avoid duplicates
             if (activeTasks.Any(t => t.taskTitle == taskData.taskTitle))
             {
@@ -1164,6 +1181,35 @@ public class TaskSystem : MonoBehaviour
         }
 
         return null;
+    }
+
+    public void CompleteAlertTask(GameTask alertTask)
+    {
+        if (alertTask == null) return;
+        
+        // Mark as completed
+        alertTask.status = TaskStatus.Completed;
+        
+        // Remove from active tasks
+        if (activeTasks.Contains(alertTask))
+        {
+            activeTasks.Remove(alertTask);
+            completedTasks.Add(alertTask);
+            
+            // Apply any impacts (alerts can have automatic impacts)
+            /*if (alertTask.impacts != null && alertTask.impacts.Count > 0)
+            {
+                foreach (TaskImpact impact in alertTask.impacts)
+                {
+                    ApplyImpact(impact);
+                }
+            }*/
+            
+            OnTaskCompleted?.Invoke(alertTask);
+            
+            if (showDebugInfo)
+                Debug.Log($"Alert task completed: {alertTask.taskTitle}");
+        }
     }
 
     // Utility methods for impact display

@@ -20,11 +20,12 @@ public class TaskDatabase : ScriptableObject
         List<TaskData> triggeredTasks = new List<TaskData>();
         
         foreach (TaskData taskData in allTasks)
-        {
+        {  
+
             if (AreTriggersActivated(taskData))
             {
                 triggeredTasks.Add(taskData);
-                
+
                 if (showDebugInfo)
                     Debug.Log($"Task triggered: {taskData.taskId} - {taskData.taskTitle}");
             }
@@ -51,6 +52,12 @@ public class TaskDatabase : ScriptableObject
             triggerResults.Add(trigger.CheckCondition());
         
         foreach (var trigger in taskData.probabilityTriggers)
+            triggerResults.Add(trigger.CheckCondition());
+
+        foreach (var trigger in taskData.floodTileTriggers)
+            triggerResults.Add(trigger.CheckCondition());
+
+        foreach (var trigger in taskData.floodedFacilityTriggers)
             triggerResults.Add(trigger.CheckCondition());
         
         if (triggerResults.Count == 0) return false; // No triggers = never activate

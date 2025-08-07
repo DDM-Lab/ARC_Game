@@ -1025,10 +1025,10 @@ MonoBehaviour:
   incompleteColor: {r: 0.9098039, g: 0.81960785, b: 0.6117647, a: 1}
   expiredColor: {r: 0.9098039, g: 0.81960785, b: 0.6117647, a: 1}
   completedColor: {r: 0.9098039, g: 0.81960785, b: 0.6117647, a: 1}
-  emergencyColor: {r: 1, g: 0, b: 0, a: 1}
-  demandColor: {r: 1, g: 0, b: 1, a: 1}
-  advisoryColor: {r: 0, g: 0, b: 1, a: 1}
-  alertColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  emergencyColor: {r: 0.5999999, g: 0, b: 0, a: 1}
+  demandColor: {r: 0, g: 0.03446021, b: 0.6528301, a: 1}
+  advisoryColor: {r: 0.23921569, g: 0.18431373, b: 0.1764706, a: 1}
+  alertColor: {r: 0, g: 0, b: 0, a: 1}
   showDebugInfo: 1
 --- !u!1 &8756387264088803388
 GameObject:

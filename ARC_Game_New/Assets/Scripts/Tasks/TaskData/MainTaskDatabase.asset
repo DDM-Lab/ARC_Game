@@ -15,4 +15,5 @@ MonoBehaviour:
   allTasks:
   - {fileID: 11400000, guid: 4078a097420469547bb2b21fd3a115b3, type: 2}
   - {fileID: 11400000, guid: ae87469d9b21b8b4b806864bd73370a8, type: 2}
+  - {fileID: 11400000, guid: 9252c0d5be4b82449a450b8ea9966002, type: 2}
   showDebugInfo: 1

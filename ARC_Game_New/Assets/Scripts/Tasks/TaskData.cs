@@ -22,6 +22,8 @@ public class TaskData : ScriptableObject
     public List<PopulationTrigger> populationTriggers = new List<PopulationTrigger>();
     public List<ResourceTrigger> resourceTriggers = new List<ResourceTrigger>();
     public List<ProbabilityTrigger> probabilityTriggers = new List<ProbabilityTrigger>();
+    public List<FloodTileTrigger> floodTileTriggers = new List<FloodTileTrigger>();
+    public List<FloodedFacilityTrigger> floodedFacilityTriggers = new List<FloodedFacilityTrigger>();
     public bool requireAllTriggers = true; // AND vs OR logic
 
     [Header("Facility Targeting")]
