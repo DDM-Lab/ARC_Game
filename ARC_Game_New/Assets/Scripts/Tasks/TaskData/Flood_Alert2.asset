@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4c182747abbcaae4ab5183b8a6d24a10, type: 3}
-  m_Name: Flood_Alert
+  m_Name: Flood_Alert2
   m_EditorClassIdentifier: 
-  taskId: Flood_Alert
-  taskTitle: Flood Alert - Rising Water
+  taskId: Flood_Alert2
+  taskTitle: Flood_Alert2
   taskType: 3
   description: Flood levels are rising. We should prepare for potential evacuations.
   taskImage: {fileID: 0}
@@ -37,16 +37,10 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts: []
   agentMessages:
-  - messageText: Weather station reports rising flood levels. Current count exceeds
-      10 tiles.
+  - messageText: Flood Alert 2 for testing
     agentAvatar: {fileID: 0}
-    useTypingEffect: 1
-    typingSpeed: 0.05
-  - messageText: We should consider evacuating vulnerable areas and checking our
-      emergency supplies.
-    agentAvatar: {fileID: 0}
-    useTypingEffect: 1
-    typingSpeed: 0.05
+    useTypingEffect: 0
+    typingSpeed: 0
   agentChoices: []
   numericalInputs: []
   deliveryFailureSatisfactionPenalty: 10

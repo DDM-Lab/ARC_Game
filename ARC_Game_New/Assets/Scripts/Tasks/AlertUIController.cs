@@ -9,6 +9,7 @@ public class AlertUIController : MonoBehaviour
 {
     [Header("UI References")]
     public GameObject alertPanel;
+    public GameObject alertBackground;
     public Image agentIcon;
     public TextMeshProUGUI messageText;
     public Button nextButton;
@@ -24,6 +25,7 @@ public class AlertUIController : MonoBehaviour
     
     // Current alert data
     private GameTask currentAlert;
+    private Queue<GameTask> alertQueue = new Queue<GameTask>();
     private List<AgentMessage> alertMessages;
     private int currentMessageIndex = 0;
     private bool isTyping = false;
@@ -68,7 +70,8 @@ public class AlertUIController : MonoBehaviour
     {
         // Hide alert UI initially
         alertPanel.SetActive(false);
-        
+        alertBackground.SetActive(false);
+
         // Setup button events
         nextButton.onClick.AddListener(OnNextButtonClicked);
         
@@ -101,14 +104,22 @@ public class AlertUIController : MonoBehaviour
     /// </summary>
     public void ShowAlert(GameTask alertTask)
     {
-        if (alertActive)
-        {
-            Debug.LogWarning("Alert already active - queuing not supported yet");
-            return;
-        }
+        alertQueue.Enqueue(alertTask);
+        Debug.Log($"Alert queued: {alertTask.taskTitle}");
 
-        currentAlert = alertTask;
-        alertMessages = alertTask.agentMessages;
+        if (!alertActive)
+        {
+            ProcessNextAlert();
+        }
+    }
+
+    void ProcessNextAlert()
+    {
+        if (alertQueue.Count == 0) return;
+
+        currentAlert = alertQueue.Dequeue();
+        Debug.Log($"Processing alert: {currentAlert.taskTitle}");
+        alertMessages = currentAlert.agentMessages;
         currentMessageIndex = 0;
 
         if (alertMessages.Count == 0)
@@ -122,12 +133,14 @@ public class AlertUIController : MonoBehaviour
 
         // NEW: Start with UI hidden, show after layout calculation
         StartCoroutine(ShowAlertWithDelay());
+        
     }
 
     IEnumerator ShowAlertWithDelay()
     {
-        // Setup UI but keep invisible
-        alertPanel.SetActive(true);
+        // Setup UI but keep invisible, except background
+        alertPanel.SetActive(false);
+        alertBackground.SetActive(true);
 
         // Make panel transparent initially
         CanvasGroup panelCanvasGroup = alertPanel.GetComponent<CanvasGroup>();
@@ -176,6 +189,7 @@ public class AlertUIController : MonoBehaviour
     /// </summary>
     void ShowCurrentMessage()
     {
+        alertPanel.SetActive(true);
         if (currentMessageIndex >= alertMessages.Count)
         {
             CompleteAlert();
@@ -288,28 +302,68 @@ public class AlertUIController : MonoBehaviour
     /// </summary>
     void CompleteAlert()
     {
-        // Hide UI
-        alertPanel.SetActive(false);
-        
-        // Resume game
-        ResumeGame();
-        
         // Mark task as completed (alerts don't require choices)
         if (currentAlert != null && TaskSystem.Instance != null)
         {
             TaskSystem.Instance.CompleteAlertTask(currentAlert);
             OnAlertCompleted?.Invoke(currentAlert);
         }
-        
+
         // Reset state
         alertActive = false;
         currentAlert = null;
         alertMessages = null;
         currentMessageIndex = 0;
-        
+
+        // Queue remaining alerts
+        if (TaskSystem.Instance != null)
+        {
+            var activeTasks = TaskSystem.Instance.GetAllActiveTasks();
+            foreach (var task in activeTasks)
+            {
+                if (task.taskType == TaskType.Alert && !alertQueue.Contains(task))
+                {
+                    alertQueue.Enqueue(task);
+                    Debug.Log($"Queued remaining alert: {task.taskTitle}");
+                }
+            }
+        }
+
+        // Check queue for next alert
+        if (alertQueue.Count > 0)
+        {
+            StartCoroutine(TransitionToNextAlert());
+            return; // Don't resume game yet
+        }
+        // Hide UI
+        alertPanel.SetActive(false);
+        alertBackground.SetActive(false);
+
+        ResumeGame(); // resume only if no alerts
         Debug.Log("Alert completed");
     }
-    
+
+    // Fade out current alert and transition to next
+    IEnumerator TransitionToNextAlert()
+    {
+        // Fade out current alert
+        CanvasGroup panelCanvasGroup = alertPanel.GetComponent<CanvasGroup>();
+        if (panelCanvasGroup == null)
+            panelCanvasGroup = alertPanel.AddComponent<CanvasGroup>();
+
+        while (panelCanvasGroup.alpha > 0f)
+        {
+            panelCanvasGroup.alpha -= Time.unscaledDeltaTime * 5f; // Fast fade
+            yield return null;
+        }
+
+        // Small pause between alerts
+        yield return new WaitForSecondsRealtime(0.2f);
+
+        // Process next alert
+        ProcessNextAlert();
+    }
+
     /// <summary>
     /// Pause the game
     /// </summary>

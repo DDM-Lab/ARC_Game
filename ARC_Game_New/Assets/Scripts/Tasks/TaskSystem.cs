@@ -1196,15 +1196,6 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(alertTask);
             completedTasks.Add(alertTask);
             
-            // Apply any impacts (alerts can have automatic impacts)
-            /*if (alertTask.impacts != null && alertTask.impacts.Count > 0)
-            {
-                foreach (TaskImpact impact in alertTask.impacts)
-                {
-                    ApplyImpact(impact);
-                }
-            }*/
-            
             OnTaskCompleted?.Invoke(alertTask);
             
             if (showDebugInfo)
