@@ -44,8 +44,8 @@ public class TaskDatabase : ScriptableObject
         // Check all trigger types
         foreach (var trigger in taskData.roundTriggers)
             triggerResults.Add(trigger.CheckCondition());
-        
-        foreach (var trigger in taskData.populationTriggers)
+
+        foreach (var trigger in taskData.dayTriggers)
             triggerResults.Add(trigger.CheckCondition());
         
         foreach (var trigger in taskData.resourceTriggers)
@@ -59,7 +59,13 @@ public class TaskDatabase : ScriptableObject
 
         foreach (var trigger in taskData.floodedFacilityTriggers)
             triggerResults.Add(trigger.CheckCondition());
-        
+
+        foreach (var trigger in taskData.budgetTriggers)
+            triggerResults.Add(trigger.CheckCondition());
+
+        foreach (var trigger in taskData.satisfactionTriggers)
+            triggerResults.Add(trigger.CheckCondition());
+
         if (triggerResults.Count == 0) return false; // No triggers = never activate
         
         if (taskData.requireAllTriggers)
