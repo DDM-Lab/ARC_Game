@@ -42,6 +42,13 @@ public enum DeliverySourceType
     ManualAssignment
 }
 
+public enum DeliveryQuantityType
+{
+    Fixed,          // Use deliveryQuantity value
+    Percentage,     // Use deliveryPercentage of available resources
+    All             // Move all available resources
+}
+
 public enum DeliveryDestinationType
 {
     AutoFind,
@@ -152,9 +159,15 @@ public class AgentChoice
     
     [Header("Delivery Configuration")]
     public bool triggersDelivery = false;
+    public bool immediateDelivery = false;
     public ResourceType deliveryCargoType = ResourceType.Population;
-    public int deliveryQuantity = 0;
     
+    [Header("Dynamic Delivery Quantity")]
+    public DeliveryQuantityType quantityType = DeliveryQuantityType.Fixed;
+    public int deliveryQuantity = 5; // Keep existing field for fixed amounts
+    public float deliveryPercentage = 100f; // For percentage-based
+    public bool deliverAll = false; // For "all available" option
+
     [Header("Delivery Source")]
     public DeliverySourceType sourceType = DeliverySourceType.RequestingFacility;
     public BuildingType sourceBuilding = BuildingType.Community;
@@ -964,10 +977,35 @@ public class TaskSystem : MonoBehaviour
         return task;
     }
 
+    public int GetAvailableResourceAmount(MonoBehaviour source, ResourceType resourceType)
+    {
+        int amount = source.GetComponent<BuildingResourceStorage>()?.GetResourceAmount(resourceType) ?? 0;
+        return amount;
+    }
+
+    public int CalculateDeliveryQuantity(AgentChoice choice, MonoBehaviour source)
+    {
+        switch (choice.quantityType)
+        {
+            case DeliveryQuantityType.Fixed:
+                return choice.deliveryQuantity;
+
+            case DeliveryQuantityType.All:
+                return GetAvailableResourceAmount(source, choice.deliveryCargoType);
+
+            case DeliveryQuantityType.Percentage:
+                int available = GetAvailableResourceAmount(source, choice.deliveryCargoType);
+                return Mathf.RoundToInt(available * (choice.deliveryPercentage / 100f));
+
+            default:
+                return choice.deliveryQuantity;
+        }
+    }
+
     public GameTask CreateTaskFromData(TaskData taskData)
     {
         GameTask newTask = new GameTask(nextTaskId++, taskData.taskTitle, taskData.taskType, taskData.targetFacilityType.ToString());
-        
+
         // Copy basic info
         newTask.description = taskData.description;
         newTask.taskImage = taskData.taskImage;
@@ -1000,18 +1038,34 @@ public class TaskSystem : MonoBehaviour
         foreach (AgentChoice choice in taskData.agentChoices)
         {
             AgentChoice newChoice = new AgentChoice(choice.choiceId, choice.choiceText);
-            
+
             // Copy choice impacts
             newChoice.choiceImpacts = new List<TaskImpact>();
             foreach (TaskImpact impact in choice.choiceImpacts)
             {
                 newChoice.choiceImpacts.Add(new TaskImpact(impact.impactType, impact.value, impact.isCountdown, impact.customLabel));
             }
-            
+
+            MonoBehaviour source = FindTriggeringFacility(newTask);
+            if (source == null)
+            {
+                Debug.LogWarning($"No triggering facility found for task: {newTask.taskTitle}");
+                return null;
+            }
+
+            // Calculate dynamic quantity according to type
+            int actualQuantity = CalculateDeliveryQuantity(choice, source);
+
+            if (actualQuantity <= 0)
+            {
+                Debug.LogWarning($"No resources available for delivery from {source.name}");
+                return null;
+            }
+
             // Copy delivery configuration
             newChoice.triggersDelivery = choice.triggersDelivery;
             newChoice.deliveryCargoType = choice.deliveryCargoType;
-            newChoice.deliveryQuantity = choice.deliveryQuantity;
+            newChoice.deliveryQuantity = actualQuantity; // Use calculated quantity
             newChoice.sourceType = choice.sourceType;
             newChoice.sourceBuilding = choice.sourceBuilding;
             newChoice.sourcePrebuilt = choice.sourcePrebuilt;
@@ -1022,7 +1076,7 @@ public class TaskSystem : MonoBehaviour
             newChoice.specificDestinationName = choice.specificDestinationName;
             newChoice.prioritizeNearestSource = choice.prioritizeNearestSource;
             newChoice.prioritizeNearestDestination = choice.prioritizeNearestDestination;
-            
+
             newTask.agentChoices.Add(newChoice);
         }
 
@@ -1035,17 +1089,17 @@ public class TaskSystem : MonoBehaviour
                 stepSize = input.stepSize
             });
         }
-        
+
         // Set delivery time limit from task data
         newTask.deliveryTimeLimit = taskData.deliveryTimeLimit;
         newTask.deliveryFailureSatisfactionPenalty = taskData.deliveryFailureSatisfactionPenalty;
-        
+
         activeTasks.Add(newTask);
         OnTaskCreated?.Invoke(newTask);
-        
+
         if (showDebugInfo)
             Debug.Log($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
-        
+
         return newTask;
     }
 
@@ -1179,8 +1233,6 @@ public class TaskSystem : MonoBehaviour
                 Debug.Log($"Auto-finding destination for cargo type: {choice.deliveryCargoType}");
                 return FindBestDeliveryDestination(choice.deliveryCargoType, triggeringFacility?.transform.position);
         }
-
-        return null;
     }
 
     public void CompleteAlertTask(GameTask alertTask)
@@ -1419,6 +1471,17 @@ public class TaskSystem : MonoBehaviour
         motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -200));
         motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10, false, "Premium Housing"));
         transportTask.agentChoices.Add(motelChoice);
+
+        AgentChoice airDrop = new AgentChoice(2, "Emergency airdrop to Motel(instant)");
+        airDrop.immediateDelivery = true;
+        airDrop.deliveryCargoType = ResourceType.Population;
+        airDrop.deliveryQuantity = transportAmount;
+        airDrop.sourceType = DeliverySourceType.RequestingFacility;
+        airDrop.destinationType = DeliveryDestinationType.SpecificPrebuilt;
+        airDrop.destinationPrebuilt = PrebuiltBuildingType.Motel;
+        airDrop.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1000, false, "Airdrop Cost"));
+        airDrop.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 20, false, "Premium Housing"));
+        transportTask.agentChoices.Add(airDrop);
 
         AgentChoice delayChoice = new AgentChoice(3, "Wait for better options (Risk satisfaction loss)");
         delayChoice.triggersDelivery = false;

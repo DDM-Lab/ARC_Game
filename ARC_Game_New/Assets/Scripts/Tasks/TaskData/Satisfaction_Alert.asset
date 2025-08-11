@@ -1,0 +1,60 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c182747abbcaae4ab5183b8a6d24a10, type: 3}
+  m_Name: Satisfaction_Alert
+  m_EditorClassIdentifier: 
+  taskId: Satisfaction_Alert
+  taskTitle: Satisfaction Declining
+  taskType: 3
+  description: Community satisfaction has dropped significantly.
+  taskImage: {fileID: 0}
+  roundTriggers: []
+  dayTriggers: []
+  resourceTriggers: []
+  probabilityTriggers: []
+  floodTileTriggers: []
+  floodedFacilityTriggers: []
+  budgetTriggers: []
+  satisfactionTriggers:
+  - conditionType: 1
+    comparison: 1
+    targetValue: 15
+    previousSatisfaction: 0
+  requireAllTriggers: 1
+  isGlobalTask: 0
+  targetFacilityType: 1
+  autoSelectFacility: 1
+  specificFacility: {fileID: 0}
+  roundsRemaining: 1
+  realTimeRemaining: 300
+  hasRealTimeLimit: 0
+  impacts: []
+  agentMessages:
+  - messageText: Our monitoring systems show a significant drop in satisfaction levels.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  - messageText: Satisfaction has decreased by more than 15 points recently. People
+      are becoming restless. We need to identify the cause and take immediate action
+      to restore community morale.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  - messageText: Check resource supplies, facility conditions, and recent decisions
+      that may have affected the satisfaction.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  agentChoices: []
+  numericalInputs: []
+  deliveryFailureSatisfactionPenalty: 10
+  deliveryTimeLimit: 300

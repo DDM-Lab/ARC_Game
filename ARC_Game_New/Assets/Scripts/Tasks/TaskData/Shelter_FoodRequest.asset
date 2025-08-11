@@ -19,16 +19,21 @@ MonoBehaviour:
     food delivery from the nearest kitchen.
   taskImage: {fileID: 21300000, guid: c939145498029214ab7fc047d1938e25, type: 3}
   roundTriggers: []
-  populationTriggers:
-  - facilityType: 1
-    populationThreshold: 0
-    condition: 2
+  dayTriggers: []
   resourceTriggers:
   - facilityType: 1
     resourceType: 1
     resourceThreshold: 0
     condition: 0
+  - facilityType: 1
+    resourceType: 0
+    resourceThreshold: 0
+    condition: 3
   probabilityTriggers: []
+  floodTileTriggers: []
+  floodedFacilityTriggers: []
+  budgetTriggers: []
+  satisfactionTriggers: []
   requireAllTriggers: 1
   isGlobalTask: 0
   targetFacilityType: 1
@@ -76,7 +81,10 @@ MonoBehaviour:
     isSelected: 0
     triggersDelivery: 1
     deliveryCargoType: 1
+    quantityType: 0
     deliveryQuantity: 5
+    deliveryPercentage: 0
+    deliverAll: 0
     sourceType: 0
     sourceBuilding: 0
     sourcePrebuilt: 0
@@ -88,7 +96,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 0
-    choiceText: Request 50 food packs (Full supply)
+    choiceText: Request full supply (Max shelter capacity)
     choiceImpacts:
     - impactType: 0
       value: 10
@@ -97,7 +105,10 @@ MonoBehaviour:
     isSelected: 0
     triggersDelivery: 1
     deliveryCargoType: 1
-    deliveryQuantity: 50
+    quantityType: 2
+    deliveryQuantity: 0
+    deliveryPercentage: 0
+    deliverAll: 1
     sourceType: 0
     sourceBuilding: 0
     sourcePrebuilt: 0
@@ -118,7 +129,10 @@ MonoBehaviour:
     isSelected: 0
     triggersDelivery: 0
     deliveryCargoType: 1
+    quantityType: 0
     deliveryQuantity: 0
+    deliveryPercentage: 0
+    deliverAll: 0
     sourceType: 0
     sourceBuilding: 0
     sourcePrebuilt: 0

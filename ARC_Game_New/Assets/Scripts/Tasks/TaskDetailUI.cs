@@ -436,9 +436,15 @@ public class TaskDetailUI : MonoBehaviour
         {
             ApplyChoiceImpacts(selectedChoice);
 
-            // Check if this choice triggers a delivery
-            if (selectedChoice.triggersDelivery)
+            if (selectedChoice.immediateDelivery)
             {
+                // Execute immediate delivery
+                ExecuteImmediateDelivery(selectedChoice);
+                TaskSystem.Instance.CompleteTask(currentTask);
+            }
+            else if (selectedChoice.triggersDelivery)
+            {
+                // Execute normal delivery
                 CreateChoiceDeliveryTask(selectedChoice);
                 TaskSystem.Instance.SetTaskInProgress(currentTask);
             }
@@ -461,8 +467,8 @@ public class TaskDetailUI : MonoBehaviour
     {
         errorMessage = "";
 
-        if (!choice.triggersDelivery)
-            return true;
+        if (!choice.triggersDelivery && !choice.immediateDelivery)
+        return true;
 
         MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
@@ -480,39 +486,14 @@ public class TaskDetailUI : MonoBehaviour
             return false;
         }
 
-        // NEW: Get detailed route analysis
-        PathfindingSystem pathfinder = FindObjectOfType<PathfindingSystem>();
-        if (pathfinder != null)
+        // Calculate actual quantity for validation
+        int availableAmount = TaskSystem.Instance.CalculateDeliveryQuantity(choice, source);
+
+        if (availableAmount <= 0)
         {
-            PathAnalysis analysis = pathfinder.AnalyzePath(source.transform.position, destination.transform.position);
-            DeliveryTimeEstimate estimate = pathfinder.EstimateDeliveryTime(source.transform.position, destination.transform.position);
-
-            if (!estimate.pathExists)
-            {
-                if (estimate.isFloodBlocked)
-                {
-                    errorMessage = $"All routes from {source.name} to {destination.name} are blocked by flood";
-                }
-                else
-                {
-                    errorMessage = $"No route available from {source.name} to {destination.name}";
-                }
-                return false;
-            }
-
-            // Show route information in choice text (optional enhancement)
-            if (analysis.isFloodAffected && analysis.hasAlternativeRoute)
-            {
-                if (showDebugInfo)
-                    Debug.Log($"Choice uses alternative route (+{analysis.routeLengthDifference} tiles) due to flood");
-            }
-        }
-
-        // Rest of existing validation...
-        int availableAmount = GetAvailableResourceAmount(source, choice.deliveryCargoType);
-        if (availableAmount < choice.deliveryQuantity)
-        {
-            errorMessage = $"Insufficient resources at {source.name}. Required: {choice.deliveryQuantity}, Available: {availableAmount}";
+            string quantityText = choice.quantityType == DeliveryQuantityType.Percentage ? 
+                $"{choice.deliveryPercentage}%" : "all";
+            errorMessage = $"No resources available at {source.name} for {quantityText} delivery";
             return false;
         }
 
@@ -523,24 +504,56 @@ public class TaskDetailUI : MonoBehaviour
             return false;
         }
 
-        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-        bool hasCapableVehicle = false;
-
-        foreach (Vehicle vehicle in vehicles)
+        // Vehicle check only for normal delivery
+        if (choice.triggersDelivery && !choice.immediateDelivery)
         {
-            if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
-                vehicle.GetMaxCapacity() >= Mathf.Min(choice.deliveryQuantity, 10) &&
-                vehicle.GetCurrentStatus() != VehicleStatus.Damaged)
+            // Get detailed route analysis
+            PathfindingSystem pathfinder = FindObjectOfType<PathfindingSystem>();
+            if (pathfinder != null)
             {
-                hasCapableVehicle = true;
-                break;
-            }
-        }
+                PathAnalysis analysis = pathfinder.AnalyzePath(source.transform.position, destination.transform.position);
+                DeliveryTimeEstimate estimate = pathfinder.EstimateDeliveryTime(source.transform.position, destination.transform.position);
 
-        if (!hasCapableVehicle)
-        {
-            errorMessage = $"No available undamaged vehicle to transport {choice.deliveryCargoType}";
-            return false;
+                if (!estimate.pathExists)
+                {
+                    if (estimate.isFloodBlocked)
+                    {
+                        errorMessage = $"All routes from {source.name} to {destination.name} are blocked by flood";
+                    }
+                    else
+                    {
+                        errorMessage = $"No route available from {source.name} to {destination.name}";
+                    }
+                    return false;
+                }
+
+                // Show route information in choice text (optional enhancement)
+                if (analysis.isFloodAffected && analysis.hasAlternativeRoute)
+                {
+                    if (showDebugInfo)
+                        Debug.Log($"Choice uses alternative route (+{analysis.routeLengthDifference} tiles) due to flood");
+                }
+            }
+        
+            Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+            bool hasCapableVehicle = false;
+
+            foreach (Vehicle vehicle in vehicles)
+            {
+                if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
+                    vehicle.GetMaxCapacity() >= Mathf.Min(choice.deliveryQuantity, 10) &&
+                    vehicle.GetCurrentStatus() != VehicleStatus.Damaged)
+                {
+                    hasCapableVehicle = true;
+                    break;
+                }
+            }
+
+            if (!hasCapableVehicle)
+            {
+                errorMessage = $"No available undamaged vehicle to transport {choice.deliveryCargoType}";
+                return false;
+            }
         }
 
         return true;
@@ -675,9 +688,6 @@ public class TaskDetailUI : MonoBehaviour
         {
             currentTask.linkedDeliveryTaskIds.Add(deliveryTask.taskId);
 
-            // Use task's default time limit
-            currentTask.deliveryTimeLimit = currentTask.deliveryTimeLimit;
-
             // Start monitoring delivery completion (without time segment monitoring)
             StartCoroutine(MonitorChoiceDeliveryCompletion());
 
@@ -730,7 +740,73 @@ public class TaskDetailUI : MonoBehaviour
         return true; // All deliveries are completed
     }
 
+    void ExecuteImmediateDelivery(AgentChoice choice)
+    {
+        MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
+        MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
+        MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
 
+        if (source == null || destination == null)
+        {
+            Debug.LogError("Could not determine immediate delivery source or destination");
+            return;
+        }
+
+        // Calculate quantity
+        int actualQuantity = TaskSystem.Instance.CalculateDeliveryQuantity(choice, source);
+
+        if (actualQuantity <= 0)
+        {
+            Debug.LogWarning($"No resources available for immediate delivery from {source.name}");
+            return;
+        }
+
+        // Get resource storages
+        BuildingResourceStorage sourceStorage = GetBuildingResourceStorage(source);
+        BuildingResourceStorage destStorage = GetBuildingResourceStorage(destination);
+
+        if (sourceStorage == null || destStorage == null)
+        {
+            Debug.LogError("Could not find resource storage for immediate delivery");
+            return;
+        }
+
+        // Perform immediate transfer
+        int actualRemoved = sourceStorage.RemoveResource(choice.deliveryCargoType, actualQuantity);
+        int actualDelivered = destStorage.AddResource(choice.deliveryCargoType, actualRemoved);
+
+        // Handle overflow if destination couldn't accept all
+        if (actualDelivered < actualRemoved)
+        {
+            int overflow = actualRemoved - actualDelivered;
+            sourceStorage.AddResource(choice.deliveryCargoType, overflow);
+            Debug.LogWarning($"Immediate delivery overflow: {overflow} {choice.deliveryCargoType} returned to {source.name}");
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"Immediate delivery completed: {actualDelivered} {choice.deliveryCargoType} from {source.name} to {destination.name}");
+    }
+
+    // Helper method to get resource storage from any building type
+    BuildingResourceStorage GetBuildingResourceStorage(MonoBehaviour building)
+    {
+        // Try Building component first
+        Building buildingComponent = building.GetComponent<Building>();
+        if (buildingComponent != null)
+        {
+            return buildingComponent.GetComponent<BuildingResourceStorage>();
+        }
+
+        // Try PrebuiltBuilding component
+        PrebuiltBuilding prebuiltBuilding = building.GetComponent<PrebuiltBuilding>();
+        if (prebuiltBuilding != null)
+        {
+            return prebuiltBuilding.GetResourceStorage();
+        }
+
+        // Try direct BuildingResourceStorage component
+        return building.GetComponent<BuildingResourceStorage>();
+    }
 
     void ApplyChoiceImpacts(AgentChoice choice)
     {
@@ -762,7 +838,7 @@ public class TaskDetailUI : MonoBehaviour
             }
         }
 
-        // NEW: Handle vehicle repair completion
+        // Handle vehicle repair completion
         if (currentTask.taskTitle.Contains("Vehicle Repair") && choice.choiceId == 1) // Immediate repair choice
         {
             // Extract vehicle ID from task description
