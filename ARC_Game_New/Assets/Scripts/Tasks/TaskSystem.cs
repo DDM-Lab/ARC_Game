@@ -515,6 +515,11 @@ public class TaskSystem : MonoBehaviour
         
         foreach (TaskData taskData in triggeredTasks)
         {
+            if (taskData == null)
+            {
+                Debug.LogWarning("Found null TaskData in database");
+                continue;
+            }
 
             // Skip if this alert was already shown
             if (taskData.taskType == TaskType.Alert)
@@ -545,15 +550,26 @@ public class TaskSystem : MonoBehaviour
 
     public GameTask CreateTaskFromDatabase(TaskData taskData)
     {
+        if (taskData == null)
+        {
+            Debug.LogError("TaskData is null in CreateTaskFromDatabase");
+            return null;
+        }
+
         // Find suitable facility that triggered the task
         MonoBehaviour triggeringFacility = taskDatabase.FindSuitableFacility(taskData);
         string facilityName = triggeringFacility?.name ?? taskData.targetFacilityType.ToString();
         
         GameTask newTask = CreateTaskFromData(taskData);
+        if (newTask == null)
+        {
+            if (showDebugInfo)
+                Debug.LogWarning($"Failed to create task from database: {taskData.taskTitle} - insufficient resources or other validation failure");
+            return null;
+        }
+
         newTask.affectedFacility = facilityName;
-        
-        // No need to set up delivery here - it's handled by choices now
-        
+
         if (showDebugInfo)
             Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
         
@@ -1046,26 +1062,35 @@ public class TaskSystem : MonoBehaviour
                 newChoice.choiceImpacts.Add(new TaskImpact(impact.impactType, impact.value, impact.isCountdown, impact.customLabel));
             }
 
-            MonoBehaviour source = FindTriggeringFacility(newTask);
-            if (source == null)
+            // NEW: Only validate delivery choices that actually trigger delivery
+            if (choice.triggersDelivery || choice.immediateDelivery)
             {
-                Debug.LogWarning($"No triggering facility found for task: {newTask.taskTitle}");
-                return null;
-            }
+                MonoBehaviour source = FindTriggeringFacility(newTask);
+                if (source == null)
+                {
+                    Debug.LogWarning($"No triggering facility found for task: {newTask.taskTitle}");
+                    return null;
+                }
 
-            // Calculate dynamic quantity according to type
-            int actualQuantity = CalculateDeliveryQuantity(choice, source);
+                // Calculate dynamic quantity according to type
+                int actualQuantity = CalculateDeliveryQuantity(choice, source);
 
-            if (actualQuantity <= 0)
-            {
-                Debug.LogWarning($"No resources available for delivery from {source.name}");
-                return null;
+                if (actualQuantity <= 0)
+                {
+                    Debug.LogWarning($"No resources available for delivery from {source.name} for choice: {choice.choiceText}");
+                    return null;
+                }
+
+                // Use calculated quantity for delivery choices
+                newChoice.deliveryQuantity = actualQuantity;
             }
 
             // Copy delivery configuration
             newChoice.triggersDelivery = choice.triggersDelivery;
+            newChoice.immediateDelivery = choice.immediateDelivery; // New
             newChoice.deliveryCargoType = choice.deliveryCargoType;
-            newChoice.deliveryQuantity = actualQuantity; // Use calculated quantity
+            newChoice.quantityType = choice.quantityType; // NEW: Copy quantity type
+            newChoice.deliveryPercentage = choice.deliveryPercentage; // NEW: Copy percentage
             newChoice.sourceType = choice.sourceType;
             newChoice.sourceBuilding = choice.sourceBuilding;
             newChoice.sourcePrebuilt = choice.sourcePrebuilt;
