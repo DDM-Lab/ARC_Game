@@ -1197,16 +1197,47 @@ public class TaskSystem : MonoBehaviour
                 return FindFacilityByName(choice.specificSourceName);
                 
             case DeliverySourceType.SpecificBuilding:
-                Debug.Log($"Looking for specific building type: {choice.sourceBuilding}");
+                /*Debug.Log($"Looking for specific building type: {choice.sourceBuilding}");
                 MonoBehaviour foundBuilding = FindNearestBuilding(choice.sourceBuilding, triggeringFacility?.transform.position, 
                                         choice.deliveryCargoType, true);
                 Debug.Log($"Found building: {foundBuilding?.name}");
-                return foundBuilding;
+                return foundBuilding;*/
+
+                // NEW: Exclude the triggering facility if it's also the destination
+                Building[] buildings = FindObjectsOfType<Building>()
+                    .Where(b => b.GetBuildingType() == choice.sourceBuilding)
+                    .Where(b => b != triggeringFacility || choice.destinationType != DeliveryDestinationType.RequestingFacility) // Conditional exclude
+                    .ToArray();
+
+                if (buildings.Length == 0) return null;
+
+                if (choice.prioritizeNearestSource && triggeringFacility != null)
+                {
+                    return FindNearestBuilding(choice.sourceBuilding, triggeringFacility?.transform.position, 
+                                        choice.deliveryCargoType, true);
+                }
+                return buildings[0];
+                
                 
             case DeliverySourceType.SpecificPrebuilt:
-                Debug.Log($"Looking for specific prebuilt type: {choice.sourcePrebuilt}");
+                /*Debug.Log($"Looking for specific prebuilt type: {choice.sourcePrebuilt}");
                 return FindNearestPrebuiltBuilding(choice.sourcePrebuilt, triggeringFacility?.transform.position,
+                                                choice.deliveryCargoType, true);*/
+                    // NEW: Exclude the triggering facility from prebuilt search
+                PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>()
+                .Where(p => p.GetPrebuiltType() == choice.sourcePrebuilt)
+                .Where(p => p != triggeringFacility || choice.destinationType != DeliveryDestinationType.RequestingFacility)
+                .ToArray();
+
+                if (prebuilts.Length == 0) return null;
+
+                if (choice.prioritizeNearestSource && triggeringFacility != null)
+                {
+                    return FindNearestPrebuiltBuilding(choice.sourcePrebuilt, triggeringFacility?.transform.position,
                                                 choice.deliveryCargoType, true);
+                }
+                return prebuilts[0];
+
                 
             case DeliverySourceType.AutoFind:
             default:
@@ -1233,7 +1264,7 @@ public class TaskSystem : MonoBehaviour
                 return FindFacilityByName(choice.specificDestinationName);
 
             case DeliveryDestinationType.SpecificBuilding:
-                Debug.Log($"Looking for specific building type: {choice.destinationBuilding}");
+                /*Debug.Log($"Looking for specific building type: {choice.destinationBuilding}");
 
                 // Debug: List all buildings
                 Building[] allBuildings = FindObjectsOfType<Building>();
@@ -1246,12 +1277,55 @@ public class TaskSystem : MonoBehaviour
                 MonoBehaviour foundBuilding = FindNearestBuilding(choice.destinationBuilding, triggeringFacility?.transform.position,
                                         choice.deliveryCargoType, false);
                 Debug.Log($"Found building result: {foundBuilding?.name}");
-                return foundBuilding;
+                return foundBuilding;*/
+
+                // NEW: Exclude the triggering facility from destination search
+                Building[] buildings = FindObjectsOfType<Building>()
+                .Where(b => b.GetBuildingType() == choice.destinationBuilding)
+                .Where(b => b != triggeringFacility) // Exclude source facility
+                .ToArray();
+
+                if (buildings.Length == 0)
+                {
+                    if (showDebugInfo)
+                        Debug.LogWarning($"No available {choice.destinationBuilding} buildings found (excluding source)");
+                    return null;
+                }
+
+                if (choice.prioritizeNearestDestination && triggeringFacility != null)
+                {
+                    return FindNearestBuilding(choice.destinationBuilding, triggeringFacility?.transform.position,
+                                        choice.deliveryCargoType, false);
+                }
+                return buildings[0];
+                
+
 
             case DeliveryDestinationType.SpecificPrebuilt:
-                Debug.Log($"Looking for specific prebuilt type: {choice.destinationPrebuilt}");
+                /*Debug.Log($"Looking for specific prebuilt type: {choice.destinationPrebuilt}");
                 return FindNearestPrebuiltBuilding(choice.destinationPrebuilt, triggeringFacility?.transform.position,
-                                                choice.deliveryCargoType, false);
+                                            choice.deliveryCargoType, false);*/
+                                                
+                // NEW: Exclude the triggering facility from prebuilt search
+                PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>()
+                    .Where(p => p.GetPrebuiltType() == choice.destinationPrebuilt)
+                    .Where(p => p != triggeringFacility) // Exclude source facility
+                    .ToArray();
+
+                if (prebuilts.Length == 0)
+                {
+                    if (showDebugInfo)
+                        Debug.LogWarning($"No available {choice.destinationPrebuilt} prebuilts found (excluding source)");
+                    return null;
+                }
+
+                if (choice.prioritizeNearestDestination && triggeringFacility != null)
+                {
+                    return FindNearestPrebuiltBuilding(choice.destinationPrebuilt, triggeringFacility?.transform.position,
+                                            choice.deliveryCargoType, false);
+                }
+                return prebuilts[0];
+
 
             case DeliveryDestinationType.AutoFind:
             default:

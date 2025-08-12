@@ -486,6 +486,13 @@ public class TaskDetailUI : MonoBehaviour
             return false;
         }
 
+        // NEW: Check if source and destination are the same
+        if (source == destination)
+        {
+            errorMessage = $"Cannot deliver to the same facility. Need alternative {choice.destinationType}";
+            return false;
+        }
+
         // Calculate actual quantity for validation
         int availableAmount = TaskSystem.Instance.CalculateDeliveryQuantity(choice, source);
 
