@@ -63,20 +63,16 @@ public class WeatherReportSystem : MonoBehaviour
         // Generate report messages
         report.agentMessages = new List<AgentMessage>();
         
-        // Weather Report
+        // Weather Report and disaster report
         string weatherReport = GenerateWeatherReport();
-        //report.agentMessages.Add(new AgentMessage($"🌤️ DAILY WEATHER REPORT", null));
-        report.agentMessages.Add(new AgentMessage(weatherReport, null));
-        
-        // Disaster Report
-        string disasterReport = GenerateDisasterReport();
-        //report.agentMessages.Add(new AgentMessage($"🚨 DISASTER STATUS REPORT", null));
-        report.agentMessages.Add(new AgentMessage(disasterReport, null));
+        string disasterReport = GenerateDisasterReport();  
+        report.agentMessages.Add(new AgentMessage(weatherReport + "\n" + disasterReport, null));
         
         // Forecast
         string forecast = GenerateForecast();
-        //report.agentMessages.Add(new AgentMessage($"📊 TODAY'S FORECAST", null));
         report.agentMessages.Add(new AgentMessage(forecast, null));
+        report.agentMessages.Add(new AgentMessage(weatherReport + "\n" + disasterReport, null));
+        
         
         return report;
     }
@@ -88,9 +84,9 @@ public class WeatherReportSystem : MonoBehaviour
         
         WeatherType currentWeather = weatherSystem.GetCurrentWeather();
         float rainIntensity = weatherSystem.GetRainIntensity();
-        
-        string report = $"Current weather: {currentWeather}";
-        
+
+        string report = $"Here is your daily weather report:\nCurrent weather: {currentWeather}";
+
         if (weatherSystem.IsRaining())
         {
             report += $"\nRain intensity: {rainIntensity:F1}";

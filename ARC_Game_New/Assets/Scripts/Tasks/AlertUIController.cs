@@ -201,8 +201,19 @@ public class AlertUIController : MonoBehaviour
         // Update agent icon for this message
         SetupAgentIcon(currentMessage);
         
-        // Start typing effect
-        StartTyping(currentMessage.messageText);
+        // Add small delay to prevent visual jumping
+        StartCoroutine(DelayedMessageStart(currentMessage.messageText));
+        
+    }
+
+    IEnumerator DelayedMessageStart(string message)
+    {
+        // Clear text and wait
+        messageText.text = "";
+        yield return new WaitForSecondsRealtime(0.1f);
+
+        // Start typing
+        StartTyping(message);
         
     }
     
