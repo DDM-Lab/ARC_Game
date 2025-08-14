@@ -19,10 +19,14 @@ MonoBehaviour:
     options and budget.
   taskImage: {fileID: 21300000, guid: c939145498029214ab7fc047d1938e25, type: 3}
   roundTriggers: []
-  populationTriggers: []
+  dayTriggers: []
   resourceTriggers: []
   probabilityTriggers:
   - probability: 0.5
+  floodTileTriggers: []
+  floodedFacilityTriggers: []
+  budgetTriggers: []
+  satisfactionTriggers: []
   requireAllTriggers: 1
   isGlobalTask: 0
   targetFacilityType: 3
@@ -44,16 +48,16 @@ MonoBehaviour:
   - messageText: We have a family that needs immediate relocation.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
-    typingSpeed: 0
+    typingSpeed: 0.05
   - messageText: They've been displaced and need somewhere to stay tonight.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
-    typingSpeed: 0
+    typingSpeed: 0.05
   - messageText: We have several options available. Where would you like to send
       them?
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
-    typingSpeed: 0
+    typingSpeed: 0.05
   agentChoices:
   - choiceId: 1
     choiceText: Send to Shelter (Free, limited space)
@@ -64,8 +68,12 @@ MonoBehaviour:
       customLabel: 
     isSelected: 0
     triggersDelivery: 1
+    immediateDelivery: 0
     deliveryCargoType: 0
+    quantityType: 0
     deliveryQuantity: 2
+    deliveryPercentage: 0
+    deliverAll: 0
     sourceType: 2
     sourceBuilding: 3
     sourcePrebuilt: 0
@@ -73,48 +81,6 @@ MonoBehaviour:
     destinationType: 0
     destinationBuilding: 1
     destinationPrebuilt: 0
-    specificDestinationName: 
-    prioritizeNearestSource: 0
-    prioritizeNearestDestination: 0
-  - choiceId: 2
-    choiceText: Send to Motel ($500, always available)
-    choiceImpacts:
-    - impactType: 0
-      value: 5
-      isCountdown: 0
-      customLabel: 
-    isSelected: 0
-    triggersDelivery: 1
-    deliveryCargoType: 0
-    deliveryQuantity: 2
-    sourceType: 2
-    sourceBuilding: 3
-    sourcePrebuilt: 0
-    specificSourceName: 
-    destinationType: 0
-    destinationBuilding: 4
-    destinationPrebuilt: 1
-    specificDestinationName: 
-    prioritizeNearestSource: 0
-    prioritizeNearestDestination: 0
-  - choiceId: 3
-    choiceText: Keep them here for now (overcrowding risk)
-    choiceImpacts:
-    - impactType: 0
-      value: -10
-      isCountdown: 0
-      customLabel: 
-    isSelected: 0
-    triggersDelivery: 0
-    deliveryCargoType: 0
-    deliveryQuantity: 0
-    sourceType: 2
-    sourceBuilding: 3
-    sourcePrebuilt: 0
-    specificSourceName: 
-    destinationType: 2
-    destinationBuilding: 4
-    destinationPrebuilt: 1
     specificDestinationName: 
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0

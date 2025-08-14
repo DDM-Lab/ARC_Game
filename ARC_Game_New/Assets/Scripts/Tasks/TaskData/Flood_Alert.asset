@@ -18,7 +18,7 @@ MonoBehaviour:
   description: Flood levels are rising. We should prepare for potential evacuations.
   taskImage: {fileID: 0}
   roundTriggers: []
-  populationTriggers: []
+  dayTriggers: []
   resourceTriggers: []
   probabilityTriggers: []
   floodTileTriggers:
@@ -27,6 +27,8 @@ MonoBehaviour:
     targetValue: 10
     previousFloodCount: 0
   floodedFacilityTriggers: []
+  budgetTriggers: []
+  satisfactionTriggers: []
   requireAllTriggers: 1
   isGlobalTask: 1
   targetFacilityType: 1

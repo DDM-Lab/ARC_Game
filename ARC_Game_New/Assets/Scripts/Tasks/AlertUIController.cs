@@ -287,14 +287,51 @@ public class AlertUIController : MonoBehaviour
             StopCoroutine(typingCoroutine);
         }
         
-        // Show full message immediately
+        // Show full message immediately with proper layout
         if (currentMessageIndex < alertMessages.Count)
         {
-            messageText.text = alertMessages[currentMessageIndex].messageText;
+            string fullMessage = alertMessages[currentMessageIndex].messageText;
+            
+            // Temporarily disable Content Size Fitters to prevent flickering
+            ContentSizeFitter textFitter = messageText.GetComponent<ContentSizeFitter>();
+            ContentSizeFitter panelFitter = messageText.transform.parent.GetComponent<ContentSizeFitter>();
+            
+            bool textFitterWasEnabled = textFitter != null && textFitter.enabled;
+            bool panelFitterWasEnabled = panelFitter != null && panelFitter.enabled;
+            
+            // Disable fitters
+            if (textFitter != null) textFitter.enabled = false;
+            if (panelFitter != null) panelFitter.enabled = false;
+            
+            // Set the text
+            messageText.text = fullMessage;
+            
+            // Wait one frame then re-enable and rebuild
+            StartCoroutine(RestoreLayoutAfterSkip(textFitter, panelFitter, textFitterWasEnabled, panelFitterWasEnabled));
         }
         
         isTyping = false;
         nextButton.interactable = true;
+    }
+
+    /// <summary>
+    /// Restore layout components after skip
+    /// </summary>
+    IEnumerator RestoreLayoutAfterSkip(ContentSizeFitter textFitter, ContentSizeFitter panelFitter, bool textWasEnabled, bool panelWasEnabled)
+    {
+        yield return new WaitForEndOfFrame();
+        
+        // Re-enable fitters
+        if (textFitter != null && textWasEnabled) textFitter.enabled = true;
+        if (panelFitter != null && panelWasEnabled) panelFitter.enabled = true;
+        
+        // Force layout rebuild
+        yield return new WaitForEndOfFrame();
+        Canvas.ForceUpdateCanvases();
+        LayoutRebuilder.ForceRebuildLayoutImmediate(messageText.GetComponent<RectTransform>());
+        if (panelFitter != null)
+            LayoutRebuilder.ForceRebuildLayoutImmediate(messageText.transform.parent.GetComponent<RectTransform>());
+        LayoutRebuilder.ForceRebuildLayoutImmediate(alertPanel.GetComponent<RectTransform>());
     }
     
     /// <summary>
@@ -435,7 +472,12 @@ public class AlertUIController : MonoBehaviour
         
         // Re-enable camera controls if needed
     }
-    
+
+    public bool IsUIOpen()
+    {
+        return alertPanel.activeSelf;
+    } 
+
     void OnDestroy()
     {
         if (TaskSystem.Instance != null)

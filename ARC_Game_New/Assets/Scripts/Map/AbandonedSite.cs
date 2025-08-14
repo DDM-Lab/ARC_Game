@@ -94,6 +94,17 @@ public class AbandonedSite : MonoBehaviour
                 return true;
             }
         }
+
+        AlertUIController alertUI = FindObjectOfType<AlertUIController>();
+        if (alertUI != null && alertUI.IsUIOpen())
+        {
+            // Only block if pointer is actually over the UI panels
+            if (EventSystem.current.IsPointerOverGameObject())
+            {
+                return true;
+            }
+        }
+
         return false;
     }
     

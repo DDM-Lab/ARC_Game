@@ -20,7 +20,11 @@ MonoBehaviour:
   taskImage: {fileID: 0}
   roundTriggers: []
   dayTriggers: []
-  resourceTriggers: []
+  resourceTriggers:
+  - facilityType: 1
+    resourceType: 0
+    resourceThreshold: 0
+    condition: 3
   probabilityTriggers: []
   floodTileTriggers: []
   floodedFacilityTriggers:
@@ -33,7 +37,7 @@ MonoBehaviour:
   budgetTriggers: []
   satisfactionTriggers: []
   requireAllTriggers: 1
-  isGlobalTask: 1
+  isGlobalTask: 0
   targetFacilityType: 1
   autoSelectFacility: 1
   specificFacility: {fileID: 0}

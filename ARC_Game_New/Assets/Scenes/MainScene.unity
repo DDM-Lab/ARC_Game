@@ -23731,6 +23731,7 @@ GameObject:
   - component: {fileID: 978748999}
   - component: {fileID: 978748998}
   - component: {fileID: 978749001}
+  - component: {fileID: 978749002}
   m_Layer: 0
   m_Name: TaskSystem
   m_TagString: Untagged
@@ -23877,6 +23878,22 @@ MonoBehaviour:
   typingSoundEffect: {fileID: 0}
   audioSource: {fileID: 0}
   defaultAgentSprite: {fileID: 21300000, guid: 941cebf6bbf755c4dbe5a2dbdb31b1f4, type: 3}
+--- !u!114 &978749002
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 978748995}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7017394265702ed40acacd0de4331733, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  weatherSystem: {fileID: 146349968}
+  floodSystem: {fileID: 550057046}
+  enableDailyReports: 1
+  showDebugInfo: 1
 --- !u!1 &1001303809
 GameObject:
   m_ObjectHideFlags: 0
@@ -24571,6 +24588,7 @@ GameObject:
   - component: {fileID: 1027441500}
   - component: {fileID: 1027441499}
   - component: {fileID: 1027441498}
+  - component: {fileID: 1027441501}
   m_Layer: 5
   m_Name: AgentAlertText
   m_TagString: Untagged
@@ -24595,7 +24613,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
   m_AnchoredPosition: {x: 435, y: -73.025}
-  m_SizeDelta: {x: 690, y: 26.05}
+  m_SizeDelta: {x: 690, y: 28}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1027441498
 MonoBehaviour:
@@ -24708,6 +24726,26 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1027441496}
   m_CullTransparentMesh: 1
+--- !u!114 &1027441501
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1027441496}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 306cc8c2b49d7114eaa3623786fc2126, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_IgnoreLayout: 0
+  m_MinWidth: -1
+  m_MinHeight: 28
+  m_PreferredWidth: -1
+  m_PreferredHeight: -1
+  m_FlexibleWidth: -1
+  m_FlexibleHeight: -1
+  m_LayoutPriority: 1
 --- !u!1 &1032132258
 GameObject:
   m_ObjectHideFlags: 0
