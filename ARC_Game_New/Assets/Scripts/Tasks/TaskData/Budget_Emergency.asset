@@ -1,0 +1,139 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c182747abbcaae4ab5183b8a6d24a10, type: 3}
+  m_Name: Budget_Emergency
+  m_EditorClassIdentifier: 
+  taskId: Budget_Emergency
+  taskTitle: Emergency Budget Crisis
+  taskType: 0
+  description: 'CRITICAL: We''ve run out of funds!'
+  taskImage: {fileID: 0}
+  roundTriggers: []
+  dayTriggers: []
+  resourceTriggers: []
+  probabilityTriggers: []
+  floodTileTriggers: []
+  floodedFacilityTriggers: []
+  budgetTriggers:
+  - conditionType: 0
+    comparison: 2
+    targetValue: 1
+    previousBudget: 0
+  satisfactionTriggers: []
+  workforceTriggers: []
+  facilityStatusTriggers: []
+  requireAllTriggers: 1
+  isGlobalTask: 0
+  targetFacilityType: 1
+  autoSelectFacility: 1
+  specificFacility: {fileID: 0}
+  roundsRemaining: 1
+  realTimeRemaining: 300
+  hasRealTimeLimit: 0
+  impacts:
+  - impactType: 5
+    value: 1
+    isCountdown: 0
+    customLabel: 
+  - impactType: 0
+    value: 5
+    isCountdown: 0
+    customLabel: 
+  agentMessages:
+  - messageText: Our accounts are empty. Operations will halt without immediate funding.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  - messageText: I've prepared several funding requests. Choose based on urgency
+      and political cost.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  agentChoices:
+  - choiceId: 0
+    choiceText: Emergency allocation ($5,000) - Fast approval
+    choiceImpacts:
+    - impactType: 1
+      value: 5000
+      isCountdown: 0
+      customLabel: 
+    isSelected: 0
+    triggersDelivery: 0
+    immediateDelivery: 0
+    deliveryCargoType: 0
+    quantityType: 0
+    deliveryQuantity: 0
+    deliveryPercentage: 0
+    deliverAll: 0
+    sourceType: 0
+    sourceBuilding: 0
+    sourcePrebuilt: 0
+    specificSourceName: 
+    destinationType: 0
+    destinationBuilding: 0
+    destinationPrebuilt: 0
+    specificDestinationName: 
+    prioritizeNearestSource: 0
+    prioritizeNearestDestination: 0
+  - choiceId: 1
+    choiceText: Disaster relief fund ($15,000) - Standard request
+    choiceImpacts:
+    - impactType: 1
+      value: 15000
+      isCountdown: 0
+      customLabel: 
+    isSelected: 0
+    triggersDelivery: 0
+    immediateDelivery: 0
+    deliveryCargoType: 0
+    quantityType: 0
+    deliveryQuantity: 0
+    deliveryPercentage: 0
+    deliverAll: 0
+    sourceType: 0
+    sourceBuilding: 0
+    sourcePrebuilt: 0
+    specificSourceName: 
+    destinationType: 0
+    destinationBuilding: 0
+    destinationPrebuilt: 0
+    specificDestinationName: 
+    prioritizeNearestSource: 0
+    prioritizeNearestDestination: 0
+  - choiceId: 2
+    choiceText: Federal emergency grant ($30,000) - Takes time but substantial
+    choiceImpacts:
+    - impactType: 1
+      value: 15000
+      isCountdown: 0
+      customLabel: 
+    isSelected: 0
+    triggersDelivery: 0
+    immediateDelivery: 0
+    deliveryCargoType: 0
+    quantityType: 0
+    deliveryQuantity: 0
+    deliveryPercentage: 0
+    deliverAll: 0
+    sourceType: 0
+    sourceBuilding: 0
+    sourcePrebuilt: 0
+    specificSourceName: 
+    destinationType: 0
+    destinationBuilding: 0
+    destinationPrebuilt: 0
+    specificDestinationName: 
+    prioritizeNearestSource: 0
+    prioritizeNearestDestination: 0
+  numericalInputs: []
+  deliveryFailureSatisfactionPenalty: 10
+  deliveryTimeLimit: 300

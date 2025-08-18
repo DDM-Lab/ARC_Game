@@ -26,6 +26,9 @@ public class TaskData : ScriptableObject
     public List<FloodedFacilityTrigger> floodedFacilityTriggers = new List<FloodedFacilityTrigger>();
     public List<BudgetTrigger> budgetTriggers = new List<BudgetTrigger>();
     public List<SatisfactionTrigger> satisfactionTriggers = new List<SatisfactionTrigger>();
+    public List<WorkforceTrigger> workforceTriggers = new List<WorkforceTrigger>();
+    public List<FacilityStatusTrigger> facilityStatusTriggers = new List<FacilityStatusTrigger>();
+    public List<WeatherTrigger> weatherTriggers = new List<WeatherTrigger>();
 
     public bool requireAllTriggers = true; // AND vs OR logic
 

@@ -663,50 +663,50 @@ public class BudgetTrigger : TaskTrigger
     public BudgetConditionType conditionType = BudgetConditionType.CurrentAmount;
     public ComparisonType comparison = ComparisonType.LessThan;
     public float targetValue = 1000f;
-    
+
     [Header("Change Tracking")]
     public float previousBudget = 0f;
-    
+
     public enum BudgetConditionType
     {
         CurrentAmount,      // Current budget amount
         BudgetDecreased,    // Budget decreased by N
         BudgetIncreased     // Budget increased by N
     }
-    
+
     public enum ComparisonType
     {
         ExactMatch, MoreThan, LessThan, AtLeast, AtMost
     }
-    
+
     public override bool CheckCondition()
     {
         if (SatisfactionAndBudget.Instance == null) return false;
-        
+
         float currentBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
-        
+
         switch (conditionType)
         {
             case BudgetConditionType.CurrentAmount:
                 return CheckComparison(currentBudget, targetValue);
-                
+
             case BudgetConditionType.BudgetDecreased:
                 float decrease = previousBudget - currentBudget;
                 bool decreaseMatch = decrease > 0 && CheckComparison(decrease, targetValue);
                 previousBudget = currentBudget;
                 return decreaseMatch;
-                
+
             case BudgetConditionType.BudgetIncreased:
                 float increase = currentBudget - previousBudget;
                 bool increaseMatch = increase > 0 && CheckComparison(increase, targetValue);
                 previousBudget = currentBudget;
                 return increaseMatch;
-                
+
             default:
                 return false;
         }
     }
-    
+
     bool CheckComparison(float actualValue, float targetValue)
     {
         switch (comparison)
@@ -719,7 +719,7 @@ public class BudgetTrigger : TaskTrigger
             default: return false;
         }
     }
-    
+
     public override string GetDescription()
     {
         string comparisonText = GetComparisonText();
@@ -734,7 +734,7 @@ public class BudgetTrigger : TaskTrigger
             default: return "Unknown budget condition";
         }
     }
-    
+
     string GetComparisonText()
     {
         switch (comparison)
@@ -746,5 +746,202 @@ public class BudgetTrigger : TaskTrigger
             case ComparisonType.AtMost: return "at most";
             default: return "";
         }
+    }
+}
+
+[System.Serializable]
+public class WorkforceTrigger : TaskTrigger
+{
+    [Header("Workforce Condition")]
+    public WorkforceConditionType conditionType = WorkforceConditionType.CurrentAvailableWorkforce;
+    public ComparisonType comparison = ComparisonType.LessThan;
+    public float targetValue = 1000f;
+
+    public enum WorkforceConditionType
+    {
+        CurrentAvailableWorkforce,      // Current available workforce amount
+        TrainedUntrainedRatio, // Trained vs Untrained workforce ratio
+        IdleWorkerPercentage,   // Idle worker percentage
+    }
+
+    public enum ComparisonType
+    {
+        ExactMatch, MoreThan, LessThan, AtLeast, AtMost
+    }
+
+    public override bool CheckCondition()
+    {
+        if (WorkerSystem.Instance == null)
+        {
+            Debug.LogWarning("WorkerSystem instance is null in WorkforceTrigger");
+            return false;
+        }
+
+        switch (conditionType)
+        {
+            case WorkforceConditionType.CurrentAvailableWorkforce:
+                float currentAvailable = WorkerSystem.Instance.GetTotalAvailableWorkforce();
+                return CheckComparison(currentAvailable, targetValue);
+
+            case WorkforceConditionType.TrainedUntrainedRatio:
+                float trained = WorkerSystem.Instance.GetTrainedWorkersCount();
+                float untrained = WorkerSystem.Instance.GetUntrainedWorkersCount();
+                float ratio = untrained > 0 ? trained / untrained : 0;
+                return CheckComparison(ratio, targetValue);
+
+            case WorkforceConditionType.IdleWorkerPercentage:
+                float idlePercentage = WorkerSystem.Instance.GetIdleWorkerPercentage();
+                return CheckComparison(idlePercentage, targetValue);
+
+            default:
+                return false;
+        }
+    }
+
+    bool CheckComparison(float actualValue, float targetValue)
+    {
+        switch (comparison)
+        {
+            case ComparisonType.ExactMatch: return Mathf.Approximately(actualValue, targetValue);
+            case ComparisonType.MoreThan: return actualValue > targetValue;
+            case ComparisonType.LessThan: return actualValue < targetValue;
+            case ComparisonType.AtLeast: return actualValue >= targetValue;
+            case ComparisonType.AtMost: return actualValue <= targetValue;
+            default: return false;
+        }
+    }
+
+    public override string GetDescription()
+    {
+        string comparisonText = GetComparisonText();
+        switch (conditionType)
+        {
+            case WorkforceConditionType.CurrentAvailableWorkforce:
+                return $"Current available workforce {comparisonText} {targetValue}";
+            case WorkforceConditionType.TrainedUntrainedRatio:
+                return $"Trained/Untrained ratio {comparisonText} {targetValue}";
+            case WorkforceConditionType.IdleWorkerPercentage:
+                return $"Idle worker percentage {comparisonText} {targetValue}";
+            default: return "Unknown workforce condition";
+        }
+    }
+
+    string GetComparisonText()
+    {
+        switch (comparison)
+        {
+            case ComparisonType.ExactMatch: return "exactly";
+            case ComparisonType.MoreThan: return "more than";
+            case ComparisonType.LessThan: return "less than";
+            case ComparisonType.AtLeast: return "at least";
+            case ComparisonType.AtMost: return "at most";
+            default: return "";
+        }
+    }
+}
+
+[System.Serializable]
+public class FacilityStatusTrigger : TaskTrigger
+{
+    [Header("Facility Status Condition")]
+    public bool specificFacilityOnly = false;
+    public BuildingType facilityType = BuildingType.Shelter;
+    public FacilityStatus requiredStatus = FacilityStatus.NeedWorker;
+    public int minimumCount = 1;
+
+    public enum FacilityStatus
+    {
+        UnderConstruction,
+        NeedWorker,
+        InUse,
+        Disabled
+    }
+
+    public override bool CheckCondition()
+    {
+        Building[] buildings = Object.FindObjectsOfType<Building>();
+        int matchingCount = 0;
+
+        foreach (Building building in buildings)
+        {
+            if (specificFacilityOnly && building.GetBuildingType() != facilityType)
+                continue;
+
+            bool statusMatch = false;
+            switch (requiredStatus)
+            {
+                case FacilityStatus.UnderConstruction:
+                    statusMatch = building.IsUnderConstruction();
+                    break;
+                case FacilityStatus.NeedWorker:
+                    statusMatch = building.NeedsWorker();
+                    break;
+                case FacilityStatus.InUse:
+                    statusMatch = building.IsOperational();
+                    break;
+                case FacilityStatus.Disabled:
+                    statusMatch = building.IsDisabled();
+                    break;
+            }
+
+            if (statusMatch)
+            {
+                matchingCount++;
+                if (matchingCount >= minimumCount)
+                {
+                    return true; // Condition met
+                }
+            }
+
+        }
+
+        return false; // Condition not met
+    }
+    
+    public override string GetDescription()
+    {
+        string facilityText = specificFacilityOnly ? facilityType.ToString() : "Any Facility";
+        return $"{facilityText} {requiredStatus} (Min: {minimumCount})";
+    }
+}
+
+
+[System.Serializable]
+public class WeatherTrigger : TaskTrigger
+{
+    [Header("Weather Condition")]
+    public WeatherSeverity conditionType = WeatherSeverity.Severe;
+
+    public enum WeatherSeverity
+    {
+        Light,
+        Moderate,
+        Severe
+    }
+
+    public override bool CheckCondition()
+    {
+        if (WeatherSystem.Instance == null) return false;
+
+        WeatherType currentWeather = WeatherSystem.Instance.GetCurrentWeather();
+        switch (conditionType)
+        {
+            case WeatherSeverity.Light:
+                return currentWeather == WeatherType.Sunny;
+            case WeatherSeverity.Moderate:
+                return currentWeather == WeatherType.MediumRain || currentWeather == WeatherType.SmallRain;
+            case WeatherSeverity.Severe:
+                return currentWeather == WeatherType.HeavyRain || currentWeather == WeatherType.Storm;
+            default:
+                return false;
+        }
+        
+    }
+
+
+    public override string GetDescription()
+    {
+        string conditionText = conditionType.ToString();
+        return $"Current weather's severity level is {conditionText}";
     }
 }

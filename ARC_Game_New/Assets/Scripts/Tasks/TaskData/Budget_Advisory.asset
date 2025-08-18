@@ -1,0 +1,105 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c182747abbcaae4ab5183b8a6d24a10, type: 3}
+  m_Name: Budget_Advisory
+  m_EditorClassIdentifier: 
+  taskId: Budget_Advisory
+  taskTitle: Storm Funding Advisory
+  taskType: 2
+  description: 'Weather Alert: Major storm incoming!'
+  taskImage: {fileID: 0}
+  roundTriggers: []
+  dayTriggers: []
+  resourceTriggers: []
+  probabilityTriggers: []
+  floodTileTriggers: []
+  floodedFacilityTriggers: []
+  budgetTriggers: []
+  satisfactionTriggers: []
+  workforceTriggers: []
+  facilityStatusTriggers: []
+  weatherTriggers:
+  - conditionType: 2
+  requireAllTriggers: 1
+  isGlobalTask: 1
+  targetFacilityType: 1
+  autoSelectFacility: 1
+  specificFacility: {fileID: 0}
+  roundsRemaining: 2
+  realTimeRemaining: 300
+  hasRealTimeLimit: 0
+  impacts:
+  - impactType: 0
+    value: 5
+    isCountdown: 0
+    customLabel: 
+  agentMessages:
+  - messageText: Meteorology reports intensifying storm conditions. This could overwhelm
+      our current resources.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  - messageText: I strongly recommend securing additional funding now, before the
+      situation deteriorates further.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  agentChoices:
+  - choiceId: 0
+    choiceText: Request pre-disaster funding ($10,000)
+    choiceImpacts:
+    - impactType: 1
+      value: 10000
+      isCountdown: 0
+      customLabel: 
+    isSelected: 0
+    triggersDelivery: 0
+    immediateDelivery: 0
+    deliveryCargoType: 0
+    quantityType: 0
+    deliveryQuantity: 0
+    deliveryPercentage: 0
+    deliverAll: 0
+    sourceType: 0
+    sourceBuilding: 0
+    sourcePrebuilt: 0
+    specificSourceName: 
+    destinationType: 0
+    destinationBuilding: 0
+    destinationPrebuilt: 0
+    specificDestinationName: 
+    prioritizeNearestSource: 0
+    prioritizeNearestDestination: 0
+  - choiceId: 1
+    choiceText: Wait and see - conserve current budget
+    choiceImpacts: []
+    isSelected: 0
+    triggersDelivery: 0
+    immediateDelivery: 0
+    deliveryCargoType: 0
+    quantityType: 0
+    deliveryQuantity: 0
+    deliveryPercentage: 0
+    deliverAll: 0
+    sourceType: 0
+    sourceBuilding: 0
+    sourcePrebuilt: 0
+    specificSourceName: 
+    destinationType: 0
+    destinationBuilding: 0
+    destinationPrebuilt: 0
+    specificDestinationName: 
+    prioritizeNearestSource: 0
+    prioritizeNearestDestination: 0
+  numericalInputs: []
+  deliveryFailureSatisfactionPenalty: 10
+  deliveryTimeLimit: 300

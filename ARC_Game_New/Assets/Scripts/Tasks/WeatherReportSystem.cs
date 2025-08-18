@@ -1,12 +1,19 @@
 using UnityEngine;
 using System.Collections.Generic;
+using TMPro;
 
 public class WeatherReportSystem : MonoBehaviour
 {
     [Header("System References")]
     public WeatherSystem weatherSystem;
     public FloodSystem floodSystem;
-    
+
+    [Header("Today's Disaster Info UI Reference")]
+    public TextMeshProUGUI FoodDemandText;
+    public TextMeshProUGUI LodgingDemandText;
+    public TextMeshProUGUI EmergencyPossibilityText;
+    public TextMeshProUGUI FloodingExpansionText;
+
     [Header("Report Settings")]
     public bool enableDailyReports = true;
     public bool showDebugInfo = true;
@@ -71,9 +78,11 @@ public class WeatherReportSystem : MonoBehaviour
         // Forecast
         string forecast = GenerateForecast();
         report.agentMessages.Add(new AgentMessage(forecast, null));
-        report.agentMessages.Add(new AgentMessage(weatherReport + "\n" + disasterReport, null));
-        
-        
+
+        // Emergency preparedness
+        string preparednessAdvice = GeneratePreparednessAdvice();
+        report.agentMessages.Add(new AgentMessage(preparednessAdvice, null));
+
         return report;
     }
     
@@ -90,17 +99,27 @@ public class WeatherReportSystem : MonoBehaviour
         if (weatherSystem.IsRaining())
         {
             report += $"\nRain intensity: {rainIntensity:F1}";
-            
+
             if (rainIntensity > 0.7f)
+            {
                 report += " (Heavy rain - flood risk HIGH)";
+                FloodingExpansionText.text = "High";
+            }
             else if (rainIntensity > 0.4f)
+            {
                 report += " (Moderate rain - flood risk MEDIUM)";
+                FloodingExpansionText.text = "Medium";
+            }
             else
+            {
                 report += " (Light rain - flood risk LOW)";
+                FloodingExpansionText.text = "Low";
+            }
         }
         else
         {
             report += "\nNo precipitation expected - flood risk MINIMAL";
+            FloodingExpansionText.text = "None";
         }
         
         return report;
@@ -113,7 +132,7 @@ public class WeatherReportSystem : MonoBehaviour
         
         int currentFloodTiles = floodSystem.GetFloodTileCount();
         string report;
-        
+
         if (currentFloodTiles == 0)
         {
             report = "✅ No active flood areas detected.\nAll facilities operating at normal capacity.";
@@ -121,24 +140,38 @@ public class WeatherReportSystem : MonoBehaviour
         else
         {
             report = $"⚠️ Active flood coverage: {currentFloodTiles} tiles";
-            
+
             // Check affected facilities
             int affectedFacilities = CountFloodAffectedFacilities();
             if (affectedFacilities > 0)
             {
                 report += $"\n🏠 Facilities impacted by flood: {affectedFacilities}";
                 report += "\nCapacity reductions may be in effect.";
+                LodgingDemandText.text = "High";
             }
-            
+            else
+            {
+                report += "\nNo facilities currently affected by flood.";
+                LodgingDemandText.text = "Normal";
+            }
+
             // Flood severity assessment
             if (currentFloodTiles > 20)
+            {
                 report += "\n🚨 MAJOR flood event - emergency protocols active";
+                EmergencyPossibilityText.text = "High";
+            }
             else if (currentFloodTiles > 10)
+            {
                 report += "\n⚠️ MODERATE flood event - monitor closely";
+                EmergencyPossibilityText.text = "Medium";
+            }
             else
+            {
                 report += "\n📊 MINOR flood event - manageable impact";
+                EmergencyPossibilityText.text = "Low";
+            }
         }
-        
         return report;
     }
 
@@ -174,9 +207,6 @@ public class WeatherReportSystem : MonoBehaviour
             // Resource demand forecast
             forecast += GenerateResourceDemandForecast();
 
-            // Emergency preparedness
-            forecast += GeneratePreparednessAdvice();
-
             return forecast;
         }
         else
@@ -192,48 +222,52 @@ public class WeatherReportSystem : MonoBehaviour
         
         // Get current day for demand patterns
         int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
-        
+
         // Simple demand patterns based on day
         if (currentDay % 3 == 0)
         {
             demand += "• HIGH demand for food supplies expected\n";
             demand += "• Population movement may increase\n";
+            FoodDemandText.text = "High";
         }
         else if (currentDay % 2 == 0)
         {
             demand += "• MODERATE resource consumption expected\n";
             demand += "• Normal population stability\n";
+            FoodDemandText.text = "Medium";
         }
         else
         {
             demand += "• LOW to NORMAL demand anticipated\n";
             demand += "• Stable resource requirements\n";
+            FoodDemandText.text = "Low";
         }
-        
+
         // Weather-based adjustments
         if (weatherSystem != null && weatherSystem.IsRaining())
         {
             demand += "• Increased shelter demand due to weather\n";
             demand += "• Emergency supplies may be needed\n";
         }
-        
+
         return demand;
     }
     
     string GeneratePreparednessAdvice()
     {
-        string advice = "\n💡 Preparedness Recommendations:\n";
+        string advice = "💡 Preparedness Recommendations:\n";
         
         // Weather-based advice
         if (weatherSystem != null)
         {
             float rainIntensity = weatherSystem.GetRainIntensity();
-            
+
             if (rainIntensity > 0.6f)
             {
                 advice += "• Prepare for potential evacuations\n";
                 advice += "• Ensure emergency vehicles are ready\n";
                 advice += "• Monitor shelter capacity closely\n";
+                
             }
             else if (rainIntensity > 0.3f)
             {

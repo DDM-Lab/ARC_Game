@@ -66,6 +66,15 @@ public class TaskDatabase : ScriptableObject
         foreach (var trigger in taskData.satisfactionTriggers)
             triggerResults.Add(trigger.CheckCondition());
 
+        foreach (var trigger in taskData.workforceTriggers)
+            triggerResults.Add(trigger.CheckCondition());
+
+        foreach (var trigger in taskData.facilityStatusTriggers)
+            triggerResults.Add(trigger.CheckCondition());
+
+        foreach (var trigger in taskData.weatherTriggers)
+            triggerResults.Add(trigger.CheckCondition());
+
         if (triggerResults.Count == 0) return false; // No triggers = never activate
         
         if (taskData.requireAllTriggers)
