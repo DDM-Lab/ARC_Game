@@ -93,9 +93,9 @@ public class FloodTaskGenerator : MonoBehaviour
         roadBlockageTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, 1, false, "Urgent Response"));
 
         // Add agent messages
-        roadBlockageTask.agentMessages.Add(new AgentMessage($"Emergency! Vehicle {blockedVehicle.GetVehicleName()} is blocked by flood!", TaskSystem.Instance.defaultAgentAvatar));
-        roadBlockageTask.agentMessages.Add(new AgentMessage($"The vehicle was transporting {originalDelivery.quantity} {originalDelivery.cargoType} from {originalDelivery.sourceBuilding.name} to {originalDelivery.destinationBuilding.name}."));
-        roadBlockageTask.agentMessages.Add(new AgentMessage("We need to decide how to handle this situation immediately."));
+        roadBlockageTask.agentMessages.Add(new AgentMessage($"Emergency! Vehicle {blockedVehicle.GetVehicleName()} is blocked by flood!", TaskSystem.Instance.foodMassCareSprite));
+        roadBlockageTask.agentMessages.Add(new AgentMessage($"The vehicle was transporting {originalDelivery.quantity} {originalDelivery.cargoType} from {originalDelivery.sourceBuilding.name} to {originalDelivery.destinationBuilding.name}.", TaskSystem.Instance.foodMassCareSprite));
+        roadBlockageTask.agentMessages.Add(new AgentMessage("We need to decide how to handle this situation immediately.", TaskSystem.Instance.foodMassCareSprite));
 
         // Create choices based on cargo type
         if (originalDelivery.cargoType == ResourceType.FoodPacks)
@@ -222,8 +222,8 @@ public class FloodTaskGenerator : MonoBehaviour
         repairTask.impacts.Add(new TaskImpact(ImpactType.Workforce, 2, false, "Repair Crew"));
         
         // Add agent messages
-        repairTask.agentMessages.Add(new AgentMessage($"Vehicle {damagedVehicle.GetVehicleName()} needs repair after flood damage.", TaskSystem.Instance.defaultAgentAvatar));
-        repairTask.agentMessages.Add(new AgentMessage("We can either repair it now or wait, but the vehicle won't be available until fixed."));
+        repairTask.agentMessages.Add(new AgentMessage($"Vehicle {damagedVehicle.GetVehicleName()} needs repair after flood damage.", TaskSystem.Instance.foodMassCareSprite));
+        repairTask.agentMessages.Add(new AgentMessage("We can either repair it now or wait, but the vehicle won't be available until fixed.", TaskSystem.Instance.foodMassCareSprite));
         
         // Add repair choices
         AgentChoice immediateRepairChoice = new AgentChoice(1, "Repair immediately ($800, 2 workforce)");

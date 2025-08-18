@@ -15,6 +15,8 @@ public class TaskData : ScriptableObject
     [TextArea(3, 5)]
     public string description;
     public Sprite taskImage;
+    [Header("Task Officer")]
+    public TaskOfficer taskOfficer = TaskOfficer.DisasterOfficer;
 
     [Header("Task Triggers")]
     public List<TaskTrigger> allTriggers = new List<TaskTrigger>();

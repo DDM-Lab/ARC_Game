@@ -58,6 +58,15 @@ public enum DeliveryDestinationType
     ManualAssignment
 }
 
+public enum TaskOfficer
+{
+    DisasterOfficer,    // Default
+    WorkforceService,
+    LodgingMassCare,
+    ExternalRelationship,
+    FoodMassCare
+}
+
 [System.Serializable]
 public class TaskImpact
 {
@@ -85,6 +94,9 @@ public class GameTask
     public string affectedFacility;
     public string description;
     public Sprite taskImage;
+
+    [Header("Task Officer")]
+    public TaskOfficer taskOfficer = TaskOfficer.DisasterOfficer;
     
     [Header("Timing")]
     public int roundsRemaining = 3; // Rounds until expiry
@@ -236,7 +248,13 @@ public class TaskSystem : MonoBehaviour
 
     [Header("Default Assets")]
     public Sprite defaultTaskImage;
-    public Sprite defaultAgentAvatar;
+    
+        [Header("Agent Icons")]
+    public Sprite defaultAgentSprite;
+    public Sprite workforceServiceSprite;
+    public Sprite lodgingMassCareSprite;
+    public Sprite externalRelationshipSprite;
+    public Sprite foodMassCareSprite;
 
     [Header("Task Database")]
     public TaskDatabase taskDatabase;
@@ -1025,6 +1043,7 @@ public class TaskSystem : MonoBehaviour
         // Copy basic info
         newTask.description = taskData.description;
         newTask.taskImage = taskData.taskImage;
+        newTask.taskOfficer = taskData.taskOfficer;
 
         // Copy time settings
         newTask.roundsRemaining = taskData.roundsRemaining;
@@ -1042,7 +1061,8 @@ public class TaskSystem : MonoBehaviour
         newTask.agentMessages = new List<AgentMessage>();
         foreach (AgentMessage message in taskData.agentMessages)
         {
-            newTask.agentMessages.Add(new AgentMessage(message.messageText, message.agentAvatar)
+            Sprite agentIcon = GetOfficerAvatar(taskData.taskOfficer);
+            newTask.agentMessages.Add(new AgentMessage(message.messageText, agentIcon)
             {
                 useTypingEffect = message.useTypingEffect,
                 typingSpeed = message.typingSpeed
@@ -1127,18 +1147,31 @@ public class TaskSystem : MonoBehaviour
 
         return newTask;
     }
+    
+    Sprite GetOfficerAvatar(TaskOfficer officer)
+    {
+        switch (officer)
+        {
+            case TaskOfficer.DisasterOfficer: return defaultAgentSprite;
+            case TaskOfficer.WorkforceService: return workforceServiceSprite;
+            case TaskOfficer.LodgingMassCare: return lodgingMassCareSprite;
+            case TaskOfficer.ExternalRelationship: return externalRelationshipSprite;
+            case TaskOfficer.FoodMassCare: return foodMassCareSprite;
+            default: return defaultAgentSprite;
+        }
+    }
 
     public MonoBehaviour FindTriggeringFacility(GameTask task)
     {
         Debug.Log("=== FIND TRIGGERING FACILITY ===");
         Debug.Log($"Task affected facility: {task.affectedFacility}");
-        
+
         if (string.IsNullOrEmpty(task.affectedFacility))
         {
             Debug.Log("Affected facility is null or empty");
             return null;
         }
-        
+
         MonoBehaviour result = FindFacilityByName(task.affectedFacility);
         Debug.Log($"FindFacilityByName result: {(result != null ? result.name : "NULL")}");
         return result;
@@ -1403,7 +1436,7 @@ public class TaskSystem : MonoBehaviour
         foodTask.impacts.Add(new TaskImpact(ImpactType.Satisfaction, -10));
 
         // Add agent messages
-        foodTask.agentMessages.Add(new AgentMessage("Hello! We have an urgent food shortage situation.", defaultAgentAvatar));
+        foodTask.agentMessages.Add(new AgentMessage("Hello! We have an urgent food shortage situation.", defaultAgentSprite));
         foodTask.agentMessages.Add(new AgentMessage("Several families in our shelter have completely run out of food supplies."));
         foodTask.agentMessages.Add(new AgentMessage("We need to decide how to respond quickly. What would you like to do?"));
 
@@ -1447,7 +1480,7 @@ public class TaskSystem : MonoBehaviour
         advisoryTask.impacts.Add(new TaskImpact(ImpactType.Budget, 5000));
         advisoryTask.impacts.Add(new TaskImpact(ImpactType.Satisfaction, 25));
 
-        advisoryTask.agentMessages.Add(new AgentMessage("I've been reviewing our kitchen operations.", defaultAgentAvatar));
+        advisoryTask.agentMessages.Add(new AgentMessage("I've been reviewing our kitchen operations.", defaultAgentSprite));
         advisoryTask.agentMessages.Add(new AgentMessage("We could upgrade our equipment to serve more people efficiently."));
         advisoryTask.agentMessages.Add(new AgentMessage("This would cost $5000 but improve long-term satisfaction."));
 
@@ -1479,7 +1512,7 @@ public class TaskSystem : MonoBehaviour
         numericalTask.numericalInputs.Add(budgetInput);
         
         // Add agent messages
-        numericalTask.agentMessages.Add(new AgentMessage("We need to configure this facility.", defaultAgentAvatar));
+        numericalTask.agentMessages.Add(new AgentMessage("We need to configure this facility.", defaultAgentSprite));
         numericalTask.agentMessages.Add(new AgentMessage("Please use the controls below to set the parameters."));
         numericalTask.agentMessages.Add(new AgentMessage("Confirm your settings when ready."));
         
@@ -1544,7 +1577,7 @@ public class TaskSystem : MonoBehaviour
         transportTask.impacts.Add(new TaskImpact(ImpactType.Satisfaction, -15, false, "Failure Penalty"));
 
         // Add agent messages
-        transportTask.agentMessages.Add(new AgentMessage("We have an urgent situation!", defaultAgentAvatar));
+        transportTask.agentMessages.Add(new AgentMessage("We have an urgent situation!", defaultAgentSprite));
         transportTask.agentMessages.Add(new AgentMessage($"{transportAmount} families at {community.name} need immediate transport."));
         transportTask.agentMessages.Add(new AgentMessage("We must get them relocated within 2 rounds or they'll lose faith in our response."));
         transportTask.agentMessages.Add(new AgentMessage("Where should we send them?"));
@@ -1603,7 +1636,7 @@ public class TaskSystem : MonoBehaviour
         choiceTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, 2, false, "Rounds Remaining"));
 
         // Add agent messages
-        choiceTask.agentMessages.Add(new AgentMessage("We have a family that needs immediate relocation.", defaultAgentAvatar));
+        choiceTask.agentMessages.Add(new AgentMessage("We have a family that needs immediate relocation.", defaultAgentSprite));
         choiceTask.agentMessages.Add(new AgentMessage("They've been displaced and need somewhere to stay tonight."));
         choiceTask.agentMessages.Add(new AgentMessage("We have several options available. Where would you like to send them?"));
 

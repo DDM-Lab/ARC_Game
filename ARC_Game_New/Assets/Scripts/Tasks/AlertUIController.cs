@@ -11,6 +11,7 @@ public class AlertUIController : MonoBehaviour
     public GameObject alertPanel;
     public GameObject alertBackground;
     public Image agentIcon;
+    public TextMeshProUGUI agentNameText;
     public TextMeshProUGUI messageText;
     public Button nextButton;
     public Button skipTypingButton; // Optional: separate skip button
@@ -22,7 +23,11 @@ public class AlertUIController : MonoBehaviour
     
     [Header("Agent Icons")]
     public Sprite defaultAgentSprite;
-    
+    public Sprite workforceServiceSprite;
+    public Sprite lodgingMassCareSprite;
+    public Sprite externalRelationshipSprite;
+    public Sprite foodMassCareSprite;
+
     // Current alert data
     private GameTask currentAlert;
     private Queue<GameTask> alertQueue = new Queue<GameTask>();
@@ -174,16 +179,53 @@ public class AlertUIController : MonoBehaviour
     void SetupAgentIcon(AgentMessage message)
     {
         Sprite iconSprite = defaultAgentSprite;
-        
+
         // Use message-specific avatar if available
         if (message.agentAvatar != null)
         {
             iconSprite = message.agentAvatar;
         }
-        
+        else if (currentAlert != null)
+        {
+            // Use task officer avatar if not assigned
+            iconSprite = GetOfficerAvatar(currentAlert.taskOfficer);
+        }
+
+        // Set up Agent name text
+        if (agentNameText != null && currentAlert != null)
+        {
+            agentNameText.text = GetOfficerName(currentAlert.taskOfficer);
+        }
+
         agentIcon.sprite = iconSprite;
     }
-    
+
+    Sprite GetOfficerAvatar(TaskOfficer officer)
+    {
+        switch (officer)
+        {
+            case TaskOfficer.DisasterOfficer: return defaultAgentSprite;
+            case TaskOfficer.WorkforceService: return workforceServiceSprite;
+            case TaskOfficer.LodgingMassCare: return lodgingMassCareSprite;
+            case TaskOfficer.ExternalRelationship: return externalRelationshipSprite;
+            case TaskOfficer.FoodMassCare: return foodMassCareSprite;
+            default: return defaultAgentSprite;
+        }
+    }
+
+    string GetOfficerName(TaskOfficer officer)
+    {
+        switch (officer)
+        {
+            case TaskOfficer.DisasterOfficer: return "Disaster Officer";
+            case TaskOfficer.WorkforceService: return "Workforce Service";
+            case TaskOfficer.LodgingMassCare: return "Lodging Mass Care";
+            case TaskOfficer.ExternalRelationship: return "External Relationship";
+            case TaskOfficer.FoodMassCare: return "Food Mass Care";
+            default: return "Officer";
+        }
+    }
+
     /// <summary>
     /// Show current message with typing effect
     /// </summary>

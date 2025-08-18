@@ -1020,6 +1020,11 @@ MonoBehaviour:
   taskTypeLabelContainer: {fileID: 5094737472468844852}
   taskTypeLabelText: {fileID: 3998709339356812478}
   additionalInfoText: {fileID: 3352026430316930551}
+  defaultOfficerSprite: {fileID: 21300000, guid: 65080322d4a2ce243bed37e6027b554a, type: 3}
+  workforceServiceSprite: {fileID: 21300000, guid: b134b453b85ab2b44b64eef736add825, type: 3}
+  lodgingMassCareSprite: {fileID: 21300000, guid: 941cebf6bbf755c4dbe5a2dbdb31b1f4, type: 3}
+  externalRelationshipSprite: {fileID: 21300000, guid: ab959cd0f0c172345ae5d1e39e4005e5, type: 3}
+  foodMassCareSprite: {fileID: 21300000, guid: 491e4111ec4c9ec438404c035888a5d6, type: 3}
   activeColor: {r: 1, g: 1, b: 1, a: 1}
   inProgressColor: {r: 0.9098039, g: 0.81960785, b: 0.6117647, a: 1}
   incompleteColor: {r: 0.9098039, g: 0.81960785, b: 0.6117647, a: 1}
