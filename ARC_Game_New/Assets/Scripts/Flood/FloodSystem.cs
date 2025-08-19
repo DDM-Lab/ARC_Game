@@ -231,13 +231,13 @@ public class FloodSystem : MonoBehaviour
         // Subscribe to simulation events for flood updates
         if (GlobalClock.Instance != null)
         {
-            GlobalClock.Instance.OnSimulationStarted += OnSimulationStarted;
+            GlobalClock.Instance.OnSimulationEnded += OnSimulationEnded;
             // Also listen to time segment changes for additional updates
             GlobalClock.Instance.OnTimeSegmentChanged += OnTimeSegmentChanged;
         }
     }
 
-    void OnSimulationStarted()
+    void OnSimulationEnded()
     {
         // Update flood when each simulation round ends
         UpdateFlood();
@@ -792,7 +792,7 @@ public class FloodSystem : MonoBehaviour
         // Unsubscribe from events
         if (GlobalClock.Instance != null)
         {
-            GlobalClock.Instance.OnSimulationStarted -= OnSimulationStarted;
+            GlobalClock.Instance.OnSimulationEnded -= OnSimulationEnded;
             GlobalClock.Instance.OnTimeSegmentChanged -= OnTimeSegmentChanged;
         }
     }

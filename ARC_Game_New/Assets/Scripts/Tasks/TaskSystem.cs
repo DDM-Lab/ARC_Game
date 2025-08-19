@@ -173,7 +173,18 @@ public class AgentChoice
     public bool triggersDelivery = false;
     public bool immediateDelivery = false;
     public ResourceType deliveryCargoType = ResourceType.Population;
-    
+
+    [Header("Multi-Delivery Options")]
+    public bool enableMultipleDeliveries = false;
+    public MultiDeliveryType multiDeliveryType = MultiDeliveryType.SingleSourceMultiDest;
+    public enum MultiDeliveryType
+    {
+        SingleSourceSingleDest,     // Current behavior
+        SingleSourceMultiDest,      // One source → Multiple destinations  
+        MultiSourceSingleDest,      // Multiple sources → One destination
+        MultiSourceMultiDest        // Multiple sources → Multiple destinations
+    }
+
     [Header("Dynamic Delivery Quantity")]
     public DeliveryQuantityType quantityType = DeliveryQuantityType.Fixed;
     public int deliveryQuantity = 5; // Keep existing field for fixed amounts
@@ -1108,6 +1119,7 @@ public class TaskSystem : MonoBehaviour
             // Copy delivery configuration
             newChoice.triggersDelivery = choice.triggersDelivery;
             newChoice.immediateDelivery = choice.immediateDelivery; // New
+            newChoice.enableMultipleDeliveries = choice.enableMultipleDeliveries; // New
             newChoice.deliveryCargoType = choice.deliveryCargoType;
             newChoice.quantityType = choice.quantityType; // NEW: Copy quantity type
             newChoice.deliveryPercentage = choice.deliveryPercentage; // NEW: Copy percentage
@@ -1422,7 +1434,7 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
-    // Update all existing test methods in TaskSystem.cs
+    
 
     [ContextMenu("Create Test Food Demand Task")]
     public void CreateTestFoodDemandTask()
@@ -1706,6 +1718,29 @@ public class TaskSystem : MonoBehaviour
         
         Debug.Log("Created simple road blockage test (no GameTask failure)");
     }
+
+    [ContextMenu("Test Multi-Shelter Delivery")]
+    public void TestMultiShelterDelivery()
+    {
+        GameTask evacTask = TaskSystem.Instance.CreateTask("Multi-Shelter Test", TaskType.Emergency, "Community", "Test multiple shelter delivery");
+        evacTask.roundsRemaining = 1;
+        AgentChoice multiChoice = new AgentChoice(1, "Evacuate to all available shelters");
+        multiChoice.enableMultipleDeliveries = true;
+        multiChoice.multiDeliveryType = AgentChoice.MultiDeliveryType.SingleSourceMultiDest;
+        multiChoice.triggersDelivery = true;
+        multiChoice.deliveryCargoType = ResourceType.Population;
+        multiChoice.quantityType = DeliveryQuantityType.Fixed;
+        multiChoice.deliveryQuantity = 30;
+        multiChoice.sourceType = DeliverySourceType.SpecificPrebuilt;
+        multiChoice.sourcePrebuilt = PrebuiltBuildingType.Community;
+        multiChoice.destinationType = DeliveryDestinationType.SpecificBuilding;
+        multiChoice.destinationBuilding = BuildingType.Shelter;
+
+        evacTask.agentChoices.Add(multiChoice);
+
+        Debug.Log("Created test multi-shelter delivery task");
+    }
+
     
     [ContextMenu("Print Task Statistics")]
     public void PrintTaskStatistics()

@@ -420,8 +420,8 @@ public class TaskDetailUI : MonoBehaviour
             return;
         }
 
-        // Validate selected choice if it involves delivery
-        if (selectedChoice != null && selectedChoice.triggersDelivery)
+        // Validate selected choice if it involves any type of delivery
+        if (selectedChoice != null && (selectedChoice.triggersDelivery || selectedChoice.immediateDelivery || selectedChoice.enableMultipleDeliveries))
         {
             string errorMessage;
             if (!ValidateChoiceDelivery(selectedChoice, out errorMessage))
@@ -436,22 +436,37 @@ public class TaskDetailUI : MonoBehaviour
         {
             ApplyChoiceImpacts(selectedChoice);
 
-            if (selectedChoice.immediateDelivery)
+            // NEW: Handle delivery execution with strict type checking
+            if (selectedChoice.enableMultipleDeliveries)
             {
-                // Execute immediate delivery
+                Debug.Log("Executing multiple deliveries");
+                ExecuteMultipleDeliveries(selectedChoice);
+                TaskSystem.Instance.SetTaskInProgress(currentTask);
+            }
+            else if (selectedChoice.immediateDelivery && !selectedChoice.triggersDelivery) // STRICT: Only immediate, not both
+            {
+                Debug.Log("Executing immediate delivery");
                 ExecuteImmediateDelivery(selectedChoice);
                 TaskSystem.Instance.CompleteTask(currentTask);
             }
-            else if (selectedChoice.triggersDelivery)
+            else if (selectedChoice.triggersDelivery && !selectedChoice.immediateDelivery) // STRICT: Only normal, not both
             {
-                // Execute normal delivery
+                Debug.Log("Executing normal delivery");
                 CreateChoiceDeliveryTask(selectedChoice);
                 TaskSystem.Instance.SetTaskInProgress(currentTask);
             }
-            else
+            else if (selectedChoice.triggersDelivery && selectedChoice.immediateDelivery) // Both flags set
             {
+                Debug.LogWarning("Choice has both triggersDelivery and immediateDelivery - using immediate delivery");
+                ExecuteImmediateDelivery(selectedChoice);
                 TaskSystem.Instance.CompleteTask(currentTask);
             }
+            else
+            {
+                Debug.Log("No delivery - completing task immediately");
+                TaskSystem.Instance.CompleteTask(currentTask);
+            }
+        
         }
         else
         {
@@ -467,10 +482,17 @@ public class TaskDetailUI : MonoBehaviour
     {
         errorMessage = "";
 
-        if (!choice.triggersDelivery && !choice.immediateDelivery)
+        if (!choice.triggersDelivery && !choice.immediateDelivery && !choice.enableMultipleDeliveries)
         return true;
 
         MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
+        if (choice.enableMultipleDeliveries)
+        {
+            Debug.Log("Using multi-delivery validation");
+            return ValidateMultipleDeliveries(choice, triggeringFacility, out errorMessage);
+        }
+
+        Debug.Log("Using single delivery validation");
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
         MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
 
@@ -566,6 +588,322 @@ public class TaskDetailUI : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// Validate multiple delivery scenarios
+    /// </summary>
+    bool ValidateMultipleDeliveries(AgentChoice choice, MonoBehaviour triggeringFacility, out string errorMessage)
+    {
+        errorMessage = "";
+
+        switch (choice.multiDeliveryType)
+        {
+            case AgentChoice.MultiDeliveryType.SingleSourceMultiDest:
+                return ValidateSingleSourceMultiDest(choice, triggeringFacility, out errorMessage);
+                
+            case AgentChoice.MultiDeliveryType.MultiSourceSingleDest:
+                return ValidateMultiSourceSingleDest(choice, triggeringFacility, out errorMessage);
+                
+            case AgentChoice.MultiDeliveryType.MultiSourceMultiDest:
+                return ValidateMultiSourceMultiDest(choice, triggeringFacility, out errorMessage);
+                
+            default:
+                errorMessage = "Unknown multi-delivery type";
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Validate single source to multiple destinations
+    /// </summary>
+    bool ValidateSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFacility, out string errorMessage)
+    {
+        errorMessage = "";
+
+        // Find source
+        MonoBehaviour source = DetermineChoiceDeliverySource(choice, triggeringFacility);
+        if (source == null)
+        {
+            errorMessage = $"No suitable source found for {choice.deliveryCargoType}";
+            return false;
+        }
+
+        // Find multiple destinations - EXCLUDE SOURCE
+        List<MonoBehaviour> destinations = FindMultipleDestinations(choice, triggeringFacility, 3)
+            .Where(dest => dest != source) // NEW: Exclude source from destinations
+            .ToList();
+            
+        if (destinations.Count == 0)
+        {
+            errorMessage = $"No suitable destinations found for {choice.deliveryCargoType} (excluding source)";
+            return false;
+        }
+
+        // Check source has enough resources
+        int totalAvailable = CalculateDeliveryQuantity(choice, source);
+        if (totalAvailable <= 0)
+        {
+            errorMessage = $"No resources available at {source.name}";
+            return false;
+        }
+
+        // Check total destination capacity
+        int totalDestinationSpace = 0;
+        foreach (MonoBehaviour dest in destinations)
+        {
+            totalDestinationSpace += GetAvailableSpace(dest, choice.deliveryCargoType);
+        }
+
+        if (totalDestinationSpace < totalAvailable)
+        {
+            errorMessage = $"Insufficient total space at destinations. Available: {totalDestinationSpace}, Required: {totalAvailable}";
+            return false;
+        }
+
+        // Vehicle check only for normal delivery (not immediate)
+        if (choice.triggersDelivery && !choice.immediateDelivery)
+        {
+            // NEW: Only check if there's one available vehicle, since deliveries are queued
+            Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+            bool hasAnyCapableVehicle = false;
+
+            foreach (Vehicle vehicle in vehicles)
+            {
+                if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
+                    vehicle.GetCurrentStatus() != VehicleStatus.Damaged)
+                {
+                    hasAnyCapableVehicle = true;
+                    break;
+                }
+            }
+
+            if (!hasAnyCapableVehicle)
+            {
+                errorMessage = $"No available undamaged vehicles to transport {choice.deliveryCargoType}";
+                return false;
+            }
+
+            if (showDebugInfo)
+                Debug.Log($"Vehicle validation passed: Found capable vehicles for queued delivery");
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"Multi-dest validation: {source.name} → {destinations.Count} destinations ({totalAvailable} resources, {totalDestinationSpace} space)");
+
+        return true;
+    }
+
+    /// <summary>
+    /// Validate multiple sources to single destination  
+    /// </summary>
+    bool ValidateMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFacility, out string errorMessage)
+    {
+        errorMessage = "";
+
+        // Find destination
+        MonoBehaviour destination = DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+        if (destination == null)
+        {
+            errorMessage = $"No suitable destination found for {choice.deliveryCargoType}";
+            return false;
+        }
+
+        // Find multiple sources - EXCLUDE DESTINATION
+        List<MonoBehaviour> sources = FindMultipleSources(choice, triggeringFacility, 3)
+            .Where(source => source != destination) // NEW: Exclude destination from sources
+            .ToList();
+            
+        if (sources.Count == 0)
+        {
+            errorMessage = $"No suitable sources found for {choice.deliveryCargoType} (excluding destination)";
+            return false;
+        }
+
+        // Check total available resources
+        int totalAvailable = 0;
+        int sourcesWithResources = 0;
+        foreach (MonoBehaviour source in sources)
+        {
+            int available = CalculateDeliveryQuantity(choice, source);
+            if (available > 0)
+            {
+                totalAvailable += available;
+                sourcesWithResources++;
+            }
+        }
+
+        if (totalAvailable <= 0)
+        {
+            errorMessage = $"No resources available at any of the {sources.Count} sources";
+            return false;
+        }
+
+        // Check destination capacity
+        int destinationSpace = GetAvailableSpace(destination, choice.deliveryCargoType);
+        if (destinationSpace < totalAvailable)
+        {
+            errorMessage = $"Insufficient space at {destination.name}. Available: {destinationSpace}, Total incoming: {totalAvailable}";
+            return false;
+        }
+
+        // Vehicle check for normal delivery
+        if (choice.triggersDelivery && !choice.immediateDelivery)
+        {
+            Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+            int availableVehicles = vehicles.Count(v => 
+                v.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
+                v.GetCurrentStatus() != VehicleStatus.Damaged);
+
+            if (availableVehicles < sourcesWithResources)
+            {
+                errorMessage = $"Need {sourcesWithResources} vehicles for multi-source delivery, only {availableVehicles} available";
+                return false;
+            }
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"Multi-source validation: {sourcesWithResources} sources → {destination.name} ({totalAvailable} resources, {destinationSpace} space)");
+
+        return true;
+    }
+
+    /// <summary>
+    /// Validate multiple sources to multiple destinations
+    /// </summary>
+    bool ValidateMultiSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFacility, out string errorMessage)
+    {
+        errorMessage = "";
+
+        // Find sources and destinations
+        List<MonoBehaviour> allSources = FindMultipleSources(choice, triggeringFacility, 3);
+        List<MonoBehaviour> allDestinations = FindMultipleDestinations(choice, triggeringFacility, 3);
+
+        // Remove overlapping facilities
+        List<MonoBehaviour> sources = allSources.Where(s => !allDestinations.Contains(s)).ToList();
+        List<MonoBehaviour> destinations = allDestinations.Where(d => !allSources.Contains(d)).ToList();
+
+        if (sources.Count == 0)
+        {
+            errorMessage = $"No suitable sources found for {choice.deliveryCargoType} (excluding destinations)";
+            return false;
+        }
+
+        if (destinations.Count == 0)
+        {
+            errorMessage = $"No suitable destinations found for {choice.deliveryCargoType} (excluding sources)";
+            return false;
+        }
+
+        // Check total resources vs total capacity
+        int totalAvailable = 0;
+        int sourcesWithResources = 0;
+        foreach (MonoBehaviour source in sources)
+        {
+            int available = CalculateDeliveryQuantity(choice, source);
+            if (available > 0)
+            {
+                totalAvailable += available;
+                sourcesWithResources++;
+            }
+        }
+
+        if (totalAvailable <= 0)
+        {
+            errorMessage = $"No resources available at any sources";
+            return false;
+        }
+
+        int totalDestinationSpace = 0;
+        foreach (MonoBehaviour dest in destinations)
+        {
+            totalDestinationSpace += GetAvailableSpace(dest, choice.deliveryCargoType);
+        }
+
+        if (totalDestinationSpace < totalAvailable)
+        {
+            errorMessage = $"Insufficient total destination space. Available: {totalDestinationSpace}, Required: {totalAvailable}";
+            return false;
+        }
+
+        // Vehicle check for normal delivery
+        if (choice.triggersDelivery && !choice.immediateDelivery)
+        {
+            Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+            int availableVehicles = vehicles.Count(v => 
+                v.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
+                v.GetCurrentStatus() != VehicleStatus.Damaged);
+
+            int requiredVehicles = sourcesWithResources;
+            if (availableVehicles < requiredVehicles)
+            {
+                errorMessage = $"Need {requiredVehicles} vehicles for multi-to-multi delivery, only {availableVehicles} available";
+                return false;
+            }
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"Multi-to-multi validation: {sourcesWithResources} sources → {destinations.Count} destinations ({totalAvailable} resources, {totalDestinationSpace} space)");
+
+        return true;
+    }
+
+    /// <summary>
+    /// Validate vehicle availability for single delivery
+    /// </summary>
+    bool ValidateVehicleAvailability(AgentChoice choice, MonoBehaviour source, MonoBehaviour destination, out string errorMessage)
+    {
+        errorMessage = "";
+
+        // Get route analysis
+        PathfindingSystem pathfinder = FindObjectOfType<PathfindingSystem>();
+        if (pathfinder != null)
+        {
+            PathAnalysis analysis = pathfinder.AnalyzePath(source.transform.position, destination.transform.position);
+            DeliveryTimeEstimate estimate = pathfinder.EstimateDeliveryTime(source.transform.position, destination.transform.position);
+
+            if (!estimate.pathExists)
+            {
+                if (estimate.isFloodBlocked)
+                {
+                    errorMessage = $"All routes from {source.name} to {destination.name} are blocked by flood";
+                }
+                else
+                {
+                    errorMessage = $"No route available from {source.name} to {destination.name}";
+                }
+                return false;
+            }
+
+            // Show route information
+            if (analysis.isFloodAffected && analysis.hasAlternativeRoute)
+            {
+                if (showDebugInfo)
+                    Debug.Log($"Choice uses alternative route (+{analysis.routeLengthDifference} tiles) due to flood");
+            }
+        }
+
+        // Check vehicle availability
+        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+        bool hasCapableVehicle = false;
+
+        foreach (Vehicle vehicle in vehicles)
+        {
+            if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
+                vehicle.GetMaxCapacity() >= Mathf.Min(choice.deliveryQuantity, 10) &&
+                vehicle.GetCurrentStatus() != VehicleStatus.Damaged)
+            {
+                hasCapableVehicle = true;
+                break;
+            }
+        }
+
+        if (!hasCapableVehicle)
+        {
+            errorMessage = $"No available undamaged vehicle to transport {choice.deliveryCargoType}";
+            return false;
+        }
+
+        return true;
+    }
 
     // Helper methods for resource checking
     int GetAvailableResourceAmount(MonoBehaviour facility, ResourceType resourceType)
@@ -645,8 +983,432 @@ public class TaskDetailUI : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Showed error message: {errorText}");
     }
-    //  --------- END OF SECTION ---------
+    //  -------------  END OF SECTION -------------------------------
+    // -------------- SECTION: Multi delivery methods ---------------
 
+    /// <summary>
+    /// Execute immediate delivery between specific facilities
+    /// </summary>
+    void ExecuteImmediateDeliveryBetween(MonoBehaviour source, MonoBehaviour destination, ResourceType cargoType, int quantity)
+    {
+        // Get resource storages
+        BuildingResourceStorage sourceStorage = GetBuildingResourceStorage(source);
+        BuildingResourceStorage destStorage = GetBuildingResourceStorage(destination);
+
+        if (sourceStorage == null || destStorage == null)
+        {
+            Debug.LogError($"Could not find resource storage for immediate delivery: {source.name} → {destination.name}");
+            return;
+        }
+
+        // Perform immediate transfer
+        int actualRemoved = sourceStorage.RemoveResource(cargoType, quantity);
+        int actualDelivered = destStorage.AddResource(cargoType, actualRemoved);
+
+        // Handle overflow if destination couldn't accept all
+        if (actualDelivered < actualRemoved)
+        {
+            int overflow = actualRemoved - actualDelivered;
+            sourceStorage.AddResource(cargoType, overflow);
+            Debug.LogWarning($"Immediate delivery overflow: {overflow} {cargoType} returned to {source.name}");
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"Immediate delivery: {actualDelivered} {cargoType} from {source.name} to {destination.name}");
+    }
+
+    /// <summary>
+    /// Helper methods that call TaskSystem methods
+    /// </summary>
+    MonoBehaviour FindTriggeringFacility(GameTask task)
+    {
+        return TaskSystem.Instance.FindTriggeringFacility(task);
+    }
+
+    MonoBehaviour DetermineChoiceDeliverySource(AgentChoice choice, MonoBehaviour triggeringFacility)
+    {
+        return TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
+    }
+
+    MonoBehaviour DetermineChoiceDeliveryDestination(AgentChoice choice, MonoBehaviour triggeringFacility)
+    {
+        return TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+    }
+
+    int CalculateDeliveryQuantity(AgentChoice choice, MonoBehaviour source)
+    {
+        return TaskSystem.Instance.CalculateDeliveryQuantity(choice, source);
+    }
+
+    bool CanBuildingHandleCargo(Building building, ResourceType cargoType, bool isSource)
+    {
+        BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
+        if (storage == null) return false;
+        
+        if (isSource)
+        {
+            return storage.GetResourceAmount(cargoType) > 0;
+        }
+        else
+        {
+            return storage.GetAvailableSpace(cargoType) > 0;
+        }
+    }
+
+    bool CanPrebuiltHandleCargo(PrebuiltBuilding prebuilt, ResourceType cargoType, bool isSource)
+    {
+        if (cargoType == ResourceType.Population)
+        {
+            if (isSource)
+            {
+                return prebuilt.GetCurrentPopulation() > 0;
+            }
+            else
+            {
+                return prebuilt.CanAcceptPopulation(1);
+            }
+        }
+        
+        // For other resource types, check storage
+        BuildingResourceStorage storage = prebuilt.GetResourceStorage();
+        if (storage == null) return false;
+        
+        if (isSource)
+        {
+            return storage.GetResourceAmount(cargoType) > 0;
+        }
+        else
+        {
+            return storage.GetAvailableSpace(cargoType) > 0;
+        }
+    }
+
+    /// <summary>
+    /// Execute normal delivery choice (existing method, but calling correct source/destination methods)
+    /// </summary>
+    void ExecuteChoiceDelivery(AgentChoice choice)
+    {
+        MonoBehaviour triggeringFacility = FindTriggeringFacility(currentTask);
+        MonoBehaviour source = DetermineChoiceDeliverySource(choice, triggeringFacility);
+        MonoBehaviour destination = DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+
+        if (source == null || destination == null)
+        {
+            Debug.LogError($"Could not determine delivery route for choice: {choice.choiceText}");
+            return;
+        }
+
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null) return;
+
+        int actualQuantity = CalculateDeliveryQuantity(choice, source);
+
+        DeliveryTask deliveryTask = deliverySystem.CreateSingleDeliveryTask(
+            source, destination, choice.deliveryCargoType, actualQuantity, 3);
+
+        if (deliveryTask != null)
+        {
+            currentTask.linkedDeliveryTaskIds.Add(deliveryTask.taskId);
+            StartCoroutine(MonitorChoiceDeliveryCompletion());
+
+            if (showDebugInfo)
+                Debug.Log($"Created single delivery: {actualQuantity} {choice.deliveryCargoType} from {source.name} to {destination.name}");
+        }
+    }
+
+    /// <summary>
+    /// Execute delivery with multiple sources/destinations
+    /// </summary>
+    void ExecuteMultipleDeliveries(AgentChoice choice)
+    {
+        MonoBehaviour triggeringFacility = FindTriggeringFacility(currentTask);
+        
+        switch (choice.multiDeliveryType)
+        {
+            case AgentChoice.MultiDeliveryType.SingleSourceMultiDest:
+                ExecuteSingleSourceMultiDest(choice, triggeringFacility);
+                break;
+
+            case AgentChoice.MultiDeliveryType.MultiSourceSingleDest:
+                ExecuteMultiSourceSingleDest(choice, triggeringFacility);
+                break;
+
+            case AgentChoice.MultiDeliveryType.MultiSourceMultiDest:
+                ExecuteMultiSourceMultiDest(choice, triggeringFacility);
+                break;
+                
+            default:
+                // Fall back to single delivery
+                ExecuteChoiceDelivery(choice);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// One source delivers to multiple destinations
+    /// </summary>
+    void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFacility)
+    {
+        Debug.Log("=== EXECUTING SINGLE SOURCE MULTI DEST ===");
+        Debug.Log($"Choice immediate delivery: {choice.immediateDelivery}");
+        Debug.Log($"Choice triggers delivery: {choice.triggersDelivery}");
+
+        MonoBehaviour source = DetermineChoiceDeliverySource(choice, triggeringFacility);
+        if (source == null) return;
+        
+        // Find multiple destinations
+        List<MonoBehaviour> destinations = FindMultipleDestinations(choice, triggeringFacility, 3)
+        .Where(dest => dest != source) // Exclude source
+        .ToList();
+        
+        if (destinations.Count == 0)
+        {
+            Debug.LogWarning("No suitable destinations found for multi-destination delivery");
+            return;
+        }
+        
+        int totalQuantity = CalculateDeliveryQuantity(choice, source);
+        int quantityPerDest = Mathf.Max(1, totalQuantity / destinations.Count);
+        
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null) return;
+        
+        foreach (MonoBehaviour dest in destinations)
+        {
+            if (choice.immediateDelivery)
+            {
+                ExecuteImmediateDeliveryBetween(source, dest, choice.deliveryCargoType, quantityPerDest);
+            }
+            else
+            {
+                deliverySystem.CreateDeliveryTask(source, dest, choice.deliveryCargoType, quantityPerDest, 3);
+            }
+            
+            if (showDebugInfo)
+                Debug.Log($"Multi-delivery: {quantityPerDest} {choice.deliveryCargoType} from {source.name} to {dest.name}");
+        }
+    }
+
+    /// <summary>
+    /// Multiple sources deliver to one destination
+    /// </summary>
+    void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFacility)
+    {
+        MonoBehaviour destination = DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+        if (destination == null) return;
+        
+        // Find multiple sources
+        List<MonoBehaviour> sources = FindMultipleSources(choice, triggeringFacility, 3); // Max 3 sources
+        
+        if (sources.Count == 0)
+        {
+            Debug.LogWarning("No suitable sources found for multi-source delivery");
+            return;
+        }
+        
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null) return;
+        
+        foreach (MonoBehaviour source in sources)
+        {
+            int availableQuantity = CalculateDeliveryQuantity(choice, source);
+            if (availableQuantity <= 0) continue;
+            
+            if (choice.immediateDelivery)
+            {
+                ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, availableQuantity);
+            }
+            else
+            {
+                deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
+            }
+            
+            if (showDebugInfo)
+                Debug.Log($"Multi-source: {availableQuantity} {choice.deliveryCargoType} from {source.name} to {destination.name}");
+        }
+    }
+
+    /// <summary>
+    /// Multiple sources to multiple destinations (distributed)
+    /// </summary>
+    void ExecuteMultiSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFacility)
+    {
+        List<MonoBehaviour> sources = FindMultipleSources(choice, triggeringFacility, 3);
+        List<MonoBehaviour> destinations = FindMultipleDestinations(choice, triggeringFacility, 3);
+        
+        if (sources.Count == 0 || destinations.Count == 0) return;
+        
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null) return;
+        
+        // Round-robin distribution
+        int destIndex = 0;
+        foreach (MonoBehaviour source in sources)
+        {
+            int availableQuantity = CalculateDeliveryQuantity(choice, source);
+            if (availableQuantity <= 0) continue;
+            
+            MonoBehaviour destination = destinations[destIndex % destinations.Count];
+            destIndex++;
+            
+            if (choice.immediateDelivery)
+            {
+                ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, availableQuantity);
+            }
+            else
+            {
+                deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
+            }
+            
+            if (showDebugInfo)
+                Debug.Log($"Multi-to-multi: {availableQuantity} {choice.deliveryCargoType} from {source.name} to {destination.name}");
+        }
+    }
+
+    /// <summary>
+    /// Find multiple sources for delivery
+    /// </summary>
+    List<MonoBehaviour> FindMultipleSources(AgentChoice choice, MonoBehaviour triggeringFacility, int maxSources)
+    {
+        List<MonoBehaviour> sources = new List<MonoBehaviour>();
+        
+        switch (choice.sourceType)
+        {
+            case DeliverySourceType.SpecificBuilding:
+                Building[] buildings = FindObjectsOfType<Building>()
+                    .Where(b => b.GetBuildingType() == choice.sourceBuilding)
+                    .Where(b => b != triggeringFacility)
+                    .Where(b => CanBuildingHandleCargo(b, choice.deliveryCargoType, true))
+                    .Take(maxSources)
+                    .ToArray();
+                sources.AddRange(buildings.Cast<MonoBehaviour>());
+                break;
+                
+            case DeliverySourceType.SpecificPrebuilt:
+                PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>()
+                    .Where(p => p.GetPrebuiltType() == choice.sourcePrebuilt)
+                    .Where(p => p != triggeringFacility)
+                    .Where(p => CanPrebuiltHandleCargo(p, choice.deliveryCargoType, true))
+                    .Take(maxSources)
+                    .ToArray();
+                sources.AddRange(prebuilts.Cast<MonoBehaviour>());
+                break;
+                
+            case DeliverySourceType.AutoFind:
+                sources.AddRange(FindAllSuitableSources(choice.deliveryCargoType, maxSources));
+                break;
+        }
+        
+        return sources;
+    }
+
+    /// <summary>
+    /// Find multiple destinations for delivery
+    /// </summary>
+    List<MonoBehaviour> FindMultipleDestinations(AgentChoice choice, MonoBehaviour triggeringFacility, int maxDestinations)
+    {
+        List<MonoBehaviour> destinations = new List<MonoBehaviour>();
+        
+        switch (choice.destinationType)
+        {
+            case DeliveryDestinationType.SpecificBuilding:
+                Building[] buildings = FindObjectsOfType<Building>()
+                    .Where(b => b.GetBuildingType() == choice.destinationBuilding)
+                    .Where(b => b != triggeringFacility)
+                    .Where(b => CanBuildingHandleCargo(b, choice.deliveryCargoType, false))
+                    .Take(maxDestinations)
+                    .ToArray();
+                destinations.AddRange(buildings.Cast<MonoBehaviour>());
+                break;
+                
+            case DeliveryDestinationType.SpecificPrebuilt:
+                PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>()
+                    .Where(p => p.GetPrebuiltType() == choice.destinationPrebuilt)
+                    .Where(p => p != triggeringFacility)
+                    .Where(p => CanPrebuiltHandleCargo(p, choice.deliveryCargoType, false))
+                    .Take(maxDestinations)
+                    .ToArray();
+                destinations.AddRange(prebuilts.Cast<MonoBehaviour>());
+                break;
+                
+            case DeliveryDestinationType.AutoFind:
+                destinations.AddRange(FindAllSuitableDestinations(choice.deliveryCargoType, maxDestinations));
+                break;
+        }
+        
+        return destinations;
+    }
+
+    /// <summary>
+    /// Find all suitable sources for a cargo type
+    /// </summary>
+    List<MonoBehaviour> FindAllSuitableSources(ResourceType cargoType, int maxCount)
+    {
+        List<MonoBehaviour> sources = new List<MonoBehaviour>();
+        
+        switch (cargoType)
+        {
+            case ResourceType.FoodPacks:
+                Building[] kitchens = FindObjectsOfType<Building>()
+                    .Where(b => b.GetBuildingType() == BuildingType.Kitchen)
+                    .Where(b => CanBuildingHandleCargo(b, cargoType, true))
+                    .Take(maxCount)
+                    .ToArray();
+                sources.AddRange(kitchens.Cast<MonoBehaviour>());
+                break;
+                
+            case ResourceType.Population:
+                PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>()
+                    .Where(p => p.GetPrebuiltType() == PrebuiltBuildingType.Community)
+                    .Where(p => CanPrebuiltHandleCargo(p, cargoType, true))
+                    .Take(maxCount)
+                    .ToArray();
+                sources.AddRange(communities.Cast<MonoBehaviour>());
+                break;
+        }
+        
+        return sources;
+    }
+
+    /// <summary>
+    /// Find all suitable destinations for a cargo type
+    /// </summary>
+    List<MonoBehaviour> FindAllSuitableDestinations(ResourceType cargoType, int maxCount)
+    {
+        List<MonoBehaviour> destinations = new List<MonoBehaviour>();
+        
+        switch (cargoType)
+        {
+            case ResourceType.FoodPacks:
+                Building[] shelters = FindObjectsOfType<Building>()
+                    .Where(b => b.GetBuildingType() == BuildingType.Shelter)
+                    .Where(b => CanBuildingHandleCargo(b, cargoType, false))
+                    .Take(maxCount)
+                    .ToArray();
+                destinations.AddRange(shelters.Cast<MonoBehaviour>());
+                break;
+                
+            case ResourceType.Population:
+                Building[] shelterDests = FindObjectsOfType<Building>()
+                    .Where(b => b.GetBuildingType() == BuildingType.Shelter)
+                    .Where(b => CanBuildingHandleCargo(b, cargoType, false))
+                    .Take(maxCount)
+                    .ToArray();
+                destinations.AddRange(shelterDests.Cast<MonoBehaviour>());
+                
+                PrebuiltBuilding[] motels = FindObjectsOfType<PrebuiltBuilding>()
+                    .Where(p => p.GetPrebuiltType() == PrebuiltBuildingType.Motel)
+                    .Where(p => CanPrebuiltHandleCargo(p, cargoType, false))
+                    .Take(maxCount - destinations.Count)
+                    .ToArray();
+                destinations.AddRange(motels.Cast<MonoBehaviour>());
+                break;
+        }
+        
+        return destinations;
+    }
+
+    // -------------- END OF SECTION ------------------
     void CreateChoiceDeliveryTask(AgentChoice choice)
     {
         Debug.Log("=== STARTING CreateChoiceDeliveryTask ===");
@@ -867,6 +1629,7 @@ public class TaskDetailUI : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Applied impacts for choice: {choice.choiceText}");
     }
+    
     void RepairVehicleById(int vehicleId)
     {
         Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
