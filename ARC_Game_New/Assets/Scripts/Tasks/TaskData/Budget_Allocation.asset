@@ -17,6 +17,7 @@ MonoBehaviour:
   taskType: 2
   description: ' Daily budget report ready.'
   taskImage: {fileID: 0}
+  taskOfficer: 3
   roundTriggers:
   - targetRound: 0
     exactMatch: 1

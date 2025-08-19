@@ -17,6 +17,7 @@ MonoBehaviour:
   taskType: 0
   description: 'CRITICAL: We''ve run out of funds!'
   taskImage: {fileID: 0}
+  taskOfficer: 3
   roundTriggers: []
   dayTriggers: []
   resourceTriggers: []
@@ -31,6 +32,7 @@ MonoBehaviour:
   satisfactionTriggers: []
   workforceTriggers: []
   facilityStatusTriggers: []
+  weatherTriggers: []
   requireAllTriggers: 1
   isGlobalTask: 0
   targetFacilityType: 1
@@ -70,6 +72,8 @@ MonoBehaviour:
     triggersDelivery: 0
     immediateDelivery: 0
     deliveryCargoType: 0
+    enableMultipleDeliveries: 0
+    multiDeliveryType: 0
     quantityType: 0
     deliveryQuantity: 0
     deliveryPercentage: 0
@@ -95,6 +99,8 @@ MonoBehaviour:
     triggersDelivery: 0
     immediateDelivery: 0
     deliveryCargoType: 0
+    enableMultipleDeliveries: 0
+    multiDeliveryType: 0
     quantityType: 0
     deliveryQuantity: 0
     deliveryPercentage: 0
@@ -120,6 +126,8 @@ MonoBehaviour:
     triggersDelivery: 0
     immediateDelivery: 0
     deliveryCargoType: 0
+    enableMultipleDeliveries: 0
+    multiDeliveryType: 0
     quantityType: 0
     deliveryQuantity: 0
     deliveryPercentage: 0

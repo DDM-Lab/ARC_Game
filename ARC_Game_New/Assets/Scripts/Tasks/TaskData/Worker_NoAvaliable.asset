@@ -18,6 +18,7 @@ MonoBehaviour:
   description: Facility requires workers but none are available. External recruitment
     needed.
   taskImage: {fileID: 0}
+  taskOfficer: 1
   roundTriggers: []
   dayTriggers: []
   resourceTriggers: []
@@ -35,6 +36,7 @@ MonoBehaviour:
     facilityType: 0
     requiredStatus: 1
     minimumCount: 1
+  weatherTriggers: []
   requireAllTriggers: 1
   isGlobalTask: 1
   targetFacilityType: 1

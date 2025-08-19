@@ -17,6 +17,7 @@ MonoBehaviour:
   taskType: 2
   description: High ratio of untrained volunteers detected. Training programs recommended.
   taskImage: {fileID: 0}
+  taskOfficer: 1
   roundTriggers:
   - targetRound: 1
     exactMatch: 0
@@ -32,6 +33,7 @@ MonoBehaviour:
     comparison: 2
     targetValue: 1
   facilityStatusTriggers: []
+  weatherTriggers: []
   requireAllTriggers: 1
   isGlobalTask: 1
   targetFacilityType: 1

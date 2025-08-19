@@ -749,16 +749,25 @@ public class TaskDetailUI : MonoBehaviour
         if (choice.triggersDelivery && !choice.immediateDelivery)
         {
             Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-            int availableVehicles = vehicles.Count(v => 
-                v.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
-                v.GetCurrentStatus() != VehicleStatus.Damaged);
+            bool hasAnyCapableVehicle = false;
 
-            if (availableVehicles < sourcesWithResources)
+            foreach (Vehicle vehicle in vehicles)
             {
-                errorMessage = $"Need {sourcesWithResources} vehicles for multi-source delivery, only {availableVehicles} available";
+                if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
+                    vehicle.GetCurrentStatus() != VehicleStatus.Damaged)
+                {
+                    hasAnyCapableVehicle = true;
+                    break;
+                }
+            }
+
+            if (!hasAnyCapableVehicle)
+            {
+                errorMessage = $"No available undamaged vehicles to transport {choice.deliveryCargoType}";
                 return false;
             }
         }
+
 
         if (showDebugInfo)
             Debug.Log($"Multi-source validation: {sourcesWithResources} sources → {destination.name} ({totalAvailable} resources, {destinationSpace} space)");
@@ -828,14 +837,21 @@ public class TaskDetailUI : MonoBehaviour
         if (choice.triggersDelivery && !choice.immediateDelivery)
         {
             Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-            int availableVehicles = vehicles.Count(v => 
-                v.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
-                v.GetCurrentStatus() != VehicleStatus.Damaged);
+            bool hasAnyCapableVehicle = false;
 
-            int requiredVehicles = sourcesWithResources;
-            if (availableVehicles < requiredVehicles)
+            foreach (Vehicle vehicle in vehicles)
             {
-                errorMessage = $"Need {requiredVehicles} vehicles for multi-to-multi delivery, only {availableVehicles} available";
+                if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
+                    vehicle.GetCurrentStatus() != VehicleStatus.Damaged)
+                {
+                    hasAnyCapableVehicle = true;
+                    break;
+                }
+            }
+
+            if (!hasAnyCapableVehicle)
+            {
+                errorMessage = $"No available undamaged vehicles to transport {choice.deliveryCargoType}";
                 return false;
             }
         }

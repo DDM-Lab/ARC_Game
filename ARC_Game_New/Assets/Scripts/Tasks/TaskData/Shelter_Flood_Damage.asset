@@ -18,6 +18,7 @@ MonoBehaviour:
   description: A shelter has been severely damaged by flood water. We need to relocate
     the residents immediately.
   taskImage: {fileID: 0}
+  taskOfficer: 2
   roundTriggers: []
   dayTriggers: []
   resourceTriggers:
@@ -36,6 +37,9 @@ MonoBehaviour:
     detectionRadius: 5
   budgetTriggers: []
   satisfactionTriggers: []
+  workforceTriggers: []
+  facilityStatusTriggers: []
+  weatherTriggers: []
   requireAllTriggers: 1
   isGlobalTask: 0
   targetFacilityType: 1
@@ -74,6 +78,8 @@ MonoBehaviour:
     triggersDelivery: 1
     immediateDelivery: 0
     deliveryCargoType: 0
+    enableMultipleDeliveries: 1
+    multiDeliveryType: 1
     quantityType: 2
     deliveryQuantity: 0
     deliveryPercentage: 0
@@ -103,6 +109,8 @@ MonoBehaviour:
     triggersDelivery: 1
     immediateDelivery: 0
     deliveryCargoType: 0
+    enableMultipleDeliveries: 0
+    multiDeliveryType: 0
     quantityType: 2
     deliveryQuantity: 0
     deliveryPercentage: 0
@@ -132,6 +140,8 @@ MonoBehaviour:
     triggersDelivery: 1
     immediateDelivery: 1
     deliveryCargoType: 0
+    enableMultipleDeliveries: 0
+    multiDeliveryType: 0
     quantityType: 2
     deliveryQuantity: 0
     deliveryPercentage: 0
