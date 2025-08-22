@@ -448,6 +448,7 @@ public class TaskDetailUI : MonoBehaviour
                 Debug.Log("Executing immediate delivery");
                 ExecuteImmediateDelivery(selectedChoice);
                 TaskSystem.Instance.CompleteTask(currentTask);
+                
             }
             else if (selectedChoice.triggersDelivery && !selectedChoice.immediateDelivery) // STRICT: Only normal, not both
             {
@@ -1029,8 +1030,46 @@ public class TaskDetailUI : MonoBehaviour
             Debug.LogWarning($"Immediate delivery overflow: {overflow} {cargoType} returned to {source.name}");
         }
 
+        // Track client arrivals at shelters
+        if (cargoType == ResourceType.Population && ClientStayTracker.Instance != null)
+        {
+            Building destinationBuilding = destination.GetComponent<Building>();
+            if (destinationBuilding != null && destinationBuilding.GetBuildingType() == BuildingType.Shelter)
+            {
+                string groupName = $"Delivery_Vehicle_{currentTask.taskId}";
+                ClientStayTracker.Instance.RegisterClientArrival(destinationBuilding, actualDelivered, groupName);
+            }
+        }
+
         if (showDebugInfo)
             Debug.Log($"Immediate delivery: {actualDelivered} {cargoType} from {source.name} to {destination.name}");
+
+        // NEW: Track client arrivals for multi-delivery immediate transfers
+        if (cargoType == ResourceType.Population && ClientStayTracker.Instance != null && actualDelivered > 0)
+        {
+            Building sourceBuilding = source.GetComponent<Building>();
+            Building destBuilding = destination.GetComponent<Building>();
+            PrebuiltBuilding sourcePrebuilt = source.GetComponent<PrebuiltBuilding>();
+            
+            if (sourcePrebuilt != null && sourcePrebuilt.GetPrebuiltType() == PrebuiltBuildingType.Community &&
+                destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
+            {
+                string groupName = $"Multi_{currentTask.taskId}_{sourcePrebuilt.name}_to_{destBuilding.name}";
+                ClientStayTracker.Instance.RegisterClientArrival(destBuilding, actualDelivered, groupName);
+            }
+            else if (sourceBuilding != null && sourceBuilding.GetBuildingType() == BuildingType.Shelter &&
+                    destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
+            {
+                string groupName = $"Multi_{currentTask.taskId}_{sourceBuilding.name}_to_{destBuilding.name}";
+                ClientStayTracker.Instance.RegisterClientArrival(destBuilding, actualDelivered, groupName);
+            }
+            else if (sourceBuilding != null && sourceBuilding.GetBuildingType() == BuildingType.Shelter &&
+                    destBuilding != null && destBuilding.GetBuildingType() == BuildingType.CaseworkSite)
+            {
+                if (showDebugInfo)
+                    Debug.Log($"Multi-delivery casework: {actualDelivered} from {sourceBuilding.name}");
+            }
+        }
     }
 
     /// <summary>
@@ -1570,6 +1609,38 @@ public class TaskDetailUI : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Immediate delivery completed: {actualDelivered} {choice.deliveryCargoType} from {source.name} to {destination.name}");
+
+        // NEW: Track client arrivals at shelters for immediate delivery
+        if (choice.deliveryCargoType == ResourceType.Population && ClientStayTracker.Instance != null && actualDelivered > 0)
+        {
+            Building sourceBuilding = source.GetComponent<Building>();
+            Building destBuilding = destination.GetComponent<Building>();
+            PrebuiltBuilding sourcePrebuilt = source.GetComponent<PrebuiltBuilding>();
+            PrebuiltBuilding destPrebuilt = destination.GetComponent<PrebuiltBuilding>();
+            
+            // Case 1: Community to Shelter
+            if (sourcePrebuilt != null && sourcePrebuilt.GetPrebuiltType() == PrebuiltBuildingType.Community &&
+                destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
+            {
+                string groupName = $"Immediate_{currentTask.taskId}_{sourcePrebuilt.name}_to_{destBuilding.name}";
+                ClientStayTracker.Instance.RegisterClientArrival(destBuilding, actualDelivered, groupName);
+            }
+            // Case 2: Shelter to Shelter
+            else if (sourceBuilding != null && sourceBuilding.GetBuildingType() == BuildingType.Shelter &&
+                    destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
+            {
+                string groupName = $"Immediate_{currentTask.taskId}_{sourceBuilding.name}_to_{destBuilding.name}";
+                ClientStayTracker.Instance.RegisterClientArrival(destBuilding, actualDelivered, groupName);
+            }
+            // Case 3: Shelter to Casework
+            else if (sourceBuilding != null && sourceBuilding.GetBuildingType() == BuildingType.Shelter &&
+                    destBuilding != null && destBuilding.GetBuildingType() == BuildingType.CaseworkSite)
+            {
+                int removed = ClientStayTracker.Instance.RemoveClientsByQuantity(sourceBuilding, actualDelivered);
+                if (showDebugInfo)
+                    Debug.Log($"Removed {removed} clients from {sourceBuilding.name} for immediate casework");
+            }
+        }
     }
 
     // Helper method to get resource storage from any building type

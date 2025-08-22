@@ -14052,6 +14052,7 @@ GameObject:
   - component: {fileID: 550057043}
   - component: {fileID: 550057045}
   - component: {fileID: 550057046}
+  - component: {fileID: 550057047}
   m_Layer: 0
   m_Name: MapBuildingWorkerManager
   m_TagString: Untagged
@@ -14163,6 +14164,27 @@ MonoBehaviour:
   showDebugGizmos: 1
   floodGizmoColor: {r: 0, g: 0, b: 1, a: 1}
   riverGizmoColor: {r: 0, g: 1, b: 1, a: 1}
+--- !u!114 &550057047
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 550057041}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a096afa520af6104088fe9472940a141, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  clientGroups: []
+  overstayRecords: []
+  caseworkRequestThreshold: 8
+  overstayThreshold: 10
+  enableCaseworkTaskGeneration: 1
+  caseworkTaskTitle: Casework Request
+  caseworkTaskDescription: Clients have been in shelter for {0} rounds and are requesting
+    casework assistance.
+  showDebugInfo: 1
 --- !u!1 &555145402
 GameObject:
   m_ObjectHideFlags: 0
@@ -16035,7 +16057,7 @@ MonoBehaviour:
     m_Top: 15
     m_Bottom: 0
   m_ChildAlignment: 0
-  m_Spacing: 15
+  m_Spacing: 92
   m_ChildForceExpandWidth: 0
   m_ChildForceExpandHeight: 0
   m_ChildControlWidth: 0

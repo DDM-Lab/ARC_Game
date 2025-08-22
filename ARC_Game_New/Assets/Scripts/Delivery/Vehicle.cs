@@ -492,6 +492,39 @@ public class Vehicle : MonoBehaviour
             int actualDelivered = destStorage.AddResource(currentTask.cargoType, cargoAmount);
             currentCargo[currentTask.cargoType] = 0;
 
+            // NEW: Track client arrivals at shelters
+            if (currentTask.cargoType == ResourceType.Population && ClientStayTracker.Instance != null && actualDelivered > 0)
+            {
+                Building sourceBuilding = currentTask.sourceBuilding.GetComponent<Building>();
+                Building destBuilding = currentTask.destinationBuilding.GetComponent<Building>();
+                PrebuiltBuilding sourcePrebuilt = currentTask.sourceBuilding.GetComponent<PrebuiltBuilding>();
+                PrebuiltBuilding destPrebuilt = currentTask.destinationBuilding.GetComponent<PrebuiltBuilding>();
+                
+                // Case 1: Community to Shelter - Register new clients
+                if (sourcePrebuilt != null && sourcePrebuilt.GetPrebuiltType() == PrebuiltBuildingType.Community &&
+                    destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
+                {
+                    string groupName = $"Vehicle_{currentTask.taskId}_{sourcePrebuilt.name}_to_{destBuilding.name}";
+                    ClientStayTracker.Instance.RegisterClientArrival(destBuilding, actualDelivered, groupName);
+                }
+                // Case 2: Shelter to Shelter - Move existing clients (implementation needed)
+                else if (sourceBuilding != null && sourceBuilding.GetBuildingType() == BuildingType.Shelter &&
+                        destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
+                {
+                    // For now, register as new arrivals (continue their stay duration)
+                    string groupName = $"Vehicle_{currentTask.taskId}_{sourceBuilding.name}_to_{destBuilding.name}";
+                    ClientStayTracker.Instance.RegisterClientArrival(destBuilding, actualDelivered, groupName);
+                }
+                // Case 3: Shelter to Casework - Remove clients
+                else if (sourceBuilding != null && sourceBuilding.GetBuildingType() == BuildingType.Shelter &&
+                        destBuilding != null && destBuilding.GetBuildingType() == BuildingType.CaseworkSite)
+                {
+                    int removed = ClientStayTracker.Instance.RemoveClientsByQuantity(sourceBuilding, actualDelivered);
+                    if (showDebugInfo)
+                        Debug.Log($"Removed {removed} clients from {sourceBuilding.name} for casework");
+                }
+            }
+
             if (showDebugInfo)
                 Debug.Log($"Vehicle {vehicleName} delivered {actualDelivered} {currentTask.cargoType}");
         }
