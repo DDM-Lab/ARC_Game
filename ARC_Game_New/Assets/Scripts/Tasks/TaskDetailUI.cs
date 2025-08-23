@@ -132,8 +132,17 @@ public class TaskDetailUI : MonoBehaviour
     {
         if (taskDetailPanel != null)
         {
-            taskDetailPanel.SetActive(false);
+            // Stop all running coroutines before clearing display
+            StopAllCoroutines();
+            
+            // Reset typing state
+            isTyping = false;
+            currentTypingMessage = null;
+
+            // Force clear all UI elements immediately (before hiding panel)
             ClearDisplay();
+            
+            taskDetailPanel.SetActive(false);
 
             if (showDebugInfo)
                 Debug.Log("Task detail closed");
@@ -234,9 +243,17 @@ public class TaskDetailUI : MonoBehaviour
         // Display agent messages with typing effect
         foreach (AgentMessage message in currentTask.agentMessages)
         {
+            // Check if panel is still active before each message
+            if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
+                yield break;
+                
             yield return StartCoroutine(DisplayAgentMessage(message));
             //yield return new WaitForSecondsRealtime(0.5f); // Brief pause between messages, use real time
         }
+        
+        // Check if panel is still active before displaying choices
+        if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
+            yield break;
 
         // Display choices if available
         if (currentTask.agentChoices.Count > 0)
@@ -255,6 +272,10 @@ public class TaskDetailUI : MonoBehaviour
 
     IEnumerator DisplayAgentMessage(AgentMessage message)
     {
+        // Check if panel is still active
+        if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
+            yield break;
+
         GameObject messageItem = Instantiate(agentMessagePrefab, conversationContent);
         AgentMessageUI messageUI = messageItem.GetComponent<AgentMessageUI>();
 
@@ -325,22 +346,53 @@ public class TaskDetailUI : MonoBehaviour
 
     void ClearConversation()
     {
+        // NEW: Stop any typing effects first
+        isTyping = false;
+        currentTypingMessage = null;
+        
+        // NEW: Immediate cleanup of all conversation items
         foreach (GameObject item in currentConversationItems)
         {
             if (item != null)
-                Destroy(item);
+            {
+                // Force immediate destruction
+                DestroyImmediate(item);
+            }
         }
         currentConversationItems.Clear();
         selectedChoice = null;
+        
+        // NEW: Also clear any orphaned children from conversationContent
+        if (conversationContent != null)
+        {
+            for (int i = conversationContent.childCount - 1; i >= 0; i--)
+            {
+                Transform child = conversationContent.GetChild(i);
+                if (child != null)
+                {
+                    DestroyImmediate(child.gameObject);
+                }
+            }
+        }
     }
 
     void ClearDisplay()
     {
+        // NEW: Stop any remaining coroutines
+        StopAllCoroutines();
+        
+        // Reset typing state
+        isTyping = false;
+        currentTypingMessage = null;
+        
         ClearImpactItems();
         ClearConversation();
         currentTask = null;
         selectedChoice = null;
         numericalInputs.Clear();
+        
+        if (showDebugInfo)
+            Debug.Log("Display cleared completely");
     }
 
     // doesn't work for now

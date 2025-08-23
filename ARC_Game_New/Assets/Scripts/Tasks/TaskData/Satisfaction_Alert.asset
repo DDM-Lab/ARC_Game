@@ -16,9 +16,15 @@ MonoBehaviour:
   taskTitle: Satisfaction Declining
   taskType: 3
   description: Community satisfaction has dropped significantly.
-  taskImage: {fileID: 0}
+  taskImage: {fileID: 21300000, guid: 3c8b727b245029b43b112ed24fc7c5d3, type: 3}
+  taskOfficer: 0
   roundTriggers: []
-  dayTriggers: []
+  dayTriggers:
+  - conditionType: 3
+    targetDay: 0
+    intervalDays: 0
+    startDay: 2
+    endDay: 0
   resourceTriggers: []
   probabilityTriggers: []
   floodTileTriggers: []
@@ -28,7 +34,10 @@ MonoBehaviour:
   - conditionType: 1
     comparison: 1
     targetValue: 15
-    previousSatisfaction: 0
+    previousSatisfaction: 65
+  workforceTriggers: []
+  facilityStatusTriggers: []
+  weatherTriggers: []
   requireAllTriggers: 1
   isGlobalTask: 0
   targetFacilityType: 1

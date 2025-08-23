@@ -7,6 +7,7 @@ public class FloodTaskGenerator : MonoBehaviour
     [Header("Emergency Task Configuration")]
     public bool enableFloodTasks = true;
     public TaskDatabase emergencyTaskDatabase;
+    public Sprite vehicleDamageImage;
 
     [Header("Debug")]
     public bool showDebugInfo = true;
@@ -83,6 +84,8 @@ public class FloodTaskGenerator : MonoBehaviour
 
         GameTask roadBlockageTask = TaskSystem.Instance.CreateTask(
             taskTitle, TaskType.Emergency, "Emergency Response", description);
+
+        roadBlockageTask.taskImage = vehicleDamageImage;
 
         // Set tight timing for emergency
         roadBlockageTask.roundsRemaining = 2;
@@ -212,6 +215,8 @@ public class FloodTaskGenerator : MonoBehaviour
         
         GameTask repairTask = TaskSystem.Instance.CreateTask(
             taskTitle, TaskType.Emergency, "Maintenance", description);
+
+        repairTask.taskImage = vehicleDamageImage;
         
         // Longer time for repair tasks
         repairTask.roundsRemaining = 2;

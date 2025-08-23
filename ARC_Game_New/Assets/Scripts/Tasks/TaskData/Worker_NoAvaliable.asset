@@ -17,10 +17,15 @@ MonoBehaviour:
   taskType: 2
   description: Facility requires workers but none are available. External recruitment
     needed.
-  taskImage: {fileID: 0}
+  taskImage: {fileID: 21300000, guid: 7818154064cc5274d8c36500af7288dc, type: 3}
   taskOfficer: 1
   roundTriggers: []
-  dayTriggers: []
+  dayTriggers:
+  - conditionType: 3
+    targetDay: 0
+    intervalDays: 0
+    startDay: 2
+    endDay: 0
   resourceTriggers: []
   probabilityTriggers: []
   floodTileTriggers: []

@@ -49,7 +49,8 @@ public class DayTrigger : TaskTrigger
     {
         SpecificDay,        // Triggers on exact day number
         DayInterval,        // Triggers every N days
-        DayRange            // Triggers if current day is within range
+        DayRange,           // Triggers if current day is within range
+        StartsFrom         // Triggers if current day is greater than or equal to start day
     }
 
     public override bool CheckCondition()
@@ -69,6 +70,9 @@ public class DayTrigger : TaskTrigger
             case DayConditionType.DayRange:
                 return currentDay >= startDay && currentDay <= endDay;
 
+            case DayConditionType.StartsFrom:
+                return currentDay >= startDay;
+
             default:
                 return false;
         }
@@ -84,6 +88,8 @@ public class DayTrigger : TaskTrigger
                 return $"Every {intervalDays} days";
             case DayConditionType.DayRange:
                 return $"Days {startDay}-{endDay}";
+            case DayConditionType.StartsFrom:
+                return $"Starts from Day {startDay}";
             default:
                 return "Unknown day condition";
         }
@@ -935,7 +941,7 @@ public class WeatherTrigger : TaskTrigger
             default:
                 return false;
         }
-        
+
     }
 
 
@@ -945,3 +951,5 @@ public class WeatherTrigger : TaskTrigger
         return $"Current weather's severity level is {conditionText}";
     }
 }
+
+

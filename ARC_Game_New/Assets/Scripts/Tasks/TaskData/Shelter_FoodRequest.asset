@@ -17,10 +17,15 @@ MonoBehaviour:
   taskType: 1
   description: This shelter has people but no food supplies. We need to request emergency
     food delivery from the nearest kitchen.
-  taskImage: {fileID: 21300000, guid: c939145498029214ab7fc047d1938e25, type: 3}
+  taskImage: {fileID: 21300000, guid: fae5a30ae4bbd6948812db185f36f3d8, type: 3}
   taskOfficer: 4
   roundTriggers: []
-  dayTriggers: []
+  dayTriggers:
+  - conditionType: 3
+    targetDay: 0
+    intervalDays: 0
+    startDay: 2
+    endDay: 0
   resourceTriggers:
   - facilityType: 1
     resourceType: 1

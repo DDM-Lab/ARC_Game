@@ -16,9 +16,15 @@ MonoBehaviour:
   taskTitle: Flood Alert - Rising Water
   taskType: 3
   description: Flood levels are rising. We should prepare for potential evacuations.
-  taskImage: {fileID: 0}
+  taskImage: {fileID: 21300000, guid: 09373f204d0d14b488fa491635b79346, type: 3}
+  taskOfficer: 0
   roundTriggers: []
-  dayTriggers: []
+  dayTriggers:
+  - conditionType: 3
+    targetDay: 0
+    intervalDays: 0
+    startDay: 2
+    endDay: 0
   resourceTriggers: []
   probabilityTriggers: []
   floodTileTriggers:
@@ -29,6 +35,9 @@ MonoBehaviour:
   floodedFacilityTriggers: []
   budgetTriggers: []
   satisfactionTriggers: []
+  workforceTriggers: []
+  facilityStatusTriggers: []
+  weatherTriggers: []
   requireAllTriggers: 1
   isGlobalTask: 1
   targetFacilityType: 1

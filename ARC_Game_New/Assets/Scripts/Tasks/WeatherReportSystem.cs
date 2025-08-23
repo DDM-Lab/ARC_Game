@@ -15,6 +15,7 @@ public class WeatherReportSystem : MonoBehaviour
     public TextMeshProUGUI FloodingExpansionText;
 
     [Header("Report Settings")]
+    public Sprite reportTaskImage;
     public bool enableDailyReports = true;
     public bool showDebugInfo = true;
     
@@ -66,6 +67,8 @@ public class WeatherReportSystem : MonoBehaviour
     GameTask CreateDailyReportAlert()
     {
         GameTask report = TaskSystem.Instance.CreateTask($"Day {GlobalClock.Instance.GetCurrentDay()} Start of Day Report", TaskType.Alert, "Daily Report", "Daily weather and disaster situation report");
+
+        report.taskImage = reportTaskImage;
         
         // Generate report messages
         report.agentMessages = new List<AgentMessage>();

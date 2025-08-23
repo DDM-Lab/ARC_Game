@@ -17,10 +17,15 @@ MonoBehaviour:
   taskType: 1
   description: 20 clients in this community need relocation. Choose where to send
     them based on available options and budget.
-  taskImage: {fileID: 21300000, guid: c939145498029214ab7fc047d1938e25, type: 3}
+  taskImage: {fileID: 21300000, guid: 7099591f7bcf3f343aeb32a4fd0d27cb, type: 3}
   taskOfficer: 2
   roundTriggers: []
-  dayTriggers: []
+  dayTriggers:
+  - conditionType: 3
+    targetDay: 0
+    intervalDays: 0
+    startDay: 2
+    endDay: 0
   resourceTriggers: []
   probabilityTriggers:
   - probability: 0.5

@@ -17,10 +17,15 @@ MonoBehaviour:
   taskType: 0
   description: Flood has reached community center. Emergency relocation of residents
     required.
-  taskImage: {fileID: 0}
+  taskImage: {fileID: 21300000, guid: 7099591f7bcf3f343aeb32a4fd0d27cb, type: 3}
   taskOfficer: 2
   roundTriggers: []
-  dayTriggers: []
+  dayTriggers:
+  - conditionType: 3
+    targetDay: 0
+    intervalDays: 0
+    startDay: 2
+    endDay: 0
   resourceTriggers: []
   probabilityTriggers: []
   floodTileTriggers: []

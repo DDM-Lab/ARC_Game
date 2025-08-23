@@ -16,12 +16,17 @@ MonoBehaviour:
   taskTitle: Daily Budget Allocation
   taskType: 2
   description: ' Daily budget report ready.'
-  taskImage: {fileID: 0}
+  taskImage: {fileID: 21300000, guid: 279e68b249d217e4baea8f58cf4e4d64, type: 3}
   taskOfficer: 3
   roundTriggers:
   - targetRound: 0
     exactMatch: 1
-  dayTriggers: []
+  dayTriggers:
+  - conditionType: 3
+    targetDay: 0
+    intervalDays: 0
+    startDay: 2
+    endDay: 0
   resourceTriggers: []
   probabilityTriggers: []
   floodTileTriggers: []
@@ -62,7 +67,34 @@ MonoBehaviour:
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
-  agentChoices: []
+  agentChoices:
+  - choiceId: 0
+    choiceText: Receive $3000 Budget
+    choiceImpacts:
+    - impactType: 1
+      value: 3000
+      isCountdown: 0
+      customLabel: 
+    isSelected: 1
+    triggersDelivery: 0
+    immediateDelivery: 0
+    deliveryCargoType: 0
+    enableMultipleDeliveries: 0
+    multiDeliveryType: 0
+    quantityType: 0
+    deliveryQuantity: 0
+    deliveryPercentage: 0
+    deliverAll: 0
+    sourceType: 0
+    sourceBuilding: 0
+    sourcePrebuilt: 0
+    specificSourceName: 
+    destinationType: 0
+    destinationBuilding: 0
+    destinationPrebuilt: 0
+    specificDestinationName: 
+    prioritizeNearestSource: 0
+    prioritizeNearestDestination: 0
   numericalInputs: []
   deliveryFailureSatisfactionPenalty: 10
   deliveryTimeLimit: 300

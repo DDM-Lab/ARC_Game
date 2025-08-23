@@ -37,7 +37,11 @@ MonoBehaviour:
   randomExpansionChance: 0.4
   maxRandomExpansionDistance: 5
   landSpreadMultiplier: 1
-  terrainBlockMultiplier: 0.2
+  terrainBlockMultiplier: 1
+  blockingRadius: 5
+  minimumRainForSpawning: 0.3
+  floodSpawnChance: 0.7
+  rainIntensitySpawnBonus: 0.2
   baseShrinkageChance: 0.1
   edgeShrinkageBonus: 0.2
   enableDebugLogs: 1
