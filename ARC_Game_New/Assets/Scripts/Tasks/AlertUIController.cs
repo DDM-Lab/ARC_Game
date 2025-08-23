@@ -10,11 +10,19 @@ public class AlertUIController : MonoBehaviour
     [Header("UI References")]
     public GameObject alertPanel;
     public GameObject alertBackground;
+    public GameObject clickableArea; // NEW: Entire clickable area for skip
     public Image agentIcon;
     public TextMeshProUGUI agentNameText;
     public TextMeshProUGUI messageText;
     public Button nextButton;
     public Button skipTypingButton; // Optional: separate skip button
+    
+    [Header("Dynamic Layout")]
+    public RectTransform messageContainer; // Container for the message text
+    public float minHeight = 100f; // Minimum height for message container
+    public float maxHeight = 400f; // Maximum height for message container
+    public float padding = 20f; // Padding around text
+    public float animationSpeed = 3f; // Speed of height animation
     
     [Header("Typing Effect Settings")]
     public float typingSpeed = 0.05f; // Seconds per character
@@ -35,7 +43,13 @@ public class AlertUIController : MonoBehaviour
     private int currentMessageIndex = 0;
     private bool isTyping = false;
     private bool alertActive = false;
+    private bool isAnimatingHeight = false;
     private Coroutine typingCoroutine;
+    private Coroutine heightAnimationCoroutine;
+    
+    // Dynamic height calculation
+    private float targetHeight;
+    private float currentHeight;
     
     // Game pause state
     private bool wasGamePaused = false;
@@ -80,12 +94,8 @@ public class AlertUIController : MonoBehaviour
         // Setup button events
         nextButton.onClick.AddListener(OnNextButtonClicked);
         
-        // Setup skip typing functionality - clicking on message text skips typing
-        if (messageText.GetComponent<Button>() == null)
-        {
-            Button messageButton = messageText.gameObject.AddComponent<Button>();
-            messageButton.onClick.AddListener(OnMessageClicked);
-        }
+        // NEW: Setup clickable area for entire panel skip functionality
+        SetupClickableArea();
         
         // Setup audio source
         if (audioSource == null)
@@ -93,6 +103,76 @@ public class AlertUIController : MonoBehaviour
         
         audioSource.playOnAwake = false;
         audioSource.volume = 0.3f;
+        
+        // Initialize message container references
+        if (messageContainer == null)
+            messageContainer = messageText.transform.parent.GetComponent<RectTransform>();
+            
+        // Remove any Content Size Fitter components to prevent conflicts
+        RemoveContentSizeFitters();
+    }
+    
+    /// <summary>
+    /// Setup clickable area for the entire message panel
+    /// </summary>
+    void SetupClickableArea()
+    {
+        // If no clickable area is assigned, use the message container
+        if (clickableArea == null)
+        {
+            clickableArea = messageContainer != null ? messageContainer.gameObject : alertPanel;
+        }
+        
+        // Add or get Button component for clickable area
+        Button clickAreaButton = clickableArea.GetComponent<Button>();
+        if (clickAreaButton == null)
+        {
+            clickAreaButton = clickableArea.AddComponent<Button>();
+            
+            // Make button invisible but interactable
+            clickAreaButton.targetGraphic = null;
+            Image buttonImage = clickableArea.GetComponent<Image>();
+            if (buttonImage == null)
+            {
+                buttonImage = clickableArea.AddComponent<Image>();
+                buttonImage.color = new Color(0, 0, 0, 0); // Transparent
+            }
+            clickAreaButton.targetGraphic = buttonImage;
+        }
+        
+        // Setup click handler
+        clickAreaButton.onClick.RemoveAllListeners();
+        clickAreaButton.onClick.AddListener(OnMessageAreaClicked);
+    }
+    
+    /// <summary>
+    /// Remove Content Size Fitter components that might cause conflicts
+    /// </summary>
+    void RemoveContentSizeFitters()
+    {
+        // Remove from message text
+        ContentSizeFitter textFitter = messageText.GetComponent<ContentSizeFitter>();
+        if (textFitter != null)
+        {
+            DestroyImmediate(textFitter);
+        }
+        
+        // Remove from message container
+        if (messageContainer != null)
+        {
+            ContentSizeFitter containerFitter = messageContainer.GetComponent<ContentSizeFitter>();
+            if (containerFitter != null)
+            {
+                DestroyImmediate(containerFitter);
+            }
+        }
+        
+        // Remove from alert panel
+        ContentSizeFitter panelFitter = alertPanel.GetComponent<ContentSizeFitter>();
+        if (panelFitter != null)
+        {
+            DestroyImmediate(panelFitter);
+        }
     }
     
     void OnTaskCreated(GameTask task)
@@ -136,17 +216,16 @@ public class AlertUIController : MonoBehaviour
         // Pause the game
         PauseGame();
 
-        // NEW: Start with UI hidden, show after layout calculation
-        StartCoroutine(ShowAlertWithDelay());
-        
+        // Show alert with smooth setup
+        StartCoroutine(ShowAlertSmooth());
     }
 
-    IEnumerator ShowAlertWithDelay()
+    IEnumerator ShowAlertSmooth()
     {
-        // Setup UI but keep invisible, except background
-        alertPanel.SetActive(false);
+        // Setup UI but keep invisible
         alertBackground.SetActive(true);
-
+        alertPanel.SetActive(true);
+        
         // Make panel transparent initially
         CanvasGroup panelCanvasGroup = alertPanel.GetComponent<CanvasGroup>();
         if (panelCanvasGroup == null)
@@ -154,16 +233,29 @@ public class AlertUIController : MonoBehaviour
 
         panelCanvasGroup.alpha = 0f;
 
-        // Setup content
+        // Setup initial content
         SetupAgentIcon(alertMessages[0]);
-        messageText.text = alertMessages[0].messageText; // temporary set full text for Content Size Fitter calculation
+        messageText.text = ""; // Start with empty text
+        
+        // Calculate target height for the full message
+        string fullMessage = alertMessages[0].messageText;
+        float calculatedHeight = CalculateTextHeight(fullMessage);
+        targetHeight = Mathf.Clamp(calculatedHeight + padding, minHeight, maxHeight);
+        
+        // Set initial height to minimum
+        currentHeight = minHeight;
+        SetMessageContainerHeight(currentHeight);
 
-        // Wait for layout to calculate
+        // Wait for layout
         yield return new WaitForEndOfFrame();
-        yield return new WaitForEndOfFrame(); // wait 2 frames till content size is calculated
 
-        // Now show with fade in
+        // Fade in panel
         alertActive = true;
+        while (panelCanvasGroup.alpha < 1f)
+        {
+            panelCanvasGroup.alpha += Time.unscaledDeltaTime * 5f;
+            yield return null;
+        }
         panelCanvasGroup.alpha = 1f;
 
         // Start typing effect
@@ -171,7 +263,79 @@ public class AlertUIController : MonoBehaviour
 
         Debug.Log($"Showing alert: {currentAlert.taskTitle}");
     }
-
+    
+    /// <summary>
+    /// Calculate the height needed for text
+    /// </summary>
+    float CalculateTextHeight(string text)
+    {
+        // Create a temporary text component for measurement
+        GameObject tempObj = new GameObject("TempText");
+        TextMeshProUGUI tempText = tempObj.AddComponent<TextMeshProUGUI>();
+        
+        // Copy settings from main text component
+        tempText.font = messageText.font;
+        tempText.fontSize = messageText.fontSize;
+        tempText.fontStyle = messageText.fontStyle;
+        tempText.text = text;
+        
+        // Set the width to match our message text
+        RectTransform tempRect = tempText.GetComponent<RectTransform>();
+        tempRect.sizeDelta = new Vector2(messageText.rectTransform.sizeDelta.x, 0);
+        
+        // Force text generation
+        tempText.ForceMeshUpdate();
+        
+        // Get the preferred height
+        float height = tempText.preferredHeight;
+        
+        // Clean up
+        DestroyImmediate(tempObj);
+        
+        return height;
+    }
+    
+    /// <summary>
+    /// Set message container height
+    /// </summary>
+    void SetMessageContainerHeight(float height)
+    {
+        if (messageContainer != null)
+        {
+            Vector2 sizeDelta = messageContainer.sizeDelta;
+            sizeDelta.y = height;
+            messageContainer.sizeDelta = sizeDelta;
+        }
+    }
+    
+    /// <summary>
+    /// Animate container height smoothly
+    /// </summary>
+    IEnumerator AnimateContainerHeight(float fromHeight, float toHeight)
+    {
+        isAnimatingHeight = true;
+        float elapsed = 0f;
+        float duration = Mathf.Abs(toHeight - fromHeight) / (animationSpeed * 100f); // Dynamic duration based on height difference
+        duration = Mathf.Clamp(duration, 0.1f, 1f); // Clamp between 0.1 and 1 second
+        
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = elapsed / duration;
+            
+            // Use smooth curve
+            t = Mathf.SmoothStep(0f, 1f, t);
+            
+            currentHeight = Mathf.Lerp(fromHeight, toHeight, t);
+            SetMessageContainerHeight(currentHeight);
+            
+            yield return null;
+        }
+        
+        currentHeight = toHeight;
+        SetMessageContainerHeight(currentHeight);
+        isAnimatingHeight = false;
+    }
     
     /// <summary>
     /// Setup agent icon based on message
@@ -231,7 +395,6 @@ public class AlertUIController : MonoBehaviour
     /// </summary>
     void ShowCurrentMessage()
     {
-        alertPanel.SetActive(true);
         if (currentMessageIndex >= alertMessages.Count)
         {
             CompleteAlert();
@@ -243,20 +406,32 @@ public class AlertUIController : MonoBehaviour
         // Update agent icon for this message
         SetupAgentIcon(currentMessage);
         
-        // Add small delay to prevent visual jumping
-        StartCoroutine(DelayedMessageStart(currentMessage.messageText));
+        // Calculate new target height for this message
+        float newTargetHeight = CalculateTextHeight(currentMessage.messageText);
+        targetHeight = Mathf.Clamp(newTargetHeight + padding, minHeight, maxHeight);
         
+        // Start typing with height animation
+        StartCoroutine(ShowMessageWithAnimation(currentMessage.messageText));
     }
 
-    IEnumerator DelayedMessageStart(string message)
+    IEnumerator ShowMessageWithAnimation(string message)
     {
-        // Clear text and wait
+        // Clear text
         messageText.text = "";
+        
+        // Animate to target height if needed
+        if (Mathf.Abs(currentHeight - targetHeight) > 5f)
+        {
+            if (heightAnimationCoroutine != null)
+                StopCoroutine(heightAnimationCoroutine);
+            heightAnimationCoroutine = StartCoroutine(AnimateContainerHeight(currentHeight, targetHeight));
+        }
+        
+        // Small delay before typing starts
         yield return new WaitForSecondsRealtime(0.1f);
 
         // Start typing
         StartTyping(message);
-        
     }
     
     /// <summary>
@@ -277,15 +452,32 @@ public class AlertUIController : MonoBehaviour
     }
     
     /// <summary>
-    /// Typing effect coroutine
+    /// Typing effect coroutine with dynamic height adjustment
     /// </summary>
     IEnumerator TypeMessage(string message)
     {
         messageText.text = "";
+        int lastLineCount = 1;
         
         for (int i = 0; i <= message.Length; i++)
         {
             messageText.text = message.Substring(0, i);
+            
+            // Check if we need to adjust height based on line count
+            int currentLineCount = messageText.textInfo.lineCount;
+            if (currentLineCount != lastLineCount && !isAnimatingHeight)
+            {
+                float currentTextHeight = CalculateTextHeight(messageText.text);
+                float adjustedHeight = Mathf.Clamp(currentTextHeight + padding, minHeight, targetHeight);
+                
+                if (Mathf.Abs(currentHeight - adjustedHeight) > 10f)
+                {
+                    // Quick micro-adjustment during typing
+                    StartCoroutine(QuickHeightAdjustment(adjustedHeight));
+                }
+                
+                lastLineCount = currentLineCount;
+            }
             
             // Play typing sound
             if (typingSoundEffect != null && audioSource != null && i < message.Length)
@@ -296,9 +488,39 @@ public class AlertUIController : MonoBehaviour
             yield return new WaitForSecondsRealtime(typingSpeed);
         }
         
+        // Ensure final height is correct
+        if (Mathf.Abs(currentHeight - targetHeight) > 2f)
+        {
+            if (heightAnimationCoroutine != null)
+                StopCoroutine(heightAnimationCoroutine);
+            heightAnimationCoroutine = StartCoroutine(AnimateContainerHeight(currentHeight, targetHeight));
+        }
+        
         // Typing completed
         isTyping = false;
         nextButton.interactable = true;
+    }
+    
+    /// <summary>
+    /// Quick height adjustment during typing (smaller movements)
+    /// </summary>
+    IEnumerator QuickHeightAdjustment(float newHeight)
+    {
+        float startHeight = currentHeight;
+        float elapsed = 0f;
+        float duration = 0.1f; // Very quick adjustment
+        
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = elapsed / duration;
+            currentHeight = Mathf.Lerp(startHeight, newHeight, t);
+            SetMessageContainerHeight(currentHeight);
+            yield return null;
+        }
+        
+        currentHeight = newHeight;
+        SetMessageContainerHeight(currentHeight);
     }
     
     /// <summary>
@@ -320,9 +542,9 @@ public class AlertUIController : MonoBehaviour
     }
     
     /// <summary>
-    /// Handle message text click (skip typing)
+    /// Handle message area click (skip typing) - NEW: Works for entire panel area
     /// </summary>
-    void OnMessageClicked()
+    void OnMessageAreaClicked()
     {
         if (isTyping)
         {
@@ -331,7 +553,7 @@ public class AlertUIController : MonoBehaviour
     }
     
     /// <summary>
-    /// Skip current typing effect
+    /// Skip current typing effect - IMPROVED: Smooth without glitching
     /// </summary>
     void SkipTyping()
     {
@@ -340,51 +562,25 @@ public class AlertUIController : MonoBehaviour
             StopCoroutine(typingCoroutine);
         }
         
-        // Show full message immediately with proper layout
+        // Show full message immediately
         if (currentMessageIndex < alertMessages.Count)
         {
             string fullMessage = alertMessages[currentMessageIndex].messageText;
-            
-            // Temporarily disable Content Size Fitters to prevent flickering
-            ContentSizeFitter textFitter = messageText.GetComponent<ContentSizeFitter>();
-            ContentSizeFitter panelFitter = messageText.transform.parent.GetComponent<ContentSizeFitter>();
-            
-            bool textFitterWasEnabled = textFitter != null && textFitter.enabled;
-            bool panelFitterWasEnabled = panelFitter != null && panelFitter.enabled;
-            
-            // Disable fitters
-            if (textFitter != null) textFitter.enabled = false;
-            if (panelFitter != null) panelFitter.enabled = false;
-            
-            // Set the text
             messageText.text = fullMessage;
             
-            // Wait one frame then re-enable and rebuild
-            StartCoroutine(RestoreLayoutAfterSkip(textFitter, panelFitter, textFitterWasEnabled, panelFitterWasEnabled));
+            // Ensure height is correct for full message
+            if (Mathf.Abs(currentHeight - targetHeight) > 2f)
+            {
+                if (heightAnimationCoroutine != null)
+                    StopCoroutine(heightAnimationCoroutine);
+                // Quick snap to final height when skipping
+                currentHeight = targetHeight;
+                SetMessageContainerHeight(currentHeight);
+            }
         }
         
         isTyping = false;
         nextButton.interactable = true;
-    }
-
-    /// <summary>
-    /// Restore layout components after skip
-    /// </summary>
-    IEnumerator RestoreLayoutAfterSkip(ContentSizeFitter textFitter, ContentSizeFitter panelFitter, bool textWasEnabled, bool panelWasEnabled)
-    {
-        yield return new WaitForEndOfFrame();
-        
-        // Re-enable fitters
-        if (textFitter != null && textWasEnabled) textFitter.enabled = true;
-        if (panelFitter != null && panelWasEnabled) panelFitter.enabled = true;
-        
-        // Force layout rebuild
-        yield return new WaitForEndOfFrame();
-        Canvas.ForceUpdateCanvases();
-        LayoutRebuilder.ForceRebuildLayoutImmediate(messageText.GetComponent<RectTransform>());
-        if (panelFitter != null)
-            LayoutRebuilder.ForceRebuildLayoutImmediate(messageText.transform.parent.GetComponent<RectTransform>());
-        LayoutRebuilder.ForceRebuildLayoutImmediate(alertPanel.GetComponent<RectTransform>());
     }
     
     /// <summary>
@@ -425,15 +621,36 @@ public class AlertUIController : MonoBehaviour
             StartCoroutine(TransitionToNextAlert());
             return; // Don't resume game yet
         }
+        
         // Hide UI
+        StartCoroutine(HideAlertSmooth());
+    }
+
+    /// <summary>
+    /// Smooth alert hiding
+    /// </summary>
+    IEnumerator HideAlertSmooth()
+    {
+        CanvasGroup panelCanvasGroup = alertPanel.GetComponent<CanvasGroup>();
+        if (panelCanvasGroup == null)
+            panelCanvasGroup = alertPanel.AddComponent<CanvasGroup>();
+
+        while (panelCanvasGroup.alpha > 0f)
+        {
+            panelCanvasGroup.alpha -= Time.unscaledDeltaTime * 5f;
+            yield return null;
+        }
+
         alertPanel.SetActive(false);
         alertBackground.SetActive(false);
 
-        ResumeGame(); // resume only if no alerts
-        Debug.Log("Alert completed");
+        ResumeGame();
+        Debug.Log("Alert completed and hidden");
     }
 
-    // Fade out current alert and transition to next
+    /// <summary>
+    /// Fade out current alert and transition to next
+    /// </summary>
     IEnumerator TransitionToNextAlert()
     {
         // Fade out current alert
@@ -443,12 +660,12 @@ public class AlertUIController : MonoBehaviour
 
         while (panelCanvasGroup.alpha > 0f)
         {
-            panelCanvasGroup.alpha -= Time.unscaledDeltaTime * 5f; // Fast fade
+            panelCanvasGroup.alpha -= Time.unscaledDeltaTime * 5f;
             yield return null;
         }
 
         // Small pause between alerts
-        yield return new WaitForSecondsRealtime(0.2f);
+        yield return new WaitForSecondsRealtime(0.3f);
 
         // Process next alert
         ProcessNextAlert();
@@ -502,9 +719,6 @@ public class AlertUIController : MonoBehaviour
                 }
             }
         }
-        
-        // Disable camera controls if needed
-        // Add specific disabling for your camera controller here
     }
     
     /// <summary>
@@ -522,8 +736,6 @@ public class AlertUIController : MonoBehaviour
                 raycaster.enabled = true;
             }
         }
-        
-        // Re-enable camera controls if needed
     }
 
     public bool IsUIOpen()
