@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Onboard_Day1Round3
   m_EditorClassIdentifier: 
   taskId: Onboard_Day1Round3
-  taskTitle: Onboarding Message - Day 1 Round 3
+  taskTitle: Onboarding Day 1 Round 3
   taskType: 3
   description: Tutorial on first day
   taskImage: {fileID: 21300000, guid: 3c8b727b245029b43b112ed24fc7c5d3, type: 3}

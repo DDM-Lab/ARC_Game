@@ -19,7 +19,8 @@ public class TaskDetailUI : MonoBehaviour
     public TextMeshProUGUI descriptionText;
     public Transform ImpactHorizontalchoiceLayout1;
     public Transform ImpactHorizontalchoiceLayout2;
-    public GameObject impactItemPrefab;
+    public GameObject impactItemPrefab_Short;
+    public GameObject impactItemPrefab_Long;
 
     [Header("Task Type Sprites")]
     public Image taskTypeImage;
@@ -190,7 +191,7 @@ public class TaskDetailUI : MonoBehaviour
 
     void UpdateImpactDisplay()
     {
-        if (ImpactHorizontalchoiceLayout1 == null || ImpactHorizontalchoiceLayout2 == null || impactItemPrefab == null) return;
+        if (ImpactHorizontalchoiceLayout1 == null || ImpactHorizontalchoiceLayout2 == null || impactItemPrefab_Short == null || impactItemPrefab_Long == null) return;
 
         // Clear existing impact items
         ClearImpactItems();
@@ -200,13 +201,21 @@ public class TaskDetailUI : MonoBehaviour
         {
             TaskImpact impact = currentTask.impacts[i];
             Transform layout = (i % 2 == 0) ? ImpactHorizontalchoiceLayout1 : ImpactHorizontalchoiceLayout2;
-            CreateImpactItem(impact, layout);
+            bool useLongPrefab = (i % 2 == 0) ? false : true;
+            if (currentTask.impacts.Count == 2)
+            {
+                useLongPrefab = true;
+            }else if (currentTask.impacts.Count == 4)
+            {
+                useLongPrefab = false;
+            }
+            CreateImpactItem(impact, layout, useLongPrefab);
         }
     }
 
-    void CreateImpactItem(TaskImpact impact, Transform layout)
+    void CreateImpactItem(TaskImpact impact, Transform layout, bool useLongPrefab)
     {
-        GameObject impactItem = Instantiate(impactItemPrefab, layout);
+        GameObject impactItem = Instantiate(useLongPrefab ? impactItemPrefab_Long : impactItemPrefab_Short, layout);
         ImpactItemUI impactUI = impactItem.GetComponent<ImpactItemUI>();
 
         if (impactUI != null)

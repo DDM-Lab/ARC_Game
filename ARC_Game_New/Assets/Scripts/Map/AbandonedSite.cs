@@ -199,7 +199,6 @@ public class AbandonedSite : MonoBehaviour
         if (Application.isPlaying)
         {
             Vector3 labelPos = transform.position + Vector3.up * 0.8f;
-            UnityEditor.Handles.Label(labelPos, $"Site {siteId}\n{(isAvailable ? "Available" : "Unavailable")}");
         }
     }
 }

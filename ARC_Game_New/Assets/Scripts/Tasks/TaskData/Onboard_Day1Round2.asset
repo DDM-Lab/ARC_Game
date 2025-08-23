@@ -13,11 +13,11 @@ MonoBehaviour:
   m_Name: Onboard_Day1Round2
   m_EditorClassIdentifier: 
   taskId: Onboard_Day1Round2
-  taskTitle: Onboarding Message - Day 1 Round 2
+  taskTitle: Onboarding Day 1 Round 2
   taskType: 3
   description: Tutorial on first day
   taskImage: {fileID: 21300000, guid: 3c8b727b245029b43b112ed24fc7c5d3, type: 3}
-  taskOfficer: 0
+  taskOfficer: 1
   roundTriggers:
   - targetRound: 2
     exactMatch: 1
@@ -46,7 +46,8 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts: []
   agentMessages:
-  - messageText: onboarding instruction 2
+  - messageText: There are no other tasks on day 1. You can start with building shelters
+      and kitchens. Remember to assign workers to facilities.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
