@@ -134,14 +134,14 @@ public class TaskDetailUI : MonoBehaviour
         {
             // Stop all running coroutines before clearing display
             StopAllCoroutines();
-            
+
             // Reset typing state
             isTyping = false;
             currentTypingMessage = null;
 
             // Force clear all UI elements immediately (before hiding panel)
             ClearDisplay();
-            
+
             taskDetailPanel.SetActive(false);
 
             if (showDebugInfo)
@@ -246,11 +246,11 @@ public class TaskDetailUI : MonoBehaviour
             // Check if panel is still active before each message
             if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
                 yield break;
-                
+
             yield return StartCoroutine(DisplayAgentMessage(message));
             //yield return new WaitForSecondsRealtime(0.5f); // Brief pause between messages, use real time
         }
-        
+
         // Check if panel is still active before displaying choices
         if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
             yield break;
@@ -349,7 +349,7 @@ public class TaskDetailUI : MonoBehaviour
         // NEW: Stop any typing effects first
         isTyping = false;
         currentTypingMessage = null;
-        
+
         // NEW: Immediate cleanup of all conversation items
         foreach (GameObject item in currentConversationItems)
         {
@@ -361,7 +361,7 @@ public class TaskDetailUI : MonoBehaviour
         }
         currentConversationItems.Clear();
         selectedChoice = null;
-        
+
         // NEW: Also clear any orphaned children from conversationContent
         if (conversationContent != null)
         {
@@ -380,17 +380,17 @@ public class TaskDetailUI : MonoBehaviour
     {
         // NEW: Stop any remaining coroutines
         StopAllCoroutines();
-        
+
         // Reset typing state
         isTyping = false;
         currentTypingMessage = null;
-        
+
         ClearImpactItems();
         ClearConversation();
         currentTask = null;
         selectedChoice = null;
         numericalInputs.Clear();
-        
+
         if (showDebugInfo)
             Debug.Log("Display cleared completely");
     }
@@ -500,7 +500,7 @@ public class TaskDetailUI : MonoBehaviour
                 Debug.Log("Executing immediate delivery");
                 ExecuteImmediateDelivery(selectedChoice);
                 TaskSystem.Instance.CompleteTask(currentTask);
-                
+
             }
             else if (selectedChoice.triggersDelivery && !selectedChoice.immediateDelivery) // STRICT: Only normal, not both
             {
@@ -519,7 +519,7 @@ public class TaskDetailUI : MonoBehaviour
                 Debug.Log("No delivery - completing task immediately");
                 TaskSystem.Instance.CompleteTask(currentTask);
             }
-        
+
         }
         else
         {
@@ -536,7 +536,7 @@ public class TaskDetailUI : MonoBehaviour
         errorMessage = "";
 
         if (!choice.triggersDelivery && !choice.immediateDelivery && !choice.enableMultipleDeliveries)
-        return true;
+            return true;
 
         MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
         if (choice.enableMultipleDeliveries)
@@ -573,7 +573,7 @@ public class TaskDetailUI : MonoBehaviour
 
         if (availableAmount <= 0)
         {
-            string quantityText = choice.quantityType == DeliveryQuantityType.Percentage ? 
+            string quantityText = choice.quantityType == DeliveryQuantityType.Percentage ?
                 $"{choice.deliveryPercentage}%" : "all";
             errorMessage = $"No resources available at {source.name} for {quantityText} delivery";
             return false;
@@ -616,7 +616,7 @@ public class TaskDetailUI : MonoBehaviour
                         Debug.Log($"Choice uses alternative route (+{analysis.routeLengthDifference} tiles) due to flood");
                 }
             }
-        
+
             Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
             bool hasCapableVehicle = false;
 
@@ -652,13 +652,13 @@ public class TaskDetailUI : MonoBehaviour
         {
             case AgentChoice.MultiDeliveryType.SingleSourceMultiDest:
                 return ValidateSingleSourceMultiDest(choice, triggeringFacility, out errorMessage);
-                
+
             case AgentChoice.MultiDeliveryType.MultiSourceSingleDest:
                 return ValidateMultiSourceSingleDest(choice, triggeringFacility, out errorMessage);
-                
+
             case AgentChoice.MultiDeliveryType.MultiSourceMultiDest:
                 return ValidateMultiSourceMultiDest(choice, triggeringFacility, out errorMessage);
-                
+
             default:
                 errorMessage = "Unknown multi-delivery type";
                 return false;
@@ -684,7 +684,7 @@ public class TaskDetailUI : MonoBehaviour
         List<MonoBehaviour> destinations = FindMultipleDestinations(choice, triggeringFacility, 3)
             .Where(dest => dest != source) // NEW: Exclude source from destinations
             .ToList();
-            
+
         if (destinations.Count == 0)
         {
             errorMessage = $"No suitable destinations found for {choice.deliveryCargoType} (excluding source)";
@@ -764,7 +764,7 @@ public class TaskDetailUI : MonoBehaviour
         List<MonoBehaviour> sources = FindMultipleSources(choice, triggeringFacility, 3)
             .Where(source => source != destination) // NEW: Exclude destination from sources
             .ToList();
-            
+
         if (sources.Count == 0)
         {
             errorMessage = $"No suitable sources found for {choice.deliveryCargoType} (excluding destination)";
@@ -1102,7 +1102,7 @@ public class TaskDetailUI : MonoBehaviour
             Building sourceBuilding = source.GetComponent<Building>();
             Building destBuilding = destination.GetComponent<Building>();
             PrebuiltBuilding sourcePrebuilt = source.GetComponent<PrebuiltBuilding>();
-            
+
             if (sourcePrebuilt != null && sourcePrebuilt.GetPrebuiltType() == PrebuiltBuildingType.Community &&
                 destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
             {
@@ -1151,7 +1151,7 @@ public class TaskDetailUI : MonoBehaviour
     {
         BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
         if (storage == null) return false;
-        
+
         if (isSource)
         {
             return storage.GetResourceAmount(cargoType) > 0;
@@ -1175,11 +1175,11 @@ public class TaskDetailUI : MonoBehaviour
                 return prebuilt.CanAcceptPopulation(1);
             }
         }
-        
+
         // For other resource types, check storage
         BuildingResourceStorage storage = prebuilt.GetResourceStorage();
         if (storage == null) return false;
-        
+
         if (isSource)
         {
             return storage.GetResourceAmount(cargoType) > 0;
@@ -1229,7 +1229,7 @@ public class TaskDetailUI : MonoBehaviour
     void ExecuteMultipleDeliveries(AgentChoice choice)
     {
         MonoBehaviour triggeringFacility = FindTriggeringFacility(currentTask);
-        
+
         switch (choice.multiDeliveryType)
         {
             case AgentChoice.MultiDeliveryType.SingleSourceMultiDest:
@@ -1243,7 +1243,7 @@ public class TaskDetailUI : MonoBehaviour
             case AgentChoice.MultiDeliveryType.MultiSourceMultiDest:
                 ExecuteMultiSourceMultiDest(choice, triggeringFacility);
                 break;
-                
+
             default:
                 // Fall back to single delivery
                 ExecuteChoiceDelivery(choice);
@@ -1262,24 +1262,24 @@ public class TaskDetailUI : MonoBehaviour
 
         MonoBehaviour source = DetermineChoiceDeliverySource(choice, triggeringFacility);
         if (source == null) return;
-        
+
         // Find multiple destinations
         List<MonoBehaviour> destinations = FindMultipleDestinations(choice, triggeringFacility, 3)
         .Where(dest => dest != source) // Exclude source
         .ToList();
-        
+
         if (destinations.Count == 0)
         {
             Debug.LogWarning("No suitable destinations found for multi-destination delivery");
             return;
         }
-        
+
         int totalQuantity = CalculateDeliveryQuantity(choice, source);
         int quantityPerDest = Mathf.Max(1, totalQuantity / destinations.Count);
-        
+
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
         if (deliverySystem == null) return;
-        
+
         foreach (MonoBehaviour dest in destinations)
         {
             if (choice.immediateDelivery)
@@ -1290,7 +1290,7 @@ public class TaskDetailUI : MonoBehaviour
             {
                 deliverySystem.CreateDeliveryTask(source, dest, choice.deliveryCargoType, quantityPerDest, 3);
             }
-            
+
             if (showDebugInfo)
                 Debug.Log($"Multi-delivery: {quantityPerDest} {choice.deliveryCargoType} from {source.name} to {dest.name}");
         }
@@ -1303,24 +1303,24 @@ public class TaskDetailUI : MonoBehaviour
     {
         MonoBehaviour destination = DetermineChoiceDeliveryDestination(choice, triggeringFacility);
         if (destination == null) return;
-        
+
         // Find multiple sources
         List<MonoBehaviour> sources = FindMultipleSources(choice, triggeringFacility, 3); // Max 3 sources
-        
+
         if (sources.Count == 0)
         {
             Debug.LogWarning("No suitable sources found for multi-source delivery");
             return;
         }
-        
+
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
         if (deliverySystem == null) return;
-        
+
         foreach (MonoBehaviour source in sources)
         {
             int availableQuantity = CalculateDeliveryQuantity(choice, source);
             if (availableQuantity <= 0) continue;
-            
+
             if (choice.immediateDelivery)
             {
                 ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, availableQuantity);
@@ -1329,7 +1329,7 @@ public class TaskDetailUI : MonoBehaviour
             {
                 deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
             }
-            
+
             if (showDebugInfo)
                 Debug.Log($"Multi-source: {availableQuantity} {choice.deliveryCargoType} from {source.name} to {destination.name}");
         }
@@ -1342,22 +1342,22 @@ public class TaskDetailUI : MonoBehaviour
     {
         List<MonoBehaviour> sources = FindMultipleSources(choice, triggeringFacility, 3);
         List<MonoBehaviour> destinations = FindMultipleDestinations(choice, triggeringFacility, 3);
-        
+
         if (sources.Count == 0 || destinations.Count == 0) return;
-        
+
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
         if (deliverySystem == null) return;
-        
+
         // Round-robin distribution
         int destIndex = 0;
         foreach (MonoBehaviour source in sources)
         {
             int availableQuantity = CalculateDeliveryQuantity(choice, source);
             if (availableQuantity <= 0) continue;
-            
+
             MonoBehaviour destination = destinations[destIndex % destinations.Count];
             destIndex++;
-            
+
             if (choice.immediateDelivery)
             {
                 ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, availableQuantity);
@@ -1366,7 +1366,7 @@ public class TaskDetailUI : MonoBehaviour
             {
                 deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
             }
-            
+
             if (showDebugInfo)
                 Debug.Log($"Multi-to-multi: {availableQuantity} {choice.deliveryCargoType} from {source.name} to {destination.name}");
         }
@@ -1378,7 +1378,7 @@ public class TaskDetailUI : MonoBehaviour
     List<MonoBehaviour> FindMultipleSources(AgentChoice choice, MonoBehaviour triggeringFacility, int maxSources)
     {
         List<MonoBehaviour> sources = new List<MonoBehaviour>();
-        
+
         switch (choice.sourceType)
         {
             case DeliverySourceType.SpecificBuilding:
@@ -1390,7 +1390,7 @@ public class TaskDetailUI : MonoBehaviour
                     .ToArray();
                 sources.AddRange(buildings.Cast<MonoBehaviour>());
                 break;
-                
+
             case DeliverySourceType.SpecificPrebuilt:
                 PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>()
                     .Where(p => p.GetPrebuiltType() == choice.sourcePrebuilt)
@@ -1400,12 +1400,12 @@ public class TaskDetailUI : MonoBehaviour
                     .ToArray();
                 sources.AddRange(prebuilts.Cast<MonoBehaviour>());
                 break;
-                
+
             case DeliverySourceType.AutoFind:
                 sources.AddRange(FindAllSuitableSources(choice.deliveryCargoType, maxSources));
                 break;
         }
-        
+
         return sources;
     }
 
@@ -1415,7 +1415,7 @@ public class TaskDetailUI : MonoBehaviour
     List<MonoBehaviour> FindMultipleDestinations(AgentChoice choice, MonoBehaviour triggeringFacility, int maxDestinations)
     {
         List<MonoBehaviour> destinations = new List<MonoBehaviour>();
-        
+
         switch (choice.destinationType)
         {
             case DeliveryDestinationType.SpecificBuilding:
@@ -1427,7 +1427,7 @@ public class TaskDetailUI : MonoBehaviour
                     .ToArray();
                 destinations.AddRange(buildings.Cast<MonoBehaviour>());
                 break;
-                
+
             case DeliveryDestinationType.SpecificPrebuilt:
                 PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>()
                     .Where(p => p.GetPrebuiltType() == choice.destinationPrebuilt)
@@ -1437,12 +1437,12 @@ public class TaskDetailUI : MonoBehaviour
                     .ToArray();
                 destinations.AddRange(prebuilts.Cast<MonoBehaviour>());
                 break;
-                
+
             case DeliveryDestinationType.AutoFind:
                 destinations.AddRange(FindAllSuitableDestinations(choice.deliveryCargoType, maxDestinations));
                 break;
         }
-        
+
         return destinations;
     }
 
@@ -1452,7 +1452,7 @@ public class TaskDetailUI : MonoBehaviour
     List<MonoBehaviour> FindAllSuitableSources(ResourceType cargoType, int maxCount)
     {
         List<MonoBehaviour> sources = new List<MonoBehaviour>();
-        
+
         switch (cargoType)
         {
             case ResourceType.FoodPacks:
@@ -1463,7 +1463,7 @@ public class TaskDetailUI : MonoBehaviour
                     .ToArray();
                 sources.AddRange(kitchens.Cast<MonoBehaviour>());
                 break;
-                
+
             case ResourceType.Population:
                 PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>()
                     .Where(p => p.GetPrebuiltType() == PrebuiltBuildingType.Community)
@@ -1473,7 +1473,7 @@ public class TaskDetailUI : MonoBehaviour
                 sources.AddRange(communities.Cast<MonoBehaviour>());
                 break;
         }
-        
+
         return sources;
     }
 
@@ -1483,7 +1483,7 @@ public class TaskDetailUI : MonoBehaviour
     List<MonoBehaviour> FindAllSuitableDestinations(ResourceType cargoType, int maxCount)
     {
         List<MonoBehaviour> destinations = new List<MonoBehaviour>();
-        
+
         switch (cargoType)
         {
             case ResourceType.FoodPacks:
@@ -1494,7 +1494,7 @@ public class TaskDetailUI : MonoBehaviour
                     .ToArray();
                 destinations.AddRange(shelters.Cast<MonoBehaviour>());
                 break;
-                
+
             case ResourceType.Population:
                 Building[] shelterDests = FindObjectsOfType<Building>()
                     .Where(b => b.GetBuildingType() == BuildingType.Shelter)
@@ -1502,7 +1502,7 @@ public class TaskDetailUI : MonoBehaviour
                     .Take(maxCount)
                     .ToArray();
                 destinations.AddRange(shelterDests.Cast<MonoBehaviour>());
-                
+
                 PrebuiltBuilding[] motels = FindObjectsOfType<PrebuiltBuilding>()
                     .Where(p => p.GetPrebuiltType() == PrebuiltBuildingType.Motel)
                     .Where(p => CanPrebuiltHandleCargo(p, cargoType, false))
@@ -1511,7 +1511,7 @@ public class TaskDetailUI : MonoBehaviour
                 destinations.AddRange(motels.Cast<MonoBehaviour>());
                 break;
         }
-        
+
         return destinations;
     }
 
@@ -1669,7 +1669,7 @@ public class TaskDetailUI : MonoBehaviour
             Building destBuilding = destination.GetComponent<Building>();
             PrebuiltBuilding sourcePrebuilt = source.GetComponent<PrebuiltBuilding>();
             PrebuiltBuilding destPrebuilt = destination.GetComponent<PrebuiltBuilding>();
-            
+
             // Case 1: Community to Shelter
             if (sourcePrebuilt != null && sourcePrebuilt.GetPrebuiltType() == PrebuiltBuildingType.Community &&
                 destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
@@ -1768,16 +1768,16 @@ public class TaskDetailUI : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Applied impacts for choice: {choice.choiceText}");
     }
-    
+
     void RepairVehicleById(int vehicleId)
     {
         Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
         Vehicle targetVehicle = vehicles.FirstOrDefault(v => v.GetVehicleId() == vehicleId);
-        
+
         if (targetVehicle != null)
         {
             targetVehicle.RepairVehicle();
-            
+
             if (showDebugInfo)
                 Debug.Log($"Repaired vehicle: {targetVehicle.GetVehicleName()}");
         }
@@ -1842,7 +1842,7 @@ public class TaskDetailUI : MonoBehaviour
             }
         }
     }
-    
+
     void UpdateChoiceValidation()
     {
         foreach (GameObject item in currentConversationItems)
@@ -1855,14 +1855,19 @@ public class TaskDetailUI : MonoBehaviour
                 {
                     string errorMessage;
                     bool isValid = ValidateChoiceDelivery(choice, out errorMessage);
-                    
+
                     // Update choice appearance based on validity
                     choiceUI.SetValidationState(isValid, errorMessage);
                 }
             }
         }
     }
-    
+
+    public bool IsUIOpen()
+    {
+        return taskDetailPanel != null && taskDetailPanel.activeInHierarchy;
+    }
+
 }
 
 

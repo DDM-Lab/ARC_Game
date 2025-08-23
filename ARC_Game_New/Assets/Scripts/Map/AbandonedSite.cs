@@ -32,6 +32,12 @@ public class AbandonedSite : MonoBehaviour
     
     void OnMouseEnter()
     {
+        // If pointer is over interactive UI elements, show no hover effects
+        if (IsPointerOverInteractiveUI() || isInSimulation())
+        {
+            return;
+        }
+
         if (isAvailable)
         {
             isMouseOver = true;
@@ -47,8 +53,8 @@ public class AbandonedSite : MonoBehaviour
     
     void OnMouseDown()
     {
-        // Only block if pointer is over interactive UI elements, not just any UI
-        if (IsPointerOverInteractiveUI())
+        // Only block if pointer is over interactive UI elements and is not in simulation
+        if (IsPointerOverInteractiveUI() || isInSimulation())
         {
             return;
         }
@@ -58,6 +64,11 @@ public class AbandonedSite : MonoBehaviour
         {
             OnSiteSelected?.Invoke(this);
         }
+    }
+
+    bool isInSimulation()
+    {
+        return GlobalClock.Instance != null && GlobalClock.Instance.IsSimulationRunning();
     }
 
     bool IsPointerOverInteractiveUI()
@@ -97,6 +108,26 @@ public class AbandonedSite : MonoBehaviour
 
         AlertUIController alertUI = FindObjectOfType<AlertUIController>();
         if (alertUI != null && alertUI.IsUIOpen())
+        {
+            // Only block if pointer is actually over the UI panels
+            if (EventSystem.current.IsPointerOverGameObject())
+            {
+                return true;
+            }
+        }
+
+        TaskCenterUI taskCenterUI = FindObjectOfType<TaskCenterUI>();
+        if (taskCenterUI != null && taskCenterUI.IsUIOpen())
+        {
+            // Only block if pointer is actually over the UI panels
+            if (EventSystem.current.IsPointerOverGameObject())
+            {
+                return true;
+            }
+        }
+
+        TaskDetailUI taskDetailUI = FindObjectOfType<TaskDetailUI>();
+        if (taskDetailUI != null && taskDetailUI.IsUIOpen())
         {
             // Only block if pointer is actually over the UI panels
             if (EventSystem.current.IsPointerOverGameObject())

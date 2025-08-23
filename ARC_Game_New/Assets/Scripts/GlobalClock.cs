@@ -30,6 +30,11 @@ public class GlobalClock : MonoBehaviour
     [Header("UI References")]
     public Button executeButton;    
     public TMP_Dropdown speedDropdown;
+    public Button buildingStatsButton;
+    public Button workerCenterButton;
+    public Button taskCenterButton;
+    
+
     public Image[] timeSegmentImages = new Image[4]; // 4 time segments
     
     [Header("Sprite References")]
@@ -132,7 +137,7 @@ public class GlobalClock : MonoBehaviour
 
         if (TaskCenterDayRoundText != null)
         {
-            TaskCenterDayRoundText.text = $"Day {currentDay} Round {currentTimeSegment + 1}";
+            TaskCenterDayRoundText.text = $"Day {currentDay}, Round {currentTimeSegment + 1}";
         }
 
         // Update time segment sprites
@@ -269,31 +274,48 @@ public class GlobalClock : MonoBehaviour
         // Update display
         UpdateTimeDisplay();
     }
-    
+
     void DisablePlayerInteractions()
     {
         // Disable execute button
         if (executeButton != null)
             executeButton.interactable = false;
-        
+
         // Disable speed dropdown during simulation
         if (speedDropdown != null)
             speedDropdown.interactable = false;
-        
-        // You can add more UI elements to disable here
-        // For example: building placement, worker assignment UI, etc.
+
+        if (buildingStatsButton != null)
+            buildingStatsButton.interactable = false;
+
+        if (taskCenterButton != null)
+            taskCenterButton.interactable = false;
+
+        if (workerCenterButton != null)
+            workerCenterButton.interactable = false;
+
+        // ***Can add more UI elements to disable here
     }
-    
+
     void EnablePlayerInteractions()
     {
         // Enable execute button
         if (executeButton != null)
             executeButton.interactable = true;
-        
+
         // Enable speed dropdown
         if (speedDropdown != null)
             speedDropdown.interactable = true;
-        
+
+        if (buildingStatsButton != null)
+            buildingStatsButton.interactable = true;
+
+        if (taskCenterButton != null)
+            taskCenterButton.interactable = true;
+
+        if (workerCenterButton != null)
+            workerCenterButton.interactable = true;
+
         // Re-enable other UI elements here
     }
     
