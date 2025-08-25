@@ -7916,6 +7916,7 @@ RectTransform:
   - {fileID: 1986749443}
   - {fileID: 1105357441}
   - {fileID: 1776780028}
+  - {fileID: 856978762}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -13981,6 +13982,7 @@ GameObject:
   - component: {fileID: 550057045}
   - component: {fileID: 550057046}
   - component: {fileID: 550057047}
+  - component: {fileID: 550057048}
   m_Layer: 0
   m_Name: MapBuildingWorkerManager
   m_TagString: Untagged
@@ -14068,7 +14070,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   initialTrainedWorkers: 5
   initialUntrainedWorkers: 5
-  globalWorkerManagementUI: {fileID: 1475215137}
+  globalWorkerManagementUI: {fileID: 0}
 --- !u!114 &550057046
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -14113,6 +14115,49 @@ MonoBehaviour:
   caseworkTaskDescription: Clients have been in shelter for {0} rounds and are requesting
     casework assistance.
   showDebugInfo: 1
+--- !u!114 &550057048
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 550057041}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5a88c48a5145f0240ad5a1fca27e996c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mainPanel: {fileID: 732766043}
+  leftStatsPanel: {fileID: 1177160391}
+  trainedWorkingText: {fileID: 396563468}
+  trainedFreeText: {fileID: 1807290000}
+  trainedNotArrivedText: {fileID: 143537170}
+  trainedTotalText: {fileID: 832533296}
+  untrainedWorkingText: {fileID: 1328230339}
+  untrainedFreeText: {fileID: 1704944230}
+  untrainedTrainingText: {fileID: 1930369888}
+  untrainedTotalText: {fileID: 349292867}
+  enableImmediateRequest: 1
+  immediateRequestTrainedButton: {fileID: 1823104623}
+  immediateRequestUntrainedButton: {fileID: 1528276785}
+  totalWorkersText: {fileID: 1061873010}
+  availableWorkforceText: {fileID: 0}
+  totalWorkforceText: {fileID: 0}
+  rightBuildingPanel: {fileID: 1059549672}
+  shelterTabButton: {fileID: 1640661774}
+  kitchenTabButton: {fileID: 1433932086}
+  caseworkTabButton: {fileID: 1432559764}
+  disasterAssessmentTabButton: {fileID: 1997038060}
+  trainCenterTabButton: {fileID: 466517946}
+  activeTabColor: {r: 1, g: 1, b: 1, a: 1}
+  inactiveTabColor: {r: 0.92549026, g: 0.8431373, b: 0.67058825, a: 1}
+  buildingScrollView: {fileID: 2088814763}
+  scrollViewContent: {fileID: 1681404846}
+  buildingListItemPrefab: {fileID: 4628746065564638752, guid: 5611df47c6b480f4ea45e6ef8c8a2bdb, type: 3}
+  closeButton: {fileID: 1677823026}
+  workerSystem: {fileID: 550057045}
+  buildingSystem: {fileID: 550057043}
+  individualManageUI: {fileID: 609181995}
 --- !u!1 &555145402
 GameObject:
   m_ObjectHideFlags: 0
@@ -15091,6 +15136,57 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 593616849}
   m_CullTransparentMesh: 1
+--- !u!1 &595964833
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 595964835}
+  - component: {fileID: 595964834}
+  m_Layer: 0
+  m_Name: UIManagers
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &595964834
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 595964833}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fa55f279079712b4ebbb11bac03c0b7d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  displayDuration: 3
+  maxToastCount: 3
+  toastPrefab: {fileID: 7749637785647014075, guid: a95146d9dae3d214e816e131176cd4f1, type: 3}
+  toastParent: {fileID: 856978762}
+  soundEffects: []
+  audioSource: {fileID: 0}
+  toastSpacing: 80
+--- !u!4 &595964835
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 595964833}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -4.64647, y: 7.708328, z: 3.2945561}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &597780842
 GameObject:
   m_ObjectHideFlags: 0
@@ -27044,6 +27140,77 @@ MonoBehaviour:
   m_ChildScaleWidth: 0
   m_ChildScaleHeight: 0
   m_ReverseArrangement: 0
+--- !u!1 &856978761
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 856978762}
+  - component: {fileID: 856978763}
+  - component: {fileID: 856978764}
+  m_Layer: 5
+  m_Name: ToastContainer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &856978762
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 856978761}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 319038540}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 700, y: 385}
+  m_SizeDelta: {x: 525, y: 350}
+  m_Pivot: {x: 1, y: 1}
+--- !u!222 &856978763
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 856978761}
+  m_CullTransparentMesh: 1
+--- !u!114 &856978764
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 856978761}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 59f8146938fff824cb5fd77236b75775, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Padding:
+    m_Left: 0
+    m_Right: 0
+    m_Top: 0
+    m_Bottom: 0
+  m_ChildAlignment: 2
+  m_Spacing: 5
+  m_ChildForceExpandWidth: 0
+  m_ChildForceExpandHeight: 0
+  m_ChildControlWidth: 0
+  m_ChildControlHeight: 0
+  m_ChildScaleWidth: 0
+  m_ChildScaleHeight: 0
+  m_ReverseArrangement: 0
 --- !u!1 &858293078
 GameObject:
   m_ObjectHideFlags: 0
@@ -28947,11 +29114,11 @@ Transform:
   m_GameObject: {fileID: 883239017}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -3.1, y: -2.11, z: 0}
+  m_LocalPosition: {x: -13.08, y: -0.6999999, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 0}
+  m_Father: {fileID: 1573964781}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &899674119
 GameObject:
@@ -36396,7 +36563,7 @@ GameObject:
   - component: {fileID: 1185566962}
   - component: {fileID: 1185566961}
   m_Layer: 0
-  m_Name: ResourceManager
+  m_Name: ResourceDeliveryManager
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -45722,7 +45889,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1475215138}
-  - component: {fileID: 1475215137}
   m_Layer: 5
   m_Name: GlobalWorkerAssignment
   m_TagString: Untagged
@@ -45730,49 +45896,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1475215137
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1475215136}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5a88c48a5145f0240ad5a1fca27e996c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  mainPanel: {fileID: 732766043}
-  leftStatsPanel: {fileID: 1177160391}
-  trainedWorkingText: {fileID: 396563468}
-  trainedFreeText: {fileID: 1807290000}
-  trainedNotArrivedText: {fileID: 143537170}
-  trainedTotalText: {fileID: 832533296}
-  untrainedWorkingText: {fileID: 1328230339}
-  untrainedFreeText: {fileID: 1704944230}
-  untrainedTrainingText: {fileID: 1930369888}
-  untrainedTotalText: {fileID: 349292867}
-  enableImmediateRequest: 1
-  immediateRequestTrainedButton: {fileID: 1823104623}
-  immediateRequestUntrainedButton: {fileID: 1528276785}
-  totalWorkersText: {fileID: 1061873010}
-  availableWorkforceText: {fileID: 0}
-  totalWorkforceText: {fileID: 0}
-  rightBuildingPanel: {fileID: 1059549672}
-  shelterTabButton: {fileID: 1640661774}
-  kitchenTabButton: {fileID: 1433932086}
-  caseworkTabButton: {fileID: 1432559764}
-  disasterAssessmentTabButton: {fileID: 1997038060}
-  trainCenterTabButton: {fileID: 466517946}
-  activeTabColor: {r: 1, g: 1, b: 1, a: 1}
-  inactiveTabColor: {r: 0.92549026, g: 0.8431373, b: 0.67058825, a: 1}
-  buildingScrollView: {fileID: 2088814763}
-  scrollViewContent: {fileID: 1681404846}
-  buildingListItemPrefab: {fileID: 4628746065564638752, guid: 5611df47c6b480f4ea45e6ef8c8a2bdb, type: 3}
-  closeButton: {fileID: 1677823026}
-  workerSystem: {fileID: 550057045}
-  buildingSystem: {fileID: 550057043}
-  individualManageUI: {fileID: 609181995}
 --- !u!224 &1475215138
 RectTransform:
   m_ObjectHideFlags: 0
@@ -49807,6 +49930,7 @@ Transform:
   - {fileID: 198843863}
   - {fileID: 2020026259}
   - {fileID: 2009039308}
+  - {fileID: 883239019}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1579226894
@@ -67242,6 +67366,6 @@ SceneRoots:
   - {fileID: 978748997}
   - {fileID: 536388037}
   - {fileID: 2085978411}
+  - {fileID: 595964835}
   - {fileID: 962768839}
   - {fileID: 1573964781}
-  - {fileID: 883239019}
