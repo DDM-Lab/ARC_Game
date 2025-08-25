@@ -23,13 +23,39 @@ public class ToastUI : MonoBehaviour
     public Color infoColor = Color.white;
     
     [Header("Animation")]
-    public float fadeInDuration = 0.3f;
-    public float fadeOutDuration = 0.5f;
+    public float slideDistance = 10f;
+    public float fadeInDuration = 0.4f;
+    public float fadeOutDuration = 0.3f;
+    public AnimationCurve slideCurve = new AnimationCurve(new Keyframe(0, 0, 0, 2), new Keyframe(1, 1, 0, 0));
+    public AnimationCurve scaleCurve = new AnimationCurve(new Keyframe(0, 0, 0, 2), new Keyframe(1, 1, 0, 0));
+
+    private RectTransform rectTransform;
+    private Vector2 originalPosition;
+    private Vector3 originalScale;
+    private bool isAnimating = false;
+    private bool isInitialized = false;
+
+    private void Awake()
+    {
+        rectTransform = GetComponent<RectTransform>();
+        originalScale = transform.localScale;
+    }
 
     private void Start()
     {
+        // Hide completely until initialized
         if (canvasGroup != null)
-            canvasGroup.alpha = 1f; // make sure it's visible in the Scene view
+        {
+            canvasGroup.alpha = 0f;
+            canvasGroup.blocksRaycasts = false;
+        }
+
+        // Hide transform as backup
+        if (!isInitialized)
+        {
+            transform.localScale = Vector3.zero;
+        }
+
         AdjustToastSize();
     }
 
@@ -62,17 +88,67 @@ public class ToastUI : MonoBehaviour
 
     public void Initialize(string message, ToastType type, float displayDuration)
     {
+        isInitialized = true;
+        
         messageText.text = message;
-
         AdjustToastSize();
+        
+        // Set color and style based on type
+        SetToastStyle(type);
+        
+        // Ensure proper initial state
+        if (canvasGroup != null)
+        {
+            canvasGroup.alpha = 0f;
+            canvasGroup.blocksRaycasts = true;
+        }
+        
+        transform.localScale = originalScale;
+        
+        // Start animation after position is set by ToastManager
+        StartCoroutine(DelayedInitialize(displayDuration));
+    }
     
-        // Set color based on type
+    private IEnumerator DelayedInitialize(float displayDuration)
+    {
+        // Wait for layout to settle
+        yield return new WaitForEndOfFrame();
+        yield return null;
+        
+        // Store original position after ToastManager sets it
+        originalPosition = rectTransform.anchoredPosition;
+        
+        StartCoroutine(AnimateToast(displayDuration));
+    }
+    
+    // Public method for ToastManager to update position
+    public void UpdateTargetPosition(Vector2 newPosition)
+    {
+        if (!isAnimating)
+        {
+            originalPosition = newPosition;
+            rectTransform.anchoredPosition = newPosition;
+        }
+        else
+        {
+            // If animating, just update the target
+            originalPosition = newPosition;
+        }
+    }
+    
+    private void SetToastStyle(ToastType type)
+    {
         Color typeColor = GetTypeColor(type);
         if (backgroundImage != null)
+        {
             backgroundImage.color = typeColor;
+        }
         
-        // Start animation
-        StartCoroutine(AnimateToast(displayDuration));
+        // Set text color for better contrast
+        if (messageText != null)
+        {
+            messageText.color = type == ToastType.Info ? Color.white : Color.black;
+        }
     }
     
     private Color GetTypeColor(ToastType type)
@@ -92,36 +168,74 @@ public class ToastUI : MonoBehaviour
 
     private IEnumerator AnimateToast(float displayDuration)
     {
-        // Fade in
+        isAnimating = true;
+        
+        // Initialize animation state
         canvasGroup.alpha = 0f;
+        transform.localScale = originalScale * 0.8f;
+        rectTransform.anchoredPosition = originalPosition + Vector2.right * slideDistance;
+        
         float elapsed = 0f;
 
+        // Slide in + Fade in + Scale animation
         while (elapsed < fadeInDuration)
         {
-            elapsed += Time.unscaledDeltaTime;  // use unscaledDeltaTime since sometimes game pause
-            canvasGroup.alpha = Mathf.Lerp(0f, 1f, elapsed / fadeInDuration);
+            float progress = elapsed / fadeInDuration;
+            
+            // Fade
+            canvasGroup.alpha = Mathf.Lerp(0f, 1f, progress);
+            
+            // Slide
+            float slideProgress = slideCurve.Evaluate(progress);
+            Vector2 currentPos = Vector2.Lerp(originalPosition + Vector2.right * slideDistance, originalPosition, slideProgress);
+            rectTransform.anchoredPosition = currentPos;
+            
+            // Scale
+            float scaleProgress = scaleCurve.Evaluate(progress);
+            transform.localScale = Vector3.Lerp(originalScale * 0.8f, originalScale, scaleProgress);
+            
+            elapsed += Time.unscaledDeltaTime;
             yield return null;
         }
 
+        // Ensure final state
         canvasGroup.alpha = 1f;
+        rectTransform.anchoredPosition = originalPosition;
+        transform.localScale = originalScale;
+        
+        isAnimating = false; // Allow position updates during display time
 
         // Wait for display time
         float waitTime = displayDuration - fadeInDuration - fadeOutDuration;
         if (waitTime > 0)
         {
-            yield return new WaitForSecondsRealtime(waitTime);  // use WaitForSecondsRealtime since sometimes game pause
+            yield return new WaitForSecondsRealtime(waitTime);
         }
 
-        // Fade out
+        isAnimating = true; // Prevent position updates during fade out
+        
+        // Slide out + Fade out animation
         elapsed = 0f;
         while (elapsed < fadeOutDuration)
         {
-            elapsed += Time.unscaledDeltaTime;  // use unscaledDeltaTime since sometimes game pause
-            canvasGroup.alpha = Mathf.Lerp(1f, 0f, elapsed / fadeOutDuration);
+            float progress = elapsed / fadeOutDuration;
+            
+            // Fade
+            canvasGroup.alpha = Mathf.Lerp(1f, 0f, progress);
+            
+            // Slide out to right
+            float slideProgress = slideCurve.Evaluate(progress);
+            Vector2 currentPos = Vector2.Lerp(originalPosition, originalPosition + Vector2.right * slideDistance, slideProgress);
+            rectTransform.anchoredPosition = currentPos;
+            
+            // Slight scale down
+            transform.localScale = Vector3.Lerp(originalScale, originalScale * 0.9f, progress);
+            
+            elapsed += Time.unscaledDeltaTime;
             yield return null;
         }
 
         canvasGroup.alpha = 0f;
+        isAnimating = false;
     }
-
 }

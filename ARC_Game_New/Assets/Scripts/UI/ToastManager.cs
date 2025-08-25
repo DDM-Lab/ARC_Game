@@ -109,17 +109,22 @@ public class ToastManager : MonoBehaviour
         StartCoroutine(RemoveToastAfterDelay(toastObj, displayDuration));
     }
 
-    private void RepositionToasts()
+private void RepositionToasts()
+{
+    for (int i = 0; i < activeToasts.Count; i++)
     {
-        for (int i = 0; i < activeToasts.Count; i++)
+        if (activeToasts[i] != null)
         {
-            if (activeToasts[i] != null)
+            ToastUI toastUI = activeToasts[i].GetComponent<ToastUI>();
+            Vector2 targetPos = new Vector2(0, -i * toastSpacing);
+            
+            if (toastUI != null)
             {
-                RectTransform rectTransform = activeToasts[i].GetComponent<RectTransform>();
-                rectTransform.anchoredPosition = new Vector2(0, -i * toastSpacing);
+                toastUI.UpdateTargetPosition(targetPos);
             }
         }
     }
+}
 
     private IEnumerator RemoveToastAfterDelay(GameObject toastObj, float delay)
     {
