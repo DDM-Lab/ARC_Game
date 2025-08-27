@@ -145,10 +145,10 @@ public class ToastUI : MonoBehaviour
         }
         
         // Set text color for better contrast
-        if (messageText != null)
+        /*if (messageText != null)
         {
             messageText.color = type == ToastType.Info ? Color.white : Color.black;
-        }
+        }*/
     }
     
     private Color GetTypeColor(ToastType type)

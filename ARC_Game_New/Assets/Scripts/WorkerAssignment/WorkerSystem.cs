@@ -137,16 +137,16 @@ public class WorkerSystem : MonoBehaviour
         Debug.Log($"Assigned {selectedWorkers.Count} workers (workforce: {totalWorkforce}) to building {buildingId}");
         return true;
     }
-    
+
     public void ReleaseWorkersFromBuilding(int buildingId)
     {
         List<Worker> buildingWorkers = GetWorkersByBuildingId(buildingId);
-        
+
         foreach (Worker worker in buildingWorkers)
         {
             worker.ReleaseFromBuilding();
         }
-        
+
         Debug.Log($"Released {buildingWorkers.Count} workers from building {buildingId}");
     }
     

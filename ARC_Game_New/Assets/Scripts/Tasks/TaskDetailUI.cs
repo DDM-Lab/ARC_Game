@@ -490,6 +490,10 @@ public class TaskDetailUI : MonoBehaviour
                 ShowAgentErrorMessage($"Cannot complete this action: {errorMessage}");
                 return;
             }
+            else
+            {
+                ToastManager.ShowToast($"Delivery for task '{currentTask.taskTitle}' is added to queue.", ToastType.Info, true);
+            }
         }
 
         // Apply choice impacts first
@@ -623,6 +627,7 @@ public class TaskDetailUI : MonoBehaviour
                 {
                     if (showDebugInfo)
                         Debug.Log($"Choice uses alternative route (+{analysis.routeLengthDifference} tiles) due to flood");
+                    ToastManager.ShowToast($"Due to flood, the delivery reroute takes (+{analysis.routeLengthDifference} tiles) longer than normal path.", ToastType.Info, true);
                 }
             }
 
@@ -1735,9 +1740,15 @@ public class TaskDetailUI : MonoBehaviour
                     if (SatisfactionAndBudget.Instance != null)
                     {
                         if (impact.value > 0)
+                        {
                             SatisfactionAndBudget.Instance.AddSatisfaction(impact.value);
+                            ToastManager.ShowToast($"Satisfaction increased by {impact.value}", ToastType.Info, true);
+                        }
                         else
+                        {
                             SatisfactionAndBudget.Instance.RemoveSatisfaction(-impact.value);
+                            ToastManager.ShowToast($"Satisfaction decreased by {-impact.value}", ToastType.Warning, true);
+                        }
                     }
                     break;
 
@@ -1745,9 +1756,15 @@ public class TaskDetailUI : MonoBehaviour
                     if (SatisfactionAndBudget.Instance != null)
                     {
                         if (impact.value > 0)
+                        {
                             SatisfactionAndBudget.Instance.AddBudget(impact.value);
+                            ToastManager.ShowToast($"Budget increased by {impact.value}", ToastType.Info, true);
+                        }
                         else
+                        {
                             SatisfactionAndBudget.Instance.RemoveBudget(-impact.value);
+                            ToastManager.ShowToast($"Budget decreased by {-impact.value}", ToastType.Warning, true);
+                        }
                     }
                     break;
 

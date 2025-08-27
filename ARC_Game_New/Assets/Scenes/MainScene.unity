@@ -15166,7 +15166,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   displayDuration: 3
-  maxToastCount: 3
+  maxToastCount: 5
   toastPrefab: {fileID: 7749637785647014075, guid: a95146d9dae3d214e816e131176cd4f1, type: 3}
   toastParent: {fileID: 856978762}
   soundEffects: []
@@ -27150,7 +27150,6 @@ GameObject:
   m_Component:
   - component: {fileID: 856978762}
   - component: {fileID: 856978763}
-  - component: {fileID: 856978764}
   m_Layer: 5
   m_Name: ToastContainer
   m_TagString: Untagged
@@ -27175,7 +27174,7 @@ RectTransform:
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
   m_AnchoredPosition: {x: 700, y: 385}
-  m_SizeDelta: {x: 525, y: 350}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 1, y: 1}
 --- !u!222 &856978763
 CanvasRenderer:
@@ -27185,32 +27184,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 856978761}
   m_CullTransparentMesh: 1
---- !u!114 &856978764
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 856978761}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 59f8146938fff824cb5fd77236b75775, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_Padding:
-    m_Left: 0
-    m_Right: 0
-    m_Top: 0
-    m_Bottom: 0
-  m_ChildAlignment: 2
-  m_Spacing: 5
-  m_ChildForceExpandWidth: 0
-  m_ChildForceExpandHeight: 0
-  m_ChildControlWidth: 0
-  m_ChildControlHeight: 0
-  m_ChildScaleWidth: 0
-  m_ChildScaleHeight: 0
-  m_ReverseArrangement: 0
 --- !u!1 &858293078
 GameObject:
   m_ObjectHideFlags: 0

@@ -84,7 +84,7 @@ public class Building : MonoBehaviour
         StartConstruction();
 
         Debug.Log($"Building initialized: {buildingType} at original site {siteId}");
-        ToastManager.ShowToast($"You chose to change an abandoned site into {buildingType}", ToastType.Info, true);
+        ToastManager.ShowToast($"You chose to change an abandoned site at {originalSiteId} into {buildingType}", ToastType.Info, true);
 
     }
 
@@ -166,7 +166,7 @@ public class Building : MonoBehaviour
         NotifyStatsUpdate();
 
         Debug.Log($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment");
-        ToastManager.ShowToast("Facility conversion completed! Now needs worker assignment", ToastType.Success, true);
+        ToastManager.ShowToast($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment", ToastType.Success, true);
 
     }
 

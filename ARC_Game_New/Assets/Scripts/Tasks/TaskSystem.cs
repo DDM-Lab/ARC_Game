@@ -387,10 +387,10 @@ public class TaskSystem : MonoBehaviour
     {
         if (task.linkedDeliveryTaskIds == null || task.linkedDeliveryTaskIds.Count == 0)
             return;
-        
+
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
         if (deliverySystem == null) return;
-        
+
         int cancelledCount = 0;
         foreach (int taskId in task.linkedDeliveryTaskIds)
         {
@@ -399,9 +399,10 @@ public class TaskSystem : MonoBehaviour
                 cancelledCount++;
             }
         }
-        
+
         if (showDebugInfo)
             Debug.Log($"Cancelled {cancelledCount} delivery tasks for expired game task: {task.taskTitle}");
+        ToastManager.ShowToast($"Cancelled {cancelledCount} delivery tasks for expired game task: {task.taskTitle}", ToastType.Warning, true);
     }
 
     void OnTimeSegmentAdvanced(int newSegment)
@@ -415,6 +416,7 @@ public class TaskSystem : MonoBehaviour
 
                 if (showDebugInfo)
                     Debug.Log($"Task '{task.taskTitle}' rounds remaining: {task.roundsRemaining}");
+                    //ToastManager.ShowToast($"Task '{task.taskTitle}' rounds remaining: {task.roundsRemaining}", ToastType.Info, true);
             }
         }
         CheckForUnrepairedVehicles();
@@ -443,6 +445,7 @@ public class TaskSystem : MonoBehaviour
                         
                         if (showDebugInfo)
                             Debug.Log($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}");
+                            ToastManager.ShowToast($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}", ToastType.Info, true);
                     }
                 }
             }
@@ -480,13 +483,14 @@ public class TaskSystem : MonoBehaviour
             
             bool allCompleted = gameTask.linkedDeliveryTaskIds.All(id => 
                 completedTasks.Any(ct => ct.taskId == id));
-            
+
             if (allCompleted)
             {
-                CompleteTask(gameTask);
-                
                 if (showDebugInfo)
                     Debug.Log($"All deliveries completed for task: {gameTask.taskTitle}");
+                    ToastManager.ShowToast($"All deliveries completed for task: {gameTask.taskTitle}, ", ToastType.Success, true);
+
+                CompleteTask(gameTask);
             }
         }
     }
@@ -499,23 +503,24 @@ public class TaskSystem : MonoBehaviour
                 Debug.LogWarning("HandleDeliveryFailure called with null task - skipping");
             return;
         }
-        
+
         if (task.status == TaskStatus.InProgress)
         {
             task.status = TaskStatus.Incomplete;
             activeTasks.Remove(task);
             completedTasks.Add(task);
-            
+
             // Apply penalties for delivery failure
             if (SatisfactionAndBudget.Instance != null && task.deliveryFailureSatisfactionPenalty > 0)
             {
                 SatisfactionAndBudget.Instance.RemoveSatisfaction(task.deliveryFailureSatisfactionPenalty);
             }
-            
+
             OnTaskCompleted?.Invoke(task);
-            
+
             if (showDebugInfo)
                 Debug.Log($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
+                ToastManager.ShowToast($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}", ToastType.Warning, true);
         }
     }
 
@@ -889,6 +894,8 @@ public class TaskSystem : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Created task: {title} ({type}) for {facility}");
 
+        ToastManager.ShowToast($"New Task: {title} ({type})", ToastType.Info, true);
+
         return newTask;
     }
 
@@ -909,6 +916,7 @@ public class TaskSystem : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log($"Completed task: {task.taskTitle}");
+            ToastManager.ShowToast($"Completed task: {task.taskTitle}", ToastType.Success, true);
         }
     }
 
@@ -932,6 +940,8 @@ public class TaskSystem : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log($"Expired task: {task.taskTitle} (Status: {task.status})");
+
+            ToastManager.ShowToast($"Expired task: {task.taskTitle} (Status: {task.status})", ToastType.Warning, true);
         }
     }
 
@@ -945,10 +955,12 @@ public class TaskSystem : MonoBehaviour
                 case ImpactType.Satisfaction:
                     if (SatisfactionAndBudget.Instance != null)
                         SatisfactionAndBudget.Instance.RemoveSatisfaction(impact.value);
+                    ToastManager.ShowToast($"Removed satisfaction: {impact.value} from task: {task.taskTitle} due to incomplete task", ToastType.Warning, true);
                     break;
                 case ImpactType.Budget:
                     if (SatisfactionAndBudget.Instance != null)
                         SatisfactionAndBudget.Instance.RemoveBudget(impact.value);
+                    ToastManager.ShowToast($"Removed budget: {impact.value} from task: {task.taskTitle} due to incomplete task", ToastType.Warning, true);
                     break;
             }
         }
@@ -1156,6 +1168,7 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
+        ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);
 
         return newTask;
     }
