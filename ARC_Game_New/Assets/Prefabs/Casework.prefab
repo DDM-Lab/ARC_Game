@@ -663,7 +663,7 @@ MonoBehaviour:
   buildingType: 2
   originalSiteId: 0
   currentStatus: 0
-  capacity: 10
+  capacity: 40
   operationalEfficiency: 1
   requiredWorkforce: 4
   buildingRenderer: {fileID: 2554845328523709256}
@@ -675,6 +675,7 @@ MonoBehaviour:
   disabledColor: {r: 0.335849, g: 0.335849, b: 0.335849, a: 0.60784316}
   workerSystem: {fileID: 0}
   mapWorkforceIndicator: {fileID: 4820328232251583978}
+  enableManualTasks: 1
 --- !u!114 &2408109077865379310
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -1,0 +1,57 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c182747abbcaae4ab5183b8a6d24a10, type: 3}
+  m_Name: Onboard_Day1Round2
+  m_EditorClassIdentifier: 
+  taskId: Onboard_Day1Round2
+  taskTitle: Onboarding Day 1 Round 2
+  taskType: 3
+  description: Tutorial on first day
+  taskImage: {fileID: 21300000, guid: 3c8b727b245029b43b112ed24fc7c5d3, type: 3}
+  taskOfficer: 1
+  roundTriggers:
+  - targetRound: 2
+    exactMatch: 1
+  dayTriggers:
+  - conditionType: 0
+    targetDay: 1
+    intervalDays: 0
+    startDay: 0
+    endDay: 0
+  resourceTriggers: []
+  probabilityTriggers: []
+  floodTileTriggers: []
+  floodedFacilityTriggers: []
+  budgetTriggers: []
+  satisfactionTriggers: []
+  workforceTriggers: []
+  facilityStatusTriggers: []
+  weatherTriggers: []
+  requireAllTriggers: 1
+  isGlobalTask: 1
+  targetFacilityType: 1
+  autoSelectFacility: 1
+  specificFacility: {fileID: 0}
+  roundsRemaining: 1
+  realTimeRemaining: 300
+  hasRealTimeLimit: 0
+  impacts: []
+  agentMessages:
+  - messageText: There are no other tasks on day 1. You can start with building shelters
+      and kitchens. Remember to assign workers to facilities.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  agentChoices: []
+  numericalInputs: []
+  deliveryFailureSatisfactionPenalty: 10
+  deliveryTimeLimit: 300

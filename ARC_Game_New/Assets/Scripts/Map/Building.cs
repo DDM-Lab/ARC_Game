@@ -72,9 +72,6 @@ public class Building : MonoBehaviour
         originalSiteId = siteId;
         currentStatus = BuildingStatus.UnderConstruction;
 
-        // Set building-specific properties
-        SetBuildingTypeProperties();
-
         // Ensure progress bar is visible for construction
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(true);
@@ -87,6 +84,8 @@ public class Building : MonoBehaviour
         StartConstruction();
 
         Debug.Log($"Building initialized: {buildingType} at original site {siteId}");
+        ToastManager.ShowToast($"You chose to change an abandoned site at {originalSiteId} into {buildingType}", ToastType.Info, true);
+
     }
 
     public void StartConstruction(float constructionTime = 5f)
@@ -167,6 +166,8 @@ public class Building : MonoBehaviour
         NotifyStatsUpdate();
 
         Debug.Log($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment");
+        ToastManager.ShowToast($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment", ToastType.Success, true);
+
     }
 
     public void AssignWorker()
@@ -194,10 +195,12 @@ public class Building : MonoBehaviour
                     UpdateBuildingVisual();
                     NotifyStatsUpdate();
                     Debug.Log($"{buildingType} at site {originalSiteId} is now in use with {totalWorkforce} workforce");
+                    ToastManager.ShowToast($"{buildingType} at site {originalSiteId} is now operational with {totalWorkforce} workforce!", ToastType.Success, true);
                 }
                 else
                 {
                     Debug.LogWarning($"Cannot activate {buildingType} - insufficient workforce. Required: {requiredWorkforce}, Available: {totalWorkforce}");
+                    ToastManager.ShowToast($"Not enough workforce assigned! Required: {requiredWorkforce}, Available: {totalWorkforce}", ToastType.Warning, true);
                 }
             }
             else
@@ -247,10 +250,12 @@ public class Building : MonoBehaviour
             UpdateBuildingVisual();
             NotifyStatsUpdate();
             Debug.Log($"{buildingType} at site {originalSiteId} has been disabled and workers released");
+            ToastManager.ShowToast($"{buildingType} at site {originalSiteId} has been disabled! Please repair and reassign workers.", ToastType.Warning, true);
         }
         else
         {
             Debug.LogWarning($"Cannot disable {buildingType} - current status: {currentStatus}");
+            ToastManager.ShowToast($"Cannot disable {buildingType} - current status: {currentStatus}", ToastType.Warning, true);
         }
     }
 
@@ -267,10 +272,12 @@ public class Building : MonoBehaviour
             UpdateBuildingVisual();
             NotifyStatsUpdate();
             Debug.Log($"{buildingType} at site {originalSiteId} has been repaired and needs worker reassignment");
+            ToastManager.ShowToast($"{buildingType} at site {originalSiteId} has been repaired! Please reassign workers.", ToastType.Info, true);
         }
         else
         {
             Debug.LogWarning($"Cannot repair {buildingType} - current status: {currentStatus}");
+            ToastManager.ShowToast($"Cannot repair {buildingType} - current status: {currentStatus}", ToastType.Warning, true);
         }
     }
 
@@ -287,22 +294,6 @@ public class Building : MonoBehaviour
         if (mapWorkforceIndicator != null && workerSystem != null)
         {
             mapWorkforceIndicator.UpdateFromBuilding(this, workerSystem);
-        }
-    }
-
-    void SetBuildingTypeProperties()
-    {
-        switch (buildingType)
-        {
-            case BuildingType.Kitchen:
-                capacity = 20; // Can serve 20 people
-                break;
-            case BuildingType.Shelter:
-                capacity = 15; // Can house 15 people
-                break;
-            case BuildingType.CaseworkSite:
-                capacity = 8; // Can handle 8 cases simultaneously
-                break;
         }
     }
 

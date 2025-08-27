@@ -1,0 +1,67 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c182747abbcaae4ab5183b8a6d24a10, type: 3}
+  m_Name: Worker_NoAvaliable
+  m_EditorClassIdentifier: 
+  taskId: Worker_NoAvaliable
+  taskTitle: Worker Shortage Advice
+  taskType: 2
+  description: Facility requires workers but none are available. External recruitment
+    needed.
+  taskImage: {fileID: 21300000, guid: 7818154064cc5274d8c36500af7288dc, type: 3}
+  taskOfficer: 1
+  roundTriggers: []
+  dayTriggers:
+  - conditionType: 3
+    targetDay: 0
+    intervalDays: 0
+    startDay: 2
+    endDay: 0
+  resourceTriggers: []
+  probabilityTriggers: []
+  floodTileTriggers: []
+  floodedFacilityTriggers: []
+  budgetTriggers: []
+  satisfactionTriggers: []
+  workforceTriggers:
+  - conditionType: 0
+    comparison: 2
+    targetValue: 4
+  facilityStatusTriggers:
+  - specificFacilityOnly: 0
+    facilityType: 0
+    requiredStatus: 1
+    minimumCount: 1
+  weatherTriggers: []
+  requireAllTriggers: 1
+  isGlobalTask: 1
+  targetFacilityType: 1
+  autoSelectFacility: 1
+  specificFacility: {fileID: 0}
+  roundsRemaining: 1
+  realTimeRemaining: 300
+  hasRealTimeLimit: 0
+  impacts: []
+  agentMessages:
+  - messageText: Facilities need staff assignments but no enough workers are available.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  - messageText: Consider recruiting workers from external sources or redistributing
+      staff from other facilities.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  agentChoices: []
+  numericalInputs: []
+  deliveryFailureSatisfactionPenalty: 10
+  deliveryTimeLimit: 300

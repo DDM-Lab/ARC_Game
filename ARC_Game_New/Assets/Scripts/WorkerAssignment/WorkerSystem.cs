@@ -18,7 +18,23 @@ public class WorkerSystem : MonoBehaviour
     
     // Events
     public event Action OnWorkerStatsChanged;
-    
+
+    // Singleton instance
+    public static WorkerSystem Instance { get; private set; }
+
+    void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+    }
+
     void Start()
     {
         InitializeWorkerPool();
@@ -121,16 +137,16 @@ public class WorkerSystem : MonoBehaviour
         Debug.Log($"Assigned {selectedWorkers.Count} workers (workforce: {totalWorkforce}) to building {buildingId}");
         return true;
     }
-    
+
     public void ReleaseWorkersFromBuilding(int buildingId)
     {
         List<Worker> buildingWorkers = GetWorkersByBuildingId(buildingId);
-        
+
         foreach (Worker worker in buildingWorkers)
         {
             worker.ReleaseFromBuilding();
         }
-        
+
         Debug.Log($"Released {buildingWorkers.Count} workers from building {buildingId}");
     }
     
@@ -212,11 +228,29 @@ public class WorkerSystem : MonoBehaviour
         return allWorkers.Sum(w => w.WorkforceValue);
     }
     
+    public int GetTrainedWorkersCount()
+    {
+        return GetWorkersByType(WorkerType.Trained).Count;
+    }
+
+    public int GetUntrainedWorkersCount()
+    {
+        return GetWorkersByType(WorkerType.Untrained).Count;
+    }
+
+    public float GetIdleWorkerPercentage()
+    {
+        int totalWorkers = allWorkers.Count;
+        int idleWorkers = allWorkers.Count(w => w.IsAvailable);
+
+        return totalWorkers > 0 ? (float)idleWorkers / totalWorkers * 100 : 0;
+    }
+
     // Debug and testing methods
     public void PrintWorkerStatistics()
     {
         WorkerStatistics stats = GetWorkerStatistics();
-        
+
         Debug.Log("=== WORKER STATISTICS ===");
         Debug.Log($"Trained Workers - Working: {stats.trainedWorking}, Free: {stats.trainedFree}, Not Arrived: {stats.trainedNotArrived}");
         Debug.Log($"Untrained Workers - Working: {stats.untrainedWorking}, Free: {stats.untrainedFree}, Training: {stats.untrainedTraining}");

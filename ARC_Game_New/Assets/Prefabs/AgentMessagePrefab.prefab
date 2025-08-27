@@ -390,7 +390,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: 38d210d0a91802541b8bd5e68aa95d92, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 65080322d4a2ce243bed37e6027b554a, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -480,3 +480,8 @@ MonoBehaviour:
   agentAvatar: {fileID: 1293560822448405639}
   messageText: {fileID: 5103711188828765442}
   speechBubble: {fileID: 6394702250370943178}
+  defaultAgentSprite: {fileID: 0}
+  workforceServiceSprite: {fileID: 0}
+  lodgingMassCareSprite: {fileID: 0}
+  externalRelationshipSprite: {fileID: 0}
+  foodMassCareSprite: {fileID: 0}

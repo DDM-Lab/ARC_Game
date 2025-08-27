@@ -12,6 +12,14 @@ public class AgentMessageUI : MonoBehaviour
     public TextMeshProUGUI messageText;
     public Image speechBubble;
 
+    [Header("Agent Icons")]
+    public Sprite defaultAgentSprite;
+    public Sprite workforceServiceSprite;
+    public Sprite lodgingMassCareSprite;
+    public Sprite externalRelationshipSprite;
+    public Sprite foodMassCareSprite;   
+
+
     private AgentMessage message;
     private string fullMessage;
     private bool isSkipped = false;

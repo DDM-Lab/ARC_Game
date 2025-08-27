@@ -19,7 +19,14 @@ public class TaskItemUI : MonoBehaviour
     [SerializeField] private GameObject taskTypeLabelContainer; // Container for task type label
     [SerializeField] private TextMeshProUGUI taskTypeLabelText; // The actual text component
     [SerializeField] private TextMeshProUGUI additionalInfoText; // Additional info like "5 people"
-    
+
+    [Header("Agent Avatar Sprites")]
+    public Sprite defaultOfficerSprite;
+    public Sprite workforceServiceSprite;
+    public Sprite lodgingMassCareSprite;
+    public Sprite externalRelationshipSprite;
+    public Sprite foodMassCareSprite;
+
     [Header("Status Colors")]
     public Color activeColor = Color.green;
     public Color inProgressColor = Color.yellow;
@@ -31,7 +38,7 @@ public class TaskItemUI : MonoBehaviour
     public Color emergencyColor = Color.red;
     public Color demandColor = Color.magenta;
     public Color advisoryColor = Color.blue;
-    public Color alertColor = Color.yellow;
+    public Color alertColor = Color.black;
     
     [Header("Debug")]
     public bool showDebugInfo = true;
@@ -164,9 +171,9 @@ public class TaskItemUI : MonoBehaviour
         }
         
         // Update agent icon if available
-        if (agentIcon != null && assignedTask.taskImage != null)
+        if (agentIcon != null && assignedTask != null)
         {
-            agentIcon.sprite = assignedTask.taskImage;
+            agentIcon.sprite = GetOfficerAvatar(assignedTask.taskOfficer);
         }
         
         // Update status colors
@@ -175,6 +182,20 @@ public class TaskItemUI : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Updated display for task: {assignedTask.taskTitle} ({assignedTask.taskType})");
     }
+
+    Sprite GetOfficerAvatar(TaskOfficer officer)
+    {
+        switch (officer)
+        {
+            case TaskOfficer.DisasterOfficer: return defaultOfficerSprite;
+            case TaskOfficer.WorkforceService: return workforceServiceSprite;
+            case TaskOfficer.LodgingMassCare: return lodgingMassCareSprite;
+            case TaskOfficer.ExternalRelationship: return externalRelationshipSprite;
+            case TaskOfficer.FoodMassCare: return foodMassCareSprite;
+            default: return defaultOfficerSprite;
+        }
+    }
+
     
     string GenerateAdditionalInfo()
     {

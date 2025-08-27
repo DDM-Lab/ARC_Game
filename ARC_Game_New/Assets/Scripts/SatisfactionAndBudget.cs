@@ -372,9 +372,19 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         return currentBudget < (budgetSmallAmount * 2); // Less than 2 small amounts
     }
-    
+
+    public float GetCurrentSatisfaction()
+    {
+        return currentSatisfaction;
+    }
+
+    public float GetCurrentBudget()
+    {
+        return currentBudget;
+    }
+
     // ===== DEBUG METHODS =====
-    
+
     [ContextMenu("Add Satisfaction Small")]
     public void DebugAddSatisfactionSmall()
     {

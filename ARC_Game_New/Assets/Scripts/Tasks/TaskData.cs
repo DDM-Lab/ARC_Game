@@ -15,13 +15,23 @@ public class TaskData : ScriptableObject
     [TextArea(3, 5)]
     public string description;
     public Sprite taskImage;
+    [Header("Task Officer")]
+    public TaskOfficer taskOfficer = TaskOfficer.DisasterOfficer;
 
     [Header("Task Triggers")]
     public List<TaskTrigger> allTriggers = new List<TaskTrigger>();
     public List<RoundTrigger> roundTriggers = new List<RoundTrigger>();
-    public List<PopulationTrigger> populationTriggers = new List<PopulationTrigger>();
+    public List<DayTrigger> dayTriggers = new List<DayTrigger>();
     public List<ResourceTrigger> resourceTriggers = new List<ResourceTrigger>();
     public List<ProbabilityTrigger> probabilityTriggers = new List<ProbabilityTrigger>();
+    public List<FloodTileTrigger> floodTileTriggers = new List<FloodTileTrigger>();
+    public List<FloodedFacilityTrigger> floodedFacilityTriggers = new List<FloodedFacilityTrigger>();
+    public List<BudgetTrigger> budgetTriggers = new List<BudgetTrigger>();
+    public List<SatisfactionTrigger> satisfactionTriggers = new List<SatisfactionTrigger>();
+    public List<WorkforceTrigger> workforceTriggers = new List<WorkforceTrigger>();
+    public List<FacilityStatusTrigger> facilityStatusTriggers = new List<FacilityStatusTrigger>();
+    public List<WeatherTrigger> weatherTriggers = new List<WeatherTrigger>();
+
     public bool requireAllTriggers = true; // AND vs OR logic
 
     [Header("Facility Targeting")]

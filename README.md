@@ -15,8 +15,6 @@ Version: **Unity 2022.3.27f - 2D URP**
 Download the project files by cloning the repository. Then open the project in **Unity Hub**.
 
 ### **2️⃣ Install Required Assets**  
-Please do not redistribute the City Builder Kit outside of the research group due to licensing restrictions. If you have any concern regarding the license, please contact Yuchen(yuchenda@andrew.cmu.edu).
-
 **TextMeshPro** will be auto-installed by Unity Package Manager. If not, please download it manually. 
 
 

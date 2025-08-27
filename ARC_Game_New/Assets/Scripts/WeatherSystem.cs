@@ -71,9 +71,12 @@ public class WeatherSystem : MonoBehaviour
         {
             GlobalClock.Instance.OnDayChanged += OnDayChanged;
         }
-        
+
         // Set initial weather
-        GenerateRandomWeather();
+        //GenerateRandomWeather();
+
+        // Set first day to Sunny
+        SetWeather(WeatherType.Sunny);
         
         if (showDebugInfo)
             Debug.Log("Weather System initialized");

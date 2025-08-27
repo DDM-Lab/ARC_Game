@@ -1,0 +1,166 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c182747abbcaae4ab5183b8a6d24a10, type: 3}
+  m_Name: Shelter_Flood_Damage
+  m_EditorClassIdentifier: 
+  taskId: Shelter_Flood_Damage
+  taskTitle: Shelter Flood Damage
+  taskType: 0
+  description: A shelter has been severely damaged by flood water. We need to relocate
+    the residents immediately.
+  taskImage: {fileID: 21300000, guid: 09373f204d0d14b488fa491635b79346, type: 3}
+  taskOfficer: 2
+  roundTriggers: []
+  dayTriggers:
+  - conditionType: 3
+    targetDay: 0
+    intervalDays: 0
+    startDay: 2
+    endDay: 0
+  resourceTriggers:
+  - facilityType: 1
+    resourceType: 0
+    resourceThreshold: 0
+    condition: 3
+  probabilityTriggers: []
+  floodTileTriggers: []
+  floodedFacilityTriggers:
+  - facilityType: 3
+    comparison: 1
+    floodTileThreshold: 2
+    specificBuildingType: 1
+    specificPrebuiltType: 0
+    detectionRadius: 5
+  budgetTriggers: []
+  satisfactionTriggers: []
+  workforceTriggers: []
+  facilityStatusTriggers: []
+  weatherTriggers: []
+  requireAllTriggers: 1
+  isGlobalTask: 0
+  targetFacilityType: 1
+  autoSelectFacility: 1
+  specificFacility: {fileID: 0}
+  roundsRemaining: 2
+  realTimeRemaining: 300
+  hasRealTimeLimit: 0
+  impacts: []
+  agentMessages:
+  - messageText: We have a critical situation. One of our shelters has been severely
+      damaged by flood water.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  - messageText: We have a critical situation. One of our shelters has been severely
+      damaged by flood water. The building is no longer safe for habitation. Water
+      has compromised the structure and electrical systems.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  - messageText: They need immediate relocation. I've identified several options
+      for emergency housing. We need to act quickly.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  agentChoices:
+  - choiceId: 0
+    choiceText: Evacuate all residents to other shelters
+    choiceImpacts:
+    - impactType: 0
+      value: 10
+      isCountdown: 0
+      customLabel: 
+    isSelected: 0
+    triggersDelivery: 1
+    immediateDelivery: 0
+    deliveryCargoType: 0
+    enableMultipleDeliveries: 1
+    multiDeliveryType: 1
+    quantityType: 2
+    deliveryQuantity: 0
+    deliveryPercentage: 0
+    deliverAll: 1
+    sourceType: 3
+    sourceBuilding: 1
+    sourcePrebuilt: 0
+    specificSourceName: 
+    destinationType: 1
+    destinationBuilding: 1
+    destinationPrebuilt: 0
+    specificDestinationName: 
+    prioritizeNearestSource: 1
+    prioritizeNearestDestination: 0
+  - choiceId: 1
+    choiceText: Emergency motel accommodation
+    choiceImpacts:
+    - impactType: 1
+      value: -500
+      isCountdown: 0
+      customLabel: 
+    - impactType: 0
+      value: 10
+      isCountdown: 0
+      customLabel: 
+    isSelected: 0
+    triggersDelivery: 1
+    immediateDelivery: 0
+    deliveryCargoType: 0
+    enableMultipleDeliveries: 0
+    multiDeliveryType: 0
+    quantityType: 2
+    deliveryQuantity: 0
+    deliveryPercentage: 0
+    deliverAll: 1
+    sourceType: 3
+    sourceBuilding: 1
+    sourcePrebuilt: 0
+    specificSourceName: 
+    destinationType: 2
+    destinationBuilding: 0
+    destinationPrebuilt: 1
+    specificDestinationName: 
+    prioritizeNearestSource: 0
+    prioritizeNearestDestination: 1
+  - choiceId: 2
+    choiceText: Helicopter evacuation to Motel
+    choiceImpacts:
+    - impactType: 1
+      value: -5000
+      isCountdown: 0
+      customLabel: 
+    - impactType: 0
+      value: 20
+      isCountdown: 0
+      customLabel: 
+    isSelected: 0
+    triggersDelivery: 1
+    immediateDelivery: 1
+    deliveryCargoType: 0
+    enableMultipleDeliveries: 0
+    multiDeliveryType: 0
+    quantityType: 2
+    deliveryQuantity: 0
+    deliveryPercentage: 0
+    deliverAll: 1
+    sourceType: 3
+    sourceBuilding: 1
+    sourcePrebuilt: 0
+    specificSourceName: 
+    destinationType: 2
+    destinationBuilding: 0
+    destinationPrebuilt: 1
+    specificDestinationName: 
+    prioritizeNearestSource: 0
+    prioritizeNearestDestination: 1
+  numericalInputs: []
+  deliveryFailureSatisfactionPenalty: 10
+  deliveryTimeLimit: 300
