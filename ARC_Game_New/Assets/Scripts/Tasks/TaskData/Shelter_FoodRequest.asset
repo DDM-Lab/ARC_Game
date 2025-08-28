@@ -97,7 +97,7 @@ MonoBehaviour:
     deliveryQuantity: 5
     deliveryPercentage: 0
     deliverAll: 0
-    sourceType: 0
+    sourceType: 1
     sourceBuilding: 0
     sourcePrebuilt: 0
     specificSourceName: 
@@ -105,9 +105,9 @@ MonoBehaviour:
     destinationBuilding: 1
     destinationPrebuilt: 0
     specificDestinationName: 
-    prioritizeNearestSource: 0
+    prioritizeNearestSource: 1
     prioritizeNearestDestination: 0
-  - choiceId: 0
+  - choiceId: 1
     choiceText: Request full supply (Max shelter capacity)
     choiceImpacts:
     - impactType: 0
@@ -117,6 +117,33 @@ MonoBehaviour:
     isSelected: 0
     triggersDelivery: 1
     immediateDelivery: 0
+    deliveryCargoType: 1
+    enableMultipleDeliveries: 0
+    multiDeliveryType: 0
+    quantityType: 2
+    deliveryQuantity: 0
+    deliveryPercentage: 0
+    deliverAll: 1
+    sourceType: 1
+    sourceBuilding: 0
+    sourcePrebuilt: 0
+    specificSourceName: 
+    destinationType: 3
+    destinationBuilding: 1
+    destinationPrebuilt: 0
+    specificDestinationName: 
+    prioritizeNearestSource: 0
+    prioritizeNearestDestination: 0
+  - choiceId: 2
+    choiceText: Helicopter deliver full supply of food packs
+    choiceImpacts:
+    - impactType: 0
+      value: -15
+      isCountdown: 0
+      customLabel: 
+    isSelected: 0
+    triggersDelivery: 1
+    immediateDelivery: 1
     deliveryCargoType: 1
     enableMultipleDeliveries: 0
     multiDeliveryType: 0
@@ -134,8 +161,8 @@ MonoBehaviour:
     specificDestinationName: 
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
-  - choiceId: 0
-    choiceText: Wait for regular supply shipment
+  - choiceId: 3
+    choiceText: Ignore current request
     choiceImpacts:
     - impactType: 0
       value: -15

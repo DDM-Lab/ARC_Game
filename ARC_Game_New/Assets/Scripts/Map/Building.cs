@@ -52,20 +52,6 @@ public class Building : MonoBehaviour
     private float constructionProgress = 0f;
     private Coroutine constructionCoroutine;
 
-    void Start()
-    {
-        if (buildingRenderer == null)
-            buildingRenderer = GetComponent<SpriteRenderer>();
-
-        // Find WorkerSystem if not assigned
-        if (workerSystem == null)
-            workerSystem = FindObjectOfType<WorkerSystem>();
-
-        // Hide worker button initially (will be shown when construction completes)
-        if (workerButton != null)
-            workerButton.SetActive(false);
-    }
-
     public void Initialize(BuildingType type, int siteId)
     {
         buildingType = type;
@@ -80,12 +66,34 @@ public class Building : MonoBehaviour
         if (workerButton != null)
             workerButton.SetActive(false);
 
+        // Hide workforce indicator during construction
+        if (mapWorkforceIndicator != null)
+            mapWorkforceIndicator.gameObject.SetActive(false);
+
         // Start construction immediately
         StartConstruction();
 
         Debug.Log($"Building initialized: {buildingType} at original site {siteId}");
         ToastManager.ShowToast($"You chose to change an abandoned site at {originalSiteId} into {buildingType}", ToastType.Info, true);
 
+    }
+
+    void Start()
+    {
+        if (buildingRenderer == null)
+            buildingRenderer = GetComponent<SpriteRenderer>();
+
+        // Find WorkerSystem if not assigned
+        if (workerSystem == null)
+            workerSystem = FindObjectOfType<WorkerSystem>();
+
+        // Hide worker button initially (will be shown when construction completes)
+        if (workerButton != null)
+            workerButton.SetActive(false);
+
+        // Hide workforce indicator initially (will be shown when construction completes)
+        if (mapWorkforceIndicator != null)
+            mapWorkforceIndicator.gameObject.SetActive(false);
     }
 
     public void StartConstruction(float constructionTime = 5f)
@@ -98,11 +106,13 @@ public class Building : MonoBehaviour
         currentStatus = BuildingStatus.UnderConstruction;
         constructionProgress = 0f;
 
-        // Show progress bar, hide worker button
+        // Show progress bar, hide worker button, hide workforce indicator
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(true);
         if (workerButton != null)
             workerButton.SetActive(false);
+        if (mapWorkforceIndicator != null)
+            mapWorkforceIndicator.gameObject.SetActive(false);
 
         // Start construction
         constructionCoroutine = StartCoroutine(ConstructionCoroutine(constructionTime));
@@ -156,11 +166,13 @@ public class Building : MonoBehaviour
         currentStatus = BuildingStatus.NeedWorker;
         constructionProgress = 1f;
 
-        // Hide progress bar, show worker button
+        // Hide progress bar, show worker button, show workforce indicator
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(false);
         if (workerButton != null)
             workerButton.SetActive(true);
+        if (mapWorkforceIndicator != null)
+            mapWorkforceIndicator.gameObject.SetActive(true);
 
         UpdateBuildingVisual();
         NotifyStatsUpdate();
@@ -209,6 +221,7 @@ public class Building : MonoBehaviour
                 currentStatus = BuildingStatus.InUse;
                 if (workerButton != null)
                     workerButton.SetActive(false);
+
                 UpdateBuildingVisual();
                 NotifyStatsUpdate();
                 Debug.LogWarning($"{buildingType} activated without WorkerSystem validation");
@@ -317,6 +330,27 @@ public class Building : MonoBehaviour
                 buildingRenderer.color = disabledColor;
                 break;
         }
+    }
+    void OnMouseEnter()
+    {
+        if (FacilityInfoManager.Instance != null)
+            FacilityInfoManager.Instance.OnFacilityHover(this, true);
+    }
+
+    void OnMouseExit()
+    {
+        if (FacilityInfoManager.Instance != null)
+            FacilityInfoManager.Instance.OnFacilityHover(this, false);
+    }
+
+    void OnMouseDown()
+    {
+        // Check if over UI
+        if (UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject())
+            return;
+
+        if (FacilityInfoManager.Instance != null)
+            FacilityInfoManager.Instance.OnFacilityClick(this);
     }
 
     /*

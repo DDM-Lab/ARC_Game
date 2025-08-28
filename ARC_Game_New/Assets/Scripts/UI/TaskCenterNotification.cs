@@ -17,6 +17,7 @@ public class TaskCenterNotification : MonoBehaviour
     
     private Image notificationImage;
     private TaskSystem taskSystem;
+
     
     void Awake()
     {
@@ -78,7 +79,7 @@ public class TaskCenterNotification : MonoBehaviour
     {
         if (taskSystem == null) return;
         
-        var activeTasks = taskSystem.GetAllActiveTasks();
+        var activeTasks = taskSystem.GetAllActiveNonAlertTasks();
         int activeTaskCount = activeTasks.Count;
         
         // Update task count text
