@@ -248,31 +248,70 @@ public class GlobalClock : MonoBehaviour
         // Notify other systems
         OnSimulationEnded?.Invoke();
         
-        if (showDebugInfo)
+        if (showDebugInfo && currentTimeSegment < 4)
             Debug.Log($"Simulation ended - Now at Day {currentDay}, Time Segment {currentTimeSegment + 1}");
+        else if (showDebugInfo) // when currentTimeSegment == 5 that's just for displaying daily report
+            Debug.Log($"Simulation ended - Day {currentDay} complete, waiting for daily report");
     }
     
     void AdvanceTimeSegment()
     {
         currentTimeSegment++;
-        
-        // Check if day is complete
+
+        // Check if day is complete (4 rounds = end of day)
         if (currentTimeSegment >= 4)
         {
-            // Advance to next day
-            currentDay++;
-            currentTimeSegment = 0;
-            
-            OnDayChanged?.Invoke(currentDay);
-            
-            if (showDebugInfo)
-                Debug.Log($"Day advanced to Day {currentDay}");
+            // Don't increment day here - let DailyReportManager handle it
+            OnDayChanged?.Invoke(currentDay + 1); // Signal next day number
+            return; // Exit early, don't update display yet
         }
         
         OnTimeSegmentChanged?.Invoke(currentTimeSegment);
         
+        // Update display only if not end of day
+        UpdateTimeDisplay();
+    }
+
+    // The daily report system will call this to advance the day
+    public void ProceedToNextDay()
+    {
+        // Actually advance to next day after report confirmation
+        currentDay++;
+        currentTimeSegment = 0; // Reset to first round (not 1)
+        
+        // Trigger events for new day
+        // OnDayChanged?.Invoke(currentDay);
+        OnTimeSegmentChanged?.Invoke(currentTimeSegment);
+        
         // Update display
         UpdateTimeDisplay();
+        
+        if (showDebugInfo)
+            Debug.Log($"Advanced to Day {currentDay}, Round 1");
+    }
+
+    public void PauseSimulation()
+    {
+        if (isSimulationRunning)
+        {
+            StopAllCoroutines();
+            isSimulationRunning = false;
+            currentState = TimeState.Paused;
+        }
+        Time.timeScale = 0f;
+        
+        if (showDebugInfo)
+            Debug.Log("Simulation paused by external system");
+    }
+
+    public void ResumeSimulation()
+    {
+        Time.timeScale = 0f; // Keep paused for player interaction
+        currentState = TimeState.Paused;
+        EnablePlayerInteractions();
+        
+        if (showDebugInfo)
+            Debug.Log("Simulation resumed - ready for player interaction");
     }
 
     void DisablePlayerInteractions()

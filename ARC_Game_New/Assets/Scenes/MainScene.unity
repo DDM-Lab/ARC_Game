@@ -8637,19 +8637,19 @@ RectTransform:
   m_Children:
   - {fileID: 1274977487}
   - {fileID: 1826804384}
-  - {fileID: 133791603}
   - {fileID: 976446833}
   - {fileID: 1181144876}
   - {fileID: 1328466860}
   - {fileID: 1180798375}
+  - {fileID: 530385324}
+  - {fileID: 2103902861}
+  - {fileID: 133791603}
   - {fileID: 1475215138}
   - {fileID: 731831277}
   - {fileID: 1825224481}
   - {fileID: 1986749443}
   - {fileID: 1776780028}
   - {fileID: 856978762}
-  - {fileID: 530385324}
-  - {fileID: 2142597800}
   - {fileID: 1105357441}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -9879,7 +9879,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 0}
-  m_RaycastTarget: 1
+  m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
@@ -16593,12 +16593,16 @@ MonoBehaviour:
   emergencyCountText: {fileID: 1319142098}
   activeColor: {r: 1, g: 1, b: 1, a: 1}
   disabledColor: {r: 0.7283019, g: 0.7283019, b: 0.7283019, a: 1}
+  brown: {r: 0.6, g: 0.3, b: 0.1, a: 1}
+  darkRed: {r: 0.6, g: 0.1, b: 0.1, a: 1}
+  darkOrange: {r: 0.6, g: 0.4, b: 0.1, a: 1}
   taskCategoryPanel: {fileID: 2142597799}
   categoryTitleText: {fileID: 780026972}
   taskScrollView: {fileID: 2012066600}
   taskListParent: {fileID: 1708890540}
   taskListItemPrefab: {fileID: 888860682902877912, guid: 30f1be44b8cc83e418e192906ce2554c, type: 3}
   closePanelButton: {fileID: 1587067278}
+  panelXOffset: 0
 --- !u!1 &597780842
 GameObject:
   m_ObjectHideFlags: 0
@@ -24096,8 +24100,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 720.0461, y: -512.03}
-  m_SizeDelta: {x: 1440, y: 1024}
+  m_AnchoredPosition: {x: 727.87, y: -512.03}
+  m_SizeDelta: {x: 1455.7, y: 1024}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &651446777
 MonoBehaviour:
@@ -29247,9 +29251,9 @@ RectTransform:
   m_Father: {fileID: 2012066597}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 0, y: 0}
+  m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 0, y: 0}
+  m_SizeDelta: {x: -17, y: 0}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &835039770
 MonoBehaviour:
@@ -58916,6 +58920,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1776780028}
+  - component: {fileID: 1776780029}
   m_Layer: 5
   m_Name: EndOfDayReport
   m_TagString: Untagged
@@ -58943,6 +58948,21 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &1776780029
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1776780027}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9a899479cc89f4041a3ec8c7f5e8bec4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  dailyReportPanel: {fileID: 33961764}
+  nextDayButton: {fileID: 1362666639}
+  globalClock: {fileID: 146349966}
 --- !u!1 &1780910160
 GameObject:
   m_ObjectHideFlags: 0
@@ -58977,8 +58997,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 720.0461, y: -512.0328}
-  m_SizeDelta: {x: 1440, y: 1024}
+  m_AnchoredPosition: {x: 727.8734, y: -512.0328}
+  m_SizeDelta: {x: 1455.647, y: 1024}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1780910162
 MonoBehaviour:
@@ -68614,7 +68634,7 @@ MonoBehaviour:
   m_HorizontalScrollbar: {fileID: 0}
   m_VerticalScrollbar: {fileID: 1180842800}
   m_HorizontalScrollbarVisibility: 2
-  m_VerticalScrollbarVisibility: 2
+  m_VerticalScrollbarVisibility: 0
   m_HorizontalScrollbarSpacing: -3
   m_VerticalScrollbarSpacing: -3
   m_OnValueChanged:
@@ -71422,6 +71442,42 @@ MonoBehaviour:
   m_ChildScaleWidth: 0
   m_ChildScaleHeight: 0
   m_ReverseArrangement: 0
+--- !u!1 &2103902860
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2103902861}
+  m_Layer: 5
+  m_Name: CategoryTaskInfo
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &2103902861
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2103902860}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 2142597800}
+  m_Father: {fileID: 319038540}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 100, y: 100}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &2105117801
 GameObject:
   m_ObjectHideFlags: 0
@@ -72086,7 +72142,6 @@ GameObject:
   - component: {fileID: 2142597804}
   - component: {fileID: 2142597803}
   - component: {fileID: 2142597802}
-  - component: {fileID: 2142597801}
   m_Layer: 5
   m_Name: CategoryTaskInfoPanel
   m_TagString: Untagged
@@ -72101,54 +72156,20 @@ RectTransform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2142597799}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 2039656948}
   - {fileID: 2012066597}
-  m_Father: {fileID: 319038540}
+  m_Father: {fileID: 2103902861}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 577.18, y: -753.85}
+  m_AnchoredPosition: {x: -70, y: -291.84998}
   m_SizeDelta: {x: 300, y: 170}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &2142597801
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2142597799}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7be8974689648eb42b9e2a3999404d0d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  facilityNameText: {fileID: 780026972}
-  facilityTypeText: {fileID: 0}
-  siteIdText: {fileID: 0}
-  positionText: {fileID: 0}
-  populationText: {fileID: 0}
-  foodPacksText: {fileID: 0}
-  capacityText: {fileID: 0}
-  workersHeaderText: {fileID: 0}
-  trainedWorkersText: {fileID: 0}
-  untrainedWorkersText: {fileID: 0}
-  totalWorkforceText: {fileID: 0}
-  statusText: {fileID: 0}
-  floodStatusText: {fileID: 0}
-  roadConnectionText: {fileID: 0}
-  tasksHeaderText: {fileID: 0}
-  taskListParent: {fileID: 1708890540}
-  taskListItemPrefab: {fileID: 888860682902877912, guid: 30f1be44b8cc83e418e192906ce2554c, type: 3}
-  closeButton: {fileID: 1587067278}
-  normalColor: {r: 1, g: 1, b: 1, a: 1}
-  warningColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
-  errorColor: {r: 1, g: 0, b: 0, a: 1}
-  goodColor: {r: 0, g: 1, b: 0, a: 1}
 --- !u!114 &2142597802
 MonoBehaviour:
   m_ObjectHideFlags: 0
