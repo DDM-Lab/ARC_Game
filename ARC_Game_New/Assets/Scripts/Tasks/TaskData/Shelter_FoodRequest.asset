@@ -101,7 +101,7 @@ MonoBehaviour:
     sourceBuilding: 0
     sourcePrebuilt: 0
     specificSourceName: 
-    destinationType: 3
+    destinationType: 1
     destinationBuilding: 1
     destinationPrebuilt: 0
     specificDestinationName: 
@@ -128,7 +128,7 @@ MonoBehaviour:
     sourceBuilding: 0
     sourcePrebuilt: 0
     specificSourceName: 
-    destinationType: 3
+    destinationType: 1
     destinationBuilding: 1
     destinationPrebuilt: 0
     specificDestinationName: 
@@ -155,7 +155,7 @@ MonoBehaviour:
     sourceBuilding: 0
     sourcePrebuilt: 0
     specificSourceName: 
-    destinationType: 3
+    destinationType: 1
     destinationBuilding: 1
     destinationPrebuilt: 0
     specificDestinationName: 

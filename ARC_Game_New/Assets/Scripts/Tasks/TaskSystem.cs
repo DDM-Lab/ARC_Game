@@ -97,6 +97,8 @@ public class GameTask
 
     [Header("Task Officer")]
     public TaskOfficer taskOfficer = TaskOfficer.DisasterOfficer;
+    [Header("Task Classification")]
+    public bool isGlobalTask = false;
     
     [Header("Timing")]
     public int roundsRemaining = 3; // Rounds until expiry
@@ -1072,6 +1074,7 @@ public class TaskSystem : MonoBehaviour
         newTask.description = taskData.description;
         newTask.taskImage = taskData.taskImage;
         newTask.taskOfficer = taskData.taskOfficer;
+        newTask.isGlobalTask = taskData.isGlobalTask;
 
         // Copy time settings
         newTask.roundsRemaining = taskData.roundsRemaining;
