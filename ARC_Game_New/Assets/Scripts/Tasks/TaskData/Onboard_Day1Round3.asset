@@ -17,9 +17,9 @@ MonoBehaviour:
   taskType: 3
   description: Tutorial on first day
   taskImage: {fileID: 21300000, guid: 3c8b727b245029b43b112ed24fc7c5d3, type: 3}
-  taskOfficer: 0
+  taskOfficer: 2
   roundTriggers:
-  - targetRound: 3
+  - targetRound: 2
     exactMatch: 1
   dayTriggers:
   - conditionType: 0
@@ -46,7 +46,16 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts: []
   agentMessages:
-  - messageText: onboarding instruction 3
+  - messageText: Before survivors arrive, we need to prepare. Your first task is
+      to set up facilities. Look for abandoned sites in good locations and convert
+      them into shelters and a kitchen.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  - messageText: "I recommend building three shelters and one kitchen to start. That
+      will give us space for people and a steady food supply. Once that\u2019s done,
+      we\u2019ll move to the next step: assigning workers to keep everything running.
+      Ready to begin?"
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05

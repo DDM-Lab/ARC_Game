@@ -10,16 +10,16 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4c182747abbcaae4ab5183b8a6d24a10, type: 3}
-  m_Name: Onboard_Day1Round1
+  m_Name: Onboard_Day1Round4
   m_EditorClassIdentifier: 
-  taskId: Onboard_Day1Round1
-  taskTitle: Onboarding Day 1 Round 1
+  taskId: Onboard_Day1Round4
+  taskTitle: Onboarding Day 1 Round 4
   taskType: 3
   description: Tutorial on first day
   taskImage: {fileID: 21300000, guid: 3c8b727b245029b43b112ed24fc7c5d3, type: 3}
-  taskOfficer: 0
+  taskOfficer: 1
   roundTriggers:
-  - targetRound: 1
+  - targetRound: 3
     exactMatch: 1
   dayTriggers:
   - conditionType: 0
@@ -46,10 +46,9 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts: []
   agentMessages:
-  - messageText: Hi, welcome to ARC disaster simulation game. This is only a demo
-      version and the game is still under development. I'll skip the onboarding process
-      for now. On day 1, you should select some abandoned sites on the map and convert
-      them to other building types like shelters, kitchens, and casework sites.
+  - messageText: "Good work on setting up facilities. Now let\u2019s bring in workers.
+      Assign them to shelters and kitchens so survivors can be cared for and fed.
+      Trained workers perform better, so consider investing in training early."
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05

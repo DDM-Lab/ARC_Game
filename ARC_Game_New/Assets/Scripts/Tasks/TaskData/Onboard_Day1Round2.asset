@@ -17,9 +17,9 @@ MonoBehaviour:
   taskType: 3
   description: Tutorial on first day
   taskImage: {fileID: 21300000, guid: 3c8b727b245029b43b112ed24fc7c5d3, type: 3}
-  taskOfficer: 1
+  taskOfficer: 0
   roundTriggers:
-  - targetRound: 2
+  - targetRound: 1
     exactMatch: 1
   dayTriggers:
   - conditionType: 0
@@ -46,8 +46,21 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts: []
   agentMessages:
-  - messageText: There are no other tasks on day 1. You can start with building shelters
-      and kitchens. Remember to assign workers to facilities.
+  - messageText: "Welcome to the ARC mission. You\u2019re in charge of disaster relief
+      after a major flood. Each day you\u2019ll need to balance limited workers,
+      supplies, and time. Keep survivors safe and fed, build shelters and kitchens,
+      and request more aid when resources run low. Emergencies can strike at any
+      moment, so stay ready."
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  - messageText: Your daily report will track survivor satisfaction and how wisely
+      you use resources. The better you perform, the stronger your team becomes.
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  - messageText: "Think you can lead through chaos? Then let\u2019s begin\u2014click
+      \"Execute\" to start your mission."
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
