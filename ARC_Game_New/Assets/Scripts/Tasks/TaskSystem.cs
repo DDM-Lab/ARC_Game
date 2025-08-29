@@ -572,11 +572,11 @@ public class TaskSystem : MonoBehaviour
             }
 
             // TBA: Check if task already exists to avoid duplicates
-            /*if (activeTasks.Any(t => t.taskTitle == taskData.taskTitle))
+            if (activeTasks.Any(t => t.taskTitle == taskData.taskTitle))
             {
                 Debug.Log($"Task {taskData.taskTitle} already exists, skipping");
                 continue;
-            }*/
+            }
 
             Debug.Log($"Creating task: {taskData.taskTitle}");
 
