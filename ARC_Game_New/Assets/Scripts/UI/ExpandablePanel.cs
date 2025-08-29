@@ -203,7 +203,12 @@ public class ExpandablePanel : MonoBehaviour
         if (isExpanded)
             SetPanelHeight(expandedHeight);
     }
-    
+
+    public bool IsUIOpen()
+    {
+        return isExpanded;
+    }
+
     // Debug methods
     [ContextMenu("Toggle Panel")]
     public void DebugTogglePanel()

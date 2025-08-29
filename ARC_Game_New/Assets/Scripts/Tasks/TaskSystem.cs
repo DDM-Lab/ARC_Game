@@ -97,6 +97,8 @@ public class GameTask
 
     [Header("Task Officer")]
     public TaskOfficer taskOfficer = TaskOfficer.DisasterOfficer;
+    [Header("Task Classification")]
+    public bool isGlobalTask = false;
     
     [Header("Timing")]
     public int roundsRemaining = 3; // Rounds until expiry
@@ -569,12 +571,12 @@ public class TaskSystem : MonoBehaviour
                 }
             }
 
-            // Check if task already exists to avoid duplicates
-            if (activeTasks.Any(t => t.taskTitle == taskData.taskTitle))
+            // TBA: Check if task already exists to avoid duplicates
+            /*if (activeTasks.Any(t => t.taskTitle == taskData.taskTitle))
             {
                 Debug.Log($"Task {taskData.taskTitle} already exists, skipping");
                 continue;
-            }
+            }*/
 
             Debug.Log($"Creating task: {taskData.taskTitle}");
 
@@ -1026,6 +1028,11 @@ public class TaskSystem : MonoBehaviour
         return new List<GameTask>(activeTasks);
     }
 
+    public List<GameTask> GetAllActiveNonAlertTasks()
+    {
+        return new List<GameTask>(activeTasks.Where(t => t.taskType != TaskType.Alert));
+    }
+
     public GameTask GetTaskById(int taskId)
     {
         GameTask task = activeTasks.FirstOrDefault(t => t.taskId == taskId);
@@ -1067,6 +1074,7 @@ public class TaskSystem : MonoBehaviour
         newTask.description = taskData.description;
         newTask.taskImage = taskData.taskImage;
         newTask.taskOfficer = taskData.taskOfficer;
+        newTask.isGlobalTask = taskData.isGlobalTask;
 
         // Copy time settings
         newTask.roundsRemaining = taskData.roundsRemaining;
@@ -1112,16 +1120,20 @@ public class TaskSystem : MonoBehaviour
                 if (source == null)
                 {
                     Debug.LogWarning($"No triggering facility found for task: {newTask.taskTitle}");
-                    return null;
+                    // Don't return null, continue creating the task
                 }
 
                 // Calculate dynamic quantity according to type
                 int actualQuantity = CalculateDeliveryQuantity(choice, source);
-
                 if (actualQuantity <= 0)
                 {
                     Debug.LogWarning($"No resources available for delivery from {source.name} for choice: {choice.choiceText}");
-                    return null;
+                    // Don't return null, but set a minimum delivery quantity
+                    newChoice.deliveryQuantity = 1; // Or keep original quantity
+                }
+                else
+                {
+                    newChoice.deliveryQuantity = actualQuantity;
                 }
 
                 // Use calculated quantity for delivery choices
@@ -1168,7 +1180,9 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
-        ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);
+
+        if(taskData.taskType != TaskType.Alert)
+            ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);
 
         return newTask;
     }

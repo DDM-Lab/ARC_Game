@@ -136,6 +136,26 @@ public class AbandonedSite : MonoBehaviour
             }
         }
 
+        FacilityInfoPanel facilityInfo = FindObjectOfType<FacilityInfoPanel>();
+        if (facilityInfo != null && facilityInfo.IsUIOpen())
+        {
+            // Only block if pointer is actually over the UI panels
+            if (EventSystem.current.IsPointerOverGameObject())
+            {
+                return true;
+            }
+        }
+
+        ExpandablePanel expandablePanel = FindObjectOfType<ExpandablePanel>();
+        if (expandablePanel != null && expandablePanel.IsUIOpen())
+        {
+            // Only block if pointer is actually over the UI panels
+            if (EventSystem.current.IsPointerOverGameObject())
+            {
+                return true;
+            }
+        }
+
         return false;
     }
     

@@ -335,13 +335,26 @@ public class PrebuiltBuilding : MonoBehaviour
         return roadConnection.GetRoadConnectionPoint();
     }
 
-    // Mouse interaction for debugging
+    void OnMouseEnter()
+    {
+        if (FacilityInfoManager.Instance != null)
+            FacilityInfoManager.Instance.OnFacilityHover(this, true);
+    }
+
+    void OnMouseExit()
+    {
+        if (FacilityInfoManager.Instance != null)
+            FacilityInfoManager.Instance.OnFacilityHover(this, false);
+    }
+
     void OnMouseDown()
     {
-        if (resourceStorage != null)
-        {
-            Debug.Log($"{buildingName} clicked - {resourceStorage.GetResourceSummary()}");
-        }
+        // Check if over UI
+        if (UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject())
+            return;
+            
+        if (FacilityInfoManager.Instance != null)
+            FacilityInfoManager.Instance.OnFacilityClick(this);
     }
 
     // Getters
