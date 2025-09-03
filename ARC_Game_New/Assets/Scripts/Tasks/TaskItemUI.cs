@@ -342,6 +342,7 @@ public class TaskItemUI : MonoBehaviour
         
         if (parentUI != null && assignedTask != null)
         {
+            AudioManager.Instance.PlayClickSFX();
             parentUI.OnTaskItemClicked(assignedTask);
         }
         else

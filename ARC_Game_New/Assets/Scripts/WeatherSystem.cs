@@ -176,7 +176,8 @@ public class WeatherSystem : MonoBehaviour
         
         // Notify other systems
         OnWeatherChanged?.Invoke(currentWeather);
-        
+        AudioManager.Instance.StartAmbience(currentWeather);
+
         if (showDebugInfo)
             Debug.Log($"Weather changed from {previousWeather} to {currentWeather}");
     }

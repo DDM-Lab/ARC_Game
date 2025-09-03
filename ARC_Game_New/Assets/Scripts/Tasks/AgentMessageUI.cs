@@ -66,6 +66,7 @@ public class AgentMessageUI : MonoBehaviour
 
     public void SkipTyping()
     {
+        AudioManager.Instance.PlaySkipSFX();
         isSkipped = true;
         ShowFullMessage();
     }

@@ -62,6 +62,7 @@ public class AbandonedSite : MonoBehaviour
         // Handle site selection
         if (isAvailable)
         {
+            AudioManager.Instance.PlayClickSFX();
             OnSiteSelected?.Invoke(this);
         }
     }

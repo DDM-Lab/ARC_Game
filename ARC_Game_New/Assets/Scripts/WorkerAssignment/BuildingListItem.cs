@@ -281,6 +281,7 @@ public class BuildingListItem : MonoBehaviour
         }
         if (assignedBuilding != null && parentUI != null)
         {
+            AudioManager.Instance.PlayClickSFX();
             parentUI.OnManageButtonClicked(assignedBuilding);
         }
         else
