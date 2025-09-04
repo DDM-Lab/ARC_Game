@@ -224,7 +224,8 @@ MonoBehaviour:
   dailyStartingFoodPacks: 0
   roundProduction: []
   enablePopulationBasedConsumption: 1
-  foodPerPersonPerRound: 1
+  foodPerPersonPerNRounds: 1
+  consumptionRoundInterval: 4
   workersConsumeFoodToo: 1
   showDebugInfo: 1
 --- !u!114 &-3025893776972649351

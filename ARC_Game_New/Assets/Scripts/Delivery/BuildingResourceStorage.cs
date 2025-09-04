@@ -17,7 +17,8 @@ public class BuildingResourceStorage : MonoBehaviour
     
     [Header("Population-Based Consumption")]
     public bool enablePopulationBasedConsumption = true;
-    public int foodPerPersonPerRound = 1;
+    public int foodPerPersonPerNRounds  = 1;
+    public int consumptionRoundInterval = 4; // Consume food every N rounds
     public bool workersConsumeFoodToo = true;
 
     
@@ -31,6 +32,8 @@ public class BuildingResourceStorage : MonoBehaviour
     // Events
     public event Action<ResourceType, int, int> OnResourceChanged; // type, newAmount, capacity
     public event Action OnStorageUpdated;
+
+    private int roundsSinceLastConsumption = 0;
     
     void Start()
     {
@@ -90,11 +93,11 @@ public class BuildingResourceStorage : MonoBehaviour
         
         OnStorageUpdated?.Invoke();
     }
-    
+
     void OnRoundChanged(int newRound)
     {
         HandleRoundProduction();
-        HandlePopulationConsumption();
+        HandlePopulationConsumptionCycle();
     }
     
     void OnDayChanged(int newDay)
@@ -155,26 +158,39 @@ public class BuildingResourceStorage : MonoBehaviour
         }
     }
     
-    void HandlePopulationConsumption()
+    void HandlePopulationConsumptionCycle()
     {
         if (!enablePopulationBasedConsumption) return;
         
-        int totalPeopleToFeed = GetTotalPeopleCount();
-        int foodNeeded = totalPeopleToFeed * foodPerPersonPerRound;
+        roundsSinceLastConsumption++;
         
-        if (foodNeeded > 0)
+        // Only consume food every N rounds
+        if (roundsSinceLastConsumption >= consumptionRoundInterval)
         {
-            int foodConsumed = RemoveResource(ResourceType.FoodPacks, foodNeeded);
+            int totalPeopleToFeed = GetTotalPeopleCount();
+            int foodNeeded = totalPeopleToFeed * foodPerPersonPerNRounds;
             
-            if (showDebugInfo)
+            if (foodNeeded > 0)
             {
-                Debug.Log($"{gameObject.name} fed {totalPeopleToFeed} people, consumed {foodConsumed}/{foodNeeded} food packs");
+                int foodConsumed = RemoveResource(ResourceType.FoodPacks, foodNeeded);
                 
-                if (foodConsumed < foodNeeded)
+                if (showDebugInfo)
                 {
-                    Debug.LogWarning($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
+                    Debug.Log($"{gameObject.name} fed {totalPeopleToFeed} people after {consumptionRoundInterval} rounds, consumed {foodConsumed}/{foodNeeded} food packs");
+                    
+                    if (foodConsumed < foodNeeded)
+                    {
+                        Debug.LogWarning($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
+                    }
                 }
             }
+            
+            // Reset counter
+            roundsSinceLastConsumption = 0;
+        }
+        else if (showDebugInfo)
+        {
+            Debug.Log($"{gameObject.name} consumption cycle: {roundsSinceLastConsumption}/{consumptionRoundInterval} rounds");
         }
     }
     
@@ -379,13 +395,7 @@ public class BuildingResourceStorage : MonoBehaviour
         }
     }
     
-    [ContextMenu("Print Resource Status")]
-    public void DebugPrintStatus()
-    {
-        int totalPeople = GetTotalPeopleCount();
-        Debug.Log($"{gameObject.name} Resource Status: {GetResourceSummary()}");
-        Debug.Log($"Total People to Feed: {totalPeople} (Food needed per round: {totalPeople * foodPerPersonPerRound})");
-    }
+
     
     [ContextMenu("Force Daily Reset")]
     public void DebugForceDailyReset()
