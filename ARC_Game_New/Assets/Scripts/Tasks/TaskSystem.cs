@@ -368,8 +368,8 @@ public class TaskSystem : MonoBehaviour
             // check if task has delivery unfinished
             if (task.status == TaskStatus.InProgress)
             {
-                // cancel related delivery tasks
-                CancelTaskDeliveries(task);
+                // ***cancel related delivery tasks (deleted after 9.4)
+                // CancelTaskDeliveries(task);
 
                 // mark as incomplete (has delivery but not finished)
                 SetTaskIncomplete(task);
