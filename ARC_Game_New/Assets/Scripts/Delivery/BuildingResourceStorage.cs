@@ -7,12 +7,19 @@ public class BuildingResourceStorage : MonoBehaviour
     [Header("Storage Configuration")]
     public List<ResourceCapacity> resourceCapacities = new List<ResourceCapacity>();
     
-    [Header("Initial Resources")]
-    public List<ResourceAmount> initialResources = new List<ResourceAmount>();
+    [Header("Daily Reset Settings")]
+    public List<ResourceAmount> dailyStartingResources = new List<ResourceAmount>();
+    public bool enableDailyFoodWaste = true;
+    public int dailyStartingFoodPacks = 0; // Separate food allocation per day
     
-    [Header("Auto Production/Consumption")]
-    public List<ResourceProduction> resourceProduction = new List<ResourceProduction>();
-    public List<ResourceConsumption> resourceConsumption = new List<ResourceConsumption>();
+    [Header("Round-Based Production")]
+    public List<RoundResourceProduction> roundProduction = new List<RoundResourceProduction>();
+    
+    [Header("Population-Based Consumption")]
+    public bool enablePopulationBasedConsumption = true;
+    public int foodPerPersonPerRound = 1;
+    public bool workersConsumeFoodToo = true;
+
     
     [Header("Debug")]
     public bool showDebugInfo = true;
@@ -25,20 +32,20 @@ public class BuildingResourceStorage : MonoBehaviour
     public event Action<ResourceType, int, int> OnResourceChanged; // type, newAmount, capacity
     public event Action OnStorageUpdated;
     
-    // Auto production/consumption
-    private float lastProductionTime = 0f;
-    private float lastConsumptionTime = 0f;
-    
     void Start()
     {
         InitializeStorage();
+        SubscribeToEvents();
     }
     
-    void Update()
+    void SubscribeToEvents()
     {
-        // Handle auto production and consumption
-        HandleAutoProduction();
-        HandleAutoConsumption();
+        // Subscribe to round changes for production and consumption
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
+            GlobalClock.Instance.OnDayChanged += OnDayChanged;
+        }
     }
     
     void InitializeStorage()
@@ -50,8 +57,16 @@ public class BuildingResourceStorage : MonoBehaviour
             currentResources[capacity.resourceType] = 0;
         }
         
-        // Set initial resources
-        foreach (ResourceAmount resource in initialResources)
+        // Set daily starting resources
+        SetDailyStartingResources();
+        
+        OnStorageUpdated?.Invoke();
+    }
+    
+    void SetDailyStartingResources()
+    {
+        // Set general daily starting resources (population, etc.)
+        foreach (ResourceAmount resource in dailyStartingResources)
         {
             if (maxCapacities.ContainsKey(resource.type))
             {
@@ -59,11 +74,147 @@ public class BuildingResourceStorage : MonoBehaviour
                 currentResources[resource.type] = actualAmount;
                 
                 if (showDebugInfo)
-                    Debug.Log($"{gameObject.name} initialized with {actualAmount} {resource.type}");
+                    Debug.Log($"{gameObject.name} daily reset to {actualAmount} {resource.type}");
             }
         }
         
+        // Separately handle daily food allocation
+        if (dailyStartingFoodPacks > 0 && maxCapacities.ContainsKey(ResourceType.FoodPacks))
+        {
+            int actualFood = Mathf.Min(dailyStartingFoodPacks, maxCapacities[ResourceType.FoodPacks]);
+            currentResources[ResourceType.FoodPacks] = actualFood;
+            
+            if (showDebugInfo)
+                Debug.Log($"{gameObject.name} received daily food allocation: {actualFood} food packs");
+        }
+        
         OnStorageUpdated?.Invoke();
+    }
+    
+    void OnRoundChanged(int newRound)
+    {
+        HandleRoundProduction();
+        HandlePopulationConsumption();
+    }
+    
+    void OnDayChanged(int newDay)
+    {
+        HandleDailyReset();
+    }
+    
+    void HandleRoundProduction()
+    {
+        // Check if this building is operational before producing
+        Building building = GetComponent<Building>();
+        if (building != null && !building.IsOperational())
+        {
+            if (showDebugInfo)
+                Debug.Log($"{gameObject.name} cannot produce - building not operational (Status: {building.GetCurrentStatus()})");
+            return;
+        }
+
+        foreach (RoundResourceProduction production in roundProduction)
+        {
+            // Check if we can produce (capacity available)
+            if (CanAddResource(production.resourceType, production.amountPerRound))
+            {
+                // Check if we have required input resources
+                bool canProduce = true;
+                foreach (ResourceAmount requirement in production.requiredResources)
+                {
+                    if (!HasResource(requirement.type, requirement.amount))
+                    {
+                        canProduce = false;
+                        break;
+                    }
+                }
+
+                if (canProduce)
+                {
+                    // Consume input resources
+                    foreach (ResourceAmount requirement in production.requiredResources)
+                    {
+                        RemoveResource(requirement.type, requirement.amount);
+                    }
+
+                    // Produce output resource
+                    AddResource(production.resourceType, production.amountPerRound);
+
+                    if (showDebugInfo)
+                        Debug.Log($"{gameObject.name} produced {production.amountPerRound} {production.resourceType} this round");
+                }
+                else if (showDebugInfo)
+                {
+                    Debug.LogWarning($"{gameObject.name} cannot produce {production.resourceType} - missing required resources");
+                }
+            }
+            else if (showDebugInfo)
+            {
+                Debug.LogWarning($"{gameObject.name} cannot produce {production.resourceType} - storage full");
+            }
+        }
+    }
+    
+    void HandlePopulationConsumption()
+    {
+        if (!enablePopulationBasedConsumption) return;
+        
+        int totalPeopleToFeed = GetTotalPeopleCount();
+        int foodNeeded = totalPeopleToFeed * foodPerPersonPerRound;
+        
+        if (foodNeeded > 0)
+        {
+            int foodConsumed = RemoveResource(ResourceType.FoodPacks, foodNeeded);
+            
+            if (showDebugInfo)
+            {
+                Debug.Log($"{gameObject.name} fed {totalPeopleToFeed} people, consumed {foodConsumed}/{foodNeeded} food packs");
+                
+                if (foodConsumed < foodNeeded)
+                {
+                    Debug.LogWarning($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
+                }
+            }
+        }
+    }
+    
+    int GetTotalPeopleCount()
+    {
+        int totalPeople = 0;
+        
+        // Count population
+        totalPeople += GetResourceAmount(ResourceType.Population);
+        
+        // Count workers if they consume food too
+        if (workersConsumeFoodToo)
+        {
+            Building building = GetComponent<Building>();
+            if (building != null)
+            {
+                totalPeople += building.GetAssignedWorkforce();
+            }
+        }
+        
+        return totalPeople;
+    }
+    
+    void HandleDailyReset()
+    {
+        if (enableDailyFoodWaste)
+        {
+            // Remove all unused food at end of day
+            int wastedFood = GetResourceAmount(ResourceType.FoodPacks);
+            if (wastedFood > 0)
+            {
+                RemoveResource(ResourceType.FoodPacks, wastedFood);
+                
+                if (showDebugInfo)
+                    Debug.Log($"{gameObject.name} wasted {wastedFood} unused food packs at end of day");
+            }
+        }
+        
+        // Reset to daily starting resources
+        SetDailyStartingResources();
     }
     
     /// <summary>
@@ -203,85 +354,6 @@ public class BuildingResourceStorage : MonoBehaviour
     }
     
     /// <summary>
-    /// Handle automatic production
-    /// </summary>
-    void HandleAutoProduction()
-    {
-        if (resourceProduction.Count == 0) return;
-        
-        float currentTime = Time.time;
-        
-        foreach (ResourceProduction production in resourceProduction)
-        {
-            if (currentTime - lastProductionTime >= production.productionInterval)
-            {
-                // Check if we can produce (capacity available)
-                if (CanAddResource(production.resourceType, production.amountPerInterval))
-                {
-                    // Check if we have required input resources
-                    bool canProduce = true;
-                    foreach (ResourceAmount requirement in production.requiredResources)
-                    {
-                        if (!HasResource(requirement.type, requirement.amount))
-                        {
-                            canProduce = false;
-                            break;
-                        }
-                    }
-                    
-                    if (canProduce)
-                    {
-                        // Consume input resources
-                        foreach (ResourceAmount requirement in production.requiredResources)
-                        {
-                            RemoveResource(requirement.type, requirement.amount);
-                        }
-                        
-                        // Produce output resource
-                        AddResource(production.resourceType, production.amountPerInterval);
-                        
-                        if (showDebugInfo)
-                            Debug.Log($"{gameObject.name} produced {production.amountPerInterval} {production.resourceType}");
-                    }
-                }
-                
-                lastProductionTime = currentTime;
-            }
-        }
-    }
-    
-    /// <summary>
-    /// Handle automatic consumption
-    /// </summary>
-    void HandleAutoConsumption()
-    {
-        if (resourceConsumption.Count == 0) return;
-        
-        float currentTime = Time.time;
-        
-        foreach (ResourceConsumption consumption in resourceConsumption)
-        {
-            if (currentTime - lastConsumptionTime >= consumption.consumptionInterval)
-            {
-                // Check if we have the resource to consume
-                if (HasResource(consumption.resourceType, consumption.amountPerInterval))
-                {
-                    RemoveResource(consumption.resourceType, consumption.amountPerInterval);
-                    
-                    if (showDebugInfo)
-                        Debug.Log($"{gameObject.name} consumed {consumption.amountPerInterval} {consumption.resourceType}");
-                }
-                else if (showDebugInfo)
-                {
-                    Debug.LogWarning($"{gameObject.name} cannot consume {consumption.amountPerInterval} {consumption.resourceType} - insufficient resources");
-                }
-                
-                lastConsumptionTime = currentTime;
-            }
-        }
-    }
-    
-    /// <summary>
     /// Get resource summary for debugging
     /// </summary>
     public string GetResourceSummary()
@@ -297,10 +369,28 @@ public class BuildingResourceStorage : MonoBehaviour
         return string.Join(", ", summary);
     }
     
+    void OnDestroy()
+    {
+        // Unsubscribe from events
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
+            GlobalClock.Instance.OnDayChanged -= OnDayChanged;
+        }
+    }
+    
     [ContextMenu("Print Resource Status")]
     public void DebugPrintStatus()
     {
+        int totalPeople = GetTotalPeopleCount();
         Debug.Log($"{gameObject.name} Resource Status: {GetResourceSummary()}");
+        Debug.Log($"Total People to Feed: {totalPeople} (Food needed per round: {totalPeople * foodPerPersonPerRound})");
+    }
+    
+    [ContextMenu("Force Daily Reset")]
+    public void DebugForceDailyReset()
+    {
+        HandleDailyReset();
     }
 }
 
@@ -312,18 +402,22 @@ public class ResourceCapacity
 }
 
 [System.Serializable]
-public class ResourceProduction
+public class RoundResourceProduction
 {
     public ResourceType resourceType;
-    public int amountPerInterval;
-    public float productionInterval = 5f; // seconds
+    public int amountPerRound;
     public List<ResourceAmount> requiredResources = new List<ResourceAmount>(); // input requirements
 }
 
 [System.Serializable]
-public class ResourceConsumption
+public class ResourceAmount
 {
-    public ResourceType resourceType;
-    public int amountPerInterval;
-    public float consumptionInterval = 10f; // seconds
+    public ResourceType type;
+    public int amount;
+}
+
+public enum ResourceType
+{
+    Population,
+    FoodPacks
 }

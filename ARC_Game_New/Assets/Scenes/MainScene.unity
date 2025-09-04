@@ -5724,9 +5724,9 @@ RectTransform:
   - {fileID: 1644935057}
   m_Father: {fileID: 1806595712}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 153.225, y: -74.375}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 286.45, y: 36.25}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &217493637
@@ -14108,9 +14108,9 @@ RectTransform:
   - {fileID: 1858762042}
   m_Father: {fileID: 849138968}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 156.905, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 127.55, y: 30}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &507450004
@@ -15182,60 +15182,6 @@ MonoBehaviour:
   m_ChildScaleWidth: 0
   m_ChildScaleHeight: 0
   m_ReverseArrangement: 0
---- !u!1 &536388035
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 536388037}
-  - component: {fileID: 536388036}
-  m_Layer: 0
-  m_Name: DebuggingSystem
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &536388036
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 536388035}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6f7e9f696d1d58e499d1ef98247b2928, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  debugPanelUI: {fileID: 1806595711}
-  startVisible: 0
-  toggleKey: 282
-  messageInputField: {fileID: 0}
-  colorDropdown: {fileID: 0}
-  messageTypeDropdown: {fileID: 0}
-  addMessageButton: {fileID: 0}
-  clearLogButton: {fileID: 0}
-  taskIdDropdown: {fileID: 0}
-  spawnTaskButton: {fileID: 0}
---- !u!4 &536388037
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 536388035}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 4.6944227, y: 7.950844, z: -1.2311821}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &537430618
 GameObject:
   m_ObjectHideFlags: 0
@@ -16508,9 +16454,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 849138968}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 44.065002, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 88.13, y: 30}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &593616851
@@ -24628,9 +24574,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 1692617590}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 113.32, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 226.64, y: 30}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &676423359
@@ -29656,9 +29602,9 @@ RectTransform:
   - {fileID: 2140892991}
   m_Father: {fileID: 1806595712}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 153.225, y: -120.625}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 286.45, y: 36.25}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &849138969
@@ -34629,9 +34575,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 217493636}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 44.065002, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 88.13, y: 30}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1016481714
@@ -35910,11 +35856,16 @@ MonoBehaviour:
     maxCapacity: 50
   - resourceType: 1
     maxCapacity: 50
-  initialResources:
+  dailyStartingResources:
   - type: 0
     amount: 50
-  resourceProduction: []
-  resourceConsumption: []
+  - type: 1
+    amount: 50
+  enableDailyFoodWaste: 0
+  roundProduction: []
+  enablePopulationBasedConsumption: 1
+  foodPerPersonPerRound: 1
+  workersConsumeFoodToo: 1
   showDebugInfo: 1
 --- !u!114 &1045973710
 MonoBehaviour:
@@ -38874,10 +38825,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   resourceCapacities:
   - resourceType: 0
-    maxCapacity: 100
-  initialResources: []
-  resourceProduction: []
-  resourceConsumption: []
+    maxCapacity: 300
+  dailyStartingResources: []
+  enableDailyFoodWaste: 1
+  roundProduction: []
+  enablePopulationBasedConsumption: 1
+  foodPerPersonPerRound: 1
+  workersConsumeFoodToo: 1
   showDebugInfo: 1
 --- !u!114 &1139266910
 MonoBehaviour:
@@ -42262,6 +42216,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1274977487}
+  - component: {fileID: 1274977489}
+  - component: {fileID: 1274977488}
   m_Layer: 5
   m_Name: DebugUI
   m_TagString: Untagged
@@ -42289,6 +42245,48 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &1274977488
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1274977486}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9c6cc6be7c7745342b9e918497c3bf93, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  scrollRect: {fileID: 0}
+  contentRect: {fileID: 0}
+  logText: {fileID: 0}
+  normalTextColor: {r: 1, g: 1, b: 1, a: 1}
+  highlightTextColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  autoScrollToBottom: 1
+  debugMode: 1
+  clearLogKey: 286
+--- !u!114 &1274977489
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1274977486}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6f7e9f696d1d58e499d1ef98247b2928, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  debugPanelUI: {fileID: 1806595711}
+  startVisible: 0
+  toggleKey: 100
+  messageInputField: {fileID: 0}
+  colorDropdown: {fileID: 0}
+  messageTypeDropdown: {fileID: 0}
+  addMessageButton: {fileID: 0}
+  clearLogButton: {fileID: 0}
+  taskIdDropdown: {fileID: 0}
+  spawnTaskButton: {fileID: 0}
 --- !u!1 &1275284033
 GameObject:
   m_ObjectHideFlags: 0
@@ -56172,9 +56170,9 @@ RectTransform:
   - {fileID: 876433375}
   m_Father: {fileID: 217493636}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 144.14, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 102.02, y: 30}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1644935058
@@ -57116,9 +57114,9 @@ RectTransform:
   - {fileID: 673208513}
   m_Father: {fileID: 1806595712}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 153.225, y: -28.125}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 286.45, y: 36.25}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1692617591
@@ -58863,11 +58861,16 @@ MonoBehaviour:
     maxCapacity: 100
   - resourceType: 1
     maxCapacity: 100
-  initialResources:
+  dailyStartingResources:
   - type: 0
-    amount: 60
-  resourceProduction: []
-  resourceConsumption: []
+    amount: 100
+  - type: 1
+    amount: 100
+  enableDailyFoodWaste: 0
+  roundProduction: []
+  enablePopulationBasedConsumption: 1
+  foodPerPersonPerRound: 1
+  workersConsumeFoodToo: 1
   showDebugInfo: 1
 --- !u!114 &1758808075
 MonoBehaviour:
@@ -61287,11 +61290,16 @@ MonoBehaviour:
     maxCapacity: 100
   - resourceType: 1
     maxCapacity: 100
-  initialResources:
+  dailyStartingResources:
   - type: 0
-    amount: 80
-  resourceProduction: []
-  resourceConsumption: []
+    amount: 100
+  - type: 1
+    amount: 100
+  enableDailyFoodWaste: 0
+  roundProduction: []
+  enablePopulationBasedConsumption: 1
+  foodPerPersonPerRound: 1
+  workersConsumeFoodToo: 1
   showDebugInfo: 1
 --- !u!114 &1805033305
 MonoBehaviour:
@@ -61580,7 +61588,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &1806595712
 RectTransform:
   m_ObjectHideFlags: 0
@@ -61600,8 +61608,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 533, y: 306}
-  m_SizeDelta: {x: 239.47998, y: 84.400024}
+  m_AnchoredPosition: {x: 438.11, y: 120.73}
+  m_SizeDelta: {x: 429.27, y: 454.94}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1806595713
 MonoBehaviour:
@@ -72952,9 +72960,9 @@ RectTransform:
   - {fileID: 921590260}
   m_Father: {fileID: 849138968}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 273.835, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 96.31, y: 30}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &2142597799
@@ -73141,7 +73149,6 @@ SceneRoots:
   - {fileID: 146349967}
   - {fileID: 908626679}
   - {fileID: 978748997}
-  - {fileID: 536388037}
   - {fileID: 595964835}
   - {fileID: 962768839}
   - {fileID: 2085978411}
