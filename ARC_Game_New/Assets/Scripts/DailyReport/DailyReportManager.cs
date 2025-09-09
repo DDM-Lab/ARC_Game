@@ -126,6 +126,12 @@ public class DailyReportManager : MonoBehaviour
 
     IEnumerator FadeInReportWithData()
     {
+        // Reset all elements to hidden AFTER panel is activated but BEFORE fade in
+        if (reportUI != null)
+        {
+            reportUI.ResetAllElementsToHidden();
+        }
+        
         // Do the existing fade in animation first
         yield return StartCoroutine(FadeInReport());
         
@@ -134,10 +140,6 @@ public class DailyReportManager : MonoBehaviour
         {
             var metrics = DailyReportData.Instance.GenerateDailyReport();
             reportUI.DisplayDailyReport(metrics);
-        }
-        else
-        {
-            Debug.LogWarning("DailyReportData.Instance or reportUI is null");
         }
     }
     
