@@ -394,6 +394,11 @@ public class BuildingResourceStorage : MonoBehaviour
             GlobalClock.Instance.OnDayChanged -= OnDayChanged;
         }
     }
+
+    public int GetMaxCapacity(ResourceType resourceType)
+    {
+        return maxCapacities[resourceType];
+    }
     
 
     
