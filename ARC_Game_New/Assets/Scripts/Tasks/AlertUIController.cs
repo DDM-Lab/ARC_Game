@@ -557,6 +557,8 @@ public class AlertUIController : MonoBehaviour
     /// </summary>
     void SkipTyping()
     {
+        AudioManager.Instance.PlaySkipSFX();
+
         if (typingCoroutine != null)
         {
             StopCoroutine(typingCoroutine);
@@ -740,8 +742,8 @@ public class AlertUIController : MonoBehaviour
 
     public bool IsUIOpen()
     {
-        return alertPanel.activeSelf;
-    } 
+        return alertActive;
+    }
 
     void OnDestroy()
     {

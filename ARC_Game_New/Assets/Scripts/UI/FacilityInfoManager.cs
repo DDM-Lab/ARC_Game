@@ -275,7 +275,9 @@ public class FacilityInfoManager : MonoBehaviour
         {
             facilityInfoPanel.SetActive(false);
         }
-        
+
+        AudioManager.Instance.PlayCancelSFX();
+
         isPanelOpen = false;
         currentSelectedFacility = null;
         
@@ -317,6 +319,7 @@ public class FacilityInfoManager : MonoBehaviour
     // Called from Building/PrebuiltBuilding OnMouseDown
     public void OnFacilityClick(MonoBehaviour facility)
     {
+        AudioManager.Instance.PlayClickSFX();
         OnFacilityClicked(facility);
     }
 

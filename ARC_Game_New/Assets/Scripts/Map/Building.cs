@@ -350,7 +350,9 @@ public class Building : MonoBehaviour
             return;
 
         if (FacilityInfoManager.Instance != null)
+        {
             FacilityInfoManager.Instance.OnFacilityClick(this);
+        }
     }
 
     /*
