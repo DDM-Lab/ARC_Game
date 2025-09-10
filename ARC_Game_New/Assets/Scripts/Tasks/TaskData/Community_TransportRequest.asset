@@ -39,7 +39,7 @@ MonoBehaviour:
   requireAllTriggers: 1
   isGlobalTask: 0
   targetFacilityType: 3
-  autoSelectFacility: 1
+  autoSelectFacility: 0
   specificFacility: {fileID: 0}
   roundsRemaining: 2
   realTimeRemaining: 300

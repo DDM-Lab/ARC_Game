@@ -261,8 +261,8 @@ public class TaskSystem : MonoBehaviour
 
     [Header("Default Assets")]
     public Sprite defaultTaskImage;
-    
-        [Header("Agent Icons")]
+
+    [Header("Agent Icons")]
     public Sprite defaultAgentSprite;
     public Sprite workforceServiceSprite;
     public Sprite lodgingMassCareSprite;
@@ -360,9 +360,9 @@ public class TaskSystem : MonoBehaviour
 
     void CheckExpiredTasks()
     {
-        List<GameTask> expiredTasks = activeTasks.Where(t => t.roundsRemaining <= 0 || 
+        List<GameTask> expiredTasks = activeTasks.Where(t => t.roundsRemaining <= 0 ||
             (t.hasRealTimeLimit && t.realTimeRemaining <= 0)).ToList();
-        
+
         foreach (GameTask task in expiredTasks)
         {
             // check if task has delivery unfinished
@@ -418,7 +418,7 @@ public class TaskSystem : MonoBehaviour
 
                 if (showDebugInfo)
                     Debug.Log($"Task '{task.taskTitle}' rounds remaining: {task.roundsRemaining}");
-                    //ToastManager.ShowToast($"Task '{task.taskTitle}' rounds remaining: {task.roundsRemaining}", ToastType.Info, true);
+                //ToastManager.ShowToast($"Task '{task.taskTitle}' rounds remaining: {task.roundsRemaining}", ToastType.Info, true);
             }
         }
         CheckForUnrepairedVehicles();
@@ -430,24 +430,24 @@ public class TaskSystem : MonoBehaviour
     void CheckForUnrepairedVehicles()
     {
         Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-        
+
         foreach (Vehicle vehicle in vehicles)
         {
             if (vehicle.GetCurrentStatus() == VehicleStatus.Damaged)
             {
                 // Check if this vehicle already has a repair task
                 bool hasRepairTask = HasVehicleRepairTask(vehicle);
-                
+
                 if (!hasRepairTask)
                 {
                     // Create repair task for this vehicle
                     if (FloodTaskGenerator.Instance != null)
                     {
                         FloodTaskGenerator.Instance.CreateVehicleRepairTask(vehicle);
-                        
+
                         if (showDebugInfo)
                             Debug.Log($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}");
-                            ToastManager.ShowToast($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}", ToastType.Info, true);
+                        ToastManager.ShowToast($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}", ToastType.Info, true);
                     }
                 }
             }
@@ -461,36 +461,36 @@ public class TaskSystem : MonoBehaviour
     {
         foreach (GameTask task in activeTasks)
         {
-            if (task.taskTitle.Contains("Vehicle Repair") && 
+            if (task.taskTitle.Contains("Vehicle Repair") &&
                 task.description.Contains(vehicle.GetVehicleName()))
             {
                 return true;
             }
         }
-        
+
         return false;
     }
 
     void OnDeliveryTaskCompleted(DeliveryTask deliveryTask)
     {
         // find any active tasks that are linked to this delivery task
-        GameTask gameTask = activeTasks.FirstOrDefault(t => 
+        GameTask gameTask = activeTasks.FirstOrDefault(t =>
             t.linkedDeliveryTaskIds != null && t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
-        
+
         if (gameTask != null && gameTask.status == TaskStatus.InProgress)
         {
             // check if all deliveries are completed
             DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
             List<DeliveryTask> completedTasks = deliverySystem.GetCompletedTasks();
-            
-            bool allCompleted = gameTask.linkedDeliveryTaskIds.All(id => 
+
+            bool allCompleted = gameTask.linkedDeliveryTaskIds.All(id =>
                 completedTasks.Any(ct => ct.taskId == id));
 
             if (allCompleted)
             {
                 if (showDebugInfo)
                     Debug.Log($"All deliveries completed for task: {gameTask.taskTitle}");
-                    ToastManager.ShowToast($"All deliveries completed for task: {gameTask.taskTitle}, ", ToastType.Success, true);
+                ToastManager.ShowToast($"All deliveries completed for task: {gameTask.taskTitle}, ", ToastType.Success, true);
 
                 CompleteTask(gameTask);
             }
@@ -522,7 +522,7 @@ public class TaskSystem : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
-                ToastManager.ShowToast($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}", ToastType.Warning, true);
+            ToastManager.ShowToast($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}", ToastType.Warning, true);
         }
     }
 
@@ -545,19 +545,23 @@ public class TaskSystem : MonoBehaviour
             return;
         }
 
-        Debug.Log("Checking for triggered tasks...");
-        List<TaskData> triggeredTasks = taskDatabase.CheckTriggeredTasks();
-        Debug.Log($"Found {triggeredTasks.Count} triggered tasks");
-        
-        foreach (TaskData taskData in triggeredTasks)
+        Debug.Log("Checking for triggered tasks per facility...");
+
+        // NEW: Get tasks with their specific facilities
+        List<(TaskData taskData, MonoBehaviour facility)> triggeredTasksWithFacilities =
+            taskDatabase.CheckTriggeredTasksPerFacility();
+
+        Debug.Log($"Found {triggeredTasksWithFacilities.Count} triggered task-facility combinations");
+
+        foreach (var (taskData, facility) in triggeredTasksWithFacilities)
         {
             if (taskData == null)
             {
-                Debug.LogWarning("Found null TaskData in database");
+                Debug.LogWarning("Found null TaskData in triggered results");
                 continue;
             }
 
-            // Skip if this alert was already shown
+            // Handle alert tasks (global check for duplicates)
             if (taskData.taskType == TaskType.Alert)
             {
                 if (shownAlertIds.Contains(taskData.taskId))
@@ -571,18 +575,38 @@ public class TaskSystem : MonoBehaviour
                 }
             }
 
-            // TBA: Check if task already exists to avoid duplicates
-            if (activeTasks.Any(t => t.taskTitle == taskData.taskTitle))
+            // For global tasks (facility is null)
+            if (facility == null)
             {
-                Debug.Log($"Task {taskData.taskTitle} already exists, skipping");
-                continue;
+                // Check if global task already exists to avoid duplicates
+                if (activeTasks.Any(t => t.taskTitle == taskData.taskTitle && t.isGlobalTask))
+                {
+                    Debug.Log($"Global task {taskData.taskTitle} already exists, skipping");
+                    continue;
+                }
+
+                Debug.Log($"Creating global task: {taskData.taskTitle}");
+                CreateTaskFromDatabase(taskData);
             }
+            else
+            {
+                // For facility-specific tasks
+                string facilityName = facility.name;
 
-            Debug.Log($"Creating task: {taskData.taskTitle}");
+                // Check if task already exists for this specific facility
+                if (activeTasks.Any(t => t.taskTitle == taskData.taskTitle && t.affectedFacility == facilityName))
+                {
+                    Debug.Log($"Task {taskData.taskTitle} already exists for {facilityName}, skipping");
+                    continue;
+                }
 
-            CreateTaskFromDatabase(taskData);
+                Debug.Log($"Creating task: {taskData.taskTitle} for facility: {facilityName}");
+                CreateTaskFromDatabase(taskData, facility);
+            }
         }
     }
+
+
 
     public GameTask CreateTaskFromDatabase(TaskData taskData)
     {
@@ -595,7 +619,7 @@ public class TaskSystem : MonoBehaviour
         // Find suitable facility that triggered the task
         MonoBehaviour triggeringFacility = taskDatabase.FindSuitableFacility(taskData);
         string facilityName = triggeringFacility?.name ?? taskData.targetFacilityType.ToString();
-        
+
         GameTask newTask = CreateTaskFromData(taskData);
         if (newTask == null)
         {
@@ -608,36 +632,36 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
-        
+
         return newTask;
     }
 
     // Enhanced facility finding methods
-    MonoBehaviour FindNearestBuilding(BuildingType buildingType, Vector3? referencePosition, 
+    MonoBehaviour FindNearestBuilding(BuildingType buildingType, Vector3? referencePosition,
                                 ResourceType cargoType, bool isSource)
     {
         Debug.Log($"=== FIND NEAREST BUILDING DEBUG ===");
         Debug.Log($"Looking for: {buildingType}, Cargo: {cargoType}, IsSource: {isSource}");
-        
-        Building[] buildings = FindObjectsOfType<Building>().Where(b => 
+
+        Building[] buildings = FindObjectsOfType<Building>().Where(b =>
             b.GetBuildingType() == buildingType && b.IsOperational()).ToArray();
-        
+
         Debug.Log($"Found {buildings.Length} operational {buildingType} buildings");
-        
+
         Building bestBuilding = null;
         float closestDistance = float.MaxValue;
-        
+
         foreach (Building building in buildings)
         {
             Debug.Log($"Checking building: {building.name}");
-            
+
             // Check if building can provide/accept the cargo
             bool canHandle = CanBuildingHandleCargo(building, cargoType, isSource);
             Debug.Log($"  Can handle cargo: {canHandle}");
-            
+
             if (!canHandle)
                 continue;
-            
+
             if (referencePosition.HasValue)
             {
                 float distance = Vector3.Distance(building.transform.position, referencePosition.Value);
@@ -655,7 +679,7 @@ public class TaskSystem : MonoBehaviour
                 return building;
             }
         }
-        
+
         Debug.Log($"Final result: {bestBuilding?.name}");
         return bestBuilding;
     }
@@ -665,16 +689,16 @@ public class TaskSystem : MonoBehaviour
     {
         PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>().Where(pb =>
             pb.GetPrebuiltType() == prebuiltType).ToArray();
-        
+
         PrebuiltBuilding bestPrebuilt = null;
         float closestDistance = float.MaxValue;
-        
+
         foreach (PrebuiltBuilding prebuilt in prebuilts)
         {
             // Check if prebuilt can provide/accept the cargo
             if (!CanPrebuiltHandleCargo(prebuilt, cargoType, isSource))
                 continue;
-            
+
             if (referencePosition.HasValue)
             {
                 float distance = Vector3.Distance(prebuilt.transform.position, referencePosition.Value);
@@ -689,7 +713,7 @@ public class TaskSystem : MonoBehaviour
                 return prebuilt; // Return first suitable if no reference position
             }
         }
-        
+
         return bestPrebuilt;
     }
 
@@ -697,14 +721,14 @@ public class TaskSystem : MonoBehaviour
     {
         Debug.Log($"=== CAN HANDLE CARGO DEBUG ===");
         Debug.Log($"Building: {building.name}, Cargo: {cargoType}, IsSource: {isSource}");
-        
+
         BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
         if (storage == null)
         {
             Debug.Log($"❌ No BuildingResourceStorage component on {building.name}");
             return false;
         }
-        
+
         if (isSource)
         {
             int available = storage.GetResourceAmount(cargoType);
@@ -734,11 +758,11 @@ public class TaskSystem : MonoBehaviour
                 return prebuilt.CanAcceptPopulation(1);
             }
         }
-        
+
         // For other resource types, check storage
         BuildingResourceStorage storage = prebuilt.GetResourceStorage();
         if (storage == null) return false;
-        
+
         if (isSource)
         {
             return storage.GetResourceAmount(cargoType) > 0;
@@ -756,15 +780,15 @@ public class TaskSystem : MonoBehaviour
         {
             case ResourceType.FoodPacks:
                 return FindNearestBuilding(BuildingType.Kitchen, referencePosition, cargoType, true);
-                
+
             case ResourceType.Population:
                 // Prefer communities, then shelters with people
-                MonoBehaviour communitySource = FindNearestPrebuiltBuilding(PrebuiltBuildingType.Community, 
+                MonoBehaviour communitySource = FindNearestPrebuiltBuilding(PrebuiltBuildingType.Community,
                                                                         referencePosition, cargoType, true);
                 if (communitySource != null) return communitySource;
-                
+
                 return FindNearestBuilding(BuildingType.Shelter, referencePosition, cargoType, true);
-                
+
             default:
                 return null;
         }
@@ -776,14 +800,14 @@ public class TaskSystem : MonoBehaviour
         {
             case ResourceType.FoodPacks:
                 return FindNearestBuilding(BuildingType.Shelter, referencePosition, cargoType, false);
-                
+
             case ResourceType.Population:
                 // Prefer shelters, then motels
                 MonoBehaviour shelterDest = FindNearestBuilding(BuildingType.Shelter, referencePosition, cargoType, false);
                 if (shelterDest != null) return shelterDest;
-                
+
                 return FindNearestPrebuiltBuilding(PrebuiltBuildingType.Motel, referencePosition, cargoType, false);
-                
+
             default:
                 return null;
         }
@@ -795,9 +819,9 @@ public class TaskSystem : MonoBehaviour
         if (cargoType == ResourceType.FoodPacks)
         {
             // Find kitchen with food
-            Building[] kitchens = FindObjectsOfType<Building>().Where(b => 
+            Building[] kitchens = FindObjectsOfType<Building>().Where(b =>
                 b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational()).ToArray();
-            
+
             foreach (Building kitchen in kitchens)
             {
                 BuildingResourceStorage storage = kitchen.GetComponent<BuildingResourceStorage>();
@@ -810,14 +834,14 @@ public class TaskSystem : MonoBehaviour
             // Find community with people
             PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>().Where(pb =>
                 pb.GetPrebuiltType() == PrebuiltBuildingType.Community).ToArray();
-            
+
             foreach (PrebuiltBuilding community in communities)
             {
                 if (community.GetCurrentPopulation() > 0)
                     return community;
             }
         }
-        
+
         return null;
     }
 
@@ -828,7 +852,7 @@ public class TaskSystem : MonoBehaviour
             // Find shelter with space
             Building[] shelters = FindObjectsOfType<Building>().Where(b =>
                 b.GetBuildingType() == BuildingType.Shelter && b.IsOperational()).ToArray();
-            
+
             foreach (Building shelter in shelters)
             {
                 BuildingResourceStorage storage = shelter.GetComponent<BuildingResourceStorage>();
@@ -841,25 +865,25 @@ public class TaskSystem : MonoBehaviour
             // Find shelter with space, then motel
             Building[] shelters = FindObjectsOfType<Building>().Where(b =>
                 b.GetBuildingType() == BuildingType.Shelter && b.IsOperational()).ToArray();
-            
+
             foreach (Building shelter in shelters)
             {
                 BuildingResourceStorage storage = shelter.GetComponent<BuildingResourceStorage>();
                 if (storage != null && storage.GetAvailableSpace(ResourceType.Population) > 0)
                     return shelter;
             }
-            
+
             // Fallback to motel
             PrebuiltBuilding[] motels = FindObjectsOfType<PrebuiltBuilding>().Where(pb =>
                 pb.GetPrebuiltType() == PrebuiltBuildingType.Motel).ToArray();
-            
+
             foreach (PrebuiltBuilding motel in motels)
             {
                 if (motel.CanAcceptPopulation(1))
                     return motel;
             }
         }
-        
+
         return null;
     }
 
@@ -984,7 +1008,7 @@ public class TaskSystem : MonoBehaviour
                 Debug.Log($"Ignored advisory task: {task.taskTitle}");
         }
     }
-    
+
     public void SetTaskInProgress(GameTask task)
     {
         if (activeTasks.Contains(task))
@@ -1003,10 +1027,10 @@ public class TaskSystem : MonoBehaviour
             task.status = TaskStatus.Incomplete;
             activeTasks.Remove(task);
             completedTasks.Add(task);
-            
+
             ApplyTaskPenalties(task);
             OnTaskCompleted?.Invoke(task);
-            
+
             if (showDebugInfo)
                 Debug.Log($"Task marked as incomplete: {task.taskTitle}");
         }
@@ -1181,12 +1205,12 @@ public class TaskSystem : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
 
-        if(taskData.taskType != TaskType.Alert)
+        if (taskData.taskType != TaskType.Alert)
             ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);
 
         return newTask;
     }
-    
+
     Sprite GetOfficerAvatar(TaskOfficer officer)
     {
         switch (officer)
@@ -1221,9 +1245,9 @@ public class TaskSystem : MonoBehaviour
     {
         Debug.Log($"=== FIND FACILITY BY NAME ===");
         Debug.Log($"Looking for: '{facilityName}'");
-        
+
         if (string.IsNullOrEmpty(facilityName)) return null;
-        
+
         // Search in Buildings
         Building[] buildings = FindObjectsOfType<Building>();
         Debug.Log($"Found {buildings.Length} buildings:");
@@ -1236,7 +1260,7 @@ public class TaskSystem : MonoBehaviour
                 return building;
             }
         }
-        
+
         // Search in PrebuiltBuildings
         PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>();
         Debug.Log($"Found {prebuilts.Length} prebuilt buildings:");
@@ -1249,7 +1273,7 @@ public class TaskSystem : MonoBehaviour
                 return prebuilt;
             }
         }
-        
+
         Debug.Log("❌ No facility found");
         return null;
     }
@@ -1257,17 +1281,17 @@ public class TaskSystem : MonoBehaviour
     public MonoBehaviour DetermineChoiceDeliverySource(AgentChoice choice, MonoBehaviour triggeringFacility)
     {
         Debug.Log($"Determining source: Type={choice.sourceType}");
-    
+
         switch (choice.sourceType)
         {
             case DeliverySourceType.RequestingFacility:
                 Debug.Log($"Using requesting facility as source: {triggeringFacility?.name}");
                 return triggeringFacility;
-                
+
             case DeliverySourceType.ManualAssignment:
                 Debug.Log($"Looking for facility by name: {choice.specificSourceName}");
                 return FindFacilityByName(choice.specificSourceName);
-                
+
             case DeliverySourceType.SpecificBuilding:
                 /*Debug.Log($"Looking for specific building type: {choice.sourceBuilding}");
                 MonoBehaviour foundBuilding = FindNearestBuilding(choice.sourceBuilding, triggeringFacility?.transform.position, 
@@ -1285,17 +1309,17 @@ public class TaskSystem : MonoBehaviour
 
                 if (choice.prioritizeNearestSource && triggeringFacility != null)
                 {
-                    return FindNearestBuilding(choice.sourceBuilding, triggeringFacility?.transform.position, 
+                    return FindNearestBuilding(choice.sourceBuilding, triggeringFacility?.transform.position,
                                         choice.deliveryCargoType, true);
                 }
                 return buildings[0];
-                
-                
+
+
             case DeliverySourceType.SpecificPrebuilt:
                 /*Debug.Log($"Looking for specific prebuilt type: {choice.sourcePrebuilt}");
                 return FindNearestPrebuiltBuilding(choice.sourcePrebuilt, triggeringFacility?.transform.position,
                                                 choice.deliveryCargoType, true);*/
-                    // NEW: Exclude the triggering facility from prebuilt search
+                // NEW: Exclude the triggering facility from prebuilt search
                 PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>()
                 .Where(p => p.GetPrebuiltType() == choice.sourcePrebuilt)
                 .Where(p => p != triggeringFacility || choice.destinationType != DeliveryDestinationType.RequestingFacility)
@@ -1310,7 +1334,7 @@ public class TaskSystem : MonoBehaviour
                 }
                 return prebuilts[0];
 
-                
+
             case DeliverySourceType.AutoFind:
             default:
                 Debug.Log($"Auto-finding source for cargo type: {choice.deliveryCargoType}");
@@ -1356,7 +1380,7 @@ public class TaskSystem : MonoBehaviour
                                         choice.deliveryCargoType, false);
                 }
                 return buildings[0];
-                
+
 
 
             case DeliveryDestinationType.SpecificPrebuilt:
@@ -1391,18 +1415,18 @@ public class TaskSystem : MonoBehaviour
     public void CompleteAlertTask(GameTask alertTask)
     {
         if (alertTask == null) return;
-        
+
         // Mark as completed
         alertTask.status = TaskStatus.Completed;
-        
+
         // Remove from active tasks
         if (activeTasks.Contains(alertTask))
         {
             activeTasks.Remove(alertTask);
             completedTasks.Add(alertTask);
-            
+
             OnTaskCompleted?.Invoke(alertTask);
-            
+
             if (showDebugInfo)
                 Debug.Log($"Alert task completed: {alertTask.taskTitle}");
         }
@@ -1443,7 +1467,35 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
-    
+    // <summary>
+    /// Create task from database with specific facility
+    /// </summary>
+    public GameTask CreateTaskFromDatabase(TaskData taskData, MonoBehaviour specificFacility)
+    {
+        if (taskData == null)
+        {
+            Debug.LogError("TaskData is null in CreateTaskFromDatabase");
+            return null;
+        }
+
+        // Use the specific facility provided
+        string facilityName = specificFacility?.name ?? taskData.targetFacilityType.ToString();
+
+        GameTask newTask = CreateTaskFromData(taskData);
+        if (newTask == null)
+        {
+            if (showDebugInfo)
+                Debug.LogWarning($"Failed to create task from database: {taskData.taskTitle} - insufficient resources or other validation failure");
+            return null;
+        }
+
+        newTask.affectedFacility = facilityName;
+
+        if (showDebugInfo)
+            Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
+
+        return newTask;
+    }
 
     [ContextMenu("Create Test Food Demand Task")]
     public void CreateTestFoodDemandTask()
@@ -1523,20 +1575,20 @@ public class TaskSystem : MonoBehaviour
     {
         GameTask numericalTask = CreateTask("Worker Assignment", TaskType.Advisory, "Kitchen Operations",
             "We need to assign workers to this facility. Please specify how many workers to assign.");
-        
+
         // Add numerical inputs
         AgentNumericalInput workerInput = new AgentNumericalInput(1, "Workers to Assign", 2, 0, 8);
         numericalTask.numericalInputs.Add(workerInput);
-        
+
         AgentNumericalInput budgetInput = new AgentNumericalInput(2, "Budget Allocation", 1000, 500, 5000);
         budgetInput.stepSize = 500;
         numericalTask.numericalInputs.Add(budgetInput);
-        
+
         // Add agent messages
         numericalTask.agentMessages.Add(new AgentMessage("We need to configure this facility.", defaultAgentSprite));
         numericalTask.agentMessages.Add(new AgentMessage("Please use the controls below to set the parameters."));
         numericalTask.agentMessages.Add(new AgentMessage("Confirm your settings when ready."));
-        
+
         // Add impacts
         numericalTask.impacts.Add(new TaskImpact(ImpactType.Workforce, 0, false, "Workers to Assign"));
         numericalTask.impacts.Add(new TaskImpact(ImpactType.Budget, 0, false, "Budget Allocation"));
@@ -1553,7 +1605,7 @@ public class TaskSystem : MonoBehaviour
     {
         PrebuiltBuilding community = null;
         PrebuiltBuilding motel = null;
-        
+
         PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>();
         foreach (var pb in prebuilts)
         {
@@ -1562,21 +1614,21 @@ public class TaskSystem : MonoBehaviour
             else if (pb.GetPrebuiltType() == PrebuiltBuildingType.Motel)
                 motel = pb;
         }
-        
+
         if (community == null || motel == null)
         {
             Debug.LogError("Cannot create transport task - missing Community with population or Motel");
             return;
         }
-        
+
         // Check vehicle capacity and available resources
         Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
         int maxVehicleCapacity = vehicles.Length > 0 ? vehicles.Max(v => v.GetMaxCapacity()) : 10;
-        
+
         int availablePopulation = community.GetCurrentPopulation();
         int motelSpace = motel.GetPopulationCapacity() - motel.GetCurrentPopulation();
         int transportAmount = Mathf.Min(availablePopulation, motelSpace, maxVehicleCapacity, 3);
-        
+
         if (transportAmount <= 0)
         {
             Debug.LogError("Cannot create transport task - no available population or space");
@@ -1591,7 +1643,7 @@ public class TaskSystem : MonoBehaviour
         transportTask.hasRealTimeLimit = false;
         transportTask.deliveryTimeLimit = 300f;
         transportTask.deliveryFailureSatisfactionPenalty = 15f;
-        
+
         // Add impacts
         transportTask.impacts.Add(new TaskImpact(ImpactType.Clients, transportAmount, false, "People to Transport"));
         transportTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, 2, false, "Rounds Remaining"));
@@ -1602,7 +1654,7 @@ public class TaskSystem : MonoBehaviour
         transportTask.agentMessages.Add(new AgentMessage($"{transportAmount} families at {community.name} need immediate transport."));
         transportTask.agentMessages.Add(new AgentMessage("We must get them relocated within 2 rounds or they'll lose faith in our response."));
         transportTask.agentMessages.Add(new AgentMessage("Where should we send them?"));
-        
+
         // Add transport choices
         AgentChoice shelterChoice = new AgentChoice(1, "Send to Shelter (Free, but limited space)");
         shelterChoice.triggersDelivery = true;
@@ -1640,7 +1692,7 @@ public class TaskSystem : MonoBehaviour
         delayChoice.triggersDelivery = false;
         delayChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -8, false, "Delayed Response"));
         transportTask.agentChoices.Add(delayChoice);
-        
+
         if (showDebugInfo)
             Debug.Log($"Created test population transport task: {transportAmount} people from {community.name}. " +
                     $"Max vehicle capacity: {maxVehicleCapacity}");
@@ -1705,7 +1757,7 @@ public class TaskSystem : MonoBehaviour
             Debug.LogWarning("No vehicle found");
             return;
         }
-        
+
         // Create simple fake delivery without GameTask
         Building[] buildings = FindObjectsOfType<Building>();
         if (buildings.Length < 2)
@@ -1713,18 +1765,18 @@ public class TaskSystem : MonoBehaviour
             Debug.LogWarning("Need at least 2 buildings");
             return;
         }
-        
+
         DeliveryTask fakeDelivery = new DeliveryTask(
-            buildings[0], buildings[1], 
+            buildings[0], buildings[1],
             ResourceType.FoodPacks, 5, 999);
-        
+
         // Assign to vehicle for testing
         testVehicle.currentTask = fakeDelivery;
         testVehicle.SetStatus(VehicleStatus.InTransit);
-        
+
         // Force flood stop - this should create road blockage task only
         testVehicle.StopVehicleDueToFlood();
-        
+
         Debug.Log("Created simple road blockage test (no GameTask failure)");
     }
 
@@ -1750,7 +1802,7 @@ public class TaskSystem : MonoBehaviour
         Debug.Log("Created test multi-shelter delivery task");
     }
 
-    
+
     [ContextMenu("Print Task Statistics")]
     public void PrintTaskStatistics()
     {
@@ -1764,4 +1816,123 @@ public class TaskSystem : MonoBehaviour
             Debug.Log($"{type} Tasks: {count}");
         }
     }
+
+    /// <summary>
+    /// NEW: Debug method to test community task generation
+    /// </summary>
+    [ContextMenu("Debug: Test Community Task Generation")]
+    public void DebugTestCommunityTasks()
+    {
+        PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>()
+            .Where(pb => pb.GetPrebuiltType() == PrebuiltBuildingType.Community).ToArray();
+
+        Debug.Log($"Found {communities.Length} communities:");
+
+        foreach (PrebuiltBuilding community in communities)
+        {
+            Debug.Log($"  - {community.name} (Population: {community.GetCurrentPopulation()})");
+
+            // Create a test task for each community
+            GameTask testTask = CreateTask($"Test Transport from {community.name}",
+                                         TaskType.Demand,
+                                         community.name,
+                                         $"Test task specifically for {community.name}");
+
+            testTask.roundsRemaining = 3;
+
+            // Add simple transport choice for testing
+            AgentChoice transportChoice = new AgentChoice(1, "Transport people to shelter");
+            transportChoice.triggersDelivery = true;
+            transportChoice.deliveryCargoType = ResourceType.Population;
+            transportChoice.deliveryQuantity = 2;
+            transportChoice.sourceType = DeliverySourceType.RequestingFacility;
+            transportChoice.destinationType = DeliveryDestinationType.SpecificBuilding;
+            transportChoice.destinationBuilding = BuildingType.Shelter;
+            testTask.agentChoices.Add(transportChoice);
+        }
+
+        Debug.Log($"Created {communities.Length} test tasks");
+    }
+
+    /// <summary>
+    /// NEW: Debug method to test per-facility probability triggers
+    /// </summary>
+    [ContextMenu("Debug: Test Per-Facility Probability")]
+    public void DebugTestPerFacilityProbability()
+    {
+        PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>()
+            .Where(pb => pb.GetPrebuiltType() == PrebuiltBuildingType.Community).ToArray();
+        
+        Debug.Log($"=== TESTING PER-FACILITY PROBABILITY ===");
+        Debug.Log($"Found {communities.Length} communities for testing");
+        
+        // Simulate probability triggers for each community
+        for (int round = 1; round <= 3; round++)
+        {
+            Debug.Log($"\n--- Round {round} ---");
+            
+            foreach (PrebuiltBuilding community in communities)
+            {
+                // Simulate 50% probability for each community independently
+                bool triggered = UnityEngine.Random.Range(0f, 1f) < 0.5f;
+                
+                if (triggered)
+                {
+                    Debug.Log($"✅ {community.name}: TRIGGERED (creating task)");
+                    
+                    GameTask testTask = CreateTask($"Transport Request R{round}", 
+                                                TaskType.Demand, 
+                                                community.name, 
+                                                $"Round {round} transport request from {community.name}");
+                    testTask.roundsRemaining = 2;
+                }
+                else
+                {
+                    Debug.Log($"❌ {community.name}: NOT triggered");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// NEW: Debug method to test resource triggers per facility
+    /// </summary>
+    [ContextMenu("Debug: Test Per-Facility Resource Triggers")]
+    public void DebugTestPerFacilityResourceTriggers()
+    {
+        PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>()
+            .Where(pb => pb.GetPrebuiltType() == PrebuiltBuildingType.Community).ToArray();
+
+        Debug.Log($"=== TESTING PER-FACILITY RESOURCE TRIGGERS ===");
+
+        foreach (PrebuiltBuilding community in communities)
+        {
+            int population = community.GetCurrentPopulation();
+            int capacity = community.GetPopulationCapacity();
+
+            Debug.Log($"{community.name}: Population {population}/{capacity}");
+
+            // Test different resource conditions
+            bool isEmpty = (population == 0);
+            bool isFull = (population >= capacity);
+            bool hasMany = (population > 5);
+            bool hasFew = (population < 3);
+
+            Debug.Log($"  - Empty: {isEmpty}");
+            Debug.Log($"  - Full: {isFull}");
+            Debug.Log($"  - Has Many (>5): {hasMany}");
+            Debug.Log($"  - Has Few (<3): {hasFew}");
+
+            // Create tasks based on conditions (for testing)
+            if (hasMany)
+            {
+                GameTask task = CreateTask($"Overcrowding at {community.name}",
+                                        TaskType.Emergency,
+                                        community.name,
+                                        $"{community.name} has {population} people - needs evacuation");
+                task.roundsRemaining = 1;
+            }
+        }
+    }
+
 }

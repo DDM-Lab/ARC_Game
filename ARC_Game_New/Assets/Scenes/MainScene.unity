@@ -36065,7 +36065,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   prebuiltType: 0
   buildingId: 0
-  buildingName: Community 1
+  buildingName: Community01
   buildingRenderer: {fileID: 1045973711}
   resourceStorage: {fileID: 1045973709}
   roadConnection: {fileID: 1045973708}
@@ -59243,7 +59243,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   prebuiltType: 0
   buildingId: 3
-  buildingName: Community 3
+  buildingName: Community03
   buildingRenderer: {fileID: 1758808076}
   resourceStorage: {fileID: 1758808074}
   roadConnection: {fileID: 1758808073}
@@ -61870,7 +61870,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   prebuiltType: 0
   buildingId: 2
-  buildingName: Community 2
+  buildingName: Community02
   buildingRenderer: {fileID: 1805033306}
   resourceStorage: {fileID: 1805033304}
   roadConnection: {fileID: 1805033303}
