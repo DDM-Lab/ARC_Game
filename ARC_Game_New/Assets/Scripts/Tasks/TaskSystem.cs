@@ -1230,9 +1230,9 @@ public class TaskSystem : MonoBehaviour
         foreach (Building building in buildings)
         {
             Debug.Log($"  Building: {building.name}");
-            if (building.name.Contains(facilityName) || building.name == facilityName)
+            if ((building.name.Contains(facilityName) || building.name == facilityName) && building.IsOperational())
             {
-                Debug.Log($"  ✅ MATCH: {building.name}");
+                Debug.Log($"  ✅ MATCH: {building.name} and it's operational");
                 return building;
             }
         }
@@ -1336,24 +1336,10 @@ public class TaskSystem : MonoBehaviour
                 return FindFacilityByName(choice.specificDestinationName);
 
             case DeliveryDestinationType.SpecificBuilding:
-                /*Debug.Log($"Looking for specific building type: {choice.destinationBuilding}");
-
-                // Debug: List all buildings
-                Building[] allBuildings = FindObjectsOfType<Building>();
-                Debug.Log($"Found {allBuildings.Length} total buildings:");
-                foreach (Building b in allBuildings)
-                {
-                    Debug.Log($"  - {b.name}: Type={b.GetBuildingType()}, Status={b.GetCurrentStatus()}, Operational={b.IsOperational()}");
-                }
-
-                MonoBehaviour foundBuilding = FindNearestBuilding(choice.destinationBuilding, triggeringFacility?.transform.position,
-                                        choice.deliveryCargoType, false);
-                Debug.Log($"Found building result: {foundBuilding?.name}");
-                return foundBuilding;*/
-
-                // NEW: Exclude the triggering facility from destination search
+                // Exclude the triggering facility from destination search
                 Building[] buildings = FindObjectsOfType<Building>()
                 .Where(b => b.GetBuildingType() == choice.destinationBuilding)
+                .Where(b => b.IsOperational()) // Only operational buildings
                 .Where(b => b != triggeringFacility) // Exclude source facility
                 .ToArray();
 
@@ -1374,11 +1360,7 @@ public class TaskSystem : MonoBehaviour
 
 
             case DeliveryDestinationType.SpecificPrebuilt:
-                /*Debug.Log($"Looking for specific prebuilt type: {choice.destinationPrebuilt}");
-                return FindNearestPrebuiltBuilding(choice.destinationPrebuilt, triggeringFacility?.transform.position,
-                                            choice.deliveryCargoType, false);*/
-                                                
-                // NEW: Exclude the triggering facility from prebuilt search
+                // Exclude the triggering facility from prebuilt search
                 PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>()
                     .Where(p => p.GetPrebuiltType() == choice.destinationPrebuilt)
                     .Where(p => p != triggeringFacility) // Exclude source facility
