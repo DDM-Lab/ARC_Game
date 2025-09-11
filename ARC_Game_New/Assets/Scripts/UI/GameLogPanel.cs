@@ -3,6 +3,80 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Linq;
+using System;
+
+public enum LogMessageType
+{
+    Normal,
+    Debug,
+    Error
+}
+
+public enum LogCategory
+{
+    All,
+    Buildings,    // Facility status, construction, damage, operational changes
+    Resources,    // Food production/consumption, resource transfers, storage changes
+    Workers,      // Assignment, training, workforce changes
+    Tasks,        // Generation, completion, expiration, task-related deliveries
+    Environment,  // Weather, floods, external conditions
+    Vehicles,     // Delivery status, damage, route changes
+    Metrics,      // Satisfaction, budget, performance indicators
+    Player        // Direct player interactions (clicks, UI actions, decisions)
+}
+
+[System.Serializable]
+public class LogMessage
+{
+    public string id;
+    public string content;
+    public LogMessageType messageType;
+    public LogCategory category;
+    public int day;
+    public int round;
+    public float timestamp;
+    public DateTime realTime;
+    
+    public LogMessage(string content, LogMessageType type, LogCategory category)
+    {
+        this.id = System.Guid.NewGuid().ToString();
+        this.content = content;
+        this.messageType = type;
+        this.category = category;
+        this.timestamp = Time.time;
+        this.realTime = DateTime.Now;
+        
+        // Get current game time
+        if (GlobalClock.Instance != null)
+        {
+            this.day = GlobalClock.Instance.GetCurrentDay();
+            this.round = GlobalClock.Instance.GetCurrentTimeSegment() + 1;
+        }
+        else
+        {
+            this.day = 1;
+            this.round = 1;
+        }
+    }
+}
+
+[System.Serializable]
+public class LogExportData
+{
+    public List<LogMessage> messages;
+    public string exportTime;
+    public int totalMessages;
+    public string gameVersion;
+    
+    public LogExportData(List<LogMessage> messages)
+    {
+        this.messages = messages;
+        this.exportTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        this.totalMessages = messages.Count;
+        this.gameVersion = Application.version;
+    }
+}
 
 public class GameLogPanel : MonoBehaviour
 {
@@ -11,22 +85,37 @@ public class GameLogPanel : MonoBehaviour
     [SerializeField] private RectTransform contentRect;
     [SerializeField] private TextMeshProUGUI logText;
 
-    [Header("Settings")]
+    [Header("Filter UI")]
+    [SerializeField] private TMP_Dropdown messageTypeDropdown;
+    [SerializeField] private TMP_Dropdown categoryDropdown;
+    [SerializeField] private TMP_Dropdown timePeriodDropdown;
+
+    [Header("Colors")]
     [SerializeField] private Color normalTextColor = Color.white;
-    [SerializeField] private Color highlightTextColor = Color.yellow;
+    [SerializeField] private Color debugTextColor = Color.cyan;
+    [SerializeField] private Color errorTextColor = Color.red;
+    [SerializeField] private bool enableDebugMessages = true;
+
+    [Header("Settings")]
     [SerializeField] private bool autoScrollToBottom = true;
+    [SerializeField] private int maxDisplayedMessages = 100;
 
-    [Header("Debug")]
-    [SerializeField] private bool debugMode = true;
-    [SerializeField] private KeyCode clearLogKey = KeyCode.F5;
+    [Header("Export")]
+    [SerializeField] private Button exportCurrentButton;
+    [SerializeField] private Button exportAllButton;
 
-    private Queue<string> messageQueue = new Queue<string>();
+    // Message storage
+    private List<LogMessage> allMessages = new List<LogMessage>();
+    private Queue<string> displayQueue = new Queue<string>();
     private bool isDisplayingMessage = false;
 
-    // Singleton implementation
+    // Filtering
+    private LogMessageType currentTypeFilter = LogMessageType.Normal;
+    private LogCategory currentCategoryFilter = LogCategory.All;
+    private int currentTimePeriodFilter = 0; // 0=Current, 1=Today, 2=All
+
+    // Singleton
     public static GameLogPanel Instance { get; private set; }
-    
-    // Static property to check if text is currently being displayed
     public static bool IsDisplayingText { get; private set; } = false;
 
     private void Awake()
@@ -43,173 +132,352 @@ public class GameLogPanel : MonoBehaviour
 
     private void Start()
     {
-        // Initialize log panel
-        logText.text = "";
+        InitializeUI();
+        SetupDropdowns();
+        RefreshDisplay();
 
-        // Check required references
-        if (scrollRect == null)
-            Debug.LogError("GameLogPanel: scrollRect reference missing!");
-
-        if (contentRect == null)
-            Debug.LogError("GameLogPanel: contentRect reference missing!");
-
-        if (logText == null)
-            Debug.LogError("GameLogPanel: logText reference missing!");
+        // Add welcome message
+        LogPlayerAction("Game started");
     }
 
-    private void Update()
+    void InitializeUI()
     {
-        // Debug functionality
-        if (debugMode)
+        if (logText == null)
+            Debug.LogError("GameLogPanel: logText reference missing!");
+
+        // Setup export buttons
+        if (exportCurrentButton != null)
+            exportCurrentButton.onClick.AddListener(() => ExportMessages(false));
+
+        if (exportAllButton != null)
+            exportAllButton.onClick.AddListener(() => ExportMessages(true));
+    }
+
+    void SetupDropdowns()
+    {
+        // Message Type Dropdown
+        if (messageTypeDropdown != null)
         {
-            // Clear log
-            if (Input.GetKeyDown(clearLogKey))
+            messageTypeDropdown.ClearOptions();
+            messageTypeDropdown.AddOptions(new List<string> { "All", "Normal", "Debug", "Error" });
+            messageTypeDropdown.onValueChanged.AddListener(OnMessageTypeFilterChanged);
+        }
+
+        // Category Dropdown
+        if (categoryDropdown != null)
+        {
+            categoryDropdown.ClearOptions();
+            var categoryNames = System.Enum.GetNames(typeof(LogCategory)).ToList();
+            categoryDropdown.AddOptions(categoryNames);
+            categoryDropdown.onValueChanged.AddListener(OnCategoryFilterChanged);
+        }
+
+        // Time Period Dropdown
+        if (timePeriodDropdown != null)
+        {
+            timePeriodDropdown.ClearOptions();
+            timePeriodDropdown.AddOptions(new List<string> { "Current Round", "Today", "All Time" });
+            timePeriodDropdown.onValueChanged.AddListener(OnTimePeriodFilterChanged);
+        }
+    }
+
+    #region Public Logging Methods
+
+    // Buildings category
+    public void LogBuildingStatus(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Buildings);
+
+    // Resources category
+    public void LogResourceChange(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Resources);
+
+    // Workers category
+    public void LogWorkerAction(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Workers);
+
+    // Tasks category
+    public void LogTaskEvent(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Tasks);
+
+    // Environment category
+    public void LogEnvironmentChange(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Environment);
+
+    // Vehicles category
+    public void LogVehicleEvent(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Vehicles);
+
+    // Metrics category
+    public void LogMetricsChange(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Metrics);
+
+    // Player category
+    public void LogPlayerAction(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Player);
+
+    // Debug messages
+    public void LogDebug(string message) => AddLogMessage(message, LogMessageType.Debug, LogCategory.Player);
+
+    // Error messages
+    public void LogError(string message) => AddLogMessage(message, LogMessageType.Error, LogCategory.Player);
+
+    #endregion
+
+    void AddLogMessage(string content, LogMessageType type, LogCategory category)
+    {
+        // Skip debug messages if disabled
+        if (type == LogMessageType.Debug && !enableDebugMessages)
+            return;
+
+        LogMessage message = new LogMessage(content, type, category);
+        allMessages.Add(message);
+
+        // If message passes current filters, add to display queue
+        if (PassesCurrentFilters(message))
+        {
+            string formattedMessage = FormatMessageForDisplay(message);
+            displayQueue.Enqueue(formattedMessage);
+
+            if (!isDisplayingMessage)
             {
-                ClearLog();
+                StartCoroutine(DisplayNextMessage());
             }
         }
     }
 
-    /// <summary>
-    /// Add a new message to the log
-    /// </summary>
-    public void AddMessage(string message)
+    bool PassesCurrentFilters(LogMessage message)
     {
-        if (string.IsNullOrEmpty(message))
-            return;
-
-        messageQueue.Enqueue(message);
-
-        if (!isDisplayingMessage)
+        // Type filter
+        int typeDropdownValue = messageTypeDropdown != null ? messageTypeDropdown.value : 0;
+        if (typeDropdownValue != 0) // Not "All"
         {
-            StartCoroutine(DisplayNextMessage());
+            LogMessageType expectedType = LogMessageType.Normal;
+            switch (typeDropdownValue)
+            {
+                case 1: expectedType = LogMessageType.Normal; break;
+                case 2: expectedType = LogMessageType.Debug; break;
+                case 3: expectedType = LogMessageType.Error; break;
+            }
+            
+            if (message.messageType != expectedType) return false;
+        }
+
+        // Category filter
+        if (currentCategoryFilter != LogCategory.All && message.category != currentCategoryFilter)
+            return false;
+
+        // Time period filter
+        if (GlobalClock.Instance != null)
+        {
+            int currentDay = GlobalClock.Instance.GetCurrentDay();
+            int currentRound = GlobalClock.Instance.GetCurrentTimeSegment() + 1;
+
+            switch (currentTimePeriodFilter)
+            {
+                case 0: // Current Round
+                    if (message.day != currentDay || message.round != currentRound) return false;
+                    break;
+                case 1: // Today
+                    if (message.day != currentDay) return false;
+                    break;
+                case 2: // All Time
+                    break;
+            }
+        }
+
+        return true;
+    }
+
+    string FormatMessageForDisplay(LogMessage message)
+    {
+        Color messageColor = GetMessageColor(message.messageType);
+        string timeStamp = $"[Day {message.day}, Round {message.round}]";
+        string categoryTag = $"[{message.category}]";
+
+        string colorHex = ColorUtility.ToHtmlStringRGB(messageColor);
+        return $"<color=#AAAAAA>{timeStamp}</color> <color=#{colorHex}>{categoryTag} {message.content}</color>";
+    }
+
+    Color GetMessageColor(LogMessageType type)
+    {
+        switch (type)
+        {
+            case LogMessageType.Debug: return debugTextColor;
+            case LogMessageType.Error: return errorTextColor;
+            default: return normalTextColor;
         }
     }
 
-    /// <summary>
-    /// Coroutine to display messages instantly
-    /// </summary>
-    private IEnumerator DisplayNextMessage()
+    IEnumerator DisplayNextMessage()
     {
         isDisplayingMessage = true;
         IsDisplayingText = true;
 
-        while (messageQueue.Count > 0)
+        while (displayQueue.Count > 0)
         {
-            string message = messageQueue.Dequeue();
-            bool isFormattedMessage = message.StartsWith("[FORMATTED]");
-        
-            if (isFormattedMessage)
+            string message = displayQueue.Dequeue();
+            logText.text += message + "\n";
+
+            // Limit displayed messages for performance
+            string[] lines = logText.text.Split('\n');
+            if (lines.Length > maxDisplayedMessages)
             {
-                message = message.Substring("[FORMATTED]".Length);
+                logText.text = string.Join("\n", lines.Skip(lines.Length - maxDisplayedMessages));
             }
 
-            // Show timestamp in debug mode
-            if (debugMode)
-            {
-                string timestamp = System.DateTime.Now.ToString("[HH:mm:ss] ");
-                logText.text += "<color=#AAAAAA>" + timestamp + "</color>";
-            }
-
-            // Display entire message at once
-            logText.text += message;
-
-            // Auto scroll to bottom
             if (autoScrollToBottom && scrollRect != null)
             {
                 Canvas.ForceUpdateCanvases();
                 scrollRect.verticalNormalizedPosition = 0f;
             }
 
-            // Add line break after message
-            logText.text += "\n\n";
-
-            // Force scroll to bottom
-            if (autoScrollToBottom && scrollRect != null)
-            {
-                Canvas.ForceUpdateCanvases();
-                scrollRect.verticalNormalizedPosition = 0f;
-            }
-
-            yield return null; // Wait one frame between messages
+            yield return null;
         }
 
         isDisplayingMessage = false;
         IsDisplayingText = false;
     }
 
-    /// <summary>
-    /// Clear all log content
-    /// </summary>
-    public void ClearLog()
+    #region Filter Event Handlers
+
+    void OnMessageTypeFilterChanged(int value)
+    {
+        // Update the current filter based on dropdown value
+        switch (value)
+        {
+            case 0: currentTypeFilter = LogMessageType.Normal; break; // "All" 
+            case 1: currentTypeFilter = LogMessageType.Normal; break;
+            case 2: currentTypeFilter = LogMessageType.Debug; break;
+            case 3: currentTypeFilter = LogMessageType.Error; break;
+        }
+        RefreshDisplay();
+    }
+
+    void OnCategoryFilterChanged(int value)
+    {
+        currentCategoryFilter = (LogCategory)value;
+        RefreshDisplay();
+    }
+
+    void OnTimePeriodFilterChanged(int value)
+    {
+        currentTimePeriodFilter = value;
+        RefreshDisplay();
+    }
+
+    #endregion
+
+    void RefreshDisplay()
     {
         logText.text = "";
-        messageQueue.Clear();
-        isDisplayingMessage = false;
-        IsDisplayingText = false;
-    }
+        displayQueue.Clear();
 
-    /// <summary>
-    /// Add a highlighted message
-    /// </summary>
-    public void AddHighlightMessage(string message)
-    {
-        AddMessage("<color=#" + ColorUtility.ToHtmlStringRGB(highlightTextColor) + ">" + message + "</color>");
-    }
+        var filteredMessages = allMessages.Where(PassesCurrentFilters).ToList();
 
-    /// <summary>
-    /// Add a colored message
-    /// </summary>
-    public void AddColoredMessage(string message, Color color)
-    {
-        AddMessage("<color=#" + ColorUtility.ToHtmlStringRGB(color) + ">" + message + "</color>");
-    }
-
-    /// <summary>
-    /// Add a message with a tag
-    /// </summary>
-    public void AddTaggedMessage(string tag, string message)
-    {
-        AddMessage("[" + tag + "] " + message);
-    }
-
-    /// <summary>
-    /// Add debug information (only shows if debug mode is enabled)
-    /// </summary>
-    public void AddDebugMessage(string message)
-    {
-        if (debugMode)
+        foreach (var message in filteredMessages.TakeLast(maxDisplayedMessages))
         {
-            AddMessage("<color=#AAAAAA>[DEBUG] " + message + "</color>");
+            string formattedMessage = FormatMessageForDisplay(message);
+            logText.text += formattedMessage + "\n";
+        }
+
+        if (autoScrollToBottom && scrollRect != null)
+        {
+            Canvas.ForceUpdateCanvases();
+            scrollRect.verticalNormalizedPosition = 0f;
         }
     }
-    
-    /// <summary>
-    /// Add a formatted message (same as regular message now)
-    /// </summary>
-    public void AddFormattedMessage(string message)
+
+    #region Export Methods
+
+    public void ExportMessages(bool exportAll = false)
     {
-        AddMessage(message);
+        List<LogMessage> messagesToExport;
+
+        if (exportAll)
+        {
+            messagesToExport = allMessages.ToList();
+        }
+        else
+        {
+            // Export current round and day only
+            if (GlobalClock.Instance != null)
+            {
+                int currentDay = GlobalClock.Instance.GetCurrentDay();
+                int currentRound = GlobalClock.Instance.GetCurrentTimeSegment() + 1;
+
+                messagesToExport = allMessages.Where(m =>
+                    m.day == currentDay && m.round == currentRound).ToList();
+            }
+            else
+            {
+                messagesToExport = allMessages.ToList();
+            }
+        }
+
+        LogExportData exportData = new LogExportData(messagesToExport);
+        string json = JsonUtility.ToJson(exportData, true);
+
+        // TBA: For now, just log the JSON. Later you can save to file or send to API
+        Debug.Log("=== LOG EXPORT ===");
+        Debug.Log(json);
+
+        LogPlayerAction($"Exported {messagesToExport.Count} log messages");
     }
 
-    /// <summary>
-    /// Get current message queue count
-    /// </summary>
-    public int GetQueueCount()
+    public string GetMessagesAsJson(bool exportAll = false)
     {
-        return messageQueue.Count;
+        List<LogMessage> messagesToExport = exportAll ?
+            allMessages.ToList() :
+            allMessages.Where(m => GlobalClock.Instance != null &&
+                m.day == GlobalClock.Instance.GetCurrentDay() &&
+                m.round == GlobalClock.Instance.GetCurrentTimeSegment() + 1).ToList();
+
+        LogExportData exportData = new LogExportData(messagesToExport);
+        return JsonUtility.ToJson(exportData, true);
     }
 
-    private void OnApplicationQuit()
-    {
-        // Stop all coroutines
-        StopAllCoroutines();
+    #endregion
 
-        // Clear queue
-        messageQueue.Clear();
+    public void ClearLog()
+    {
+        allMessages.Clear();
+        displayQueue.Clear();
+        logText.text = "";
         isDisplayingMessage = false;
         IsDisplayingText = false;
 
-        Debug.Log("GameLogPanel: Application quit cleanup completed");
+        LogPlayerAction("Game log cleared");
+    }
+    
+    [ContextMenu("Test Log Message")]
+    void TestLogMessage()
+    {
+        // Buildings - facility status, construction, damage, operations
+        LogBuildingStatus("Kitchen started food production");
+        LogBuildingStatus("Shelter damaged by flood");
+
+        // Resources - production, consumption, transfers, storage
+        LogResourceChange("Produced 10 food packs");
+        LogResourceChange("Consumed 5 food packs");
+
+        // Workers - assignment, training, workforce changes  
+        LogWorkerAction("Assigned 2 trained workers to Kitchen");
+        LogWorkerAction("Worker training completed");
+
+        // Tasks - generation, completion, expiration, deliveries
+        LogTaskEvent("Emergency food task completed");
+        LogTaskEvent("Population transport task generated");
+
+        // Environment - weather, floods, external conditions
+        LogEnvironmentChange("Weather changed to Rainy");
+        LogEnvironmentChange("Flood expanded to 5 tiles");
+
+        // Vehicles - delivery status, damage, route changes
+        LogVehicleEvent("Vehicle completed food delivery");
+        LogVehicleEvent("Vehicle damaged by flood");
+
+        // Metrics - satisfaction, budget, performance indicators
+        LogMetricsChange("Satisfaction increased by 10");
+        LogMetricsChange("Budget decreased by $500");
+
+        // Player - direct interactions, clicks, UI actions, decisions
+        LogPlayerAction("Player opened task center");
+        LogPlayerAction("Player selected emergency response");
+
+        // Debug and Error
+        LogDebug("Pathfinding calculation completed");
+        LogError("Failed to create delivery task");
     }
 }
