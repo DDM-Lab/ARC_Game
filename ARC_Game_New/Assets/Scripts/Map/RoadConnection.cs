@@ -27,6 +27,7 @@ public class RoadConnection : MonoBehaviour
         if (roadManager == null)
         {
             Debug.LogWarning($"RoadTilemapManager not found for {gameObject.name}");
+            GameLogPanel.Instance.LogError($"RoadTilemapManager not found for {gameObject.name} in RoadConnection script.");
             return;
         }
         
@@ -75,6 +76,7 @@ public class RoadConnection : MonoBehaviour
         }
         else if (wasConnected)
         {
+            GameLogPanel.Instance.LogError($"{gameObject.name} was connected and now disconnected from road connections.");
             Debug.Log($"{gameObject.name} disconnected from road network");
         }
     }
@@ -86,6 +88,7 @@ public class RoadConnection : MonoBehaviour
     {
         if (!isConnectedToRoad)
         {
+            GameLogPanel.Instance.LogError($"{gameObject.name} is not connected to road network.");
             Debug.LogWarning($"{gameObject.name} is not connected to road network");
             return transform.position;
         }

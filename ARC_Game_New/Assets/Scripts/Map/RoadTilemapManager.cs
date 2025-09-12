@@ -31,13 +31,15 @@ public class RoadTilemapManager : MonoBehaviour
     {
         if (roadTilemap == null)
         {
-            Debug.LogError("Road Tilemap not assigned!");
+            GameLogPanel.Instance.LogError("Road Tilemap not assigned in RoadTilemapManager script.");
+            Debug.LogError("Road Tilemap not assigned in RoadTilemapManager!");
             return;
         }
         
         if (roadRuleTile == null)
         {
-            Debug.LogError("Road Rule Tile not assigned!");
+            GameLogPanel.Instance.LogError("Road Rule Tile not assigned in RoadTilemapManager script.");
+            Debug.LogError("Road Rule Tile not assigned in RoadTilemapManager!");
             return;
         }
         
@@ -220,7 +222,7 @@ public class RoadTilemapManager : MonoBehaviour
         float nearestDistance = float.MaxValue;
         
         // Search in expanding square pattern with larger radius
-        for (int radius = 0; radius <= 10; radius++) // 增加搜索范围到10
+        for (int radius = 0; radius <= 10; radius++)
         {
             for (int x = -radius; x <= radius; x++)
             {

@@ -90,7 +90,6 @@ public class DeliverySystem : MonoBehaviour
 
     private int nextTaskId = 1;
     private float lastTaskAssignment = 0f;
-    private float lastAutoTaskGeneration = 0f;
 
     // Events
     public event Action<DeliveryTask> OnTaskCreated;
