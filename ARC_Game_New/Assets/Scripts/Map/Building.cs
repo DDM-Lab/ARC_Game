@@ -73,8 +73,9 @@ public class Building : MonoBehaviour
         // Start construction immediately
         StartConstruction();
 
-        Debug.Log($"Building initialized: {buildingType} at original site {siteId}");
-        ToastManager.ShowToast($"You chose to change an abandoned site at {originalSiteId} into {buildingType}", ToastType.Info, true);
+        Debug.Log($"Building initialized: {buildingType} at original site {siteId}. Currently Under Construction.");
+        GameLogPanel.Instance.LogBuildingStatus($"Building initialized: {buildingType} at original site {siteId}. Currently Under Construction.");
+        ToastManager.ShowToast($"You chose to change an abandoned site at {originalSiteId} into {buildingType}. Currently Under Construction.", ToastType.Info, true);
 
     }
 
@@ -178,6 +179,7 @@ public class Building : MonoBehaviour
         NotifyStatsUpdate();
 
         Debug.Log($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment");
+        GameLogPanel.Instance.LogBuildingStatus($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment");
         ToastManager.ShowToast($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment", ToastType.Success, true);
 
     }
@@ -207,11 +209,13 @@ public class Building : MonoBehaviour
                     UpdateBuildingVisual();
                     NotifyStatsUpdate();
                     Debug.Log($"{buildingType} at site {originalSiteId} is now in use with {totalWorkforce} workforce");
+                    GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} is now operational with {totalWorkforce} workforce");
                     ToastManager.ShowToast($"{buildingType} at site {originalSiteId} is now operational with {totalWorkforce} workforce!", ToastType.Success, true);
                 }
                 else
                 {
                     Debug.LogWarning($"Cannot activate {buildingType} - insufficient workforce. Required: {requiredWorkforce}, Available: {totalWorkforce}");
+                    GameLogPanel.Instance.LogError($"Cannot activate {buildingType} - insufficient workforce. Required: {requiredWorkforce}, Available: {totalWorkforce}");
                     ToastManager.ShowToast($"Not enough workforce assigned! Required: {requiredWorkforce}, Available: {totalWorkforce}", ToastType.Warning, true);
                 }
             }
@@ -225,11 +229,14 @@ public class Building : MonoBehaviour
                 UpdateBuildingVisual();
                 NotifyStatsUpdate();
                 Debug.LogWarning($"{buildingType} activated without WorkerSystem validation");
+                GameLogPanel.Instance.LogError($"{buildingType} at site {originalSiteId} is operational without workforce validation");
             }
         }
         else
         {
             Debug.LogWarning($"Cannot assign worker to {buildingType} - current status: {currentStatus}");
+            ToastManager.ShowToast($"Cannot assign worker to {buildingType} - current status: {currentStatus}", ToastType.Warning, true);
+            GameLogPanel.Instance.LogError($"Cannot assign worker to {buildingType} - current status: {currentStatus}");
         }
     }
 
@@ -263,11 +270,13 @@ public class Building : MonoBehaviour
             UpdateBuildingVisual();
             NotifyStatsUpdate();
             Debug.Log($"{buildingType} at site {originalSiteId} has been disabled and workers released");
+            GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} has been disabled due to an event. Please repair and reassign workers.");
             ToastManager.ShowToast($"{buildingType} at site {originalSiteId} has been disabled! Please repair and reassign workers.", ToastType.Warning, true);
         }
         else
         {
             Debug.LogWarning($"Cannot disable {buildingType} - current status: {currentStatus}");
+            GameLogPanel.Instance.LogError($"Cannot disable {buildingType} - current status: {currentStatus}");
             ToastManager.ShowToast($"Cannot disable {buildingType} - current status: {currentStatus}", ToastType.Warning, true);
         }
     }
@@ -285,11 +294,13 @@ public class Building : MonoBehaviour
             UpdateBuildingVisual();
             NotifyStatsUpdate();
             Debug.Log($"{buildingType} at site {originalSiteId} has been repaired and needs worker reassignment");
+            GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} has been repaired. Please reassign workers.");
             ToastManager.ShowToast($"{buildingType} at site {originalSiteId} has been repaired! Please reassign workers.", ToastType.Info, true);
         }
         else
         {
             Debug.LogWarning($"Cannot repair {buildingType} - current status: {currentStatus}");
+            GameLogPanel.Instance.LogError($"Cannot repair {buildingType} - current status: {currentStatus}");
             ToastManager.ShowToast($"Cannot repair {buildingType} - current status: {currentStatus}", ToastType.Warning, true);
         }
     }
@@ -355,47 +366,6 @@ public class Building : MonoBehaviour
         }
     }
 
-    /*
-    void OnMouseDown()
-    {
-        // Check if pointer is over UI - if so, ignore map input
-        if (EventSystem.current.IsPointerOverGameObject())
-        {
-            return;
-        }
-        // Handle building interaction based on current status
-        switch (currentStatus)
-        {
-            case BuildingStatus.UnderConstruction:
-                Debug.Log($"{buildingType} is still under construction ({constructionProgress:P0} complete)");
-                break;
-            case BuildingStatus.NeedWorker:
-                Debug.Log($"Opening worker assignment UI for {buildingType}");
-                OpenWorkerAssignmentUI();
-                break;
-            case BuildingStatus.InUse:
-                Debug.Log($"Disabling {buildingType} (simulating event)");
-                DisableBuilding();
-                break;
-            case BuildingStatus.Disabled:
-                Debug.Log($"Repairing {buildingType}");
-                RepairBuilding();
-                break;
-        }
-    }
-
-    public void OpenWorkerAssignmentUI()
-    {
-        if (workerSystem != null)
-        {
-            workerSystem.ShowWorkerAssignmentUI(this);
-        }
-        else
-        {
-            Debug.LogWarning("WorkerSystem not found - cannot open worker assignment UI");
-        }
-    }*/
-
     // Getters
     public BuildingType GetBuildingType() => buildingType;
     public int GetOriginalSiteId() => originalSiteId;
@@ -429,43 +399,6 @@ public class Building : MonoBehaviour
     {
         return GetAssignedWorkforce() >= requiredWorkforce;
     }
-
-    // Building functionality methods (to be expanded later)
-    public virtual void PerformBuildingFunction()
-    {
-        if (currentStatus != BuildingStatus.InUse) return;
-
-        switch (buildingType)
-        {
-            case BuildingType.Kitchen:
-                ProduceFood();
-                break;
-            case BuildingType.Shelter:
-                ProvideShelter();
-                break;
-            case BuildingType.CaseworkSite:
-                HandleCasework();
-                break;
-        }
-    }
-
-    protected virtual void ProduceFood()
-    {
-        Debug.Log($"Kitchen producing food for {capacity} people with {GetAssignedWorkforce()} workforce");
-        // Food production logic will be implemented later
-    }
-
-    protected virtual void ProvideShelter()
-    {
-        Debug.Log($"Shelter housing {capacity} people with {GetAssignedWorkforce()} workforce");
-        // Shelter management logic will be implemented later
-    }
-
-    protected virtual void HandleCasework()
-    {
-        Debug.Log($"Casework site handling {capacity} cases with {GetAssignedWorkforce()} workforce");
-        // Casework processing logic will be implemented later
-    }
     
     [Header("Manual Task Debug")]
     public bool enableManualTasks = true;
@@ -478,7 +411,8 @@ public class Building : MonoBehaviour
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
         if (deliverySystem == null)
         {
-            Debug.LogError("DeliverySystem not found!");
+            Debug.LogError("DeliverySystem not found in Building.cs");
+            GameLogPanel.Instance.LogError("DeliverySystem not found in Building.cs");
             return;
         }
         

@@ -16897,10 +16897,8 @@ MonoBehaviour:
   communityPrefab: {fileID: 0}
   abandonedSitePrefab: {fileID: 4161880596547375488, guid: 7c36b6afde72432469b94545fab49046, type: 3}
   motelPosition: {x: 0, y: -6}
-  communityPositions:
-  - {x: -4, y: 4}
-  - {x: 4, y: -4}
-  - {x: -4, y: 4}
+  numberOfCommunities: 3
+  communityPositions: []
   abandonedSitePositions:
   - {x: 0, y: 4}
   - {x: 3, y: 4}
@@ -38431,7 +38429,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   prebuiltType: 0
-  buildingId: 0
+  buildingId: 1
   buildingName: Community01
   buildingRenderer: {fileID: 1045973711}
   resourceStorage: {fileID: 1045973709}
