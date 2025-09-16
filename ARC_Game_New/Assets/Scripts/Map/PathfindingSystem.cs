@@ -206,8 +206,8 @@ public class PathfindingSystem : MonoBehaviour
                 {
                     Debug.Log($"Pathfinding succeeded in {iterations} iterations");
                 }
-                GameLogPanel.Instance.LogDebug($"Pathfinding succeeded in {iterations} iterations for {startPos} to {endPos}.");
-                GameLogPanel.Instance.LogEnvironmentChange($"Path from {startPos} to {endPos} found.");
+                //GameLogPanel.Instance.LogDebug($"Pathfinding succeeded in {iterations} iterations for {startPos} to {endPos}.");
+                //GameLogPanel.Instance.LogEnvironmentChange($"Path from {startPos} to {endPos} found.");
                 return ReconstructPath(currentNode);
             }
             
@@ -254,8 +254,8 @@ public class PathfindingSystem : MonoBehaviour
             Debug.Log($"No path found after {iterations} iterations");
         }
 
-        GameLogPanel.Instance.LogDebug($"No path found after {iterations} iterations for {startPos} to {endPos}.");
-        GameLogPanel.Instance.LogEnvironmentChange($"Path from {startPos} to {endPos} not found.");
+        //GameLogPanel.Instance.LogDebug($"No path found after {iterations} iterations for {startPos} to {endPos}.");
+        //GameLogPanel.Instance.LogEnvironmentChange($"Path from {startPos} to {endPos} not found.");
         return new List<Vector3Int>(); // No path found
     }
     
@@ -392,8 +392,8 @@ public class PathfindingSystem : MonoBehaviour
         Vector3Int startGrid = roadManager.FindNearestRoadPosition(startWorld);
         Vector3Int endGrid = roadManager.FindNearestRoadPosition(endWorld);
         
-        if (showDebugInfo)
-            Debug.Log($"Flood-aware pathfinding: {startWorld} -> {endWorld} started.");
+        //if (showDebugInfo)
+        //    Debug.Log($"Flood-aware pathfinding: {startWorld} -> {endWorld} started.");
 
         // Find path using flood-aware A*
         List<Vector3Int> gridPath = FindPathAStarFloodAware(startGrid, endGrid);
@@ -414,14 +414,14 @@ public class PathfindingSystem : MonoBehaviour
         }
 
         // Visualize the path
-        if (worldPath.Count > 0)
+        /*if (worldPath.Count > 0)
         {
             GameLogPanel.Instance.LogEnvironmentChange($"Flood-aware path found with {worldPath.Count} waypoints from {startWorld} to {endWorld}.");
         }
         else
         {
             GameLogPanel.Instance.LogEnvironmentChange($"No flood-free path available from {startWorld} to {endWorld}.");
-        }
+        }*/
         
         return worldPath;
     }
@@ -498,7 +498,7 @@ public class PathfindingSystem : MonoBehaviour
         {
             Debug.Log($"Delivery estimate: {estimate.roadTileCount} tiles, {estimate.totalDistance:F1} distance, {estimate.estimatedTimeSeconds:F1} seconds");
         }
-        GameLogPanel.Instance.LogEnvironmentChange($"Delivery estimate: {estimate.roadTileCount} tiles, {estimate.totalDistance:F1} distance, {estimate.estimatedTimeSeconds:F1} seconds from {startPos} to {endPos}.");
+        //GameLogPanel.Instance.LogEnvironmentChange($"Delivery estimate: {estimate.roadTileCount} tiles, {estimate.totalDistance:F1} distance, {estimate.estimatedTimeSeconds:F1} seconds from {startPos} to {endPos}.");
         
         return estimate;
     }
@@ -585,7 +585,7 @@ public class PathfindingSystem : MonoBehaviour
             {
                 if (showDebugInfo)
                     Debug.Log($"Flood-aware path found in {iterations} iterations from {startPos} to {endPos}");
-                GameLogPanel.Instance.LogDebug($"Flood-aware path found in {iterations} iterations for {startPos} to {endPos}.");
+                //GameLogPanel.Instance.LogDebug($"Flood-aware path found in {iterations} iterations for {startPos} to {endPos}.");
                 return ReconstructPath(currentNode);
             }
             
@@ -624,7 +624,7 @@ public class PathfindingSystem : MonoBehaviour
         }
         
         Debug.LogWarning($"No flood-free path found after {iterations} iterations");
-        GameLogPanel.Instance.LogDebug($"No flood-free path found after {iterations} iterations for {startPos} to {endPos}.");
+        //GameLogPanel.Instance.LogDebug($"No flood-free path found after {iterations} iterations for {startPos} to {endPos}.");
         return new List<Vector3Int>();
     }
 
