@@ -57,15 +57,16 @@ public class SatisfactionAndBudget : MonoBehaviour
             return;
         }
     }
-    
+
     void Start()
     {
         InitializeValues();
         SetupFeedbackEffects();
         UpdateUI();
-        
+
         if (showDebugInfo)
             Debug.Log($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
+        GameLogPanel.Instance.LogMetricsChanged($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
     }
     
     void SetupFeedbackEffects()
@@ -109,9 +110,9 @@ public class SatisfactionAndBudget : MonoBehaviour
             budgetText.text = budgetPrefix + currentBudget.ToString("N0");
         }
     }
-    
+
     // ===== SATISFACTION METHODS =====
-    
+
     /// <summary>
     /// Add specific amount to satisfaction
     /// </summary>
@@ -119,13 +120,13 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         float previousValue = currentSatisfaction;
         currentSatisfaction = Mathf.Clamp(currentSatisfaction + amount, minSatisfaction, maxSatisfaction);
-        
+
         // Show feedback effects
         if (feedbackEffects != null && Mathf.Abs(amount) > 0.01f)
         {
             feedbackEffects.ShowSatisfactionChange(previousValue, currentSatisfaction, maxSatisfaction);
         }
-        
+
         // Update UI (but don't update slider directly if using feedback effects)
         if (feedbackEffects == null)
         {
@@ -139,11 +140,12 @@ public class SatisfactionAndBudget : MonoBehaviour
                 budgetText.text = budgetPrefix + currentBudget.ToString("N0");
             }
         }
-        
+
         OnSatisfactionChanged?.Invoke(currentSatisfaction);
-        
+
         if (showDebugInfo)
             Debug.Log($"Satisfaction: {previousValue:F1} → {currentSatisfaction:F1} (+{amount:F1})");
+        GameLogPanel.Instance.LogMetricsChanged($"Satisfaction: {previousValue:F1} → {currentSatisfaction:F1} (+{amount:F1})");
     }
     
     /// <summary>
@@ -201,7 +203,7 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         RemoveSatisfaction(satisfactionLargeAmount);
     }
-    
+
     /// <summary>
     /// Set satisfaction to specific value
     /// </summary>
@@ -209,16 +211,17 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         float previousValue = currentSatisfaction;
         currentSatisfaction = Mathf.Clamp(value, minSatisfaction, maxSatisfaction);
-        
+
         UpdateUI();
         OnSatisfactionChanged?.Invoke(currentSatisfaction);
-        
+
         if (showDebugInfo)
             Debug.Log($"Satisfaction set: {previousValue:F1} → {currentSatisfaction:F1}");
+        GameLogPanel.Instance.LogMetricsChanged($"Satisfaction set: {previousValue:F1} → {currentSatisfaction:F1}");
     }
-    
+
     // ===== BUDGET METHODS =====
-    
+
     /// <summary>
     /// Add specific amount to budget
     /// </summary>
@@ -226,23 +229,24 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         int previousValue = currentBudget;
         currentBudget = Mathf.Clamp(currentBudget + amount, minBudget, maxBudget);
-        
+
         // Show feedback effects
         if (feedbackEffects != null && amount != 0)
         {
             feedbackEffects.ShowBudgetChange(previousValue, currentBudget);
         }
-        
+
         // Update UI
         if (budgetText != null)
         {
             budgetText.text = budgetPrefix + currentBudget.ToString("N0");
         }
-        
+
         OnBudgetChanged?.Invoke(currentBudget);
-        
+
         if (showDebugInfo)
             Debug.Log($"Budget: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0} (+{budgetPrefix}{amount:N0})");
+        GameLogPanel.Instance.LogMetricsChanged($"Budget: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0} (+{budgetPrefix}{amount:N0})");
     }
     
     /// <summary>
@@ -300,7 +304,7 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         RemoveBudget(budgetLargeAmount);
     }
-    
+
     /// <summary>
     /// Set budget to specific value
     /// </summary>
@@ -308,12 +312,13 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         int previousValue = currentBudget;
         currentBudget = Mathf.Clamp(value, minBudget, maxBudget);
-        
+
         UpdateUI();
         OnBudgetChanged?.Invoke(currentBudget);
-        
+
         if (showDebugInfo)
             Debug.Log($"Budget set: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0}");
+        GameLogPanel.Instance.LogMetricsChanged($"Budget set: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0}");
     }
     
     /// <summary>
@@ -337,7 +342,7 @@ public class SatisfactionAndBudget : MonoBehaviour
         
         if (showDebugInfo)
             Debug.LogWarning($"Cannot afford {budgetPrefix}{cost:N0} - Current budget: {budgetPrefix}{currentBudget:N0}");
-        
+        GameLogPanel.Instance.LogDebug($"Cannot afford {budgetPrefix}{cost:N0} - Current budget: {budgetPrefix}{currentBudget:N0}");
         return false;
     }
     

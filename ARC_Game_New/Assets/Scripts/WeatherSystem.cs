@@ -163,23 +163,24 @@ public class WeatherSystem : MonoBehaviour
         // Fallback to sunny weather
         SetWeather(WeatherType.Sunny);
     }
-    
+
     public void SetWeather(WeatherType newWeather)
     {
         if (currentWeather == newWeather) return;
-        
+
         WeatherType previousWeather = currentWeather;
         currentWeather = newWeather;
-        
+
         // Update weather icon
         UpdateWeatherIcon();
-        
+
         // Notify other systems
         OnWeatherChanged?.Invoke(currentWeather);
         AudioManager.Instance.StartAmbience(currentWeather);
 
         if (showDebugInfo)
             Debug.Log($"Weather changed from {previousWeather} to {currentWeather}");
+        GameLogPanel.Instance.LogEnvironmentChange($"The weather has changed from {previousWeather} to {currentWeather}.");
     }
     
     void UpdateWeatherIcon()
@@ -203,14 +204,15 @@ public class WeatherSystem : MonoBehaviour
         
         // Get selected weather from dropdown
         int selectedIndex = weatherDropdown.value;
-        
+
         if (selectedIndex >= 0 && selectedIndex < weatherTypes.Length)
         {
             WeatherType selectedWeather = weatherTypes[selectedIndex].weatherType;
             SetWeather(selectedWeather);
-            
+
             if (showDebugInfo)
                 Debug.Log($"Weather manually set to {selectedWeather} via debug panel");
+            GameLogPanel.Instance.LogEnvironmentChange($"Weather manually set to {selectedWeather} via debug panel");
         }
     }
     

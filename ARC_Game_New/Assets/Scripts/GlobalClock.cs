@@ -77,15 +77,17 @@ public class GlobalClock : MonoBehaviour
             return;
         }
     }
-    
+
     void Start()
     {
         InitializeTimeSystem();
         SetupUI();
         UpdateTimeDisplay();
-        
+
         if (showDebugInfo)
-            Debug.Log("Global Clock initialized - Game starts paused at Day 1, Time Segment 1 (9:00)");
+            Debug.Log("Global Clock initialized - Game starts paused at Day 1, Time Segment 1");
+            
+        GameLogPanel.Instance.LogMetricsChanged($"Game started - Day {currentDay}, Round {currentTimeSegment + 1}");
     }
     
     void InitializeTimeSystem()
@@ -174,7 +176,7 @@ public class GlobalClock : MonoBehaviour
         
         StartSimulation();
     }
-    
+
     void OnSpeedDropdownChanged(int dropdownValue)
     {
         switch (dropdownValue)
@@ -192,9 +194,10 @@ public class GlobalClock : MonoBehaviour
                 currentTimeSpeed = TimeSpeed.Normal;
                 break;
         }
-        
+
         if (showDebugInfo)
             Debug.Log($"Time speed changed to {currentTimeSpeed}x");
+        GameLogPanel.Instance.LogMetricsChanged($"Time speed set to {currentTimeSpeed}x");
     }
     
     void StartSimulation()
@@ -218,7 +221,7 @@ public class GlobalClock : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log($"Simulation started - Player waits {playerWaitTime}s, game content runs at {currentTimeSpeed}x speed");
-        
+        GameLogPanel.Instance.LogMetricsChanged($"Simulation started - Player waits {playerWaitTime}s, game content runs at {currentTimeSpeed}x speed");
         // Start simulation coroutine
         StartCoroutine(SimulationCoroutine(playerWaitTime));
     }
@@ -247,11 +250,17 @@ public class GlobalClock : MonoBehaviour
         
         // Notify other systems
         OnSimulationEnded?.Invoke();
-        
+
         if (showDebugInfo && currentTimeSegment < 4)
+        {
+            GameLogPanel.Instance.LogMetricsChanged($"Simulation ended - Now at Day {currentDay}, Time Segment {currentTimeSegment + 1}");
             Debug.Log($"Simulation ended - Now at Day {currentDay}, Time Segment {currentTimeSegment + 1}");
+        }
         else if (showDebugInfo) // when currentTimeSegment == 5 that's just for displaying daily report
+        {
+            GameLogPanel.Instance.LogMetricsChanged($"Simulation ended - Day {currentDay} complete, waiting for daily report");
             Debug.Log($"Simulation ended - Day {currentDay} complete, waiting for daily report");
+        }
     }
     
     void AdvanceTimeSegment()
@@ -278,16 +287,17 @@ public class GlobalClock : MonoBehaviour
         // Actually advance to next day after report confirmation
         currentDay++;
         currentTimeSegment = 0; // Reset to first round (not 1)
-        
+
         // Trigger events for new day
         // OnDayChanged?.Invoke(currentDay);
         OnTimeSegmentChanged?.Invoke(currentTimeSegment);
-        
+
         // Update display
         UpdateTimeDisplay();
-        
+
         if (showDebugInfo)
             Debug.Log($"Advanced to Day {currentDay}, Round 1");
+        GameLogPanel.Instance.LogMetricsChanged($"Advanced to Day {currentDay}, Round 1");
     }
 
     public void PauseSimulation()
@@ -299,9 +309,10 @@ public class GlobalClock : MonoBehaviour
             currentState = TimeState.Paused;
         }
         Time.timeScale = 0f;
-        
+
         if (showDebugInfo)
             Debug.Log("Simulation paused by external system");
+        GameLogPanel.Instance.LogMetricsChanged("Simulation paused by external system");
     }
 
     public void ResumeSimulation()
@@ -309,9 +320,10 @@ public class GlobalClock : MonoBehaviour
         Time.timeScale = 0f; // Keep paused for player interaction
         currentState = TimeState.Paused;
         EnablePlayerInteractions();
-        
+
         if (showDebugInfo)
             Debug.Log("Simulation resumed - ready for player interaction");
+        GameLogPanel.Instance.LogMetricsChanged("Simulation resumed - ready for player interaction");
     }
 
     void DisablePlayerInteractions()
