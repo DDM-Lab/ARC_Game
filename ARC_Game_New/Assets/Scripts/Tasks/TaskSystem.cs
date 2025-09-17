@@ -327,6 +327,7 @@ public class TaskSystem : MonoBehaviour
         }
         else
         {
+            GameLogPanel.Instance.LogError("DeliverySystem not found! Delivery tasks will not be tracked.");
             Debug.LogError("DeliverySystem not found! Delivery tasks will not be tracked.");
         }
 
@@ -405,6 +406,7 @@ public class TaskSystem : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Cancelled {cancelledCount} delivery tasks for expired game task: {task.taskTitle}");
         ToastManager.ShowToast($"Cancelled {cancelledCount} delivery tasks for expired game task: {task.taskTitle}", ToastType.Warning, true);
+        GameLogPanel.Instance.LogTaskEvent($"Cancelled {cancelledCount} delivery tasks for expired game task: {task.taskTitle}");
     }
 
     void OnTimeSegmentAdvanced(int newSegment)
@@ -418,6 +420,7 @@ public class TaskSystem : MonoBehaviour
 
                 if (showDebugInfo)
                     Debug.Log($"Task '{task.taskTitle}' rounds remaining: {task.roundsRemaining}");
+                GameLogPanel.Instance.LogTaskEvent($"Task '{task.taskTitle}' rounds remaining: {task.roundsRemaining}");
                 //ToastManager.ShowToast($"Task '{task.taskTitle}' rounds remaining: {task.roundsRemaining}", ToastType.Info, true);
             }
         }
@@ -448,6 +451,7 @@ public class TaskSystem : MonoBehaviour
                         if (showDebugInfo)
                             Debug.Log($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}");
                         ToastManager.ShowToast($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}", ToastType.Info, true);
+                        GameLogPanel.Instance.LogTaskEvent($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}");
                     }
                 }
             }
@@ -491,6 +495,7 @@ public class TaskSystem : MonoBehaviour
                 if (showDebugInfo)
                     Debug.Log($"All deliveries completed for task: {gameTask.taskTitle}");
                 ToastManager.ShowToast($"All deliveries completed for task: {gameTask.taskTitle}, ", ToastType.Success, true);
+                GameLogPanel.Instance.LogTaskEvent($"All deliveries completed for task: {gameTask.taskTitle}");
 
                 CompleteTask(gameTask);
             }
@@ -503,6 +508,7 @@ public class TaskSystem : MonoBehaviour
         {
             if (showDebugInfo)
                 Debug.LogWarning("HandleDeliveryFailure called with null task - skipping");
+            GameLogPanel.Instance.LogError("HandleDeliveryFailure called with null task - skipping");
             return;
         }
 
@@ -522,6 +528,7 @@ public class TaskSystem : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
+            GameLogPanel.Instance.LogTaskEvent($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
             ToastManager.ShowToast($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}", ToastType.Warning, true);
         }
     }
@@ -542,12 +549,13 @@ public class TaskSystem : MonoBehaviour
         if (taskDatabase == null)
         {
             Debug.LogError("TaskDatabase is null! Cannot generate tasks.");
+            GameLogPanel.Instance.LogError("TaskDatabase is null! Cannot generate tasks.");
             return;
         }
 
         Debug.Log("Checking for triggered tasks per facility...");
 
-        // NEW: Get tasks with their specific facilities
+        // Get tasks with their specific facilities
         List<(TaskData taskData, MonoBehaviour facility)> triggeredTasksWithFacilities =
             taskDatabase.CheckTriggeredTasksPerFacility();
 
@@ -558,6 +566,7 @@ public class TaskSystem : MonoBehaviour
             if (taskData == null)
             {
                 Debug.LogWarning("Found null TaskData in triggered results");
+                GameLogPanel.Instance.LogError("Found null TaskData in triggered results");
                 continue;
             }
 
@@ -597,6 +606,7 @@ public class TaskSystem : MonoBehaviour
                 if (activeTasks.Any(t => t.taskTitle == taskData.taskTitle && t.affectedFacility == facilityName))
                 {
                     Debug.Log($"Task {taskData.taskTitle} already exists for {facilityName}, skipping");
+                    GameLogPanel.Instance.LogTaskEvent($"Task {taskData.taskTitle} already exists for {facilityName}, skipping");
                     continue;
                 }
 
@@ -613,6 +623,7 @@ public class TaskSystem : MonoBehaviour
         if (taskData == null)
         {
             Debug.LogError("TaskData is null in CreateTaskFromDatabase");
+            GameLogPanel.Instance.LogError("TaskData is null in CreateTaskFromDatabase");
             return null;
         }
 
@@ -919,7 +930,7 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Created task: {title} ({type}) for {facility}");
-
+        GameLogPanel.Instance.LogTaskEvent($"Created task: {title} ({type}) for {facility}");
         ToastManager.ShowToast($"New Task: {title} ({type})", ToastType.Info, true);
 
         return newTask;
@@ -942,6 +953,7 @@ public class TaskSystem : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log($"Completed task: {task.taskTitle}");
+            GameLogPanel.Instance.LogTaskEvent($"Completed task: {task.taskTitle}");
             ToastManager.ShowToast($"Completed task: {task.taskTitle}", ToastType.Success, true);
         }
     }
@@ -966,7 +978,7 @@ public class TaskSystem : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log($"Expired task: {task.taskTitle} (Status: {task.status})");
-
+            GameLogPanel.Instance.LogTaskEvent($"Expired task: {task.taskTitle} (Status: {task.status})");
             ToastManager.ShowToast($"Expired task: {task.taskTitle} (Status: {task.status})", ToastType.Warning, true);
         }
     }
@@ -982,17 +994,20 @@ public class TaskSystem : MonoBehaviour
                     if (SatisfactionAndBudget.Instance != null)
                         SatisfactionAndBudget.Instance.RemoveSatisfaction(impact.value);
                     ToastManager.ShowToast($"Removed satisfaction: {impact.value} from task: {task.taskTitle} due to incomplete task", ToastType.Warning, true);
+                    GameLogPanel.Instance.LogTaskEvent($"Removed satisfaction: {impact.value} from task: {task.taskTitle} due to incomplete task");
                     break;
                 case ImpactType.Budget:
                     if (SatisfactionAndBudget.Instance != null)
                         SatisfactionAndBudget.Instance.RemoveBudget(impact.value);
                     ToastManager.ShowToast($"Removed budget: {impact.value} from task: {task.taskTitle} due to incomplete task", ToastType.Warning, true);
+                    GameLogPanel.Instance.LogTaskEvent($"Removed budget: {impact.value} from task: {task.taskTitle} due to incomplete task");
                     break;
             }
         }
 
         if (showDebugInfo)
             Debug.Log($"Applied penalties for incomplete task: {task.taskTitle}");
+        
     }
 
     public void IgnoreTask(GameTask task)
@@ -1033,6 +1048,7 @@ public class TaskSystem : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log($"Task marked as incomplete: {task.taskTitle}");
+            GameLogPanel.Instance.LogTaskEvent($"Task marked as incomplete: {task.taskTitle}");
         }
     }
 
@@ -1137,7 +1153,7 @@ public class TaskSystem : MonoBehaviour
                 newChoice.choiceImpacts.Add(new TaskImpact(impact.impactType, impact.value, impact.isCountdown, impact.customLabel));
             }
 
-            // NEW: Only validate delivery choices that actually trigger delivery
+            // Only validate delivery choices that actually trigger delivery
             if (choice.triggersDelivery || choice.immediateDelivery)
             {
                 MonoBehaviour source = FindTriggeringFacility(newTask);
@@ -1204,7 +1220,8 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
-
+        GameLogPanel.Instance.LogTaskEvent($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
+        // Don't show alert tasks as toasts
         if (taskData.taskType != TaskType.Alert)
             ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);
 
@@ -1493,7 +1510,7 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
-
+        GameLogPanel.Instance.LogTaskEvent($"Generated task from database: {taskData.taskId} for facility {facilityName}");
         return newTask;
     }
 

@@ -70,14 +70,13 @@ public class FloodTaskGenerator : MonoBehaviour
                 Debug.Log("Flood tasks disabled or TaskSystem not found");
             return;
         }
-        
+
         if (blockedVehicle == null || originalDelivery == null)
         {
             if (showDebugInfo)
                 Debug.LogWarning("Cannot create road blockage task - missing vehicle or delivery");
             return;
         }
-        
 
         string taskTitle = "Road Blockage Emergency";
         string description = $"Vehicle {blockedVehicle.GetVehicleName()} is blocked by flood while transporting {originalDelivery.quantity} {originalDelivery.cargoType}. Choose how to handle this emergency.";
@@ -112,6 +111,7 @@ public class FloodTaskGenerator : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Created road blockage emergency task for vehicle {blockedVehicle.GetVehicleName()}");
+        GameLogPanel.Instance.LogTaskEvent($"Created road blockage emergency task for vehicle {blockedVehicle.GetVehicleName()}");
     }
 
     void CreateFoodBlockageChoices(GameTask task, DeliveryTask originalDelivery, Vehicle blockedVehicle)
@@ -196,57 +196,58 @@ public class FloodTaskGenerator : MonoBehaviour
     public void CreateVehicleRepairTask(Vehicle damagedVehicle)
     {
         if (!enableFloodTasks || TaskSystem.Instance == null) return;
-        
+
         // Check if repair task already exists for this vehicle (double-check)
         var activeTasks = TaskSystem.Instance.GetAllActiveTasks();
-        bool repairTaskExists = activeTasks.Any(t => 
-            t.taskTitle.Contains("Vehicle Repair") && 
+        bool repairTaskExists = activeTasks.Any(t =>
+            t.taskTitle.Contains("Vehicle Repair") &&
             t.description.Contains(damagedVehicle.GetVehicleName()));
-        
+
         if (repairTaskExists)
         {
             if (showDebugInfo)
                 Debug.Log($"Repair task already exists for vehicle {damagedVehicle.GetVehicleName()}");
             return;
         }
-        
+
         string taskTitle = "Vehicle Repair Required";
         string description = $"Vehicle {damagedVehicle.GetVehicleName()} has been damaged by flood and requires repair before it can operate again.";
-        
+
         GameTask repairTask = TaskSystem.Instance.CreateTask(
             taskTitle, TaskType.Emergency, "Maintenance", description);
 
         repairTask.taskImage = vehicleDamageImage;
-        
+
         // Longer time for repair tasks
         repairTask.roundsRemaining = 2;
         repairTask.hasRealTimeLimit = false;
-        
+
         // Add impacts
         repairTask.impacts.Add(new TaskImpact(ImpactType.Budget, -800, false, "Repair Cost"));
         repairTask.impacts.Add(new TaskImpact(ImpactType.Workforce, 2, false, "Repair Crew"));
-        
+
         // Add agent messages
         repairTask.agentMessages.Add(new AgentMessage($"Vehicle {damagedVehicle.GetVehicleName()} needs repair after flood damage.", TaskSystem.Instance.foodMassCareSprite));
         repairTask.agentMessages.Add(new AgentMessage("We can either repair it now or wait, but the vehicle won't be available until fixed.", TaskSystem.Instance.foodMassCareSprite));
-        
+
         // Add repair choices
         AgentChoice immediateRepairChoice = new AgentChoice(1, "Repair immediately ($800, 2 workforce)");
         immediateRepairChoice.triggersDelivery = false;
         immediateRepairChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -800, false, "Repair Cost"));
         immediateRepairChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Workforce, -2, false, "Crew Assignment"));
         repairTask.agentChoices.Add(immediateRepairChoice);
-        
+
         AgentChoice delayRepairChoice = new AgentChoice(2, "Delay repair (vehicle remains unavailable)");
         delayRepairChoice.triggersDelivery = false;
         delayRepairChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5, false, "Reduced Capacity"));
         repairTask.agentChoices.Add(delayRepairChoice);
-        
+
         // Store vehicle reference for later repair
         repairTask.description += $"|VEHICLE_ID:{damagedVehicle.GetVehicleId()}";
-        
+
         if (showDebugInfo)
             Debug.Log($"Created vehicle repair task for {damagedVehicle.GetVehicleName()}");
+        GameLogPanel.Instance.LogTaskEvent($"Created vehicle repair task for {damagedVehicle.GetVehicleName()}");
     }
 
     void OnDestroy()
