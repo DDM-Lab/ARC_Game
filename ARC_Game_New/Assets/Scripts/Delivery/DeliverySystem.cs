@@ -113,6 +113,7 @@ public class DeliverySystem : MonoBehaviour
         }
 
         Debug.Log($"Delivery System initialized with {availableVehicles.Count} vehicles");
+        GameLogPanel.Instance.LogVehicleEvent($"Delivery System initialized with {availableVehicles.Count} vehicles");
 
         pendingTasks.Clear();
     }
@@ -126,12 +127,6 @@ public class DeliverySystem : MonoBehaviour
             lastTaskAssignment = Time.time;
         }
 
-        // Generate automatic tasks
-        /*if (enableAutoTasks && Time.time - lastAutoTaskGeneration > autoTaskInterval)
-        {
-            GenerateAutoTasks();
-            lastAutoTaskGeneration = Time.time;
-        }*/
     }
 
     public bool CanCreateDeliveryWithEstimate(MonoBehaviour source, MonoBehaviour destination, out DeliveryTimeEstimate estimate)
@@ -156,9 +151,13 @@ public class DeliverySystem : MonoBehaviour
 
         estimate = pathfinder.EstimateDeliveryTime(sourcePos, destPos);
 
-        if (showDebugInfo && estimate.pathExists)
+        if (estimate.pathExists)
         {
-            Debug.Log($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
+            if (showDebugInfo)
+            {
+                Debug.Log($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
+            }
+            GameLogPanel.Instance.LogVehicleEvent($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
         }
 
         return estimate.pathExists;
@@ -173,12 +172,14 @@ public class DeliverySystem : MonoBehaviour
 
         if (source == null || destination == null)
         {
+            GameLogPanel.Instance.LogError("Cannot create delivery task with null buildings");
             Debug.LogError("Cannot create delivery task with null buildings");
             return createdTasks;
         }
 
         if (quantity <= 0)
         {
+            GameLogPanel.Instance.LogError("Cannot create delivery task with zero or negative quantity");
             Debug.LogError("Cannot create delivery task with zero or negative quantity");
             return createdTasks;
         }
@@ -189,10 +190,12 @@ public class DeliverySystem : MonoBehaviour
         {
             if (estimate.isFloodBlocked)
             {
+                GameLogPanel.Instance.LogError($"Cannot create delivery task - route blocked by flood from {source.name} to {destination.name}");
                 Debug.LogWarning($"Cannot create delivery task - route blocked by flood from {source.name} to {destination.name}");
             }
             else
             {
+                GameLogPanel.Instance.LogError($"Cannot create delivery task - no route available from {source.name} to {destination.name}");
                 Debug.LogWarning($"Cannot create delivery task - no route available from {source.name} to {destination.name}");
             }
             return createdTasks;
@@ -208,6 +211,7 @@ public class DeliverySystem : MonoBehaviour
 
         if (maxCapacity <= 0)
         {
+            GameLogPanel.Instance.LogError($"No vehicle available for cargo type {cargoType}");
             Debug.LogError($"No vehicle available for cargo type {cargoType}");
             return createdTasks;
         }
@@ -221,6 +225,7 @@ public class DeliverySystem : MonoBehaviour
 
             if (pendingTasks.Count >= maxQueuedTasks)
             {
+                GameLogPanel.Instance.LogError("Delivery task queue is full - cannot add more tasks");
                 Debug.LogWarning("Delivery task queue is full - cannot add more tasks");
                 break;
             }
@@ -237,7 +242,7 @@ public class DeliverySystem : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log($"Created delivery task {taskNumber}: {newTask} (Est: {estimate.GetFormattedTime()})");
-
+            GameLogPanel.Instance.LogVehicleEvent($"Created delivery task {taskNumber}: {newTask} (Est: {estimate.GetFormattedTime()})");
             remainingQuantity -= currentTaskQuantity;
             taskNumber++;
         }
@@ -297,6 +302,7 @@ public class DeliverySystem : MonoBehaviour
             cancelled = true;
             if (showDebugInfo)
                 Debug.Log($"Cancelled active delivery task: {activeTask}");
+            GameLogPanel.Instance.LogVehicleEvent($"Cancelled active delivery task: {activeTask}");
         }
 
         return cancelled;
@@ -364,6 +370,7 @@ public class DeliverySystem : MonoBehaviour
 
                     if (showDebugInfo)
                         Debug.Log($"Assigned {task} to vehicle {suitableVehicle.GetVehicleName()}");
+                    GameLogPanel.Instance.LogVehicleEvent($"Assigned {task} to vehicle {suitableVehicle.GetVehicleName()}");
                 }
             }
         }
@@ -427,7 +434,6 @@ public class DeliverySystem : MonoBehaviour
     void OnVehicleDeliveryCompleted(Vehicle vehicle, DeliveryTask completedTask)
     {
         Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
-
         activeTasks.Remove(completedTask);
         completedTasks.Add(completedTask);
         OnTaskCompleted?.Invoke(completedTask);

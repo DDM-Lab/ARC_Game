@@ -649,15 +649,7 @@ public class PathfindingSystem : MonoBehaviour
         Vector3 destPos = destination.transform.position;
         
         estimate = pathfinder.EstimateDeliveryTime(sourcePos, destPos);
-        
-        if (showDebugInfo && estimate.pathExists)
-        {
-            Debug.Log($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
-        }
-        if (estimate.pathExists)
-        {
-            GameLogPanel.Instance.LogEnvironmentChange($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
-        }
+
         return estimate.pathExists;
     }
 
