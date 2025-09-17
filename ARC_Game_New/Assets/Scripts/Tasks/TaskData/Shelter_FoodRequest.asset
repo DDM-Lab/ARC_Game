@@ -108,7 +108,7 @@ MonoBehaviour:
     prioritizeNearestSource: 1
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Request full supply (Max shelter capacity)
+    choiceText: Request 10 food packs
     choiceImpacts:
     - impactType: 0
       value: 10
@@ -118,12 +118,12 @@ MonoBehaviour:
     triggersDelivery: 1
     immediateDelivery: 0
     deliveryCargoType: 1
-    enableMultipleDeliveries: 0
-    multiDeliveryType: 0
-    quantityType: 2
-    deliveryQuantity: 0
+    enableMultipleDeliveries: 1
+    multiDeliveryType: 2
+    quantityType: 0
+    deliveryQuantity: 10
     deliveryPercentage: 0
-    deliverAll: 1
+    deliverAll: 0
     sourceType: 1
     sourceBuilding: 0
     sourcePrebuilt: 0
@@ -151,7 +151,7 @@ MonoBehaviour:
     deliveryQuantity: 0
     deliveryPercentage: 0
     deliverAll: 1
-    sourceType: 0
+    sourceType: 1
     sourceBuilding: 0
     sourcePrebuilt: 0
     specificSourceName: 
@@ -178,11 +178,11 @@ MonoBehaviour:
     deliveryQuantity: 0
     deliveryPercentage: 0
     deliverAll: 0
-    sourceType: 0
+    sourceType: 1
     sourceBuilding: 0
     sourcePrebuilt: 0
     specificSourceName: 
-    destinationType: 3
+    destinationType: 1
     destinationBuilding: 1
     destinationPrebuilt: 0
     specificDestinationName: 

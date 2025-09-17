@@ -7,11 +7,13 @@ public class BuildingResourceStorage : MonoBehaviour
     [Header("Storage Configuration")]
     public List<ResourceCapacity> resourceCapacities = new List<ResourceCapacity>();
     
-    [Header("Daily Reset Settings")]
-    public List<ResourceAmount> dailyStartingResources = new List<ResourceAmount>();
-    public bool enableDailyFoodWaste = true;
-    public int dailyStartingFoodPacks = 0; // Separate food allocation per day
+    [Header("Game Start Resource Settings")]
+    public List<ResourceAmount> startingResources = new List<ResourceAmount>();
     
+    [Header("Daily Food Settings")]
+    public int startingFoodPacks = 0; // Separate food allocation per game start
+    public bool enableFoodWaste = true;
+
     [Header("Round-Based Production")]
     public List<RoundResourceProduction> roundProduction = new List<RoundResourceProduction>();
     
@@ -58,37 +60,31 @@ public class BuildingResourceStorage : MonoBehaviour
         {
             maxCapacities[capacity.resourceType] = capacity.maxCapacity;
             currentResources[capacity.resourceType] = 0;
+            Debug.Log($"{gameObject.name} storage initialized to {capacity.maxCapacity} of {capacity.resourceType}");
+            GameLogPanel.Instance.LogResourceChange($"{gameObject.name} storage initialized to {capacity.maxCapacity} of {capacity.resourceType}");
         }
         
         // Set daily starting resources
-        SetDailyStartingResources();
+        SetStartingResources();
         
         OnStorageUpdated?.Invoke();
     }
     
-    void SetDailyStartingResources()
+    void SetStartingResources()
     {
-        // Set general daily starting resources (population, etc.)
-        foreach (ResourceAmount resource in dailyStartingResources)
+        // Set general game start resources (population, etc.)
+        foreach (ResourceAmount resource in startingResources)
         {
             if (maxCapacities.ContainsKey(resource.type))
             {
                 int actualAmount = Mathf.Min(resource.amount, maxCapacities[resource.type]);
                 currentResources[resource.type] = actualAmount;
-                
+
                 if (showDebugInfo)
-                    Debug.Log($"{gameObject.name} daily reset to {actualAmount} {resource.type}");
+                    Debug.Log($"{gameObject.name} game start resource set to {actualAmount} {resource.type}");
+
+                GameLogPanel.Instance.LogResourceChange($"{gameObject.name} game start resource is set to {actualAmount} {resource.type}");
             }
-        }
-        
-        // Separately handle daily food allocation
-        if (dailyStartingFoodPacks > 0 && maxCapacities.ContainsKey(ResourceType.FoodPacks))
-        {
-            int actualFood = Mathf.Min(dailyStartingFoodPacks, maxCapacities[ResourceType.FoodPacks]);
-            currentResources[ResourceType.FoodPacks] = actualFood;
-            
-            if (showDebugInfo)
-                Debug.Log($"{gameObject.name} received daily food allocation: {actualFood} food packs");
         }
         
         OnStorageUpdated?.Invoke();
@@ -96,10 +92,13 @@ public class BuildingResourceStorage : MonoBehaviour
 
     void OnRoundChanged(int newRound)
     {
-        HandleRoundProduction();
-        HandlePopulationConsumptionCycle();
+        if (newRound <= 4) // round 5 is daily report stage
+        {
+            HandleRoundProduction();
+            HandlePopulationConsumptionCycle();
+        }
     }
-    
+
     void OnDayChanged(int newDay)
     {
         HandleDailyReset();
@@ -145,16 +144,23 @@ public class BuildingResourceStorage : MonoBehaviour
 
                     if (showDebugInfo)
                         Debug.Log($"{gameObject.name} produced {production.amountPerRound} {production.resourceType} this round");
+                    GameLogPanel.Instance.LogResourceChange($"{gameObject.name} produced {production.amountPerRound} {production.resourceType} this round");
                 }
-                else if (showDebugInfo)
+                else
                 {
-                    Debug.LogWarning($"{gameObject.name} cannot produce {production.resourceType} - missing required resources");
+                    if (showDebugInfo)
+                        Debug.Log($"{gameObject.name} cannot produce {production.resourceType} - missing required resources");
+                    GameLogPanel.Instance.LogResourceChange($"{gameObject.name} cannot produce {production.resourceType} - missing required resources");
                 }
             }
-            else if (showDebugInfo)
+            else
             {
-                Debug.LogWarning($"{gameObject.name} cannot produce {production.resourceType} - storage full");
+                if (showDebugInfo)
+                    Debug.Log($"{gameObject.name} cannot produce {production.resourceType} - storage full");
+                GameLogPanel.Instance.LogResourceChange($"{gameObject.name} cannot produce {production.resourceType} - storage full");
             }
+
+            
         }
     }
     
@@ -163,34 +169,42 @@ public class BuildingResourceStorage : MonoBehaviour
         if (!enablePopulationBasedConsumption) return;
         
         roundsSinceLastConsumption++;
-        
+
         // Only consume food every N rounds
         if (roundsSinceLastConsumption >= consumptionRoundInterval)
         {
             int totalPeopleToFeed = GetTotalPeopleCount();
             int foodNeeded = totalPeopleToFeed * foodPerPersonPerNRounds;
-            
+
             if (foodNeeded > 0)
             {
                 int foodConsumed = RemoveResource(ResourceType.FoodPacks, foodNeeded);
-                
+
                 if (showDebugInfo)
                 {
                     Debug.Log($"{gameObject.name} fed {totalPeopleToFeed} people after {consumptionRoundInterval} rounds, consumed {foodConsumed}/{foodNeeded} food packs");
-                    
+
                     if (foodConsumed < foodNeeded)
                     {
-                        Debug.LogWarning($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
+                        Debug.Log($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
                     }
                 }
+
+                GameLogPanel.Instance.LogResourceChange($"{gameObject.name} fed {totalPeopleToFeed} people after {consumptionRoundInterval} rounds, consumed {foodConsumed}/{foodNeeded} food packs");
+                if (foodConsumed < foodNeeded)
+                {
+                    GameLogPanel.Instance.LogResourceChange($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
+                }
             }
-            
+
             // Reset counter
             roundsSinceLastConsumption = 0;
         }
-        else if (showDebugInfo)
+        else
         {
-            Debug.Log($"{gameObject.name} consumption cycle: {roundsSinceLastConsumption}/{consumptionRoundInterval} rounds");
+            if (showDebugInfo)
+                Debug.Log($"{gameObject.name} consumption cycle: {roundsSinceLastConsumption}/{consumptionRoundInterval} rounds");
+            GameLogPanel.Instance.LogResourceChange($"{gameObject.name} consumption cycle: {roundsSinceLastConsumption}/{consumptionRoundInterval} rounds");
         }
     }
     
@@ -213,24 +227,32 @@ public class BuildingResourceStorage : MonoBehaviour
         
         return totalPeople;
     }
-    
+
     void HandleDailyReset()
     {
-        if (enableDailyFoodWaste)
+        if (enableFoodWaste)
         {
             // Remove all unused food at end of day
             int wastedFood = GetResourceAmount(ResourceType.FoodPacks);
             if (wastedFood > 0)
             {
                 RemoveResource(ResourceType.FoodPacks, wastedFood);
-                
+
                 if (showDebugInfo)
                     Debug.Log($"{gameObject.name} wasted {wastedFood} unused food packs at end of day");
+                GameLogPanel.Instance.LogResourceChange($"{gameObject.name} wasted {wastedFood} unused food packs at end of day");
             }
         }
         
-        // Reset to daily starting resources
-        SetDailyStartingResources();
+        // Add starting food packs at the start of each day
+        if (startingFoodPacks > 0)
+        {
+            int actualAdded = AddResource(ResourceType.FoodPacks, startingFoodPacks);
+            if (showDebugInfo)
+                Debug.Log($"{gameObject.name} received {actualAdded} starting food packs at start of day");
+            GameLogPanel.Instance.LogResourceChange($"{gameObject.name} received {actualAdded} starting food packs at start of day");
+        }
+        
     }
     
     /// <summary>
@@ -257,6 +279,7 @@ public class BuildingResourceStorage : MonoBehaviour
         
         if (showDebugInfo && actualAdded > 0)
             Debug.Log($"{gameObject.name} received {actualAdded} {type} ({currentResources[type]}/{capacity})");
+        GameLogPanel.Instance.LogResourceChange($"{gameObject.name} received {actualAdded} {type} ({currentResources[type]}/{capacity})");
         
         return actualAdded;
     }
@@ -279,7 +302,8 @@ public class BuildingResourceStorage : MonoBehaviour
         
         if (showDebugInfo && actualRemoved > 0)
             Debug.Log($"{gameObject.name} lost {actualRemoved} {type} ({currentResources[type]}/{maxCapacities[type]})");
-        
+        GameLogPanel.Instance.LogResourceChange($"{gameObject.name} lost {actualRemoved} {type} ({currentResources[type]}/{maxCapacities[type]})");
+
         return actualRemoved;
     }
     
@@ -365,7 +389,7 @@ public class BuildingResourceStorage : MonoBehaviour
         
         if (showDebugInfo && actualTransferred > 0)
             Debug.Log($"Transferred {actualTransferred} {type} from {gameObject.name} to {targetStorage.gameObject.name}");
-        
+        GameLogPanel.Instance.LogResourceChange($"Transferred {actualTransferred} {type} from {gameObject.name} to {targetStorage.gameObject.name}");
         return actualTransferred;
     }
     

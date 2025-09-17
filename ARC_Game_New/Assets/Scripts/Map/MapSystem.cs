@@ -17,26 +17,9 @@ public class MapSystem : MonoBehaviour
     
     [Header("Map Layout")]
     public Vector2 motelPosition = new Vector2(0, 200);
-    public Vector2[] communityPositions = new Vector2[4]
-    {
-        new Vector2(-400, 100),
-        new Vector2(400, 100),
-        new Vector2(-400, -100),
-        new Vector2(400, -100)
-    };
-    
-    public Vector2[] abandonedSitePositions = new Vector2[8]
-    {
-        new Vector2(-200, 300),
-        new Vector2(200, 300),
-        new Vector2(-600, 0),
-        new Vector2(600, 0),
-        new Vector2(-300, -200),
-        new Vector2(300, -200),
-        new Vector2(-100, -300),
-        new Vector2(100, -300)
-    };
-    
+    public int numberOfCommunities = 3;
+    public List<Vector2> communityPositions = new List<Vector2>();
+    public List<Vector2> abandonedSitePositions = new List<Vector2>();
     private List<AbandonedSite> abandonedSites = new List<AbandonedSite>();
     
     void Start()
@@ -44,7 +27,7 @@ public class MapSystem : MonoBehaviour
         InitializeMap();
         SetupCamera();
     }
-    
+
     void InitializeMap()
     {
         // Create map container if not assigned
@@ -52,48 +35,74 @@ public class MapSystem : MonoBehaviour
         {
             mapContainer = new GameObject("MapContainer").transform;
         }
-        
-        // Create motel
-        if (motelPrefab != null)
+
+        //Find motel position
+        GameObject motel = GameObject.Find("Motel");
+        if (motel != null)
         {
-            GameObject motel = Instantiate(motelPrefab, motelPosition, Quaternion.identity, mapContainer);
-            motel.name = "Motel";
+            motelPosition = motel.transform.position;
+            Debug.Log($"Found Motel at {motelPosition}");
+            GameLogPanel.Instance.LogBuildingStatus($"Motel established at position {motelPosition}");
         }
-        
-        // Create communities
-        for (int i = 0; i < communityPositions.Length; i++)
+        else
         {
-            if (communityPrefab != null)
+            Debug.LogWarning("Motel object not found in the scene.");
+            GameLogPanel.Instance.LogError("Motel object not found in the scene.");
+        }
+
+        //Find community positions
+        for (int i = 0; i < numberOfCommunities; i++)
+        {
+            GameObject community = GameObject.Find($"Community0{i + 1}");
+            if (community != null)
             {
-                GameObject community = Instantiate(communityPrefab, communityPositions[i], Quaternion.identity, mapContainer);
-                community.name = $"Community_{i + 1}";
+                communityPositions.Add(community.transform.position);
+                Debug.Log($"Found Community0{i + 1} at {community.transform.position}");
+                GameLogPanel.Instance.LogBuildingStatus($"Community0{i + 1} located at position {community.transform.position}");
+            }
+            else
+            {
+                Debug.LogWarning($"Community0{i + 1} object not found in the scene.");
+                GameLogPanel.Instance.LogError($"Community0{i + 1} object not found in the scene.");
             }
         }
-        
+
         // Create abandoned sites
-        for (int i = 0; i < abandonedSitePositions.Length; i++)
+        for (int i = 0; i < abandonedSitePositions.Count; i++)
         {
             if (abandonedSitePrefab != null)
             {
                 GameObject siteObj = Instantiate(abandonedSitePrefab, abandonedSitePositions[i], Quaternion.identity, mapContainer);
                 siteObj.name = $"AbandonedSite_{i + 1}";
-                
+
                 AbandonedSite site = siteObj.GetComponent<AbandonedSite>();
                 if (site != null)
                 {
                     site.Initialize(i);
                     abandonedSites.Add(site);
+                    Debug.Log($"Created AbandonedSite_{i + 1} at {abandonedSitePositions[i]}");
+                    GameLogPanel.Instance.LogBuildingStatus($"AbandonedSite_{i + 1} established at position {abandonedSitePositions[i]}");
                 }
             }
+            else
+            {
+                Debug.LogError("AbandonedSite prefab is not assigned in MapSystem.");
+                GameLogPanel.Instance.LogError("AbandonedSite prefab is not assigned in MapSystem.");
+            }
         }
-        
+
         // Register abandoned sites with building system
         if (buildingSystem != null)
         {
             buildingSystem.RegisterAbandonedSites(abandonedSites);
         }
-        
-        Debug.Log($"Map initialized with {abandonedSites.Count} abandoned sites");
+        else
+        {
+            Debug.LogWarning("BuildingSystem reference not assigned in MapSystem.");
+            GameLogPanel.Instance.LogError("BuildingSystem reference not assigned in MapSystem.");
+        }
+
+        Debug.Log($"Map initialized with {abandonedSites.Count} abandoned sites, {communityPositions.Count} communities, and one motel.");
     }
     
     void SetupCamera()

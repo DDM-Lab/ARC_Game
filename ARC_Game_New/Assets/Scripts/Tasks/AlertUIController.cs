@@ -204,6 +204,7 @@ public class AlertUIController : MonoBehaviour
 
         currentAlert = alertQueue.Dequeue();
         Debug.Log($"Processing alert: {currentAlert.taskTitle}");
+        GameLogPanel.Instance.LogTaskEvent($"Processing alert: {currentAlert.taskTitle}");
         alertMessages = currentAlert.agentMessages;
         currentMessageIndex = 0;
 

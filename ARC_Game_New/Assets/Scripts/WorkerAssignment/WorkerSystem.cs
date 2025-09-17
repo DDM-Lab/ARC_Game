@@ -53,7 +53,7 @@ public class WorkerSystem : MonoBehaviour
         {
             CreateUntrainedWorker();
         }
-        
+        GameLogPanel.Instance.LogWorkerAction($"Initialized worker pool with {initialTrainedWorkers} trained and {initialUntrainedWorkers} untrained workers.");
         Debug.Log($"Worker pool initialized with {initialTrainedWorkers} trained and {initialUntrainedWorkers} untrained workers");
         PrintWorkerStatistics();
     }
@@ -67,7 +67,7 @@ public class WorkerSystem : MonoBehaviour
         
         allWorkers.Add(worker);
         OnWorkerStatsChanged?.Invoke();
-        
+        GameLogPanel.Instance.LogWorkerAction($"Created trained worker (ID: {worker.Id})");
         Debug.Log($"Created trained worker: {worker}");
         return worker;
     }
@@ -80,7 +80,7 @@ public class WorkerSystem : MonoBehaviour
         
         allWorkers.Add(worker);
         OnWorkerStatsChanged?.Invoke();
-        
+        GameLogPanel.Instance.LogWorkerAction($"Created untrained worker (ID: {worker.Id})");
         Debug.Log($"Created untrained worker: {worker}");
         return worker;
     }
@@ -146,7 +146,7 @@ public class WorkerSystem : MonoBehaviour
         {
             worker.ReleaseFromBuilding();
         }
-
+        GameLogPanel.Instance.LogWorkerAction($"Released {buildingWorkers.Count} workers from building {buildingId}");
         Debug.Log($"Released {buildingWorkers.Count} workers from building {buildingId}");
     }
     

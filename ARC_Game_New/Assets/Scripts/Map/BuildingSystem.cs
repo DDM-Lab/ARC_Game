@@ -20,12 +20,21 @@ public class BuildingSystem : MonoBehaviour
     
     private List<AbandonedSite> registeredSites = new List<AbandonedSite>();
     private AbandonedSite selectedSite;
-    
+
     void Start()
     {
         // Find WorkerSystem if not assigned
         if (workerSystem == null)
+        {
+            Debug.LogWarning("WorkerSystem not assigned in BuildingSystem, attempting to find in scene...");
             workerSystem = FindObjectOfType<WorkerSystem>();
+        }
+
+        if (workerSystem == null)
+        {
+            Debug.LogError("WorkerSystem not found in BuildingSystem.");
+            GameLogPanel.Instance.LogError("WorkerSystem not found in  BuildingSystem.");
+        }
         
         // Subscribe to construction events if needed
     }
@@ -53,6 +62,7 @@ public class BuildingSystem : MonoBehaviour
             else
             {
                 Debug.LogWarning("BuildingSelectionUI not assigned!");
+                GameLogPanel.Instance.LogError("BuildingSelectionUI not assigned in BuildingSystem");
             }
         }
     }
@@ -76,19 +86,20 @@ public class BuildingSystem : MonoBehaviour
         if (!site.IsAvailable())
         {
             Debug.LogWarning($"Site {site.GetId()} is not available for construction");
+            GameLogPanel.Instance.LogError($"Site {site.GetId()} is not available for construction but was attempted to build {buildingType}");
             return;
         }
         
         // Get the prefab for the building type
         GameObject buildingPrefab = GetBuildingPrefab(buildingType);
-        
+
         if (buildingPrefab != null)
         {
             // Create the building at the site location immediately
             Vector3 sitePosition = site.transform.position;
             GameObject newBuilding = Instantiate(buildingPrefab, sitePosition, Quaternion.identity);
             newBuilding.name = $"{buildingType}_{site.GetId()}";
-            
+
             // Initialize building component (this will start construction automatically)
             Building buildingComponent = newBuilding.GetComponent<Building>();
             if (buildingComponent != null)
@@ -96,41 +107,39 @@ public class BuildingSystem : MonoBehaviour
                 // Assign WorkerSystem reference to the building
                 if (workerSystem != null)
                     buildingComponent.workerSystem = workerSystem;
-                
+
                 buildingComponent.Initialize(buildingType, site.GetId());
             }
-            
+
             // Convert abandoned site (disable it)
             site.ConvertToBuilding();
-            
-            Debug.Log($"Building {buildingType} created at site {site.GetId()} - construction started");
+
+            Debug.Log($"You created {buildingType} at AbandonedSite_{site.GetId()} - construction started");
+            GameLogPanel.Instance.LogPlayerAction($"You created {buildingType} at AbandonedSite_{site.GetId()} - construction started");
         }
         else
         {
             Debug.LogError($"No prefab found for building type: {buildingType}");
+            GameLogPanel.Instance.LogError($"No prefab found for building type: {buildingType}");
         }
     }
-    
+
     GameObject GetBuildingPrefab(BuildingType buildingType)
     {
-        switch (buildingType)
+        GameObject prefab = buildingType switch
         {
-            case BuildingType.Kitchen:
-                return kitchenPrefab;
-            case BuildingType.Shelter:
-                return shelterPrefab;
-            case BuildingType.CaseworkSite:
-                return caseworkSitePrefab;
-            default:
-                return null;
+            BuildingType.Kitchen => kitchenPrefab,
+            BuildingType.Shelter => shelterPrefab,
+            BuildingType.CaseworkSite => caseworkSitePrefab,
+            _ => null,
+        };
+
+        if (prefab == null)
+        {
+            Debug.LogError($"Prefab for {buildingType} is not assigned in BuildingSystem");
+            GameLogPanel.Instance.LogError($"Prefab for {buildingType} is not assigned in BuildingSystem");
         }
-    }
-    
-    public bool IsUnderConstruction(AbandonedSite site)
-    {
-        // This method is no longer needed since buildings handle their own construction
-        // Keeping for backward compatibility
-        return false;
+        return prefab;
     }
     
     public List<Building> GetAllBuildings()
@@ -244,6 +253,7 @@ public class BuildingSystem : MonoBehaviour
         if (workerSystem == null)
         {
             Debug.LogWarning("WorkerSystem not available");
+            GameLogPanel.Instance.LogError("WorkerSystem not available for Auto Assign Available Workers");
             return;
         }
         
@@ -257,11 +267,12 @@ public class BuildingSystem : MonoBehaviour
                     building.GetOriginalSiteId(), 
                     building.GetRequiredWorkforce()
                 );
-                
+
                 if (success)
                 {
                     building.AssignWorker();
-                    Debug.Log($"Auto-assigned workers to {building.GetBuildingType()} at site {building.GetOriginalSiteId()}");
+                    Debug.Log($"Auto-assigned workers to {building.GetBuildingType()} at AbandonedSite_{building.GetOriginalSiteId()}");
+                    GameLogPanel.Instance.LogBuildingStatus($"Auto-assigned workers to {building.GetBuildingType()} at AbandonedSite_{building.GetOriginalSiteId()}");
                 }
             }
         }

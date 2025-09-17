@@ -1165,6 +1165,7 @@ public class TaskDetailUI : MonoBehaviour
     {
         BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
         if (storage == null) return false;
+        if (building.IsOperational() == false) return false;
 
         if (isSource)
         {

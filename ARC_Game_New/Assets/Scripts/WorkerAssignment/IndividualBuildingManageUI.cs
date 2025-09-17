@@ -270,6 +270,7 @@ public class IndividualBuildingManageUI : MonoBehaviour
         UpdateButtonStates();
 
         Debug.Log($"Modified {workerType} worker count by {change}. New temporary counts: Trained={tempTrainedWorkers}, Untrained={tempUntrainedWorkers}");
+        GameLogPanel.Instance.LogPlayerAction($"Modified {workerType} worker count by {change} for building {currentBuilding.GetBuildingType()} at site {currentBuilding.GetOriginalSiteId()}");
     }
 
     bool HasChanges()
@@ -367,7 +368,7 @@ public class IndividualBuildingManageUI : MonoBehaviour
             {
                 worker.TryAssignToBuilding(currentBuilding.GetOriginalSiteId());
             }
-
+            GameLogPanel.Instance.LogPlayerAction($"Assigned {actualTrained} trained and {actualUntrained} untrained workers to building {currentBuilding.GetBuildingType()} at site {currentBuilding.GetOriginalSiteId()}");
             Debug.Log($"Successfully assigned {actualTrained} trained and {actualUntrained} untrained workers to building {currentBuilding.GetOriginalSiteId()}");
             return true;
         }

@@ -39,7 +39,6 @@ public class Vehicle : MonoBehaviour
 
     [Header("Flood Interaction")]
     public bool isDamaged = false;
-    private bool wasFloodCheckingEnabled = false;
 
     [Header("Debug")]
     public bool showDebugInfo = true;

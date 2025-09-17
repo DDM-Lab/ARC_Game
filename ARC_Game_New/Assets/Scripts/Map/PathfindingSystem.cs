@@ -62,15 +62,28 @@ public class PathfindingSystem : MonoBehaviour
     public bool showSearchedNodes = false;
     
     private Dictionary<Vector3Int, PathNode> searchedNodes;
-    
+
     void Start()
     {
         // Find references if not assigned
         if (roadManager == null)
             roadManager = FindObjectOfType<RoadTilemapManager>();
-        
+
+        if (roadManager == null)
+        {
+            Debug.LogError("RoadTilemapManager not found in PathfindingSystem!");
+            GameLogPanel.Instance.LogError("RoadTilemapManager not found in PathfindingSystem!");
+            return;
+        }
+
         if (pathVisualizer == null)
             pathVisualizer = FindObjectOfType<PathVisualizer>();
+            
+        if (pathVisualizer == null)
+        {
+            Debug.LogWarning("PathVisualizer not found! Path visualization will be disabled.");
+            GameLogPanel.Instance.LogError("PathVisualizer not found! Path visualization will be disabled.");
+        }
     }
     
     /// <summary>
@@ -81,6 +94,7 @@ public class PathfindingSystem : MonoBehaviour
         if (roadManager == null)
         {
             Debug.LogError("RoadManager not found!");
+            GameLogPanel.Instance.LogError("RoadManager not found in PathfindingSystem!");
             return new List<Vector3>();
         }
         
@@ -150,13 +164,15 @@ public class PathfindingSystem : MonoBehaviour
         // Check if start and end positions are valid
         if (!roadManager.HasRoadAt(startPos))
         {
-            Debug.LogWarning($"Start position {startPos} is not on a road!");
+            Debug.LogWarning($"Start position {startPos} is not on a road. Pathfinding failed. Nearest road to start is at {roadManager.FindNearestRoadPosition(roadManager.CellToWorld(startPos))}.");
+            GameLogPanel.Instance.LogError($"Start position {startPos} is not on a road. Pathfinding failed. Nearest road to start is at {roadManager.FindNearestRoadPosition(roadManager.CellToWorld(startPos))}.");
             return new List<Vector3Int>();
         }
         
         if (!roadManager.HasRoadAt(endPos))
         {
-            Debug.LogWarning($"End position {endPos} is not on a road!");
+            Debug.LogWarning($"End position {endPos} is not on a road. Pathfinding failed. Nearest road to end is at {roadManager.FindNearestRoadPosition(roadManager.CellToWorld(endPos))}.");
+            GameLogPanel.Instance.LogError($"End position {endPos} is not on a road. Pathfinding failed. Nearest road to end is at {roadManager.FindNearestRoadPosition(roadManager.CellToWorld(endPos))}.");
             return new List<Vector3Int>();
         }
         
@@ -188,9 +204,10 @@ public class PathfindingSystem : MonoBehaviour
             {
                 if (showDebugInfo)
                 {
-                    Debug.Log($"Path found in {iterations} iterations");
+                    Debug.Log($"Pathfinding succeeded in {iterations} iterations");
                 }
-                
+                //GameLogPanel.Instance.LogDebug($"Pathfinding succeeded in {iterations} iterations for {startPos} to {endPos}.");
+                //GameLogPanel.Instance.LogEnvironmentChange($"Path from {startPos} to {endPos} found.");
                 return ReconstructPath(currentNode);
             }
             
@@ -231,12 +248,14 @@ public class PathfindingSystem : MonoBehaviour
                 }
             }
         }
-        
+
         if (showDebugInfo)
         {
-            Debug.LogWarning($"No path found after {iterations} iterations");
+            Debug.Log($"No path found after {iterations} iterations");
         }
-        
+
+        //GameLogPanel.Instance.LogDebug($"No path found after {iterations} iterations for {startPos} to {endPos}.");
+        //GameLogPanel.Instance.LogEnvironmentChange($"Path from {startPos} to {endPos} not found.");
         return new List<Vector3Int>(); // No path found
     }
     
@@ -360,12 +379,12 @@ public class PathfindingSystem : MonoBehaviour
     /// <summary>
     /// Find path that avoids flood tiles
     /// </summary>
-    // Replace the existing FindFloodAwarePath method in PathfindingSystem.cs
     public List<Vector3> FindFloodAwarePath(Vector3 startWorld, Vector3 endWorld)
     {
         if (roadManager == null)
         {
             Debug.LogError("RoadManager not found!");
+            GameLogPanel.Instance.LogError("RoadManager not found in PathfindingSystem!");
             return new List<Vector3>();
         }
         
@@ -373,9 +392,9 @@ public class PathfindingSystem : MonoBehaviour
         Vector3Int startGrid = roadManager.FindNearestRoadPosition(startWorld);
         Vector3Int endGrid = roadManager.FindNearestRoadPosition(endWorld);
         
-        if (showDebugInfo)
-            Debug.Log($"Flood-aware pathfinding: {startWorld} -> {endWorld}");
-        
+        //if (showDebugInfo)
+        //    Debug.Log($"Flood-aware pathfinding: {startWorld} -> {endWorld} started.");
+
         // Find path using flood-aware A*
         List<Vector3Int> gridPath = FindPathAStarFloodAware(startGrid, endGrid);
         
@@ -389,10 +408,20 @@ public class PathfindingSystem : MonoBehaviour
         if (showDebugInfo)
         {
             if (worldPath.Count > 0)
-                Debug.Log($"Found flood-aware path with {worldPath.Count} waypoints");
+                Debug.Log($"Found flood-aware path with {worldPath.Count} waypoints from {startWorld} to {endWorld}");
             else
-                Debug.Log("No flood-free path available");
+                Debug.Log($"No flood-free path available from {startWorld} to {endWorld}");
         }
+
+        // Visualize the path
+        /*if (worldPath.Count > 0)
+        {
+            GameLogPanel.Instance.LogEnvironmentChange($"Flood-aware path found with {worldPath.Count} waypoints from {startWorld} to {endWorld}.");
+        }
+        else
+        {
+            GameLogPanel.Instance.LogEnvironmentChange($"No flood-free path available from {startWorld} to {endWorld}.");
+        }*/
         
         return worldPath;
     }
@@ -469,6 +498,7 @@ public class PathfindingSystem : MonoBehaviour
         {
             Debug.Log($"Delivery estimate: {estimate.roadTileCount} tiles, {estimate.totalDistance:F1} distance, {estimate.estimatedTimeSeconds:F1} seconds");
         }
+        //GameLogPanel.Instance.LogEnvironmentChange($"Delivery estimate: {estimate.roadTileCount} tiles, {estimate.totalDistance:F1} distance, {estimate.estimatedTimeSeconds:F1} seconds from {startPos} to {endPos}.");
         
         return estimate;
     }
@@ -515,7 +545,6 @@ public class PathfindingSystem : MonoBehaviour
         {
             Debug.Log($"Path Analysis: Normal={analysis.normalPathLength} tiles, Flood-aware={analysis.floodAwarePathLength} tiles, Difference={analysis.routeLengthDifference}");
         }
-        
         return analysis;
     }
 
@@ -530,6 +559,7 @@ public class PathfindingSystem : MonoBehaviour
         if (!roadManager.HasRoadAt(startPos) || !roadManager.HasRoadAt(endPos))
         {
             Debug.LogWarning("Start or end position is not on a road!");
+            GameLogPanel.Instance.LogError("Start or end position is not on a road in flood-aware pathfinding!");
             return new List<Vector3Int>();
         }
         
@@ -554,7 +584,8 @@ public class PathfindingSystem : MonoBehaviour
             if (currentNode.position == endPos)
             {
                 if (showDebugInfo)
-                    Debug.Log($"Flood-aware path found in {iterations} iterations");
+                    Debug.Log($"Flood-aware path found in {iterations} iterations from {startPos} to {endPos}");
+                //GameLogPanel.Instance.LogDebug($"Flood-aware path found in {iterations} iterations for {startPos} to {endPos}.");
                 return ReconstructPath(currentNode);
             }
             
@@ -593,6 +624,7 @@ public class PathfindingSystem : MonoBehaviour
         }
         
         Debug.LogWarning($"No flood-free path found after {iterations} iterations");
+        //GameLogPanel.Instance.LogDebug($"No flood-free path found after {iterations} iterations for {startPos} to {endPos}.");
         return new List<Vector3Int>();
     }
 
@@ -617,12 +649,7 @@ public class PathfindingSystem : MonoBehaviour
         Vector3 destPos = destination.transform.position;
         
         estimate = pathfinder.EstimateDeliveryTime(sourcePos, destPos);
-        
-        if (showDebugInfo && estimate.pathExists)
-        {
-            Debug.Log($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
-        }
-        
+
         return estimate.pathExists;
     }
 

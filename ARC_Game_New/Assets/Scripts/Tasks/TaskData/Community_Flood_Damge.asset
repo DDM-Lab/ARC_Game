@@ -26,7 +26,11 @@ MonoBehaviour:
     intervalDays: 0
     startDay: 2
     endDay: 0
-  resourceTriggers: []
+  resourceTriggers:
+  - facilityType: 3
+    resourceType: 0
+    resourceThreshold: 10
+    condition: 3
   probabilityTriggers: []
   floodTileTriggers: []
   floodedFacilityTriggers:

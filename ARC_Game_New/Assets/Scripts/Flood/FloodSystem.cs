@@ -89,30 +89,35 @@ public class FloodSystem : MonoBehaviour
     {
         if (groundTilemap == null)
         {
+            GameLogPanel.Instance.LogError("FloodSystem: Ground Tilemap not assigned!");
             Debug.LogError("FloodSystem: Ground Tilemap not assigned!");
             return false;
         }
 
         if (floodTilemap == null)
         {
+            GameLogPanel.Instance.LogError("FloodSystem: Flood Tilemap not assigned!");
             Debug.LogError("FloodSystem: Flood Tilemap not assigned!");
             return false;
         }
 
         if (riverRuleTile == null)
         {
+            GameLogPanel.Instance.LogError("FloodSystem: River Rule Tile not assigned!");
             Debug.LogError("FloodSystem: River Rule Tile not assigned!");
             return false;
         }
 
         if (floodRuleTile == null)
         {
+            GameLogPanel.Instance.LogError("FloodSystem: Flood Rule Tile not assigned!");
             Debug.LogError("FloodSystem: Flood Rule Tile not assigned!");
             return false;
         }
 
         if (floodParameters == null)
         {
+            GameLogPanel.Instance.LogError("FloodSystem: Flood Parameters not assigned!");
             Debug.LogError("FloodSystem: Flood Parameters not assigned!");
             return false;
         }
@@ -266,7 +271,6 @@ public class FloodSystem : MonoBehaviour
         WeatherType currentWeather = WeatherSystem.Instance.GetCurrentWeather();
         WeatherFloodData weatherData = GetWeatherFloodData(currentWeather);
         float rainIntensity = WeatherSystem.Instance.GetRainIntensity();
-        
         Debug.Log($"Current weather: {currentWeather}, Rain intensity: {rainIntensity}");
         
         bool wasRaining = WeatherSystem.Instance.IsRaining();
@@ -301,7 +305,8 @@ public class FloodSystem : MonoBehaviour
         
         int floodCountAfter = currentFloodTiles.Count;
         int floodChange = floodCountAfter - floodCountBefore;
-        
+        GameLogPanel.Instance.LogEnvironmentChange($"Current weather: {currentWeather}, Rain intensity: {rainIntensity:F2}");
+        GameLogPanel.Instance.LogEnvironmentChange($"Flood tiles changed. Before: {floodCountBefore}, after: {floodCountAfter}, change: {floodChange}");
         Debug.Log($"Flood tiles before: {floodCountBefore}, after: {floodCountAfter}, change: {floodChange}");
         
         // NEW: Track and trigger flood change events
@@ -382,7 +387,7 @@ public class FloodSystem : MonoBehaviour
         Debug.Log($"Tiles to expand: {tilesToExpand}");
 
         List<Vector3Int> expansionCandidates = new List<Vector3Int>();
-
+        
         // Get all possible expansion positions
         Debug.Log($"Checking expansion from {currentFloodTiles.Count} current flood tiles");
         foreach (Vector3Int floodPos in currentFloodTiles)

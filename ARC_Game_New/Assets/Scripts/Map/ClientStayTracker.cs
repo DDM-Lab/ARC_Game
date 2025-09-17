@@ -137,7 +137,9 @@ public class ClientStayTracker : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log($"Registered {clientCount} clients at {shelter.name} (Group: {groupName}, Round: {currentRound})");
-        
+
+        GameLogPanel.Instance.LogBuildingStatus($"Registered {clientCount} clients at {shelter.name} (Group: {groupName}, Round: {currentRound})");
+
         return newGroup;
     }
 
@@ -153,7 +155,9 @@ public class ClientStayTracker : MonoBehaviour
             
             if (showDebugInfo)
                 Debug.Log($"Removed client group {group.groupName} from {group.currentShelter?.name}");
-            
+
+            GameLogPanel.Instance.LogBuildingStatus($"Removed client group {group.groupName} from {group.currentShelter?.name}");
+
             return true;
         }
         
@@ -172,26 +176,27 @@ public class ClientStayTracker : MonoBehaviour
         foreach (ClientGroup group in shelterGroups.ToList())
         {
             if (remainingToRemove <= 0) break;
-            
+
             if (group.clientCount <= remainingToRemove)
             {
                 // Remove entire group
                 remainingToRemove -= group.clientCount;
                 totalRemoved += group.clientCount;
                 clientGroups.Remove(group);
-                
+
                 if (showDebugInfo)
                     Debug.Log($"Removed entire group {group.groupName} ({group.clientCount} clients) for casework");
+                GameLogPanel.Instance.LogBuildingStatus($"Removed entire group {group.groupName} ({group.clientCount} clients) for casework");
             }
             else
             {
                 // Partial removal from group
                 group.clientCount -= remainingToRemove;
                 totalRemoved += remainingToRemove;
-                
+
                 if (showDebugInfo)
                     Debug.Log($"Partially removed {remainingToRemove} clients from group {group.groupName}");
-                
+                GameLogPanel.Instance.LogBuildingStatus($"Partially removed {remainingToRemove} clients from group {group.groupName}");
                 remainingToRemove = 0;
             }
         }
@@ -215,6 +220,7 @@ public class ClientStayTracker : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Moved {group.groupName} from {oldShelter?.name} to {newShelter.name}");
 
+            GameLogPanel.Instance.LogBuildingStatus($"Moved {group.groupName} from {oldShelter?.name} to {newShelter.name}");
             return true;
         }
 
@@ -237,22 +243,24 @@ public class ClientStayTracker : MonoBehaviour
                 group.caseworkRequestGenerated = true;
                 OnCaseworkRequested?.Invoke(group);
             }
-            
+
             // Check for overstay
             if (group.IsOverstaying(currentRound) && !group.isOverstaying)
             {
                 group.isOverstaying = true;
                 group.overstayRounds = group.GetRoundsInShelter(currentRound) - overstayThreshold;
-                
+
                 // Record overstay
                 OverstayRecord record = new OverstayRecord(group, currentRound);
                 overstayRecords.Add(record);
-                
+
                 OnClientOverstay?.Invoke(group);
                 OnOverstayRecorded?.Invoke(record);
-                
+
                 if (showDebugInfo)
                     Debug.Log($"OVERSTAY: {group.groupName} at {group.currentShelter?.name} - {group.GetRoundsInShelter(currentRound)} rounds");
+                    
+                GameLogPanel.Instance.LogBuildingStatus($"client overstay: {group.groupName} at {group.currentShelter?.name} - {group.GetRoundsInShelter(currentRound)} rounds");
             }
             
             // Update overstay rounds for already overstaying groups
@@ -269,25 +277,25 @@ public class ClientStayTracker : MonoBehaviour
     void GenerateCaseworkTask(ClientGroup group)
     {
         if (TaskSystem.Instance == null) return;
-        
+
         string description = string.Format(caseworkTaskDescription, group.GetRoundsInShelter(currentRound));
         string facilityName = group.currentShelter?.name ?? "Unknown Shelter";
-        
+
         GameTask caseworkTask = TaskSystem.Instance.CreateTask(
-            caseworkTaskTitle, 
-            TaskType.Advisory, 
-            facilityName, 
+            caseworkTaskTitle,
+            TaskType.Advisory,
+            facilityName,
             description);
-        
+
         // Add task details
         caseworkTask.impacts.Add(new TaskImpact(ImpactType.Clients, group.clientCount, false, "Clients Requesting Casework"));
         caseworkTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, group.GetRoundsInShelter(currentRound), false, "Rounds in Shelter"));
-        
+
         // Add agent messages
         caseworkTask.agentMessages.Add(new AgentMessage($"We have {group.clientCount} clients who have been in {facilityName} for {group.GetRoundsInShelter(currentRound)} rounds."));
         caseworkTask.agentMessages.Add(new AgentMessage("They are requesting casework assistance to find permanent housing."));
         caseworkTask.agentMessages.Add(new AgentMessage("How would you like to respond?"));
-        
+
         // Add choices
         AgentChoice sendToCasework = new AgentChoice(1, $"Send {group.groupName} to casework site");
         sendToCasework.triggersDelivery = true;
@@ -300,17 +308,18 @@ public class ClientStayTracker : MonoBehaviour
         sendToCasework.destinationBuilding = BuildingType.CaseworkSite; // Assuming you have this building type
         sendToCasework.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10));
         caseworkTask.agentChoices.Add(sendToCasework);
-        
+
         AgentChoice delay = new AgentChoice(2, "Ask them to wait longer");
         delay.triggersDelivery = false;
         delay.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5));
         caseworkTask.agentChoices.Add(delay);
-        
+
         // Store reference to client group in task description for removal after completion
         caseworkTask.description += $"|CLIENT_GROUP_ID:{group.groupId}";
-        
+
         if (showDebugInfo)
-            Debug.Log($"Generated casework task for {group.groupName} at {facilityName}");
+            Debug.Log($"ClientStayTracker generated casework task for {group.groupName} ({group.clientCount} clients) at {facilityName}");
+        GameLogPanel.Instance.LogTaskEvent($"ClientStayTracker generated casework task for {group.groupName} ({group.clientCount} clients) at {facilityName}");
     }
 
     /// <summary>
@@ -342,14 +351,15 @@ public class ClientStayTracker : MonoBehaviour
     }
 
     /// <summary>
-    /// Clear overstay records (e.g., at end of day)
+    /// Clear overstay records
     /// </summary>
     public void ClearOverstayRecords()
     {
         overstayRecords.Clear();
-        
+
         if (showDebugInfo)
-            Debug.Log("Cleared overstay records");
+            Debug.Log("Cleared all overstay records");
+        GameLogPanel.Instance.LogBuildingStatus("Cleared all overstay records");
     }
 
     /// <summary>
