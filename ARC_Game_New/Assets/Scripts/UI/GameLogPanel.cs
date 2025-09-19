@@ -317,6 +317,15 @@ public class GameLogPanel : MonoBehaviour
                 logText.text = string.Join("\n", lines.Skip(lines.Length - maxDisplayedMessages));
             }
 
+            // Force TextMeshPro to recalculate
+            logText.ForceMeshUpdate();
+            
+            // Update content height to match text
+            if (contentRect != null)
+            {
+                contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+            }
+
             if (autoScrollToBottom && scrollRect != null)
             {
                 Canvas.ForceUpdateCanvases();
@@ -370,6 +379,15 @@ public class GameLogPanel : MonoBehaviour
         {
             string formattedMessage = FormatMessageForDisplay(message);
             logText.text += formattedMessage + "\n";
+        }
+
+        // Force TextMeshPro to update its mesh
+        logText.ForceMeshUpdate();
+        
+        // Update content rect height based on text's preferred height
+        if (contentRect != null)
+        {
+            contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
         }
 
         if (autoScrollToBottom && scrollRect != null)
