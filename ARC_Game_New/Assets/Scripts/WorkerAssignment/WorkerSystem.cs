@@ -67,7 +67,7 @@ public class WorkerSystem : MonoBehaviour
         
         allWorkers.Add(worker);
         OnWorkerStatsChanged?.Invoke();
-        GameLogPanel.Instance.LogWorkerAction($"Created trained worker (ID: {worker.Id})");
+        GameLogPanel.Instance.LogWorkerAction($"Created trained worker: {worker}");
         Debug.Log($"Created trained worker: {worker}");
         return worker;
     }
@@ -80,7 +80,7 @@ public class WorkerSystem : MonoBehaviour
         
         allWorkers.Add(worker);
         OnWorkerStatsChanged?.Invoke();
-        GameLogPanel.Instance.LogWorkerAction($"Created untrained worker (ID: {worker.Id})");
+        GameLogPanel.Instance.LogWorkerAction($"Created untrained worker: worker.Id");
         Debug.Log($"Created untrained worker: {worker}");
         return worker;
     }

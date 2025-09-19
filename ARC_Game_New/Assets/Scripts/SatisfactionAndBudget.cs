@@ -66,7 +66,7 @@ public class SatisfactionAndBudget : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
-        GameLogPanel.Instance.LogMetricsChanged($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
+        GameLogPanel.Instance.LogMetricsChange($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
     }
     
     void SetupFeedbackEffects()
@@ -145,7 +145,7 @@ public class SatisfactionAndBudget : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Satisfaction: {previousValue:F1} → {currentSatisfaction:F1} (+{amount:F1})");
-        GameLogPanel.Instance.LogMetricsChanged($"Satisfaction: {previousValue:F1} → {currentSatisfaction:F1} (+{amount:F1})");
+        GameLogPanel.Instance.LogMetricsChange($"Satisfaction: {previousValue:F1} → {currentSatisfaction:F1} (+{amount:F1})");
     }
     
     /// <summary>
@@ -217,7 +217,7 @@ public class SatisfactionAndBudget : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Satisfaction set: {previousValue:F1} → {currentSatisfaction:F1}");
-        GameLogPanel.Instance.LogMetricsChanged($"Satisfaction set: {previousValue:F1} → {currentSatisfaction:F1}");
+        GameLogPanel.Instance.LogMetricsChange($"Satisfaction set: {previousValue:F1} → {currentSatisfaction:F1}");
     }
 
     // ===== BUDGET METHODS =====
@@ -246,7 +246,7 @@ public class SatisfactionAndBudget : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Budget: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0} (+{budgetPrefix}{amount:N0})");
-        GameLogPanel.Instance.LogMetricsChanged($"Budget: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0} (+{budgetPrefix}{amount:N0})");
+        GameLogPanel.Instance.LogMetricsChange($"Budget: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0} (+{budgetPrefix}{amount:N0})");
     }
     
     /// <summary>
@@ -318,7 +318,7 @@ public class SatisfactionAndBudget : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Budget set: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0}");
-        GameLogPanel.Instance.LogMetricsChanged($"Budget set: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0}");
+        GameLogPanel.Instance.LogMetricsChange($"Budget set: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0}");
     }
     
     /// <summary>
