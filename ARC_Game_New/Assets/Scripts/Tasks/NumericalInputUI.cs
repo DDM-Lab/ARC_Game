@@ -46,4 +46,17 @@ public class NumericalInputUI : MonoBehaviour
         if (valueText != null)
             valueText.text = numericalInput.currentValue.ToString();
     }
+
+    public void InitializeAsHistorical(AgentNumericalInput input)
+    {
+        Initialize(input, null); // null taskDetailUI for historical mode
+        
+        // Disable all inputs in historical mode
+        if (decreaseButton != null) decreaseButton.interactable = false;
+        if (increaseButton != null) increaseButton.interactable = false;
+        
+        // Show final value
+        if (valueText != null)
+            valueText.color = Color.gray;
+    }
 }

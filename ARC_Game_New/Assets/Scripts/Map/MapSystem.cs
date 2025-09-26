@@ -41,7 +41,7 @@ public class MapSystem : MonoBehaviour
         if (motel != null)
         {
             motelPosition = motel.transform.position;
-            Debug.Log($"Found Motel at {motelPosition}");
+            Debug.Log($"Found Motel at ({motelPosition.x:F2}, {motelPosition.y:F2})");
             GameLogPanel.Instance.LogBuildingStatus($"Motel established at position {motelPosition}");
         }
         else
@@ -57,8 +57,9 @@ public class MapSystem : MonoBehaviour
             if (community != null)
             {
                 communityPositions.Add(community.transform.position);
-                Debug.Log($"Found Community0{i + 1} at {community.transform.position}");
-                GameLogPanel.Instance.LogBuildingStatus($"Community0{i + 1} located at position {community.transform.position}");
+                var communityPosition = community.transform.position;
+                Debug.Log($"Found Community0{i + 1} at ({communityPosition.x:F2}, {communityPosition.y:F2})");
+                GameLogPanel.Instance.LogBuildingStatus($"Found Community0{i + 1} at ({communityPosition.x:F2}, {communityPosition.y:F2})");
             }
             else
             {
@@ -80,8 +81,9 @@ public class MapSystem : MonoBehaviour
                 {
                     site.Initialize(i);
                     abandonedSites.Add(site);
-                    Debug.Log($"Created AbandonedSite_{i + 1} at {abandonedSitePositions[i]}");
-                    GameLogPanel.Instance.LogBuildingStatus($"AbandonedSite_{i + 1} established at position {abandonedSitePositions[i]}");
+                    var abandonedSitePosition = abandonedSitePositions[i];
+                    Debug.Log($"Created AbandonedSite_{i + 1} at ({abandonedSitePosition.x:F2}, {abandonedSitePosition.y:F2})");
+                    GameLogPanel.Instance.LogBuildingStatus($"AbandonedSite_{i + 1} located at ({abandonedSitePosition.x:F2}, {abandonedSitePosition.y:F2})");
                 }
             }
             else

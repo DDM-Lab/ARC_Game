@@ -5,6 +5,9 @@ using UnityEngine.UI;
 using TMPro;
 using System.Linq;
 using System;
+using System.IO;
+using System.Text;
+
 
 public enum LogMessageType
 {
@@ -250,7 +253,7 @@ public class GameLogPanel : MonoBehaviour
                 case 2: expectedType = LogMessageType.Debug; break;
                 case 3: expectedType = LogMessageType.Error; break;
             }
-            
+
             if (message.messageType != expectedType) return false;
         }
 
@@ -319,7 +322,7 @@ public class GameLogPanel : MonoBehaviour
 
             // Force TextMeshPro to recalculate
             logText.ForceMeshUpdate();
-            
+
             // Update content height to match text
             if (contentRect != null)
             {
@@ -383,7 +386,7 @@ public class GameLogPanel : MonoBehaviour
 
         // Force TextMeshPro to update its mesh
         logText.ForceMeshUpdate();
-        
+
         // Update content rect height based on text's preferred height
         if (contentRect != null)
         {
@@ -446,6 +449,130 @@ public class GameLogPanel : MonoBehaviour
         return JsonUtility.ToJson(exportData, true);
     }
 
+    public void ExportToCSV(bool exportAll = false)
+    {
+        List<LogMessage> messagesToExport = GetMessagesToExport(exportAll);
+        
+        string fileName = exportAll ? 
+            $"game_logs_all_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv" : 
+            $"game_logs_current_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv";
+        
+        string filePath = Path.Combine(Application.persistentDataPath, fileName);
+        
+        try
+        {
+            List<string> csvLines = new List<string>();
+            
+            // Add header
+            csvLines.Add("ID,Timestamp,RealTime,Day,Round,Category,MessageType,Content");
+            
+            // Process each message
+            foreach (LogMessage message in messagesToExport)
+            {
+                string cleanContent = CleanContentForCSV(message.content);
+                
+                string csvLine = string.Join(",", new string[]
+                {
+                    QuoteAndEscape(message.id ?? ""),
+                    message.timestamp.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+                    QuoteAndEscape(message.realTime.ToString("yyyy-MM-dd HH:mm:ss")),
+                    message.day.ToString(),
+                    message.round.ToString(),
+                    message.category.ToString(),
+                    message.messageType.ToString(),
+                    QuoteAndEscape(cleanContent)
+                });
+                
+                csvLines.Add(csvLine);
+            }
+            
+            // Write all lines at once
+            File.WriteAllLines(filePath, csvLines, System.Text.Encoding.UTF8);
+            
+            Debug.Log($"CSV exported successfully to: {filePath}");
+            LogPlayerAction($"Exported {messagesToExport.Count} messages to CSV: {fileName}");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Failed to export CSV: {e.Message}");
+            LogError($"CSV export failed: {e.Message}");
+        }
+    }
+    
+    private string CleanContentForCSV(string content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return "";
+        
+        // Remove ALL problematic characters
+        content = content.Replace("\r\n", " ")    // Windows line breaks
+                        .Replace("\r", " ")        // Mac line breaks  
+                        .Replace("\n", " ")        // Unix line breaks
+                        .Replace("\t", " ")        // Tab characters (main culprit!)
+                        .Replace("\"", "\"\"");    // Escape quotes
+        
+        // Clean up multiple spaces
+        while (content.Contains("  "))
+        {
+            content = content.Replace("  ", " ");
+        }
+        
+        return content.Trim();
+    }
+
+    private string QuoteAndEscape(string field)
+    {
+        if (string.IsNullOrEmpty(field))
+            return "\"\"";
+        
+        // Always quote fields to prevent CSV parsing issues
+        return "\"" + field.Replace("\"", "\"\"") + "\"";
+    }
+    
+    private List<LogMessage> GetMessagesToExport(bool exportAll)
+    {
+        if (exportAll)
+        {
+            return allMessages.ToList();
+        }
+
+        if (GlobalClock.Instance != null)
+        {
+            int currentDay = GlobalClock.Instance.GetCurrentDay();
+            int currentRound = GlobalClock.Instance.GetCurrentTimeSegment() + 1;
+
+            return allMessages.Where(m => m.day == currentDay && m.round == currentRound).ToList();
+        }
+
+        return allMessages.ToList();
+    }
+
+    private string EscapeCsvField(string field)
+    {
+        if (string.IsNullOrEmpty(field))
+            return "\"\"";
+        
+        // Remove ALL types of line breaks and extra whitespace
+        field = field.Replace("\r\n", " ")
+                    .Replace("\r", " ")
+                    .Replace("\n", " ")
+                    .Replace("\t", " ");
+        
+        // Collapse multiple spaces into single space
+        while (field.Contains("  "))
+        {
+            field = field.Replace("  ", " ");
+        }
+        
+        field = field.Trim();
+        
+        // Escape quotes by doubling them
+        field = field.Replace("\"", "\"\"");
+        
+        // Always wrap in quotes
+        return "\"" + field + "\"";
+    }
+
     #endregion
 
     public void ClearLog()
@@ -458,7 +585,7 @@ public class GameLogPanel : MonoBehaviour
 
         LogPlayerAction("Game log cleared");
     }
-    
+
     [ContextMenu("Test Log Message")]
     void TestLogMessage()
     {
@@ -497,5 +624,17 @@ public class GameLogPanel : MonoBehaviour
         // Debug and Error
         LogDebug("Pathfinding calculation completed");
         LogError("Failed to create delivery task");
+    }
+
+    [ContextMenu("Export Current to CSV")]
+    void TestExportCurrentCSV()
+    {
+        ExportToCSV(false);
+    }
+
+    [ContextMenu("Export All to CSV")]  
+    void TestExportAllCSV()
+    {
+        ExportToCSV(true);
     }
 }

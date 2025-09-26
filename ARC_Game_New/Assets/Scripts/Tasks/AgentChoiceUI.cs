@@ -73,24 +73,40 @@ public class AgentChoiceUI : MonoBehaviour
     {
         isValid = valid;
         validationMessage = message;
-        
+
         // Update button appearance
         if (choiceButton != null)
         {
             //choiceButton.interactable = valid;
-            
+
             Image buttonImage = choiceButton.GetComponent<Image>();
             if (buttonImage != null)
             {
                 buttonImage.color = valid ? normalColor : invalidColor;
             }
         }
-        
+
         // Show validation message
         if (validationText != null)
         {
             validationText.text = valid ? "" : message;
             validationText.color = Color.red;
+        }
+    }
+    
+    public void InitializeAsHistorical(AgentChoice choice)
+    {
+        Initialize(choice, null); // null taskDetailUI for historical mode
+        
+        // Disable interaction in historical mode
+        if (choiceButton != null)
+        {
+            choiceButton.interactable = false;
+            
+            // Visual indication it's historical
+            Image buttonImage = choiceButton.GetComponent<Image>();
+            if (buttonImage != null)
+                buttonImage.color = Color.gray;
         }
     }
 }
