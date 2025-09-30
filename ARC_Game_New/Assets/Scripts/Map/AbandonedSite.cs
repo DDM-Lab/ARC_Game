@@ -157,6 +157,15 @@ public class AbandonedSite : MonoBehaviour
             }
         }
 
+        AgentConversationUI agentConversationUI = FindObjectOfType<AgentConversationUI>();
+        if (agentConversationUI != null && agentConversationUI.IsUIOpen())
+        {
+            if (EventSystem.current.IsPointerOverGameObject())
+            {
+                return true;
+            }
+        }
+
         return false;
     }
     
