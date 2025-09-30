@@ -68,6 +68,17 @@ public class FacilityInfoManager : MonoBehaviour
     
     void HandleMouseInput()
     {
+        // Check if mouse is over UI - if yes, clear hover and return
+        if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+        {
+            if (currentHoveredFacility != null)
+            {
+                OnFacilityHoverExit();
+                currentHoveredFacility = null;
+            }
+            return; // Don't process any facility interactions
+        }
+
         Vector3 mousePos = Input.mousePosition;
         Vector3 worldPos = mainCamera.ScreenToWorldPoint(new Vector3(mousePos.x, mousePos.y, mainCamera.nearClipPlane));
         
