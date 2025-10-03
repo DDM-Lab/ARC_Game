@@ -1,10 +1,12 @@
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 
 public class BuildingSelectionUI : MonoBehaviour
 {
     [Header("UI References")]
     public GameObject selectionPanel;
+    public TextMeshProUGUI selectSitePromptText;
     public Button kitchenButton;
     public Button shelterButton;
     public Button caseworkButton;
@@ -12,8 +14,8 @@ public class BuildingSelectionUI : MonoBehaviour
     
     [Header("Confirmation Panel")]
     public GameObject confirmationPanel;
-    public TMPro.TextMeshProUGUI buildingNameText;
-    public TMPro.TextMeshProUGUI buildingDescriptionText;
+    public TextMeshProUGUI buildingNameText;
+    public TextMeshProUGUI buildingDescriptionText;
     public Button buildButton;
     public Button backButton;
     
@@ -61,6 +63,8 @@ public class BuildingSelectionUI : MonoBehaviour
         
         // Hide panels initially
         HideAllPanels();
+
+        selectSitePromptText.gameObject.SetActive(false);
         
         Debug.Log("BuildingSelectionUI initialized");
     }
@@ -71,33 +75,58 @@ public class BuildingSelectionUI : MonoBehaviour
         lastActivationTime = Time.time;
         isUIOpen = true;
         
-        // Show selection panel, hide confirmation panel
-        if (selectionPanel != null)
-            selectionPanel.SetActive(true);
+        // Only show panels if there's a selected site from BuildingSystem
+        BuildingSystem buildingSystem = FindObjectOfType<BuildingSystem>();
+        bool hasSiteSelected = buildingSystem != null && buildingSystem.HasSelectedSite();
+        
+        if (hasSiteSelected)
+        {
+            selectSitePromptText.gameObject.SetActive(false);
+
+            // Show selection panel
+            if (selectionPanel != null)
+                selectionPanel.SetActive(true);
+                
+            if (confirmationPanel != null)
+                confirmationPanel.SetActive(false);
             
-        if (confirmationPanel != null)
-            confirmationPanel.SetActive(false);
-        
-        // Show stats panel
-        if (buildingStatsUI != null)
-            buildingStatsUI.ShowStatsPanel();
-        
-        Debug.Log("Building selection UI panel activated");
+            if (buildingStatsUI != null)
+                buildingStatsUI.ShowStatsPanel();
+        }
+        else
+        {
+            selectSitePromptText.gameObject.SetActive(true);
+            // Don't show other panels if no site selected
+            if (buildingStatsUI != null)
+                buildingStatsUI.ShowStatsPanel();
+        }
     }
-    
+
     public void HideAllPanels()
     {
         isUIOpen = false;
-        
+
         if (selectionPanel != null)
             selectionPanel.SetActive(false);
-            
+
         if (confirmationPanel != null)
             confirmationPanel.SetActive(false);
-        
-        // Hide stats panel
+
         if (buildingStatsUI != null)
             buildingStatsUI.HideStatsPanel();
+            
+        selectSitePromptText.gameObject.SetActive(false);
+    }
+    public void ToggleUI(Vector3 worldPosition)
+    {
+        if (isUIOpen)
+        {
+            OnCancelSelected();
+        }
+        else
+        {
+            ShowSelectionUI(worldPosition);
+        }
     }
     
     void PositionUIPanel(Vector3 worldPosition)
@@ -242,9 +271,7 @@ public class BuildingSelectionUI : MonoBehaviour
         {
             confirmationPanel.SetActive(false);
         }
-        // Go back to selection panel
-            //ShowSelectionUI(currentSitePosition);
-        }
+    }
     
     void OnCancelSelected()
     {

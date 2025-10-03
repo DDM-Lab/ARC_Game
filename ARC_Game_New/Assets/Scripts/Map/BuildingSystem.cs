@@ -17,6 +17,8 @@ public class BuildingSystem : MonoBehaviour
     
     [Header("Worker System")]
     public WorkerSystem workerSystem;
+    [Header("Global Button")]
+    public GlobalFacilityButton globalFacilityButton;
     
     private List<AbandonedSite> registeredSites = new List<AbandonedSite>();
     private AbandonedSite selectedSite;
@@ -53,7 +55,13 @@ public class BuildingSystem : MonoBehaviour
     {
         if (site.IsAvailable())
         {
+            // Deselect previous site
+            if (selectedSite != null)
+                selectedSite.SetSelected(false);
+                
             selectedSite = site;
+            selectedSite.SetSelected(true); // Highlight selected site
+
             // Show building selection UI
             if (buildingSelectionUI != null)
             {
@@ -66,19 +74,22 @@ public class BuildingSystem : MonoBehaviour
             }
         }
     }
-    
+
+    public void CancelBuildingSelection()
+    {
+        if (selectedSite != null)
+            selectedSite.SetSelected(false); // Clear highlight
+        selectedSite = null;
+    }
+
     public void OnBuildingTypeSelected(BuildingType buildingType)
     {
         if (selectedSite != null)
         {
             CreateBuildingImmediately(selectedSite, buildingType);
-            selectedSite = null; // Clear selection
+            selectedSite.SetSelected(false); // Clear highlight
+            selectedSite = null;
         }
-    }
-    
-    public void CancelBuildingSelection()
-    {
-        selectedSite = null;
     }
     
     public void CreateBuildingImmediately(AbandonedSite site, BuildingType buildingType)
@@ -243,6 +254,69 @@ public class BuildingSystem : MonoBehaviour
             Debug.Log("=== WORKFORCE STATISTICS ===");
             Debug.Log($"Total Workforce: {workforceStats.totalWorkforce}, Available: {workforceStats.totalAvailableWorkforce}, In Use: {workforceStats.totalWorkforceInUse}");
             Debug.Log($"Buildings with Workers: {workforceStats.buildingsWithWorkers}, Buildings Needing Workers: {workforceStats.buildingsNeedingWorkers}");
+        }
+    }
+
+    /// <summary>
+    /// Deconstruct building and restore abandoned site
+    /// </summary>
+    public bool DeconstructBuilding(Building building)
+    {
+        if (building == null) return false;
+        
+        int siteId = building.GetOriginalSiteId();
+        Vector3 buildingPosition = building.transform.position;
+        
+        // Find the corresponding abandoned site
+        AbandonedSite site = registeredSites.Find(s => s.GetId() == siteId);
+        
+        if (site == null)
+        {
+            Debug.LogError($"Cannot deconstruct: AbandonedSite {siteId} not found");
+            return false;
+        }
+        
+        // Return workers to pool if building has assigned workers
+        if (building.IsOperational() && workerSystem != null)
+        {
+            int workforceToReturn = building.GetAssignedWorkforce();
+            workerSystem.ReturnWorkersFromBuilding(siteId, workforceToReturn);
+        }
+        
+        // Restore the abandoned site
+        site.SetAvailability(true);
+        
+        // Re-enable site components
+        SpriteRenderer siteRenderer = site.GetComponent<SpriteRenderer>();
+        if (siteRenderer != null)
+            siteRenderer.enabled = true;
+            
+        Collider2D siteCollider = site.GetComponent<Collider2D>();
+        if (siteCollider != null)
+            siteCollider.enabled = true;
+        
+        // Destroy the building
+        string buildingName = building.name;
+        Destroy(building.gameObject);
+        
+        Debug.Log($"Deconstructed {buildingName} at site {siteId}");
+        GameLogPanel.Instance.LogPlayerAction($"Deconstructed {buildingName}, site restored");
+        
+        return true;
+    }
+
+    public bool HasSelectedSite()
+    {
+        return selectedSite != null;
+    }
+
+    [ContextMenu("Test Deconstruct First Building")]
+    public void TestDeconstructFirstBuilding()
+    {
+        Building firstBuilding = FindObjectOfType<Building>();
+        if (firstBuilding != null)
+        {
+            DeconstructBuilding(firstBuilding);
         }
     }
     

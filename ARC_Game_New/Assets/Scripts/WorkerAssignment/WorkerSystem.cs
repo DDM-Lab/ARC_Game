@@ -246,6 +246,35 @@ public class WorkerSystem : MonoBehaviour
         return totalWorkers > 0 ? (float)idleWorkers / totalWorkers * 100 : 0;
     }
 
+    /// <summary>
+    /// Return workers from a building back to the available pool
+    /// </summary>
+    public void ReturnWorkersFromBuilding(int buildingId, int workforceAmount=4)
+    {
+        List<Worker> buildingWorkers = GetWorkersByBuildingId(buildingId);
+        
+        if (buildingWorkers.Count == 0)
+        {
+            Debug.LogWarning($"No workers found assigned to building {buildingId}");
+            return;
+        }
+        
+        int workforceReturned = 0;
+        int workersReleased = 0;
+        
+        foreach (Worker worker in buildingWorkers)
+        {
+            worker.ReleaseFromBuilding();
+            workforceReturned += worker.WorkforceValue;
+            workersReleased++;
+        }
+        
+        OnWorkerStatsChanged?.Invoke();
+        
+        Debug.Log($"Returned {workersReleased} workers (workforce: {workforceReturned}) from building {buildingId} to available pool");
+        GameLogPanel.Instance.LogWorkerAction($"Returned {workersReleased} workers (workforce: {workforceReturned}) from building {buildingId}");
+    }
+
     // Debug and testing methods
     public void PrintWorkerStatistics()
     {

@@ -15,6 +15,9 @@ public class AbandonedSite : MonoBehaviour
     public Color normalColor = Color.gray;
     public Color hoverColor = Color.white;
     public Color unavailableColor = Color.red;
+
+    [Header("Selection State")]
+    private bool isSelected = false;
     
     // Events
     public event Action<AbandonedSite> OnSiteSelected;
@@ -190,7 +193,7 @@ public class AbandonedSite : MonoBehaviour
         {
             siteRenderer.color = unavailableColor;
         }
-        else if (isMouseOver)
+        else if (isSelected || isMouseOver)
         {
             siteRenderer.color = hoverColor;
         }
@@ -200,19 +203,25 @@ public class AbandonedSite : MonoBehaviour
         }
     }
     
+    public void SetSelected(bool selected)
+    {
+        isSelected = selected;
+        UpdateVisualState();
+    }
+    
     // Called when this site is converted to a building
     public void ConvertToBuilding()
     {
         isAvailable = false;
-        
+
         // Disable this gameobject's components
         if (siteRenderer != null)
             siteRenderer.enabled = false;
-        
+
         Collider2D siteCollider = GetComponent<Collider2D>();
         if (siteCollider != null)
             siteCollider.enabled = false;
-        
+
         Debug.Log($"Site {siteId} converted to building");
     }
     
