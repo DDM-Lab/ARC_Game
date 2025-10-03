@@ -466,6 +466,15 @@ public class TaskDetailUI : MonoBehaviour
             TaskSystem.Instance?.IgnoreTask(currentTask);
             CloseTaskDetail();
 
+            // Refresh notification
+            TaskCenterNotification notification = FindObjectOfType<TaskCenterNotification>();
+            if (notification != null)
+                notification.RefreshNotification();
+
+            CategoryTaskManager categoryManager = FindObjectOfType<CategoryTaskManager>();
+            if (categoryManager != null)
+                categoryManager.RefreshTaskList();
+                
             if (showDebugInfo)
                 Debug.Log($"Task postponed: {currentTask.taskTitle}");
         }
@@ -541,6 +550,15 @@ public class TaskDetailUI : MonoBehaviour
         }
 
         CloseTaskDetail();
+
+        // Refresh notification after task completion
+        TaskCenterNotification notification = FindObjectOfType<TaskCenterNotification>();
+        if (notification != null)
+            notification.RefreshNotification();
+
+        CategoryTaskManager categoryManager = FindObjectOfType<CategoryTaskManager>();
+        if (categoryManager != null)
+            categoryManager.RefreshTaskList();
     }
 
     //  ---------CHOICE DELIVERY VALIDATION ---------
@@ -574,7 +592,7 @@ public class TaskDetailUI : MonoBehaviour
             return false;
         }
 
-        // NEW: Check if source and destination are the same
+        // Check if source and destination are the same
         if (source == destination)
         {
             errorMessage = $"Cannot deliver to the same facility. Need alternative {choice.destinationType}";

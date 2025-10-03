@@ -68,15 +68,39 @@ public class CategoryTaskManager : MonoBehaviour
         }
     }
     
+    void OnTaskChanged(GameTask task)
+    {
+        RefreshTaskList();
+    }
+
     void Start()
     {
         SetupButtonListeners();
-        
+
         if (taskCategoryPanel != null)
             taskCategoryPanel.SetActive(false);
-            
+
         // Update button states initially
         UpdateButtonStates();
+        
+        // Subscribe to task system events
+        if (TaskSystem.Instance != null)
+        {
+            TaskSystem.Instance.OnTaskCreated += OnTaskChanged;
+            TaskSystem.Instance.OnTaskCompleted += OnTaskChanged;
+            TaskSystem.Instance.OnTaskExpired += OnTaskChanged;
+        }
+    }
+
+    void OnDestroy()
+    {
+        // Unsubscribe from events
+        if (TaskSystem.Instance != null)
+        {
+            TaskSystem.Instance.OnTaskCreated -= OnTaskChanged;
+            TaskSystem.Instance.OnTaskCompleted -= OnTaskChanged;
+            TaskSystem.Instance.OnTaskExpired -= OnTaskChanged;
+        }
     }
     
     void Update()
@@ -109,7 +133,7 @@ public class CategoryTaskManager : MonoBehaviour
             closePanelButton.onClick.AddListener(CloseCategoryPanel);
     }
     
-    void UpdateButtonStates()
+    public void UpdateButtonStates()
     {
         if (TaskSystem.Instance == null) return;
         
@@ -147,6 +171,40 @@ public class CategoryTaskManager : MonoBehaviour
         if (countText != null && hasTasks)
         {
             countText.text = taskCount.ToString();
+        }
+    }
+
+    /// <summary>
+    /// Refresh the task list when task states change
+    /// </summary>
+    public void RefreshTaskList()
+    {
+        // Update all button states and bubbles
+        UpdateButtonStates();
+        
+        // If panel is currently open, refresh its contents
+        if (isPanelOpen)
+        {
+            // Clear and rebuild the task list for current category
+            ClearTaskList();
+            
+            List<GameTask> categoryTasks = GetTasksByCategory(currentCategory);
+            
+            foreach (GameTask task in categoryTasks)
+            {
+                CreateTaskListItem(task);
+            }
+            
+            // If no tasks remain in this category, close the panel
+            if (categoryTasks.Count == 0)
+            {
+                CloseCategoryPanel();
+                Debug.Log($"No tasks remaining in {currentCategory} category - closing panel");
+            }
+            else
+            {
+                Debug.Log($"Refreshed {currentCategory} task list - {categoryTasks.Count} tasks");
+            }
         }
     }
     
@@ -231,7 +289,7 @@ public class CategoryTaskManager : MonoBehaviour
     {
         if (TaskSystem.Instance == null) return new List<GameTask>();
         
-        var allTasks = TaskSystem.Instance.GetAllActiveTasks();
+        var allTasks = TaskSystem.Instance.GetAllActiveTasks().Where(t => t.status == TaskStatus.Active).ToList();
         var categoryTasks = new List<GameTask>();
         
         foreach (GameTask task in allTasks)
