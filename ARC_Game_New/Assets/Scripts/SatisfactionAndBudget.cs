@@ -121,6 +121,13 @@ public class SatisfactionAndBudget : MonoBehaviour
         float previousValue = currentSatisfaction;
         currentSatisfaction = Mathf.Clamp(currentSatisfaction + amount, minSatisfaction, maxSatisfaction);
 
+        // Record this change in history
+        if (MetricsHistoryManager.Instance != null)
+        {
+            string description = $"Round {(GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 1)}";
+            MetricsHistoryManager.Instance.RecordSatisfactionChange(amount, description);
+        }
+
         // Show feedback effects
         if (feedbackEffects != null && Mathf.Abs(amount) > 0.01f)
         {
@@ -229,6 +236,12 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         int previousValue = currentBudget;
         currentBudget = Mathf.Clamp(currentBudget + amount, minBudget, maxBudget);
+        // Record this change in history
+        if (MetricsHistoryManager.Instance != null)
+        {
+            string description = $"Round {(GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 1)}";
+            MetricsHistoryManager.Instance.RecordBudgetChange(amount, description);
+        }
 
         // Show feedback effects
         if (feedbackEffects != null && amount != 0)

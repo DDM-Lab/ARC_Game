@@ -8,7 +8,6 @@ public class TaskCenterUI : MonoBehaviour
 {
     [Header("Main Panel")]
     public GameObject taskCenterPanel;
-    public Button openTaskCenterButton;
     public Button closeButton;
 
     [Header("Filter Buttons")]
@@ -35,6 +34,7 @@ public class TaskCenterUI : MonoBehaviour
 
     private TaskType? currentFilter = null;
     private List<GameObject> currentTaskItems = new List<GameObject>();
+    private bool isUIOpen = false;
 
     void Start()
     {
@@ -51,14 +51,11 @@ public class TaskCenterUI : MonoBehaviour
         // Hide panel initially
         if (taskCenterPanel != null)
             taskCenterPanel.SetActive(false);
+            
     }
 
     void SetupUI()
     {
-        // Setup main buttons
-        if (openTaskCenterButton != null)
-            openTaskCenterButton.onClick.AddListener(OpenTaskCenter);
-
         if (closeButton != null)
             closeButton.onClick.AddListener(CloseTaskCenter);
 
@@ -79,6 +76,8 @@ public class TaskCenterUI : MonoBehaviour
             alertTasksButton.onClick.AddListener(() => SetFilter(TaskType.Alert));
     }
 
+    
+
     public void OpenTaskCenter()
     {
         if (taskCenterPanel != null)
@@ -86,6 +85,7 @@ public class TaskCenterUI : MonoBehaviour
             taskCenterPanel.SetActive(true);
             RefreshTaskList();
             UpdateFilterButtons();
+            isUIOpen = true;
 
             if (showDebugInfo)
                 Debug.Log("Task Center opened");
@@ -97,6 +97,7 @@ public class TaskCenterUI : MonoBehaviour
         if (taskCenterPanel != null)
         {
             taskCenterPanel.SetActive(false);
+            isUIOpen = false;
 
             if (showDebugInfo)
                 Debug.Log("Task Center closed");
@@ -290,18 +291,15 @@ public class TaskCenterUI : MonoBehaviour
     // Public method to toggle task center
     public void ToggleTaskCenter()
     {
-        if (taskCenterPanel != null)
-        {
-            if (taskCenterPanel.activeInHierarchy)
-                CloseTaskCenter();
-            else
-                OpenTaskCenter();
-        }
+        if (isUIOpen)
+            CloseTaskCenter();
+        else
+            OpenTaskCenter();
     }
 
     public bool IsUIOpen()
     {
-        return taskCenterPanel != null && taskCenterPanel.activeInHierarchy;
+        return isUIOpen;
     }
 }
 

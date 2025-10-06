@@ -236,11 +236,11 @@ public class PrebuiltBuilding : MonoBehaviour
         }
         else if (population >= capacity)
         {
-            buildingRenderer.color = Color.yellow; // Full community
+            buildingRenderer.color = Color.white; // Full community
         }
         else
         {
-            buildingRenderer.color = Color.green; // Active community
+            buildingRenderer.color = Color.white; // Active community
         }
     }
 
@@ -259,7 +259,7 @@ public class PrebuiltBuilding : MonoBehaviour
         }
         else
         {
-            buildingRenderer.color = Color.cyan; // Occupied motel
+            buildingRenderer.color = Color.white; // Occupied motel
         }
     }
 
@@ -335,6 +335,8 @@ public class PrebuiltBuilding : MonoBehaviour
         return roadConnection.GetRoadConnectionPoint();
     }
 
+    /*
+    // Hover effects are handled directly by FacilityInfoManager.cs
     void OnMouseEnter()
     {
         if (FacilityInfoManager.Instance != null)
@@ -345,7 +347,7 @@ public class PrebuiltBuilding : MonoBehaviour
     {
         if (FacilityInfoManager.Instance != null)
             FacilityInfoManager.Instance.OnFacilityHover(this, false);
-    }
+    }*/
 
     void OnMouseDown()
     {

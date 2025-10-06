@@ -342,6 +342,8 @@ public class Building : MonoBehaviour
                 break;
         }
     }
+    /*
+    // Hover effects are handled directly by FacilityInfoManager.cs
     void OnMouseEnter()
     {
         if (FacilityInfoManager.Instance != null)
@@ -352,7 +354,7 @@ public class Building : MonoBehaviour
     {
         if (FacilityInfoManager.Instance != null)
             FacilityInfoManager.Instance.OnFacilityHover(this, false);
-    }
+    }*/
 
     void OnMouseDown()
     {

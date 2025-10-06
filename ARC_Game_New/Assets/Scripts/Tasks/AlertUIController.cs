@@ -92,9 +92,13 @@ public class AlertUIController : MonoBehaviour
         alertBackground.SetActive(false);
 
         // Setup button events
-        nextButton.onClick.AddListener(OnNextButtonClicked);
+        if (nextButton != null)
+            nextButton.onClick.AddListener(OnNextButtonClicked);
+
+        if (skipTypingButton != null)
+            skipTypingButton.onClick.AddListener(OnSkipTypingButtonClicked);
         
-        // NEW: Setup clickable area for entire panel skip functionality
+        // Setup clickable area for entire panel skip functionality
         SetupClickableArea();
         
         // Setup audio source
@@ -447,6 +451,7 @@ public class AlertUIController : MonoBehaviour
         
         isTyping = true;
         nextButton.interactable = false;
+        skipTypingButton.interactable = true;
         messageText.text = "";
         
         typingCoroutine = StartCoroutine(TypeMessage(message));
@@ -500,6 +505,7 @@ public class AlertUIController : MonoBehaviour
         // Typing completed
         isTyping = false;
         nextButton.interactable = true;
+        skipTypingButton.interactable = false;
     }
     
     /// <summary>
@@ -552,6 +558,17 @@ public class AlertUIController : MonoBehaviour
             SkipTyping();
         }
     }
+
+    /// <summary>
+    /// Handle skip typing button click (if separate button is used)
+    /// </summary>
+    void OnSkipTypingButtonClicked()
+    {
+        if (isTyping)
+        {
+            SkipTyping();
+        }
+    }
     
     /// <summary>
     /// Skip current typing effect - IMPROVED: Smooth without glitching
@@ -583,6 +600,7 @@ public class AlertUIController : MonoBehaviour
         }
         
         isTyping = false;
+        skipTypingButton.interactable = false;
         nextButton.interactable = true;
     }
     

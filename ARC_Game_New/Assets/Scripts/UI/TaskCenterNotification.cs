@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Linq;
 
 public class TaskCenterNotification : MonoBehaviour
 {
@@ -79,7 +80,7 @@ public class TaskCenterNotification : MonoBehaviour
     {
         if (taskSystem == null) return;
         
-        var activeTasks = taskSystem.GetAllActiveNonAlertTasks();
+        var activeTasks = taskSystem.GetAllActiveNonAlertTasks().Where(t => t.status == TaskStatus.Active).ToList();
         int activeTaskCount = activeTasks.Count;
         
         // Update task count text
