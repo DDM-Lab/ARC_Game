@@ -65,6 +65,11 @@ public class GlobalWorkerManagementUI : MonoBehaviour
     [Header("Individual Building Manage UI")]
     public IndividualBuildingManageUI individualManageUI;
 
+    [Header("Colors")]
+    public Color positiveColor = new Color(0.2f, 0.6f, 0.2f); // dark green
+    public Color negativeColor = new Color(0.6f, 0.2f, 0.2f); // dark red
+    public Color neutralColor = new Color(0.6f, 0.4f, 0.2f); // brown
+
     // Private variables
     private BuildingType currentSelectedTab = BuildingType.Shelter;
     private bool isUIOpen = false;
@@ -233,12 +238,12 @@ public class GlobalWorkerManagementUI : MonoBehaviour
     void ApplyWorkerStatsColors(WorkerStatistics stats)
     {
         // Color free workers green if available
-        Color trainedFreeColor = stats.trainedFree > 0 ? Color.green : Color.gray;
-        Color untrainedFreeColor = stats.untrainedFree > 0 ? Color.green : Color.gray;
+        Color trainedFreeColor = stats.trainedFree > 0 ? positiveColor : neutralColor;
+        Color untrainedFreeColor = stats.untrainedFree > 0 ? positiveColor : neutralColor;
 
         // Color working workers blue
-        Color workingColor = Color.cyan;
-        Color notWorkingColor = Color.gray;
+        Color workingColor = neutralColor;
+        Color notWorkingColor = neutralColor;
 
         UpdateTextWithColor(trainedFreeText, stats.trainedFree.ToString(), trainedFreeColor);
         UpdateTextWithColor(untrainedFreeText, stats.untrainedFree.ToString(), untrainedFreeColor);
@@ -254,7 +259,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
                            stats.untrainedTraining > 0 ? Color.magenta : Color.gray);
 
         // Color available workforce based on total
-        Color availableColor = stats.GetAvailableWorkforce() > 0 ? Color.green : Color.red;
+        Color availableColor = stats.GetAvailableWorkforce() > 0 ? positiveColor : negativeColor;
         UpdateTextWithColor(availableWorkforceText, stats.GetAvailableWorkforce().ToString(), availableColor);
     }
 
