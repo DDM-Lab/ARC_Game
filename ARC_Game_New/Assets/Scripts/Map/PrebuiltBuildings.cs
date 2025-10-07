@@ -22,6 +22,10 @@ public class PrebuiltBuilding : MonoBehaviour
     public RoadConnection roadConnection;
     [Header("Info Display")]
     public InfoDisplay infoDisplay;
+    [Header("Colors")]
+    public Color normalColor = Color.white;
+    public Color fullColor = Color.white;
+    public Color emptyColor = new Color(0.8f, 0.8f, 0.8f); // light gray
 
     // Building functionality
     private bool isInitialized = false;
@@ -107,9 +111,8 @@ public class PrebuiltBuilding : MonoBehaviour
         int currentPop = GetCurrentPopulation();
         int maxPop = GetPopulationCapacity();
 
-        if (currentPop == 0) return Color.gray;
-        if (currentPop >= maxPop) return Color.red;
-        return Color.green;
+        if (currentPop == 0) return emptyColor;
+        return normalColor;
     }
 
     void InitializePrebuiltBuilding()
@@ -232,15 +235,15 @@ public class PrebuiltBuilding : MonoBehaviour
 
         if (population == 0)
         {
-            buildingRenderer.color = Color.gray; // Empty community
+            buildingRenderer.color = emptyColor; // Empty community
         }
         else if (population >= capacity)
         {
-            buildingRenderer.color = Color.white; // Full community
+            buildingRenderer.color = fullColor; // Full community
         }
         else
         {
-            buildingRenderer.color = Color.white; // Active community
+            buildingRenderer.color = normalColor; // Active community
         }
     }
 
@@ -251,15 +254,15 @@ public class PrebuiltBuilding : MonoBehaviour
 
         if (population == 0)
         {
-            buildingRenderer.color = Color.white; // Empty motel
+            buildingRenderer.color = emptyColor; // Empty motel
         }
         else if (population >= capacity)
         {
-            buildingRenderer.color = Color.red; // Full motel
+            buildingRenderer.color = fullColor; // Full motel
         }
         else
         {
-            buildingRenderer.color = Color.white; // Occupied motel
+            buildingRenderer.color = normalColor; // Occupied motel
         }
     }
 

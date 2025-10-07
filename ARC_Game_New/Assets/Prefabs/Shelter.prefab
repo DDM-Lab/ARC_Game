@@ -196,9 +196,9 @@ MonoBehaviour:
   constructionProgressBar: {fileID: 6964710940977767148}
   workerButton: {fileID: 0}
   constructionColor: {r: 0.8037735, g: 0.8037735, b: 0.8037735, a: 0.53333336}
-  needWorkerColor: {r: 1, g: 0.9166349, b: 0.4509434, a: 1}
+  needWorkerColor: {r: 1, g: 0.9674528, b: 0.7830188, a: 1}
   inUseColor: {r: 1, g: 1, b: 1, a: 1}
-  disabledColor: {r: 0.335849, g: 0.335849, b: 0.335849, a: 0.60784316}
+  disabledColor: {r: 0.4943396, g: 0.4943396, b: 0.4943396, a: 0.80784315}
   workerSystem: {fileID: 0}
   mapWorkforceIndicator: {fileID: 1497958618288529501}
   enableManualTasks: 1
@@ -219,9 +219,9 @@ MonoBehaviour:
     maxCapacity: 10
   - resourceType: 1
     maxCapacity: 10
-  dailyStartingResources: []
-  enableDailyFoodWaste: 1
-  dailyStartingFoodPacks: 0
+  startingResources: []
+  startingFoodPacks: 0
+  enableFoodWaste: 1
   roundProduction: []
   enablePopulationBasedConsumption: 1
   foodPerPersonPerNRounds: 1

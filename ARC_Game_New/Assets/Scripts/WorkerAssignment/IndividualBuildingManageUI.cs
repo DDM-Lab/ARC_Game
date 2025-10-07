@@ -188,7 +188,7 @@ public class IndividualBuildingManageUI : MonoBehaviour
         int requiredWorkforce = currentBuilding.GetRequiredWorkforce();
 
         // Current workforce with color coding
-        Color workforceColor = currentWorkforce >= requiredWorkforce ? Color.green : Color.red;
+        Color workforceColor = currentWorkforce >= requiredWorkforce ? successColor : warningColor;
         UpdateTextWithColor(currentWorkforceText, $"Current: {currentWorkforce}/{requiredWorkforce}", workforceColor);
 
         // Individual worker counts
