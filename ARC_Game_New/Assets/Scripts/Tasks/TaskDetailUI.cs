@@ -60,6 +60,7 @@ public class TaskDetailUI : MonoBehaviour
     private Dictionary<int, AgentNumericalInput> numericalInputs = new Dictionary<int, AgentNumericalInput>();
     private bool isTyping = false;
     private AgentMessageUI currentTypingMessage;
+    private Vector2 lastScrollPosition;
 
     void Start()
     {
@@ -335,6 +336,11 @@ public class TaskDetailUI : MonoBehaviour
     {
         if (currentTask.numericalInputs.Count > 0)
         {
+            // Disable auto-layout to prevent scroll jumping
+            ContentSizeFitter fitter = conversationContent.GetComponent<ContentSizeFitter>();
+            if (fitter != null)
+                fitter.enabled = false;
+            
             foreach (AgentNumericalInput input in currentTask.numericalInputs)
             {
                 GameObject inputItem = Instantiate(numericalInputPrefab, conversationContent);
@@ -348,8 +354,6 @@ public class TaskDetailUI : MonoBehaviour
 
                 currentConversationItems.Add(inputItem);
             }
-
-            ScrollToBottom();
         }
     }
 
@@ -1906,6 +1910,22 @@ public class TaskDetailUI : MonoBehaviour
                 }
             }
         }
+    }
+
+    public void PreventScrollReset()
+    {
+        if (conversationScrollView != null)
+        {
+            lastScrollPosition = conversationScrollView.normalizedPosition;
+            StartCoroutine(RestoreScrollPosition());
+        }
+    }
+
+    IEnumerator RestoreScrollPosition()
+    {
+        yield return new WaitForEndOfFrame();
+        if (conversationScrollView != null)
+            conversationScrollView.normalizedPosition = lastScrollPosition;
     }
 
     public bool IsUIOpen()

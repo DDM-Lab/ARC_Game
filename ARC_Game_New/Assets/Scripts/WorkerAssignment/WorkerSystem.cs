@@ -285,6 +285,23 @@ public class WorkerSystem : MonoBehaviour
         Debug.Log($"Untrained Workers - Working: {stats.untrainedWorking}, Free: {stats.untrainedFree}, Training: {stats.untrainedTraining}");
         Debug.Log($"Total Workers: {allWorkers.Count}, Available Workforce: {GetTotalAvailableWorkforce()}, Total Workforce: {GetTotalWorkforce()}");
     }
+
+    /// <summary>
+    /// Remove a worker from the system (for training conversion)
+    /// </summary>
+    public void RemoveWorker(Worker worker)
+    {
+        if (allWorkers.Contains(worker))
+        {
+            // Unsubscribe from events
+            worker.OnStatusChanged -= OnWorkerStatusChanged;
+            
+            // Remove from list
+            allWorkers.Remove(worker);
+            
+            OnWorkerStatsChanged?.Invoke();
+        }
+    }
     
     // Test methods for demonstration
     [ContextMenu("Add Trained Worker")]

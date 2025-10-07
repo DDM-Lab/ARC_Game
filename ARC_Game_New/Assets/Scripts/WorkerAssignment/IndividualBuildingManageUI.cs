@@ -182,7 +182,7 @@ public class IndividualBuildingManageUI : MonoBehaviour
 
     void UpdateCurrentWorkforceDisplay()
     {
-        if (currentBuilding == null) return;
+        if (currentBuilding == null || workerSystem == null) return;
 
         int currentWorkforce = currentBuilding.GetAssignedWorkforce();
         int requiredWorkforce = currentBuilding.GetRequiredWorkforce();
@@ -191,17 +191,13 @@ public class IndividualBuildingManageUI : MonoBehaviour
         Color workforceColor = currentWorkforce >= requiredWorkforce ? successColor : warningColor;
         UpdateTextWithColor(currentWorkforceText, $"Current: {currentWorkforce}/{requiredWorkforce}", workforceColor);
 
-        // Individual worker counts
-        /*List<Worker> currentWorkers = workerSystem.GetWorkersByBuildingId(currentBuilding.GetOriginalSiteId());
-        int trainedCount = currentWorkers.Count(w => w.Type == WorkerType.Trained);
-        int untrainedCount = currentWorkers.Count(w => w.Type == WorkerType.Untrained);*/
-
+        // FIXED: Show AVAILABLE workers (not assigned to this building)
         WorkerStatistics stats = workerSystem.GetWorkerStatistics();
-        int trainedCount = stats.trainedFree;
-        int untrainedCount = stats.untrainedFree;
+        int availableTrained = stats.trainedFree;
+        int availableUntrained = stats.untrainedFree;
 
-        UpdateTextSafe(trainedWorkersText, $"{trainedCount}");
-        UpdateTextSafe(untrainedWorkersText, $"{untrainedCount}");
+        UpdateTextSafe(trainedWorkersText, $"{availableTrained}");
+        UpdateTextSafe(untrainedWorkersText, $"{availableUntrained}");
     }
 
     void UpdateWorkerControls()

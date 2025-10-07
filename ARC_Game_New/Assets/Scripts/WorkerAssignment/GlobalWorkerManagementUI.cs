@@ -337,7 +337,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         HideUI();
     }
 
-    void OnWorkerStatsChanged()
+    public void OnWorkerStatsChanged()
     {
         // Real-time update when worker stats change
         if (isUIOpen)
