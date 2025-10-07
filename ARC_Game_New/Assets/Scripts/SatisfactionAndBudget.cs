@@ -164,7 +164,7 @@ public class SatisfactionAndBudget : MonoBehaviour
     /// </summary>
     private string GetDefaultSatisfactionDescription(float amount)
     {
-        int currentRound = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 1;
+        int currentRound = (GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 1) + 1;
         
         if (amount > 0)
             return $"Round {currentRound} - Positive action";
@@ -292,7 +292,7 @@ public class SatisfactionAndBudget : MonoBehaviour
     /// </summary>
     private string GetDefaultBudgetDescription(int amount)
     {
-        int currentRound = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 1;
+        int currentRound = (GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 1 ) + 1;
         
         if (amount > 0)
             return $"Round {currentRound} - Income";

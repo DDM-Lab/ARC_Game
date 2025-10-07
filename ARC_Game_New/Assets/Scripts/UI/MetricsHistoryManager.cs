@@ -34,17 +34,18 @@ public class DailyMetricsHistory
 
 public class MetricsHistoryManager : MonoBehaviour
 {
-    [Header("Panel References")]
-    public RectTransform satisfactionPanel;
-    public RectTransform budgetPanel;
-    public Button satisfactionExpandButton;
-    public Button budgetExpandButton;
+    [Header("Merged Panel")]
+    public RectTransform metricsPanel;
+    public TextMeshProUGUI panelTitleText;
+    public Button exitButton;
     
-    [Header("Scroll Views")]
-    public ScrollRect satisfactionScrollView;
-    public Transform satisfactionContent;
-    public ScrollRect budgetScrollView;
-    public Transform budgetContent;
+    [Header("Tab Buttons")]
+    public Button satisfactionTabButton;
+    public Button budgetTabButton;
+    
+    [Header("Scroll View (Shared)")]
+    public ScrollRect metricsScrollView;
+    public Transform metricsContent;
     
     [Header("Prefabs")]
     public GameObject metricEntryPrefab;
@@ -57,6 +58,8 @@ public class MetricsHistoryManager : MonoBehaviour
     [Header("Colors")]
     public Color positiveColor = Color.green;
     public Color negativeColor = Color.red;
+    public Color activeTabColor = Color.green;
+    public Color inactiveTabColor = Color.white;
     
     [Header("Debug")]
     public bool showDebugInfo = true;
@@ -66,17 +69,16 @@ public class MetricsHistoryManager : MonoBehaviour
     private DailyMetricsHistory currentDayHistory;
     
     // UI state
-    private bool isSatisfactionExpanded = false;
-    private bool isBudgetExpanded = false;
+    private bool isPanelExpanded = false;
     private bool isAnimating = false;
+    private bool isShowingSatisfaction = true; // Track which tab is active
     
     // Current game state
     private int currentRound = 1;
     private int currentDay = 1;
     
     // UI item tracking
-    private List<GameObject> currentSatisfactionItems = new List<GameObject>();
-    private List<GameObject> currentBudgetItems = new List<GameObject>();
+    private List<GameObject> currentMetricItems = new List<GameObject>();
     
     public static MetricsHistoryManager Instance { get; private set; }
     
@@ -100,19 +102,22 @@ public class MetricsHistoryManager : MonoBehaviour
         SubscribeToEvents();
         
         // Set initial collapsed state
-        if (satisfactionPanel != null)
-            satisfactionPanel.sizeDelta = new Vector2(satisfactionPanel.sizeDelta.x, collapsedHeight);
-        if (budgetPanel != null)
-            budgetPanel.sizeDelta = new Vector2(budgetPanel.sizeDelta.x, collapsedHeight);
+        if (metricsPanel != null)
+            metricsPanel.sizeDelta = new Vector2(metricsPanel.sizeDelta.x, collapsedHeight);
     }
     
     void SetupUI()
     {
-        if (satisfactionExpandButton != null)
-            satisfactionExpandButton.onClick.AddListener(ToggleSatisfactionPanel);
+        if (satisfactionTabButton != null)
+            satisfactionTabButton.onClick.AddListener(ShowSatisfactionTab);
             
-        if (budgetExpandButton != null)
-            budgetExpandButton.onClick.AddListener(ToggleBudgetPanel);
+        if (budgetTabButton != null)
+            budgetTabButton.onClick.AddListener(ShowBudgetTab);
+            
+        if (exitButton != null)
+            exitButton.onClick.AddListener(ClosePanel);
+            
+        UpdateTabColors();
     }
     
     void InitializeHistory()
@@ -139,94 +144,98 @@ public class MetricsHistoryManager : MonoBehaviour
         }
     }
     
-    void Update()
+    public void ShowSatisfactionTab()
     {
-        HandleClickOutside();
-    }
-    
-    void HandleClickOutside()
-    {
-        if (!isSatisfactionExpanded && !isBudgetExpanded) return;
+        isShowingSatisfaction = true;
         
-        if (Input.GetMouseButtonDown(0))
+        // Update title
+        if (panelTitleText != null)
+            panelTitleText.text = "Satisfaction History";
+        
+        // Update tab colors
+        UpdateTabColors();
+        
+        // Open panel if not already open
+        if (!isPanelExpanded)
         {
-            Vector2 mousePos = Input.mousePosition;
-            bool clickedSatisfactionButton = false;
-            bool clickedBudgetButton = false;
-            
-            // Check if clicked on expand buttons
-            if (satisfactionExpandButton != null)
-            {
-                RectTransform buttonRect = satisfactionExpandButton.GetComponent<RectTransform>();
-                clickedSatisfactionButton = RectTransformUtility.RectangleContainsScreenPoint(
-                    buttonRect, mousePos, null);
-            }
-            
-            if (budgetExpandButton != null)
-            {
-                RectTransform buttonRect = budgetExpandButton.GetComponent<RectTransform>();
-                clickedBudgetButton = RectTransformUtility.RectangleContainsScreenPoint(
-                    buttonRect, mousePos, null);
-            }
-            
-            // Check if clicked inside panels
-            bool clickedInsideSatisfaction = false;
-            bool clickedInsideBudget = false;
-            
-            if (isSatisfactionExpanded && satisfactionPanel != null)
-            {
-                clickedInsideSatisfaction = RectTransformUtility.RectangleContainsScreenPoint(
-                    satisfactionPanel, mousePos, null);
-            }
-            
-            if (isBudgetExpanded && budgetPanel != null)
-            {
-                clickedInsideBudget = RectTransformUtility.RectangleContainsScreenPoint(
-                    budgetPanel, mousePos, null);
-            }
-            
-            // Close panels if clicked outside
-            if (isSatisfactionExpanded && !clickedInsideSatisfaction && !clickedSatisfactionButton)
-            {
-                ToggleSatisfactionPanel();
-            }
-            
-            if (isBudgetExpanded && !clickedInsideBudget && !clickedBudgetButton)
-            {
-                ToggleBudgetPanel();
-            }
+            OpenPanel();
+        }
+        else
+        {
+            // Just refresh content
+            RefreshCurrentTab();
         }
     }
     
-    void ToggleSatisfactionPanel()
+    public void ShowBudgetTab()
     {
-        if (isAnimating) return;
-        isSatisfactionExpanded = !isSatisfactionExpanded;
+        isShowingSatisfaction = false;
         
-        if (isSatisfactionExpanded)
-            RefreshSatisfactionHistory();
-            
-        StartCoroutine(AnimatePanel(satisfactionPanel, isSatisfactionExpanded));
+        // Update title
+        if (panelTitleText != null)
+            panelTitleText.text = "Budget History";
+        
+        // Update tab colors
+        UpdateTabColors();
+        
+        // Open panel if not already open
+        if (!isPanelExpanded)
+        {
+            OpenPanel();
+        }
+        else
+        {
+            // Just refresh content
+            RefreshCurrentTab();
+        }
     }
     
-    void ToggleBudgetPanel()
+    void UpdateTabColors()
     {
-        if (isAnimating) return;
-        isBudgetExpanded = !isBudgetExpanded;
+        if (satisfactionTabButton != null)
+        {
+            Image buttonImage = satisfactionTabButton.GetComponent<Image>();
+            if (buttonImage != null)
+                buttonImage.color = isShowingSatisfaction ? activeTabColor : inactiveTabColor;
+        }
         
-        if (isBudgetExpanded)
-            RefreshBudgetHistory();
-            
-        StartCoroutine(AnimatePanel(budgetPanel, isBudgetExpanded));
+        if (budgetTabButton != null)
+        {
+            Image buttonImage = budgetTabButton.GetComponent<Image>();
+            if (buttonImage != null)
+                buttonImage.color = !isShowingSatisfaction ? activeTabColor : inactiveTabColor;
+        }
     }
     
-    IEnumerator AnimatePanel(RectTransform panel, bool expand)
+    void OpenPanel()
     {
-        if (panel == null) yield break;
+        if (isAnimating) return;
+        isPanelExpanded = true;
+        RefreshCurrentTab();
+        StartCoroutine(AnimatePanel(true));
+    }
+    
+    void ClosePanel()
+    {
+        isPanelExpanded = false;
+        
+        // Immediate close without animation
+        if (metricsPanel != null)
+            metricsPanel.sizeDelta = new Vector2(metricsPanel.sizeDelta.x, collapsedHeight);
+        
+        ClearMetricItems();
+        
+        if (showDebugInfo)
+            Debug.Log("Metrics panel closed immediately");
+    }
+    
+    IEnumerator AnimatePanel(bool expand)
+    {
+        if (metricsPanel == null) yield break;
         
         isAnimating = true;
         
-        float startHeight = panel.sizeDelta.y;
+        float startHeight = metricsPanel.sizeDelta.y;
         float targetHeight = expand ? expandedHeight : collapsedHeight;
         float elapsed = 0f;
         
@@ -237,24 +246,31 @@ public class MetricsHistoryManager : MonoBehaviour
             float easedT = Mathf.SmoothStep(0f, 1f, t);
             
             float currentHeight = Mathf.Lerp(startHeight, targetHeight, easedT);
-            panel.sizeDelta = new Vector2(panel.sizeDelta.x, currentHeight);
+            metricsPanel.sizeDelta = new Vector2(metricsPanel.sizeDelta.x, currentHeight);
             
             yield return null;
         }
         
-        panel.sizeDelta = new Vector2(panel.sizeDelta.x, targetHeight);
+        metricsPanel.sizeDelta = new Vector2(metricsPanel.sizeDelta.x, targetHeight);
         isAnimating = false;
+    }
+    
+    void RefreshCurrentTab()
+    {
+        if (isShowingSatisfaction)
+            RefreshSatisfactionHistory();
+        else
+            RefreshBudgetHistory();
     }
     
     void OnSatisfactionChanged(float newValue)
     {
-        // This gets called AFTER the change, so we need to track the delta
-        // We'll handle this through the existing AddSatisfaction/RemoveSatisfaction methods
+        // Handled through RecordSatisfactionChange
     }
     
     void OnBudgetChanged(int newValue)
     {
-        // Same as satisfaction
+        // Handled through RecordBudgetChange
     }
     
     public void RecordSatisfactionChange(float amount, string description)
@@ -281,7 +297,7 @@ public class MetricsHistoryManager : MonoBehaviour
     
     void RefreshSatisfactionHistory()
     {
-        ClearSatisfactionItems();
+        ClearMetricItems();
         
         if (currentDayHistory == null) return;
         
@@ -289,13 +305,13 @@ public class MetricsHistoryManager : MonoBehaviour
         for (int i = currentDayHistory.satisfactionChanges.Count - 1; i >= 0; i--)
         {
             MetricChangeEntry entry = currentDayHistory.satisfactionChanges[i];
-            CreateMetricEntryItem(entry, satisfactionContent, currentSatisfactionItems);
+            CreateMetricEntryItem(entry, metricsContent, currentMetricItems);
         }
     }
     
     void RefreshBudgetHistory()
     {
-        ClearBudgetItems();
+        ClearMetricItems();
         
         if (currentDayHistory == null) return;
         
@@ -303,7 +319,7 @@ public class MetricsHistoryManager : MonoBehaviour
         for (int i = currentDayHistory.budgetChanges.Count - 1; i >= 0; i--)
         {
             MetricChangeEntry entry = currentDayHistory.budgetChanges[i];
-            CreateMetricEntryItem(entry, budgetContent, currentBudgetItems);
+            CreateMetricEntryItem(entry, metricsContent, currentMetricItems);
         }
     }
     
@@ -318,10 +334,9 @@ public class MetricsHistoryManager : MonoBehaviour
 
         if (texts.Length >= 3)
         {
-            // First text: round and day info
-            texts[0].text = $"{entry.round}-{entry.day}";
+            // First text: day and round info
+            texts[0].text = $"{entry.day}-{entry.round+1}";
             texts[0].color = Color.white;
-
 
             // Second text: description
             texts[1].text = entry.description;
@@ -336,18 +351,11 @@ public class MetricsHistoryManager : MonoBehaviour
         itemList.Add(item);
     }
     
-    void ClearSatisfactionItems()
+    void ClearMetricItems()
     {
-        foreach (GameObject item in currentSatisfactionItems)
+        foreach (GameObject item in currentMetricItems)
             if (item != null) Destroy(item);
-        currentSatisfactionItems.Clear();
-    }
-    
-    void ClearBudgetItems()
-    {
-        foreach (GameObject item in currentBudgetItems)
-            if (item != null) Destroy(item);
-        currentBudgetItems.Clear();
+        currentMetricItems.Clear();
     }
     
     void OnRoundChanged(int newRound)
