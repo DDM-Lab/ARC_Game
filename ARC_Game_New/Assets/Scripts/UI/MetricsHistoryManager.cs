@@ -140,7 +140,6 @@ public class MetricsHistoryManager : MonoBehaviour
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
-            GlobalClock.Instance.OnDayChanged += OnDayChanged;
         }
     }
     
@@ -363,18 +362,6 @@ public class MetricsHistoryManager : MonoBehaviour
         currentRound = newRound;
     }
     
-    void OnDayChanged(int newDay)
-    {
-        currentDay = newDay;
-        
-        // Create new day history
-        currentDayHistory = new DailyMetricsHistory { day = currentDay };
-        allDaysHistory.Add(currentDayHistory);
-        
-        if (showDebugInfo)
-            Debug.Log($"Started tracking Day {currentDay} metrics history");
-    }
-    
     // Public API for accessing history data
     public List<DailyMetricsHistory> GetAllHistory()
     {
@@ -402,7 +389,6 @@ public class MetricsHistoryManager : MonoBehaviour
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
-            GlobalClock.Instance.OnDayChanged -= OnDayChanged;
         }
     }
 }
