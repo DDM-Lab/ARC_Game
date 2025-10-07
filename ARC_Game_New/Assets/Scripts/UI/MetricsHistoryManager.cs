@@ -313,21 +313,24 @@ public class MetricsHistoryManager : MonoBehaviour
         
         GameObject item = Instantiate(metricEntryPrefab, parent);
         
-        // Get the two text components
+        // Get the three text components
         TextMeshProUGUI[] texts = item.GetComponentsInChildren<TextMeshProUGUI>();
-        
-        if (texts.Length >= 2)
+
+        if (texts.Length >= 3)
         {
-            // First text: amount with color
-            TextMeshProUGUI amountText = texts[0];
-            string sign = entry.amount >= 0 ? "+" : "";
-            amountText.text = $"{sign}{entry.amount:F0}";
-            amountText.color = entry.amount >= 0 ? positiveColor : negativeColor;
-            
+            // First text: round and day info
+            texts[0].text = $"{entry.round}-{entry.day}";
+            texts[0].color = Color.white;
+
+
             // Second text: description
-            TextMeshProUGUI descText = texts[1];
-            descText.text = entry.description;
-            descText.color = Color.white;
+            texts[1].text = entry.description;
+            texts[1].color = Color.white;
+
+            // Third text: amount with sign and color
+            string sign = entry.amount >= 0 ? "+" : "";
+            texts[2].text = $"{sign}{entry.amount:F0}";
+            texts[2].color = entry.amount >= 0 ? positiveColor : negativeColor;
         }
         
         itemList.Add(item);

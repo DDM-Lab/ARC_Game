@@ -114,17 +114,22 @@ public class SatisfactionAndBudget : MonoBehaviour
     // ===== SATISFACTION METHODS =====
 
     /// <summary>
-    /// Add specific amount to satisfaction
+    /// Add satisfaction with custom description
     /// </summary>
-    public void AddSatisfaction(float amount)
+    public void AddSatisfaction(float amount, string description = "")
     {
         float previousValue = currentSatisfaction;
         currentSatisfaction = Mathf.Clamp(currentSatisfaction + amount, minSatisfaction, maxSatisfaction);
 
-        // Record this change in history
+        // Use default description if none provided
+        if (string.IsNullOrEmpty(description))
+        {
+            description = GetDefaultSatisfactionDescription(amount);
+        }
+
+        // Record in history
         if (MetricsHistoryManager.Instance != null)
         {
-            string description = $"Round {(GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 1)}";
             MetricsHistoryManager.Instance.RecordSatisfactionChange(amount, description);
         }
 
@@ -134,14 +139,13 @@ public class SatisfactionAndBudget : MonoBehaviour
             feedbackEffects.ShowSatisfactionChange(previousValue, currentSatisfaction, maxSatisfaction);
         }
 
-        // Update UI (but don't update slider directly if using feedback effects)
+        // Update UI
         if (feedbackEffects == null)
         {
             UpdateUI();
         }
         else
         {
-            // Only update budget text, slider will be animated by feedback effects
             if (budgetText != null)
             {
                 budgetText.text = budgetPrefix + currentBudget.ToString("N0");
@@ -151,16 +155,31 @@ public class SatisfactionAndBudget : MonoBehaviour
         OnSatisfactionChanged?.Invoke(currentSatisfaction);
 
         if (showDebugInfo)
-            Debug.Log($"Satisfaction: {previousValue:F1} → {currentSatisfaction:F1} (+{amount:F1})");
-        GameLogPanel.Instance.LogMetricsChange($"Satisfaction: {previousValue:F1} → {currentSatisfaction:F1} (+{amount:F1})");
+            Debug.Log($"Satisfaction: {previousValue:F1} → {currentSatisfaction:F1} (+{amount:F1}) - {description}");
+        GameLogPanel.Instance.LogMetricsChange($"Satisfaction: {previousValue:F1} → {currentSatisfaction:F1} (+{amount:F1}) - {description}");
+    }
+    
+    /// <summary>
+    /// Get default description for satisfaction changes - EASY TO CUSTOMIZE
+    /// </summary>
+    private string GetDefaultSatisfactionDescription(float amount)
+    {
+        int currentRound = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 1;
+        
+        if (amount > 0)
+            return $"Round {currentRound} - Positive action";
+        else if (amount < 0)
+            return $"Round {currentRound} - Negative event";
+        else
+            return $"Round {currentRound}";
     }
     
     /// <summary>
     /// Remove specific amount from satisfaction
     /// </summary>
-    public void RemoveSatisfaction(float amount)
+    public void RemoveSatisfaction(float amount, string description = "")
     {
-        AddSatisfaction(-amount);
+        AddSatisfaction(-amount, description);
     }
     
     /// <summary>
@@ -230,16 +249,22 @@ public class SatisfactionAndBudget : MonoBehaviour
     // ===== BUDGET METHODS =====
 
     /// <summary>
-    /// Add specific amount to budget
+    /// Add budget with custom description
     /// </summary>
-    public void AddBudget(int amount)
+    public void AddBudget(int amount, string description = "")
     {
         int previousValue = currentBudget;
         currentBudget = Mathf.Clamp(currentBudget + amount, minBudget, maxBudget);
-        // Record this change in history
+
+        // Use default description if none provided
+        if (string.IsNullOrEmpty(description))
+        {
+            description = GetDefaultBudgetDescription(amount);
+        }
+
+        // Record in history
         if (MetricsHistoryManager.Instance != null)
         {
-            string description = $"Round {(GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 1)}";
             MetricsHistoryManager.Instance.RecordBudgetChange(amount, description);
         }
 
@@ -258,16 +283,31 @@ public class SatisfactionAndBudget : MonoBehaviour
         OnBudgetChanged?.Invoke(currentBudget);
 
         if (showDebugInfo)
-            Debug.Log($"Budget: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0} (+{budgetPrefix}{amount:N0})");
-        GameLogPanel.Instance.LogMetricsChange($"Budget: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0} (+{budgetPrefix}{amount:N0})");
+            Debug.Log($"Budget: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0} (+{budgetPrefix}{amount:N0}) - {description}");
+        GameLogPanel.Instance.LogMetricsChange($"Budget: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0} (+{budgetPrefix}{amount:N0}) - {description}");
+    }
+
+    /// <summary>
+    /// Get default description for budget changes - EASY TO CUSTOMIZE
+    /// </summary>
+    private string GetDefaultBudgetDescription(int amount)
+    {
+        int currentRound = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 1;
+        
+        if (amount > 0)
+            return $"Round {currentRound} - Income";
+        else if (amount < 0)
+            return $"Round {currentRound} - Expense";
+        else
+            return $"Round {currentRound}";
     }
     
     /// <summary>
     /// Remove specific amount from budget
     /// </summary>
-    public void RemoveBudget(int amount)
+    public void RemoveBudget(int amount, string description = "")
     {
-        AddBudget(-amount);
+        AddBudget(-amount, description);
     }
     
     /// <summary>
