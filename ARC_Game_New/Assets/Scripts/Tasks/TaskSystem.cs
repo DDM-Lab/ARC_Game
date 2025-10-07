@@ -521,7 +521,7 @@ public class TaskSystem : MonoBehaviour
             // Apply penalties for delivery failure
             if (SatisfactionAndBudget.Instance != null && task.deliveryFailureSatisfactionPenalty > 0)
             {
-                SatisfactionAndBudget.Instance.RemoveSatisfaction(task.deliveryFailureSatisfactionPenalty);
+                SatisfactionAndBudget.Instance.RemoveSatisfaction(task.deliveryFailureSatisfactionPenalty, $"Delivery Failure Penalty from [{task.taskTitle}]");
             }
 
             OnTaskCompleted?.Invoke(task);
@@ -992,13 +992,13 @@ public class TaskSystem : MonoBehaviour
             {
                 case ImpactType.Satisfaction:
                     if (SatisfactionAndBudget.Instance != null)
-                        SatisfactionAndBudget.Instance.RemoveSatisfaction(impact.value);
+                        SatisfactionAndBudget.Instance.RemoveSatisfaction(impact.value, $"Task Incomplete Penalty from [{task.taskTitle}]");
                     ToastManager.ShowToast($"Removed satisfaction: {impact.value} from task: {task.taskTitle} due to incomplete task", ToastType.Warning, true);
                     GameLogPanel.Instance.LogTaskEvent($"Removed satisfaction: {impact.value} from task: {task.taskTitle} due to incomplete task");
                     break;
                 case ImpactType.Budget:
                     if (SatisfactionAndBudget.Instance != null)
-                        SatisfactionAndBudget.Instance.RemoveBudget(impact.value);
+                        SatisfactionAndBudget.Instance.RemoveBudget(impact.value, $"Task Incomplete Penalty from [{task.taskTitle}]");
                     ToastManager.ShowToast($"Removed budget: {impact.value} from task: {task.taskTitle} due to incomplete task", ToastType.Warning, true);
                     GameLogPanel.Instance.LogTaskEvent($"Removed budget: {impact.value} from task: {task.taskTitle} due to incomplete task");
                     break;

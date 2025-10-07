@@ -1760,12 +1760,12 @@ public class TaskDetailUI : MonoBehaviour
                     {
                         if (impact.value > 0)
                         {
-                            SatisfactionAndBudget.Instance.AddSatisfaction(impact.value);
+                            SatisfactionAndBudget.Instance.AddSatisfaction(impact.value, $"Task [{currentTask.taskTitle}] satisfaction impact");
                             ToastManager.ShowToast($"Satisfaction increased by {impact.value}", ToastType.Info, true);
                         }
                         else
                         {
-                            SatisfactionAndBudget.Instance.RemoveSatisfaction(-impact.value);
+                            SatisfactionAndBudget.Instance.RemoveSatisfaction(-impact.value, $"Task [{currentTask.taskTitle}] satisfaction impact");
                             ToastManager.ShowToast($"Satisfaction decreased by {-impact.value}", ToastType.Warning, true);
                         }
                     }
@@ -1776,12 +1776,12 @@ public class TaskDetailUI : MonoBehaviour
                     {
                         if (impact.value > 0)
                         {
-                            SatisfactionAndBudget.Instance.AddBudget(impact.value);
+                            SatisfactionAndBudget.Instance.AddBudget(impact.value, $"Task [{currentTask.taskTitle}] budget impact");
                             ToastManager.ShowToast($"Budget increased by {impact.value}", ToastType.Info, true);
                         }
                         else
                         {
-                            SatisfactionAndBudget.Instance.RemoveBudget(-impact.value);
+                            SatisfactionAndBudget.Instance.RemoveBudget(-impact.value, $"Task [{currentTask.taskTitle}] budget impact");
                             ToastManager.ShowToast($"Budget decreased by {-impact.value}", ToastType.Warning, true);
                         }
                     }

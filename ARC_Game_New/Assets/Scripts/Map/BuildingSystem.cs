@@ -17,9 +17,15 @@ public class BuildingSystem : MonoBehaviour
     
     [Header("Worker System")]
     public WorkerSystem workerSystem;
+
     [Header("Global Button")]
     public GlobalFacilityButton globalFacilityButton;
-    
+
+    [Header("Construction Costs")]
+    public int shelterConstructionCost = 1000;
+    public int kitchenConstructionCost = 1000;
+    public int caseworkSiteConstructionCost = 1000;
+
     private List<AbandonedSite> registeredSites = new List<AbandonedSite>();
     private AbandonedSite selectedSite;
 
@@ -120,6 +126,21 @@ public class BuildingSystem : MonoBehaviour
                     buildingComponent.workerSystem = workerSystem;
 
                 buildingComponent.Initialize(buildingType, site.GetId());
+            }
+
+            // Deduct construction cost
+            int constructionCost = buildingType switch
+            {
+                BuildingType.Kitchen => kitchenConstructionCost,
+                BuildingType.Shelter => shelterConstructionCost,
+                BuildingType.CaseworkSite => caseworkSiteConstructionCost,
+                _ => 0,
+            };
+            if (SatisfactionAndBudget.Instance != null && constructionCost > 0)
+            {
+                SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
+                ToastManager.ShowToast($"Construction cost of {constructionCost} deducted for building {buildingType}", ToastType.Info, true);
+                GameLogPanel.Instance.LogPlayerAction($"Construction cost of {constructionCost} deducted for building {buildingType} at AbandonedSite_{site.GetId()}");
             }
 
             // Convert abandoned site (disable it)
