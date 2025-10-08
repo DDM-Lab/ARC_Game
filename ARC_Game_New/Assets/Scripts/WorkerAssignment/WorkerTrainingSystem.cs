@@ -106,34 +106,25 @@ public class WorkerTrainingSystem : MonoBehaviour
         
         // Add agent messages
         trainingTask.agentMessages.Add(new AgentMessage(
-            "Hello! I'm from the Workforce Service department.",
+            "Our volunteers are enthusiastic—but untrained. That might be enough for now, but if you want to make the most out of your limited resources, training is essential.",
             taskSystem.workforceServiceSprite
         ));
         
         trainingTask.agentMessages.Add(new AgentMessage(
-            $"We currently have {maxTrainable} untrained workers who could benefit from training.",
+            "Trained responders are two times more efficient than untrained ones. That means lower cost per case, less resource waste, and higher overall impact.",
             taskSystem.workforceServiceSprite
         ));
         
         trainingTask.agentMessages.Add(new AgentMessage(
-            "Trained workers provide 2 workforce points instead of 1, making them much more effective.",
+            $"We currently have {maxTrainable} untrained responders who could benefit from training. Training costs ${trainingCostPerWorker} per responder and takes {trainingDurationDays} day(s) to complete. How many responders would you like to train?",
             taskSystem.workforceServiceSprite
         ));
-        
-        trainingTask.agentMessages.Add(new AgentMessage(
-            $"Training costs ${trainingCostPerWorker} per worker and takes {trainingDurationDays} day(s) to complete.",
-            taskSystem.workforceServiceSprite
-        ));
-        
-        trainingTask.agentMessages.Add(new AgentMessage(
-            "How many workers would you like to train?",
-            taskSystem.workforceServiceSprite
-        ));
+
         
         // Add numerical input for worker count
         AgentNumericalInput workerCountInput = new AgentNumericalInput(
             1,
-            "Workers to Train",
+            "Responders to Train",
             Mathf.Min(1, maxTrainable),
             0,
             maxTrainable
