@@ -61,6 +61,9 @@ public class TaskDetailUI : MonoBehaviour
     private bool isTyping = false;
     private AgentMessageUI currentTypingMessage;
     private Vector2 lastScrollPosition;
+    
+    // NEW: Track which tasks have been shown before
+    private HashSet<int> previouslyShownTaskIds = new HashSet<int>();
 
     void Start()
     {
@@ -115,6 +118,9 @@ public class TaskDetailUI : MonoBehaviour
 
     public void ShowTaskDetail(GameTask task)
     {
+        // NEW: Check if this task was shown before
+        bool isFirstTimeShowing = !previouslyShownTaskIds.Contains(task.taskId);
+        
         currentTask = task;
 
         if (taskDetailPanel != null)
@@ -122,11 +128,17 @@ public class TaskDetailUI : MonoBehaviour
             taskDetailPanel.SetActive(true);
 
             UpdateTaskDescription();
-            StartAgentConversation();
+            
+            // NEW: Pass the isFirstTimeShowing flag to StartAgentConversation
+            StartAgentConversation(isFirstTimeShowing);
+            
             UpdateActionButtons();
 
+            // NEW: Mark task as shown
+            previouslyShownTaskIds.Add(task.taskId);
+
             if (showDebugInfo)
-                Debug.Log($"Showing task detail for: {task.taskTitle}");
+                Debug.Log($"Showing task detail for: {task.taskTitle} (First time: {isFirstTimeShowing})");
         }
     }
 
@@ -237,28 +249,29 @@ public class TaskDetailUI : MonoBehaviour
         currentImpactItems.Clear();
     }
 
-    void StartAgentConversation()
+    // MODIFIED: Now accepts isFirstTimeShowing parameter
+    void StartAgentConversation(bool isFirstTimeShowing)
     {
         if (currentTask == null) return;
 
-        // Clear existing conversation
+        // Clear existing conversation - ALWAYS clear to prevent duplicates
         ClearConversation();
 
-        // Start conversation coroutine
-        StartCoroutine(PlayAgentConversation());
+        // Start conversation coroutine with the flag
+        StartCoroutine(PlayAgentConversation(isFirstTimeShowing));
     }
 
-    IEnumerator PlayAgentConversation()
+    // MODIFIED: Now accepts and uses isFirstTimeShowing parameter
+    IEnumerator PlayAgentConversation(bool isFirstTimeShowing)
     {
-        // Display agent messages with typing effect
+        // Display agent messages with or without typing effect based on if it's first time
         foreach (AgentMessage message in currentTask.agentMessages)
         {
             // Check if panel is still active before each message
             if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
                 yield break;
 
-            yield return StartCoroutine(DisplayAgentMessage(message));
-            //yield return new WaitForSecondsRealtime(0.5f); // Brief pause between messages, use real time
+            yield return StartCoroutine(DisplayAgentMessage(message, isFirstTimeShowing));
         }
 
         // Check if panel is still active before displaying choices
@@ -280,7 +293,8 @@ public class TaskDetailUI : MonoBehaviour
         ScrollToBottom();
     }
 
-    IEnumerator DisplayAgentMessage(AgentMessage message)
+    // MODIFIED: Now accepts and uses isFirstTimeShowing parameter
+    IEnumerator DisplayAgentMessage(AgentMessage message, bool isFirstTimeShowing)
     {
         // Check if panel is still active
         if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
@@ -293,7 +307,9 @@ public class TaskDetailUI : MonoBehaviour
         {
             messageUI.Initialize(message);
 
-            if (message.useTypingEffect && currentTask.status == TaskStatus.Active && !currentTask.isExpired)
+            // MODIFIED: Only show typing effect if it's the first time AND conditions are met
+            if (message.useTypingEffect && currentTask.status == TaskStatus.Active && 
+                !currentTask.isExpired && isFirstTimeShowing)
             {
                 isTyping = true;
                 currentTypingMessage = messageUI;
@@ -303,6 +319,7 @@ public class TaskDetailUI : MonoBehaviour
             }
             else
             {
+                // Show full message immediately if reopening or conditions not met
                 messageUI.ShowFullMessage();
             }
         }
@@ -358,6 +375,13 @@ public class TaskDetailUI : MonoBehaviour
 
     void ClearConversation()
     {
+        // MODIFIED: Properly destroy all conversation items before clearing list
+        foreach (GameObject item in currentConversationItems)
+        {
+            if (item != null)
+                Destroy(item);
+        }
+        
         if (conversationScrollView != null)
             conversationScrollView.vertical = true;
 
@@ -1909,6 +1933,19 @@ public class TaskDetailUI : MonoBehaviour
         return taskDetailPanel != null && taskDetailPanel.activeInHierarchy;
     }
 
+    // NEW: Method to reset task shown history (useful for scene reloads)
+    public void ResetTaskHistory()
+    {
+        previouslyShownTaskIds.Clear();
+        if (showDebugInfo)
+            Debug.Log("Task history reset - all tasks will show typing effects again");
+    }
+
+    // NEW: Method to manually mark a task as shown (useful for pre-loaded tasks)
+    public void MarkTaskAsShown(int taskId)
+    {
+        previouslyShownTaskIds.Add(taskId);
+        if (showDebugInfo)
+            Debug.Log($"Task {taskId} marked as previously shown");
+    }
 }
-
-
