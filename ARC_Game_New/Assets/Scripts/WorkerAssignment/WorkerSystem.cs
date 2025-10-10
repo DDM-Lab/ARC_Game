@@ -238,6 +238,16 @@ public class WorkerSystem : MonoBehaviour
         return GetWorkersByType(WorkerType.Untrained).Count;
     }
 
+    public int GetAvailableUntrainedWorkers()
+    {
+        return GetWorkersByType(WorkerType.Untrained).Count(w => w.IsAvailable);
+    }
+
+    public int GetAvailableTrainedWorkers()
+    {
+        return GetWorkersByType(WorkerType.Trained).Count(w => w.IsAvailable);
+    }
+
     public float GetIdleWorkerPercentage()
     {
         int totalWorkers = allWorkers.Count;

@@ -436,7 +436,7 @@ public class SatisfactionAndBudget : MonoBehaviour
         return currentSatisfaction;
     }
 
-    public float GetCurrentBudget()
+    public int GetCurrentBudget()
     {
         return currentBudget;
     }

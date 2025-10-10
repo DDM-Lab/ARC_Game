@@ -494,6 +494,14 @@ public class TaskDetailUI : MonoBehaviour
             return;
         }
 
+        // Validate numerical inputs before proceeding
+        string numericalValidationError;
+        if (!ValidateNumericalInputs(out numericalValidationError))
+        {
+            ShowAgentErrorMessage(numericalValidationError);
+            return;
+        }
+
         // Validate selected choice if it involves any type of delivery
         if (selectedChoice != null && (selectedChoice.triggersDelivery || selectedChoice.immediateDelivery || selectedChoice.enableMultipleDeliveries))
         {
@@ -563,6 +571,225 @@ public class TaskDetailUI : MonoBehaviour
         CategoryTaskManager categoryManager = FindObjectOfType<CategoryTaskManager>();
         if (categoryManager != null)
             categoryManager.RefreshTaskList();
+    }
+
+    // ---------NUMERICAL INPUT VALIDATION ---------
+    /// <summary>
+    /// Validates all numerical inputs in the current task
+    /// </summary>
+    bool ValidateNumericalInputs(out string errorMessage)
+    {
+        errorMessage = "";
+        
+        if (currentTask.numericalInputs == null || currentTask.numericalInputs.Count == 0)
+            return true; // No numerical inputs to validate
+        
+        foreach (GameObject item in currentConversationItems)
+        {
+            NumericalInputUI inputUI = item.GetComponent<NumericalInputUI>();
+            if (inputUI != null)
+            {
+                int value = inputUI.GetCurrentValue();
+                NumericalInputType inputType = inputUI.GetInputType();
+                
+                // Perform type-specific validation
+                string validationError = ValidateSpecificInput(inputType, value);
+                if (!string.IsNullOrEmpty(validationError))
+                {
+                    errorMessage = validationError;
+                    return false;
+                }
+            }
+        }
+        
+        // Perform cross-input validation (e.g., total budget checks)
+        string crossValidationError = ValidateCrossInputConstraints();
+        if (!string.IsNullOrEmpty(crossValidationError))
+        {
+            errorMessage = crossValidationError;
+            return false;
+        }
+        
+        return true;
+    }
+
+    /// <summary>
+    /// Type-specific validation for individual inputs
+    /// </summary>
+    string ValidateSpecificInput(NumericalInputType type, int value)
+    {
+        switch (type)
+        {
+            case NumericalInputType.Budget:
+                // Check if budget value exceeds available funds
+                if (SatisfactionAndBudget.Instance != null)
+                {
+                    int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+                    if (value > availableBudget)
+                    {
+                        return $"Insufficient budget. You requested ${value:N0} but only have ${availableBudget:N0} available.";
+                    }
+                }
+                break;
+                
+            case NumericalInputType.UntrainedWorkers:
+                // Check if requested workers exceed available
+                if (WorkerSystem.Instance != null)
+                {
+                    int availableUntrained = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
+                    if (value > availableUntrained)
+                    {
+                        return $"Not enough untrained workers. You requested {value} but only have {availableUntrained} available.";
+                    }
+                }
+                break;
+                
+            case NumericalInputType.TrainedWorkers:
+                // Check if requested trained workers exceed available
+                if (WorkerSystem.Instance != null)
+                {
+                    int availableTrained = WorkerSystem.Instance.GetAvailableTrainedWorkers();
+                    if (value > availableTrained)
+                    {
+                        return $"Not enough trained workers. You requested {value} but only have {availableTrained} available.";
+                    }
+                }
+                break;
+                
+            case NumericalInputType.FoodPacks:
+                // Check food pack availability
+                if (value > 0)
+                {
+                    // Find kitchen with available food packs
+                    Building[] kitchens = FindObjectsOfType<Building>()
+                        .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
+                        .ToArray();
+                        
+                    int totalAvailable = 0;
+                    foreach (Building kitchen in kitchens)
+                    {
+                        BuildingResourceStorage storage = kitchen.GetComponent<BuildingResourceStorage>();
+                        if (storage != null)
+                            totalAvailable += storage.GetResourceAmount(ResourceType.FoodPacks);
+                    }
+                    
+                    if (value > totalAvailable)
+                    {
+                        return $"Not enough food packs. You requested {value} but only have {totalAvailable} available across all kitchens.";
+                    }
+                }
+                break;
+                
+            case NumericalInputType.Clients:
+                // Check if processing more clients than available
+                if (value > 0)
+                {
+                    // Context-specific validation based on task
+                    if (currentTask.taskTitle.Contains("Training"))
+                    {
+                        // For training tasks, clients might mean workers to train
+                        return ValidateTrainingCapacity(value);
+                    }
+                    else if (currentTask.taskTitle.Contains("Transport") || currentTask.taskTitle.Contains("Evacuation"))
+                    {
+                        // For transport tasks, validate vehicle capacity
+                        return ValidateTransportCapacity(value);
+                    }
+                }
+                break;
+        }
+        
+        return ""; // No error
+    }
+
+    /// <summary>
+    /// Validate constraints across multiple inputs
+    /// </summary>
+    string ValidateCrossInputConstraints()
+    {
+        int totalBudgetRequested = 0;
+        int totalWorkersRequested = 0;
+        
+        foreach (GameObject item in currentConversationItems)
+        {
+            NumericalInputUI inputUI = item.GetComponent<NumericalInputUI>();
+            if (inputUI != null)
+            {
+                NumericalInputType type = inputUI.GetInputType();
+                int value = inputUI.GetCurrentValue();
+                
+                if (type == NumericalInputType.Budget)
+                {
+                    totalBudgetRequested += value;
+                }
+                else if (type == NumericalInputType.UntrainedWorkers || type == NumericalInputType.TrainedWorkers)
+                {
+                    totalWorkersRequested += value;
+                }
+            }
+        }
+        
+        // Check total budget
+        if (totalBudgetRequested > 0 && SatisfactionAndBudget.Instance != null)
+        {
+            int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+            if (totalBudgetRequested > availableBudget)
+            {
+                return $"Total budget requested (${totalBudgetRequested:N0}) exceeds available funds (${availableBudget:N0}).";
+            }
+        }
+        
+        // Check if total workers requested exceeds building capacity
+        if (totalWorkersRequested > 0 && currentTask.affectedFacility != null)
+        {
+            // Could add facility-specific worker capacity checks here
+        }
+        
+        return ""; // No error
+    }
+
+    /// <summary>
+    /// Validate training capacity for worker training tasks
+    /// </summary>
+    string ValidateTrainingCapacity(int workersToTrain)
+    {
+        if (WorkerTrainingSystem.Instance != null)
+        {
+            int trainingCost = WorkerTrainingSystem.Instance.trainingCostPerWorker * workersToTrain;
+            
+            if (SatisfactionAndBudget.Instance != null)
+            {
+                int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+                if (trainingCost > availableBudget)
+                {
+                    return $"Training {workersToTrain} workers costs ${trainingCost:N0}, but you only have ${availableBudget:N0} available.";
+                }
+            }
+        }
+        return "";
+    }
+
+    /// <summary>
+    /// Validate transport capacity for evacuation tasks
+    /// </summary>
+    string ValidateTransportCapacity(int peopleToTransport)
+    {
+        Vehicle[] vehicles = FindObjectsOfType<Vehicle>()
+            .Where(v => v.GetCurrentStatus() != VehicleStatus.Damaged)
+            .ToArray();
+        
+        if (vehicles.Length == 0)
+        {
+            return "No available vehicles for transport.";
+        }
+        
+        int maxCapacity = vehicles.Max(v => v.GetMaxCapacity());
+        if (peopleToTransport > maxCapacity)
+        {
+            return $"Cannot transport {peopleToTransport} people. Maximum vehicle capacity is {maxCapacity}.";
+        }
+        
+        return "";
     }
 
     //  ---------CHOICE DELIVERY VALIDATION ---------
@@ -1071,7 +1298,16 @@ public class TaskDetailUI : MonoBehaviour
 
         if (messageUI != null)
         {
-            AgentMessage errorMessage = new AgentMessage(errorText);
+            Sprite errorAgentSprite = currentTask.taskOfficer switch
+            {
+                TaskOfficer.WorkforceService => TaskSystem.Instance.workforceServiceSprite,
+                TaskOfficer.LodgingMassCare => TaskSystem.Instance.lodgingMassCareSprite,
+                TaskOfficer.ExternalRelationship => TaskSystem.Instance.externalRelationshipSprite,
+                TaskOfficer.FoodMassCare => TaskSystem.Instance.foodMassCareSprite,
+                _ => TaskSystem.Instance.defaultAgentSprite
+            };
+            AgentMessage errorMessage = new AgentMessage(errorText, errorAgentSprite);
+            errorMessage.useTypingEffect = false;
             messageUI.Initialize(errorMessage);
             messageUI.ShowFullMessage();
 
