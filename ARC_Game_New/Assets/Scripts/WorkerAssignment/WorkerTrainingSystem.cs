@@ -77,7 +77,6 @@ public class WorkerTrainingSystem : MonoBehaviour
                 Debug.Log("Training task expired - cleared reference");
         }
     }
-
     
     public void OnTrainWorkerButtonClicked()
     {
@@ -150,15 +149,18 @@ public class WorkerTrainingSystem : MonoBehaviour
         ));
 
         
-        // Add numerical input for worker count
         AgentNumericalInput workerCountInput = new AgentNumericalInput(
-            1,
-            "Responders to Train",
-            1,
-            0,
-            maxTrainable
+            1,                                    // inputId
+            NumericalInputType.UntrainedWorkers, // inputType
+            1,                                    // currentValue (default to 1)
+            0,                                    // minValue
+            maxTrainable                         // maxValue
         );
-        workerCountInput.stepSize = 1;
+        
+        // Optional: Override the label and description for this specific context
+        workerCountInput.inputLabel = "Responders to Train";
+        workerCountInput.customDescription = $"Select how many untrained responders to train (${trainingCostPerWorker} per worker, {trainingDurationDays} days)";
+
         trainingTask.numericalInputs.Add(workerCountInput);
 
         // Store reference to current task

@@ -67,6 +67,15 @@ public enum TaskOfficer
     FoodMassCare
 }
 
+public enum NumericalInputType
+{
+    Budget,           // Money/cost input
+    Clients,          // Population/people count
+    UntrainedWorkers, // Untrained staff
+    TrainedWorkers,   // Trained/skilled staff
+    FoodPacks        // Food resource count
+}
+
 [System.Serializable]
 public class TaskImpact
 {
@@ -225,6 +234,10 @@ public class AgentNumericalInput
     public int minValue;
     public int maxValue;
     public int stepSize = 1;
+    
+    [Header("Input Type Configuration")]
+    public NumericalInputType inputType = NumericalInputType.Budget;
+    public string customDescription = ""; // Optional custom description override
 
     public AgentNumericalInput(int id, string label, int current, int min, int max)
     {
@@ -233,6 +246,52 @@ public class AgentNumericalInput
         currentValue = current;
         minValue = min;
         maxValue = max;
+    }
+    
+    // New constructor with type
+    public AgentNumericalInput(int id, NumericalInputType type, int current, int min, int max)
+    {
+        inputId = id;
+        inputType = type;
+        inputLabel = GetDefaultLabel(type);
+        currentValue = current;
+        minValue = min;
+        maxValue = max;
+        stepSize = GetDefaultStepSize(type);
+    }
+    
+    // Helper to get default label based on type
+    private string GetDefaultLabel(NumericalInputType type)
+    {
+        switch (type)
+        {
+            case NumericalInputType.Budget:
+                return "Budget Allocation";
+            case NumericalInputType.Clients:
+                return "Number of Clients";
+            case NumericalInputType.UntrainedWorkers:
+                return "Untrained Workers";
+            case NumericalInputType.TrainedWorkers:
+                return "Trained Workers";
+            case NumericalInputType.FoodPacks:
+                return "Food Packs";
+            default:
+                return "Value";
+        }
+    }
+    
+    // Helper to get default step size based on type
+    private int GetDefaultStepSize(NumericalInputType type)
+    {
+        switch (type)
+        {
+            case NumericalInputType.Budget:
+                return 100; // Step by $100
+            case NumericalInputType.FoodPacks:
+                return 5;   // Step by 5 packs
+            default:
+                return 1;   // Step by 1 for people/workers
+        }
     }
 }
 
