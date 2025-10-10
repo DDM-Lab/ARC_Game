@@ -17,15 +17,15 @@ public class WorkerTrainingSystem : MonoBehaviour
     public TaskSystem taskSystem;
     public WorkerSystem workerSystem;
     public TaskDetailUI taskDetailUI;
-    
+
     [Header("Debug")]
     public bool showDebugInfo = true;
-    
+
     // Track training tasks
     private List<TrainingTask> activeTrainingTasks = new List<TrainingTask>();
     
     public static WorkerTrainingSystem Instance { get; private set; }
-    
+
     void Awake()
     {
         if (Instance == null)
@@ -80,7 +80,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         
         if (availableUntrained == 0)
         {
-            ToastManager.ShowToast("No untrained workers available to train", ToastType.Warning, true);
+            ToastManager.ShowToast("No untrained responders available to train", ToastType.Warning, true);
             return;
         }
         
@@ -97,7 +97,7 @@ public class WorkerTrainingSystem : MonoBehaviour
             "Worker Training Program",
             TaskType.Advisory,
             "Worker Management",
-            $"We have {maxTrainable} untrained workers available. Training them will improve their productivity from 1 to 2 workforce points."
+            $"We have {maxTrainable} untrained responders available. Training them will improve their productivity from 1 to 2 workforce points."
         );
         
         // Set timing
@@ -125,7 +125,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         AgentNumericalInput workerCountInput = new AgentNumericalInput(
             1,
             "Responders to Train",
-            Mathf.Min(1, maxTrainable),
+            1,
             0,
             maxTrainable
         );
@@ -145,7 +145,7 @@ public class WorkerTrainingSystem : MonoBehaviour
     void OnTaskCompleted(GameTask task)
     {
         // Check if this is a training task
-        if (task.taskTitle != "Worker Training Program")
+        if (task.taskTitle != "Responder Training Program")
             return;
         
         // Get the number of workers to train from numerical input
@@ -159,7 +159,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         
         if (workersToTrain <= 0)
         {
-            ToastManager.ShowToast("No workers selected for training", ToastType.Warning, true);
+            ToastManager.ShowToast("No responders selected for training", ToastType.Warning, true);
             return;
         }
         
@@ -170,13 +170,13 @@ public class WorkerTrainingSystem : MonoBehaviour
         if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.CanAfford(totalCost))
         {
             ToastManager.ShowToast($"Insufficient budget! Need ${totalCost}", ToastType.Warning, true);
-            GameLogPanel.Instance.LogError($"Cannot afford worker training: ${totalCost}");
+            GameLogPanel.Instance.LogError($"Cannot afford responder training: ${totalCost}");
             return;
         }
         
         // Deduct budget
-        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Training {workersToTrain} workers");
-        
+        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Training {workersToTrain} responders");
+
         // Start training
         StartWorkerTraining(workersToTrain);
     }
@@ -189,8 +189,8 @@ public class WorkerTrainingSystem : MonoBehaviour
         
         if (untrainedWorkers.Count < workerCount)
         {
-            Debug.LogError($"Not enough free untrained workers! Requested: {workerCount}, Available: {untrainedWorkers.Count}");
-            ToastManager.ShowToast($"Not enough free untrained workers available", ToastType.Warning, true);
+            Debug.LogError($"Not enough free untrained responders! Requested: {workerCount}, Available: {untrainedWorkers.Count}");
+            ToastManager.ShowToast($"Not enough free untrained responders available", ToastType.Warning, true);
             return;
         }
         
@@ -210,44 +210,37 @@ public class WorkerTrainingSystem : MonoBehaviour
         TrainingTask trainingTask = new TrainingTask
         {
             workers = trainingWorkers,
+            startDay = currentDay,
             completionDay = completionDay,
             workerCount = workerCount
         };
         
         activeTrainingTasks.Add(trainingTask);
-        
-        ToastManager.ShowToast($"Started training {workerCount} workers. Completion: Day {completionDay}", ToastType.Success, true);
-        GameLogPanel.Instance.LogWorkerAction($"Started training {workerCount} workers (completion Day {completionDay})");
-        
+
+        ToastManager.ShowToast($"Started training {workerCount} responders. Completion: Day {completionDay}", ToastType.Success, true);
+        GameLogPanel.Instance.LogWorkerAction($"Started training {workerCount} responders (completion Day {completionDay})");
+
         if (showDebugInfo)
-            Debug.Log($"Training started on Day {currentDay} for {workerCount} workers, completion day: {completionDay}");
+            Debug.Log($"Training started on Day {currentDay} for {workerCount} responders, completion day: {completionDay}");
     }
     
     void OnDayChanged(int newDay)
     {
-        // Check if any training is complete
-        List<TrainingTask> completedTraining = new List<TrainingTask>();
-        
         foreach (TrainingTask training in activeTrainingTasks)
         {
             if (newDay >= training.completionDay)
             {
                 CompleteWorkerTraining(training);
-                completedTraining.Add(training);
             }
         }
         
-        // Remove completed training
-        foreach (TrainingTask completed in completedTraining)
-        {
-            activeTrainingTasks.Remove(completed);
-        }
+        // Don't remove completed training - they stay in the list as completed
     }
     
     void CompleteWorkerTraining(TrainingTask training)
     {
         int successfullyTrained = 0;
-        
+
         foreach (Worker worker in training.workers)
         {
             // Check if worker is still in training status
@@ -255,27 +248,28 @@ public class WorkerTrainingSystem : MonoBehaviour
             {
                 // Remove old untrained worker
                 workerSystem.RemoveWorker(worker);
-                
+
                 // Create new trained worker with FREE status
                 Worker newTrainedWorker = workerSystem.CreateTrainedWorker(TrainedWorkerStatus.Free);
-                
+
                 successfullyTrained++;
             }
         }
+        training.isCompleted = true;
         Debug.Log($"Completed training for {successfullyTrained} workers");
 
         // Add satisfaction for successful training
         if (SatisfactionAndBudget.Instance != null && successfullyTrained > 0)
         {
             SatisfactionAndBudget.Instance.AddSatisfaction(successfullyTrained * satisfactionPerTrainedWorker,
-                "Completed training " + successfullyTrained + " workers");
+                "Completed training " + successfullyTrained + " responders");
 
             ToastManager.ShowToast("Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion", ToastType.Info, true);
             GameLogPanel.Instance.LogMetricsChange("Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion");
         }
 
-        ToastManager.ShowToast("Training complete! " + successfullyTrained + " workers are now trained and available", ToastType.Success, true);
-        GameLogPanel.Instance.LogWorkerAction("Training complete: " + successfullyTrained + " workers now trained and free");
+        ToastManager.ShowToast("Training complete! " + successfullyTrained + " responders are now trained and available", ToastType.Success, true);
+        GameLogPanel.Instance.LogWorkerAction("Training complete: " + successfullyTrained + " responders now trained and free");
 
     }
     
@@ -291,12 +285,19 @@ public class WorkerTrainingSystem : MonoBehaviour
             GlobalClock.Instance.OnDayChanged -= OnDayChanged;
         }
     }
-    
+
     [System.Serializable]
-    private class TrainingTask
+    public class TrainingTask
     {
         public List<Worker> workers;
+        public int startDay;
         public int completionDay;
         public int workerCount;
+        public bool isCompleted = false;
+    }
+    
+    public List<TrainingTask> GetActiveTrainingTasks()
+    {
+        return new List<TrainingTask>(activeTrainingTasks);
     }
 }

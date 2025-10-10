@@ -54,6 +54,9 @@ public class GlobalWorkerManagementUI : MonoBehaviour
 
     [Header("Building List Item Prefab")]
     public GameObject buildingListItemPrefab;
+    
+    [Header("Training Group Item Prefab")]
+    public GameObject trainingGroupItemPrefab;
 
     [Header("Close Button")]
     public Button closeButton;
@@ -61,64 +64,74 @@ public class GlobalWorkerManagementUI : MonoBehaviour
     [Header("System References")]
     public WorkerSystem workerSystem;
     public BuildingSystem buildingSystem;
+    public WorkerTrainingSystem workerTrainingSystem;
 
     [Header("Individual Building Manage UI")]
     public IndividualBuildingManageUI individualManageUI;
 
     [Header("Colors")]
-    public Color positiveColor = new Color(0.2f, 0.6f, 0.2f); // dark green
-    public Color negativeColor = new Color(0.6f, 0.2f, 0.2f); // dark red
-    public Color neutralColor = new Color(0.6f, 0.4f, 0.2f); // brown
+    public Color positiveColor = new Color(0.2f, 0.6f, 0.2f);
+    public Color negativeColor = new Color(0.6f, 0.2f, 0.2f);
+    public Color neutralColor = new Color(0.6f, 0.4f, 0.2f);
 
     // Private variables
-    private BuildingType currentSelectedTab = BuildingType.Shelter;
+    private enum TabType
+    {
+        Shelter,
+        Kitchen,
+        Casework,
+        DisasterAssessment,
+        TrainCenter
+    }
+    
+    private TabType currentSelectedTab = TabType.Shelter;
     private bool isUIOpen = false;
-    private List<GameObject> currentBuildingItems = new List<GameObject>();
+    private List<GameObject> currentListItems = new List<GameObject>();
 
     void Awake()
     {
-        // Find system references if not assigned
         if (workerSystem == null)
             workerSystem = FindObjectOfType<WorkerSystem>();
         if (buildingSystem == null)
             buildingSystem = FindObjectOfType<BuildingSystem>();
+        if (workerTrainingSystem == null)
+            workerTrainingSystem = FindObjectOfType<WorkerTrainingSystem>();
 
-        // Setup button listeners
         SetupButtonListeners();
 
-        // Subscribe to worker system events
         if (workerSystem != null)
             workerSystem.OnWorkerStatsChanged += OnWorkerStatsChanged;
     }
 
     void Start()
     {
-        // Only ensure proper initial state if the panel is already active
-        // Don't force hide if something else activated it
         if (mainPanel != null && mainPanel.activeInHierarchy && !isUIOpen)
         {
-            // Panel is active but our state says it shouldn't be - fix the state
             isUIOpen = true;
             UpdateWorkerStatsDisplay();
-            UpdateBuildingList();
+            UpdateRightPanel();
         }
 
-        // Initialize UI state
-        SetActiveTab(BuildingType.Shelter);
-
+        SetActiveTab(TabType.Shelter);
         Debug.Log("GlobalWorkerManagementUI Start() called, isUIOpen: " + isUIOpen);
     }
 
     void SetupButtonListeners()
     {
         if (shelterTabButton != null)
-            shelterTabButton.onClick.AddListener(() => OnTabClicked(BuildingType.Shelter));
+            shelterTabButton.onClick.AddListener(() => OnTabClicked(TabType.Shelter));
 
         if (kitchenTabButton != null)
-            kitchenTabButton.onClick.AddListener(() => OnTabClicked(BuildingType.Kitchen));
+            kitchenTabButton.onClick.AddListener(() => OnTabClicked(TabType.Kitchen));
 
         if (caseworkTabButton != null)
-            caseworkTabButton.onClick.AddListener(() => OnTabClicked(BuildingType.CaseworkSite));
+            caseworkTabButton.onClick.AddListener(() => OnTabClicked(TabType.Casework));
+            
+        if (disasterAssessmentTabButton != null)
+            disasterAssessmentTabButton.onClick.AddListener(() => OnTabClicked(TabType.DisasterAssessment));
+            
+        if (trainCenterTabButton != null)
+            trainCenterTabButton.onClick.AddListener(() => OnTabClicked(TabType.TrainCenter));
 
         if (closeButton != null)
             closeButton.onClick.AddListener(OnCloseButtonClicked);
@@ -137,9 +150,8 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         if (mainPanel != null)
             mainPanel.SetActive(true);
 
-        // Immediate update when opening
         UpdateWorkerStatsDisplay();
-        UpdateBuildingList();
+        UpdateRightPanel();
 
         Debug.Log("Global Worker Management UI opened");
     }
@@ -151,51 +163,32 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         if (mainPanel != null)
             mainPanel.SetActive(false);
 
-        // Also close individual manage UI if open
         if (individualManageUI != null)
             individualManageUI.HideManageUI();
 
         Debug.Log("Global Worker Management UI closed");
     }
 
-    void OnTabClicked(BuildingType tabType)
+    void OnTabClicked(TabType tabType)
     {
         SetActiveTab(tabType);
-        UpdateBuildingList();
-
+        UpdateRightPanel();
         Debug.Log($"Switched to {tabType} tab");
     }
 
-    void SetActiveTab(BuildingType tabType)
+    void SetActiveTab(TabType tabType)
     {
         currentSelectedTab = tabType;
-
-        // Update tab button visuals
         UpdateTabButtonVisuals();
     }
 
     void UpdateTabButtonVisuals()
     {
-        // Reset all tabs to inactive color
-        SetTabButtonColor(shelterTabButton, inactiveTabColor);
-        SetTabButtonColor(kitchenTabButton, inactiveTabColor);
-        SetTabButtonColor(caseworkTabButton, inactiveTabColor);
-        SetTabButtonColor(disasterAssessmentTabButton, inactiveTabColor);
-        SetTabButtonColor(trainCenterTabButton, inactiveTabColor);
-
-        // Set active tab color
-        switch (currentSelectedTab)
-        {
-            case BuildingType.Shelter:
-                SetTabButtonColor(shelterTabButton, activeTabColor);
-                break;
-            case BuildingType.Kitchen:
-                SetTabButtonColor(kitchenTabButton, activeTabColor);
-                break;
-            case BuildingType.CaseworkSite:
-                SetTabButtonColor(caseworkTabButton, activeTabColor);
-                break;
-        }
+        SetTabButtonColor(shelterTabButton, currentSelectedTab == TabType.Shelter ? activeTabColor : inactiveTabColor);
+        SetTabButtonColor(kitchenTabButton, currentSelectedTab == TabType.Kitchen ? activeTabColor : inactiveTabColor);
+        SetTabButtonColor(caseworkTabButton, currentSelectedTab == TabType.Casework ? activeTabColor : inactiveTabColor);
+        SetTabButtonColor(disasterAssessmentTabButton, currentSelectedTab == TabType.DisasterAssessment ? activeTabColor : inactiveTabColor);
+        SetTabButtonColor(trainCenterTabButton, currentSelectedTab == TabType.TrainCenter ? activeTabColor : inactiveTabColor);
     }
 
     void SetTabButtonColor(Button button, Color color)
@@ -214,34 +207,27 @@ public class GlobalWorkerManagementUI : MonoBehaviour
 
         WorkerStatistics stats = workerSystem.GetWorkerStatistics();
 
-        // Update trained worker stats
         UpdateTextSafe(trainedWorkingText, stats.trainedWorking.ToString());
         UpdateTextSafe(trainedFreeText, stats.trainedFree.ToString());
         UpdateTextSafe(trainedNotArrivedText, stats.trainedNotArrived.ToString());
         UpdateTextSafe(trainedTotalText, stats.GetTotalTrained().ToString());
 
-        // Update untrained worker stats
         UpdateTextSafe(untrainedWorkingText, stats.untrainedWorking.ToString());
         UpdateTextSafe(untrainedFreeText, stats.untrainedFree.ToString());
         UpdateTextSafe(untrainedTrainingText, stats.untrainedTraining.ToString());
         UpdateTextSafe(untrainedTotalText, stats.GetTotalUntrained().ToString());
 
-        // Update summary stats
         UpdateTextSafe(totalWorkersText, stats.GetTotalWorkers().ToString());
         UpdateTextSafe(availableWorkforceText, stats.GetAvailableWorkforce().ToString());
         UpdateTextSafe(totalWorkforceText, workerSystem.GetTotalWorkforce().ToString());
 
-        // Apply color coding
         ApplyWorkerStatsColors(stats);
     }
 
     void ApplyWorkerStatsColors(WorkerStatistics stats)
     {
-        // Color free workers green if available
         Color trainedFreeColor = stats.trainedFree > 0 ? positiveColor : neutralColor;
         Color untrainedFreeColor = stats.untrainedFree > 0 ? positiveColor : neutralColor;
-
-        // Color working workers blue
         Color workingColor = neutralColor;
         Color notWorkingColor = neutralColor;
 
@@ -252,40 +238,87 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         UpdateTextWithColor(untrainedWorkingText, stats.untrainedWorking.ToString(),
                            stats.untrainedWorking > 0 ? workingColor : notWorkingColor);
 
-        // Color special statuses
         UpdateTextWithColor(trainedNotArrivedText, stats.trainedNotArrived.ToString(),
                            stats.trainedNotArrived > 0 ? Color.yellow : Color.gray);
         UpdateTextWithColor(untrainedTrainingText, stats.untrainedTraining.ToString(),
                            stats.untrainedTraining > 0 ? Color.magenta : Color.gray);
 
-        // Color available workforce based on total
         Color availableColor = stats.GetAvailableWorkforce() > 0 ? positiveColor : negativeColor;
         UpdateTextWithColor(availableWorkforceText, stats.GetAvailableWorkforce().ToString(), availableColor);
     }
 
-    void UpdateBuildingList()
+    void UpdateRightPanel()
+    {
+        ClearList();
+
+        switch (currentSelectedTab)
+        {
+            case TabType.Shelter:
+                UpdateBuildingList(BuildingType.Shelter);
+                break;
+            case TabType.Kitchen:
+                UpdateBuildingList(BuildingType.Kitchen);
+                break;
+            case TabType.Casework:
+                UpdateBuildingList(BuildingType.CaseworkSite);
+                break;
+            case TabType.DisasterAssessment:
+                // TODO: Implement disaster assessment panel
+                Debug.Log("Disaster Assessment tab - not yet implemented");
+                break;
+            case TabType.TrainCenter:
+                UpdateTrainingGroupList();
+                break;
+        }
+    }
+
+    void UpdateBuildingList(BuildingType buildingType)
     {
         if (buildingSystem == null || scrollViewContent == null) return;
 
-        // Clear existing items
-        ClearBuildingList();
+        List<Building> buildings = GetBuildingsOfType(buildingType);
 
-        // Get buildings of current selected type
-        List<Building> buildings = GetBuildingsOfType(currentSelectedTab);
-
-        // Create items for each building
         foreach (Building building in buildings)
         {
             CreateBuildingListItem(building);
         }
 
-        Debug.Log($"Updated building list for {currentSelectedTab}: {buildings.Count} buildings");
+        Debug.Log($"Updated building list for {buildingType}: {buildings.Count} buildings");
+    }
+
+    void UpdateTrainingGroupList()
+    {
+        if (workerTrainingSystem == null || scrollViewContent == null)
+        {
+            Debug.LogWarning("WorkerTrainingSystem or scroll content not found!");
+            return;
+        }
+
+        List<WorkerTrainingSystem.TrainingTask> activeTrainings = workerTrainingSystem.GetActiveTrainingTasks();
+
+        if (activeTrainings.Count == 0)
+        {
+            // Display nothing - just clear the list
+            return;
+        }
+
+        // Sort: In-progress first, then completed, then by completion day
+        activeTrainings = activeTrainings
+            .OrderBy(t => t.isCompleted ? 1 : 0)  // In-progress (false=0) before completed (true=1)
+            .ThenBy(t => t.completionDay)         // Earlier completion first
+            .ToList();
+
+        foreach (var training in activeTrainings)
+        {
+            CreateTrainingGroupItem(training);
+        }
+
+        Debug.Log($"Updated training group list: {activeTrainings.Count} groups");
     }
 
     List<Building> GetBuildingsOfType(BuildingType buildingType)
     {
         if (buildingSystem == null) return new List<Building>();
-
         List<Building> allBuildings = buildingSystem.GetAllBuildings();
         return allBuildings.Where(b => b.GetBuildingType() == buildingType).ToList();
     }
@@ -295,28 +328,41 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         if (buildingListItemPrefab == null) return;
 
         GameObject item = Instantiate(buildingListItemPrefab, scrollViewContent);
-        currentBuildingItems.Add(item);
+        currentListItems.Add(item);
 
-        // Configure the building list item
         BuildingListItem listItem = item.GetComponent<BuildingListItem>();
         if (listItem != null)
         {
             listItem.Initialize(building, this);
         }
-        else
+    }
+
+    void CreateTrainingGroupItem(WorkerTrainingSystem.TrainingTask training)
+    {
+        if (trainingGroupItemPrefab == null)
         {
-            Debug.LogWarning("BuildingListItem component not found on prefab!");
+            Debug.LogWarning("Training group item prefab not assigned!");
+            return;
+        }
+
+        GameObject item = Instantiate(trainingGroupItemPrefab, scrollViewContent);
+        currentListItems.Add(item);
+
+        TrainingGroupItemUI groupItem = item.GetComponent<TrainingGroupItemUI>();
+        if (groupItem != null)
+        {
+            groupItem.Initialize(training);
         }
     }
 
-    void ClearBuildingList()
+    void ClearList()
     {
-        foreach (GameObject item in currentBuildingItems)
+        foreach (GameObject item in currentListItems)
         {
             if (item != null)
                 Destroy(item);
         }
-        currentBuildingItems.Clear();
+        currentListItems.Clear();
     }
 
     public void OnManageButtonClicked(Building building)
@@ -325,10 +371,6 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         {
             individualManageUI.ShowManageUI(building);
             Debug.Log($"Opening individual manage UI for {building.GetBuildingType()} at site {building.GetOriginalSiteId()}");
-        }
-        else
-        {
-            Debug.LogWarning("IndividualBuildingManageUI reference not set!");
         }
     }
 
@@ -339,21 +381,17 @@ public class GlobalWorkerManagementUI : MonoBehaviour
 
     public void OnWorkerStatsChanged()
     {
-        // Real-time update when worker stats change
         if (isUIOpen)
         {
             UpdateWorkerStatsDisplay();
-            // Also refresh building list as workforce assignments might have changed
-            UpdateBuildingList();
+            UpdateRightPanel();
         }
     }
 
     void UpdateTextSafe(TextMeshProUGUI textComponent, string value)
     {
         if (textComponent != null)
-        {
             textComponent.text = value;
-        }
     }
 
     void UpdateTextWithColor(TextMeshProUGUI textComponent, string value, Color color)
@@ -365,34 +403,23 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         }
     }
 
-    // Handle ESC key to close UI
     void LateUpdate()
     {
         if (isUIOpen && Input.GetKeyDown(KeyCode.Escape))
-        {
             OnCloseButtonClicked();
-        }
     }
 
     void OnDestroy()
     {
-        // Clean up event subscriptions
         if (workerSystem != null)
             workerSystem.OnWorkerStatsChanged -= OnWorkerStatsChanged;
     }
 
-    // Public methods for external access
     public bool IsUIOpen()
     {
         return isUIOpen;
     }
 
-    public BuildingType GetCurrentSelectedTab()
-    {
-        return currentSelectedTab;
-    }
-
-    // Method to be called by the global worker button on the map
     public void ToggleUI()
     {
         if (isUIOpen)

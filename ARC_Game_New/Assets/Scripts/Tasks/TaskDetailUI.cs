@@ -336,11 +336,6 @@ public class TaskDetailUI : MonoBehaviour
     {
         if (currentTask.numericalInputs.Count > 0)
         {
-            // Disable auto-layout to prevent scroll jumping
-            ContentSizeFitter fitter = conversationContent.GetComponent<ContentSizeFitter>();
-            if (fitter != null)
-                fitter.enabled = false;
-            
             foreach (AgentNumericalInput input in currentTask.numericalInputs)
             {
                 GameObject inputItem = Instantiate(numericalInputPrefab, conversationContent);
@@ -354,39 +349,20 @@ public class TaskDetailUI : MonoBehaviour
 
                 currentConversationItems.Add(inputItem);
             }
+
+            // Disable vertical scrolling on the scroll view
+            if (conversationScrollView != null)
+                conversationScrollView.vertical = false;
         }
     }
 
     void ClearConversation()
     {
-        // NEW: Stop any typing effects first
-        isTyping = false;
-        currentTypingMessage = null;
+        if (conversationScrollView != null)
+            conversationScrollView.vertical = true;
 
-        // NEW: Immediate cleanup of all conversation items
-        foreach (GameObject item in currentConversationItems)
-        {
-            if (item != null)
-            {
-                // Force immediate destruction
-                DestroyImmediate(item);
-            }
-        }
         currentConversationItems.Clear();
         selectedChoice = null;
-
-        // NEW: Also clear any orphaned children from conversationContent
-        if (conversationContent != null)
-        {
-            for (int i = conversationContent.childCount - 1; i >= 0; i--)
-            {
-                Transform child = conversationContent.GetChild(i);
-                if (child != null)
-                {
-                    DestroyImmediate(child.gameObject);
-                }
-            }
-        }
     }
 
     void ClearDisplay()
