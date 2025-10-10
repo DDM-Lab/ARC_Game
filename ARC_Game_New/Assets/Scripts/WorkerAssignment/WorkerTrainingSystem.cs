@@ -21,6 +21,9 @@ public class WorkerTrainingSystem : MonoBehaviour
     [Header("Debug")]
     public bool showDebugInfo = true;
 
+    [Header("Task Tracking")]
+    private GameTask currentTrainingTask = null;
+
     // Track training tasks
     private List<TrainingTask> activeTrainingTasks = new List<TrainingTask>();
     
@@ -50,29 +53,55 @@ public class WorkerTrainingSystem : MonoBehaviour
         if (trainWorkerButton != null)
             trainWorkerButton.onClick.AddListener(OnTrainWorkerButtonClicked);
     }
-    
+
     void SubscribeToEvents()
     {
         if (TaskSystem.Instance != null)
         {
             TaskSystem.Instance.OnTaskCompleted += OnTaskCompleted;
+            TaskSystem.Instance.OnTaskExpired += OnTaskExpired;
         }
-        
+
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnDayChanged += OnDayChanged;
         }
     }
+    void OnTaskExpired(GameTask task)
+    {
+        // Clear reference if training task expired
+        if (task.taskTitle == "Worker Training Program" && currentTrainingTask == task)
+        {
+            currentTrainingTask = null;
+            if (showDebugInfo)
+                Debug.Log("Training task expired - cleared reference");
+        }
+    }
+
     
     public void OnTrainWorkerButtonClicked()
     {
         // Check if we have untrained workers
         if (workerSystem == null)
             workerSystem = WorkerSystem.Instance;
-            
+
         if (workerSystem == null)
         {
             Debug.LogError("WorkerSystem not found!");
+            return;
+        }
+
+        // Check if there's already an active training task
+        if (currentTrainingTask != null &&
+            TaskSystem.Instance.GetAllActiveTasks().Contains(currentTrainingTask))
+        {
+            // Open existing task
+            if (taskDetailUI != null)
+            {
+                taskDetailUI.ShowTaskDetail(currentTrainingTask);
+                if (showDebugInfo)
+                    Debug.Log("Reopened existing worker training task");
+            }
             return;
         }
         
@@ -94,7 +123,7 @@ public class WorkerTrainingSystem : MonoBehaviour
             taskSystem = TaskSystem.Instance;
             
         GameTask trainingTask = taskSystem.CreateTask(
-            "Worker Training Program",
+            "Responder Training Program",
             TaskType.Advisory,
             "Worker Management",
             $"We have {maxTrainable} untrained responders available. Training them will improve their productivity from 1 to 2 workforce points."
@@ -131,6 +160,9 @@ public class WorkerTrainingSystem : MonoBehaviour
         );
         workerCountInput.stepSize = 1;
         trainingTask.numericalInputs.Add(workerCountInput);
+
+        // Store reference to current task
+        currentTrainingTask = trainingTask;
         
         // Show task detail immediately
         if (taskDetailUI != null)
@@ -147,6 +179,10 @@ public class WorkerTrainingSystem : MonoBehaviour
         // Check if this is a training task
         if (task.taskTitle != "Responder Training Program")
             return;
+
+        // Clear current task reference when completed
+        if (currentTrainingTask == task)
+            currentTrainingTask = null;
         
         // Get the number of workers to train from numerical input
         if (task.numericalInputs.Count == 0)

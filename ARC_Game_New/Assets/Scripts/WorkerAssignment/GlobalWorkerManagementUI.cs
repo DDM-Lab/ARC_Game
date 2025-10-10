@@ -54,9 +54,10 @@ public class GlobalWorkerManagementUI : MonoBehaviour
 
     [Header("Building List Item Prefab")]
     public GameObject buildingListItemPrefab;
-    
+
     [Header("Training Group Item Prefab")]
     public GameObject trainingGroupItemPrefab;
+    public GameObject noActiveTrainingText;
 
     [Header("Close Button")]
     public Button closeButton;
@@ -298,7 +299,9 @@ public class GlobalWorkerManagementUI : MonoBehaviour
 
         if (activeTrainings.Count == 0)
         {
-            // Display nothing - just clear the list
+            // Create a "No active training" message
+            GameObject noTrainingItem = Instantiate(noActiveTrainingText, scrollViewContent);
+            currentListItems.Add(noTrainingItem);
             return;
         }
 

@@ -19292,6 +19292,7 @@ MonoBehaviour:
   scrollViewContent: {fileID: 1681404846}
   buildingListItemPrefab: {fileID: 4628746065564638752, guid: 5611df47c6b480f4ea45e6ef8c8a2bdb, type: 3}
   trainingGroupItemPrefab: {fileID: 5674592798549072054, guid: 3ff3d80c10dfe524c9c21b1c5d281317, type: 3}
+  noActiveTrainingText: {fileID: 6599924936806858972, guid: 40864f240feec7a44befff82ca01fc6f, type: 3}
   closeButton: {fileID: 1677823026}
   workerSystem: {fileID: 550057045}
   buildingSystem: {fileID: 550057043}
