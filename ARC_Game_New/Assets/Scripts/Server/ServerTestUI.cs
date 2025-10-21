@@ -4,11 +4,12 @@ using System.Net.Sockets;
 using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 
 public class ServerTestUI : MonoBehaviour
 {
     public Button testButton;
-    public Text resultText; // Or TMP_Text if using TextMeshPro
+    public TMP_Text resultText; // Or TMP_Text if using TextMeshPro
 
     private string host = "janus.hss.cmu.edu";
     private int port = 8998;

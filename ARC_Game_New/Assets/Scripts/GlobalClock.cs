@@ -128,13 +128,13 @@ public class GlobalClock : MonoBehaviour
         // Update day text
         if (dayText != null)
         {
-            dayText.text = $"Day   {currentDay}";
+            dayText.text = $"{currentDay}";
         }
 
         // Update round text
         if (roundText != null)
         {
-            roundText.text = $"Round   {currentTimeSegment + 1}";
+            roundText.text = $"{currentTimeSegment + 1}";
         }
 
         if (TaskCenterDayRoundText != null)
