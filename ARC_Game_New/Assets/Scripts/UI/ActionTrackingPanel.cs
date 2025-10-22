@@ -99,7 +99,7 @@ public class ActionTrackingPanel : MonoBehaviour
 
     public void OnNewMessage(ActionTrackingManager.ActionMessage message)
     {
-        if (isExpanded)
+        if (isExpanded && message.day == ActionTrackingManager.Instance.currentDay)
         {
             AddMessageToList(message);
             
@@ -127,11 +127,16 @@ public class ActionTrackingPanel : MonoBehaviour
         {
             var messages = ActionTrackingManager.Instance.GetAllMessages();
             
-            // Add messages in reverse order (newest at bottom)
+            // Filter messages for the current day
+            int currentDay = ActionTrackingManager.Instance.currentDay;
             foreach (var message in messages)
             {
-                AddMessageToList(message);
+                if (message.day == currentDay)
+                {
+                    AddMessageToList(message);
+                }
             }
+        
             
             // Scroll to bottom after adding all messages
             if (scrollView != null && messages.Count > 0)

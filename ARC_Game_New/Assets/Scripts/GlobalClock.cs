@@ -274,6 +274,8 @@ public class GlobalClock : MonoBehaviour
             OnDayChanged?.Invoke(currentDay + 1); // Signal next day number
             return; // Exit early, don't update display yet
         }
+
+        ActionTrackingManager.Instance.SetDayAndRound(currentDay, currentTimeSegment+1);
         
         OnTimeSegmentChanged?.Invoke(currentTimeSegment);
         
