@@ -28,7 +28,7 @@ public class BuildingListItem : MonoBehaviour
     public WorkforceIndicator workforceIndicator;
 
     private Building assignedBuilding;
-    private GlobalWorkerManagementUI parentUI;
+    private GlobalWorkerManagementUI globalWorkerManagementUI;
     private Image backgroundImage;
     private WorkerSystem workerSystem;
     
@@ -47,10 +47,10 @@ public class BuildingListItem : MonoBehaviour
         workerSystem = FindObjectOfType<WorkerSystem>();
     }
     
-    public void Initialize(Building building, GlobalWorkerManagementUI parentUI)
+    public void Initialize(Building building, GlobalWorkerManagementUI globalWorkerManagementUI)
     {
         this.assignedBuilding = building;
-        this.parentUI = parentUI;
+        this.globalWorkerManagementUI = globalWorkerManagementUI;
         
         // Update display immediately
         UpdateDisplay();
@@ -97,7 +97,7 @@ public class BuildingListItem : MonoBehaviour
     
     int GetBuildingNumber()
     {
-        if (parentUI == null) return 1;
+        if (globalWorkerManagementUI == null) return 1;
         
         // Get all buildings of the same type and find this building's position
         var buildingsOfSameType = FindObjectsOfType<Building>()
@@ -279,10 +279,10 @@ public class BuildingListItem : MonoBehaviour
             Debug.Log("Cannot manage during simulation");
             return;
         }
-        if (assignedBuilding != null && parentUI != null)
+        if (assignedBuilding != null && globalWorkerManagementUI != null)
         {
             AudioManager.Instance.PlayClickSFX();
-            parentUI.OnManageButtonClicked(assignedBuilding);
+            globalWorkerManagementUI.OnManageButtonClicked(assignedBuilding);
         }
         else
         {

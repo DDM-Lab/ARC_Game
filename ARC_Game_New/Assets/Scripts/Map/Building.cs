@@ -36,7 +36,6 @@ public class Building : MonoBehaviour
     [Header("Visual Components")]
     public SpriteRenderer buildingRenderer;
     public GameObject constructionProgressBar;
-    public GameObject workerButton; // Button to open worker assignment UI
 
     [Header("Status Colors")]
     public Color constructionColor = Color.yellow;
@@ -62,10 +61,6 @@ public class Building : MonoBehaviour
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(true);
 
-        // Hide worker button during construction
-        if (workerButton != null)
-            workerButton.SetActive(false);
-
         // Hide workforce indicator during construction
         if (mapWorkforceIndicator != null)
             mapWorkforceIndicator.gameObject.SetActive(false);
@@ -88,10 +83,6 @@ public class Building : MonoBehaviour
         if (workerSystem == null)
             workerSystem = FindObjectOfType<WorkerSystem>();
 
-        // Hide worker button initially (will be shown when construction completes)
-        if (workerButton != null)
-            workerButton.SetActive(false);
-
         // Hide workforce indicator initially (will be shown when construction completes)
         if (mapWorkforceIndicator != null)
             mapWorkforceIndicator.gameObject.SetActive(false);
@@ -110,8 +101,7 @@ public class Building : MonoBehaviour
         // Show progress bar, hide worker button, hide workforce indicator
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(true);
-        if (workerButton != null)
-            workerButton.SetActive(false);
+
         if (mapWorkforceIndicator != null)
             mapWorkforceIndicator.gameObject.SetActive(false);
 
@@ -170,8 +160,7 @@ public class Building : MonoBehaviour
         // Hide progress bar, show worker button, show workforce indicator
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(false);
-        if (workerButton != null)
-            workerButton.SetActive(true);
+
         if (mapWorkforceIndicator != null)
             mapWorkforceIndicator.gameObject.SetActive(true);
 
@@ -202,10 +191,6 @@ public class Building : MonoBehaviour
                 {
                     currentStatus = BuildingStatus.InUse;
 
-                    // Hide worker button when in use
-                    if (workerButton != null)
-                        workerButton.SetActive(false);
-
                     UpdateBuildingVisual();
                     NotifyStatsUpdate();
                     Debug.Log($"{buildingType} at site {originalSiteId} is now in use with {totalWorkforce} workforce");
@@ -223,8 +208,6 @@ public class Building : MonoBehaviour
             {
                 // Fallback for when WorkerSystem is not available
                 currentStatus = BuildingStatus.InUse;
-                if (workerButton != null)
-                    workerButton.SetActive(false);
 
                 UpdateBuildingVisual();
                 NotifyStatsUpdate();
@@ -257,10 +240,6 @@ public class Building : MonoBehaviour
         {
             currentStatus = BuildingStatus.Disabled;
 
-            // Show worker button when disabled (for potential reassignment)
-            if (workerButton != null)
-                workerButton.SetActive(true);
-
             // Release workers from this building
             if (workerSystem != null)
             {
@@ -286,10 +265,6 @@ public class Building : MonoBehaviour
         if (currentStatus == BuildingStatus.Disabled)
         {
             currentStatus = BuildingStatus.NeedWorker;
-
-            // Keep worker button visible for reassignment
-            if (workerButton != null)
-                workerButton.SetActive(true);
 
             UpdateBuildingVisual();
             NotifyStatsUpdate();

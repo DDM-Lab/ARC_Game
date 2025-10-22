@@ -143,6 +143,12 @@ public class BuildingSystem : MonoBehaviour
                 GameLogPanel.Instance.LogPlayerAction($"Construction cost of {constructionCost} deducted for building {buildingType} at AbandonedSite_{site.GetId()}");
             }
 
+            // Notify UI Overlay about new building
+            if (BuildingUIOverlay.Instance != null)
+            {
+                BuildingUIOverlay.Instance.OnBuildingCreated(buildingComponent);
+            }
+
             // Convert abandoned site (disable it)
             site.ConvertToBuilding();
 
@@ -315,6 +321,12 @@ public class BuildingSystem : MonoBehaviour
         Collider2D siteCollider = site.GetComponent<Collider2D>();
         if (siteCollider != null)
             siteCollider.enabled = true;
+
+        // BEFORE destroying the building, notify UI Overlay
+        if (BuildingUIOverlay.Instance != null && building != null)
+        {
+            BuildingUIOverlay.Instance.OnBuildingDestroyed(building);
+        }
         
         // Destroy the building
         string buildingName = building.name;
