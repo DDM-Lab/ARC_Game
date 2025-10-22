@@ -36,12 +36,12 @@ public class GlobalClock : MonoBehaviour
     
 
     public Image[] timeSegmentImages = new Image[4]; // 4 time segments
-    
-    [Header("Sprite References")]
-    public Sprite pastTimeSprite;     // Already passed time segment
-    public Sprite currentTimeSprite;  // Current time segment
-    public Sprite futureTimeSprite;   // Future time segment
-    
+
+    [Header("Color References")]
+    public Color pastTimeColor;     // Already passed time segment
+    public Color currentTimeColor;  // Current time segment
+    public Color futureTimeColor;   // Future time segment
+
     [Header("Day Display")]
     public TextMeshProUGUI dayText;
     public TextMeshProUGUI roundText;
@@ -143,29 +143,29 @@ public class GlobalClock : MonoBehaviour
         }
 
         // Update time segment sprites
-        UpdateTimeSegmentSprites();
+        UpdateTimeSegmentColors();
     }
-    
-    void UpdateTimeSegmentSprites()
+
+    void UpdateTimeSegmentColors()
     {
         for (int i = 0; i < timeSegmentImages.Length; i++)
         {
             if (timeSegmentImages[i] == null) continue;
-            
+
             if (i < currentTimeSegment)
             {
                 // Past time segment
-                timeSegmentImages[i].sprite = pastTimeSprite;
+                timeSegmentImages[i].color = pastTimeColor;
             }
             else if (i == currentTimeSegment)
             {
                 // Current time segment
-                timeSegmentImages[i].sprite = currentTimeSprite;
+                timeSegmentImages[i].color = currentTimeColor;
             }
             else
             {
                 // Future time segment
-                timeSegmentImages[i].sprite = futureTimeSprite;
+                timeSegmentImages[i].color = futureTimeColor;
             }
         }
     }
