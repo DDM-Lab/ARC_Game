@@ -116,6 +116,27 @@ public class TaskDetailUI : MonoBehaviour
         }
     }
 
+    public void SkipCurrentTyping()
+    {
+        if (isTyping && currentTypingMessage != null)
+        {
+            // Stop typing coroutine
+            StopAllCoroutines();
+
+            // Show full text immediately
+            currentTypingMessage.SkipTyping();
+
+            isTyping = false;
+
+            // Auto-scroll to bottom
+            if (conversationScrollView != null)
+            {
+                Canvas.ForceUpdateCanvases();
+                conversationScrollView.verticalNormalizedPosition = 0f;
+            }
+        }
+    }
+
     public void ShowTaskDetail(GameTask task)
     {
         // NEW: Check if this task was shown before
@@ -293,7 +314,7 @@ public class TaskDetailUI : MonoBehaviour
         ScrollToBottom();
     }
 
-    // MODIFIED: Now accepts and uses isFirstTimeShowing parameter
+    // Now accepts and uses isFirstTimeShowing parameter
     IEnumerator DisplayAgentMessage(AgentMessage message, bool isFirstTimeShowing)
     {
         // Check if panel is still active
@@ -307,9 +328,9 @@ public class TaskDetailUI : MonoBehaviour
         {
             messageUI.Initialize(message);
 
-            // MODIFIED: Only show typing effect if it's the first time AND conditions are met
+            // Only show typing effect if it's the first time AND conditions are met AND settings allow it
             if (message.useTypingEffect && currentTask.status == TaskStatus.Active && 
-                !currentTask.isExpired && isFirstTimeShowing)
+                !currentTask.isExpired && isFirstTimeShowing && !SettingsPanel.SkipTyping)
             {
                 isTyping = true;
                 currentTypingMessage = messageUI;
