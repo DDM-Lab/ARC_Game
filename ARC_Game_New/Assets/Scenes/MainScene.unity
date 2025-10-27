@@ -17215,8 +17215,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 126, y: 92}
+  m_AnchoredPosition: {x: 6, y: 2.505}
+  m_SizeDelta: {x: 141.58, y: 111.39}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &448853343
 MonoBehaviour:
@@ -34537,8 +34537,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -1, y: 0}
-  m_SizeDelta: {x: 117, y: 100}
+  m_AnchoredPosition: {x: -1.4, y: -2.5}
+  m_SizeDelta: {x: 128.98, y: 111.4}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &756614827
 MonoBehaviour:
@@ -43218,6 +43218,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   testButton: {fileID: 332728404}
   resultText: {fileID: 1485753969}
+  host: janus.hss.cmu.edu
+  port: 8998
 --- !u!4 &995145999
 Transform:
   m_ObjectHideFlags: 0
@@ -86190,8 +86192,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -1, y: 0}
-  m_SizeDelta: {x: 149, y: 70}
+  m_AnchoredPosition: {x: -2.6, y: -4.01}
+  m_SizeDelta: {x: 145.8, y: 108.38}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1921389038
 MonoBehaviour:

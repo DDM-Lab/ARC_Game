@@ -1,18 +1,21 @@
 using System;
-using System.IO;
-using System.Net.Sockets;
 using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using NativeWebSocket;
 
 public class ServerTestUI : MonoBehaviour
 {
+    [Header("UI References")]
     public Button testButton;
-    public TMP_Text resultText; // Or TMP_Text if using TextMeshPro
+    public TMP_Text resultText;
 
-    private string host = "janus.hss.cmu.edu";
-    private int port = 8998;
+    [Header("Server Settings")]
+    [SerializeField] private string host = "janus.hss.cmu.edu";
+    [SerializeField] private int port = 8998;
+
+    private WebSocket websocket;
 
     void Start()
     {
@@ -22,7 +25,7 @@ public class ServerTestUI : MonoBehaviour
         }
         if (resultText != null)
         {
-            resultText.text = "Press the button to test connection.";
+            resultText.text = "Press the button to test WebSocket connection.";
         }
     }
 
@@ -31,31 +34,71 @@ public class ServerTestUI : MonoBehaviour
         try
         {
             resultText.text = "Connecting...";
+            
+            // Create WebSocket connection
+            string wsUrl = $"ws://{host}:{port}";
+            websocket = new WebSocket(wsUrl);
 
-            using (TcpClient client = new TcpClient())
+            // Set up event handlers
+            websocket.OnOpen += () =>
             {
-                await client.ConnectAsync(host, port);
+                Debug.Log("WebSocket connection opened!");
                 resultText.text = "Connected! Sending message...";
+                
+                // Send test message
+                string jsonToSend = "{\"arg\":\"hello\"}";
+                websocket.SendText(jsonToSend);
+                Debug.Log($"📤 Sent: {jsonToSend}");
+            };
 
-                using (NetworkStream stream = client.GetStream())
-                {
-                    string jsonToSend = "{\"arg\":\"hello\"}\n"; // newline at end = message boundary
-                    byte[] dataToSend = Encoding.UTF8.GetBytes(jsonToSend);
-                    await stream.WriteAsync(dataToSend, 0, dataToSend.Length);
+            websocket.OnMessage += (bytes) =>
+            {
+                string response = Encoding.UTF8.GetString(bytes);
+                resultText.text = $"Response: {response}";
+                Debug.Log($"📩 Received: {response}");
+                
+                // Close after receiving response
+                websocket.Close();
+            };
 
-                    using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
-                    {
-                        string response = await reader.ReadLineAsync();
-                        resultText.text = $"Response: {response}";
-                        Debug.Log($"📩 Received: {response}");
-                    }
-                }
-            }
+            websocket.OnError += (errorMsg) =>
+            {
+                resultText.text = $"Error: {errorMsg}";
+                Debug.LogError($"WebSocket Error: {errorMsg}");
+            };
+
+            websocket.OnClose += (closeCode) =>
+            {
+                Debug.Log($"WebSocket closed with code: {closeCode}");
+            };
+
+            // Connect
+            await websocket.Connect();
         }
         catch (Exception e)
         {
             resultText.text = $"Error: {e.Message}";
             Debug.LogError(e);
+        }
+    }
+
+    void Update()
+    {
+        // CRITICAL: Dispatch WebSocket messages on main thread
+        #if !UNITY_WEBGL || UNITY_EDITOR
+        if (websocket != null)
+        {
+            websocket.DispatchMessageQueue();
+        }
+        #endif
+    }
+
+    async void OnApplicationQuit()
+    {
+        // Clean up WebSocket on quit
+        if (websocket != null && websocket.State == WebSocketState.Open)
+        {
+            await websocket.Close();
         }
     }
 }
