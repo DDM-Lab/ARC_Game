@@ -4626,9 +4626,9 @@ MonoBehaviour:
   - {fileID: 2111961907}
   - {fileID: 1836231678}
   - {fileID: 1846952788}
-  pastTimeColor: {r: 0.2603773, g: 0.2603773, b: 0.2603773, a: 0}
-  currentTimeColor: {r: 0.74509805, g: 0.74509805, b: 0.74509805, a: 1}
-  futureTimeColor: {r: 1, g: 1, b: 1, a: 1}
+  pastTimeColor: {r: 0.21515253, g: 0.20738341, b: 0.2754717, a: 0}
+  currentTimeColor: {r: 1, g: 1, b: 1, a: 1}
+  futureTimeColor: {r: 0.6301887, g: 0.6301887, b: 0.6301887, a: 1}
   dayText: {fileID: 1548110931}
   roundText: {fileID: 1253246064}
   TaskCenterDayRoundText: {fileID: 1869181402}
@@ -58367,7 +58367,7 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_IsOn: 1
+  m_IsOn: 0
 --- !u!1 &1370863595
 GameObject:
   m_ObjectHideFlags: 0
@@ -77605,11 +77605,11 @@ MonoBehaviour:
   efficiencyChangeText: {fileID: 0}
   efficiencyBar: {fileID: 1727721154}
   efficiencyAnimationSection: {fileID: 566426948}
-  elementAnimationDelay: 0.2
-  elementFadeInDuration: 0.1
-  numberCountDuration: 0.4
+  elementAnimationDelay: 0.1
+  elementFadeInDuration: 0.05
+  numberCountDuration: 0.2
   satisfactionAnimationDuration: 1
-  barAnimationDuration: 1.5
+  barAnimationDuration: 1
 --- !u!1 &1780910160
 GameObject:
   m_ObjectHideFlags: 0
@@ -85843,7 +85843,7 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_IsOn: 1
+  m_IsOn: 0
 --- !u!1 &1917468028
 GameObject:
   m_ObjectHideFlags: 0
