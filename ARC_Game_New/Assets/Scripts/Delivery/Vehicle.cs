@@ -44,7 +44,12 @@ public class Vehicle : MonoBehaviour
     public bool showDebugInfo = true;
     public bool showPathGizmos = true;
 
-
+    [Header("Colors")]
+    public Color idleColor = Color.white;
+    public Color loadingColor = new Color(0.8f, 0.8f, 0.8f); // light gray
+    public Color inTransitColor = Color.white;
+    public Color unloadingColor = new Color(0.8f, 0.8f, 0.8f);
+    public Color damagedColor = new Color(1f, 0.2f, 0.2f); // light red
     // Current state
     private VehicleStatus currentStatus = VehicleStatus.Idle;
     private List<Vector3> currentPath = new List<Vector3>();
@@ -103,19 +108,19 @@ public class Vehicle : MonoBehaviour
         {
             case VehicleStatus.Idle:
                 displayText += "Idle";
-                displayColor = Color.white;
+                displayColor = idleColor;
                 break;
             case VehicleStatus.Loading:
                 displayText += "Loading";
-                displayColor = Color.yellow;
+                displayColor = loadingColor;
                 break;
             case VehicleStatus.InTransit:
                 displayText += "In Transit";
-                displayColor = Color.green;
+                displayColor = inTransitColor;
                 break;
             case VehicleStatus.Unloading:
                 displayText += "Unloading";
-                displayColor = Color.cyan;
+                displayColor = unloadingColor;
                 break;
         }
 
@@ -387,22 +392,22 @@ public class Vehicle : MonoBehaviour
         switch (currentStatus)
         {
             case VehicleStatus.Idle:
-                vehicleRenderer.color = Color.white;
+                vehicleRenderer.color = idleColor;
                 break;
             case VehicleStatus.Loading:
-                vehicleRenderer.color = Color.yellow;
+                vehicleRenderer.color = loadingColor;
                 break;
             case VehicleStatus.InTransit:
-                vehicleRenderer.color = Color.green;
+                vehicleRenderer.color = inTransitColor;
                 break;
             case VehicleStatus.Unloading:
-                vehicleRenderer.color = Color.blue;
+                vehicleRenderer.color = unloadingColor;
                 break;
             case VehicleStatus.Returning:
-                vehicleRenderer.color = Color.cyan;
+                vehicleRenderer.color = inTransitColor;
                 break;
             case VehicleStatus.Damaged:
-                vehicleRenderer.color = Color.red; // Red for damaged
+                vehicleRenderer.color = damagedColor;
                 break;
         }
 

@@ -84,15 +84,14 @@ public class Worker
     
     public void SetUntrainedStatus(UntrainedWorkerStatus status)
     {
-        if (workerType == WorkerType.Untrained)
-        {
-            untrainedStatus = status;
-            OnStatusChanged?.Invoke(this);
-        }
-        else
+        if (Type != WorkerType.Untrained)
         {
             Debug.LogWarning($"Cannot set untrained status on trained worker {workerId}");
+            return;
         }
+        
+        untrainedStatus = status;
+        OnStatusChanged?.Invoke(this);
     }
     
     // Assignment management

@@ -17,9 +17,15 @@ public class BuildingSystem : MonoBehaviour
     
     [Header("Worker System")]
     public WorkerSystem workerSystem;
+
     [Header("Global Button")]
     public GlobalFacilityButton globalFacilityButton;
-    
+
+    [Header("Construction Costs")]
+    public int shelterConstructionCost = 1000;
+    public int kitchenConstructionCost = 1000;
+    public int caseworkSiteConstructionCost = 1000;
+
     private List<AbandonedSite> registeredSites = new List<AbandonedSite>();
     private AbandonedSite selectedSite;
 
@@ -120,6 +126,27 @@ public class BuildingSystem : MonoBehaviour
                     buildingComponent.workerSystem = workerSystem;
 
                 buildingComponent.Initialize(buildingType, site.GetId());
+            }
+
+            // Deduct construction cost
+            int constructionCost = buildingType switch
+            {
+                BuildingType.Kitchen => kitchenConstructionCost,
+                BuildingType.Shelter => shelterConstructionCost,
+                BuildingType.CaseworkSite => caseworkSiteConstructionCost,
+                _ => 0,
+            };
+            if (SatisfactionAndBudget.Instance != null && constructionCost > 0)
+            {
+                SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
+                ToastManager.ShowToast($"Construction cost of {constructionCost} deducted for building {buildingType}", ToastType.Info, true);
+                GameLogPanel.Instance.LogPlayerAction($"Construction cost of {constructionCost} deducted for building {buildingType} at AbandonedSite_{site.GetId()}");
+            }
+
+            // Notify UI Overlay about new building
+            if (BuildingUIOverlay.Instance != null)
+            {
+                BuildingUIOverlay.Instance.OnBuildingCreated(buildingComponent);
             }
 
             // Convert abandoned site (disable it)
@@ -294,6 +321,12 @@ public class BuildingSystem : MonoBehaviour
         Collider2D siteCollider = site.GetComponent<Collider2D>();
         if (siteCollider != null)
             siteCollider.enabled = true;
+
+        // BEFORE destroying the building, notify UI Overlay
+        if (BuildingUIOverlay.Instance != null && building != null)
+        {
+            BuildingUIOverlay.Instance.OnBuildingDestroyed(building);
+        }
         
         // Destroy the building
         string buildingName = building.name;

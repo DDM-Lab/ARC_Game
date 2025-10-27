@@ -193,6 +193,13 @@ public class AlertUIController : MonoBehaviour
     /// </summary>
     public void ShowAlert(GameTask alertTask)
     {
+        // Check if alerts should be skipped entirely
+        if (SettingsPanel.SkipAlerts)
+        {
+            Debug.Log($"Skipping alert: {alertTask.taskTitle}");
+            return;
+        }
+        
         alertQueue.Enqueue(alertTask);
         Debug.Log($"Alert queued: {alertTask.taskTitle}");
 
@@ -462,6 +469,24 @@ public class AlertUIController : MonoBehaviour
     /// </summary>
     IEnumerator TypeMessage(string message)
     {
+        // Check if typing should be skipped
+        if (SettingsPanel.SkipTyping)
+        {
+            // Display full message immediately
+            messageText.text = message;
+
+            // Set to target height immediately
+            SetMessageContainerHeight(targetHeight);
+            currentHeight = targetHeight;
+
+            // Mark typing as complete
+            isTyping = false;
+            nextButton.interactable = true;
+            skipTypingButton.interactable = false;
+
+            yield break;
+        }
+        
         messageText.text = "";
         int lastLineCount = 1;
         
@@ -569,11 +594,11 @@ public class AlertUIController : MonoBehaviour
             SkipTyping();
         }
     }
-    
+
     /// <summary>
     /// Skip current typing effect - IMPROVED: Smooth without glitching
     /// </summary>
-    void SkipTyping()
+    /*void SkipTyping()
     {
         AudioManager.Instance.PlaySkipSFX();
 
@@ -581,13 +606,13 @@ public class AlertUIController : MonoBehaviour
         {
             StopCoroutine(typingCoroutine);
         }
-        
+
         // Show full message immediately
         if (currentMessageIndex < alertMessages.Count)
         {
             string fullMessage = alertMessages[currentMessageIndex].messageText;
             messageText.text = fullMessage;
-            
+
             // Ensure height is correct for full message
             if (Mathf.Abs(currentHeight - targetHeight) > 2f)
             {
@@ -598,10 +623,34 @@ public class AlertUIController : MonoBehaviour
                 SetMessageContainerHeight(currentHeight);
             }
         }
-        
+
         isTyping = false;
         skipTypingButton.interactable = false;
         nextButton.interactable = true;
+    }*/
+    
+    // For external calls to skip typing
+    public void SkipTyping()
+    {
+        if (isTyping && typingCoroutine != null)
+        {
+            StopCoroutine(typingCoroutine);
+            
+            // Show full message immediately
+            if (currentMessageIndex < alertMessages.Count)
+            {
+                messageText.text = alertMessages[currentMessageIndex].messageText;
+            }
+            
+            // Complete typing
+            isTyping = false;
+            nextButton.interactable = true;
+            skipTypingButton.interactable = false;
+            
+            // Ensure container is at target height
+            SetMessageContainerHeight(targetHeight);
+            currentHeight = targetHeight;
+        }
     }
     
     /// <summary>

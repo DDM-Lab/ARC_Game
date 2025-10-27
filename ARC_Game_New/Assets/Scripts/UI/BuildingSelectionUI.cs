@@ -216,15 +216,18 @@ public class BuildingSelectionUI : MonoBehaviour
         {
             case BuildingType.Kitchen:
                 buildingName = "Kitchen";
-                buildingDescription = "Provides food for survivors.\nCapacity: 20 people\nFunction: Food production and distribution";
+                buildingDescription = "Provides food for clients.\nCapacity: 10 food packs\n" + "<color=#00FF00>Time Needed: 1 Round</color>\n" +
+                                        $"<color=#00FF00>Construction Cost: ${buildingSystem.kitchenConstructionCost}</color>";
                 break;
             case BuildingType.Shelter:
                 buildingName = "Shelter";
-                buildingDescription = "Provides housing for survivors.\nCapacity: 15 people\nFunction: Safe accommodation and rest";
+                buildingDescription = "Provides housing for clients.\nCapacity: 10 people\n" + "<color=#00FF00>Time Needed: 1 Round</color>\n" +
+                                        $"<color=#00FF00>Construction Cost: ${buildingSystem.shelterConstructionCost}</color>";
                 break;
             case BuildingType.CaseworkSite:
                 buildingName = "Casework Site";
-                buildingDescription = "Handles administrative tasks.\nCapacity: 8 cases\nFunction: Case management and support services";
+                buildingDescription = "Handles administrative tasks.\nCapacity: 40 cases\n" + "<color=#00FF00>Time Needed: 1 Round</color>\n" +
+                                        $"<color=#00FF00>Construction Cost: ${buildingSystem.caseworkSiteConstructionCost}</color>";
                 break;
         }
         

@@ -97,6 +97,9 @@ public class ToastManager : MonoBehaviour
         activeToasts.Add(toastObj);
         RepositionToasts();
 
+        // Share message with ActionTrackingManager
+        ActionTrackingManager.AddMessage(toastData.message);
+
         if (toastData.playSound && audioSource != null && soundEffects != null)
         {
             int soundIndex = (int)toastData.type;
@@ -109,22 +112,22 @@ public class ToastManager : MonoBehaviour
         StartCoroutine(RemoveToastAfterDelay(toastObj, displayDuration));
     }
 
-private void RepositionToasts()
-{
-    for (int i = 0; i < activeToasts.Count; i++)
+    private void RepositionToasts()
     {
-        if (activeToasts[i] != null)
+        for (int i = 0; i < activeToasts.Count; i++)
         {
-            ToastUI toastUI = activeToasts[i].GetComponent<ToastUI>();
-            Vector2 targetPos = new Vector2(0, -i * toastSpacing);
-            
-            if (toastUI != null)
+            if (activeToasts[i] != null)
             {
-                toastUI.UpdateTargetPosition(targetPos);
+                ToastUI toastUI = activeToasts[i].GetComponent<ToastUI>();
+                Vector2 targetPos = new Vector2(0, -i * toastSpacing);
+                
+                if (toastUI != null)
+                {
+                    toastUI.UpdateTargetPosition(targetPos);
+                }
             }
         }
     }
-}
 
     private IEnumerator RemoveToastAfterDelay(GameObject toastObj, float delay)
     {

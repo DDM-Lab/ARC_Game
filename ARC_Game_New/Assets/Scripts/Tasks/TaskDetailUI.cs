@@ -60,6 +60,10 @@ public class TaskDetailUI : MonoBehaviour
     private Dictionary<int, AgentNumericalInput> numericalInputs = new Dictionary<int, AgentNumericalInput>();
     private bool isTyping = false;
     private AgentMessageUI currentTypingMessage;
+    private Vector2 lastScrollPosition;
+    
+    // NEW: Track which tasks have been shown before
+    private HashSet<int> previouslyShownTaskIds = new HashSet<int>();
 
     void Start()
     {
@@ -112,8 +116,32 @@ public class TaskDetailUI : MonoBehaviour
         }
     }
 
+    public void SkipCurrentTyping()
+    {
+        if (isTyping && currentTypingMessage != null)
+        {
+            // Stop typing coroutine
+            StopAllCoroutines();
+
+            // Show full text immediately
+            currentTypingMessage.SkipTyping();
+
+            isTyping = false;
+
+            // Auto-scroll to bottom
+            if (conversationScrollView != null)
+            {
+                Canvas.ForceUpdateCanvases();
+                conversationScrollView.verticalNormalizedPosition = 0f;
+            }
+        }
+    }
+
     public void ShowTaskDetail(GameTask task)
     {
+        // NEW: Check if this task was shown before
+        bool isFirstTimeShowing = !previouslyShownTaskIds.Contains(task.taskId);
+        
         currentTask = task;
 
         if (taskDetailPanel != null)
@@ -121,11 +149,17 @@ public class TaskDetailUI : MonoBehaviour
             taskDetailPanel.SetActive(true);
 
             UpdateTaskDescription();
-            StartAgentConversation();
+            
+            // NEW: Pass the isFirstTimeShowing flag to StartAgentConversation
+            StartAgentConversation(isFirstTimeShowing);
+            
             UpdateActionButtons();
 
+            // NEW: Mark task as shown
+            previouslyShownTaskIds.Add(task.taskId);
+
             if (showDebugInfo)
-                Debug.Log($"Showing task detail for: {task.taskTitle}");
+                Debug.Log($"Showing task detail for: {task.taskTitle} (First time: {isFirstTimeShowing})");
         }
     }
 
@@ -236,28 +270,29 @@ public class TaskDetailUI : MonoBehaviour
         currentImpactItems.Clear();
     }
 
-    void StartAgentConversation()
+    // MODIFIED: Now accepts isFirstTimeShowing parameter
+    void StartAgentConversation(bool isFirstTimeShowing)
     {
         if (currentTask == null) return;
 
-        // Clear existing conversation
+        // Clear existing conversation - ALWAYS clear to prevent duplicates
         ClearConversation();
 
-        // Start conversation coroutine
-        StartCoroutine(PlayAgentConversation());
+        // Start conversation coroutine with the flag
+        StartCoroutine(PlayAgentConversation(isFirstTimeShowing));
     }
 
-    IEnumerator PlayAgentConversation()
+    // MODIFIED: Now accepts and uses isFirstTimeShowing parameter
+    IEnumerator PlayAgentConversation(bool isFirstTimeShowing)
     {
-        // Display agent messages with typing effect
+        // Display agent messages with or without typing effect based on if it's first time
         foreach (AgentMessage message in currentTask.agentMessages)
         {
             // Check if panel is still active before each message
             if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
                 yield break;
 
-            yield return StartCoroutine(DisplayAgentMessage(message));
-            //yield return new WaitForSecondsRealtime(0.5f); // Brief pause between messages, use real time
+            yield return StartCoroutine(DisplayAgentMessage(message, isFirstTimeShowing));
         }
 
         // Check if panel is still active before displaying choices
@@ -279,7 +314,8 @@ public class TaskDetailUI : MonoBehaviour
         ScrollToBottom();
     }
 
-    IEnumerator DisplayAgentMessage(AgentMessage message)
+    // Now accepts and uses isFirstTimeShowing parameter
+    IEnumerator DisplayAgentMessage(AgentMessage message, bool isFirstTimeShowing)
     {
         // Check if panel is still active
         if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
@@ -292,7 +328,9 @@ public class TaskDetailUI : MonoBehaviour
         {
             messageUI.Initialize(message);
 
-            if (message.useTypingEffect && currentTask.status == TaskStatus.Active && !currentTask.isExpired)
+            // Only show typing effect if it's the first time AND conditions are met AND settings allow it
+            if (message.useTypingEffect && currentTask.status == TaskStatus.Active && 
+                !currentTask.isExpired && isFirstTimeShowing && !SettingsPanel.SkipTyping)
             {
                 isTyping = true;
                 currentTypingMessage = messageUI;
@@ -302,6 +340,7 @@ public class TaskDetailUI : MonoBehaviour
             }
             else
             {
+                // Show full message immediately if reopening or conditions not met
                 messageUI.ShowFullMessage();
             }
         }
@@ -349,40 +388,26 @@ public class TaskDetailUI : MonoBehaviour
                 currentConversationItems.Add(inputItem);
             }
 
-            ScrollToBottom();
+            // Disable vertical scrolling on the scroll view
+            if (conversationScrollView != null)
+                conversationScrollView.vertical = false;
         }
     }
 
     void ClearConversation()
     {
-        // NEW: Stop any typing effects first
-        isTyping = false;
-        currentTypingMessage = null;
-
-        // NEW: Immediate cleanup of all conversation items
+        // MODIFIED: Properly destroy all conversation items before clearing list
         foreach (GameObject item in currentConversationItems)
         {
             if (item != null)
-            {
-                // Force immediate destruction
-                DestroyImmediate(item);
-            }
+                Destroy(item);
         }
+        
+        if (conversationScrollView != null)
+            conversationScrollView.vertical = true;
+
         currentConversationItems.Clear();
         selectedChoice = null;
-
-        // NEW: Also clear any orphaned children from conversationContent
-        if (conversationContent != null)
-        {
-            for (int i = conversationContent.childCount - 1; i >= 0; i--)
-            {
-                Transform child = conversationContent.GetChild(i);
-                if (child != null)
-                {
-                    DestroyImmediate(child.gameObject);
-                }
-            }
-        }
     }
 
     void ClearDisplay()
@@ -490,6 +515,14 @@ public class TaskDetailUI : MonoBehaviour
             return;
         }
 
+        // Validate numerical inputs before proceeding
+        string numericalValidationError;
+        if (!ValidateNumericalInputs(out numericalValidationError))
+        {
+            ShowAgentErrorMessage(numericalValidationError);
+            return;
+        }
+
         // Validate selected choice if it involves any type of delivery
         if (selectedChoice != null && (selectedChoice.triggersDelivery || selectedChoice.immediateDelivery || selectedChoice.enableMultipleDeliveries))
         {
@@ -559,6 +592,225 @@ public class TaskDetailUI : MonoBehaviour
         CategoryTaskManager categoryManager = FindObjectOfType<CategoryTaskManager>();
         if (categoryManager != null)
             categoryManager.RefreshTaskList();
+    }
+
+    // ---------NUMERICAL INPUT VALIDATION ---------
+    /// <summary>
+    /// Validates all numerical inputs in the current task
+    /// </summary>
+    bool ValidateNumericalInputs(out string errorMessage)
+    {
+        errorMessage = "";
+        
+        if (currentTask.numericalInputs == null || currentTask.numericalInputs.Count == 0)
+            return true; // No numerical inputs to validate
+        
+        foreach (GameObject item in currentConversationItems)
+        {
+            NumericalInputUI inputUI = item.GetComponent<NumericalInputUI>();
+            if (inputUI != null)
+            {
+                int value = inputUI.GetCurrentValue();
+                NumericalInputType inputType = inputUI.GetInputType();
+                
+                // Perform type-specific validation
+                string validationError = ValidateSpecificInput(inputType, value);
+                if (!string.IsNullOrEmpty(validationError))
+                {
+                    errorMessage = validationError;
+                    return false;
+                }
+            }
+        }
+        
+        // Perform cross-input validation (e.g., total budget checks)
+        string crossValidationError = ValidateCrossInputConstraints();
+        if (!string.IsNullOrEmpty(crossValidationError))
+        {
+            errorMessage = crossValidationError;
+            return false;
+        }
+        
+        return true;
+    }
+
+    /// <summary>
+    /// Type-specific validation for individual inputs
+    /// </summary>
+    string ValidateSpecificInput(NumericalInputType type, int value)
+    {
+        switch (type)
+        {
+            case NumericalInputType.Budget:
+                // Check if budget value exceeds available funds
+                if (SatisfactionAndBudget.Instance != null)
+                {
+                    int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+                    if (value > availableBudget)
+                    {
+                        return $"Insufficient budget. You requested ${value:N0} but only have ${availableBudget:N0} available.";
+                    }
+                }
+                break;
+                
+            case NumericalInputType.UntrainedWorkers:
+                // Check if requested workers exceed available
+                if (WorkerSystem.Instance != null)
+                {
+                    int availableUntrained = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
+                    if (value > availableUntrained)
+                    {
+                        return $"Not enough untrained workers. You requested {value} but only have {availableUntrained} available.";
+                    }
+                }
+                break;
+                
+            case NumericalInputType.TrainedWorkers:
+                // Check if requested trained workers exceed available
+                if (WorkerSystem.Instance != null)
+                {
+                    int availableTrained = WorkerSystem.Instance.GetAvailableTrainedWorkers();
+                    if (value > availableTrained)
+                    {
+                        return $"Not enough trained workers. You requested {value} but only have {availableTrained} available.";
+                    }
+                }
+                break;
+                
+            case NumericalInputType.FoodPacks:
+                // Check food pack availability
+                if (value > 0)
+                {
+                    // Find kitchen with available food packs
+                    Building[] kitchens = FindObjectsOfType<Building>()
+                        .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
+                        .ToArray();
+                        
+                    int totalAvailable = 0;
+                    foreach (Building kitchen in kitchens)
+                    {
+                        BuildingResourceStorage storage = kitchen.GetComponent<BuildingResourceStorage>();
+                        if (storage != null)
+                            totalAvailable += storage.GetResourceAmount(ResourceType.FoodPacks);
+                    }
+                    
+                    if (value > totalAvailable)
+                    {
+                        return $"Not enough food packs. You requested {value} but only have {totalAvailable} available across all kitchens.";
+                    }
+                }
+                break;
+                
+            case NumericalInputType.Clients:
+                // Check if processing more clients than available
+                if (value > 0)
+                {
+                    // Context-specific validation based on task
+                    if (currentTask.taskTitle.Contains("Training"))
+                    {
+                        // For training tasks, clients might mean workers to train
+                        return ValidateTrainingCapacity(value);
+                    }
+                    else if (currentTask.taskTitle.Contains("Transport") || currentTask.taskTitle.Contains("Evacuation"))
+                    {
+                        // For transport tasks, validate vehicle capacity
+                        return ValidateTransportCapacity(value);
+                    }
+                }
+                break;
+        }
+        
+        return ""; // No error
+    }
+
+    /// <summary>
+    /// Validate constraints across multiple inputs
+    /// </summary>
+    string ValidateCrossInputConstraints()
+    {
+        int totalBudgetRequested = 0;
+        int totalWorkersRequested = 0;
+        
+        foreach (GameObject item in currentConversationItems)
+        {
+            NumericalInputUI inputUI = item.GetComponent<NumericalInputUI>();
+            if (inputUI != null)
+            {
+                NumericalInputType type = inputUI.GetInputType();
+                int value = inputUI.GetCurrentValue();
+                
+                if (type == NumericalInputType.Budget)
+                {
+                    totalBudgetRequested += value;
+                }
+                else if (type == NumericalInputType.UntrainedWorkers || type == NumericalInputType.TrainedWorkers)
+                {
+                    totalWorkersRequested += value;
+                }
+            }
+        }
+        
+        // Check total budget
+        if (totalBudgetRequested > 0 && SatisfactionAndBudget.Instance != null)
+        {
+            int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+            if (totalBudgetRequested > availableBudget)
+            {
+                return $"Total budget requested (${totalBudgetRequested:N0}) exceeds available funds (${availableBudget:N0}).";
+            }
+        }
+        
+        // Check if total workers requested exceeds building capacity
+        if (totalWorkersRequested > 0 && currentTask.affectedFacility != null)
+        {
+            // Could add facility-specific worker capacity checks here
+        }
+        
+        return ""; // No error
+    }
+
+    /// <summary>
+    /// Validate training capacity for worker training tasks
+    /// </summary>
+    string ValidateTrainingCapacity(int workersToTrain)
+    {
+        if (WorkerTrainingSystem.Instance != null)
+        {
+            int trainingCost = WorkerTrainingSystem.Instance.trainingCostPerWorker * workersToTrain;
+            
+            if (SatisfactionAndBudget.Instance != null)
+            {
+                int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+                if (trainingCost > availableBudget)
+                {
+                    return $"Training {workersToTrain} workers costs ${trainingCost:N0}, but you only have ${availableBudget:N0} available.";
+                }
+            }
+        }
+        return "";
+    }
+
+    /// <summary>
+    /// Validate transport capacity for evacuation tasks
+    /// </summary>
+    string ValidateTransportCapacity(int peopleToTransport)
+    {
+        Vehicle[] vehicles = FindObjectsOfType<Vehicle>()
+            .Where(v => v.GetCurrentStatus() != VehicleStatus.Damaged)
+            .ToArray();
+        
+        if (vehicles.Length == 0)
+        {
+            return "No available vehicles for transport.";
+        }
+        
+        int maxCapacity = vehicles.Max(v => v.GetMaxCapacity());
+        if (peopleToTransport > maxCapacity)
+        {
+            return $"Cannot transport {peopleToTransport} people. Maximum vehicle capacity is {maxCapacity}.";
+        }
+        
+        return "";
     }
 
     //  ---------CHOICE DELIVERY VALIDATION ---------
@@ -1067,7 +1319,16 @@ public class TaskDetailUI : MonoBehaviour
 
         if (messageUI != null)
         {
-            AgentMessage errorMessage = new AgentMessage(errorText);
+            Sprite errorAgentSprite = currentTask.taskOfficer switch
+            {
+                TaskOfficer.WorkforceService => TaskSystem.Instance.workforceServiceSprite,
+                TaskOfficer.LodgingMassCare => TaskSystem.Instance.lodgingMassCareSprite,
+                TaskOfficer.ExternalRelationship => TaskSystem.Instance.externalRelationshipSprite,
+                TaskOfficer.FoodMassCare => TaskSystem.Instance.foodMassCareSprite,
+                _ => TaskSystem.Instance.defaultAgentSprite
+            };
+            AgentMessage errorMessage = new AgentMessage(errorText, errorAgentSprite);
+            errorMessage.useTypingEffect = false;
             messageUI.Initialize(errorMessage);
             messageUI.ShowFullMessage();
 
@@ -1760,13 +2021,13 @@ public class TaskDetailUI : MonoBehaviour
                     {
                         if (impact.value > 0)
                         {
-                            SatisfactionAndBudget.Instance.AddSatisfaction(impact.value);
-                            ToastManager.ShowToast($"Satisfaction increased by {impact.value}", ToastType.Info, true);
+                            SatisfactionAndBudget.Instance.AddSatisfaction(impact.value, $"Task [{currentTask.taskTitle}] satisfaction impact");
+                            ToastManager.ShowToast($"Satisfaction increased by {impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
                         }
                         else
                         {
-                            SatisfactionAndBudget.Instance.RemoveSatisfaction(-impact.value);
-                            ToastManager.ShowToast($"Satisfaction decreased by {-impact.value}", ToastType.Warning, true);
+                            SatisfactionAndBudget.Instance.RemoveSatisfaction(-impact.value, $"Task [{currentTask.taskTitle}] satisfaction impact");
+                            ToastManager.ShowToast($"Satisfaction decreased by {-impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
                         }
                     }
                     break;
@@ -1776,13 +2037,13 @@ public class TaskDetailUI : MonoBehaviour
                     {
                         if (impact.value > 0)
                         {
-                            SatisfactionAndBudget.Instance.AddBudget(impact.value);
-                            ToastManager.ShowToast($"Budget increased by {impact.value}", ToastType.Info, true);
+                            SatisfactionAndBudget.Instance.AddBudget(impact.value, $"Task [{currentTask.taskTitle}] budget impact");
+                            ToastManager.ShowToast($"Budget increased by {impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
                         }
                         else
                         {
-                            SatisfactionAndBudget.Instance.RemoveBudget(-impact.value);
-                            ToastManager.ShowToast($"Budget decreased by {-impact.value}", ToastType.Warning, true);
+                            SatisfactionAndBudget.Instance.RemoveBudget(-impact.value, $"Task [{currentTask.taskTitle}] budget impact");
+                            ToastManager.ShowToast($"Budget decreased by {-impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
                         }
                     }
                     break;
@@ -1908,11 +2169,40 @@ public class TaskDetailUI : MonoBehaviour
         }
     }
 
+    public void PreventScrollReset()
+    {
+        if (conversationScrollView != null)
+        {
+            lastScrollPosition = conversationScrollView.normalizedPosition;
+            StartCoroutine(RestoreScrollPosition());
+        }
+    }
+
+    IEnumerator RestoreScrollPosition()
+    {
+        yield return new WaitForEndOfFrame();
+        if (conversationScrollView != null)
+            conversationScrollView.normalizedPosition = lastScrollPosition;
+    }
+
     public bool IsUIOpen()
     {
         return taskDetailPanel != null && taskDetailPanel.activeInHierarchy;
     }
 
+    // NEW: Method to reset task shown history (useful for scene reloads)
+    public void ResetTaskHistory()
+    {
+        previouslyShownTaskIds.Clear();
+        if (showDebugInfo)
+            Debug.Log("Task history reset - all tasks will show typing effects again");
+    }
+
+    // NEW: Method to manually mark a task as shown (useful for pre-loaded tasks)
+    public void MarkTaskAsShown(int taskId)
+    {
+        previouslyShownTaskIds.Add(taskId);
+        if (showDebugInfo)
+            Debug.Log($"Task {taskId} marked as previously shown");
+    }
 }
-
-

@@ -29,6 +29,7 @@ public class WeatherSystem : MonoBehaviour
     
     [Header("UI References")]
     public Image weatherIcon;
+    public Image weatherIcon_duplicate; // For dual icon setups
     
     [Header("Debug Panel")]
     public GameObject debugPanel;
@@ -186,7 +187,7 @@ public class WeatherSystem : MonoBehaviour
     void UpdateWeatherIcon()
     {
         if (weatherIcon == null) return;
-        
+
         // Find the sprite for current weather
         foreach (WeatherData weather in weatherTypes)
         {
@@ -195,6 +196,11 @@ public class WeatherSystem : MonoBehaviour
                 weatherIcon.sprite = weather.weatherSprite;
                 break;
             }
+        }
+        
+        if (weatherIcon_duplicate != null)
+        {
+            weatherIcon_duplicate.sprite = weatherIcon.sprite;
         }
     }
     

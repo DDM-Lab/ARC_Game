@@ -36,23 +36,26 @@ public class GlobalClock : MonoBehaviour
     
 
     public Image[] timeSegmentImages = new Image[4]; // 4 time segments
-    
-    [Header("Sprite References")]
-    public Sprite pastTimeSprite;     // Already passed time segment
-    public Sprite currentTimeSprite;  // Current time segment
-    public Sprite futureTimeSprite;   // Future time segment
-    
+
+    [Header("Color References")]
+    public Color pastTimeColor;     // Already passed time segment
+    public Color currentTimeColor;  // Current time segment
+    public Color futureTimeColor;   // Future time segment
+
     [Header("Day Display")]
     public TextMeshProUGUI dayText;
     public TextMeshProUGUI roundText;
     public TextMeshProUGUI TaskCenterDayRoundText;
-    
+
     [Header("Debug")]
     public bool showDebugInfo = true;
+    
+    private Color disabledColor = new Color(0.784f, 0.784f, 0.784f, 0.502f);
     
     // Current state
     private TimeState currentState = TimeState.Paused;
     private bool isSimulationRunning = false;
+    private bool isWaitingForReport = false; // Track if we're waiting for report
     
     // Events for other systems to listen to
     public event Action OnSimulationStarted;
@@ -88,6 +91,12 @@ public class GlobalClock : MonoBehaviour
             Debug.Log("Global Clock initialized - Game starts paused at Day 1, Time Segment 1");
             
         GameLogPanel.Instance.LogMetricsChange($"Game started - Day {currentDay}, Round {currentTimeSegment + 1}");
+        
+        // Update ActionTrackingManager at start
+        if (ActionTrackingManager.Instance != null)
+        {
+            ActionTrackingManager.Instance.SetDayAndRound(currentDay, currentTimeSegment + 1);
+        }
     }
     
     void InitializeTimeSystem()
@@ -128,13 +137,13 @@ public class GlobalClock : MonoBehaviour
         // Update day text
         if (dayText != null)
         {
-            dayText.text = $"Day   {currentDay}";
+            dayText.text = $"{currentDay}";
         }
 
         // Update round text
         if (roundText != null)
         {
-            roundText.text = $"Round   {currentTimeSegment + 1}";
+            roundText.text = $"{currentTimeSegment + 1}";
         }
 
         if (TaskCenterDayRoundText != null)
@@ -143,29 +152,29 @@ public class GlobalClock : MonoBehaviour
         }
 
         // Update time segment sprites
-        UpdateTimeSegmentSprites();
+        UpdateTimeSegmentColors();
     }
-    
-    void UpdateTimeSegmentSprites()
+
+    void UpdateTimeSegmentColors()
     {
         for (int i = 0; i < timeSegmentImages.Length; i++)
         {
             if (timeSegmentImages[i] == null) continue;
-            
+
             if (i < currentTimeSegment)
             {
                 // Past time segment
-                timeSegmentImages[i].sprite = pastTimeSprite;
+                timeSegmentImages[i].color = pastTimeColor;
             }
             else if (i == currentTimeSegment)
             {
                 // Current time segment
-                timeSegmentImages[i].sprite = currentTimeSprite;
+                timeSegmentImages[i].color = currentTimeColor;
             }
             else
             {
                 // Future time segment
-                timeSegmentImages[i].sprite = futureTimeSprite;
+                timeSegmentImages[i].color = futureTimeColor;
             }
         }
     }
@@ -174,7 +183,21 @@ public class GlobalClock : MonoBehaviour
     {
         if (isSimulationRunning) return;
         
-        StartSimulation();
+        // If waiting for report, clicking button shows the report
+        if (isWaitingForReport)
+        {
+            // This will trigger the daily report
+            OnDayChanged?.Invoke(currentDay + 1);
+            isWaitingForReport = false;
+            
+            // Disable button until report is handled
+            if (executeButton != null)
+                executeButton.interactable = false;
+        }
+        else
+        {
+            StartSimulation();
+        }
     }
 
     void OnSpeedDropdownChanged(int dropdownValue)
@@ -248,19 +271,37 @@ public class GlobalClock : MonoBehaviour
         // Enable player interactions
         EnablePlayerInteractions();
         
+        // Check if we just finished round 4
+        if (currentTimeSegment >= 4)
+        {
+            // Change button text to "View Report"
+            if (executeButton != null)
+            {
+                TextMeshProUGUI buttonText = executeButton.GetComponentInChildren<TextMeshProUGUI>();
+                if (buttonText != null)
+                {
+                    buttonText.text = "View Report";
+                }
+            }
+            isWaitingForReport = true;
+            
+            if (showDebugInfo)
+            {
+                GameLogPanel.Instance.LogMetricsChange($"Day {currentDay} complete - Click 'View Report' when ready");
+                Debug.Log($"Day {currentDay} complete - Click 'View Report' when ready");
+            }
+        }
+        else
+        {
+            if (showDebugInfo)
+            {
+                GameLogPanel.Instance.LogMetricsChange($"Simulation ended - Now at Day {currentDay}, Round {currentTimeSegment + 1}");
+                Debug.Log($"Simulation ended - Now at Day {currentDay}, Round {currentTimeSegment + 1}");
+            }
+        }
+        
         // Notify other systems
         OnSimulationEnded?.Invoke();
-
-        if (showDebugInfo && currentTimeSegment < 4)
-        {
-            GameLogPanel.Instance.LogMetricsChange($"Simulation ended - Now at Day {currentDay}, Time Segment {currentTimeSegment + 1}");
-            Debug.Log($"Simulation ended - Now at Day {currentDay}, Time Segment {currentTimeSegment + 1}");
-        }
-        else if (showDebugInfo) // when currentTimeSegment == 5 that's just for displaying daily report
-        {
-            GameLogPanel.Instance.LogMetricsChange($"Simulation ended - Day {currentDay} complete, waiting for daily report");
-            Debug.Log($"Simulation ended - Day {currentDay} complete, waiting for daily report");
-        }
     }
     
     void AdvanceTimeSegment()
@@ -270,9 +311,14 @@ public class GlobalClock : MonoBehaviour
         // Check if day is complete (4 rounds = end of day)
         if (currentTimeSegment >= 4)
         {
-            // Don't increment day here - let DailyReportManager handle it
-            OnDayChanged?.Invoke(currentDay + 1); // Signal next day number
+            // Don't trigger OnDayChanged here anymore - wait for button click
             return; // Exit early, don't update display yet
+        }
+
+        // Update ActionTrackingManager for rounds 1-3
+        if (ActionTrackingManager.Instance != null)
+        {
+            ActionTrackingManager.Instance.SetDayAndRound(currentDay, currentTimeSegment + 1);
         }
         
         OnTimeSegmentChanged?.Invoke(currentTimeSegment);
@@ -287,6 +333,22 @@ public class GlobalClock : MonoBehaviour
         // Actually advance to next day after report confirmation
         currentDay++;
         currentTimeSegment = 0; // Reset to first round (not 1)
+
+        // Update ActionTrackingManager for new day
+        if (ActionTrackingManager.Instance != null)
+        {
+            ActionTrackingManager.Instance.SetDayAndRound(currentDay, currentTimeSegment + 1);
+        }
+
+        // Reset button text back to "Execute"
+        if (executeButton != null)
+        {
+            TextMeshProUGUI buttonText = executeButton.GetComponentInChildren<TextMeshProUGUI>();
+            if (buttonText != null)
+            {
+                buttonText.text = "Execute";
+            }
+        }
 
         // Trigger events for new day
         // OnDayChanged?.Invoke(currentDay);
@@ -330,7 +392,15 @@ public class GlobalClock : MonoBehaviour
     {
         // Disable execute button
         if (executeButton != null)
+        {
             executeButton.interactable = false;
+            // Change text color to disabled
+            TextMeshProUGUI buttonText = executeButton.GetComponentInChildren<TextMeshProUGUI>();
+            if (buttonText != null)
+            {
+                buttonText.color = disabledColor;
+            }
+        }
 
         // Disable speed dropdown during simulation
         if (speedDropdown != null)
@@ -352,7 +422,15 @@ public class GlobalClock : MonoBehaviour
     {
         // Enable execute button
         if (executeButton != null)
+        {
             executeButton.interactable = true;
+            // Restore text color
+            TextMeshProUGUI buttonText = executeButton.GetComponentInChildren<TextMeshProUGUI>();
+            if (buttonText != null)
+            {
+                buttonText.color = Color.white;
+            }
+        }
 
         // Enable speed dropdown
         if (speedDropdown != null)
@@ -394,7 +472,9 @@ public class GlobalClock : MonoBehaviour
     public string GetCurrentTimeString()
     {
         string[] timeStrings = { "9:00", "12:00", "15:00", "18:00" };
-        return timeStrings[currentTimeSegment];
+        if (currentTimeSegment < timeStrings.Length)
+            return timeStrings[currentTimeSegment];
+        return "End of Day";
     }
     
     public TimeSpeed GetCurrentTimeSpeed()
@@ -424,6 +504,18 @@ public class GlobalClock : MonoBehaviour
         {
             currentDay = 1;
             currentTimeSegment = 0;
+            isWaitingForReport = false;
+            
+            // Reset button text
+            if (executeButton != null)
+            {
+                TextMeshProUGUI buttonText = executeButton.GetComponentInChildren<TextMeshProUGUI>();
+                if (buttonText != null)
+                {
+                    buttonText.text = "Execute";
+                }
+            }
+            
             UpdateTimeDisplay();
             
             if (showDebugInfo)
@@ -436,6 +528,7 @@ public class GlobalClock : MonoBehaviour
     {
         Debug.Log($"Current Time: Day {currentDay}, {GetCurrentTimeString()} (Segment {currentTimeSegment + 1}/4)");
         Debug.Log($"State: {currentState}, Speed: {currentTimeSpeed}x, Can Interact: {CanPlayerInteract()}");
+        Debug.Log($"Waiting for Report: {isWaitingForReport}");
     }
     
     void OnDestroy()
