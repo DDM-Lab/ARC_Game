@@ -167,6 +167,12 @@ public class Building : MonoBehaviour
         UpdateBuildingVisual();
         NotifyStatsUpdate();
 
+        // Report to daily tracking
+        if (DailyReportData.Instance != null)
+        {
+            DailyReportData.Instance.RecordBuildingConstructed();
+        }
+
         Debug.Log($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment");
         GameLogPanel.Instance.LogBuildingStatus($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment");
         ToastManager.ShowToast($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment", ToastType.Success, true);

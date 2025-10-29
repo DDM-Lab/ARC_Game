@@ -436,6 +436,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         if (workerSystem != null && enableImmediateRequest)
         {
             workerSystem.CreateTrainedWorker();
+            workerSystem.IncrementNewWorkersHired();
             Debug.Log("Immediate request for trained workers sent.");
         }
     }
@@ -445,6 +446,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         if (workerSystem != null && enableImmediateRequest)
         {
             workerSystem.CreateUntrainedWorker();
+            workerSystem.IncrementNewWorkersHired();
             Debug.Log("Immediate request for untrained workers sent.");
         }
     }

@@ -434,6 +434,13 @@ public class DeliverySystem : MonoBehaviour
     void OnVehicleDeliveryCompleted(Vehicle vehicle, DeliveryTask completedTask)
     {
         Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
+
+        // Report to daily tracking
+        if (DailyReportData.Instance != null)
+        {
+            DailyReportData.Instance.RecordDeliveryCompleted(completedTask);
+        }
+
         activeTasks.Remove(completedTask);
         completedTasks.Add(completedTask);
         OnTaskCompleted?.Invoke(completedTask);

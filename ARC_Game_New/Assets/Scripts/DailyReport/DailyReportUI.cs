@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 [System.Serializable]
 public class SectionElement
@@ -16,6 +17,9 @@ public class SectionElement
 
 public class DailyReportUI : MonoBehaviour
 {
+    [Header("Systems References")]
+    public DeliverySystem deliverySystem;
+
     [Header("Satisfaction Panel Sections")]
     [Header("Food Delivery Section")]
     public SectionElement foodDeliveryTotal;
@@ -86,6 +90,20 @@ public class DailyReportUI : MonoBehaviour
     public float numberCountDuration = 0.8f;
     public float satisfactionAnimationDuration = 1f;
     public float barAnimationDuration = 1.5f;
+
+    [Header("Bottom Panel - What We Did Today")]
+    public TextMeshProUGUI tasksCompletedText;
+    public TextMeshProUGUI facilitiesConstructedText;
+    public TextMeshProUGUI moneySpentText;
+    public TextMeshProUGUI workersHiredText;
+    public TextMeshProUGUI workersTrainedText;
+
+    [Header("Bottom Panel - Today's Data")]
+    public TextMeshProUGUI totalInfluencedResidentsText;
+    public TextMeshProUGUI foodTaskRatioText;
+    public TextMeshProUGUI lodgingTaskRatioText;
+    public TextMeshProUGUI caseworkTaskRatioText;
+    public TextMeshProUGUI emergencyTaskRatioText;
 
     private DailyReportMetrics currentMetrics;
 
@@ -159,7 +177,49 @@ public class DailyReportUI : MonoBehaviour
     public void DisplayDailyReport(DailyReportMetrics metrics)
     {
         currentMetrics = metrics;
+        UpdateBottomPanels(metrics);
         StartCoroutine(AnimateReportDisplay());
+    }
+
+    public void UpdateBottomPanels(DailyReportMetrics metrics)
+    {
+        // What We Did Today section
+        if (tasksCompletedText != null)
+            tasksCompletedText.text = metrics.completedTasks.ToString();
+        
+        if (facilitiesConstructedText != null)
+            facilitiesConstructedText.text = metrics.buildingsConstructed.ToString();
+        
+        if (moneySpentText != null)
+            moneySpentText.text = $"${metrics.budgetSpent:F0}";
+        
+        if (workersHiredText != null)
+            workersHiredText.text = GetNewWorkersHired().ToString();
+        
+        if (workersTrainedText != null)
+            workersTrainedText.text = GetWorkersInTraining().ToString();
+        
+        // Today's Data section
+        if (totalInfluencedResidentsText != null)
+            totalInfluencedResidentsText.text = CalculateTotalInfluencedResidents().ToString();
+        
+        if (foodTaskRatioText != null)
+            foodTaskRatioText.text = $"{metrics.completedFoodTasks}/{metrics.totalFoodTasks}";
+        
+        if (lodgingTaskRatioText != null)
+            lodgingTaskRatioText.text = $"{metrics.completedLodgingTasks}/{metrics.totalLodgingTasks}";
+        
+        if (caseworkTaskRatioText != null)
+        {
+            var caseworkMetrics = CalculateCaseworkTaskMetrics();
+            caseworkTaskRatioText.text = $"{caseworkMetrics.completed}/{caseworkMetrics.total}";
+        }
+        
+        if (emergencyTaskRatioText != null)
+        {
+            var emergencyMetrics = CalculateEmergencyTaskMetrics();
+            emergencyTaskRatioText.text = $"{emergencyMetrics.completed}/{emergencyMetrics.total}";
+        }
     }
 
     IEnumerator AnimateReportDisplay()
@@ -561,6 +621,105 @@ public class DailyReportUI : MonoBehaviour
         {
             element.canvasGroup.alpha = 0f;
         }
+    }
+
+    int GetNewWorkersHired()
+    {
+        // Check if any new workers were added today
+        if (WorkerSystem.Instance != null)
+        {
+            return WorkerSystem.Instance.GetNewWorkersHiredToday();
+        }
+        return 0;
+    }
+
+    int GetWorkersInTraining()
+    {
+        if (WorkerSystem.Instance != null)
+        {
+            var stats = WorkerSystem.Instance.GetWorkerStatistics();
+            return stats.untrainedTraining;
+        }
+        return 0;
+    }
+
+    int CalculateTotalInfluencedResidents()
+    {
+        // Calculate total population moved in deliveries today
+        int totalInfluenced = 0;
+        
+        if (deliverySystem != null)
+        {
+            var completedDeliveries = deliverySystem.GetCompletedTasks();
+            foreach (var delivery in completedDeliveries)
+            {
+                if (delivery.cargoType == ResourceType.Population)
+                {
+                    totalInfluenced += delivery.quantity;
+                }
+            }
+        }
+        
+        return totalInfluenced;
+    }
+
+    (int completed, int total) CalculateCaseworkTaskMetrics()
+    {
+        if (TaskSystem.Instance == null) return (0, 0);
+        
+        int totalCasework = 0;
+        int completedCasework = 0;
+        
+        // Check all tasks for casework-related keywords
+        var allTasks = new List<GameTask>();
+        allTasks.AddRange(TaskSystem.Instance.activeTasks);
+        allTasks.AddRange(TaskSystem.Instance.completedTasks);
+        
+        foreach (var task in allTasks)
+        {
+            if (IsTaskRelatedToCasework(task))
+            {
+                totalCasework++;
+                if (task.status == TaskStatus.Completed)
+                    completedCasework++;
+            }
+        }
+        
+        return (completedCasework, totalCasework);
+    }
+
+    (int completed, int total) CalculateEmergencyTaskMetrics()
+    {
+        if (TaskSystem.Instance == null) return (0, 0);
+        
+        int totalEmergency = 0;
+        int completedEmergency = 0;
+        
+        var allTasks = new List<GameTask>();
+        allTasks.AddRange(TaskSystem.Instance.activeTasks);
+        allTasks.AddRange(TaskSystem.Instance.completedTasks);
+        
+        foreach (var task in allTasks)
+        {
+            if (task.taskType == TaskType.Emergency)
+            {
+                totalEmergency++;
+                if (task.status == TaskStatus.Completed)
+                    completedEmergency++;
+            }
+        }
+        
+        return (completedEmergency, totalEmergency);
+    }
+
+    bool IsTaskRelatedToCasework(GameTask task)
+    {
+        if (task == null) return false;
+        
+        string taskText = (task.taskTitle + " " + task.description).ToLower();
+        string[] caseworkKeywords = { "casework", "case work", "social work", "counseling", "assistance", "support services", "case management" };
+        
+        return caseworkKeywords.Any(keyword => taskText.Contains(keyword));
     }
 
 }

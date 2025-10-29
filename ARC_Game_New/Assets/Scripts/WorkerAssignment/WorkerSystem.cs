@@ -22,6 +22,9 @@ public class WorkerSystem : MonoBehaviour
     // Singleton instance
     public static WorkerSystem Instance { get; private set; }
 
+    // Daily Hired Workers Tracking
+    private int newWorkersHiredToday = 0;
+
     void Awake()
     {
         if (Instance == null)
@@ -38,6 +41,21 @@ public class WorkerSystem : MonoBehaviour
     void Start()
     {
         InitializeWorkerPool();
+
+        // Subscribe to day change event
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnDayChanged += ResetDailyHiredWorkersCount;
+        }
+    }
+
+    void OnDestroy()
+    {
+        // ALWAYS unsubscribe when destroyed to prevent memory leaks
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnDayChanged -= ResetDailyHiredWorkersCount;
+        }
     }
     
     void InitializeWorkerPool()
@@ -305,12 +323,25 @@ public class WorkerSystem : MonoBehaviour
         {
             // Unsubscribe from events
             worker.OnStatusChanged -= OnWorkerStatusChanged;
-            
+
             // Remove from list
             allWorkers.Remove(worker);
-            
+
             OnWorkerStatsChanged?.Invoke();
         }
+    }
+    public void IncrementNewWorkersHired()
+    {
+        newWorkersHiredToday++;
+    }
+    public int GetNewWorkersHiredToday()
+    {
+        return newWorkersHiredToday;
+    }
+    public void ResetDailyHiredWorkersCount(int newDay)
+    {
+        Debug.Log($"Day changed to {newDay}, resetting worker count");
+        newWorkersHiredToday = 0;
     }
     
     // Test methods for demonstration
@@ -360,9 +391,10 @@ public class WorkerStatistics
     {
         return GetTotalTrained() + GetTotalUntrained();
     }
-    
+
     public int GetAvailableWorkforce()
     {
         return (trainedFree * 2) + untrainedFree; // Trained = 2 workforce, Untrained = 1
     }
+
 }
