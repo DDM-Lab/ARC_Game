@@ -236,6 +236,9 @@ public class BuildingResourceStorage : MonoBehaviour
             int wastedFood = GetResourceAmount(ResourceType.FoodPacks);
             if (wastedFood > 0)
             {
+                // Report to daily tracking
+                DailyReportData.Instance.RecordFoodWasted(wastedFood);
+                
                 RemoveResource(ResourceType.FoodPacks, wastedFood);
 
                 if (showDebugInfo)

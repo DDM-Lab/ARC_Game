@@ -2,54 +2,41 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
-[System.Serializable]
-public class DailyReportMetrics
-{
-    [Header("Task Completion")]
-    public int totalFoodTasks;
-    public int completedFoodTasks;
-    public int expiredFoodDemandTasks;
-    public int totalLodgingTasks;
-    public int completedLodgingTasks;
-    
-    [Header("Population Metrics")]
-    public int overstayingClientGroups;
-    public int groupsOver48Hours; // New field for overstay tracking
-    
-    [Header("Worker Metrics")]
-    public int totalWorkersInvolved;
-    public int tasksCompletedByWorkers;
-    public int trainedWorkersInvolved;
-    public int untrainedWorkersInvolved;
-    public float idleWorkerRate;
-    
-    [Header("Resource Efficiency")]
-    public int totalIdleWorkers;
-    public int wastedFoodPacks;
-    public int expiredFoodPacks; // New field for expired food tracking
-    public float mealUsageRate;
-    public int vacantShelterSlots;
-    public float shelterUtilizationRate; // New field for shelter utilization
-    public float budgetUsageRate;
-    public float averageTaskCost;
-}
-
 public class DailyReportData : MonoBehaviour
 {
     [Header("System References")]
     public TaskSystem taskSystem;
     public WorkerSystem workerSystem;
+    public DeliverySystem deliverySystem;
+    public SatisfactionAndBudget budgetSystem;
     public ClientStayTracker clientTracker;
     
-    [Header("Daily Tracking")]
-    public float dailyBudgetAllocated = 3000f; // Default daily budget
+    [Header("Daily Budget")]
+    public float dailyBudgetAllocated = 3000f;
     
-    // Daily tracking data
+    [Header("Daily Tracking")]
+    private float dayStartBudget;
+    private float dayStartSatisfaction;
+    private int dayStartPopulation;
+    private int currentDayNumber = 1;
+    
+    // Daily data tracking
     private List<GameTask> todayCompletedTasks = new List<GameTask>();
     private List<GameTask> todayExpiredTasks = new List<GameTask>();
-    private float todayTaskCosts = 0f;
-    private int todayWastedFood = 0;
+    private List<GameTask> todayCreatedTasks = new List<GameTask>();
+    private List<DeliveryTask> todayCompletedDeliveries = new List<DeliveryTask>();
+    private int todayFoodProduced = 0;
+    private int todayFoodDelivered = 0;
+    private int todayFoodConsumed = 0;
+    private int todayFoodWasted = 0;
     private int todayExpiredFood = 0;
+    private int todayNewArrivals = 0;
+    private int todayDepartures = 0;
+    private int todayBuildingsConstructed = 0;
+    private float todayTaskCosts = 0f;
+    
+    // Track what we've already processed
+    private HashSet<int> processedTaskIds = new HashSet<int>();
     
     // Singleton
     public static DailyReportData Instance { get; private set; }
@@ -71,6 +58,10 @@ public class DailyReportData : MonoBehaviour
     {
         FindSystemReferences();
         SubscribeToEvents();
+        RecordDayStartMetrics();
+        
+        // Sync with existing data
+        SyncWithExistingTasks();
     }
     
     void FindSystemReferences()
@@ -79,254 +70,454 @@ public class DailyReportData : MonoBehaviour
             taskSystem = FindObjectOfType<TaskSystem>();
         if (workerSystem == null)
             workerSystem = FindObjectOfType<WorkerSystem>();
+        if (deliverySystem == null)
+            deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (budgetSystem == null)
+            budgetSystem = FindObjectOfType<SatisfactionAndBudget>();
         if (clientTracker == null)
             clientTracker = FindObjectOfType<ClientStayTracker>();
     }
     
     void SubscribeToEvents()
     {
+        // Task events
         if (taskSystem != null)
         {
             taskSystem.OnTaskCompleted += OnTaskCompleted;
             taskSystem.OnTaskExpired += OnTaskExpired;
+            taskSystem.OnTaskCreated += OnTaskCreated;
         }
         
+        // Global clock events
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnDayChanged += OnDayChanged;
+            GlobalClock.Instance.OnSimulationStarted += OnRoundStarted;
         }
+    }
+    
+    // NEW: Sync with tasks that already exist when we start
+    void SyncWithExistingTasks()
+    {
+        if (taskSystem == null) return;
+        
+        Debug.Log($"Syncing with existing tasks - Active: {taskSystem.activeTasks.Count}, Completed: {taskSystem.completedTasks.Count}");
+        
+        // Get current day from GlobalClock
+        if (GlobalClock.Instance != null)
+        {
+            currentDayNumber = GlobalClock.Instance.GetCurrentDay();
+        }
+        
+        // Add all active tasks as "created today"
+        foreach (var task in taskSystem.activeTasks)
+        {
+            if (!processedTaskIds.Contains(task.taskId))
+            {
+                todayCreatedTasks.Add(task);
+                processedTaskIds.Add(task.taskId);
+            }
+        }
+        
+        // Add all completed tasks as "completed today" (for current day)
+        foreach (var task in taskSystem.completedTasks)
+        {
+            if (!processedTaskIds.Contains(task.taskId))
+            {
+                todayCompletedTasks.Add(task);
+                processedTaskIds.Add(task.taskId);
+                
+                // Track costs
+                foreach (var impact in task.impacts)
+                {
+                    if (impact.impactType == ImpactType.Budget && impact.value < 0)
+                    {
+                        todayTaskCosts += Mathf.Abs(impact.value);
+                    }
+                }
+            }
+        }
+        
+        Debug.Log($"After sync - Created: {todayCreatedTasks.Count}, Completed: {todayCompletedTasks.Count}");
+    }
+    
+    void RecordDayStartMetrics()
+    {
+        if (budgetSystem != null)
+        {
+            dayStartBudget = budgetSystem.GetCurrentBudget();
+            dayStartSatisfaction = budgetSystem.GetCurrentSatisfaction();
+        }
+        
+        dayStartPopulation = CalculateTotalPopulation();
     }
     
     void OnTaskCompleted(GameTask task)
     {
-        todayCompletedTasks.Add(task);
-        
-        // Track task costs
-        foreach (var impact in task.impacts)
+        if (!processedTaskIds.Contains(task.taskId))
         {
-            if (impact.impactType == ImpactType.Budget && impact.value < 0)
+            todayCompletedTasks.Add(task);
+            processedTaskIds.Add(task.taskId);
+            
+            // Track task costs
+            foreach (var impact in task.impacts)
             {
-                todayTaskCosts += Mathf.Abs(impact.value);
+                if (impact.impactType == ImpactType.Budget && impact.value < 0)
+                {
+                    todayTaskCosts += Mathf.Abs(impact.value);
+                }
             }
         }
     }
     
     void OnTaskExpired(GameTask task)
     {
-        todayExpiredTasks.Add(task);
+        if (!processedTaskIds.Contains(task.taskId))
+        {
+            todayExpiredTasks.Add(task);
+            processedTaskIds.Add(task.taskId);
+        }
+    }
+    
+    void OnTaskCreated(GameTask task)
+    {
+        if (!processedTaskIds.Contains(task.taskId))
+        {
+            todayCreatedTasks.Add(task);
+            processedTaskIds.Add(task.taskId);
+        }
+    }
+    
+    void OnRoundStarted()
+    {
+        // Track food production each round
+        TrackFoodProduction();
     }
     
     void OnDayChanged(int newDay)
     {
+        // Day is ending, generate report before reset
+        currentDayNumber = newDay;
+        
         // Reset daily tracking for new day
+        ResetDailyTracking();
+        RecordDayStartMetrics();
+    }
+    
+    void ResetDailyTracking()
+    {
         todayCompletedTasks.Clear();
         todayExpiredTasks.Clear();
-        todayTaskCosts = 0f;
-        todayWastedFood = 0;
+        todayCreatedTasks.Clear();
+        todayCompletedDeliveries.Clear();
+        processedTaskIds.Clear(); // Clear processed IDs for new day
+        todayFoodProduced = 0;
+        todayFoodDelivered = 0;
+        todayFoodConsumed = 0;
+        todayFoodWasted = 0;
         todayExpiredFood = 0;
+        todayNewArrivals = 0;
+        todayDepartures = 0;
+        todayBuildingsConstructed = 0;
+        todayTaskCosts = 0f;
     }
     
     public DailyReportMetrics GenerateDailyReport()
     {
+        // If we haven't synced yet, do it now
+        if (todayCreatedTasks.Count == 0 && todayCompletedTasks.Count == 0 && taskSystem != null)
+        {
+            Debug.Log("No tasks tracked yet, syncing with TaskSystem...");
+            SyncWithExistingTasks();
+        }
+        
         DailyReportMetrics metrics = new DailyReportMetrics();
         
-        // Task completion metrics
-        CalculateTaskMetrics(metrics);
+        // Task metrics - use ALL tasks from today
+        metrics.totalTasks = todayCreatedTasks.Count;
+        metrics.completedTasks = todayCompletedTasks.Count;
+        metrics.expiredTasks = todayExpiredTasks.Count;
         
-        // Worker contribution metrics
+        // Task type breakdown
+        CalculateTaskTypeMetrics(metrics);
+        
+        // Delivery metrics
+        if (deliverySystem != null)
+        {
+            var allDeliveryTasks = deliverySystem.GetCompletedTasks();
+            todayCompletedDeliveries = allDeliveryTasks;
+            metrics.totalDeliveryTasks = allDeliveryTasks.Count;
+            metrics.completedDeliveryTasks = todayCompletedDeliveries.Count;
+        }
+        
+        // Resource metrics
+        metrics.foodProduced = CalculateFoodProduced();
+        metrics.foodDelivered = CalculateFoodDelivered();
+        metrics.foodConsumed = CalculateFoodConsumed();
+        metrics.foodWasted = todayFoodWasted;
+        metrics.wastedFoodPacks = todayFoodWasted; // Compatibility
+        metrics.expiredFoodPacks = todayExpiredFood; // Compatibility
+        metrics.currentFoodInStorage = CalculateCurrentFoodStorage();
+        
+        // Meal usage rate
+        int totalMealsProduced = metrics.foodProduced;
+        int totalMealsConsumed = totalMealsProduced - metrics.foodWasted;
+        metrics.mealUsageRate = totalMealsProduced > 0 ? (float)totalMealsConsumed / totalMealsProduced * 100f : 100f;
+        
+        // Population metrics
+        metrics.totalPopulation = CalculateTotalPopulation();
+        metrics.newArrivals = todayNewArrivals;
+        metrics.departures = todayDepartures;
+        metrics.overstayingClientGroups = CalculateOverstayingGroups();
+        metrics.groupsOver48Hours = GetGroupsOver48Hours();
+        metrics.shelterOccupancyRate = CalculateShelterOccupancy();
+        metrics.shelterUtilizationRate = metrics.shelterOccupancyRate; // Compatibility
+        metrics.vacantShelterSlots = CalculateVacantShelterSlots();
+        
+        // Worker metrics
         CalculateWorkerMetrics(metrics);
         
-        // Resource efficiency metrics
-        CalculateResourceEfficiencyMetrics(metrics);
+        // Financial metrics
+        if (budgetSystem != null)
+        {
+            metrics.startingBudget = dayStartBudget;
+            metrics.endingBudget = budgetSystem.GetCurrentBudget();
+            metrics.budgetSpent = dayStartBudget - metrics.endingBudget;
+            metrics.averageTaskCost = todayCompletedTasks.Count > 0 ? todayTaskCosts / todayCompletedTasks.Count : 0f;
+            metrics.budgetUsageRate = dailyBudgetAllocated > 0 ? todayTaskCosts / dailyBudgetAllocated * 100f : 0f;
+            metrics.satisfactionChange = budgetSystem.GetCurrentSatisfaction() - dayStartSatisfaction;
+        }
+        
+        metrics.buildingsConstructed = todayBuildingsConstructed;
         
         return metrics;
     }
     
-    void CalculateTaskMetrics(DailyReportMetrics metrics)
+    void CalculateTaskTypeMetrics(DailyReportMetrics metrics)
     {
-        // Food delivery tasks
-        var foodTasks = todayCompletedTasks.Where(t => IsTaskRelatedToFood(t)).ToList();
-        var allFoodTasks = GetAllFoodTasksToday();
+        // Combine all tasks for the day
+        var allTodayTasks = new List<GameTask>();
+        allTodayTasks.AddRange(todayCreatedTasks);
+        allTodayTasks.AddRange(todayCompletedTasks);
+        allTodayTasks.AddRange(todayExpiredTasks);
         
-        metrics.totalFoodTasks = allFoodTasks.Count;
-        metrics.completedFoodTasks = foodTasks.Count;
+        // Remove duplicates by task ID
+        var uniqueTasks = allTodayTasks.GroupBy(t => t.taskId).Select(g => g.First()).ToList();
+        
+        // Food tasks
+        var foodTasks = uniqueTasks.Where(t => IsTaskRelatedToFood(t)).ToList();
+        var completedFoodTasks = todayCompletedTasks.Where(t => IsTaskRelatedToFood(t)).ToList();
+        
+        metrics.totalFoodTasks = foodTasks.Count;
+        metrics.completedFoodTasks = completedFoodTasks.Count;
         
         // Food demand task expiry
         metrics.expiredFoodDemandTasks = todayExpiredTasks.Count(t => 
             t.taskType == TaskType.Demand && IsTaskRelatedToFood(t));
         
-        // Lodging tasks (population/shelter related)
-        var lodgingTasks = todayCompletedTasks.Where(t => IsTaskRelatedToLodging(t)).ToList();
-        var allLodgingTasks = GetAllLodgingTasksToday();
+        // Lodging tasks
+        var lodgingTasks = uniqueTasks.Where(t => IsTaskRelatedToLodging(t)).ToList();
+        var completedLodgingTasks = todayCompletedTasks.Where(t => IsTaskRelatedToLodging(t)).ToList();
         
-        metrics.totalLodgingTasks = allLodgingTasks.Count;
-        metrics.completedLodgingTasks = lodgingTasks.Count;
+        metrics.totalLodgingTasks = lodgingTasks.Count;
+        metrics.completedLodgingTasks = completedLodgingTasks.Count;
     }
     
     void CalculateWorkerMetrics(DailyReportMetrics metrics)
     {
-        if (workerSystem == null) return;
-        
-        // Get workers involved in completed tasks
-        HashSet<int> workersInvolved = new HashSet<int>();
-        int trainedCount = 0;
-        int untrainedCount = 0;
-        
-        foreach (var task in todayCompletedTasks)
-        {
-            // Get buildings involved in this task and their workers
-            var involvedBuildings = GetBuildingsInvolvedInTask(task);
-            foreach (var building in involvedBuildings)
-            {
-                var buildingWorkers = workerSystem.GetWorkersByBuildingId(building.GetOriginalSiteId());
-                foreach (var worker in buildingWorkers)
-                {
-                    if (workersInvolved.Add(worker.WorkerId)) // Add returns true if new
-                    {
-                        if (worker.Type == WorkerType.Trained)
-                            trainedCount++;
-                        else
-                            untrainedCount++;
-                    }
-                }
-            }
-        }
-        
-        metrics.totalWorkersInvolved = workersInvolved.Count;
-        metrics.tasksCompletedByWorkers = todayCompletedTasks.Count;
-        metrics.trainedWorkersInvolved = trainedCount;
-        metrics.untrainedWorkersInvolved = untrainedCount;
-        
-        // Idle worker rate
-        var allWorkers = workerSystem.GetAllWorkers();
-        int availableWorkers = allWorkers.Count(w => w.IsAvailable);
-        metrics.idleWorkerRate = allWorkers.Count > 0 ? (float)availableWorkers / allWorkers.Count * 100f : 0f;
-    }
-    
-    void CalculateResourceEfficiencyMetrics(DailyReportMetrics metrics)
-    {
-        // Idle workers
         if (workerSystem != null)
         {
-            var allWorkers = workerSystem.GetAllWorkers();
-            metrics.totalIdleWorkers = allWorkers.Count(w => w.IsAvailable);
+            var stats = workerSystem.GetWorkerStatistics();
+            metrics.totalWorkers = stats.GetTotalWorkers();
+            metrics.workingWorkers = stats.trainedWorking + stats.untrainedWorking;
+            metrics.idleWorkers = stats.trainedFree + stats.untrainedFree;
+            metrics.totalIdleWorkers = metrics.idleWorkers; // Compatibility
+            metrics.trainedWorkers = stats.GetTotalTrained();
+            metrics.untrainedWorkers = stats.GetTotalUntrained();
+            metrics.idleWorkerRate = workerSystem.GetIdleWorkerPercentage();
+            
+            // For worker involvement, use completed task count as approximation
+            metrics.totalWorkersInvolved = metrics.workingWorkers; // Workers currently working
+            metrics.tasksCompletedByWorkers = todayCompletedTasks.Count;
+            
+            // Estimate trained/untrained split based on current ratio
+            if (metrics.totalWorkersInvolved > 0)
+            {
+                float trainedRatio = (float)stats.trainedWorking / (stats.trainedWorking + stats.untrainedWorking);
+                metrics.trainedWorkersInvolved = Mathf.RoundToInt(metrics.totalWorkersInvolved * trainedRatio);
+                metrics.untrainedWorkersInvolved = metrics.totalWorkersInvolved - metrics.trainedWorkersInvolved;
+            }
         }
-        
-        // Wasted food packs
-        metrics.wastedFoodPacks = CalculateWastedFood();
-        
-        // Expired food packs
-        metrics.expiredFoodPacks = todayExpiredFood;
-        
-        // Meal usage rate
-        int totalMealsProduced = CalculateTotalMealsProduced();
-        int totalMealsConsumed = totalMealsProduced - metrics.wastedFoodPacks;
-        metrics.mealUsageRate = totalMealsProduced > 0 ? (float)totalMealsConsumed / totalMealsProduced * 100f : 100f;
-        
-        // Vacant shelter slots
-        metrics.vacantShelterSlots = CalculateVacantShelterSlots();
-        
-        // Shelter utilization rate
-        metrics.shelterUtilizationRate = CalculateShelterUtilizationRate();
-        
-        // Overstaying groups
-        metrics.overstayingClientGroups = GetOverstayingClientGroups();
-        metrics.groupsOver48Hours = GetGroupsOver48Hours();
-        
-        // Budget usage
-        metrics.averageTaskCost = todayCompletedTasks.Count > 0 ? todayTaskCosts / todayCompletedTasks.Count : 0f;
-        metrics.budgetUsageRate = dailyBudgetAllocated > 0 ? todayTaskCosts / dailyBudgetAllocated * 100f : 0f;
     }
     
     // Helper methods
     bool IsTaskRelatedToFood(GameTask task)
     {
-        if (task.taskTitle.ToLower().Contains("food")) return true;
-        if (task.description.ToLower().Contains("food")) return true;
+        if (task == null) return false;
         
-        // Check if task involves food delivery
-        if (task.linkedDeliveryTaskIds != null)
-        {
-            DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
-            if (deliverySystem != null)
-            {
-                var deliveryTasks = deliverySystem.GetCompletedTasks();
-                return deliveryTasks.Any(dt => 
-                    task.linkedDeliveryTaskIds.Contains(dt.taskId) && 
-                    dt.cargoType == ResourceType.FoodPacks);
-            }
-        }
+        string taskText = (task.taskTitle + " " + task.description).ToLower();
+        string[] foodKeywords = { "food", "meal", "kitchen", "hunger", "feed", "eating" };
         
-        return false;
+        return foodKeywords.Any(keyword => taskText.Contains(keyword));
     }
     
     bool IsTaskRelatedToLodging(GameTask task)
     {
-        string[] lodgingKeywords = { "shelter", "housing", "lodging", "accommodation", "population", "relocation" };
+        if (task == null) return false;
+        
+        string[] lodgingKeywords = { "shelter", "housing", "lodging", "accommodation", "population", "relocation", "evacuate", "evacuation" };
         string taskText = (task.taskTitle + " " + task.description).ToLower();
         
         return lodgingKeywords.Any(keyword => taskText.Contains(keyword));
     }
     
-    List<GameTask> GetAllFoodTasksToday()
+    // Calculation methods (unchanged from before)
+    int CalculateFoodProduced()
     {
-        var allTasks = new List<GameTask>();
-        allTasks.AddRange(todayCompletedTasks);
-        allTasks.AddRange(todayExpiredTasks);
+        int totalProduced = todayFoodProduced;
         
-        return allTasks.Where(t => IsTaskRelatedToFood(t)).ToList();
-    }
-    
-    List<GameTask> GetAllLodgingTasksToday()
-    {
-        var allTasks = new List<GameTask>();
-        allTasks.AddRange(todayCompletedTasks);
-        allTasks.AddRange(todayExpiredTasks);
-        
-        return allTasks.Where(t => IsTaskRelatedToLodging(t)).ToList();
-    }
-    
-    List<Building> GetBuildingsInvolvedInTask(GameTask task)
-    {
-        List<Building> buildings = new List<Building>();
-        
-        // Get building from affected facility
-        if (!string.IsNullOrEmpty(task.affectedFacility))
-        {
-            Building building = FindObjectsOfType<Building>()
-                .FirstOrDefault(b => b.name.Contains(task.affectedFacility));
-            if (building != null)
-                buildings.Add(building);
-        }
-        
-        return buildings;
-    }
-    
-    int CalculateWastedFood()
-    {
-        return todayWastedFood;
-    }
-    
-    int CalculateTotalMealsProduced()
-    {
-        // Calculate total food production for the day
         Building[] kitchens = FindObjectsOfType<Building>()
             .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
             .ToArray();
         
-        int totalProduced = 0;
         foreach (var kitchen in kitchens)
         {
             var storage = kitchen.GetComponent<BuildingResourceStorage>();
             if (storage != null)
             {
-                // Estimate production based on rounds and production rate
-                // This should ideally be tracked throughout the day
-                totalProduced += 10 * 4; // Assuming 10 per round * 4 rounds
+                totalProduced += storage.GetResourceAmount(ResourceType.FoodPacks);
             }
         }
         
         return totalProduced;
+    }
+    
+    int CalculateFoodDelivered()
+    {
+        int delivered = 0;
+        
+        foreach (var delivery in todayCompletedDeliveries)
+        {
+            if (delivery.cargoType == ResourceType.FoodPacks)
+            {
+                delivered += delivery.quantity;
+            }
+        }
+        
+        return delivered;
+    }
+    
+    int CalculateFoodConsumed()
+    {
+        return todayFoodProduced - CalculateCurrentFoodStorage() - todayFoodWasted;
+    }
+    
+    int CalculateCurrentFoodStorage()
+    {
+        int totalFood = 0;
+        
+        Building[] allBuildings = FindObjectsOfType<Building>();
+        foreach (var building in allBuildings)
+        {
+            var storage = building.GetComponent<BuildingResourceStorage>();
+            if (storage != null)
+            {
+                totalFood += storage.GetResourceAmount(ResourceType.FoodPacks);
+            }
+        }
+        
+        PrebuiltBuilding[] prebuiltBuildings = FindObjectsOfType<PrebuiltBuilding>();
+        foreach (var building in prebuiltBuildings)
+        {
+            var storage = building.GetComponent<BuildingResourceStorage>();
+            if (storage != null)
+            {
+                totalFood += storage.GetResourceAmount(ResourceType.FoodPacks);
+            }
+        }
+        
+        return totalFood;
+    }
+    
+    int CalculateTotalPopulation()
+    {
+        int totalPop = 0;
+        
+        Building[] shelters = FindObjectsOfType<Building>()
+            .Where(b => b.GetBuildingType() == BuildingType.Shelter)
+            .ToArray();
+        
+        foreach (var shelter in shelters)
+        {
+            var storage = shelter.GetComponent<BuildingResourceStorage>();
+            if (storage != null)
+            {
+                totalPop += storage.GetResourceAmount(ResourceType.Population);
+            }
+        }
+        
+        PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>()
+            .Where(p => p.GetPrebuiltType() == PrebuiltBuildingType.Community)
+            .ToArray();
+        
+        foreach (var community in communities)
+        {
+            totalPop += community.GetCurrentPopulation();
+        }
+        
+        return totalPop;
+    }
+    
+    int CalculateOverstayingGroups()
+    {
+        if (clientTracker != null)
+        {
+            var stats = clientTracker.GetOverstayStatistics();
+            if (stats.ContainsKey("CurrentOverstayingGroups"))
+            {
+                return (int)stats["CurrentOverstayingGroups"];
+            }
+        }
+        
+        return 0;
+    }
+    
+    int GetGroupsOver48Hours()
+    {
+        if (clientTracker != null)
+        {
+            var overstayRecords = clientTracker.GetOverstayStatistics();
+            if (overstayRecords.ContainsKey("GroupsOver48Hours"))
+            {
+                return (int)overstayRecords["GroupsOver48Hours"];
+            }
+        }
+        
+        return 0;
+    }
+    
+    float CalculateShelterOccupancy()
+    {
+        int totalCapacity = 0;
+        int totalOccupied = 0;
+        
+        Building[] shelters = FindObjectsOfType<Building>()
+            .Where(b => b.GetBuildingType() == BuildingType.Shelter)
+            .ToArray();
+        
+        foreach (var shelter in shelters)
+        {
+            var storage = shelter.GetComponent<BuildingResourceStorage>();
+            if (storage != null)
+            {
+                int capacity = storage.GetMaxCapacity(ResourceType.Population);
+                int occupied = storage.GetResourceAmount(ResourceType.Population);
+                totalCapacity += capacity;
+                totalOccupied += occupied;
+            }
+        }
+        
+        return totalCapacity > 0 ? (float)totalOccupied / totalCapacity * 100f : 0f;
     }
     
     int CalculateVacantShelterSlots()
@@ -349,84 +540,73 @@ public class DailyReportData : MonoBehaviour
         return totalVacant;
     }
     
-    float CalculateShelterUtilizationRate()
+    void TrackFoodProduction()
     {
-        Building[] shelters = FindObjectsOfType<Building>()
-            .Where(b => b.GetBuildingType() == BuildingType.Shelter)
+        Building[] kitchens = FindObjectsOfType<Building>()
+            .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
             .ToArray();
         
-        int totalCapacity = 0;
-        int totalOccupied = 0;
-        
-        foreach (var shelter in shelters)
+        foreach (var kitchen in kitchens)
         {
-            var storage = shelter.GetComponent<BuildingResourceStorage>();
-            if (storage != null)
-            {
-                int capacity = storage.GetMaxCapacity(ResourceType.Population);
-                int occupied = storage.GetResourceAmount(ResourceType.Population);
-                totalCapacity += capacity;
-                totalOccupied += occupied;
-            }
+            todayFoodProduced += 10; // Base production per round per kitchen
         }
-        
-        return totalCapacity > 0 ? (float)totalOccupied / totalCapacity * 100f : 0f;
     }
     
-    public int GetOverstayingClientGroups()
+    // Public tracking methods
+    public void RecordFoodWasted(int amount)
     {
-        if (clientTracker == null) return 0;
-        
-        var overstayRecords = clientTracker.GetOverstayStatistics();
-        if (overstayRecords.ContainsKey("CurrentOverstayingGroups"))
-        {
-            return (int)overstayRecords["CurrentOverstayingGroups"];
-        }
-        
-        return 0;
+        todayFoodWasted += amount;
     }
     
-    int GetGroupsOver48Hours()
-    {
-        if (clientTracker == null) return 0;
-        
-        var overstayRecords = clientTracker.GetOverstayStatistics();
-        if (overstayRecords.ContainsKey("GroupsOver48Hours"))
-        {
-            return (int)overstayRecords["GroupsOver48Hours"];
-        }
-        
-        return 0;
-    }
-    
-    // Public method to add wasted food tracking
-    public void RecordWastedFood(int amount)
-    {
-        todayWastedFood += amount;
-    }
-    
-    // Public method to add expired food tracking
     public void RecordExpiredFood(int amount)
     {
         todayExpiredFood += amount;
     }
     
-    [ContextMenu("Generate Test Report")]
-    public void GenerateTestReport()
+    public void RecordNewArrival(int count = 1)
     {
-        var metrics = GenerateDailyReport();
+        todayNewArrivals += count;
+    }
+    
+    public void RecordDeparture(int count = 1)
+    {
+        todayDepartures += count;
+    }
+    
+    public void RecordBuildingConstructed()
+    {
+        todayBuildingsConstructed++;
+    }
+    
+    public void RecordDeliveryCompleted(DeliveryTask task)
+    {
+        todayCompletedDeliveries.Add(task);
         
-        Debug.Log("=== DAILY REPORT TEST ===");
-        Debug.Log($"Food Tasks: {metrics.completedFoodTasks}/{metrics.totalFoodTasks}");
-        Debug.Log($"Expired Food Demands: {metrics.expiredFoodDemandTasks}");
-        Debug.Log($"Lodging Tasks: {metrics.completedLodgingTasks}/{metrics.totalLodgingTasks}");
-        Debug.Log($"Overstaying Groups: {metrics.overstayingClientGroups}");
-        Debug.Log($"Groups Over 48h: {metrics.groupsOver48Hours}");
-        Debug.Log($"Worker Contribution: {metrics.tasksCompletedByWorkers} tasks by {metrics.totalWorkersInvolved} workers");
-        Debug.Log($"Idle Worker Rate: {metrics.idleWorkerRate:F1}%");
-        Debug.Log($"Wasted Food: {metrics.wastedFoodPacks}");
-        Debug.Log($"Expired Food: {metrics.expiredFoodPacks}");
-        Debug.Log($"Meal Usage Rate: {metrics.mealUsageRate:F1}%");
-        Debug.Log($"Shelter Utilization: {metrics.shelterUtilizationRate:F1}%");
+        if (task.cargoType == ResourceType.FoodPacks)
+        {
+            todayFoodDelivered += task.quantity;
+        }
+    }
+    
+    public void RecordWastedFood(int amount)
+    {
+        todayFoodWasted += amount;
+    }
+    
+    // Debug method
+    [ContextMenu("Debug Current Tracking")]
+    public void DebugCurrentTracking()
+    {
+        Debug.Log($"=== DAILY REPORT TRACKING ===");
+        Debug.Log($"Day: {currentDayNumber}");
+        Debug.Log($"Created Tasks: {todayCreatedTasks.Count}");
+        Debug.Log($"Completed Tasks: {todayCompletedTasks.Count}");
+        Debug.Log($"Expired Tasks: {todayExpiredTasks.Count}");
+        Debug.Log($"Processed IDs: {processedTaskIds.Count}");
+        
+        if (taskSystem != null)
+        {
+            Debug.Log($"TaskSystem - Active: {taskSystem.activeTasks.Count}, Completed: {taskSystem.completedTasks.Count}");
+        }
     }
 }

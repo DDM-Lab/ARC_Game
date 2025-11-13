@@ -294,8 +294,8 @@ MonoBehaviour:
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4281151293
-  m_fontColor: {r: 0.23921569, g: 0.18431373, b: 0.1764706, a: 1}
+    rgba: 4278190080
+  m_fontColor: {r: 0, g: 0, b: 0, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
@@ -457,8 +457,7 @@ MonoBehaviour:
   agentAvatar: {fileID: 3425883747610440896}
   messageText: {fileID: 4177618545590704048}
   speechBubble: {fileID: 5510165471167493811}
-  defaultAgentSprite: {fileID: 0}
-  workforceServiceSprite: {fileID: 0}
-  lodgingMassCareSprite: {fileID: 0}
-  externalRelationshipSprite: {fileID: 0}
-  foodMassCareSprite: {fileID: 0}
+  paddingTop: 10
+  paddingBottom: 10
+  minHeight: 60
+  additionalHeightBuffer: 5
