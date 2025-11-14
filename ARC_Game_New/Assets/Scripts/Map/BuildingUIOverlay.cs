@@ -9,6 +9,7 @@ public class BuildingUIOverlay : MonoBehaviour
     [Header("UI Settings")]
     public float uiElementSize = 100f; // Size of UI overlay elements
     public Vector2 uiOffset = Vector2.zero; // Offset from building position
+    public float toastDurationTime = 5f; // Duration to show toast messages
     
     [Header("UI Prefab")]
     public GameObject uiOverlayPrefab; // Single prefab with InfoText and worker button children
@@ -378,8 +379,8 @@ public class BuildingUIOverlay : MonoBehaviour
         }
         canvasGroup.alpha = 1f;
         
-        // Wait for 2 seconds (total 3 seconds including fades)
-        yield return new WaitForSecondsRealtime(2f);
+        // Wait for a few seconds
+        yield return new WaitForSecondsRealtime(toastDurationTime);
         
         // Fade out
         elapsedTime = 0f;
@@ -499,8 +500,31 @@ public class BuildingUIOverlay : MonoBehaviour
         
         if (building != null && building.IsOperational())
         {
-            // Optional: Add confirmation dialog here before starting deconstruction
-            building.StartDeconstruction();
+            // Show confirmation popup instead of immediately deconstructing
+            if (ConfirmationPopup.Instance != null)
+            {
+                string message = $"Are you sure you want to deconstruct {building.GetBuildingType()} at site {building.GetOriginalSiteId()}?\n\nThis action cannot be undone.";
+                
+                ConfirmationPopup.Instance.ShowPopup(
+                    message: message,
+                    onConfirm: () => {
+                        // This executes when user clicks Confirm
+                        building.StartDeconstruction();
+                        Debug.Log($"User confirmed deconstruction of {building.name}");
+                    },
+                    onCancel: () => {
+                        // This executes when user clicks Cancel (optional)
+                        Debug.Log($"User cancelled deconstruction of {building.name}");
+                    },
+                    title: "Deconstruct Building"
+                );
+            }
+            else
+            {
+                Debug.LogError("ConfirmationPopup not found in scene!");
+                // Fallback: deconstruct immediately if popup system not available
+                building.StartDeconstruction();
+            }
         }
     }
     

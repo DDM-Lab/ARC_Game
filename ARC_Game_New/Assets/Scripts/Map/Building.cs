@@ -44,6 +44,9 @@ public class Building : MonoBehaviour
     public Color needWorkerColor = Color.white;
     public Color inUseColor = Color.green;
     public Color disabledColor = Color.grey;
+
+    [Header("Deconstruction Visuals")]
+    public SpriteRenderer deconstructionStartingSpriteRenderer;
     public Color deconstructionColor = new Color(1f, 0.3f, 0.3f, 1f); // Red for deconstruction
 
     [Header("System References")]
@@ -270,6 +273,10 @@ public class Building : MonoBehaviour
                 if (fillRenderer != null)
                 {
                     fillRenderer.color = deconstructionColor;
+                    if (deconstructionStartingSpriteRenderer != null)
+                    {
+                        deconstructionStartingSpriteRenderer.color = deconstructionColor;
+                    }
                 }
             }
         }
