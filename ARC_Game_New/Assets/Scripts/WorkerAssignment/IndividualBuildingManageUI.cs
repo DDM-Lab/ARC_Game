@@ -316,11 +316,13 @@ public class IndividualBuildingManageUI : MonoBehaviour
             }
             else if (!meetsRequirement && currentBuilding.IsOperational())
             {
-                currentBuilding.DisableBuilding();
+                // Building will automatically transition to NeedWorker state
+                // when UpdateWorkerStatus detects insufficient workforce
+                currentBuilding.UpdateWorkerStatus();
             }
 
             // Refresh displays
-            currentBuilding.UpdateWorkforceDisplay();
+            currentBuilding.UpdateWorkerStatus();
             UpdateCurrentWorkforceDisplay();
             UpdateButtonStates();
         }

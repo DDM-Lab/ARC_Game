@@ -142,6 +142,21 @@ public class BuildingUIOverlay : MonoBehaviour
                 }
             }
             
+            // Find and hide the deconstruct button initially
+            Transform deconstructButton = uiOverlay.transform.Find("DeconstructButton");
+            if (deconstructButton != null)
+            {
+                deconstructButton.gameObject.SetActive(false);
+                
+                // Set up button click handler
+                Button deconstructBtnComponent = deconstructButton.GetComponent<Button>();
+                if (deconstructBtnComponent != null)
+                {
+                    deconstructBtnComponent.onClick.RemoveAllListeners();
+                    deconstructBtnComponent.onClick.AddListener(() => OnDeconstructClicked(building));
+                }
+            }
+            
             // Find and hide ToastText initially
             Transform toastText = uiOverlay.transform.Find("ToastText");
             if (toastText != null)
@@ -227,44 +242,13 @@ public class BuildingUIOverlay : MonoBehaviour
             // If canvas is Screen Space - Overlay
             if (canvas.renderMode == RenderMode.ScreenSpaceOverlay)
             {
-                // Use screen dimensions instead
-                screenPos = new Vector2(
-                    viewportPos.x * Screen.width,
-                    viewportPos.y * Screen.height
-                );
-                
-                // Convert screen position to local position in canvas
-                RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                    canvasRect,
-                    screenPos,
-                    null, // null for Screen Space - Overlay
-                    out Vector2 localPos
-                );
-                
-                screenPos = localPos;
-            }
-            // If canvas is Screen Space - Camera
-            else if (canvas.renderMode == RenderMode.ScreenSpaceCamera)
-            {
-                // Convert world to screen position
-                Vector3 screenPoint = mainCamera.WorldToScreenPoint(worldPos);
-                
-                // Convert screen position to local position in canvas
-                RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                    canvasRect,
-                    screenPoint,
-                    canvas.worldCamera, // Use canvas camera
-                    out Vector2 localPos
-                );
-                
-                screenPos = localPos;
+                screenPos = mainCamera.WorldToScreenPoint(worldPos);
             }
             
             // Apply offset
-            screenPos.x += uiOffset.x;
-            screenPos.y += uiOffset.y;
+            screenPos += uiOffset;
             
-            // Set UI position
+            // Set position
             RectTransform rectTransform = uiOverlay.GetComponent<RectTransform>();
             if (rectTransform != null)
             {
@@ -273,7 +257,7 @@ public class BuildingUIOverlay : MonoBehaviour
         }
         else
         {
-            // Hide overlay if building is off-screen
+            // Building is off-screen, hide UI
             if (uiOverlay.activeSelf)
                 uiOverlay.SetActive(false);
         }
@@ -281,6 +265,8 @@ public class BuildingUIOverlay : MonoBehaviour
     
     private IEnumerator MonitorBuildingStatus(Building building)
     {
+        if (building == null) yield break;
+        
         BuildingStatus previousStatus = building.GetCurrentStatus();
         
         while (building != null && buildingUIMap.ContainsKey(building))
@@ -298,6 +284,11 @@ public class BuildingUIOverlay : MonoBehaviour
                      currentStatus == BuildingStatus.InUse)
             {
                 OnWorkersAssigned(building);
+            }
+            // Check if building entered deconstructing state
+            else if (currentStatus == BuildingStatus.Deconstructing)
+            {
+                OnDeconstructionStarted(building);
             }
             
             previousStatus = currentStatus;
@@ -415,19 +406,6 @@ public class BuildingUIOverlay : MonoBehaviour
             textBG.gameObject.SetActive(false);
         }
 
-        // Hide the worker button
-        /*Transform workerButton = uiOverlay.transform.Find("WorkerButton");
-        if (workerButton == null)
-        {
-            workerButton = uiOverlay.transform.Find("Worker Button");
-            if (workerButton == null)
-                workerButton = uiOverlay.transform.Find("AssignButton");
-        }
-        if (workerButton != null)
-        {
-            workerButton.gameObject.SetActive(false);
-        }*/
-
         // Change the text of worker button to "Manage"
         Transform workerButton = uiOverlay.transform.Find("WorkerButton");
         if (workerButton == null)
@@ -445,7 +423,59 @@ public class BuildingUIOverlay : MonoBehaviour
             }
         }
 
+        // Show the deconstruct button
+        Transform deconstructButton = uiOverlay.transform.Find("DeconstructButton");
+        if (deconstructButton != null)
+        {
+            deconstructButton.gameObject.SetActive(true);
+        }
+
         Debug.Log($"Building {building.name} workers assigned - UI updated");
+    }
+    
+    private void OnDeconstructionStarted(Building building)
+    {
+        if (!buildingUIMap.ContainsKey(building)) return;
+        
+        GameObject uiOverlay = buildingUIMap[building];
+        
+        // Show TextBG with "Deconstructing" message
+        Transform textBG = uiOverlay.transform.Find("TextBG");
+        if (textBG != null)
+        {
+            textBG.gameObject.SetActive(true);
+            Transform infoText = textBG.Find("InfoText");
+            if (infoText != null)
+            {
+                TextMeshProUGUI textComponent = infoText.GetComponent<TextMeshProUGUI>();
+                if (textComponent != null)
+                {
+                    textComponent.text = "Deconstructing...";
+                }
+            }
+        }
+        
+        // Hide worker button
+        Transform workerButton = uiOverlay.transform.Find("WorkerButton");
+        if (workerButton == null)
+        {
+            workerButton = uiOverlay.transform.Find("Worker Button");
+            if (workerButton == null)
+                workerButton = uiOverlay.transform.Find("AssignButton");
+        }
+        if (workerButton != null)
+        {
+            workerButton.gameObject.SetActive(false);
+        }
+        
+        // Hide deconstruct button
+        Transform deconstructButton = uiOverlay.transform.Find("DeconstructButton");
+        if (deconstructButton != null)
+        {
+            deconstructButton.gameObject.SetActive(false);
+        }
+        
+        Debug.Log($"Building {building.name} deconstruction started - UI updated");
     }
     
     private void OnAssignWorkerClicked(Building building)
@@ -460,6 +490,17 @@ public class BuildingUIOverlay : MonoBehaviour
             {
                 workerAssignmentUI.OnManageButtonClicked(building);
             }
+        }
+    }
+    
+    private void OnDeconstructClicked(Building building)
+    {
+        Debug.Log($"Deconstruct button clicked for building {building.name}");
+        
+        if (building != null && building.IsOperational())
+        {
+            // Optional: Add confirmation dialog here before starting deconstruction
+            building.StartDeconstruction();
         }
     }
     

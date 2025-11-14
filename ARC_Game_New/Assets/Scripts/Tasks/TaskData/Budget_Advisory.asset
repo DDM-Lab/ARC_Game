@@ -43,11 +43,7 @@ MonoBehaviour:
   roundsRemaining: 2
   realTimeRemaining: 300
   hasRealTimeLimit: 0
-  impacts:
-  - impactType: 0
-    value: 5
-    isCountdown: 0
-    customLabel: 
+  impacts: []
   agentMessages:
   - messageText: Meteorology reports intensifying storm conditions. This could overwhelm
       our current resources.
