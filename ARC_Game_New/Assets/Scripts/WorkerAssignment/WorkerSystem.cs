@@ -226,6 +226,9 @@ public class WorkerSystem : MonoBehaviour
                     case "Free":
                         stats.untrainedFree++;
                         break;
+                    case "NotArrived":
+                        stats.untrainedNotArrived++;
+                        break;
                     case "Training":
                         stats.untrainedTraining++;
                         break;
@@ -376,6 +379,7 @@ public class WorkerStatistics
     public int untrainedWorking = 0;
     public int untrainedFree = 0;
     public int untrainedTraining = 0;
+    public int untrainedNotArrived = 0;
     
     public int GetTotalTrained()
     {

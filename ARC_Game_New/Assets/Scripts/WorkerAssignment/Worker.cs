@@ -18,7 +18,8 @@ public enum UntrainedWorkerStatus
 {
     Working,     // Currently assigned to a building
     Free,        // Available for assignment
-    Training     // Currently being trained (might become trained worker later)
+    Training,     // Currently being trained (might become trained worker later)
+    NotArrived   // Will arrive later
 }
 
 [System.Serializable]

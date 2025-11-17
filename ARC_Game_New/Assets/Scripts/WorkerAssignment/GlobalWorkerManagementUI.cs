@@ -22,6 +22,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
     public TextMeshProUGUI untrainedWorkingText;
     public TextMeshProUGUI untrainedFreeText;
     public TextMeshProUGUI untrainedTrainingText;
+    public TextMeshProUGUI untrainedNotArrivedText;
     public TextMeshProUGUI untrainedTotalText;
 
     [Header("Demo Only - Immediate Request Worker")]
@@ -42,6 +43,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
     public Button kitchenTabButton;
     public Button caseworkTabButton;
     public Button disasterAssessmentTabButton;
+    public Button requestWorkerTabButton;
     public Button trainCenterTabButton;
 
     [Header("Tab Visual States")]
@@ -66,9 +68,15 @@ public class GlobalWorkerManagementUI : MonoBehaviour
     public WorkerSystem workerSystem;
     public BuildingSystem buildingSystem;
     public WorkerTrainingSystem workerTrainingSystem;
+    public WorkerRequestSystem workerRequestSystem;
 
     [Header("Individual Building Manage UI")]
     public IndividualBuildingManageUI individualManageUI;
+    
+    [Header("Worker Request Queue")]
+    public Transform requestQueueContainer;
+    public GameObject requestGroupItemPrefab;
+    public GameObject noActiveRequestText;
 
     [Header("Colors")]
     public Color positiveColor = new Color(0.2f, 0.6f, 0.2f);
@@ -82,6 +90,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         Kitchen,
         Casework,
         DisasterAssessment,
+        RequestWorker,
         TrainCenter
     }
     
@@ -97,6 +106,8 @@ public class GlobalWorkerManagementUI : MonoBehaviour
             buildingSystem = FindObjectOfType<BuildingSystem>();
         if (workerTrainingSystem == null)
             workerTrainingSystem = FindObjectOfType<WorkerTrainingSystem>();
+        if (workerRequestSystem == null)
+            workerRequestSystem = FindObjectOfType<WorkerRequestSystem>();
 
         SetupButtonListeners();
 
@@ -130,6 +141,9 @@ public class GlobalWorkerManagementUI : MonoBehaviour
             
         if (disasterAssessmentTabButton != null)
             disasterAssessmentTabButton.onClick.AddListener(() => OnTabClicked(TabType.DisasterAssessment));
+
+        if (requestWorkerTabButton != null)
+            requestWorkerTabButton.onClick.AddListener(() => OnTabClicked(TabType.RequestWorker));
             
         if (trainCenterTabButton != null)
             trainCenterTabButton.onClick.AddListener(() => OnTabClicked(TabType.TrainCenter));
@@ -189,6 +203,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         SetTabButtonColor(kitchenTabButton, currentSelectedTab == TabType.Kitchen ? activeTabColor : inactiveTabColor);
         SetTabButtonColor(caseworkTabButton, currentSelectedTab == TabType.Casework ? activeTabColor : inactiveTabColor);
         SetTabButtonColor(disasterAssessmentTabButton, currentSelectedTab == TabType.DisasterAssessment ? activeTabColor : inactiveTabColor);
+        SetTabButtonColor(requestWorkerTabButton, currentSelectedTab == TabType.RequestWorker ? activeTabColor : inactiveTabColor);
         SetTabButtonColor(trainCenterTabButton, currentSelectedTab == TabType.TrainCenter ? activeTabColor : inactiveTabColor);
     }
 
@@ -216,6 +231,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         UpdateTextSafe(untrainedWorkingText, stats.untrainedWorking.ToString());
         UpdateTextSafe(untrainedFreeText, stats.untrainedFree.ToString());
         UpdateTextSafe(untrainedTrainingText, stats.untrainedTraining.ToString());
+        UpdateTextSafe(untrainedNotArrivedText, stats.untrainedNotArrived.ToString());
         UpdateTextSafe(untrainedTotalText, stats.GetTotalUntrained().ToString());
 
         UpdateTextSafe(totalWorkersText, stats.GetTotalWorkers().ToString());
@@ -240,9 +256,11 @@ public class GlobalWorkerManagementUI : MonoBehaviour
                            stats.untrainedWorking > 0 ? workingColor : notWorkingColor);
 
         UpdateTextWithColor(trainedNotArrivedText, stats.trainedNotArrived.ToString(),
-                           stats.trainedNotArrived > 0 ? Color.yellow : Color.gray);
+                           stats.trainedNotArrived > 0 ? Color.black : Color.gray);
+        UpdateTextWithColor(untrainedNotArrivedText, stats.untrainedNotArrived.ToString(),
+                           stats.untrainedNotArrived > 0 ? Color.black : Color.gray);
         UpdateTextWithColor(untrainedTrainingText, stats.untrainedTraining.ToString(),
-                           stats.untrainedTraining > 0 ? Color.magenta : Color.gray);
+                           stats.untrainedTraining > 0 ? Color.black : Color.gray);
 
         Color availableColor = stats.GetAvailableWorkforce() > 0 ? positiveColor : negativeColor;
         UpdateTextWithColor(availableWorkforceText, stats.GetAvailableWorkforce().ToString(), availableColor);
@@ -266,6 +284,9 @@ public class GlobalWorkerManagementUI : MonoBehaviour
             case TabType.DisasterAssessment:
                 // TODO: Implement disaster assessment panel
                 Debug.Log("Disaster Assessment tab - not yet implemented");
+                break;
+            case TabType.RequestWorker:
+                UpdateRequestWorkerList();
                 break;
             case TabType.TrainCenter:
                 UpdateTrainingGroupList();
@@ -319,6 +340,38 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         Debug.Log($"Updated training group list: {activeTrainings.Count} groups");
     }
 
+    void UpdateRequestWorkerList()
+    {
+        if (workerRequestSystem == null || scrollViewContent == null)
+        {
+            Debug.LogWarning("WorkerRequestSystem or scroll content not found!");
+            return;
+        }
+
+        List<WorkerRequestSystem.RequestTask> activeRequests = workerRequestSystem.GetActiveRequestTasks();
+
+        if (activeRequests.Count == 0)
+        {
+            // Create a "No active requests" message
+            GameObject noRequestItem = Instantiate(noActiveRequestText, scrollViewContent);
+            currentListItems.Add(noRequestItem);
+            return;
+        }
+
+        // Sort: In-progress first, then completed, then by arrival day
+        activeRequests = activeRequests
+            .OrderBy(r => r.isCompleted ? 1 : 0)  // In-progress (false=0) before completed (true=1)
+            .ThenBy(r => r.arrivalDay)            // Earlier arrival first
+            .ToList();
+
+        foreach (var request in activeRequests)
+        {
+            CreateRequestGroupItem(request);
+        }
+
+        Debug.Log($"Updated request worker list: {activeRequests.Count} requests");
+    }
+
     List<Building> GetBuildingsOfType(BuildingType buildingType)
     {
         if (buildingSystem == null) return new List<Building>();
@@ -355,6 +408,24 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         if (groupItem != null)
         {
             groupItem.Initialize(training);
+        }
+    }
+
+    void CreateRequestGroupItem(WorkerRequestSystem.RequestTask request)
+    {
+        if (requestGroupItemPrefab == null)
+        {
+            Debug.LogWarning("Request group item prefab not assigned!");
+            return;
+        }
+
+        GameObject item = Instantiate(requestGroupItemPrefab, scrollViewContent);
+        currentListItems.Add(item);
+
+        RequestGroupItemUI groupItem = item.GetComponent<RequestGroupItemUI>();
+        if (groupItem != null)
+        {
+            groupItem.Initialize(request);
         }
     }
 
