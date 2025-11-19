@@ -47,6 +47,9 @@ TagManager:
   - name: Buildings
     uniqueID: 92941517
     locked: 0
+  - name: Weather
+    uniqueID: 3148318367
+    locked: 0
   - name: UI
     uniqueID: 426700653
     locked: 0

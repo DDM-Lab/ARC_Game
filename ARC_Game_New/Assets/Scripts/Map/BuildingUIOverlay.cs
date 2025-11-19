@@ -164,6 +164,18 @@ public class BuildingUIOverlay : MonoBehaviour
             {
                 toastText.gameObject.SetActive(false);
             }
+
+            // Find the label text and set it to the facility's name
+            Transform labelText = uiOverlay.transform.Find("BuildingLabelText");
+            if (labelText != null)
+            {
+                TextMeshProUGUI labelTextComponent = labelText.GetComponent<TextMeshProUGUI>();
+                if (labelTextComponent != null)
+                {
+                    // get the facility name and id
+                    labelTextComponent.text = $"{building.GetBuildingType()} ({building.GetOriginalSiteId()})";
+                }
+            }
         }
         else
         {
