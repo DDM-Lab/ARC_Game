@@ -17,12 +17,14 @@ public class RainEffectController : MonoBehaviour
     {
         rainParticles = GetComponent<ParticleSystem>();
         
+        // Make rain continue during pause (Time.timeScale = 0)
+        var main = rainParticles.main;
+        main.useUnscaledTime = true;
+        
         // Subscribe to weather changes
         if (WeatherSystem.Instance != null)
         {
             WeatherSystem.Instance.OnWeatherChanged += OnWeatherChanged;
-            
-            // Set initial emission based on current weather
             OnWeatherChanged(WeatherSystem.Instance.GetCurrentWeather());
         }
     }
