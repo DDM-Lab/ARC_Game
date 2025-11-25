@@ -538,12 +538,35 @@ public class TaskDetailUI : MonoBehaviour
             }
         }
 
+        // Check if this is the first time confirming a task
+        /*if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstTaskConfirm())
+        {
+            if (ConfirmationPopup.Instance != null)
+            {
+                ConfirmationPopup.Instance.ShowPopup(
+                    message: "Once confirmed, this decision is irreversible. Are you sure you want to proceed? (This is a one-time tutorial prompt)",
+                    onConfirm: () => {
+                        FirstTimeActionTracker.Instance.MarkTaskConfirmCompleted();
+                        CompleteTaskAction();
+                    },
+                    title: "Confirm Task Decision"
+                );
+                return;
+            }
+        }*/
+        CompleteTaskAction();
+
+    }
+
+    // The actual task completion logic
+    private void CompleteTaskAction()
+    {
         // Apply choice impacts first
         if (selectedChoice != null)
         {
             ApplyChoiceImpacts(selectedChoice);
 
-            // NEW: Handle delivery execution with strict type checking
+            // Handle delivery execution with strict type checking
             if (selectedChoice.enableMultipleDeliveries)
             {
                 Debug.Log("Executing multiple deliveries");

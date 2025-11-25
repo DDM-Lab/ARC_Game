@@ -106,6 +106,29 @@ public class BuildingSystem : MonoBehaviour
             GameLogPanel.Instance.LogError($"Site {site.GetId()} is not available for construction but was attempted to build {buildingType}");
             return;
         }
+
+        // Check if this is the first time constructing
+        if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstConstruct())
+        {
+            if (ConfirmationPopup.Instance != null)
+            {
+                ConfirmationPopup.Instance.ShowPopup(
+                    message: $"Convert this abandoned site into a {buildingType}?\n\nConversion will take time to complete. Assign workers once the conversion is complete. Are you sure to proceed? (This is a one-time tutorial prompt)",
+                    onConfirm: () => {
+                        FirstTimeActionTracker.Instance.MarkConstructCompleted();
+                        PerformConstruction(site, buildingType);
+                    },
+                    title: $"Convert into {buildingType}?"
+                );
+                return;
+            }
+        }
+        PerformConstruction(site, buildingType);
+    }
+
+    // Actual construction logic
+    private void PerformConstruction(AbandonedSite site, BuildingType buildingType)
+    {
         
         // Get the prefab for the building type
         GameObject buildingPrefab = GetBuildingPrefab(buildingType);
