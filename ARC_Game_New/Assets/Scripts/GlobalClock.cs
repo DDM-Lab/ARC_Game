@@ -223,7 +223,7 @@ public class GlobalClock : MonoBehaviour
                 );
                 return;
             }
-            else
+            /*else
             {
                 // Ask for confirmation to start simulation
                 if (ConfirmationPopup.Instance != null)
@@ -237,7 +237,11 @@ public class GlobalClock : MonoBehaviour
                     );
                     return;
                 }
-            }
+            }*/
+            else
+            {
+                StartSimulation();
+            }   
             
         }
     }
