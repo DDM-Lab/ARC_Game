@@ -19,14 +19,12 @@ public class AbandonedSite : MonoBehaviour
     [Header("Selection State")]
     private bool isSelected = false;
     
-    // Events
     public event Action<AbandonedSite> OnSiteSelected;
     
     private bool isMouseOver = false;
     
     void Start()
     {
-        // Initialize visual components
         if (siteRenderer == null)
             siteRenderer = GetComponent<SpriteRenderer>();
         
@@ -35,11 +33,7 @@ public class AbandonedSite : MonoBehaviour
     
     void OnMouseEnter()
     {
-        // If pointer is over interactive UI elements, show no hover effects
-        if (IsPointerOverInteractiveUI() || isInSimulation())
-        {
-            return;
-        }
+        if (ShouldBlockInteraction()) return;
 
         if (isAvailable)
         {
@@ -56,13 +50,8 @@ public class AbandonedSite : MonoBehaviour
     
     void OnMouseDown()
     {
-        // Only block if pointer is over interactive UI elements and is not in simulation
-        if (IsPointerOverInteractiveUI() || isInSimulation())
-        {
-            return;
-        }
+        if (ShouldBlockInteraction()) return;
         
-        // Handle site selection
         if (isAvailable)
         {
             AudioManager.Instance.PlayClickSFX();
@@ -70,106 +59,19 @@ public class AbandonedSite : MonoBehaviour
         }
     }
 
+    bool ShouldBlockInteraction()
+    {
+        if (isInSimulation()) return true;
+        
+        if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+            return true;
+        
+        return false;
+    }
+
     bool isInSimulation()
     {
         return GlobalClock.Instance != null && GlobalClock.Instance.IsSimulationRunning();
-    }
-
-    bool IsPointerOverInteractiveUI()
-    {
-        // Check if over blocking UIs (not building selection UI)
-        GlobalWorkerManagementUI globalUI = FindObjectOfType<GlobalWorkerManagementUI>();
-        if (globalUI != null && globalUI.IsUIOpen())
-        {
-            return true;
-        }
-        
-        IndividualBuildingManageUI manageUI = FindObjectOfType<IndividualBuildingManageUI>();
-        if (manageUI != null && manageUI.IsUIOpen())
-        {
-            return true;
-        }
-
-        BuildingSelectionUI selectionUI = FindObjectOfType<BuildingSelectionUI>();
-        if (selectionUI != null && selectionUI.IsUIOpen())
-        {
-            // Only block if pointer is actually over the UI panels
-            if (EventSystem.current.IsPointerOverGameObject())
-            {
-                return true;
-            }
-        }
-
-        DebugPanel debugPanel = FindObjectOfType<DebugPanel>();
-        if (debugPanel != null && debugPanel.IsUIOpen())
-        {
-            // Only block if pointer is actually over the UI panels
-            if (EventSystem.current.IsPointerOverGameObject())
-            {
-                return true;
-            }
-        }
-
-        AlertUIController alertUI = FindObjectOfType<AlertUIController>();
-        if (alertUI != null && alertUI.IsUIOpen())
-        {
-            // Only block if pointer is actually over the UI panels
-            if (EventSystem.current.IsPointerOverGameObject())
-            {
-                return true;
-            }
-        }
-
-        TaskCenterUI taskCenterUI = FindObjectOfType<TaskCenterUI>();
-        if (taskCenterUI != null && taskCenterUI.IsUIOpen())
-        {
-            // Only block if pointer is actually over the UI panels
-            if (EventSystem.current.IsPointerOverGameObject())
-            {
-                return true;
-            }
-        }
-
-        TaskDetailUI taskDetailUI = FindObjectOfType<TaskDetailUI>();
-        if (taskDetailUI != null && taskDetailUI.IsUIOpen())
-        {
-            // Only block if pointer is actually over the UI panels
-            if (EventSystem.current.IsPointerOverGameObject())
-            {
-                return true;
-            }
-        }
-
-        FacilityInfoPanel facilityInfo = FindObjectOfType<FacilityInfoPanel>();
-        if (facilityInfo != null && facilityInfo.IsUIOpen())
-        {
-            // Only block if pointer is actually over the UI panels
-            if (EventSystem.current.IsPointerOverGameObject())
-            {
-                return true;
-            }
-        }
-
-        ExpandablePanel expandablePanel = FindObjectOfType<ExpandablePanel>();
-        if (expandablePanel != null && expandablePanel.IsUIOpen())
-        {
-            // Only block if pointer is actually over the UI panels
-            if (EventSystem.current.IsPointerOverGameObject())
-            {
-                return true;
-            }
-        }
-
-        AgentConversationUI agentConversationUI = FindObjectOfType<AgentConversationUI>();
-        if (agentConversationUI != null && agentConversationUI.IsUIOpen())
-        {
-            if (EventSystem.current.IsPointerOverGameObject())
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
     
     public void Initialize(int id)
@@ -209,12 +111,10 @@ public class AbandonedSite : MonoBehaviour
         UpdateVisualState();
     }
     
-    // Called when this site is converted to a building
     public void ConvertToBuilding()
     {
         isAvailable = false;
 
-        // Disable this gameobject's components
         if (siteRenderer != null)
             siteRenderer.enabled = false;
 
@@ -225,19 +125,12 @@ public class AbandonedSite : MonoBehaviour
         Debug.Log($"Site {siteId} converted to building");
     }
     
-    // Getters
     public int GetId() => siteId;
     public bool IsAvailable() => isAvailable;
     
-    // Debug info
     void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.blue;
         Gizmos.DrawWireCube(transform.position, Vector3.one * 0.5f);
-        
-        if (Application.isPlaying)
-        {
-            Vector3 labelPos = transform.position + Vector3.up * 0.8f;
-        }
     }
 }
