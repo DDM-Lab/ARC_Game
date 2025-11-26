@@ -6,6 +6,7 @@ using System;
 public class ConfirmationPopup : MonoBehaviour
 {
     [Header("UI References")]
+    [SerializeField] private GameObject maskBG;
     [SerializeField] private GameObject popupPanel;
     [SerializeField] private RectTransform popupPanelRect;
     [SerializeField] private TextMeshProUGUI messageText;
@@ -86,6 +87,10 @@ public class ConfirmationPopup : MonoBehaviour
         if (titleText != null)
             titleText.text = title;
         
+        // Show mask
+        if (maskBG != null)
+            maskBG.SetActive(true);
+
         // Show popup
         if (popupPanel != null)
             popupPanel.SetActive(true);
@@ -186,6 +191,9 @@ public class ConfirmationPopup : MonoBehaviour
     {
         if (popupPanel != null)
             popupPanel.SetActive(false);
+
+        if (maskBG != null)
+            maskBG.SetActive(false);
         
         // Clear callbacks
         onConfirmCallback = null;

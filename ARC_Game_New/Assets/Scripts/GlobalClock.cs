@@ -241,7 +241,7 @@ public class GlobalClock : MonoBehaviour
             else
             {
                 StartSimulation();
-            }   
+            }
             
         }
     }
@@ -250,13 +250,13 @@ public class GlobalClock : MonoBehaviour
     {
         switch (dropdownValue)
         {
-            case 0:
+            case 2:
                 currentTimeSpeed = TimeSpeed.Normal;
                 break;
             case 1:
                 currentTimeSpeed = TimeSpeed.Fast;
                 break;
-            case 2:
+            case 0:
                 currentTimeSpeed = TimeSpeed.VeryFast;
                 break;
             default:
@@ -297,8 +297,17 @@ public class GlobalClock : MonoBehaviour
     
     IEnumerator SimulationCoroutine(float playerWaitTime)
     {
-        // Wait using unscaled time so player wait time is accurate regardless of Time.timeScale
-        yield return new WaitForSecondsRealtime(playerWaitTime);
+        float elapsed = 0f;
+        
+        while (elapsed < playerWaitTime)
+        {
+            // Use unscaledDeltaTime when paused (timeScale = 0), use deltaTime when running
+            if (Time.timeScale > 0)
+            {
+                elapsed += Time.unscaledDeltaTime;
+            }
+            yield return null;
+        }
         
         EndSimulation();
     }
