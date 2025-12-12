@@ -252,9 +252,18 @@ public class DailyReportManager : MonoBehaviour
             Debug.Log("ERROR: dailyReportPanel is null!");
             return;
         }
+
+        // Show confirmation popup when clicking next day. If confirmed, proceed to fade out and next day. If not, stay on report.
+        ConfirmationPopup.Instance.ShowPopup(
+            message: "Are you sure you want to proceed to the next day?",
+            onConfirm: () => {
+                // Start fade out transition
+                StartCoroutine(FadeOutAndProceed());
+            },
+            title: "Proceed to Next Day?"
+        );
         
-        // Start fade out transition
-        StartCoroutine(FadeOutAndProceed());
+        
     }
     
     IEnumerator FadeOutAndProceed()

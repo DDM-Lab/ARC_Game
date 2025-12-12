@@ -186,17 +186,63 @@ public class GlobalClock : MonoBehaviour
         // If waiting for report, clicking button shows the report
         if (isWaitingForReport)
         {
-            // This will trigger the daily report
-            OnDayChanged?.Invoke(currentDay + 1);
-            isWaitingForReport = false;
-            
-            // Disable button until report is handled
-            if (executeButton != null)
-                executeButton.interactable = false;
+            // Ask for confirmation to view report
+            if (ConfirmationPopup.Instance != null)
+            {
+                ConfirmationPopup.Instance.ShowPopup(
+                    message: "Do you want to view the daily report now? You will be able to proceed to the next day after viewing the report.",
+                    onConfirm: () => {
+                        
+                        // This will trigger the daily report
+                        OnDayChanged?.Invoke(currentDay + 1);
+                        isWaitingForReport = false;
+                        
+                        // Disable button until report is handled
+                        if (executeButton != null)
+                            executeButton.interactable = false;
+                        
+                    },
+                    title: "View Daily Report?"
+                );
+                return;
+            }
+
         }
         else
         {
-            StartSimulation();
+            // for the first time execution, show longer confirmation text
+            if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstExecute())
+            {
+                ConfirmationPopup.Instance.ShowPopup(
+                    message: "This is your first time executing a simulation round. During the simulation, you won't be able to make changes until it completes. You can adjust the simulation speed in settings.\n\nDo you want to proceed?",
+                    onConfirm: () => {
+                        FirstTimeActionTracker.Instance.MarkExecuteCompleted();
+                        StartSimulation();
+                    },
+                    title: "First Time Execution"
+                );
+                return;
+            }
+            /*else
+            {
+                // Ask for confirmation to start simulation
+                if (ConfirmationPopup.Instance != null)
+                {
+                    ConfirmationPopup.Instance.ShowPopup(
+                        message: "Are you sure you want to proceed to the next round?",
+                        onConfirm: () => {
+                            StartSimulation();
+                        },
+                        title: "Start Simulation Now?"
+                    );
+                    return;
+                }
+            }*/
+            else
+            {
+                StartSimulation();
+            }
+            
         }
     }
 
@@ -204,13 +250,13 @@ public class GlobalClock : MonoBehaviour
     {
         switch (dropdownValue)
         {
-            case 0:
+            case 2:
                 currentTimeSpeed = TimeSpeed.Normal;
                 break;
             case 1:
                 currentTimeSpeed = TimeSpeed.Fast;
                 break;
-            case 2:
+            case 0:
                 currentTimeSpeed = TimeSpeed.VeryFast;
                 break;
             default:
@@ -251,8 +297,17 @@ public class GlobalClock : MonoBehaviour
     
     IEnumerator SimulationCoroutine(float playerWaitTime)
     {
-        // Wait using unscaled time so player wait time is accurate regardless of Time.timeScale
-        yield return new WaitForSecondsRealtime(playerWaitTime);
+        float elapsed = 0f;
+        
+        while (elapsed < playerWaitTime)
+        {
+            // Use unscaledDeltaTime when paused (timeScale = 0), use deltaTime when running
+            if (Time.timeScale > 0)
+            {
+                elapsed += Time.unscaledDeltaTime;
+            }
+            yield return null;
+        }
         
         EndSimulation();
     }

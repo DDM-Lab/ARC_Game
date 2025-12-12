@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using System.Collections;
 using System.Linq;
+
 public enum BuildingType
 {
     Kitchen,
@@ -16,7 +17,8 @@ public enum BuildingStatus
     UnderConstruction,
     NeedWorker,
     InUse,
-    Disabled
+    Disabled,
+    Deconstructing  // Added deconstruction status
 }
 
 public class Building : MonoBehaviour
@@ -43,13 +45,24 @@ public class Building : MonoBehaviour
     public Color inUseColor = Color.green;
     public Color disabledColor = Color.grey;
 
+    [Header("Deconstruction Visuals")]
+    public SpriteRenderer deconstructionStartingSpriteRenderer;
+    public Color deconstructionColor = new Color(1f, 0.3f, 0.3f, 1f); // Red for deconstruction
+
     [Header("System References")]
     public WorkerSystem workerSystem;
+    
     [Header("UI Components")]
     public SpriteWorkforceIndicator mapWorkforceIndicator;
 
+    [Header("Deconstruction Settings")] // NEW SECTION
+    public float deconstructionTime = 3f;
+    private float deconstructionProgress = 0f;
+    private Coroutine deconstructionCoroutine;
+
     private float constructionProgress = 0f;
     private Coroutine constructionCoroutine;
+    private AbandonedSite abandonedSiteComponent; // Reference to AbandonedSite
 
     public void Initialize(BuildingType type, int siteId)
     {
@@ -71,7 +84,6 @@ public class Building : MonoBehaviour
         Debug.Log($"Building initialized: {buildingType} at original site {siteId}. Currently Under Construction.");
         GameLogPanel.Instance.LogBuildingStatus($"Building initialized: {buildingType} at original site {siteId}. Currently Under Construction.");
         ToastManager.ShowToast($"You chose to change an abandoned site at {originalSiteId} into {buildingType}. Currently Under Construction.", ToastType.Info, true);
-
     }
 
     void Start()
@@ -176,7 +188,151 @@ public class Building : MonoBehaviour
         Debug.Log($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment");
         GameLogPanel.Instance.LogBuildingStatus($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment");
         ToastManager.ShowToast($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment", ToastType.Success, true);
+    }
 
+    // Start Deconstruction
+    public void StartDeconstruction()
+    {
+        if (currentStatus != BuildingStatus.InUse)
+        {
+            Debug.LogWarning($"Cannot deconstruct {buildingType}: building is not in use (current status: {currentStatus})");
+            return;
+        }
+
+        // Release all workers immediately
+        ReleaseAllWorkers();
+
+        // Change status to deconstructing
+        currentStatus = BuildingStatus.Deconstructing;
+        deconstructionProgress = 0f;
+
+        // Show progress bar
+        if (constructionProgressBar != null)
+            constructionProgressBar.SetActive(true);
+
+        // Hide workforce indicator
+        if (mapWorkforceIndicator != null)
+            mapWorkforceIndicator.gameObject.SetActive(false);
+
+        // Start deconstruction coroutine
+        if (deconstructionCoroutine != null)
+        {
+            StopCoroutine(deconstructionCoroutine);
+        }
+        deconstructionCoroutine = StartCoroutine(DeconstructionCoroutine());
+
+        UpdateBuildingVisual();
+
+        Debug.Log($"{buildingType} at site {originalSiteId} deconstruction started");
+        GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deconstruction started");
+        ToastManager.ShowToast($"{buildingType} deconstruction started - workers released", ToastType.Info, true);
+    }
+
+    // Deconstruction Coroutine
+    IEnumerator DeconstructionCoroutine()
+    {
+        float elapsedTime = 0f;
+
+        while (elapsedTime < deconstructionTime)
+        {
+            elapsedTime += Time.deltaTime;
+            deconstructionProgress = elapsedTime / deconstructionTime;
+
+            // Update progress bar
+            UpdateDeconstructionProgress(deconstructionProgress);
+            UpdateBuildingVisual();
+
+            yield return null;
+        }
+
+        // Deconstruction completed
+        CompleteDeconstruction();
+    }
+
+    // Update Deconstruction Progress
+    void UpdateDeconstructionProgress(float progress)
+    {
+        deconstructionProgress = Mathf.Clamp01(progress);
+
+        // Update progress bar visual if exists (same visual as construction)
+        if (constructionProgressBar != null)
+        {
+            Transform progressFill = constructionProgressBar.transform.Find("Fill");
+            if (progressFill != null)
+            {
+                // Scale from left edge
+                progressFill.localScale = new Vector3(deconstructionProgress, 1f, 1f);
+
+                // Adjust position to make it grow from left edge
+                float offset = (1f - deconstructionProgress) * 0.5f;
+                Vector3 originalPos = progressFill.localPosition;
+                progressFill.localPosition = new Vector3(-offset, originalPos.y, originalPos.z);
+
+                // Change color to deconstruction color
+                SpriteRenderer fillRenderer = progressFill.GetComponent<SpriteRenderer>();
+                if (fillRenderer != null)
+                {
+                    fillRenderer.color = deconstructionColor;
+                    if (deconstructionStartingSpriteRenderer != null)
+                    {
+                        deconstructionStartingSpriteRenderer.color = deconstructionColor;
+                    }
+                }
+            }
+        }
+    }
+
+    // Complete Deconstruction
+    void CompleteDeconstruction()
+    {
+        Debug.Log($"{buildingType} at site {originalSiteId} deconstruction completed - reverting to AbandonedSite");
+        GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deconstruction completed - reverting to AbandonedSite");
+        ToastManager.ShowToast($"{buildingType} deconstructed - site is now abandoned again", ToastType.Info, true);
+
+        // Find the BuildingSystem to handle deconstruction properly
+        BuildingSystem buildingSystem = FindObjectOfType<BuildingSystem>();
+        if (buildingSystem != null)
+        {
+            // Use BuildingSystem's existing deconstruction method
+            // which knows how to find and restore the original AbandonedSite
+            buildingSystem.DeconstructBuilding(this);
+
+            Debug.Log("Deconstruction handled by BuildingSystem");
+            return; // BuildingSystem will handle destroying this building
+        }
+        else
+        {
+            Debug.LogError("BuildingSystem not found! Cannot properly deconstruct building.");
+
+            // Fallback: just destroy the building GameObject
+            if (constructionProgressBar != null)
+                Destroy(constructionProgressBar);
+
+            if (mapWorkforceIndicator != null)
+                Destroy(mapWorkforceIndicator.gameObject);
+
+            // Notify UI before destroying
+            BuildingSystemUIIntegration uiIntegration = FindObjectOfType<BuildingSystemUIIntegration>();
+            if (uiIntegration != null)
+            {
+                uiIntegration.NotifyBuildingDestroyed(this);
+            }
+
+            Destroy(gameObject); // Destroy the entire building GameObject
+        }
+    }
+
+    // Release All Workers
+    void ReleaseAllWorkers()
+    {
+        if (workerSystem == null)
+        {
+            Debug.LogWarning("WorkerSystem not found - cannot release workers");
+            return;
+        }
+
+        // Use existing WorkerSystem method to release workers
+        workerSystem.ReleaseWorkersFromBuilding(originalSiteId);
     }
 
     public void AssignWorker()
@@ -210,95 +366,54 @@ public class Building : MonoBehaviour
                     ToastManager.ShowToast($"Not enough workforce assigned! Required: {requiredWorkforce}, Available: {totalWorkforce}", ToastType.Warning, true);
                 }
             }
-            else
-            {
-                // Fallback for when WorkerSystem is not available
-                currentStatus = BuildingStatus.InUse;
-
-                UpdateBuildingVisual();
-                NotifyStatsUpdate();
-                Debug.LogWarning($"{buildingType} activated without WorkerSystem validation");
-                GameLogPanel.Instance.LogError($"{buildingType} at site {originalSiteId} is operational without workforce validation");
-            }
-        }
-        else
-        {
-            Debug.LogWarning($"Cannot assign worker to {buildingType} - current status: {currentStatus}");
-            ToastManager.ShowToast($"Cannot assign worker to {buildingType} - current status: {currentStatus}", ToastType.Warning, true);
-            GameLogPanel.Instance.LogError($"Cannot assign worker to {buildingType} - current status: {currentStatus}");
         }
     }
 
-    /// <summary>
-    /// Force update the workforce indicator display (called from external systems)
-    /// </summary>
-    public void UpdateWorkforceDisplay()
+    public void UpdateWorkerStatus()
     {
-        if (mapWorkforceIndicator != null && workerSystem != null)
+        if (currentStatus == BuildingStatus.InUse || currentStatus == BuildingStatus.NeedWorker)
         {
-            mapWorkforceIndicator.UpdateFromBuilding(this, workerSystem);
-        }
-    }
-
-    public void DisableBuilding()
-    {
-        if (currentStatus == BuildingStatus.InUse)
-        {
-            currentStatus = BuildingStatus.Disabled;
-
-            // Release workers from this building
             if (workerSystem != null)
             {
-                workerSystem.ReleaseWorkersFromBuilding(originalSiteId);
+                var assignedWorkers = workerSystem.GetWorkersByBuildingId(originalSiteId);
+                int totalWorkforce = 0;
+                foreach (var worker in assignedWorkers)
+                {
+                    totalWorkforce += worker.WorkforceValue;
+                }
+
+                if (totalWorkforce >= requiredWorkforce && currentStatus == BuildingStatus.NeedWorker)
+                {
+                    currentStatus = BuildingStatus.InUse;
+                    UpdateBuildingVisual();
+                    NotifyStatsUpdate();
+                    Debug.Log($"{buildingType} at site {originalSiteId} activated with {totalWorkforce} workforce");
+                    GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} activated with {totalWorkforce} workforce");
+                }
+                else if (totalWorkforce < requiredWorkforce && currentStatus == BuildingStatus.InUse)
+                {
+                    currentStatus = BuildingStatus.NeedWorker;
+                    UpdateBuildingVisual();
+                    NotifyStatsUpdate();
+                    Debug.LogWarning($"{buildingType} at site {originalSiteId} deactivated - insufficient workforce");
+                    GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deactivated - insufficient workforce");
+                    ToastManager.ShowToast($"{buildingType} needs more workers to operate!", ToastType.Warning, true);
+                }
             }
-
-            UpdateBuildingVisual();
-            NotifyStatsUpdate();
-            Debug.Log($"{buildingType} at site {originalSiteId} has been disabled and workers released");
-            GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} has been disabled due to an event. Please repair and reassign workers.");
-            ToastManager.ShowToast($"{buildingType} at site {originalSiteId} has been disabled! Please repair and reassign workers.", ToastType.Warning, true);
-        }
-        else
-        {
-            Debug.LogWarning($"Cannot disable {buildingType} - current status: {currentStatus}");
-            GameLogPanel.Instance.LogError($"Cannot disable {buildingType} - current status: {currentStatus}");
-            ToastManager.ShowToast($"Cannot disable {buildingType} - current status: {currentStatus}", ToastType.Warning, true);
-        }
-    }
-
-    public void RepairBuilding()
-    {
-        if (currentStatus == BuildingStatus.Disabled)
-        {
-            currentStatus = BuildingStatus.NeedWorker;
-
-            UpdateBuildingVisual();
-            NotifyStatsUpdate();
-            Debug.Log($"{buildingType} at site {originalSiteId} has been repaired and needs worker reassignment");
-            GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} has been repaired. Please reassign workers.");
-            ToastManager.ShowToast($"{buildingType} at site {originalSiteId} has been repaired! Please reassign workers.", ToastType.Info, true);
-        }
-        else
-        {
-            Debug.LogWarning($"Cannot repair {buildingType} - current status: {currentStatus}");
-            GameLogPanel.Instance.LogError($"Cannot repair {buildingType} - current status: {currentStatus}");
-            ToastManager.ShowToast($"Cannot repair {buildingType} - current status: {currentStatus}", ToastType.Warning, true);
         }
     }
 
     void NotifyStatsUpdate()
     {
-        // Find and notify BuildingStatsUI to update
-        BuildingStatsUI statsUI = FindObjectOfType<BuildingStatsUI>();
-        if (statsUI != null)
+        // Try to find the stats manager - use a more flexible approach
+        MonoBehaviour[] allComponents = FindObjectsOfType<MonoBehaviour>();
+        foreach (var component in allComponents)
         {
-            statsUI.ForceUpdateStats();
-        }
-
-        // update the workforce indicator on the map
-        if (mapWorkforceIndicator != null && workerSystem != null)
-        {
-            mapWorkforceIndicator.UpdateFromBuilding(this, workerSystem);
+            if (component.GetType().Name == "BuildingStatsUIManager")
+            {
+                component.SendMessage("UpdateBuildingStats", SendMessageOptions.DontRequireReceiver);
+                break;
+            }
         }
     }
 
@@ -309,8 +424,7 @@ public class Building : MonoBehaviour
         switch (currentStatus)
         {
             case BuildingStatus.UnderConstruction:
-                // Lerp between construction color and need worker color based on progress
-                buildingRenderer.color = Color.Lerp(constructionColor, needWorkerColor, constructionProgress);
+                buildingRenderer.color = constructionColor;
                 break;
             case BuildingStatus.NeedWorker:
                 buildingRenderer.color = needWorkerColor;
@@ -321,21 +435,11 @@ public class Building : MonoBehaviour
             case BuildingStatus.Disabled:
                 buildingRenderer.color = disabledColor;
                 break;
+            case BuildingStatus.Deconstructing: // NEW
+                buildingRenderer.color = deconstructionColor;
+                break;
         }
     }
-    /*
-    // Hover effects are handled directly by FacilityInfoManager.cs
-    void OnMouseEnter()
-    {
-        if (FacilityInfoManager.Instance != null)
-            FacilityInfoManager.Instance.OnFacilityHover(this, true);
-    }
-
-    void OnMouseExit()
-    {
-        if (FacilityInfoManager.Instance != null)
-            FacilityInfoManager.Instance.OnFacilityHover(this, false);
-    }*/
 
     void OnMouseDown()
     {
@@ -357,7 +461,9 @@ public class Building : MonoBehaviour
     public bool IsUnderConstruction() => currentStatus == BuildingStatus.UnderConstruction;
     public bool NeedsWorker() => currentStatus == BuildingStatus.NeedWorker;
     public bool IsDisabled() => currentStatus == BuildingStatus.Disabled;
+    public bool IsDeconstructing() => currentStatus == BuildingStatus.Deconstructing; // NEW
     public float GetConstructionProgress() => constructionProgress;
+    public float GetDeconstructionProgress() => deconstructionProgress; // NEW
     public int GetCapacity() => capacity;
     public float GetEfficiency() => operationalEfficiency;
     public int GetRequiredWorkforce() => requiredWorkforce;
@@ -527,4 +633,13 @@ public class Building : MonoBehaviour
         }
     }
 
+    // Debug method for testing deconstruction
+    [ContextMenu("Manual: Start Deconstruction")]
+    public void DebugStartDeconstruction()
+    {
+        if (enableManualTasks)
+        {
+            StartDeconstruction();
+        }
+    }
 }

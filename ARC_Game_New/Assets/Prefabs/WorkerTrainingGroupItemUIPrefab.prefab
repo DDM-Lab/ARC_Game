@@ -661,7 +661,7 @@ GameObject:
   - component: {fileID: 267603855354267567}
   - component: {fileID: 8060747309429115800}
   m_Layer: 5
-  m_Name: TrainingGroupItemUIPrefab
+  m_Name: WorkerTrainingGroupItemUIPrefab
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

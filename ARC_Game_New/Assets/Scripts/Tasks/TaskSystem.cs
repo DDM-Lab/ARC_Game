@@ -589,6 +589,12 @@ public class TaskSystem : MonoBehaviour
                 Debug.Log($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
             GameLogPanel.Instance.LogTaskEvent($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
             ToastManager.ShowToast($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}", ToastType.Warning, true);
+
+            // Show task result popup with delivery failure reason
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert))
+            {
+                TaskResultManager.Instance.ShowTaskResult(task);
+            }
         }
     }
 
@@ -1014,6 +1020,12 @@ public class TaskSystem : MonoBehaviour
                 Debug.Log($"Completed task: {task.taskTitle}");
             GameLogPanel.Instance.LogTaskEvent($"Completed task: {task.taskTitle}");
             ToastManager.ShowToast($"Completed task: {task.taskTitle}", ToastType.Success, true);
+
+            // Show task result popup
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert))
+            {
+                TaskResultManager.Instance.ShowTaskResult(task);
+            }
         }
     }
 
@@ -1039,6 +1051,12 @@ public class TaskSystem : MonoBehaviour
                 Debug.Log($"Expired task: {task.taskTitle} (Status: {task.status})");
             GameLogPanel.Instance.LogTaskEvent($"Expired task: {task.taskTitle} (Status: {task.status})");
             ToastManager.ShowToast($"Expired task: {task.taskTitle} (Status: {task.status})", ToastType.Warning, true);
+
+            // Show task result popup
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert))
+            {
+                TaskResultManager.Instance.ShowTaskResult(task);
+            }
         }
     }
 
@@ -1108,6 +1126,12 @@ public class TaskSystem : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Task marked as incomplete: {task.taskTitle}");
             GameLogPanel.Instance.LogTaskEvent($"Task marked as incomplete: {task.taskTitle}");
+
+            // Show task result popup with incompletion reason
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert))
+            {
+                TaskResultManager.Instance.ShowTaskResult(task);
+            }
         }
     }
 
