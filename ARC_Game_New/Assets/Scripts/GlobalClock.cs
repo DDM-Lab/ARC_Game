@@ -55,7 +55,7 @@ public class GlobalClock : MonoBehaviour
     // Current state
     private TimeState currentState = TimeState.Paused;
     private bool isSimulationRunning = false;
-    private bool isWaitingForReport = false; // Track if we're waiting for report
+    public bool isWaitingForReport = false; // Track if we're waiting for report
     
     // Events for other systems to listen to
     public event Action OnSimulationStarted;
