@@ -679,7 +679,7 @@ public class TaskDetailUI : MonoBehaviour
             case NumericalInputType.UntrainedWorkers:
                 if (WorkerSystem.Instance != null)
                 {
-                    // For REQUEST tasks, validate budget instead of worker availability
+                    // For REQUEST tasks, validate budget
                     if (currentTask.taskTitle.Contains("Request"))
                     {
                         if (WorkerRequestSystem.Instance != null && SatisfactionAndBudget.Instance != null)
@@ -698,11 +698,35 @@ public class TaskDetailUI : MonoBehaviour
                         break;
                     }
                     
-                    // For TRAINING tasks, validate worker availability
-                    int availableUntrained = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
-                    if (value > availableUntrained)
+                    // For TRAINING tasks, validate budget AND worker availability
+                    if (currentTask.taskTitle.Contains("Training"))
                     {
-                        return $"Not enough untrained workers. You requested {value} but only have {availableUntrained} available.";
+                        // Check budget first
+                        if (WorkerTrainingSystem.Instance != null && SatisfactionAndBudget.Instance != null)
+                        {
+                            int totalCost = value * WorkerTrainingSystem.Instance.trainingCostPerWorker;
+                            int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+                            
+                            if (totalCost > availableBudget)
+                            {
+                                return $"Insufficient budget. Training {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
+                            }
+                        }
+                        
+                        // Then check worker availability
+                        int availableUntrained = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
+                        if (value > availableUntrained)
+                        {
+                            return $"Not enough untrained workers. You requested {value} but only have {availableUntrained} available.";
+                        }
+                        break;
+                    }
+                    
+                    // Default: validate worker availability
+                    int availableUntrainedDefault = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
+                    if (value > availableUntrainedDefault)
+                    {
+                        return $"Not enough untrained workers. You requested {value} but only have {availableUntrainedDefault} available.";
                     }
                 }
                 break;
