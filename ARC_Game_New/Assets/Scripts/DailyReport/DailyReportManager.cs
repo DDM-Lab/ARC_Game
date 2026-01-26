@@ -21,7 +21,12 @@ public class DailyReportManager : MonoBehaviour
     
     private bool isWaitingForNextDay = false;
     private bool isTransitioning = false;
-    
+
+    [Header("Day 1 Special")]
+    public GameObject day1MaskPanel;
+    [Header("Game End Settings")]
+    public int finalDay = 8; // Game ends after this day
+
     // Singleton
     public static DailyReportManager Instance { get; private set; }
     private float lastReportTime = 0f;
@@ -134,9 +139,22 @@ public class DailyReportManager : MonoBehaviour
         
         // Do the existing fade in animation first
         yield return StartCoroutine(FadeInReport());
+
+        // Show mask for Day 1, hide for other days
+        int currentDay = globalClock != null ? globalClock.GetCurrentDay() : 1;
+        if (day1MaskPanel != null)
+        {
+            day1MaskPanel.SetActive(currentDay == 1);
+        }
+
+        // Hide next day button if game ended
+        if (currentDay >= finalDay && nextDayButton != null)
+        {
+            nextDayButton.gameObject.SetActive(false);
+        }
         
-        // THEN generate and display report data
-        if (DailyReportData.Instance != null && reportUI != null)
+        // Only generate report data if NOT Day 1
+        if (currentDay > 1 && DailyReportData.Instance != null && reportUI != null)
         {
             var metrics = DailyReportData.Instance.GenerateDailyReport();
             reportUI.DisplayDailyReport(metrics);
@@ -219,7 +237,12 @@ public class DailyReportManager : MonoBehaviour
             panelCanvasGroup.alpha = 0f;
             panelCanvasGroup.blocksRaycasts = false;
         }
-        
+
+        if (day1MaskPanel != null)
+        {
+            day1MaskPanel.SetActive(false);
+        }
+
         // Hide panel completely
         dailyReportPanel.SetActive(false);
         

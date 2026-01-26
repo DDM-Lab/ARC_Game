@@ -677,21 +677,81 @@ public class TaskDetailUI : MonoBehaviour
                 break;
                 
             case NumericalInputType.UntrainedWorkers:
-                // Check if requested workers exceed available
                 if (WorkerSystem.Instance != null)
                 {
-                    int availableUntrained = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
-                    if (value > availableUntrained)
+                    // For REQUEST tasks, validate budget
+                    if (currentTask.taskTitle.Contains("Request"))
                     {
-                        return $"Not enough untrained workers. You requested {value} but only have {availableUntrained} available.";
+                        if (WorkerRequestSystem.Instance != null && SatisfactionAndBudget.Instance != null)
+                        {
+                            int costPerWorker = currentTask.taskTitle.Contains("Untrained") 
+                                ? WorkerRequestSystem.Instance.untrainedWorkerCost 
+                                : WorkerRequestSystem.Instance.trainedWorkerCost;
+                            int totalCost = value * costPerWorker;
+                            int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+                            
+                            if (totalCost > availableBudget)
+                            {
+                                return $"Insufficient budget. Requesting {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
+                            }
+                        }
+                        break;
+                    }
+                    
+                    // For TRAINING tasks, validate budget AND worker availability
+                    if (currentTask.taskTitle.Contains("Training"))
+                    {
+                        // Check budget first
+                        if (WorkerTrainingSystem.Instance != null && SatisfactionAndBudget.Instance != null)
+                        {
+                            int totalCost = value * WorkerTrainingSystem.Instance.trainingCostPerWorker;
+                            int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+                            
+                            if (totalCost > availableBudget)
+                            {
+                                return $"Insufficient budget. Training {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
+                            }
+                        }
+                        
+                        // Then check worker availability
+                        int availableUntrained = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
+                        if (value > availableUntrained)
+                        {
+                            return $"Not enough untrained workers. You requested {value} but only have {availableUntrained} available.";
+                        }
+                        break;
+                    }
+                    
+                    // Default: validate worker availability
+                    int availableUntrainedDefault = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
+                    if (value > availableUntrainedDefault)
+                    {
+                        return $"Not enough untrained workers. You requested {value} but only have {availableUntrainedDefault} available.";
                     }
                 }
                 break;
                 
             case NumericalInputType.TrainedWorkers:
-                // Check if requested trained workers exceed available
                 if (WorkerSystem.Instance != null)
                 {
+                    // For REQUEST tasks, validate budget instead of worker availability
+                    if (currentTask.taskTitle.Contains("Request"))
+                    {
+                        if (WorkerRequestSystem.Instance != null && SatisfactionAndBudget.Instance != null)
+                        {
+                            int costPerWorker = WorkerRequestSystem.Instance.trainedWorkerCost;
+                            int totalCost = value * costPerWorker;
+                            int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+                            
+                            if (totalCost > availableBudget)
+                            {
+                                return $"Insufficient budget. Requesting {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
+                            }
+                        }
+                        break;
+                    }
+                    
+                    // For TRAINING tasks, validate worker availability
                     int availableTrained = WorkerSystem.Instance.GetAvailableTrainedWorkers();
                     if (value > availableTrained)
                     {

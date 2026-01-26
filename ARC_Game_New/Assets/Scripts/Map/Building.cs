@@ -98,6 +98,19 @@ public class Building : MonoBehaviour
         // Hide workforce indicator initially (will be shown when construction completes)
         if (mapWorkforceIndicator != null)
             mapWorkforceIndicator.gameObject.SetActive(false);
+
+        if (WorkerSystem.Instance != null)
+        {
+            WorkerSystem.Instance.OnWorkerStatsChanged += UpdateWorkforceIndicator;
+        }
+    }
+    void UpdateWorkforceIndicator()
+    {
+        SpriteWorkforceIndicator indicator = GetComponentInChildren<SpriteWorkforceIndicator>();
+        if (indicator != null && WorkerSystem.Instance != null)
+        {
+            indicator.UpdateFromBuilding(this, WorkerSystem.Instance);
+        }
     }
 
     public void StartConstruction(float constructionTime = 5f)
@@ -487,6 +500,14 @@ public class Building : MonoBehaviour
     public bool HasSufficientWorkforce()
     {
         return GetAssignedWorkforce() >= requiredWorkforce;
+    }
+
+    void OnDestroy()
+    {
+        if (WorkerSystem.Instance != null)
+        {
+            WorkerSystem.Instance.OnWorkerStatsChanged -= UpdateWorkforceIndicator;
+        }
     }
     
     [Header("Manual Task Debug")]

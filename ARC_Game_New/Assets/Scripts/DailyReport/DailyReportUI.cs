@@ -21,6 +21,7 @@ public class DailyReportUI : MonoBehaviour
     public DeliverySystem deliverySystem;
 
     [Header("Satisfaction Panel Sections")]
+    public TextMeshProUGUI currentDayDisplay;
     [Header("Food Delivery Section")]
     public SectionElement foodDeliveryTotal;
     public SectionElement foodDeliveryStatus;
@@ -177,6 +178,7 @@ public class DailyReportUI : MonoBehaviour
     public void DisplayDailyReport(DailyReportMetrics metrics)
     {
         currentMetrics = metrics;
+        currentDayDisplay.text = GlobalClock.Instance.currentDay.ToString();
         UpdateBottomPanels(metrics);
         StartCoroutine(AnimateReportDisplay());
     }
