@@ -92,6 +92,7 @@ public class ToastManager : MonoBehaviour
         if (toastUI != null)
         {
             toastUI.Initialize(toastData.message, toastData.type, displayDuration);
+            toastUI.OnClose += () => OnToastClosed(toastObj); // disable auto dismiss
         }
 
         activeToasts.Add(toastObj);
@@ -109,7 +110,19 @@ public class ToastManager : MonoBehaviour
             }
         }
 
-        StartCoroutine(RemoveToastAfterDelay(toastObj, displayDuration));
+        //StartCoroutine(RemoveToastAfterDelay(toastObj, displayDuration));
+    }
+
+    // Close toast message functionality
+    private void OnToastClosed(GameObject toastObj)
+    {
+        if (toastObj != null && activeToasts.Contains(toastObj))
+        {
+            activeToasts.Remove(toastObj);
+            Destroy(toastObj);
+            RepositionToasts();
+            ProcessToastQueue();
+        }
     }
 
     private void RepositionToasts()
