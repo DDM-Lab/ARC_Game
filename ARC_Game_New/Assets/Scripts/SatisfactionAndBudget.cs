@@ -64,6 +64,11 @@ public class SatisfactionAndBudget : MonoBehaviour
         SetupFeedbackEffects();
         UpdateUI();
 
+        if (satisfactionSlider != null)
+        {
+            satisfactionSlider.value = currentSatisfaction;
+        }
+
         if (showDebugInfo)
             Debug.Log($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
         GameLogPanel.Instance.LogMetricsChange($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
