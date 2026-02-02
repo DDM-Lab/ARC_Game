@@ -59,6 +59,34 @@ public class ToastManager : MonoBehaviour
             audioSource = GetComponent<AudioSource>();
     }
 
+    void Start()
+    {
+        // Subscribe to round changes
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
+        }
+    }
+
+    void OnRoundChanged(int round)
+    {
+        ClearAllToasts();
+    }
+
+    public void ClearAllToasts()
+    {
+        // Clear active toasts
+        foreach (GameObject toast in activeToasts)
+        {
+            if (toast != null)
+                Destroy(toast);
+        }
+        activeToasts.Clear();
+        
+        // Clear queue
+        toastQueue.Clear();
+    }
+
     public static void ShowToast(string message, ToastType type, bool playSound = false)
     {
         if (Instance != null)
@@ -155,6 +183,13 @@ public class ToastManager : MonoBehaviour
         }
     }
 
+    void OnDestroy()
+    {
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
+        }
+    }
 
     [ContextMenu("Test Toast")]
     private void TestToast()
