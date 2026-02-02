@@ -125,8 +125,8 @@ public class DailyReportManager : MonoBehaviour
         // Start fade in transition
         StartCoroutine(FadeInReportWithData());
         
-        Debug.Log("Daily report displayed - waiting for player to continue");
-        ToastManager.ShowToast("Daily report generated", ToastType.Info, true);
+        Debug.Log("Daily report displayed - waiting for player to read and continue to next day");
+        GameLogPanel.Instance.LogPlayerAction("Daily report displayed - waiting for player to read and continue to next day");
     }
 
     IEnumerator FadeInReportWithData()
@@ -302,7 +302,7 @@ public class DailyReportManager : MonoBehaviour
         }
         
         Debug.Log("Player confirmed - proceeding to next day");
-        ToastManager.ShowToast("Proceeding to next day", ToastType.Success, true);
+        GameLogPanel.Instance.LogPlayerAction("Player finished reading daily report. Now proceeding to next day");
     }
     
     public bool IsWaitingForNextDay()

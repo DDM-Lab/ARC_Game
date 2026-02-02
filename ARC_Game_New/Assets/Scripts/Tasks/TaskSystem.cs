@@ -510,7 +510,7 @@ public class TaskSystem : MonoBehaviour
 
                         if (showDebugInfo)
                             Debug.Log($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}");
-                        ToastManager.ShowToast($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}", ToastType.Info, true);
+                        //ToastManager.ShowToast($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}", ToastType.Info, true);
                         GameLogPanel.Instance.LogTaskEvent($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}");
                     }
                 }
@@ -554,7 +554,7 @@ public class TaskSystem : MonoBehaviour
             {
                 if (showDebugInfo)
                     Debug.Log($"All deliveries completed for task: {gameTask.taskTitle}");
-                ToastManager.ShowToast($"All deliveries completed for task: {gameTask.taskTitle}, ", ToastType.Success, true);
+                //ToastManager.ShowToast($"All deliveries completed for task: {gameTask.taskTitle}, ", ToastType.Success, true);
                 GameLogPanel.Instance.LogTaskEvent($"All deliveries completed for task: {gameTask.taskTitle}");
 
                 CompleteTask(gameTask);
@@ -997,7 +997,7 @@ public class TaskSystem : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Created task: {title} ({type}) for {facility}");
         GameLogPanel.Instance.LogTaskEvent($"Created task: {title} ({type}) for {facility}");
-        ToastManager.ShowToast($"New Task: {title} ({type})", ToastType.Info, true);
+        //ToastManager.ShowToast($"New Task: {title} ({type})", ToastType.Info, true);
 
         return newTask;
     }
@@ -1051,7 +1051,7 @@ public class TaskSystem : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Expired task: {task.taskTitle} (Status: {task.status})");
             GameLogPanel.Instance.LogTaskEvent($"Expired task: {task.taskTitle} (Status: {task.status})");
-            ToastManager.ShowToast($"Expired task: {task.taskTitle} (Status: {task.status})", ToastType.Warning, true);
+            //ToastManager.ShowToast($"Expired task: {task.taskTitle} (Status: {task.status})", ToastType.Warning, true);
 
             // Show task result popup
             if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
@@ -1306,8 +1306,8 @@ public class TaskSystem : MonoBehaviour
             Debug.Log($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
         GameLogPanel.Instance.LogTaskEvent($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
         // Don't show alert tasks as toasts
-        if (taskData.taskType != TaskType.Alert)
-            ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);
+        /*if (taskData.taskType != TaskType.Alert)
+            ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);*/
 
         return newTask;
     }
