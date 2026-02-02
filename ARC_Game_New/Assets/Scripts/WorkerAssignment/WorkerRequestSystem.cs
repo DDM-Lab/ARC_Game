@@ -163,7 +163,7 @@ public class WorkerRequestSystem : MonoBehaviour
         
         GameTask requestTask = taskSystem.CreateTask(
             $"Request {workerTypeLabel} Responders",
-            TaskType.Advisory,
+            TaskType.Other,
             "Worker Management",
             $"Request additional {workerTypeLabel.ToLower()} responders to expand your workforce capacity."
         );

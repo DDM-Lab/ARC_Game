@@ -123,7 +123,7 @@ public class WorkerTrainingSystem : MonoBehaviour
             
         GameTask trainingTask = taskSystem.CreateTask(
             "Responder Training Program",
-            TaskType.Advisory,
+            TaskType.Other,
             "Worker Management",
             $"We have {maxTrainable} untrained responders available. Training them will improve their productivity from 1 to 2 workforce points."
         );

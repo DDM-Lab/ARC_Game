@@ -165,6 +165,15 @@ public class TaskDetailUI : MonoBehaviour
 
     public void CloseTaskDetail()
     {
+        // Auto-discard Other type tasks when closed
+        if (currentTask != null && currentTask.taskType == TaskType.Other)
+        {
+            if (TaskSystem.Instance != null && TaskSystem.Instance.activeTasks != null)
+            {
+                TaskSystem.Instance.activeTasks.Remove(currentTask); // Completely remove from system
+            }
+        }
+
         if (taskDetailPanel != null)
         {
             // Stop all running coroutines before clearing display
