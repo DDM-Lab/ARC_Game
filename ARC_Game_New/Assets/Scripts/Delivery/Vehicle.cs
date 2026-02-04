@@ -51,19 +51,19 @@ public class Vehicle : MonoBehaviour
     public Color unloadingColor = new Color(0.8f, 0.8f, 0.8f);
     public Color damagedColor = new Color(1f, 0.2f, 0.2f); // light red
     // Current state
-    private VehicleStatus currentStatus = VehicleStatus.Idle;
-    private List<Vector3> currentPath = new List<Vector3>();
+    public VehicleStatus currentStatus = VehicleStatus.Idle;
+    public List<Vector3> currentPath = new List<Vector3>();
     private int currentPathIndex = 0;
     private float pathProgress = 0f;
 
     // Cargo management
-    private Dictionary<ResourceType, int> currentCargo = new Dictionary<ResourceType, int>();
+    public Dictionary<ResourceType, int> currentCargo = new Dictionary<ResourceType, int>();
 
     // Current delivery task
     public DeliveryTask currentTask;
-    private Vector3 targetPosition;
-    private MonoBehaviour sourceBuilding;
-    private MonoBehaviour destinationBuilding;
+    public Vector3 targetPosition;
+    public MonoBehaviour sourceBuilding;
+    public MonoBehaviour destinationBuilding;
 
     // Movement
     private Coroutine movementCoroutine;
@@ -80,6 +80,19 @@ public class Vehicle : MonoBehaviour
             infoDisplay = GetComponent<InfoDisplay>();
 
         UpdateInfoDisplay();
+
+        // Register with UI overlay
+        if (VehicleUIOverlay.Instance != null)
+        {
+            VehicleUIOverlay.Instance.RegisterVehicle(this);
+        }
+        
+        // Ensure collider exists for click detection
+        if (GetComponent<Collider2D>() == null)
+        {
+            CircleCollider2D collider = gameObject.AddComponent<CircleCollider2D>();
+            collider.radius = 0.5f;
+        }
 
     }
 
@@ -127,7 +140,7 @@ public class Vehicle : MonoBehaviour
         infoDisplay.UpdateDisplay(displayText, displayColor);
     }
 
-    ResourceType GetPrimaryCargoType()
+    public ResourceType GetPrimaryCargoType()
     {
         foreach (var kvp in currentCargo)
         {
@@ -664,6 +677,37 @@ public class Vehicle : MonoBehaviour
         {
             Gizmos.color = Color.red;
             Gizmos.DrawSphere(transform.position, 0.3f);
+        }
+    }
+    
+    void OnMouseEnter()
+    {
+        if (Time.timeScale != 0f) return; // Only when paused
+        transform.localScale = Vector3.one * 1.1f;
+    }
+
+    void OnMouseExit()
+    {
+        transform.localScale = Vector3.one;
+    }
+
+    void OnMouseDown()
+    {
+        // Only allow clicks when game is paused
+        if (Time.timeScale != 0f)
+            return;
+        
+        if (VehicleInfoPanel.Instance != null)
+        {
+            VehicleInfoPanel.Instance.OnVehicleClicked(transform.position);
+        }
+    }
+    
+    void OnDestroy()
+    {
+        if (VehicleUIOverlay.Instance != null)
+        {
+            VehicleUIOverlay.Instance.UnregisterVehicle(this);
         }
     }
 
