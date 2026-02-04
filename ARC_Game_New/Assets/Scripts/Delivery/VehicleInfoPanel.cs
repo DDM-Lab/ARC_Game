@@ -19,7 +19,7 @@ public class VehicleInfoPanel : MonoBehaviour
     public TextMeshProUGUI vehicleCountText; // Shows "Vehicle 2/3" when multiple at same position
     
     [Header("Route Visualization")]
-    public PathVisualizer pathVisualizer;
+    public PathHighlighter pathHighlighter;
     
     [Header("Click Detection")]
     public float clickRadius = 1f; // Radius to detect overlapping vehicles
@@ -55,9 +55,9 @@ public class VehicleInfoPanel : MonoBehaviour
             infoPanel.SetActive(false);
         }
         
-        if (pathVisualizer == null)
+        if (pathHighlighter == null)
         {
-            pathVisualizer = FindObjectOfType<PathVisualizer>();
+            pathHighlighter = FindObjectOfType<PathHighlighter>();
         }
     }
     
@@ -290,7 +290,7 @@ public class VehicleInfoPanel : MonoBehaviour
         
         float distance = 0f;
         
-        // Find closest point on path to vehicle
+        // Find closest waypoint to vehicle
         int closestIndex = FindClosestPathIndex();
         
         // Distance from vehicle to closest waypoint
@@ -304,7 +304,7 @@ public class VehicleInfoPanel : MonoBehaviour
         
         return distance;
     }
-
+    
     int FindClosestPathIndex()
     {
         if (currentVehicle.currentPath == null || currentVehicle.currentPath.Count == 0)
@@ -328,14 +328,10 @@ public class VehicleInfoPanel : MonoBehaviour
     
     void ShowRouteVisualization()
     {
-        if (pathVisualizer == null)
-        {
-            Debug.LogWarning("PathVisualizer not assigned!");
+        if (pathHighlighter == null || currentVehicle == null)
             return;
-        }
         
-        // Clear any existing path
-        pathVisualizer.ClearPath();
+        pathHighlighter.ClearHighlights();
         
         // Show current path if available
         if (currentVehicle.currentPath != null && currentVehicle.currentPath.Count > 0)
@@ -345,7 +341,7 @@ public class VehicleInfoPanel : MonoBehaviour
             visualPath.Add(currentVehicle.transform.position); // Start from current position
             visualPath.AddRange(currentVehicle.currentPath); // Add remaining path
             
-            pathVisualizer.ShowPath(visualPath);
+            pathHighlighter.HighlightPath(visualPath);
         }
     }
     
@@ -357,9 +353,9 @@ public class VehicleInfoPanel : MonoBehaviour
         }
         
         // Clear route visualization
-        if (pathVisualizer != null)
+        if (pathHighlighter != null)
         {
-            pathVisualizer.ClearPath();
+            pathHighlighter.ClearHighlights();
         }
         
         currentVehicle = null;

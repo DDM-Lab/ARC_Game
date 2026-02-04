@@ -34,9 +34,6 @@ public class Vehicle : MonoBehaviour
     public float rotationSpeed = 10f; // turn speed
     public float defaultAngle = 180f; // default angle when idle
 
-    [Header("Info Display")]
-    public InfoDisplay infoDisplay;
-
     [Header("Flood Interaction")]
     public bool isDamaged = false;
 
@@ -76,10 +73,6 @@ public class Vehicle : MonoBehaviour
     void Start()
     {
         InitializeVehicle();
-        if (infoDisplay == null)
-            infoDisplay = GetComponent<InfoDisplay>();
-
-        UpdateInfoDisplay();
 
         // Register with UI overlay
         if (VehicleUIOverlay.Instance != null)
@@ -94,50 +87,6 @@ public class Vehicle : MonoBehaviour
             collider.radius = 0.5f;
         }
 
-    }
-
-    public void UpdateInfoDisplay()
-    {
-        if (infoDisplay == null) return;
-
-        string displayText = "";
-        Color displayColor = Color.white;
-
-        // Show cargo information
-        int totalCargo = GetTotalCargo();
-        if (totalCargo > 0)
-        {
-            ResourceType cargoType = GetPrimaryCargoType();
-            string cargoIcon = cargoType == ResourceType.Population ? "👥" : "📦";
-            displayText += $"{cargoIcon} {totalCargo}/{maxCargoCapacity}\n";
-        }
-        else
-        {
-            displayText += $"🚚 {totalCargo}/{maxCargoCapacity}\n";
-        }
-
-        // Show vehicle status
-        switch (currentStatus)
-        {
-            case VehicleStatus.Idle:
-                displayText += "Idle";
-                displayColor = idleColor;
-                break;
-            case VehicleStatus.Loading:
-                displayText += "Loading";
-                displayColor = loadingColor;
-                break;
-            case VehicleStatus.InTransit:
-                displayText += "In Transit";
-                displayColor = inTransitColor;
-                break;
-            case VehicleStatus.Unloading:
-                displayText += "Unloading";
-                displayColor = unloadingColor;
-                break;
-        }
-
-        infoDisplay.UpdateDisplay(displayText, displayColor);
     }
 
     public ResourceType GetPrimaryCargoType()
@@ -157,7 +106,6 @@ public class Vehicle : MonoBehaviour
         {
             currentStatus = newStatus;
             UpdateVisualState();
-            UpdateInfoDisplay();
             OnStatusChanged?.Invoke(this, currentStatus);
         }
     }
@@ -679,7 +627,7 @@ public class Vehicle : MonoBehaviour
             Gizmos.DrawSphere(transform.position, 0.3f);
         }
     }
-    
+
     void OnMouseEnter()
     {
         if (Time.timeScale != 0f) return; // Only when paused
