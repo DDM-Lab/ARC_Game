@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using System.Collections;
 using TMPro;
 using System;
 
@@ -35,6 +36,11 @@ public class SatisfactionAndBudget : MonoBehaviour
     
     [Header("Debug")]
     public bool showDebugInfo = true;
+
+    [Header("Config Loading")]
+    public bool useExternalConfig = true;
+    public GameConfigLoader configLoader;
+
     
     // Events for other systems to listen to
     public event Action<float> OnSatisfactionChanged;
@@ -60,6 +66,48 @@ public class SatisfactionAndBudget : MonoBehaviour
 
     void Start()
     {
+        StartCoroutine(InitializeWithConfig());
+    }
+
+    IEnumerator InitializeWithConfig()
+    {
+        // Wait for config to load if using external config
+        if (useExternalConfig)
+        {
+            if (configLoader == null)
+                configLoader = GameConfigLoader.Instance;
+            
+            if (configLoader != null)
+            {
+                // Wait for config to load (max 10 seconds)
+                float waitTime = 0f;
+                while (!configLoader.IsConfigLoaded() && waitTime < 10f)
+                {
+                    yield return new WaitForSeconds(0.1f);
+                    waitTime += 0.1f;
+                }
+                
+                // Apply loaded config
+                if (configLoader.IsConfigLoaded())
+                {
+                    currentBudget = configLoader.GetInitialBudget();
+                    currentSatisfaction = configLoader.GetInitialSatisfaction();
+                    
+                    if (showDebugInfo)
+                        Debug.Log($"SatisfactionAndBudget: Using config initialBudget = {currentBudget}; initialSatisfaction = {currentSatisfaction}");
+                }
+                else
+                {
+                    Debug.LogWarning("SatisfactionAndBudget: Config load timeout. Using inspector value.");
+                }
+            }
+            else
+            {
+                Debug.LogWarning("SatisfactionAndBudget: GameConfigLoader not found. Using inspector value.");
+            }
+        }
+        
+        // Original Start() code continues here:
         InitializeValues();
         SetupFeedbackEffects();
         UpdateUI();
@@ -73,7 +121,7 @@ public class SatisfactionAndBudget : MonoBehaviour
             Debug.Log($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
         GameLogPanel.Instance.LogMetricsChange($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
     }
-    
+
     void SetupFeedbackEffects()
     {
         // Find feedback effects if not assigned
