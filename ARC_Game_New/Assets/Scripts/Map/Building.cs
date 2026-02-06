@@ -81,9 +81,9 @@ public class Building : MonoBehaviour
         // Start construction immediately
         StartConstruction();
 
-        Debug.Log($"Building initialized: {buildingType} at original site {siteId}. Currently Under Construction.");
-        GameLogPanel.Instance.LogBuildingStatus($"Building initialized: {buildingType} at original site {siteId}. Currently Under Construction.");
-        ToastManager.ShowToast($"You chose to change an abandoned site at {originalSiteId} into {buildingType}. Currently Under Construction.", ToastType.Info, true);
+        Debug.Log($"Player chose to convert site {originalSiteId} into {buildingType}. Construction will start during simulation period.");
+        GameLogPanel.Instance.LogBuildingStatus($"Player chose to convert site {originalSiteId} into {buildingType}. Construction will start during simulation period.");
+        //ToastManager.ShowToast($"You chose to change an abandoned site at {originalSiteId} into {buildingType}. Currently Under Construction.", ToastType.Info, true);
     }
 
     void Start()
@@ -200,7 +200,7 @@ public class Building : MonoBehaviour
 
         Debug.Log($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment");
         GameLogPanel.Instance.LogBuildingStatus($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment");
-        ToastManager.ShowToast($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment", ToastType.Success, true);
+        //ToastManager.ShowToast($"{buildingType} construction completed at site {originalSiteId} - Now needs worker assignment", ToastType.Success, true);
     }
 
     // Start Deconstruction
@@ -238,7 +238,7 @@ public class Building : MonoBehaviour
 
         Debug.Log($"{buildingType} at site {originalSiteId} deconstruction started");
         GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deconstruction started");
-        ToastManager.ShowToast($"{buildingType} deconstruction started - workers released", ToastType.Info, true);
+        ToastManager.ShowToast($"{buildingType} deconstruction started - responders released. ", ToastType.Info, true);
     }
 
     // Deconstruction Coroutine
@@ -298,9 +298,9 @@ public class Building : MonoBehaviour
     // Complete Deconstruction
     void CompleteDeconstruction()
     {
-        Debug.Log($"{buildingType} at site {originalSiteId} deconstruction completed - reverting to AbandonedSite");
-        GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deconstruction completed - reverting to AbandonedSite");
-        ToastManager.ShowToast($"{buildingType} deconstructed - site is now abandoned again", ToastType.Info, true);
+        Debug.Log($"{buildingType} at site {originalSiteId} deconstruction completed - reverted to AbandonedSite");
+        GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deconstruction completed - reverted to AbandonedSite");
+        //ToastManager.ShowToast($"{buildingType} deconstructed - site is now abandoned again", ToastType.Info, true);
 
         // Find the BuildingSystem to handle deconstruction properly
         BuildingSystem buildingSystem = FindObjectOfType<BuildingSystem>();
@@ -369,14 +369,14 @@ public class Building : MonoBehaviour
                     UpdateBuildingVisual();
                     NotifyStatsUpdate();
                     Debug.Log($"{buildingType} at site {originalSiteId} is now in use with {totalWorkforce} workforce");
-                    GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} is now operational with {totalWorkforce} workforce");
-                    ToastManager.ShowToast($"{buildingType} at site {originalSiteId} is now operational with {totalWorkforce} workforce!", ToastType.Success, true);
+                    GameLogPanel.Instance.LogBuildingStatus($"Player assigned workers. {buildingType} at site {originalSiteId} is now operational with {totalWorkforce} workforce");
+                    //ToastManager.ShowToast($"{buildingType} at site {originalSiteId} is now operational with {totalWorkforce} workforce!", ToastType.Success, true);
                 }
                 else
                 {
                     Debug.LogWarning($"Cannot activate {buildingType} - insufficient workforce. Required: {requiredWorkforce}, Available: {totalWorkforce}");
-                    GameLogPanel.Instance.LogError($"Cannot activate {buildingType} - insufficient workforce. Required: {requiredWorkforce}, Available: {totalWorkforce}");
-                    ToastManager.ShowToast($"Not enough workforce assigned! Required: {requiredWorkforce}, Available: {totalWorkforce}", ToastType.Warning, true);
+                    GameLogPanel.Instance.LogError($"Player cannot activate {buildingType} - insufficient workforce. Required: {requiredWorkforce}, Available: {totalWorkforce}");
+                    //ToastManager.ShowToast($"Not enough workforce assigned! Required: {requiredWorkforce}, Available: {totalWorkforce}", ToastType.Warning, true);
                 }
             }
         }
@@ -410,7 +410,7 @@ public class Building : MonoBehaviour
                     NotifyStatsUpdate();
                     Debug.LogWarning($"{buildingType} at site {originalSiteId} deactivated - insufficient workforce");
                     GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deactivated - insufficient workforce");
-                    ToastManager.ShowToast($"{buildingType} needs more workers to operate!", ToastType.Warning, true);
+                    ToastManager.ShowToast($"{buildingType} is not functional - it needs more responders to operate!", ToastType.Warning, true);
                 }
             }
         }

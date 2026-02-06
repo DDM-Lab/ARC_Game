@@ -123,7 +123,7 @@ public class WorkerTrainingSystem : MonoBehaviour
             
         GameTask trainingTask = taskSystem.CreateTask(
             "Responder Training Program",
-            TaskType.Advisory,
+            TaskType.Other,
             "Worker Management",
             $"We have {maxTrainable} untrained responders available. Training them will improve their productivity from 1 to 2 workforce points."
         );
@@ -197,7 +197,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         
         if (workersToTrain <= 0)
         {
-            ToastManager.ShowToast("No responders selected for training", ToastType.Warning, true);
+            //ToastManager.ShowToast("No responders selected for training", ToastType.Warning, true);
             return;
         }
         
@@ -207,7 +207,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         // Check budget
         if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.CanAfford(totalCost))
         {
-            ToastManager.ShowToast($"Insufficient budget! Need ${totalCost}", ToastType.Warning, true);
+            //ToastManager.ShowToast($"Insufficient budget! Need ${totalCost}", ToastType.Warning, true);
             GameLogPanel.Instance.LogError($"Cannot afford responder training: ${totalCost}");
             return;
         }
@@ -228,7 +228,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         if (untrainedWorkers.Count < workerCount)
         {
             Debug.LogError($"Not enough free untrained responders! Requested: {workerCount}, Available: {untrainedWorkers.Count}");
-            ToastManager.ShowToast($"Not enough free untrained responders available", ToastType.Warning, true);
+            //ToastManager.ShowToast($"Not enough free untrained responders available", ToastType.Warning, true);
             return;
         }
         
@@ -255,7 +255,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         
         activeTrainingTasks.Add(trainingTask);
 
-        ToastManager.ShowToast($"Started training {workerCount} responders. Completion: Day {completionDay}", ToastType.Success, true);
+        ToastManager.ShowToast($"Started training {workerCount} responders. Estimated Completion Date: Day {completionDay}", ToastType.Success, true);
         GameLogPanel.Instance.LogWorkerAction($"Started training {workerCount} responders (completion Day {completionDay})");
 
         if (showDebugInfo)
@@ -302,11 +302,13 @@ public class WorkerTrainingSystem : MonoBehaviour
             SatisfactionAndBudget.Instance.AddSatisfaction(successfullyTrained * satisfactionPerTrainedWorker,
                 "Completed training " + successfullyTrained + " responders");
 
-            ToastManager.ShowToast("Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion", ToastType.Info, true);
+            ToastManager.ShowToast("Training complete! " + successfullyTrained + " responders are now trained and available. " + "Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion", ToastType.Info, true);
             GameLogPanel.Instance.LogMetricsChange("Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion");
         }
-
-        ToastManager.ShowToast("Training complete! " + successfullyTrained + " responders are now trained and available", ToastType.Success, true);
+        else
+        {
+            ToastManager.ShowToast("Training complete! " + successfullyTrained + " responders are now trained and available", ToastType.Success, true);
+        }
         GameLogPanel.Instance.LogWorkerAction("Training complete: " + successfullyTrained + " responders now trained and free");
 
     }

@@ -168,6 +168,9 @@ public class TaskCenterUI : MonoBehaviour
         allTasks.AddRange(TaskSystem.Instance.GetTasksByStatus(TaskStatus.Completed));
         allTasks.AddRange(TaskSystem.Instance.GetTasksByStatus(TaskStatus.Expired));
 
+        // FILTER OUT Other tasks
+        allTasks = allTasks.Where(t => t.taskType != TaskType.Other).ToList();
+        
         // Apply filter
         if (currentFilter.HasValue)
         {

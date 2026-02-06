@@ -9,6 +9,7 @@ public class ToastUI : MonoBehaviour
     public TextMeshProUGUI messageText;
     public Image backgroundImage;
     public CanvasGroup canvasGroup;
+    public Button closeButton;
 
     [Header("Layout Settings")]
     public float maxWidth = 525f;
@@ -35,6 +36,8 @@ public class ToastUI : MonoBehaviour
     private bool isAnimating = false;
     private bool isInitialized = false;
 
+    public System.Action OnClose;
+
     private void Awake()
     {
         rectTransform = GetComponent<RectTransform>();
@@ -54,6 +57,11 @@ public class ToastUI : MonoBehaviour
         if (!isInitialized)
         {
             transform.localScale = Vector3.zero;
+        }
+
+        if (closeButton != null)
+        {
+            closeButton.onClick.AddListener(OnCloseButtonClicked);
         }
 
         AdjustToastSize();
@@ -101,24 +109,60 @@ public class ToastUI : MonoBehaviour
         {
             canvasGroup.alpha = 0f;
             canvasGroup.blocksRaycasts = true;
+            canvasGroup.interactable = true;
         }
         
         transform.localScale = originalScale;
         
         // Start animation after position is set by ToastManager
-        StartCoroutine(DelayedInitialize(displayDuration));
+        StartCoroutine(DelayedInitialize());
     }
     
-    private IEnumerator DelayedInitialize(float displayDuration)
+    private IEnumerator DelayedInitialize() // REMOVED displayDuration parameter
     {
-        // Wait for layout to settle
         yield return new WaitForEndOfFrame();
         yield return null;
         
-        // Store original position after ToastManager sets it
         originalPosition = rectTransform.anchoredPosition;
         
-        StartCoroutine(AnimateToast(displayDuration));
+        StartCoroutine(AnimateIn()); // CHANGE 1.26: only animate in, no auto fade out
+    }
+
+    private IEnumerator AnimateIn()
+    {
+        isAnimating = true;
+        if (canvasGroup != null)
+        {
+            canvasGroup.blocksRaycasts = true;
+            canvasGroup.interactable = true;
+        }
+        
+        canvasGroup.alpha = 0f;
+        transform.localScale = originalScale * 0.8f;
+        rectTransform.anchoredPosition = originalPosition + Vector2.right * slideDistance;
+        
+        float elapsed = 0f;
+
+        while (elapsed < fadeInDuration)
+        {
+            float progress = elapsed / fadeInDuration;
+            canvasGroup.alpha = Mathf.Lerp(0f, 1f, progress);
+            
+            float slideProgress = slideCurve.Evaluate(progress);
+            Vector2 currentPos = Vector2.Lerp(originalPosition + Vector2.right * slideDistance, originalPosition, slideProgress);
+            rectTransform.anchoredPosition = currentPos;
+            
+            float scaleProgress = scaleCurve.Evaluate(progress);
+            transform.localScale = Vector3.Lerp(originalScale * 0.8f, originalScale, scaleProgress);
+            
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        canvasGroup.alpha = 1f;
+        rectTransform.anchoredPosition = originalPosition;
+        transform.localScale = originalScale;
+        isAnimating = false;
     }
     
     // Public method for ToastManager to update position
@@ -166,7 +210,7 @@ public class ToastUI : MonoBehaviour
         }
     }
 
-    private IEnumerator AnimateToast(float displayDuration)
+    /*private IEnumerator AnimateToast(float displayDuration)
     {
         isAnimating = true;
         
@@ -237,5 +281,30 @@ public class ToastUI : MonoBehaviour
 
         canvasGroup.alpha = 0f;
         isAnimating = false;
+    }*/
+
+    private void OnCloseButtonClicked()
+    {
+        StartCoroutine(FadeOutAndClose());
     }
+
+    private IEnumerator FadeOutAndClose()
+    {
+        isAnimating = true;
+        float elapsed = 0f;
+        
+        while (elapsed < fadeOutDuration)
+        {
+            float progress = elapsed / fadeOutDuration;
+            canvasGroup.alpha = Mathf.Lerp(1f, 0f, progress);
+            transform.localScale = Vector3.Lerp(originalScale, originalScale * 0.9f, progress);
+            
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
+        
+        OnClose?.Invoke();
+    }
+
+
 }

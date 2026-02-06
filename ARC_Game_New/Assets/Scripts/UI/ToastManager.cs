@@ -59,6 +59,34 @@ public class ToastManager : MonoBehaviour
             audioSource = GetComponent<AudioSource>();
     }
 
+    void Start()
+    {
+        // Subscribe to round changes
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
+        }
+    }
+
+    void OnRoundChanged(int round)
+    {
+        ClearAllToasts();
+    }
+
+    public void ClearAllToasts()
+    {
+        // Clear active toasts
+        foreach (GameObject toast in activeToasts)
+        {
+            if (toast != null)
+                Destroy(toast);
+        }
+        activeToasts.Clear();
+        
+        // Clear queue
+        toastQueue.Clear();
+    }
+
     public static void ShowToast(string message, ToastType type, bool playSound = false)
     {
         if (Instance != null)
@@ -92,6 +120,7 @@ public class ToastManager : MonoBehaviour
         if (toastUI != null)
         {
             toastUI.Initialize(toastData.message, toastData.type, displayDuration);
+            toastUI.OnClose += () => OnToastClosed(toastObj); // disable auto dismiss
         }
 
         activeToasts.Add(toastObj);
@@ -109,7 +138,19 @@ public class ToastManager : MonoBehaviour
             }
         }
 
-        StartCoroutine(RemoveToastAfterDelay(toastObj, displayDuration));
+        //StartCoroutine(RemoveToastAfterDelay(toastObj, displayDuration));
+    }
+
+    // Close toast message functionality
+    private void OnToastClosed(GameObject toastObj)
+    {
+        if (toastObj != null && activeToasts.Contains(toastObj))
+        {
+            activeToasts.Remove(toastObj);
+            Destroy(toastObj);
+            RepositionToasts();
+            ProcessToastQueue();
+        }
     }
 
     private void RepositionToasts()
@@ -142,6 +183,13 @@ public class ToastManager : MonoBehaviour
         }
     }
 
+    void OnDestroy()
+    {
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
+        }
+    }
 
     [ContextMenu("Test Toast")]
     private void TestToast()

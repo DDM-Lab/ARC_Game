@@ -8,7 +8,8 @@ public enum TaskType
     Emergency,
     Demand, 
     Advisory,
-    Alert
+    Alert,
+    Other // Won't display in task center. For example, worker management tasks
 }
 
 public enum TaskStatus
@@ -509,7 +510,7 @@ public class TaskSystem : MonoBehaviour
 
                         if (showDebugInfo)
                             Debug.Log($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}");
-                        ToastManager.ShowToast($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}", ToastType.Info, true);
+                        //ToastManager.ShowToast($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}", ToastType.Info, true);
                         GameLogPanel.Instance.LogTaskEvent($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}");
                     }
                 }
@@ -553,7 +554,7 @@ public class TaskSystem : MonoBehaviour
             {
                 if (showDebugInfo)
                     Debug.Log($"All deliveries completed for task: {gameTask.taskTitle}");
-                ToastManager.ShowToast($"All deliveries completed for task: {gameTask.taskTitle}, ", ToastType.Success, true);
+                //ToastManager.ShowToast($"All deliveries completed for task: {gameTask.taskTitle}, ", ToastType.Success, true);
                 GameLogPanel.Instance.LogTaskEvent($"All deliveries completed for task: {gameTask.taskTitle}");
 
                 CompleteTask(gameTask);
@@ -588,12 +589,12 @@ public class TaskSystem : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
             GameLogPanel.Instance.LogTaskEvent($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
-            ToastManager.ShowToast($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}", ToastType.Warning, true);
+            //ToastManager.ShowToast($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}", ToastType.Warning, true);
 
             // Show task result popup with delivery failure reason
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert))
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
             {
-                TaskResultManager.Instance.ShowTaskResult(task);
+                TaskResultManager.Instance.ShowTaskResult(task, $"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
             }
         }
     }
@@ -996,7 +997,7 @@ public class TaskSystem : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Created task: {title} ({type}) for {facility}");
         GameLogPanel.Instance.LogTaskEvent($"Created task: {title} ({type}) for {facility}");
-        ToastManager.ShowToast($"New Task: {title} ({type})", ToastType.Info, true);
+        //ToastManager.ShowToast($"New Task: {title} ({type})", ToastType.Info, true);
 
         return newTask;
     }
@@ -1019,10 +1020,10 @@ public class TaskSystem : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Completed task: {task.taskTitle}");
             GameLogPanel.Instance.LogTaskEvent($"Completed task: {task.taskTitle}");
-            ToastManager.ShowToast($"Completed task: {task.taskTitle}", ToastType.Success, true);
+            // ToastManager.ShowToast($"Completed task: {task.taskTitle}", ToastType.Success, true);
 
             // Show task result popup
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert))
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other) )
             {
                 TaskResultManager.Instance.ShowTaskResult(task);
             }
@@ -1050,10 +1051,10 @@ public class TaskSystem : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Expired task: {task.taskTitle} (Status: {task.status})");
             GameLogPanel.Instance.LogTaskEvent($"Expired task: {task.taskTitle} (Status: {task.status})");
-            ToastManager.ShowToast($"Expired task: {task.taskTitle} (Status: {task.status})", ToastType.Warning, true);
+            //ToastManager.ShowToast($"Expired task: {task.taskTitle} (Status: {task.status})", ToastType.Warning, true);
 
             // Show task result popup
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert))
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
             {
                 TaskResultManager.Instance.ShowTaskResult(task);
             }
@@ -1128,7 +1129,7 @@ public class TaskSystem : MonoBehaviour
             GameLogPanel.Instance.LogTaskEvent($"Task marked as incomplete: {task.taskTitle}");
 
             // Show task result popup with incompletion reason
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert))
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
             {
                 TaskResultManager.Instance.ShowTaskResult(task);
             }
@@ -1305,8 +1306,8 @@ public class TaskSystem : MonoBehaviour
             Debug.Log($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
         GameLogPanel.Instance.LogTaskEvent($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
         // Don't show alert tasks as toasts
-        if (taskData.taskType != TaskType.Alert)
-            ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);
+        /*if (taskData.taskType != TaskType.Alert)
+            ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);*/
 
         return newTask;
     }
