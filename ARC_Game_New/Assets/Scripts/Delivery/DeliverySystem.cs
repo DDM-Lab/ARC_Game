@@ -651,6 +651,30 @@ public class DeliverySystem : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Get all active deliveries going TO a specific building
+    /// </summary>
+    public List<DeliveryTask> GetIncomingDeliveries(MonoBehaviour building)
+    {
+        return activeTasks.Where(t => t.destinationBuilding == building).ToList();
+    }
+
+    /// <summary>
+    /// Get all active deliveries going FROM a specific building
+    /// </summary>
+    public List<DeliveryTask> GetOutgoingDeliveries(MonoBehaviour building)
+    {
+        return activeTasks.Where(t => t.sourceBuilding == building).ToList();
+    }
+
+    /// <summary>
+    /// Get the vehicle assigned to a delivery task
+    /// </summary>
+    public Vehicle GetVehicleForTask(DeliveryTask task)
+    {
+        return availableVehicles.FirstOrDefault(v => v.currentTask != null && v.currentTask.taskId == task.taskId);
+    }
+
     [ContextMenu("Print Delivery Statistics")]
     public void DebugPrintStats()
     {

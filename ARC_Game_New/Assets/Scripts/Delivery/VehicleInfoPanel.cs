@@ -225,15 +225,15 @@ public class VehicleInfoPanel : MonoBehaviour
     
     string GetBuildingName(MonoBehaviour building)
     {
-        if (building == null)
-            return "Unknown";
+        if (building == null) return "Unknown";
         
-        // Try to get Building component
-        Building buildingComponent = building.GetComponent<Building>();
-        if (buildingComponent != null)
-        {
-            return $"{buildingComponent.GetBuildingType()} (Site {buildingComponent.GetOriginalSiteId()})";
-        }
+        Building b = building.GetComponent<Building>();
+        if (b != null)
+            return $"{b.GetBuildingType()} (Site {b.GetOriginalSiteId()})";
+        
+        PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
+        if (pb != null)
+            return pb.GetBuildingName();
         
         return building.name;
     }

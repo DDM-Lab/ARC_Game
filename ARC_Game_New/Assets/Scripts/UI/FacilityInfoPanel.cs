@@ -42,6 +42,10 @@ public class FacilityInfoPanel : MonoBehaviour
     public Color errorColor = Color.red;
     public Color goodColor = Color.green;
 
+    [Header("Deliveries")]
+    public TextMeshProUGUI expectedDeliveriesText;
+    public TextMeshProUGUI outgoingDeliveriesText;
+
     private List<GameObject> currentTaskItems = new List<GameObject>();
 
     void Start()
@@ -66,6 +70,8 @@ public class FacilityInfoPanel : MonoBehaviour
         }
 
         UpdateTasksList(facility);
+        UpdateExpectedDeliveries(facility);
+        UpdateOutgoingDeliveries(facility);
     }
 
     void UpdateBuildingInfo(Building building)
@@ -494,5 +500,76 @@ public class FacilityInfoPanel : MonoBehaviour
     public bool IsUIOpen()
     {
         return gameObject.activeSelf;
+    }
+    void UpdateExpectedDeliveries(MonoBehaviour facility)
+    {
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null || expectedDeliveriesText == null)
+            return;
+        
+        List<DeliveryTask> incoming = deliverySystem.GetIncomingDeliveries(facility);
+        
+        if (incoming.Count == 0)
+        {
+            expectedDeliveriesText.text = "No deliveries expected";
+            return;
+        }
+        
+        // Count by cargo type
+        int foodPacks = incoming.Where(d => d.cargoType == ResourceType.FoodPacks).Sum(d => d.quantity);
+        int clients = incoming.Where(d => d.cargoType == ResourceType.Population).Sum(d => d.quantity);
+        
+        string message = "";
+        if (foodPacks > 0) message += $"{foodPacks} food packs on the way. ";
+        if (clients > 0) message += $"{clients} clients on the way.";
+        
+        expectedDeliveriesText.text = message.Trim();
+    }
+    
+    void UpdateOutgoingDeliveries(MonoBehaviour facility)
+    {
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null || outgoingDeliveriesText == null)
+            return;
+        
+        List<DeliveryTask> outgoing = deliverySystem.GetOutgoingDeliveries(facility);
+        
+        if (outgoing.Count == 0)
+        {
+            outgoingDeliveriesText.text = "No outgoing deliveries";
+            return;
+        }
+        
+        // Group by destination
+        var grouped = outgoing.GroupBy(d => d.destinationBuilding);
+        
+        string message = "";
+        foreach (var group in grouped)
+        {
+            int foodPacks = group.Where(d => d.cargoType == ResourceType.FoodPacks).Sum(d => d.quantity);
+            int clients = group.Where(d => d.cargoType == ResourceType.Population).Sum(d => d.quantity);
+            
+            string destName = GetBuildingDisplayName(group.Key);
+            
+            if (foodPacks > 0) message += $"{foodPacks} food packs leaving, going to {destName}. ";
+            if (clients > 0) message += $"{clients} clients leaving, going to {destName}. ";
+        }
+        
+        outgoingDeliveriesText.text = message.Trim();
+    }
+
+    string GetBuildingDisplayName(MonoBehaviour building)
+    {
+        if (building == null) return "Unknown";
+        
+        Building b = building.GetComponent<Building>();
+        if (b != null)
+            return $"{b.GetBuildingType()} (Site {b.GetOriginalSiteId()})";
+        
+        PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
+        if (pb != null)
+            return pb.GetBuildingName();
+        
+        return building.name;
     }
 }
