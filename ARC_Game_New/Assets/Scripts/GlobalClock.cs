@@ -339,7 +339,17 @@ public class GlobalClock : MonoBehaviour
                 }
             }
             isWaitingForReport = true;
-            
+
+            // CHECK FOR END GAME (Round 4 of Day 8)
+            if (currentDay == 8 && currentTimeSegment >= 4)
+            {
+                if (EndGamePanel.Instance != null)
+                {
+                    EndGamePanel.Instance.ShowEndGamePanel();
+                    Debug.Log("End game reached - Round 4 of Day 8");
+                }
+            }
+
             if (showDebugInfo)
             {
                 GameLogPanel.Instance.LogMetricsChange($"Day {currentDay} complete - Click 'View Report' when ready");
@@ -585,7 +595,17 @@ public class GlobalClock : MonoBehaviour
         Debug.Log($"State: {currentState}, Speed: {currentTimeSpeed}x, Can Interact: {CanPlayerInteract()}");
         Debug.Log($"Waiting for Report: {isWaitingForReport}");
     }
-    
+
+    [ContextMenu("Debug: Jump to Day 8")]
+    public void DebugJumpToDay8()
+    {
+        currentDay = 8;
+        currentTimeSegment = 0; // Start of Day 8, Round 1
+        UpdateTimeDisplay();
+        
+        Debug.Log("Jumped to Day 8, Round 1");
+    }
+        
     void OnDestroy()
     {
         // Reset time scale when destroyed
