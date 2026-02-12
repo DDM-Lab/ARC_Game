@@ -287,6 +287,9 @@ public class ClientStayTracker : MonoBehaviour
             facilityName,
             description);
 
+        // Tag for daily report classification
+        caseworkTask.taskTag = TaskTag.BackToHome;
+
         // Add task details
         caseworkTask.impacts.Add(new TaskImpact(ImpactType.Clients, group.clientCount, false, "Clients Requesting Casework"));
         caseworkTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, group.GetRoundsInShelter(currentRound), false, "Rounds in Shelter"));

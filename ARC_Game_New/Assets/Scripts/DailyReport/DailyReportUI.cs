@@ -35,11 +35,11 @@ public class DailyReportUI : MonoBehaviour
     public SectionElement lodgingCompletionBonus;
     public SectionElement lodgingOverstayPenalty;
 
-    [Header("Worker Section")]
+    [Header("Worker Training Section")]
     public SectionElement workerTotal;
     public SectionElement workerStatus;
-    public SectionElement workerTaskBonus;
-    public SectionElement workerIdleRate;
+    public SectionElement workerTrainingBonusElement;
+    // workerIdleRate removed - no longer used for satisfaction
 
     [Header("Efficiency Panel Sections")]
     [Header("Food Utilization Section")]
@@ -100,20 +100,17 @@ public class DailyReportUI : MonoBehaviour
     public TextMeshProUGUI workersTrainedText;
 
     [Header("Bottom Panel - Today's Data")]
-    public TextMeshProUGUI totalInfluencedResidentsText;
+    public TextMeshProUGUI incompleteExpiredTasksText;   // Was: totalInfluencedResidentsText
     public TextMeshProUGUI foodTaskRatioText;
     public TextMeshProUGUI lodgingTaskRatioText;
-    public TextMeshProUGUI caseworkTaskRatioText;
+    public TextMeshProUGUI casesResolvedRatioText;       // Was: caseworkTaskRatioText
     public TextMeshProUGUI emergencyTaskRatioText;
 
     private DailyReportMetrics currentMetrics;
 
-    // Running satisfaction/efficiency values that persist across days
+    // Default values
     private float currentSatisfaction = 50f;
     private float currentEfficiency = 80f;
-    
-    // Track whether we're currently animating (to prevent save corruption)
-    private bool isAnimating = false;
 
     void Start()
     {
@@ -128,6 +125,7 @@ public class DailyReportUI : MonoBehaviour
 
     void InitializeElements()
     {
+        // Initialize all section elements
         InitializeSectionElement(foodDeliveryTotal);
         InitializeSectionElement(foodDeliveryStatus);
         InitializeSectionElement(foodCompletionBonus);
@@ -141,8 +139,7 @@ public class DailyReportUI : MonoBehaviour
 
         InitializeSectionElement(workerTotal);
         InitializeSectionElement(workerStatus);
-        InitializeSectionElement(workerTaskBonus);
-        InitializeSectionElement(workerIdleRate);
+        InitializeSectionElement(workerTrainingBonusElement);
 
         InitializeSectionElement(foodUtilizationTotal);
         InitializeSectionElement(foodUsageSummary);
@@ -163,8 +160,9 @@ public class DailyReportUI : MonoBehaviour
 
     void InitializeSectionElement(SectionElement element)
     {
-        if (element.layoutObject == null) return;
+        if (element == null || element.layoutObject == null) return;
 
+        // Add CanvasGroup if not assigned
         if (element.canvasGroup == null)
         {
             element.canvasGroup = element.layoutObject.GetComponent<CanvasGroup>();
@@ -172,39 +170,37 @@ public class DailyReportUI : MonoBehaviour
                 element.canvasGroup = element.layoutObject.AddComponent<CanvasGroup>();
         }
 
+        // Hide initially
         element.canvasGroup.alpha = 0f;
     }
 
-    // ================================================================
-    // PUBLIC ENTRY POINTS
-    // ================================================================
+    // =========================================================================
+    // PUBLIC API
+    // =========================================================================
 
-    /// <summary>
-    /// Display a new daily report WITH animations. Called for the current day's report.
-    /// After all animations complete, calculated scores are saved to history.
-    /// </summary>
     public void DisplayDailyReport(DailyReportMetrics metrics)
     {
         currentMetrics = metrics;
         currentDayDisplay.text = GlobalClock.Instance.currentDay.ToString();
         UpdateBottomPanels(metrics);
+        
+        // FIX PROBLEM 1: Save report BEFORE animation starts.
+        // All calculation methods are deterministic based on currentMetrics,
+        // so we pre-compute the final satisfaction/efficiency values.
+        SaveCompletedReportToHistory();
+        
         StartCoroutine(AnimateReportDisplay());
     }
 
     /// <summary>
-    /// Display a historical report INSTANTLY without animations.
-    /// Uses ONLY stored calculated values from metrics - NO recalculation.
-    /// 
-    /// FIX: Removed the premature SaveCompletedReportToHistory() call that was here.
-    /// The old code would save whatever was in currentMetrics to history tagged with
-    /// the CURRENT GlobalClock day, which corrupted data when browsing historical reports
-    /// (e.g., viewing Day 2 then clicking Day 3 would save Day 2's data as the current day).
+    /// Display report immediately without animations (for historical reports and day button clicks).
+    /// FIX PROBLEM 1: No longer tries to save - report is already saved at animation start.
+    /// FIX PROBLEM 2: Uses float-formatted SetSectionValueFormatted for proper +25.5 display.
     /// </summary>
     public void DisplayDailyReportImmediate(DailyReportMetrics metrics, int dayNumber)
     {
-        // Stop any running animations (they may be mid-flight for current day)
+        // Stop any running animations (safe - report was already saved at animation start)
         StopAllCoroutines();
-        isAnimating = false;
         
         currentMetrics = metrics;
         
@@ -214,25 +210,24 @@ public class DailyReportUI : MonoBehaviour
             currentDayDisplay.text = dayNumber.ToString();
         }
         
-        // Use stored final values - don't overwrite running satisfaction/efficiency
-        // for historical views, just display what was stored
-        float displaySatisfaction = metrics.finalSatisfactionValue;
-        float displayEfficiency = metrics.finalEfficiencyValue;
+        // Use stored final values from metrics
+        currentSatisfaction = metrics.finalSatisfactionValue;
+        currentEfficiency = metrics.finalEfficiencyValue;
         
-        // Populate ALL sections from stored data (no recalculation)
+        // Set all values from stored metrics (NO recalculation)
         UpdateBottomPanels(metrics);
         SetAllStoredSectionValues(metrics);
-        SetFinalValuesFromStoredMetrics(metrics, displaySatisfaction, displayEfficiency);
+        SetFinalValuesFromMetrics(metrics);
         SetAllElementsVisible();
     }
 
-    // ================================================================
-    // BOTTOM PANELS (raw metric display, same for live and historical)
-    // ================================================================
+    // =========================================================================
+    // BOTTOM PANELS
+    // =========================================================================
 
     public void UpdateBottomPanels(DailyReportMetrics metrics)
     {
-        // What We Did Today
+        // What We Did Today section
         if (tasksCompletedText != null)
             tasksCompletedText.text = metrics.completedTasks.ToString();
         
@@ -248,9 +243,10 @@ public class DailyReportUI : MonoBehaviour
         if (workersTrainedText != null)
             workersTrainedText.text = metrics.workersInTraining.ToString();
         
-        // Today's Data - task type ratios
-        if (totalInfluencedResidentsText != null)
-            totalInfluencedResidentsText.text = metrics.totalInfluencedResidents.ToString();
+        // Today's Data section
+        // FIX PROBLEM 7: Show incomplete/expired tasks instead of "total influenced residents"
+        if (incompleteExpiredTasksText != null)
+            incompleteExpiredTasksText.text = metrics.incompleteExpiredTasks.ToString();
         
         if (foodTaskRatioText != null)
             foodTaskRatioText.text = $"{metrics.completedFoodTasks}/{metrics.totalFoodTasks}";
@@ -258,235 +254,86 @@ public class DailyReportUI : MonoBehaviour
         if (lodgingTaskRatioText != null)
             lodgingTaskRatioText.text = $"{metrics.completedLodgingTasks}/{metrics.totalLodgingTasks}";
         
-        if (caseworkTaskRatioText != null)
-            caseworkTaskRatioText.text = $"{metrics.completedCaseworkTasks}/{metrics.totalCaseworkTasks}";
+        // FIX PROBLEM 4: Cases resolved = Emergency + Demand only
+        if (casesResolvedRatioText != null)
+            casesResolvedRatioText.text = $"{metrics.completedCasesResolved}/{metrics.totalCasesResolvable}";
         
         if (emergencyTaskRatioText != null)
             emergencyTaskRatioText.text = $"{metrics.completedEmergencyTasks}/{metrics.totalEmergencyTasks}";
     }
 
-    // ================================================================
-    // ANIMATED DISPLAY (current day report)
-    // ================================================================
+    // =========================================================================
+    // ANIMATION COROUTINES
+    // =========================================================================
 
     IEnumerator AnimateReportDisplay()
     {
-        isAnimating = true;
-        
-        // Step 1: Animate satisfaction panel sections one by one
+        // Note: SaveCompletedReportToHistory() already called BEFORE this starts
+
+        // Step 1: Display satisfaction panel sections one by one
         yield return StartCoroutine(DisplaySatisfactionSections());
 
-        // Step 2: Animate efficiency panel sections one by one
+        // Step 2: Display efficiency panel sections one by one
         yield return StartCoroutine(DisplayEfficiencySections());
 
-        // Step 3: Show final satisfaction score with animated bar
+        // Step 3: Show final satisfaction changes
         yield return StartCoroutine(AnimateFinalSatisfactionChanges());
 
-        // Step 4: Show final efficiency score with animated bar
+        // Step 4: Show final efficiency changes
         yield return StartCoroutine(AnimateFinalEfficiencyChanges());
         
-        // Step 5: SAVE all calculated values to history AFTER everything is done
-        isAnimating = false;
-        SaveCompletedReportToHistory();
+        // No save needed here - already saved before animation started
     }
-
-    /// <summary>
-    /// Save the current report with all calculated scores to history.
-    /// Called ONLY after animations complete for the current day.
-    /// </summary>
-    void SaveCompletedReportToHistory()
-    {
-        if (DailyReportData.Instance == null || currentMetrics == null)
-            return;
-        
-        // Store all individual score components that were displayed during animation
-        currentMetrics.foodCompletionBonus = CalculateFoodCompletionBonus();
-        currentMetrics.foodOnTimeBonus = CalculateFoodOnTimeBonus();
-        currentMetrics.foodDelayScore = CalculateFoodDelayScore();
-        currentMetrics.lodgingCompletionBonus = CalculateLodgingCompletionBonus();
-        currentMetrics.lodgingOverstayPenalty = CalculateLodgingOverstayPenalty();
-        currentMetrics.workerTaskBonus = CalculateWorkerTaskBonus();
-        currentMetrics.workerIdleRatePenalty = CalculateWorkerIdleRateDisplay();
-        
-        currentMetrics.kitchenEfficiencyScore = CalculateKitchenEfficiencyScore();
-        currentMetrics.shelterEfficiencyScore = CalculateShelterEfficiencyScore();
-        currentMetrics.workerEfficiencyScore = CalculateWorkerUtilizationScore();
-        currentMetrics.budgetEfficiencyScore = CalculateBudgetEfficiencyScore();
-        
-        // Store aggregate satisfaction/efficiency breakdown totals
-        currentMetrics.foodSatisfaction = CalculateFoodSatisfactionTotal();
-        currentMetrics.lodgingSatisfaction = CalculateLodgingSatisfactionTotal();
-        currentMetrics.workerSatisfaction = CalculateWorkerSatisfactionTotal();
-        currentMetrics.foodEfficiency = currentMetrics.kitchenEfficiencyScore;
-        currentMetrics.shelterEfficiency = currentMetrics.shelterEfficiencyScore;
-        currentMetrics.workerEfficiency = currentMetrics.workerEfficiencyScore;
-        currentMetrics.budgetEfficiency = currentMetrics.budgetEfficiencyScore;
-        
-        // Store final animated values
-        currentMetrics.finalSatisfactionValue = currentSatisfaction;
-        currentMetrics.finalEfficiencyValue = currentEfficiency;
-        currentMetrics.satisfactionChangeCalculated = CalculateSatisfactionScore();
-        
-        // Save to history keyed by current day
-        int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
-        DailyReportData.Instance.SaveReportToHistory(currentDay, currentMetrics);
-        
-        Debug.Log($"Saved completed report for Day {currentDay} | Satisfaction: {currentSatisfaction:F1}% | Efficiency: {currentEfficiency:F1}%");
-    }
-
-    // ================================================================
-    // SATISFACTION ANIMATION SECTIONS
-    // ================================================================
 
     IEnumerator DisplaySatisfactionSections()
     {
-        // --- Food Delivery Section ---
+        // Food Delivery Section
         yield return StartCoroutine(AnimateSectionElement(foodDeliveryTotal, CalculateFoodSatisfactionTotal(), "Timely Food Delivery"));
         yield return StartCoroutine(AnimateSectionElement(foodDeliveryStatus, GenerateFoodDeliveryStatusText()));
         yield return StartCoroutine(AnimateSectionElement(foodCompletionBonus, CalculateFoodCompletionBonus(), "Task Completion Bonus:"));
         yield return StartCoroutine(AnimateSectionElement(foodOnTimeBonus, CalculateFoodOnTimeBonus(), "On-Time Bonus:"));
         yield return StartCoroutine(AnimateSectionElement(foodDelayScore, CalculateFoodDelayScore(), "Task Delay Score:"));
 
-        // --- Lodging Section ---
+        // Lodging Section
         yield return StartCoroutine(AnimateSectionElement(lodgingTotal, CalculateLodgingSatisfactionTotal(), "Lodging Services"));
         yield return StartCoroutine(AnimateSectionElement(lodgingStatus, GenerateLodgingStatusText()));
         yield return StartCoroutine(AnimateSectionElement(lodgingCompletionBonus, CalculateLodgingCompletionBonus(), "Task Completion Bonus:"));
         yield return StartCoroutine(AnimateSectionElement(lodgingOverstayPenalty, CalculateLodgingOverstayPenalty(), GenerateOverstayText()));
 
-        // --- Worker Section ---
-        yield return StartCoroutine(AnimateSectionElement(workerTotal, CalculateWorkerSatisfactionTotal(), "Worker Management"));
-        yield return StartCoroutine(AnimateSectionElement(workerStatus, GenerateWorkerStatusText()));
-        yield return StartCoroutine(AnimateSectionElement(workerTaskBonus, CalculateWorkerTaskBonus(), "Worker Task Bonus:"));
-        yield return StartCoroutine(AnimateSectionElement(workerIdleRate, CalculateWorkerIdleRateDisplay(), $"Idle Workers: {currentMetrics.idleWorkerRate:F1}%"));
+        // FIX PROBLEM 3: Worker Training Section (replaces old Worker Management)
+        yield return StartCoroutine(AnimateSectionElement(workerTotal, CalculateWorkerSatisfactionTotal(), "Worker Training"));
+        yield return StartCoroutine(AnimateSectionElement(workerStatus, GenerateWorkerTrainingStatusText()));
+        yield return StartCoroutine(AnimateSectionElement(workerTrainingBonusElement, CalculateWorkerTrainingBonus(), $"Workers in Training: {currentMetrics.workersReceivingTraining}"));
     }
-
-    // ================================================================
-    // EFFICIENCY ANIMATION SECTIONS
-    // ================================================================
 
     IEnumerator DisplayEfficiencySections()
     {
-        // --- Food Utilization ---
+        // Food Utilization Section
         yield return StartCoroutine(AnimateSectionElement(foodUtilizationTotal, CalculateFoodUtilizationTotal(), "Food Utilization"));
         yield return StartCoroutine(AnimateSectionElement(foodUsageSummary, GenerateFoodUsageSummaryText()));
         yield return StartCoroutine(AnimateSectionElement(kitchenEfficiencyScore, CalculateKitchenEfficiencyScore(), "Kitchen Efficiency Score:"));
 
-        // --- Shelter Utilization ---
+        // Shelter Utilization Section
         yield return StartCoroutine(AnimateSectionElement(shelterUtilizationTotal, CalculateShelterUtilizationTotal(), "Shelter Utilization"));
         yield return StartCoroutine(AnimateSectionElement(shelterUsageSummary, GenerateShelterUsageSummaryText()));
         yield return StartCoroutine(AnimateSectionElement(shelterEfficiencyScore, CalculateShelterEfficiencyScore(), "Shelter Efficiency Score:"));
 
-        // --- Worker Utilization ---
+        // Worker Utilization Section
         yield return StartCoroutine(AnimateSectionElement(workerUtilizationTotal, CalculateWorkerUtilizationTotal(), "Worker Utilization"));
         yield return StartCoroutine(AnimateSectionElement(workerUsageSummary, GenerateWorkerUsageSummaryText()));
         yield return StartCoroutine(AnimateSectionElement(workerEfficiencyScore, CalculateWorkerUtilizationScore(), "Worker Efficiency Score:"));
 
-        // --- Budget Efficiency ---
+        // Budget Efficiency Section
         yield return StartCoroutine(AnimateSectionElement(budgetEfficiencyTotal, CalculateBudgetEfficiencyTotal(), "Budget Efficiency"));
         yield return StartCoroutine(AnimateSectionElement(budgetUsageSummary, GenerateBudgetUsageSummaryText()));
         yield return StartCoroutine(AnimateSectionElement(budgetEfficiencyScore, CalculateBudgetEfficiencyScore(), "Cost Efficiency Score:"));
     }
 
-    // ================================================================
-    // FINAL SCORE ANIMATIONS (progress bars + value text)
-    // ================================================================
-
-    IEnumerator AnimateFinalSatisfactionChanges()
-    {
-        if (satisfactionAnimationSection == null) yield break;
-
-        // Set initial values BEFORE fade in
-        if (satisfactionValueText != null)
-            satisfactionValueText.text = $"{currentSatisfaction:F1}%";
-        if (satisfactionBar != null)
-            satisfactionBar.value = currentSatisfaction / 100f;
-
-        float satisfactionChange = CalculateSatisfactionScore();
-        float newSatisfaction = Mathf.Clamp(currentSatisfaction + satisfactionChange, 0f, 100f);
-
-        // Fade in the satisfaction summary section
-        satisfactionAnimationSection.alpha = 0f;
-        float elapsed = 0f;
-        while (elapsed < satisfactionAnimationDuration)
-        {
-            elapsed += Time.unscaledDeltaTime;
-            satisfactionAnimationSection.alpha = Mathf.Lerp(0f, 1f, elapsed / satisfactionAnimationDuration);
-            yield return null;
-        }
-        satisfactionAnimationSection.alpha = 1f;
-
-        // Show change text
-        if (satisfactionChangeText != null)
-        {
-            string changeText = satisfactionChange >= 0 ? $"+{satisfactionChange:F1}" : $"{satisfactionChange:F1}";
-            satisfactionChangeText.text = changeText;
-            satisfactionChangeText.color = satisfactionChange >= 0 ? positiveChangeColor : negativeChangeColor;
-        }
-
-        // Animate the bar and value from current to new
-        if (satisfactionValueText != null && satisfactionBar != null)
-        {
-            yield return StartCoroutine(AnimateFinalValue(satisfactionValueText, satisfactionBar, currentSatisfaction, newSatisfaction));
-        }
-
-        // Update running value for next day
-        currentSatisfaction = newSatisfaction;
-    }
-
-    IEnumerator AnimateFinalEfficiencyChanges()
-    {
-        if (efficiencyAnimationSection == null) yield break;
-
-        // Set initial values BEFORE fade in
-        if (efficiencyValueText != null)
-            efficiencyValueText.text = $"{currentEfficiency:F1}%";
-        if (efficiencyBar != null)
-            efficiencyBar.value = currentEfficiency / 100f;
-
-        float efficiencyChange = CalculateEfficiencyScore();
-        float newEfficiency = Mathf.Clamp(currentEfficiency + efficiencyChange, 0f, 100f);
-
-        // Fade in the efficiency summary section
-        efficiencyAnimationSection.alpha = 0f;
-        float elapsed = 0f;
-        while (elapsed < satisfactionAnimationDuration)
-        {
-            elapsed += Time.unscaledDeltaTime;
-            efficiencyAnimationSection.alpha = Mathf.Lerp(0f, 1f, elapsed / satisfactionAnimationDuration);
-            yield return null;
-        }
-        efficiencyAnimationSection.alpha = 1f;
-
-        // Show change text
-        if (efficiencyChangeText != null)
-        {
-            string changeText = efficiencyChange >= 0 ? $"+{efficiencyChange:F1}" : $"{efficiencyChange:F1}";
-            efficiencyChangeText.text = changeText;
-            efficiencyChangeText.color = efficiencyChange >= 0 ? positiveChangeColor : negativeChangeColor;
-        }
-
-        // Animate the bar and value
-        if (efficiencyValueText != null && efficiencyBar != null)
-        {
-            yield return StartCoroutine(AnimateFinalValue(efficiencyValueText, efficiencyBar, currentEfficiency, newEfficiency));
-        }
-
-        // Update running value for next day
-        currentEfficiency = newEfficiency;
-    }
-
-    // ================================================================
-    // ANIMATION HELPERS
-    // ================================================================
-
-    /// <summary>
-    /// Animate a section element with a numeric value and label.
-    /// Used for score rows (bonuses, penalties, totals).
-    /// </summary>
     IEnumerator AnimateSectionElement(SectionElement element, float numberValue, string labelValue)
     {
-        if (element.layoutObject == null) yield break;
+        if (element == null || element.layoutObject == null) yield break;
 
+        // Update content
         if (element.numberText != null)
         {
             yield return StartCoroutine(AnimateNumberText(element.numberText, 0f, numberValue));
@@ -497,28 +344,27 @@ public class DailyReportUI : MonoBehaviour
             element.labelText.text = labelValue;
         }
 
+        // Fade in the entire layout
         yield return StartCoroutine(FadeInElement(element));
     }
 
-    /// <summary>
-    /// Animate a section element with sentence text only.
-    /// Used for status/summary description rows.
-    /// </summary>
     IEnumerator AnimateSectionElement(SectionElement element, string sentenceValue)
     {
-        if (element.layoutObject == null) yield break;
+        if (element == null || element.layoutObject == null) yield break;
 
+        // Update sentence content
         if (element.sentenceText != null)
         {
             element.sentenceText.text = sentenceValue;
         }
 
+        // Fade in the entire layout
         yield return StartCoroutine(FadeInElement(element));
     }
 
     IEnumerator FadeInElement(SectionElement element)
     {
-        if (element.canvasGroup == null) yield break;
+        if (element == null || element.canvasGroup == null) yield break;
 
         float elapsed = 0f;
         while (elapsed < elementFadeInDuration)
@@ -532,6 +378,10 @@ public class DailyReportUI : MonoBehaviour
         yield return new WaitForSecondsRealtime(elementAnimationDelay);
     }
 
+    /// <summary>
+    /// Animate a number counting up with sign prefix and one decimal place.
+    /// e.g. +25.5, -3.0, +0.0
+    /// </summary>
     IEnumerator AnimateNumberText(TextMeshProUGUI numberText, float fromValue, float toValue)
     {
         float elapsed = 0f;
@@ -541,6 +391,7 @@ public class DailyReportUI : MonoBehaviour
             float progress = elapsed / numberCountDuration;
             float currentValue = Mathf.Lerp(fromValue, toValue, progress);
 
+            // Format with + or - sign and one decimal place
             string sign = currentValue >= 0 ? "+" : "";
             numberText.text = $"{sign}{currentValue:F1}";
             numberText.color = currentValue >= 0 ? positiveChangeColor : negativeChangeColor;
@@ -551,6 +402,82 @@ public class DailyReportUI : MonoBehaviour
         string finalSign = toValue >= 0 ? "+" : "";
         numberText.text = $"{finalSign}{toValue:F1}";
         numberText.color = toValue >= 0 ? positiveChangeColor : negativeChangeColor;
+    }
+
+    IEnumerator AnimateFinalSatisfactionChanges()
+    {
+        if (satisfactionAnimationSection == null) yield break;
+
+        // Set initial values BEFORE fade in animation
+        if (satisfactionValueText != null)
+            satisfactionValueText.text = $"{currentSatisfaction:F1}%";
+        if (satisfactionBar != null)
+            satisfactionBar.value = currentSatisfaction / 100f;
+
+        float satisfactionChange = CalculateSatisfactionScore();
+        float newSatisfaction = Mathf.Clamp(currentSatisfaction + satisfactionChange, 0f, 100f);
+
+        satisfactionAnimationSection.alpha = 0f;
+        float elapsed = 0f;
+        while (elapsed < satisfactionAnimationDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            satisfactionAnimationSection.alpha = Mathf.Lerp(0f, 1f, elapsed / satisfactionAnimationDuration);
+            yield return null;
+        }
+        satisfactionAnimationSection.alpha = 1f;
+
+        if (satisfactionChangeText != null)
+        {
+            string changeText = satisfactionChange >= 0 ? $"+{satisfactionChange:F1}" : $"{satisfactionChange:F1}";
+            satisfactionChangeText.text = changeText;
+            satisfactionChangeText.color = satisfactionChange >= 0 ? positiveChangeColor : negativeChangeColor;
+        }
+
+        if (satisfactionValueText != null && satisfactionBar != null)
+        {
+            yield return StartCoroutine(AnimateFinalValue(satisfactionValueText, satisfactionBar, currentSatisfaction, newSatisfaction));
+        }
+
+        currentSatisfaction = newSatisfaction;
+    }
+
+    IEnumerator AnimateFinalEfficiencyChanges()
+    {
+        if (efficiencyAnimationSection == null) yield break;
+
+        // Set initial values BEFORE fade in animation  
+        if (efficiencyValueText != null)
+            efficiencyValueText.text = $"{currentEfficiency:F1}%";
+        if (efficiencyBar != null)
+            efficiencyBar.value = currentEfficiency / 100f;
+
+        float efficiencyChange = CalculateEfficiencyScore();
+        float newEfficiency = Mathf.Clamp(currentEfficiency + efficiencyChange, 0f, 100f);
+
+        efficiencyAnimationSection.alpha = 0f;
+        float elapsed = 0f;
+        while (elapsed < satisfactionAnimationDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            efficiencyAnimationSection.alpha = Mathf.Lerp(0f, 1f, elapsed / satisfactionAnimationDuration);
+            yield return null;
+        }
+        efficiencyAnimationSection.alpha = 1f;
+
+        if (efficiencyChangeText != null)
+        {
+            string changeText = efficiencyChange >= 0 ? $"+{efficiencyChange:F1}" : $"{efficiencyChange:F1}";
+            efficiencyChangeText.text = changeText;
+            efficiencyChangeText.color = efficiencyChange >= 0 ? positiveChangeColor : negativeChangeColor;
+        }
+
+        if (efficiencyValueText != null && efficiencyBar != null)
+        {
+            yield return StartCoroutine(AnimateFinalValue(efficiencyValueText, efficiencyBar, currentEfficiency, newEfficiency));
+        }
+
+        currentEfficiency = newEfficiency;
     }
 
     IEnumerator AnimateFinalValue(TextMeshProUGUI valueText, Slider valueBar, float fromValue, float toValue)
@@ -574,253 +501,117 @@ public class DailyReportUI : MonoBehaviour
         valueBar.value = toValue / 100f;
     }
 
-    // ================================================================
-    // SCORE CALCULATION METHODS
-    // These compute scores from currentMetrics base data.
-    // Used during animation AND when saving to history.
-    // ================================================================
+    // =========================================================================
+    // SAVE TO HISTORY
+    // =========================================================================
 
-    // --- Satisfaction: Food Delivery ---
-    
-    /// <summary>+2 points per completed food task</summary>
-    float CalculateFoodCompletionBonus() { return currentMetrics.completedFoodTasks * 2f; }
-    
     /// <summary>
-    /// +1.5 points per food task completed without expiring.
-    /// FIX: Changed from (totalFoodTasks - expired) to (completedFoodTasks - expired).
-    /// The old formula gave on-time bonus for tasks that were still active/pending,
-    /// which inflated the score. Only completed tasks should count as "on time".
+    /// Save the completed report with all calculated scores to history.
+    /// FIX PROBLEM 1: Called BEFORE animation starts (not after).
+    /// Pre-computes finalSatisfactionValue and finalEfficiencyValue so interrupting
+    /// the animation can never cause data loss or corrupted values.
     /// </summary>
-    float CalculateFoodOnTimeBonus() 
-    { 
-        // FIX: Use completedFoodTasks as the base, not totalFoodTasks
-        // Only tasks that were actually completed can be considered "on time"
-        int onTimeTasks = Mathf.Max(0, currentMetrics.completedFoodTasks - currentMetrics.expiredFoodDemandTasks);
-        return onTimeTasks * 1.5f; 
-    }
-    
-    /// <summary>-5 points per expired food demand task</summary>
-    float CalculateFoodDelayScore() { return -currentMetrics.expiredFoodDemandTasks * 5f; }
-
-    // --- Satisfaction: Lodging ---
-    
-    /// <summary>+2 points per completed lodging task</summary>
-    float CalculateLodgingCompletionBonus() { return currentMetrics.completedLodgingTasks * 2f; }
-    
-    /// <summary>-5 points per group that stayed over 48 hours</summary>
-    float CalculateLodgingOverstayPenalty() { return -currentMetrics.groupsOver48Hours * 5f; }
-
-    // --- Satisfaction: Worker ---
-    
-    /// <summary>+1.5 points per task completed by workers</summary>
-    float CalculateWorkerTaskBonus() { return currentMetrics.tasksCompletedByWorkers * 1.5f; }
-    
-    /// <summary>-0.1 points per percentage point of idle worker rate</summary>
-    float CalculateWorkerIdleRateDisplay() { return -currentMetrics.idleWorkerRate * 0.1f; }
-
-    // --- Efficiency: Kitchen ---
-    
-    /// <summary>-2 points per expired food pack (penalty for food waste)</summary>
-    float CalculateKitchenEfficiencyScore() { return -currentMetrics.expiredFoodPacks * 2f; }
-    
-    // --- Efficiency: Shelter ---
-    
-    /// <summary>-0.5 points per vacant shelter slot (penalty for unused capacity)</summary>
-    float CalculateShelterEfficiencyScore() { return -currentMetrics.vacantShelterSlots * 0.5f; }
-    
-    // --- Efficiency: Worker ---
-    
-    /// <summary>-1.5 points per idle worker</summary>
-    float CalculateWorkerUtilizationScore() { return -currentMetrics.totalIdleWorkers * 1.5f; }
-    
-    // --- Efficiency: Budget ---
-    
-    /// <summary>
-    /// Budget efficiency based on 70% ideal usage.
-    /// Positive if under 70% budget used, negative if over.
-    /// Formula: (70 - budgetUsageRate) * 0.2
-    /// </summary>
-    float CalculateBudgetEfficiencyScore() { return (70f - currentMetrics.budgetUsageRate) * 0.2f; }
-
-    // --- Aggregate Totals ---
-    
-    float CalculateFoodSatisfactionTotal()
+    void SaveCompletedReportToHistory()
     {
-        return CalculateFoodCompletionBonus() + CalculateFoodOnTimeBonus() + CalculateFoodDelayScore();
+        if (DailyReportData.Instance == null || currentMetrics == null)
+            return;
+        
+        // Store all calculated score components in currentMetrics
+        currentMetrics.foodCompletionBonus = CalculateFoodCompletionBonus();
+        currentMetrics.foodOnTimeBonus = CalculateFoodOnTimeBonus();
+        currentMetrics.foodDelayScore = CalculateFoodDelayScore();
+        currentMetrics.lodgingCompletionBonus = CalculateLodgingCompletionBonus();
+        currentMetrics.lodgingOverstayPenalty = CalculateLodgingOverstayPenalty();
+        currentMetrics.workerTrainingBonus = CalculateWorkerTrainingBonus();
+        
+        currentMetrics.kitchenEfficiencyScore = CalculateKitchenEfficiencyScore();
+        currentMetrics.shelterEfficiencyScore = CalculateShelterEfficiencyScore();
+        currentMetrics.workerEfficiencyScore = CalculateWorkerUtilizationScore();
+        currentMetrics.budgetEfficiencyScore = CalculateBudgetEfficiencyScore();
+        
+        // PRE-COMPUTE final values (what the animation WILL reach)
+        // This way, even if animation is interrupted, stored values are correct.
+        float satisfactionChange = CalculateSatisfactionScore();
+        float efficiencyChange = CalculateEfficiencyScore();
+        
+        currentMetrics.finalSatisfactionValue = Mathf.Clamp(currentSatisfaction + satisfactionChange, 0f, 100f);
+        currentMetrics.finalEfficiencyValue = Mathf.Clamp(currentEfficiency + efficiencyChange, 0f, 100f);
+        currentMetrics.satisfactionChangeCalculated = satisfactionChange;
+        
+        // Also store aggregate totals
+        currentMetrics.foodSatisfaction = CalculateFoodSatisfactionTotal();
+        currentMetrics.lodgingSatisfaction = CalculateLodgingSatisfactionTotal();
+        currentMetrics.workerSatisfaction = CalculateWorkerSatisfactionTotal();
+        currentMetrics.foodEfficiency = CalculateKitchenEfficiencyScore();
+        currentMetrics.shelterEfficiency = CalculateShelterEfficiencyScore();
+        currentMetrics.workerEfficiency = CalculateWorkerUtilizationScore();
+        currentMetrics.budgetEfficiency = CalculateBudgetEfficiencyScore();
+        
+        // Save to history
+        int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
+        DailyReportData.Instance.SaveReportToHistory(currentDay, currentMetrics);
+        
+        Debug.Log($"Saved completed report for Day {currentDay} to history (pre-computed final sat={currentMetrics.finalSatisfactionValue:F1}, eff={currentMetrics.finalEfficiencyValue:F1})");
     }
 
-    float CalculateLodgingSatisfactionTotal()
-    {
-        return CalculateLodgingCompletionBonus() + CalculateLodgingOverstayPenalty();
-    }
-
-    float CalculateWorkerSatisfactionTotal()
-    {
-        return CalculateWorkerTaskBonus() + CalculateWorkerIdleRateDisplay();
-    }
-
-    float CalculateFoodUtilizationTotal()
-    {
-        return CalculateKitchenEfficiencyScore();
-    }
-
-    float CalculateShelterUtilizationTotal()
-    {
-        return CalculateShelterEfficiencyScore();
-    }
-
-    float CalculateWorkerUtilizationTotal()
-    {
-        return CalculateWorkerUtilizationScore();
-    }
-
-    float CalculateBudgetEfficiencyTotal()
-    {
-        return CalculateBudgetEfficiencyScore();
-    }
-
-    /// <summary>Total satisfaction change = sum of all three satisfaction category totals</summary>
-    float CalculateSatisfactionScore()
-    {
-        return CalculateFoodSatisfactionTotal() + CalculateLodgingSatisfactionTotal() + CalculateWorkerSatisfactionTotal();
-    }
-
-    /// <summary>Total efficiency change = sum of all four efficiency scores</summary>
-    float CalculateEfficiencyScore()
-    {
-        return CalculateFoodUtilizationTotal() + CalculateShelterUtilizationTotal() + CalculateWorkerUtilizationTotal() + CalculateBudgetEfficiencyTotal();
-    }
-
-    // ================================================================
-    // TEXT GENERATION (for sentence/status elements)
-    // ================================================================
-
-    string GenerateFoodDeliveryStatusText()
-    {
-        if (currentMetrics.totalFoodTasks == 0)
-            return "No food delivery tasks today.";
-        return currentMetrics.completedFoodTasks == currentMetrics.totalFoodTasks ?
-            "All food delivery tasks completed successfully." :
-            $"Food delivery completion: {currentMetrics.completedFoodTasks}/{currentMetrics.totalFoodTasks} tasks completed.";
-    }
-
-    string GenerateLodgingStatusText()
-    {
-        if (currentMetrics.totalLodgingTasks == 0)
-            return "No lodging tasks today.";
-        return currentMetrics.completedLodgingTasks == currentMetrics.totalLodgingTasks ?
-            "All lodging tasks completed successfully." :
-            $"Lodging completion: {currentMetrics.completedLodgingTasks}/{currentMetrics.totalLodgingTasks} tasks completed.";
-    }
-
-    string GenerateWorkerStatusText()
-    {
-        return $"{currentMetrics.tasksCompletedByWorkers} tasks completed by {currentMetrics.totalWorkersInvolved} workers ({currentMetrics.trainedWorkersInvolved} trained, {currentMetrics.untrainedWorkersInvolved} untrained).";
-    }
-
-    string GenerateOverstayText()
-    {
-        if (currentMetrics.groupsOver48Hours == 0)
-            return "No groups overstayed beyond 48 hours.";
-        return $"{currentMetrics.groupsOver48Hours} group(s) stayed over 48 hours";
-    }
-
-    string GenerateFoodUsageSummaryText()
-    {
-        return $"Meal usage rate: {currentMetrics.mealUsageRate:F1}%";
-    }
-
-    string GenerateShelterUsageSummaryText()
-    {
-        return $"Shelter utilization rate: {currentMetrics.shelterUtilizationRate:F1}%";
-    }
-
-    string GenerateWorkerUsageSummaryText()
-    {
-        return $"Worker utilization: {(100f - currentMetrics.idleWorkerRate):F1}%";
-    }
-
-    string GenerateBudgetUsageSummaryText()
-    {
-        return $"Budget usage: {currentMetrics.budgetUsageRate:F1}%";
-    }
-
-    // ================================================================
-    // IMMEDIATE DISPLAY HELPERS (for historical reports)
-    // ================================================================
+    // =========================================================================
+    // HISTORICAL REPORT DISPLAY (no animation)
+    // =========================================================================
 
     /// <summary>
-    /// Set ALL section values from STORED metrics without any recalculation.
-    /// This includes both numeric score elements AND sentence/status text elements.
-    /// 
-    /// FIX: The old version only set numeric values and skipped sentence texts,
-    /// leaving stale text from the previous report visible.
-    /// Now also populates all sentence/status text elements from stored metrics.
+    /// Set all section values from STORED metrics (no recalculation).
+    /// FIX PROBLEM 2: Uses SetSectionValueFormatted() to preserve +25.5 format.
+    /// FIX PROBLEM 3: Uses workerTrainingBonus instead of workerTaskBonus/workerIdleRatePenalty.
+    /// Also populates sentence/status texts for historical views.
     /// </summary>
     void SetAllStoredSectionValues(DailyReportMetrics metrics)
     {
-        // === SATISFACTION SECTIONS ===
+        // Food Delivery Section - use stored bonuses
+        SetSectionValueFormatted(foodDeliveryTotal,
+            metrics.foodCompletionBonus + metrics.foodOnTimeBonus + metrics.foodDelayScore);
+        SetSectionSentence(foodDeliveryStatus, GenerateStoredFoodDeliveryStatusText(metrics));
+        SetSectionValueFormatted(foodCompletionBonus, metrics.foodCompletionBonus);
+        SetSectionValueFormatted(foodOnTimeBonus, metrics.foodOnTimeBonus);
+        SetSectionValueFormatted(foodDelayScore, metrics.foodDelayScore);
         
-        // Food Delivery - numeric scores from stored bonuses
-        SetSectionValue(foodDeliveryTotal, Mathf.RoundToInt(
-            metrics.foodCompletionBonus + metrics.foodOnTimeBonus + metrics.foodDelayScore));
-        SetSectionValue(foodCompletionBonus, Mathf.RoundToInt(metrics.foodCompletionBonus));
-        SetSectionValue(foodOnTimeBonus, Mathf.RoundToInt(metrics.foodOnTimeBonus));
-        SetSectionValue(foodDelayScore, Mathf.RoundToInt(metrics.foodDelayScore));
+        // Lodging Section
+        SetSectionValueFormatted(lodgingTotal,
+            metrics.lodgingCompletionBonus + metrics.lodgingOverstayPenalty);
+        SetSectionSentence(lodgingStatus, GenerateStoredLodgingStatusText(metrics));
+        SetSectionValueFormatted(lodgingCompletionBonus, metrics.lodgingCompletionBonus);
+        SetSectionValueFormatted(lodgingOverstayPenalty, metrics.lodgingOverstayPenalty);
         
-        // FIX: Also set the sentence text for food delivery status
-        SetSectionSentence(foodDeliveryStatus, GenerateFoodDeliveryStatusText());
+        // Worker Training Section - FIX PROBLEM 3: uses workerTrainingBonus
+        SetSectionValueFormatted(workerTotal, metrics.workerTrainingBonus);
+        SetSectionSentence(workerStatus, GenerateStoredWorkerTrainingStatusText(metrics));
+        SetSectionValueFormatted(workerTrainingBonusElement, metrics.workerTrainingBonus);
         
-        // Lodging - numeric scores from stored bonuses
-        SetSectionValue(lodgingTotal, Mathf.RoundToInt(
-            metrics.lodgingCompletionBonus + metrics.lodgingOverstayPenalty));
-        SetSectionValue(lodgingCompletionBonus, Mathf.RoundToInt(metrics.lodgingCompletionBonus));
-        SetSectionValue(lodgingOverstayPenalty, Mathf.RoundToInt(metrics.lodgingOverstayPenalty));
+        // Efficiency Sections - use stored scores
+        SetSectionValueFormatted(foodUtilizationTotal, metrics.kitchenEfficiencyScore);
+        SetSectionSentence(foodUsageSummary, $"Meal usage rate: {metrics.mealUsageRate:F1}%");
+        SetSectionValueFormatted(kitchenEfficiencyScore, metrics.kitchenEfficiencyScore);
         
-        // FIX: Also set sentence texts for lodging
-        SetSectionSentence(lodgingStatus, GenerateLodgingStatusText());
+        SetSectionValueFormatted(shelterUtilizationTotal, metrics.shelterEfficiencyScore);
+        SetSectionSentence(shelterUsageSummary, $"Shelter utilization rate: {metrics.shelterUtilizationRate:F1}%");
+        SetSectionValueFormatted(shelterEfficiencyScore, metrics.shelterEfficiencyScore);
         
-        // Worker - numeric scores from stored bonuses
-        SetSectionValue(workerTotal, Mathf.RoundToInt(
-            metrics.workerTaskBonus + metrics.workerIdleRatePenalty));
-        SetSectionValue(workerTaskBonus, Mathf.RoundToInt(metrics.workerTaskBonus));
-        SetSectionValue(workerIdleRate, Mathf.RoundToInt(metrics.workerIdleRatePenalty));
+        SetSectionValueFormatted(workerUtilizationTotal, metrics.workerEfficiencyScore);
+        SetSectionSentence(workerUsageSummary, $"Worker utilization: {(100f - metrics.idleWorkerRate):F1}%");
+        SetSectionValueFormatted(workerEfficiencyScore, metrics.workerEfficiencyScore);
         
-        // FIX: Also set sentence texts for worker
-        SetSectionSentence(workerStatus, GenerateWorkerStatusText());
-        
-        // === EFFICIENCY SECTIONS ===
-        
-        // Food Utilization
-        SetSectionValue(foodUtilizationTotal, Mathf.RoundToInt(metrics.kitchenEfficiencyScore));
-        SetSectionValue(kitchenEfficiencyScore, Mathf.RoundToInt(metrics.kitchenEfficiencyScore));
-        SetSectionSentence(foodUsageSummary, GenerateFoodUsageSummaryText());
-        
-        // Shelter Utilization
-        SetSectionValue(shelterUtilizationTotal, Mathf.RoundToInt(metrics.shelterEfficiencyScore));
-        SetSectionValue(shelterEfficiencyScore, Mathf.RoundToInt(metrics.shelterEfficiencyScore));
-        SetSectionSentence(shelterUsageSummary, GenerateShelterUsageSummaryText());
-        
-        // Worker Utilization
-        SetSectionValue(workerUtilizationTotal, Mathf.RoundToInt(metrics.workerEfficiencyScore));
-        SetSectionValue(workerEfficiencyScore, Mathf.RoundToInt(metrics.workerEfficiencyScore));
-        SetSectionSentence(workerUsageSummary, GenerateWorkerUsageSummaryText());
-        
-        // Budget Efficiency
-        SetSectionValue(budgetEfficiencyTotal, Mathf.RoundToInt(metrics.budgetEfficiencyScore));
-        SetSectionValue(budgetEfficiencyScore, Mathf.RoundToInt(metrics.budgetEfficiencyScore));
-        SetSectionSentence(budgetUsageSummary, GenerateBudgetUsageSummaryText());
+        SetSectionValueFormatted(budgetEfficiencyTotal, metrics.budgetEfficiencyScore);
+        SetSectionSentence(budgetUsageSummary, $"Budget usage: {metrics.budgetUsageRate:F1}%");
+        SetSectionValueFormatted(budgetEfficiencyScore, metrics.budgetEfficiencyScore);
     }
 
     /// <summary>
-    /// Set final satisfaction/efficiency values from stored metrics.
-    /// Displays the stored final values and change amounts without recalculation.
+    /// Set final satisfaction/efficiency from stored metrics (for historical view)
     /// </summary>
-    void SetFinalValuesFromStoredMetrics(DailyReportMetrics metrics, float satisfaction, float efficiency)
+    void SetFinalValuesFromMetrics(DailyReportMetrics metrics)
     {
         // Satisfaction
         if (satisfactionValueText != null)
-            satisfactionValueText.text = $"{satisfaction:F1}%";
+            satisfactionValueText.text = $"{metrics.finalSatisfactionValue:F1}%";
         
         if (satisfactionChangeText != null)
         {
@@ -831,19 +622,19 @@ public class DailyReportUI : MonoBehaviour
         
         if (satisfactionBar != null)
         {
-            satisfactionBar.value = satisfaction / 100f;
+            satisfactionBar.value = metrics.finalSatisfactionValue / 100f;
         }
         
         // Efficiency
         if (efficiencyValueText != null)
-            efficiencyValueText.text = $"{efficiency:F1}%";
+            efficiencyValueText.text = $"{metrics.finalEfficiencyValue:F1}%";
         
         if (efficiencyBar != null)
         {
-            efficiencyBar.value = efficiency / 100f;
+            efficiencyBar.value = metrics.finalEfficiencyValue / 100f;
         }
         
-        // Efficiency change from stored components
+        // Efficiency change (sum of efficiency components)
         if (efficiencyChangeText != null)
         {
             float effChange = metrics.kitchenEfficiencyScore + metrics.shelterEfficiencyScore + 
@@ -853,17 +644,25 @@ public class DailyReportUI : MonoBehaviour
         }
     }
 
+    // =========================================================================
+    // SECTION VALUE HELPERS
+    // =========================================================================
+
     /// <summary>
-    /// Helper to set a section element's numeric value directly (no animation).
-    /// Makes the element visible.
+    /// FIX PROBLEM 2: Format a float value with sign and one decimal place.
+    /// e.g. +25.5, -3.0, +0.0  (matches the animation format exactly)
     /// </summary>
-    void SetSectionValue(SectionElement element, int value, string suffix = "")
+    void SetSectionValueFormatted(SectionElement element, float value)
     {
         if (element == null || element.numberText == null) return;
         
-        element.numberText.text = value.ToString() + suffix;
+        string sign = value >= 0 ? "+" : "";
+        element.numberText.text = $"{sign}{value:F1}";
+        
+        // Set color based on positive/negative
         element.numberText.color = value >= 0 ? positiveChangeColor : negativeChangeColor;
         
+        // Make visible
         if (element.canvasGroup != null)
             element.canvasGroup.alpha = 1f;
         if (element.layoutObject != null)
@@ -871,16 +670,15 @@ public class DailyReportUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Helper to set a section element's sentence text directly (no animation).
-    /// Makes the element visible.
-    /// FIX: New method - the old code had no way to set sentence texts for historical display.
+    /// Set sentence text on a section element and make it visible.
+    /// Used for status/summary text lines in historical view.
     /// </summary>
-    void SetSectionSentence(SectionElement element, string text)
+    void SetSectionSentence(SectionElement element, string sentence)
     {
         if (element == null) return;
         
         if (element.sentenceText != null)
-            element.sentenceText.text = text;
+            element.sentenceText.text = sentence;
         
         if (element.canvasGroup != null)
             element.canvasGroup.alpha = 1f;
@@ -889,7 +687,7 @@ public class DailyReportUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Make all UI elements visible (called after setting values for historical display).
+    /// Make all UI elements visible (used after SetAllStoredSectionValues)
     /// </summary>
     void SetAllElementsVisible()
     {
@@ -920,8 +718,7 @@ public class DailyReportUI : MonoBehaviour
         
         ShowSectionElement(workerTotal);
         ShowSectionElement(workerStatus);
-        ShowSectionElement(workerTaskBonus);
-        ShowSectionElement(workerIdleRate);
+        ShowSectionElement(workerTrainingBonusElement);
         
         ShowSectionElement(foodUtilizationTotal);
         ShowSectionElement(foodUsageSummary);
@@ -950,15 +747,211 @@ public class DailyReportUI : MonoBehaviour
             element.layoutObject.SetActive(true);
     }
 
-    // ================================================================
-    // RESET & PUBLIC SETTERS
-    // ================================================================
+    // =========================================================================
+    // SATISFACTION SCORE CALCULATIONS
+    // =========================================================================
+
+    // Satisfaction total calculations
+    float CalculateFoodSatisfactionTotal()
+    {
+        return CalculateFoodCompletionBonus() + CalculateFoodOnTimeBonus() + CalculateFoodDelayScore();
+    }
+
+    float CalculateLodgingSatisfactionTotal()
+    {
+        return CalculateLodgingCompletionBonus() + CalculateLodgingOverstayPenalty();
+    }
+
+    /// <summary>
+    /// FIX PROBLEM 3: Worker satisfaction now only uses training bonus.
+    /// More workers in training = better satisfaction.
+    /// </summary>
+    float CalculateWorkerSatisfactionTotal()
+    {
+        return CalculateWorkerTrainingBonus();
+    }
+
+    // Efficiency total calculations
+    float CalculateFoodUtilizationTotal() { return CalculateKitchenEfficiencyScore(); }
+    float CalculateShelterUtilizationTotal() { return CalculateShelterEfficiencyScore(); }
+    float CalculateWorkerUtilizationTotal() { return CalculateWorkerUtilizationScore(); }
+    float CalculateBudgetEfficiencyTotal() { return CalculateBudgetEfficiencyScore(); }
+
+    // Score calculation methods - Food Delivery
+    float CalculateFoodCompletionBonus() { return currentMetrics.completedFoodTasks * 2f; }
+    float CalculateFoodOnTimeBonus() { return (currentMetrics.completedFoodTasks - currentMetrics.expiredFoodDemandTasks) * 1.5f; }
+    float CalculateFoodDelayScore() { return -currentMetrics.expiredFoodDemandTasks * 5f; }
+
+    // Score calculation methods - Lodging
+    float CalculateLodgingCompletionBonus() { return currentMetrics.completedLodgingTasks * 2f; }
+    float CalculateLodgingOverstayPenalty() { return -currentMetrics.groupsOver48Hours * 5f; }
+
+    // Score calculation methods - Worker Training (FIX PROBLEM 3)
+    /// <summary>
+    /// Worker Training Bonus = workersReceivingTraining * 3.0
+    /// More workers in training = higher satisfaction bonus.
+    /// Replaces old workerTaskBonus + workerIdleRatePenalty.
+    /// </summary>
+    float CalculateWorkerTrainingBonus() { return currentMetrics.workersReceivingTraining * 3f; }
+
+    // =========================================================================
+    // EFFICIENCY SCORE CALCULATIONS
+    // Each formula: positive when performing well, negative when performing poorly.
+    // Score ≈ 0 at 50% utilization (baseline). Range roughly -5 to +5 each.
+    // =========================================================================
+    
+    /// <summary>
+    /// Kitchen: Reward high meal usage rate, penalize expired food.
+    /// +5 at 100% usage, 0 at 50%, -5 at 0%. Extra penalty for waste.
+    /// </summary>
+    float CalculateKitchenEfficiencyScore() 
+    { 
+        float usageReward = (currentMetrics.mealUsageRate - 50f) * 0.1f;
+        float wastePenalty = -currentMetrics.expiredFoodPacks * 2f;
+        return usageReward + wastePenalty;
+    }
+    
+    /// <summary>
+    /// Shelter: Reward high occupancy rate.
+    /// +5 at 100% occupancy, 0 at 50%, -5 at 0%.
+    /// </summary>
+    float CalculateShelterEfficiencyScore() 
+    { 
+        return (currentMetrics.shelterOccupancyRate - 50f) * 0.1f;
+    }
+    
+    /// <summary>
+    /// Worker: Reward low idle rate (high utilization).
+    /// +5 at 0% idle, 0 at 50% idle, -5 at 100% idle.
+    /// </summary>
+    float CalculateWorkerUtilizationScore() 
+    { 
+        float utilization = 100f - currentMetrics.idleWorkerRate;
+        return (utilization - 50f) * 0.1f;
+    }
+    
+    /// <summary>
+    /// Budget: Reward conservative spending relative to daily allocation.
+    /// +14 at 0% usage, 0 at 70%, -6 at 100%.
+    /// </summary>
+    float CalculateBudgetEfficiencyScore() 
+    { 
+        return (70f - currentMetrics.budgetUsageRate) * 0.2f; 
+    }
+
+    // Final score calculations
+    float CalculateSatisfactionScore()
+    {
+        return CalculateFoodSatisfactionTotal() + CalculateLodgingSatisfactionTotal() + CalculateWorkerSatisfactionTotal();
+    }
+
+    float CalculateEfficiencyScore()
+    {
+        return CalculateFoodUtilizationTotal() + CalculateShelterUtilizationTotal() + CalculateWorkerUtilizationTotal() + CalculateBudgetEfficiencyTotal();
+    }
+
+    // =========================================================================
+    // TEXT GENERATION METHODS
+    // =========================================================================
+
+    // --- Live text (used during animation with currentMetrics) ---
+
+    string GenerateFoodDeliveryStatusText()
+    {
+        if (currentMetrics.totalFoodTasks == 0)
+            return "No food delivery tasks today.";
+        return currentMetrics.completedFoodTasks == currentMetrics.totalFoodTasks ?
+            "All food delivery tasks completed successfully." :
+            $"Food delivery completion: {currentMetrics.completedFoodTasks}/{currentMetrics.totalFoodTasks} tasks completed.";
+    }
+
+    string GenerateLodgingStatusText()
+    {
+        if (currentMetrics.totalLodgingTasks == 0)
+            return "No lodging tasks today.";
+        return currentMetrics.completedLodgingTasks == currentMetrics.totalLodgingTasks ?
+            "All lodging tasks completed successfully." :
+            $"Lodging completion: {currentMetrics.completedLodgingTasks}/{currentMetrics.totalLodgingTasks} tasks completed.";
+    }
+
+    /// <summary>
+    /// FIX PROBLEM 3: Worker status now shows training info instead of task completion.
+    /// </summary>
+    string GenerateWorkerTrainingStatusText()
+    {
+        if (currentMetrics.workersReceivingTraining == 0)
+            return "No workers currently in training.";
+        return $"{currentMetrics.workersReceivingTraining} worker(s) currently receiving training.";
+    }
+
+    string GenerateOverstayText()
+    {
+        if (currentMetrics.groupsOver48Hours == 0)
+            return "No groups overstayed beyond 48 hours.";
+        return $"{currentMetrics.groupsOver48Hours} group(s) stayed over 48 hours";
+    }
+
+    string GenerateFoodUsageSummaryText()
+    {
+        return $"Meal usage rate: {currentMetrics.mealUsageRate:F1}%";
+    }
+
+    string GenerateShelterUsageSummaryText()
+    {
+        return $"Shelter utilization rate: {currentMetrics.shelterUtilizationRate:F1}%";
+    }
+
+    string GenerateWorkerUsageSummaryText()
+    {
+        return $"Worker utilization: {(100f - currentMetrics.idleWorkerRate):F1}%";
+    }
+
+    string GenerateBudgetUsageSummaryText()
+    {
+        return $"Budget usage: {currentMetrics.budgetUsageRate:F1}%";
+    }
+
+    // --- Stored text (used for historical view from metrics) ---
+
+    string GenerateStoredFoodDeliveryStatusText(DailyReportMetrics metrics)
+    {
+        if (metrics.totalFoodTasks == 0)
+            return "No food delivery tasks today.";
+        return metrics.completedFoodTasks == metrics.totalFoodTasks ?
+            "All food delivery tasks completed successfully." :
+            $"Food delivery completion: {metrics.completedFoodTasks}/{metrics.totalFoodTasks} tasks completed.";
+    }
+
+    string GenerateStoredLodgingStatusText(DailyReportMetrics metrics)
+    {
+        if (metrics.totalLodgingTasks == 0)
+            return "No lodging tasks today.";
+        return metrics.completedLodgingTasks == metrics.totalLodgingTasks ?
+            "All lodging tasks completed successfully." :
+            $"Lodging completion: {metrics.completedLodgingTasks}/{metrics.totalLodgingTasks} tasks completed.";
+    }
+
+    string GenerateStoredWorkerTrainingStatusText(DailyReportMetrics metrics)
+    {
+        if (metrics.workersReceivingTraining == 0)
+            return "No workers currently in training.";
+        return $"{metrics.workersReceivingTraining} worker(s) currently receiving training.";
+    }
+
+    // =========================================================================
+    // PUBLIC SETTERS
+    // =========================================================================
 
     public void SetCurrentSatisfaction(float satisfaction) { currentSatisfaction = satisfaction; }
     public void SetCurrentEfficiency(float efficiency) { currentEfficiency = efficiency; }
 
+    // =========================================================================
+    // RESET
+    // =========================================================================
+
     public void ResetAllElementsToHidden()
     {
+        // Reset all satisfaction sections
         ResetSectionElement(foodDeliveryTotal);
         ResetSectionElement(foodDeliveryStatus);
         ResetSectionElement(foodCompletionBonus);
@@ -972,9 +965,9 @@ public class DailyReportUI : MonoBehaviour
 
         ResetSectionElement(workerTotal);
         ResetSectionElement(workerStatus);
-        ResetSectionElement(workerTaskBonus);
-        ResetSectionElement(workerIdleRate);
+        ResetSectionElement(workerTrainingBonusElement);
 
+        // Reset all efficiency sections
         ResetSectionElement(foodUtilizationTotal);
         ResetSectionElement(foodUsageSummary);
         ResetSectionElement(kitchenEfficiencyScore);
@@ -991,6 +984,7 @@ public class DailyReportUI : MonoBehaviour
         ResetSectionElement(budgetUsageSummary);
         ResetSectionElement(budgetEfficiencyScore);
 
+        // Reset final animation sections
         if (satisfactionAnimationSection != null)
             satisfactionAnimationSection.alpha = 0f;
         if (efficiencyAnimationSection != null)
@@ -999,60 +993,9 @@ public class DailyReportUI : MonoBehaviour
 
     void ResetSectionElement(SectionElement element)
     {
-        if (element.canvasGroup != null)
+        if (element != null && element.canvasGroup != null)
         {
             element.canvasGroup.alpha = 0f;
         }
     }
-
-    // ================================================================
-    // HELPER DATA METHODS
-    // ================================================================
-
-    int GetNewWorkersHired()
-    {
-        if (WorkerSystem.Instance != null)
-        {
-            return WorkerSystem.Instance.GetNewWorkersHiredToday();
-        }
-        return 0;
-    }
-
-    int GetWorkersInTraining()
-    {
-        if (WorkerSystem.Instance != null)
-        {
-            var stats = WorkerSystem.Instance.GetWorkerStatistics();
-            return stats.untrainedTraining;
-        }
-        return 0;
-    }
-
-    int CalculateTotalInfluencedResidents()
-    {
-        int totalInfluenced = 0;
-        
-        if (deliverySystem != null)
-        {
-            var completedDeliveries = deliverySystem.GetCompletedTasks();
-            foreach (var delivery in completedDeliveries)
-            {
-                if (delivery.cargoType == ResourceType.Population)
-                {
-                    totalInfluenced += delivery.quantity;
-                }
-            }
-        }
-        
-        return totalInfluenced;
-    }
-
-    // REMOVED: CalculateCaseworkTaskMetrics() - dead code, DailyReportData handles this
-    // REMOVED: CalculateEmergencyTaskMetrics() - dead code, DailyReportData handles this
-    // REMOVED: IsTaskRelatedToCasework() - dead code, DailyReportData handles this
-    // REMOVED: SaveReportWithCalculatedScores() - dead code, replaced by SaveCompletedReportToHistory
-    // REMOVED: CopyBaseMetrics() - dead code, was only used by SaveReportWithCalculatedScores
-    // REMOVED: SetAllSectionValuesFromMetrics() - dead code duplicate of SetAllStoredSectionValues
-    // REMOVED: SetFinalValuesDirectly() - dead code duplicate of SetFinalValuesFromStoredMetrics
-    // REMOVED: SetAllSectionValuesDirectly() - dead code duplicate of SetAllStoredSectionValues
 }

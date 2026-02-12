@@ -68,6 +68,18 @@ public enum TaskOfficer
     FoodMassCare
 }
 
+/// <summary>
+/// Manual classification tag for tasks. Set in TaskData ScriptableObject.
+/// Used by DailyReportData to categorize tasks instead of unreliable keyword matching.
+/// </summary>
+public enum TaskTag
+{
+    None,           // Default - not classified
+    Food,           // Food delivery, food shortage, meal distribution
+    Lodging,        // Relocation, shelter assignment, housing
+    BackToHome,     // Return home tasks
+}
+
 public enum NumericalInputType
 {
     Budget,           // Money/cost input
@@ -109,6 +121,11 @@ public class GameTask
     public TaskOfficer taskOfficer = TaskOfficer.DisasterOfficer;
     [Header("Task Classification")]
     public bool isGlobalTask = false;
+    
+    /// <summary>
+    /// Manual category tag. Set from TaskData. Used by daily report for accurate classification.
+    /// </summary>
+    public TaskTag taskTag = TaskTag.None;
     
     [Header("Timing")]
     public int roundsRemaining = 3; // Rounds until expiry
@@ -1199,6 +1216,7 @@ public class TaskSystem : MonoBehaviour
         newTask.taskImage = taskData.taskImage;
         newTask.taskOfficer = taskData.taskOfficer;
         newTask.isGlobalTask = taskData.isGlobalTask;
+        newTask.taskTag = taskData.taskTag;
 
         // Copy time settings
         newTask.roundsRemaining = taskData.roundsRemaining;
