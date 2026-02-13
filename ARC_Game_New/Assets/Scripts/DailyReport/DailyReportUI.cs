@@ -39,6 +39,7 @@ public class DailyReportUI : MonoBehaviour
     public SectionElement workerTotal;
     public SectionElement workerStatus;
     public SectionElement workerTrainingBonusElement;
+    public SectionElement idleWorker;
     // workerIdleRate removed - no longer used for satisfaction
 
     [Header("Efficiency Panel Sections")]
@@ -140,6 +141,7 @@ public class DailyReportUI : MonoBehaviour
         InitializeSectionElement(workerTotal);
         InitializeSectionElement(workerStatus);
         InitializeSectionElement(workerTrainingBonusElement);
+        InitializeSectionElement(idleWorker);
 
         InitializeSectionElement(foodUtilizationTotal);
         InitializeSectionElement(foodUsageSummary);
@@ -295,15 +297,16 @@ public class DailyReportUI : MonoBehaviour
         yield return StartCoroutine(AnimateSectionElement(foodDelayScore, CalculateFoodDelayScore(), "Task Delay Score:"));
 
         // Lodging Section
-        yield return StartCoroutine(AnimateSectionElement(lodgingTotal, CalculateLodgingSatisfactionTotal(), "Lodging Services"));
+        yield return StartCoroutine(AnimateSectionElement(lodgingTotal, CalculateLodgingSatisfactionTotal(), "Lodging Provided"));
         yield return StartCoroutine(AnimateSectionElement(lodgingStatus, GenerateLodgingStatusText()));
         yield return StartCoroutine(AnimateSectionElement(lodgingCompletionBonus, CalculateLodgingCompletionBonus(), "Task Completion Bonus:"));
         yield return StartCoroutine(AnimateSectionElement(lodgingOverstayPenalty, CalculateLodgingOverstayPenalty(), GenerateOverstayText()));
 
-        // FIX PROBLEM 3: Worker Training Section (replaces old Worker Management)
-        yield return StartCoroutine(AnimateSectionElement(workerTotal, CalculateWorkerSatisfactionTotal(), "Worker Training"));
+        // Worker Training Section (replaces old Worker Management)
+        yield return StartCoroutine(AnimateSectionElement(workerTotal, CalculateWorkerSatisfactionTotal(), "Worker Contributions"));
         yield return StartCoroutine(AnimateSectionElement(workerStatus, GenerateWorkerTrainingStatusText()));
         yield return StartCoroutine(AnimateSectionElement(workerTrainingBonusElement, CalculateWorkerTrainingBonus(), $"Workers in Training: {currentMetrics.workersReceivingTraining}"));
+        yield return StartCoroutine(AnimateSectionElement(idleWorker, GenerateWorkerUsageSummaryText()));
     }
 
     IEnumerator DisplayEfficiencySections()

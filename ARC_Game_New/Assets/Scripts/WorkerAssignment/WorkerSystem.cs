@@ -24,6 +24,8 @@ public class WorkerSystem : MonoBehaviour
 
     // Daily Hired Workers Tracking
     private int newWorkersHiredToday = 0;
+    private Dictionary <int, int> newWorkersHiredEachDay = new Dictionary<int, int>();
+    private bool isInitializing = true; // Don't count initial pool as "hired today"
 
     void Awake()
     {
@@ -74,10 +76,30 @@ public class WorkerSystem : MonoBehaviour
         GameLogPanel.Instance.LogWorkerAction($"Initialized worker pool with {initialTrainedWorkers} trained and {initialUntrainedWorkers} untrained workers.");
         Debug.Log($"Worker pool initialized with {initialTrainedWorkers} trained and {initialUntrainedWorkers} untrained workers");
         PrintWorkerStatistics();
+        isInitializing = false; // Future calls to Create*Worker now count as hires
     }
     
-    // Worker creation methods
-    public Worker CreateTrainedWorker(TrainedWorkerStatus initialStatus = TrainedWorkerStatus.Free)
+    // =========================================================================
+    // WORKER CREATION
+    // =========================================================================
+    
+    /// <summary>
+    /// Create a trained worker and add to the system.
+    /// 
+    /// FIX: Added 'countAsNewHire' parameter (default true).
+    /// 
+    /// WHAT WAS WRONG: When WorkerTrainingSystem completed training, it called
+    /// RemoveWorker() on the old untrained worker then CreateTrainedWorker() to
+    /// make the upgraded version. CreateTrainedWorker() always called 
+    /// IncrementNewWorkersHired(), so each training completion counted as a
+    /// "new hire". This caused the daily report to show inflated hired counts
+    /// (e.g., 6 actual hires + 2 training completions = "8 hired").
+    /// 
+    /// WHY THIS FIXES IT: WorkerTrainingSystem now passes countAsNewHire:false
+    /// when creating trained workers from training completion. Only genuinely
+    /// new workers (from WorkerRequestSystem or manual creation) count as hires.
+    /// </summary>
+    public Worker CreateTrainedWorker(TrainedWorkerStatus initialStatus = TrainedWorkerStatus.Free, bool countAsNewHire = true)
     {
         Worker worker = new Worker(nextWorkerId++, WorkerType.Trained);
         worker.SetTrainedStatus(initialStatus);
@@ -85,12 +107,23 @@ public class WorkerSystem : MonoBehaviour
         
         allWorkers.Add(worker);
         OnWorkerStatsChanged?.Invoke();
+        
+        // Track as new hire only if:
+        // 1. Not during initial pool setup
+        // 2. Caller explicitly says this is a new hire (not a training upgrade)
+        if (!isInitializing && countAsNewHire)
+            IncrementNewWorkersHired();
+        
         GameLogPanel.Instance.LogWorkerAction($"Created trained worker: {worker}");
-        Debug.Log($"Created trained worker: {worker}");
+        Debug.Log($"Created trained worker: {worker} (countAsNewHire={countAsNewHire})");
         return worker;
     }
     
-    public Worker CreateUntrainedWorker(UntrainedWorkerStatus initialStatus = UntrainedWorkerStatus.Free)
+    /// <summary>
+    /// Create an untrained worker and add to the system.
+    /// FIX: Added 'countAsNewHire' parameter for consistency.
+    /// </summary>
+    public Worker CreateUntrainedWorker(UntrainedWorkerStatus initialStatus = UntrainedWorkerStatus.Free, bool countAsNewHire = true)
     {
         Worker worker = new Worker(nextWorkerId++, WorkerType.Untrained);
         worker.SetUntrainedStatus(initialStatus);
@@ -98,8 +131,13 @@ public class WorkerSystem : MonoBehaviour
         
         allWorkers.Add(worker);
         OnWorkerStatsChanged?.Invoke();
+        
+        // Track as new hire only if not during initial setup and caller says so
+        if (!isInitializing && countAsNewHire)
+            IncrementNewWorkersHired();
+        
         GameLogPanel.Instance.LogWorkerAction($"Created untrained worker: worker.Id");
-        Debug.Log($"Created untrained worker: {worker}");
+        Debug.Log($"Created untrained worker: {worker} (countAsNewHire={countAsNewHire})");
         return worker;
     }
     
@@ -341,9 +379,16 @@ public class WorkerSystem : MonoBehaviour
     {
         return newWorkersHiredToday;
     }
+    public int GetNewWorkersHiredOnDay(int Day)
+    {
+        if (newWorkersHiredEachDay.ContainsKey(Day))
+            return newWorkersHiredEachDay[Day];
+        return 0;
+    }
     public void ResetDailyHiredWorkersCount(int newDay)
     {
-        Debug.Log($"Day changed to {newDay}, resetting worker count");
+        Debug.Log($"Day changed to {newDay}, resetting worker count. Previous day hired: {newWorkersHiredToday}");
+        newWorkersHiredEachDay[newDay-1] = newWorkersHiredToday;
         newWorkersHiredToday = 0;
     }
     

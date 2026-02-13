@@ -95,7 +95,24 @@ public class DailyReportData : MonoBehaviour
         // Global clock events
         if (GlobalClock.Instance != null)
         {
-            GlobalClock.Instance.OnDayChanged += OnDayChanged;
+            // =====================================================
+            // FIX: REMOVED OnDayChanged subscription.
+            //
+            // WHAT WAS WRONG: DailyReportData subscribed to OnDayChanged,
+            // which was fired from OnExecuteButtonClicked() when the player
+            // clicked "View Report". This caused ResetDailyTracking() to
+            // clear ALL accumulated stats BEFORE GenerateDailyReport() could
+            // read them. Workers in training, completed tasks, food data,
+            // budget tracking — everything was zeroed out.
+            //
+            // WHY THIS FIXES IT: Data reset is now handled exclusively by
+            // PrepareForNewDay(), called from GlobalClock.ProceedToNextDay()
+            // AFTER the report has been displayed and the player confirms.
+            // The OnDayChanged event can still be used by OTHER systems
+            // that need to know about day changes.
+            // =====================================================
+            // OLD: GlobalClock.Instance.OnDayChanged += OnDayChanged;
+            
             GlobalClock.Instance.OnSimulationStarted += OnRoundStarted;
         }
     }
@@ -215,11 +232,48 @@ public class DailyReportData : MonoBehaviour
         TrackFoodProduction();
     }
     
-    void OnDayChanged(int newDay)
+    // =====================================================
+    // FIX: REMOVED OnDayChanged handler.
+    // This was the method that prematurely reset all tracking
+    // data when OnDayChanged fired from OnExecuteButtonClicked().
+    //
+    // OLD CODE:
+    // void OnDayChanged(int newDay)
+    // {
+    //     currentDayNumber = newDay;
+    //     ResetDailyTracking();      // ← Cleared everything!
+    //     RecordDayStartMetrics();
+    // }
+    //
+    // REPLACED BY: PrepareForNewDay() called from 
+    // GlobalClock.ProceedToNextDay() at the correct time.
+    // =====================================================
+    
+    /// <summary>
+    /// PUBLIC METHOD: Called by GlobalClock.ProceedToNextDay() AFTER the
+    /// daily report has been fully displayed and the player clicks "Next Day".
+    /// 
+    /// This is the ONLY place where daily tracking data gets reset.
+    /// The correct order is:
+    ///   1. Player clicks "View Report" → GenerateDailyReport() reads current data
+    ///   2. Report animates and is saved to history
+    ///   3. Player clicks "Next Day" → PrepareForNewDay() clears data
+    ///   4. GlobalClock advances to next day
+    /// </summary>
+    public void PrepareForNewDay()
     {
-        currentDayNumber = newDay;
+        Debug.Log($"PrepareForNewDay called - resetting tracking for new day (was day {currentDayNumber})");
+        
+        // Update day number to match what GlobalClock will set
+        if (GlobalClock.Instance != null)
+        {
+            currentDayNumber = GlobalClock.Instance.GetCurrentDay() + 1;
+        }
+        
         ResetDailyTracking();
         RecordDayStartMetrics();
+        
+        Debug.Log($"Daily tracking reset complete - ready for day {currentDayNumber}");
     }
     
     void ResetDailyTracking()
@@ -320,9 +374,27 @@ public class DailyReportData : MonoBehaviour
         metrics.expiredFoodPacks = todayExpiredFood;
         metrics.currentFoodInStorage = CalculateCurrentFoodStorage();
         
+        // =====================================================
+        // FIX: Meal usage rate now includes BOTH manually wasted
+        // AND expired food in the waste calculation.
+        //
+        // WHAT WAS WRONG: The old formula only used todayFoodWasted
+        // (from RecordFoodWasted calls). Expired food tracked via
+        // RecordExpiredFood() was stored separately in todayExpiredFood
+        // but never included. This meant if food expired but wasn't 
+        // manually marked as wasted, usage rate stayed at 100%.
+        //
+        // NEW FORMULA:
+        //   totalWaste = wasted + expired
+        //   mealUsageRate = (produced - totalWaste) / produced × 100
+        //
+        // 100% = no waste at all
+        // 80%  = 20% of produced food was wasted or expired
+        // =====================================================
         int totalMealsProduced = metrics.foodProduced;
-        int totalMealsConsumed = totalMealsProduced - metrics.foodWasted;
-        metrics.mealUsageRate = totalMealsProduced > 0 ? (float)totalMealsConsumed / totalMealsProduced * 100f : 100f;
+        int totalWaste = todayFoodWasted + todayExpiredFood;
+        int totalMealsUsed = Mathf.Max(0, totalMealsProduced - totalWaste);
+        metrics.mealUsageRate = totalMealsProduced > 0 ? (float)totalMealsUsed / totalMealsProduced * 100f : 100f;
         
         // =====================================================================
         // POPULATION METRICS

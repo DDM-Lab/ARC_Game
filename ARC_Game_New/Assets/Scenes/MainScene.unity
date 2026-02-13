@@ -91326,11 +91326,17 @@ MonoBehaviour:
     sentenceText: {fileID: 733685722}
     canvasGroup: {fileID: 1666695723}
   workerTrainingBonusElement:
-    layoutObject: {fileID: 0}
-    numberText: {fileID: 0}
-    labelText: {fileID: 0}
+    layoutObject: {fileID: 1255495967}
+    numberText: {fileID: 903453261}
+    labelText: {fileID: 1514298565}
     sentenceText: {fileID: 0}
-    canvasGroup: {fileID: 0}
+    canvasGroup: {fileID: 1255495970}
+  idleWorker:
+    layoutObject: {fileID: 46356733}
+    numberText: {fileID: 1871715481}
+    labelText: {fileID: 1804558623}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 46356736}
   foodUtilizationTotal:
     layoutObject: {fileID: 742928327}
     numberText: {fileID: 1089727875}
@@ -91423,10 +91429,10 @@ MonoBehaviour:
   moneySpentText: {fileID: 1698929570}
   workersHiredText: {fileID: 1400409806}
   workersTrainedText: {fileID: 698252808}
-  incompleteExpiredTasksText: {fileID: 0}
+  incompleteExpiredTasksText: {fileID: 1141857090}
   foodTaskRatioText: {fileID: 1410653567}
   lodgingTaskRatioText: {fileID: 234360611}
-  casesResolvedRatioText: {fileID: 0}
+  casesResolvedRatioText: {fileID: 172421309}
   emergencyTaskRatioText: {fileID: 33177532}
 --- !u!114 &1776780032
 MonoBehaviour:

@@ -266,13 +266,22 @@ public class WorkerTrainingSystem : MonoBehaviour
     {
         foreach (TrainingTask training in activeTrainingTasks)
         {
+            // =====================================================
+            // FIX: Skip already-completed training tasks.
+            //
+            // WHAT WAS WRONG: Completed training tasks stayed in the
+            // activeTrainingTasks list forever. On each day change, 
+            // CompleteWorkerTraining() was called again for old tasks.
+            // While the inner status check prevented double-upgrading,
+            // it still logged confusing messages.
+            // =====================================================
+            if (training.isCompleted) continue;
+            
             if (newDay >= training.completionDay)
             {
                 CompleteWorkerTraining(training);
             }
         }
-        
-        // Don't remove completed training - they stay in the list as completed
     }
     
     void CompleteWorkerTraining(TrainingTask training)
@@ -287,8 +296,20 @@ public class WorkerTrainingSystem : MonoBehaviour
                 // Remove old untrained worker
                 workerSystem.RemoveWorker(worker);
 
-                // Create new trained worker with FREE status
-                Worker newTrainedWorker = workerSystem.CreateTrainedWorker(TrainedWorkerStatus.Free);
+                // =====================================================
+                // FIX: Pass countAsNewHire: false.
+                //
+                // WHAT WAS WRONG: CreateTrainedWorker() always called
+                // IncrementNewWorkersHired(). Training completions are
+                // upgrades of existing workers, not new hires. This 
+                // inflated the "Workers Hired" count in the daily report.
+                // e.g., 6 real hires + 2 training completions = "8 hired"
+                //
+                // WHY THIS FIXES IT: The new countAsNewHire parameter
+                // lets us skip the hire counter for training upgrades.
+                // Only genuinely new workers count as hires.
+                // =====================================================
+                Worker newTrainedWorker = workerSystem.CreateTrainedWorker(TrainedWorkerStatus.Free, countAsNewHire: false);
 
                 successfullyTrained++;
             }

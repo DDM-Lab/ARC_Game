@@ -54,7 +54,7 @@ public class DailyReportMetrics
     public int totalDeliveryTasks;
     public int completedDeliveryTasks;
     
-    [Header("Task Details by Category (uses TaskTag tag)")]
+    [Header("Task Details by Tag (uses TaskTag)")]
     public int totalFoodTasks;
     public int completedFoodTasks;
     public int expiredFoodDemandTasks;
@@ -166,4 +166,4 @@ public class DailyReportMetrics
     public float workerEfficiencyScore;
     public float budgetEfficiencyScore;
 
-}
+} 

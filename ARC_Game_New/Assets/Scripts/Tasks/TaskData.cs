@@ -15,10 +15,10 @@ public class TaskData : ScriptableObject
     [TextArea(3, 5)]
     public string description;
     public Sprite taskImage;
-    [Header("Task Officer")] 
+    [Header("Task Officer")]
     public TaskOfficer taskOfficer = TaskOfficer.DisasterOfficer;
 
-    [Header("Task Category (for Daily Report classification)")]
+    [Header("Task Tag (for Daily Report classification)")]
     [Tooltip("Manual tag to classify this task for daily report metrics. Set this instead of relying on keyword matching.")]
     public TaskTag taskTag = TaskTag.None;
 

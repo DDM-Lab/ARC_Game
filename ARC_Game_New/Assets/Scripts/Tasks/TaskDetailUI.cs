@@ -1601,8 +1601,8 @@ public class TaskDetailUI : MonoBehaviour
 
         if (deliveryTask != null)
         {
-            currentTask.linkedDeliveryTaskIds.Add(deliveryTask.taskId);
-            StartCoroutine(MonitorChoiceDeliveryCompletion());
+            // Link delivery → parent task so OnDeliveryTaskCompleted can find it
+            TaskSystem.Instance.LinkDeliveryToTask(currentTask, deliveryTask);
 
             if (showDebugInfo)
                 Debug.Log($"Created single delivery: {actualQuantity} {choice.deliveryCargoType} from {source.name} to {destination.name}");
@@ -1674,7 +1674,9 @@ public class TaskDetailUI : MonoBehaviour
             }
             else
             {
-                deliverySystem.CreateDeliveryTask(source, dest, choice.deliveryCargoType, quantityPerDest, 3);
+                List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, dest, choice.deliveryCargoType, quantityPerDest, 3);
+                // Link all created deliveries → parent task
+                TaskSystem.Instance.LinkDeliveriesToTask(currentTask, deliveries);
             }
 
             if (showDebugInfo)
@@ -1713,7 +1715,9 @@ public class TaskDetailUI : MonoBehaviour
             }
             else
             {
-                deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
+                List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
+                // Link all created deliveries → parent task
+                TaskSystem.Instance.LinkDeliveriesToTask(currentTask, deliveries);
             }
 
             if (showDebugInfo)
@@ -1750,7 +1754,9 @@ public class TaskDetailUI : MonoBehaviour
             }
             else
             {
-                deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
+                List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
+                // Link all created deliveries → parent task
+                TaskSystem.Instance.LinkDeliveriesToTask(currentTask, deliveries);
             }
 
             if (showDebugInfo)
@@ -1948,10 +1954,8 @@ public class TaskDetailUI : MonoBehaviour
 
         if (deliveryTask != null)
         {
-            currentTask.linkedDeliveryTaskIds.Add(deliveryTask.taskId);
-
-            // Start monitoring delivery completion (without time segment monitoring)
-            StartCoroutine(MonitorChoiceDeliveryCompletion());
+            // Link delivery → parent task so OnDeliveryTaskCompleted can find it
+            TaskSystem.Instance.LinkDeliveryToTask(currentTask, deliveryTask);
 
             if (showDebugInfo)
                 Debug.Log($"Created delivery from choice: {source.name} → {destination.name} " +
