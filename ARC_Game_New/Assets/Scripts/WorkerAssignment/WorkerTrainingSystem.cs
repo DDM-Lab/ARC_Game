@@ -69,7 +69,6 @@ public class WorkerTrainingSystem : MonoBehaviour
     }
     void OnTaskExpired(GameTask task)
     {
-        // Clear reference if training task expired
         if (task.taskTitle == "Worker Training Program" && currentTrainingTask == task)
         {
             currentTrainingTask = null;
@@ -80,7 +79,6 @@ public class WorkerTrainingSystem : MonoBehaviour
     
     public void OnTrainWorkerButtonClicked()
     {
-        // Check if we have untrained workers
         if (workerSystem == null)
             workerSystem = WorkerSystem.Instance;
 
@@ -90,11 +88,9 @@ public class WorkerTrainingSystem : MonoBehaviour
             return;
         }
 
-        // Check if there's already an active training task
         if (currentTrainingTask != null &&
             TaskSystem.Instance.GetAllActiveTasks().Contains(currentTrainingTask))
         {
-            // Open existing task
             if (taskDetailUI != null)
             {
                 taskDetailUI.ShowTaskDetail(currentTrainingTask);
@@ -112,7 +108,6 @@ public class WorkerTrainingSystem : MonoBehaviour
             return;
         }
         
-        // Create training task
         CreateWorkerTrainingTask(availableUntrained);
     }
     
@@ -128,11 +123,9 @@ public class WorkerTrainingSystem : MonoBehaviour
             $"We have {maxTrainable} untrained responders available. Training them will improve their productivity from 1 to 2 workforce points."
         );
         
-        // Set timing
         trainingTask.roundsRemaining = 5;
         trainingTask.taskOfficer = TaskOfficer.WorkforceService;
         
-        // Add agent messages
         trainingTask.agentMessages.Add(new AgentMessage(
             "Our volunteers are enthusiastic—but untrained. That might be enough for now, but if you want to make the most out of your limited resources, training is essential.",
             taskSystem.workforceServiceSprite
@@ -148,25 +141,21 @@ public class WorkerTrainingSystem : MonoBehaviour
             taskSystem.workforceServiceSprite
         ));
 
-        
         AgentNumericalInput workerCountInput = new AgentNumericalInput(
-            1,                                    // inputId
-            NumericalInputType.UntrainedWorkers, // inputType
-            1,                                    // currentValue (default to 1)
-            0,                                    // minValue
-            maxTrainable                         // maxValue
+            1,
+            NumericalInputType.UntrainedWorkers,
+            1,
+            0,
+            maxTrainable
         );
         
-        // Optional: Override the label and description for this specific context
         workerCountInput.inputLabel = "Responders to Train";
         workerCountInput.customDescription = $"Select how many untrained responders to train (${trainingCostPerWorker} per worker, {trainingDurationDays} days)";
 
         trainingTask.numericalInputs.Add(workerCountInput);
 
-        // Store reference to current task
         currentTrainingTask = trainingTask;
         
-        // Show task detail immediately
         if (taskDetailUI != null)
         {
             taskDetailUI.ShowTaskDetail(trainingTask);
@@ -178,15 +167,12 @@ public class WorkerTrainingSystem : MonoBehaviour
 
     void OnTaskCompleted(GameTask task)
     {
-        // Check if this is a training task
         if (task.taskTitle != "Responder Training Program")
             return;
 
-        // Clear current task reference when completed
         if (currentTrainingTask == task)
             currentTrainingTask = null;
         
-        // Get the number of workers to train from numerical input
         if (task.numericalInputs.Count == 0)
         {
             Debug.LogError("No numerical input found in training task!");
@@ -196,43 +182,31 @@ public class WorkerTrainingSystem : MonoBehaviour
         int workersToTrain = task.numericalInputs[0].currentValue;
         
         if (workersToTrain <= 0)
-        {
-            //ToastManager.ShowToast("No responders selected for training", ToastType.Warning, true);
             return;
-        }
         
-        // Calculate cost
         int totalCost = workersToTrain * trainingCostPerWorker;
         
-        // Check budget
         if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.CanAfford(totalCost))
         {
-            //ToastManager.ShowToast($"Insufficient budget! Need ${totalCost}", ToastType.Warning, true);
             GameLogPanel.Instance.LogError($"Cannot afford responder training: ${totalCost}");
             return;
         }
         
-        // Deduct budget
         SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Training {workersToTrain} responders");
-
-        // Start training
         StartWorkerTraining(workersToTrain);
     }
     
     void StartWorkerTraining(int workerCount)
     {
-        // Get FREE untrained workers only
         List<Worker> untrainedWorkers = workerSystem.GetWorkersByType(WorkerType.Untrained)
             .FindAll(w => w.GetCurrentStatus() == "Free");
         
         if (untrainedWorkers.Count < workerCount)
         {
             Debug.LogError($"Not enough free untrained responders! Requested: {workerCount}, Available: {untrainedWorkers.Count}");
-            //ToastManager.ShowToast($"Not enough free untrained responders available", ToastType.Warning, true);
             return;
         }
         
-        // Set workers to training status
         List<Worker> trainingWorkers = new List<Worker>();
         for (int i = 0; i < workerCount; i++)
         {
@@ -241,7 +215,6 @@ public class WorkerTrainingSystem : MonoBehaviour
             trainingWorkers.Add(worker);
         }
         
-        // If training duration is 1 day, and we start on day 1, it completes on day 2
         int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
         int completionDay = currentDay + trainingDurationDays;
         
@@ -266,15 +239,7 @@ public class WorkerTrainingSystem : MonoBehaviour
     {
         foreach (TrainingTask training in activeTrainingTasks)
         {
-            // =====================================================
-            // FIX: Skip already-completed training tasks.
-            //
-            // WHAT WAS WRONG: Completed training tasks stayed in the
-            // activeTrainingTasks list forever. On each day change, 
-            // CompleteWorkerTraining() was called again for old tasks.
-            // While the inner status check prevented double-upgrading,
-            // it still logged confusing messages.
-            // =====================================================
+            // FIX: Skip already-completed training tasks to prevent re-processing
             if (training.isCompleted) continue;
             
             if (newDay >= training.completionDay)
@@ -290,10 +255,8 @@ public class WorkerTrainingSystem : MonoBehaviour
 
         foreach (Worker worker in training.workers)
         {
-            // Check if worker is still in training status
             if (worker.Type == WorkerType.Untrained && worker.GetCurrentStatus() == "Training")
             {
-                // Remove old untrained worker
                 workerSystem.RemoveWorker(worker);
 
                 // =====================================================
@@ -301,13 +264,12 @@ public class WorkerTrainingSystem : MonoBehaviour
                 //
                 // WHAT WAS WRONG: CreateTrainedWorker() always called
                 // IncrementNewWorkersHired(). Training completions are
-                // upgrades of existing workers, not new hires. This 
+                // upgrades of EXISTING workers, not new hires. This
                 // inflated the "Workers Hired" count in the daily report.
-                // e.g., 6 real hires + 2 training completions = "8 hired"
                 //
                 // WHY THIS FIXES IT: The new countAsNewHire parameter
-                // lets us skip the hire counter for training upgrades.
-                // Only genuinely new workers count as hires.
+                // skips the hire counter. Only genuinely new workers
+                // (from WorkerRequestSystem) count as hires.
                 // =====================================================
                 Worker newTrainedWorker = workerSystem.CreateTrainedWorker(TrainedWorkerStatus.Free, countAsNewHire: false);
 
@@ -317,7 +279,6 @@ public class WorkerTrainingSystem : MonoBehaviour
         training.isCompleted = true;
         Debug.Log($"Completed training for {successfullyTrained} workers");
 
-        // Add satisfaction for successful training
         if (SatisfactionAndBudget.Instance != null && successfullyTrained > 0)
         {
             SatisfactionAndBudget.Instance.AddSatisfaction(successfullyTrained * satisfactionPerTrainedWorker,
@@ -331,7 +292,6 @@ public class WorkerTrainingSystem : MonoBehaviour
             ToastManager.ShowToast("Training complete! " + successfullyTrained + " responders are now trained and available", ToastType.Success, true);
         }
         GameLogPanel.Instance.LogWorkerAction("Training complete: " + successfullyTrained + " responders now trained and free");
-
     }
     
     void OnDestroy()

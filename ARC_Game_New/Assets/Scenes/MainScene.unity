@@ -55397,8 +55397,6 @@ MonoBehaviour:
   startingResources:
   - type: 0
     amount: 40
-  - type: 1
-    amount: 40
   startingFoodPacks: 0
   enableFoodWaste: 0
   roundProduction: []
@@ -90202,8 +90200,6 @@ MonoBehaviour:
   startingResources:
   - type: 0
     amount: 40
-  - type: 1
-    amount: 40
   startingFoodPacks: 0
   enableFoodWaste: 0
   roundProduction: []
@@ -93430,8 +93426,6 @@ MonoBehaviour:
     maxCapacity: 40
   startingResources:
   - type: 0
-    amount: 40
-  - type: 1
     amount: 40
   startingFoodPacks: 0
   enableFoodWaste: 0

@@ -85,7 +85,6 @@ public class DailyReportMetrics
     public int totalWorkers;
     public int workingWorkers;
     public int idleWorkers;
-    public int totalIdleWorkers;    // Compatibility alias
     public int trainedWorkers;
     public int untrainedWorkers;
     public float idleWorkerRate;

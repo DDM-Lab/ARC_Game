@@ -44,20 +44,44 @@ public class WorkerSystem : MonoBehaviour
     {
         InitializeWorkerPool();
 
-        // Subscribe to day change event
-        if (GlobalClock.Instance != null)
-        {
-            GlobalClock.Instance.OnDayChanged += ResetDailyHiredWorkersCount;
-        }
+        // =====================================================
+        // FIX: REMOVED OnDayChanged subscription for reset.
+        //
+        // WHAT WAS WRONG: ResetDailyHiredWorkersCount was subscribed
+        // to OnDayChanged, but WorkerRequestSystem (arrivals) and
+        // WorkerTrainingSystem (training completions) also subscribe
+        // to OnDayChanged and CREATE workers during their handlers.
+        // C# doesn't guarantee handler execution order across
+        // different MonoBehaviours.
+        //
+        // This caused unpredictable behavior:
+        // - If reset fires BEFORE arrivals → new arrivals count
+        //   toward the new day (ok but inconsistent)
+        // - If reset fires AFTER arrivals → new arrivals increment
+        //   the counter then get immediately zeroed (data loss)
+        // - Training completions also created workers via
+        //   CreateTrainedWorker which incremented the counter
+        //
+        // The result was hired counts that accumulated across days
+        // and included training completions as "hires".
+        //
+        // WHY THIS FIXES IT: Reset is now called explicitly by
+        // DailyReportData.PrepareForNewDay() at a controlled time:
+        //   1. Report reads newWorkersHiredToday (correct value)
+        //   2. Player clicks "Next Day"
+        //   3. PrepareForNewDay() → SaveAndResetDailyHiredCount()
+        //   4. OnDayChanged fires → arrivals/training create workers
+        //      → these correctly count toward the NEW day
+        //
+        // OLD CODE:
+        // if (GlobalClock.Instance != null)
+        //     GlobalClock.Instance.OnDayChanged += ResetDailyHiredWorkersCount;
+        // =====================================================
     }
 
     void OnDestroy()
     {
-        // ALWAYS unsubscribe when destroyed to prevent memory leaks
-        if (GlobalClock.Instance != null)
-        {
-            GlobalClock.Instance.OnDayChanged -= ResetDailyHiredWorkersCount;
-        }
+        // FIX: Removed OnDayChanged unsubscribe (no longer subscribed)
     }
     
     void InitializeWorkerPool()
@@ -87,17 +111,8 @@ public class WorkerSystem : MonoBehaviour
     /// Create a trained worker and add to the system.
     /// 
     /// FIX: Added 'countAsNewHire' parameter (default true).
-    /// 
-    /// WHAT WAS WRONG: When WorkerTrainingSystem completed training, it called
-    /// RemoveWorker() on the old untrained worker then CreateTrainedWorker() to
-    /// make the upgraded version. CreateTrainedWorker() always called 
-    /// IncrementNewWorkersHired(), so each training completion counted as a
-    /// "new hire". This caused the daily report to show inflated hired counts
-    /// (e.g., 6 actual hires + 2 training completions = "8 hired").
-    /// 
-    /// WHY THIS FIXES IT: WorkerTrainingSystem now passes countAsNewHire:false
-    /// when creating trained workers from training completion. Only genuinely
-    /// new workers (from WorkerRequestSystem or manual creation) count as hires.
+    /// WorkerTrainingSystem passes false for training upgrades.
+    /// WorkerRequestSystem uses default true for genuine new hires.
     /// </summary>
     public Worker CreateTrainedWorker(TrainedWorkerStatus initialStatus = TrainedWorkerStatus.Free, bool countAsNewHire = true)
     {
@@ -108,9 +123,6 @@ public class WorkerSystem : MonoBehaviour
         allWorkers.Add(worker);
         OnWorkerStatsChanged?.Invoke();
         
-        // Track as new hire only if:
-        // 1. Not during initial pool setup
-        // 2. Caller explicitly says this is a new hire (not a training upgrade)
         if (!isInitializing && countAsNewHire)
             IncrementNewWorkersHired();
         
@@ -132,7 +144,6 @@ public class WorkerSystem : MonoBehaviour
         allWorkers.Add(worker);
         OnWorkerStatsChanged?.Invoke();
         
-        // Track as new hire only if not during initial setup and caller says so
         if (!isInitializing && countAsNewHire)
             IncrementNewWorkersHired();
         
@@ -155,36 +166,29 @@ public class WorkerSystem : MonoBehaviour
         List<Worker> selectedWorkers = new List<Worker>();
         int totalWorkforce = 0;
         
-        // Greedy selection: prioritize trained workers first
         var trainedWorkers = availableWorkers.Where(w => w.Type == WorkerType.Trained).ToList();
         var untrainedWorkers = availableWorkers.Where(w => w.Type == WorkerType.Untrained).ToList();
         
-        // First, use trained workers
         foreach (Worker worker in trainedWorkers)
         {
             if (totalWorkforce >= requiredWorkforce) break;
-            
             selectedWorkers.Add(worker);
             totalWorkforce += worker.WorkforceValue;
         }
         
-        // Then, use untrained workers if needed
         foreach (Worker worker in untrainedWorkers)
         {
             if (totalWorkforce >= requiredWorkforce) break;
-            
             selectedWorkers.Add(worker);
             totalWorkforce += worker.WorkforceValue;
         }
         
-        // Check if we have enough workforce
         if (totalWorkforce < requiredWorkforce)
         {
             Debug.LogWarning($"Not enough available workforce for building {buildingId}. Required: {requiredWorkforce}, Available: {totalWorkforce}");
             return false;
         }
         
-        // Assign selected workers
         foreach (Worker worker in selectedWorkers)
         {
             worker.TryAssignToBuilding(buildingId);
@@ -207,30 +211,11 @@ public class WorkerSystem : MonoBehaviour
     }
     
     // Worker retrieval methods
-    public List<Worker> GetAllWorkers()
-    {
-        return new List<Worker>(allWorkers);
-    }
-    
-    public List<Worker> GetAvailableWorkers()
-    {
-        return allWorkers.Where(w => w.IsAvailable).ToList();
-    }
-    
-    public List<Worker> GetWorkingWorkers()
-    {
-        return allWorkers.Where(w => w.IsWorking).ToList();
-    }
-    
-    public List<Worker> GetWorkersByType(WorkerType type)
-    {
-        return allWorkers.Where(w => w.Type == type).ToList();
-    }
-    
-    public List<Worker> GetWorkersByBuildingId(int buildingId)
-    {
-        return allWorkers.Where(w => w.AssignedBuildingId == buildingId).ToList();
-    }
+    public List<Worker> GetAllWorkers() { return new List<Worker>(allWorkers); }
+    public List<Worker> GetAvailableWorkers() { return allWorkers.Where(w => w.IsAvailable).ToList(); }
+    public List<Worker> GetWorkingWorkers() { return allWorkers.Where(w => w.IsWorking).ToList(); }
+    public List<Worker> GetWorkersByType(WorkerType type) { return allWorkers.Where(w => w.Type == type).ToList(); }
+    public List<Worker> GetWorkersByBuildingId(int buildingId) { return allWorkers.Where(w => w.AssignedBuildingId == buildingId).ToList(); }
     
     // Statistics methods
     public WorkerStatistics GetWorkerStatistics()
@@ -243,33 +228,19 @@ public class WorkerSystem : MonoBehaviour
             {
                 switch (worker.GetCurrentStatus())
                 {
-                    case "Working":
-                        stats.trainedWorking++;
-                        break;
-                    case "Free":
-                        stats.trainedFree++;
-                        break;
-                    case "NotArrived":
-                        stats.trainedNotArrived++;
-                        break;
+                    case "Working": stats.trainedWorking++; break;
+                    case "Free": stats.trainedFree++; break;
+                    case "NotArrived": stats.trainedNotArrived++; break;
                 }
             }
-            else // Untrained
+            else
             {
                 switch (worker.GetCurrentStatus())
                 {
-                    case "Working":
-                        stats.untrainedWorking++;
-                        break;
-                    case "Free":
-                        stats.untrainedFree++;
-                        break;
-                    case "NotArrived":
-                        stats.untrainedNotArrived++;
-                        break;
-                    case "Training":
-                        stats.untrainedTraining++;
-                        break;
+                    case "Working": stats.untrainedWorking++; break;
+                    case "Free": stats.untrainedFree++; break;
+                    case "NotArrived": stats.untrainedNotArrived++; break;
+                    case "Training": stats.untrainedTraining++; break;
                 }
             }
         }
@@ -277,47 +248,20 @@ public class WorkerSystem : MonoBehaviour
         return stats;
     }
     
-    public int GetTotalAvailableWorkforce()
-    {
-        return GetAvailableWorkers().Sum(w => w.WorkforceValue);
-    }
-    
-    public int GetTotalWorkforce()
-    {
-        return allWorkers.Sum(w => w.WorkforceValue);
-    }
-    
-    public int GetTrainedWorkersCount()
-    {
-        return GetWorkersByType(WorkerType.Trained).Count;
-    }
-
-    public int GetUntrainedWorkersCount()
-    {
-        return GetWorkersByType(WorkerType.Untrained).Count;
-    }
-
-    public int GetAvailableUntrainedWorkers()
-    {
-        return GetWorkersByType(WorkerType.Untrained).Count(w => w.IsAvailable);
-    }
-
-    public int GetAvailableTrainedWorkers()
-    {
-        return GetWorkersByType(WorkerType.Trained).Count(w => w.IsAvailable);
-    }
+    public int GetTotalAvailableWorkforce() { return GetAvailableWorkers().Sum(w => w.WorkforceValue); }
+    public int GetTotalWorkforce() { return allWorkers.Sum(w => w.WorkforceValue); }
+    public int GetTrainedWorkersCount() { return GetWorkersByType(WorkerType.Trained).Count; }
+    public int GetUntrainedWorkersCount() { return GetWorkersByType(WorkerType.Untrained).Count; }
+    public int GetAvailableUntrainedWorkers() { return GetWorkersByType(WorkerType.Untrained).Count(w => w.IsAvailable); }
+    public int GetAvailableTrainedWorkers() { return GetWorkersByType(WorkerType.Trained).Count(w => w.IsAvailable); }
 
     public float GetIdleWorkerPercentage()
     {
         int totalWorkers = allWorkers.Count;
         int idleWorkers = allWorkers.Count(w => w.IsAvailable);
-
         return totalWorkers > 0 ? (float)idleWorkers / totalWorkers * 100 : 0;
     }
 
-    /// <summary>
-    /// Return workers from a building back to the available pool
-    /// </summary>
     public void ReturnWorkersFromBuilding(int buildingId, int workforceAmount=4)
     {
         List<Worker> buildingWorkers = GetWorkersByBuildingId(buildingId);
@@ -344,72 +288,63 @@ public class WorkerSystem : MonoBehaviour
         GameLogPanel.Instance.LogWorkerAction($"Returned {workersReleased} workers (workforce: {workforceReturned}) from building {buildingId}");
     }
 
-    // Debug and testing methods
     public void PrintWorkerStatistics()
     {
         WorkerStatistics stats = GetWorkerStatistics();
-
         Debug.Log("=== WORKER STATISTICS ===");
         Debug.Log($"Trained Workers - Working: {stats.trainedWorking}, Free: {stats.trainedFree}, Not Arrived: {stats.trainedNotArrived}");
         Debug.Log($"Untrained Workers - Working: {stats.untrainedWorking}, Free: {stats.untrainedFree}, Training: {stats.untrainedTraining}");
         Debug.Log($"Total Workers: {allWorkers.Count}, Available Workforce: {GetTotalAvailableWorkforce()}, Total Workforce: {GetTotalWorkforce()}");
     }
 
-    /// <summary>
-    /// Remove a worker from the system (for training conversion)
-    /// </summary>
     public void RemoveWorker(Worker worker)
     {
         if (allWorkers.Contains(worker))
         {
-            // Unsubscribe from events
             worker.OnStatusChanged -= OnWorkerStatusChanged;
-
-            // Remove from list
             allWorkers.Remove(worker);
-
             OnWorkerStatsChanged?.Invoke();
         }
     }
+    
     public void IncrementNewWorkersHired()
     {
         newWorkersHiredToday++;
+        Debug.Log($"[WorkerSystem] newWorkersHiredToday incremented to {newWorkersHiredToday}");
     }
+    
     public int GetNewWorkersHiredToday()
     {
         return newWorkersHiredToday;
     }
+    
     public int GetNewWorkersHiredOnDay(int Day)
     {
         if (newWorkersHiredEachDay.ContainsKey(Day))
             return newWorkersHiredEachDay[Day];
         return 0;
     }
-    public void ResetDailyHiredWorkersCount(int newDay)
+    
+    /// <summary>
+    /// FIX: Explicit save-and-reset, called by DailyReportData.PrepareForNewDay().
+    /// Replaces the old OnDayChanged-based ResetDailyHiredWorkersCount.
+    /// Guaranteed to run AFTER report reads the data, BEFORE new day starts.
+    /// </summary>
+    public void SaveAndResetDailyHiredCount(int completedDay)
     {
-        Debug.Log($"Day changed to {newDay}, resetting worker count. Previous day hired: {newWorkersHiredToday}");
-        newWorkersHiredEachDay[newDay-1] = newWorkersHiredToday;
+        Debug.Log($"[WorkerSystem] Saving hired count for Day {completedDay}: {newWorkersHiredToday}. Resetting to 0.");
+        newWorkersHiredEachDay[completedDay] = newWorkersHiredToday;
         newWorkersHiredToday = 0;
     }
     
-    // Test methods for demonstration
     [ContextMenu("Add Trained Worker")]
-    public void AddTrainedWorkerForTesting()
-    {
-        CreateTrainedWorker();
-    }
+    public void AddTrainedWorkerForTesting() { CreateTrainedWorker(); }
     
     [ContextMenu("Add Untrained Worker")]
-    public void AddUntrainedWorkerForTesting()
-    {
-        CreateUntrainedWorker();
-    }
+    public void AddUntrainedWorkerForTesting() { CreateUntrainedWorker(); }
     
     [ContextMenu("Print Worker Stats")]
-    public void PrintStatsForTesting()
-    {
-        PrintWorkerStatistics();
-    }
+    public void PrintStatsForTesting() { PrintWorkerStatistics(); }
 }
 
 [System.Serializable]
@@ -426,24 +361,8 @@ public class WorkerStatistics
     public int untrainedTraining = 0;
     public int untrainedNotArrived = 0;
     
-    public int GetTotalTrained()
-    {
-        return trainedWorking + trainedFree + trainedNotArrived;
-    }
-    
-    public int GetTotalUntrained()
-    {
-        return untrainedWorking + untrainedFree + untrainedTraining;
-    }
-    
-    public int GetTotalWorkers()
-    {
-        return GetTotalTrained() + GetTotalUntrained();
-    }
-
-    public int GetAvailableWorkforce()
-    {
-        return (trainedFree * 2) + untrainedFree; // Trained = 2 workforce, Untrained = 1
-    }
-
+    public int GetTotalTrained() { return trainedWorking + trainedFree + trainedNotArrived; }
+    public int GetTotalUntrained() { return untrainedWorking + untrainedFree + untrainedTraining; }
+    public int GetTotalWorkers() { return GetTotalTrained() + GetTotalUntrained(); }
+    public int GetAvailableWorkforce() { return (trainedFree * 2) + untrainedFree; }
 }
