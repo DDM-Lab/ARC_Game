@@ -467,8 +467,7 @@ public class DailyReportData : MonoBehaviour
         if (task == null) return false;
         if (task.taskTag == TaskTag.Food) return true;
         if (task.taskTag != TaskTag.None) return false;
-        string taskText = (task.taskTitle + " " + task.description).ToLower();
-        return taskText.Contains("food");
+        return false;
     }
     
     bool IsTaskLodging(GameTask task)
@@ -476,8 +475,7 @@ public class DailyReportData : MonoBehaviour
         if (task == null) return false;
         if (task.taskTag == TaskTag.Lodging) return true;
         if (task.taskTag != TaskTag.None) return false;
-        string taskText = (task.taskTitle + " " + task.description).ToLower();
-        return taskText.Contains("relocation") || taskText.Contains("shelter") || taskText.Contains("housing");
+        return false;
     }
     
     // =========================================================================
