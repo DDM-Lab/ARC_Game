@@ -17,7 +17,7 @@ using UnityEngine;
 /// SATISFACTION SCORE FORMULA:
 ///   Food Satisfaction:
 ///     foodCompletionBonus    = completedFoodTasks * 2.0
-///     foodOnTimeBonus        = (completedFoodTasks - expiredFoodDemandTasks) * 1.5
+///     foodOnTimeBonus        = (totalFoodTasks - expiredFoodDemandTasks) * 1.5f
 ///     foodDelayScore         = -expiredFoodDemandTasks * 5.0
 ///
 ///   Lodging Satisfaction:
@@ -26,14 +26,15 @@ using UnityEngine;
 ///
 ///   Worker Training Satisfaction:
 ///     workerTrainingBonus    = workersReceivingTraining * 3.0
-///
+///     workerUtilizationScore = ((100 - idleWorkerRate) - 50) * 0.1; (CalculateWorkerUtilizationScore P.S.idleWorkerRate = [1,100])
+/// 
 ///   Total Satisfaction Change = Food + Lodging + Worker Training
 ///   Final Satisfaction = Clamp(previous + change, 0, 100)
 ///
 /// EFFICIENCY SCORE FORMULA:
-///   Kitchen Efficiency  = -expiredFoodPacks * 2.0
-///   Shelter Efficiency  = -vacantShelterSlots * 0.5
-///   Worker Efficiency   = -idleWorkers * 1.5
+///   Kitchen Efficiency  = 5.0 - foodInStorage * 0.5 clamped to [-5, 5]
+///   Shelter Efficiency  = (shelterOccupancyRate - 50) * 0.1
+///   Worker Efficiency   = (100 - idleWorkerRate - 50) * 0.1
 ///   Budget Efficiency   = (70 - budgetUsageRate) * 0.2
 ///
 ///   Total Efficiency Change = sum of all four
