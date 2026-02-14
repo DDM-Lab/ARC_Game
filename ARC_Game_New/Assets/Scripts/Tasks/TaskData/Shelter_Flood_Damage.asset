@@ -19,6 +19,7 @@ MonoBehaviour:
     the residents immediately.
   taskImage: {fileID: 21300000, guid: 09373f204d0d14b488fa491635b79346, type: 3}
   taskOfficer: 2
+  taskTag: 2
   roundTriggers: []
   dayTriggers:
   - conditionType: 3

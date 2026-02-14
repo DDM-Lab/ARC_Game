@@ -77,6 +77,18 @@ public enum NumericalInputType
     FoodPacks        // Food resource count
 }
 
+/// <summary>
+/// Manual classification tag for tasks. Set in TaskData ScriptableObject.
+/// Used by DailyReportData to categorize tasks instead of unreliable keyword matching.
+/// </summary>
+public enum TaskTag
+{
+    None,           // Default - not classified
+    Food,           // Food delivery, food shortage, meal distribution
+    Lodging,        // Relocation, shelter assignment, housing
+    BackToHome,     // Return home tasks
+}
+
 [System.Serializable]
 public class TaskImpact
 {
@@ -109,6 +121,9 @@ public class GameTask
     public TaskOfficer taskOfficer = TaskOfficer.DisasterOfficer;
     [Header("Task Classification")]
     public bool isGlobalTask = false;
+    
+    [Tooltip("Classification tag for daily report. Set via TaskData or programmatically.")]
+    public TaskTag taskTag = TaskTag.None;
     
     [Header("Timing")]
     public int roundsRemaining = 3; // Rounds until expiry
@@ -350,6 +365,13 @@ public class TaskSystem : MonoBehaviour
     public static TaskSystem Instance { get; private set; }
 
     private HashSet<string> shownAlertIds = new HashSet<string>();
+    
+    /// <summary>
+    /// Maps delivery task IDs → parent GameTask IDs.
+    /// Populated by LinkDeliveriesToTask / CreateAndLinkDelivery.
+    /// Used by OnDeliveryTaskCompleted to find the parent task when delivery finishes.
+    /// </summary>
+    private Dictionary<int, int> deliveryToTaskMap = new Dictionary<int, int>();
 
     void Awake()
     {
@@ -537,13 +559,38 @@ public class TaskSystem : MonoBehaviour
 
     void OnDeliveryTaskCompleted(DeliveryTask deliveryTask)
     {
-        // find any active tasks that are linked to this delivery task
-        GameTask gameTask = activeTasks.FirstOrDefault(t =>
-            t.linkedDeliveryTaskIds != null && t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
+        // =====================================================================
+        // PRIMARY: Look up parent task via deliveryToTaskMap (populated by LinkDeliveriesToTask)
+        // FALLBACK: Search linkedDeliveryTaskIds on each active task (legacy path)
+        // =====================================================================
+        
+        GameTask gameTask = null;
+        
+        // Primary: use the map
+        if (deliveryToTaskMap.TryGetValue(deliveryTask.taskId, out int parentTaskId))
+        {
+            gameTask = activeTasks.FirstOrDefault(t => t.taskId == parentTaskId);
+            
+            if (gameTask == null)
+            {
+                // Task may have already been completed/expired
+                if (showDebugInfo)
+                    Debug.Log($"Delivery {deliveryTask.taskId} completed but parent task {parentTaskId} is no longer active");
+                deliveryToTaskMap.Remove(deliveryTask.taskId);
+                return;
+            }
+        }
+        
+        // Fallback: search linkedDeliveryTaskIds (in case linking was done directly)
+        if (gameTask == null)
+        {
+            gameTask = activeTasks.FirstOrDefault(t =>
+                t.linkedDeliveryTaskIds != null && t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
+        }
 
         if (gameTask != null && gameTask.status == TaskStatus.InProgress)
         {
-            // check if all deliveries are completed
+            // Check if ALL deliveries for this task are completed
             DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
             List<DeliveryTask> completedTasks = deliverySystem.GetCompletedTasks();
 
@@ -554,11 +601,21 @@ public class TaskSystem : MonoBehaviour
             {
                 if (showDebugInfo)
                     Debug.Log($"All deliveries completed for task: {gameTask.taskTitle}");
-                //ToastManager.ShowToast($"All deliveries completed for task: {gameTask.taskTitle}, ", ToastType.Success, true);
                 GameLogPanel.Instance.LogTaskEvent($"All deliveries completed for task: {gameTask.taskTitle}");
 
                 CompleteTask(gameTask);
+                
+                // Clean up map entries for this task
+                foreach (int dId in gameTask.linkedDeliveryTaskIds)
+                {
+                    deliveryToTaskMap.Remove(dId);
+                }
             }
+        }
+        else if (gameTask == null && showDebugInfo)
+        {
+            Debug.LogWarning($"Delivery {deliveryTask.taskId} completed but no parent task found. " +
+                "Was LinkDeliveriesToTask() called when creating this delivery?");
         }
     }
 
@@ -1030,6 +1087,63 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
+    // =========================================================================
+    // DELIVERY ↔ TASK LINKING
+    // Call these methods when creating deliveries from player choices.
+    // Without linking, OnDeliveryTaskCompleted cannot find the parent task.
+    // =========================================================================
+    
+    /// <summary>
+    /// Link delivery tasks to their parent GameTask.
+    /// Call this AFTER creating deliveries via DeliverySystem.CreateDeliveryTask().
+    /// Both linkedDeliveryTaskIds and the internal map are populated.
+    /// </summary>
+    public void LinkDeliveriesToTask(GameTask parentTask, List<DeliveryTask> deliveries)
+    {
+        if (parentTask == null || deliveries == null) return;
+        
+        foreach (var delivery in deliveries)
+        {
+            parentTask.linkedDeliveryTaskIds.Add(delivery.taskId);
+            deliveryToTaskMap[delivery.taskId] = parentTask.taskId;
+            
+            if (showDebugInfo)
+                Debug.Log($"Linked delivery {delivery.taskId} → task '{parentTask.taskTitle}' (taskId={parentTask.taskId})");
+        }
+    }
+    
+    /// <summary>
+    /// Link a single delivery task to its parent GameTask.
+    /// </summary>
+    public void LinkDeliveryToTask(GameTask parentTask, DeliveryTask delivery)
+    {
+        if (parentTask == null || delivery == null) return;
+        
+        parentTask.linkedDeliveryTaskIds.Add(delivery.taskId);
+        deliveryToTaskMap[delivery.taskId] = parentTask.taskId;
+        
+        if (showDebugInfo)
+            Debug.Log($"Linked delivery {delivery.taskId} → task '{parentTask.taskTitle}' (taskId={parentTask.taskId})");
+    }
+    
+    /// <summary>
+    /// Convenience: Create deliveries via DeliverySystem AND link them to the parent task in one call.
+    /// Returns the created delivery tasks (empty list if creation failed).
+    /// </summary>
+    public List<DeliveryTask> CreateAndLinkDelivery(GameTask parentTask, MonoBehaviour source, MonoBehaviour destination, ResourceType cargoType, int quantity, int priority = 1)
+    {
+        DeliverySystem ds = FindObjectOfType<DeliverySystem>();
+        if (ds == null)
+        {
+            Debug.LogError("CreateAndLinkDelivery: DeliverySystem not found!");
+            return new List<DeliveryTask>();
+        }
+        
+        List<DeliveryTask> deliveries = ds.CreateDeliveryTask(source, destination, cargoType, quantity, priority);
+        LinkDeliveriesToTask(parentTask, deliveries);
+        return deliveries;
+    }
+
     public void ExpireTask(GameTask task)
     {
         if (activeTasks.Contains(task))
@@ -1199,6 +1313,7 @@ public class TaskSystem : MonoBehaviour
         newTask.taskImage = taskData.taskImage;
         newTask.taskOfficer = taskData.taskOfficer;
         newTask.isGlobalTask = taskData.isGlobalTask;
+        newTask.taskTag = taskData.taskTag;
 
         // Copy time settings
         newTask.roundsRemaining = taskData.roundsRemaining;

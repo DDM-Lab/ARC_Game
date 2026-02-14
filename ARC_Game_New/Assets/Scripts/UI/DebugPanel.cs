@@ -15,8 +15,10 @@ public class DebugPanel : MonoBehaviour
     [SerializeField] private TMP_Dropdown taskIdDropdown;
     [SerializeField] private Button spawnTaskButton;
 
+    [Header("Log Sending")]
+    [SerializeField] private Button sendLogsButton;
+    [SerializeField] private TextMeshProUGUI sendStatusText;
 
-    // Singleton
     public static DebugPanel Instance { get; private set; }
 
     private bool isPanelVisible = false;
@@ -39,12 +41,10 @@ public class DebugPanel : MonoBehaviour
     {
         InitializeDebugPanel();
         SetPanelVisibility(startVisible);
-
     }
 
     void Update()
     {
-        // Toggle debug panel with toggle key
         if (Input.GetKeyDown(toggleKey))
         {
             SetPanelVisibility(!isPanelVisible);
@@ -54,11 +54,60 @@ public class DebugPanel : MonoBehaviour
 
     private void InitializeDebugPanel()
     {
-
         if (taskIdDropdown != null && spawnTaskButton != null)
         {
             UpdateTaskDropdown();
             spawnTaskButton.onClick.AddListener(SpawnSelectedTask);
+        }
+
+        if (sendLogsButton != null)
+        {
+            sendLogsButton.onClick.AddListener(OnSendLogsClicked);
+        }
+
+        if (sendStatusText != null)
+        {
+            sendStatusText.text = "";
+        }
+
+        LogSender.OnSendComplete += OnLogSendComplete;
+    }
+
+    private void OnDestroy()
+    {
+        LogSender.OnSendComplete -= OnLogSendComplete;
+    }
+
+    void OnSendLogsClicked()
+    {
+        if (LogSender.Instance == null)
+        {
+            Debug.LogError("LogSender not found in scene.");
+            if (sendStatusText != null)
+                sendStatusText.text = "Error: LogSender not in scene";
+            return;
+        }
+
+        if (sendStatusText != null)
+            sendStatusText.text = "Sending logs...";
+
+        if (sendLogsButton != null)
+            sendLogsButton.interactable = false;
+
+        LogSender.Instance.SendAllLogs();
+    }
+
+    void OnLogSendComplete(LogSender.SendStatus status, string message)
+    {
+        if (sendLogsButton != null)
+            sendLogsButton.interactable = true;
+
+        if (sendStatusText != null)
+        {
+            if (status == LogSender.SendStatus.Success)
+                sendStatusText.text = "Logs sent!";
+            else
+                sendStatusText.text = $"Failed: {message}";
         }
     }
 
@@ -82,7 +131,7 @@ public class DebugPanel : MonoBehaviour
     {
         TaskSystem taskSystem = FindObjectOfType<TaskSystem>();
         if (taskSystem?.taskDatabase == null) return;
-        
+
         List<string> taskIds = taskSystem.taskDatabase.GetAllTaskIds();
         taskIdDropdown.ClearOptions();
         taskIdDropdown.AddOptions(taskIds);
@@ -95,7 +144,7 @@ public class DebugPanel : MonoBehaviour
 
         string selectedTaskId = taskIdDropdown.options[taskIdDropdown.value].text;
         TaskData taskData = taskSystem.taskDatabase.GetTaskById(selectedTaskId);
-        
+
         Debug.Log($"Spawning Task: {selectedTaskId} through Debug Panel.");
     }
 
@@ -103,5 +152,4 @@ public class DebugPanel : MonoBehaviour
     {
         return isPanelVisible;
     }
-
 }

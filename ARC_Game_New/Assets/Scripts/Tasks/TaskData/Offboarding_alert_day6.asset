@@ -46,9 +46,9 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts: []
   agentMessages:
-  - messageText: "Just a reminder\u2014today is Day 6. You may want to consider closing
-      unnecessary buildings to improve resource allocation efficiency. The simulation
-      will conclude after Day 8."
+  - messageText: "Just a reminder\u2014You may want to consider closing unnecessary
+      buildings to improve resource allocation efficiency. The simulation will conclude
+      after Day 8."
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05

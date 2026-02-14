@@ -13,8 +13,8 @@ MonoBehaviour:
   m_Name: Offboarding_alert_day7
   m_EditorClassIdentifier: 
   taskId: Offboarding_alert_day7
-  taskTitle: 
-  taskType: 0
+  taskTitle: Alert - Game Will End on Day 8
+  taskType: 3
   description: 
   taskImage: {fileID: 0}
   taskOfficer: 0
@@ -46,9 +46,9 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts: []
   agentMessages:
-  - messageText: 'Reminder: today is Day 7. The game will conclude on Day 8. You
-      may consider finishing any remaining tasks and wrapping up operations by closing
-      unnecessary facilities. Great job so far.'
+  - messageText: 'Reminder: The game will conclude on Day 8. You may consider finishing
+      any remaining tasks and wrapping up operations by closing unnecessary facilities.
+      Great job so far.'
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05

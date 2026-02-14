@@ -19,38 +19,35 @@ public enum LogMessageType
 public enum LogCategory
 {
     All,
-    Buildings,    // Facility status, construction, damage, operational changes
-    Resources,    // Food production/consumption, resource transfers, storage changes
-    Workers,      // Assignment, training, workforce changes
-    Tasks,        // Generation, completion, expiration, task-related deliveries
-    Environment,  // Weather, floods, external conditions
-    Vehicles,     // Delivery status, damage, route changes
-    Metrics,      // Satisfaction, budget, performance indicators
-    Player        // Direct player interactions (clicks, UI actions, decisions)
+    Buildings,
+    Resources,
+    Workers,
+    Tasks,
+    Environment,
+    Vehicles,
+    Metrics,
+    Player
 }
 
 [System.Serializable]
 public class LogMessage
 {
-    public string id;
     public string content;
-    public LogMessageType messageType;
-    public LogCategory category;
+    public string messageType;
+    public string category;
     public int day;
     public int round;
     public float timestamp;
-    public DateTime realTime;
-    
+    public string realTime;
+
     public LogMessage(string content, LogMessageType type, LogCategory category)
     {
-        this.id = System.Guid.NewGuid().ToString();
         this.content = content;
-        this.messageType = type;
-        this.category = category;
+        this.messageType = type.ToString();
+        this.category = category.ToString();
         this.timestamp = Time.time;
-        this.realTime = DateTime.Now;
-        
-        // Get current game time
+        this.realTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
         if (GlobalClock.Instance != null)
         {
             this.day = GlobalClock.Instance.GetCurrentDay();
@@ -67,17 +64,21 @@ public class LogMessage
 [System.Serializable]
 public class LogExportData
 {
-    public List<LogMessage> messages;
+    public string sessionId;
+    public string playerName;
+    public string gameVersion;
     public string exportTime;
     public int totalMessages;
-    public string gameVersion;
-    
+    public List<LogMessage> messages;
+
     public LogExportData(List<LogMessage> messages)
     {
-        this.messages = messages;
+        this.sessionId = PlayerSession.SessionId;
+        this.playerName = PlayerSession.PlayerName;
+        this.gameVersion = Application.version;
         this.exportTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         this.totalMessages = messages.Count;
-        this.gameVersion = Application.version;
+        this.messages = messages;
     }
 }
 
@@ -107,17 +108,14 @@ public class GameLogPanel : MonoBehaviour
     [SerializeField] private Button exportCurrentButton;
     [SerializeField] private Button exportAllButton;
 
-    // Message storage
     private List<LogMessage> allMessages = new List<LogMessage>();
     private Queue<string> displayQueue = new Queue<string>();
     private bool isDisplayingMessage = false;
 
-    // Filtering
     private LogMessageType currentTypeFilter = LogMessageType.Normal;
     private LogCategory currentCategoryFilter = LogCategory.All;
-    private int currentTimePeriodFilter = 0; // 0=Current, 1=Today, 2=All
+    private int currentTimePeriodFilter = 0;
 
-    // Singleton
     public static GameLogPanel Instance { get; private set; }
     public static bool IsDisplayingText { get; private set; } = false;
 
@@ -138,8 +136,6 @@ public class GameLogPanel : MonoBehaviour
         InitializeUI();
         SetupDropdowns();
         RefreshDisplay();
-
-        // Add welcome message
         LogPlayerAction("Game started");
     }
 
@@ -148,7 +144,6 @@ public class GameLogPanel : MonoBehaviour
         if (logText == null)
             Debug.LogError("GameLogPanel: logText reference missing!");
 
-        // Setup export buttons
         if (exportCurrentButton != null)
             exportCurrentButton.onClick.AddListener(() => ExportMessages(false));
 
@@ -158,7 +153,6 @@ public class GameLogPanel : MonoBehaviour
 
     void SetupDropdowns()
     {
-        // Message Type Dropdown
         if (messageTypeDropdown != null)
         {
             messageTypeDropdown.ClearOptions();
@@ -166,7 +160,6 @@ public class GameLogPanel : MonoBehaviour
             messageTypeDropdown.onValueChanged.AddListener(OnMessageTypeFilterChanged);
         }
 
-        // Category Dropdown
         if (categoryDropdown != null)
         {
             categoryDropdown.ClearOptions();
@@ -175,7 +168,6 @@ public class GameLogPanel : MonoBehaviour
             categoryDropdown.onValueChanged.AddListener(OnCategoryFilterChanged);
         }
 
-        // Time Period Dropdown
         if (timePeriodDropdown != null)
         {
             timePeriodDropdown.ClearOptions();
@@ -186,48 +178,27 @@ public class GameLogPanel : MonoBehaviour
 
     #region Public Logging Methods
 
-    // Buildings category
     public void LogBuildingStatus(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Buildings);
-
-    // Resources category
     public void LogResourceChange(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Resources);
-
-    // Workers category
     public void LogWorkerAction(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Workers);
-
-    // Tasks category
     public void LogTaskEvent(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Tasks);
-
-    // Environment category
     public void LogEnvironmentChange(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Environment);
-
-    // Vehicles category
     public void LogVehicleEvent(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Vehicles);
-
-    // Metrics category
     public void LogMetricsChange(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Metrics);
-
-    // Player category
     public void LogPlayerAction(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Player);
-
-    // Debug messages
     public void LogDebug(string message) => AddLogMessage(message, LogMessageType.Debug, LogCategory.Player);
-
-    // Error messages
     public void LogError(string message) => AddLogMessage(message, LogMessageType.Error, LogCategory.Player);
 
     #endregion
 
     void AddLogMessage(string content, LogMessageType type, LogCategory category)
     {
-        // Skip debug messages if disabled
         if (type == LogMessageType.Debug && !enableDebugMessages)
             return;
 
         LogMessage message = new LogMessage(content, type, category);
         allMessages.Add(message);
 
-        // If message passes current filters, add to display queue
         if (PassesCurrentFilters(message))
         {
             string formattedMessage = FormatMessageForDisplay(message);
@@ -242,9 +213,8 @@ public class GameLogPanel : MonoBehaviour
 
     bool PassesCurrentFilters(LogMessage message)
     {
-        // Type filter
         int typeDropdownValue = messageTypeDropdown != null ? messageTypeDropdown.value : 0;
-        if (typeDropdownValue != 0) // Not "All"
+        if (typeDropdownValue != 0)
         {
             LogMessageType expectedType = LogMessageType.Normal;
             switch (typeDropdownValue)
@@ -254,14 +224,14 @@ public class GameLogPanel : MonoBehaviour
                 case 3: expectedType = LogMessageType.Error; break;
             }
 
-            if (message.messageType != expectedType) return false;
+            LogMessageType msgType = (LogMessageType)System.Enum.Parse(typeof(LogMessageType), message.messageType);
+            if (msgType != expectedType) return false;
         }
 
-        // Category filter
-        if (currentCategoryFilter != LogCategory.All && message.category != currentCategoryFilter)
+        LogCategory msgCategory = (LogCategory)System.Enum.Parse(typeof(LogCategory), message.category);
+        if (currentCategoryFilter != LogCategory.All && msgCategory != currentCategoryFilter)
             return false;
 
-        // Time period filter
         if (GlobalClock.Instance != null)
         {
             int currentDay = GlobalClock.Instance.GetCurrentDay();
@@ -269,13 +239,13 @@ public class GameLogPanel : MonoBehaviour
 
             switch (currentTimePeriodFilter)
             {
-                case 0: // Current Round
+                case 0:
                     if (message.day != currentDay || message.round != currentRound) return false;
                     break;
-                case 1: // Today
+                case 1:
                     if (message.day != currentDay) return false;
                     break;
-                case 2: // All Time
+                case 2:
                     break;
             }
         }
@@ -285,7 +255,8 @@ public class GameLogPanel : MonoBehaviour
 
     string FormatMessageForDisplay(LogMessage message)
     {
-        Color messageColor = GetMessageColor(message.messageType);
+        LogMessageType msgType = (LogMessageType)System.Enum.Parse(typeof(LogMessageType), message.messageType);
+        Color messageColor = GetMessageColor(msgType);
         string timeStamp = $"[Day {message.day}, Round {message.round}]";
         string categoryTag = $"[{message.category}]";
 
@@ -313,17 +284,14 @@ public class GameLogPanel : MonoBehaviour
             string message = displayQueue.Dequeue();
             logText.text += message + "\n";
 
-            // Limit displayed messages for performance
             string[] lines = logText.text.Split('\n');
             if (lines.Length > maxDisplayedMessages)
             {
                 logText.text = string.Join("\n", lines.Skip(lines.Length - maxDisplayedMessages));
             }
 
-            // Force TextMeshPro to recalculate
             logText.ForceMeshUpdate();
 
-            // Update content height to match text
             if (contentRect != null)
             {
                 contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
@@ -346,10 +314,9 @@ public class GameLogPanel : MonoBehaviour
 
     void OnMessageTypeFilterChanged(int value)
     {
-        // Update the current filter based on dropdown value
         switch (value)
         {
-            case 0: currentTypeFilter = LogMessageType.Normal; break; // "All" 
+            case 0: currentTypeFilter = LogMessageType.Normal; break;
             case 1: currentTypeFilter = LogMessageType.Normal; break;
             case 2: currentTypeFilter = LogMessageType.Debug; break;
             case 3: currentTypeFilter = LogMessageType.Error; break;
@@ -384,10 +351,8 @@ public class GameLogPanel : MonoBehaviour
             logText.text += formattedMessage + "\n";
         }
 
-        // Force TextMeshPro to update its mesh
         logText.ForceMeshUpdate();
 
-        // Update content rect height based on text's preferred height
         if (contentRect != null)
         {
             contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
@@ -412,7 +377,6 @@ public class GameLogPanel : MonoBehaviour
         }
         else
         {
-            // Export current round and day only
             if (GlobalClock.Instance != null)
             {
                 int currentDay = GlobalClock.Instance.GetCurrentDay();
@@ -430,7 +394,6 @@ public class GameLogPanel : MonoBehaviour
         LogExportData exportData = new LogExportData(messagesToExport);
         string json = JsonUtility.ToJson(exportData, true);
 
-        // TBA: For now, just log the JSON. Later you can save to file or send to API
         Debug.Log("=== LOG EXPORT ===");
         Debug.Log(json);
 
@@ -449,46 +412,48 @@ public class GameLogPanel : MonoBehaviour
         return JsonUtility.ToJson(exportData, true);
     }
 
+    public LogExportData GetExportData(bool exportAll = false)
+    {
+        List<LogMessage> messagesToExport = GetMessagesToExport(exportAll);
+        return new LogExportData(messagesToExport);
+    }
+
     public void ExportToCSV(bool exportAll = false)
     {
         List<LogMessage> messagesToExport = GetMessagesToExport(exportAll);
-        
-        string fileName = exportAll ? 
-            $"game_logs_all_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv" : 
+
+        string fileName = exportAll ?
+            $"game_logs_all_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv" :
             $"game_logs_current_{System.DateTime.Now:yyyyMMdd_HHmmss}.csv";
-        
+
         string filePath = Path.Combine(Application.persistentDataPath, fileName);
-        
+
         try
         {
             List<string> csvLines = new List<string>();
-            
-            // Add header
-            csvLines.Add("ID,Timestamp,RealTime,Day,Round,Category,MessageType,Content");
-            
-            // Process each message
+
+            csvLines.Add("Timestamp,RealTime,Day,Round,Category,MessageType,Content");
+
             foreach (LogMessage message in messagesToExport)
             {
                 string cleanContent = CleanContentForCSV(message.content);
-                
+
                 string csvLine = string.Join(",", new string[]
                 {
-                    QuoteAndEscape(message.id ?? ""),
                     message.timestamp.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
-                    QuoteAndEscape(message.realTime.ToString("yyyy-MM-dd HH:mm:ss")),
+                    QuoteAndEscape(message.realTime),
                     message.day.ToString(),
                     message.round.ToString(),
-                    message.category.ToString(),
-                    message.messageType.ToString(),
+                    message.category,
+                    message.messageType,
                     QuoteAndEscape(cleanContent)
                 });
-                
+
                 csvLines.Add(csvLine);
             }
-            
-            // Write all lines at once
+
             File.WriteAllLines(filePath, csvLines, System.Text.Encoding.UTF8);
-            
+
             Debug.Log($"CSV exported successfully to: {filePath}");
             LogPlayerAction($"Exported {messagesToExport.Count} messages to CSV: {fileName}");
         }
@@ -498,25 +463,23 @@ public class GameLogPanel : MonoBehaviour
             LogError($"CSV export failed: {e.Message}");
         }
     }
-    
+
     private string CleanContentForCSV(string content)
     {
         if (string.IsNullOrEmpty(content))
             return "";
-        
-        // Remove ALL problematic characters
-        content = content.Replace("\r\n", " ")    // Windows line breaks
-                        .Replace("\r", " ")        // Mac line breaks  
-                        .Replace("\n", " ")        // Unix line breaks
-                        .Replace("\t", " ")        // Tab characters (main culprit!)
-                        .Replace("\"", "\"\"");    // Escape quotes
-        
-        // Clean up multiple spaces
+
+        content = content.Replace("\r\n", " ")
+                        .Replace("\r", " ")
+                        .Replace("\n", " ")
+                        .Replace("\t", " ")
+                        .Replace("\"", "\"\"");
+
         while (content.Contains("  "))
         {
             content = content.Replace("  ", " ");
         }
-        
+
         return content.Trim();
     }
 
@@ -524,11 +487,10 @@ public class GameLogPanel : MonoBehaviour
     {
         if (string.IsNullOrEmpty(field))
             return "\"\"";
-        
-        // Always quote fields to prevent CSV parsing issues
+
         return "\"" + field.Replace("\"", "\"\"") + "\"";
     }
-    
+
     private List<LogMessage> GetMessagesToExport(bool exportAll)
     {
         if (exportAll)
@@ -547,32 +509,6 @@ public class GameLogPanel : MonoBehaviour
         return allMessages.ToList();
     }
 
-    private string EscapeCsvField(string field)
-    {
-        if (string.IsNullOrEmpty(field))
-            return "\"\"";
-        
-        // Remove ALL types of line breaks and extra whitespace
-        field = field.Replace("\r\n", " ")
-                    .Replace("\r", " ")
-                    .Replace("\n", " ")
-                    .Replace("\t", " ");
-        
-        // Collapse multiple spaces into single space
-        while (field.Contains("  "))
-        {
-            field = field.Replace("  ", " ");
-        }
-        
-        field = field.Trim();
-        
-        // Escape quotes by doubling them
-        field = field.Replace("\"", "\"\"");
-        
-        // Always wrap in quotes
-        return "\"" + field + "\"";
-    }
-
     #endregion
 
     public void ClearLog()
@@ -589,39 +525,22 @@ public class GameLogPanel : MonoBehaviour
     [ContextMenu("Test Log Message")]
     void TestLogMessage()
     {
-        // Buildings - facility status, construction, damage, operations
         LogBuildingStatus("Kitchen started food production");
         LogBuildingStatus("Shelter damaged by flood");
-
-        // Resources - production, consumption, transfers, storage
         LogResourceChange("Produced 10 food packs");
         LogResourceChange("Consumed 5 food packs");
-
-        // Workers - assignment, training, workforce changes  
         LogWorkerAction("Assigned 2 trained workers to Kitchen");
         LogWorkerAction("Worker training completed");
-
-        // Tasks - generation, completion, expiration, deliveries
         LogTaskEvent("Emergency food task completed");
         LogTaskEvent("Population transport task generated");
-
-        // Environment - weather, floods, external conditions
         LogEnvironmentChange("Weather changed to Rainy");
         LogEnvironmentChange("Flood expanded to 5 tiles");
-
-        // Vehicles - delivery status, damage, route changes
         LogVehicleEvent("Vehicle completed food delivery");
         LogVehicleEvent("Vehicle damaged by flood");
-
-        // Metrics - satisfaction, budget, performance indicators
         LogMetricsChange("Satisfaction increased by 10");
         LogMetricsChange("Budget decreased by $500");
-
-        // Player - direct interactions, clicks, UI actions, decisions
         LogPlayerAction("Player opened task center");
         LogPlayerAction("Player selected emergency response");
-
-        // Debug and Error
         LogDebug("Pathfinding calculation completed");
         LogError("Failed to create delivery task");
     }
@@ -632,7 +551,7 @@ public class GameLogPanel : MonoBehaviour
         ExportToCSV(false);
     }
 
-    [ContextMenu("Export All to CSV")]  
+    [ContextMenu("Export All to CSV")]
     void TestExportAllCSV()
     {
         ExportToCSV(true);
