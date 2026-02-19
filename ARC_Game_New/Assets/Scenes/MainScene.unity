@@ -108616,7 +108616,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fa55f279079712b4ebbb11bac03c0b7d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  displayDuration: 3
+  displayDuration: 5
   maxToastCount: 5
   toastPrefab: {fileID: 7749637785647014075, guid: a95146d9dae3d214e816e131176cd4f1, type: 3}
   toastParent: {fileID: 856978762}
