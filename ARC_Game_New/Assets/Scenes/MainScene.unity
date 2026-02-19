@@ -91915,9 +91915,9 @@ MonoBehaviour:
   efficiencyChangeText: {fileID: 0}
   efficiencyBar: {fileID: 1727721154}
   efficiencyAnimationSection: {fileID: 566426948}
-  elementAnimationDelay: 0.1
+  elementAnimationDelay: 0.05
   elementFadeInDuration: 0.05
-  numberCountDuration: 0.2
+  numberCountDuration: 0.1
   satisfactionAnimationDuration: 1
   barAnimationDuration: 1
   tasksCompletedText: {fileID: 107241139}
