@@ -54,9 +54,21 @@ public class ImpactItemUI : MonoBehaviour
             {
                 valueText.text = FormatCountdown(impact.value);
             }
+            else if (impact.impactType == ImpactType.Satisfaction || impact.impactType == ImpactType.Budget)
+            {
+                // only display a trend for satisfaction and budget
+                valueText.text = impact.value > 0 ? "Up" : "Down";
+                
+            }
+            else if (impact.impactType == ImpactType.TotalTime)
+            {
+                // only display a trend for satisfaction and budget
+                valueText.text = impact.value.ToString() + " Rounds";
+                
+            }
             else
             {
-                string prefix = impact.value > 0 ? "+" : "";
+                string prefix = impact.value > 0 ? "" : "";
                 valueText.text = prefix + impact.value.ToString();
             }
         }

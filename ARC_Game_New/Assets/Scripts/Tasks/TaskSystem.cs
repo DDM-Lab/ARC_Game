@@ -654,9 +654,9 @@ public class TaskSystem : MonoBehaviour
 
     void OnRoundChanged(int newSegment)
     {
-        Debug.Log($"OnRoundChanged called: segment {newSegment}, auto generation: {enableAutoTaskGeneration}");
+        Debug.Log($"OnRoundChanged called in Task System: segment {newSegment}, auto generation: {enableAutoTaskGeneration}. (We skip generation when newSegment == 3)");
         // Check for new tasks at the start of each round
-        if (enableAutoTaskGeneration)
+        if (enableAutoTaskGeneration && newSegment != 3)
         {
             Debug.Log("Attempting to generate tasks from database...");
             GenerateTasksFromDatabase();
@@ -1644,34 +1644,16 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
-    // Utility methods for impact display
-    public static string GetImpactIcon(ImpactType type)
-    {
-        switch (type)
-        {
-            case ImpactType.Satisfaction: return "😊";
-            case ImpactType.Budget: return "💰";
-            case ImpactType.FoodPacks: return "🍞";
-            case ImpactType.Clients: return "👥";
-            case ImpactType.Workforce: return "👷";
-            case ImpactType.TotalTime: return "⏰";
-            case ImpactType.TrainingTime: return "📚";
-            case ImpactType.TotalCosts: return "💸";
-            case ImpactType.TotalLodging: return "🏠";
-            default: return "❓";
-        }
-    }
-
     public static string GetImpactLabel(ImpactType type)
     {
         switch (type)
         {
             case ImpactType.Satisfaction: return "Satisfaction";
             case ImpactType.Budget: return "Budget";
-            case ImpactType.FoodPacks: return "Food Packs";
-            case ImpactType.Clients: return "Clients";
-            case ImpactType.Workforce: return "Workforce";
-            case ImpactType.TotalTime: return "Total Time";
+            case ImpactType.FoodPacks: return "Food Packs Amount";
+            case ImpactType.Clients: return "Clients Amount";
+            case ImpactType.Workforce: return "Workforce Required";
+            case ImpactType.TotalTime: return "Estimated Time";
             case ImpactType.TrainingTime: return "Training Time";
             case ImpactType.TotalCosts: return "Total Costs";
             case ImpactType.TotalLodging: return "Total Lodging";
