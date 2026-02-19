@@ -154,10 +154,10 @@ public class DailyReportData : MonoBehaviour
     
     void OnTaskCompleted(GameTask task)
     {
-        if (!processedTaskIds.Contains(task.taskId))
+        // No processedTaskIds check here — a task can be both created and completed same day
+        if (!todayCompletedTasks.Any(t => t.taskId == task.taskId))
         {
             todayCompletedTasks.Add(task);
-            processedTaskIds.Add(task.taskId);
             foreach (var impact in task.impacts)
             {
                 if (impact.impactType == ImpactType.Budget && impact.value < 0)
@@ -165,14 +165,11 @@ public class DailyReportData : MonoBehaviour
             }
         }
     }
-    
+
     void OnTaskExpired(GameTask task)
     {
-        if (!processedTaskIds.Contains(task.taskId))
-        {
+        if (!todayExpiredTasks.Any(t => t.taskId == task.taskId))
             todayExpiredTasks.Add(task);
-            processedTaskIds.Add(task.taskId);
-        }
     }
     
     void OnTaskCreated(GameTask task)

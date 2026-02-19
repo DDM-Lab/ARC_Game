@@ -1153,7 +1153,7 @@ public class TaskSystem : MonoBehaviour
             // Apply penalties for incomplete emergency/demand tasks
             if (task.status == TaskStatus.Incomplete)
             {
-                ApplyTaskPenalties(task);
+                //ApplyTaskPenalties(task);
             }
 
             OnTaskExpired?.Invoke(task);
@@ -1164,7 +1164,7 @@ public class TaskSystem : MonoBehaviour
             //ToastManager.ShowToast($"Expired task: {task.taskTitle} (Status: {task.status})", ToastType.Warning, true);
 
             // Show task result popup
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other) && (task.taskType != TaskType.Advisory))
             {
                 TaskResultManager.Instance.ShowTaskResult(task);
             }
@@ -1231,7 +1231,7 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            ApplyTaskPenalties(task);
+            //ApplyTaskPenalties(task);
             OnTaskCompleted?.Invoke(task);
 
             if (showDebugInfo)
