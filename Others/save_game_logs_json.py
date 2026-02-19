@@ -2,8 +2,6 @@
 
 import cgi
 import cgitb
-import csv
-import io
 import json
 import os
 import sys
@@ -52,45 +50,19 @@ def main():
 
         session_id = log_data.get("sessionId", "unknown")
         player_name = log_data.get("playerName", "unknown")
-        game_version = log_data.get("gameVersion", "unknown")
-        messages = log_data.get("messages", [])
+        total_messages = log_data.get("totalMessages", 0)
 
         safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in player_name)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        # Filename: PlayerName_SessionId_Timestamp_MessageCount.csv
-        filename = "{}_{}_{}_{}.csv".format(safe_name, session_id, timestamp, len(messages))
+        filename = "{}_{}_{}_{}.json".format(safe_name, session_id, timestamp, total_messages)
         filepath = os.path.join(LOG_DIR, filename)
 
         os.makedirs(LOG_DIR, exist_ok=True)
 
-        output = io.StringIO()
-        writer = csv.writer(output)
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(log_data, f, indent=2, ensure_ascii=False)
 
-        writer.writerow([
-            "SessionId", "PlayerName", "GameVersion",
-            "Timestamp", "RealTime", "Day", "Round",
-            "Category", "MessageType", "Content"
-        ])
-
-        for msg in messages:
-            writer.writerow([
-                session_id,
-                player_name,
-                game_version,
-                msg.get("timestamp", ""),
-                msg.get("realTime", ""),
-                msg.get("day", ""),
-                msg.get("round", ""),
-                msg.get("category", ""),
-                msg.get("messageType", ""),
-                msg.get("content", "")
-            ])
-
-        with open(filepath, "w", encoding="utf-8", newline="") as f:
-            f.write(output.getvalue())
-
-        send_response(200, "Saved {} messages to {}".format(len(messages), filename))
+        send_response(200, "Saved {} messages to {}".format(total_messages, filename))
 
     except json.JSONDecodeError as e:
         send_response(400, "Invalid JSON: {}".format(str(e)))
