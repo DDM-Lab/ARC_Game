@@ -570,60 +570,137 @@ public class TaskDetailUI : MonoBehaviour
     // The actual task completion logic
     private void CompleteTaskAction()
     {
-        // Apply choice impacts first
         if (selectedChoice != null)
         {
             ApplyChoiceImpacts(selectedChoice);
 
-            // Handle delivery execution with strict type checking
-            if (selectedChoice.enableMultipleDeliveries)
+            if (selectedChoice.triggersDelivery)
             {
-                Debug.Log("Executing multiple deliveries");
-                ExecuteMultipleDeliveries(selectedChoice);
-                TaskSystem.Instance.SetTaskInProgress(currentTask);
+                ExecuteGeneratorDelivery(selectedChoice, immediate: false);
             }
-            else if (selectedChoice.immediateDelivery && !selectedChoice.triggersDelivery) // STRICT: Only immediate, not both
+            else if (selectedChoice.immediateDelivery)
             {
-                Debug.Log("Executing immediate delivery");
-                ExecuteImmediateDelivery(selectedChoice);
-                TaskSystem.Instance.CompleteTask(currentTask);
-
-            }
-            else if (selectedChoice.triggersDelivery && !selectedChoice.immediateDelivery) // STRICT: Only normal, not both
-            {
-                Debug.Log("Executing normal delivery");
-                CreateChoiceDeliveryTask(selectedChoice);
-                TaskSystem.Instance.SetTaskInProgress(currentTask);
-            }
-            else if (selectedChoice.triggersDelivery && selectedChoice.immediateDelivery) // Both flags set
-            {
-                Debug.LogWarning("Choice has both triggersDelivery and immediateDelivery - using immediate delivery");
-                ExecuteImmediateDelivery(selectedChoice);
+                ExecuteGeneratorDelivery(selectedChoice, immediate: true);
                 TaskSystem.Instance.CompleteTask(currentTask);
             }
             else
             {
-                Debug.Log("No delivery - completing task immediately");
                 TaskSystem.Instance.CompleteTask(currentTask);
             }
-
         }
         else
         {
-            // No choice selected, complete task normally
             TaskSystem.Instance.CompleteTask(currentTask);
         }
 
         CloseTaskDetail();
 
-        // Refresh notification after task completion
         TaskCenterNotification notification = FindObjectOfType<TaskCenterNotification>();
-        if (notification != null)
-            notification.RefreshNotification();
+        if (notification != null) notification.RefreshNotification();
 
         CategoryTaskManager categoryManager = FindObjectOfType<CategoryTaskManager>();
-        if (categoryManager != null)
-            categoryManager.RefreshTaskList();
+        if (categoryManager != null) categoryManager.RefreshTaskList();
+    }
+
+    void ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)
+    {
+        switch (choice.deliveryCargoType)
+        {
+            case ResourceType.FoodPacks:
+                ExecuteFoodDelivery(choice, immediate);
+                break;
+
+            case ResourceType.Population:
+                ExecuteClientRelocation(choice, immediate);
+                break;
+
+            default:
+                // Fallback for any other cargo type: single source→destination delivery
+                ExecuteFallbackDelivery(choice, immediate);
+                break;
+        }
+    }
+
+    
+    // FOOD DELIVERY via FoodDeliveryHandler
+    void ExecuteFoodDelivery(AgentChoice choice, bool immediate)
+    {
+        if (FoodDeliveryHandler.Instance == null)
+        {
+            Debug.LogError("[TaskDetailUI] FoodDeliveryHandler not found in scene");
+            return;
+        }
+
+        if (immediate)
+        {
+            FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice.deliveryQuantity);
+        }
+        else
+        {
+            bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice.deliveryQuantity);
+            if (!success)
+                ShowAgentErrorMessage("Could not queue food delivery — check kitchen stock and vehicle availability.");
+        }
+    }
+
+    // CLIENT RELOCATION via ClientRelocationHandler
+    void ExecuteClientRelocation(AgentChoice choice, bool immediate)
+    {
+        if (ClientRelocationHandler.Instance == null)
+        {
+            Debug.LogError("[TaskDetailUI] ClientRelocationHandler not found in scene");
+            return;
+        }
+
+        // Derive target destination types from the choice destination setting
+        // (kept as a simple two-flag approach; no complex enum needed)
+        bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                    || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
+        bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                    && choice.destinationPrebuilt == PrebuiltBuildingType.Motel;
+        // If neither flag set (AutoFind), allow both
+        if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+
+        if (immediate)
+        {
+            ClientRelocationHandler.Instance.ExecuteImmediate(
+                currentTask, choice.deliveryQuantity, toShelter, toMotel);
+        }
+        else
+        {
+            bool success = ClientRelocationHandler.Instance.Execute(
+                currentTask, choice.deliveryQuantity, toShelter, toMotel);
+            if (!success)
+                ShowAgentErrorMessage("Could not queue client relocation — check shelter/motel capacity.");
+        }
+    }
+
+    // FALLBACK for other cargo types
+    void ExecuteFallbackDelivery(AgentChoice choice, bool immediate)
+    {
+        MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
+        MonoBehaviour source      = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
+        MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+
+        if (source == null || destination == null)
+        {
+            Debug.LogError($"[TaskDetailUI] Fallback delivery: could not resolve source/destination for {choice.deliveryCargoType}");
+            return;
+        }
+
+        if (immediate)
+        {
+            ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, choice.deliveryQuantity);
+        }
+        else
+        {
+            DeliverySystem ds = DeliverySystem.Instance ?? FindObjectOfType<DeliverySystem>();
+            if (ds == null) return;
+            List<DeliveryTask> deliveries = ds.CreateDeliveryTask(source, destination, choice.deliveryCargoType, choice.deliveryQuantity, 3);
+            TaskSystem.Instance.LinkDeliveriesToTask(currentTask, deliveries);
+            if (deliveries.Count > 0)
+                TaskSystem.Instance.SetTaskInProgress(currentTask);
+        }
     }
 
     // ---------NUMERICAL INPUT VALIDATION ---------
@@ -910,111 +987,35 @@ public class TaskDetailUI : MonoBehaviour
     {
         errorMessage = "";
 
-        if (!choice.triggersDelivery && !choice.immediateDelivery && !choice.enableMultipleDeliveries)
+        if (!choice.triggersDelivery && !choice.immediateDelivery)
             return true;
 
-        MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
-        if (choice.enableMultipleDeliveries)
+        switch (choice.deliveryCargoType)
         {
-            Debug.Log("Using multi-delivery validation");
-            return ValidateMultipleDeliveries(choice, triggeringFacility, out errorMessage);
+            case ResourceType.FoodPacks:
+                return FoodDeliveryHandler.Instance != null
+                    && FoodDeliveryHandler.Instance.CanExecute(currentTask, choice.deliveryQuantity, out errorMessage);
+
+            case ResourceType.Population:
+                bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                            || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
+                bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                            && choice.destinationPrebuilt == PrebuiltBuildingType.Motel;
+                if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+
+                return ClientRelocationHandler.Instance != null
+                    && ClientRelocationHandler.Instance.CanExecute(
+                        currentTask, choice.deliveryQuantity, toShelter, toMotel, out errorMessage);
+
+            default:
+                // Fallback validation: just check a vehicle exists
+                bool hasVehicle = FindObjectsOfType<Vehicle>()
+                    .Any(v => v.GetAllowedCargoTypes().Contains(choice.deliveryCargoType)
+                        && v.GetCurrentStatus() != VehicleStatus.Damaged);
+                if (!hasVehicle)
+                    errorMessage = $"No undamaged vehicle for {choice.deliveryCargoType}";
+                return hasVehicle;
         }
-
-        Debug.Log("Using single delivery validation");
-        MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
-        MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
-
-        if (source == null)
-        {
-            errorMessage = $"No suitable source found for {choice.deliveryCargoType}";
-            return false;
-        }
-
-        if (destination == null)
-        {
-            errorMessage = $"No suitable destination found for {choice.deliveryCargoType}";
-            return false;
-        }
-
-        // Check if source and destination are the same
-        if (source == destination)
-        {
-            errorMessage = $"Cannot deliver to the same facility. Need alternative {choice.destinationType}";
-            return false;
-        }
-
-        // Calculate actual quantity for validation
-        int availableAmount = TaskSystem.Instance.CalculateDeliveryQuantity(choice, source);
-
-        if (availableAmount <= 0)
-        {
-            string quantityText = choice.quantityType == DeliveryQuantityType.Percentage ?
-                $"{choice.deliveryPercentage}%" : "all";
-            errorMessage = $"No resources available at {source.name} for {quantityText} delivery";
-            return false;
-        }
-
-        int availableSpace = GetAvailableSpace(destination, choice.deliveryCargoType);
-        if (availableSpace < choice.deliveryQuantity)
-        {
-            errorMessage = $"Insufficient space at {destination.name}. Required: {choice.deliveryQuantity}, Available space: {availableSpace}";
-            return false;
-        }
-
-        // Vehicle check only for normal delivery
-        if (choice.triggersDelivery && !choice.immediateDelivery)
-        {
-            // Get detailed route analysis
-            PathfindingSystem pathfinder = FindObjectOfType<PathfindingSystem>();
-            if (pathfinder != null)
-            {
-                PathAnalysis analysis = pathfinder.AnalyzePath(source.transform.position, destination.transform.position);
-                DeliveryTimeEstimate estimate = pathfinder.EstimateDeliveryTime(source.transform.position, destination.transform.position);
-
-                if (!estimate.pathExists)
-                {
-                    if (estimate.isFloodBlocked)
-                    {
-                        errorMessage = $"All routes from {source.name} to {destination.name} are blocked by flood";
-                    }
-                    else
-                    {
-                        errorMessage = $"No route available from {source.name} to {destination.name}";
-                    }
-                    return false;
-                }
-
-                // Show route information in choice text (optional enhancement)
-                if (analysis.isFloodAffected && analysis.hasAlternativeRoute)
-                {
-                    if (showDebugInfo)
-                        Debug.Log($"Choice uses alternative route (+{analysis.routeLengthDifference} tiles) due to flood");
-                    ToastManager.ShowToast($"Due to flood, the delivery reroute takes (+{analysis.routeLengthDifference} tiles) longer than normal path.", ToastType.Info, true);
-                }
-            }
-
-            Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-            bool hasCapableVehicle = false;
-
-            foreach (Vehicle vehicle in vehicles)
-            {
-                if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
-                    vehicle.GetMaxCapacity() >= Mathf.Min(choice.deliveryQuantity, 10) &&
-                    vehicle.GetCurrentStatus() != VehicleStatus.Damaged)
-                {
-                    hasCapableVehicle = true;
-                    break;
-                }
-            }
-
-            if (!hasCapableVehicle)
-            {
-                errorMessage = $"No available undamaged vehicle to transport {choice.deliveryCargoType}";
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /// <summary>

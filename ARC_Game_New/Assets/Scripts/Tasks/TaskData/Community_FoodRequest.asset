@@ -154,33 +154,6 @@ MonoBehaviour:
     specificDestinationName: 
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
-  - choiceId: 3
-    choiceText: Ignore current request
-    choiceImpacts:
-    - impactType: 0
-      value: -15
-      isCountdown: 0
-      customLabel: 
-    isSelected: 0
-    triggersDelivery: 0
-    immediateDelivery: 0
-    deliveryCargoType: 1
-    enableMultipleDeliveries: 0
-    multiDeliveryType: 0
-    quantityType: 0
-    deliveryQuantity: 0
-    deliveryPercentage: 0
-    deliverAll: 0
-    sourceType: 1
-    sourceBuilding: 0
-    sourcePrebuilt: 0
-    specificSourceName: 
-    destinationType: 2
-    destinationBuilding: 1
-    destinationPrebuilt: 0
-    specificDestinationName: 
-    prioritizeNearestSource: 0
-    prioritizeNearestDestination: 0
   numericalInputs: []
   deliveryFailureSatisfactionPenalty: 15
   deliveryTimeLimit: 300
