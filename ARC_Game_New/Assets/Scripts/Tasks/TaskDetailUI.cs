@@ -405,13 +405,23 @@ public class TaskDetailUI : MonoBehaviour
 
     void ClearConversation()
     {
-        // MODIFIED: Properly destroy all conversation items before clearing list
         foreach (GameObject item in currentConversationItems)
         {
             if (item != null)
                 Destroy(item);
         }
-        
+
+        // Safety: destroy any orphaned children not tracked in our list
+        // (e.g. messages instantiated mid-typing when player exits)
+        if (conversationContent != null)
+        {
+            foreach (Transform child in conversationContent)
+            {
+                if (child != null)
+                    Destroy(child.gameObject);
+            }
+        }
+
         if (conversationScrollView != null)
             conversationScrollView.vertical = true;
 
