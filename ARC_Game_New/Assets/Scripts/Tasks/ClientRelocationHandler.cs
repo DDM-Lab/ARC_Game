@@ -264,14 +264,19 @@ public class ClientRelocationHandler : MonoBehaviour
 
     int RemovePopulation(MonoBehaviour building, int amount)
     {
+        // Community (PrebuiltBuilding) — remove directly from its resource storage
         PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
-        if (pb != null && ClientStayTracker.Instance != null)
-            return ClientStayTracker.Instance.RemoveClientsByQuantity(pb, amount);
+        if (pb != null)
+        {
+            BuildingResourceStorage storage = pb.GetResourceStorage();
+            return storage?.RemoveResource(ResourceType.Population, amount) ?? 0;
+        }
 
-        BuildingResourceStorage storage =
+        // Shelter (Building)
+        BuildingResourceStorage bStorage =
             building.GetComponent<Building>()?.GetComponent<BuildingResourceStorage>()
             ?? building.GetComponent<BuildingResourceStorage>();
-        return storage?.RemoveResource(ResourceType.Population, amount) ?? 0;
+        return bStorage?.RemoveResource(ResourceType.Population, amount) ?? 0;
     }
 
     int AddPopulation(MonoBehaviour building, int amount)

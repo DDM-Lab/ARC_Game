@@ -573,15 +573,14 @@ public class TaskDetailUI : MonoBehaviour
         if (selectedChoice != null)
         {
             ApplyChoiceImpacts(selectedChoice);
-
-            if (selectedChoice.triggersDelivery)
-            {
-                ExecuteGeneratorDelivery(selectedChoice, immediate: false);
-            }
-            else if (selectedChoice.immediateDelivery)
+            if (selectedChoice.immediateDelivery)
             {
                 ExecuteGeneratorDelivery(selectedChoice, immediate: true);
                 TaskSystem.Instance.CompleteTask(currentTask);
+            }
+            else if (selectedChoice.triggersDelivery)
+            {
+                ExecuteGeneratorDelivery(selectedChoice, immediate: false);
             }
             else
             {
@@ -990,6 +989,29 @@ public class TaskDetailUI : MonoBehaviour
         if (!choice.triggersDelivery && !choice.immediateDelivery)
             return true;
 
+        // Immediate delivery bypasses vehicle/reservation logic — just check resources exist
+        if (choice.immediateDelivery)
+        {
+            switch (choice.deliveryCargoType)
+            {
+                case ResourceType.FoodPacks:
+                    int totalFood = FindObjectsOfType<Building>()
+                        .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
+                        .Sum(b => b.GetComponent<BuildingResourceStorage>()?.GetResourceAmount(ResourceType.FoodPacks) ?? 0);
+                    if (totalFood <= 0) { errorMessage = "No food packs available in any kitchen"; return false; }
+                    return true;
+
+                case ResourceType.Population:
+                    int totalPop = GetPopulationAtFacility(currentTask);
+                    if (totalPop <= 0) { errorMessage = "No clients at source facility"; return false; }
+                    return true;
+
+                default:
+                    return true; // Let it attempt, fail gracefully at execution
+            }
+        }
+
+        // Normal (vehicle) delivery — use generators
         switch (choice.deliveryCargoType)
         {
             case ResourceType.FoodPacks:
@@ -1002,20 +1024,29 @@ public class TaskDetailUI : MonoBehaviour
                 bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
                             && choice.destinationPrebuilt == PrebuiltBuildingType.Motel;
                 if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
-
                 return ClientRelocationHandler.Instance != null
                     && ClientRelocationHandler.Instance.CanExecute(
                         currentTask, choice.deliveryQuantity, toShelter, toMotel, out errorMessage);
 
             default:
-                // Fallback validation: just check a vehicle exists
                 bool hasVehicle = FindObjectsOfType<Vehicle>()
                     .Any(v => v.GetAllowedCargoTypes().Contains(choice.deliveryCargoType)
                         && v.GetCurrentStatus() != VehicleStatus.Damaged);
-                if (!hasVehicle)
-                    errorMessage = $"No undamaged vehicle for {choice.deliveryCargoType}";
+                if (!hasVehicle) errorMessage = $"No undamaged vehicle for {choice.deliveryCargoType}";
                 return hasVehicle;
         }
+    }
+
+    // Helper — reads population from the task's triggering facility
+    int GetPopulationAtFacility(GameTask task)
+    {
+        MonoBehaviour facility = TaskSystem.Instance.FindTriggeringFacility(task);
+        if (facility == null) return 0;
+        PrebuiltBuilding pb = facility.GetComponent<PrebuiltBuilding>();
+        if (pb != null) return pb.GetCurrentPopulation();
+        BuildingResourceStorage storage = facility.GetComponent<BuildingResourceStorage>()
+            ?? facility.GetComponent<Building>()?.GetComponent<BuildingResourceStorage>();
+        return storage?.GetResourceAmount(ResourceType.Population) ?? 0;
     }
 
     /// <summary>

@@ -158,34 +158,11 @@ public class FoodDeliveryHandler : MonoBehaviour
         BuildingResourceStorage destStorage = GetStorage(destination);
         if (destStorage == null) return;
 
-        int remaining = requestedQuantity > 0
-            ? requestedQuantity
-            : destStorage.GetAvailableSpace(ResourceType.FoodPacks);
+        int amount = requestedQuantity > 0 ? requestedQuantity : destStorage.GetAvailableSpace(ResourceType.FoodPacks);
+        destStorage.AddResource(ResourceType.FoodPacks, amount);
 
-        var kitchens = FindObjectsOfType<Building>()
-            .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
-            .Select(b => (building: b, storage: b.GetComponent<BuildingResourceStorage>()))
-            .Where(k => k.storage != null && k.storage.GetResourceAmount(ResourceType.FoodPacks) > 0)
-            .OrderByDescending(k => k.storage.GetResourceAmount(ResourceType.FoodPacks))
-            .ToList();
-
-        foreach (var (kitchen, storage) in kitchens)
-        {
-            if (remaining <= 0) break;
-
-            int take      = Mathf.Min(remaining, storage.GetResourceAmount(ResourceType.FoodPacks));
-            int removed   = storage.RemoveResource(ResourceType.FoodPacks, take);
-            int delivered = destStorage.AddResource(ResourceType.FoodPacks, removed);
-
-            // Return overflow if destination was full
-            if (delivered < removed)
-                storage.AddResource(ResourceType.FoodPacks, removed - delivered);
-
-            remaining -= delivered;
-
-            if (showDebugInfo)
-                Debug.Log($"[FoodDeliveryTaskGenerator] Immediate {delivered} food from {kitchen.name} → {destination.name}");
-        }
+        if (showDebugInfo)
+            Debug.Log($"[FoodDeliveryTaskGenerator] Immediate drop: added {amount} food to {destination.name}");
     }
 
     // ─────────────────────────────────────────────────────────────────
