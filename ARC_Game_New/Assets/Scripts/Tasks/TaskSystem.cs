@@ -559,64 +559,60 @@ public class TaskSystem : MonoBehaviour
 
     void OnDeliveryTaskCompleted(DeliveryTask deliveryTask)
     {
-        // =====================================================================
-        // PRIMARY: Look up parent task via deliveryToTaskMap (populated by LinkDeliveriesToTask)
-        // FALLBACK: Search linkedDeliveryTaskIds on each active task (legacy path)
-        // =====================================================================
-        
-        GameTask gameTask = null;
-        
-        // Primary: use the map
-        if (deliveryToTaskMap.TryGetValue(deliveryTask.taskId, out int parentTaskId))
+        // Search active tasks first
+        GameTask parentTask = activeTasks.FirstOrDefault(t =>
+            t.linkedDeliveryTaskIds != null &&
+            t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
+
+        // Fall back to completed tasks — delivery finished after task expired/was completed early
+        bool wasAlreadyCompleted = false;
+        if (parentTask == null)
         {
-            gameTask = activeTasks.FirstOrDefault(t => t.taskId == parentTaskId);
-            
-            if (gameTask == null)
-            {
-                // Task may have already been completed/expired
-                if (showDebugInfo)
-                    Debug.Log($"Delivery {deliveryTask.taskId} completed but parent task {parentTaskId} is no longer active");
-                deliveryToTaskMap.Remove(deliveryTask.taskId);
-                return;
-            }
-        }
-        
-        // Fallback: search linkedDeliveryTaskIds (in case linking was done directly)
-        if (gameTask == null)
-        {
-            gameTask = activeTasks.FirstOrDefault(t =>
-                t.linkedDeliveryTaskIds != null && t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
+            parentTask = completedTasks.FirstOrDefault(t =>
+                t.linkedDeliveryTaskIds != null &&
+                t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
+            wasAlreadyCompleted = parentTask != null;
         }
 
-        if (gameTask != null && gameTask.status == TaskStatus.InProgress)
+        if (parentTask == null)
         {
-            // Check if ALL deliveries for this task are completed
-            DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
-            List<DeliveryTask> completedTasks = deliverySystem.GetCompletedTasks();
-
-            bool allCompleted = gameTask.linkedDeliveryTaskIds.All(id =>
-                completedTasks.Any(ct => ct.taskId == id));
-
-            if (allCompleted)
-            {
-                if (showDebugInfo)
-                    Debug.Log($"All deliveries completed for task: {gameTask.taskTitle}");
-                GameLogPanel.Instance.LogTaskEvent($"All deliveries completed for task: {gameTask.taskTitle}");
-
-                CompleteTask(gameTask);
-                
-                // Clean up map entries for this task
-                foreach (int dId in gameTask.linkedDeliveryTaskIds)
-                {
-                    deliveryToTaskMap.Remove(dId);
-                }
-            }
+            if (showDebugInfo)
+                Debug.LogWarning($"[TaskSystem] No parent task found for delivery {deliveryTask.taskId} — ignoring");
+            return;
         }
-        else if (gameTask == null && showDebugInfo)
+
+        if (showDebugInfo)
+            Debug.Log($"[TaskSystem] Delivery {deliveryTask.taskId} completed for task '{parentTask.taskTitle}'" +
+                    (wasAlreadyCompleted ? " (task was already closed)" : ""));
+
+        // If the parent task is still in progress, check if all its deliveries are done
+        if (!wasAlreadyCompleted && parentTask.status == TaskStatus.InProgress)
         {
-            Debug.LogWarning($"Delivery {deliveryTask.taskId} completed but no parent task found. " +
-                "Was LinkDeliveriesToTask() called when creating this delivery?");
+            bool allDone = AreAllLinkedDeliveriesComplete(parentTask);
+            if (allDone)
+                CompleteTask(parentTask);
+            // else: still waiting on other deliveries — do nothing
         }
+
+        // If the task was already closed (expired/completed early), the physical resource
+        // transfer already happened on the Vehicle layer — just log it and move on.
+        if (wasAlreadyCompleted)
+        {
+            GameLogPanel.Instance?.LogTaskEvent(
+                $"Late delivery {deliveryTask.taskId} arrived for closed task '{parentTask.taskTitle}'");
+        }
+    }
+
+    bool AreAllLinkedDeliveriesComplete(GameTask task)
+    {
+        if (task.linkedDeliveryTaskIds == null || task.linkedDeliveryTaskIds.Count == 0)
+            return true;
+
+        DeliverySystem ds = DeliverySystem.Instance;
+        if (ds == null) return false;
+
+        var completed = ds.GetCompletedTasks();
+        return task.linkedDeliveryTaskIds.All(id => completed.Any(d => d.taskId == id));
     }
 
     public void HandleDeliveryFailure(GameTask task)
@@ -658,9 +654,9 @@ public class TaskSystem : MonoBehaviour
 
     void OnRoundChanged(int newSegment)
     {
-        Debug.Log($"OnRoundChanged called: segment {newSegment}, auto generation: {enableAutoTaskGeneration}");
+        Debug.Log($"OnRoundChanged called in Task System: segment {newSegment}, auto generation: {enableAutoTaskGeneration}. (We skip generation when newSegment == 3)");
         // Check for new tasks at the start of each round
-        if (enableAutoTaskGeneration)
+        if (enableAutoTaskGeneration && newSegment != 3)
         {
             Debug.Log("Attempting to generate tasks from database...");
             GenerateTasksFromDatabase();
@@ -1157,7 +1153,7 @@ public class TaskSystem : MonoBehaviour
             // Apply penalties for incomplete emergency/demand tasks
             if (task.status == TaskStatus.Incomplete)
             {
-                ApplyTaskPenalties(task);
+                //ApplyTaskPenalties(task);
             }
 
             OnTaskExpired?.Invoke(task);
@@ -1168,7 +1164,7 @@ public class TaskSystem : MonoBehaviour
             //ToastManager.ShowToast($"Expired task: {task.taskTitle} (Status: {task.status})", ToastType.Warning, true);
 
             // Show task result popup
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other) && (task.taskType != TaskType.Advisory))
             {
                 TaskResultManager.Instance.ShowTaskResult(task);
             }
@@ -1235,7 +1231,7 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            ApplyTaskPenalties(task);
+            //ApplyTaskPenalties(task);
             OnTaskCompleted?.Invoke(task);
 
             if (showDebugInfo)
@@ -1648,34 +1644,16 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
-    // Utility methods for impact display
-    public static string GetImpactIcon(ImpactType type)
-    {
-        switch (type)
-        {
-            case ImpactType.Satisfaction: return "😊";
-            case ImpactType.Budget: return "💰";
-            case ImpactType.FoodPacks: return "🍞";
-            case ImpactType.Clients: return "👥";
-            case ImpactType.Workforce: return "👷";
-            case ImpactType.TotalTime: return "⏰";
-            case ImpactType.TrainingTime: return "📚";
-            case ImpactType.TotalCosts: return "💸";
-            case ImpactType.TotalLodging: return "🏠";
-            default: return "❓";
-        }
-    }
-
     public static string GetImpactLabel(ImpactType type)
     {
         switch (type)
         {
             case ImpactType.Satisfaction: return "Satisfaction";
             case ImpactType.Budget: return "Budget";
-            case ImpactType.FoodPacks: return "Food Packs";
-            case ImpactType.Clients: return "Clients";
-            case ImpactType.Workforce: return "Workforce";
-            case ImpactType.TotalTime: return "Total Time";
+            case ImpactType.FoodPacks: return "Food Packs Amount";
+            case ImpactType.Clients: return "Clients Amount";
+            case ImpactType.Workforce: return "Workforce Required";
+            case ImpactType.TotalTime: return "Estimated Time";
             case ImpactType.TrainingTime: return "Training Time";
             case ImpactType.TotalCosts: return "Total Costs";
             case ImpactType.TotalLodging: return "Total Lodging";

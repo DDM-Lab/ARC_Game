@@ -58,11 +58,11 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   - impactType: 1
-    value: -500
+    value: -1
     isCountdown: 0
     customLabel: 
   - impactType: 0
-    value: 15
+    value: 1
     isCountdown: 0
     customLabel: 
   - impactType: 5
@@ -82,37 +82,10 @@ MonoBehaviour:
     typingSpeed: 0
   agentChoices:
   - choiceId: 0
-    choiceText: Request 5 food packs (Quick delivery)
+    choiceText: Request 10 food packs (Quick delivery)
     choiceImpacts:
     - impactType: 0
       value: 5
-      isCountdown: 0
-      customLabel: 
-    isSelected: 0
-    triggersDelivery: 1
-    immediateDelivery: 0
-    deliveryCargoType: 1
-    enableMultipleDeliveries: 0
-    multiDeliveryType: 0
-    quantityType: 0
-    deliveryQuantity: 5
-    deliveryPercentage: 0
-    deliverAll: 0
-    sourceType: 1
-    sourceBuilding: 0
-    sourcePrebuilt: 0
-    specificSourceName: 
-    destinationType: 1
-    destinationBuilding: 1
-    destinationPrebuilt: 0
-    specificDestinationName: 
-    prioritizeNearestSource: 1
-    prioritizeNearestDestination: 0
-  - choiceId: 1
-    choiceText: Request 10 food packs
-    choiceImpacts:
-    - impactType: 0
-      value: 10
       isCountdown: 0
       customLabel: 
     isSelected: 0
@@ -133,25 +106,25 @@ MonoBehaviour:
     destinationBuilding: 1
     destinationPrebuilt: 0
     specificDestinationName: 
-    prioritizeNearestSource: 0
+    prioritizeNearestSource: 1
     prioritizeNearestDestination: 0
-  - choiceId: 2
-    choiceText: Helicopter deliver full supply of food packs
+  - choiceId: 1
+    choiceText: Request 20 food packs
     choiceImpacts:
     - impactType: 0
-      value: -15
+      value: 10
       isCountdown: 0
       customLabel: 
     isSelected: 0
     triggersDelivery: 1
-    immediateDelivery: 1
+    immediateDelivery: 0
     deliveryCargoType: 1
-    enableMultipleDeliveries: 0
-    multiDeliveryType: 0
-    quantityType: 2
-    deliveryQuantity: 0
+    enableMultipleDeliveries: 1
+    multiDeliveryType: 2
+    quantityType: 0
+    deliveryQuantity: 20
     deliveryPercentage: 0
-    deliverAll: 1
+    deliverAll: 0
     sourceType: 1
     sourceBuilding: 0
     sourcePrebuilt: 0
@@ -162,21 +135,21 @@ MonoBehaviour:
     specificDestinationName: 
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
-  - choiceId: 3
-    choiceText: Ignore current request
+  - choiceId: 2
+    choiceText: Helicopter deliver 10 food packs
     choiceImpacts:
-    - impactType: 0
-      value: -15
+    - impactType: 1
+      value: -1000
       isCountdown: 0
       customLabel: 
     isSelected: 0
-    triggersDelivery: 0
-    immediateDelivery: 0
+    triggersDelivery: 1
+    immediateDelivery: 1
     deliveryCargoType: 1
     enableMultipleDeliveries: 0
     multiDeliveryType: 0
     quantityType: 0
-    deliveryQuantity: 0
+    deliveryQuantity: 10
     deliveryPercentage: 0
     deliverAll: 0
     sourceType: 1

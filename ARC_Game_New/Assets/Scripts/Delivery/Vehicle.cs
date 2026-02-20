@@ -413,15 +413,27 @@ public class Vehicle : MonoBehaviour
         if (currentTask == null || sourceBuilding == null)
             yield break;
 
-        // Simulate loading time
         yield return new WaitForSeconds(1f);
 
-        // Try to get resources from source building
         BuildingResourceStorage sourceStorage = GetBuildingResourceStorage(sourceBuilding);
 
         if (sourceStorage != null)
         {
             int actualLoaded = sourceStorage.RemoveResource(currentTask.cargoType, currentTask.quantity);
+
+            // ── NEW: abort if source was empty ────────────────────────────
+            if (actualLoaded <= 0)
+            {
+                Debug.LogWarning($"Vehicle {vehicleName}: source {sourceBuilding.name} had no " +
+                                $"{currentTask.cargoType} — aborting delivery");
+                currentTask        = null;
+                sourceBuilding     = null;
+                destinationBuilding = null;
+                SetStatus(VehicleStatus.Idle);
+                yield break;
+            }
+            // ─────────────────────────────────────────────────────────────
+
             currentCargo[currentTask.cargoType] = actualLoaded;
 
             if (showDebugInfo)
@@ -436,6 +448,7 @@ public class Vehicle : MonoBehaviour
         UpdateVisualState();
         OnCargoChanged?.Invoke(this);
     }
+
 
     /// <summary>
     /// Unload cargo at destination building

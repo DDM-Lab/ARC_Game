@@ -96,6 +96,14 @@ public class DeliverySystem : MonoBehaviour
     public event Action<DeliveryTask, Vehicle> OnTaskAssigned;
     public event Action<DeliveryTask> OnTaskCompleted;
 
+    public static DeliverySystem Instance { get; private set; }
+
+    void Awake()
+    {
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
+    }
+
     void Start()
     {
         // Find vehicles if not assigned
@@ -658,6 +666,47 @@ public class DeliverySystem : MonoBehaviour
     {
         return activeTasks.Where(t => t.destinationBuilding == building).ToList();
     }
+
+    /// <summary>
+    /// Total quantity of a cargo type committed to arrive at a destination,
+    /// counting both pending (queued) and active (in-flight) tasks.
+    /// Use instead of raw storage space to avoid double-booking.
+    /// </summary>
+    public int GetReservedIncomingQuantity(MonoBehaviour destination, ResourceType cargoType)
+    {
+        int total = 0;
+
+        foreach (DeliveryTask t in pendingTasks)
+            if (t.destinationBuilding == destination && t.cargoType == cargoType)
+                total += t.quantity;
+
+        foreach (DeliveryTask t in activeTasks)
+            if (t.destinationBuilding == destination && t.cargoType == cargoType)
+                total += t.quantity;
+
+        return total;
+    }
+
+    /// <summary>
+    /// Total quantity of a cargo type committed to leave a source,
+    /// counting both pending and active tasks.
+    /// Use this to know how much of a kitchen's stock is already "spoken for".
+    /// </summary>
+    public int GetReservedOutgoingQuantity(MonoBehaviour source, ResourceType cargoType)
+    {
+        int total = 0;
+
+        foreach (DeliveryTask t in pendingTasks)
+            if (t.sourceBuilding == source && t.cargoType == cargoType)
+                total += t.quantity;
+
+        foreach (DeliveryTask t in activeTasks)
+            if (t.sourceBuilding == source && t.cargoType == cargoType)
+                total += t.quantity;
+
+        return total;
+    }
+
 
     /// <summary>
     /// Get all active deliveries going FROM a specific building

@@ -138,7 +138,7 @@ public class ToastManager : MonoBehaviour
             }
         }
 
-        //StartCoroutine(RemoveToastAfterDelay(toastObj, displayDuration));
+        StartCoroutine(RemoveToastAfterDelay(toastObj, displayDuration));
     }
 
     // Close toast message functionality

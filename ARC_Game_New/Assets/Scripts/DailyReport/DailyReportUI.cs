@@ -712,6 +712,7 @@ public class DailyReportUI : MonoBehaviour
         ShowSectionElement(workerTotal);
         ShowSectionElement(workerStatus);
         ShowSectionElement(workerTrainingBonusElement);
+        ShowSectionElement(idleWorker);
         
         ShowSectionElement(foodUtilizationTotal);
         ShowSectionElement(foodUsageSummary);
