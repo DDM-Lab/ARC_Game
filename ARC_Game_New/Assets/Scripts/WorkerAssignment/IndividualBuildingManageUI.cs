@@ -114,6 +114,7 @@ public class IndividualBuildingManageUI : MonoBehaviour
         InitializeUI();
 
         Debug.Log($"Individual manage UI opened for {building.GetBuildingType()} at site {building.GetOriginalSiteId()}");
+        GameLogPanel.Instance?.LogUIInteraction($"Individual manage UI opened for {building.GetBuildingType()} at site {building.GetOriginalSiteId()}");
     }
 
     public void HideManageUI()
@@ -127,6 +128,7 @@ public class IndividualBuildingManageUI : MonoBehaviour
         ClearFeedback();
 
         Debug.Log("Individual manage UI closed");
+        GameLogPanel.Instance?.LogUIInteraction("Individual manage UI closed");
     }
 
     void InitializeUI()
@@ -388,6 +390,7 @@ public class IndividualBuildingManageUI : MonoBehaviour
         ClearFeedback();
 
         Debug.Log("Worker assignment changes cancelled");
+        GameLogPanel.Instance?.LogUIInteraction("Worker assignment changes cancelled");
     }
 
     void OnCloseClicked()

@@ -139,7 +139,7 @@ public class TaskDetailUI : MonoBehaviour
 
     public void ShowTaskDetail(GameTask task)
     {
-        // NEW: Check if this task was shown before
+        // Check if this task was shown before
         bool isFirstTimeShowing = !previouslyShownTaskIds.Contains(task.taskId);
         
         currentTask = task;
@@ -150,21 +150,56 @@ public class TaskDetailUI : MonoBehaviour
 
             UpdateTaskDescription();
             
-            // NEW: Pass the isFirstTimeShowing flag to StartAgentConversation
+            // Pass the isFirstTimeShowing flag to StartAgentConversation
             StartAgentConversation(isFirstTimeShowing);
             
             UpdateActionButtons();
 
-            // NEW: Mark task as shown
+            // Mark task as shown
             previouslyShownTaskIds.Add(task.taskId);
 
             if (showDebugInfo)
                 Debug.Log($"Showing task detail for: {task.taskTitle} (First time: {isFirstTimeShowing})");
+
+            GameLogPanel.Instance?.LogUIInteraction($"Opened task: [{currentTask.taskType}] {currentTask.taskTitle} at {currentTask.affectedFacility}");
+            GameLogPanel.Instance?.LogTaskEvent(SerializeTaskContent(currentTask));
         }
+    }
+
+    string SerializeTaskContent(GameTask task)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"TASK_DETAIL | id={task.taskId} | title={task.taskTitle} | type={task.taskType} | tag={task.taskTag} | facility={task.affectedFacility} | status={task.status}");
+
+        if (task.impacts != null && task.impacts.Count > 0)
+        {
+            sb.Append(" | impacts=");
+            sb.Append(string.Join(";", task.impacts.Select(i => $"{i.impactType}:{i.value}")));
+        }
+        if (task.agentMessages != null && task.agentMessages.Count > 0)
+        {
+            sb.Append(" | messages=");
+            sb.Append(string.Join(";", task.agentMessages.Select(m => m.messageText.Replace("|", "/").Replace(";", ","))));
+        }
+        if (task.agentChoices != null && task.agentChoices.Count > 0)
+        {
+            sb.Append(" | choices=");
+            sb.Append(string.Join(";", task.agentChoices.Select(c => $"[{c.choiceId}]{c.choiceText}")));
+        }
+        if (task.numericalInputs != null && task.numericalInputs.Count > 0)
+        {
+            sb.Append(" | inputs=");
+            sb.Append(string.Join(";", task.numericalInputs.Select(n => 
+                $"[{n.inputId}]{n.inputLabel}:min={n.minValue},max={n.maxValue}")));
+        }
+
+        return sb.ToString();
     }
 
     public void CloseTaskDetail()
     {
+        GameLogPanel.Instance?.LogUIInteraction($"Closed task: {currentTask?.taskTitle}");
+
         // Auto-discard Other type tasks when closed
         if (currentTask != null && currentTask.taskType == TaskType.Other)
         {
@@ -503,6 +538,7 @@ public class TaskDetailUI : MonoBehaviour
         }
     }
 
+    // Later button not used any more
     void OnLaterButtonClicked()
     {
         if (currentTask != null && currentTask.taskType == TaskType.Advisory)
@@ -582,7 +618,22 @@ public class TaskDetailUI : MonoBehaviour
     {
         if (selectedChoice != null)
         {
+            // Log numerical input for the task
+            if (currentTask.numericalInputs != null && currentTask.numericalInputs.Count > 0)
+            {
+                var inputValues = currentConversationItems
+                    .Select(item => item.GetComponent<NumericalInputUI>())
+                    .Where(ui => ui != null)
+                    .Select(ui => $"[{ui.GetInputType()}]={ui.GetCurrentValue()}");
+                
+                GameLogPanel.Instance?.LogUIInteraction(
+                    $"Numerical inputs submitted for '{currentTask.taskTitle}': {string.Join(";", inputValues)}");
+            }
+            // Log choice selection for the task
+            GameLogPanel.Instance?.LogUIInteraction($"Choice selected: '{selectedChoice.choiceText}' for task '{currentTask.taskTitle}'");
+            
             ApplyChoiceImpacts(selectedChoice);
+
             if (selectedChoice.immediateDelivery)
             {
                 ExecuteGeneratorDelivery(selectedChoice, immediate: true);
@@ -2242,6 +2293,9 @@ public class TaskDetailUI : MonoBehaviour
             {
                 messageText.text = message;
             }
+
+            GameLogPanel.Instance?.LogUIInteraction(
+            $"Player message sent | message={message}");
 
             playerInputField.text = "";
             ScrollToBottom();

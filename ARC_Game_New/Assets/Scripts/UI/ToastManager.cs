@@ -128,6 +128,7 @@ public class ToastManager : MonoBehaviour
 
         // Share message with ActionTrackingManager
         ActionTrackingManager.AddMessage(toastData.message);
+        GameLogPanel.Instance?.LogPlayerAction($"TOAST | type={toastData.type} | message={toastData.message}");
 
         if (toastData.playSound && audioSource != null && soundEffects != null)
         {

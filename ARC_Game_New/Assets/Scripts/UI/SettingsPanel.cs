@@ -22,9 +22,6 @@ public class SettingsPanel : MonoBehaviour
     public TextMeshProUGUI sfxVolumeText;
     public TextMeshProUGUI bgmVolumeText;
     
-    [Header("Main Menu")]
-    public Button mainMenuButton;
-    
     // Settings keys for PlayerPrefs
     private const string SKIP_ALERTS_KEY = "SkipAlerts";
     private const string SKIP_TYPING_KEY = "SkipTyping";
@@ -69,10 +66,6 @@ public class SettingsPanel : MonoBehaviour
         // Exit button
         if (exitButton != null)
             exitButton.onClick.AddListener(CloseSettings);
-        
-        // Main Menu button
-        if (mainMenuButton != null)
-            mainMenuButton.onClick.AddListener(ReturnToMainMenu);
         
         // Skip Alerts toggle
         if (skipAlertsToggle != null)
@@ -156,6 +149,10 @@ public class SettingsPanel : MonoBehaviour
             // Play UI sound
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlaySFX(SFXType.UIClick);
+
+            GameLogPanel.Instance?.LogUIInteraction(
+            $"Settings opened | skipAlerts={SkipAlerts} | skipTyping={SkipTyping}" +
+            $" | sfx={Mathf.RoundToInt(sfxVolumeSlider.value * 100)}% | bgm={Mathf.RoundToInt(bgmVolumeSlider.value * 100)}%");
         }
     }
     
@@ -181,13 +178,17 @@ public class SettingsPanel : MonoBehaviour
             // Play UI sound
             if (AudioManager.Instance != null)
                 AudioManager.Instance.PlaySFX(SFXType.UICancel);
+
+            GameLogPanel.Instance?.LogUIInteraction(
+            $"Settings closed | skipAlerts={SkipAlerts} | skipTyping={SkipTyping}" +
+            $" | sfx={Mathf.RoundToInt(sfxVolumeSlider.value * 100)}% | bgm={Mathf.RoundToInt(bgmVolumeSlider.value * 100)}%");
         }
     }
     
     void OnSkipAlertsChanged(bool value)
     {
         SkipAlerts = value;
-        
+        GameLogPanel.Instance?.LogUIInteraction($"Setting changed: skipAlerts={value}");
         // Play toggle sound
         if (AudioManager.Instance != null)
             AudioManager.Instance.PlaySFX(SFXType.Switch);
@@ -214,7 +215,7 @@ public class SettingsPanel : MonoBehaviour
                 taskDetailUI.SkipCurrentTyping();
             }
         }
-        
+        GameLogPanel.Instance?.LogUIInteraction($"Setting changed: skipTyping={value}");
         // Play toggle sound
         if (AudioManager.Instance != null)
             AudioManager.Instance.PlaySFX(SFXType.Switch);
@@ -231,6 +232,7 @@ public class SettingsPanel : MonoBehaviour
         }
         
         UpdateVolumeTexts();
+        GameLogPanel.Instance?.LogUIInteraction($"Setting changed: sfxVolume={Mathf.RoundToInt(value * 100)}%");
     }
     
     void OnBGMVolumeChanged(float value)
@@ -239,6 +241,7 @@ public class SettingsPanel : MonoBehaviour
         {
             AudioManager.Instance.SetBGMVolume(value);
             AudioManager.Instance.SetAmbienceVolume(value); // Ambience follows BGM
+            GameLogPanel.Instance?.LogUIInteraction($"Setting changed: bgmVolume={Mathf.RoundToInt(value * 100)}%");
         }
         
         UpdateVolumeTexts();
@@ -255,18 +258,6 @@ public class SettingsPanel : MonoBehaviour
         {
             bgmVolumeText.text = $"{Mathf.RoundToInt(bgmVolumeSlider.value * 100)}%";
         }
-    }
-    
-    void ReturnToMainMenu()
-    {
-        // Save settings before leaving
-        SaveSettings();
-        
-        // Reset time scale
-        Time.timeScale = 1f;
-        
-        // Load main menu scene (you need to set your main menu scene name)
-        SceneManager.LoadScene("MainMenu"); // Change "MainMenu" to your actual scene name
     }
     
     // Optional: Add keyboard shortcut to open settings

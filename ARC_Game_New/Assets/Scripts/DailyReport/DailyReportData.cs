@@ -186,46 +186,10 @@ public class DailyReportData : MonoBehaviour
         TrackFoodProduction();
     }
     
-    // =========================================================================
-    // PREPARE FOR NEW DAY (replaces old OnDayChanged handler)
-    // =========================================================================
-    
-    /// <summary>
-    /// Called by GlobalClock.ProceedToNextDay() AFTER the daily report has been
-    /// fully displayed and the player clicks "Next Day".
-    /// 
-    /// This is the ONLY place where daily tracking data gets reset.
-    /// 
-    /// FIX: Also resets the WorkerSystem hired counter here, so the reset
-    /// timing is guaranteed:
-    ///   1. Report generates → reads newWorkersHiredToday (still has current count)
-    ///   2. Report animates and is saved to history
-    ///   3. Player clicks "Next Day"
-    ///   4. PrepareForNewDay() → saves worker hired count, resets everything
-    ///   5. OnDayChanged fires → worker arrivals/training create new workers
-    ///      → these correctly count toward the NEW day's counter (starts at 0)
-    /// </summary>
     public void PrepareForNewDay()
     {
         Debug.Log($"PrepareForNewDay called - resetting tracking for new day (was day {currentDayNumber})");
-        
-        // =====================================================
-        // FIX: Save and reset the worker hired counter HERE,
-        // at a controlled time, instead of in OnDayChanged.
-        //
-        // WHAT WAS WRONG: WorkerSystem.ResetDailyHiredWorkersCount
-        // was subscribed to OnDayChanged alongside WorkerRequestSystem
-        // and WorkerTrainingSystem. The execution order was
-        // non-deterministic, causing:
-        // - Hire counts accumulating across days
-        // - Training completions being counted as hires
-        // - Workers arriving via OnDayChanged being counted then
-        //   immediately zeroed (or vice versa)
-        //
-        // WHY THIS FIXES IT: We explicitly save/reset the counter
-        // AFTER the report reads it and BEFORE OnDayChanged fires.
-        // No more race conditions between event handlers.
-        // =====================================================
+    
         if (workerSystem == null)
             workerSystem = FindObjectOfType<WorkerSystem>();
         
@@ -323,24 +287,7 @@ public class DailyReportData : MonoBehaviour
             metrics.totalDeliveryTasks = allDeliveryTasks.Count;
             metrics.completedDeliveryTasks = todayCompletedDeliveries.Count;
         }
-        
-        // =====================================================================
-        // RESOURCE METRICS
-        // =====================================================
-        // FIX: Changed food utilization metric.
-        //
-        // WHAT WAS WRONG: The old "meal usage rate" was calculated as:
-        //   (foodProduced - foodWasted) / foodProduced × 100
-        // This was always 100% because:
-        //   1. Food waste is recorded in BuildingResourceStorage.HandleDailyReset()
-        //   2. HandleDailyReset() fires on OnDayChanged
-        //   3. OnDayChanged fires AFTER the report is already generated
-        //   4. So todayFoodWasted was always 0 at report time
-        //
-        // NEW APPROACH: Count food packs currently sitting in storage.
-        // These packs WILL become waste when the day advances (HandleDailyReset
-        // removes them). This gives the player a clear view of upcoming waste.
-        // =====================================================
+
         metrics.foodProduced = CalculateFoodProduced();
         metrics.foodDelivered = CalculateFoodDelivered();
         metrics.foodConsumed = CalculateFoodConsumed();
@@ -383,9 +330,7 @@ public class DailyReportData : MonoBehaviour
             metrics.budgetSpent = Mathf.Max(0f, dayStartBudget - currentBudget);
             metrics.averageTaskCost = todayCompletedTasks.Count > 0 ? todayTaskCosts / todayCompletedTasks.Count : 0f;
             
-            metrics.budgetUsageRate = dailyBudgetAllocated > 0 
-                ? metrics.budgetSpent / dailyBudgetAllocated * 100f 
-                : 0f;
+            metrics.budgetUsageRate = currentBudget / (dayStartBudget + dailyBudgetAllocated) * 100f;
             
             metrics.satisfactionChange = budgetSystem.GetCurrentSatisfaction() - dayStartSatisfaction;
             

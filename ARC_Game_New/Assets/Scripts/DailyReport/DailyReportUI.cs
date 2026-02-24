@@ -545,6 +545,67 @@ public class DailyReportUI : MonoBehaviour
         // Save to history
         int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
         DailyReportData.Instance.SaveReportToHistory(currentDay, currentMetrics);
+
+        // ── Log all metrics and scores ──────────────────────────────
+        int day = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
+
+        // Task summary
+        GameLogPanel.Instance?.LogMetricsChange(
+            $"DAILY_REPORT | day={day}" +
+            $" | tasks_total={currentMetrics.totalTasks}" +
+            $" | tasks_completed={currentMetrics.completedTasks}" +
+            $" | tasks_expired={currentMetrics.expiredTasks}" +
+            $" | food_tasks={currentMetrics.completedFoodTasks}/{currentMetrics.totalFoodTasks}" +
+            $" | lodging_tasks={currentMetrics.completedLodgingTasks}/{currentMetrics.totalLodgingTasks}" +
+            $" | emergency_tasks={currentMetrics.completedEmergencyTasks}/{currentMetrics.totalEmergencyTasks}" +
+            $" | cases_resolved={currentMetrics.completedCasesResolved}/{currentMetrics.totalCasesResolvable}");
+
+        // Resource & population
+        GameLogPanel.Instance?.LogMetricsChange(
+            $"DAILY_RESOURCES | day={day}" +
+            $" | food_produced={currentMetrics.foodProduced}" +
+            $" | food_delivered={currentMetrics.foodDelivered}" +
+            $" | food_in_storage={currentMetrics.currentFoodInStorage}" +
+            $" | food_wasted={currentMetrics.foodWasted}" +
+            $" | population={currentMetrics.totalPopulation}" +
+            $" | shelter_occupancy={currentMetrics.shelterOccupancyRate:F1}%" +
+            $" | vacant_slots={currentMetrics.vacantShelterSlots}" +
+            $" | overstay_groups={currentMetrics.groupsOver48Hours}");
+
+        // Workers & budget
+        GameLogPanel.Instance?.LogMetricsChange(
+            $"DAILY_WORKERS_BUDGET | day={day}" +
+            $" | workers_total={currentMetrics.totalWorkers}" +
+            $" | workers_idle={currentMetrics.idleWorkers}" +
+            $" | idle_rate={currentMetrics.idleWorkerRate:F1}%" +
+            $" | workers_in_training={currentMetrics.workersReceivingTraining}" +
+            $" | workers_hired={currentMetrics.newWorkersHired}" +
+            $" | budget_start={currentMetrics.startingBudget:F0}" +
+            $" | budget_spent={currentMetrics.budgetSpent:F0}" +
+            $" | budget_end={currentMetrics.endingBudget:F0}" +
+            $" | budget_usage={currentMetrics.budgetUsageRate:F1}%");
+
+        // Satisfaction score breakdown
+        GameLogPanel.Instance?.LogMetricsChange(
+            $"SATISFACTION_SCORES | day={day}" +
+            $" | food_completion_bonus={currentMetrics.foodCompletionBonus:F1}" +
+            $" | food_ontime_bonus={currentMetrics.foodOnTimeBonus:F1}" +
+            $" | food_delay_score={currentMetrics.foodDelayScore:F1}" +
+            $" | lodging_completion_bonus={currentMetrics.lodgingCompletionBonus:F1}" +
+            $" | lodging_overstay_penalty={currentMetrics.lodgingOverstayPenalty:F1}" +
+            $" | worker_training_bonus={currentMetrics.workerTrainingBonus:F1}" +
+            $" | satisfaction_change={currentMetrics.satisfactionChangeCalculated:F1}" +
+            $" | satisfaction_final={currentMetrics.finalSatisfactionValue:F1}");
+
+        // Efficiency score breakdown
+        GameLogPanel.Instance?.LogMetricsChange(
+            $"EFFICIENCY_SCORES | day={day}" +
+            $" | kitchen_efficiency={currentMetrics.kitchenEfficiencyScore:F1}" +
+            $" | shelter_efficiency={currentMetrics.shelterEfficiencyScore:F1}" +
+            $" | worker_efficiency={currentMetrics.workerEfficiencyScore:F1}" +
+            $" | budget_efficiency={currentMetrics.budgetEfficiencyScore:F1}" +
+            $" | efficiency_final={currentMetrics.finalEfficiencyValue:F1}");
+        // ─────────────────────────────────────────────────────────────────
         
         Debug.Log($"Saved completed report for Day {currentDay} to history (pre-computed final sat={currentMetrics.finalSatisfactionValue:F1}, eff={currentMetrics.finalEfficiencyValue:F1})");
     }
@@ -593,7 +654,7 @@ public class DailyReportUI : MonoBehaviour
         SetSectionValueFormatted(shelterEfficiencyScore, metrics.shelterEfficiencyScore);
         
         SetSectionValueFormatted(workerUtilizationTotal, metrics.workerEfficiency);
-        SetSectionSentence(workerUsageSummary, $"Worker utilization: {(100f - metrics.idleWorkerRate):F1}%");
+        SetSectionSentence(workerUsageSummary, $"Worker utilization: {100f - metrics.idleWorkerRate:F1}%");
         SetSectionValueFormatted(workerEfficiencyScore, metrics.workerEfficiencyScore);
         
         SetSectionValueFormatted(budgetEfficiencyTotal, metrics.budgetEfficiencyScore);

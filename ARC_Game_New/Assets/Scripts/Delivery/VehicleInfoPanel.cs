@@ -138,7 +138,18 @@ public class VehicleInfoPanel : MonoBehaviour
         {
             infoPanel.SetActive(true);
         }
-        
+
+        // Log Vehicle Info Panel Display
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Opened vehicle panel: Vehicle #{currentVehicle.vehicleId}" +
+            $" | status={currentVehicle.currentStatus}" +
+            $" | cargo={GetCargoText()}" +
+            $" | source={GetBuildingName(currentVehicle.sourceBuilding)}" +
+            $" | destination={GetBuildingName(currentVehicle.destinationBuilding)}" +
+            " | " + GetCargoText() +
+            " | " + GetETAText()
+            );
+
         // Update all text fields
         UpdatePanelContent();
         
@@ -347,6 +358,8 @@ public class VehicleInfoPanel : MonoBehaviour
     
     public void ClosePanel()
     {
+        GameLogPanel.Instance?.LogUIInteraction("Closed vehicle panel for Vehicle #{currentVehicle.vehicleId}");
+
         if (infoPanel != null)
         {
             infoPanel.SetActive(false);

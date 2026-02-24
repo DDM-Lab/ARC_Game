@@ -26,7 +26,8 @@ public enum LogCategory
     Environment,
     Vehicles,
     Metrics,
-    Player
+    Player,
+    UI
 }
 
 [System.Serializable]
@@ -69,6 +70,11 @@ public class LogExportData
     public string gameVersion;
     public string exportTime;
     public int totalMessages;
+
+    // ── Environment Config ──
+    public int initialBudget;
+    public int initialSatisfaction;
+
     public List<LogMessage> messages;
 
     public LogExportData(List<LogMessage> messages)
@@ -188,6 +194,7 @@ public class GameLogPanel : MonoBehaviour
     public void LogPlayerAction(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Player);
     public void LogDebug(string message) => AddLogMessage(message, LogMessageType.Debug, LogCategory.Player);
     public void LogError(string message) => AddLogMessage(message, LogMessageType.Error, LogCategory.Player);
+    public void LogUIInteraction(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.UI);
 
     #endregion
 
@@ -310,6 +317,14 @@ public class GameLogPanel : MonoBehaviour
         IsDisplayingText = false;
     }
 
+    // Auto-send on Day 8 daily report method — should call this from DailyReportManager when showing Day 8 report
+    public void TriggerEndGameLogSend()
+    {
+        LogPlayerAction("Day 8 report reached — auto-sending all logs");
+        if (LogSender.Instance != null)
+            LogSender.Instance.SendAllLogs();
+    }
+
     #region Filter Event Handlers
 
     void OnMessageTypeFilterChanged(int value)
@@ -409,6 +424,14 @@ public class GameLogPanel : MonoBehaviour
                 m.round == GlobalClock.Instance.GetCurrentTimeSegment() + 1).ToList();
 
         LogExportData exportData = new LogExportData(messagesToExport);
+
+        // Inject environment config
+        if (GameConfigLoader.Instance != null)
+        {
+            exportData.initialBudget      = GameConfigLoader.Instance.GetInitialBudget();
+            exportData.initialSatisfaction = GameConfigLoader.Instance.GetInitialSatisfaction();
+        }
+
         return JsonUtility.ToJson(exportData, true);
     }
 
