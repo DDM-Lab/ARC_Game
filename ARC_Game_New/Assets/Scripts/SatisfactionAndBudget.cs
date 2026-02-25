@@ -15,7 +15,7 @@ public class SatisfactionAndBudget : MonoBehaviour
     [Header("Budget Settings")]
     public int currentBudget = 10000;
     public int maxBudget = 999999;
-    public int minBudget = 0;
+    public int minBudget = -999999;
     
     [Header("Amount Presets")]
     public float satisfactionSmallAmount = 5f;
@@ -33,6 +33,7 @@ public class SatisfactionAndBudget : MonoBehaviour
     public Slider satisfactionSlider;
     public TextMeshProUGUI budgetText;
     public string budgetPrefix = "$";
+    public TextMeshProUGUI satisfactionValueText;
     
     [Header("Debug")]
     public bool showDebugInfo = true;
@@ -162,6 +163,21 @@ public class SatisfactionAndBudget : MonoBehaviour
         {
             budgetText.text = budgetPrefix + currentBudget.ToString("N0");
         }
+
+        UpdateSatisfactionValueText();
+    }
+
+    public void ForceRefreshUI()
+    {
+        if (satisfactionSlider != null)
+            satisfactionSlider.value = currentSatisfaction;
+
+        if (budgetText != null)
+        {
+            budgetText.text = budgetPrefix + currentBudget.ToString("N0");
+        }
+
+        UpdateSatisfactionValueText();
     }
 
     // ===== SATISFACTION METHODS =====
@@ -297,6 +313,12 @@ public class SatisfactionAndBudget : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Satisfaction set: {previousValue:F1} → {currentSatisfaction:F1}");
         GameLogPanel.Instance.LogMetricsChange($"Satisfaction set: {previousValue:F1} → {currentSatisfaction:F1}");
+    }
+
+    void UpdateSatisfactionValueText()
+    {
+        if (satisfactionValueText != null)
+            satisfactionValueText.text = $"{currentSatisfaction:F1}";
     }
 
     // ===== BUDGET METHODS =====

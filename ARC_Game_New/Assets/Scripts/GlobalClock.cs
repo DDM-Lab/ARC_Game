@@ -62,7 +62,8 @@ public class GlobalClock : MonoBehaviour
     public event Action OnSimulationEnded;
     public event Action<int> OnTimeSegmentChanged;
     public event Action<int> OnDayChanged;
-    
+
+    public static event Action OnRoundEnd;
     // Singleton for easy access
     public static GlobalClock Instance { get; private set; }
     
@@ -332,6 +333,8 @@ public class GlobalClock : MonoBehaviour
         
         // Advance to next time segment
         AdvanceTimeSegment();
+
+        OnRoundEnd?.Invoke();
         
         // Enable player interactions
         EnablePlayerInteractions();

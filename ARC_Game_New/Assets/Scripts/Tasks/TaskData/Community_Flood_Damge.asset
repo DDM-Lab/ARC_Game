@@ -54,7 +54,15 @@ MonoBehaviour:
   roundsRemaining: 2
   realTimeRemaining: 300
   hasRealTimeLimit: 0
-  impacts: []
+  impacts:
+  - impactType: 0
+    value: 1
+    isCountdown: 0
+    customLabel: 
+  - impactType: 5
+    value: 2
+    isCountdown: 0
+    customLabel: 
   agentMessages:
   - messageText: Flood water detected at community center! Large population at risk.
       Immediate mass evacuation required.
@@ -66,7 +74,7 @@ MonoBehaviour:
     choiceText: Evacuate 50% of community to shelters
     choiceImpacts:
     - impactType: 0
-      value: 10
+      value: 5
       isCountdown: 0
       customLabel: 
     isSelected: 0
@@ -87,17 +95,14 @@ MonoBehaviour:
     destinationBuilding: 1
     destinationPrebuilt: 0
     specificDestinationName: 
+    budgetDelayRounds: 0
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Full community evacuation to multiple locations
+    choiceText: Full community evacuation to Shelters
     choiceImpacts:
     - impactType: 0
-      value: 20
-      isCountdown: 0
-      customLabel: 
-    - impactType: 1
-      value: -500
+      value: 15
       isCountdown: 0
       customLabel: 
     isSelected: 0
@@ -118,13 +123,14 @@ MonoBehaviour:
     destinationBuilding: 1
     destinationPrebuilt: 0
     specificDestinationName: 
+    budgetDelayRounds: 0
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 1
   - choiceId: 2
     choiceText: 50% community evacuation to Motel (Immediate)
     choiceImpacts:
     - impactType: 0
-      value: 30
+      value: 5
       isCountdown: 0
       customLabel: 
     - impactType: 1
@@ -149,6 +155,7 @@ MonoBehaviour:
     destinationBuilding: 1
     destinationPrebuilt: 1
     specificDestinationName: 
+    budgetDelayRounds: 0
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   numericalInputs: []

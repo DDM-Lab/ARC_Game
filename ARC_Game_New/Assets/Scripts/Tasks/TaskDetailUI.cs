@@ -287,6 +287,10 @@ public class TaskDetailUI : MonoBehaviour
             {
                 useLongPrefab = false;
             }
+            else if (currentTask.impacts.Count == 1)
+            {
+                useLongPrefab = true;
+            }
             CreateImpactItem(impact, layout, useLongPrefab);
         }
     }
@@ -2224,20 +2228,33 @@ public class TaskDetailUI : MonoBehaviour
                 case ImpactType.Budget:
                     if (SatisfactionAndBudget.Instance != null)
                     {
+                        int delayRounds = choice.budgetDelayRounds;
                         if (impact.value > 0)
                         {
-                            SatisfactionAndBudget.Instance.AddBudget(impact.value, $"Task [{currentTask.taskTitle}] budget impact");
-                            ToastManager.ShowToast($"Budget increased by {impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
+                            // Positive budget = incoming funds — respect delay
+                            BudgetAllocationManager.Instance?.ScheduleAllocation(
+                                (int)impact.value,
+                                delayRounds,
+                                $"Task: {currentTask.taskTitle}");
+                            // rounds delayed
+                            if (delayRounds > 0){
+                                ToastManager.ShowToast(
+                                    $"${impact.value:N0} funding approved — arrives in {delayRounds} round(s)",
+                                    ToastType.Info, true);
+                            }
                         }
                         else
                         {
-                            SatisfactionAndBudget.Instance.RemoveBudget(-impact.value, $"Task [{currentTask.taskTitle}] budget impact");
-                            ToastManager.ShowToast($"Budget decreased by {-impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
+                            // Costs are always immediate
+                            SatisfactionAndBudget.Instance.RemoveBudget(
+                                -(int)impact.value,
+                                $"Task [{currentTask.taskTitle}] cost");
+                            ToastManager.ShowToast(
+                                $"Budget decreased by ${-impact.value:N0}",
+                                ToastType.Info, true);
                         }
                     }
                     break;
-
-                    // Add other impact types as needed
             }
         }
 

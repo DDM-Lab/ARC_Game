@@ -4,6 +4,7 @@ using TMPro;
 using System.Collections;
 using System.Collections.Generic;
 using System;
+using System.Linq;
 
 public class AlertUIController : MonoBehaviour
 {
@@ -214,8 +215,6 @@ public class AlertUIController : MonoBehaviour
         if (alertQueue.Count == 0) return;
 
         currentAlert = alertQueue.Dequeue();
-        Debug.Log($"Processing alert: {currentAlert.taskTitle}");
-        GameLogPanel.Instance.LogTaskEvent($"Processing alert: {currentAlert.taskTitle}");
         alertMessages = currentAlert.agentMessages;
         currentMessageIndex = 0;
 
@@ -225,6 +224,16 @@ public class AlertUIController : MonoBehaviour
             return;
         }
 
+        Debug.Log($"Processing alert: {currentAlert.taskTitle}");
+        GameLogPanel.Instance.LogTaskEvent($"Processing alert: {currentAlert.taskTitle}");
+        // log full alert content
+        var allMessages = string.Join(";", alertMessages.Select(m =>
+            m.messageText.Replace("|", "/").Replace(";", ",")));
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"ALERT_SHOWN | task=[{currentAlert.taskType}] {currentAlert.taskTitle}" +
+            $" | officer={currentAlert.taskOfficer}" +
+            $" | messages={alertMessages.Count} | content={allMessages}");
+            
         // Pause the game
         PauseGame();
 

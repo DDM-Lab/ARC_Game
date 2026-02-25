@@ -283,19 +283,14 @@ public class DailyReportManager : MonoBehaviour
             title: "Proceed to Next Day?"
         );
     }
-    
-    /// <summary>
-    /// FIX: The correct order of operations is now guaranteed:
-    ///   1. Report panel fades out
-    ///   2. GlobalClock resumes simulation
-    ///   3. GlobalClock.ProceedToNextDay() calls DailyReportData.PrepareForNewDay()
-    ///      which resets all daily tracking, THEN advances the day counter.
-    /// This ensures data is only cleared AFTER the report has been fully shown.
-    /// </summary>
+
     IEnumerator FadeOutAndProceed()
     {
         // Fade out the panel
         yield return StartCoroutine(FadeOutReport());
+
+        // Refresh satisfaction and budget UI
+        SatisfactionAndBudget.Instance?.ForceRefreshUI();
         
         // Resume simulation and allow day transition
         if (globalClock != null)

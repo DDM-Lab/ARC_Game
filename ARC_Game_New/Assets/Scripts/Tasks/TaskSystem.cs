@@ -229,6 +229,10 @@ public class AgentChoice
     public BuildingType destinationBuilding = BuildingType.Shelter;
     public PrebuiltBuildingType destinationPrebuilt = PrebuiltBuildingType.Motel;
     public string specificDestinationName = ""; // Use name instead of direct reference
+
+    [Header("Delayed Budget")]
+    [Tooltip("If > 0, any Budget impact on this choice is delayed this many rounds instead of applied immediately")]
+    public int budgetDelayRounds = 0;
     
     [Header("Distance Priority")]
     public bool prioritizeNearestSource = true;
@@ -1392,7 +1396,8 @@ public class TaskSystem : MonoBehaviour
             newChoice.specificDestinationName = choice.specificDestinationName;
             newChoice.prioritizeNearestSource = choice.prioritizeNearestSource;
             newChoice.prioritizeNearestDestination = choice.prioritizeNearestDestination;
-
+            newChoice.budgetDelayRounds = choice.budgetDelayRounds;
+            
             newTask.agentChoices.Add(newChoice);
         }
 

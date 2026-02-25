@@ -97,6 +97,7 @@ public class DailyReportUI : MonoBehaviour
     public TextMeshProUGUI tasksCompletedText;
     public TextMeshProUGUI facilitiesConstructedText;
     public TextMeshProUGUI moneySpentText;
+    public TextMeshProUGUI moneyReceivedText;
     public TextMeshProUGUI workersHiredText;
     public TextMeshProUGUI workersTrainedText;
 
@@ -233,6 +234,10 @@ public class DailyReportUI : MonoBehaviour
         
         if (moneySpentText != null)
             moneySpentText.text = $"${metrics.budgetSpent:F0}";
+
+        if (moneyReceivedText != null)
+            moneyReceivedText.text = $"${metrics.budgetReceived:F0}";
+
         
         if (workersHiredText != null)
             workersHiredText.text = metrics.newWorkersHired.ToString();
@@ -1022,6 +1027,7 @@ public class DailyReportUI : MonoBehaviour
         ResetSectionElement(workerTotal);
         ResetSectionElement(workerStatus);
         ResetSectionElement(workerTrainingBonusElement);
+        ResetSectionElement(idleWorker);
 
         // Reset all efficiency sections
         ResetSectionElement(foodUtilizationTotal);

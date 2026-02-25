@@ -11,9 +11,6 @@ public class DailyReportData : MonoBehaviour
     public SatisfactionAndBudget budgetSystem;
     public ClientStayTracker clientTracker;
     
-    [Header("Daily Budget")]
-    public float dailyBudgetAllocated = 3000f;
-    
     [Header("Daily Tracking")]
     private float dayStartBudget;
     private float dayStartSatisfaction;
@@ -38,6 +35,7 @@ public class DailyReportData : MonoBehaviour
     private int todayDepartures = 0;
     private int todayBuildingsConstructed = 0;
     private float todayTaskCosts = 0f;
+    private float todayBudgetReceived = 0f;
     
     // Track what we've already processed
     private HashSet<int> processedTaskIds = new HashSet<int>();
@@ -73,6 +71,11 @@ public class DailyReportData : MonoBehaviour
         if (deliverySystem == null) deliverySystem = FindObjectOfType<DeliverySystem>();
         if (budgetSystem == null) budgetSystem = FindObjectOfType<SatisfactionAndBudget>();
         if (clientTracker == null) clientTracker = FindObjectOfType<ClientStayTracker>();
+    }
+
+    public void RecordBudgetReceived(float amount)
+    {
+        todayBudgetReceived += amount;
     }
     
     void SubscribeToEvents()
@@ -224,6 +227,7 @@ public class DailyReportData : MonoBehaviour
         todayDepartures = 0;
         todayBuildingsConstructed = 0;
         todayTaskCosts = 0f;
+        todayBudgetReceived = 0f;
     }
     
     // =========================================================================
@@ -327,10 +331,11 @@ public class DailyReportData : MonoBehaviour
             
             metrics.startingBudget = dayStartBudget;
             metrics.endingBudget = currentBudget;
-            metrics.budgetSpent = Mathf.Max(0f, dayStartBudget - currentBudget);
-            metrics.averageTaskCost = todayCompletedTasks.Count > 0 ? todayTaskCosts / todayCompletedTasks.Count : 0f;
-            
-            metrics.budgetUsageRate = currentBudget / (dayStartBudget + dailyBudgetAllocated) * 100f;
+            metrics.budgetReceived   = todayBudgetReceived;
+            metrics.budgetSpent      = Mathf.Max(0f, (dayStartBudget + todayBudgetReceived) - currentBudget);
+            metrics.budgetUsageRate = metrics.budgetReceived > 0
+                ? metrics.budgetSpent / metrics.budgetReceived * 100f
+                : 0f;
             
             metrics.satisfactionChange = budgetSystem.GetCurrentSatisfaction() - dayStartSatisfaction;
             
