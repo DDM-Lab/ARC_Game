@@ -576,6 +576,9 @@ public class AlertUIController : MonoBehaviour
         }
         else
         {
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Alert advanced — message {currentMessageIndex + 1}/{alertMessages.Count}" +
+                $": \"{alertMessages[currentMessageIndex].messageText}\"");
             // Go to next message
             currentMessageIndex++;
             ShowCurrentMessage();
@@ -644,6 +647,9 @@ public class AlertUIController : MonoBehaviour
         if (isTyping && typingCoroutine != null)
         {
             StopCoroutine(typingCoroutine);
+
+            GameLogPanel.Instance?.LogUIInteraction(
+            $"Alert messages typing skipped — message {currentMessageIndex + 1}/{alertMessages.Count}");
             
             // Show full message immediately
             if (currentMessageIndex < alertMessages.Count)

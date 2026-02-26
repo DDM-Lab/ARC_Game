@@ -5563,7 +5563,7 @@ MonoBehaviour:
   minSatisfaction: 0
   currentBudget: 10000
   maxBudget: 999999
-  minBudget: 0
+  minBudget: -999999
   satisfactionSmallAmount: 5
   satisfactionMediumAmount: 15
   satisfactionLargeAmount: 30

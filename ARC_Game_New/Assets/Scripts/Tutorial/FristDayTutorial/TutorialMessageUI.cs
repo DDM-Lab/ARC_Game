@@ -166,7 +166,9 @@ public class TutorialMessageUI : MonoBehaviour
             Debug.LogWarning("TutorialMessageUI: No messages to show");
             return;
         }
-        
+        GameLogPanel.Instance?.LogUIInteraction(
+        $"Tutorial started — {messages.Count} message(s) from {GetAgentName(messages[0].agent)}");
+
         PauseGame();
         StartCoroutine(ShowMessagesSmooth());
     }
@@ -323,6 +325,10 @@ public class TutorialMessageUI : MonoBehaviour
         }
         else
         {
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Tutorial advanced — message {currentMessageIndex + 1}/{currentMessages.Count} " +
+                $"({GetAgentName(currentMessages[currentMessageIndex].agent)}): " +
+                $"\"{currentMessages[currentMessageIndex].messageText}\"");
             currentMessageIndex++;
             ShowCurrentMessage();
         }
@@ -349,6 +355,9 @@ public class TutorialMessageUI : MonoBehaviour
         if (isTyping && typingCoroutine != null)
         {
             StopCoroutine(typingCoroutine);
+
+            GameLogPanel.Instance?.LogUIInteraction(
+            $"Tutorial typing skipped — message {currentMessageIndex + 1}/{currentMessages.Count}");
             
             if (currentMessageIndex < currentMessages.Count)
             {
