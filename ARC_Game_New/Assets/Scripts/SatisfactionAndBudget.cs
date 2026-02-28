@@ -37,9 +37,9 @@ public class SatisfactionAndBudget : MonoBehaviour
     [Header("Debug")]
     public bool showDebugInfo = true;
 
-    [Header("Config Loading")]
-    public bool useExternalConfig = true;
-    public GameConfigLoader configLoader;
+    // [Header("Config Loading")]
+    // public bool useExternalConfig = true;
+    // public GameConfigLoader configLoader;
 
     
     // Events for other systems to listen to
@@ -66,61 +66,79 @@ public class SatisfactionAndBudget : MonoBehaviour
 
     void Start()
     {
-        StartCoroutine(InitializeWithConfig());
+        // StartCoroutine(InitializeWithConfig());
+        StartCoroutine(InitializeWithCentralConfig());
     }
-
-    IEnumerator InitializeWithConfig()
+    IEnumerator InitializeWithCentralConfig()
     {
-        // Wait for config to load if using external config
-        if (useExternalConfig)
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
         {
-            if (configLoader == null)
-                configLoader = GameConfigLoader.Instance;
-            
-            if (configLoader != null)
-            {
-                // Wait for config to load (max 10 seconds)
-                float waitTime = 0f;
-                while (!configLoader.IsConfigLoaded() && waitTime < 10f)
-                {
-                    yield return new WaitForSeconds(0.1f);
-                    waitTime += 0.1f;
-                }
-                
-                // Apply loaded config
-                if (configLoader.IsConfigLoaded())
-                {
-                    currentBudget = configLoader.GetInitialBudget();
-                    currentSatisfaction = configLoader.GetInitialSatisfaction();
-                    
-                    if (showDebugInfo)
-                        Debug.Log($"SatisfactionAndBudget: Using config initialBudget = {currentBudget}; initialSatisfaction = {currentSatisfaction}");
-                }
-                else
-                {
-                    Debug.LogWarning("SatisfactionAndBudget: Config load timeout. Using inspector value.");
-                }
-            }
-            else
-            {
-                Debug.LogWarning("SatisfactionAndBudget: GameConfigLoader not found. Using inspector value.");
-            }
+            yield return null;
         }
         
-        // Original Start() code continues here:
+        currentBudget = GameDataManager.Instance.InitialBudget;
+        currentSatisfaction = GameDataManager.Instance.InitialSatisfaction;
+    
         InitializeValues();
         SetupFeedbackEffects();
         UpdateUI();
 
-        if (satisfactionSlider != null)
-        {
-            satisfactionSlider.value = currentSatisfaction;
-        }
-
         if (showDebugInfo)
-            Debug.Log($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
-        GameLogPanel.Instance.LogMetricsChange($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
+            Debug.Log($"SatisfactionAndBudget initialized from DataManager - Budget: {currentBudget}, Sat: {currentSatisfaction}");
     }
+
+    // IEnumerator InitializeWithConfig()
+    // {
+    //     // Wait for config to load if using external config
+    //     if (useExternalConfig)
+    //     {
+    //         if (configLoader == null)
+    //             configLoader = GameConfigLoader.Instance;
+            
+    //         if (configLoader != null)
+    //         {
+    //             // Wait for config to load (max 10 seconds)
+    //             float waitTime = 0f;
+    //             while (!configLoader.IsConfigLoaded() && waitTime < 10f)
+    //             {
+    //                 yield return new WaitForSeconds(0.1f);
+    //                 waitTime += 0.1f;
+    //             }
+                
+    //             // Apply loaded config
+    //             if (configLoader.IsConfigLoaded())
+    //             {
+    //                 currentBudget = configLoader.GetInitialBudget();
+    //                 currentSatisfaction = configLoader.GetInitialSatisfaction();
+                    
+    //                 if (showDebugInfo)
+    //                     Debug.Log($"SatisfactionAndBudget: Using config initialBudget = {currentBudget}; initialSatisfaction = {currentSatisfaction}");
+    //             }
+    //             else
+    //             {
+    //                 Debug.LogWarning("SatisfactionAndBudget: Config load timeout. Using inspector value.");
+    //             }
+    //         }
+    //         else
+    //         {
+    //             Debug.LogWarning("SatisfactionAndBudget: GameConfigLoader not found. Using inspector value.");
+    //         }
+    //     }
+        
+    //     // Original Start() code continues here:
+    //     InitializeValues();
+    //     SetupFeedbackEffects();
+    //     UpdateUI();
+
+    //     if (satisfactionSlider != null)
+    //     {
+    //         satisfactionSlider.value = currentSatisfaction;
+    //     }
+
+    //     if (showDebugInfo)
+    //         Debug.Log($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
+    //     GameLogPanel.Instance.LogMetricsChange($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
+    // }
 
     void SetupFeedbackEffects()
     {
@@ -158,6 +176,7 @@ public class SatisfactionAndBudget : MonoBehaviour
         }
         
         // Always update budget text
+        Debug.Log("UI is trying to display budget: " + currentBudget); // ADD THIS
         if (budgetText != null)
         {
             budgetText.text = budgetPrefix + currentBudget.ToString("N0");
@@ -308,6 +327,7 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         int previousValue = currentBudget;
         currentBudget = Mathf.Clamp(currentBudget + amount, minBudget, maxBudget);
+        Debug.Log($"AddBudget: {amount}, NewBudget: {currentBudget}");
 
         // Use default description if none provided
         if (string.IsNullOrEmpty(description))

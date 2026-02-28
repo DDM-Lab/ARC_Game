@@ -28,10 +28,21 @@ public class PrebuiltBuilding : MonoBehaviour
 
     // Building functionality
     private bool isInitialized = false;
+    private int communityResidentCount;
 
     void Start()
     {
+        StartCoroutine(InitializeWithCentralConfig());
         InitializePrebuiltBuilding();
+    }
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+        
+        communityResidentCount = GameDataManager.Instance.InitialResidentsPerCommunityNumber;
     }
 
     string GetTransportTaskStatus()
@@ -132,6 +143,11 @@ public class PrebuiltBuilding : MonoBehaviour
         {
             // Ensure community can store population
             // Initial population should be set in the inspector via initialResources
+            foreach (ResourceAmount amnt in resourceStorage.startingResources)
+            {
+                if (amnt.type == ResourceType.Population)
+                    amnt.amount = communityResidentCount;
+            } 
         }
 
         // Communities typically don't require road connection validation

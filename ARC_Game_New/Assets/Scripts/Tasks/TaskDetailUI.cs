@@ -53,7 +53,7 @@ public class TaskDetailUI : MonoBehaviour
     [Header("Debug")]
     public bool showDebugInfo = true;
 
-    private GameTask currentTask;
+    public GameTask currentTask;
     private List<GameObject> currentImpactItems = new List<GameObject>();
     private List<GameObject> currentConversationItems = new List<GameObject>();
     private AgentChoice selectedChoice;
@@ -582,6 +582,14 @@ public class TaskDetailUI : MonoBehaviour
     {
         if (selectedChoice != null)
         {
+            // Inside CompleteTaskAction
+if (selectedChoice != null) {
+    foreach(var i in selectedChoice.choiceImpacts) 
+        Debug.Log($"CHOICE Impact: {i.impactType} = {i.value}");
+    
+    foreach(var i in currentTask.impacts) 
+        Debug.Log($"TASK Impact: {i.impactType} = {i.value}");
+}
             ApplyChoiceImpacts(selectedChoice);
             if (selectedChoice.immediateDelivery)
             {
@@ -594,11 +602,23 @@ public class TaskDetailUI : MonoBehaviour
             }
             else
             {
+                foreach (TaskImpact impact in currentTask.impacts)
+        {
+            switch (impact.impactType)
+            {
+                case ImpactType.Budget:
+                    var budgetSystem = SatisfactionAndBudget.Instance;
+                    Debug.Log($"completetaskaction: Competed task {currentTask.taskTitle}. budget impact: {impact.value}, satisfactionbudget: {budgetSystem.currentBudget}");
+                    break;
+            }
+        }
+                // Debug.Log("completetaskaction taskdetailUI");
                 TaskSystem.Instance.CompleteTask(currentTask);
             }
         }
         else
         {
+
             TaskSystem.Instance.CompleteTask(currentTask);
         }
 
@@ -2175,7 +2195,9 @@ public class TaskDetailUI : MonoBehaviour
                     {
                         if (impact.value > 0)
                         {
+                            Debug.Log("hereeee");
                             SatisfactionAndBudget.Instance.AddBudget(impact.value, $"Task [{currentTask.taskTitle}] budget impact");
+                            Debug.Log($"TaskDetailUI, applychoiceimpacts: Budget increased by {impact.value} due to task completion of [{currentTask.taskTitle}]");
                             ToastManager.ShowToast($"Budget increased by {impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
                         }
                         else

@@ -12,8 +12,15 @@ public class GameConfigLoader : MonoBehaviour
     public bool showDebugInfo = true;
     
     // Loaded config 
-    public int loadedInitialBudget;
-    public int loadedInitialSatisfaction;
+    public int loadedInitialBudget=10000;
+    public int loadedInitialSatisfaction=50;
+    public int loadedInitialCommunityNumber=3;
+    public int loadedInitialCommunityResidents=40;
+    public int loadedInitialGameDays=8;
+    public int loadedInitialGameRounds=4;
+    public int loadedInitialTrainedVols=5;
+    public int loadedInitialUntrainedVols=5;
+    public int loadedInitialBudgetDailyAllocs=3000;
     private bool configLoaded = false;
     
     public static GameConfigLoader Instance { get; private set; }
@@ -106,6 +113,42 @@ public class GameConfigLoader : MonoBehaviour
                 if (int.TryParse(value, out int satisfaction))
                     loadedInitialSatisfaction = satisfaction;
             }
+            else if (parameter.Equals("initialCommunityCount", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int commCount))
+                    loadedInitialCommunityNumber = commCount;
+            }
+            else if (parameter.Equals("initialCommunityResidentCount", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int resPerComm))
+                    loadedInitialCommunityResidents = resPerComm;
+            }
+            else if (parameter.Equals("initialDaysPerRun", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int gameDays))
+                    loadedInitialGameDays = gameDays;
+            }
+            else if (parameter.Equals("initialRoundsPerGameDay", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int roundsPerDay))
+                    loadedInitialGameRounds = roundsPerDay;
+            }
+            else if (parameter.Equals("initialTrainedVolunteerCount", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int trainedVols))
+                    loadedInitialTrainedVols = trainedVols;
+            }
+            else if (parameter.Equals("initialUntrainedVolunteerCount", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int untrainedVols))
+                    loadedInitialUntrainedVols = untrainedVols;
+            }
+            else if (parameter.Equals("initialDailyBudgetAdditions", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int dailyBudgetAllocs))
+                    loadedInitialBudgetDailyAllocs = dailyBudgetAllocs;
+            }
+            
         }
         
         configLoaded = true;
@@ -130,6 +173,34 @@ public class GameConfigLoader : MonoBehaviour
     public int GetInitialSatisfaction()
     {
         return loadedInitialSatisfaction;
+    }
+     public int GetInitialCommunityCount()
+    {
+        return loadedInitialCommunityNumber;
+    }
+     public int GetInitialResidentCountPerCommunity()
+    {
+        return loadedInitialCommunityResidents;
+    }
+     public int GetInitialNumDays()
+    {
+        return loadedInitialGameDays;
+    }
+     public int GetInitialNumRoundsPerGame()
+    {
+        return loadedInitialGameRounds;
+    }
+     public int GetInitialTrainedVolunteerCount()
+    {
+        return loadedInitialTrainedVols;
+    }
+     public int GetInitialUntrainedVolunteerCount()
+    {
+        return loadedInitialUntrainedVols;
+    }
+    public int GetInitialBudgetDailyAdditions()
+    {
+        return loadedInitialBudgetDailyAllocs;
     }
 
 }

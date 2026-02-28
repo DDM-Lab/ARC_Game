@@ -18,6 +18,7 @@ MonoBehaviour:
   description: ' Daily budget report ready.'
   taskImage: {fileID: 21300000, guid: 279e68b249d217e4baea8f58cf4e4d64, type: 3}
   taskOfficer: 3
+  taskTag: 0
   roundTriggers:
   - targetRound: 0
     exactMatch: 1
@@ -46,7 +47,7 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts:
   - impactType: 1
-    value: 3000
+    value: 2000
     isCountdown: 0
     customLabel: 
   - impactType: 5

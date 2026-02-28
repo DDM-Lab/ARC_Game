@@ -746,6 +746,7 @@ public class TaskSystem : MonoBehaviour
             return null;
         }
 
+
         // Find suitable facility that triggered the task
         MonoBehaviour triggeringFacility = taskDatabase.FindSuitableFacility(taskData);
         string facilityName = triggeringFacility?.name ?? taskData.targetFacilityType.ToString();
@@ -762,6 +763,19 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
+
+                /*
+        levers debug - daliy amnt
+        */
+        foreach (TaskImpact impact in newTask.impacts)
+        {
+            switch (impact.impactType)
+            {
+                case ImpactType.Budget:
+                    Debug.Log($"Spawning task {newTask.taskTitle}. budget impact: {impact.value}");
+                    break;
+            }
+        }
 
         return newTask;
     }
@@ -1062,8 +1076,27 @@ public class TaskSystem : MonoBehaviour
             task.status = TaskStatus.Completed;
             activeTasks.Remove(task);
             completedTasks.Add(task);
-
+foreach (TaskImpact impact in task.impacts)
+        {
+            switch (impact.impactType)
+            {
+                case ImpactType.Budget:
+                    var budgetSystem = SatisfactionAndBudget.Instance;
+                    Debug.Log($"before Competed task {task.taskTitle}. budget impact: {impact.value}, satisfactionbudget: {budgetSystem.currentBudget}");
+                    break;
+            }
+        }
             OnTaskCompleted?.Invoke(task);
+                    foreach (TaskImpact impact in task.impacts)
+        {
+            switch (impact.impactType)
+            {
+                case ImpactType.Budget:
+                    var budgetSystem = SatisfactionAndBudget.Instance;
+                    Debug.Log($"Competed task {task.taskTitle}. budget impact: {impact.value}, satisfactionbudget: {budgetSystem.currentBudget}");
+                    break;
+            }
+        }
 
             if (taskCenterUI != null && taskCenterUI.taskCenterPanel.activeInHierarchy)
             {
