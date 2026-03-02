@@ -11,8 +11,6 @@ public class MapSystem : MonoBehaviour
     public BuildingSystem buildingSystem;
     
     [Header("Prefabs")]
-    public GameObject motelPrefab;
-    public GameObject communityPrefab;
     public GameObject abandonedSitePrefab;
     
     [Header("Map Layout")]

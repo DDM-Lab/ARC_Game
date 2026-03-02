@@ -85,6 +85,7 @@ public class FloodTaskGenerator : MonoBehaviour
             taskTitle, TaskType.Emergency, "Emergency Response", description);
 
         roadBlockageTask.taskImage = vehicleDamageImage;
+        roadBlockageTask.taskOfficer = TaskOfficer.LodgingMassCare;
 
         // Set tight timing for emergency
         roadBlockageTask.roundsRemaining = 2;
@@ -217,6 +218,7 @@ public class FloodTaskGenerator : MonoBehaviour
             taskTitle, TaskType.Emergency, "Maintenance", description);
 
         repairTask.taskImage = vehicleDamageImage;
+        repairTask.taskOfficer = TaskOfficer.LodgingMassCare;
 
         // Longer time for repair tasks
         repairTask.roundsRemaining = 2;
@@ -231,13 +233,12 @@ public class FloodTaskGenerator : MonoBehaviour
         repairTask.agentMessages.Add(new AgentMessage("We can either repair it now or wait, but the vehicle won't be available until fixed.", TaskSystem.Instance.foodMassCareSprite));
 
         // Add repair choices
-        AgentChoice immediateRepairChoice = new AgentChoice(1, "Repair immediately ($800, 2 workforce)");
+        AgentChoice immediateRepairChoice = new AgentChoice(1, "Repair immediately ($1200)");
         immediateRepairChoice.triggersDelivery = false;
-        immediateRepairChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -800, false, "Repair Cost"));
-        immediateRepairChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Workforce, -2, false, "Crew Assignment"));
+        immediateRepairChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1200, false, "Repair Cost"));
         repairTask.agentChoices.Add(immediateRepairChoice);
 
-        AgentChoice delayRepairChoice = new AgentChoice(2, "Delay repair (vehicle remains unavailable)");
+        AgentChoice delayRepairChoice = new AgentChoice(2, "Delay repair (vehicle remains unavailable, Satisfaction - 5)");
         delayRepairChoice.triggersDelivery = false;
         delayRepairChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5, false, "Reduced Capacity"));
         repairTask.agentChoices.Add(delayRepairChoice);

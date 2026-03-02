@@ -78,7 +78,7 @@ MonoBehaviour:
     typingSpeed: 0
   agentChoices:
   - choiceId: 0
-    choiceText: Request 10 food packs (Quicker delivery)
+    choiceText: Request 10 food packs from Kitchens (Quicker delivery)
     choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
@@ -102,7 +102,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Request 20 food packs
+    choiceText: Request 20 food packs from Kitchens
     choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
@@ -126,7 +126,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 2
-    choiceText: Helicopter deliver 10 food packs
+    choiceText: Helicopter deliver 10 food packs (immediate)
     choiceImpacts:
     - impactType: 1
       value: -1000

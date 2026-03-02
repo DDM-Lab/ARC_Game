@@ -24245,8 +24245,6 @@ MonoBehaviour:
   mapSize: {x: 1440, y: 1024}
   mapContainer: {fileID: 901098}
   buildingSystem: {fileID: 550057043}
-  motelPrefab: {fileID: 0}
-  communityPrefab: {fileID: 0}
   abandonedSitePrefab: {fileID: 4161880596547375488, guid: 7c36b6afde72432469b94545fab49046, type: 3}
   motelPosition: {x: 0, y: -6}
   numberOfCommunities: 3
