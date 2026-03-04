@@ -10,14 +10,10 @@ public class MapSystem : MonoBehaviour
     [Header("Building System Reference")]
     public BuildingSystem buildingSystem;
     
-    [Header("Prefabs")]
-    public GameObject abandonedSitePrefab;
-    
     [Header("Map Layout")]
     public Vector2 motelPosition = new Vector2(0, 200);
     public int numberOfCommunities = 3;
     public List<Vector2> communityPositions = new List<Vector2>();
-    public List<Vector2> abandonedSitePositions = new List<Vector2>();
     private List<AbandonedSite> abandonedSites = new List<AbandonedSite>();
     
     void Start()
@@ -28,13 +24,12 @@ public class MapSystem : MonoBehaviour
 
     void InitializeMap()
     {
-        // Create map container if not assigned
         if (mapContainer == null)
         {
             mapContainer = new GameObject("MapContainer").transform;
         }
 
-        //Find motel position
+        // Find motel position
         GameObject motel = GameObject.Find("Motel");
         if (motel != null)
         {
@@ -48,7 +43,7 @@ public class MapSystem : MonoBehaviour
             GameLogPanel.Instance.LogError("Motel object not found in the scene.");
         }
 
-        //Find community positions
+        // Find community positions
         for (int i = 0; i < numberOfCommunities; i++)
         {
             GameObject community = GameObject.Find($"Community0{i + 1}");
@@ -66,29 +61,22 @@ public class MapSystem : MonoBehaviour
             }
         }
 
-        // Create abandoned sites
-        for (int i = 0; i < abandonedSitePositions.Count; i++)
-        {
-            if (abandonedSitePrefab != null)
-            {
-                GameObject siteObj = Instantiate(abandonedSitePrefab, abandonedSitePositions[i], Quaternion.identity, mapContainer);
-                siteObj.name = $"AbandonedSite_{i + 1}";
+        // Find all pre-placed abandoned sites in the scene
+        AbandonedSite[] foundSites = FindObjectsOfType<AbandonedSite>();
 
-                AbandonedSite site = siteObj.GetComponent<AbandonedSite>();
-                if (site != null)
-                {
-                    site.Initialize(i);
-                    abandonedSites.Add(site);
-                    var abandonedSitePosition = abandonedSitePositions[i];
-                    Debug.Log($"Created AbandonedSite_{i + 1} at ({abandonedSitePosition.x:F2}, {abandonedSitePosition.y:F2})");
-                    GameLogPanel.Instance.LogBuildingStatus($"AbandonedSite_{i + 1} located at ({abandonedSitePosition.x:F2}, {abandonedSitePosition.y:F2})");
-                }
-            }
-            else
-            {
-                Debug.LogError("AbandonedSite prefab is not assigned in MapSystem.");
-                GameLogPanel.Instance.LogError("AbandonedSite prefab is not assigned in MapSystem.");
-            }
+        if (foundSites.Length == 0)
+        {
+            Debug.LogWarning("No AbandonedSite objects found in the scene.");
+            GameLogPanel.Instance.LogError("No AbandonedSite objects found in the scene.");
+        }
+
+        for (int i = 0; i < foundSites.Length; i++)
+        {
+            foundSites[i].Initialize(i);
+            abandonedSites.Add(foundSites[i]);
+            var pos = foundSites[i].transform.position;
+            Debug.Log($"Found AbandonedSite at ({pos.x:F2}, {pos.y:F2})");
+            GameLogPanel.Instance.LogBuildingStatus($"AbandonedSite_{i + 1} located at ({pos.x:F2}, {pos.y:F2})");
         }
 
         // Register abandoned sites with building system
@@ -107,15 +95,13 @@ public class MapSystem : MonoBehaviour
     
     void SetupCamera()
     {
-
         Camera mainCamera = Camera.main;
         if (mainCamera != null)
         {
             mainCamera.orthographic = true;
-            mainCamera.orthographicSize = 10f; // fixed size for testing only
+            mainCamera.orthographicSize = 10f;
             mainCamera.transform.position = new Vector3(0, 0, -10);
         }
-
     }
     
     public List<AbandonedSite> GetAbandonedSites()
