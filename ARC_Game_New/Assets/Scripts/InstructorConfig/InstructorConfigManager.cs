@@ -115,7 +115,7 @@ public class InstructorConfigManager : MonoBehaviour
         try
         {
             MapConfig loaded = JsonUtility.FromJson<MapConfig>(json);
-            if (loaded == null || loaded.tiles == null) return false;
+            if (loaded == null || loaded.landLayer == null) return false;
             CurrentConfig = loaded;
             NotifyConfigChanged();
             return true;
