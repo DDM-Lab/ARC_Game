@@ -71,7 +71,7 @@ MonoBehaviour:
     typingSpeed: 0.05
   agentChoices:
   - choiceId: 0
-    choiceText: Evacuate 50% of community to shelters
+    choiceText: Evacuate 50% of community to shelters  (Satisfaction + 5)
     choiceImpacts:
     - impactType: 0
       value: 5
@@ -99,7 +99,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Full community evacuation to Shelters
+    choiceText: Full community evacuation to Shelters (Satisfaction + 15)
     choiceImpacts:
     - impactType: 0
       value: 15
@@ -127,7 +127,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 1
   - choiceId: 2
-    choiceText: 50% community evacuation to Motel (Immediate)
+    choiceText: 50% community evacuation to Motel (Immediate) (Satisfaction + 5)
     choiceImpacts:
     - impactType: 0
       value: 5

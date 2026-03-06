@@ -72,14 +72,14 @@ MonoBehaviour:
     isSelected: 0
     triggersDelivery: 0
     immediateDelivery: 0
-    deliveryCargoType: 0
+    deliveryCargoType: 1
     enableMultipleDeliveries: 0
-    multiDeliveryType: 0
-    quantityType: 0
+    multiDeliveryType: 2
+    quantityType: 2
     deliveryQuantity: 0
     deliveryPercentage: 0
     deliverAll: 0
-    sourceType: 0
+    sourceType: 1
     sourceBuilding: 0
     sourcePrebuilt: 0
     specificSourceName: 

@@ -40,7 +40,7 @@ MonoBehaviour:
     floodTileThreshold: 2
     specificBuildingType: 1
     specificPrebuiltType: 0
-    detectionRadius: 5
+    detectionRadius: 2
   budgetTriggers: []
   satisfactionTriggers: []
   workforceTriggers: []
@@ -77,7 +77,7 @@ MonoBehaviour:
     typingSpeed: 0.05
   agentChoices:
   - choiceId: 0
-    choiceText: Evacuate all residents to other shelters
+    choiceText: Evacuate all residents to other shelters (Satisfaction + 10)
     choiceImpacts:
     - impactType: 0
       value: 10
@@ -105,7 +105,7 @@ MonoBehaviour:
     prioritizeNearestSource: 1
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Evacuate all residents to Motel
+    choiceText: Evacuate all residents to Motel (Satisfaction + 10)
     choiceImpacts:
     - impactType: 0
       value: 10
@@ -133,7 +133,8 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 1
   - choiceId: 2
-    choiceText: Helicopter evacuation to Motel ($5000)
+    choiceText: Helicopter evacuation to Motel (Immediate, $5000, Satisfaction +
+      10)
     choiceImpacts:
     - impactType: 1
       value: -5000

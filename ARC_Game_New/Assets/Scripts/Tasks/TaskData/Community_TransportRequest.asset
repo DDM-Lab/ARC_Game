@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Community_TransportRequest
   m_EditorClassIdentifier: 
   taskId: Community_TransportRequest
-  taskTitle: Population Relocation
+  taskTitle: Population Relocation From Community
   taskType: 1
   description: 20 clients in this community need relocation. Choose where to send
     them based on available options and budget.
@@ -63,7 +63,7 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   agentMessages:
-  - messageText: We have people  that need immediate relocation.
+  - messageText: We have 20 people that need immediate relocation.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
@@ -102,12 +102,8 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Send to Motel ($2000)
-    choiceImpacts:
-    - impactType: 1
-      value: -2000
-      isCountdown: 0
-      customLabel: 
+    choiceText: Send to Motel
+    choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
     immediateDelivery: 0
