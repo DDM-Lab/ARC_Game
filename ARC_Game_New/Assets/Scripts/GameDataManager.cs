@@ -21,6 +21,12 @@ public class GameDataManager : MonoBehaviour
     public int defaultTrainedVolunteerCount = 5;
     public int defaultUntrainedVolunteerCount = 5;
     public int defaultDailyBudgetAllocs = 3000;
+    public WeatherType defaultInitialWeather = WeatherType.Sunny;
+    public int defaultKitchenCapacity = 10;
+    public int defaultShelterCapacity = 10;
+    public int defaultCaseworkCapacity = 10;
+    public int defaultRequiredWorkersPerLoc = 4;
+
 
 
     public int InitialBudget { get; private set; }
@@ -32,6 +38,11 @@ public class GameDataManager : MonoBehaviour
     public int InitialTrainedVolunteerCount { get; private set; }
     public int InitialUntrainedVolunteerCount { get; private set; }
     public int InitialDailyBudgetAddition { get; private set; }
+    public WeatherType InitialWeather {get; private set;}
+    public int InitialKitchenCapacity { get; private set; }
+    public int InitialShelterCapacity { get; private set; }
+    public int InitialCaseworkCapacity { get; private set; }
+    public int InitialRequiredWorkersPerLoc {get; private set; }
 
 
     public bool IsDataReady { get; private set; } = false;
@@ -77,6 +88,11 @@ public class GameDataManager : MonoBehaviour
                 InitialTrainedVolunteerCount =configLoader.GetInitialTrainedVolunteerCount();
                 InitialUntrainedVolunteerCount =configLoader.GetInitialUntrainedVolunteerCount();
                 InitialDailyBudgetAddition =configLoader.GetInitialBudgetDailyAdditions();
+                InitialWeather = configLoader.GetInitialWeather();
+                InitialKitchenCapacity = configLoader.GetInitialKitchenCapacity();
+                InitialShelterCapacity = configLoader.GetInitialShelterCapacity();
+                InitialCaseworkCapacity = configLoader.GetInitialCaseworkCapacity();
+                InitialRequiredWorkersPerLoc = configLoader.GetInitialNeededWorkersPerLoc();
                 
                 Debug.Log("GameDataManager: extern config success!");
             }
@@ -101,5 +117,10 @@ public class GameDataManager : MonoBehaviour
         InitialTrainedVolunteerCount =defaultTrainedVolunteerCount;
         InitialUntrainedVolunteerCount =defaultUntrainedVolunteerCount;
         InitialDailyBudgetAddition =defaultDailyBudgetAllocs;
+        InitialWeather = defaultInitialWeather;
+        InitialKitchenCapacity = defaultKitchenCapacity;
+        InitialShelterCapacity = defaultShelterCapacity;
+        InitialCaseworkCapacity = defaultCaseworkCapacity;
+        InitialRequiredWorkersPerLoc = defaultRequiredWorkersPerLoc;
     }
 }

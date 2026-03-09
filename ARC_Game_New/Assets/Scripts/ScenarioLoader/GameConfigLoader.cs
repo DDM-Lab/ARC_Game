@@ -21,7 +21,14 @@ public class GameConfigLoader : MonoBehaviour
     public int loadedInitialTrainedVols=5;
     public int loadedInitialUntrainedVols=5;
     public int loadedInitialBudgetDailyAllocs=3000;
+    public WeatherType loadedInitialWeather = WeatherType.Sunny;
+    public int loadedInitialShelterCapacity = 10;
+    public int loadedInitialKitchenCapacity = 10;
+    public int loadedInitialCaseworkCapacity = 10;
+    public int loadedInitialRequiredWorkers = 4;
+
     private bool configLoaded = false;
+    public TaskData dailyBudgetAlloc;
     
     public static GameConfigLoader Instance { get; private set; }
     
@@ -148,10 +155,60 @@ public class GameConfigLoader : MonoBehaviour
                 if (int.TryParse(value, out int dailyBudgetAllocs))
                     loadedInitialBudgetDailyAllocs = dailyBudgetAllocs;
             }
+            else if (parameter.Equals("initialWeather", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (System.Enum.TryParse(value, true, out WeatherType weather))
+                {
+                    loadedInitialWeather = weather;
+                    if (showDebugInfo) Debug.Log($"GameConfigLoader: Weather set to {weather}");
+                }
+                else
+                {
+                    Debug.LogWarning($"GameConfigLoader: Could not parse weather type '{value}'. Defaulting to Sunny.");
+                    loadedInitialWeather = WeatherType.Sunny;
+                }
+            }
+            else if (parameter.Equals("initialKitchenCapacity", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int kitchenCapac))
+                    loadedInitialKitchenCapacity = kitchenCapac;
+            }
+            else if (parameter.Equals("initialShelterCapacity", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int shelterCapac))
+                    loadedInitialShelterCapacity = shelterCapac;
+            }
+            else if (parameter.Equals("initialCaseworkCapacity", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int caseworkCapac))
+                    loadedInitialCaseworkCapacity = caseworkCapac;
+            }
+            else if (parameter.Equals("initialWorkerUnitsNeededPerLocation", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int reqWorkers))
+                    loadedInitialRequiredWorkers = reqWorkers;
+            }
+
+            ApplyInitBudgetAllocation();
             
         }
         
         configLoaded = true;
+    }
+
+
+    void ApplyInitBudgetAllocation()
+    {
+        if (dailyBudgetAlloc != null)
+        {
+            dailyBudgetAlloc.impacts[0].value = loadedInitialBudgetDailyAllocs;
+            dailyBudgetAlloc.agentMessages[1].messageText = $"We received an additional ${loadedInitialBudgetDailyAllocs} in donations overnight, which can now be allocated to supply procurement or transport..";
+            dailyBudgetAlloc.agentChoices[0].choiceImpacts[0].value = loadedInitialBudgetDailyAllocs;
+            dailyBudgetAlloc.agentChoices[0].choiceText = $"Receive ${loadedInitialBudgetDailyAllocs} Budget";
+            
+            if (showDebugInfo)
+                Debug.Log($"Applied {loadedInitialBudgetDailyAllocs} to SO");
+        }
     }
     
     /// <summary>
@@ -202,5 +259,29 @@ public class GameConfigLoader : MonoBehaviour
     {
         return loadedInitialBudgetDailyAllocs;
     }
+
+    public WeatherType GetInitialWeather()
+    {
+        return loadedInitialWeather;
+    }
+    public int GetInitialKitchenCapacity()
+    {
+        return loadedInitialKitchenCapacity;
+    }
+    public int GetInitialShelterCapacity()
+    {
+        return loadedInitialShelterCapacity;
+    }
+    public int GetInitialCaseworkCapacity()
+    {
+        return loadedInitialCaseworkCapacity;
+    }
+    public int GetInitialNeededWorkersPerLoc()
+    {
+        return loadedInitialRequiredWorkers;
+    }
+
+
+
 
 }

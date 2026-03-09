@@ -147,6 +147,7 @@ public class PrebuiltBuilding : MonoBehaviour
             {
                 if (amnt.type == ResourceType.Population)
                     amnt.amount = communityResidentCount;
+                    Debug.Log($"resourcestorage community of ${communityResidentCount}");
             } 
         }
 
@@ -207,6 +208,7 @@ public class PrebuiltBuilding : MonoBehaviour
     {
         int population = resourceStorage.GetResourceAmount(ResourceType.Population);
         int capacity = resourceStorage.GetResourceCapacity(ResourceType.Population);
+        Debug.Log($"UpdateCommunityVisuals: population - {population}");
 
         if (population == 0)
         {

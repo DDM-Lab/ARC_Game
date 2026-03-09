@@ -30,6 +30,9 @@ public class Building : MonoBehaviour
 
     [Header("Building Stats")]
     public int capacity = 10;
+    public int shelterCapcity = 10;
+    public int kitchenCapacity = 10;
+    public int caseworkCapacity = 10;
     public float operationalEfficiency = 1.0f;
 
     [Header("Worker Requirements")]
@@ -69,6 +72,7 @@ public class Building : MonoBehaviour
         buildingType = type;
         originalSiteId = siteId;
         currentStatus = BuildingStatus.UnderConstruction;
+        SetCapacityByType();
 
         // Ensure progress bar is visible for construction
         if (constructionProgressBar != null)
@@ -88,6 +92,7 @@ public class Building : MonoBehaviour
 
     void Start()
     {
+        StartCoroutine(InitializeWithCentralConfig());
         if (buildingRenderer == null)
             buildingRenderer = GetComponent<SpriteRenderer>();
 
@@ -103,6 +108,18 @@ public class Building : MonoBehaviour
         {
             WorkerSystem.Instance.OnWorkerStatsChanged += UpdateWorkforceIndicator;
         }
+    }
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+        shelterCapcity = GameDataManager.Instance.InitialShelterCapacity;
+        kitchenCapacity = GameDataManager.Instance.InitialKitchenCapacity;
+        caseworkCapacity = GameDataManager.Instance.InitialCaseworkCapacity;
+        requiredWorkforce = GameDataManager.Instance.InitialRequiredWorkersPerLoc;
+        
     }
     void UpdateWorkforceIndicator()
     {
@@ -466,6 +483,24 @@ public class Building : MonoBehaviour
         }
     }
 
+    private void SetCapacityByType()
+    {
+        switch (buildingType)
+        {
+            case BuildingType.Shelter:
+                capacity = shelterCapcity;
+                break;
+            case BuildingType.Kitchen:
+                capacity = kitchenCapacity;
+                break;
+            case BuildingType.CaseworkSite:
+                capacity = caseworkCapacity;
+                break;
+            default:
+                capacity = 10; // Default fallback
+                break;
+        }
+    }
     // Getters
     public BuildingType GetBuildingType() => buildingType;
     public int GetOriginalSiteId() => originalSiteId;
@@ -478,6 +513,7 @@ public class Building : MonoBehaviour
     public float GetConstructionProgress() => constructionProgress;
     public float GetDeconstructionProgress() => deconstructionProgress; // NEW
     public int GetCapacity() => capacity;
+
     public float GetEfficiency() => operationalEfficiency;
     public int GetRequiredWorkforce() => requiredWorkforce;
 
