@@ -141,6 +141,7 @@ public class SimulationPauseUI : MonoBehaviour
         }
         
         UpdateButtonSprite();
+        GameLogPanel.Instance?.LogUIInteraction($"Simulation {(isPaused ? "paused" : "resumed")}");
     }
     
     void OnSpeedChanged(int value)
@@ -149,6 +150,8 @@ public class SimulationPauseUI : MonoBehaviour
         {
             if (GlobalClock.Instance != null && isInSimulation && !isPaused)
             {
+                GameLogPanel.Instance?.LogUIInteraction($"Simulation speed changed to: {speedDropdown.options[value].text}");
+
                 Time.timeScale = (int)GlobalClock.Instance.currentTimeSpeed;
             }
         }

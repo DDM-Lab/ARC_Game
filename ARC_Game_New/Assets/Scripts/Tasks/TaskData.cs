@@ -18,6 +18,10 @@ public class TaskData : ScriptableObject
     [Header("Task Officer")]
     public TaskOfficer taskOfficer = TaskOfficer.DisasterOfficer;
 
+    [Header("Task Tag (for Daily Report classification)")]
+    [Tooltip("Manual tag to classify this task for daily report metrics. Set this instead of relying on keyword matching.")]
+    public TaskTag taskTag = TaskTag.None;
+
     [Header("Task Triggers")]
     public List<TaskTrigger> allTriggers = new List<TaskTrigger>();
     public List<RoundTrigger> roundTriggers = new List<RoundTrigger>();

@@ -103,6 +103,7 @@ public class ConfirmationPopup : MonoBehaviour
         updateFrameCount = 0;
         
         Debug.Log($"Confirmation popup shown: {message}");
+        GameLogPanel.Instance?.LogUIInteraction($"Confirmation popup shown | title={title} | message={message}");
     }
     
     void LateUpdate()
@@ -207,7 +208,7 @@ public class ConfirmationPopup : MonoBehaviour
     private void OnConfirmClicked()
     {
         Debug.Log("Confirmation popup: Confirm clicked");
-        
+        GameLogPanel.Instance?.LogUIInteraction($"Confirmation popup: CONFIRMED | \"{messageText?.text}\"");
         // Execute confirm callback
         onConfirmCallback?.Invoke();
         
@@ -218,7 +219,7 @@ public class ConfirmationPopup : MonoBehaviour
     private void OnCancelClicked()
     {
         Debug.Log("Confirmation popup: Cancel clicked");
-        
+        GameLogPanel.Instance?.LogUIInteraction($"Confirmation popup: CANCELLED | \"{messageText?.text}\"");
         // Execute cancel callback if provided
         onCancelCallback?.Invoke();
         

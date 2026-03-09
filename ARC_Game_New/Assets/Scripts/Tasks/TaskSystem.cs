@@ -8,7 +8,8 @@ public enum TaskType
     Emergency,
     Demand, 
     Advisory,
-    Alert
+    Alert,
+    Other // Won't display in task center. For example, worker management tasks
 }
 
 public enum TaskStatus
@@ -76,6 +77,18 @@ public enum NumericalInputType
     FoodPacks        // Food resource count
 }
 
+/// <summary>
+/// Manual classification tag for tasks. Set in TaskData ScriptableObject.
+/// Used by DailyReportData to categorize tasks instead of unreliable keyword matching.
+/// </summary>
+public enum TaskTag
+{
+    None,           // Default - not classified
+    Food,           // Food delivery, food shortage, meal distribution
+    Lodging,        // Relocation, shelter assignment, housing
+    BackToHome,     // Return home tasks
+}
+
 [System.Serializable]
 public class TaskImpact
 {
@@ -108,6 +121,9 @@ public class GameTask
     public TaskOfficer taskOfficer = TaskOfficer.DisasterOfficer;
     [Header("Task Classification")]
     public bool isGlobalTask = false;
+    
+    [Tooltip("Classification tag for daily report. Set via TaskData or programmatically.")]
+    public TaskTag taskTag = TaskTag.None;
     
     [Header("Timing")]
     public int roundsRemaining = 3; // Rounds until expiry
@@ -218,6 +234,10 @@ public class AgentChoice
     public BuildingType destinationBuilding = BuildingType.Shelter;
     public PrebuiltBuildingType destinationPrebuilt = PrebuiltBuildingType.Motel;
     public string specificDestinationName = ""; // Use name instead of direct reference
+
+    [Header("Delayed Budget")]
+    [Tooltip("If > 0, any Budget impact on this choice is delayed this many rounds instead of applied immediately")]
+    public int budgetDelayRounds = 0;
     
     [Header("Distance Priority")]
     public bool prioritizeNearestSource = true;
@@ -354,6 +374,13 @@ public class TaskSystem : MonoBehaviour
     public static TaskSystem Instance { get; private set; }
 
     private HashSet<string> shownAlertIds = new HashSet<string>();
+    
+    /// <summary>
+    /// Maps delivery task IDs → parent GameTask IDs.
+    /// Populated by LinkDeliveriesToTask / CreateAndLinkDelivery.
+    /// Used by OnDeliveryTaskCompleted to find the parent task when delivery finishes.
+    /// </summary>
+    private Dictionary<int, int> deliveryToTaskMap = new Dictionary<int, int>();
 
     void Awake()
     {
@@ -514,7 +541,7 @@ public class TaskSystem : MonoBehaviour
 
                         if (showDebugInfo)
                             Debug.Log($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}");
-                        ToastManager.ShowToast($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}", ToastType.Info, true);
+                        //ToastManager.ShowToast($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}", ToastType.Info, true);
                         GameLogPanel.Instance.LogTaskEvent($"Created repair task for damaged vehicle: {vehicle.GetVehicleName()}");
                     }
                 }
@@ -541,29 +568,60 @@ public class TaskSystem : MonoBehaviour
 
     void OnDeliveryTaskCompleted(DeliveryTask deliveryTask)
     {
-        // find any active tasks that are linked to this delivery task
-        GameTask gameTask = activeTasks.FirstOrDefault(t =>
-            t.linkedDeliveryTaskIds != null && t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
+        // Search active tasks first
+        GameTask parentTask = activeTasks.FirstOrDefault(t =>
+            t.linkedDeliveryTaskIds != null &&
+            t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
 
-        if (gameTask != null && gameTask.status == TaskStatus.InProgress)
+        // Fall back to completed tasks — delivery finished after task expired/was completed early
+        bool wasAlreadyCompleted = false;
+        if (parentTask == null)
         {
-            // check if all deliveries are completed
-            DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
-            List<DeliveryTask> completedTasks = deliverySystem.GetCompletedTasks();
-
-            bool allCompleted = gameTask.linkedDeliveryTaskIds.All(id =>
-                completedTasks.Any(ct => ct.taskId == id));
-
-            if (allCompleted)
-            {
-                if (showDebugInfo)
-                    Debug.Log($"All deliveries completed for task: {gameTask.taskTitle}");
-                ToastManager.ShowToast($"All deliveries completed for task: {gameTask.taskTitle}, ", ToastType.Success, true);
-                GameLogPanel.Instance.LogTaskEvent($"All deliveries completed for task: {gameTask.taskTitle}");
-
-                CompleteTask(gameTask);
-            }
+            parentTask = completedTasks.FirstOrDefault(t =>
+                t.linkedDeliveryTaskIds != null &&
+                t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
+            wasAlreadyCompleted = parentTask != null;
         }
+
+        if (parentTask == null)
+        {
+            if (showDebugInfo)
+                Debug.LogWarning($"[TaskSystem] No parent task found for delivery {deliveryTask.taskId} — ignoring");
+            return;
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"[TaskSystem] Delivery {deliveryTask.taskId} completed for task '{parentTask.taskTitle}'" +
+                    (wasAlreadyCompleted ? " (task was already closed)" : ""));
+
+        // If the parent task is still in progress, check if all its deliveries are done
+        if (!wasAlreadyCompleted && parentTask.status == TaskStatus.InProgress)
+        {
+            bool allDone = AreAllLinkedDeliveriesComplete(parentTask);
+            if (allDone)
+                CompleteTask(parentTask);
+            // else: still waiting on other deliveries — do nothing
+        }
+
+        // If the task was already closed (expired/completed early), the physical resource
+        // transfer already happened on the Vehicle layer — just log it and move on.
+        if (wasAlreadyCompleted)
+        {
+            GameLogPanel.Instance?.LogTaskEvent(
+                $"Late delivery {deliveryTask.taskId} arrived for closed task '{parentTask.taskTitle}'");
+        }
+    }
+
+    bool AreAllLinkedDeliveriesComplete(GameTask task)
+    {
+        if (task.linkedDeliveryTaskIds == null || task.linkedDeliveryTaskIds.Count == 0)
+            return true;
+
+        DeliverySystem ds = DeliverySystem.Instance;
+        if (ds == null) return false;
+
+        var completed = ds.GetCompletedTasks();
+        return task.linkedDeliveryTaskIds.All(id => completed.Any(d => d.taskId == id));
     }
 
     public void HandleDeliveryFailure(GameTask task)
@@ -593,21 +651,21 @@ public class TaskSystem : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
             GameLogPanel.Instance.LogTaskEvent($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
-            ToastManager.ShowToast($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}", ToastType.Warning, true);
+            //ToastManager.ShowToast($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}", ToastType.Warning, true);
 
             // Show task result popup with delivery failure reason
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert))
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
             {
-                TaskResultManager.Instance.ShowTaskResult(task);
+                TaskResultManager.Instance.ShowTaskResult(task, $"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
             }
         }
     }
 
     void OnRoundChanged(int newSegment)
     {
-        Debug.Log($"OnRoundChanged called: segment {newSegment}, auto generation: {enableAutoTaskGeneration}");
+        Debug.Log($"OnRoundChanged called in Task System: segment {newSegment}, auto generation: {enableAutoTaskGeneration}. (We skip generation when newSegment == 3)");
         // Check for new tasks at the start of each round
-        if (enableAutoTaskGeneration)
+        if (enableAutoTaskGeneration && newSegment != 3)
         {
             Debug.Log("Attempting to generate tasks from database...");
             GenerateTasksFromDatabase();
@@ -1001,7 +1059,7 @@ public class TaskSystem : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Created task: {title} ({type}) for {facility}");
         GameLogPanel.Instance.LogTaskEvent($"Created task: {title} ({type}) for {facility}");
-        ToastManager.ShowToast($"New Task: {title} ({type})", ToastType.Info, true);
+        //ToastManager.ShowToast($"New Task: {title} ({type})", ToastType.Info, true);
 
         return newTask;
     }
@@ -1024,14 +1082,71 @@ public class TaskSystem : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Completed task: {task.taskTitle}");
             GameLogPanel.Instance.LogTaskEvent($"Completed task: {task.taskTitle}");
-            ToastManager.ShowToast($"Completed task: {task.taskTitle}", ToastType.Success, true);
+            // ToastManager.ShowToast($"Completed task: {task.taskTitle}", ToastType.Success, true);
 
             // Show task result popup
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert))
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other) )
             {
                 TaskResultManager.Instance.ShowTaskResult(task);
             }
         }
+    }
+
+    // =========================================================================
+    // DELIVERY ↔ TASK LINKING
+    // Call these methods when creating deliveries from player choices.
+    // Without linking, OnDeliveryTaskCompleted cannot find the parent task.
+    // =========================================================================
+    
+    /// <summary>
+    /// Link delivery tasks to their parent GameTask.
+    /// Call this AFTER creating deliveries via DeliverySystem.CreateDeliveryTask().
+    /// Both linkedDeliveryTaskIds and the internal map are populated.
+    /// </summary>
+    public void LinkDeliveriesToTask(GameTask parentTask, List<DeliveryTask> deliveries)
+    {
+        if (parentTask == null || deliveries == null) return;
+        
+        foreach (var delivery in deliveries)
+        {
+            parentTask.linkedDeliveryTaskIds.Add(delivery.taskId);
+            deliveryToTaskMap[delivery.taskId] = parentTask.taskId;
+            
+            if (showDebugInfo)
+                Debug.Log($"Linked delivery {delivery.taskId} → task '{parentTask.taskTitle}' (taskId={parentTask.taskId})");
+        }
+    }
+    
+    /// <summary>
+    /// Link a single delivery task to its parent GameTask.
+    /// </summary>
+    public void LinkDeliveryToTask(GameTask parentTask, DeliveryTask delivery)
+    {
+        if (parentTask == null || delivery == null) return;
+        
+        parentTask.linkedDeliveryTaskIds.Add(delivery.taskId);
+        deliveryToTaskMap[delivery.taskId] = parentTask.taskId;
+        
+        if (showDebugInfo)
+            Debug.Log($"Linked delivery {delivery.taskId} → task '{parentTask.taskTitle}' (taskId={parentTask.taskId})");
+    }
+    
+    /// <summary>
+    /// Convenience: Create deliveries via DeliverySystem AND link them to the parent task in one call.
+    /// Returns the created delivery tasks (empty list if creation failed).
+    /// </summary>
+    public List<DeliveryTask> CreateAndLinkDelivery(GameTask parentTask, MonoBehaviour source, MonoBehaviour destination, ResourceType cargoType, int quantity, int priority = 1)
+    {
+        DeliverySystem ds = FindObjectOfType<DeliverySystem>();
+        if (ds == null)
+        {
+            Debug.LogError("CreateAndLinkDelivery: DeliverySystem not found!");
+            return new List<DeliveryTask>();
+        }
+        
+        List<DeliveryTask> deliveries = ds.CreateDeliveryTask(source, destination, cargoType, quantity, priority);
+        LinkDeliveriesToTask(parentTask, deliveries);
+        return deliveries;
     }
 
     public void ExpireTask(GameTask task)
@@ -1047,7 +1162,7 @@ public class TaskSystem : MonoBehaviour
             // Apply penalties for incomplete emergency/demand tasks
             if (task.status == TaskStatus.Incomplete)
             {
-                ApplyTaskPenalties(task);
+                //ApplyTaskPenalties(task);
             }
 
             OnTaskExpired?.Invoke(task);
@@ -1055,10 +1170,10 @@ public class TaskSystem : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Expired task: {task.taskTitle} (Status: {task.status})");
             GameLogPanel.Instance.LogTaskEvent($"Expired task: {task.taskTitle} (Status: {task.status})");
-            ToastManager.ShowToast($"Expired task: {task.taskTitle} (Status: {task.status})", ToastType.Warning, true);
+            //ToastManager.ShowToast($"Expired task: {task.taskTitle} (Status: {task.status})", ToastType.Warning, true);
 
             // Show task result popup
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert))
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other) && (task.taskType != TaskType.Advisory))
             {
                 TaskResultManager.Instance.ShowTaskResult(task);
             }
@@ -1125,7 +1240,7 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            ApplyTaskPenalties(task);
+            //ApplyTaskPenalties(task);
             OnTaskCompleted?.Invoke(task);
 
             if (showDebugInfo)
@@ -1133,7 +1248,7 @@ public class TaskSystem : MonoBehaviour
             GameLogPanel.Instance.LogTaskEvent($"Task marked as incomplete: {task.taskTitle}");
 
             // Show task result popup with incompletion reason
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert))
+            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
             {
                 TaskResultManager.Instance.ShowTaskResult(task);
             }
@@ -1246,6 +1361,7 @@ public class TaskSystem : MonoBehaviour
         newTask.taskImage = taskData.taskImage;
         newTask.taskOfficer = taskData.taskOfficer;
         newTask.isGlobalTask = taskData.isGlobalTask;
+        newTask.taskTag = taskData.taskTag;
 
         // Copy time settings
         newTask.roundsRemaining = taskData.roundsRemaining;
@@ -1328,7 +1444,8 @@ public class TaskSystem : MonoBehaviour
             newChoice.specificDestinationName = choice.specificDestinationName;
             newChoice.prioritizeNearestSource = choice.prioritizeNearestSource;
             newChoice.prioritizeNearestDestination = choice.prioritizeNearestDestination;
-
+            newChoice.budgetDelayRounds = choice.budgetDelayRounds;
+            
             newTask.agentChoices.Add(newChoice);
         }
 
@@ -1353,8 +1470,8 @@ public class TaskSystem : MonoBehaviour
             Debug.Log($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
         GameLogPanel.Instance.LogTaskEvent($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
         // Don't show alert tasks as toasts
-        if (taskData.taskType != TaskType.Alert)
-            ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);
+        /*if (taskData.taskType != TaskType.Alert)
+            ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);*/
 
         // 🤖 LLM CONTENT GENERATION DISABLED
         // All tasks use pre-scripted choices from TaskData ScriptableObjects
@@ -1591,34 +1708,16 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
-    // Utility methods for impact display
-    public static string GetImpactIcon(ImpactType type)
-    {
-        switch (type)
-        {
-            case ImpactType.Satisfaction: return "😊";
-            case ImpactType.Budget: return "💰";
-            case ImpactType.FoodPacks: return "🍞";
-            case ImpactType.Clients: return "👥";
-            case ImpactType.Workforce: return "👷";
-            case ImpactType.TotalTime: return "⏰";
-            case ImpactType.TrainingTime: return "📚";
-            case ImpactType.TotalCosts: return "💸";
-            case ImpactType.TotalLodging: return "🏠";
-            default: return "❓";
-        }
-    }
-
     public static string GetImpactLabel(ImpactType type)
     {
         switch (type)
         {
             case ImpactType.Satisfaction: return "Satisfaction";
             case ImpactType.Budget: return "Budget";
-            case ImpactType.FoodPacks: return "Food Packs";
-            case ImpactType.Clients: return "Clients";
-            case ImpactType.Workforce: return "Workforce";
-            case ImpactType.TotalTime: return "Total Time";
+            case ImpactType.FoodPacks: return "Food Packs Amount";
+            case ImpactType.Clients: return "Clients Amount";
+            case ImpactType.Workforce: return "Workforce Required";
+            case ImpactType.TotalTime: return "Estimated Time";
             case ImpactType.TrainingTime: return "Training Time";
             case ImpactType.TotalCosts: return "Total Costs";
             case ImpactType.TotalLodging: return "Total Lodging";

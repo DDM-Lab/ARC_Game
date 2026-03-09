@@ -18,13 +18,14 @@ MonoBehaviour:
   description: Flood levels are rising. We should prepare for potential evacuations.
   taskImage: {fileID: 21300000, guid: 09373f204d0d14b488fa491635b79346, type: 3}
   taskOfficer: 0
+  taskTag: 2
   roundTriggers: []
   dayTriggers:
-  - conditionType: 3
+  - conditionType: 2
     targetDay: 0
     intervalDays: 0
     startDay: 2
-    endDay: 0
+    endDay: 6
   resourceTriggers: []
   probabilityTriggers: []
   floodTileTriggers:

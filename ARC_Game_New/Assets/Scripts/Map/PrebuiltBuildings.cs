@@ -20,8 +20,7 @@ public class PrebuiltBuilding : MonoBehaviour
     [Header("System References")]
     public BuildingResourceStorage resourceStorage;
     public RoadConnection roadConnection;
-    [Header("Info Display")]
-    public InfoDisplay infoDisplay;
+
     [Header("Colors")]
     public Color normalColor = Color.white;
     public Color fullColor = Color.white;
@@ -33,45 +32,6 @@ public class PrebuiltBuilding : MonoBehaviour
     void Start()
     {
         InitializePrebuiltBuilding();
-
-        if (infoDisplay == null)
-            infoDisplay = GetComponent<InfoDisplay>();
-
-        // make sure the display is initialized after all components are ready
-        StartCoroutine(InitializeInfoDisplayAfterFrame());
-    }
-
-    IEnumerator InitializeInfoDisplayAfterFrame()
-    {
-        // Wait for a frame to ensure all components are initialized
-        yield return new WaitForEndOfFrame();
-        UpdateInfoDisplay();
-    }
-
-    public void UpdateInfoDisplay()
-    {
-        if (infoDisplay == null) return;
-
-        string displayText = "";
-        Color displayColor = Color.white;
-
-        int currentPop = GetCurrentPopulation();
-        int maxPop = GetPopulationCapacity();
-        displayText += $"👥 {currentPop}/{maxPop}\n";
-
-        string taskStatus = GetTransportTaskStatus();
-        if (!string.IsNullOrEmpty(taskStatus))
-        {
-            displayText += taskStatus;
-            displayColor = Color.yellow;
-        }
-        else
-        {
-            displayText += GetBuildingStatusText();
-            displayColor = GetStatusColor();
-        }
-
-        infoDisplay.UpdateDisplay(displayText, displayColor);
     }
 
     string GetTransportTaskStatus()
@@ -203,7 +163,6 @@ public class PrebuiltBuilding : MonoBehaviour
     {
         // Update visual indicators when resources change
         UpdateVisualState();
-        UpdateInfoDisplay();
 
     }
 

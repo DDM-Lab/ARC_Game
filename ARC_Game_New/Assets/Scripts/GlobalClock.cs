@@ -55,14 +55,15 @@ public class GlobalClock : MonoBehaviour
     // Current state
     private TimeState currentState = TimeState.Paused;
     private bool isSimulationRunning = false;
-    private bool isWaitingForReport = false; // Track if we're waiting for report
+    public bool isWaitingForReport = false; // Track if we're waiting for report
     
     // Events for other systems to listen to
     public event Action OnSimulationStarted;
     public event Action OnSimulationEnded;
     public event Action<int> OnTimeSegmentChanged;
     public event Action<int> OnDayChanged;
-    
+
+    public static event Action OnRoundEnd;
     // Singleton for easy access
     public static GlobalClock Instance { get; private set; }
     
@@ -193,8 +194,18 @@ public class GlobalClock : MonoBehaviour
                     message: "Do you want to view the daily report now? You will be able to proceed to the next day after viewing the report.",
                     onConfirm: () => {
                         
-                        // This will trigger the daily report
-                        OnDayChanged?.Invoke(currentDay + 1);
+                        // =====================================================
+                        // FIX: Do NOT fire OnDayChanged here.
+                        // Previously this fired OnDayChanged which reset all 
+                        // daily tracking BEFORE the report could read the data.
+                        // Now we directly tell DailyReportManager to show the 
+                        // report. The day advancement and data reset will happen
+                        // AFTER the player closes the report.
+                        // =====================================================
+                        if (DailyReportManager.Instance != null)
+                        {
+                            DailyReportManager.Instance.ShowDailyReport();
+                        }
                         isWaitingForReport = false;
                         
                         // Disable button until report is handled
@@ -375,6 +386,8 @@ public class GlobalClock : MonoBehaviour
         
         // Advance to next time segment
         AdvanceTimeSegment();
+
+        OnRoundEnd?.Invoke();
         
         // Enable player interactions
         EnablePlayerInteractions();
@@ -392,7 +405,17 @@ public class GlobalClock : MonoBehaviour
                 }
             }
             isWaitingForReport = true;
-            
+
+            // CHECK FOR END GAME (Round 4 of Day 8)
+            if (currentDay == 8 && currentTimeSegment >= 4)
+            {
+                if (EndGamePanel.Instance != null)
+                {
+                    EndGamePanel.Instance.ShowEndGamePanel();
+                    Debug.Log("End game reached - Round 4 of Day 8");
+                }
+            }
+
             if (showDebugInfo)
             {
                 GameLogPanel.Instance.LogMetricsChange($"Day {currentDay} complete - Click 'View Report' when ready");
@@ -438,6 +461,18 @@ public class GlobalClock : MonoBehaviour
     // The daily report system will call this to advance the day
     public void ProceedToNextDay()
     {
+        // =====================================================
+        // FIX: Reset daily tracking data BEFORE advancing the day.
+        // This is the correct time to reset — after the report has
+        // been displayed and the player has confirmed moving on.
+        // Previously, this reset happened when OnDayChanged fired
+        // (before the report was shown), causing zeroed data.
+        // =====================================================
+        if (DailyReportData.Instance != null)
+        {
+            DailyReportData.Instance.PrepareForNewDay();
+        }
+
         // Actually advance to next day after report confirmation
         currentDay++;
         currentTimeSegment = 0; // Reset to first round (not 1)
@@ -458,8 +493,14 @@ public class GlobalClock : MonoBehaviour
             }
         }
 
-        // Trigger events for new day
-        // OnDayChanged?.Invoke(currentDay);
+        // =====================================================
+        // FIX: Fire OnDayChanged NOW (after reset, after day 
+        // advances) so other systems that need to know about
+        // the new day can respond. DailyReportData no longer
+        // listens to this event for resetting — it uses
+        // PrepareForNewDay() instead (called above).
+        // =====================================================
+        OnDayChanged?.Invoke(currentDay);
         OnTimeSegmentChanged?.Invoke(currentTimeSegment);
 
         // Update display
@@ -638,7 +679,17 @@ public class GlobalClock : MonoBehaviour
         Debug.Log($"State: {currentState}, Speed: {currentTimeSpeed}x, Can Interact: {CanPlayerInteract()}");
         Debug.Log($"Waiting for Report: {isWaitingForReport}");
     }
-    
+
+    [ContextMenu("Debug: Jump to Day 8")]
+    public void DebugJumpToDay8()
+    {
+        currentDay = 8;
+        currentTimeSegment = 0; // Start of Day 8, Round 1
+        UpdateTimeDisplay();
+        
+        Debug.Log("Jumped to Day 8, Round 1");
+    }
+        
     void OnDestroy()
     {
         // Reset time scale when destroyed

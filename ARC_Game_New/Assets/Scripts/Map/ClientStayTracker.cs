@@ -286,6 +286,12 @@ public class ClientStayTracker : MonoBehaviour
             TaskType.Advisory,
             facilityName,
             description);
+        
+        
+        caseworkTask.taskOfficer = TaskOfficer.LodgingMassCare;
+        // Tag for daily report classification
+        caseworkTask.taskTag = TaskTag.BackToHome;
+        caseworkTask.roundsRemaining = 3;
 
         // Add task details
         caseworkTask.impacts.Add(new TaskImpact(ImpactType.Clients, group.clientCount, false, "Clients Requesting Casework"));
@@ -297,7 +303,7 @@ public class ClientStayTracker : MonoBehaviour
         caseworkTask.agentMessages.Add(new AgentMessage("How would you like to respond?"));
 
         // Add choices
-        AgentChoice sendToCasework = new AgentChoice(1, $"Send {group.groupName} to casework site");
+        AgentChoice sendToCasework = new AgentChoice(1, $"Send {group.groupName} to casework site (Satisfaction + 10)");
         sendToCasework.triggersDelivery = true;
         sendToCasework.enableMultipleDeliveries = true;
         sendToCasework.multiDeliveryType = AgentChoice.MultiDeliveryType.SingleSourceMultiDest; // enable multi delivery
@@ -309,7 +315,7 @@ public class ClientStayTracker : MonoBehaviour
         sendToCasework.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10));
         caseworkTask.agentChoices.Add(sendToCasework);
 
-        AgentChoice delay = new AgentChoice(2, "Ask them to wait longer");
+        AgentChoice delay = new AgentChoice(2, "Ask them to wait longer (Satisfaction -5)");
         delay.triggersDelivery = false;
         delay.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5));
         caseworkTask.agentChoices.Add(delay);

@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
+using TMPro;
 
 public class DailyReportManager : MonoBehaviour
 {
@@ -21,7 +22,23 @@ public class DailyReportManager : MonoBehaviour
     
     private bool isWaitingForNextDay = false;
     private bool isTransitioning = false;
+
+    [Header("Day 1 Special")]
+    public GameObject day1MaskPanel;
+    [Header("Game End Settings")]
+    public int finalDay = 8; // Game ends after this day
     
+    [Header("History Navigation")]
+    public GameObject historyNavigationPanel;
+    public Button[] dayButtons = new Button[7]; // Day 2-8 buttons
+    
+    [Header("Button States")]
+    public Sprite selectedButtonSprite;
+    public Sprite notSelectedButtonSprite;
+    public Sprite inactiveButtonSprite;
+
+    private int currentViewingDay = -1; // -1 = current day, 1-8 = specific day
+
     // Singleton
     public static DailyReportManager Instance { get; private set; }
     private float lastReportTime = 0f;
@@ -45,12 +62,6 @@ public class DailyReportManager : MonoBehaviour
         // Find GlobalClock if not assigned
         if (globalClock == null)
             globalClock = FindObjectOfType<GlobalClock>();
-        
-        // Subscribe to day change events
-        if (globalClock != null)
-        {
-            globalClock.OnDayChanged += OnDayChangeAttempt;
-        }
         
         // Setup next day button
         if (nextDayButton != null)
@@ -81,35 +92,21 @@ public class DailyReportManager : MonoBehaviour
             panelCanvasGroup.interactable = false;
             panelCanvasGroup.blocksRaycasts = false;
         }
+
+        SetupHistoryNavigation();
     }
-    
-    void OnDayChangeAttempt(int newDay)
+
+    public void ShowDailyReport()
     {
-        // Prevent showing report during transitions
-        if (isTransitioning)
-        {
-            Debug.Log($"Transition in progress - skipping day change for day {newDay}");
-            return;
-        }
+        if (dailyReportPanel == null || isTransitioning) return;
         
         // Add cooldown to prevent duplicate reports
         if (Time.unscaledTime - lastReportTime < reportCooldown)
         {
-            Debug.Log($"Report cooldown active - skipping duplicate day change for day {newDay}");
+            Debug.Log($"Report cooldown active - skipping duplicate ShowDailyReport call");
             return;
         }
-        
-        // Show daily report at the end of day (when transitioning to next day)
-        if (newDay > 1) // Don't show report before first day starts
-        {
-            ShowDailyReport();
-            lastReportTime = Time.unscaledTime;
-        }
-    }
-    
-    void ShowDailyReport()
-    {
-        if (dailyReportPanel == null || isTransitioning) return;
+        lastReportTime = Time.unscaledTime;
         
         // Pause the simulation
         if (globalClock != null)
@@ -120,8 +117,8 @@ public class DailyReportManager : MonoBehaviour
         // Start fade in transition
         StartCoroutine(FadeInReportWithData());
         
-        Debug.Log("Daily report displayed - waiting for player to continue");
-        ToastManager.ShowToast("Daily report generated", ToastType.Info, true);
+        Debug.Log("Daily report displayed - waiting for player to read and continue to next day");
+        GameLogPanel.Instance.LogPlayerAction("Daily report displayed - waiting for player to read and continue to next day");
     }
 
     IEnumerator FadeInReportWithData()
@@ -134,13 +131,35 @@ public class DailyReportManager : MonoBehaviour
         
         // Do the existing fade in animation first
         yield return StartCoroutine(FadeInReport());
+
+        // Show mask for Day 1, hide for other days
+        int currentDay = globalClock != null ? globalClock.GetCurrentDay() : 1;
+        if (day1MaskPanel != null)
+        {
+            day1MaskPanel.SetActive(currentDay == 1);
+        }
+
+        // Hide next day button if game ended
+        if (currentDay >= finalDay && nextDayButton != null)
+        {
+            nextDayButton.gameObject.SetActive(false);
+        }
         
-        // THEN generate and display report data
-        if (DailyReportData.Instance != null && reportUI != null)
+        // Only generate report data if NOT Day 1
+        if (currentDay > 1 && DailyReportData.Instance != null && reportUI != null)
         {
             var metrics = DailyReportData.Instance.GenerateDailyReport();
             reportUI.DisplayDailyReport(metrics);
         }
+        
+        // Send logs to server if game ended
+        if (currentDay >= finalDay)
+        {
+            GameLogPanel.Instance?.TriggerEndGameLogSend();
+        }
+
+        // Update button states
+        UpdateDayButtonStates(currentDay);
     }
     
     IEnumerator FadeInReport()
@@ -219,7 +238,12 @@ public class DailyReportManager : MonoBehaviour
             panelCanvasGroup.alpha = 0f;
             panelCanvasGroup.blocksRaycasts = false;
         }
-        
+
+        if (day1MaskPanel != null)
+        {
+            day1MaskPanel.SetActive(false);
+        }
+
         // Hide panel completely
         dailyReportPanel.SetActive(false);
         
@@ -229,11 +253,7 @@ public class DailyReportManager : MonoBehaviour
     }
     
     void OnNextDayButtonClicked()
-    {
-        Debug.Log("=== NEXT DAY BUTTON DEBUG ===");
-        Debug.Log($"isWaitingForNextDay: {isWaitingForNextDay}");
-        Debug.Log($"isTransitioning: {isTransitioning}");
-        
+    {   
         // Prevent action during transitions
         if (isTransitioning)
         {
@@ -253,23 +273,24 @@ public class DailyReportManager : MonoBehaviour
             return;
         }
 
-        // Show confirmation popup when clicking next day. If confirmed, proceed to fade out and next day. If not, stay on report.
+        // Show confirmation popup when clicking next day
         ConfirmationPopup.Instance.ShowPopup(
             message: "Are you sure you want to proceed to the next day?",
             onConfirm: () => {
-                // Start fade out transition
+                GameLogPanel.Instance?.LogUIInteraction("Player clicked Next Day on daily report — confirmed");
                 StartCoroutine(FadeOutAndProceed());
             },
             title: "Proceed to Next Day?"
         );
-        
-        
     }
-    
+
     IEnumerator FadeOutAndProceed()
     {
         // Fade out the panel
         yield return StartCoroutine(FadeOutReport());
+
+        // Refresh satisfaction and budget UI
+        SatisfactionAndBudget.Instance?.ForceRefreshUI();
         
         // Resume simulation and allow day transition
         if (globalClock != null)
@@ -279,7 +300,7 @@ public class DailyReportManager : MonoBehaviour
         }
         
         Debug.Log("Player confirmed - proceeding to next day");
-        ToastManager.ShowToast("Proceeding to next day", ToastType.Success, true);
+        GameLogPanel.Instance.LogPlayerAction("Player finished reading daily report. Now proceeding to next day");
     }
     
     public bool IsWaitingForNextDay()
@@ -290,6 +311,97 @@ public class DailyReportManager : MonoBehaviour
     public bool IsTransitioning()
     {
         return isTransitioning;
+    }
+
+    // =========================================================================
+    // HISTORY NAVIGATION
+    // =========================================================================
+
+    void SetupHistoryNavigation()
+    {
+        // Setup individual day buttons (Day 2-8)
+        for (int i = 0; i < dayButtons.Length; i++)
+        {
+            int dayIndex = i + 2;
+            if (dayButtons[i] != null)
+            {
+                dayButtons[i].onClick.AddListener(() => OnDayButtonClicked(dayIndex));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Show report for a specific historical day.
+    /// </summary>
+    void OnDayButtonClicked(int day)
+    {
+        if (DailyReportData.Instance == null) return;
+        
+        if (!DailyReportData.Instance.HasReportForDay(day))
+        {
+            Debug.LogWarning($"No report available for Day {day}");
+            return;
+        }
+        
+        // Show single report UI
+        if (reportUI != null)
+        {
+            reportUI.gameObject.SetActive(true);
+        }
+        
+        // Get historical report
+        DailyReportMetrics metrics = DailyReportData.Instance.GetHistoricalReport(day);
+        
+        if (metrics != null && reportUI != null)
+        {
+            currentViewingDay = day;
+            
+            // USE IMMEDIATE DISPLAY - NO ANIMATIONS
+            reportUI.DisplayDailyReportImmediate(metrics, day);
+            
+            // UPDATE BUTTON STATES
+            UpdateDayButtonStates(day);
+            
+            Debug.Log($"Displaying historical report for Day {day}");
+            GameLogPanel.Instance?.LogUIInteraction($"Player viewed historical report for Day {day}");
+        }
+    }
+
+    /// <summary>
+    /// FIX PROBLEM 1: Now checks HasReportForDay() instead of just day number comparison.
+    /// This ensures buttons are only enabled for days that actually have saved data.
+    /// </summary>
+    void UpdateDayButtonStates(int selectedDay)
+    {
+        for (int i = 0; i < dayButtons.Length; i++)
+        {
+            int dayIndex = i + 2; // Day 2-8
+            Button btn = dayButtons[i];
+            
+            if (btn == null) continue;
+            
+            Image btnImage = btn.GetComponent<Image>();
+            if (btnImage == null) continue;
+            
+            // Selected (currently viewing)
+            if (dayIndex == selectedDay)
+            {
+                btnImage.sprite = selectedButtonSprite;
+                btn.interactable = true;
+            }
+            // Has saved report data (available to view)
+            else if (DailyReportData.Instance != null && DailyReportData.Instance.HasReportForDay(dayIndex))
+            {
+                btnImage.sprite = notSelectedButtonSprite;
+                btn.interactable = true;
+            }
+            // No data yet (inactive)
+            else
+            {
+                btnImage.sprite = inactiveButtonSprite;
+                btn.interactable = false;
+            }
+        }
     }
     
     // Method to force show report for testing

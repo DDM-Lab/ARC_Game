@@ -141,7 +141,7 @@ public class TaskDetailUI : MonoBehaviour
 
     public void ShowTaskDetail(GameTask task)
     {
-        // NEW: Check if this task was shown before
+        // Check if this task was shown before
         bool isFirstTimeShowing = !previouslyShownTaskIds.Contains(task.taskId);
         
         currentTask = task;
@@ -152,21 +152,65 @@ public class TaskDetailUI : MonoBehaviour
 
             UpdateTaskDescription();
             
-            // NEW: Pass the isFirstTimeShowing flag to StartAgentConversation
+            // Pass the isFirstTimeShowing flag to StartAgentConversation
             StartAgentConversation(isFirstTimeShowing);
             
             UpdateActionButtons();
 
-            // NEW: Mark task as shown
+            // Mark task as shown
             previouslyShownTaskIds.Add(task.taskId);
 
             if (showDebugInfo)
                 Debug.Log($"Showing task detail for: {task.taskTitle} (First time: {isFirstTimeShowing})");
+
+            GameLogPanel.Instance?.LogUIInteraction($"Opened task: [{currentTask.taskType}] {currentTask.taskTitle} at {currentTask.affectedFacility}");
+            GameLogPanel.Instance?.LogTaskEvent(SerializeTaskContent(currentTask));
         }
+    }
+
+    string SerializeTaskContent(GameTask task)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"TASK_DETAIL | id={task.taskId} | title={task.taskTitle} | type={task.taskType} | tag={task.taskTag} | facility={task.affectedFacility} | status={task.status}");
+
+        if (task.impacts != null && task.impacts.Count > 0)
+        {
+            sb.Append(" | impacts=");
+            sb.Append(string.Join(";", task.impacts.Select(i => $"{i.impactType}:{i.value}")));
+        }
+        if (task.agentMessages != null && task.agentMessages.Count > 0)
+        {
+            sb.Append(" | messages=");
+            sb.Append(string.Join(";", task.agentMessages.Select(m => m.messageText.Replace("|", "/").Replace(";", ","))));
+        }
+        if (task.agentChoices != null && task.agentChoices.Count > 0)
+        {
+            sb.Append(" | choices=");
+            sb.Append(string.Join(";", task.agentChoices.Select(c => $"[{c.choiceId}]{c.choiceText}")));
+        }
+        if (task.numericalInputs != null && task.numericalInputs.Count > 0)
+        {
+            sb.Append(" | inputs=");
+            sb.Append(string.Join(";", task.numericalInputs.Select(n => 
+                $"[{n.inputId}]{n.inputLabel}:min={n.minValue},max={n.maxValue}")));
+        }
+
+        return sb.ToString();
     }
 
     public void CloseTaskDetail()
     {
+        GameLogPanel.Instance?.LogUIInteraction($"Closed task: {currentTask?.taskTitle}");
+
+        // Auto-discard Other type tasks when closed
+        if (currentTask != null && currentTask.taskType == TaskType.Other)
+        {
+            if (TaskSystem.Instance != null && TaskSystem.Instance.activeTasks != null)
+            {
+                TaskSystem.Instance.activeTasks.Remove(currentTask); // Completely remove from system
+            }
+        }
+
         if (taskDetailPanel != null)
         {
             // Stop all running coroutines before clearing display
@@ -244,6 +288,10 @@ public class TaskDetailUI : MonoBehaviour
             }else if (currentTask.impacts.Count == 4)
             {
                 useLongPrefab = false;
+            }
+            else if (currentTask.impacts.Count == 1)
+            {
+                useLongPrefab = true;
             }
             CreateImpactItem(impact, layout, useLongPrefab);
         }
@@ -398,13 +446,23 @@ public class TaskDetailUI : MonoBehaviour
 
     void ClearConversation()
     {
-        // MODIFIED: Properly destroy all conversation items before clearing list
         foreach (GameObject item in currentConversationItems)
         {
             if (item != null)
                 Destroy(item);
         }
-        
+
+        // Safety: destroy any orphaned children not tracked in our list
+        // (e.g. messages instantiated mid-typing when player exits)
+        if (conversationContent != null)
+        {
+            foreach (Transform child in conversationContent)
+            {
+                if (child != null)
+                    Destroy(child.gameObject);
+            }
+        }
+
         if (conversationScrollView != null)
             conversationScrollView.vertical = true;
 
@@ -486,6 +544,7 @@ public class TaskDetailUI : MonoBehaviour
         }
     }
 
+    // Later button not used any more
     void OnLaterButtonClicked()
     {
         if (currentTask != null && currentTask.taskType == TaskType.Advisory)
@@ -573,57 +632,149 @@ public class TaskDetailUI : MonoBehaviour
         // Apply choice impacts first
         if (selectedChoice != null)
         {
+            // Log numerical input for the task
+            if (currentTask.numericalInputs != null && currentTask.numericalInputs.Count > 0)
+            {
+                var inputValues = currentConversationItems
+                    .Select(item => item.GetComponent<NumericalInputUI>())
+                    .Where(ui => ui != null)
+                    .Select(ui => $"[{ui.GetInputType()}]={ui.GetCurrentValue()}");
+                
+                GameLogPanel.Instance?.LogUIInteraction(
+                    $"Numerical inputs submitted for '{currentTask.taskTitle}': {string.Join(";", inputValues)}");
+            }
+            // Log choice selection for the task
+            GameLogPanel.Instance?.LogUIInteraction($"Choice selected: '{selectedChoice.choiceText}' for task '{currentTask.taskTitle}'");
+            
             ApplyChoiceImpacts(selectedChoice);
 
-            // Handle delivery execution with strict type checking
-            if (selectedChoice.enableMultipleDeliveries)
+            if (selectedChoice.immediateDelivery)
             {
-                Debug.Log("Executing multiple deliveries");
-                ExecuteMultipleDeliveries(selectedChoice);
-                TaskSystem.Instance.SetTaskInProgress(currentTask);
-            }
-            else if (selectedChoice.immediateDelivery && !selectedChoice.triggersDelivery) // STRICT: Only immediate, not both
-            {
-                Debug.Log("Executing immediate delivery");
-                ExecuteImmediateDelivery(selectedChoice);
+                ExecuteGeneratorDelivery(selectedChoice, immediate: true);
                 TaskSystem.Instance.CompleteTask(currentTask);
-
             }
-            else if (selectedChoice.triggersDelivery && !selectedChoice.immediateDelivery) // STRICT: Only normal, not both
+            else if (selectedChoice.triggersDelivery)
             {
-                Debug.Log("Executing normal delivery");
-                CreateChoiceDeliveryTask(selectedChoice);
-                TaskSystem.Instance.SetTaskInProgress(currentTask);
-            }
-            else if (selectedChoice.triggersDelivery && selectedChoice.immediateDelivery) // Both flags set
-            {
-                Debug.LogWarning("Choice has both triggersDelivery and immediateDelivery - using immediate delivery");
-                ExecuteImmediateDelivery(selectedChoice);
-                TaskSystem.Instance.CompleteTask(currentTask);
+                ExecuteGeneratorDelivery(selectedChoice, immediate: false);
             }
             else
             {
-                Debug.Log("No delivery - completing task immediately");
                 TaskSystem.Instance.CompleteTask(currentTask);
             }
-
         }
         else
         {
-            // No choice selected, complete task normally
             TaskSystem.Instance.CompleteTask(currentTask);
         }
 
         CloseTaskDetail();
 
-        // Refresh notification after task completion
         TaskCenterNotification notification = FindObjectOfType<TaskCenterNotification>();
-        if (notification != null)
-            notification.RefreshNotification();
+        if (notification != null) notification.RefreshNotification();
 
         CategoryTaskManager categoryManager = FindObjectOfType<CategoryTaskManager>();
-        if (categoryManager != null)
-            categoryManager.RefreshTaskList();
+        if (categoryManager != null) categoryManager.RefreshTaskList();
+    }
+
+    void ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)
+    {
+        switch (choice.deliveryCargoType)
+        {
+            case ResourceType.FoodPacks:
+                ExecuteFoodDelivery(choice, immediate);
+                break;
+
+            case ResourceType.Population:
+                ExecuteClientRelocation(choice, immediate);
+                break;
+
+            default:
+                // Fallback for any other cargo type: single source→destination delivery
+                ExecuteFallbackDelivery(choice, immediate);
+                break;
+        }
+    }
+
+    
+    // FOOD DELIVERY via FoodDeliveryHandler
+    void ExecuteFoodDelivery(AgentChoice choice, bool immediate)
+    {
+        if (FoodDeliveryHandler.Instance == null)
+        {
+            Debug.LogError("[TaskDetailUI] FoodDeliveryHandler not found in scene");
+            return;
+        }
+
+        if (immediate)
+        {
+            FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice.deliveryQuantity);
+        }
+        else
+        {
+            bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice.deliveryQuantity);
+            if (!success)
+                ShowAgentErrorMessage("Could not queue food delivery — check kitchen stock and vehicle availability.");
+        }
+    }
+
+    // CLIENT RELOCATION via ClientRelocationHandler
+    void ExecuteClientRelocation(AgentChoice choice, bool immediate)
+    {
+        if (ClientRelocationHandler.Instance == null)
+        {
+            Debug.LogError("[TaskDetailUI] ClientRelocationHandler not found in scene");
+            return;
+        }
+
+        // Derive target destination types from the choice destination setting
+        // (kept as a simple two-flag approach; no complex enum needed)
+        bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                    || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
+        bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                    && choice.destinationPrebuilt == PrebuiltBuildingType.Motel;
+        // If neither flag set (AutoFind), allow both
+        if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+
+        if (immediate)
+        {
+            ClientRelocationHandler.Instance.ExecuteImmediate(
+                currentTask, choice.deliveryQuantity, toShelter, toMotel);
+        }
+        else
+        {
+            bool success = ClientRelocationHandler.Instance.Execute(
+                currentTask, choice.deliveryQuantity, toShelter, toMotel);
+            if (!success)
+                ShowAgentErrorMessage("Could not queue client relocation — check shelter/motel capacity.");
+        }
+    }
+
+    // FALLBACK for other cargo types
+    void ExecuteFallbackDelivery(AgentChoice choice, bool immediate)
+    {
+        MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
+        MonoBehaviour source      = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
+        MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+
+        if (source == null || destination == null)
+        {
+            Debug.LogError($"[TaskDetailUI] Fallback delivery: could not resolve source/destination for {choice.deliveryCargoType}");
+            return;
+        }
+
+        if (immediate)
+        {
+            ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, choice.deliveryQuantity);
+        }
+        else
+        {
+            DeliverySystem ds = DeliverySystem.Instance ?? FindObjectOfType<DeliverySystem>();
+            if (ds == null) return;
+            List<DeliveryTask> deliveries = ds.CreateDeliveryTask(source, destination, choice.deliveryCargoType, choice.deliveryQuantity, 3);
+            TaskSystem.Instance.LinkDeliveriesToTask(currentTask, deliveries);
+            if (deliveries.Count > 0)
+                TaskSystem.Instance.SetTaskInProgress(currentTask);
+        }
     }
 
     // ---------NUMERICAL INPUT VALIDATION ---------
@@ -686,21 +837,81 @@ public class TaskDetailUI : MonoBehaviour
                 break;
                 
             case NumericalInputType.UntrainedWorkers:
-                // Check if requested workers exceed available
                 if (WorkerSystem.Instance != null)
                 {
-                    int availableUntrained = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
-                    if (value > availableUntrained)
+                    // For REQUEST tasks, validate budget
+                    if (currentTask.taskTitle.Contains("Request"))
                     {
-                        return $"Not enough untrained workers. You requested {value} but only have {availableUntrained} available.";
+                        if (WorkerRequestSystem.Instance != null && SatisfactionAndBudget.Instance != null)
+                        {
+                            int costPerWorker = currentTask.taskTitle.Contains("Untrained") 
+                                ? WorkerRequestSystem.Instance.untrainedWorkerCost 
+                                : WorkerRequestSystem.Instance.trainedWorkerCost;
+                            int totalCost = value * costPerWorker;
+                            int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+                            
+                            if (totalCost > availableBudget)
+                            {
+                                return $"Insufficient budget. Requesting {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
+                            }
+                        }
+                        break;
+                    }
+                    
+                    // For TRAINING tasks, validate budget AND worker availability
+                    if (currentTask.taskTitle.Contains("Training"))
+                    {
+                        // Check budget first
+                        if (WorkerTrainingSystem.Instance != null && SatisfactionAndBudget.Instance != null)
+                        {
+                            int totalCost = value * WorkerTrainingSystem.Instance.trainingCostPerWorker;
+                            int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+                            
+                            if (totalCost > availableBudget)
+                            {
+                                return $"Insufficient budget. Training {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
+                            }
+                        }
+                        
+                        // Then check worker availability
+                        int availableUntrained = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
+                        if (value > availableUntrained)
+                        {
+                            return $"Not enough untrained workers. You requested {value} but only have {availableUntrained} available.";
+                        }
+                        break;
+                    }
+                    
+                    // Default: validate worker availability
+                    int availableUntrainedDefault = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
+                    if (value > availableUntrainedDefault)
+                    {
+                        return $"Not enough untrained workers. You requested {value} but only have {availableUntrainedDefault} available.";
                     }
                 }
                 break;
                 
             case NumericalInputType.TrainedWorkers:
-                // Check if requested trained workers exceed available
                 if (WorkerSystem.Instance != null)
                 {
+                    // For REQUEST tasks, validate budget instead of worker availability
+                    if (currentTask.taskTitle.Contains("Request"))
+                    {
+                        if (WorkerRequestSystem.Instance != null && SatisfactionAndBudget.Instance != null)
+                        {
+                            int costPerWorker = WorkerRequestSystem.Instance.trainedWorkerCost;
+                            int totalCost = value * costPerWorker;
+                            int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+                            
+                            if (totalCost > availableBudget)
+                            {
+                                return $"Insufficient budget. Requesting {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
+                            }
+                        }
+                        break;
+                    }
+                    
+                    // For TRAINING tasks, validate worker availability
                     int availableTrained = WorkerSystem.Instance.GetAvailableTrainedWorkers();
                     if (value > availableTrained)
                     {
@@ -850,111 +1061,67 @@ public class TaskDetailUI : MonoBehaviour
     {
         errorMessage = "";
 
-        if (!choice.triggersDelivery && !choice.immediateDelivery && !choice.enableMultipleDeliveries)
+        if (!choice.triggersDelivery && !choice.immediateDelivery)
             return true;
 
-        MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
-        if (choice.enableMultipleDeliveries)
+        // Immediate delivery bypasses vehicle/reservation logic — just check resources exist
+        if (choice.immediateDelivery)
         {
-            Debug.Log("Using multi-delivery validation");
-            return ValidateMultipleDeliveries(choice, triggeringFacility, out errorMessage);
-        }
-
-        Debug.Log("Using single delivery validation");
-        MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
-        MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
-
-        if (source == null)
-        {
-            errorMessage = $"No suitable source found for {choice.deliveryCargoType}";
-            return false;
-        }
-
-        if (destination == null)
-        {
-            errorMessage = $"No suitable destination found for {choice.deliveryCargoType}";
-            return false;
-        }
-
-        // Check if source and destination are the same
-        if (source == destination)
-        {
-            errorMessage = $"Cannot deliver to the same facility. Need alternative {choice.destinationType}";
-            return false;
-        }
-
-        // Calculate actual quantity for validation
-        int availableAmount = TaskSystem.Instance.CalculateDeliveryQuantity(choice, source);
-
-        if (availableAmount <= 0)
-        {
-            string quantityText = choice.quantityType == DeliveryQuantityType.Percentage ?
-                $"{choice.deliveryPercentage}%" : "all";
-            errorMessage = $"No resources available at {source.name} for {quantityText} delivery";
-            return false;
-        }
-
-        int availableSpace = GetAvailableSpace(destination, choice.deliveryCargoType);
-        if (availableSpace < choice.deliveryQuantity)
-        {
-            errorMessage = $"Insufficient space at {destination.name}. Required: {choice.deliveryQuantity}, Available space: {availableSpace}";
-            return false;
-        }
-
-        // Vehicle check only for normal delivery
-        if (choice.triggersDelivery && !choice.immediateDelivery)
-        {
-            // Get detailed route analysis
-            PathfindingSystem pathfinder = FindObjectOfType<PathfindingSystem>();
-            if (pathfinder != null)
+            switch (choice.deliveryCargoType)
             {
-                PathAnalysis analysis = pathfinder.AnalyzePath(source.transform.position, destination.transform.position);
-                DeliveryTimeEstimate estimate = pathfinder.EstimateDeliveryTime(source.transform.position, destination.transform.position);
+                case ResourceType.FoodPacks:
+                    int totalFood = FindObjectsOfType<Building>()
+                        .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
+                        .Sum(b => b.GetComponent<BuildingResourceStorage>()?.GetResourceAmount(ResourceType.FoodPacks) ?? 0);
+                    if (totalFood <= 0) { errorMessage = "No food packs available in any kitchen"; return false; }
+                    return true;
 
-                if (!estimate.pathExists)
-                {
-                    if (estimate.isFloodBlocked)
-                    {
-                        errorMessage = $"All routes from {source.name} to {destination.name} are blocked by flood";
-                    }
-                    else
-                    {
-                        errorMessage = $"No route available from {source.name} to {destination.name}";
-                    }
-                    return false;
-                }
+                case ResourceType.Population:
+                    int totalPop = GetPopulationAtFacility(currentTask);
+                    if (totalPop <= 0) { errorMessage = "No clients at source facility"; return false; }
+                    return true;
 
-                // Show route information in choice text (optional enhancement)
-                if (analysis.isFloodAffected && analysis.hasAlternativeRoute)
-                {
-                    if (showDebugInfo)
-                        Debug.Log($"Choice uses alternative route (+{analysis.routeLengthDifference} tiles) due to flood");
-                    ToastManager.ShowToast($"Due to flood, the delivery reroute takes (+{analysis.routeLengthDifference} tiles) longer than normal path.", ToastType.Info, true);
-                }
-            }
-
-            Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-            bool hasCapableVehicle = false;
-
-            foreach (Vehicle vehicle in vehicles)
-            {
-                if (vehicle.GetAllowedCargoTypes().Contains(choice.deliveryCargoType) &&
-                    vehicle.GetMaxCapacity() >= Mathf.Min(choice.deliveryQuantity, 10) &&
-                    vehicle.GetCurrentStatus() != VehicleStatus.Damaged)
-                {
-                    hasCapableVehicle = true;
-                    break;
-                }
-            }
-
-            if (!hasCapableVehicle)
-            {
-                errorMessage = $"No available undamaged vehicle to transport {choice.deliveryCargoType}";
-                return false;
+                default:
+                    return true; // Let it attempt, fail gracefully at execution
             }
         }
 
-        return true;
+        // Normal (vehicle) delivery — use generators
+        switch (choice.deliveryCargoType)
+        {
+            case ResourceType.FoodPacks:
+                return FoodDeliveryHandler.Instance != null
+                    && FoodDeliveryHandler.Instance.CanExecute(currentTask, choice.deliveryQuantity, out errorMessage);
+
+            case ResourceType.Population:
+                bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                            || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
+                bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                            && choice.destinationPrebuilt == PrebuiltBuildingType.Motel;
+                if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+                return ClientRelocationHandler.Instance != null
+                    && ClientRelocationHandler.Instance.CanExecute(
+                        currentTask, choice.deliveryQuantity, toShelter, toMotel, out errorMessage);
+
+            default:
+                bool hasVehicle = FindObjectsOfType<Vehicle>()
+                    .Any(v => v.GetAllowedCargoTypes().Contains(choice.deliveryCargoType)
+                        && v.GetCurrentStatus() != VehicleStatus.Damaged);
+                if (!hasVehicle) errorMessage = $"No undamaged vehicle for {choice.deliveryCargoType}";
+                return hasVehicle;
+        }
+    }
+
+    // Helper — reads population from the task's triggering facility
+    int GetPopulationAtFacility(GameTask task)
+    {
+        MonoBehaviour facility = TaskSystem.Instance.FindTriggeringFacility(task);
+        if (facility == null) return 0;
+        PrebuiltBuilding pb = facility.GetComponent<PrebuiltBuilding>();
+        if (pb != null) return pb.GetCurrentPopulation();
+        BuildingResourceStorage storage = facility.GetComponent<BuildingResourceStorage>()
+            ?? facility.GetComponent<Building>()?.GetComponent<BuildingResourceStorage>();
+        return storage?.GetResourceAmount(ResourceType.Population) ?? 0;
     }
 
     /// <summary>
@@ -1541,8 +1708,8 @@ public class TaskDetailUI : MonoBehaviour
 
         if (deliveryTask != null)
         {
-            currentTask.linkedDeliveryTaskIds.Add(deliveryTask.taskId);
-            StartCoroutine(MonitorChoiceDeliveryCompletion());
+            // Link delivery → parent task so OnDeliveryTaskCompleted can find it
+            TaskSystem.Instance.LinkDeliveryToTask(currentTask, deliveryTask);
 
             if (showDebugInfo)
                 Debug.Log($"Created single delivery: {actualQuantity} {choice.deliveryCargoType} from {source.name} to {destination.name}");
@@ -1614,7 +1781,9 @@ public class TaskDetailUI : MonoBehaviour
             }
             else
             {
-                deliverySystem.CreateDeliveryTask(source, dest, choice.deliveryCargoType, quantityPerDest, 3);
+                List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, dest, choice.deliveryCargoType, quantityPerDest, 3);
+                // Link all created deliveries → parent task
+                TaskSystem.Instance.LinkDeliveriesToTask(currentTask, deliveries);
             }
 
             if (showDebugInfo)
@@ -1653,7 +1822,9 @@ public class TaskDetailUI : MonoBehaviour
             }
             else
             {
-                deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
+                List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
+                // Link all created deliveries → parent task
+                TaskSystem.Instance.LinkDeliveriesToTask(currentTask, deliveries);
             }
 
             if (showDebugInfo)
@@ -1690,7 +1861,9 @@ public class TaskDetailUI : MonoBehaviour
             }
             else
             {
-                deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
+                List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
+                // Link all created deliveries → parent task
+                TaskSystem.Instance.LinkDeliveriesToTask(currentTask, deliveries);
             }
 
             if (showDebugInfo)
@@ -1888,10 +2061,8 @@ public class TaskDetailUI : MonoBehaviour
 
         if (deliveryTask != null)
         {
-            currentTask.linkedDeliveryTaskIds.Add(deliveryTask.taskId);
-
-            // Start monitoring delivery completion (without time segment monitoring)
-            StartCoroutine(MonitorChoiceDeliveryCompletion());
+            // Link delivery → parent task so OnDeliveryTaskCompleted can find it
+            TaskSystem.Instance.LinkDeliveryToTask(currentTask, deliveryTask);
 
             if (showDebugInfo)
                 Debug.Log($"Created delivery from choice: {source.name} → {destination.name} " +
@@ -2067,20 +2238,33 @@ public class TaskDetailUI : MonoBehaviour
                 case ImpactType.Budget:
                     if (SatisfactionAndBudget.Instance != null)
                     {
+                        int delayRounds = choice.budgetDelayRounds;
                         if (impact.value > 0)
                         {
-                            SatisfactionAndBudget.Instance.AddBudget(impact.value, $"Task [{currentTask.taskTitle}] budget impact");
-                            ToastManager.ShowToast($"Budget increased by {impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
+                            // Positive budget = incoming funds — respect delay
+                            BudgetAllocationManager.Instance?.ScheduleAllocation(
+                                (int)impact.value,
+                                delayRounds,
+                                $"Task: {currentTask.taskTitle}");
+                            // rounds delayed
+                            if (delayRounds > 0){
+                                ToastManager.ShowToast(
+                                    $"${impact.value:N0} funding approved — arrives in {delayRounds} round(s)",
+                                    ToastType.Info, true);
+                            }
                         }
                         else
                         {
-                            SatisfactionAndBudget.Instance.RemoveBudget(-impact.value, $"Task [{currentTask.taskTitle}] budget impact");
-                            ToastManager.ShowToast($"Budget decreased by {-impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
+                            // Costs are always immediate
+                            SatisfactionAndBudget.Instance.RemoveBudget(
+                                -(int)impact.value,
+                                $"Task [{currentTask.taskTitle}] cost");
+                            ToastManager.ShowToast(
+                                $"Budget decreased by ${-impact.value:N0}",
+                                ToastType.Info, true);
                         }
                     }
                     break;
-
-                    // Add other impact types as needed
             }
         }
 
@@ -2149,6 +2333,9 @@ public class TaskDetailUI : MonoBehaviour
             }
 
             currentConversationItems.Add(messageItem);
+            GameLogPanel.Instance?.LogUIInteraction(
+            $"Player message sent | message={message}");
+
             playerInputField.text = "";
             ScrollToBottom();
         }

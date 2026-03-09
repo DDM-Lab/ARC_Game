@@ -163,7 +163,7 @@ public class WorkerRequestSystem : MonoBehaviour
         
         GameTask requestTask = taskSystem.CreateTask(
             $"Request {workerTypeLabel} Responders",
-            TaskType.Advisory,
+            TaskType.Other,
             "Worker Management",
             $"Request additional {workerTypeLabel.ToLower()} responders to expand your workforce capacity."
         );
@@ -258,7 +258,7 @@ public class WorkerRequestSystem : MonoBehaviour
         
         if (workersToRequest <= 0)
         {
-            ToastManager.ShowToast("No responders selected for request", ToastType.Warning, true);
+            //ToastManager.ShowToast("No responders selected for request", ToastType.Warning, true);
             return;
         }
         
@@ -271,7 +271,7 @@ public class WorkerRequestSystem : MonoBehaviour
         // Check budget
         if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.CanAfford(totalCost))
         {
-            ToastManager.ShowToast($"Insufficient budget! Need ${totalCost}", ToastType.Warning, true);
+            //ToastManager.ShowToast($"Insufficient budget! Need ${totalCost}", ToastType.Warning, true);
             GameLogPanel.Instance.LogError($"Cannot afford worker request: ${totalCost}");
             return;
         }
@@ -325,7 +325,7 @@ public class WorkerRequestSystem : MonoBehaviour
         activeRequestTasks.Add(requestTask);
 
         string workerTypeLabel = isUntrained ? "untrained" : "trained";
-        ToastManager.ShowToast($"Requested {workerCount} {workerTypeLabel} responders. Arrival: Day {arrivalDay}", ToastType.Success, true);
+        ToastManager.ShowToast($"Requested {workerCount} {workerTypeLabel} responders. Estimated Arrival Date: Day {arrivalDay}", ToastType.Success, true);
         GameLogPanel.Instance.LogWorkerAction($"Requested {workerCount} {workerTypeLabel} responders (arrival Day {arrivalDay})");
 
         if (showDebugInfo)

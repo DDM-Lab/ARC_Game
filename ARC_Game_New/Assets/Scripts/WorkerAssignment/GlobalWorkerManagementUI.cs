@@ -169,6 +169,14 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         UpdateRightPanel();
 
         Debug.Log("Global Worker Management UI opened");
+        if (workerSystem != null)
+        {
+            WorkerStatistics stats = workerSystem.GetWorkerStatistics();
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Worker management UI opened | trained={stats.GetTotalTrained()}(working={stats.trainedWorking},free={stats.trainedFree})" +
+                $" | untrained={stats.GetTotalUntrained()}(working={stats.untrainedWorking},free={stats.untrainedFree},training={stats.untrainedTraining})" +
+                $" | total={stats.GetTotalWorkers()} | tab={currentSelectedTab}");
+        }
     }
 
     public void HideUI()
@@ -182,6 +190,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
             individualManageUI.HideManageUI();
 
         Debug.Log("Global Worker Management UI closed");
+        GameLogPanel.Instance?.LogUIInteraction("Worker management UI closed");
     }
 
     void OnTabClicked(TabType tabType)
@@ -189,6 +198,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         SetActiveTab(tabType);
         UpdateRightPanel();
         Debug.Log($"Switched to {tabType} tab");
+        GameLogPanel.Instance?.LogUIInteraction($"Worker management tab switched: {tabType}");
     }
 
     void SetActiveTab(TabType tabType)
@@ -445,6 +455,8 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         {
             individualManageUI.ShowManageUI(building);
             Debug.Log($"Opening individual manage UI for {building.GetBuildingType()} at site {building.GetOriginalSiteId()}");
+            GameLogPanel.Instance?.LogUIInteraction(
+            $"Opening individual manage UI for {building.GetBuildingType()} at site {building.GetOriginalSiteId()}");
         }
     }
 
@@ -509,6 +521,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
             workerSystem.CreateTrainedWorker();
             workerSystem.IncrementNewWorkersHired();
             Debug.Log("Immediate request for trained workers sent.");
+            GameLogPanel.Instance?.LogWorkerAction("DEBUG: Immediate trained worker created");
         }
     }
 
@@ -519,6 +532,7 @@ public class GlobalWorkerManagementUI : MonoBehaviour
             workerSystem.CreateUntrainedWorker();
             workerSystem.IncrementNewWorkersHired();
             Debug.Log("Immediate request for untrained workers sent.");
+            GameLogPanel.Instance?.LogWorkerAction("DEBUG: Immediate untrained worker created");
         }
     }
 }
