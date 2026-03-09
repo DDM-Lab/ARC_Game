@@ -677,6 +677,8 @@ public class Vehicle : MonoBehaviour
     public string GetVehicleName() => vehicleName;
     public VehicleStatus GetCurrentStatus() => currentStatus;
     public int GetMaxCapacity() => maxCargoCapacity;
+    public int GetCurrentLoad() => GetTotalCargo();
+    public ResourceType GetCurrentCargoType() => GetPrimaryCargoType();
     public List<ResourceType> GetAllowedCargoTypes() => new List<ResourceType>(allowedCargoTypes);
     public DeliveryTask GetCurrentTask() => currentTask;
 

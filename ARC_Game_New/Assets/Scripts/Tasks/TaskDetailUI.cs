@@ -1,10 +1,12 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.EventSystems;
 using System.Linq;
+using GameActions;
 
 public class TaskDetailUI : MonoBehaviour
 {
@@ -620,6 +622,14 @@ public class TaskDetailUI : MonoBehaviour
     // The actual task completion logic
     private void CompleteTaskAction()
     {
+        // Check if this is a multi-agent choice proposal (taskId == -1)
+        if (currentTask != null && currentTask.taskId == -1 && currentTask.multiAgentProposal != null)
+        {
+            HandleMultiAgentChoiceSelection();
+            return;
+        }
+
+        // Apply choice impacts first
         if (selectedChoice != null)
         {
             // Log numerical input for the task
@@ -2301,7 +2311,18 @@ public class TaskDetailUI : MonoBehaviour
         {
             string message = playerInputField.text;
 
-            // create player message item
+            // Send to vLLM server if WebSocket is connected
+            if (WebSocketManager.Instance != null && WebSocketManager.Instance.IsConnected())
+            {
+                WebSocketManager.Instance.SendMessage(message, currentTask.taskId);
+            }
+            else
+            {
+                if (showDebugInfo)
+                    Debug.Log("Playing in offline mode - message not sent to LLM");
+            }
+
+            // Always display player's message in UI (works offline!)
             GameObject messageItem = Instantiate(playerMessagePrefab, conversationContent);
 
             // Set message text
@@ -2311,6 +2332,7 @@ public class TaskDetailUI : MonoBehaviour
                 messageText.text = message;
             }
 
+            currentConversationItems.Add(messageItem);
             GameLogPanel.Instance?.LogUIInteraction(
             $"Player message sent | message={message}");
 
@@ -2325,6 +2347,57 @@ public class TaskDetailUI : MonoBehaviour
         {
             OnSendPlayerMessage();
         }
+    }
+
+    /// <summary>
+    /// Receives LLM responses from WebSocket and displays them as agent messages
+    /// </summary>
+    public void OnReceiveLLMResponse(string responseText)
+    {
+        if (currentTask == null || taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
+        {
+            Debug.LogWarning("Cannot display LLM response - task panel not active");
+            return;
+        }
+
+        try
+        {
+            // Create dynamic agent message from LLM response
+            AgentMessage llmMessage = new AgentMessage(responseText, GetCurrentTaskOfficerSprite());
+            llmMessage.useTypingEffect = true;
+            llmMessage.typingSpeed = 0.05f;
+
+            // Add to task's message history
+            currentTask.agentMessages.Add(llmMessage);
+
+            // Display with typing effect
+            StartCoroutine(DisplayAgentMessage(llmMessage, true));
+
+            if (showDebugInfo)
+                Debug.Log($"✅ Displayed LLM response: {responseText}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to display LLM response: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Get the appropriate sprite for the current task's officer
+    /// </summary>
+    Sprite GetCurrentTaskOfficerSprite()
+    {
+        if (currentTask == null || TaskSystem.Instance == null)
+            return TaskSystem.Instance?.defaultAgentSprite;
+
+        return currentTask.taskOfficer switch
+        {
+            TaskOfficer.WorkforceService => TaskSystem.Instance.workforceServiceSprite,
+            TaskOfficer.LodgingMassCare => TaskSystem.Instance.lodgingMassCareSprite,
+            TaskOfficer.ExternalRelationship => TaskSystem.Instance.externalRelationshipSprite,
+            TaskOfficer.FoodMassCare => TaskSystem.Instance.foodMassCareSprite,
+            _ => TaskSystem.Instance.defaultAgentSprite
+        };
     }
 
     void Update()
@@ -2414,4 +2487,142 @@ public class TaskDetailUI : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Task {taskId} marked as previously shown");
     }
+
+    /// <summary>
+    /// Handle when director selects a choice from a multi-agent proposal.
+    /// Executes the action package and sends choice_made back to the router.
+    /// </summary>
+    private void HandleMultiAgentChoiceSelection()
+    {
+        if (selectedChoice == null)
+        {
+            ShowAgentErrorMessage("Please select a recommendation before confirming.");
+            return;
+        }
+
+        var proposal = currentTask.multiAgentProposal;
+        int packageIndex = selectedChoice.choiceId;
+
+        // Find the selected package
+        ActionPackage selectedPackage = null;
+        if (proposal.packages != null && packageIndex >= 0 && packageIndex < proposal.packages.Length)
+        {
+            selectedPackage = proposal.packages[packageIndex];
+        }
+
+        if (selectedPackage == null)
+        {
+            ShowAgentErrorMessage("Selected package not found.");
+            return;
+        }
+
+        Debug.Log($"[MultiAgent] Executing package {packageIndex}: {selectedPackage.label}");
+
+        // Get available actions from the proposal
+        GameActions.GameAction[] availableActions = proposal.available_actions;
+        if (availableActions == null || availableActions.Length == 0)
+        {
+            ShowAgentErrorMessage("No actions available in proposal.");
+            return;
+        }
+
+        // Execute each action in the package via ActionExecutor
+        var executionResults = new System.Collections.Generic.List<ActionExecutionResultData>();
+
+        if (selectedPackage.action_indices != null)
+        {
+            foreach (int actionIndex in selectedPackage.action_indices)
+            {
+                // Validate index bounds
+                if (actionIndex < 0 || actionIndex >= availableActions.Length)
+                {
+                    Debug.LogWarning($"[MultiAgent] Action index {actionIndex} out of bounds (available: {availableActions.Length})");
+                    executionResults.Add(new ActionExecutionResultData
+                    {
+                        action_index = actionIndex,
+                        success = false,
+                        error = "Action index out of bounds"
+                    });
+                    continue;
+                }
+
+                // Get the action object
+                GameActions.GameAction action = availableActions[actionIndex];
+
+                // Execute via ActionExecutor (sole responsibility for game actions)
+                if (ActionExecutor.Instance != null)
+                {
+                    Debug.Log($"[MultiAgent] Executing action {actionIndex}: {action.description}");
+                    ActionExecutionResult result = ActionExecutor.Instance.ExecuteAction(action);
+
+                    executionResults.Add(new ActionExecutionResultData
+                    {
+                        action_index = actionIndex,
+                        action_id = action.action_id,
+                        success = result.success,
+                        error = result.error_message
+                    });
+
+                    if (result.success)
+                    {
+                        Debug.Log($"✅ [MultiAgent] Action {actionIndex} succeeded");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"❌ [MultiAgent] Action {actionIndex} failed: {result.error_message}");
+                    }
+                }
+                else
+                {
+                    Debug.LogError("[MultiAgent] ActionExecutor not found!");
+                    executionResults.Add(new ActionExecutionResultData
+                    {
+                        action_index = actionIndex,
+                        success = false,
+                        error = "ActionExecutor not available"
+                    });
+                }
+            }
+        }
+
+        // Get updated game state after execution
+        GameStatePayload updatedGameState = TaskSystem.Instance.GetCurrentGameState();
+
+        // Send choice_made back to router
+        if (WebSocketManager.Instance != null)
+        {
+            // Convert execution results to JSON array format
+            string resultsJson = "[" + string.Join(",", executionResults.ConvertAll(r =>
+                $"{{\"action_index\":{r.action_index}," +
+                $"\"action_id\":\"{r.action_id}\"," +
+                $"\"success\":{(r.success ? "true" : "false")}," +
+                $"\"error\":{(r.error != null ? "\"" + r.error.Replace("\"", "\\\"") + "\"" : "null")}}}"
+            )) + "]";
+
+            string stateJson = JsonUtility.ToJson(updatedGameState);
+
+            WebSocketManager.Instance.SendChoiceMade(
+                proposal.agent_name,
+                packageIndex,
+                resultsJson,
+                stateJson
+            );
+        }
+
+        // Complete the multi-agent task
+        TaskSystem.Instance.CompleteTask(currentTask);
+        CloseTaskDetail();
+
+        Debug.Log($"✅ [MultiAgent] Choice confirmed and sent to router");
+    }
+}
+
+// Helper class for multi-agent action execution results
+[System.Serializable]
+public class ActionExecutionResultData
+{
+    public int action_index;
+    public string action_id;
+    public bool success;
+    public string error;
 }
