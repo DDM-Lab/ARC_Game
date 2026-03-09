@@ -1,0 +1,97 @@
+{
+  "agent_order_rule": "sequential",
+  "agents": [
+    {
+      "subagent_name": "Strategic Coach",
+      "role": "subagent",
+      "actor_type": "coach",
+      "num_turns": 3,
+      "max_actions_per_turn": 3,
+      "talkinghead_endpoint": "DisasterOfficer",
+      "subaction_space": [
+        { "category": "all" }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "constructionState",
+        "workers",
+        "mapState",
+        "logistics"
+      ],
+      "llm_provider": "anthropic",
+      "llm_model": "claude-3-5-sonnet-20241022",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "turn_token_budget": 1024,
+      "use_global_prompt": true,
+      "system_prompt": "You are a strategic operations coach. Analyze the situation deeply, identify key problems and opportunities, and provide a multi-turn action plan with clear rationale.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Construction Officer",
+      "role": "subagent",
+      "actor_type": "choices",
+      "num_choices": 3,
+      "max_actions_per_package": 4,
+      "talkinghead_endpoint": "DisasterOfficer",
+      "subaction_space": [
+        { "category": "construction" },
+        { "category": "deconstruction" }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "constructionState",
+        "mapState"
+      ],
+      "llm_provider": "anthropic",
+      "llm_model": "claude-3-haiku-20240307",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "turn_token_budget": 512,
+      "use_global_prompt": true,
+      "system_prompt": "You are a construction expert advising on infrastructure priorities.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Logistics Officer",
+      "role": "subagent",
+      "actor_type": "auto",
+      "num_choices": null,
+      "max_actions_per_package": 3,
+      "talkinghead_endpoint": "WorkforceService",
+      "subaction_space": [
+        { "category": "worker" },
+        { "category": "worker_assignment" }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "workers",
+        "mapState"
+      ],
+      "llm_provider": "anthropic",
+      "llm_model": "claude-3-haiku-20240307",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "turn_token_budget": 256,
+      "use_global_prompt": true,
+      "system_prompt": "You are a logistics coordinator managing workers and assignments.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Player",
+      "role": "director",
+      "actor_type": "manual",
+      "num_choices": null,
+      "max_actions_per_package": null,
+      "talkinghead_endpoint": null,
+      "subaction_space": [{ "category": "all" }],
+      "subobservation_space": ["all"],
+      "llm_model": null,
+      "llm_endpoint": null,
+      "llm_port": null,
+      "turn_token_budget": null,
+      "system_prompt": null,
+      "can_address": []
+    }
+  ]
+}
