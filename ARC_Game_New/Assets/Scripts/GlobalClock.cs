@@ -272,27 +272,80 @@ public class GlobalClock : MonoBehaviour
     void StartSimulation()
     {
         if (isSimulationRunning) return;
-        
+
+        // Request LLM agent decision before simulation starts (legacy path)
+        RequestLLMAgentDecision();
+
+        // Notify agent router of new round (multi-agent router path)
+        int roundNumber = (currentDay - 1) * 4 + currentTimeSegment + 1;
+        if (WebSocketManager.Instance != null && WebSocketManager.Instance.isConnected)
+        {
+            WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, currentTimeSegment);
+        }
+
         isSimulationRunning = true;
         currentState = TimeState.Simulating;
-        
+
         // Disable player interactions
         DisablePlayerInteractions();
-        
+
         // Calculate player wait time based on speed (shorter wait for higher speeds)
         float playerWaitTime = simulationDuration / (int)currentTimeSpeed;
-        
+
         // Set time scale to speed up game content
         Time.timeScale = (int)currentTimeSpeed;
-        
+
         // Notify other systems
         OnSimulationStarted?.Invoke();
-        
+
         if (showDebugInfo)
             Debug.Log($"Simulation started - Player waits {playerWaitTime}s, game content runs at {currentTimeSpeed}x speed");
         GameLogPanel.Instance.LogMetricsChange($"Simulation started - Player waits {playerWaitTime}s, game content runs at {currentTimeSpeed}x speed");
         // Start simulation coroutine
         StartCoroutine(SimulationCoroutine(playerWaitTime));
+    }
+
+    void RequestLLMAgentDecision()
+    {
+        // Check if WebSocket is connected
+        if (WebSocketManager.Instance == null || !WebSocketManager.Instance.IsConnected())
+        {
+            if (showDebugInfo)
+                Debug.Log("WebSocket not connected - skipping LLM agent decision");
+            return;
+        }
+
+        // Check if TaskSystem is available
+        if (TaskSystem.Instance == null)
+        {
+            Debug.LogWarning("TaskSystem not available - cannot request agent decision");
+            return;
+        }
+
+        // Get current game state
+        GameStatePayload gameState = TaskSystem.Instance.GetCurrentGameState(0);
+
+        // Create request payload using proper serializable class
+        AgentDecisionRequest payload = new AgentDecisionRequest
+        {
+            type = "request_agent_decision",
+            game_state = gameState,
+            goal = "Maximize satisfaction while maintaining budget and completing tasks",
+            timestamp = System.DateTime.UtcNow.ToString("o")
+        };
+
+        // Send request via WebSocket
+        string json = JsonUtility.ToJson(payload);
+
+        if (showDebugInfo)
+        {
+            Debug.Log($"📤 Requested LLM agent decision for Day {currentDay}, Round {currentTimeSegment + 1}");
+            Debug.Log($"📦 Payload JSON length: {json.Length} characters");
+            Debug.Log($"📋 JSON Content (first 500 chars): {json.Substring(0, Mathf.Min(500, json.Length))}");
+        }
+
+        WebSocketManager.Instance.SendRawMessage(json);
+        GameLogPanel.Instance.LogMetricsChange($"Requested AI decision for Day {currentDay}, Round {currentTimeSegment + 1}");
     }
     
     IEnumerator SimulationCoroutine(float playerWaitTime)

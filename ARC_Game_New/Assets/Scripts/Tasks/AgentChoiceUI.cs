@@ -10,6 +10,7 @@ public class AgentChoiceUI : MonoBehaviour
     [Header("UI Components")]
     public Button choiceButton;
     public TextMeshProUGUI choiceText;
+    public TextMeshProUGUI descriptionText; // Optional: displays agentReasoning
     public Image selectedIndicator;
 
     [Header("Colors")]
@@ -28,11 +29,31 @@ public class AgentChoiceUI : MonoBehaviour
 
     public void Initialize(AgentChoice agentChoice, TaskDetailUI parent)
     {
+        if (agentChoice == null)
+        {
+            Debug.LogError("[AgentChoiceUI] Initialize called with null agentChoice");
+            return;
+        }
+
         choice = agentChoice;
         parentUI = parent;
 
         if (choiceText != null)
-            choiceText.text = agentChoice.choiceText;
+            choiceText.text = agentChoice.choiceText ?? "";
+
+        // Display agent reasoning/description if available
+        if (descriptionText != null)
+        {
+            if (!string.IsNullOrEmpty(agentChoice.agentReasoning))
+            {
+                descriptionText.text = agentChoice.agentReasoning;
+                descriptionText.gameObject.SetActive(true);
+            }
+            else
+            {
+                descriptionText.gameObject.SetActive(false);
+            }
+        }
 
         if (choiceButton != null)
         {
