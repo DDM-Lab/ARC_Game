@@ -306,7 +306,7 @@ def _query_anthropic(
 ) -> str:
     """Query Anthropic Claude models."""
     agent_name = agent_cfg.get("subagent_name", "Unknown")
-    model = agent_cfg.get("llm_model", "claude-3-sonnet-20240229")
+    model = agent_cfg.get("llm_model", "claude-sonnet-4-6")
 
     if anthropic is None:
         print(f"[llm_query] [{agent_name}] Anthropic library not installed. "
