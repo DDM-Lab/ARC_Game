@@ -30,9 +30,13 @@ public class PrebuiltBuilding : MonoBehaviour
     private bool isInitialized = false;
     private int communityResidentCount;
 
-    void Start()
+    void Awake()
     {
         StartCoroutine(InitializeWithCentralConfig());
+    }
+    void Start()
+    {
+        // StartCoroutine(InitializeWithCentralConfig());
         InitializePrebuiltBuilding();
     }
     IEnumerator InitializeWithCentralConfig()
@@ -147,8 +151,17 @@ public class PrebuiltBuilding : MonoBehaviour
             {
                 if (amnt.type == ResourceType.Population)
                     amnt.amount = communityResidentCount;
+                    // force config value to override
+                    int current = resourceStorage.GetResourceAmount(ResourceType.Population);
+                    resourceStorage.RemoveResource(ResourceType.Population, current); 
+                    resourceStorage.AddResource(ResourceType.Population, communityResidentCount);
                     Debug.Log($"resourcestorage community of ${communityResidentCount}");
+                    Debug.Log($"configurecommunity population: {GetCurrentPopulation()}");
             } 
+
+        //     int current = resourceStorage.GetResourceAmount(ResourceType.Population);
+        // resourceStorage.RemoveResource(ResourceType.Population, current); 
+        // resourceStorage.AddResource(ResourceType.Population, communityResidentCount);
         }
 
         // Communities typically don't require road connection validation

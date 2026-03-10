@@ -30,7 +30,7 @@ public class Building : MonoBehaviour
 
     [Header("Building Stats")]
     public int capacity = 10;
-    public int shelterCapcity = 10;
+    public int shelterCapacity = 10;
     public int kitchenCapacity = 10;
     public int caseworkCapacity = 10;
     public float operationalEfficiency = 1.0f;
@@ -73,6 +73,7 @@ public class Building : MonoBehaviour
         originalSiteId = siteId;
         currentStatus = BuildingStatus.UnderConstruction;
         SetCapacityByType();
+        Debug.Log($"buildinginit: type - {buildingType}, capac - {capacity}");
 
         // Ensure progress bar is visible for construction
         if (constructionProgressBar != null)
@@ -115,10 +116,12 @@ public class Building : MonoBehaviour
         {
             yield return null;
         }
-        shelterCapcity = GameDataManager.Instance.InitialShelterCapacity;
+        shelterCapacity = GameDataManager.Instance.InitialShelterCapacity;
+        Debug.Log($"initwcc: sehtlerCapac - {shelterCapacity}");
         kitchenCapacity = GameDataManager.Instance.InitialKitchenCapacity;
         caseworkCapacity = GameDataManager.Instance.InitialCaseworkCapacity;
         requiredWorkforce = GameDataManager.Instance.InitialRequiredWorkersPerLoc;
+        SetCapacityByType();
         
     }
     void UpdateWorkforceIndicator()
@@ -488,13 +491,16 @@ public class Building : MonoBehaviour
         switch (buildingType)
         {
             case BuildingType.Shelter:
-                capacity = shelterCapcity;
+                capacity = shelterCapacity;
+                Debug.Log($"setcapacbytype: shelterCapac - {shelterCapacity}");
                 break;
             case BuildingType.Kitchen:
                 capacity = kitchenCapacity;
+                Debug.Log($"setcapacbytype: kitchenCapac - {kitchenCapacity}");
                 break;
             case BuildingType.CaseworkSite:
                 capacity = caseworkCapacity;
+                Debug.Log($"setcapacbytype: caseworkCapac - {caseworkCapacity}");
                 break;
             default:
                 capacity = 10; // Default fallback

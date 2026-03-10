@@ -165,13 +165,13 @@ public class GameConfigLoader : MonoBehaviour
                 else
                 {
                     Debug.LogWarning($"GameConfigLoader: Could not parse weather type '{value}'. Defaulting to Sunny.");
-                    loadedInitialWeather = WeatherType.Sunny;
                 }
             }
             else if (parameter.Equals("initialKitchenCapacity", System.StringComparison.OrdinalIgnoreCase))
             {
                 if (int.TryParse(value, out int kitchenCapac))
                     loadedInitialKitchenCapacity = kitchenCapac;
+                    Debug.Log($"gameconfigloader:kitchencpac - {loadedInitialKitchenCapacity}");
             }
             else if (parameter.Equals("initialShelterCapacity", System.StringComparison.OrdinalIgnoreCase))
             {
