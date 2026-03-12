@@ -26,6 +26,16 @@ public class GameDataManager : MonoBehaviour
     public int defaultShelterCapacity = 10;
     public int defaultCaseworkCapacity = 10;
     public int defaultRequiredWorkersPerLoc = 4;
+    public float defaultSunnyExpansionRate = 0f;
+    public float defaultSunnySpreadChanceMultiplier = 0.5f;
+    public float defaultSmallRainExpansionRate = 0.5f;
+    public float defaultSmallRainSpreadChanceMultiplier = 0.8f;
+    public float defaultMediumRainExpansionRate = 1.5f;
+    public float defaultMediumRainSpreadChanceMultiplier = 1f;
+    public float defaultHeavyRainExpansionRate = 3f;
+    public float defaultHeavyRainSpreadChanceMultiplier = 1.2f;
+    public float defaultStormExpansionRate = 5f;
+    public float defaultStormSpreadChanceMultiplier = 1.5f;
 
 
 
@@ -43,6 +53,16 @@ public class GameDataManager : MonoBehaviour
     public int InitialShelterCapacity { get; private set; }
     public int InitialCaseworkCapacity { get; private set; }
     public int InitialRequiredWorkersPerLoc {get; private set; }
+    public float InitialSunnyExpansionRate {get; private set; }
+    public float InitialSunnySpreadChanceMultiplier {get; private set; }
+    public float InitialSmallRainExpansionRate {get; private set; }
+    public float InitialSmallRainSpreadChanceMultiplier {get; private set; }
+    public float InitialMediumRainExpansionRate {get; private set; }
+    public float InitialMediumRainSpreadChanceMultiplier {get; private set; }
+    public float InitialHeavyRainExpansionRate {get; private set; }
+    public float InitialHeavyRainSpreadChanceMultiplier {get; private set; }
+    public float InitialStormExpansionRate {get; private set; }
+    public float InitialStormSpreadChanceMultiplier {get; private set; }
 
 
     public bool IsDataReady { get; private set; } = false;
@@ -93,7 +113,17 @@ public class GameDataManager : MonoBehaviour
                 InitialShelterCapacity = configLoader.GetInitialShelterCapacity();
                 InitialCaseworkCapacity = configLoader.GetInitialCaseworkCapacity();
                 InitialRequiredWorkersPerLoc = configLoader.GetInitialNeededWorkersPerLoc();
-                
+                InitialSunnyExpansionRate = configLoader.GetInitialSunnyFloodExpansionRate();
+                InitialSunnySpreadChanceMultiplier = configLoader.GetInitialSunnyFloodSpreadChanceMultiplier();
+                InitialSmallRainExpansionRate = configLoader.GetInitialSmallRainFloodExpansionRate();
+                InitialSmallRainSpreadChanceMultiplier = configLoader.GetInitialSmallRainFloodSpreadChanceMultiplier();
+                InitialMediumRainExpansionRate = configLoader.GetInitialMediumRainFloodExpansionRate();
+                InitialMediumRainSpreadChanceMultiplier = configLoader.GetInitialMediumRainFloodSpreadChanceMultiplier();
+                InitialHeavyRainExpansionRate = configLoader.GetInitialHeavyRainFloodExpansionRate();
+                InitialHeavyRainSpreadChanceMultiplier = configLoader.GetInitialHeavyRainFloodSpreadChanceMultiplier();
+                InitialStormExpansionRate = configLoader.GetInitialStormFloodExpansionRate();
+                InitialStormSpreadChanceMultiplier = configLoader.GetInitialStormFloodSpreadChanceMultiplier();
+
                 Debug.Log("GameDataManager: extern config success!");
             }
         }
@@ -122,5 +152,15 @@ public class GameDataManager : MonoBehaviour
         InitialShelterCapacity = defaultShelterCapacity;
         InitialCaseworkCapacity = defaultCaseworkCapacity;
         InitialRequiredWorkersPerLoc = defaultRequiredWorkersPerLoc;
+        InitialSunnyExpansionRate = defaultSunnyExpansionRate;
+        InitialSunnySpreadChanceMultiplier = defaultSunnySpreadChanceMultiplier;
+        InitialSmallRainExpansionRate = defaultSmallRainExpansionRate;
+        InitialSmallRainSpreadChanceMultiplier = defaultSmallRainSpreadChanceMultiplier;
+        InitialMediumRainExpansionRate = defaultMediumRainExpansionRate;
+        InitialMediumRainSpreadChanceMultiplier = defaultMediumRainSpreadChanceMultiplier;
+        InitialHeavyRainExpansionRate = defaultHeavyRainExpansionRate;
+        InitialHeavyRainSpreadChanceMultiplier = defaultHeavyRainSpreadChanceMultiplier;
+        InitialStormExpansionRate = defaultStormExpansionRate;
+        InitialStormSpreadChanceMultiplier = defaultStormSpreadChanceMultiplier;
     }
 }

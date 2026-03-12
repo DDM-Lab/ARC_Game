@@ -62,9 +62,46 @@ public class FloodSystem : MonoBehaviour
 
     void Start()
     {
+        StartCoroutine(InitializeWithCentralConfig());
         InitializeFloodSystem();
         SubscribeToEvents();
     }
+IEnumerator InitializeWithCentralConfig()
+{
+    while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+    {
+        yield return null;
+    }
+
+    foreach (var data in floodParameters.weatherFloodRates)
+    {
+        // We set the ACTUAL variables the simulation uses
+        switch (data.weatherType)
+        {
+            case WeatherType.Sunny:
+                data.expansionRate = GameDataManager.Instance.InitialSunnyExpansionRate;
+                data.spreadChanceMultiplier = GameDataManager.Instance.InitialSunnySpreadChanceMultiplier;
+                break;
+            case WeatherType.SmallRain:
+                data.expansionRate = GameDataManager.Instance.InitialSmallRainExpansionRate;
+                data.spreadChanceMultiplier = GameDataManager.Instance.InitialSmallRainSpreadChanceMultiplier;
+                break;
+            case WeatherType.MediumRain:
+                data.expansionRate = GameDataManager.Instance.InitialMediumRainExpansionRate;
+                data.spreadChanceMultiplier = GameDataManager.Instance.InitialMediumRainSpreadChanceMultiplier;
+                break;
+            case WeatherType.HeavyRain:
+                data.expansionRate = GameDataManager.Instance.InitialHeavyRainExpansionRate;
+                data.spreadChanceMultiplier = GameDataManager.Instance.InitialHeavyRainSpreadChanceMultiplier;
+                break;
+            case WeatherType.Storm:
+                data.expansionRate = GameDataManager.Instance.InitialStormExpansionRate;
+                data.spreadChanceMultiplier = GameDataManager.Instance.InitialStormSpreadChanceMultiplier;
+                break;
+        }
+    }
+    Debug.Log("FloodSystem: Real expansion rates updated from Config!");
+}
 
     void InitializeFloodSystem()
     {
@@ -377,12 +414,14 @@ public class FloodSystem : MonoBehaviour
         }
 
         // Fallback to sunny weather data
+        Debug.Log($"sunny expansion rate: {floodParameters.weatherFloodRates[0].expansionRate}");
         return floodParameters.weatherFloodRates[0];
     }
 
     void ExpandFlood(WeatherFloodData weatherData)
     {
         Debug.Log($"--- FLOOD EXPANSION START ---");
+        Debug.Log($"weather type - {weatherData.weatherType}, expansionrate - {weatherData.expansionRate}");
         int tilesToExpand = Mathf.RoundToInt(weatherData.expansionRate);
         Debug.Log($"Tiles to expand: {tilesToExpand}");
 

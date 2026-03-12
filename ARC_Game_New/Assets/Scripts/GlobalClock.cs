@@ -352,7 +352,7 @@ public class GlobalClock : MonoBehaviour
         EnablePlayerInteractions();
         
         // Check if we just finished round 4
-        if (currentTimeSegment >= 4)
+        if (currentTimeSegment >= roundsPerDay)
         {
             // Change button text to "View Report"
             if (executeButton != null)
@@ -399,7 +399,7 @@ public class GlobalClock : MonoBehaviour
         currentTimeSegment++;
 
         // Check if day is complete (4 rounds = end of day)
-        if (currentTimeSegment >= 4)
+        if (currentTimeSegment >= roundsPerDay)
         {
             // Don't trigger OnDayChanged here anymore - wait for button click
             return; // Exit early, don't update display yet
@@ -634,7 +634,7 @@ public class GlobalClock : MonoBehaviour
     [ContextMenu("Print Current Time")]
     public void PrintCurrentTime()
     {
-        Debug.Log($"Current Time: Day {currentDay}, {GetCurrentTimeString()} (Segment {currentTimeSegment + 1}/4)");
+        Debug.Log($"Current Time: Day {currentDay}, {GetCurrentTimeString()} (Segment {currentTimeSegment + 1}/{roundsPerDay})");
         Debug.Log($"State: {currentState}, Speed: {currentTimeSpeed}x, Can Interact: {CanPlayerInteract()}");
         Debug.Log($"Waiting for Report: {isWaitingForReport}");
     }

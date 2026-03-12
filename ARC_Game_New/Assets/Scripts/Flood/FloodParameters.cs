@@ -94,47 +94,34 @@ public class WeatherFloodData
     [Range(0f, 1f)]
     [Tooltip("Chance for flood to shrink during this weather")]
     public float shrinkageChance = 0f;
-
-    public float sunnyExpansionRate = 0f;
-    public float sunnyChanceMultiplier = 0.5f;
-    public float smallRainExpansionRate = 0.5f;
-    public float smallRainChanceMultiplier = 0.8f;
-    public float mediumRainExpansionRate = 1.5f;
-    public float mediumRainChanceMultiplier = 1f;
-    public float heavyRainExpansionRate = 3f;
-    public float heavyRainChanceMultiplier = 1.2f;
-    public float stormExpansionRate = 5f;
-    public float stormChanceMultiplier = 1.5f;
-
-    
     public WeatherFloodData()
     {
         // Set default values based on weather type
         switch (weatherType)
         {
             case WeatherType.Sunny:
-                expansionRate = sunnyExpansionRate;
-                spreadChanceMultiplier = sunnyChanceMultiplier;
+                expansionRate = 0f;
+                spreadChanceMultiplier = 0.5f;
                 shrinkageChance = 0.3f;
                 break;
             case WeatherType.SmallRain:
-                expansionRate = smallRainExpansionRate;
-                spreadChanceMultiplier = smallRainChanceMultiplier;
+                expansionRate = 0.5f;
+                spreadChanceMultiplier = 0.8f;
                 shrinkageChance = 0.1f;
                 break;
             case WeatherType.MediumRain:
-                expansionRate = mediumRainExpansionRate;
-                spreadChanceMultiplier = mediumRainChanceMultiplier;
+                expansionRate = 1.5f;
+                spreadChanceMultiplier = 1f;
                 shrinkageChance = 0f;
                 break;
             case WeatherType.HeavyRain:
-                expansionRate = heavyRainExpansionRate;
-                spreadChanceMultiplier = heavyRainChanceMultiplier;
+                expansionRate = 3f;
+                spreadChanceMultiplier = 1.2f;
                 shrinkageChance = 0f;
                 break;
             case WeatherType.Storm:
-                expansionRate = stormExpansionRate;
-                spreadChanceMultiplier = stormChanceMultiplier;
+                expansionRate = 5f;
+                spreadChanceMultiplier = 1.5f;
                 shrinkageChance = 0f;
                 break;
         }

@@ -26,6 +26,17 @@ public class GameConfigLoader : MonoBehaviour
     public int loadedInitialKitchenCapacity = 10;
     public int loadedInitialCaseworkCapacity = 10;
     public int loadedInitialRequiredWorkers = 4;
+    public float loadedInitialSunnyExpansionRate = 0f;
+    public float loadedInitialSunnySpreadChanceMultiplier = 0.5f;
+    public float loadedInitialSmallRainExpansionRate = 0.5f;
+    public float loadedInitialSmallRainSpreadChanceMultiplier = 0.8f;
+    public float loadedInitialMediumRainExpansionRate = 1.5f;
+    public float loadedInitialMediumRainSpreadChanceMultiplier = 1f;
+    public float loadedInitialHeavyRainExpansionRate = 3f;
+    public float loadedInitialHeavyRainSpreadChanceMultiplier = 1.2f;
+    public float loadedInitialStormExpansionRate = 5f;
+    public float loadedInitialStormSpreadChanceMultiplier = 1.5f;
+
 
     private bool configLoaded = false;
     public TaskData dailyBudgetAlloc;
@@ -188,6 +199,56 @@ public class GameConfigLoader : MonoBehaviour
                 if (int.TryParse(value, out int reqWorkers))
                     loadedInitialRequiredWorkers = reqWorkers;
             }
+            else if (parameter.Equals("initialSunnyFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (float.TryParse(value, out float sunnyExpRt))
+                    loadedInitialSunnyExpansionRate = sunnyExpRt;
+            }
+            else if (parameter.Equals("initialSunnyFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (float.TryParse(value, out float sunnySCM))
+                    loadedInitialSunnySpreadChanceMultiplier = sunnySCM;
+            }
+            else if (parameter.Equals("initialSmallRainFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (float.TryParse(value, out float smallRainExpRt))
+                    loadedInitialSmallRainExpansionRate = smallRainExpRt;
+            }
+            else if (parameter.Equals("initialSmallRainFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (float.TryParse(value, out float smallRainSCM))
+                    loadedInitialSmallRainSpreadChanceMultiplier = smallRainSCM;
+            }
+            else if (parameter.Equals("initialMediumRainFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (float.TryParse(value, out float mediumRainExpRt))
+                    loadedInitialMediumRainExpansionRate = mediumRainExpRt;
+            }
+            else if (parameter.Equals("initialMediumRainFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (float.TryParse(value, out float mediumRainSCM))
+                    loadedInitialMediumRainSpreadChanceMultiplier = mediumRainSCM;
+            }
+            else if (parameter.Equals("initialHeavyRainFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (float.TryParse(value, out float heavyRainExpRt))
+                    loadedInitialHeavyRainExpansionRate = heavyRainExpRt;
+            }
+            else if (parameter.Equals("initialHeavyRainFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (float.TryParse(value, out float heavyRainSCM))
+                    loadedInitialHeavyRainSpreadChanceMultiplier = heavyRainSCM;
+            }
+            else if (parameter.Equals("initialStormFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (float.TryParse(value, out float stormExpRt))
+                    loadedInitialStormExpansionRate = stormExpRt;
+            }
+            else if (parameter.Equals("initialStormFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (float.TryParse(value, out float stormSCM))
+                    loadedInitialStormSpreadChanceMultiplier = stormSCM;
+            }
 
             ApplyInitBudgetAllocation();
             
@@ -280,8 +341,55 @@ public class GameConfigLoader : MonoBehaviour
     {
         return loadedInitialRequiredWorkers;
     }
-
-
-
+    public float GetInitialSunnyFloodExpansionRate()
+    {
+        Debug.Log($"sunn exp - {loadedInitialSunnyExpansionRate}");
+        return loadedInitialSunnyExpansionRate;
+    }
+    public float GetInitialSunnyFloodSpreadChanceMultiplier()
+    {
+        Debug.Log($"sunn spread - {loadedInitialSunnySpreadChanceMultiplier}");
+        return loadedInitialSunnySpreadChanceMultiplier;
+    }
+    public float GetInitialSmallRainFloodExpansionRate()
+    {
+        Debug.Log($"smallrain exp - {loadedInitialSmallRainExpansionRate}");
+        return loadedInitialSmallRainExpansionRate;
+    }
+    public float GetInitialSmallRainFloodSpreadChanceMultiplier()
+    {
+        Debug.Log($"smallrain spread - {loadedInitialSmallRainSpreadChanceMultiplier}");
+        return loadedInitialSmallRainSpreadChanceMultiplier;
+    }
+    public float GetInitialMediumRainFloodExpansionRate()
+    {
+        Debug.Log($"medrain exp - {loadedInitialMediumRainExpansionRate}");
+        return loadedInitialMediumRainExpansionRate;
+    }
+    public float GetInitialMediumRainFloodSpreadChanceMultiplier()
+    {
+        Debug.Log($"medrain spread - {loadedInitialMediumRainSpreadChanceMultiplier}");
+        return loadedInitialMediumRainSpreadChanceMultiplier;
+    }
+    public float GetInitialHeavyRainFloodExpansionRate()
+    {
+        Debug.Log($"heavyrain exp - {loadedInitialHeavyRainExpansionRate}");
+        return loadedInitialHeavyRainExpansionRate;
+    }
+    public float GetInitialHeavyRainFloodSpreadChanceMultiplier()
+    {
+        Debug.Log($"heavyrain spread - {loadedInitialHeavyRainSpreadChanceMultiplier}");
+        return loadedInitialHeavyRainSpreadChanceMultiplier;
+    }
+    public float GetInitialStormFloodExpansionRate()
+    {
+        Debug.Log($"storm exp - {loadedInitialStormExpansionRate}");
+        return loadedInitialStormExpansionRate;
+    }
+    public float GetInitialStormFloodSpreadChanceMultiplier()
+    {
+        Debug.Log($"storm spread - {loadedInitialStormSpreadChanceMultiplier}");
+        return loadedInitialStormSpreadChanceMultiplier;
+    }
 
 }
