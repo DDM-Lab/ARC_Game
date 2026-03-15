@@ -113,4 +113,18 @@ public class MapSystem : MonoBehaviour
     {
         return abandonedSites.Find(site => site.GetId() == id);
     }
+
+    /// <summary>
+    /// Called by MapConfigApplier after spawning AbandonedSite prefabs from server
+    /// config (which happens in a coroutine, after Start() has already run).
+    /// Re-registers the new sites with BuildingSystem so players can build on them.
+    /// </summary>
+    public void SetAbandonedSites(List<AbandonedSite> sites)
+    {
+        abandonedSites = sites;
+        if (buildingSystem != null)
+            buildingSystem.RegisterAbandonedSites(abandonedSites);
+        else
+            Debug.LogWarning("MapSystem.SetAbandonedSites: BuildingSystem not assigned.");
+    }
 }

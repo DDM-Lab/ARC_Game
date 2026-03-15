@@ -42,6 +42,9 @@ public class FacilityInfoPanel : MonoBehaviour
     public Color errorColor = Color.red;
     public Color goodColor = Color.green;
 
+    [Header("Motel Cost (shown only for Motel)")]
+    public TextMeshProUGUI motelCostText;
+
     [Header("Deliveries")]
     public TextMeshProUGUI expectedDeliveriesText;
     public TextMeshProUGUI outgoingDeliveriesText;
@@ -219,6 +222,26 @@ public class FacilityInfoPanel : MonoBehaviour
 
         SetTextSafe(this.statusText, $"Status: {statusText}");
         SetTextColor(this.statusText, population >= populationCap ? errorColor : (population > 0 ? goodColor : normalColor));
+
+        // Motel daily cost (only shown for Motel type)
+        if (motelCostText != null)
+        {
+            if (prebuilt.GetPrebuiltType() == PrebuiltBuildingType.Motel)
+            {
+                var costMgr = FindObjectOfType<MotelCostManager>();
+                if (costMgr != null)
+                {
+                    float dailyCost = costMgr.GetCurrentDailyCost();
+                    motelCostText.text = $"Daily Cost: ${dailyCost:F0} ({population} residents × ${costMgr.costPerPersonPerDay:F0}/day)";
+                    motelCostText.color = dailyCost > 0 ? warningColor : normalColor;
+                }
+                motelCostText.gameObject.SetActive(true);
+            }
+            else
+            {
+                motelCostText.gameObject.SetActive(false);
+            }
+        }
 
         // Flood status
         UpdateFloodStatus(prebuilt.gameObject);

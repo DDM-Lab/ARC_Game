@@ -5,24 +5,17 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Root UI controller for InstructorConfigScene.
-/// Manages tab switching (Map Editor ↔ Parameters) and the action bar
-/// (Save to server, Clear map, Export JSON, Back to title).
 ///
-/// SCENE SETUP – on a root Canvas:
-///   ┌─ TabBar
-///   │    ├─ MapEditorTabButton   → OnClick: ShowTab(0)
-///   │    └─ ParametersTabButton  → OnClick: ShowTab(1)
-///   ├─ MapEditorPanel  (contains MapEditorCanvas script)
-///   ├─ ParametersPanel (contains ParametersPanel script)
-///   └─ ActionBar
-///        ├─ SaveButton           → OnClick: OnSaveClicked()
-///        ├─ ClearButton          → OnClick: OnClearClicked()
-///        ├─ ExportButton         → OnClick: OnExportJsonClicked()
-///        ├─ BackButton           → OnClick: OnBackClicked()
-///        └─ StatusLabel (TMP)
+/// ACTION BAR BUTTONS:
+///   SaveToFileButton  → downloads current config as a .json file
+///   ImportButton      → opens file picker to load a saved .json
+///   SaveToServerButton→ POSTs to remote server (when URL is configured)
+///   ClearButton       → wipes the map
+///   BackButton        → returns to TitleScene
 ///
-/// Also place an InstructorConfigManager prefab in the scene
-/// (it will self-destruct if another one exists from a previous scene).
+/// SCENE SETUP:
+///   • Add a GameObject named "FileIOBridge" with the FileIOBridge script
+///   • Wire all buttons in the Inspector (see fields below)
 /// </summary>
 public class InstructorConfigUI : MonoBehaviour
 {
@@ -35,14 +28,16 @@ public class InstructorConfigUI : MonoBehaviour
     public GameObject parametersPanel;
 
     [Header("Action Bar")]
-    public Button             saveButton;
-    public Button             clearButton;
-    public Button             exportJsonButton;
-    public Button             backButton;
-    public TextMeshProUGUI    statusLabel;
+    public Button          saveToFileButton;    // download JSON to disk
+    public Button          importButton;        // load JSON from disk
+    public Button          saveToServerButton;  // POST to remote server
+    public Button          clearButton;
+    public Button          backButton;
+    public TextMeshProUGUI statusLabel;
 
     [Header("References")]
     public MapEditorCanvas mapEditorCanvas;
+    public FileIOBridge    fileIOBridge;
 
     [Header("Scene Names")]
     public string titleSceneName = "TitleScene";
@@ -52,16 +47,21 @@ public class InstructorConfigUI : MonoBehaviour
     void Start()
     {
         // Tab buttons
-        mapEditorTabButton.onClick.AddListener(() => ShowTab(0));
+        mapEditorTabButton .onClick.AddListener(() => ShowTab(0));
         parametersTabButton.onClick.AddListener(() => ShowTab(1));
 
         // Action bar
-        saveButton.onClick.AddListener(OnSaveClicked);
-        clearButton.onClick.AddListener(OnClearClicked);
-        exportJsonButton.onClick.AddListener(OnExportJsonClicked);
-        backButton.onClick.AddListener(OnBackClicked);
+        saveToFileButton  .onClick.AddListener(OnSaveToFileClicked);
+        importButton      .onClick.AddListener(OnImportClicked);
+        saveToServerButton.onClick.AddListener(OnSaveToServerClicked);
+        clearButton       .onClick.AddListener(OnClearClicked);
+        backButton        .onClick.AddListener(OnBackClicked);
 
-        // Subscribe to manager events
+        // File import callback
+        if (fileIOBridge != null)
+            fileIOBridge.OnFileImported += OnFileImported;
+
+        // Server save callback
         InstructorConfigManager.Instance.OnSaveComplete += HandleSaveComplete;
 
         ShowTab(0);
@@ -70,6 +70,9 @@ public class InstructorConfigUI : MonoBehaviour
 
     void OnDestroy()
     {
+        if (fileIOBridge != null)
+            fileIOBridge.OnFileImported -= OnFileImported;
+
         if (InstructorConfigManager.Instance != null)
             InstructorConfigManager.Instance.OnSaveComplete -= HandleSaveComplete;
     }
@@ -78,54 +81,84 @@ public class InstructorConfigUI : MonoBehaviour
 
     public void ShowTab(int tab)
     {
-        mapEditorPanel.SetActive(tab == 0);
+        mapEditorPanel .SetActive(tab == 0);
         parametersPanel.SetActive(tab == 1);
-
-        mapEditorTabButton.interactable  = tab != 0;
+        mapEditorTabButton .interactable = tab != 0;
         parametersTabButton.interactable = tab != 1;
     }
 
-    // ── Action handlers ───────────────────────────────────────────────────────
+    // ── Save to file (browser download) ──────────────────────────────────────
 
-    void OnSaveClicked()
+    void OnSaveToFileClicked()
+    {
+        string json     = InstructorConfigManager.Instance.GetConfigJson();
+        string filename = $"map_config_{System.DateTime.Now:yyyyMMdd_HHmmss}.json";
+
+        if (fileIOBridge != null)
+            fileIOBridge.DownloadJson(filename, json);
+        else
+            GUIUtility.systemCopyBuffer = json; // fallback: copy to clipboard
+
+        SetStatus($"Saved as {filename}");
+    }
+
+    // ── Import from file ──────────────────────────────────────────────────────
+
+    void OnImportClicked()
+    {
+        if (fileIOBridge == null)
+        {
+            SetStatus("FileIOBridge not assigned.");
+            return;
+        }
+        SetStatus("Opening file picker…");
+        fileIOBridge.OpenImportPicker();
+    }
+
+    void OnFileImported(string json)
+    {
+        bool ok = InstructorConfigManager.Instance.LoadFromJson(json);
+        if (ok)
+        {
+            mapEditorCanvas?.ReloadFromConfig();
+            SetStatus("Config imported successfully.");
+        }
+        else
+        {
+            SetStatus("Import failed: invalid JSON.");
+        }
+    }
+
+    // ── Save to server ────────────────────────────────────────────────────────
+
+    void OnSaveToServerClicked()
     {
         if (InstructorConfigManager.Instance.IsSaving) return;
-        SetStatus("Saving…");
-        saveButton.interactable = false;
+        SetStatus("Saving to server…");
+        saveToServerButton.interactable = false;
         InstructorConfigManager.Instance.SaveToServer();
     }
 
     void HandleSaveComplete(bool success, string message)
     {
-        saveButton.interactable = true;
+        saveToServerButton.interactable = true;
         SetStatus(message);
     }
 
+    // ── Clear / Back ──────────────────────────────────────────────────────────
+
     void OnClearClicked()
     {
-        if (mapEditorCanvas != null)
-            mapEditorCanvas.ClearMap();
+        mapEditorCanvas?.ClearMap();
         SetStatus("Map cleared.");
     }
 
-    void OnExportJsonClicked()
-    {
-        string json = InstructorConfigManager.Instance.GetConfigJson();
-        GUIUtility.systemCopyBuffer = json;
-        Debug.Log($"[InstructorConfig] Exported JSON:\n{json}");
-        SetStatus("JSON copied to clipboard.");
-    }
-
-    void OnBackClicked()
-    {
-        SceneManager.LoadScene(titleSceneName);
-    }
+    void OnBackClicked() => SceneManager.LoadScene(titleSceneName);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     void SetStatus(string msg)
     {
-        if (statusLabel != null)
-            statusLabel.text = msg;
+        if (statusLabel != null) statusLabel.text = msg;
     }
 }

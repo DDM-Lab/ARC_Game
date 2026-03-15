@@ -50559,6 +50559,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   googleSheetsCsvUrl: https://docs.google.com/spreadsheets/d/e/2PACX-1vTGcKtnKuRq1dS-ZMMYKmepAEsfeaYhKlt8IMSkZ1xe-5_JApbSfTokI_VHFS8v0g3XIHWHWEPSdSzS/pub?gid=0&single=true&output=csv
+  mapConfigServerUrl: http://janus.hss.cmu.edu/cgi-bin/map_config.cgi
+  mapConfigTimeout: 5
   showDebugInfo: 1
   loadedInitialBudget: 0
   loadedInitialSatisfaction: 0
@@ -96989,7 +96991,6 @@ MonoBehaviour:
   bgmVolumeSlider: {fileID: 1245608257}
   sfxVolumeText: {fileID: 515339126}
   bgmVolumeText: {fileID: 436065266}
-  mainMenuButton: {fileID: 1871062482}
 --- !u!1 &1609540635
 GameObject:
   m_ObjectHideFlags: 0
@@ -123586,6 +123587,7 @@ MonoBehaviour:
   tasksCompletedText: {fileID: 882101563}
   facilitiesConstructedText: {fileID: 1384337184}
   moneySpentText: {fileID: 1121655133}
+  moneyReceivedText: {fileID: 0}
   workersHiredText: {fileID: 473308842}
   workersTrainedText: {fileID: 1359684786}
   incompleteExpiredTasksText: {fileID: 0}

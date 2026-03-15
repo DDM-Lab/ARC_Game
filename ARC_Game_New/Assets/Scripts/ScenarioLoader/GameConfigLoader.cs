@@ -7,17 +7,30 @@ public class GameConfigLoader : MonoBehaviour
     [Header("Google Sheets Config")]
     [Tooltip("Publish your Google Sheet as CSV and paste the URL here")]
     public string googleSheetsCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTGcKtnKuRq1dS-ZMMYKmepAEsfeaYhKlt8IMSkZ1xe-5_JApbSfTokI_VHFS8v0g3XIHWHWEPSdSzS/pub?gid=0&single=true&output=csv";
-    
+
+    [Header("Map Config Server")]
+    [Tooltip("GET endpoint served by map_config_server.py  (leave blank to skip)")]
+    public string mapConfigServerUrl = "http://localhost:8765/config";
+    [Tooltip("Seconds before giving up and using the default scene layout")]
+    public float mapConfigTimeout = 5f;
+
     [Header("Debug")]
     public bool showDebugInfo = true;
-    
-    // Loaded config 
+
+    // ── CSV parameters (existing) ─────────────────────────────────────────────
     public int loadedInitialBudget;
     public int loadedInitialSatisfaction;
     private bool configLoaded = false;
-    
+
+    // ── Map config (new) ──────────────────────────────────────────────────────
+    private MapConfig loadedMapConfig;
+    private bool mapConfigLoaded  = false; // true when fetch is done (success OR failure)
+    private bool mapConfigSuccess = false; // true only when server returned valid data
+
     public static GameConfigLoader Instance { get; private set; }
-    
+
+    // ─────────────────────────────────────────────────────────────────────────
+
     void Awake()
     {
         if (Instance == null)
@@ -30,15 +43,15 @@ public class GameConfigLoader : MonoBehaviour
             Destroy(gameObject);
         }
     }
-    
+
     void Start()
     {
         StartCoroutine(LoadConfigFromSheet());
+        StartCoroutine(LoadMapConfigFromServer());
     }
-    
-    /// <summary>
-    /// Load config from Google Sheets CSV
-    /// </summary>
+
+    // ── Google Sheets CSV (existing, unchanged) ───────────────────────────────
+
     IEnumerator LoadConfigFromSheet()
     {
         if (string.IsNullOrEmpty(googleSheetsCsvUrl))
@@ -47,55 +60,46 @@ public class GameConfigLoader : MonoBehaviour
             configLoaded = true;
             yield break;
         }
-    
+
         string urlWithCacheBuster = googleSheetsCsvUrl + "&t=" + System.DateTime.Now.Ticks;
-        
+
         if (showDebugInfo)
             Debug.Log("GameConfigLoader: Fetching config from Google Sheets...");
-        
+
         using (UnityWebRequest request = UnityWebRequest.Get(urlWithCacheBuster))
         {
-            // Set timeout
             request.timeout = 5;
-            
             yield return request.SendWebRequest();
-            
+
             if (request.result == UnityWebRequest.Result.Success)
             {
-                string csvData = request.downloadHandler.text;
-                ParseCSV(csvData);
-                
+                ParseCSV(request.downloadHandler.text);
                 if (showDebugInfo)
-                    Debug.Log("GameConfigLoader: Config loaded successfully!");
+                    Debug.Log("GameConfigLoader: CSV config loaded successfully!");
             }
             else
             {
-                Debug.LogWarning($"GameConfigLoader: Failed to load config - {request.error}. Using default values.");
+                Debug.LogWarning($"GameConfigLoader: Failed to load CSV - {request.error}. Using default values.");
                 configLoaded = true;
             }
         }
     }
-    
-    /// <summary>
-    /// Parse CSV data (simple implementation)
-    /// Expected format: parameter,value
-    /// Example: initialBudget,15000
-    /// </summary>
+
     void ParseCSV(string csvData)
     {
         string[] lines = csvData.Split('\n');
-        
+
         foreach (string line in lines)
         {
             if (string.IsNullOrWhiteSpace(line) || line.ToLower().Contains("parameter"))
                 continue;
-            
+
             string[] parts = line.Split(',');
             if (parts.Length < 2) continue;
-            
+
             string parameter = parts[0].Trim();
-            string value = parts[1].Trim();
-            
+            string value     = parts[1].Trim();
+
             if (parameter.Equals("initialBudget", System.StringComparison.OrdinalIgnoreCase))
             {
                 if (int.TryParse(value, out int budget))
@@ -107,29 +111,83 @@ public class GameConfigLoader : MonoBehaviour
                     loadedInitialSatisfaction = satisfaction;
             }
         }
-        
+
         configLoaded = true;
     }
-    
-    /// <summary>
-    /// Check if config is ready
-    /// </summary>
-    public bool IsConfigLoaded()
+
+    // ── Map Config from server (new) ──────────────────────────────────────────
+
+    IEnumerator LoadMapConfigFromServer()
     {
-        return configLoaded;
-    }
-    
-    /// <summary>
-    /// Get initial budget
-    /// </summary>
-    public int GetInitialBudget()
-    {
-        return loadedInitialBudget;
+        if (string.IsNullOrEmpty(mapConfigServerUrl))
+        {
+            if (showDebugInfo)
+                Debug.Log("GameConfigLoader: No map config URL set — using default scene layout.");
+            mapConfigLoaded = true;
+            yield break;
+        }
+
+        string urlWithCacheBuster = mapConfigServerUrl + "?t=" + System.DateTime.Now.Ticks;
+
+        if (showDebugInfo)
+            Debug.Log("GameConfigLoader: Fetching map config from server...");
+
+        using (UnityWebRequest request = UnityWebRequest.Get(urlWithCacheBuster))
+        {
+            request.timeout = (int)mapConfigTimeout;
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                string json = request.downloadHandler.text;
+                try
+                {
+                    MapConfig parsed = JsonUtility.FromJson<MapConfig>(json);
+                    if (parsed != null && parsed.gridWidth > 0 && parsed.gridHeight > 0)
+                    {
+                        loadedMapConfig  = parsed;
+                        mapConfigSuccess = true;
+                        if (showDebugInfo)
+                            Debug.Log($"GameConfigLoader: Map config loaded (schema v{parsed.schemaVersion}, " +
+                                      $"{parsed.objects?.Count ?? 0} objects).");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("GameConfigLoader: Map config JSON was empty or invalid. Using default layout.");
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"GameConfigLoader: Failed to parse map config JSON — {ex.Message}. Using default layout.");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"GameConfigLoader: Could not reach map config server ({request.error}). Using default scene layout.");
+            }
+
+            mapConfigLoaded = true;
+        }
     }
 
-    public int GetInitialSatisfaction()
-    {
-        return loadedInitialSatisfaction;
-    }
+    // ── Public API ────────────────────────────────────────────────────────────
 
+    /// <summary>CSV parameters are ready (existing gate).</summary>
+    public bool IsConfigLoaded() => configLoaded;
+
+    /// <summary>Map config fetch is done (success or fallback).</summary>
+    public bool IsMapConfigLoaded() => mapConfigLoaded;
+
+    /// <summary>True when the server returned a valid MapConfig.</summary>
+    public bool HasServerMapConfig() => mapConfigSuccess;
+
+    /// <summary>
+    /// Returns the server-loaded MapConfig, or null if unavailable.
+    /// Check HasServerMapConfig() first; null means use default scene layout.
+    /// </summary>
+    public MapConfig GetMapConfig() => loadedMapConfig;
+
+    // Existing getters (unchanged)
+    public int GetInitialBudget()      => loadedInitialBudget;
+    public int GetInitialSatisfaction() => loadedInitialSatisfaction;
 }
