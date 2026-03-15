@@ -65,10 +65,6 @@ public class MotelCostManager : MonoBehaviour
             (int)totalCost,
             $"Motel housing: {residents} residents × ${costPerPersonPerDay:F0}/day");
 
-        // Daily report tracking
-        if (DailyReportData.Instance != null)
-            DailyReportData.Instance.RecordMotelCost(totalCost);
-
         // Toast notification
         ToastManager.ShowToast(
             $"Motel cost: {residents} residents × ${costPerPersonPerDay:F0} = ${totalCost:F0} deducted",

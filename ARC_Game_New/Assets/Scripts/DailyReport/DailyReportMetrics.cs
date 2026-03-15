@@ -100,7 +100,6 @@ public class DailyReportMetrics
     public int workersReceivingTraining;
     
     [Header("Financial Metrics")]
-    public float motelCostToday;   // total motel housing cost charged this day
     public float startingBudget;
     public float budgetSpent;
     public float budgetReceived;

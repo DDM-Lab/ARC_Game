@@ -175,6 +175,7 @@ public class MapConfigApplier : MonoBehaviour
         int communityIndex = 0;
         int abandonedIndex = 0;
         int vehicleIndex   = 0;
+        var spawnedVehicles = new List<Vehicle>();
 
         foreach (var obj in cfg.objects)
         {
@@ -196,7 +197,7 @@ public class MapConfigApplier : MonoBehaviour
                     break;
 
                 case PlacedObjectType.Vehicle:
-                    SpawnVehicle(pos, vehicleIndex);
+                    SpawnVehicle(pos, vehicleIndex, spawnedVehicles);
                     vehicleIndex++;
                     break;
 
@@ -211,6 +212,7 @@ public class MapConfigApplier : MonoBehaviour
                       $"{vehicleIndex} vehicles.");
 
         ReregisterAbandonedSites();
+        ReregisterVehicles(spawnedVehicles);
     }
 
     void SpawnCommunity(Vector3 pos, ref int index)
@@ -278,7 +280,7 @@ public class MapConfigApplier : MonoBehaviour
         if (site != null) site.Initialize(index);
     }
 
-    void SpawnVehicle(Vector3 pos, int index)
+    void SpawnVehicle(Vector3 pos, int index, List<Vehicle> spawnedVehicles)
     {
         if (vehiclePrefab == null)
         {
@@ -305,6 +307,7 @@ public class MapConfigApplier : MonoBehaviour
         {
             v.vehicleId   = index + 1;
             v.vehicleName = $"Vehicle {index + 1}";
+            spawnedVehicles.Add(v);
         }
     }
 
@@ -325,6 +328,24 @@ public class MapConfigApplier : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"MapConfigApplier: Re-registered {sites.Count} AbandonedSites with MapSystem.");
+    }
+
+    void ReregisterVehicles(List<Vehicle> vehicles)
+    {
+        var deliverySystem = DeliverySystem.Instance;
+        if (deliverySystem == null)
+        {
+            Debug.LogWarning("MapConfigApplier: DeliverySystem not found — vehicles not registered.");
+            return;
+        }
+
+        deliverySystem.availableVehicles.Clear();
+
+        foreach (var v in vehicles)
+            deliverySystem.AddVehicle(v);
+
+        if (showDebugInfo)
+            Debug.Log($"MapConfigApplier: Registered {vehicles.Count} vehicles with DeliverySystem.");
     }
 
     static void ApplyParameters(MapConfig cfg)

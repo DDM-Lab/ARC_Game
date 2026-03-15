@@ -36,7 +36,6 @@ public class DailyReportData : MonoBehaviour
     private int todayBuildingsConstructed = 0;
     private float todayTaskCosts = 0f;
     private float todayBudgetReceived = 0f;
-    private float todayMotelCost = 0f;
     
     // Track what we've already processed
     private HashSet<int> processedTaskIds = new HashSet<int>();
@@ -229,7 +228,6 @@ public class DailyReportData : MonoBehaviour
         todayBuildingsConstructed = 0;
         todayTaskCosts = 0f;
         todayBudgetReceived = 0f;
-        todayMotelCost = 0f;
     }
     
     // =========================================================================
@@ -335,8 +333,9 @@ public class DailyReportData : MonoBehaviour
             metrics.endingBudget = currentBudget;
             metrics.budgetReceived   = todayBudgetReceived;
             metrics.budgetSpent      = Mathf.Max(0f, (dayStartBudget + todayBudgetReceived) - currentBudget);
-            metrics.budgetUsageRate = metrics.budgetReceived > 0
-                ? metrics.budgetSpent / metrics.budgetReceived * 100f
+            float totalAvailable = dayStartBudget + todayBudgetReceived;
+            metrics.budgetUsageRate = totalAvailable > 0
+                ? metrics.budgetSpent / totalAvailable * 100f
                 : 0f;
             
             metrics.satisfactionChange = budgetSystem.GetCurrentSatisfaction() - dayStartSatisfaction;
@@ -349,7 +348,6 @@ public class DailyReportData : MonoBehaviour
         }
         
         metrics.buildingsConstructed = todayBuildingsConstructed;
-        metrics.motelCostToday = todayMotelCost;
         
         // =====================================================================
         // BOTTOM PANEL - "What We Did Today"
@@ -594,7 +592,6 @@ public class DailyReportData : MonoBehaviour
     // PUBLIC TRACKING METHODS
     // =========================================================================
     
-    public void RecordMotelCost(float amount) { todayMotelCost += amount; }
     public void RecordFoodWasted(int amount) { todayFoodWasted += amount; }
     public void RecordExpiredFood(int amount) { todayExpiredFood += amount; }
     public void RecordNewArrival(int count = 1) { todayNewArrivals += count; }
