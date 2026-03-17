@@ -558,9 +558,8 @@ public class AgentConversationUI : MonoBehaviour
         for (int i = 0; i < packages.Length; i++)
         {
             var package = packages[i];
-            AgentChoice choice = new AgentChoice();
-            choice.choiceId = package.package_index;
-            choice.choiceText = FormatPackageActions(package, availableActions);
+            string choiceText = FormatPackageActions(package, availableActions);
+            AgentChoice choice = new AgentChoice(package.package_index, choiceText);
             choice.agentReasoning = reasoning;
             targetTask.agentChoices.Add(choice);
         }
