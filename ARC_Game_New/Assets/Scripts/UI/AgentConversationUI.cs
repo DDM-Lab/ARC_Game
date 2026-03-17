@@ -524,7 +524,11 @@ public class AgentConversationUI : MonoBehaviour
         {
             if (idx >= 0 && idx < availableActions.Length)
             {
-                actionNames.Add(availableActions[idx].actionName);
+                // Use description or action_id as display name
+                string actionName = availableActions[idx].description;
+                if (string.IsNullOrEmpty(actionName))
+                    actionName = availableActions[idx].action_id;
+                actionNames.Add(actionName);
             }
         }
 
@@ -581,11 +585,28 @@ public class AgentConversationUI : MonoBehaviour
             if (actionIdx >= 0 && actionIdx < availableActions.Length)
             {
                 GameAction action = availableActions[actionIdx];
-                Debug.Log($"[AgentConversationUI] Executing inline choice action: {action.actionName}");
+                string actionName = action.description ?? action.action_id;
+                Debug.Log($"[AgentConversationUI] Executing inline choice action: {actionName}");
 
-                // Execute action via ActionExecutor
-                bool success = ActionExecutor.ExecuteAction(action);
-                executionResults.Add(JsonUtility.ToJson(new { success, action = action.actionName }));
+                // Execute action via ActionExecutor instance
+                if (ActionExecutor.Instance != null)
+                {
+                    var result = ActionExecutor.Instance.ExecuteAction(action);
+                    executionResults.Add(JsonUtility.ToJson(new {
+                        success = result.success,
+                        action = actionName,
+                        message = result.message
+                    }));
+                }
+                else
+                {
+                    Debug.LogError("[AgentConversationUI] ActionExecutor.Instance is null!");
+                    executionResults.Add(JsonUtility.ToJson(new {
+                        success = false,
+                        action = actionName,
+                        message = "ActionExecutor not found"
+                    }));
+                }
 
                 yield return new WaitForSeconds(0.1f); // Brief delay between actions
             }
