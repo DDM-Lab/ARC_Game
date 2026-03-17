@@ -304,10 +304,16 @@ def _query_openai(
                   f"in environment variable '{api_key_env}'")
             return ""
 
-        client = openai.OpenAI(api_key=api_key)
-        messages = _build_prompt(game_state, actions, agent_cfg, history)
+        # Support custom base_url for third-party providers
+        base_url = agent_cfg.get("llm_endpoint")
+        if base_url:
+            client = openai.OpenAI(api_key=api_key, base_url=base_url)
+            print(f"[llm_query] [{agent_name}] Querying OPENAI (custom endpoint) model: {model}")
+        else:
+            client = openai.OpenAI(api_key=api_key)
+            print(f"[llm_query] [{agent_name}] Querying OPENAI model: {model}")
 
-        print(f"[llm_query] [{agent_name}] Querying OPENAI model: {model}")
+        messages = _build_prompt(game_state, actions, agent_cfg, history)
 
         response = client.chat.completions.create(
             model=model,
