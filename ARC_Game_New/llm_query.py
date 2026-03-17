@@ -107,9 +107,32 @@ def _build_prompt(
     messages.append({"role": "system", "content": system_prompt})
 
     # Inject conversation history (prior rounds)
+    # History can be in two formats:
+    # 1. Old format: [{"user": "...", "assistant": "..."}]
+    # 2. New format (from message_queue): [{"from": "agent", "to": "Director", "content": "...", "round": N}]
     for entry in history:
-        messages.append({"role": "user",    "content": entry.get("user", "")})
-        messages.append({"role": "assistant","content": entry.get("assistant", "")})
+        if "user" in entry and "assistant" in entry:
+            # Old format
+            messages.append({"role": "user",    "content": entry.get("user", "")})
+            messages.append({"role": "assistant","content": entry.get("assistant", "")})
+        elif "from" in entry and "to" in entry:
+            # New format - conversation message
+            from_agent = entry.get("from")
+            to_agent = entry.get("to")
+            content = entry.get("content", "")
+            round_num = entry.get("round", "?")
+
+            # Determine role based on who sent the message
+            # If agent sent it, it's "assistant". If Director sent it, it's "user"
+            if from_agent == "Director":
+                role = "user"
+                label = f"Director (Round {round_num})"
+            else:
+                role = "assistant"
+                label = f"You (Round {round_num})"
+
+            formatted_content = f"[{label}] {content}"
+            messages.append({"role": role, "content": formatted_content})
 
     # Current state summary
     session = game_state.get("sessionInfo", {})

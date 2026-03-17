@@ -32,6 +32,7 @@ from agent_filters import filter_observation, filter_actions
 from agent_ordering import get_agent_order
 from episode_logger import EpisodeLogger
 from llm_query import query_llm
+from message_queue import MessageQueue
 import re
 
 
@@ -58,6 +59,7 @@ class AgentRouter:
     def __init__(self, config: RouterConfig, log_path: str = "episode_log.jsonl"):
         self.config = config
         self.logger = EpisodeLogger(log_path)
+        self.message_queue = MessageQueue()  # Conversation management
         self.episode_id: str = self.logger.new_episode()
         self.round_num: int = 0
         self._websocket: Optional[WebSocket] = None  # set when Unity connects
@@ -107,6 +109,10 @@ class AgentRouter:
             asyncio.create_task(self._handle_begin_round(msg))
         elif msg_type == "choice_made":
             await self._handle_choice_made(msg)
+        elif msg_type == "director_message":
+            await self._handle_director_message(msg)
+        elif msg_type == "request_reproposal":
+            await self._handle_request_reproposal(msg)
         elif msg_type == "round_end":
             self._handle_round_end(msg)
         else:
@@ -182,7 +188,9 @@ class AgentRouter:
         game_state: dict,
         all_actions: List[dict],
     ) -> Tuple[dict, List[dict]]:
-        raw = query_llm(filtered_state, filtered_actions, agent, agent.conversation_history)
+        # Get conversation history from message queue
+        conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
+        raw = query_llm(filtered_state, filtered_actions, agent, conversation)
 
         # Validate LLM response
         indices, validation_errors = self._validate_action_indices(
@@ -224,6 +232,10 @@ class AgentRouter:
         self._update_conv_history(agent, filtered_state, filtered_actions, raw)
         self._log_turn(agent, filtered_state, filtered_actions, [], None, log_results,
                        sat_before, game_state, budget_before, raw, 0)
+
+        # Post action summary to director
+        await self._post_auto_summary(agent, results)
+
         return game_state, all_actions
 
     async def _run_choices(
@@ -234,7 +246,9 @@ class AgentRouter:
         game_state: dict,
         all_actions: List[dict],
     ) -> Tuple[dict, List[dict]]:
-        raw = query_llm(filtered_state, filtered_actions, agent, agent.conversation_history)
+        # Get conversation history from message queue
+        conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
+        raw = query_llm(filtered_state, filtered_actions, agent, conversation)
         packages = self._parse_packages_response(
             raw, filtered_actions,
             num_choices=agent.num_choices or 3,
@@ -296,7 +310,9 @@ class AgentRouter:
         all_actions: List[dict],
     ) -> Tuple[dict, List[dict]]:
         """Run coach agent - provides strategic analysis and recommendations without execution."""
-        raw = query_llm(filtered_state, filtered_actions, agent, agent.conversation_history)
+        # Get conversation history from message queue
+        conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
+        raw = query_llm(filtered_state, filtered_actions, agent, conversation)
 
         # Parse coach response
         recommendations = self._parse_coach_response(
@@ -355,6 +371,87 @@ class AgentRouter:
 
     def _handle_round_end(self, msg: dict):
         print(f"[router] Round {self.round_num} ended.")
+
+    async def _handle_director_message(self, msg: dict):
+        """Handle conversational message from director to an agent."""
+        to_agent_name = msg.get("to_agent")
+        content = msg.get("content", "")
+
+        if not to_agent_name or not content:
+            print(f"[router] Invalid director_message: missing to_agent or content")
+            return
+
+        print(f"[router] Director → {to_agent_name}: {content[:50]}...")
+
+        # Store message in queue
+        message = self.message_queue.send_message(
+            from_agent="Director",
+            to_agent=to_agent_name,
+            content=content,
+            msg_type="response",
+            round_num=self.round_num
+        )
+
+        # Log conversation message
+        self.logger.log_event({
+            "event_type": "conversation_message",
+            "round": self.round_num,
+            "from": "Director",
+            "to": to_agent_name,
+            "content": content,
+            "message_type": "response",
+            "message_id": message["id"],
+            "timestamp": message["timestamp"]
+        })
+
+    async def _handle_request_reproposal(self, msg: dict):
+        """Handle director requesting an agent to repropose choices."""
+        agent_name = msg.get("agent_name")
+        feedback = msg.get("feedback", "")
+
+        if not agent_name:
+            print(f"[router] Invalid request_reproposal: missing agent_name")
+            return
+
+        print(f"[router] Director requests reproposal from {agent_name}")
+
+        # Store feedback message
+        if feedback:
+            message = self.message_queue.send_message(
+                from_agent="Director",
+                to_agent=agent_name,
+                content=feedback,
+                msg_type="feedback",
+                round_num=self.round_num
+            )
+
+            # Log feedback
+            self.logger.log_event({
+                "event_type": "conversation_message",
+                "round": self.round_num,
+                "from": "Director",
+                "to": agent_name,
+                "content": feedback,
+                "message_type": "feedback",
+                "message_id": message["id"],
+                "timestamp": message["timestamp"]
+            })
+
+        # Find the agent
+        agent = self._get_agent_by_name(agent_name)
+        if not agent:
+            print(f"[router] Agent '{agent_name}' not found for reproposal")
+            return
+
+        # Repropose choices
+        await self._repropose_choices(agent)
+
+    def _get_agent_by_name(self, agent_name: str) -> Optional[AgentConfig]:
+        """Find agent by subagent_name."""
+        for agent in self.config.agents:
+            if agent.subagent_name == agent_name:
+                return agent
+        return None
 
     # ── Unity Communication ──────────────────────────────────────
 
@@ -484,6 +581,104 @@ class AgentRouter:
 
     def _filter_state(self, game_state: dict, agent: AgentConfig) -> dict:
         return filter_observation(game_state, agent.subobservation_space)
+
+    async def _post_auto_summary(self, agent: AgentConfig, results: dict):
+        """Post conversational summary after auto agent executes actions."""
+        executed_count = len(results.get("executed", []))
+        skipped_count = len(results.get("skipped", []))
+
+        # Generate summary message
+        if executed_count > 0:
+            executed_actions = [item["action"]["description"] for item in results.get("executed", [])]
+            summary = f"I executed {executed_count} action(s): {', '.join(executed_actions[:3])}"
+            if executed_count > 3:
+                summary += f" and {executed_count - 3} more"
+        else:
+            summary = "I didn't execute any actions this turn"
+
+        if skipped_count > 0:
+            summary += f" ({skipped_count} action(s) were invalid/skipped)"
+
+        # Send message to message queue
+        message = self.message_queue.send_message(
+            from_agent=agent.subagent_name,
+            to_agent="Director",
+            content=summary,
+            msg_type="action_summary",
+            round_num=self.round_num
+        )
+
+        # Log conversation message
+        self.logger.log_event({
+            "event_type": "conversation_message",
+            "round": self.round_num,
+            "from": agent.subagent_name,
+            "to": "Director",
+            "content": summary,
+            "message_type": "action_summary",
+            "message_id": message["id"],
+            "timestamp": message["timestamp"]
+        })
+
+        # Send to Unity for display
+        await self._send({
+            "type": "agent_message",
+            "agent_name": agent.subagent_name,
+            "talkinghead_endpoint": agent.talkinghead_endpoint,
+            "content": summary,
+            "message_type": "action_summary",
+            "round": self.round_num,
+            "timestamp": message["timestamp"]
+        })
+
+        print(f"[router] {agent.subagent_name} → Director: {summary[:60]}...")
+
+    async def _repropose_choices(self, agent: AgentConfig):
+        """Agent generates new choices based on director feedback."""
+        print(f"[router] {agent.subagent_name} reproposing choices...")
+
+        # Get conversation including director's feedback
+        conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
+
+        # Need current game state and actions - store these when choices are first proposed
+        # For now, re-query with conversation context
+        # TODO: Store filtered_state and filtered_actions when first proposing choices
+
+        # This is a simplified version - in production, we'd need to store the game state
+        # when choices were first proposed and reuse it here
+        print(f"[router] Note: Reproposal needs game state context - not yet fully implemented")
+
+        # Post message about reproposal
+        message = self.message_queue.send_message(
+            from_agent=agent.subagent_name,
+            to_agent="Director",
+            content="Based on your feedback, let me generate revised choices...",
+            msg_type="choice_revision",
+            round_num=self.round_num
+        )
+
+        # Log message
+        self.logger.log_event({
+            "event_type": "conversation_message",
+            "round": self.round_num,
+            "from": agent.subagent_name,
+            "to": "Director",
+            "content": message["content"],
+            "message_type": "choice_revision",
+            "message_id": message["id"],
+            "timestamp": message["timestamp"]
+        })
+
+        # Send to Unity
+        await self._send({
+            "type": "agent_message",
+            "agent_name": agent.subagent_name,
+            "talkinghead_endpoint": agent.talkinghead_endpoint,
+            "content": message["content"],
+            "message_type": "choice_revision",
+            "round": self.round_num,
+            "timestamp": message["timestamp"]
+        })
 
     def _validate_action_indices(
         self,
