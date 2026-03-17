@@ -595,7 +595,7 @@ public class AgentConversationUI : MonoBehaviour
                     executionResults.Add(JsonUtility.ToJson(new {
                         success = result.success,
                         action = actionName,
-                        message = result.message
+                        error_message = result.error_message
                     }));
                 }
                 else
@@ -604,7 +604,7 @@ public class AgentConversationUI : MonoBehaviour
                     executionResults.Add(JsonUtility.ToJson(new {
                         success = false,
                         action = actionName,
-                        message = "ActionExecutor not found"
+                        error_message = "ActionExecutor not found"
                     }));
                 }
 
