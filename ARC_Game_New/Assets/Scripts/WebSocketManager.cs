@@ -547,7 +547,7 @@ public class WebSocketManager : MonoBehaviour
     {
         try
         {
-            var msg = JsonUtility.FromJson<AgentMessage>(data);
+            var msg = JsonUtility.FromJson<AgentConversationMessage>(data);
             Debug.Log($"[WS] agent_message received from {msg.agent_name}: {msg.content}");
 
             // Parse talkinghead_endpoint to TaskOfficer enum
@@ -959,7 +959,7 @@ public class ChoicesProposalMessage
 }
 
 [System.Serializable]
-public class AgentMessage
+public class AgentConversationMessage
 {
     public string type = "agent_message";
     public string agent_name;
