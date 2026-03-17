@@ -66,6 +66,7 @@ class AgentRouter:
         self._websocket: Optional[WebSocket] = None  # set when Unity connects
         self._pending_choice: Optional[asyncio.Future] = None  # asyncio.Future when waiting for choice_made
         self._pending_action: Optional[asyncio.Future] = None  # asyncio.Future when waiting for action result
+        self._choice_context: dict = {}  # Store game state/actions for reproposal {agent_name: (state, actions)}
 
     # ── WebSocket Handler ────────────────────────────────────────
 
@@ -256,6 +257,9 @@ class AgentRouter:
             max_per_package=agent.max_actions_per_package or 4,
         )
         print(f"[router]   Proposing {len(packages)} packages to director.")
+
+        # Store context for potential reproposal
+        self._choice_context[agent.subagent_name] = (filtered_state, filtered_actions, game_state, all_actions)
 
         # Extract reasoning from structured response
         reasoning = self._extract_reasoning(raw)
@@ -448,6 +452,23 @@ class AgentRouter:
             "round": self.round_num,
             "timestamp": response_message["timestamp"]
         })
+
+        # Detect if director is requesting new choices
+        reproposal_keywords = [
+            "new choices", "new options", "different choices", "different options",
+            "repropose", "re-propose", "regenerate", "try again",
+            "give me new", "show me new", "other choices", "other options",
+            "don't want", "not those", "something else"
+        ]
+
+        content_lower = content.lower()
+        if any(keyword in content_lower for keyword in reproposal_keywords):
+            # Check if this agent is a choices agent and has active context
+            if agent.actor_type == "choices" and agent.subagent_name in self._choice_context:
+                print(f"[router] 🔄 Detected reproposal request - generating new choices...")
+                await self._repropose_choices(agent)
+            else:
+                print(f"[router] Note: Reproposal detected but agent is not in choices mode or has no context")
 
     async def _handle_request_reproposal(self, msg: dict):
         """Handle director requesting an agent to repropose choices."""
@@ -765,22 +786,46 @@ Keep your responses concise and focused. You can discuss:
         """Agent generates new choices based on director feedback."""
         print(f"[router] {agent.subagent_name} reproposing choices...")
 
+        # Get stored context from original proposal
+        context = self._choice_context.get(agent.subagent_name)
+        if not context:
+            print(f"[router] Warning: No stored context for {agent.subagent_name} - cannot repropose")
+            return
+
+        filtered_state, filtered_actions, game_state, all_actions = context
+
         # Get conversation including director's feedback
         conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
 
-        # Need current game state and actions - store these when choices are first proposed
-        # For now, re-query with conversation context
-        # TODO: Store filtered_state and filtered_actions when first proposing choices
+        # Regenerate packages with conversation context
+        raw = query_llm(filtered_state, filtered_actions, agent, conversation)
+        packages = self._parse_packages_response(
+            raw, filtered_actions,
+            num_choices=agent.num_choices or 3,
+            max_per_package=agent.max_actions_per_package or 4,
+        )
 
-        # This is a simplified version - in production, we'd need to store the game state
-        # when choices were first proposed and reuse it here
-        print(f"[router] Note: Reproposal needs game state context - not yet fully implemented")
+        print(f"[router]   Reproposed {len(packages)} packages to director.")
+
+        # Extract reasoning from structured response
+        reasoning = self._extract_reasoning(raw)
+
+        # Send new choices proposal to Unity
+        await self._send({
+            "type": "choices_proposal",
+            "agent_name": agent.subagent_name,
+            "talkinghead": agent.talkinghead_endpoint,
+            "reasoning": reasoning,
+            "packages": packages,
+            "available_actions": filtered_actions,
+            "timestamp": _now(),
+        })
 
         # Post message about reproposal
         message = self.message_queue.send_message(
             from_agent=agent.subagent_name,
             to_agent="Director",
-            content="Based on your feedback, let me generate revised choices...",
+            content=f"I've generated {len(packages)} new options based on your feedback!",
             msg_type="choice_revision",
             round_num=self.round_num
         )
