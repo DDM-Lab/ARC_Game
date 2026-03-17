@@ -526,20 +526,15 @@ public class AgentConversationUI : MonoBehaviour
             return;
         }
 
-        // Get all tasks for this officer
-        var tasks = TaskSystem.Instance.GetTasksByOfficer(officer);
-        if (tasks == null || tasks.Count == 0)
-        {
-            if (showDebugInfo)
-                Debug.Log($"[AgentConversationUI] No tasks found for {officer}, cannot update choices");
-            return;
-        }
+        // Get agent name from officer
+        string agentName = GetCurrentAgentName(officer);
 
-        // Find the most recent task with multiAgentProposal
+        // Search through active tasks to find one matching this agent
         GameTask targetTask = null;
-        foreach (var task in tasks)
+        foreach (var task in TaskSystem.Instance.activeTasks)
         {
-            if (task.multiAgentProposal != null)
+            if (task.multiAgentProposal != null &&
+                task.multiAgentProposal.agent_name == agentName)
             {
                 targetTask = task;
                 break;
@@ -549,7 +544,7 @@ public class AgentConversationUI : MonoBehaviour
         if (targetTask == null)
         {
             if (showDebugInfo)
-                Debug.Log($"[AgentConversationUI] No task with multiAgentProposal found for {officer}");
+                Debug.Log($"[AgentConversationUI] No task with multiAgentProposal found for {agentName}");
             return;
         }
 
@@ -572,12 +567,6 @@ public class AgentConversationUI : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"[AgentConversationUI] Updated task {targetTask.taskId} with {packages.Length} new choices");
-
-        // Refresh the UI if this task is currently being viewed
-        if (TaskDetailUI.Instance != null)
-        {
-            TaskDetailUI.Instance.RefreshTaskIfDisplayed(targetTask);
-        }
     }
 
     string FormatPackageActions(ActionPackage package, GameAction[] availableActions)
