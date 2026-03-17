@@ -278,6 +278,13 @@ public class WebSocketManager : MonoBehaviour
                 return;
             }
 
+            // Handle agent conversational messages
+            if (data.Contains("\"agent_message\""))
+            {
+                HandleAgentMessage(data);
+                return;
+            }
+
             // Try to parse as action message first
             ActionMessage actionMsg = null;
             try
@@ -536,6 +543,38 @@ public class WebSocketManager : MonoBehaviour
         }
     }
 
+    void HandleAgentMessage(string data)
+    {
+        try
+        {
+            var msg = JsonUtility.FromJson<AgentMessage>(data);
+            Debug.Log($"[WS] agent_message received from {msg.agent_name}: {msg.content}");
+
+            // Parse talkinghead_endpoint to TaskOfficer enum
+            TaskOfficer officer;
+            if (System.Enum.TryParse(msg.talkinghead_endpoint, out officer))
+            {
+                // Forward to conversation UI
+                if (AgentConversationUI.Instance != null)
+                {
+                    AgentConversationUI.Instance.AddAgentMessage(officer, msg.content, msg.message_type);
+                }
+                else
+                {
+                    Debug.LogWarning("[WS] AgentConversationUI not found, cannot display message");
+                }
+            }
+            else
+            {
+                Debug.LogError($"[WS] Invalid talkinghead_endpoint: {msg.talkinghead_endpoint}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[WS] Failed to handle agent_message: {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// Send begin_round to the agent router with current game state.
     /// Call this when the game advances to a new time segment.
@@ -590,6 +629,49 @@ public class WebSocketManager : MonoBehaviour
                 + $"\"timestamp\":\"{System.DateTime.UtcNow:o}\"}}";
         SendRawMessage(msg);
         Debug.Log($"[WS] choice_made sent (agent={agentName}, package={packageIndex})");
+    }
+
+    /// <summary>
+    /// Send director message to an agent.
+    /// Called when player sends a conversational message to an agent.
+    /// </summary>
+    public void SendDirectorMessage(string toAgent, string content)
+    {
+        if (!isConnected)
+        {
+            Debug.LogWarning("[WS] Cannot send director_message - not connected!");
+            return;
+        }
+
+        var msg = new DirectorMessage
+        {
+            to_agent = toAgent,
+            content = content,
+            timestamp = (System.DateTime.UtcNow - new System.DateTime(1970, 1, 1)).TotalSeconds
+        };
+
+        SendRawMessage(JsonUtility.ToJson(msg));
+        Debug.Log($"[WS] director_message sent to {toAgent}: {content}");
+    }
+
+    /// <summary>
+    /// Send request to agent to repropose choices with feedback.
+    /// Called when director wants agent to generate new choices.
+    /// </summary>
+    public void SendRequestReproposal(string agentName, string feedback)
+    {
+        if (!isConnected)
+        {
+            Debug.LogWarning("[WS] Cannot send request_reproposal - not connected!");
+            return;
+        }
+
+        var msg = $"{{\"type\":\"request_reproposal\",\"agent_name\":\"{agentName}\","
+                + $"\"feedback\":\"{feedback}\","
+                + $"\"timestamp\":{(System.DateTime.UtcNow - new System.DateTime(1970, 1, 1)).TotalSeconds}}}";
+
+        SendRawMessage(msg);
+        Debug.Log($"[WS] request_reproposal sent to {agentName}");
     }
 
     // ========================================================================
@@ -874,4 +956,25 @@ public class ChoicesProposalMessage
     public string reasoning;
     public ActionPackage[] packages;
     public GameAction[] available_actions; // Full action objects from router
+}
+
+[System.Serializable]
+public class AgentMessage
+{
+    public string type = "agent_message";
+    public string agent_name;
+    public string talkinghead_endpoint;
+    public string content;
+    public string message_type;
+    public int round;
+    public double timestamp;
+}
+
+[System.Serializable]
+public class DirectorMessage
+{
+    public string type = "director_message";
+    public string to_agent;
+    public string content;
+    public double timestamp;
 }
