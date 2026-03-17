@@ -7,6 +7,8 @@ using System.Linq;
 
 public class AgentConversationUI : MonoBehaviour
 {
+    public static AgentConversationUI Instance { get; private set; }
+
     [Header("Main Panel")]
     public GameObject mainPanel;
     public Button expandButton;
@@ -58,7 +60,19 @@ public class AgentConversationUI : MonoBehaviour
     private GameTask currentSelectedTask = null;
     private List<GameObject> currentHistoricalTaskButtons = new List<GameObject>();
     private List<GameObject> currentConversationItems = new List<GameObject>();
-    
+
+    void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+        else
+        {
+            Debug.LogWarning("Multiple AgentConversationUI instances found!");
+        }
+    }
+
     void Start()
     {
         SetupUI();
@@ -363,24 +377,91 @@ public class AgentConversationUI : MonoBehaviour
         yield return new WaitForEndOfFrame();
         conversationScrollView.verticalNormalizedPosition = 0f;
     }
-    
+
+    /// <summary>
+    /// Add agent conversational message to UI.
+    /// Called by WebSocketManager when agent_message is received.
+    /// </summary>
+    public void AddAgentMessage(TaskOfficer officer, string content, string messageType)
+    {
+        // Only display if this is the currently selected agent
+        if (officer != currentSelectedAgent)
+        {
+            if (showDebugInfo)
+                Debug.Log($"Message from {officer} (not selected), not displaying in UI");
+            return;
+        }
+
+        // Create agent message in conversation
+        if (agentMessagePrefab != null && conversationContent != null)
+        {
+            GameObject messageItem = Instantiate(agentMessagePrefab, conversationContent);
+            AgentMessageUI messageUI = messageItem.GetComponent<AgentMessageUI>();
+
+            if (messageUI != null)
+            {
+                // Create AgentMessage data for the UI component
+                var agentMsg = new Tasks.AgentMessage(content, null); // Avatar can be null
+                messageUI.Initialize(agentMsg);
+                StartCoroutine(messageUI.PlayTypingEffect(0.02f));
+            }
+            else
+            {
+                // Fallback if AgentMessageUI component not found
+                TextMeshProUGUI messageText = messageItem.GetComponentInChildren<TextMeshProUGUI>();
+                if (messageText != null) messageText.text = content;
+            }
+
+            currentConversationItems.Add(messageItem);
+            StartCoroutine(ScrollToBottomCoroutine());
+
+            if (showDebugInfo)
+                Debug.Log($"Added {messageType} message from {officer}: {content}");
+        }
+    }
+
     void OnSendPlayerMessage()
     {
         if (playerInputField != null && !string.IsNullOrEmpty(playerInputField.text))
         {
             string message = playerInputField.text;
+
+            // Display player message in UI
             GameObject messageItem = Instantiate(playerMessagePrefab, conversationContent);
             TextMeshProUGUI messageText = messageItem.GetComponentInChildren<TextMeshProUGUI>();
-            
+
             if (messageText != null) messageText.text = message;
-            
+
             currentConversationItems.Add(messageItem);
             playerInputField.text = "";
-            ScrollToBottom();
-            
+            StartCoroutine(ScrollToBottomCoroutine());
+
+            // Send message to Python backend via WebSocket
+            string agentName = GetCurrentAgentName(currentSelectedAgent);
+            if (WebSocketManager.Instance != null && !string.IsNullOrEmpty(agentName))
+            {
+                WebSocketManager.Instance.SendDirectorMessage(agentName, message);
+            }
+
             if (showDebugInfo)
-                Debug.Log($"Player sent message to {currentSelectedAgent}: {message}");
+                Debug.Log($"Player sent message to {currentSelectedAgent} ({agentName}): {message}");
         }
+    }
+
+    string GetCurrentAgentName(TaskOfficer officer)
+    {
+        // Look up agent name from config by matching talkinghead_endpoint
+        if (AgentConfigLoader.Instance != null && AgentConfigLoader.Instance.IsLoaded)
+        {
+            foreach (var agent in AgentConfigLoader.Instance.Config.agents)
+            {
+                if (agent.talkinghead_endpoint == officer.ToString())
+                {
+                    return agent.subagent_name;
+                }
+            }
+        }
+        return officer.ToString(); // Fallback to enum name
     }
     
     void OnPlayerInputSubmit(string message)
