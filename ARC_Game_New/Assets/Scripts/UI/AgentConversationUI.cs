@@ -477,8 +477,8 @@ public class AgentConversationUI : MonoBehaviour
                 string agentName = GetCurrentAgentName(officer);
                 foreach (var package in packages)
                 {
-                    // Store data for this choice
-                    inlineChoiceDataMap[package.packageId] = new InlineChoiceData
+                    // Store data for this choice using package_index
+                    inlineChoiceDataMap[package.package_index] = new InlineChoiceData
                     {
                         agentName = agentName,
                         packages = packages,
@@ -486,19 +486,21 @@ public class AgentConversationUI : MonoBehaviour
                     };
 
                     GameObject choiceItem = Instantiate(agentChoicePrefab, conversationContent);
-                    AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
 
-                    if (choiceUI != null)
+                    // Set up the choice UI manually for inline display
+                    TextMeshProUGUI choiceText = choiceItem.GetComponentInChildren<TextMeshProUGUI>();
+                    if (choiceText != null)
                     {
-                        // Create AgentChoice from ActionPackage
-                        AgentChoice choice = new AgentChoice
-                        {
-                            choiceId = package.packageId,
-                            choiceText = FormatPackageActions(package, availableActions),
-                            agentReasoning = reasoning
-                        };
+                        choiceText.text = FormatPackageActions(package, availableActions);
+                    }
 
-                        choiceUI.Initialize(choice, OnInlineChoiceSelected);
+                    // Add click handler for inline choice selection
+                    Button choiceButton = choiceItem.GetComponentInChildren<Button>();
+                    if (choiceButton != null)
+                    {
+                        int capturedIndex = package.package_index; // Capture for closure
+                        choiceButton.onClick.RemoveAllListeners();
+                        choiceButton.onClick.AddListener(() => OnInlineChoiceClicked(capturedIndex));
                     }
 
                     currentConversationItems.Add(choiceItem);
@@ -514,11 +516,11 @@ public class AgentConversationUI : MonoBehaviour
 
     string FormatPackageActions(ActionPackage package, GameAction[] availableActions)
     {
-        if (package.actionIndices == null || package.actionIndices.Length == 0)
+        if (package.action_indices == null || package.action_indices.Length == 0)
             return "No actions";
 
         var actionNames = new System.Collections.Generic.List<string>();
-        foreach (int idx in package.actionIndices)
+        foreach (int idx in package.action_indices)
         {
             if (idx >= 0 && idx < availableActions.Length)
             {
@@ -529,39 +531,37 @@ public class AgentConversationUI : MonoBehaviour
         return string.Join(", ", actionNames);
     }
 
-    void OnInlineChoiceSelected(AgentChoice choice)
+    void OnInlineChoiceClicked(int packageIndex)
     {
-        Debug.Log($"[AgentConversationUI] Inline choice selected: {choice.choiceId}");
+        Debug.Log($"[AgentConversationUI] Inline choice clicked: {packageIndex}");
 
         // Retrieve stored data for this choice
-        if (!inlineChoiceDataMap.ContainsKey(choice.choiceId))
+        if (!inlineChoiceDataMap.ContainsKey(packageIndex))
         {
-            Debug.LogError($"[AgentConversationUI] No data found for inline choice {choice.choiceId}");
+            Debug.LogError($"[AgentConversationUI] No data found for inline choice {packageIndex}");
             return;
         }
 
-        InlineChoiceData data = inlineChoiceDataMap[choice.choiceId];
+        InlineChoiceData data = inlineChoiceDataMap[packageIndex];
 
-        // Find the selected package
+        // Find the selected package by matching package_index
         ActionPackage selectedPackage = null;
-        int packageIndex = -1;
         for (int i = 0; i < data.packages.Length; i++)
         {
-            if (data.packages[i].packageId == choice.choiceId)
+            if (data.packages[i].package_index == packageIndex)
             {
                 selectedPackage = data.packages[i];
-                packageIndex = i;
                 break;
             }
         }
 
         if (selectedPackage == null)
         {
-            Debug.LogError($"[AgentConversationUI] Package not found for choice {choice.choiceId}");
+            Debug.LogError($"[AgentConversationUI] Package not found for choice {packageIndex}");
             return;
         }
 
-        Debug.Log($"[AgentConversationUI] Executing inline choice package {packageIndex} with {selectedPackage.actionIndices.Length} actions");
+        Debug.Log($"[AgentConversationUI] Executing inline choice package {packageIndex} with {selectedPackage.action_indices.Length} actions");
 
         // Execute actions (similar to TaskDetailUI.ExecuteActionPackage)
         StartCoroutine(ExecuteInlineChoicePackage(data.agentName, packageIndex, selectedPackage, data.availableActions));
@@ -576,7 +576,7 @@ public class AgentConversationUI : MonoBehaviour
         List<string> executionResults = new List<string>();
 
         // Execute each action in the package
-        foreach (int actionIdx in package.actionIndices)
+        foreach (int actionIdx in package.action_indices)
         {
             if (actionIdx >= 0 && actionIdx < availableActions.Length)
             {
