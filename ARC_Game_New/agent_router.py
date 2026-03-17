@@ -810,22 +810,13 @@ Keep your responses concise and focused. You can discuss:
         # Extract reasoning from structured response
         reasoning = self._extract_reasoning(raw)
 
-        # Send new choices proposal to Unity
-        await self._send({
-            "type": "choices_proposal",
-            "agent_name": agent.subagent_name,
-            "talkinghead": agent.talkinghead_endpoint,
-            "reasoning": reasoning,
-            "packages": packages,
-            "available_actions": filtered_actions,
-            "timestamp": _now(),
-        })
+        # Create message with embedded choices
+        response_content = f"I've generated {len(packages)} new options based on your feedback!"
 
-        # Post message about reproposal
         message = self.message_queue.send_message(
             from_agent=agent.subagent_name,
             to_agent="Director",
-            content=f"I've generated {len(packages)} new options based on your feedback!",
+            content=response_content,
             msg_type="choice_revision",
             round_num=self.round_num
         )
@@ -835,6 +826,32 @@ Keep your responses concise and focused. You can discuss:
             "event_type": "conversation_message",
             "round": self.round_num,
             "from": agent.subagent_name,
+            "to": "Director",
+            "content": response_content,
+            "message_type": "choice_revision",
+            "message_id": message["id"],
+            "timestamp": message["timestamp"]
+        })
+
+        # Send combined message with embedded choices to Unity
+        await self._send({
+            "type": "agent_message_with_choices",
+            "agent_name": agent.subagent_name,
+            "talkinghead_endpoint": agent.talkinghead_endpoint,
+            "content": response_content,
+            "message_type": "choice_revision",
+            "round": self.round_num,
+            "timestamp": message["timestamp"],
+            "reasoning": reasoning,
+            "packages": packages,
+            "available_actions": filtered_actions
+        })
+
+        # Also log the reproposed packages
+        self.logger.log_event({
+            "event_type": "choices_reproposed",
+            "round": self.round_num,
+            "agent_name": agent.subagent_name,
             "to": "Director",
             "content": message["content"],
             "message_type": "choice_revision",

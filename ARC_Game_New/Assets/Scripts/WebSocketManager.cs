@@ -278,6 +278,13 @@ public class WebSocketManager : MonoBehaviour
                 return;
             }
 
+            // Handle agent conversational messages with embedded choices
+            if (data.Contains("\"agent_message_with_choices\""))
+            {
+                HandleAgentMessageWithChoices(data);
+                return;
+            }
+
             // Handle agent conversational messages
             if (data.Contains("\"agent_message\""))
             {
@@ -572,6 +579,45 @@ public class WebSocketManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"[WS] Failed to handle agent_message: {ex.Message}");
+        }
+    }
+
+    void HandleAgentMessageWithChoices(string data)
+    {
+        try
+        {
+            var msg = JsonUtility.FromJson<AgentMessageWithChoices>(data);
+            Debug.Log($"[WS] agent_message_with_choices received from {msg.agent_name}: {msg.content}");
+
+            // Parse talkinghead_endpoint to TaskOfficer enum
+            TaskOfficer officer;
+            if (System.Enum.TryParse(msg.talkinghead_endpoint, out officer))
+            {
+                // Forward to conversation UI with embedded choices
+                if (AgentConversationUI.Instance != null)
+                {
+                    AgentConversationUI.Instance.AddAgentMessageWithChoices(
+                        officer,
+                        msg.content,
+                        msg.message_type,
+                        msg.reasoning,
+                        msg.packages,
+                        msg.available_actions
+                    );
+                }
+                else
+                {
+                    Debug.LogWarning("[WS] AgentConversationUI not found, cannot display message with choices");
+                }
+            }
+            else
+            {
+                Debug.LogError($"[WS] Invalid talkinghead_endpoint: {msg.talkinghead_endpoint}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[WS] Failed to handle agent_message_with_choices: {ex.Message}");
         }
     }
 
@@ -968,6 +1014,21 @@ public class AgentConversationMessage
     public string message_type;
     public int round;
     public double timestamp;
+}
+
+[System.Serializable]
+public class AgentMessageWithChoices
+{
+    public string type = "agent_message_with_choices";
+    public string agent_name;
+    public string talkinghead_endpoint;
+    public string content;
+    public string message_type;
+    public int round;
+    public double timestamp;
+    public string reasoning;
+    public ActionPackage[] packages;
+    public GameAction[] available_actions;
 }
 
 [System.Serializable]
