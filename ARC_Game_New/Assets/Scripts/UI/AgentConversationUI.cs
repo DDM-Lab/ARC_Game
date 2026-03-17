@@ -401,7 +401,7 @@ public class AgentConversationUI : MonoBehaviour
             if (messageUI != null)
             {
                 // Create AgentMessage data for the UI component
-                var agentMsg = new Tasks.AgentMessage(content, null); // Avatar can be null
+                var agentMsg = new AgentMessage(content, null); // Avatar can be null
                 messageUI.Initialize(agentMsg);
                 StartCoroutine(messageUI.PlayTypingEffect(0.02f));
             }
@@ -451,9 +451,10 @@ public class AgentConversationUI : MonoBehaviour
     string GetCurrentAgentName(TaskOfficer officer)
     {
         // Look up agent name from config by matching talkinghead_endpoint
-        if (AgentConfigLoader.Instance != null && AgentConfigLoader.Instance.IsLoaded)
+        AgentConfigLoader configLoader = FindObjectOfType<AgentConfigLoader>();
+        if (configLoader != null && configLoader.IsLoaded)
         {
-            foreach (var agent in AgentConfigLoader.Instance.Config.agents)
+            foreach (var agent in configLoader.Config.agents)
             {
                 if (agent.talkinghead_endpoint == officer.ToString())
                 {
