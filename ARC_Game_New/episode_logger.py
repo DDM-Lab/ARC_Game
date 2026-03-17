@@ -64,3 +64,9 @@ class EpisodeLogger:
         }
         with open(self.log_path, "a") as f:
             f.write(json.dumps(record) + "\n")
+
+    def log_event(self, event_data: dict) -> None:
+        """Append a general event record to the JSONL log (e.g., conversation messages)."""
+        event_data["timestamp"] = datetime.now(timezone.utc).isoformat()
+        with open(self.log_path, "a") as f:
+            f.write(json.dumps(event_data) + "\n")
