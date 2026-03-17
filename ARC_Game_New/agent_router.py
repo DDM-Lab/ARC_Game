@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import argparse
+import os
 import sys
 from datetime import datetime, timezone
 from typing import List, Tuple, Optional
@@ -383,25 +384,69 @@ class AgentRouter:
 
         print(f"[router] Director → {to_agent_name}: {content[:50]}...")
 
-        # Store message in queue
+        # Store director message in queue
         message = self.message_queue.send_message(
             from_agent="Director",
             to_agent=to_agent_name,
             content=content,
-            msg_type="response",
+            msg_type="director_message",
             round_num=self.round_num
         )
 
-        # Log conversation message
+        # Log director message
         self.logger.log_event({
             "event_type": "conversation_message",
             "round": self.round_num,
             "from": "Director",
             "to": to_agent_name,
             "content": content,
-            "message_type": "response",
+            "message_type": "director_message",
             "message_id": message["id"],
             "timestamp": message["timestamp"]
+        })
+
+        # Find the agent config
+        agent = self._get_agent_by_name(to_agent_name)
+        if not agent:
+            print(f"[router] Agent '{to_agent_name}' not found")
+            return
+
+        # Generate immediate response from the agent
+        conversation = self.message_queue.get_conversation(to_agent_name, "Director")
+        response_text = self._generate_conversational_response(agent, conversation)
+
+        print(f"[router] {to_agent_name} → Director: {response_text[:50]}...")
+
+        # Store agent response in queue
+        response_message = self.message_queue.send_message(
+            from_agent=to_agent_name,
+            to_agent="Director",
+            content=response_text,
+            msg_type="agent_response",
+            round_num=self.round_num
+        )
+
+        # Log agent response
+        self.logger.log_event({
+            "event_type": "conversation_message",
+            "round": self.round_num,
+            "from": to_agent_name,
+            "to": "Director",
+            "content": response_text,
+            "message_type": "agent_response",
+            "message_id": response_message["id"],
+            "timestamp": response_message["timestamp"]
+        })
+
+        # Send agent response to Unity for display
+        await self._send({
+            "type": "agent_message",
+            "agent_name": to_agent_name,
+            "talkinghead_endpoint": agent.talkinghead_endpoint,
+            "content": response_text,
+            "message_type": "agent_response",
+            "round": self.round_num,
+            "timestamp": response_message["timestamp"]
         })
 
     async def _handle_request_reproposal(self, msg: dict):
@@ -454,6 +499,83 @@ class AgentRouter:
         return None
 
     # ── Unity Communication ──────────────────────────────────────
+
+    def _generate_conversational_response(self, agent: AgentConfig, conversation: list) -> str:
+        """
+        Generate a conversational response from an agent using their LLM.
+
+        Args:
+            agent: The agent configuration
+            conversation: List of conversation messages
+
+        Returns:
+            Agent's conversational response string
+        """
+        import anthropic
+        import openai
+
+        provider = agent.llm_provider.lower() if agent.llm_provider else "anthropic"
+
+        # Build conversational prompt
+        messages = []
+        for entry in conversation:
+            if entry.get("from") == "Director":
+                role = "user"
+                messages.append({"role": role, "content": entry.get("content", "")})
+            elif entry.get("from") == agent.subagent_name:
+                role = "assistant"
+                messages.append({"role": role, "content": entry.get("content", "")})
+
+        # Create system prompt
+        system_prompt = f"""You are {agent.subagent_name}, an AI agent helping manage disaster response in the ARC Game.
+
+You are having a conversation with the Director (the human player). Respond naturally and helpfully to their messages.
+
+Keep your responses concise and focused. You can discuss:
+- Your recent actions and decisions
+- Your understanding of the current situation
+- Questions or clarifications about the disaster response
+- Coordination with other agents"""
+
+        if agent.system_prompt:
+            system_prompt += f"\n\nAdditional context: {agent.system_prompt}"
+
+        # Query the LLM
+        try:
+            if provider == "anthropic":
+                api_key = os.environ.get("ANTHROPIC_API_KEY")
+                if not api_key:
+                    return "I'm unable to respond right now - API key not configured."
+
+                client = anthropic.Anthropic(api_key=api_key)
+                response = client.messages.create(
+                    model=agent.llm_model or "claude-sonnet-4-6",
+                    max_tokens=500,
+                    system=system_prompt,
+                    messages=messages
+                )
+                return response.content[0].text
+
+            elif provider == "openai":
+                api_key = os.environ.get("OPENAI_API_KEY")
+                if not api_key:
+                    return "I'm unable to respond right now - API key not configured."
+
+                client = openai.OpenAI(api_key=api_key)
+                msgs = [{"role": "system", "content": system_prompt}] + messages
+                response = client.chat.completions.create(
+                    model=agent.llm_model or "gpt-4",
+                    max_tokens=500,
+                    messages=msgs
+                )
+                return response.choices[0].message.content
+
+            else:
+                return "I'm unable to respond - unsupported LLM provider."
+
+        except Exception as e:
+            print(f"[router] Error generating conversational response for {agent.subagent_name}: {e}")
+            return "I'm having trouble responding right now."
 
     async def _send(self, payload: dict):
         if self._websocket:
