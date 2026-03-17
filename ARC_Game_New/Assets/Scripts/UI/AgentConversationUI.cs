@@ -440,6 +440,9 @@ public class AgentConversationUI : MonoBehaviour
         ActionPackage[] packages,
         GameAction[] availableActions)
     {
+        // Update the task's choices data first
+        UpdateTaskChoices(officer, reasoning, packages, availableActions);
+
         // Only display if this is the currently selected agent
         if (officer != currentSelectedAgent)
         {
@@ -511,6 +514,69 @@ public class AgentConversationUI : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log($"Added {messageType} message with {packages.Length} choices from {officer}");
+        }
+    }
+
+    void UpdateTaskChoices(TaskOfficer officer, string reasoning, ActionPackage[] packages, GameAction[] availableActions)
+    {
+        // Find the task for this officer
+        if (TaskSystem.Instance == null)
+        {
+            Debug.LogWarning("[AgentConversationUI] TaskSystem.Instance is null, cannot update task choices");
+            return;
+        }
+
+        // Get all tasks for this officer
+        var tasks = TaskSystem.Instance.GetTasksByOfficer(officer);
+        if (tasks == null || tasks.Count == 0)
+        {
+            if (showDebugInfo)
+                Debug.Log($"[AgentConversationUI] No tasks found for {officer}, cannot update choices");
+            return;
+        }
+
+        // Find the most recent task with multiAgentProposal
+        GameTask targetTask = null;
+        foreach (var task in tasks)
+        {
+            if (task.multiAgentProposal != null)
+            {
+                targetTask = task;
+                break;
+            }
+        }
+
+        if (targetTask == null)
+        {
+            if (showDebugInfo)
+                Debug.Log($"[AgentConversationUI] No task with multiAgentProposal found for {officer}");
+            return;
+        }
+
+        // Update the task's multiAgentProposal with new choices
+        targetTask.multiAgentProposal.reasoning = reasoning;
+        targetTask.multiAgentProposal.packages = packages;
+        targetTask.multiAgentProposal.available_actions = availableActions;
+
+        // Update the agentChoices list as well
+        targetTask.agentChoices.Clear();
+        for (int i = 0; i < packages.Length; i++)
+        {
+            var package = packages[i];
+            AgentChoice choice = new AgentChoice();
+            choice.choiceId = package.package_index;
+            choice.choiceText = FormatPackageActions(package, availableActions);
+            choice.agentReasoning = reasoning;
+            targetTask.agentChoices.Add(choice);
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"[AgentConversationUI] Updated task {targetTask.taskId} with {packages.Length} new choices");
+
+        // Refresh the UI if this task is currently being viewed
+        if (TaskDetailUI.Instance != null)
+        {
+            TaskDetailUI.Instance.RefreshTaskIfDisplayed(targetTask);
         }
     }
 
