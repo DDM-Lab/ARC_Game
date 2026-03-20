@@ -50569,6 +50569,33 @@ MonoBehaviour:
   loadedInitialTrainedVols: 0
   loadedInitialUntrainedVols: 0
   loadedInitialBudgetDailyAllocs: 0
+  loadedInitialWeather: 0
+  loadedInitialShelterCapacity: 10
+  loadedInitialKitchenCapacity: 10
+  loadedInitialCaseworkCapacity: 10
+  loadedInitialRequiredWorkers: 4
+  loadedInitialSunnyExpansionRate: 0
+  loadedInitialSunnySpreadChanceMultiplier: 0.5
+  loadedInitialSmallRainExpansionRate: 0.5
+  loadedInitialSmallRainSpreadChanceMultiplier: 0.8
+  loadedInitialMediumRainExpansionRate: 1.5
+  loadedInitialMediumRainSpreadChanceMultiplier: 1
+  loadedInitialHeavyRainExpansionRate: 3
+  loadedInitialHeavyRainSpreadChanceMultiplier: 1.2
+  loadedInitialStormExpansionRate: 5
+  loadedInitialStormSpreadChanceMultiplier: 1.5
+  loadedInitialFoodDemandFrequency: -1
+  loadedInitialFloodFacilityTrigger:
+    facilityType: 3
+    comparison: 1
+    floodTileThreshold: 2
+    specificBuildingType: 1
+    specificPrebuiltType: 0
+    detectionRadius: 5
+  loadedInitialERV: 3
+  dailyBudgetAlloc: {fileID: 11400000, guid: 677f3154a65e74d409d184c6e3f7a79a, type: 2}
+  shelterFoodReq: {fileID: 11400000, guid: 4078a097420469547bb2b21fd3a115b3, type: 2}
+  shelterFloodDmg: {fileID: 11400000, guid: 1c2bafedf07f61041bded394e13a8e4e, type: 2}
 --- !u!4 &825620940
 Transform:
   m_ObjectHideFlags: 0
@@ -51658,6 +51685,37 @@ MonoBehaviour:
   configLoader: {fileID: 825620939}
   defaultBudget: 10000
   defaultSatisfaction: 50
+  defaultCommunityNumber: 3
+  defaultResidentsPerCommunity: 40
+  defaultGameDays: 8
+  defaultRoundsPerDay: 4
+  defaultTrainedVolunteerCount: 5
+  defaultUntrainedVolunteerCount: 5
+  defaultDailyBudgetAllocs: 3000
+  defaultInitialWeather: 0
+  defaultKitchenCapacity: 10
+  defaultShelterCapacity: 10
+  defaultCaseworkCapacity: 10
+  defaultRequiredWorkersPerLoc: 4
+  defaultSunnyExpansionRate: 0
+  defaultSunnySpreadChanceMultiplier: 0.5
+  defaultSmallRainExpansionRate: 0.5
+  defaultSmallRainSpreadChanceMultiplier: 0.8
+  defaultMediumRainExpansionRate: 1.5
+  defaultMediumRainSpreadChanceMultiplier: 1
+  defaultHeavyRainExpansionRate: 3
+  defaultHeavyRainSpreadChanceMultiplier: 1.2
+  defaultStormExpansionRate: 5
+  defaultStormSpreadChanceMultiplier: 1.5
+  defaultFoodDemandFrequency: -1
+  defaultShelterFloodDamage:
+    facilityType: 3
+    comparison: 1
+    floodTileThreshold: 2
+    specificBuildingType: 1
+    specificPrebuiltType: 0
+    detectionRadius: 5
+  defaultERVCount: 3
 --- !u!4 &840829270
 Transform:
   m_ObjectHideFlags: 0

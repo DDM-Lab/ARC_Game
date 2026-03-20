@@ -37,9 +37,24 @@ public class GameConfigLoader : MonoBehaviour
     public float loadedInitialStormExpansionRate = 5f;
     public float loadedInitialStormSpreadChanceMultiplier = 1.5f;
 
+    public float loadedInitialFoodDemandFrequency = -1f; // default dne
+    public FloodedFacilityTrigger loadedInitialFloodFacilityTrigger = new FloodedFacilityTrigger
+    {
+        facilityType = FloodedFacilityTrigger.FacilityFloodType.SpecificBuildingType,
+        comparison = FloodedFacilityTrigger.ComparisonType.AtLeast,
+        floodTileThreshold = 2,
+        specificBuildingType = BuildingType.Shelter,
+        specificPrebuiltType = PrebuiltBuildingType.Community,
+        detectionRadius = 5
+    };
+
+    public int loadedInitialERV = 3;
+
 
     private bool configLoaded = false;
     public TaskData dailyBudgetAlloc;
+    public TaskData shelterFoodReq; // for food demand frequency lever
+    public TaskData shelterFloodDmg; 
     
     public static GameConfigLoader Instance { get; private set; }
     
@@ -249,10 +264,46 @@ public class GameConfigLoader : MonoBehaviour
                 if (float.TryParse(value, out float stormSCM))
                     loadedInitialStormSpreadChanceMultiplier = stormSCM;
             }
+            else if (parameter.Equals("initialFoodDemandFrequency", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (float.TryParse(value, out float foodDemandFreq))
+                    loadedInitialFoodDemandFrequency = Mathf.Clamp(foodDemandFreq, 0f, 1f);
+            }
+            else if (parameter.Equals("initialShelterFloodDamageComparison", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (System.Enum.TryParse(value, true, out FloodedFacilityTrigger.ComparisonType cmp))
+                {
+                    loadedInitialFloodFacilityTrigger.comparison = cmp;
+                }
+                else
+                {
+                    Debug.LogWarning($"GameConfigLoader: Could not parse comparison type '{value}'.");
+                }
+            }
+            else if (parameter.Equals("initialShelterFloodDamageFloodTileThreshold", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int floodTileThreshold))
+                    loadedInitialFloodFacilityTrigger.floodTileThreshold = floodTileThreshold;
+            }
+            else if (parameter.Equals("initialShelterFloodDamageFloodDetectionRange", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int floodDetectionRange))
+                    loadedInitialFloodFacilityTrigger.detectionRadius = floodDetectionRange;
+            }
+            else if (parameter.Equals("initialERVCount", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int ervCount))
+                    loadedInitialERV = ervCount;
+            }
 
-            ApplyInitBudgetAllocation();
+
+
+            // ApplyInitBudgetAllocation();
             
         }
+        ApplyInitBudgetAllocation();
+        ApplyInitFoodDemandFrequency();
+        ApplyInitShelterFloodDamage();
         
         configLoaded = true;
     }
@@ -269,6 +320,41 @@ public class GameConfigLoader : MonoBehaviour
             
             if (showDebugInfo)
                 Debug.Log($"Applied {loadedInitialBudgetDailyAllocs} to SO");
+        }
+    }
+
+    void ApplyInitFoodDemandFrequency()
+    {
+        if (loadedInitialFoodDemandFrequency < 0) return;
+        if (shelterFoodReq != null)
+        {
+            if (shelterFoodReq.probabilityTriggers.Count != 0 )
+            {
+                shelterFoodReq.probabilityTriggers[0].probability = loadedInitialFoodDemandFrequency;
+            } 
+            else
+            {
+                ProbabilityTrigger trigger = new ProbabilityTrigger
+                {
+                    probability = loadedInitialFoodDemandFrequency
+                };
+                shelterFoodReq.probabilityTriggers.Add(trigger);
+            }
+        }
+    }
+
+    void ApplyInitShelterFloodDamage()
+    {
+        if (shelterFloodDmg != null)
+        {
+            if (shelterFloodDmg.floodedFacilityTriggers.Count != 0)
+            {
+                shelterFloodDmg.floodedFacilityTriggers[0] = loadedInitialFloodFacilityTrigger;
+            }
+            else
+            {
+                shelterFloodDmg.floodedFacilityTriggers.Add(loadedInitialFloodFacilityTrigger);
+            }
         }
     }
     
@@ -390,6 +476,20 @@ public class GameConfigLoader : MonoBehaviour
     {
         Debug.Log($"storm spread - {loadedInitialStormSpreadChanceMultiplier}");
         return loadedInitialStormSpreadChanceMultiplier;
+    }
+
+    public float GetInitialFoodDemandFrequency()
+    {
+        return loadedInitialFoodDemandFrequency;
+    }
+
+    public FloodedFacilityTrigger GetInitialShelterFLoodDamage()
+    {
+        return loadedInitialFloodFacilityTrigger;
+    }
+    public int GetInitialERVCount()
+    {
+        return loadedInitialERV;
     }
 
 }

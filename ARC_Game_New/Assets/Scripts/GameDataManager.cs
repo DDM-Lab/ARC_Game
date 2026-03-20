@@ -36,6 +36,17 @@ public class GameDataManager : MonoBehaviour
     public float defaultHeavyRainSpreadChanceMultiplier = 1.2f;
     public float defaultStormExpansionRate = 5f;
     public float defaultStormSpreadChanceMultiplier = 1.5f;
+    public float defaultFoodDemandFrequency = -1f;
+    public FloodedFacilityTrigger defaultShelterFloodDamage = new FloodedFacilityTrigger
+    {
+        facilityType = FloodedFacilityTrigger.FacilityFloodType.SpecificBuildingType,
+        comparison = FloodedFacilityTrigger.ComparisonType.AtLeast,
+        floodTileThreshold = 2,
+        specificBuildingType = BuildingType.Shelter,
+        specificPrebuiltType = PrebuiltBuildingType.Community,
+        detectionRadius = 5
+    };
+    public int defaultERVCount = 3;
 
 
 
@@ -63,6 +74,9 @@ public class GameDataManager : MonoBehaviour
     public float InitialHeavyRainSpreadChanceMultiplier {get; private set; }
     public float InitialStormExpansionRate {get; private set; }
     public float InitialStormSpreadChanceMultiplier {get; private set; }
+    public float InitialFoodDemandFrequency {get; private set;}
+    public FloodedFacilityTrigger InitialShelterFloodDamange {get; private set;}
+    public int InitialERVCount {get; private set;}
 
 
     public bool IsDataReady { get; private set; } = false;
@@ -123,6 +137,9 @@ public class GameDataManager : MonoBehaviour
                 InitialHeavyRainSpreadChanceMultiplier = configLoader.GetInitialHeavyRainFloodSpreadChanceMultiplier();
                 InitialStormExpansionRate = configLoader.GetInitialStormFloodExpansionRate();
                 InitialStormSpreadChanceMultiplier = configLoader.GetInitialStormFloodSpreadChanceMultiplier();
+                InitialFoodDemandFrequency = configLoader.GetInitialFoodDemandFrequency();
+                InitialShelterFloodDamange = configLoader.GetInitialShelterFLoodDamage();
+                InitialERVCount = configLoader.GetInitialERVCount();
 
                 Debug.Log("GameDataManager: extern config success!");
             }
@@ -162,5 +179,8 @@ public class GameDataManager : MonoBehaviour
         InitialHeavyRainSpreadChanceMultiplier = defaultHeavyRainSpreadChanceMultiplier;
         InitialStormExpansionRate = defaultStormExpansionRate;
         InitialStormSpreadChanceMultiplier = defaultStormSpreadChanceMultiplier;
+        InitialFoodDemandFrequency = defaultFoodDemandFrequency;
+        InitialShelterFloodDamange = defaultShelterFloodDamage;
+        InitialERVCount = defaultERVCount;
     }
 }
