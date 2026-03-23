@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.Networking;
 using System.Collections;
+using Unity.Collections;
 
 public class GameConfigLoader : MonoBehaviour
 {
@@ -49,12 +50,16 @@ public class GameConfigLoader : MonoBehaviour
     };
 
     public int loadedInitialERV = 3;
+    public int loadedInitialExternalRelationFrequency = 3; // three per game
+    public int loadedInitialEmergencyTaskFrequency = 4;
 
 
     private bool configLoaded = false;
     public TaskData dailyBudgetAlloc;
     public TaskData shelterFoodReq; // for food demand frequency lever
     public TaskData shelterFloodDmg; 
+    public TaskData budgetAdvisoryER;
+    public TaskData budgetEmergencyER;
     
     public static GameConfigLoader Instance { get; private set; }
     
@@ -295,6 +300,16 @@ public class GameConfigLoader : MonoBehaviour
                 if (int.TryParse(value, out int ervCount))
                     loadedInitialERV = ervCount;
             }
+            else if (parameter.Equals("initialExternalRelationFrequency", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int erCount))
+                    loadedInitialExternalRelationFrequency = erCount;
+            }
+            else if (parameter.Equals("initialEmergencyTaskFrequency", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int emergencyCount))
+                    loadedInitialEmergencyTaskFrequency = emergencyCount;
+            }
 
 
 
@@ -304,6 +319,7 @@ public class GameConfigLoader : MonoBehaviour
         ApplyInitBudgetAllocation();
         ApplyInitFoodDemandFrequency();
         ApplyInitShelterFloodDamage();
+        ApplyInitExternalRelationFrequency();
         
         configLoaded = true;
     }
@@ -342,6 +358,50 @@ public class GameConfigLoader : MonoBehaviour
             }
         }
     }
+
+void ApplyInitExternalRelationFrequency()
+{
+    if (budgetAdvisoryER == null && budgetEmergencyER == null) return;
+    int advisoryInterval;
+    int emergencyInterval;
+    if (budgetAdvisoryER != null && budgetEmergencyER != null)
+    {
+        bool advisoryGetsLower = new System.Random().Next(0, 2) == 0;
+        
+        int smallHalf = loadedInitialExternalRelationFrequency / 2;
+        int bigHalf = loadedInitialExternalRelationFrequency - smallHalf;
+
+        advisoryInterval = advisoryGetsLower ? smallHalf : bigHalf;
+        emergencyInterval = advisoryGetsLower ? bigHalf : smallHalf;
+    }
+    else
+    {
+        advisoryInterval = loadedInitialExternalRelationFrequency;
+        emergencyInterval = loadedInitialExternalRelationFrequency;
+    }
+    if (budgetAdvisoryER != null) ApplyTrigger(budgetAdvisoryER, advisoryInterval);
+    if (budgetEmergencyER != null) ApplyTrigger(budgetEmergencyER, emergencyInterval);
+}
+
+void ApplyTrigger(TaskData task, int interval)
+{
+    DayTrigger trigger = new DayTrigger
+    {
+        conditionType = DayTrigger.DayConditionType.DayInterval,
+        intervalDays = interval,
+        startDay = 2
+    };
+
+    if (task.dayTriggers.Count == 0 || task.dayTriggers[0] == null)
+    {
+        task.dayTriggers.Add(trigger);
+    }
+    else
+    {
+        task.dayTriggers[0] = trigger;
+    }
+}
+
 
     void ApplyInitShelterFloodDamage()
     {
@@ -490,6 +550,14 @@ public class GameConfigLoader : MonoBehaviour
     public int GetInitialERVCount()
     {
         return loadedInitialERV;
+    }
+    public int GetInitialExternalRelationFrequency()
+    {
+        return loadedInitialExternalRelationFrequency;
+    }
+    public int GetInitialEmergencyTaskFrequency()
+    {
+        return loadedInitialEmergencyTaskFrequency;
     }
 
 }

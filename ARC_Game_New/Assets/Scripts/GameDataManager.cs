@@ -47,6 +47,8 @@ public class GameDataManager : MonoBehaviour
         detectionRadius = 5
     };
     public int defaultERVCount = 3;
+    public int defaultExternalRelationFrequency = 3;
+    public int defaultEmergencyTaskFrequency = 4;
 
 
 
@@ -77,6 +79,8 @@ public class GameDataManager : MonoBehaviour
     public float InitialFoodDemandFrequency {get; private set;}
     public FloodedFacilityTrigger InitialShelterFloodDamange {get; private set;}
     public int InitialERVCount {get; private set;}
+    public int InitialExternalRelationFrequency {get; private set;}
+    public int InitialEmergencyTaskFrequency {get; private set;}
 
 
     public bool IsDataReady { get; private set; } = false;
@@ -140,6 +144,8 @@ public class GameDataManager : MonoBehaviour
                 InitialFoodDemandFrequency = configLoader.GetInitialFoodDemandFrequency();
                 InitialShelterFloodDamange = configLoader.GetInitialShelterFLoodDamage();
                 InitialERVCount = configLoader.GetInitialERVCount();
+                InitialExternalRelationFrequency = configLoader.GetInitialExternalRelationFrequency();
+                InitialEmergencyTaskFrequency = configLoader.GetInitialEmergencyTaskFrequency();
 
                 Debug.Log("GameDataManager: extern config success!");
             }
@@ -182,5 +188,7 @@ public class GameDataManager : MonoBehaviour
         InitialFoodDemandFrequency = defaultFoodDemandFrequency;
         InitialShelterFloodDamange = defaultShelterFloodDamage;
         InitialERVCount = defaultERVCount;
+        InitialExternalRelationFrequency = defaultExternalRelationFrequency;
+        InitialExternalRelationFrequency = defaultEmergencyTaskFrequency;
     }
 }
