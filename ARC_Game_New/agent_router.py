@@ -67,6 +67,14 @@ class AgentRouter:
         self._pending_choice: Optional[asyncio.Future] = None  # asyncio.Future when waiting for choice_made
         self._pending_action: Optional[asyncio.Future] = None  # asyncio.Future when waiting for action result
         self._choice_context: dict = {}  # Store game state/actions for reproposal {agent_name: (state, actions)}
+        self._director_agent: Optional[AgentConfig] = self._find_director()
+
+    def _find_director(self) -> Optional[AgentConfig]:
+        """Find the director agent in the configuration."""
+        for agent in self.config.agents:
+            if agent.role == "director":
+                return agent
+        return None
 
     # ── WebSocket Handler ────────────────────────────────────────
 
@@ -240,6 +248,112 @@ class AgentRouter:
 
         return game_state, all_actions
 
+    async def _autonomous_director_select(
+        self,
+        packages: List[dict],
+        game_state: dict,
+        reasoning: str
+    ) -> Optional[int]:
+        """Query autonomous director LLM to select a package index."""
+        if not self._director_agent or not self._director_agent.llm_model:
+            print("[router]   ⚠️  Director agent has no LLM configured")
+            return 0  # Default to first package
+
+        # Build prompt for director
+        sat = _get_satisfaction(game_state)
+        budget = _get_budget(game_state)
+        day = game_state.get("sessionInfo", {}).get("currentDay", 0)
+
+        # Format packages for the director
+        packages_text = "\n".join([
+            f"Package {i}: {pkg.get('label', 'Unnamed')} - {pkg.get('description', 'No description')}"
+            for i, pkg in enumerate(packages)
+        ])
+
+        prompt = f"""You are the director of disaster response operations.
+
+Current Situation:
+- Day: {day}
+- Satisfaction: {sat:.1f}%
+- Budget: ${budget:,.2f}
+
+Your team has proposed the following action packages:
+
+{packages_text}
+
+Team Reasoning: {reasoning}
+
+Select the package that best balances immediate needs with long-term sustainability.
+Respond with ONLY the package index number (0, 1, or 2).
+"""
+
+        # Query director LLM
+        director_state = {"situation": prompt}
+        director_actions = []  # Director doesn't need action list
+        conversation = []  # No conversation history for director (for now)
+
+        raw_response = query_llm(director_state, director_actions, self._director_agent, conversation)
+
+        # Parse index from response
+        selected_idx = self._parse_director_choice(raw_response, len(packages))
+        return selected_idx
+
+    def _parse_director_choice(self, raw_response: str, num_packages: int) -> int:
+        """Extract package index from director LLM response."""
+        # Look for first number in response
+        import re
+        match = re.search(r'\b([0-9])\b', raw_response)
+        if match:
+            idx = int(match.group(1))
+            if 0 <= idx < num_packages:
+                return idx
+
+        print(f"[router]   ⚠️  Could not parse valid index from director response: {raw_response[:100]}")
+        return 0  # Default to first package
+
+    async def _execute_actions_via_unity(
+        self,
+        actions: List[dict],
+        game_state: dict
+    ) -> Tuple[List[dict], dict]:
+        """Execute actions via Unity and wait for results."""
+        exec_results = []
+
+        for action in actions:
+            loop = asyncio.get_event_loop()
+            self._pending_action = loop.create_future()
+
+            # Send execute_action to Unity
+            await self._send({
+                "type": "execute_action",
+                "action": action,
+                "timestamp": _now(),
+            })
+
+            try:
+                result_msg = await asyncio.wait_for(self._pending_action, timeout=30.0)
+                self._pending_action = None
+
+                exec_results.append({
+                    "action_id": action.get("action_id", "unknown"),
+                    "success": result_msg.get("success", False),
+                    "error_message": result_msg.get("error_message", "")
+                })
+
+                # Update game state from result
+                if "game_state" in result_msg:
+                    game_state = result_msg["game_state"]
+
+            except asyncio.TimeoutError:
+                print(f"[router]   ⚠️  Timeout executing action {action.get('action_id', 'unknown')}")
+                exec_results.append({
+                    "action_id": action.get("action_id", "unknown"),
+                    "success": False,
+                    "error_message": "Timeout waiting for Unity execution"
+                })
+
+        return exec_results, game_state
+
     async def _run_choices(
         self,
         agent: AgentConfig,
@@ -277,26 +391,45 @@ class AgentRouter:
             "timestamp": _now(),
         })
 
-        # Wait for choice_made from Unity
-        # Timeout set to 5 minutes for human director decision time
-        loop = asyncio.get_event_loop()
-        self._pending_choice = loop.create_future()
-        print(f"[router]   ⏳ Waiting for director to select a package (5min timeout)...")
+        # Check if director is autonomous or manual
+        if self._director_agent and self._director_agent.actor_type == "auto":
+            # Autonomous director: Query LLM to select package
+            print(f"[router]   🤖 Autonomous director selecting package...")
+            selected_idx = await self._autonomous_director_select(packages, game_state, reasoning)
+            print(f"[router]   ✅ Director selected package {selected_idx}")
 
-        try:
-            choice_msg = await asyncio.wait_for(self._pending_choice, timeout=300.0)
-            self._pending_choice = None
-            print(f"[router]   ✅ Received director choice!")
+            # Execute selected package via Unity
+            if selected_idx is not None and 0 <= selected_idx < len(packages):
+                selected_package = packages[selected_idx]
+                action_indices = selected_package["action_indices"]
+                actions_to_execute = [filtered_actions[i] for i in action_indices if i < len(filtered_actions)]
 
-            selected_idx = choice_msg.get("package_index", 0)
-            exec_results = choice_msg.get("execution_results", [])
-            game_state = choice_msg.get("game_state", game_state)
-        except asyncio.TimeoutError:
-            print(f"[router]   ⚠️  Timeout (5min) waiting for choice_made from {agent.subagent_name}")
-            print(f"[router]   Skipping - no action taken.")
-            self._pending_choice = None
-            selected_idx = None
-            exec_results = []
+                exec_results, game_state = await self._execute_actions_via_unity(actions_to_execute, game_state)
+            else:
+                print(f"[router]   ⚠️  Invalid package index {selected_idx}, skipping execution")
+                selected_idx = None
+                exec_results = []
+        else:
+            # Manual director: Wait for choice_made from Unity
+            # Timeout set to 5 minutes for human director decision time
+            loop = asyncio.get_event_loop()
+            self._pending_choice = loop.create_future()
+            print(f"[router]   ⏳ Waiting for director to select a package (5min timeout)...")
+
+            try:
+                choice_msg = await asyncio.wait_for(self._pending_choice, timeout=300.0)
+                self._pending_choice = None
+                print(f"[router]   ✅ Received director choice!")
+
+                selected_idx = choice_msg.get("package_index", 0)
+                exec_results = choice_msg.get("execution_results", [])
+                game_state = choice_msg.get("game_state", game_state)
+            except asyncio.TimeoutError:
+                print(f"[router]   ⚠️  Timeout (5min) waiting for choice_made from {agent.subagent_name}")
+                print(f"[router]   Skipping - no action taken.")
+                self._pending_choice = None
+                selected_idx = None
+                exec_results = []
 
         # Re-enumerate after director selected and Unity executed
         all_actions = _enumerate_actions(game_state)

@@ -1,0 +1,24 @@
+{
+  "agent_order_rule": "sequential",
+  "agents": [
+    {
+      "subagent_name": "Player",
+      "role": "director",
+      "actor_type": "auto",
+      "talkinghead_endpoint": null,
+      "subaction_space": [
+        { "category": "all" }
+      ],
+      "subobservation_space": ["all"],
+      "llm_provider": "openai",
+      "llm_model": "claude-haiku-4-5-20251001-v1:0",
+      "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "turn_token_budget": 4096,
+      "use_global_prompt": true,
+      "system_prompt": "You are managing disaster response operations. Each turn, select up to 5 action indices to execute. Consider: building infrastructure, managing workers, allocating resources, and maintaining satisfaction. Prioritize critical needs while staying within budget.",
+      "can_address": [],
+      "max_actions_per_turn": 5
+    }
+  ]
+}
