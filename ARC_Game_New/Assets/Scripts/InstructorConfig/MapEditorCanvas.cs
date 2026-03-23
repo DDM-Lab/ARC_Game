@@ -92,6 +92,7 @@ public class MapEditorCanvas : MonoBehaviour
     [Header("UI – Object Palette (order matches PlacedObjectType enum)")]
     public GameObject objectPalettePanel;
     public Button[]   objectPaletteButtons; // exactly 5
+    public Button     eraseObjectButton;
 
     [Header("Object Default Sizes (index = PlacedObjectType)")]
     public int[] objectDefaultWidths  = { 2, 3, 2, 1, 2 };
@@ -138,6 +139,7 @@ public class MapEditorCanvas : MonoBehaviour
     TileType         _selectedTile = TileType.Land;
     PlacedObjectType _selectedObj  = PlacedObjectType.Forest;
     bool             _isDragging   = false;
+    bool             _eraseObjects = false;
     Vector2Int       _hoverCell    = new Vector2Int(-1, -1);
     Texture2D        _tex;
 
@@ -223,6 +225,14 @@ public class MapEditorCanvas : MonoBehaviour
             var lbl = btn.GetComponentInChildren<TextMeshProUGUI>();
             if (lbl != null) lbl.text = obj.ToString();
         }
+
+        if (eraseObjectButton != null)
+        {
+            RegisterButton(eraseObjectButton, normalButtonColor);
+            eraseObjectButton.onClick.AddListener(ToggleEraseObjects);
+            var lbl = eraseObjectButton.GetComponentInChildren<TextMeshProUGUI>();
+            if (lbl != null) lbl.text = "ERASE";
+        }
     }
 
     // ── Button highlight helpers ───────────────────────────────────────────────
@@ -251,8 +261,17 @@ public class MapEditorCanvas : MonoBehaviour
 
     void SelectObject(PlacedObjectType obj)
     {
-        _selectedObj = obj;
+        _selectedObj  = obj;
+        _eraseObjects = false;
+        if (eraseObjectButton != null) SetButtonHighlight(eraseObjectButton, false);
         UpdateObjectPaletteHighlight();
+    }
+
+    void ToggleEraseObjects()
+    {
+        _eraseObjects = !_eraseObjects;
+        if (_eraseObjects) UpdateObjectPaletteHighlight(); // deselect all object buttons visually
+        if (eraseObjectButton != null) SetButtonHighlight(eraseObjectButton, _eraseObjects);
     }
 
     void UpdateTilePaletteHighlight()
@@ -290,9 +309,12 @@ public class MapEditorCanvas : MonoBehaviour
     {
         _mode = mode;
 
+        _eraseObjects = false;
+        if (eraseObjectButton != null) SetButtonHighlight(eraseObjectButton, false);
+
         bool isPaint = mode == EditorMode.Paint;
         paintToolbar      .SetActive(isPaint);
-        tilePalettePanel  .SetActive(isPaint);  // explicit: hide in Place mode
+        tilePalettePanel  .SetActive(isPaint);
         objectPalettePanel.SetActive(!isPaint);
 
         modeLabel.text = isPaint ? "PAINT MODE" : "PLACE MODE";
@@ -380,8 +402,8 @@ public class MapEditorCanvas : MonoBehaviour
         }
         else // Place
         {
-            if (isRight) RemoveObjectAt(cell.x, cell.y);
-            else         PlaceObject(cell.x, cell.y);
+            if (isRight || _eraseObjects) RemoveObjectAt(cell.x, cell.y);
+            else                          PlaceObject(cell.x, cell.y);
         }
     }
 

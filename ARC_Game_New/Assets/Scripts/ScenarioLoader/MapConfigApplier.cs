@@ -197,7 +197,7 @@ public class MapConfigApplier : MonoBehaviour
                     break;
 
                 case PlacedObjectType.Vehicle:
-                    SpawnVehicle(pos, vehicleIndex, spawnedVehicles);
+                    SpawnVehicle(pos, vehicleIndex, spawnedVehicles, obj.gridX, obj.gridY, cfg);
                     vehicleIndex++;
                     break;
 
@@ -280,7 +280,7 @@ public class MapConfigApplier : MonoBehaviour
         if (site != null) site.Initialize(index);
     }
 
-    void SpawnVehicle(Vector3 pos, int index, List<Vehicle> spawnedVehicles)
+    void SpawnVehicle(Vector3 pos, int index, List<Vehicle> spawnedVehicles, int gridX, int gridY, MapConfig cfg)
     {
         if (vehiclePrefab == null)
         {
@@ -307,6 +307,15 @@ public class MapConfigApplier : MonoBehaviour
         {
             v.vehicleId   = index + 1;
             v.vehicleName = $"Vehicle {index + 1}";
+
+            bool hasVertical   = cfg.GetRoad(gridX, gridY + 1) || cfg.GetRoad(gridX, gridY - 1);
+            bool hasHorizontal = cfg.GetRoad(gridX - 1, gridY) || cfg.GetRoad(gridX + 1, gridY);
+            if (hasVertical && !hasHorizontal)
+            {
+                go.transform.rotation = Quaternion.AngleAxis(v.defaultAngle + 90f, Vector3.forward);
+                go.transform.position += new Vector3(-0.5f, 0f, 0f);
+            }
+
             spawnedVehicles.Add(v);
         }
     }

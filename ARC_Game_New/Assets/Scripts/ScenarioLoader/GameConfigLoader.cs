@@ -14,6 +14,9 @@ public class GameConfigLoader : MonoBehaviour
     [Tooltip("Seconds before giving up and using the default scene layout")]
     public float mapConfigTimeout = 5f;
 
+    [Header("Settings")]
+    public bool disableLoader = false;
+
     [Header("Debug")]
     public bool showDebugInfo = true;
 
@@ -46,6 +49,12 @@ public class GameConfigLoader : MonoBehaviour
 
     void Start()
     {
+        if (disableLoader)
+        {
+            configLoaded    = true;
+            mapConfigLoaded = true;
+            return;
+        }
         StartCoroutine(LoadConfigFromSheet());
         StartCoroutine(LoadMapConfigFromServer());
     }
