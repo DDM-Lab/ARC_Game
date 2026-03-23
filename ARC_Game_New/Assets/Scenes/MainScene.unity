@@ -5885,6 +5885,91 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 172421307}
   m_CullTransparentMesh: 1
+--- !u!1 &172813234
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 172813238}
+  - component: {fileID: 172813237}
+  - component: {fileID: 172813236}
+  - component: {fileID: 172813235}
+  m_Layer: 0
+  m_Name: GameObject
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &172813235
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 172813234}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bff69571ef1f12a469abf849e602d1d8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ConfigFilePath: ../config/agents_config.json
+  IsLoaded: 0
+  LoadError: 
+--- !u!114 &172813236
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 172813234}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 298d0ecf08c734f408367d9e05a52f6c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  buildingSystem: {fileID: 0}
+  workerSystem: {fileID: 0}
+  deliverySystem: {fileID: 0}
+  logActions: 1
+--- !u!114 &172813237
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 172813234}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 98e92c25250137c4ba448314fb0e5371, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  serverUrl: ws://localhost:8200/ws
+  enableWebSocket: 1
+  reconnectDelay: 5
+  maxReconnectAttempts: 3
+  headlessMode: 0
+  headlessPort: 9876
+  isConnected: 0
+  connectionStatus: Not Connected
+--- !u!4 &172813238
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 172813234}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &172819905
 GameObject:
   m_ObjectHideFlags: 0
@@ -104091,3 +104176,4 @@ SceneRoots:
   - {fileID: 2085978411}
   - {fileID: 1573964781}
   - {fileID: 861408117}
+  - {fileID: 172813238}
