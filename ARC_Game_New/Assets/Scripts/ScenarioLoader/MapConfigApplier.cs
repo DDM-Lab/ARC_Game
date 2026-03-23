@@ -47,6 +47,8 @@ public class MapConfigApplier : MonoBehaviour
     };
     const int MaxCommunities = 10;
 
+    public bool hasApplied = false;
+
     IEnumerator Start()
     {
         yield return new WaitUntil(() =>
@@ -57,11 +59,13 @@ public class MapConfigApplier : MonoBehaviour
         {
             if (showDebugInfo)
                 Debug.Log("MapConfigApplier: No server config — keeping default scene layout.");
+            hasApplied = true;
             yield break;
         }
 
         MapConfig cfg = GameConfigLoader.Instance.GetMapConfig();
         ApplyConfig(cfg);
+        hasApplied = true;
     }
 
     public void ApplyConfig(MapConfig cfg)
