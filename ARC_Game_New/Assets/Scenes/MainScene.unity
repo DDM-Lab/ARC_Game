@@ -3159,6 +3159,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 5610994743208829141, guid: 6b884e3ed71fc48408dbf8cfa17013fd, type: 3}
+      propertyPath: m_text
+      value: Community Amerest
+      objectReference: {fileID: 0}
     - target: {fileID: 8755671907846948717, guid: 6b884e3ed71fc48408dbf8cfa17013fd, type: 3}
       propertyPath: m_Name
       value: PrebuiltLabelPrefab
@@ -51609,7 +51613,7 @@ MonoBehaviour:
   bgmSource: {fileID: 0}
   sfxSource: {fileID: 0}
   ambienceSource: {fileID: 0}
-  mainBGM: {fileID: 8300000, guid: be54cbc034bd0e14f9fdc22387fd15ba, type: 3}
+  mainBGM: {fileID: 8300000, guid: b21f2465df9463140a74eacb4490cb14, type: 3}
   uiClickSFX: {fileID: 8300000, guid: 9ae1807ed0a7ebe48a34e112a332f47e, type: 3}
   uiCancelSFX: {fileID: 8300000, guid: 363c2d38a33b0574a999f3247bedf93c, type: 3}
   successSFX: {fileID: 8300000, guid: e46579ef0c8229d4d88267b6759f9cfa, type: 3}
@@ -72212,7 +72216,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5610994743208829141, guid: 6b884e3ed71fc48408dbf8cfa17013fd, type: 3}
       propertyPath: m_text
-      value: Community Amerest
+      value: Community Charleston
       objectReference: {fileID: 0}
     - target: {fileID: 8755671907846948717, guid: 6b884e3ed71fc48408dbf8cfa17013fd, type: 3}
       propertyPath: m_Name
@@ -92281,11 +92285,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6903123621868802251, guid: 7c36b6afde72432469b94545fab49046, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 6.01
+      value: 6.1
       objectReference: {fileID: 0}
     - target: {fileID: 6903123621868802251, guid: 7c36b6afde72432469b94545fab49046, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -4.8
+      value: -5.26
       objectReference: {fileID: 0}
     - target: {fileID: 6903123621868802251, guid: 7c36b6afde72432469b94545fab49046, type: 3}
       propertyPath: m_LocalPosition.z
@@ -95221,7 +95225,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6903123621868802251, guid: 7c36b6afde72432469b94545fab49046, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -2.85
+      value: -2.73
       objectReference: {fileID: 0}
     - target: {fileID: 6903123621868802251, guid: 7c36b6afde72432469b94545fab49046, type: 3}
       propertyPath: m_LocalPosition.z

@@ -242,7 +242,7 @@ public class TaskDetailUI : MonoBehaviour
             taskTitleText.text = currentTask.taskTitle;
 
         if (facilityText != null)
-            facilityText.text = currentTask.affectedFacility;
+            facilityText.text = string.IsNullOrEmpty(currentTask.facilityDisplayName) ? currentTask.affectedFacility : currentTask.facilityDisplayName;
 
         if (descriptionText != null)
             descriptionText.text = currentTask.description;
