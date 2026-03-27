@@ -708,6 +708,70 @@ MonoBehaviour:
   confirmButton: {fileID: 74220919}
   cancelButton: {fileID: 1196470560}
   correctPasscode: 123
+--- !u!1 &447743565
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 447743567}
+  - component: {fileID: 447743566}
+  m_Layer: 0
+  m_Name: AudioManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &447743566
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 447743565}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7e33a8e584324e64ea4da2bc9808da6b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  bgmSource: {fileID: 0}
+  sfxSource: {fileID: 0}
+  ambienceSource: {fileID: 0}
+  mainBGM: {fileID: 8300000, guid: b21f2465df9463140a74eacb4490cb14, type: 3}
+  uiClickSFX: {fileID: 8300000, guid: 9ae1807ed0a7ebe48a34e112a332f47e, type: 3}
+  uiCancelSFX: {fileID: 8300000, guid: 363c2d38a33b0574a999f3247bedf93c, type: 3}
+  successSFX: {fileID: 8300000, guid: e46579ef0c8229d4d88267b6759f9cfa, type: 3}
+  failSFX: {fileID: 8300000, guid: 98a0cf4dcc68cc341be4b084bfea56a2, type: 3}
+  messagePopupSFX: {fileID: 8300000, guid: 023572d5bb8ff9b47ab9a01c57f59be1, type: 3}
+  switchSFX: {fileID: 8300000, guid: 65d7cbf5176e054438ac263ef275c93d, type: 3}
+  skipSFX: {fileID: 8300000, guid: c7835d7198db9e842889fc0208df06d0, type: 3}
+  sunnyAmbience: {fileID: 8300000, guid: 071c0328e026c0845b2dfd48e2d264c6, type: 3}
+  smallRainAmbience: {fileID: 8300000, guid: c470460bc5873e2428115fb5195f9b83, type: 3}
+  mediumRainAmbience: {fileID: 8300000, guid: 73e261d6735c97a4cb18ab8bf9009e9d, type: 3}
+  heavyRainAmbience: {fileID: 8300000, guid: 9f7f256512359994cbb4869655161f82, type: 3}
+  stormAmbience: {fileID: 8300000, guid: 4d2f6c058088a8846991f4ad6f53373e, type: 3}
+  bgmVolume: 0
+  sfxVolume: 1
+  ambienceVolume: 0
+  ambienceFadeDuration: 2
+--- !u!4 &447743567
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 447743565}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.25001213, y: -0.26868966, z: 148.40608}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &507051840
 GameObject:
   m_ObjectHideFlags: 0
@@ -1922,13 +1986,13 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 271420940}
-  - {fileID: 1775978475}
   - {fileID: 1659691875}
-  - {fileID: 368466071}
   - {fileID: 663517621}
+  - {fileID: 1775978475}
   - {fileID: 1196669708}
   - {fileID: 1872053797}
   - {fileID: 1050410985}
+  - {fileID: 368466071}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -2494,7 +2558,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 0.8867924, g: 0.8867924, b: 0.8867924, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -3258,3 +3322,4 @@ SceneRoots:
   - {fileID: 1524755386}
   - {fileID: 1306023293}
   - {fileID: 622039330}
+  - {fileID: 447743567}

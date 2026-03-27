@@ -74,6 +74,12 @@ public class MapConfigApplier : MonoBehaviour
         ApplyForests(cfg);
         ApplyPrebuiltObjects(cfg);
         ApplyParameters(cfg);
+
+        // Refresh FloodSystem river tile cache to match the new ground tilemap
+        if (FloodSystem.Instance != null)
+            FloodSystem.Instance.ReinitializeAfterMapApplied();
+        else
+            Debug.LogWarning("MapConfigApplier: FloodSystem.Instance not found — flood river cache not refreshed.");
     }
 
     void ApplyTileLayers(MapConfig cfg)
