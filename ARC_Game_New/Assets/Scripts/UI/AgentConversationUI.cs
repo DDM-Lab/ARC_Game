@@ -40,6 +40,9 @@ public class AgentConversationUI : MonoBehaviour
     public GameObject numericalInputPrefab;
     public GameObject playerMessagePrefab;
     
+    [Header("Action Buttons")]
+    public Button confirmButton;
+
     [Header("Player Input")]
     public TMP_InputField playerInputField;
     public Button sendButton;
@@ -56,6 +59,7 @@ public class AgentConversationUI : MonoBehaviour
     private bool isAnimating = false;
     private List<GameTask> currentAgentTasks = new List<GameTask>();
     private GameTask currentSelectedTask = null;
+    private AgentChoice localSelectedChoice = null;
     private List<GameObject> currentHistoricalTaskButtons = new List<GameObject>();
     private List<GameObject> currentConversationItems = new List<GameObject>();
     
@@ -86,6 +90,9 @@ public class AgentConversationUI : MonoBehaviour
             workforceServiceButton.onClick.AddListener(() => SelectAgent(TaskOfficer.WorkforceService));
         if (externalRelationshipButton != null)
             externalRelationshipButton.onClick.AddListener(() => SelectAgent(TaskOfficer.ExternalRelationship));
+
+        if (confirmButton != null)
+            confirmButton.onClick.AddListener(OnConfirmButtonClicked);
 
         if (sendButton != null)
             sendButton.onClick.AddListener(OnSendPlayerMessage);
@@ -218,7 +225,12 @@ public class AgentConversationUI : MonoBehaviour
         Button taskButton = buttonObj.GetComponent<Button>();
         TextMeshProUGUI buttonText = buttonObj.GetComponentInChildren<TextMeshProUGUI>();
         
-        if (buttonText != null) buttonText.text = task.taskTitle;
+        string label = task.taskTitle;
+        if (task.status == TaskStatus.Expired)         label = "[Expired] " + label;
+        else if (task.status == TaskStatus.Completed)  label = "[Complete] " + label;
+        else if (task.status == TaskStatus.Incomplete) label = "[Incomplete] " + label;
+
+        if (buttonText != null) buttonText.text = label;
         if (taskButton != null) taskButton.onClick.AddListener(() => SelectHistoricalTask(task));
         
         currentHistoricalTaskButtons.Add(buttonObj);
@@ -260,17 +272,79 @@ public class AgentConversationUI : MonoBehaviour
     {
         if (task == null) return;
         ClearConversation();
-        
+        localSelectedChoice = null;
+
+        bool isActive = task.status == TaskStatus.Active;
+
         DisplaySystemMessage($"=== {task.taskTitle} ===");
-        
+
         foreach (AgentMessage message in task.agentMessages)
             DisplayAgentMessage(message);
+
         foreach (AgentChoice choice in task.agentChoices)
-            DisplayHistoricalChoice(choice);
+        {
+            if (isActive) DisplayInteractiveChoice(choice);
+            else          DisplayHistoricalChoice(choice);
+        }
+
         foreach (AgentNumericalInput input in task.numericalInputs)
-            DisplayHistoricalNumericalInput(input);
-        
+        {
+            if (isActive) DisplayInteractiveNumericalInput(input);
+            else          DisplayHistoricalNumericalInput(input);
+        }
+
+        if (confirmButton != null)
+            confirmButton.gameObject.SetActive(isActive);
+
         ScrollToBottom();
+    }
+
+    void DisplayInteractiveChoice(AgentChoice choice)
+    {
+        GameObject choiceItem = Instantiate(agentChoicePrefab, conversationContent);
+        AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
+        if (choiceUI != null)
+        {
+            choiceUI.Initialize(choice, null);
+            choiceUI.choiceButton.onClick.AddListener(() => OnLocalChoiceSelected(choice));
+        }
+        currentConversationItems.Add(choiceItem);
+    }
+
+    void DisplayInteractiveNumericalInput(AgentNumericalInput input)
+    {
+        GameObject inputItem = Instantiate(numericalInputPrefab, conversationContent);
+        NumericalInputUI inputUI = inputItem.GetComponent<NumericalInputUI>();
+        if (inputUI != null)
+            inputUI.Initialize(input, null);
+        currentConversationItems.Add(inputItem);
+    }
+
+    void OnLocalChoiceSelected(AgentChoice choice)
+    {
+        localSelectedChoice = choice;
+        foreach (GameObject item in currentConversationItems)
+        {
+            AgentChoiceUI choiceUI = item.GetComponent<AgentChoiceUI>();
+            if (choiceUI != null && choiceUI.GetChoice() != choice)
+                choiceUI.SetSelected(false);
+        }
+    }
+
+    void OnConfirmButtonClicked()
+    {
+        if (currentSelectedTask == null) return;
+        TaskDetailUI tui = FindObjectOfType<TaskDetailUI>();
+        if (tui == null) return;
+
+        if (!tui.TryConfirmTask(currentSelectedTask, localSelectedChoice, out string errorMessage))
+        {
+            DisplaySystemMessage($"Error: {errorMessage}");
+            return;
+        }
+
+        RefreshHistoricalTasks();
+        DisplayLatestConversation();
     }
     
     void DisplaySystemMessage(string message)
