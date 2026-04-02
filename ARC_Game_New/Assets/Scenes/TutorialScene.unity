@@ -50547,7 +50547,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &825620939
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -50563,7 +50563,7 @@ MonoBehaviour:
   googleSheetsCsvUrl: https://docs.google.com/spreadsheets/d/e/2PACX-1vTGcKtnKuRq1dS-ZMMYKmepAEsfeaYhKlt8IMSkZ1xe-5_JApbSfTokI_VHFS8v0g3XIHWHWEPSdSzS/pub?gid=0&single=true&output=csv
   mapConfigServerUrl: http://janus.hss.cmu.edu/cgi-bin/map_config.cgi
   mapConfigTimeout: 5
-  disableLoader: 0
+  disableLoader: 1
   showDebugInfo: 1
   loadedInitialBudget: 5000
   loadedInitialSatisfaction: 50

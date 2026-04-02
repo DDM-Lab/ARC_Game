@@ -374,6 +374,7 @@ public class VehicleInfoPanel : MonoBehaviour
         currentVehicle = null;
         vehiclesAtClickPosition.Clear();
         currentVehicleIndex = 0;
+        lastClickPosition = Vector3.positiveInfinity; // force fresh lookup on next click
     }
     
     void Update()
