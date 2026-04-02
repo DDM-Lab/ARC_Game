@@ -40,6 +40,18 @@ public class AgentConversationUI : MonoBehaviour
     public GameObject numericalInputPrefab;
     public GameObject playerMessagePrefab;
     
+    [Header("Agent Notification Dots")]
+    public GameObject disasterOfficerDot;
+    public TextMeshProUGUI disasterOfficerCount;
+    public GameObject foodMassCaresDot;
+    public TextMeshProUGUI foodMassCareCount;
+    public GameObject lodgingMassCaresDot;
+    public TextMeshProUGUI lodgingMassCareCount;
+    public GameObject workforceServiceDot;
+    public TextMeshProUGUI workforceServiceCount;
+    public GameObject externalRelationshipDot;
+    public TextMeshProUGUI externalRelationshipCount;
+
     [Header("Action Buttons")]
     public Button confirmButton;
 
@@ -47,9 +59,10 @@ public class AgentConversationUI : MonoBehaviour
     public TMP_InputField playerInputField;
     public Button sendButton;
     
-    [Header("Filter Colors")]
+    [Header("UI Colors")]
     public Color activeAgentColor = Color.green;
     public Color inactiveAgentColor = Color.white;
+    public Color inactiveTaskColor = Color.gray;
     
     [Header("Debug")]
     public bool showDebugInfo = true;
@@ -62,16 +75,71 @@ public class AgentConversationUI : MonoBehaviour
     private AgentChoice localSelectedChoice = null;
     private List<GameObject> currentHistoricalTaskButtons = new List<GameObject>();
     private List<GameObject> currentConversationItems = new List<GameObject>();
+    private TaskSystem taskSystem;
     
     void Start()
     {
         SetupUI();
         SelectAgent(TaskOfficer.DisasterOfficer);
-        
+
         if (expandedPanel != null)
         {
             expandedPanel.gameObject.SetActive(true);
             expandedPanel.sizeDelta = new Vector2(collapsedWidth, expandedPanel.sizeDelta.y);
+        }
+
+        taskSystem = TaskSystem.Instance;
+        if (taskSystem != null)
+        {
+            taskSystem.OnTaskCreated   += OnTaskChanged;
+            taskSystem.OnTaskCompleted += OnTaskChanged;
+            taskSystem.OnTaskExpired   += OnTaskChanged;
+        }
+
+        UpdateAgentNotifications();
+    }
+
+    void Update()
+    {
+        if (Time.frameCount % 30 == 0)
+            UpdateAgentNotifications();
+    }
+
+    void OnDestroy()
+    {
+        if (taskSystem != null)
+        {
+            taskSystem.OnTaskCreated   -= OnTaskChanged;
+            taskSystem.OnTaskCompleted -= OnTaskChanged;
+            taskSystem.OnTaskExpired   -= OnTaskChanged;
+        }
+    }
+
+    void OnTaskChanged(GameTask _)
+    {
+        UpdateAgentNotifications();
+    }
+
+    void UpdateAgentNotifications()
+    {
+        if (taskSystem == null) return;
+        UpdateDot(TaskOfficer.DisasterOfficer,      disasterOfficerDot,    disasterOfficerCount);
+        UpdateDot(TaskOfficer.FoodMassCare,         foodMassCaresDot,      foodMassCareCount);
+        UpdateDot(TaskOfficer.LodgingMassCare,      lodgingMassCaresDot,   lodgingMassCareCount);
+        UpdateDot(TaskOfficer.WorkforceService,     workforceServiceDot,   workforceServiceCount);
+        UpdateDot(TaskOfficer.ExternalRelationship, externalRelationshipDot, externalRelationshipCount);
+    }
+
+    void UpdateDot(TaskOfficer officer, GameObject dot, TextMeshProUGUI countText)
+    {
+        int count = taskSystem.GetAllActiveTasks()
+            .Count(t => t.taskOfficer == officer && t.status == TaskStatus.Active);
+
+        if (dot != null)      dot.SetActive(count > 0);
+        if (countText != null)
+        {
+            countText.gameObject.SetActive(count > 0);
+            if (count > 0) countText.text = count.ToString();
         }
     }
 
@@ -226,11 +294,20 @@ public class AgentConversationUI : MonoBehaviour
         TextMeshProUGUI buttonText = buttonObj.GetComponentInChildren<TextMeshProUGUI>();
         
         string label = task.taskTitle;
-        if (task.status == TaskStatus.Expired)         label = "[Expired] " + label;
+        if      (task.status == TaskStatus.Expired)    label = "[Expired] " + label;
         else if (task.status == TaskStatus.Completed)  label = "[Complete] " + label;
         else if (task.status == TaskStatus.Incomplete) label = "[Incomplete] " + label;
+        else if (task.status == TaskStatus.InProgress) label = "[In Progress] " + label;
 
         if (buttonText != null) buttonText.text = label;
+
+        if (task.status != TaskStatus.Active)
+        {
+            Image buttonImage = buttonObj.GetComponent<Image>();
+            if (buttonImage != null) buttonImage.color = inactiveTaskColor;
+            if (buttonText != null)  buttonText.color  = inactiveTaskColor;
+        }
+
         if (taskButton != null) taskButton.onClick.AddListener(() => SelectHistoricalTask(task));
         
         currentHistoricalTaskButtons.Add(buttonObj);
