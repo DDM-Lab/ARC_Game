@@ -60,7 +60,7 @@ public class TaskResultPopup : MonoBehaviour
         
         if (facilityText != null)
         {
-            facilityText.text = task.isGlobalTask ? "Global Task" : task.affectedFacility;
+            facilityText.text = task.isGlobalTask ? "Global Task" : (string.IsNullOrEmpty(task.facilityDisplayName) ? task.affectedFacility : task.facilityDisplayName);
         }
         
         if (resultText != null)

@@ -242,7 +242,7 @@ public class TaskDetailUI : MonoBehaviour
             taskTitleText.text = currentTask.taskTitle;
 
         if (facilityText != null)
-            facilityText.text = currentTask.affectedFacility;
+            facilityText.text = string.IsNullOrEmpty(currentTask.facilityDisplayName) ? currentTask.affectedFacility : currentTask.facilityDisplayName;
 
         if (descriptionText != null)
             descriptionText.text = currentTask.description;
@@ -1070,10 +1070,7 @@ public class TaskDetailUI : MonoBehaviour
             switch (choice.deliveryCargoType)
             {
                 case ResourceType.FoodPacks:
-                    int totalFood = FindObjectsOfType<Building>()
-                        .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
-                        .Sum(b => b.GetComponent<BuildingResourceStorage>()?.GetResourceAmount(ResourceType.FoodPacks) ?? 0);
-                    if (totalFood <= 0) { errorMessage = "No food packs available in any kitchen"; return false; }
+                    // Immediate food delivery assumes fast food / external order — no kitchen stock required.
                     return true;
 
                 case ResourceType.Population:

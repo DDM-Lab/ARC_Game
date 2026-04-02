@@ -113,7 +113,8 @@ public class GameTask
     public string taskTitle;
     public TaskType taskType;
     public TaskStatus status;
-    public string affectedFacility;
+    public string affectedFacility;      // GameObject name — used for delivery lookup
+    public string facilityDisplayName;   // Human-readable name — used for UI display only
     public string description;
     public Sprite taskImage;
 
@@ -758,6 +759,7 @@ public class TaskSystem : MonoBehaviour
         // Find suitable facility that triggered the task
         MonoBehaviour triggeringFacility = taskDatabase.FindSuitableFacility(taskData);
         string facilityName = triggeringFacility?.name ?? taskData.targetFacilityType.ToString();
+        string displayName = (triggeringFacility is PrebuiltBuilding pb) ? pb.GetBuildingName() : facilityName;
 
         GameTask newTask = CreateTaskFromData(taskData);
         if (newTask == null)
@@ -768,6 +770,7 @@ public class TaskSystem : MonoBehaviour
         }
 
         newTask.affectedFacility = facilityName;
+        newTask.facilityDisplayName = displayName;
 
         if (showDebugInfo)
             Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
@@ -1738,6 +1741,7 @@ public class TaskSystem : MonoBehaviour
 
         // Use the specific facility provided
         string facilityName = specificFacility?.name ?? taskData.targetFacilityType.ToString();
+        string displayName = (specificFacility is PrebuiltBuilding pb) ? pb.GetBuildingName() : facilityName;
 
         GameTask newTask = CreateTaskFromData(taskData);
         if (newTask == null)
@@ -1748,6 +1752,7 @@ public class TaskSystem : MonoBehaviour
         }
 
         newTask.affectedFacility = facilityName;
+        newTask.facilityDisplayName = displayName;
 
         if (showDebugInfo)
             Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");

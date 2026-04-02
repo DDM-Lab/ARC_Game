@@ -47,6 +47,8 @@ public class MapConfigApplier : MonoBehaviour
     };
     const int MaxCommunities = 10;
 
+    public bool hasApplied = false;
+
     IEnumerator Start()
     {
         yield return new WaitUntil(() =>
@@ -57,11 +59,13 @@ public class MapConfigApplier : MonoBehaviour
         {
             if (showDebugInfo)
                 Debug.Log("MapConfigApplier: No server config — keeping default scene layout.");
+            hasApplied = true;
             yield break;
         }
 
         MapConfig cfg = GameConfigLoader.Instance.GetMapConfig();
         ApplyConfig(cfg);
+        hasApplied = true;
     }
 
     public void ApplyConfig(MapConfig cfg)
@@ -70,6 +74,12 @@ public class MapConfigApplier : MonoBehaviour
         ApplyForests(cfg);
         ApplyPrebuiltObjects(cfg);
         ApplyParameters(cfg);
+
+        // Refresh FloodSystem river tile cache to match the new ground tilemap
+        if (FloodSystem.Instance != null)
+            FloodSystem.Instance.ReinitializeAfterMapApplied();
+        else
+            Debug.LogWarning("MapConfigApplier: FloodSystem.Instance not found — flood river cache not refreshed.");
     }
 
     void ApplyTileLayers(MapConfig cfg)
