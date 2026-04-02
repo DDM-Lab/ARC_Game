@@ -138,6 +138,7 @@ public class GameTask
     public List<AgentMessage> agentMessages = new List<AgentMessage>();
     public List<AgentChoice> agentChoices = new List<AgentChoice>();
     public List<AgentNumericalInput> numericalInputs = new List<AgentNumericalInput>();
+    public int selectedChoiceId = -1;
 
     [Header("Multi-Agent Proposal")]
     [System.NonSerialized]

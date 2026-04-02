@@ -411,7 +411,10 @@ public class TaskDetailUI : MonoBehaviour
 
             if (choiceUI != null)
             {
-                choiceUI.Initialize(choice, this);
+                if (currentTask.status == TaskStatus.Active)
+                    choiceUI.Initialize(choice, this);
+                else
+                    choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentTask.selectedChoiceId);
             }
 
             currentConversationItems.Add(choiceItem);
@@ -654,6 +657,9 @@ public class TaskDetailUI : MonoBehaviour
             HandleMultiAgentChoiceSelection();
             return;
         }
+
+        if (selectedChoice != null)
+            currentTask.selectedChoiceId = selectedChoice.choiceId;
 
         // Apply choice impacts first
         if (selectedChoice != null)
