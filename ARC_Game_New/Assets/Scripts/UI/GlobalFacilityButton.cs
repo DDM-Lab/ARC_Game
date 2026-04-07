@@ -24,6 +24,7 @@ public class GlobalFacilityButton : MonoBehaviour
         buildingSelectionUI.ToggleUI(Vector3.zero);
         
         Debug.Log($"Global facility button clicked - panel {(buildingSelectionUI.IsUIOpen() ? "opened" : "closed")}");
+        GameLogPanel.Instance?.LogUIInteraction($"Global facility button clicked - panel {(buildingSelectionUI.IsUIOpen() ? "opened" : "closed")}");
     }
     
 }

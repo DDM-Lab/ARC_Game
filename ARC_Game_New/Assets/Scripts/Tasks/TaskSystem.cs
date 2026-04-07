@@ -113,7 +113,8 @@ public class GameTask
     public string taskTitle;
     public TaskType taskType;
     public TaskStatus status;
-    public string affectedFacility;
+    public string affectedFacility;      // GameObject name — used for delivery lookup
+    public string facilityDisplayName;   // Human-readable name — used for UI display only
     public string description;
     public Sprite taskImage;
 
@@ -137,6 +138,10 @@ public class GameTask
     public List<AgentMessage> agentMessages = new List<AgentMessage>();
     public List<AgentChoice> agentChoices = new List<AgentChoice>();
     public List<AgentNumericalInput> numericalInputs = new List<AgentNumericalInput>();
+
+    [Header("Multi-Agent Proposal")]
+    [System.NonSerialized]
+    public ChoicesProposalMessage multiAgentProposal; // Stores the router's choices_proposal data
 
     [Header("Delivery Link")]
     public float deliveryTimeLimit = 300f;
@@ -193,6 +198,7 @@ public class AgentChoice
 {
     public int choiceId;
     public string choiceText;
+    public string agentReasoning = ""; // Description of what actions will be taken and their effects
     public List<TaskImpact> choiceImpacts = new List<TaskImpact>();
     public bool isSelected = false;
     
@@ -229,6 +235,10 @@ public class AgentChoice
     public BuildingType destinationBuilding = BuildingType.Shelter;
     public PrebuiltBuildingType destinationPrebuilt = PrebuiltBuildingType.Motel;
     public string specificDestinationName = ""; // Use name instead of direct reference
+
+    [Header("Delayed Budget")]
+    [Tooltip("If > 0, any Budget impact on this choice is delayed this many rounds instead of applied immediately")]
+    public int budgetDelayRounds = 0;
     
     [Header("Distance Priority")]
     public bool prioritizeNearestSource = true;
@@ -796,6 +806,7 @@ public class TaskSystem : MonoBehaviour
         // Find suitable facility that triggered the task
         MonoBehaviour triggeringFacility = taskDatabase.FindSuitableFacility(taskData);
         string facilityName = triggeringFacility?.name ?? taskData.targetFacilityType.ToString();
+        string displayName = (triggeringFacility is PrebuiltBuilding pb) ? pb.GetBuildingName() : facilityName;
 
         GameTask newTask = CreateTaskFromData(taskData);
         if (newTask == null)
@@ -806,6 +817,7 @@ public class TaskSystem : MonoBehaviour
         }
 
         newTask.affectedFacility = facilityName;
+        newTask.facilityDisplayName = displayName;
 
         if (showDebugInfo)
             Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
@@ -1354,6 +1366,49 @@ foreach (TaskImpact impact in task.impacts)
         return task;
     }
 
+    /// <summary>
+    /// Get or create a special task for multi-agent choice proposals.
+    /// Uses taskId = -1 and creates one per officer type.
+    /// </summary>
+    public GameTask GetOrCreateMultiAgentTask(string talkingheadEndpoint, string agentName)
+    {
+        // Parse talkinghead string to TaskOfficer enum
+        TaskOfficer officer = TaskOfficer.DisasterOfficer;
+        if (System.Enum.TryParse(talkingheadEndpoint, out TaskOfficer parsed))
+        {
+            officer = parsed;
+        }
+
+        // Look for existing multi-agent task for this officer
+        GameTask existingTask = activeTasks.FirstOrDefault(t =>
+            t.taskId == -1 && t.taskOfficer == officer);
+
+        if (existingTask != null)
+        {
+            // Clear previous choices to make room for new proposal
+            existingTask.agentMessages.Clear();
+            existingTask.agentChoices.Clear();
+            existingTask.numericalInputs.Clear();
+            return existingTask;
+        }
+
+        // Create new multi-agent task
+        GameTask newTask = new GameTask(
+            id: -1,
+            title: $"{agentName} Recommendations",
+            type: TaskType.Advisory,
+            facility: ""
+        );
+        newTask.taskOfficer = officer;
+        newTask.status = TaskStatus.Active;
+        newTask.roundsRemaining = 999; // Never expires
+        newTask.description = $"Action recommendations from {agentName}";
+        newTask.isGlobalTask = true;
+
+        activeTasks.Add(newTask);
+        return newTask;
+    }
+
     public int GetAvailableResourceAmount(MonoBehaviour source, ResourceType resourceType)
     {
         int amount = source.GetComponent<BuildingResourceStorage>()?.GetResourceAmount(resourceType) ?? 0;
@@ -1471,7 +1526,8 @@ foreach (TaskImpact impact in task.impacts)
             newChoice.specificDestinationName = choice.specificDestinationName;
             newChoice.prioritizeNearestSource = choice.prioritizeNearestSource;
             newChoice.prioritizeNearestDestination = choice.prioritizeNearestDestination;
-
+            newChoice.budgetDelayRounds = choice.budgetDelayRounds;
+            
             newTask.agentChoices.Add(newChoice);
         }
 
@@ -1498,6 +1554,17 @@ foreach (TaskImpact impact in task.impacts)
         // Don't show alert tasks as toasts
         /*if (taskData.taskType != TaskType.Alert)
             ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);*/
+
+        // 🤖 LLM CONTENT GENERATION DISABLED
+        // All tasks use pre-scripted choices from TaskData ScriptableObjects
+        // LLM infrastructure remains available but is not called
+        // To re-enable: uncomment the WebSocketManager.Instance.RequestTaskContent() call below
+
+        // if (WebSocketManager.Instance != null && WebSocketManager.Instance.IsConnected())
+        // {
+        //     Debug.Log($"🤖 Requesting LLM content for task: {newTask.taskTitle} (ID: {newTask.taskId})");
+        //     WebSocketManager.Instance.RequestTaskContent(newTask.taskId);
+        // }
 
         return newTask;
     }
@@ -1753,6 +1820,7 @@ foreach (TaskImpact impact in task.impacts)
 
         // Use the specific facility provided
         string facilityName = specificFacility?.name ?? taskData.targetFacilityType.ToString();
+        string displayName = (specificFacility is PrebuiltBuilding pb) ? pb.GetBuildingName() : facilityName;
 
         GameTask newTask = CreateTaskFromData(taskData);
         if (newTask == null)
@@ -1763,6 +1831,7 @@ foreach (TaskImpact impact in task.impacts)
         }
 
         newTask.affectedFacility = facilityName;
+        newTask.facilityDisplayName = displayName;
 
         if (showDebugInfo)
             Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
@@ -2205,6 +2274,674 @@ foreach (TaskImpact impact in task.impacts)
                                         $"{community.name} has {population} people - needs evacuation");
                 task.roundsRemaining = 1;
             }
+        }
+    }
+
+    // ============================================================================
+    // LLM INTEGRATION METHODS
+    // ============================================================================
+
+    /// <summary>
+    /// Get comprehensive game state for LLM decision making
+    /// </summary>
+    public GameStatePayload GetCurrentGameState(int taskId = -1)
+    {
+        GameStatePayload state = new GameStatePayload();
+
+        // Session Info
+        state.sessionInfo = GetSessionInfo();
+
+        // Task Context (if specific task requested)
+        if (taskId >= 0)
+        {
+            GameTask task = GetTaskById(taskId);
+            if (task != null)
+            {
+                state.taskContext = GetTaskContextFromTask(task);
+            }
+        }
+
+        // All Active Tasks
+        state.allActiveTasks = GetAllActiveTaskContexts();
+
+        // Map State
+        state.mapState = GetMapState();
+
+        // Environmental Conditions
+        state.environmentalConditions = GetEnvironmentalConditions();
+
+        // Distributed Resources
+        state.distributedResources = GetDistributedResources();
+
+        // Logistics
+        state.logistics = GetLogisticsState();
+
+        // Daily Metrics
+        state.dailyMetrics = GetDailyMetrics();
+
+        // Workforce State
+        state.workforceState = GetWorkforceState();
+
+        // Construction State
+        state.constructionState = GetConstructionState();
+
+        return state;
+    }
+
+    private SessionInfo GetSessionInfo()
+    {
+        SessionInfo info = new SessionInfo();
+
+        if (GlobalClock.Instance != null)
+        {
+            info.currentDay = GlobalClock.Instance.GetCurrentDay();
+            info.currentRound = GlobalClock.Instance.GetCurrentTimeSegment();
+            // GetFormattedTime may not exist, use fallback
+            info.currentGameTime = $"Day {info.currentDay}, Round {info.currentRound}";
+            info.simulationSpeed = GlobalClock.Instance.IsSimulationRunning() ? 1.0f : 0.0f;
+            info.isPaused = !GlobalClock.Instance.IsSimulationRunning();
+        }
+
+        return info;
+    }
+
+    private TaskContext GetTaskContextFromTask(GameTask task)
+    {
+        return new TaskContext
+        {
+            taskId = task.taskId,
+            taskTitle = task.taskTitle,
+            taskDescription = task.description,
+            taskType = task.taskType.ToString(),
+            affectedFacility = task.affectedFacility,
+            roundsRemaining = task.roundsRemaining
+        };
+    }
+
+    private MapState GetMapState()
+    {
+        MapState mapState = new MapState();
+        mapState.facilities = new List<FacilityState>();
+        mapState.vehicles = new List<VehicleState>();
+
+        // Collect building states
+        Building[] buildings = FindObjectsOfType<Building>();
+        foreach (Building building in buildings)
+        {
+            FacilityState facilityState = new FacilityState();
+            facilityState.facilityName = building.name;
+            facilityState.facilityType = "Building";
+            facilityState.buildingType = building.GetBuildingType().ToString();
+            facilityState.isOperational = building.IsOperational();
+            facilityState.position = new Vector3Serializable(building.transform.position);
+
+            // Get resource storage
+            BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
+            if (storage != null)
+            {
+                facilityState.resources = new ResourceInventory
+                {
+                    foodPacks = storage.GetResourceAmount(ResourceType.FoodPacks),
+                    foodPacksCapacity = storage.GetResourceCapacity(ResourceType.FoodPacks),
+                    population = storage.GetResourceAmount(ResourceType.Population),
+                    populationCapacity = storage.GetResourceCapacity(ResourceType.Population)
+                };
+                facilityState.currentPopulation = storage.GetResourceAmount(ResourceType.Population);
+                facilityState.populationCapacity = storage.GetResourceCapacity(ResourceType.Population);
+            }
+            else
+            {
+                facilityState.resources = new ResourceInventory();
+            }
+
+            // Get building status and worker assignments
+            facilityState.buildingStatus = building.GetCurrentStatus().ToString();
+            facilityState.assignedWorkforce = building.GetAssignedWorkforce();
+            facilityState.requiredWorkforce = building.GetRequiredWorkforce();
+            facilityState.originalSiteId = building.GetOriginalSiteId();
+
+            mapState.facilities.Add(facilityState);
+        }
+
+        // Collect prebuilt building states
+        PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>();
+        foreach (PrebuiltBuilding prebuilt in prebuilts)
+        {
+            FacilityState facilityState = new FacilityState();
+            facilityState.facilityName = prebuilt.name;
+            facilityState.facilityType = "Prebuilt";
+            facilityState.buildingType = prebuilt.GetPrebuiltType().ToString();
+            facilityState.isOperational = true;
+            facilityState.position = new Vector3Serializable(prebuilt.transform.position);
+            facilityState.currentPopulation = prebuilt.GetCurrentPopulation();
+            facilityState.populationCapacity = prebuilt.GetPopulationCapacity();
+
+            // Get resource storage if available
+            BuildingResourceStorage storage = prebuilt.GetResourceStorage();
+            if (storage != null)
+            {
+                facilityState.resources = new ResourceInventory
+                {
+                    foodPacks = storage.GetResourceAmount(ResourceType.FoodPacks),
+                    foodPacksCapacity = storage.GetResourceCapacity(ResourceType.FoodPacks),
+                    population = prebuilt.GetCurrentPopulation(),
+                    populationCapacity = prebuilt.GetPopulationCapacity()
+                };
+            }
+            else
+            {
+                facilityState.resources = new ResourceInventory
+                {
+                    population = prebuilt.GetCurrentPopulation(),
+                    populationCapacity = prebuilt.GetPopulationCapacity()
+                };
+            }
+
+            mapState.facilities.Add(facilityState);
+        }
+
+        // Calculate total population
+        mapState.totalPopulation = prebuilts.Sum(pb => pb.GetCurrentPopulation());
+
+        // Collect vehicle states
+        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+        foreach (Vehicle vehicle in vehicles)
+        {
+            VehicleState vehicleState = new VehicleState();
+            vehicleState.vehicleName = vehicle.GetVehicleName();
+            vehicleState.vehicleStatus = vehicle.GetCurrentStatus().ToString();
+            vehicleState.currentCapacity = vehicle.GetCurrentLoad();
+            vehicleState.maxCapacity = vehicle.GetMaxCapacity();
+            vehicleState.currentCargo = vehicle.GetCurrentCargoType().ToString();
+
+            if (vehicle.currentTask != null)
+            {
+                vehicleState.currentTask = $"{vehicle.currentTask.cargoType} delivery: {vehicle.currentTask.GetSource()?.name} → {vehicle.currentTask.GetDestination()?.name}";
+            }
+            else
+            {
+                vehicleState.currentTask = "None";
+            }
+
+            mapState.vehicles.Add(vehicleState);
+        }
+
+        // Flood state
+        mapState.floodState = GetFloodState();
+
+        // Collect abandoned sites
+        mapState.abandonedSites = new List<AbandonedSiteState>();
+        AbandonedSite[] abandonedSites = FindObjectsOfType<AbandonedSite>();
+        foreach (AbandonedSite site in abandonedSites)
+        {
+            if (site.IsAvailable())
+            {
+                AbandonedSiteState siteState = new AbandonedSiteState
+                {
+                    siteId = site.GetId(),
+                    siteName = site.name,
+                    isAvailable = site.IsAvailable(),
+                    position = new Vector3Serializable(site.transform.position)
+                };
+                mapState.abandonedSites.Add(siteState);
+            }
+        }
+
+        return mapState;
+    }
+
+    private FloodState GetFloodState()
+    {
+        FloodState floodState = new FloodState();
+        floodState.isActive = false;
+        floodState.affectedRoads = 0;
+        floodState.blockedRoutes = new List<string>();
+        floodState.waterLevel = 0f;
+
+        // Check if FloodSystem exists
+        FloodSystem floodSystem = FindObjectOfType<FloodSystem>();
+        if (floodSystem != null)
+        {
+            int floodTileCount = floodSystem.GetFloodTileCount();
+            floodState.isActive = floodTileCount > 0;
+            floodState.waterLevel = floodTileCount;
+        }
+
+        return floodState;
+    }
+
+    private EnvironmentalConditions GetEnvironmentalConditions()
+    {
+        EnvironmentalConditions conditions = new EnvironmentalConditions();
+
+        // Count damaged vehicles
+        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+        conditions.damagedVehicles = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.Damaged);
+
+        // Check flooding
+        FloodSystem floodSystem = FindObjectOfType<FloodSystem>();
+        if (floodSystem != null)
+        {
+            int floodTileCount = floodSystem.GetFloodTileCount();
+            conditions.isFlooding = floodTileCount > 0;
+        }
+        else
+        {
+            conditions.isFlooding = false;
+        }
+
+        conditions.weatherCondition = conditions.isFlooding ? "Flooding" : "Clear";
+        conditions.blockedRoads = 0; // Can be expanded if road blocking is tracked
+
+        return conditions;
+    }
+
+    private DistributedResources GetDistributedResources()
+    {
+        DistributedResources resources = new DistributedResources();
+
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem != null)
+        {
+            resources.completedDeliveryTasks = deliverySystem.GetCompletedTasks().Count;
+            resources.activeDeliveryTasks = deliverySystem.GetActiveTasks().Count;
+
+            // Calculate total food and population distributed from completed tasks
+            List<DeliveryTask> completedTasks = deliverySystem.GetCompletedTasks();
+            resources.totalFoodDistributed = completedTasks
+                .Where(t => t.cargoType == ResourceType.FoodPacks)
+                .Sum(t => t.quantity);
+            resources.totalPopulationRelocated = completedTasks
+                .Where(t => t.cargoType == ResourceType.Population)
+                .Sum(t => t.quantity);
+        }
+
+        return resources;
+    }
+
+    private Logistics GetLogisticsState()
+    {
+        Logistics logistics = new Logistics();
+        logistics.activeDeliveries = new List<ActiveDelivery>();
+
+        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+        // VehicleStatus uses Idle, not Available
+        logistics.availableVehicles = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.Idle);
+        logistics.vehiclesInTransit = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.InTransit);
+        logistics.damagedVehicles = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.Damaged);
+
+        // Collect active deliveries
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem != null)
+        {
+            List<DeliveryTask> activeTasks = deliverySystem.GetActiveTasks();
+            foreach (DeliveryTask task in activeTasks)
+            {
+                ActiveDelivery delivery = new ActiveDelivery();
+                delivery.deliveryId = task.taskId;
+                delivery.cargoType = task.cargoType.ToString();
+                delivery.quantity = task.quantity;
+                // Use GetSource() and GetDestination() methods
+                delivery.source = task.GetSource()?.name ?? "Unknown";
+                delivery.destination = task.GetDestination()?.name ?? "Unknown";
+                delivery.status = "Active"; // DeliveryTask doesn't have status field
+                delivery.progress = 0.5f; // Could be calculated from vehicle position if needed
+
+                logistics.activeDeliveries.Add(delivery);
+            }
+        }
+
+        return logistics;
+    }
+
+    private DailyMetrics GetDailyMetrics()
+    {
+        DailyMetrics metrics = new DailyMetrics();
+
+        // Satisfaction and Budget
+        if (SatisfactionAndBudget.Instance != null)
+        {
+            metrics.currentSatisfaction = (int)SatisfactionAndBudget.Instance.GetCurrentSatisfaction();
+            metrics.currentBudget = (int)SatisfactionAndBudget.Instance.GetCurrentBudget();
+        }
+
+        // Task metrics
+        metrics.activeTasks = activeTasks.Count;
+        metrics.tasksCompleted = completedTasks.Count(t => t.status == TaskStatus.Completed);
+        metrics.tasksExpired = completedTasks.Count(t => t.status == TaskStatus.Expired);
+        metrics.tasksIncomplete = completedTasks.Count(t => t.status == TaskStatus.Incomplete);
+
+        return metrics;
+    }
+
+    private List<TaskContext> GetAllActiveTaskContexts()
+    {
+        List<TaskContext> taskContexts = new List<TaskContext>();
+
+        foreach (GameTask task in activeTasks)
+        {
+            taskContexts.Add(GetTaskContextFromTask(task));
+        }
+
+        return taskContexts;
+    }
+
+    private WorkforceState GetWorkforceState()
+    {
+        WorkforceState workforceState = new WorkforceState();
+
+        if (WorkerSystem.Instance != null)
+        {
+            WorkerStatistics stats = WorkerSystem.Instance.GetWorkerStatistics();
+
+            workforceState.freeTrainedWorkers = stats.trainedFree;
+            workforceState.freeUntrainedWorkers = stats.untrainedFree;
+            workforceState.workingTrainedWorkers = stats.trainedWorking;
+            workforceState.workingUntrainedWorkers = stats.untrainedWorking;
+            workforceState.trainedWorkersNotArrived = stats.trainedNotArrived;
+            workforceState.untrainedWorkersNotArrived = stats.untrainedNotArrived;
+            workforceState.untrainedWorkersInTraining = stats.untrainedTraining;
+            workforceState.totalTrainedWorkers = stats.GetTotalTrained();
+            workforceState.totalUntrainedWorkers = stats.GetTotalUntrained();
+            workforceState.totalAvailableWorkforce = WorkerSystem.Instance.GetTotalAvailableWorkforce();
+            workforceState.totalWorkforceCapacity = WorkerSystem.Instance.GetTotalWorkforce();
+            workforceState.newWorkersHiredToday = WorkerSystem.Instance.GetNewWorkersHiredToday();
+        }
+
+        // Get worker costs from WorkerRequestSystem
+        WorkerRequestSystem workerRequestSystem = FindObjectOfType<WorkerRequestSystem>();
+        if (workerRequestSystem != null)
+        {
+            workforceState.untrainedWorkerCost = workerRequestSystem.untrainedWorkerCost;
+            workforceState.trainedWorkerCost = workerRequestSystem.trainedWorkerCost;
+        }
+        else
+        {
+            // Default values if system not found
+            workforceState.untrainedWorkerCost = 100;
+            workforceState.trainedWorkerCost = 500;
+        }
+
+        // Get training info from WorkerTrainingSystem
+        WorkerTrainingSystem trainingSystem = FindObjectOfType<WorkerTrainingSystem>();
+        if (trainingSystem != null)
+        {
+            workforceState.trainingCostPerWorker = trainingSystem.trainingCostPerWorker;
+            workforceState.trainingDurationDays = trainingSystem.trainingDurationDays;
+        }
+        else
+        {
+            // Default values if system not found
+            workforceState.trainingCostPerWorker = 50;
+            workforceState.trainingDurationDays = 3;
+        }
+
+        return workforceState;
+    }
+
+    private ConstructionState GetConstructionState()
+    {
+        ConstructionState constructionState = new ConstructionState();
+        constructionState.availableSites = new List<AbandonedSiteState>();
+        constructionState.buildingsUnderConstruction = new List<string>();
+        constructionState.buildingsNeedingWorkers = new List<string>();
+
+        // Collect available sites
+        AbandonedSite[] abandonedSites = FindObjectsOfType<AbandonedSite>();
+        foreach (AbandonedSite site in abandonedSites)
+        {
+            if (site.IsAvailable())
+            {
+                AbandonedSiteState siteState = new AbandonedSiteState
+                {
+                    siteId = site.GetId(),
+                    siteName = site.name,
+                    isAvailable = site.IsAvailable(),
+                    position = new Vector3Serializable(site.transform.position)
+                };
+                constructionState.availableSites.Add(siteState);
+            }
+        }
+
+        // Find BuildingSystem for construction info
+        BuildingSystem buildingSystem = FindObjectOfType<BuildingSystem>();
+        if (buildingSystem != null)
+        {
+            // Get buildings under construction
+            List<Building> underConstruction = buildingSystem.GetBuildingsUnderConstruction();
+            foreach (Building building in underConstruction)
+            {
+                constructionState.buildingsUnderConstruction.Add(building.name);
+            }
+
+            // Get buildings needing workers
+            List<Building> needingWorkers = buildingSystem.GetBuildingsNeedingWorkers();
+            foreach (Building building in needingWorkers)
+            {
+                constructionState.buildingsNeedingWorkers.Add(building.name);
+            }
+
+            // Get construction costs (assuming same cost for all buildings)
+            constructionState.buildingConstructionCost = buildingSystem.shelterConstructionCost;
+            constructionState.constructionTimeDays = buildingSystem.constructionTime;
+            constructionState.deconstructionTimeDays = 3.0f; // Default deconstruction time
+        }
+        else
+        {
+            // Default values if BuildingSystem not found
+            constructionState.buildingConstructionCost = 1000;
+            constructionState.constructionTimeDays = 5.0f;
+            constructionState.deconstructionTimeDays = 3.0f;
+        }
+
+        return constructionState;
+    }
+
+    /// <summary>
+    /// Apply LLM-generated task content to an existing task
+    /// </summary>
+    public void ApplyLLMTaskContent(LLMTaskContent llmContent)
+    {
+        if (llmContent == null)
+        {
+            Debug.LogError("ApplyLLMTaskContent called with null content");
+            return;
+        }
+
+        // Find the task by ID
+        GameTask task = GetTaskById(llmContent.taskId);
+        if (task == null)
+        {
+            Debug.LogError($"Task with ID {llmContent.taskId} not found");
+            return;
+        }
+
+        Debug.Log($"Applying LLM content to task: {task.taskTitle}");
+
+        // Clear existing agent messages and choices
+        task.agentMessages.Clear();
+        task.agentChoices.Clear();
+        task.numericalInputs.Clear();
+
+        // Apply LLM-generated messages
+        if (llmContent.messages != null)
+        {
+            foreach (string messageText in llmContent.messages)
+            {
+                Sprite agentIcon = GetOfficerAvatar(task.taskOfficer);
+                task.agentMessages.Add(new AgentMessage(messageText, agentIcon));
+            }
+            Debug.Log($"Added {llmContent.messages.Count} agent messages");
+        }
+
+        // Apply LLM-generated choices
+        if (llmContent.choices != null)
+        {
+            foreach (LLMAgentChoice llmChoice in llmContent.choices)
+            {
+                AgentChoice choice = ConvertLLMChoice(llmChoice, task);
+                task.agentChoices.Add(choice);
+            }
+            Debug.Log($"Added {llmContent.choices.Count} agent choices");
+        }
+
+        // Apply LLM-generated numerical inputs
+        if (llmContent.numericalInputs != null)
+        {
+            foreach (LLMNumericalInput llmInput in llmContent.numericalInputs)
+            {
+                AgentNumericalInput input = ConvertLLMNumericalInput(llmInput);
+                task.numericalInputs.Add(input);
+            }
+            Debug.Log($"Added {llmContent.numericalInputs.Count} numerical inputs");
+        }
+
+        // Note: Multi-agent tasks appear in task list but don't auto-open
+        // User clicks on the task to view the choices
+
+        Debug.Log($"✅ Successfully applied LLM content to task {task.taskTitle}");
+    }
+
+    /// <summary>
+    /// Convert LLM choice to Unity AgentChoice structure
+    /// </summary>
+    private AgentChoice ConvertLLMChoice(LLMAgentChoice llmChoice, GameTask task)
+    {
+        if (llmChoice == null)
+        {
+            Debug.LogError("[TaskSystem] ConvertLLMChoice called with null llmChoice");
+            return new AgentChoice(0, "Invalid Choice");
+        }
+
+        AgentChoice choice = new AgentChoice(llmChoice.choiceId, llmChoice.choiceText ?? "");
+        choice.agentReasoning = llmChoice.agentReasoning ?? "";
+
+        // Convert impacts
+        if (llmChoice.impacts != null)
+        {
+            foreach (LLMImpact llmImpact in llmChoice.impacts)
+            {
+                ImpactType impactType = ParseImpactType(llmImpact.type);
+                choice.choiceImpacts.Add(new TaskImpact(impactType, llmImpact.value));
+            }
+        }
+
+        // Convert delivery configuration
+        if (llmChoice.delivery != null && llmChoice.delivery.triggers)
+        {
+            choice.triggersDelivery = true;
+
+            // Parse cargo type
+            choice.deliveryCargoType = ParseResourceType(llmChoice.delivery.cargoType);
+            choice.deliveryQuantity = llmChoice.delivery.quantity;
+
+            // Parse source and destination types
+            choice.sourceType = ParseDeliverySourceType(llmChoice.delivery.sourceType);
+            choice.destinationType = ParseDeliveryDestinationType(llmChoice.delivery.destinationType);
+
+            // Set defaults based on types
+            if (choice.sourceType == DeliverySourceType.AutoFind)
+            {
+                choice.prioritizeNearestSource = true;
+            }
+            if (choice.destinationType == DeliveryDestinationType.AutoFind)
+            {
+                choice.prioritizeNearestDestination = true;
+            }
+        }
+
+        return choice;
+    }
+
+    /// <summary>
+    /// Convert LLM numerical input to Unity structure
+    /// </summary>
+    private AgentNumericalInput ConvertLLMNumericalInput(LLMNumericalInput llmInput)
+    {
+        NumericalInputType inputType = ParseNumericalInputType(llmInput.inputType);
+
+        AgentNumericalInput input = new AgentNumericalInput(
+            llmInput.inputId,
+            inputType,
+            llmInput.defaultValue,
+            llmInput.minValue,
+            llmInput.maxValue
+        );
+
+        input.stepSize = llmInput.stepSize;
+
+        // Override label if provided
+        if (!string.IsNullOrEmpty(llmInput.inputLabel))
+        {
+            input.inputLabel = llmInput.inputLabel;
+        }
+
+        return input;
+    }
+
+    // Helper parsers
+    private ImpactType ParseImpactType(string type)
+    {
+        try
+        {
+            return (ImpactType)System.Enum.Parse(typeof(ImpactType), type, true);
+        }
+        catch
+        {
+            Debug.LogWarning($"Unknown impact type: {type}, defaulting to Satisfaction");
+            return ImpactType.Satisfaction;
+        }
+    }
+
+    private ResourceType ParseResourceType(string type)
+    {
+        try
+        {
+            return (ResourceType)System.Enum.Parse(typeof(ResourceType), type, true);
+        }
+        catch
+        {
+            Debug.LogWarning($"Unknown resource type: {type}, defaulting to FoodPacks");
+            return ResourceType.FoodPacks;
+        }
+    }
+
+    private DeliverySourceType ParseDeliverySourceType(string type)
+    {
+        try
+        {
+            return (DeliverySourceType)System.Enum.Parse(typeof(DeliverySourceType), type, true);
+        }
+        catch
+        {
+            Debug.LogWarning($"Unknown source type: {type}, defaulting to AutoFind");
+            return DeliverySourceType.AutoFind;
+        }
+    }
+
+    private DeliveryDestinationType ParseDeliveryDestinationType(string type)
+    {
+        try
+        {
+            return (DeliveryDestinationType)System.Enum.Parse(typeof(DeliveryDestinationType), type, true);
+        }
+        catch
+        {
+            Debug.LogWarning($"Unknown destination type: {type}, defaulting to AutoFind");
+            return DeliveryDestinationType.AutoFind;
+        }
+    }
+
+    private NumericalInputType ParseNumericalInputType(string type)
+    {
+        try
+        {
+            return (NumericalInputType)System.Enum.Parse(typeof(NumericalInputType), type, true);
+        }
+        catch
+        {
+            Debug.LogWarning($"Unknown numerical input type: {type}, defaulting to Budget");
+            return NumericalInputType.Budget;
         }
     }
 

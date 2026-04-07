@@ -100,7 +100,7 @@ public class WorkerTrainingSystem : MonoBehaviour
             return;
         }
         
-        int availableUntrained = workerSystem.GetUntrainedWorkersCount();
+        int availableUntrained = workerSystem.GetAvailableUntrainedWorkers();
         
         if (availableUntrained == 0)
         {
@@ -258,19 +258,6 @@ public class WorkerTrainingSystem : MonoBehaviour
             if (worker.Type == WorkerType.Untrained && worker.GetCurrentStatus() == "Training")
             {
                 workerSystem.RemoveWorker(worker);
-
-                // =====================================================
-                // FIX: Pass countAsNewHire: false.
-                //
-                // WHAT WAS WRONG: CreateTrainedWorker() always called
-                // IncrementNewWorkersHired(). Training completions are
-                // upgrades of EXISTING workers, not new hires. This
-                // inflated the "Workers Hired" count in the daily report.
-                //
-                // WHY THIS FIXES IT: The new countAsNewHire parameter
-                // skips the hire counter. Only genuinely new workers
-                // (from WorkerRequestSystem) count as hires.
-                // =====================================================
                 Worker newTrainedWorker = workerSystem.CreateTrainedWorker(TrainedWorkerStatus.Free, countAsNewHire: false);
 
                 successfullyTrained++;

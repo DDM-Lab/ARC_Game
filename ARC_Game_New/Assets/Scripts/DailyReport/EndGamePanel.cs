@@ -45,6 +45,7 @@ public class EndGamePanel : MonoBehaviour
             endGamePanel.SetActive(true);
             
             Debug.Log("End game panel displayed");
+            GameLogPanel.Instance?.LogUIInteraction("End game panel displayed");
         }
     }
     
@@ -73,5 +74,6 @@ public class EndGamePanel : MonoBehaviour
         }
         
         Debug.Log("Opening final daily report from end game panel");
+        GameLogPanel.Instance?.LogUIInteraction("Opening final daily report from end game panel");
     }
 }

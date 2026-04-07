@@ -1,10 +1,12 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.EventSystems;
 using System.Linq;
+using GameActions;
 
 public class TaskDetailUI : MonoBehaviour
 {
@@ -53,7 +55,7 @@ public class TaskDetailUI : MonoBehaviour
     [Header("Debug")]
     public bool showDebugInfo = true;
 
-    public GameTask currentTask;
+    private GameTask currentTask;
     private List<GameObject> currentImpactItems = new List<GameObject>();
     private List<GameObject> currentConversationItems = new List<GameObject>();
     private AgentChoice selectedChoice;
@@ -139,7 +141,7 @@ public class TaskDetailUI : MonoBehaviour
 
     public void ShowTaskDetail(GameTask task)
     {
-        // NEW: Check if this task was shown before
+        // Check if this task was shown before
         bool isFirstTimeShowing = !previouslyShownTaskIds.Contains(task.taskId);
         
         currentTask = task;
@@ -150,21 +152,56 @@ public class TaskDetailUI : MonoBehaviour
 
             UpdateTaskDescription();
             
-            // NEW: Pass the isFirstTimeShowing flag to StartAgentConversation
+            // Pass the isFirstTimeShowing flag to StartAgentConversation
             StartAgentConversation(isFirstTimeShowing);
             
             UpdateActionButtons();
 
-            // NEW: Mark task as shown
+            // Mark task as shown
             previouslyShownTaskIds.Add(task.taskId);
 
             if (showDebugInfo)
                 Debug.Log($"Showing task detail for: {task.taskTitle} (First time: {isFirstTimeShowing})");
+
+            GameLogPanel.Instance?.LogUIInteraction($"Opened task: [{currentTask.taskType}] {currentTask.taskTitle} at {currentTask.affectedFacility}");
+            GameLogPanel.Instance?.LogTaskEvent(SerializeTaskContent(currentTask));
         }
+    }
+
+    string SerializeTaskContent(GameTask task)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"TASK_DETAIL | id={task.taskId} | title={task.taskTitle} | type={task.taskType} | tag={task.taskTag} | facility={task.affectedFacility} | status={task.status}");
+
+        if (task.impacts != null && task.impacts.Count > 0)
+        {
+            sb.Append(" | impacts=");
+            sb.Append(string.Join(";", task.impacts.Select(i => $"{i.impactType}:{i.value}")));
+        }
+        if (task.agentMessages != null && task.agentMessages.Count > 0)
+        {
+            sb.Append(" | messages=");
+            sb.Append(string.Join(";", task.agentMessages.Select(m => m.messageText.Replace("|", "/").Replace(";", ","))));
+        }
+        if (task.agentChoices != null && task.agentChoices.Count > 0)
+        {
+            sb.Append(" | choices=");
+            sb.Append(string.Join(";", task.agentChoices.Select(c => $"[{c.choiceId}]{c.choiceText}")));
+        }
+        if (task.numericalInputs != null && task.numericalInputs.Count > 0)
+        {
+            sb.Append(" | inputs=");
+            sb.Append(string.Join(";", task.numericalInputs.Select(n => 
+                $"[{n.inputId}]{n.inputLabel}:min={n.minValue},max={n.maxValue}")));
+        }
+
+        return sb.ToString();
     }
 
     public void CloseTaskDetail()
     {
+        GameLogPanel.Instance?.LogUIInteraction($"Closed task: {currentTask?.taskTitle}");
+
         // Auto-discard Other type tasks when closed
         if (currentTask != null && currentTask.taskType == TaskType.Other)
         {
@@ -205,7 +242,7 @@ public class TaskDetailUI : MonoBehaviour
             taskTitleText.text = currentTask.taskTitle;
 
         if (facilityText != null)
-            facilityText.text = currentTask.affectedFacility;
+            facilityText.text = string.IsNullOrEmpty(currentTask.facilityDisplayName) ? currentTask.affectedFacility : currentTask.facilityDisplayName;
 
         if (descriptionText != null)
             descriptionText.text = currentTask.description;
@@ -251,6 +288,10 @@ public class TaskDetailUI : MonoBehaviour
             }else if (currentTask.impacts.Count == 4)
             {
                 useLongPrefab = false;
+            }
+            else if (currentTask.impacts.Count == 1)
+            {
+                useLongPrefab = true;
             }
             CreateImpactItem(impact, layout, useLongPrefab);
         }
@@ -503,6 +544,7 @@ public class TaskDetailUI : MonoBehaviour
         }
     }
 
+    // Later button not used any more
     void OnLaterButtonClicked()
     {
         if (currentTask != null && currentTask.taskType == TaskType.Advisory)
@@ -580,17 +622,32 @@ public class TaskDetailUI : MonoBehaviour
     // The actual task completion logic
     private void CompleteTaskAction()
     {
+        // Check if this is a multi-agent choice proposal (taskId == -1)
+        if (currentTask != null && currentTask.taskId == -1 && currentTask.multiAgentProposal != null)
+        {
+            HandleMultiAgentChoiceSelection();
+            return;
+        }
+
+        // Apply choice impacts first
         if (selectedChoice != null)
         {
-            // Inside CompleteTaskAction
-if (selectedChoice != null) {
-    foreach(var i in selectedChoice.choiceImpacts) 
-        Debug.Log($"CHOICE Impact: {i.impactType} = {i.value}");
-    
-    foreach(var i in currentTask.impacts) 
-        Debug.Log($"TASK Impact: {i.impactType} = {i.value}");
-}
+            // Log numerical input for the task
+            if (currentTask.numericalInputs != null && currentTask.numericalInputs.Count > 0)
+            {
+                var inputValues = currentConversationItems
+                    .Select(item => item.GetComponent<NumericalInputUI>())
+                    .Where(ui => ui != null)
+                    .Select(ui => $"[{ui.GetInputType()}]={ui.GetCurrentValue()}");
+                
+                GameLogPanel.Instance?.LogUIInteraction(
+                    $"Numerical inputs submitted for '{currentTask.taskTitle}': {string.Join(";", inputValues)}");
+            }
+            // Log choice selection for the task
+            GameLogPanel.Instance?.LogUIInteraction($"Choice selected: '{selectedChoice.choiceText}' for task '{currentTask.taskTitle}'");
+            
             ApplyChoiceImpacts(selectedChoice);
+
             if (selectedChoice.immediateDelivery)
             {
                 ExecuteGeneratorDelivery(selectedChoice, immediate: true);
@@ -602,23 +659,11 @@ if (selectedChoice != null) {
             }
             else
             {
-                foreach (TaskImpact impact in currentTask.impacts)
-        {
-            switch (impact.impactType)
-            {
-                case ImpactType.Budget:
-                    var budgetSystem = SatisfactionAndBudget.Instance;
-                    Debug.Log($"completetaskaction: Competed task {currentTask.taskTitle}. budget impact: {impact.value}, satisfactionbudget: {budgetSystem.currentBudget}");
-                    break;
-            }
-        }
-                // Debug.Log("completetaskaction taskdetailUI");
                 TaskSystem.Instance.CompleteTask(currentTask);
             }
         }
         else
         {
-
             TaskSystem.Instance.CompleteTask(currentTask);
         }
 
@@ -1025,10 +1070,7 @@ if (selectedChoice != null) {
             switch (choice.deliveryCargoType)
             {
                 case ResourceType.FoodPacks:
-                    int totalFood = FindObjectsOfType<Building>()
-                        .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
-                        .Sum(b => b.GetComponent<BuildingResourceStorage>()?.GetResourceAmount(ResourceType.FoodPacks) ?? 0);
-                    if (totalFood <= 0) { errorMessage = "No food packs available in any kitchen"; return false; }
+                    // Immediate food delivery assumes fast food / external order — no kitchen stock required.
                     return true;
 
                 case ResourceType.Population:
@@ -2193,22 +2235,33 @@ if (selectedChoice != null) {
                 case ImpactType.Budget:
                     if (SatisfactionAndBudget.Instance != null)
                     {
+                        int delayRounds = choice.budgetDelayRounds;
                         if (impact.value > 0)
                         {
-                            Debug.Log("hereeee");
-                            SatisfactionAndBudget.Instance.AddBudget(impact.value, $"Task [{currentTask.taskTitle}] budget impact");
-                            Debug.Log($"TaskDetailUI, applychoiceimpacts: Budget increased by {impact.value} due to task completion of [{currentTask.taskTitle}]");
-                            ToastManager.ShowToast($"Budget increased by {impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
+                            // Positive budget = incoming funds — respect delay
+                            BudgetAllocationManager.Instance?.ScheduleAllocation(
+                                (int)impact.value,
+                                delayRounds,
+                                $"Task: {currentTask.taskTitle}");
+                            // rounds delayed
+                            if (delayRounds > 0){
+                                ToastManager.ShowToast(
+                                    $"${impact.value:N0} funding approved — arrives in {delayRounds} round(s)",
+                                    ToastType.Info, true);
+                            }
                         }
                         else
                         {
-                            SatisfactionAndBudget.Instance.RemoveBudget(-impact.value, $"Task [{currentTask.taskTitle}] budget impact");
-                            ToastManager.ShowToast($"Budget decreased by {-impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
+                            // Costs are always immediate
+                            SatisfactionAndBudget.Instance.RemoveBudget(
+                                -(int)impact.value,
+                                $"Task [{currentTask.taskTitle}] cost");
+                            ToastManager.ShowToast(
+                                $"Budget decreased by ${-impact.value:N0}",
+                                ToastType.Info, true);
                         }
                     }
                     break;
-
-                    // Add other impact types as needed
             }
         }
 
@@ -2255,7 +2308,18 @@ if (selectedChoice != null) {
         {
             string message = playerInputField.text;
 
-            // create player message item
+            // Send to vLLM server if WebSocket is connected
+            if (WebSocketManager.Instance != null && WebSocketManager.Instance.IsConnected())
+            {
+                WebSocketManager.Instance.SendMessage(message, currentTask.taskId);
+            }
+            else
+            {
+                if (showDebugInfo)
+                    Debug.Log("Playing in offline mode - message not sent to LLM");
+            }
+
+            // Always display player's message in UI (works offline!)
             GameObject messageItem = Instantiate(playerMessagePrefab, conversationContent);
 
             // Set message text
@@ -2264,6 +2328,10 @@ if (selectedChoice != null) {
             {
                 messageText.text = message;
             }
+
+            currentConversationItems.Add(messageItem);
+            GameLogPanel.Instance?.LogUIInteraction(
+            $"Player message sent | message={message}");
 
             playerInputField.text = "";
             ScrollToBottom();
@@ -2276,6 +2344,57 @@ if (selectedChoice != null) {
         {
             OnSendPlayerMessage();
         }
+    }
+
+    /// <summary>
+    /// Receives LLM responses from WebSocket and displays them as agent messages
+    /// </summary>
+    public void OnReceiveLLMResponse(string responseText)
+    {
+        if (currentTask == null || taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
+        {
+            Debug.LogWarning("Cannot display LLM response - task panel not active");
+            return;
+        }
+
+        try
+        {
+            // Create dynamic agent message from LLM response
+            AgentMessage llmMessage = new AgentMessage(responseText, GetCurrentTaskOfficerSprite());
+            llmMessage.useTypingEffect = true;
+            llmMessage.typingSpeed = 0.05f;
+
+            // Add to task's message history
+            currentTask.agentMessages.Add(llmMessage);
+
+            // Display with typing effect
+            StartCoroutine(DisplayAgentMessage(llmMessage, true));
+
+            if (showDebugInfo)
+                Debug.Log($"✅ Displayed LLM response: {responseText}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to display LLM response: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Get the appropriate sprite for the current task's officer
+    /// </summary>
+    Sprite GetCurrentTaskOfficerSprite()
+    {
+        if (currentTask == null || TaskSystem.Instance == null)
+            return TaskSystem.Instance?.defaultAgentSprite;
+
+        return currentTask.taskOfficer switch
+        {
+            TaskOfficer.WorkforceService => TaskSystem.Instance.workforceServiceSprite,
+            TaskOfficer.LodgingMassCare => TaskSystem.Instance.lodgingMassCareSprite,
+            TaskOfficer.ExternalRelationship => TaskSystem.Instance.externalRelationshipSprite,
+            TaskOfficer.FoodMassCare => TaskSystem.Instance.foodMassCareSprite,
+            _ => TaskSystem.Instance.defaultAgentSprite
+        };
     }
 
     void Update()
@@ -2365,4 +2484,142 @@ if (selectedChoice != null) {
         if (showDebugInfo)
             Debug.Log($"Task {taskId} marked as previously shown");
     }
+
+    /// <summary>
+    /// Handle when director selects a choice from a multi-agent proposal.
+    /// Executes the action package and sends choice_made back to the router.
+    /// </summary>
+    private void HandleMultiAgentChoiceSelection()
+    {
+        if (selectedChoice == null)
+        {
+            ShowAgentErrorMessage("Please select a recommendation before confirming.");
+            return;
+        }
+
+        var proposal = currentTask.multiAgentProposal;
+        int packageIndex = selectedChoice.choiceId;
+
+        // Find the selected package
+        ActionPackage selectedPackage = null;
+        if (proposal.packages != null && packageIndex >= 0 && packageIndex < proposal.packages.Length)
+        {
+            selectedPackage = proposal.packages[packageIndex];
+        }
+
+        if (selectedPackage == null)
+        {
+            ShowAgentErrorMessage("Selected package not found.");
+            return;
+        }
+
+        Debug.Log($"[MultiAgent] Executing package {packageIndex}: {selectedPackage.label}");
+
+        // Get available actions from the proposal
+        GameActions.GameAction[] availableActions = proposal.available_actions;
+        if (availableActions == null || availableActions.Length == 0)
+        {
+            ShowAgentErrorMessage("No actions available in proposal.");
+            return;
+        }
+
+        // Execute each action in the package via ActionExecutor
+        var executionResults = new System.Collections.Generic.List<ActionExecutionResultData>();
+
+        if (selectedPackage.action_indices != null)
+        {
+            foreach (int actionIndex in selectedPackage.action_indices)
+            {
+                // Validate index bounds
+                if (actionIndex < 0 || actionIndex >= availableActions.Length)
+                {
+                    Debug.LogWarning($"[MultiAgent] Action index {actionIndex} out of bounds (available: {availableActions.Length})");
+                    executionResults.Add(new ActionExecutionResultData
+                    {
+                        action_index = actionIndex,
+                        success = false,
+                        error = "Action index out of bounds"
+                    });
+                    continue;
+                }
+
+                // Get the action object
+                GameActions.GameAction action = availableActions[actionIndex];
+
+                // Execute via ActionExecutor (sole responsibility for game actions)
+                if (ActionExecutor.Instance != null)
+                {
+                    Debug.Log($"[MultiAgent] Executing action {actionIndex}: {action.description}");
+                    ActionExecutionResult result = ActionExecutor.Instance.ExecuteAction(action);
+
+                    executionResults.Add(new ActionExecutionResultData
+                    {
+                        action_index = actionIndex,
+                        action_id = action.action_id,
+                        success = result.success,
+                        error = result.error_message
+                    });
+
+                    if (result.success)
+                    {
+                        Debug.Log($"✅ [MultiAgent] Action {actionIndex} succeeded");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"❌ [MultiAgent] Action {actionIndex} failed: {result.error_message}");
+                    }
+                }
+                else
+                {
+                    Debug.LogError("[MultiAgent] ActionExecutor not found!");
+                    executionResults.Add(new ActionExecutionResultData
+                    {
+                        action_index = actionIndex,
+                        success = false,
+                        error = "ActionExecutor not available"
+                    });
+                }
+            }
+        }
+
+        // Get updated game state after execution
+        GameStatePayload updatedGameState = TaskSystem.Instance.GetCurrentGameState();
+
+        // Send choice_made back to router
+        if (WebSocketManager.Instance != null)
+        {
+            // Convert execution results to JSON array format
+            string resultsJson = "[" + string.Join(",", executionResults.ConvertAll(r =>
+                $"{{\"action_index\":{r.action_index}," +
+                $"\"action_id\":\"{r.action_id}\"," +
+                $"\"success\":{(r.success ? "true" : "false")}," +
+                $"\"error\":{(r.error != null ? "\"" + r.error.Replace("\"", "\\\"") + "\"" : "null")}}}"
+            )) + "]";
+
+            string stateJson = JsonUtility.ToJson(updatedGameState);
+
+            WebSocketManager.Instance.SendChoiceMade(
+                proposal.agent_name,
+                packageIndex,
+                resultsJson,
+                stateJson
+            );
+        }
+
+        // Complete the multi-agent task
+        TaskSystem.Instance.CompleteTask(currentTask);
+        CloseTaskDetail();
+
+        Debug.Log($"✅ [MultiAgent] Choice confirmed and sent to router");
+    }
+}
+
+// Helper class for multi-agent action execution results
+[System.Serializable]
+public class ActionExecutionResultData
+{
+    public int action_index;
+    public string action_id;
+    public bool success;
+    public string error;
 }

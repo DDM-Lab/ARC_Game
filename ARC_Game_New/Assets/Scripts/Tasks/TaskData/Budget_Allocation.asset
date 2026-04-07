@@ -15,7 +15,7 @@ MonoBehaviour:
   taskId: Budget_Allocation
   taskTitle: Daily Budget Allocation
   taskType: 2
-  description: ' Daily budget report ready.'
+  description: Daily budget report ready.
   taskImage: {fileID: 21300000, guid: 279e68b249d217e4baea8f58cf4e4d64, type: 3}
   taskOfficer: 3
   taskTag: 0
@@ -47,11 +47,7 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts:
   - impactType: 1
-    value: 2000
-    isCountdown: 0
-    customLabel: 
-  - impactType: 5
-    value: 3
+    value: 1
     isCountdown: 0
     customLabel: 
   agentMessages:
@@ -94,6 +90,7 @@ MonoBehaviour:
     destinationBuilding: 0
     destinationPrebuilt: 0
     specificDestinationName: 
+    budgetDelayRounds: 0
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   numericalInputs: []

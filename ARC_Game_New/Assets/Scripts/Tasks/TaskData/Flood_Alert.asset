@@ -21,11 +21,11 @@ MonoBehaviour:
   taskTag: 2
   roundTriggers: []
   dayTriggers:
-  - conditionType: 3
+  - conditionType: 2
     targetDay: 0
     intervalDays: 0
     startDay: 2
-    endDay: 0
+    endDay: 6
   resourceTriggers: []
   probabilityTriggers: []
   floodTileTriggers:

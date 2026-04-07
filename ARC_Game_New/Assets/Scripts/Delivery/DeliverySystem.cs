@@ -57,7 +57,11 @@ public class DeliveryTask
         RoadConnection roadConnection = destinationBuilding.GetComponent<RoadConnection>();
         return roadConnection != null ? roadConnection.GetRoadConnectionPoint() : destinationBuilding.transform.position;
     }
-    
+
+    // Helper methods for LLM integration
+    public MonoBehaviour GetSource() => sourceBuilding;
+    public MonoBehaviour GetDestination() => destinationBuilding;
+
     public string GetEstimatedTimeString()
     {
         if (estimatedTimeSeconds <= 0) return "Unknown";

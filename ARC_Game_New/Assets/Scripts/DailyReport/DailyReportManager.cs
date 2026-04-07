@@ -63,27 +63,6 @@ public class DailyReportManager : MonoBehaviour
         if (globalClock == null)
             globalClock = FindObjectOfType<GlobalClock>();
         
-        // =====================================================
-        // FIX: REMOVED OnDayChanged subscription.
-        //
-        // WHAT WAS WRONG: DailyReportManager subscribed to 
-        // OnDayChanged, which was fired from OnExecuteButtonClicked()
-        // to trigger showing the report. But DailyReportData ALSO
-        // subscribed to OnDayChanged and its handler ran FIRST,
-        // clearing all tracking data before the report could read it.
-        //
-        // WHY THIS FIXES IT: ShowDailyReport() is now called directly
-        // by GlobalClock.OnExecuteButtonClicked() instead of through
-        // the OnDayChanged event. This eliminates the race condition
-        // entirely — no event, no ordering dependency.
-        //
-        // OLD CODE:
-        // if (globalClock != null)
-        // {
-        //     globalClock.OnDayChanged += OnDayChangeAttempt;
-        // }
-        // =====================================================
-        
         // Setup next day button
         if (nextDayButton != null)
         {
@@ -116,26 +95,7 @@ public class DailyReportManager : MonoBehaviour
 
         SetupHistoryNavigation();
     }
-    
-    // =====================================================
-    // FIX: REMOVED OnDayChangeAttempt handler.
-    // This was the event callback that the OnDayChanged event
-    // triggered. Now ShowDailyReport() is called directly.
-    //
-    // OLD CODE:
-    // void OnDayChangeAttempt(int newDay)
-    // {
-    //     if (isTransitioning) { ... return; }
-    //     if (Time.unscaledTime - lastReportTime < reportCooldown) { ... return; }
-    //     if (newDay > 1) { ShowDailyReport(); lastReportTime = Time.unscaledTime; }
-    // }
-    // =====================================================
-    
-    /// <summary>
-    /// Show the daily report panel.
-    /// FIX: Now called directly by GlobalClock instead of through OnDayChanged event.
-    /// This ensures daily tracking data has NOT been reset when the report reads it.
-    /// </summary>
+
     public void ShowDailyReport()
     {
         if (dailyReportPanel == null || isTransitioning) return;
@@ -188,16 +148,16 @@ public class DailyReportManager : MonoBehaviour
         // Only generate report data if NOT Day 1
         if (currentDay > 1 && DailyReportData.Instance != null && reportUI != null)
         {
-            // =====================================================
-            // FIX: At this point, daily tracking data is still intact
-            // because PrepareForNewDay() hasn't been called yet.
-            // GenerateDailyReport() will correctly read all accumulated
-            // stats (workers in training, completed tasks, budget, etc.)
-            // =====================================================
             var metrics = DailyReportData.Instance.GenerateDailyReport();
             reportUI.DisplayDailyReport(metrics);
         }
         
+        // Send logs to server if game ended
+        if (currentDay >= finalDay)
+        {
+            GameLogPanel.Instance?.TriggerEndGameLogSend();
+        }
+
         // Update button states
         UpdateDayButtonStates(currentDay);
     }
@@ -293,11 +253,7 @@ public class DailyReportManager : MonoBehaviour
     }
     
     void OnNextDayButtonClicked()
-    {
-        Debug.Log("=== NEXT DAY BUTTON DEBUG ===");
-        Debug.Log($"isWaitingForNextDay: {isWaitingForNextDay}");
-        Debug.Log($"isTransitioning: {isTransitioning}");
-        
+    {   
         // Prevent action during transitions
         if (isTransitioning)
         {
@@ -321,24 +277,20 @@ public class DailyReportManager : MonoBehaviour
         ConfirmationPopup.Instance.ShowPopup(
             message: "Are you sure you want to proceed to the next day?",
             onConfirm: () => {
+                GameLogPanel.Instance?.LogUIInteraction("Player clicked Next Day on daily report — confirmed");
                 StartCoroutine(FadeOutAndProceed());
             },
             title: "Proceed to Next Day?"
         );
     }
-    
-    /// <summary>
-    /// FIX: The correct order of operations is now guaranteed:
-    ///   1. Report panel fades out
-    ///   2. GlobalClock resumes simulation
-    ///   3. GlobalClock.ProceedToNextDay() calls DailyReportData.PrepareForNewDay()
-    ///      which resets all daily tracking, THEN advances the day counter.
-    /// This ensures data is only cleared AFTER the report has been fully shown.
-    /// </summary>
+
     IEnumerator FadeOutAndProceed()
     {
         // Fade out the panel
         yield return StartCoroutine(FadeOutReport());
+
+        // Refresh satisfaction and budget UI
+        SatisfactionAndBudget.Instance?.ForceRefreshUI();
         
         // Resume simulation and allow day transition
         if (globalClock != null)
@@ -411,6 +363,7 @@ public class DailyReportManager : MonoBehaviour
             UpdateDayButtonStates(day);
             
             Debug.Log($"Displaying historical report for Day {day}");
+            GameLogPanel.Instance?.LogUIInteraction($"Player viewed historical report for Day {day}");
         }
     }
 

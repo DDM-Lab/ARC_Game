@@ -744,6 +744,17 @@ IEnumerator InitializeWithCentralConfig()
         return pathfinder.FindFloodAwarePath(startPos, endPos);
     }
 
+    /// <summary>
+    /// Call this after the ground/blocking tilemaps have been repainted by MapConfigApplier
+    /// so that river tile cache and blocking positions reflect the new layout.
+    /// </summary>
+    public void ReinitializeAfterMapApplied()
+    {
+        CacheRiverTiles();
+        CacheBlockingPositions();
+        Debug.Log($"FloodSystem: Re-cached river tiles ({riverTiles.Count}) and blocking positions after map config applied.");
+    }
+
     // Manual flood control methods (for testing/debugging)
     [ContextMenu("Force Flood Update")]
     public void ForceFloodUpdate()

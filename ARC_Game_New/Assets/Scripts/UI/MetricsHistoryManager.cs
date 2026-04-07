@@ -140,9 +140,20 @@ public class MetricsHistoryManager : MonoBehaviour
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
+            GlobalClock.Instance.OnDayChanged += OnDayChanged;
         }
     }
-    
+
+    void OnDayChanged(int newDay)
+    {
+        currentDay = newDay;
+        currentDayHistory = new DailyMetricsHistory { day = currentDay };
+        allDaysHistory.Add(currentDayHistory);
+
+        if (showDebugInfo)
+            Debug.Log($"Metrics history initialized for Day {currentDay}");
+    }
+
     public void ShowSatisfactionTab()
     {
         isShowingSatisfaction = true;
@@ -153,6 +164,8 @@ public class MetricsHistoryManager : MonoBehaviour
         
         // Update tab colors
         UpdateTabColors();
+
+        GameLogPanel.Instance?.LogUIInteraction($"Metrics panel: switched to Satisfaction tab | day={currentDay}");
         
         // Open panel if not already open
         if (!isPanelExpanded)
@@ -176,6 +189,8 @@ public class MetricsHistoryManager : MonoBehaviour
         
         // Update tab colors
         UpdateTabColors();
+
+        GameLogPanel.Instance?.LogUIInteraction($"Metrics panel: switched to Budget tab | day={currentDay}");
         
         // Open panel if not already open
         if (!isPanelExpanded)
@@ -223,7 +238,7 @@ public class MetricsHistoryManager : MonoBehaviour
             metricsPanel.sizeDelta = new Vector2(metricsPanel.sizeDelta.x, collapsedHeight);
         
         ClearMetricItems();
-        
+        GameLogPanel.Instance?.LogUIInteraction("Metrics panel closed");
         if (showDebugInfo)
             Debug.Log("Metrics panel closed immediately");
     }
@@ -389,6 +404,7 @@ public class MetricsHistoryManager : MonoBehaviour
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
+            GlobalClock.Instance.OnDayChanged -= OnDayChanged;
         }
     }
 }

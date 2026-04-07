@@ -9,6 +9,7 @@ public class DebugPanel : MonoBehaviour
     [Header("Debug Panel Settings")]
     [SerializeField] private GameObject debugPanelUI;
     [SerializeField] private bool startVisible = false;
+    [SerializeField] private bool disableDebugPanel = false;
     [SerializeField] private KeyCode toggleKey = KeyCode.F1;
 
     [Header("Task System Debug")]
@@ -45,6 +46,7 @@ public class DebugPanel : MonoBehaviour
 
     void Update()
     {
+        if (disableDebugPanel) return;
         if (Input.GetKeyDown(toggleKey))
         {
             SetPanelVisibility(!isPanelVisible);

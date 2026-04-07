@@ -56,6 +56,7 @@ public class AbandonedSite : MonoBehaviour
         {
             AudioManager.Instance.PlayClickSFX();
             OnSiteSelected?.Invoke(this);
+            GameLogPanel.Instance?.LogUIInteraction($"Player clicked on Abandoned Site {this.siteId}");
         }
     }
 

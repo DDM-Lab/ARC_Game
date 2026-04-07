@@ -102,6 +102,7 @@ public class DailyReportMetrics
     [Header("Financial Metrics")]
     public float startingBudget;
     public float budgetSpent;
+    public float budgetReceived;
     public float endingBudget;
     public float budgetUsageRate;
     public float averageTaskCost;

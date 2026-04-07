@@ -107,6 +107,7 @@ public class AgentConversationUI : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log($"Agent conversation panel {(isExpanded ? "expanding" : "collapsing")}");
+        GameLogPanel.Instance?.LogUIInteraction($"Agent conversation panel {(isExpanded ? "expanded" : "collapsed")} | agent={currentSelectedAgent}");
     }
 
     IEnumerator AnimateExpand(bool expand)
@@ -157,6 +158,7 @@ public class AgentConversationUI : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log($"Selected agent: {agent}");
+        GameLogPanel.Instance?.LogUIInteraction($"Agent selected: {agent}");
     }
     
     void UpdateAgentButtons()
@@ -235,6 +237,8 @@ public class AgentConversationUI : MonoBehaviour
         DisplayTaskConversation(task);
         if (showDebugInfo)
             Debug.Log($"Selected historical task: {task.taskTitle}");
+        GameLogPanel.Instance?.LogUIInteraction(
+        $"Historical task viewed | agent={currentSelectedAgent} | task=[{task.taskType}] {task.taskTitle} | status={task.status}");
     }
     
     void DisplayLatestConversation()
@@ -375,11 +379,15 @@ public class AgentConversationUI : MonoBehaviour
             if (messageText != null) messageText.text = message;
             
             currentConversationItems.Add(messageItem);
-            playerInputField.text = "";
-            ScrollToBottom();
             
             if (showDebugInfo)
                 Debug.Log($"Player sent message to {currentSelectedAgent}: {message}");
+                GameLogPanel.Instance?.LogUIInteraction(
+            $"Player message sent | agent={currentSelectedAgent} | task={currentSelectedTask?.taskTitle ?? "none"} | message={message}");
+
+            playerInputField.text = "";
+            ScrollToBottom();
+
         }
     }
     

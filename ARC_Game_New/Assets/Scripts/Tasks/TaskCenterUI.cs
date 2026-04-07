@@ -89,6 +89,8 @@ public class TaskCenterUI : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log("Task Center opened");
+
+            GameLogPanel.Instance?.LogUIInteraction($"Opened Task Center UI");
         }
     }
 
@@ -101,6 +103,8 @@ public class TaskCenterUI : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log("Task Center closed");
+
+            GameLogPanel.Instance?.LogUIInteraction($"Closed Task Center UI");
         }
     }
 
@@ -112,7 +116,8 @@ public class TaskCenterUI : MonoBehaviour
 
         string filterName = filter?.ToString() ?? "All";
         if (showDebugInfo)
-            Debug.Log($"Task filter set to: {filterName}");
+            Debug.Log($"Task center filter set to: {filterName}");
+        GameLogPanel.Instance?.LogUIInteraction($"Task center filter set to: {filterName}");
     }
 
     void UpdateFilterButtons()
