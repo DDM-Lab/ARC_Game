@@ -2108,6 +2108,9 @@ public class TaskSystem : MonoBehaviour
         // Session Info
         state.sessionInfo = GetSessionInfo();
 
+        // Satisfaction and Budget
+        state.satisfactionAndBudget = GetSatisfactionAndBudgetState();
+
         // Task Context (if specific task requested)
         if (taskId >= 0)
         {
@@ -2160,6 +2163,25 @@ public class TaskSystem : MonoBehaviour
         }
 
         return info;
+    }
+
+    private SatisfactionAndBudgetState GetSatisfactionAndBudgetState()
+    {
+        SatisfactionAndBudgetState state = new SatisfactionAndBudgetState();
+
+        if (SatisfactionAndBudget.Instance != null)
+        {
+            state.satisfaction = (int)SatisfactionAndBudget.Instance.GetCurrentSatisfaction();
+            state.budget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+        }
+        else
+        {
+            // Default values if system not available
+            state.satisfaction = 0;
+            state.budget = 0;
+        }
+
+        return state;
     }
 
     private TaskContext GetTaskContextFromTask(GameTask task)

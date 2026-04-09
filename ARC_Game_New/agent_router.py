@@ -136,6 +136,9 @@ class AgentRouter:
         print(f"\n[router] === Round {self.round_num} | "
               f"Day {msg.get('day', 1)} Seg {msg.get('segment', 0)} ===")
 
+        # Validate game state has required fields
+        self._validate_game_state(game_state)
+
         # Enumerate full action space from current state
         all_actions = _enumerate_actions(game_state)
 
@@ -861,6 +864,34 @@ Keep your responses concise and focused. You can discuss:
 
     # ── Helpers ──────────────────────────────────────────────────
 
+    def _validate_game_state(self, game_state: dict):
+        """Validate game state has required fields with valid values."""
+        # Check for satisfactionAndBudget field
+        if "satisfactionAndBudget" not in game_state:
+            raise ValueError(
+                "Missing 'satisfactionAndBudget' in game state. "
+                "Unity may not be sending budget/satisfaction data correctly."
+            )
+
+        sat_budget = game_state["satisfactionAndBudget"]
+
+        # Validate budget is present and reasonable
+        budget = sat_budget.get("budget", None)
+        if budget is None:
+            raise ValueError("Missing 'budget' field in satisfactionAndBudget")
+
+        if budget < 0:
+            print(f"[router] ⚠️  Warning: Negative budget detected: {budget}")
+
+        # Validate satisfaction is present
+        satisfaction = sat_budget.get("satisfaction", None)
+        if satisfaction is None:
+            raise ValueError("Missing 'satisfaction' field in satisfactionAndBudget")
+
+        # Log validation info on round 1
+        if self.round_num == 1:
+            print(f"[router] ✓ Game state validated: Budget=${budget}, Satisfaction={satisfaction}")
+
     def _filter_state(self, game_state: dict, agent: AgentConfig) -> dict:
         return filter_observation(game_state, agent.subobservation_space)
 
@@ -1351,8 +1382,18 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=1011, reason="Router not initialized")
 
 
-@app.get("/")
-async def root():
+@app.websocket("/")
+async def websocket_root_endpoint(websocket: WebSocket):
+    """WebSocket endpoint at root path (for Unity compatibility)."""
+    global router_instance
+    if router_instance:
+        await router_instance.handle_websocket(websocket)
+    else:
+        await websocket.close(code=1011, reason="Router not initialized")
+
+
+@app.get("/health")
+async def root_http():
     return {"status": "ARC Game Multi-Agent Router", "version": "1.0"}
 
 
