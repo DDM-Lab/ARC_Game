@@ -96,6 +96,7 @@ public class ExpandablePanel : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log($"Panel {(isExpanded ? "expanded" : "collapsed")}");
+        GameLogPanel.Instance?.LogUIInteraction($"Panel '{gameObject.name}' {(isExpanded ? "expanded" : "collapsed")}");
     }
     
     void SetPanelState(bool expanded, bool animate)

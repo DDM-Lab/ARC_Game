@@ -174,6 +174,7 @@ public class TutorialManager : MonoBehaviour
         if (currentPageIndex < tutorialPages.Count - 1)
         {
             ShowPage(currentPageIndex + 1);
+            GameLogPanel.Instance?.LogUIInteraction($"Next page button clicked, showing page {currentPageIndex + 1}");
         }
         else
         {
@@ -186,11 +187,13 @@ public class TutorialManager : MonoBehaviour
         if (currentPageIndex > 0)
         {
             ShowPage(currentPageIndex - 1);
+            GameLogPanel.Instance?.LogUIInteraction($"Previous page button clicked, showing page {currentPageIndex - 1}");
         }
     }
     
     public void SkipTutorial()
     {
+        GameLogPanel.Instance?.LogUIInteraction("Skip Tutorial Button Clicked");
         StartGame();
     }
     

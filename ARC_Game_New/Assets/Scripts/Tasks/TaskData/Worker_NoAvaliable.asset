@@ -19,6 +19,7 @@ MonoBehaviour:
     needed.
   taskImage: {fileID: 21300000, guid: 7818154064cc5274d8c36500af7288dc, type: 3}
   taskOfficer: 1
+  taskTag: 0
   roundTriggers: []
   dayTriggers:
   - conditionType: 3

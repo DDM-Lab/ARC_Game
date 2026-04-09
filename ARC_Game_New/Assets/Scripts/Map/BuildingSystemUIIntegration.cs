@@ -3,6 +3,9 @@ public class BuildingSystemUIIntegration : MonoBehaviour
 {
     private BuildingSystem buildingSystem;
     private BuildingUIOverlay uiOverlay;
+
+    public static event System.Action<Building> OnBuildingCreated;
+    public static event System.Action<Building> OnBuildingDestroyed;
     
     void Start()
     {
@@ -32,6 +35,8 @@ public class BuildingSystemUIIntegration : MonoBehaviour
         {
             uiOverlay.OnBuildingCreated(building);
         }
+
+        OnBuildingCreated?.Invoke(building);
     }
     
     // Call this method before destroying a building
@@ -41,5 +46,6 @@ public class BuildingSystemUIIntegration : MonoBehaviour
         {
             uiOverlay.OnBuildingDestroyed(building);
         }
+        OnBuildingDestroyed?.Invoke(building);
     }
 }

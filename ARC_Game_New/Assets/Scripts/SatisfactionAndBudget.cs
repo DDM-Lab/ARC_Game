@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using System.Collections;
 using TMPro;
 using System;
 
@@ -14,7 +15,7 @@ public class SatisfactionAndBudget : MonoBehaviour
     [Header("Budget Settings")]
     public int currentBudget = 10000;
     public int maxBudget = 999999;
-    public int minBudget = 0;
+    public int minBudget = -999999;
     
     [Header("Amount Presets")]
     public float satisfactionSmallAmount = 5f;
@@ -32,9 +33,15 @@ public class SatisfactionAndBudget : MonoBehaviour
     public Slider satisfactionSlider;
     public TextMeshProUGUI budgetText;
     public string budgetPrefix = "$";
+    public TextMeshProUGUI satisfactionValueText;
     
     [Header("Debug")]
     public bool showDebugInfo = true;
+
+    [Header("Config Loading")]
+    public bool useExternalConfig = true;
+    public GameConfigLoader configLoader;
+
     
     // Events for other systems to listen to
     public event Action<float> OnSatisfactionChanged;
@@ -60,15 +67,62 @@ public class SatisfactionAndBudget : MonoBehaviour
 
     void Start()
     {
+        StartCoroutine(InitializeWithConfig());
+    }
+
+    IEnumerator InitializeWithConfig()
+    {
+        // Wait for config to load if using external config
+        if (useExternalConfig)
+        {
+            if (configLoader == null)
+                configLoader = GameConfigLoader.Instance;
+            
+            if (configLoader != null)
+            {
+                // Wait for config to load (max 10 seconds)
+                float waitTime = 0f;
+                while (!configLoader.IsConfigLoaded() && waitTime < 10f)
+                {
+                    yield return new WaitForSeconds(0.1f);
+                    waitTime += 0.1f;
+                }
+                
+                // Apply loaded config
+                if (configLoader.IsConfigLoaded())
+                {
+                    currentBudget = configLoader.GetInitialBudget();
+                    currentSatisfaction = configLoader.GetInitialSatisfaction();
+                    
+                    if (showDebugInfo)
+                        Debug.Log($"SatisfactionAndBudget: Using config initialBudget = {currentBudget}; initialSatisfaction = {currentSatisfaction}");
+                }
+                else
+                {
+                    Debug.LogWarning("SatisfactionAndBudget: Config load timeout. Using inspector value.");
+                }
+            }
+            else
+            {
+                Debug.LogWarning("SatisfactionAndBudget: GameConfigLoader not found. Using inspector value.");
+            }
+        }
+        
+        // Original Start() code continues here:
         InitializeValues();
         SetupFeedbackEffects();
         UpdateUI();
+
+        if (satisfactionSlider != null)
+        {
+            satisfactionSlider.value = currentSatisfaction;
+        }
 
         if (showDebugInfo)
             Debug.Log($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
         GameLogPanel.Instance.LogMetricsChange($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
     }
-    
+
     void SetupFeedbackEffects()
     {
         // Find feedback effects if not assigned
@@ -109,6 +163,21 @@ public class SatisfactionAndBudget : MonoBehaviour
         {
             budgetText.text = budgetPrefix + currentBudget.ToString("N0");
         }
+
+        UpdateSatisfactionValueText();
+    }
+
+    public void ForceRefreshUI()
+    {
+        if (satisfactionSlider != null)
+            satisfactionSlider.value = currentSatisfaction;
+
+        if (budgetText != null)
+        {
+            budgetText.text = budgetPrefix + currentBudget.ToString("N0");
+        }
+
+        UpdateSatisfactionValueText();
     }
 
     // ===== SATISFACTION METHODS =====
@@ -244,6 +313,12 @@ public class SatisfactionAndBudget : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Satisfaction set: {previousValue:F1} → {currentSatisfaction:F1}");
         GameLogPanel.Instance.LogMetricsChange($"Satisfaction set: {previousValue:F1} → {currentSatisfaction:F1}");
+    }
+
+    void UpdateSatisfactionValueText()
+    {
+        if (satisfactionValueText != null)
+            satisfactionValueText.text = $"{currentSatisfaction:F1}";
     }
 
     // ===== BUDGET METHODS =====

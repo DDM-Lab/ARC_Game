@@ -205,7 +205,7 @@ public class TaskItemUI : MonoBehaviour
         // Add affected facility
         if (!string.IsNullOrEmpty(assignedTask.affectedFacility))
         {
-            info += assignedTask.affectedFacility;
+            info += string.IsNullOrEmpty(assignedTask.facilityDisplayName) ? assignedTask.affectedFacility : assignedTask.facilityDisplayName;
         }
         
         // Add impact information

@@ -15,9 +15,10 @@ MonoBehaviour:
   taskId: Satisfaction_Alert
   taskTitle: Satisfaction Declining
   taskType: 3
-  description: Community satisfaction has dropped significantly.
+  description: Satisfaction has dropped significantly.
   taskImage: {fileID: 21300000, guid: 3c8b727b245029b43b112ed24fc7c5d3, type: 3}
   taskOfficer: 0
+  taskTag: 0
   roundTriggers: []
   dayTriggers:
   - conditionType: 3
@@ -31,15 +32,15 @@ MonoBehaviour:
   floodedFacilityTriggers: []
   budgetTriggers: []
   satisfactionTriggers:
-  - conditionType: 1
-    comparison: 1
-    targetValue: 15
-    previousSatisfaction: 65
+  - conditionType: 0
+    comparison: 2
+    targetValue: 25
+    previousSatisfaction: 50
   workforceTriggers: []
   facilityStatusTriggers: []
   weatherTriggers: []
   requireAllTriggers: 1
-  isGlobalTask: 0
+  isGlobalTask: 1
   targetFacilityType: 1
   autoSelectFacility: 1
   specificFacility: {fileID: 0}
@@ -52,9 +53,8 @@ MonoBehaviour:
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
-  - messageText: Satisfaction has decreased by more than 15 points recently. People
-      are becoming restless. We need to identify the cause and take immediate action
-      to restore community morale.
+  - messageText: Satisfaction is below 25 points. People are becoming restless. We
+      need to identify the cause and take immediate action to restore community morale.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05

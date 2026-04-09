@@ -19,6 +19,7 @@ MonoBehaviour:
     the residents immediately.
   taskImage: {fileID: 21300000, guid: 09373f204d0d14b488fa491635b79346, type: 3}
   taskOfficer: 2
+  taskTag: 2
   roundTriggers: []
   dayTriggers:
   - conditionType: 3
@@ -39,7 +40,7 @@ MonoBehaviour:
     floodTileThreshold: 2
     specificBuildingType: 1
     specificPrebuiltType: 0
-    detectionRadius: 5
+    detectionRadius: 2
   budgetTriggers: []
   satisfactionTriggers: []
   workforceTriggers: []
@@ -53,13 +54,16 @@ MonoBehaviour:
   roundsRemaining: 2
   realTimeRemaining: 300
   hasRealTimeLimit: 0
-  impacts: []
+  impacts:
+  - impactType: 0
+    value: 1
+    isCountdown: 0
+    customLabel: 
+  - impactType: 5
+    value: 2
+    isCountdown: 0
+    customLabel: 
   agentMessages:
-  - messageText: We have a critical situation. One of our shelters has been severely
-      damaged by flood water.
-    agentAvatar: {fileID: 0}
-    useTypingEffect: 1
-    typingSpeed: 0.05
   - messageText: We have a critical situation. One of our shelters has been severely
       damaged by flood water. The building is no longer safe for habitation. Water
       has compromised the structure and electrical systems.
@@ -73,7 +77,7 @@ MonoBehaviour:
     typingSpeed: 0.05
   agentChoices:
   - choiceId: 0
-    choiceText: Evacuate all residents to other shelters
+    choiceText: Evacuate all residents to other shelters (Satisfaction + 10)
     choiceImpacts:
     - impactType: 0
       value: 10
@@ -97,15 +101,12 @@ MonoBehaviour:
     destinationBuilding: 1
     destinationPrebuilt: 0
     specificDestinationName: 
+    budgetDelayRounds: 0
     prioritizeNearestSource: 1
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Emergency motel accommodation
+    choiceText: Evacuate all residents to Motel (Satisfaction + 10)
     choiceImpacts:
-    - impactType: 1
-      value: -500
-      isCountdown: 0
-      customLabel: 
     - impactType: 0
       value: 10
       isCountdown: 0
@@ -128,17 +129,19 @@ MonoBehaviour:
     destinationBuilding: 0
     destinationPrebuilt: 1
     specificDestinationName: 
+    budgetDelayRounds: 0
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 1
   - choiceId: 2
-    choiceText: Helicopter evacuation to Motel
+    choiceText: Helicopter evacuation to Motel (Immediate, $5000, Satisfaction +
+      10)
     choiceImpacts:
     - impactType: 1
       value: -5000
       isCountdown: 0
       customLabel: 
     - impactType: 0
-      value: 20
+      value: 10
       isCountdown: 0
       customLabel: 
     isSelected: 0
@@ -159,6 +162,7 @@ MonoBehaviour:
     destinationBuilding: 0
     destinationPrebuilt: 1
     specificDestinationName: 
+    budgetDelayRounds: 0
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 1
   numericalInputs: []

@@ -9,7 +9,7 @@
 /[Bb]uilds/
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
-
+/venv/
 # MemoryCaptures can get excessive in size.
 # They also could contain extremely sensitive data
 /[Mm]emoryCaptures/
@@ -77,6 +77,7 @@ crashlytics-build.properties
 # Assets/TextMesh Pro/
 
 .vscode
+<<<<<<< HEAD
 .worktrees/
 
 # Python cache
@@ -106,3 +107,10 @@ build_headless.sh
 
 # Environment files
 environment.yml
+=======
+.idea
+
+# Python
+__pycache__/
+*.pyc
+>>>>>>> b6edf20fa900aceca91afffa36b265a907928f65

@@ -42,6 +42,13 @@ public class FacilityInfoPanel : MonoBehaviour
     public Color errorColor = Color.red;
     public Color goodColor = Color.green;
 
+    [Header("Motel Cost (shown only for Motel)")]
+    public TextMeshProUGUI motelCostText;
+
+    [Header("Deliveries")]
+    public TextMeshProUGUI expectedDeliveriesText;
+    public TextMeshProUGUI outgoingDeliveriesText;
+
     private List<GameObject> currentTaskItems = new List<GameObject>();
 
     void Start()
@@ -66,6 +73,64 @@ public class FacilityInfoPanel : MonoBehaviour
         }
 
         UpdateTasksList(facility);
+        UpdateExpectedDeliveries(facility);
+        UpdateOutgoingDeliveries(facility);
+
+        // log all displayed info
+        LogFacilityView(facility);
+    }
+
+    void LogFacilityView(MonoBehaviour facility)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        if (facility is Building b)
+        {
+            BuildingResourceStorage storage = b.GetComponent<BuildingResourceStorage>();
+            int pop     = storage?.GetResourceAmount(ResourceType.Population) ?? 0;
+            int popCap  = storage?.GetResourceCapacity(ResourceType.Population) ?? 0;
+            int food    = storage?.GetResourceAmount(ResourceType.FoodPacks) ?? 0;
+            int foodCap = storage?.GetResourceCapacity(ResourceType.FoodPacks) ?? 0;
+
+            var workers = WorkerSystem.Instance?.GetWorkersByBuildingId(b.GetOriginalSiteId());
+            int trained   = workers?.Count(w => w.Type == WorkerType.Trained) ?? 0;
+            int untrained = workers?.Count(w => w.Type == WorkerType.Untrained) ?? 0;
+
+            sb.Append($"FACILITY_VIEW | name={b.name} | type={b.GetBuildingType()} | site={b.GetOriginalSiteId()}");
+            sb.Append($" | status={b.GetCurrentStatus()}");
+            sb.Append($" | population={pop}/{popCap} | food={food}/{foodCap}");
+            sb.Append($" | workers={trained}trained+{untrained}untrained | workforce={b.GetAssignedWorkforce()}/{b.GetRequiredWorkforce()}");
+            sb.Append($" | flooded={IsAffectedByFlood(b.gameObject)}");
+        }
+        else if (facility is PrebuiltBuilding pb)
+        {
+            var storage   = pb.GetResourceStorage();
+            int food      = storage?.GetResourceAmount(ResourceType.FoodPacks) ?? 0;
+            int foodCap   = storage?.GetResourceCapacity(ResourceType.FoodPacks) ?? 0;
+            int pop       = pb.GetCurrentPopulation();
+            int popCap    = pb.GetPopulationCapacity();
+            string status = pop >= popCap ? "Full" : pop > 0 ? "Occupied" : "Vacant";
+
+            sb.Append($"FACILITY_VIEW | name={pb.GetBuildingName()} | type={pb.GetPrebuiltType()} | id={pb.GetBuildingId()}");
+            sb.Append($" | status={status}");
+            sb.Append($" | population={pop}/{popCap} | food={food}/{foodCap}");
+            sb.Append($" | flooded={IsAffectedByFlood(pb.gameObject)}");
+        }
+
+        // Active tasks
+        var activeTasks = TaskSystem.Instance?.activeTasks
+            .Where(t => t.affectedFacility == (facility is Building bld ? bld.name : ((PrebuiltBuilding)facility).GetBuildingName()))
+            .ToList();
+        if (activeTasks != null && activeTasks.Count > 0)
+            sb.Append($" | tasks={string.Join(";", activeTasks.Select(t => $"[{t.taskType}]{t.taskTitle}({t.roundsRemaining}r)"))}");
+        else
+            sb.Append(" | tasks=none");
+
+        // Deliveries
+        sb.Append($" | incoming={expectedDeliveriesText?.text ?? "N/A"}");
+        sb.Append($" | outgoing={outgoingDeliveriesText?.text ?? "N/A"}");
+
+        GameLogPanel.Instance?.LogUIInteraction(sb.ToString());
     }
 
     void UpdateBuildingInfo(Building building)
@@ -157,6 +222,26 @@ public class FacilityInfoPanel : MonoBehaviour
 
         SetTextSafe(this.statusText, $"Status: {statusText}");
         SetTextColor(this.statusText, population >= populationCap ? errorColor : (population > 0 ? goodColor : normalColor));
+
+        // Motel daily cost (only shown for Motel type)
+        if (motelCostText != null)
+        {
+            if (prebuilt.GetPrebuiltType() == PrebuiltBuildingType.Motel)
+            {
+                var costMgr = FindObjectOfType<MotelCostManager>();
+                if (costMgr != null)
+                {
+                    float dailyCost = costMgr.GetCurrentDailyCost();
+                    motelCostText.text = $"Daily Cost: ${dailyCost:F0} ({population} residents × ${costMgr.costPerPersonPerDay:F0}/day)";
+                    motelCostText.color = dailyCost > 0 ? warningColor : normalColor;
+                }
+                motelCostText.gameObject.SetActive(true);
+            }
+            else
+            {
+                motelCostText.gameObject.SetActive(false);
+            }
+        }
 
         // Flood status
         UpdateFloodStatus(prebuilt.gameObject);
@@ -494,5 +579,76 @@ public class FacilityInfoPanel : MonoBehaviour
     public bool IsUIOpen()
     {
         return gameObject.activeSelf;
+    }
+    void UpdateExpectedDeliveries(MonoBehaviour facility)
+    {
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null || expectedDeliveriesText == null)
+            return;
+        
+        List<DeliveryTask> incoming = deliverySystem.GetIncomingDeliveries(facility);
+        
+        if (incoming.Count == 0)
+        {
+            expectedDeliveriesText.text = "No deliveries expected";
+            return;
+        }
+        
+        // Count by cargo type
+        int foodPacks = incoming.Where(d => d.cargoType == ResourceType.FoodPacks).Sum(d => d.quantity);
+        int clients = incoming.Where(d => d.cargoType == ResourceType.Population).Sum(d => d.quantity);
+        
+        string message = "";
+        if (foodPacks > 0) message += $"{foodPacks} food packs on the way. ";
+        if (clients > 0) message += $"{clients} clients on the way.";
+        
+        expectedDeliveriesText.text = message.Trim();
+    }
+    
+    void UpdateOutgoingDeliveries(MonoBehaviour facility)
+    {
+        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null || outgoingDeliveriesText == null)
+            return;
+        
+        List<DeliveryTask> outgoing = deliverySystem.GetOutgoingDeliveries(facility);
+        
+        if (outgoing.Count == 0)
+        {
+            outgoingDeliveriesText.text = "No outgoing deliveries";
+            return;
+        }
+        
+        // Group by destination
+        var grouped = outgoing.GroupBy(d => d.destinationBuilding);
+        
+        string message = "";
+        foreach (var group in grouped)
+        {
+            int foodPacks = group.Where(d => d.cargoType == ResourceType.FoodPacks).Sum(d => d.quantity);
+            int clients = group.Where(d => d.cargoType == ResourceType.Population).Sum(d => d.quantity);
+            
+            string destName = GetBuildingDisplayName(group.Key);
+            
+            if (foodPacks > 0) message += $"{foodPacks} food packs leaving, going to {destName}. ";
+            if (clients > 0) message += $"{clients} clients leaving, going to {destName}. ";
+        }
+        
+        outgoingDeliveriesText.text = message.Trim();
+    }
+
+    string GetBuildingDisplayName(MonoBehaviour building)
+    {
+        if (building == null) return "Unknown";
+        
+        Building b = building.GetComponent<Building>();
+        if (b != null)
+            return $"{b.GetBuildingType()} (Site {b.GetOriginalSiteId()})";
+        
+        PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
+        if (pb != null)
+            return pb.GetBuildingName();
+        
+        return building.name;
     }
 }
