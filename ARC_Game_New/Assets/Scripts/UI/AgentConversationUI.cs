@@ -80,6 +80,7 @@ public class AgentConversationUI : MonoBehaviour
     private AgentChoice localSelectedChoice = null;
     private List<GameObject> currentHistoricalTaskButtons = new List<GameObject>();
     private List<GameObject> currentConversationItems = new List<GameObject>();
+    private TaskSystem taskSystem;
 
     // Store inline choice data for selection
     private Dictionary<int, InlineChoiceData> inlineChoiceDataMap = new Dictionary<int, InlineChoiceData>();
