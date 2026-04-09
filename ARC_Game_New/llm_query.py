@@ -9,7 +9,10 @@ import json
 import os
 from pathlib import Path
 from typing import Optional, Dict, Any
+from dotenv import load_dotenv
 import ollama
+
+load_dotenv(Path(__file__).parent / ".env")
 
 # Import optional providers
 try:
