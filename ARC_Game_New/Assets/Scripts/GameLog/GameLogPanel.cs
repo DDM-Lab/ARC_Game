@@ -118,7 +118,7 @@ public class GameLogPanel : MonoBehaviour
     private Queue<string> displayQueue = new Queue<string>();
     private bool isDisplayingMessage = false;
 
-    private LogMessageType currentTypeFilter = LogMessageType.Normal;
+    // private LogMessageType currentTypeFilter = LogMessageType.Normal; // Reserved for future filtering
     private LogCategory currentCategoryFilter = LogCategory.All;
     private int currentTimePeriodFilter = 0;
 
@@ -297,11 +297,19 @@ public class GameLogPanel : MonoBehaviour
                 logText.text = string.Join("\n", lines.Skip(lines.Length - maxDisplayedMessages));
             }
 
-            logText.ForceMeshUpdate();
-
-            if (contentRect != null)
+            // Only update mesh if logText has valid font/material references
+            if (logText != null && logText.font != null)
             {
-                contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+                logText.ForceMeshUpdate();
+
+                if (contentRect != null)
+                {
+                    contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+                }
+            }
+            else if (logText != null)
+            {
+                Debug.LogWarning("[GameLogPanel] TextMeshPro component missing font asset. Skipping mesh update.");
             }
 
             if (autoScrollToBottom && scrollRect != null)
@@ -329,13 +337,14 @@ public class GameLogPanel : MonoBehaviour
 
     void OnMessageTypeFilterChanged(int value)
     {
-        switch (value)
-        {
-            case 0: currentTypeFilter = LogMessageType.Normal; break;
-            case 1: currentTypeFilter = LogMessageType.Normal; break;
-            case 2: currentTypeFilter = LogMessageType.Debug; break;
-            case 3: currentTypeFilter = LogMessageType.Error; break;
-        }
+        // Type filtering currently not implemented
+        // switch (value)
+        // {
+        //     case 0: currentTypeFilter = LogMessageType.Normal; break;
+        //     case 1: currentTypeFilter = LogMessageType.Normal; break;
+        //     case 2: currentTypeFilter = LogMessageType.Debug; break;
+        //     case 3: currentTypeFilter = LogMessageType.Error; break;
+        // }
         RefreshDisplay();
     }
 
@@ -366,11 +375,15 @@ public class GameLogPanel : MonoBehaviour
             logText.text += formattedMessage + "\n";
         }
 
-        logText.ForceMeshUpdate();
-
-        if (contentRect != null)
+        // Only update mesh if logText has valid font/material references
+        if (logText != null && logText.font != null)
         {
-            contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+            logText.ForceMeshUpdate();
+
+            if (contentRect != null)
+            {
+                contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+            }
         }
 
         if (autoScrollToBottom && scrollRect != null)

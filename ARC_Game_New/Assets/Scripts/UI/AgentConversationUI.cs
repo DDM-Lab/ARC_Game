@@ -677,20 +677,25 @@ public class AgentConversationUI : MonoBehaviour
 
                     GameObject choiceItem = Instantiate(agentChoicePrefab, conversationContent);
 
-                    // Set up the choice UI manually for inline display
-                    TextMeshProUGUI choiceText = choiceItem.GetComponentInChildren<TextMeshProUGUI>();
-                    if (choiceText != null)
+                    // Use AgentChoiceUI component to properly set up the choice display
+                    AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
+                    if (choiceUI != null)
                     {
-                        choiceText.text = FormatPackageActions(package, availableActions);
-                    }
+                        // Create AgentChoice with formatted text and description
+                        string choiceText = FormatPackageActions(package, availableActions);
+                        AgentChoice choice = new AgentChoice(package.package_index, choiceText);
+                        choice.agentReasoning = FormatChoiceDescription(package, availableActions);
 
-                    // Add click handler for inline choice selection
-                    Button choiceButton = choiceItem.GetComponentInChildren<Button>();
-                    if (choiceButton != null)
-                    {
-                        int capturedIndex = package.package_index; // Capture for closure
-                        choiceButton.onClick.RemoveAllListeners();
-                        choiceButton.onClick.AddListener(() => OnInlineChoiceClicked(capturedIndex));
+                        // Initialize without parent (null) since inline choices are handled differently
+                        choiceUI.Initialize(choice, null);
+
+                        // Override click handler for inline choice selection
+                        if (choiceUI.choiceButton != null)
+                        {
+                            int capturedIndex = package.package_index; // Capture for closure
+                            choiceUI.choiceButton.onClick.RemoveAllListeners();
+                            choiceUI.choiceButton.onClick.AddListener(() => OnInlineChoiceClicked(capturedIndex));
+                        }
                     }
 
                     currentConversationItems.Add(choiceItem);
@@ -747,7 +752,10 @@ public class AgentConversationUI : MonoBehaviour
             var package = packages[i];
             string choiceText = FormatPackageActions(package, availableActions);
             AgentChoice choice = new AgentChoice(package.package_index, choiceText);
-            choice.agentReasoning = reasoning;
+
+            // Build detailed description: package description + action list
+            choice.agentReasoning = FormatChoiceDescription(package, availableActions);
+
             targetTask.agentChoices.Add(choice);
         }
 
@@ -757,6 +765,13 @@ public class AgentConversationUI : MonoBehaviour
 
     string FormatPackageActions(ActionPackage package, GameAction[] availableActions)
     {
+        // Use the package label as the primary choice text (strategy name from LLM)
+        if (!string.IsNullOrEmpty(package.label))
+        {
+            return package.label;
+        }
+
+        // Fallback: list action descriptions if no label provided
         if (package.action_indices == null || package.action_indices.Length == 0)
             return "No actions";
 
@@ -774,6 +789,38 @@ public class AgentConversationUI : MonoBehaviour
         }
 
         return string.Join(", ", actionNames);
+    }
+
+    string FormatChoiceDescription(ActionPackage package, GameAction[] availableActions)
+    {
+        // Build a detailed description with package description + action list
+        System.Text.StringBuilder desc = new System.Text.StringBuilder();
+
+        // Add package description from LLM if available
+        if (!string.IsNullOrEmpty(package.description))
+        {
+            desc.AppendLine(package.description);
+        }
+
+        // Add action list
+        if (package.action_indices != null && package.action_indices.Length > 0)
+        {
+            if (desc.Length > 0) desc.AppendLine(); // Add spacing
+
+            desc.AppendLine("Actions:");
+            foreach (int idx in package.action_indices)
+            {
+                if (idx >= 0 && idx < availableActions.Length)
+                {
+                    string actionName = availableActions[idx].description;
+                    if (string.IsNullOrEmpty(actionName))
+                        actionName = availableActions[idx].action_id;
+                    desc.AppendLine($"• {actionName}");
+                }
+            }
+        }
+
+        return desc.ToString().TrimEnd();
     }
 
     void OnInlineChoiceClicked(int packageIndex)
