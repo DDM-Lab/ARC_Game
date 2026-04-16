@@ -28,7 +28,7 @@ public class DailyReportData : MonoBehaviour
     private List<DeliveryTask> todayCompletedDeliveries = new List<DeliveryTask>();
     private int todayFoodProduced = 0;
     private int todayFoodDelivered = 0;
-    private int todayFoodConsumed = 0;
+    // private int todayFoodConsumed = 0; // Reserved for future use
     private int todayFoodWasted = 0;
     private int todayExpiredFood = 0;
     private int todayNewArrivals = 0;
@@ -220,7 +220,7 @@ public class DailyReportData : MonoBehaviour
         processedTaskIds.Clear();
         todayFoodProduced = 0;
         todayFoodDelivered = 0;
-        todayFoodConsumed = 0;
+        // todayFoodConsumed = 0; // Reserved for future use
         todayFoodWasted = 0;
         todayExpiredFood = 0;
         todayNewArrivals = 0;

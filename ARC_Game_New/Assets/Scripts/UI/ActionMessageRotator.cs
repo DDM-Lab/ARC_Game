@@ -25,7 +25,7 @@ public class ActionMessageRotator : MonoBehaviour
     private int currentHintIndex = 0;
     private Coroutine rotationCoroutine;
     private bool isShowingHint = true;
-    private float timeUntilNextRotation = 0f;
+    // private float timeUntilNextRotation = 0f; // Reserved for future use
 
     private void Start()
     {

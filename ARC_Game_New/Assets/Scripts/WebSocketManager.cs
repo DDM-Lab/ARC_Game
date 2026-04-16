@@ -502,11 +502,14 @@ public class WebSocketManager : MonoBehaviour
             {
                 foreach (var pkg in proposal.packages)
                 {
+                    // Build detailed description: package description + action list
+                    string detailedDescription = FormatPackageDescription(pkg, proposal.available_actions);
+
                     llmContent.choices.Add(new LLMAgentChoice
                     {
                         choiceId = pkg.package_index,
                         choiceText = pkg.label,
-                        agentReasoning = pkg.description,
+                        agentReasoning = detailedDescription,
                         confidence = pkg.confidence,
                         impacts = new System.Collections.Generic.List<LLMImpact>()
                     });
@@ -797,7 +800,6 @@ public class WebSocketManager : MonoBehaviour
         }
 
         // Parse and execute actions
-        bool allSuccess = true;
         if (!string.IsNullOrEmpty(actionsJson))
         {
             try
@@ -811,7 +813,6 @@ public class WebSocketManager : MonoBehaviour
                         var result = ActionExecutor.Instance.ExecuteAction(action);
                         if (!result.success)
                         {
-                            allSuccess = false;
                             Debug.LogWarning($"Action failed: {result.error_message}");
                         }
                     }
@@ -820,7 +821,6 @@ public class WebSocketManager : MonoBehaviour
             catch (System.Exception ex)
             {
                 Debug.LogError($"Failed to execute actions: {ex.Message}");
-                allSuccess = false;
             }
         }
 
@@ -899,6 +899,40 @@ public class WebSocketManager : MonoBehaviour
         SendRawMessage(json);
 
         Debug.Log($"📤 Sent step response: reward={reward}, terminated={terminated}, truncated={truncated}");
+    }
+
+    /// <summary>
+    /// Format package description combining LLM description + action list
+    /// </summary>
+    string FormatPackageDescription(ActionPackage package, GameAction[] availableActions)
+    {
+        System.Text.StringBuilder desc = new System.Text.StringBuilder();
+
+        // Add package description from LLM if available
+        if (!string.IsNullOrEmpty(package.description))
+        {
+            desc.AppendLine(package.description);
+        }
+
+        // Add action list
+        if (package.action_indices != null && package.action_indices.Length > 0 && availableActions != null)
+        {
+            if (desc.Length > 0) desc.AppendLine(); // Add spacing
+
+            desc.AppendLine("Actions:");
+            foreach (int idx in package.action_indices)
+            {
+                if (idx >= 0 && idx < availableActions.Length)
+                {
+                    string actionName = availableActions[idx].description;
+                    if (string.IsNullOrEmpty(actionName))
+                        actionName = availableActions[idx].action_id;
+                    desc.AppendLine($"• {actionName}");
+                }
+            }
+        }
+
+        return desc.ToString().TrimEnd();
     }
 }
 
