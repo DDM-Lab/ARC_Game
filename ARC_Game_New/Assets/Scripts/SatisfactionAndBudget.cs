@@ -12,6 +12,9 @@ public class SatisfactionAndBudget : MonoBehaviour
     public float maxSatisfaction = 100f;
     public float minSatisfaction = 0f;
     
+    [Header("Efficiency Settings")]
+    public float currentEfficiency = 0f;
+
     [Header("Budget Settings")]
     public int currentBudget = 10000;
     public int maxBudget = 999999;
@@ -34,6 +37,8 @@ public class SatisfactionAndBudget : MonoBehaviour
     public TextMeshProUGUI budgetText;
     public string budgetPrefix = "$";
     public TextMeshProUGUI satisfactionValueText;
+    public Slider efficiencySlider;
+    public TextMeshProUGUI efficiencyValueText;
     
     [Header("Debug")]
     public bool showDebugInfo = true;
@@ -128,11 +133,11 @@ public class SatisfactionAndBudget : MonoBehaviour
         // Find feedback effects if not assigned
         if (feedbackEffects == null)
             feedbackEffects = FindObjectOfType<BudgetSatisfactionFeedbackEffects>();
-        
-        // Set UI references for feedback effects
+
         if (feedbackEffects != null)
         {
-            feedbackEffects.SetUIReferences(satisfactionSlider, budgetText);
+            feedbackEffects.SetUIReferences(satisfactionSlider, budgetText, satisfactionValueText);
+            feedbackEffects.SetEfficiencyUIReferences(efficiencySlider, efficiencyValueText);
         }
     }
     
@@ -157,7 +162,12 @@ public class SatisfactionAndBudget : MonoBehaviour
         {
             satisfactionSlider.value = currentSatisfaction;
         }
-        
+
+        if (feedbackEffects == null && efficiencySlider != null)
+        {
+            efficiencySlider.value = currentEfficiency;
+        }
+
         // Always update budget text
         if (budgetText != null)
         {
@@ -165,6 +175,7 @@ public class SatisfactionAndBudget : MonoBehaviour
         }
 
         UpdateSatisfactionValueText();
+        UpdateEfficiencyValueText();
     }
 
     public void ForceRefreshUI()
@@ -172,12 +183,16 @@ public class SatisfactionAndBudget : MonoBehaviour
         if (satisfactionSlider != null)
             satisfactionSlider.value = currentSatisfaction;
 
+        if (efficiencySlider != null)
+            efficiencySlider.value = currentEfficiency;
+
         if (budgetText != null)
         {
             budgetText.text = budgetPrefix + currentBudget.ToString("N0");
         }
 
         UpdateSatisfactionValueText();
+        UpdateEfficiencyValueText();
     }
 
     // ===== SATISFACTION METHODS =====
@@ -320,6 +335,40 @@ public class SatisfactionAndBudget : MonoBehaviour
         if (satisfactionValueText != null)
             satisfactionValueText.text = $"{currentSatisfaction:F1}";
     }
+
+    void UpdateEfficiencyValueText()
+    {
+        if (efficiencyValueText != null)
+            efficiencyValueText.text = $"{currentEfficiency:F1}";
+    }
+
+    // ===== EFFICIENCY METHODS =====
+
+    /// <summary>
+    /// Add resource allocation efficiency score (called by DailyReportUI at end of day).
+    /// </summary>
+    public void AddEfficiency(float amount, string description = "")
+    {
+        float previousValue = currentEfficiency;
+        currentEfficiency += amount;
+
+        // Show feedback effects
+        if (feedbackEffects != null && Mathf.Abs(amount) > 0.01f)
+        {
+            feedbackEffects.ShowEfficiencyChange(previousValue, currentEfficiency);
+        }
+
+        // Update text directly; slider is animated by feedback effects
+        UpdateEfficiencyValueText();
+        if (feedbackEffects == null && efficiencySlider != null)
+            efficiencySlider.value = currentEfficiency;
+
+        if (showDebugInfo)
+            Debug.Log($"Efficiency: {previousValue:F1} → {currentEfficiency:F1} ({amount:+0.0;-0.0}) - {description}");
+        GameLogPanel.Instance?.LogMetricsChange($"Efficiency: {previousValue:F1} → {currentEfficiency:F1} ({amount:+0.0;-0.0}) - {description}");
+    }
+
+    public float GetCurrentEfficiency() => currentEfficiency;
 
     // ===== BUDGET METHODS =====
 

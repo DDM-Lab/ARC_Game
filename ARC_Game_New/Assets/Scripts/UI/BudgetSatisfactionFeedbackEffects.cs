@@ -8,6 +8,7 @@ public class BudgetSatisfactionFeedbackEffects : MonoBehaviour
     [Header("Fixed Feedback Text Objects")]
     public GameObject budgetFeedbackText; // Fixed text object above budget
     public GameObject satisfactionFeedbackText; // Fixed text object above satisfaction slider
+    public GameObject efficiencyFeedbackText; // Fixed text object above efficiency display
     
     [Header("Popup Sprites")]
     public Sprite positiveBackgroundSprite; // Green background
@@ -35,16 +36,26 @@ public class BudgetSatisfactionFeedbackEffects : MonoBehaviour
     
     // References to UI elements (will be set by GlobalVariables)
     private Slider satisfactionSlider;
+    private Slider efficiencySlider;
     private TextMeshProUGUI budgetText;
+    private TextMeshProUGUI satisfactionValueText;
+    private TextMeshProUGUI efficiencyValueText;
     private Color originalBudgetTextColor;
     private Vector3 originalBudgetTextScale;
-    
+    private Color originalSatisfactionTextColor;
+    private Vector3 originalSatisfactionTextScale;
+    private Color originalEfficiencyTextColor;
+    private Vector3 originalEfficiencyTextScale;
+
     // Singleton for easy access
     public static BudgetSatisfactionFeedbackEffects Instance { get; private set; }
 
     // Coroutines for managing feedback text animations
     private Coroutine budgetFeedbackCoroutine;
     private Coroutine satisfactionFeedbackCoroutine;
+    private Coroutine efficiencyFeedbackCoroutine;
+    private Coroutine satisfactionHighlightCoroutine;
+    private Coroutine efficiencyHighlightCoroutine;
 
     void Awake()
     {
@@ -81,20 +92,47 @@ public class BudgetSatisfactionFeedbackEffects : MonoBehaviour
         {
             satisfactionFeedbackText.SetActive(false);
         }
+
+        if (efficiencyFeedbackText != null)
+        {
+            efficiencyFeedbackText.SetActive(false);
+        }
     }
     
     /// <summary>
-    /// Set references to UI elements (called by GlobalVariables)
+    /// Set references to UI elements (called by SatisfactionAndBudget)
     /// </summary>
-    public void SetUIReferences(Slider slider, TextMeshProUGUI budgetTextComponent)
+    public void SetUIReferences(Slider slider, TextMeshProUGUI budgetTextComponent, TextMeshProUGUI satisfactionText = null)
     {
         satisfactionSlider = slider;
         budgetText = budgetTextComponent;
-        
+        satisfactionValueText = satisfactionText;
+
         if (budgetText != null)
         {
             originalBudgetTextColor = budgetText.color;
             originalBudgetTextScale = budgetText.transform.localScale;
+        }
+
+        if (satisfactionValueText != null)
+        {
+            originalSatisfactionTextColor = satisfactionValueText.color;
+            originalSatisfactionTextScale = satisfactionValueText.transform.localScale;
+        }
+    }
+
+    /// <summary>
+    /// Set efficiency UI references (called by SatisfactionAndBudget)
+    /// </summary>
+    public void SetEfficiencyUIReferences(Slider slider, TextMeshProUGUI efficiencyText)
+    {
+        efficiencySlider = slider;
+        efficiencyValueText = efficiencyText;
+
+        if (efficiencyValueText != null)
+        {
+            originalEfficiencyTextColor = efficiencyValueText.color;
+            originalEfficiencyTextScale = efficiencyValueText.transform.localScale;
         }
     }
     
@@ -105,20 +143,55 @@ public class BudgetSatisfactionFeedbackEffects : MonoBehaviour
     {
         float change = newValue - oldValue;
         if (Mathf.Abs(change) < 0.01f) return; // Skip tiny changes
-        
-        // Show feedback text
-        string feedbackText = FormatSatisfactionText(change);
+
         bool isPositive = change > 0;
-        ShowFeedbackText(satisfactionFeedbackText, feedbackText, isPositive);
-        
+
+        // Show feedback popup text
+        ShowFeedbackText(satisfactionFeedbackText, FormatChangeText(change), isPositive);
+
         // Animate satisfaction slider
         if (satisfactionSlider != null)
-        {
             StartCoroutine(AnimateSatisfactionSlider(oldValue, newValue));
+
+        // Highlight the value text (same effect as budget)
+        if (satisfactionValueText != null)
+        {
+            if (satisfactionHighlightCoroutine != null) StopCoroutine(satisfactionHighlightCoroutine);
+            satisfactionHighlightCoroutine = StartCoroutine(HighlightText(
+                satisfactionValueText, originalSatisfactionTextColor, originalSatisfactionTextScale, isPositive));
         }
-        
+
         if (showDebugInfo)
             Debug.Log($"Satisfaction feedback: {change:+0.0;-0.0}");
+    }
+
+    /// <summary>
+    /// Show efficiency change feedback
+    /// </summary>
+    public void ShowEfficiencyChange(float oldValue, float newValue)
+    {
+        float change = newValue - oldValue;
+        if (Mathf.Abs(change) < 0.01f) return;
+
+        bool isPositive = change > 0;
+
+        // Show feedback popup text
+        ShowFeedbackText(efficiencyFeedbackText, FormatChangeText(change), isPositive);
+
+        // Animate efficiency slider
+        if (efficiencySlider != null)
+            StartCoroutine(AnimateEfficiencySlider(oldValue, newValue));
+
+        // Highlight the value text
+        if (efficiencyValueText != null)
+        {
+            if (efficiencyHighlightCoroutine != null) StopCoroutine(efficiencyHighlightCoroutine);
+            efficiencyHighlightCoroutine = StartCoroutine(HighlightText(
+                efficiencyValueText, originalEfficiencyTextColor, originalEfficiencyTextScale, isPositive));
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"Efficiency feedback: {change:+0.0;-0.0}");
     }
     
     /// <summary>
@@ -162,6 +235,11 @@ public class BudgetSatisfactionFeedbackEffects : MonoBehaviour
             StopCoroutine(satisfactionFeedbackCoroutine);
             feedbackObject.SetActive(false);
         }
+        else if (feedbackObject == efficiencyFeedbackText && efficiencyFeedbackCoroutine != null)
+        {
+            StopCoroutine(efficiencyFeedbackCoroutine);
+            feedbackObject.SetActive(false);
+        }
         
         // Get components
         Image backgroundImage = feedbackObject.GetComponent<Image>();
@@ -192,19 +270,20 @@ public class BudgetSatisfactionFeedbackEffects : MonoBehaviour
         {
             satisfactionFeedbackCoroutine = StartCoroutine(AnimateFeedbackText(feedbackObject));
         }
+        else if (feedbackObject == efficiencyFeedbackText)
+        {
+            efficiencyFeedbackCoroutine = StartCoroutine(AnimateFeedbackText(feedbackObject));
+        }
         
         if (showDebugInfo)
             Debug.Log($"Showing feedback text: '{text}', positive: {isPositive}");
     }
     
-    string FormatSatisfactionText(float change)
+    string FormatChangeText(float change)
     {
-        if (change > 0)
-            return $"+{change:F1}";
-        else
-            return $"{change:F1}"; // Negative sign already included
+        return change >= 0 ? $"+{change:F1}" : $"{change:F1}";
     }
-    
+
     string FormatBudgetText(int change)
     {
         if (change > 0)
@@ -285,43 +364,59 @@ public class BudgetSatisfactionFeedbackEffects : MonoBehaviour
     
     IEnumerator HighlightBudgetText(bool isPositive)
     {
-        if (budgetText == null) yield break;
-        
+        yield return StartCoroutine(HighlightText(budgetText, originalBudgetTextColor, originalBudgetTextScale, isPositive));
+    }
+
+    IEnumerator HighlightText(TextMeshProUGUI text, Color originalColor, Vector3 originalScale, bool isPositive)
+    {
+        if (text == null) yield break;
+
         Color highlightColor = isPositive ? positiveHighlightColor : negativeHighlightColor;
-        Vector3 highlightScale = originalBudgetTextScale * highlightScaleMultiplier;
-        
-        float elapsedTime = 0f;
+        Vector3 highlightScale = originalScale * highlightScaleMultiplier;
         float halfDuration = highlightDuration * 0.5f;
-        
+        float elapsedTime = 0f;
+
         // Scale up and change color
         while (elapsedTime < halfDuration)
         {
             elapsedTime += Time.unscaledDeltaTime;
             float progress = elapsedTime / halfDuration;
-            
-            budgetText.color = Color.Lerp(originalBudgetTextColor, highlightColor, progress);
-            budgetText.transform.localScale = Vector3.Lerp(originalBudgetTextScale, highlightScale, progress);
-            
+            text.color = Color.Lerp(originalColor, highlightColor, progress);
+            text.transform.localScale = Vector3.Lerp(originalScale, highlightScale, progress);
             yield return null;
         }
-        
+
         elapsedTime = 0f;
-        
+
         // Scale down and restore color
         while (elapsedTime < halfDuration)
         {
             elapsedTime += Time.unscaledDeltaTime;
             float progress = elapsedTime / halfDuration;
-            
-            budgetText.color = Color.Lerp(highlightColor, originalBudgetTextColor, progress);
-            budgetText.transform.localScale = Vector3.Lerp(highlightScale, originalBudgetTextScale, progress);
-            
+            text.color = Color.Lerp(highlightColor, originalColor, progress);
+            text.transform.localScale = Vector3.Lerp(highlightScale, originalScale, progress);
             yield return null;
         }
-        
-        // Ensure we end at original values
-        budgetText.color = originalBudgetTextColor;
-        budgetText.transform.localScale = originalBudgetTextScale;
+
+        text.color = originalColor;
+        text.transform.localScale = originalScale;
+    }
+
+    IEnumerator AnimateEfficiencySlider(float fromValue, float toValue)
+    {
+        if (efficiencySlider == null) yield break;
+
+        float elapsedTime = 0f;
+        while (elapsedTime < sliderAnimationDuration)
+        {
+            elapsedTime += Time.unscaledDeltaTime;
+            float progress = elapsedTime / sliderAnimationDuration;
+            float curvedProgress = sliderAnimationCurve.Evaluate(progress);
+            efficiencySlider.value = Mathf.Lerp(fromValue, toValue, curvedProgress);
+            yield return null;
+        }
+
+        efficiencySlider.value = toValue;
     }
     
     [ContextMenu("Test Budget Increase")]
