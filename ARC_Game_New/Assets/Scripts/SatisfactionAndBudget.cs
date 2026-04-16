@@ -203,7 +203,7 @@ public class SatisfactionAndBudget : MonoBehaviour
     public void AddSatisfaction(float amount, string description = "")
     {
         float previousValue = currentSatisfaction;
-        currentSatisfaction = Mathf.Clamp(currentSatisfaction + amount, minSatisfaction, maxSatisfaction);
+        currentSatisfaction += amount;
 
         // Use default description if none provided
         if (string.IsNullOrEmpty(description))
@@ -231,10 +231,11 @@ public class SatisfactionAndBudget : MonoBehaviour
         else
         {
             if (budgetText != null)
-            {
                 budgetText.text = budgetPrefix + currentBudget.ToString("N0");
-            }
         }
+
+        // Always update satisfaction text regardless of feedback effects
+        UpdateSatisfactionValueText();
 
         OnSatisfactionChanged?.Invoke(currentSatisfaction);
 

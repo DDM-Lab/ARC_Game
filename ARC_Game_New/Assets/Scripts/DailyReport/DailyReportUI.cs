@@ -547,7 +547,8 @@ public class DailyReportUI : MonoBehaviour
         currentMetrics.satisfactionChangeCalculated = satisfactionChange;
 
         int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
-        // Sync efficiency to HUD
+        // Sync both scores to HUD
+        SatisfactionAndBudget.Instance?.AddSatisfaction(satisfactionChange, $"Day {currentDay} report");
         SatisfactionAndBudget.Instance?.AddEfficiency(efficiencyChange, $"Day {currentDay} efficiency");
         
         // Also store aggregate totals
