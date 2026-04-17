@@ -21,9 +21,12 @@ public class ParametersPanel : MonoBehaviour
     [System.Serializable]
     public class ParameterRow
     {
+        public enum RowType { Slider, Dropdown} // for enums like weather type etc.
         [Tooltip("Must match a switch-case in GetValue/SetValue")]
         public string paramName;
+        public RowType controlType; 
         public Slider          slider;
+        public TMP_Dropdown dropdown;
         public TMP_InputField  inputField;
         [Space]
         public float minValue = 0f;
@@ -51,31 +54,73 @@ public class ParametersPanel : MonoBehaviour
     {
         ScenarioParameters p = InstructorConfigManager.Instance.CurrentConfig.parameters;
 
+        //foreach (var row in rows)
+        //{
+        //    float val = GetValue(p, row.paramName);
+
+        //    // Configure slider bounds
+        //    row.slider.minValue     = row.minValue;
+        //    row.slider.maxValue     = row.maxValue;
+        //    row.slider.wholeNumbers = row.isInt;
+
+        //    // Sync UI without triggering callbacks
+        //    _syncing = true;
+        //    row.slider.value    = val;
+        //    row.inputField.text = FormatValue(val, row.isInt);
+        //    _syncing = false;
+
+        //    // Wire callbacks (re-wiring each OnEnable is safe – Unity deduplicates listeners
+        //    // only if added with AddListener the same way; remove first to be safe)
+        //    var capturedRow = row;
+        //    row.slider.onValueChanged.RemoveAllListeners();
+        //    row.slider.onValueChanged.AddListener(v => OnSliderChanged(capturedRow, v));
+
+        //    row.inputField.onEndEdit.RemoveAllListeners();
+        //    row.inputField.onEndEdit.AddListener(s => OnInputChanged(capturedRow, s));
+        //}
         foreach (var row in rows)
         {
             float val = GetValue(p, row.paramName);
+            var capturedRow = row; // Stay safe with closure
 
-            // Configure slider bounds
-            row.slider.minValue     = row.minValue;
-            row.slider.maxValue     = row.maxValue;
-            row.slider.wholeNumbers = row.isInt;
-
-            // Sync UI without triggering callbacks
             _syncing = true;
-            row.slider.value    = val;
+
+            if (row.controlType == ParameterRow.RowType.Slider)
+            {
+                // Original Slider logic
+                row.slider.minValue = row.minValue;
+                row.slider.maxValue = row.maxValue;
+                row.slider.wholeNumbers = row.isInt;
+                row.slider.value = val;
+
+                row.slider.onValueChanged.RemoveAllListeners();
+                row.slider.onValueChanged.AddListener(v => OnSliderChanged(capturedRow, v));
+
+                // Show slider, hide dropdown
+                row.slider.gameObject.SetActive(true);
+                if (row.dropdown != null) row.dropdown.gameObject.SetActive(false);
+            }
+            else
+            {
+                // New Dropdown logic
+                row.dropdown.value = (int)val;
+
+                row.dropdown.onValueChanged.RemoveAllListeners();
+                row.dropdown.onValueChanged.AddListener(v => OnSliderChanged(capturedRow, (float)v));
+
+                // Show dropdown, hide slider
+                row.dropdown.gameObject.SetActive(true);
+                if (row.slider != null) row.slider.gameObject.SetActive(false);
+            }
+
+            // Shared InputField logic (Exactly like your original)
             row.inputField.text = FormatValue(val, row.isInt);
-            _syncing = false;
-
-            // Wire callbacks (re-wiring each OnEnable is safe – Unity deduplicates listeners
-            // only if added with AddListener the same way; remove first to be safe)
-            var capturedRow = row;
-            row.slider.onValueChanged.RemoveAllListeners();
-            row.slider.onValueChanged.AddListener(v => OnSliderChanged(capturedRow, v));
-
             row.inputField.onEndEdit.RemoveAllListeners();
             row.inputField.onEndEdit.AddListener(s => OnInputChanged(capturedRow, s));
+
+            _syncing = false;
         }
-    }
+}
 
     // ── Callbacks ─────────────────────────────────────────────────────────────
 
@@ -95,7 +140,16 @@ public class ParametersPanel : MonoBehaviour
 
         val = Mathf.Clamp(val, row.minValue, row.maxValue);
         _syncing = true;
-        row.slider.value    = val;
+        //row.slider.value    = val;
+        // Check which UI element to update based on the row type
+        if (row.controlType == ParameterRow.RowType.Slider)
+        {
+            row.slider.value = val;
+        }
+        else
+        {
+            row.dropdown.value = (int)val;
+        }
         row.inputField.text = FormatValue(val, row.isInt);
         _syncing = false;
         Commit(row.paramName, val);
@@ -111,37 +165,133 @@ public class ParametersPanel : MonoBehaviour
     // ── Parameter get/set ─────────────────────────────────────────────────────
     //  Extend these switches whenever ScenarioParameters gains new fields.
 
+    //static float GetValue(ScenarioParameters p, string name) => name switch
+    //{
+    //    "initialBudget"          => p.initialBudget, //have 
+    //    "dailyBudgetAllocation"  => p.dailyBudgetAllocation, //have
+    //    "foodCostPerPerson"      => p.foodCostPerPerson,
+    //    "shelterCostPerPerson"   => p.shelterCostPerPerson,
+    //    "workerTrainingCost"     => p.workerTrainingCost,
+    //    "initialSatisfaction"    => p.initialSatisfaction, // have
+    //    "totalPopulation"        => p.totalPopulation,
+    //    "numberOfCommunities"    => p.numberOfCommunities, // have
+    //    "initialWorkerCount"     => p.initialWorkerCount,
+    //    "gameDurationDays"       => p.gameDurationDays, // have
+    //    "dayDurationSeconds"     => p.dayDurationSeconds,
+    //    _                        => 0f,
+
+    //};
     static float GetValue(ScenarioParameters p, string name) => name switch
     {
-        "initialBudget"          => p.initialBudget,
-        "dailyBudgetAllocation"  => p.dailyBudgetAllocation,
-        "foodCostPerPerson"      => p.foodCostPerPerson,
-        "shelterCostPerPerson"   => p.shelterCostPerPerson,
-        "workerTrainingCost"     => p.workerTrainingCost,
-        "initialSatisfaction"    => p.initialSatisfaction,
-        "totalPopulation"        => p.totalPopulation,
-        "numberOfCommunities"    => p.numberOfCommunities,
-        "initialWorkerCount"     => p.initialWorkerCount,
-        "gameDurationDays"       => p.gameDurationDays,
-        "dayDurationSeconds"     => p.dayDurationSeconds,
-        _                        => 0f
+        // Economy
+        "initialBudget" => p.initialBudget, // h
+        "dailyBudgetAllocation" => p.dailyBudgetAllocation, // h
+        "foodCostPerPerson" => p.foodCostPerPerson,
+        "shelterCostPerPerson" => p.shelterCostPerPerson,
+        "workerTrainingCost" => p.workerTrainingCost,
+
+        // Population & Satisfaction
+        "initialSatisfaction" => p.initialSatisfaction, // h
+        "totalPopulation" => p.totalPopulation,
+        "numberOfCommunities" => p.numberOfCommunities, // h
+        "residentsPerCommunity" => p.residentsPerCommunity, // h
+
+        // Workers
+        "initialWorkerCount" => p.initialWorkerCount,
+        "initialTrainedVolunteers" => p.initialTrainedVolunteerCount, // h
+        "initialUntrainedVolunteers" => p.initialUntrainedVolunteerCount, // h
+        "requiredWorkersPerLoc" => p.requiredWorkerUnitsPerLoc, // h
+
+        // Timing
+        "gameDurationDays" => p.gameDurationDays, // h
+        "dayDurationSeconds" => p.dayDurationSeconds,
+        "roundsPerDay" => p.roundsPerDay, // h
+
+        // Weather (Dropdown)
+        "initialWeather" => (int)p.initialWeather, // h
+
+        // Buildings
+        "kitchenCapacity" => p.kitchenCapacity, // h
+        "shelterCapacity" => p.shelterCapacity, // h
+        "caseworkCapacity" => p.caseworkCapacity, // h
+        "initialERVCount" => p.initialERVCount, // h
+
+        // Tasks
+        "foodDemandProb" => p.foodDemandProbability, // h
+        "externalRelationFreq" => p.externalRelationFrequency, // h
+        "emergencyTaskFreq" => p.emergencyTaskFrequency, // h
+
+        // Flooding
+        "shelterFloodThreshold" => p.shelterFloodThreshold, // h
+        "shelterFloodRadius" => p.shelterFloodRadius, // h
+        "shelterFloodComparison" => (float)p.shelterFloodComparisonType, // h
+
+        _ => 0f,
     };
 
+    //static void SetValue(ScenarioParameters p, string name, float v)
+    //{
+    //    switch (name)
+    //    {
+    //        case "initialBudget":         p.initialBudget         = (int)v; break;
+    //        case "dailyBudgetAllocation": p.dailyBudgetAllocation = v;      break;
+    //        case "foodCostPerPerson":     p.foodCostPerPerson     = v;      break;
+    //        case "shelterCostPerPerson":  p.shelterCostPerPerson  = v;      break;
+    //        case "workerTrainingCost":    p.workerTrainingCost    = v;      break;
+    //        case "initialSatisfaction":   p.initialSatisfaction   = (int)v; break;
+    //        case "totalPopulation":       p.totalPopulation       = (int)v; break;
+    //        case "numberOfCommunities":   p.numberOfCommunities   = (int)v; break;
+    //        case "initialWorkerCount":    p.initialWorkerCount    = (int)v; break;
+    //        case "gameDurationDays":      p.gameDurationDays      = (int)v; break;
+    //        case "dayDurationSeconds":    p.dayDurationSeconds    = v;      break;
+    //    }
+    //}
     static void SetValue(ScenarioParameters p, string name, float v)
     {
         switch (name)
         {
-            case "initialBudget":         p.initialBudget         = (int)v; break;
-            case "dailyBudgetAllocation": p.dailyBudgetAllocation = v;      break;
-            case "foodCostPerPerson":     p.foodCostPerPerson     = v;      break;
-            case "shelterCostPerPerson":  p.shelterCostPerPerson  = v;      break;
-            case "workerTrainingCost":    p.workerTrainingCost    = v;      break;
-            case "initialSatisfaction":   p.initialSatisfaction   = (int)v; break;
-            case "totalPopulation":       p.totalPopulation       = (int)v; break;
-            case "numberOfCommunities":   p.numberOfCommunities   = (int)v; break;
-            case "initialWorkerCount":    p.initialWorkerCount    = (int)v; break;
-            case "gameDurationDays":      p.gameDurationDays      = (int)v; break;
-            case "dayDurationSeconds":    p.dayDurationSeconds    = v;      break;
+            // Economy
+            case "initialBudget": p.initialBudget = (int)v; break;
+            case "dailyBudgetAllocation": p.dailyBudgetAllocation = v; break;
+            case "foodCostPerPerson": p.foodCostPerPerson = v; break;
+            case "shelterCostPerPerson": p.shelterCostPerPerson = v; break;
+            case "workerTrainingCost": p.workerTrainingCost = v; break;
+
+            // Population
+            case "initialSatisfaction": p.initialSatisfaction = (int)v; break;
+            case "totalPopulation": p.totalPopulation = (int)v; break;
+            case "numberOfCommunities": p.numberOfCommunities = (int)v; break;
+            case "residentsPerCommunity": p.residentsPerCommunity = (int)v; break;
+
+            // Workers
+            case "initialWorkerCount": p.initialWorkerCount = (int)v; break;
+            case "initialTrainedVolunteers": p.initialTrainedVolunteerCount = (int)v; break;
+            case "initialUntrainedVolunteers": p.initialUntrainedVolunteerCount = (int)v; break;
+            case "requiredWorkersPerLoc": p.requiredWorkerUnitsPerLoc = (int)v; break;
+
+            // Timing
+            case "gameDurationDays": p.gameDurationDays = (int)v; break;
+            case "dayDurationSeconds": p.dayDurationSeconds = v; break;
+            case "roundsPerDay": p.roundsPerDay = (int)v; break;
+
+            // Weather
+            case "initialWeather": p.initialWeather = (WeatherType)(int)v; break;
+
+            // Buildings
+            case "kitchenCapacity": p.kitchenCapacity = (int)v; break;
+            case "shelterCapacity": p.shelterCapacity = (int)v; break;
+            case "caseworkCapacity": p.caseworkCapacity = (int)v; break;
+            case "initialERVCount": p.initialERVCount = (int)v; break;
+
+            // Tasks
+            case "foodDemandProb": p.foodDemandProbability = v; break;
+            case "externalRelationFreq": p.externalRelationFrequency = (int)v; break;
+            case "emergencyTaskFreq": p.emergencyTaskFrequency = (int)v; break;
+
+            // Flooding
+            case "shelterFloodThreshold": p.shelterFloodThreshold = (int)v; break;
+            case "shelterFloodRadius": p.shelterFloodRadius = (int)v; break;
+            case "shelterFloodComparison": p.shelterFloodComparisonType = (FloodedFacilityTrigger.ComparisonType)(int)v; break;
         }
     }
 

@@ -1,17 +1,29 @@
+﻿using System.Collections;
+using System.Threading;
+using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Networking;
-using System.Collections;
-using Unity.Collections;
 
 public class GameConfigLoader : MonoBehaviour
 {
     [Header("Google Sheets Config")]
     [Tooltip("Publish your Google Sheet as CSV and paste the URL here")]
     public string googleSheetsCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTGcKtnKuRq1dS-ZMMYKmepAEsfeaYhKlt8IMSkZ1xe-5_JApbSfTokI_VHFS8v0g3XIHWHWEPSdSzS/pub?gid=0&single=true&output=csv";
-    
+
+    [Header("Map Config Server")]
+    [Tooltip("GET endpoint served by map_config_server.py  (leave blank to skip)")]
+    public string mapConfigServerUrl = "http://localhost:8765/config";
+    [Tooltip("Seconds before giving up and using the default scene layout")]
+    public float mapConfigTimeout = 5f;
+
+
+
+    [Header("Settings")]
+    public bool disableLoader = false;
+
     [Header("Debug")]
     public bool showDebugInfo = true;
-    
+
     // Loaded config 
     public int loadedInitialBudget=10000;
     public int loadedInitialSatisfaction=50;
@@ -39,15 +51,20 @@ public class GameConfigLoader : MonoBehaviour
     public float loadedInitialStormSpreadChanceMultiplier = 1.5f;
 
     public float loadedInitialFoodDemandFrequency = -1f; // default dne
-    public FloodedFacilityTrigger loadedInitialFloodFacilityTrigger = new FloodedFacilityTrigger
-    {
-        facilityType = FloodedFacilityTrigger.FacilityFloodType.SpecificBuildingType,
-        comparison = FloodedFacilityTrigger.ComparisonType.AtLeast,
-        floodTileThreshold = 2,
-        specificBuildingType = BuildingType.Shelter,
-        specificPrebuiltType = PrebuiltBuildingType.Community,
-        detectionRadius = 5
-    };
+    //public FloodedFacilityTrigger loadedInitialFloodFacilityTrigger = new FloodedFacilityTrigger
+    //{
+    //    facilityType = FloodedFacilityTrigger.FacilityFloodType.SpecificBuildingType,
+    //    comparison = FloodedFacilityTrigger.ComparisonType.AtLeast,
+    //    floodTileThreshold = 2,
+    //    specificBuildingType = BuildingType.Shelter,
+    //    specificPrebuiltType = PrebuiltBuildingType.Community,
+    //    detectionRadius = 5
+    //};
+    // for struct abv
+    public int loadedInitialShelterFloodThreshold = 2;
+    public int loadedInitialShelterFloodRadius = 5;
+    public FloodedFacilityTrigger.ComparisonType loadedInitialShelterFloodComparison;
+    // end
 
     public int loadedInitialERV = 3;
     public int loadedInitialExternalRelationFrequency = 3; // three per game
@@ -60,9 +77,16 @@ public class GameConfigLoader : MonoBehaviour
     public TaskData shelterFloodDmg; 
     public TaskData budgetAdvisoryER;
     public TaskData budgetEmergencyER;
-    
+
+    // ── Map config (new) ──────────────────────────────────────────────────────
+    private MapConfig loadedMapConfig;
+    private bool mapConfigLoaded = false; // true when fetch is done (success OR failure)
+    private bool mapConfigSuccess = false; // true only when server returned valid data
+
     public static GameConfigLoader Instance { get; private set; }
-    
+
+    // ─────────────────────────────────────────────────────────────────────────
+
     void Awake()
     {
         if (Instance == null)
@@ -278,7 +302,8 @@ public class GameConfigLoader : MonoBehaviour
             {
                 if (System.Enum.TryParse(value, true, out FloodedFacilityTrigger.ComparisonType cmp))
                 {
-                    loadedInitialFloodFacilityTrigger.comparison = cmp;
+                    //loadedInitialFloodFacilityTrigger.comparison = cmp;
+                    loadedInitialShelterFloodComparison = cmp;
                 }
                 else
                 {
@@ -288,12 +313,12 @@ public class GameConfigLoader : MonoBehaviour
             else if (parameter.Equals("initialShelterFloodDamageFloodTileThreshold", System.StringComparison.OrdinalIgnoreCase))
             {
                 if (int.TryParse(value, out int floodTileThreshold))
-                    loadedInitialFloodFacilityTrigger.floodTileThreshold = floodTileThreshold;
+                    loadedInitialShelterFloodThreshold = floodTileThreshold;
             }
             else if (parameter.Equals("initialShelterFloodDamageFloodDetectionRange", System.StringComparison.OrdinalIgnoreCase))
             {
                 if (int.TryParse(value, out int floodDetectionRange))
-                    loadedInitialFloodFacilityTrigger.detectionRadius = floodDetectionRange;
+                    loadedInitialShelterFloodThreshold = floodDetectionRange;
             }
             else if (parameter.Equals("initialERVCount", System.StringComparison.OrdinalIgnoreCase))
             {
@@ -323,6 +348,78 @@ public class GameConfigLoader : MonoBehaviour
         
         configLoaded = true;
     }
+
+    // ── Map Config from server (new) ──────────────────────────────────────────
+
+    IEnumerator LoadMapConfigFromServer()
+    {
+        if (string.IsNullOrEmpty(mapConfigServerUrl))
+        {
+            if (showDebugInfo)
+                Debug.Log("GameConfigLoader: No map config URL set — using default scene layout.");
+            mapConfigLoaded = true;
+            yield break;
+        }
+
+        string urlWithCacheBuster = mapConfigServerUrl + "?t=" + System.DateTime.Now.Ticks;
+
+        if (showDebugInfo)
+            Debug.Log("GameConfigLoader: Fetching map config from server...");
+
+        using (UnityWebRequest request = UnityWebRequest.Get(urlWithCacheBuster))
+        {
+            request.timeout = (int)mapConfigTimeout;
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                string json = request.downloadHandler.text;
+                try
+                {
+                    MapConfig parsed = JsonUtility.FromJson<MapConfig>(json);
+                    if (parsed != null && parsed.gridWidth > 0 && parsed.gridHeight > 0)
+                    {
+                        loadedMapConfig = parsed;
+                        mapConfigSuccess = true;
+                        if (showDebugInfo)
+                            Debug.Log($"GameConfigLoader: Map config loaded (schema v{parsed.schemaVersion}, " +
+                                      $"{parsed.objects?.Count ?? 0} objects).");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("GameConfigLoader: Map config JSON was empty or invalid. Using default layout.");
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"GameConfigLoader: Failed to parse map config JSON — {ex.Message}. Using default layout.");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"GameConfigLoader: Could not reach map config server ({request.error}). Using default scene layout.");
+            }
+
+            mapConfigLoaded = true;
+        }
+    }
+
+    // ── Public API ────────────────────────────────────────────────────────────
+
+    /// <summary>CSV parameters are ready (existing gate).</summary>
+    //public bool IsConfigLoaded() => configLoaded;
+
+    /// <summary>Map config fetch is done (success or fallback).</summary>
+    public bool IsMapConfigLoaded() => mapConfigLoaded;
+
+    /// <summary>True when the server returned a valid MapConfig.</summary>
+    public bool HasServerMapConfig() => mapConfigSuccess;
+
+    /// <summary>
+    /// Returns the server-loaded MapConfig, or null if unavailable.
+    /// Check HasServerMapConfig() first; null means use default scene layout.
+    /// </summary>
+    public MapConfig GetMapConfig() => loadedMapConfig;
 
 
     void ApplyInitBudgetAllocation()
@@ -403,21 +500,43 @@ void ApplyTrigger(TaskData task, int interval)
 }
 
 
+    //void ApplyInitShelterFloodDamage()
+    //{
+    //    if (shelterFloodDmg != null)
+    //    {
+    //        if (shelterFloodDmg.floodedFacilityTriggers.Count != 0)
+    //        {
+    //            shelterFloodDmg.floodedFacilityTriggers[0] = loadedInitialFloodFacilityTrigger;
+    //        }
+    //        else
+    //        {
+    //            shelterFloodDmg.floodedFacilityTriggers.Add(loadedInitialFloodFacilityTrigger);
+    //        }
+    //    }
+    //}
     void ApplyInitShelterFloodDamage()
     {
-        if (shelterFloodDmg != null)
+        if (shelterFloodDmg == null) return;
+
+        // Construct the trigger locally just for the application process
+        FloodedFacilityTrigger trigger = new FloodedFacilityTrigger
         {
-            if (shelterFloodDmg.floodedFacilityTriggers.Count != 0)
-            {
-                shelterFloodDmg.floodedFacilityTriggers[0] = loadedInitialFloodFacilityTrigger;
-            }
-            else
-            {
-                shelterFloodDmg.floodedFacilityTriggers.Add(loadedInitialFloodFacilityTrigger);
-            }
-        }
+            facilityType = FloodedFacilityTrigger.FacilityFloodType.SpecificBuildingType,
+            specificBuildingType = BuildingType.Shelter,
+            specificPrebuiltType = PrebuiltBuildingType.Community,
+
+            // Use our clean local variables
+            comparison = loadedInitialShelterFloodComparison,
+            floodTileThreshold = loadedInitialShelterFloodThreshold,
+            detectionRadius = loadedInitialShelterFloodRadius
+        };
+
+        if (shelterFloodDmg.floodedFacilityTriggers.Count != 0)
+            shelterFloodDmg.floodedFacilityTriggers[0] = trigger;
+        else
+            shelterFloodDmg.floodedFacilityTriggers.Add(trigger);
     }
-    
+
     /// <summary>
     /// Check if config is ready
     /// </summary>
@@ -543,10 +662,10 @@ void ApplyTrigger(TaskData task, int interval)
         return loadedInitialFoodDemandFrequency;
     }
 
-    public FloodedFacilityTrigger GetInitialShelterFLoodDamage()
-    {
-        return loadedInitialFloodFacilityTrigger;
-    }
+    //public FloodedFacilityTrigger GetInitialShelterFLoodDamage()
+    //{
+    //    return loadedInitialFloodFacilityTrigger;
+    //}
     public int GetInitialERVCount()
     {
         return loadedInitialERV;
@@ -559,5 +678,9 @@ void ApplyTrigger(TaskData task, int interval)
     {
         return loadedInitialEmergencyTaskFrequency;
     }
+
+    public int GetInitialShelterFloodThreshold() => loadedInitialShelterFloodThreshold;
+    public int GetInitialShelterFloodRadius() => loadedInitialShelterFloodRadius;
+    public FloodedFacilityTrigger.ComparisonType GetInitialShelterFloodComparison() => loadedInitialShelterFloodComparison;
 
 }

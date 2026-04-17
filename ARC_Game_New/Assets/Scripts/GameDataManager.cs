@@ -11,21 +11,21 @@ public class GameDataManager : MonoBehaviour
     public GameConfigLoader configLoader;
 
     [Header("Defaults")]
-    public int defaultBudget = 10000;
+    public int defaultBudget = 10000; //initialBudget
     [Range(0f, 100f)]
-    public float defaultSatisfaction = 50f;
-    public int defaultCommunityNumber= 3;
-    public int defaultResidentsPerCommunity = 40;
-    public int defaultGameDays = 8;
-    public int defaultRoundsPerDay = 4;
-    public int defaultTrainedVolunteerCount = 5;
-    public int defaultUntrainedVolunteerCount = 5;
-    public int defaultDailyBudgetAllocs = 3000;
-    public WeatherType defaultInitialWeather = WeatherType.Sunny;
-    public int defaultKitchenCapacity = 10;
-    public int defaultShelterCapacity = 10;
-    public int defaultCaseworkCapacity = 10;
-    public int defaultRequiredWorkersPerLoc = 4;
+    public float defaultSatisfaction = 50f; // initialSatisfaction
+    public int defaultCommunityNumber= 3; // numberOfCommunities
+    public int defaultResidentsPerCommunity = 40; // done
+    public int defaultGameDays = 8; // gameDurationDays
+    public int defaultRoundsPerDay = 4; // done
+    public int defaultTrainedVolunteerCount = 5; // done
+    public int defaultUntrainedVolunteerCount = 5; // done
+    public int defaultDailyBudgetAllocs = 3000; // dailyBudgetAllocation
+    public WeatherType defaultInitialWeather = WeatherType.Sunny; // done
+    public int defaultKitchenCapacity = 10; // done
+    public int defaultShelterCapacity = 10; // done
+    public int defaultCaseworkCapacity = 10; // done
+    public int defaultRequiredWorkersPerLoc = 4; // done
     public float defaultSunnyExpansionRate = 0f;
     public float defaultSunnySpreadChanceMultiplier = 0.5f;
     public float defaultSmallRainExpansionRate = 0.5f;
@@ -36,19 +36,24 @@ public class GameDataManager : MonoBehaviour
     public float defaultHeavyRainSpreadChanceMultiplier = 1.2f;
     public float defaultStormExpansionRate = 5f;
     public float defaultStormSpreadChanceMultiplier = 1.5f;
-    public float defaultFoodDemandFrequency = -1f;
-    public FloodedFacilityTrigger defaultShelterFloodDamage = new FloodedFacilityTrigger
-    {
-        facilityType = FloodedFacilityTrigger.FacilityFloodType.SpecificBuildingType,
-        comparison = FloodedFacilityTrigger.ComparisonType.AtLeast,
-        floodTileThreshold = 2,
-        specificBuildingType = BuildingType.Shelter,
-        specificPrebuiltType = PrebuiltBuildingType.Community,
-        detectionRadius = 5
-    };
-    public int defaultERVCount = 3;
-    public int defaultExternalRelationFrequency = 3;
-    public int defaultEmergencyTaskFrequency = 4;
+    public float defaultFoodDemandFrequency = -1f; // done
+    //public FloodedFacilityTrigger defaultShelterFloodDamage = new FloodedFacilityTrigger
+    //{
+    //    facilityType = FloodedFacilityTrigger.FacilityFloodType.SpecificBuildingType,
+    //    comparison = FloodedFacilityTrigger.ComparisonType.AtLeast,
+    //    floodTileThreshold = 2,
+    //    specificBuildingType = BuildingType.Shelter,
+    //    specificPrebuiltType = PrebuiltBuildingType.Community,
+    //    detectionRadius = 5
+    //};
+    // new for abv
+    public int defaultShelterFloodThreshold = 2;
+    public int defaultShelterFloodRadius = 5;
+    public FloodedFacilityTrigger.ComparisonType defaultShelterFloodComparison = FloodedFacilityTrigger.ComparisonType.AtLeast;
+    // end
+    public int defaultERVCount = 3; // done
+    public int defaultExternalRelationFrequency = 3; // done
+    public int defaultEmergencyTaskFrequency = 4; // done
 
 
 
@@ -77,10 +82,14 @@ public class GameDataManager : MonoBehaviour
     public float InitialStormExpansionRate {get; private set; }
     public float InitialStormSpreadChanceMultiplier {get; private set; }
     public float InitialFoodDemandFrequency {get; private set;}
-    public FloodedFacilityTrigger InitialShelterFloodDamange {get; private set;}
+    //public FloodedFacilityTrigger InitialShelterFloodDamange {get; private set;}
     public int InitialERVCount {get; private set;}
     public int InitialExternalRelationFrequency {get; private set;}
     public int InitialEmergencyTaskFrequency {get; private set;}
+
+    public int InitialShelterFloodThreshold { get; private set; }
+    public int InitialShelterFloodRadius { get; private set; }
+    public FloodedFacilityTrigger.ComparisonType InitialShelterFloodComparison { get; private set; }
 
 
     public bool IsDataReady { get; private set; } = false;
@@ -142,10 +151,14 @@ public class GameDataManager : MonoBehaviour
                 InitialStormExpansionRate = configLoader.GetInitialStormFloodExpansionRate();
                 InitialStormSpreadChanceMultiplier = configLoader.GetInitialStormFloodSpreadChanceMultiplier();
                 InitialFoodDemandFrequency = configLoader.GetInitialFoodDemandFrequency();
-                InitialShelterFloodDamange = configLoader.GetInitialShelterFLoodDamage();
+                //InitialShelterFloodDamange = configLoader.GetInitialShelterFLoodDamage();
                 InitialERVCount = configLoader.GetInitialERVCount();
                 InitialExternalRelationFrequency = configLoader.GetInitialExternalRelationFrequency();
                 InitialEmergencyTaskFrequency = configLoader.GetInitialEmergencyTaskFrequency();
+                InitialShelterFloodThreshold = configLoader.GetInitialShelterFloodThreshold();
+                InitialShelterFloodRadius = configLoader.GetInitialShelterFloodRadius();
+                InitialShelterFloodComparison = configLoader.GetInitialShelterFloodComparison();
+
 
                 Debug.Log("GameDataManager: extern config success!");
             }
@@ -154,6 +167,47 @@ public class GameDataManager : MonoBehaviour
         {
             Debug.Log("GameDataManager: fallback to defaults");
             SetDefaults();
+        }
+        // Inside LoadAllData() in GameDataManager.cs
+        yield return new WaitUntil(() => configLoader.IsConfigLoaded()); // Wait for download
+
+        if (InstructorConfigManager.Instance != null)
+        {
+            // Reach into the 'Vault' and get the parameters sheet
+            var p = InstructorConfigManager.Instance.CurrentConfig.parameters;
+
+            // --- Existing Mappings ---
+            p.initialBudget = InitialBudget;
+            p.dailyBudgetAllocation = (float)InitialDailyBudgetAddition;
+            p.initialSatisfaction = (int)InitialSatisfaction;
+            p.numberOfCommunities = InitialCommunityNumber;
+            p.gameDurationDays = InitialGameDays;
+
+            // --- Add These New Mappings ---
+            p.residentsPerCommunity = InitialResidentsPerCommunityNumber;
+            p.totalPopulation = InitialResidentsPerCommunityNumber * InitialCommunityNumber; // fresh
+            p.roundsPerDay = InitialRoundsPerDay;
+            p.initialWeather = InitialWeather;
+            p.initialTrainedVolunteerCount = InitialTrainedVolunteerCount;
+            p.initialUntrainedVolunteerCount = InitialUntrainedVolunteerCount;
+            p.initialWorkerCount = InitialTrainedVolunteerCount + InitialUntrainedVolunteerCount; // fresh
+
+            p.kitchenCapacity = InitialKitchenCapacity;
+            p.shelterCapacity = InitialShelterCapacity;
+            p.caseworkCapacity = InitialCaseworkCapacity;
+            p.requiredWorkerUnitsPerLoc = InitialRequiredWorkersPerLoc;
+
+            p.initialERVCount = InitialERVCount;
+            p.foodDemandProbability = InitialFoodDemandFrequency;
+            p.externalRelationFrequency = InitialExternalRelationFrequency;
+            p.emergencyTaskFrequency = InitialEmergencyTaskFrequency;
+
+            p.shelterFloodThreshold = InitialShelterFloodThreshold;
+            p.shelterFloodRadius = InitialShelterFloodRadius;
+            p.shelterFloodComparisonType = InitialShelterFloodComparison; //23
+
+            // Notify the UI that we have fresh data from the loader
+            InstructorConfigManager.Instance.NotifyConfigChanged();
         }
 
         IsDataReady = true;
@@ -186,7 +240,10 @@ public class GameDataManager : MonoBehaviour
         InitialStormExpansionRate = defaultStormExpansionRate;
         InitialStormSpreadChanceMultiplier = defaultStormSpreadChanceMultiplier;
         InitialFoodDemandFrequency = defaultFoodDemandFrequency;
-        InitialShelterFloodDamange = defaultShelterFloodDamage;
+        //InitialShelterFloodDamange = defaultShelterFloodDamage;
+        InitialShelterFloodThreshold = defaultShelterFloodThreshold;
+        InitialShelterFloodRadius = defaultShelterFloodRadius;
+        InitialShelterFloodComparison = defaultShelterFloodComparison;
         InitialERVCount = defaultERVCount;
         InitialExternalRelationFrequency = defaultExternalRelationFrequency;
         InitialExternalRelationFrequency = defaultEmergencyTaskFrequency;
