@@ -46,6 +46,7 @@ ExportedObj/
 *.mdb
 *.opendb
 *.VC.db
+*.asset
 
 # Unity3D generated meta files
 *.pidb.meta
@@ -76,8 +77,40 @@ crashlytics-build.properties
 # Assets/TextMesh Pro/
 
 .vscode
+<<<<<<< HEAD
+.worktrees/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# API keys and secrets
+llm.key
+*.key
+
+# Test and rollout data
+rollout_*/
+*_test/
+*.log
+*.jsonl
+episode_*.json
+
+# Documentation (temporary)
+*_GUIDE.md
+*_README.md
+*_PLAN.md
+docs/plans/
+
+# Build scripts (temporary)
+build_headless.bat
+build_headless.sh
+
+# Environment files
+environment.yml
+=======
 .idea
 
 # Python
 __pycache__/
 *.pyc
+>>>>>>> b6edf20fa900aceca91afffa36b265a907928f65

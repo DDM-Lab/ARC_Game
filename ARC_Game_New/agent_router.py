@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import argparse
+import os
 import sys
 from datetime import datetime, timezone
 from typing import List, Tuple, Optional
@@ -32,6 +33,7 @@ from agent_filters import filter_observation, filter_actions
 from agent_ordering import get_agent_order
 from episode_logger import EpisodeLogger
 from llm_query import query_llm
+from message_queue import MessageQueue
 import re
 
 
@@ -58,11 +60,21 @@ class AgentRouter:
     def __init__(self, config: RouterConfig, log_path: str = "episode_log.jsonl"):
         self.config = config
         self.logger = EpisodeLogger(log_path)
+        self.message_queue = MessageQueue()  # Conversation management
         self.episode_id: str = self.logger.new_episode()
         self.round_num: int = 0
         self._websocket: Optional[WebSocket] = None  # set when Unity connects
         self._pending_choice: Optional[asyncio.Future] = None  # asyncio.Future when waiting for choice_made
         self._pending_action: Optional[asyncio.Future] = None  # asyncio.Future when waiting for action result
+        self._choice_context: dict = {}  # Store game state/actions for reproposal {agent_name: (state, actions)}
+        self._director_agent: Optional[AgentConfig] = self._find_director()
+
+    def _find_director(self) -> Optional[AgentConfig]:
+        """Find the director agent in the configuration."""
+        for agent in self.config.agents:
+            if agent.role == "director":
+                return agent
+        return None
 
     # ── WebSocket Handler ────────────────────────────────────────
 
@@ -107,6 +119,10 @@ class AgentRouter:
             asyncio.create_task(self._handle_begin_round(msg))
         elif msg_type == "choice_made":
             await self._handle_choice_made(msg)
+        elif msg_type == "director_message":
+            await self._handle_director_message(msg)
+        elif msg_type == "request_reproposal":
+            await self._handle_request_reproposal(msg)
         elif msg_type == "round_end":
             self._handle_round_end(msg)
         else:
@@ -119,6 +135,9 @@ class AgentRouter:
         game_state = msg.get("game_state", {})
         print(f"\n[router] === Round {self.round_num} | "
               f"Day {msg.get('day', 1)} Seg {msg.get('segment', 0)} ===")
+
+        # Validate game state has required fields
+        self._validate_game_state(game_state)
 
         # Enumerate full action space from current state
         all_actions = _enumerate_actions(game_state)
@@ -182,7 +201,9 @@ class AgentRouter:
         game_state: dict,
         all_actions: List[dict],
     ) -> Tuple[dict, List[dict]]:
-        raw = query_llm(filtered_state, filtered_actions, agent, agent.conversation_history)
+        # Get conversation history from message queue
+        conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
+        raw = query_llm(filtered_state, filtered_actions, agent, conversation)
 
         # Validate LLM response
         indices, validation_errors = self._validate_action_indices(
@@ -224,7 +245,117 @@ class AgentRouter:
         self._update_conv_history(agent, filtered_state, filtered_actions, raw)
         self._log_turn(agent, filtered_state, filtered_actions, [], None, log_results,
                        sat_before, game_state, budget_before, raw, 0)
+
+        # Post action summary to director
+        await self._post_auto_summary(agent, results)
+
         return game_state, all_actions
+
+    async def _autonomous_director_select(
+        self,
+        packages: List[dict],
+        game_state: dict,
+        reasoning: str
+    ) -> Optional[int]:
+        """Query autonomous director LLM to select a package index."""
+        if not self._director_agent or not self._director_agent.llm_model:
+            print("[router]   ⚠️  Director agent has no LLM configured")
+            return 0  # Default to first package
+
+        # Build prompt for director
+        sat = _get_satisfaction(game_state)
+        budget = _get_budget(game_state)
+        day = game_state.get("sessionInfo", {}).get("currentDay", 0)
+
+        # Format packages for the director
+        packages_text = "\n".join([
+            f"Package {i}: {pkg.get('label', 'Unnamed')} - {pkg.get('description', 'No description')}"
+            for i, pkg in enumerate(packages)
+        ])
+
+        prompt = f"""You are the director of disaster response operations.
+
+Current Situation:
+- Day: {day}
+- Satisfaction: {sat:.1f}%
+- Budget: ${budget:,.2f}
+
+Your team has proposed the following action packages:
+
+{packages_text}
+
+Team Reasoning: {reasoning}
+
+Select the package that best balances immediate needs with long-term sustainability.
+Respond with ONLY the package index number (0, 1, or 2).
+"""
+
+        # Query director LLM
+        director_state = {"situation": prompt}
+        director_actions = []  # Director doesn't need action list
+        conversation = []  # No conversation history for director (for now)
+
+        raw_response = query_llm(director_state, director_actions, self._director_agent, conversation)
+
+        # Parse index from response
+        selected_idx = self._parse_director_choice(raw_response, len(packages))
+        return selected_idx
+
+    def _parse_director_choice(self, raw_response: str, num_packages: int) -> int:
+        """Extract package index from director LLM response."""
+        # Look for first number in response
+        import re
+        match = re.search(r'\b([0-9])\b', raw_response)
+        if match:
+            idx = int(match.group(1))
+            if 0 <= idx < num_packages:
+                return idx
+
+        print(f"[router]   ⚠️  Could not parse valid index from director response: {raw_response[:100]}")
+        return 0  # Default to first package
+
+    async def _execute_actions_via_unity(
+        self,
+        actions: List[dict],
+        game_state: dict
+    ) -> Tuple[List[dict], dict]:
+        """Execute actions via Unity and wait for results."""
+        exec_results = []
+
+        for action in actions:
+            loop = asyncio.get_event_loop()
+            self._pending_action = loop.create_future()
+
+            # Send execute_action to Unity
+            await self._send({
+                "type": "execute_action",
+                "action": action,
+                "timestamp": _now(),
+            })
+
+            try:
+                result_msg = await asyncio.wait_for(self._pending_action, timeout=30.0)
+                self._pending_action = None
+
+                exec_results.append({
+                    "action_id": action.get("action_id", "unknown"),
+                    "success": result_msg.get("success", False),
+                    "error_message": result_msg.get("error_message", "")
+                })
+
+                # Update game state from result
+                if "game_state" in result_msg:
+                    game_state = result_msg["game_state"]
+
+            except asyncio.TimeoutError:
+                print(f"[router]   ⚠️  Timeout executing action {action.get('action_id', 'unknown')}")
+                exec_results.append({
+                    "action_id": action.get("action_id", "unknown"),
+                    "success": False,
+                    "error_message": "Timeout waiting for Unity execution"
+                })
+
+        return exec_results, game_state
 
     async def _run_choices(
         self,
@@ -234,13 +365,18 @@ class AgentRouter:
         game_state: dict,
         all_actions: List[dict],
     ) -> Tuple[dict, List[dict]]:
-        raw = query_llm(filtered_state, filtered_actions, agent, agent.conversation_history)
+        # Get conversation history from message queue
+        conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
+        raw = query_llm(filtered_state, filtered_actions, agent, conversation)
         packages = self._parse_packages_response(
             raw, filtered_actions,
             num_choices=agent.num_choices or 3,
             max_per_package=agent.max_actions_per_package or 4,
         )
         print(f"[router]   Proposing {len(packages)} packages to director.")
+
+        # Store context for potential reproposal
+        self._choice_context[agent.subagent_name] = (filtered_state, filtered_actions, game_state, all_actions)
 
         # Extract reasoning from structured response
         reasoning = self._extract_reasoning(raw)
@@ -258,26 +394,45 @@ class AgentRouter:
             "timestamp": _now(),
         })
 
-        # Wait for choice_made from Unity
-        # Timeout set to 5 minutes for human director decision time
-        loop = asyncio.get_event_loop()
-        self._pending_choice = loop.create_future()
-        print(f"[router]   ⏳ Waiting for director to select a package (5min timeout)...")
+        # Check if director is autonomous or manual
+        if self._director_agent and self._director_agent.actor_type == "auto":
+            # Autonomous director: Query LLM to select package
+            print(f"[router]   🤖 Autonomous director selecting package...")
+            selected_idx = await self._autonomous_director_select(packages, game_state, reasoning)
+            print(f"[router]   ✅ Director selected package {selected_idx}")
 
-        try:
-            choice_msg = await asyncio.wait_for(self._pending_choice, timeout=300.0)
-            self._pending_choice = None
-            print(f"[router]   ✅ Received director choice!")
+            # Execute selected package via Unity
+            if selected_idx is not None and 0 <= selected_idx < len(packages):
+                selected_package = packages[selected_idx]
+                action_indices = selected_package["action_indices"]
+                actions_to_execute = [filtered_actions[i] for i in action_indices if i < len(filtered_actions)]
 
-            selected_idx = choice_msg.get("package_index", 0)
-            exec_results = choice_msg.get("execution_results", [])
-            game_state = choice_msg.get("game_state", game_state)
-        except asyncio.TimeoutError:
-            print(f"[router]   ⚠️  Timeout (5min) waiting for choice_made from {agent.subagent_name}")
-            print(f"[router]   Skipping - no action taken.")
-            self._pending_choice = None
-            selected_idx = None
-            exec_results = []
+                exec_results, game_state = await self._execute_actions_via_unity(actions_to_execute, game_state)
+            else:
+                print(f"[router]   ⚠️  Invalid package index {selected_idx}, skipping execution")
+                selected_idx = None
+                exec_results = []
+        else:
+            # Manual director: Wait for choice_made from Unity
+            # Timeout set to 5 minutes for human director decision time
+            loop = asyncio.get_event_loop()
+            self._pending_choice = loop.create_future()
+            print(f"[router]   ⏳ Waiting for director to select a package (5min timeout)...")
+
+            try:
+                choice_msg = await asyncio.wait_for(self._pending_choice, timeout=300.0)
+                self._pending_choice = None
+                print(f"[router]   ✅ Received director choice!")
+
+                selected_idx = choice_msg.get("package_index", 0)
+                exec_results = choice_msg.get("execution_results", [])
+                game_state = choice_msg.get("game_state", game_state)
+            except asyncio.TimeoutError:
+                print(f"[router]   ⚠️  Timeout (5min) waiting for choice_made from {agent.subagent_name}")
+                print(f"[router]   Skipping - no action taken.")
+                self._pending_choice = None
+                selected_idx = None
+                exec_results = []
 
         # Re-enumerate after director selected and Unity executed
         all_actions = _enumerate_actions(game_state)
@@ -296,7 +451,9 @@ class AgentRouter:
         all_actions: List[dict],
     ) -> Tuple[dict, List[dict]]:
         """Run coach agent - provides strategic analysis and recommendations without execution."""
-        raw = query_llm(filtered_state, filtered_actions, agent, agent.conversation_history)
+        # Get conversation history from message queue
+        conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
+        raw = query_llm(filtered_state, filtered_actions, agent, conversation)
 
         # Parse coach response
         recommendations = self._parse_coach_response(
@@ -356,7 +513,232 @@ class AgentRouter:
     def _handle_round_end(self, msg: dict):
         print(f"[router] Round {self.round_num} ended.")
 
+    async def _handle_director_message(self, msg: dict):
+        """Handle conversational message from director to an agent."""
+        to_agent_name = msg.get("to_agent")
+        content = msg.get("content", "")
+
+        if not to_agent_name or not content:
+            print(f"[router] Invalid director_message: missing to_agent or content")
+            return
+
+        print(f"[router] Director → {to_agent_name}: {content[:50]}...")
+
+        # Store director message in queue
+        message = self.message_queue.send_message(
+            from_agent="Director",
+            to_agent=to_agent_name,
+            content=content,
+            msg_type="director_message",
+            round_num=self.round_num
+        )
+
+        # Log director message
+        self.logger.log_event({
+            "event_type": "conversation_message",
+            "round": self.round_num,
+            "from": "Director",
+            "to": to_agent_name,
+            "content": content,
+            "message_type": "director_message",
+            "message_id": message["id"],
+            "timestamp": message["timestamp"]
+        })
+
+        # Find the agent config
+        agent = self._get_agent_by_name(to_agent_name)
+        if not agent:
+            print(f"[router] Agent '{to_agent_name}' not found")
+            return
+
+        # Generate immediate response from the agent
+        conversation = self.message_queue.get_conversation(to_agent_name, "Director")
+        response_text = self._generate_conversational_response(agent, conversation)
+
+        print(f"[router] {to_agent_name} → Director: {response_text[:50]}...")
+
+        # Store agent response in queue
+        response_message = self.message_queue.send_message(
+            from_agent=to_agent_name,
+            to_agent="Director",
+            content=response_text,
+            msg_type="agent_response",
+            round_num=self.round_num
+        )
+
+        # Log agent response
+        self.logger.log_event({
+            "event_type": "conversation_message",
+            "round": self.round_num,
+            "from": to_agent_name,
+            "to": "Director",
+            "content": response_text,
+            "message_type": "agent_response",
+            "message_id": response_message["id"],
+            "timestamp": response_message["timestamp"]
+        })
+
+        # Send agent response to Unity for display
+        await self._send({
+            "type": "agent_message",
+            "agent_name": to_agent_name,
+            "talkinghead_endpoint": agent.talkinghead_endpoint,
+            "content": response_text,
+            "message_type": "agent_response",
+            "round": self.round_num,
+            "timestamp": response_message["timestamp"]
+        })
+
+        # Detect if director is requesting new choices
+        reproposal_keywords = [
+            "new choices", "new options", "different choices", "different options",
+            "repropose", "re-propose", "regenerate", "try again",
+            "give me new", "show me new", "other choices", "other options",
+            "don't want", "not those", "something else"
+        ]
+
+        content_lower = content.lower()
+        if any(keyword in content_lower for keyword in reproposal_keywords):
+            # Check if this agent is a choices agent and has active context
+            if agent.actor_type == "choices" and agent.subagent_name in self._choice_context:
+                print(f"[router] 🔄 Detected reproposal request - generating new choices...")
+                await self._repropose_choices(agent)
+            else:
+                print(f"[router] Note: Reproposal detected but agent is not in choices mode or has no context")
+
+    async def _handle_request_reproposal(self, msg: dict):
+        """Handle director requesting an agent to repropose choices."""
+        agent_name = msg.get("agent_name")
+        feedback = msg.get("feedback", "")
+
+        if not agent_name:
+            print(f"[router] Invalid request_reproposal: missing agent_name")
+            return
+
+        print(f"[router] Director requests reproposal from {agent_name}")
+
+        # Store feedback message
+        if feedback:
+            message = self.message_queue.send_message(
+                from_agent="Director",
+                to_agent=agent_name,
+                content=feedback,
+                msg_type="feedback",
+                round_num=self.round_num
+            )
+
+            # Log feedback
+            self.logger.log_event({
+                "event_type": "conversation_message",
+                "round": self.round_num,
+                "from": "Director",
+                "to": agent_name,
+                "content": feedback,
+                "message_type": "feedback",
+                "message_id": message["id"],
+                "timestamp": message["timestamp"]
+            })
+
+        # Find the agent
+        agent = self._get_agent_by_name(agent_name)
+        if not agent:
+            print(f"[router] Agent '{agent_name}' not found for reproposal")
+            return
+
+        # Repropose choices
+        await self._repropose_choices(agent)
+
+    def _get_agent_by_name(self, agent_name: str) -> Optional[AgentConfig]:
+        """Find agent by subagent_name."""
+        for agent in self.config.agents:
+            if agent.subagent_name == agent_name:
+                return agent
+        return None
+
     # ── Unity Communication ──────────────────────────────────────
+
+    def _generate_conversational_response(self, agent: AgentConfig, conversation: list) -> str:
+        """
+        Generate a conversational response from an agent using their LLM.
+
+        Args:
+            agent: The agent configuration
+            conversation: List of conversation messages
+
+        Returns:
+            Agent's conversational response string
+        """
+        import anthropic
+        import openai
+
+        provider = agent.llm_provider.lower() if agent.llm_provider else "anthropic"
+
+        # Build conversational prompt
+        messages = []
+        for entry in conversation:
+            if entry.get("from") == "Director":
+                role = "user"
+                messages.append({"role": role, "content": entry.get("content", "")})
+            elif entry.get("from") == agent.subagent_name:
+                role = "assistant"
+                messages.append({"role": role, "content": entry.get("content", "")})
+
+        # Create system prompt
+        system_prompt = f"""You are {agent.subagent_name}, an AI agent helping manage disaster response in the ARC Game.
+
+You are having a conversation with the Director (the human player). Respond naturally and helpfully to their messages.
+
+Keep your responses concise and focused. You can discuss:
+- Your recent actions and decisions
+- Your understanding of the current situation
+- Questions or clarifications about the disaster response
+- Coordination with other agents"""
+
+        if agent.system_prompt:
+            system_prompt += f"\n\nAdditional context: {agent.system_prompt}"
+
+        # Query the LLM
+        try:
+            if provider == "anthropic":
+                api_key = os.environ.get("ANTHROPIC_API_KEY")
+                if not api_key:
+                    return "I'm unable to respond right now - API key not configured."
+
+                client = anthropic.Anthropic(api_key=api_key)
+                response = client.messages.create(
+                    model=agent.llm_model or "claude-sonnet-4-6",
+                    max_tokens=500,
+                    system=system_prompt,
+                    messages=messages
+                )
+                return response.content[0].text
+
+            elif provider == "openai":
+                api_key = os.environ.get("OPENAI_API_KEY")
+                if not api_key:
+                    return "I'm unable to respond right now - API key not configured."
+
+                # Support custom base_url for third-party providers
+                base_url = agent.llm_endpoint if hasattr(agent, 'llm_endpoint') else None
+                if base_url:
+                    client = openai.OpenAI(api_key=api_key, base_url=base_url)
+                else:
+                    client = openai.OpenAI(api_key=api_key)
+
+                msgs = [{"role": "system", "content": system_prompt}] + messages
+                response = client.chat.completions.create(
+                    model=agent.llm_model or "gpt-4",
+                    max_tokens=500,
+                    messages=msgs
+                )
+                return response.choices[0].message.content
+
+            else:
+                return "I'm unable to respond - unsupported LLM provider."
+
+        except Exception as e:
+            print(f"[router] Error generating conversational response for {agent.subagent_name}: {e}")
+            return "I'm having trouble responding right now."
 
     async def _send(self, payload: dict):
         if self._websocket:
@@ -482,8 +864,175 @@ class AgentRouter:
 
     # ── Helpers ──────────────────────────────────────────────────
 
+    def _validate_game_state(self, game_state: dict):
+        """Validate game state has required fields with valid values."""
+        # Check for satisfactionAndBudget field
+        if "satisfactionAndBudget" not in game_state:
+            raise ValueError(
+                "Missing 'satisfactionAndBudget' in game state. "
+                "Unity may not be sending budget/satisfaction data correctly."
+            )
+
+        sat_budget = game_state["satisfactionAndBudget"]
+
+        # Validate budget is present and reasonable
+        budget = sat_budget.get("budget", None)
+        if budget is None:
+            raise ValueError("Missing 'budget' field in satisfactionAndBudget")
+
+        if budget < 0:
+            print(f"[router] ⚠️  Warning: Negative budget detected: {budget}")
+
+        # Validate satisfaction is present
+        satisfaction = sat_budget.get("satisfaction", None)
+        if satisfaction is None:
+            raise ValueError("Missing 'satisfaction' field in satisfactionAndBudget")
+
+        # Log validation info on round 1
+        if self.round_num == 1:
+            print(f"[router] ✓ Game state validated: Budget=${budget}, Satisfaction={satisfaction}")
+
     def _filter_state(self, game_state: dict, agent: AgentConfig) -> dict:
         return filter_observation(game_state, agent.subobservation_space)
+
+    async def _post_auto_summary(self, agent: AgentConfig, results: dict):
+        """Post conversational summary after auto agent executes actions."""
+        executed_count = len(results.get("executed", []))
+        skipped_count = len(results.get("skipped", []))
+
+        # Generate summary message
+        if executed_count > 0:
+            executed_actions = [item["action"]["description"] for item in results.get("executed", [])]
+            summary = f"I executed {executed_count} action(s): {', '.join(executed_actions[:3])}"
+            if executed_count > 3:
+                summary += f" and {executed_count - 3} more"
+        else:
+            summary = "I didn't execute any actions this turn"
+
+        if skipped_count > 0:
+            summary += f" ({skipped_count} action(s) were invalid/skipped)"
+
+        # Send message to message queue
+        message = self.message_queue.send_message(
+            from_agent=agent.subagent_name,
+            to_agent="Director",
+            content=summary,
+            msg_type="action_summary",
+            round_num=self.round_num
+        )
+
+        # Log conversation message
+        self.logger.log_event({
+            "event_type": "conversation_message",
+            "round": self.round_num,
+            "from": agent.subagent_name,
+            "to": "Director",
+            "content": summary,
+            "message_type": "action_summary",
+            "message_id": message["id"],
+            "timestamp": message["timestamp"]
+        })
+
+        # Send to Unity for display
+        await self._send({
+            "type": "agent_message",
+            "agent_name": agent.subagent_name,
+            "talkinghead_endpoint": agent.talkinghead_endpoint,
+            "content": summary,
+            "message_type": "action_summary",
+            "round": self.round_num,
+            "timestamp": message["timestamp"]
+        })
+
+        print(f"[router] {agent.subagent_name} → Director: {summary[:60]}...")
+
+    async def _repropose_choices(self, agent: AgentConfig):
+        """Agent generates new choices based on director feedback."""
+        print(f"[router] {agent.subagent_name} reproposing choices...")
+
+        # Get stored context from original proposal
+        context = self._choice_context.get(agent.subagent_name)
+        if not context:
+            print(f"[router] Warning: No stored context for {agent.subagent_name} - cannot repropose")
+            return
+
+        filtered_state, filtered_actions, game_state, all_actions = context
+
+        # Get conversation including director's feedback
+        conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
+
+        # Regenerate packages with conversation context
+        raw = query_llm(filtered_state, filtered_actions, agent, conversation)
+        packages = self._parse_packages_response(
+            raw, filtered_actions,
+            num_choices=agent.num_choices or 3,
+            max_per_package=agent.max_actions_per_package or 4,
+        )
+
+        print(f"[router]   Reproposed {len(packages)} packages to director.")
+
+        # Extract reasoning from structured response
+        reasoning = self._extract_reasoning(raw)
+
+        # Create message with embedded choices
+        response_content = f"I've generated {len(packages)} new options based on your feedback!"
+
+        message = self.message_queue.send_message(
+            from_agent=agent.subagent_name,
+            to_agent="Director",
+            content=response_content,
+            msg_type="choice_revision",
+            round_num=self.round_num
+        )
+
+        # Log message
+        self.logger.log_event({
+            "event_type": "conversation_message",
+            "round": self.round_num,
+            "from": agent.subagent_name,
+            "to": "Director",
+            "content": response_content,
+            "message_type": "choice_revision",
+            "message_id": message["id"],
+            "timestamp": message["timestamp"]
+        })
+
+        # Send combined message with embedded choices to Unity
+        await self._send({
+            "type": "agent_message_with_choices",
+            "agent_name": agent.subagent_name,
+            "talkinghead_endpoint": agent.talkinghead_endpoint,
+            "content": response_content,
+            "message_type": "choice_revision",
+            "round": self.round_num,
+            "timestamp": message["timestamp"],
+            "reasoning": reasoning,
+            "packages": packages,
+            "available_actions": filtered_actions
+        })
+
+        # Also log the reproposed packages
+        self.logger.log_event({
+            "event_type": "choices_reproposed",
+            "round": self.round_num,
+            "agent_name": agent.subagent_name,
+            "to": "Director",
+            "content": message["content"],
+            "message_type": "choice_revision",
+            "message_id": message["id"],
+            "timestamp": message["timestamp"]
+        })
+
+        # Send to Unity
+        await self._send({
+            "type": "agent_message",
+            "agent_name": agent.subagent_name,
+            "talkinghead_endpoint": agent.talkinghead_endpoint,
+            "content": message["content"],
+            "message_type": "choice_revision",
+            "round": self.round_num,
+            "timestamp": message["timestamp"]
+        })
 
     def _validate_action_indices(
         self,
@@ -833,8 +1382,18 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=1011, reason="Router not initialized")
 
 
-@app.get("/")
-async def root():
+@app.websocket("/")
+async def websocket_root_endpoint(websocket: WebSocket):
+    """WebSocket endpoint at root path (for Unity compatibility)."""
+    global router_instance
+    if router_instance:
+        await router_instance.handle_websocket(websocket)
+    else:
+        await websocket.close(code=1011, reason="Router not initialized")
+
+
+@app.get("/health")
+async def root_http():
     return {"status": "ARC Game Multi-Agent Router", "version": "1.0"}
 
 

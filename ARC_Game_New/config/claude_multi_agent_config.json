@@ -1,0 +1,88 @@
+{
+  "agent_order_rule": "sequential",
+  "agents": [
+    {
+      "subagent_name": "Construction Officer",
+      "role": "subagent",
+      "actor_type": "auto",
+      "talkinghead_endpoint": "DisasterOfficer",
+      "subaction_space": [
+        { "category": "construction" },
+        { "category": "deconstruction" }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "constructionState",
+        "mapState"
+      ],
+      "llm_provider": "anthropic",
+      "llm_model": "claude-sonnet-4-6",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "turn_token_budget": 2048,
+      "use_global_prompt": true,
+      "system_prompt": "You are a construction expert managing infrastructure. Select action indices to build and maintain facilities. Prioritize critical infrastructure gaps and long-term sustainability.",
+      "can_address": [],
+      "max_actions_per_turn": 3
+    },
+    {
+      "subagent_name": "Logistics Officer",
+      "role": "subagent",
+      "actor_type": "auto",
+      "talkinghead_endpoint": "WorkforceService",
+      "subaction_space": [
+        { "category": "worker" },
+        { "category": "worker_assignment" }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "workers",
+        "mapState"
+      ],
+      "llm_provider": "anthropic",
+      "llm_model": "claude-sonnet-4-6",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "turn_token_budget": 2048,
+      "use_global_prompt": true,
+      "system_prompt": "You are a logistics coordinator managing workers and assignments. Select action indices to hire, train, and assign workers efficiently. Balance workforce capacity with operational needs.",
+      "can_address": [],
+      "max_actions_per_turn": 3
+    },
+    {
+      "subagent_name": "Resource Manager",
+      "role": "subagent",
+      "actor_type": "choices",
+      "num_choices": 3,
+      "max_actions_per_package": 3,
+      "talkinghead_endpoint": "FoodMassCare",
+      "subaction_space": [
+        { "category": "all" }
+      ],
+      "subobservation_space": ["all"],
+      "llm_provider": "anthropic",
+      "llm_model": "claude-sonnet-4-6",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "turn_token_budget": 2048,
+      "use_global_prompt": true,
+      "system_prompt": "You are a resource allocation strategist. Propose strategic packages of actions for the director to choose from. Consider budget constraints and satisfaction priorities.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Player",
+      "role": "director",
+      "actor_type": "manual",
+      "num_choices": null,
+      "max_actions_per_package": null,
+      "talkinghead_endpoint": null,
+      "subaction_space": [{"category": "all"}],
+      "subobservation_space": ["all"],
+      "llm_model": null,
+      "llm_provider": null,
+      "turn_token_budget": null,
+      "use_global_prompt": false,
+      "system_prompt": null,
+      "can_address": []
+    }
+  ]
+}

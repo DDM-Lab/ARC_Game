@@ -411,7 +411,7 @@ public class TaskDetailUI : MonoBehaviour
 
             if (choiceUI != null)
             {
-                if (currentTask.status == TaskStatus.Active)
+                if (currentTask.status == TaskStatus.Active || currentTask.status == TaskStatus.InProgress)
                     choiceUI.Initialize(choice, this);
                 else
                     choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentTask.selectedChoiceId);
@@ -440,10 +440,6 @@ public class TaskDetailUI : MonoBehaviour
 
                 currentConversationItems.Add(inputItem);
             }
-
-            // Disable vertical scrolling on the scroll view
-            if (conversationScrollView != null)
-                conversationScrollView.vertical = false;
         }
     }
 
@@ -465,9 +461,6 @@ public class TaskDetailUI : MonoBehaviour
                     Destroy(child.gameObject);
             }
         }
-
-        if (conversationScrollView != null)
-            conversationScrollView.vertical = true;
 
         currentConversationItems.Clear();
         selectedChoice = null;

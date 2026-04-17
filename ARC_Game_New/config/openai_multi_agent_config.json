@@ -1,0 +1,79 @@
+{
+  "agent_order_rule": "sequential",
+  "agents": [
+    {
+      "subagent_name": "Construction Officer",
+      "role": "subagent",
+      "actor_type": "auto",
+      "talkinghead_endpoint": "DisasterOfficer",
+      "subaction_space": [
+        { "category": "construction" },
+        { "category": "deconstruction" }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "constructionState",
+        "mapState"
+      ],
+      "llm_provider": "openai",
+      "llm_model": "claude-haiku-4-5-20251001-v1:0",
+      "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "turn_token_budget": 2048,
+      "use_global_prompt": true,
+      "system_prompt": "You are a construction expert managing infrastructure. Select action indices to build and maintain facilities. Prioritize critical infrastructure gaps and long-term sustainability.",
+      "can_address": [],
+      "max_actions_per_turn": 3
+    },
+    {
+      "subagent_name": "Logistics Officer",
+      "role": "subagent",
+      "actor_type": "auto",
+      "talkinghead_endpoint": "WorkforceService",
+      "subaction_space": [
+        { "category": "worker" },
+        { "category": "worker_assignment" }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "workers",
+        "mapState"
+      ],
+      "llm_provider": "openai",
+      "llm_model": "claude-haiku-4-5-20251001-v1:0",
+      "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "turn_token_budget": 2048,
+      "use_global_prompt": true,
+      "system_prompt": "You are a logistics coordinator managing workers and assignments. Select action indices to hire, train, and assign workers efficiently. Balance workforce capacity with operational needs.",
+      "can_address": [],
+      "max_actions_per_turn": 3
+    },
+    {
+      "subagent_name": "Resource Manager",
+      "role": "subagent",
+      "actor_type": "auto",
+      "talkinghead_endpoint": "FoodMassCare",
+      "subaction_space": [
+        { "category": "resource_transfer" }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "logistics",
+        "mapState"
+      ],
+      "llm_provider": "openai",
+      "llm_model": "claude-haiku-4-5-20251001-v1:0",
+      "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "turn_token_budget": 2048,
+      "use_global_prompt": true,
+      "system_prompt": "You are a resource allocation expert managing supplies and deliveries. Select action indices to purchase, allocate, and deliver resources efficiently. Prioritize critical needs and budget sustainability.",
+      "can_address": [],
+      "max_actions_per_turn": 3
+    }
+  ]
+}

@@ -21,6 +21,7 @@ public class TaskContext
 public class GameStatePayload
 {
     public SessionInfo sessionInfo;
+    public SatisfactionAndBudgetState satisfactionAndBudget;
     public TaskContext taskContext;
     public List<TaskContext> allActiveTasks;
     public MapState mapState;
@@ -40,6 +41,13 @@ public class SessionInfo
     public string currentGameTime;
     public float simulationSpeed;
     public bool isPaused;
+}
+
+[System.Serializable]
+public class SatisfactionAndBudgetState
+{
+    public int satisfaction;
+    public int budget;
 }
 
 [System.Serializable]

@@ -110,9 +110,32 @@ def _build_prompt(
     messages.append({"role": "system", "content": system_prompt})
 
     # Inject conversation history (prior rounds)
+    # History can be in two formats:
+    # 1. Old format: [{"user": "...", "assistant": "..."}]
+    # 2. New format (from message_queue): [{"from": "agent", "to": "Director", "content": "...", "round": N}]
     for entry in history:
-        messages.append({"role": "user",    "content": entry.get("user", "")})
-        messages.append({"role": "assistant","content": entry.get("assistant", "")})
+        if "user" in entry and "assistant" in entry:
+            # Old format
+            messages.append({"role": "user",    "content": entry.get("user", "")})
+            messages.append({"role": "assistant","content": entry.get("assistant", "")})
+        elif "from" in entry and "to" in entry:
+            # New format - conversation message
+            from_agent = entry.get("from")
+            to_agent = entry.get("to")
+            content = entry.get("content", "")
+            round_num = entry.get("round", "?")
+
+            # Determine role based on who sent the message
+            # If agent sent it, it's "assistant". If Director sent it, it's "user"
+            if from_agent == "Director":
+                role = "user"
+                label = f"Director (Round {round_num})"
+            else:
+                role = "assistant"
+                label = f"You (Round {round_num})"
+
+            formatted_content = f"[{label}] {content}"
+            messages.append({"role": role, "content": formatted_content})
 
     # Current state summary
     session = game_state.get("sessionInfo", {})
@@ -170,15 +193,16 @@ def _build_prompt(
             f"Each package should contain up to {max_per_package} action indices.\n\n"
             f"Response format:\n"
             f"REASONING: [1-2 sentences explaining the current situation and priorities]\n"
-            f"PACKAGE1: [strategy name] | [action indices] | [brief outcome description]\n"
-            f"PACKAGE2: [strategy name] | [action indices] | [brief outcome description]\n"
-            f"PACKAGE3: [strategy name] | [action indices] | [brief outcome description]\n\n"
+            f"PACKAGE1: [strategy name] | [action indices] | [detailed description]\n"
+            f"PACKAGE2: [strategy name] | [action indices] | [detailed description]\n"
+            f"PACKAGE3: [strategy name] | [action indices] | [detailed description]\n\n"
+            f"Description format: Brief rationale, cost, and satisfaction impact. Keep under 100 characters.\n\n"
             f"Example:\n"
-            f"REASONING: Satisfaction is low and shelter is critical. Focus on immediate needs.\n"
-            f"PACKAGE1: Emergency Shelter | 0,2 | Build 2 shelters for immediate housing\n"
-            f"PACKAGE2: Balanced Growth | 1,3,5 | Build shelter, kitchen, and medical facility\n"
-            f"PACKAGE3: Resource Focus | 4 | Hire workers to boost capacity\n\n"
-            f"Use concise strategy names (2-4 words) and outcome descriptions (under 60 characters)."
+            f"REASONING: Low budget requires cost-effective solutions while maintaining food supply.\n"
+            f"PACKAGE1: Economic Food | 0,5,7 | Cheap workers for kitchen. Cost: $1,500, +10 satisfaction\n"
+            f"PACKAGE2: Shelter Priority | 1,2,8 | Two shelters, trained staff. Cost: $3,600, +15 satisfaction\n"
+            f"PACKAGE3: Balanced Mix | 0,1,5 | Kitchen + shelter, mixed staff. Cost: $2,400, +12 satisfaction\n\n"
+            f"Keep descriptions under 100 characters. Include cost and satisfaction projections."
         )
     else:
         # Auto agent: execute immediately
@@ -284,10 +308,16 @@ def _query_openai(
                   f"in environment variable '{api_key_env}'")
             return ""
 
-        client = openai.OpenAI(api_key=api_key)
-        messages = _build_prompt(game_state, actions, agent_cfg, history)
+        # Support custom base_url for third-party providers
+        base_url = agent_cfg.get("llm_endpoint")
+        if base_url:
+            client = openai.OpenAI(api_key=api_key, base_url=base_url)
+            print(f"[llm_query] [{agent_name}] Querying OPENAI (custom endpoint) model: {model}")
+        else:
+            client = openai.OpenAI(api_key=api_key)
+            print(f"[llm_query] [{agent_name}] Querying OPENAI model: {model}")
 
-        print(f"[llm_query] [{agent_name}] Querying OPENAI model: {model}")
+        messages = _build_prompt(game_state, actions, agent_cfg, history)
 
         response = client.chat.completions.create(
             model=model,

@@ -278,6 +278,20 @@ public class WebSocketManager : MonoBehaviour
                 return;
             }
 
+            // Handle agent conversational messages with embedded choices
+            if (data.Contains("\"agent_message_with_choices\""))
+            {
+                HandleAgentMessageWithChoices(data);
+                return;
+            }
+
+            // Handle agent conversational messages
+            if (data.Contains("\"agent_message\""))
+            {
+                HandleAgentMessage(data);
+                return;
+            }
+
             // Try to parse as action message first
             ActionMessage actionMsg = null;
             try
@@ -488,11 +502,14 @@ public class WebSocketManager : MonoBehaviour
             {
                 foreach (var pkg in proposal.packages)
                 {
+                    // Build detailed description: package description + action list
+                    string detailedDescription = FormatPackageDescription(pkg, proposal.available_actions);
+
                     llmContent.choices.Add(new LLMAgentChoice
                     {
                         choiceId = pkg.package_index,
                         choiceText = pkg.label,
-                        agentReasoning = pkg.description,
+                        agentReasoning = detailedDescription,
                         confidence = pkg.confidence,
                         impacts = new System.Collections.Generic.List<LLMImpact>()
                     });
@@ -533,6 +550,77 @@ public class WebSocketManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"[WS] Failed to handle director_turn: {ex.Message}");
+        }
+    }
+
+    void HandleAgentMessage(string data)
+    {
+        try
+        {
+            var msg = JsonUtility.FromJson<AgentConversationMessage>(data);
+            Debug.Log($"[WS] agent_message received from {msg.agent_name}: {msg.content}");
+
+            // Parse talkinghead_endpoint to TaskOfficer enum
+            TaskOfficer officer;
+            if (System.Enum.TryParse(msg.talkinghead_endpoint, out officer))
+            {
+                // Forward to conversation UI
+                if (AgentConversationUI.Instance != null)
+                {
+                    AgentConversationUI.Instance.AddAgentMessage(officer, msg.content, msg.message_type);
+                }
+                else
+                {
+                    Debug.LogWarning("[WS] AgentConversationUI not found, cannot display message");
+                }
+            }
+            else
+            {
+                Debug.LogError($"[WS] Invalid talkinghead_endpoint: {msg.talkinghead_endpoint}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[WS] Failed to handle agent_message: {ex.Message}");
+        }
+    }
+
+    void HandleAgentMessageWithChoices(string data)
+    {
+        try
+        {
+            var msg = JsonUtility.FromJson<AgentMessageWithChoices>(data);
+            Debug.Log($"[WS] agent_message_with_choices received from {msg.agent_name}: {msg.content}");
+
+            // Parse talkinghead_endpoint to TaskOfficer enum
+            TaskOfficer officer;
+            if (System.Enum.TryParse(msg.talkinghead_endpoint, out officer))
+            {
+                // Forward to conversation UI with embedded choices
+                if (AgentConversationUI.Instance != null)
+                {
+                    AgentConversationUI.Instance.AddAgentMessageWithChoices(
+                        officer,
+                        msg.content,
+                        msg.message_type,
+                        msg.reasoning,
+                        msg.packages,
+                        msg.available_actions
+                    );
+                }
+                else
+                {
+                    Debug.LogWarning("[WS] AgentConversationUI not found, cannot display message with choices");
+                }
+            }
+            else
+            {
+                Debug.LogError($"[WS] Invalid talkinghead_endpoint: {msg.talkinghead_endpoint}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[WS] Failed to handle agent_message_with_choices: {ex.Message}");
         }
     }
 
@@ -590,6 +678,49 @@ public class WebSocketManager : MonoBehaviour
                 + $"\"timestamp\":\"{System.DateTime.UtcNow:o}\"}}";
         SendRawMessage(msg);
         Debug.Log($"[WS] choice_made sent (agent={agentName}, package={packageIndex})");
+    }
+
+    /// <summary>
+    /// Send director message to an agent.
+    /// Called when player sends a conversational message to an agent.
+    /// </summary>
+    public void SendDirectorMessage(string toAgent, string content)
+    {
+        if (!isConnected)
+        {
+            Debug.LogWarning("[WS] Cannot send director_message - not connected!");
+            return;
+        }
+
+        var msg = new DirectorMessage
+        {
+            to_agent = toAgent,
+            content = content,
+            timestamp = (System.DateTime.UtcNow - new System.DateTime(1970, 1, 1)).TotalSeconds
+        };
+
+        SendRawMessage(JsonUtility.ToJson(msg));
+        Debug.Log($"[WS] director_message sent to {toAgent}: {content}");
+    }
+
+    /// <summary>
+    /// Send request to agent to repropose choices with feedback.
+    /// Called when director wants agent to generate new choices.
+    /// </summary>
+    public void SendRequestReproposal(string agentName, string feedback)
+    {
+        if (!isConnected)
+        {
+            Debug.LogWarning("[WS] Cannot send request_reproposal - not connected!");
+            return;
+        }
+
+        var msg = $"{{\"type\":\"request_reproposal\",\"agent_name\":\"{agentName}\","
+                + $"\"feedback\":\"{feedback}\","
+                + $"\"timestamp\":{(System.DateTime.UtcNow - new System.DateTime(1970, 1, 1)).TotalSeconds}}}";
+
+        SendRawMessage(msg);
+        Debug.Log($"[WS] request_reproposal sent to {agentName}");
     }
 
     // ========================================================================
@@ -669,7 +800,6 @@ public class WebSocketManager : MonoBehaviour
         }
 
         // Parse and execute actions
-        bool allSuccess = true;
         if (!string.IsNullOrEmpty(actionsJson))
         {
             try
@@ -683,7 +813,6 @@ public class WebSocketManager : MonoBehaviour
                         var result = ActionExecutor.Instance.ExecuteAction(action);
                         if (!result.success)
                         {
-                            allSuccess = false;
                             Debug.LogWarning($"Action failed: {result.error_message}");
                         }
                     }
@@ -692,7 +821,6 @@ public class WebSocketManager : MonoBehaviour
             catch (System.Exception ex)
             {
                 Debug.LogError($"Failed to execute actions: {ex.Message}");
-                allSuccess = false;
             }
         }
 
@@ -771,6 +899,40 @@ public class WebSocketManager : MonoBehaviour
         SendRawMessage(json);
 
         Debug.Log($"📤 Sent step response: reward={reward}, terminated={terminated}, truncated={truncated}");
+    }
+
+    /// <summary>
+    /// Format package description combining LLM description + action list
+    /// </summary>
+    string FormatPackageDescription(ActionPackage package, GameAction[] availableActions)
+    {
+        System.Text.StringBuilder desc = new System.Text.StringBuilder();
+
+        // Add package description from LLM if available
+        if (!string.IsNullOrEmpty(package.description))
+        {
+            desc.AppendLine(package.description);
+        }
+
+        // Add action list
+        if (package.action_indices != null && package.action_indices.Length > 0 && availableActions != null)
+        {
+            if (desc.Length > 0) desc.AppendLine(); // Add spacing
+
+            desc.AppendLine("Actions:");
+            foreach (int idx in package.action_indices)
+            {
+                if (idx >= 0 && idx < availableActions.Length)
+                {
+                    string actionName = availableActions[idx].description;
+                    if (string.IsNullOrEmpty(actionName))
+                        actionName = availableActions[idx].action_id;
+                    desc.AppendLine($"• {actionName}");
+                }
+            }
+        }
+
+        return desc.ToString().TrimEnd();
     }
 }
 
@@ -874,4 +1036,40 @@ public class ChoicesProposalMessage
     public string reasoning;
     public ActionPackage[] packages;
     public GameAction[] available_actions; // Full action objects from router
+}
+
+[System.Serializable]
+public class AgentConversationMessage
+{
+    public string type = "agent_message";
+    public string agent_name;
+    public string talkinghead_endpoint;
+    public string content;
+    public string message_type;
+    public int round;
+    public double timestamp;
+}
+
+[System.Serializable]
+public class AgentMessageWithChoices
+{
+    public string type = "agent_message_with_choices";
+    public string agent_name;
+    public string talkinghead_endpoint;
+    public string content;
+    public string message_type;
+    public int round;
+    public double timestamp;
+    public string reasoning;
+    public ActionPackage[] packages;
+    public GameAction[] available_actions;
+}
+
+[System.Serializable]
+public class DirectorMessage
+{
+    public string type = "director_message";
+    public string to_agent;
+    public string content;
+    public double timestamp;
 }

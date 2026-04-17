@@ -4,9 +4,12 @@ using TMPro;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using GameActions;
 
 public class AgentConversationUI : MonoBehaviour
 {
+    public static AgentConversationUI Instance { get; private set; }
+
     [Header("Main Panel")]
     public GameObject mainPanel;
     public Button expandButton;
@@ -78,7 +81,30 @@ public class AgentConversationUI : MonoBehaviour
     private List<GameObject> currentHistoricalTaskButtons = new List<GameObject>();
     private List<GameObject> currentConversationItems = new List<GameObject>();
     private TaskSystem taskSystem;
-    
+
+    // Store inline choice data for selection
+    private Dictionary<int, InlineChoiceData> inlineChoiceDataMap = new Dictionary<int, InlineChoiceData>();
+
+    [System.Serializable]
+    private class InlineChoiceData
+    {
+        public string agentName;
+        public ActionPackage[] packages;
+        public GameAction[] availableActions;
+    }
+
+    void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+        else
+        {
+            Debug.LogWarning("Multiple AgentConversationUI instances found!");
+        }
+    }
+
     void Start()
     {
         SetupUI();
@@ -550,28 +576,386 @@ public class AgentConversationUI : MonoBehaviour
         yield return new WaitForEndOfFrame();
         conversationScrollView.verticalNormalizedPosition = 0f;
     }
-    
+
+    /// <summary>
+    /// Add agent conversational message to UI.
+    /// Called by WebSocketManager when agent_message is received.
+    /// </summary>
+    public void AddAgentMessage(TaskOfficer officer, string content, string messageType)
+    {
+        // Only display if this is the currently selected agent
+        if (officer != currentSelectedAgent)
+        {
+            if (showDebugInfo)
+                Debug.Log($"Message from {officer} (not selected), not displaying in UI");
+            return;
+        }
+
+        // Create agent message in conversation
+        if (agentMessagePrefab != null && conversationContent != null)
+        {
+            GameObject messageItem = Instantiate(agentMessagePrefab, conversationContent);
+            AgentMessageUI messageUI = messageItem.GetComponent<AgentMessageUI>();
+
+            if (messageUI != null)
+            {
+                // Create AgentMessage data for the UI component
+                var agentMsg = new AgentMessage(content, null); // Avatar can be null
+                messageUI.Initialize(agentMsg);
+                StartCoroutine(messageUI.PlayTypingEffect(0.02f));
+            }
+            else
+            {
+                // Fallback if AgentMessageUI component not found
+                TextMeshProUGUI messageText = messageItem.GetComponentInChildren<TextMeshProUGUI>();
+                if (messageText != null) messageText.text = content;
+            }
+
+            currentConversationItems.Add(messageItem);
+            StartCoroutine(ScrollToBottomCoroutine());
+
+            if (showDebugInfo)
+                Debug.Log($"Added {messageType} message from {officer}: {content}");
+        }
+    }
+
+    public void AddAgentMessageWithChoices(
+        TaskOfficer officer,
+        string content,
+        string messageType,
+        string reasoning,
+        ActionPackage[] packages,
+        GameAction[] availableActions)
+    {
+        // Update the task's choices data first
+        UpdateTaskChoices(officer, reasoning, packages, availableActions);
+
+        // Only display if this is the currently selected agent
+        if (officer != currentSelectedAgent)
+        {
+            if (showDebugInfo)
+                Debug.Log($"Message with choices from {officer} (not selected), not displaying in UI");
+            return;
+        }
+
+        // Create agent message in conversation
+        if (agentMessagePrefab != null && conversationContent != null)
+        {
+            GameObject messageItem = Instantiate(agentMessagePrefab, conversationContent);
+            AgentMessageUI messageUI = messageItem.GetComponent<AgentMessageUI>();
+
+            if (messageUI != null)
+            {
+                // Create AgentMessage data for the UI component
+                var agentMsg = new AgentMessage(content, null);
+                messageUI.Initialize(agentMsg);
+                StartCoroutine(messageUI.PlayTypingEffect(0.02f));
+            }
+            else
+            {
+                // Fallback if AgentMessageUI component not found
+                TextMeshProUGUI messageText = messageItem.GetComponentInChildren<TextMeshProUGUI>();
+                if (messageText != null) messageText.text = content;
+            }
+
+            currentConversationItems.Add(messageItem);
+
+            // Add inline choice cards below the message
+            if (agentChoicePrefab != null && packages != null && packages.Length > 0)
+            {
+                // Store inline choice data
+                string agentName = GetCurrentAgentName(officer);
+                foreach (var package in packages)
+                {
+                    // Store data for this choice using package_index
+                    inlineChoiceDataMap[package.package_index] = new InlineChoiceData
+                    {
+                        agentName = agentName,
+                        packages = packages,
+                        availableActions = availableActions
+                    };
+
+                    GameObject choiceItem = Instantiate(agentChoicePrefab, conversationContent);
+
+                    // Use AgentChoiceUI component to properly set up the choice display
+                    AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
+                    if (choiceUI != null)
+                    {
+                        // Create AgentChoice with formatted text and description
+                        string choiceText = FormatPackageActions(package, availableActions);
+                        AgentChoice choice = new AgentChoice(package.package_index, choiceText);
+                        choice.agentReasoning = FormatChoiceDescription(package, availableActions);
+
+                        // Initialize without parent (null) since inline choices are handled differently
+                        choiceUI.Initialize(choice, null);
+
+                        // Override click handler for inline choice selection
+                        if (choiceUI.choiceButton != null)
+                        {
+                            int capturedIndex = package.package_index; // Capture for closure
+                            choiceUI.choiceButton.onClick.RemoveAllListeners();
+                            choiceUI.choiceButton.onClick.AddListener(() => OnInlineChoiceClicked(capturedIndex));
+                        }
+                    }
+
+                    currentConversationItems.Add(choiceItem);
+                }
+            }
+
+            StartCoroutine(ScrollToBottomCoroutine());
+
+            if (showDebugInfo)
+                Debug.Log($"Added {messageType} message with {packages.Length} choices from {officer}");
+        }
+    }
+
+    void UpdateTaskChoices(TaskOfficer officer, string reasoning, ActionPackage[] packages, GameAction[] availableActions)
+    {
+        // Find the task for this officer
+        if (TaskSystem.Instance == null)
+        {
+            Debug.LogWarning("[AgentConversationUI] TaskSystem.Instance is null, cannot update task choices");
+            return;
+        }
+
+        // Get agent name from officer
+        string agentName = GetCurrentAgentName(officer);
+
+        // Search through active tasks to find one matching this agent
+        GameTask targetTask = null;
+        foreach (var task in TaskSystem.Instance.activeTasks)
+        {
+            if (task.multiAgentProposal != null &&
+                task.multiAgentProposal.agent_name == agentName)
+            {
+                targetTask = task;
+                break;
+            }
+        }
+
+        if (targetTask == null)
+        {
+            if (showDebugInfo)
+                Debug.Log($"[AgentConversationUI] No task with multiAgentProposal found for {agentName}");
+            return;
+        }
+
+        // Update the task's multiAgentProposal with new choices
+        targetTask.multiAgentProposal.reasoning = reasoning;
+        targetTask.multiAgentProposal.packages = packages;
+        targetTask.multiAgentProposal.available_actions = availableActions;
+
+        // Update the agentChoices list as well
+        targetTask.agentChoices.Clear();
+        for (int i = 0; i < packages.Length; i++)
+        {
+            var package = packages[i];
+            string choiceText = FormatPackageActions(package, availableActions);
+            AgentChoice choice = new AgentChoice(package.package_index, choiceText);
+
+            // Build detailed description: package description + action list
+            choice.agentReasoning = FormatChoiceDescription(package, availableActions);
+
+            targetTask.agentChoices.Add(choice);
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"[AgentConversationUI] Updated task {targetTask.taskId} with {packages.Length} new choices");
+    }
+
+    string FormatPackageActions(ActionPackage package, GameAction[] availableActions)
+    {
+        // Use the package label as the primary choice text (strategy name from LLM)
+        if (!string.IsNullOrEmpty(package.label))
+        {
+            return package.label;
+        }
+
+        // Fallback: list action descriptions if no label provided
+        if (package.action_indices == null || package.action_indices.Length == 0)
+            return "No actions";
+
+        var actionNames = new System.Collections.Generic.List<string>();
+        foreach (int idx in package.action_indices)
+        {
+            if (idx >= 0 && idx < availableActions.Length)
+            {
+                // Use description or action_id as display name
+                string actionName = availableActions[idx].description;
+                if (string.IsNullOrEmpty(actionName))
+                    actionName = availableActions[idx].action_id;
+                actionNames.Add(actionName);
+            }
+        }
+
+        return string.Join(", ", actionNames);
+    }
+
+    string FormatChoiceDescription(ActionPackage package, GameAction[] availableActions)
+    {
+        // Build a detailed description with package description + action list
+        System.Text.StringBuilder desc = new System.Text.StringBuilder();
+
+        // Add package description from LLM if available
+        if (!string.IsNullOrEmpty(package.description))
+        {
+            desc.AppendLine(package.description);
+        }
+
+        // Add action list
+        if (package.action_indices != null && package.action_indices.Length > 0)
+        {
+            if (desc.Length > 0) desc.AppendLine(); // Add spacing
+
+            desc.AppendLine("Actions:");
+            foreach (int idx in package.action_indices)
+            {
+                if (idx >= 0 && idx < availableActions.Length)
+                {
+                    string actionName = availableActions[idx].description;
+                    if (string.IsNullOrEmpty(actionName))
+                        actionName = availableActions[idx].action_id;
+                    desc.AppendLine($"• {actionName}");
+                }
+            }
+        }
+
+        return desc.ToString().TrimEnd();
+    }
+
+    void OnInlineChoiceClicked(int packageIndex)
+    {
+        Debug.Log($"[AgentConversationUI] Inline choice clicked: {packageIndex}");
+
+        // Retrieve stored data for this choice
+        if (!inlineChoiceDataMap.ContainsKey(packageIndex))
+        {
+            Debug.LogError($"[AgentConversationUI] No data found for inline choice {packageIndex}");
+            return;
+        }
+
+        InlineChoiceData data = inlineChoiceDataMap[packageIndex];
+
+        // Find the selected package by matching package_index
+        ActionPackage selectedPackage = null;
+        for (int i = 0; i < data.packages.Length; i++)
+        {
+            if (data.packages[i].package_index == packageIndex)
+            {
+                selectedPackage = data.packages[i];
+                break;
+            }
+        }
+
+        if (selectedPackage == null)
+        {
+            Debug.LogError($"[AgentConversationUI] Package not found for choice {packageIndex}");
+            return;
+        }
+
+        Debug.Log($"[AgentConversationUI] Executing inline choice package {packageIndex} with {selectedPackage.action_indices.Length} actions");
+
+        // Execute actions (similar to TaskDetailUI.ExecuteActionPackage)
+        StartCoroutine(ExecuteInlineChoicePackage(data.agentName, packageIndex, selectedPackage, data.availableActions));
+    }
+
+    System.Collections.IEnumerator ExecuteInlineChoicePackage(
+        string agentName,
+        int packageIndex,
+        ActionPackage package,
+        GameAction[] availableActions)
+    {
+        List<string> executionResults = new List<string>();
+
+        // Execute each action in the package
+        foreach (int actionIdx in package.action_indices)
+        {
+            if (actionIdx >= 0 && actionIdx < availableActions.Length)
+            {
+                GameAction action = availableActions[actionIdx];
+                string actionName = action.description ?? action.action_id;
+                Debug.Log($"[AgentConversationUI] Executing inline choice action: {actionName}");
+
+                // Execute action via ActionExecutor instance
+                if (ActionExecutor.Instance != null)
+                {
+                    var result = ActionExecutor.Instance.ExecuteAction(action);
+                    executionResults.Add(JsonUtility.ToJson(new {
+                        success = result.success,
+                        action = actionName,
+                        error_message = result.error_message
+                    }));
+                }
+                else
+                {
+                    Debug.LogError("[AgentConversationUI] ActionExecutor.Instance is null!");
+                    executionResults.Add(JsonUtility.ToJson(new {
+                        success = false,
+                        action = actionName,
+                        error_message = "ActionExecutor not found"
+                    }));
+                }
+
+                yield return new WaitForSeconds(0.1f); // Brief delay between actions
+            }
+        }
+
+        // Get current game state (simplified - would need proper serialization)
+        string gameStateJson = "{}"; // TODO: Serialize current game state
+
+        string executionResultsJson = "[" + string.Join(",", executionResults) + "]";
+
+        // Send choice_made to WebSocket
+        if (WebSocketManager.Instance != null)
+        {
+            WebSocketManager.Instance.SendChoiceMade(agentName, packageIndex, executionResultsJson, gameStateJson);
+            Debug.Log($"[AgentConversationUI] Sent choice_made for inline choice {packageIndex}");
+        }
+    }
+
     void OnSendPlayerMessage()
     {
         if (playerInputField != null && !string.IsNullOrEmpty(playerInputField.text))
         {
             string message = playerInputField.text;
+
+            // Display player message in UI
             GameObject messageItem = Instantiate(playerMessagePrefab, conversationContent);
             TextMeshProUGUI messageText = messageItem.GetComponentInChildren<TextMeshProUGUI>();
-            
+
             if (messageText != null) messageText.text = message;
-            
+
             currentConversationItems.Add(messageItem);
-            
-            if (showDebugInfo)
-                Debug.Log($"Player sent message to {currentSelectedAgent}: {message}");
-                GameLogPanel.Instance?.LogUIInteraction(
-            $"Player message sent | agent={currentSelectedAgent} | task={currentSelectedTask?.taskTitle ?? "none"} | message={message}");
-
             playerInputField.text = "";
-            ScrollToBottom();
+            StartCoroutine(ScrollToBottomCoroutine());
 
+            // Send message to Python backend via WebSocket
+            string agentName = GetCurrentAgentName(currentSelectedAgent);
+            if (WebSocketManager.Instance != null && !string.IsNullOrEmpty(agentName))
+            {
+                WebSocketManager.Instance.SendDirectorMessage(agentName, message);
+            }
+
+            if (showDebugInfo)
+                Debug.Log($"Player sent message to {currentSelectedAgent} ({agentName}): {message}");
         }
+    }
+
+    string GetCurrentAgentName(TaskOfficer officer)
+    {
+        // Look up agent name from config by matching talkinghead_endpoint
+        AgentConfigLoader configLoader = FindObjectOfType<AgentConfigLoader>();
+        if (configLoader != null && configLoader.IsLoaded)
+        {
+            foreach (var agent in configLoader.Config.agents)
+            {
+                if (agent.talkinghead_endpoint == officer.ToString())
+                {
+                    return agent.subagent_name;
+                }
+            }
+        }
+        return officer.ToString(); // Fallback to enum name
     }
     
     void OnPlayerInputSubmit(string message)
