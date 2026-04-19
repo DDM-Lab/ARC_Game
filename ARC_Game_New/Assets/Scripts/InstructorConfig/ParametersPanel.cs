@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -81,13 +82,16 @@ public class ParametersPanel : MonoBehaviour
         foreach (var row in rows)
         {
             float val = GetValue(p, row.paramName);
-            var capturedRow = row; // Stay safe with closure
+            // Wire callbacks (re-wiring each OnEnable is safe – Unity deduplicates listeners
+            // only if added with AddListener the same way; remove first to be safe)
+            var capturedRow = row;
 
+            // Sync UI without triggering callbacks
             _syncing = true;
 
             if (row.controlType == ParameterRow.RowType.Slider)
             {
-                // Original Slider logic
+                // Configure slider bounds
                 row.slider.minValue = row.minValue;
                 row.slider.maxValue = row.maxValue;
                 row.slider.wholeNumbers = row.isInt;
@@ -96,24 +100,32 @@ public class ParametersPanel : MonoBehaviour
                 row.slider.onValueChanged.RemoveAllListeners();
                 row.slider.onValueChanged.AddListener(v => OnSliderChanged(capturedRow, v));
 
-                // Show slider, hide dropdown
+                // Show slider & hide dropdown
                 row.slider.gameObject.SetActive(true);
                 if (row.dropdown != null) row.dropdown.gameObject.SetActive(false);
             }
-            else
+            else // Dropdown
             {
-                // New Dropdown logic
-                row.dropdown.value = (int)val;
+                List<string> enumNames = new List<string>();
 
+                if (row.paramName == "initialWeather")
+                {
+                    enumNames.AddRange(System.Enum.GetNames(typeof(WeatherType)));
+                }
+                else if (row.paramName == "shelterFloodComparison")
+                {
+                    enumNames.AddRange(System.Enum.GetNames(typeof(FloodedFacilityTrigger.ComparisonType)));
+                }
+                row.dropdown.ClearOptions();
+                row.dropdown.AddOptions(enumNames);
+                row.dropdown.value = (int)val;
+                row.dropdown.RefreshShownValue();
                 row.dropdown.onValueChanged.RemoveAllListeners();
                 row.dropdown.onValueChanged.AddListener(v => OnSliderChanged(capturedRow, (float)v));
 
-                // Show dropdown, hide slider
                 row.dropdown.gameObject.SetActive(true);
                 if (row.slider != null) row.slider.gameObject.SetActive(false);
             }
-
-            // Shared InputField logic (Exactly like your original)
             row.inputField.text = FormatValue(val, row.isInt);
             row.inputField.onEndEdit.RemoveAllListeners();
             row.inputField.onEndEdit.AddListener(s => OnInputChanged(capturedRow, s));
@@ -141,7 +153,6 @@ public class ParametersPanel : MonoBehaviour
         val = Mathf.Clamp(val, row.minValue, row.maxValue);
         _syncing = true;
         //row.slider.value    = val;
-        // Check which UI element to update based on the row type
         if (row.controlType == ParameterRow.RowType.Slider)
         {
             row.slider.value = val;
