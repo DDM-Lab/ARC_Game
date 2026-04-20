@@ -879,7 +879,7 @@ public class DailyReportUI : MonoBehaviour
     float CalculateKitchenEfficiencyScore() 
     { 
         float foodInStorage = currentMetrics.currentFoodInStorage;
-        return 5.0f - (foodInStorage * 0.5f);
+        return 5.0f - (foodInStorage * 0.05f);
     }
     
     /// <summary>

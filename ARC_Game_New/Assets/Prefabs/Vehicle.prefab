@@ -101,7 +101,7 @@ MonoBehaviour:
   vehicleId: 0
   vehicleName: Vehicle 1
   moveSpeed: 5
-  maxCargoCapacity: 10
+  maxCargoCapacity: 100
   allowedCargoTypes: 0000000001000000
   vehicleRenderer: {fileID: 7589427587040128936}
   cargoIndicator: {fileID: 7159830015408954970}

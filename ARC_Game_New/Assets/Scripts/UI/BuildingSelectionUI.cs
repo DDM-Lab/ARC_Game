@@ -216,18 +216,18 @@ public class BuildingSelectionUI : MonoBehaviour
         {
             case BuildingType.Kitchen:
                 buildingName = "Kitchen";
-                buildingDescription = "Provides food for clients.\nCapacity: 10 food packs\n" + "<color=#00FF00>Time Needed: 1 Round</color>\n" +
-                                        $"<color=#00FF00>Construction Cost: ${buildingSystem.kitchenConstructionCost}</color>";
+                buildingDescription = "Provides food for clients.\nCapacity: 100 food packs\n" + "<color=#00FF00>Time Needed: 1 Round</color>\n" +
+                                        $"<color=#00FF00>Setup Cost: ${buildingSystem.kitchenConstructionCost}</color>";
                 break;
             case BuildingType.Shelter:
                 buildingName = "Shelter";
-                buildingDescription = "Provides housing for clients.\nCapacity: 10 people\n" + "<color=#00FF00>Time Needed: 1 Round</color>\n" +
-                                        $"<color=#00FF00>Construction Cost: ${buildingSystem.shelterConstructionCost}</color>";
+                buildingDescription = "Provides lodging for clients.\nCapacity: 100 people\n" + "<color=#00FF00>Time Needed: 1 Round</color>\n" +
+                                        $"<color=#00FF00>Setup Cost: ${buildingSystem.shelterConstructionCost}</color>";
                 break;
             case BuildingType.CaseworkSite:
                 buildingName = "Casework Site";
-                buildingDescription = "Handles administrative tasks.\nCapacity: 40 cases\n" + "<color=#00FF00>Time Needed: 1 Round</color>\n" +
-                                        $"<color=#00FF00>Construction Cost: ${buildingSystem.caseworkSiteConstructionCost}</color>";
+                buildingDescription = "Handles administrative tasks.\nCapacity: 400 cases\n" + "<color=#00FF00>Time Needed: 1 Round</color>\n" +
+                                        $"<color=#00FF00>Setup Cost: ${buildingSystem.caseworkSiteConstructionCost}</color>";
                 break;
         }
         

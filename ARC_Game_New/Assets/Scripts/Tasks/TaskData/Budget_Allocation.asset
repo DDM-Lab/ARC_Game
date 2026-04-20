@@ -66,10 +66,11 @@ MonoBehaviour:
     typingSpeed: 0.05
   agentChoices:
   - choiceId: 0
-    choiceText: Receive $3000 Budget
+    choiceText: Receive $5000 Budget
+    agentReasoning: 
     choiceImpacts:
     - impactType: 1
-      value: 3000
+      value: 5000
       isCountdown: 0
       customLabel: 
     isSelected: 1

@@ -18,6 +18,7 @@ MonoBehaviour:
   description: High ratio of untrained volunteers detected. Training programs recommended.
   taskImage: {fileID: 21300000, guid: 7818154064cc5274d8c36500af7288dc, type: 3}
   taskOfficer: 1
+  taskTag: 0
   roundTriggers:
   - targetRound: 1
     exactMatch: 0
@@ -49,12 +50,12 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts: []
   agentMessages:
-  - messageText: You're relying heavily on untrained volunteers. This reduces operational
+  - messageText: You're relying heavily on untrained workers. This reduces operational
       efficiency.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
-  - messageText: Consider putting more untrained volunteers into the training center.
+  - messageText: Consider putting more untrained workers into the training center.
       Remember trained workers are 2 workforce for each and untrained workers are
       1 worforce each.
     agentAvatar: {fileID: 0}

@@ -10,7 +10,7 @@ public class BuildingSystem : MonoBehaviour
     public GameObject caseworkSitePrefab;
     
     [Header("Construction Settings")]
-    public float constructionTime = 5f; // Base construction time in seconds
+    public int constructionRounds = 4;
     
     [Header("UI References")]
     public BuildingSelectionUI buildingSelectionUI;
@@ -113,7 +113,7 @@ public class BuildingSystem : MonoBehaviour
             if (ConfirmationPopup.Instance != null)
             {
                 ConfirmationPopup.Instance.ShowPopup(
-                    message: $"Convert this abandoned site into a {buildingType}?\n\nConversion will take time to complete. Assign workers once the conversion is complete. Are you sure to proceed? (This is a one-time tutorial prompt)",
+                    message: $"Open a {buildingType} here?\n\nIt will take time to complete. Assign workers once it's opened to make sure it's functional. \n\n(This message won't appear again)",
                     onConfirm: () => {
                         FirstTimeActionTracker.Instance.MarkConstructCompleted();
                         PerformConstruction(site, buildingType);
@@ -148,7 +148,7 @@ public class BuildingSystem : MonoBehaviour
                 if (workerSystem != null)
                     buildingComponent.workerSystem = workerSystem;
 
-                buildingComponent.Initialize(buildingType, site.GetId());
+                buildingComponent.Initialize(buildingType, site.GetId(), constructionRounds);
             }
 
             // Deduct construction cost
@@ -162,7 +162,7 @@ public class BuildingSystem : MonoBehaviour
             if (SatisfactionAndBudget.Instance != null && constructionCost > 0)
             {
                 SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
-                ToastManager.ShowToast($"Construction cost of {constructionCost} deducted for building {buildingType}", ToastType.Info, true);
+                ToastManager.ShowToast($"Opening cost of {constructionCost} deducted for {buildingType}", ToastType.Info, true);
                 GameLogPanel.Instance.LogPlayerAction($"Construction cost of {constructionCost} deducted for building {buildingType} at AbandonedSite_{site.GetId()}");
             }
 

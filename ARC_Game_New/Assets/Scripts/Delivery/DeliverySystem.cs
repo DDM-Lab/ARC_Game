@@ -642,6 +642,11 @@ public class DeliverySystem : MonoBehaviour
         return new List<DeliveryTask>(activeTasks);
     }
 
+    public bool HasPendingOrActiveDeliveries()
+    {
+        return pendingTasks.Count > 0 || activeTasks.Count > 0;
+    }
+
     /// <summary>
     /// Print delivery system statistics
     /// </summary>

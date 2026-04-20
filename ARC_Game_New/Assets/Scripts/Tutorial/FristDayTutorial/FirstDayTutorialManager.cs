@@ -70,10 +70,10 @@ public class FirstDayTutorialManager : MonoBehaviour
         if (globalClock == null)
             globalClock = GlobalClock.Instance;
         
-        // Subscribe to round change
         if (globalClock != null)
         {
             globalClock.OnTimeSegmentChanged += OnRoundChanged;
+            globalClock.OnSimulationEnded    += OnSimulationEnded;
         }
         
         // Start tutorial immediately on Day 1
@@ -187,30 +187,18 @@ public class FirstDayTutorialManager : MonoBehaviour
             Debug.Log("FirstDayTutorial: Highlights cleared");
     }
     
-    void OnRoundChanged(int round)
+    void OnRoundChanged(int _)
+    {
+        // Reserved for future round-specific tutorial hooks
+    }
+
+    void OnSimulationEnded()
     {
         if (tutorialComplete) return;
-        
-        if (globalClock.GetCurrentDay() == 1 && round == 1)
-        {
-            ShowFeedback();
-            
-            if (globalClock != null)
-            {
-                globalClock.isWaitingForReport = true; // ADD THIS - force report state
-            }
-            
-            if (globalClock.executeButton != null)
-            {
-                TextMeshProUGUI buttonText = globalClock.executeButton.GetComponentInChildren<TextMeshProUGUI>();
-                if (buttonText != null)
-                {
-                    buttonText.text = "View Report";
-                }
-            }
-            
-            tutorialComplete = true;
-        }
+        if (globalClock.GetCurrentDay() != 1 || !globalClock.isWaitingForReport) return;
+
+        tutorialComplete = true;
+        ShowFeedback();
     }
     
     void ShowFeedback()
@@ -315,6 +303,7 @@ public class FirstDayTutorialManager : MonoBehaviour
         if (globalClock != null)
         {
             globalClock.OnTimeSegmentChanged -= OnRoundChanged;
+            globalClock.OnSimulationEnded    -= OnSimulationEnded;
         }
         
         ClearSiteHighlights();

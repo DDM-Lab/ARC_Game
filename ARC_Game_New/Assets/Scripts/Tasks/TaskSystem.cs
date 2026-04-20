@@ -2645,14 +2645,14 @@ public class TaskSystem : MonoBehaviour
 
             // Get construction costs (assuming same cost for all buildings)
             constructionState.buildingConstructionCost = buildingSystem.shelterConstructionCost;
-            constructionState.constructionTimeDays = buildingSystem.constructionTime;
+            constructionState.constructionTimeDays = buildingSystem.constructionRounds;
             constructionState.deconstructionTimeDays = 3.0f; // Default deconstruction time
         }
         else
         {
             // Default values if BuildingSystem not found
             constructionState.buildingConstructionCost = 1000;
-            constructionState.constructionTimeDays = 5.0f;
+            constructionState.constructionTimeDays = 4f;
             constructionState.deconstructionTimeDays = 3.0f;
         }
 

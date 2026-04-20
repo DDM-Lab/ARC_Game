@@ -18,6 +18,7 @@ MonoBehaviour:
   description: High number of idle workers detected. Training recommendations available.
   taskImage: {fileID: 21300000, guid: 7818154064cc5274d8c36500af7288dc, type: 3}
   taskOfficer: 1
+  taskTag: 0
   roundTriggers:
   - targetRound: 1
     exactMatch: 0
@@ -49,13 +50,13 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts: []
   agentMessages:
-  - messageText: Multiple workers are currently idle. Consider training them to improve
-      facility operations.
+  - messageText: Multiple untrained workers are currently idle. Consider training
+      them to improve facility operations.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
-  - messageText: Trained workers are more efficient and can handle specialized tasks
-      better than untrained volunteers.
+  - messageText: You need more untrained workers to do what the trained worker do,
+      and putting untrained workers into training increase their satisfaction.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05

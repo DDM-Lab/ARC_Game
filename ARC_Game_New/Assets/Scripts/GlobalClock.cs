@@ -47,6 +47,9 @@ public class GlobalClock : MonoBehaviour
     public TextMeshProUGUI roundText;
     public TextMeshProUGUI TaskCenterDayRoundText;
 
+    [Header("Clock Animation")]
+    public ClockAnimationUI clockAnimationUI;
+
     [Header("Debug")]
     public bool showDebugInfo = true;
     
@@ -191,17 +194,8 @@ public class GlobalClock : MonoBehaviour
             if (ConfirmationPopup.Instance != null)
             {
                 ConfirmationPopup.Instance.ShowPopup(
-                    message: "Do you want to view the daily report now? You will be able to proceed to the next day after viewing the report.",
+                    message: "End today and go to the daily report?",
                     onConfirm: () => {
-                        
-                        // =====================================================
-                        // FIX: Do NOT fire OnDayChanged here.
-                        // Previously this fired OnDayChanged which reset all 
-                        // daily tracking BEFORE the report could read the data.
-                        // Now we directly tell DailyReportManager to show the 
-                        // report. The day advancement and data reset will happen
-                        // AFTER the player closes the report.
-                        // =====================================================
                         if (DailyReportManager.Instance != null)
                         {
                             DailyReportManager.Instance.ShowDailyReport();
@@ -225,12 +219,12 @@ public class GlobalClock : MonoBehaviour
             if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstExecute())
             {
                 ConfirmationPopup.Instance.ShowPopup(
-                    message: "This is your first time executing a simulation round. During the simulation, you won't be able to make changes until it completes. You can adjust the simulation speed in settings.\n\nDo you want to proceed?",
+                    message: "This is your first time proceed to next round. During the simulation phase, you won't be able to change your current decisions.\n\nDo you want to proceed?",
                     onConfirm: () => {
                         FirstTimeActionTracker.Instance.MarkExecuteCompleted();
                         StartSimulation();
                     },
-                    title: "First Time Execution"
+                    title: "Proceed to Next Round"
                 );
                 return;
             }
@@ -284,36 +278,103 @@ public class GlobalClock : MonoBehaviour
     {
         if (isSimulationRunning) return;
 
-        // Request LLM agent decision before simulation starts (legacy path)
-        RequestLLMAgentDecision();
-
-        // Notify agent router of new round (multi-agent router path)
-        int roundNumber = (currentDay - 1) * 4 + currentTimeSegment + 1;
-        if (WebSocketManager.Instance != null && WebSocketManager.Instance.isConnected)
-        {
-            WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, currentTimeSegment);
-        }
-
         isSimulationRunning = true;
         currentState = TimeState.Simulating;
-
-        // Disable player interactions
         DisablePlayerInteractions();
-
-        // Calculate player wait time based on speed (shorter wait for higher speeds)
-        float playerWaitTime = simulationDuration / (int)currentTimeSpeed;
-
-        // Set time scale to speed up game content
-        Time.timeScale = (int)currentTimeSpeed;
-
-        // Notify other systems
         OnSimulationStarted?.Invoke();
 
+        // Day 1 is construction/intro — step through all 4 rounds with animation
+        if (currentDay == 1 && currentTimeSegment == 0)
+        {
+            Time.timeScale = 0f;
+            GameLogPanel.Instance.LogMetricsChange("Day 1: stepping through all rounds for construction/intro.");
+            StartCoroutine(Day1SkipCoroutine());
+            return;
+        }
+
+        RequestLLMAgentDecision();
+
+        int roundNumber = (currentDay - 1) * 4 + currentTimeSegment + 1;
+        if (WebSocketManager.Instance != null && WebSocketManager.Instance.isConnected)
+            WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, currentTimeSegment);
+
+        if (!HasActiveDeliveries())
+        {
+            // No deliveries — skip simulation, just play fast clock animation
+            Time.timeScale = 0f;
+
+            if (showDebugInfo)
+                Debug.Log("No active deliveries — skipping simulation.");
+            GameLogPanel.Instance.LogMetricsChange("No active deliveries — skipping simulation.");
+
+            if (clockAnimationUI != null)
+                clockAnimationUI.PlaySkip(EndSimulation);
+            else
+                EndSimulation();
+        }
+        else
+        {
+            float playerWaitTime = simulationDuration / (int)currentTimeSpeed;
+            Time.timeScale = (int)currentTimeSpeed;
+
+            if (showDebugInfo)
+                Debug.Log($"Simulation started — Player waits {playerWaitTime}s at {currentTimeSpeed}x speed");
+            GameLogPanel.Instance.LogMetricsChange($"Simulation started — Player waits {playerWaitTime}s at {currentTimeSpeed}x speed");
+
+            clockAnimationUI?.PlaySynced(playerWaitTime);
+
+            StartCoroutine(SimulationCoroutine(playerWaitTime));
+        }
+    }
+
+    IEnumerator Day1SkipCoroutine()
+    {
+        bool hasFacilities = FindObjectsOfType<Building>().Length > 0;
+        string openMsg     = clockAnimationUI != null
+            ? (hasFacilities ? clockAnimationUI.day1SetupMessage : clockAnimationUI.day1NoFacilitiesMessage)
+            : "";
+        string completeMsg = clockAnimationUI != null ? clockAnimationUI.day1CompleteMessage : "";
+
+        clockAnimationUI?.Show(openMsg);
+
+        // Step through rounds 1-4: show round number → play clock → fire OnRoundEnd
+        for (int round = 0; round < 4; round++)
+        {
+            currentTimeSegment = round;
+            UpdateTimeDisplay();
+
+            if (round == 3 && hasFacilities)
+                clockAnimationUI?.SetMessage(completeMsg);
+
+            if (clockAnimationUI != null)
+                yield return clockAnimationUI.PlayRoundLoops();
+            else
+                yield return new WaitForSecondsRealtime(0.1f);
+
+            OnRoundEnd?.Invoke();
+        }
+
+        clockAnimationUI?.Hide();
+
+        // Segment stays at 3 so display reads "Round 4"; advance state to end-of-day
+        currentTimeSegment  = 4;
+        isSimulationRunning = false;
+        currentState        = TimeState.Paused;
+        Time.timeScale      = 0f;
+        isWaitingForReport  = true;
+
+        executeButton?.GetComponentInChildren<TextMeshProUGUI>()?.SetText("View Report");
+        EnablePlayerInteractions();
+        OnSimulationEnded?.Invoke();
+
         if (showDebugInfo)
-            Debug.Log($"Simulation started - Player waits {playerWaitTime}s, game content runs at {currentTimeSpeed}x speed");
-        GameLogPanel.Instance.LogMetricsChange($"Simulation started - Player waits {playerWaitTime}s, game content runs at {currentTimeSpeed}x speed");
-        // Start simulation coroutine
-        StartCoroutine(SimulationCoroutine(playerWaitTime));
+            Debug.Log("Day 1 complete — all 4 rounds stepped through.");
+        GameLogPanel.Instance.LogMetricsChange("Day 1 complete — Click 'View Report' when ready.");
+    }
+
+    bool HasActiveDeliveries()
+    {
+        return DeliverySystem.Instance != null && DeliverySystem.Instance.HasPendingOrActiveDeliveries();
     }
 
     void RequestLLMAgentDecision()

@@ -254,7 +254,7 @@ public class BuildingListItem : MonoBehaviour
             switch (assignedBuilding.GetCurrentStatus())
             {
                 case BuildingStatus.UnderConstruction:
-                    buttonText.text = "Building...";
+                    buttonText.text = "In Progress";
                     break;
                 case BuildingStatus.NeedWorker:
                     buttonText.text = "Assign";
