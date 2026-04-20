@@ -31,39 +31,8 @@ public class ClientRelocationHandler : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // DEBUG
-    // ─────────────────────────────────────────────────────────────────
-
-    [ContextMenu("Debug: Deplete All Community Populations")]
-    void Debug_DepleteAllCommunityPopulations()
-    {
-        int communitiesCleared = 0;
-
-        foreach (PrebuiltBuilding pb in FindObjectsOfType<PrebuiltBuilding>())
-        {
-            if (pb.GetPrebuiltType() != PrebuiltBuildingType.Community) continue;
-            BuildingResourceStorage storage = pb.GetResourceStorage();
-            if (storage == null) continue;
-            int pop = storage.GetResourceAmount(ResourceType.Population);
-            if (pop > 0)
-            {
-                storage.RemoveResource(ResourceType.Population, pop);
-                Debug.Log($"[DEBUG] Cleared {pop} population from {pb.GetBuildingName()}");
-                communitiesCleared++;
-            }
-        }
-
-        Debug.Log($"[DEBUG] Depleted population in {communitiesCleared} communities.");
-    }
-
-    // ─────────────────────────────────────────────────────────────────
     // PUBLIC: VALIDATION
     // ─────────────────────────────────────────────────────────────────
-
-    public bool HasSourcePopulation(MonoBehaviour source)
-    {
-        return GetPopulation(source) > 0;
-    }
 
     public bool CanExecute(GameTask parentTask, int requestedQuantity,
                            bool includeShelters, bool includeMotels,

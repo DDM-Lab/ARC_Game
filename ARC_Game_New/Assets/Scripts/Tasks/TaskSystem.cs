@@ -18,8 +18,7 @@ public enum TaskStatus
     InProgress, // Task is being worked on
     Incomplete, // Task failed to complete (e.g., lack of resource, didn't deliver on time)
     Expired, // Task expired without being completed (e.g., no action taken)
-    Completed, // Task completed successfully
-    Resolved  // Task condition no longer applies — situation resolved itself, no action needed
+    Completed // Task completed successfully
 }
 
 public enum ImpactType
@@ -667,64 +666,12 @@ public class TaskSystem : MonoBehaviour
     void OnRoundChanged(int newSegment)
     {
         Debug.Log($"OnRoundChanged called in Task System: segment {newSegment}, auto generation: {enableAutoTaskGeneration}. (We skip generation when newSegment == 3)");
+        // Check for new tasks at the start of each round
         if (enableAutoTaskGeneration && newSegment != 3)
         {
             Debug.Log("Attempting to generate tasks from database...");
             GenerateTasksFromDatabase();
         }
-        CheckStaleTasks();
-    }
-
-    void CheckStaleTasks()
-    {
-        List<GameTask> toResolve = new List<GameTask>();
-
-        foreach (GameTask task in activeTasks)
-        {
-            if (task.status == TaskStatus.InProgress) continue;
-            if (IsTaskStale(task))
-                toResolve.Add(task);
-        }
-
-        foreach (GameTask task in toResolve)
-            ResolveTask(task, "Sorry, just got the newest info — the clients at this location have already been relocated. No further action is needed.");
-    }
-
-    // Returns true if the task's triggering condition no longer holds and it should be auto-resolved.
-    public bool IsTaskStale(GameTask task)
-    {
-        if (!IsRelocationTask(task)) return false;
-        if (task.status == TaskStatus.InProgress) return false;
-
-        MonoBehaviour source = FindTriggeringFacility(task);
-        if (source == null) return false;
-
-        return ClientRelocationHandler.Instance != null &&
-               !ClientRelocationHandler.Instance.HasSourcePopulation(source);
-    }
-
-    bool IsRelocationTask(GameTask task)
-    {
-        return task.agentChoices.Exists(c => c.triggersDelivery && c.deliveryCargoType == ResourceType.Population);
-    }
-
-    public void ResolveTask(GameTask task, string reason)
-    {
-        if (!activeTasks.Contains(task)) return;
-
-        // Append an agent message explaining what happened
-        Sprite avatar = GetOfficerAvatar(task.taskOfficer);
-        task.agentMessages.Add(new AgentMessage(reason, avatar) { useTypingEffect = false });
-
-        task.status = TaskStatus.Resolved;
-        activeTasks.Remove(task);
-        completedTasks.Add(task);
-
-        OnTaskExpired?.Invoke(task);
-
-        if (showDebugInfo)
-            Debug.Log($"Resolved task: {task.taskTitle} — {reason}");
-        GameLogPanel.Instance.LogTaskEvent($"Resolved task: {task.taskTitle} — condition no longer applies");
     }
 
     void GenerateTasksFromDatabase()
@@ -791,6 +738,41 @@ public class TaskSystem : MonoBehaviour
                     Debug.Log($"Task {taskData.taskTitle} already exists for {facilityName}, skipping");
                     GameLogPanel.Instance.LogTaskEvent($"Task {taskData.taskTitle} already exists for {facilityName}, skipping");
                     continue;
+                }
+
+                // Per-facility lodging dedup: only one lodging task per facility at a time.
+                // Emergency tasks take priority — they evict any existing non-emergency lodging task.
+                if (taskData.taskTag == TaskTag.Lodging)
+                {
+                    var existingLodging = activeTasks
+                        .Where(t => t.taskTag == TaskTag.Lodging && t.affectedFacility == facilityName)
+                        .ToList();
+
+                    if (existingLodging.Count > 0)
+                    {
+                        if (taskData.taskType == TaskType.Emergency)
+                        {
+                            // Evict non-emergency lodging tasks to make room for the emergency one
+                            foreach (var stale in existingLodging.Where(t => t.taskType != TaskType.Emergency))
+                            {
+                                activeTasks.Remove(stale);
+                                Debug.Log($"Emergency lodging supersedes existing task for {facilityName} — removed '{stale.taskTitle}'");
+                                GameLogPanel.Instance.LogTaskEvent($"Emergency lodging supersedes '{stale.taskTitle}' for {facilityName}");
+                            }
+                            // If an emergency lodging task already exists, still skip
+                            if (activeTasks.Any(t => t.taskTag == TaskTag.Lodging && t.affectedFacility == facilityName))
+                            {
+                                Debug.Log($"Emergency lodging already active for {facilityName} — skipping {taskData.taskTitle}");
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            Debug.Log($"Lodging task already active for {facilityName} — skipping {taskData.taskTitle}");
+                            GameLogPanel.Instance.LogTaskEvent($"Lodging task already active for {facilityName} — skipping {taskData.taskTitle}");
+                            continue;
+                        }
+                    }
                 }
 
                 Debug.Log($"Creating task: {taskData.taskTitle} for facility: {facilityName}");
