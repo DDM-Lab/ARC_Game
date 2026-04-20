@@ -103,6 +103,7 @@ public class GameConfigLoader : MonoBehaviour
     void Start()
     {
         StartCoroutine(LoadConfigFromSheet());
+        StartCoroutine(LoadMapConfigFromServer());
     }
     
     /// <summary>
@@ -368,11 +369,14 @@ public class GameConfigLoader : MonoBehaviour
 
         using (UnityWebRequest request = UnityWebRequest.Get(urlWithCacheBuster))
         {
+            Debug.Log("GameConfigLoader: using entered");
             request.timeout = (int)mapConfigTimeout;
             yield return request.SendWebRequest();
+            Debug.Log("GameConfigLoader: after yield return");
 
             if (request.result == UnityWebRequest.Result.Success)
             {
+                Debug.Log("GameConfigLoader: unity web req success!");
                 string json = request.downloadHandler.text;
                 try
                 {
