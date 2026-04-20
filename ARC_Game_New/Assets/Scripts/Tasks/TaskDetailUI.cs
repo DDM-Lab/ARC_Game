@@ -141,9 +141,16 @@ public class TaskDetailUI : MonoBehaviour
 
     public void ShowTaskDetail(GameTask task)
     {
+        // Resolve immediately if the task condition no longer holds
+        if (TaskSystem.Instance != null && TaskSystem.Instance.IsTaskStale(task))
+        {
+            TaskSystem.Instance.ResolveTask(task, "Sorry, just got the newest info — the clients at this location have already been relocated. No further action is needed.");
+            return;
+        }
+
         // Check if this task was shown before
         bool isFirstTimeShowing = !previouslyShownTaskIds.Contains(task.taskId);
-        
+
         currentTask = task;
 
         if (taskDetailPanel != null)

@@ -215,6 +215,15 @@ public class AlertUIController : MonoBehaviour
         if (alertQueue.Count == 0) return;
 
         currentAlert = alertQueue.Dequeue();
+
+        // Resolve immediately if the task condition no longer holds — skip showing it
+        if (TaskSystem.Instance != null && TaskSystem.Instance.IsTaskStale(currentAlert))
+        {
+            TaskSystem.Instance.ResolveTask(currentAlert, "Sorry, just got the newest info — the clients at this location have already been relocated. No further action is needed.");
+            currentAlert = null;
+            ProcessNextAlert();
+            return;
+        }
         alertMessages = currentAlert.agentMessages;
         currentMessageIndex = 0;
 

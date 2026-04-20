@@ -172,6 +172,7 @@ public class TaskCenterUI : MonoBehaviour
         allTasks.AddRange(TaskSystem.Instance.GetTasksByStatus(TaskStatus.Incomplete));
         allTasks.AddRange(TaskSystem.Instance.GetTasksByStatus(TaskStatus.Completed));
         allTasks.AddRange(TaskSystem.Instance.GetTasksByStatus(TaskStatus.Expired));
+        allTasks.AddRange(TaskSystem.Instance.GetTasksByStatus(TaskStatus.Resolved));
 
         // FILTER OUT Other tasks
         allTasks = allTasks.Where(t => t.taskType != TaskType.Other).ToList();
@@ -211,7 +212,8 @@ public class TaskCenterUI : MonoBehaviour
             case TaskStatus.Incomplete: return 3;
             case TaskStatus.Expired: return 4;
             case TaskStatus.Completed: return 5;
-            default: return 6;
+            case TaskStatus.Resolved: return 6;
+            default: return 7;
         }
     }
 

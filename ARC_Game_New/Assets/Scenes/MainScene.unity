@@ -27577,7 +27577,7 @@ MonoBehaviour:
   skipLoopDuration: 0.4
   skipMessage: Skipping simulation...
   day1SetupMessage: "Opening facilities\u2026"
-  day1CompleteMessage: Facilities ready.
+  day1CompleteMessage: Facilities ready soon...
   day1NoFacilitiesMessage: "Skipping setup time\u2026"
 --- !u!1 &597780842
 GameObject:

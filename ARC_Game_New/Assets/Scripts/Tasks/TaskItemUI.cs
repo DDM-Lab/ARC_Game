@@ -252,6 +252,8 @@ public class TaskItemUI : MonoBehaviour
                 return "EXPIRED";
             case TaskStatus.Completed:
                 return "COMPLETED";
+            case TaskStatus.Resolved:
+                return "RESOLVED";
             default:
                 return "";
         }
@@ -279,6 +281,9 @@ public class TaskItemUI : MonoBehaviour
                 break;
             case TaskStatus.Completed:
                 statusColor = completedColor;
+                break;
+            case TaskStatus.Resolved:
+                statusColor = expiredColor; // neutral grey, same as expired
                 break;
         }
         
