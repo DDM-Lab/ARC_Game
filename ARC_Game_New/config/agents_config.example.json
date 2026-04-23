@@ -1,0 +1,85 @@
+{
+  "agent_order_rule": "sequential",
+  "agents": [
+    {
+      "subagent_name": "Construction Officer",
+      "role": "subagent",
+      "actor_type": "choices",
+      "num_choices": 3,
+      "max_actions_per_package": 4,
+      "talkinghead_endpoint": "DisasterOfficer",
+      "subaction_space": [
+        { "category": "construction" },
+        { "category": "deconstruction" }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "constructionState",
+        "mapState"
+      ],
+      "llm_provider": "openai",
+      "llm_model": "gpt-4-turbo-preview",
+      "api_key_env": "OPENAI_API_KEY",
+      "turn_token_budget": 512,
+      "system_prompt": "You are a construction expert advising on infrastructure priorities in a disaster relief operation.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Logistics Officer",
+      "role": "subagent",
+      "actor_type": "auto",
+      "num_choices": null,
+      "max_actions_per_package": 3,
+      "talkinghead_endpoint": "WorkforceService",
+      "subaction_space": [
+        { "category": "worker" },
+        { "category": "worker_assignment" }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "workers",
+        "mapState"
+      ],
+      "llm_provider": "anthropic",
+      "llm_model": "claude-3-sonnet-20240229",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "turn_token_budget": 256,
+      "system_prompt": "You are a logistics coordinator managing workers in a disaster relief operation.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Strategic Advisor",
+      "role": "subagent",
+      "actor_type": "choices",
+      "num_choices": 3,
+      "max_actions_per_package": 5,
+      "talkinghead_endpoint": "AdvisorService",
+      "subaction_space": [
+        { "category": "all" }
+      ],
+      "subobservation_space": ["all"],
+      "llm_provider": "ollama",
+      "llm_model": "qwen2.5:0.5b",
+      "turn_token_budget": 512,
+      "system_prompt": "You are a strategic advisor coordinating all aspects of disaster relief operations.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Player",
+      "role": "director",
+      "actor_type": "manual",
+      "num_choices": null,
+      "max_actions_per_package": null,
+      "talkinghead_endpoint": null,
+      "subaction_space": [{ "category": "all" }],
+      "subobservation_space": ["all"],
+      "llm_provider": null,
+      "llm_model": null,
+      "turn_token_budget": null,
+      "system_prompt": null,
+      "can_address": []
+    }
+  ]
+}

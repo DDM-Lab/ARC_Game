@@ -1,0 +1,917 @@
+using UnityEngine;
+using System.Collections.Generic;
+using System.Linq;
+using System;
+using System.Collections;
+
+[System.Serializable]
+public class DeliveryTask
+{
+    public int taskId;
+    public MonoBehaviour sourceBuilding; // Changed to MonoBehaviour to accept both Building and PrebuiltBuilding
+    public MonoBehaviour destinationBuilding; // Changed to MonoBehaviour
+    public ResourceType cargoType;
+    public int quantity;
+    public int priority = 1; // Higher number = higher priority
+    public bool isUrgent = false;
+    public float timeCreated;
+    public float estimatedTimeSeconds = 0f;
+    
+
+
+    public DeliveryTask(MonoBehaviour source, MonoBehaviour destination, ResourceType cargo, int qty, int taskId)
+    {
+        this.taskId = taskId;
+        this.sourceBuilding = source;
+        this.destinationBuilding = destination;
+        this.cargoType = cargo;
+        this.quantity = qty;
+        this.timeCreated = Time.time;
+    }
+
+    public override string ToString()
+    {
+        return $"Task {taskId}: {quantity} {cargoType} from {sourceBuilding.name} to {destinationBuilding.name}";
+    }
+
+    // Helper methods to get positions
+    public Vector3 GetSourcePosition()
+    {
+        return sourceBuilding.transform.position;
+    }
+
+    public Vector3 GetDestinationPosition()
+    {
+        return destinationBuilding.transform.position;
+    }
+
+    // Helper methods to get road connection points
+    public Vector3 GetSourceRoadConnection()
+    {
+        RoadConnection roadConnection = sourceBuilding.GetComponent<RoadConnection>();
+        return roadConnection != null ? roadConnection.GetRoadConnectionPoint() : sourceBuilding.transform.position;
+    }
+
+    public Vector3 GetDestinationRoadConnection()
+    {
+        RoadConnection roadConnection = destinationBuilding.GetComponent<RoadConnection>();
+        return roadConnection != null ? roadConnection.GetRoadConnectionPoint() : destinationBuilding.transform.position;
+    }
+
+    // Helper methods for LLM integration
+    public MonoBehaviour GetSource() => sourceBuilding;
+    public MonoBehaviour GetDestination() => destinationBuilding;
+
+    public string GetEstimatedTimeString()
+    {
+        if (estimatedTimeSeconds <= 0) return "Unknown";
+        
+        int minutes = Mathf.FloorToInt(estimatedTimeSeconds / 60);
+        int seconds = Mathf.FloorToInt(estimatedTimeSeconds % 60);
+        return $"{minutes:D2}:{seconds:D2}";
+    }
+}
+
+public class DeliverySystem : MonoBehaviour
+{
+    [Header("Vehicle Management")]
+    public List<Vehicle> availableVehicles = new List<Vehicle>();
+    public GameObject vehiclePrefab; // For spawning new vehicles
+
+    [Header("Task Management")]
+    public int maxQueuedTasks = 50;
+    public float taskAssignmentInterval = 1f; // Check for new assignments every second
+
+    [Header("Auto-Task Generation")]
+    public bool enableAutoTasks = false;
+    public float autoTaskInterval = 10f; // Generate tasks every 10 seconds
+    public bool prioritizeFoodDelivery = true;
+
+    [Header("Debug")]
+    public bool showDebugInfo = true;
+
+    // Task management
+    private Queue<DeliveryTask> pendingTasks = new Queue<DeliveryTask>();
+    private List<DeliveryTask> activeTasks = new List<DeliveryTask>();
+    private List<DeliveryTask> completedTasks = new List<DeliveryTask>();
+
+    private int nextTaskId = 1;
+    private float lastTaskAssignment = 0f;
+
+    // Events
+    public event Action<DeliveryTask> OnTaskCreated;
+    public event Action<DeliveryTask, Vehicle> OnTaskAssigned;
+    public event Action<DeliveryTask> OnTaskCompleted;
+    public int ervCount = 3;
+
+    public static DeliverySystem Instance { get; private set; }
+
+    void Awake()
+    {
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
+    }
+
+    void Start()
+    {
+        pendingTasks.Clear();
+        StartCoroutine(InitializeWithCentralConfig());
+    }
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+
+        int ervCount = GameDataManager.Instance.InitialERVCount;
+
+        AdjustSceneCount(ervCount);
+        availableVehicles.Clear();
+        availableVehicles.AddRange(FindObjectsOfType<Vehicle>());
+
+        foreach (Vehicle vehicle in availableVehicles)
+        {
+            vehicle.OnDeliveryCompleted += OnVehicleDeliveryCompleted;
+            Debug.Log($"DeliverySystem: Finalized {vehicle.GetVehicleName()}");
+        }
+
+        Debug.Log($"Delivery System initialized with {availableVehicles.Count} vehicles.");
+        GameLogPanel.Instance.LogVehicleEvent($"Initialized with {availableVehicles.Count} vehicles (Config Target: {ervCount})");
+    }
+
+    public void AdjustSceneCount(int ervCount)
+    {
+        List<Vehicle> sceneVehicles = FindObjectsOfType<Vehicle>().ToList();
+        if (sceneVehicles.Count > ervCount)
+        {
+            int numberToRemove = sceneVehicles.Count - ervCount;
+            for (int i = 0; i < numberToRemove; i++)
+            {
+                if (sceneVehicles[i] != null)
+                    Destroy(sceneVehicles[i].gameObject);
+            }
+        }
+        else if (sceneVehicles.Count < ervCount)
+        {
+            int numberToAdd = ervCount-sceneVehicles.Count;
+            RoadTilemapManager roadManager = FindObjectOfType<RoadTilemapManager>();
+
+            if (roadManager != null)
+            {
+                List<Vector3Int> roadList = roadManager.GetAllRoadPositions().ToList();
+                if (roadList.Count > 0)
+                {
+                    for (int i = 0; i < numberToAdd; i++)
+                    {
+                        Vector3Int randomTile = roadList[UnityEngine.Random.Range(0, roadList.Count)];
+                        Vector3 spawnPos = roadManager.CellToWorld(randomTile);
+
+                        List<Vector3Int> neighbors = roadManager.GetRoadNeighbors(randomTile);
+                        Quaternion spawnRotation = Quaternion.identity;
+
+                        if (neighbors.Count > 0)
+                        {
+                            Vector3Int targetNeighbor = neighbors[UnityEngine.Random.Range(0, neighbors.Count)];
+                            Vector3Int dir = targetNeighbor - randomTile;
+                            float angle = 0;
+                            if (dir == Vector3Int.up) angle = 90;    
+                            else if (dir == Vector3Int.down) angle = 270; 
+                            else if (dir == Vector3Int.left) angle = 180; 
+                            else if (dir == Vector3Int.right) angle = 0;   
+                            spawnRotation = Quaternion.Euler(0, 0, angle);
+                        }
+                        GameObject newVehicleObj = Instantiate(vehiclePrefab, spawnPos, spawnRotation);
+                        Vehicle newVehicle = newVehicleObj.GetComponent<Vehicle>();
+                        if (newVehicle != null)
+                            AddVehicle(newVehicle);
+                    }
+                }
+            }
+        }
+        availableVehicles = FindObjectsOfType<Vehicle>().ToList();
+    }
+
+    void Update()
+    {
+        // Assign pending tasks to available vehicles
+        if (Time.time - lastTaskAssignment > taskAssignmentInterval)
+        {
+            AssignPendingTasks();
+            lastTaskAssignment = Time.time;
+        }
+
+    }
+
+    public bool CanCreateDeliveryWithEstimate(MonoBehaviour source, MonoBehaviour destination, out DeliveryTimeEstimate estimate)
+    {
+        estimate = new DeliveryTimeEstimate();
+
+        if (source == null || destination == null)
+        {
+            estimate.pathExists = false;
+            return false;
+        }
+
+        PathfindingSystem pathfinder = FindObjectOfType<PathfindingSystem>();
+        if (pathfinder == null)
+        {
+            estimate.pathExists = false;
+            return false;
+        }
+
+        Vector3 sourcePos = source.transform.position;
+        Vector3 destPos = destination.transform.position;
+
+        estimate = pathfinder.EstimateDeliveryTime(sourcePos, destPos);
+
+        if (estimate.pathExists)
+        {
+            if (showDebugInfo)
+            {
+                Debug.Log($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
+            }
+            GameLogPanel.Instance.LogVehicleEvent($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
+        }
+
+        return estimate.pathExists;
+    }
+
+    /// <summary>
+    /// Create delivery task(s) - automatically splits large tasks
+    /// </summary>
+    public List<DeliveryTask> CreateDeliveryTask(MonoBehaviour source, MonoBehaviour destination, ResourceType cargoType, int quantity, int priority = 1)
+    {
+        List<DeliveryTask> createdTasks = new List<DeliveryTask>();
+
+        if (source == null || destination == null)
+        {
+            GameLogPanel.Instance.LogError("Cannot create delivery task with null buildings");
+            Debug.LogError("Cannot create delivery task with null buildings");
+            return createdTasks;
+        }
+
+        if (quantity <= 0)
+        {
+            GameLogPanel.Instance.LogError("Cannot create delivery task with zero or negative quantity");
+            Debug.LogError("Cannot create delivery task with zero or negative quantity");
+            return createdTasks;
+        }
+
+        // Check if route is available with time estimation
+        DeliveryTimeEstimate estimate;
+        if (!CanCreateDeliveryWithEstimate(source, destination, out estimate))
+        {
+            if (estimate.isFloodBlocked)
+            {
+                GameLogPanel.Instance.LogError($"Cannot create delivery task - route blocked by flood from {source.name} to {destination.name}");
+                Debug.LogWarning($"Cannot create delivery task - route blocked by flood from {source.name} to {destination.name}");
+            }
+            else
+            {
+                GameLogPanel.Instance.LogError($"Cannot create delivery task - no route available from {source.name} to {destination.name}");
+                Debug.LogWarning($"Cannot create delivery task - no route available from {source.name} to {destination.name}");
+            }
+            return createdTasks;
+        }
+
+        if (showDebugInfo)
+        {
+            Debug.Log($"Creating delivery with estimate: {estimate.GetSummary()}");
+        }
+
+        // Continue with existing task creation logic...
+        int maxCapacity = GetMaxVehicleCapacityForCargo(cargoType);
+
+        if (maxCapacity <= 0)
+        {
+            GameLogPanel.Instance.LogError($"No vehicle available for cargo type {cargoType}");
+            Debug.LogError($"No vehicle available for cargo type {cargoType}");
+            return createdTasks;
+        }
+
+        int remainingQuantity = quantity;
+        int taskNumber = 1;
+
+        while (remainingQuantity > 0)
+        {
+            int currentTaskQuantity = Mathf.Min(remainingQuantity, maxCapacity);
+
+            if (pendingTasks.Count >= maxQueuedTasks)
+            {
+                GameLogPanel.Instance.LogError("Delivery task queue is full - cannot add more tasks");
+                Debug.LogWarning("Delivery task queue is full - cannot add more tasks");
+                break;
+            }
+
+            DeliveryTask newTask = new DeliveryTask(source, destination, cargoType, currentTaskQuantity, nextTaskId++);
+            newTask.priority = priority;
+
+            // Store time estimate in the task for reference
+            newTask.estimatedTimeSeconds = estimate.estimatedTimeSeconds;
+
+            pendingTasks.Enqueue(newTask);
+            createdTasks.Add(newTask);
+            OnTaskCreated?.Invoke(newTask);
+
+            if (showDebugInfo)
+                Debug.Log($"Created delivery task {taskNumber}: {newTask} (Est: {estimate.GetFormattedTime()})");
+            GameLogPanel.Instance.LogVehicleEvent($"Created delivery task {taskNumber}: {newTask} (Est: {estimate.GetFormattedTime()})");
+            remainingQuantity -= currentTaskQuantity;
+            taskNumber++;
+        }
+
+        return createdTasks;
+    }
+
+
+    /// <summary>
+    /// Create single delivery task (backward compatibility)
+    /// </summary>
+    public DeliveryTask CreateSingleDeliveryTask(MonoBehaviour source, MonoBehaviour destination, ResourceType cargoType, int quantity, int priority = 1)
+    {
+        List<DeliveryTask> tasks = CreateDeliveryTask(source, destination, cargoType, quantity, priority);
+        return tasks.Count > 0 ? tasks[0] : null;
+    }
+
+    /// <summary>
+    /// Cancel specific delivery task
+    /// </summary>
+    public bool CancelDeliveryTask(int taskId)
+    {
+        // remove from pending tasks
+        var pendingArray = pendingTasks.ToArray();
+        pendingTasks.Clear();
+
+        bool cancelled = false;
+        foreach (DeliveryTask task in pendingArray)
+        {
+            if (task.taskId == taskId)
+            {
+                cancelled = true;
+                if (showDebugInfo)
+                    Debug.Log($"Cancelled pending delivery task: {task}");
+            }
+            else
+            {
+                pendingTasks.Enqueue(task);
+            }
+        }
+
+        // remove from active tasks and stop vehicle
+        DeliveryTask activeTask = activeTasks.FirstOrDefault(t => t.taskId == taskId);
+        if (activeTask != null)
+        {
+            activeTasks.Remove(activeTask);
+
+            // find the vehicle executing this task and cancel it
+            Vehicle workingVehicle = availableVehicles.FirstOrDefault(v =>
+                v.GetCurrentTask() != null && v.GetCurrentTask().taskId == taskId);
+
+            if (workingVehicle != null)
+            {
+                workingVehicle.CancelCurrentTask();
+            }
+
+            cancelled = true;
+            if (showDebugInfo)
+                Debug.Log($"Cancelled active delivery task: {activeTask}");
+            GameLogPanel.Instance.LogVehicleEvent($"Cancelled active delivery task: {activeTask}");
+        }
+
+        return cancelled;
+    }
+
+
+    /// <summary>
+    /// Get maximum vehicle capacity for specific cargo type
+    /// </summary>
+    int GetMaxVehicleCapacityForCargo(ResourceType cargoType)
+    {
+        int maxCapacity = 0;
+
+        foreach (Vehicle vehicle in availableVehicles)
+        {
+            if (vehicle.GetAllowedCargoTypes().Contains(cargoType))
+            {
+                maxCapacity = Mathf.Max(maxCapacity, vehicle.GetMaxCapacity());
+            }
+        }
+
+        return maxCapacity;
+    }
+
+    /// <summary>
+    /// Get completed delivery tasks
+    /// </summary>
+    public List<DeliveryTask> GetCompletedTasks()
+    {
+        return new List<DeliveryTask>(completedTasks);
+    }
+
+    /// <summary>
+    /// Assign pending tasks to available vehicles
+    /// </summary>
+    void AssignPendingTasks()
+    {
+        if (pendingTasks.Count == 0) return;
+
+        // Get available vehicles
+        List<Vehicle> availableVehicleList = availableVehicles.Where(v => v.IsAvailable()).ToList();
+
+        if (availableVehicleList.Count == 0) return;
+
+        // Sort pending tasks by priority
+        List<DeliveryTask> sortedTasks = pendingTasks.OrderByDescending(t => t.priority).ThenBy(t => t.timeCreated).ToList();
+
+        foreach (DeliveryTask task in sortedTasks)
+        {
+            if (availableVehicleList.Count == 0) break;
+
+            // Find suitable vehicle for this task
+            Vehicle suitableVehicle = FindSuitableVehicle(task, availableVehicleList);
+
+            if (suitableVehicle != null)
+            {
+                // Assign task to vehicle
+                if (suitableVehicle.AssignDeliveryTask(task))
+                {
+                    pendingTasks = new Queue<DeliveryTask>(pendingTasks.Where(t => t != task));
+                    activeTasks.Add(task);
+                    availableVehicleList.Remove(suitableVehicle);
+
+                    OnTaskAssigned?.Invoke(task, suitableVehicle);
+
+                    if (showDebugInfo)
+                        Debug.Log($"Assigned {task} to vehicle {suitableVehicle.GetVehicleName()}");
+                    GameLogPanel.Instance.LogVehicleEvent($"Assigned {task} to vehicle {suitableVehicle.GetVehicleName()}");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Find the most suitable vehicle for a task
+    /// </summary>
+    Vehicle FindSuitableVehicle(DeliveryTask task, List<Vehicle> availableVehicleList)
+    {
+        Vehicle bestVehicle = null;
+        float bestScore = -1f;
+
+        foreach (Vehicle vehicle in availableVehicleList)
+        {
+            // Check if vehicle can handle this cargo type
+            if (!vehicle.GetAllowedCargoTypes().Contains(task.cargoType))
+                continue;
+
+            // Check if vehicle has enough capacity
+            if (vehicle.GetMaxCapacity() < task.quantity)
+                continue;
+
+            // Calculate suitability score
+            float score = CalculateVehicleSuitability(vehicle, task);
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestVehicle = vehicle;
+            }
+        }
+
+        return bestVehicle;
+    }
+
+    /// <summary>
+    /// Calculate how suitable a vehicle is for a task (higher is better)
+    /// </summary>
+    float CalculateVehicleSuitability(Vehicle vehicle, DeliveryTask task)
+    {
+        float score = 0f;
+
+        // Distance factor (closer vehicles are better)
+        float distanceToSource = Vector3.Distance(vehicle.transform.position, task.GetSourcePosition());
+        score += 100f / (1f + distanceToSource); // Inverse distance
+
+        // Capacity efficiency (vehicles with capacity closer to task quantity are better)
+        float capacityEfficiency = (float)task.quantity / vehicle.GetMaxCapacity();
+        score += capacityEfficiency * 50f;
+
+        // Speed factor
+        score += vehicle.moveSpeed * 10f;
+
+        return score;
+    }
+
+    /// <summary>
+    /// Handle vehicle delivery completion
+    /// </summary>
+    void OnVehicleDeliveryCompleted(Vehicle vehicle, DeliveryTask completedTask)
+    {
+        Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
+
+        // Report to daily tracking
+        if (DailyReportData.Instance != null)
+        {
+            DailyReportData.Instance.RecordDeliveryCompleted(completedTask);
+        }
+
+        activeTasks.Remove(completedTask);
+        completedTasks.Add(completedTask);
+        OnTaskCompleted?.Invoke(completedTask);
+    }
+
+    /// <summary>
+    /// Generate automatic delivery tasks based on building needs
+    /// </summary>
+    void GenerateAutoTasks()
+    {
+        // Find buildings that need food
+        if (prioritizeFoodDelivery)
+        {
+            GenerateFoodDeliveryTasks();
+        }
+
+        // Find communities with people who need transport to shelters
+        GeneratePopulationTransportTasks();
+    }
+
+    /// <summary>
+    /// Generate food delivery tasks from kitchens to shelters
+    /// </summary>
+    void GenerateFoodDeliveryTasks()
+    {
+        // Find kitchens with food packs
+        Building[] kitchens = FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Kitchen).ToArray();
+
+        // Find shelters that need food
+        Building[] shelters = FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Shelter).ToArray();
+
+        foreach (Building kitchen in kitchens)
+        {
+            BuildingResourceStorage kitchenStorage = kitchen.GetComponent<BuildingResourceStorage>();
+            if (kitchenStorage == null) continue;
+
+            int availableFoodPacks = kitchenStorage.GetResourceAmount(ResourceType.FoodPacks);
+            if (availableFoodPacks <= 0) continue;
+
+            // Find shelter that needs food most urgently
+            Building neediestShelter = null;
+            int highestNeed = 0;
+
+            foreach (Building shelter in shelters)
+            {
+                BuildingResourceStorage shelterStorage = shelter.GetComponent<BuildingResourceStorage>();
+                if (shelterStorage == null) continue;
+
+                int availableSpace = shelterStorage.GetAvailableSpace(ResourceType.FoodPacks);
+                int currentPopulation = shelterStorage.GetResourceAmount(ResourceType.Population);
+
+                // Calculate need based on population vs food ratio
+                int need = currentPopulation - shelterStorage.GetResourceAmount(ResourceType.FoodPacks);
+
+                if (need > highestNeed && availableSpace > 0)
+                {
+                    highestNeed = need;
+                    neediestShelter = shelter;
+                }
+            }
+
+            // Create delivery task if we found a needy shelter
+            if (neediestShelter != null && highestNeed > 0)
+            {
+                int deliveryAmount = Mathf.Min(availableFoodPacks, highestNeed, 5); // Limit to 5 per delivery
+                CreateDeliveryTask(kitchen, neediestShelter, ResourceType.FoodPacks, deliveryAmount, 2);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Generate population transport tasks from communities to shelters/motels
+    /// </summary>
+    void GeneratePopulationTransportTasks()
+    {
+        // Find communities with population
+        PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>().Where(pb => pb.GetPrebuiltType() == PrebuiltBuildingType.Community).ToArray();
+
+        // Find shelters and motels with space
+        Building[] shelters = FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Shelter).ToArray();
+        PrebuiltBuilding[] motels = FindObjectsOfType<PrebuiltBuilding>().Where(pb => pb.GetPrebuiltType() == PrebuiltBuildingType.Motel).ToArray();
+
+        foreach (PrebuiltBuilding community in communities)
+        {
+            if (community.GetCurrentPopulation() <= 0) continue;
+
+            // Find best destination (prefer shelters over motels)
+            MonoBehaviour bestDestination = null; // Changed from Building to MonoBehaviour
+            int bestAvailableSpace = 0;
+
+            // Check shelters first
+            foreach (Building shelter in shelters)
+            {
+                BuildingResourceStorage storage = shelter.GetComponent<BuildingResourceStorage>();
+                if (storage == null) continue;
+
+                int availableSpace = storage.GetAvailableSpace(ResourceType.Population);
+                if (availableSpace > bestAvailableSpace)
+                {
+                    bestAvailableSpace = availableSpace;
+                    bestDestination = shelter; // Building inherits from MonoBehaviour
+                }
+            }
+
+            // Check motels if no shelter space found
+            if (bestDestination == null)
+            {
+                foreach (PrebuiltBuilding motel in motels)
+                {
+                    int availableSpace = motel.GetPopulationCapacity() - motel.GetCurrentPopulation();
+                    if (availableSpace > bestAvailableSpace)
+                    {
+                        bestAvailableSpace = availableSpace;
+                        bestDestination = motel; // PrebuiltBuilding inherits from MonoBehaviour
+                    }
+                }
+            }
+
+            // Create transport task if we found space
+            if (bestDestination != null && bestAvailableSpace > 0)
+            {
+                int transportAmount = Mathf.Min(community.GetCurrentPopulation(), bestAvailableSpace, 3); // Limit to 3 people per trip
+                CreateDeliveryTask(community, bestDestination, ResourceType.Population, transportAmount, 3);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Add a new vehicle to the fleet
+    /// </summary>
+    public void AddVehicle(Vehicle vehicle)
+    {
+        if (!availableVehicles.Contains(vehicle))
+        {
+            availableVehicles.Add(vehicle);
+            vehicle.OnDeliveryCompleted += OnVehicleDeliveryCompleted;
+
+            if (showDebugInfo)
+                Debug.Log($"Added vehicle {vehicle.GetVehicleName()} to delivery fleet");
+        }
+    }
+
+    /// <summary>
+    /// Remove a vehicle from the fleet
+    /// </summary>
+    public void RemoveVehicle(Vehicle vehicle)
+    {
+        if (availableVehicles.Contains(vehicle))
+        {
+            availableVehicles.Remove(vehicle);
+            vehicle.OnDeliveryCompleted -= OnVehicleDeliveryCompleted;
+
+            // Cancel current task if this vehicle was working
+            if (!vehicle.IsAvailable())
+            {
+                vehicle.CancelCurrentTask();
+            }
+
+            if (showDebugInfo)
+                Debug.Log($"Removed vehicle {vehicle.GetVehicleName()} from delivery fleet");
+        }
+    }
+
+    /// <summary>
+    /// Get delivery system statistics
+    /// </summary>
+    public DeliveryStatistics GetDeliveryStatistics()
+    {
+        DeliveryStatistics stats = new DeliveryStatistics();
+
+        stats.totalVehicles = availableVehicles.Count;
+        stats.availableVehicles = availableVehicles.Count(v => v.IsAvailable());
+        stats.busyVehicles = stats.totalVehicles - stats.availableVehicles;
+
+        stats.pendingTasks = pendingTasks.Count;
+        stats.activeTasks = activeTasks.Count;
+        stats.completedTasks = completedTasks.Count;
+
+        return stats;
+    }
+
+    /// <summary>
+    /// Get all active delivery tasks (for UI display)
+    /// </summary>
+    public List<DeliveryTask> GetActiveTasks()
+    {
+        return new List<DeliveryTask>(activeTasks);
+    }
+
+    /// <summary>
+    /// Print delivery system statistics
+    /// </summary>
+    public void PrintDeliveryStatistics()
+    {
+        DeliveryStatistics stats = GetDeliveryStatistics();
+
+        Debug.Log("=== DELIVERY SYSTEM STATISTICS ===");
+        Debug.Log($"Vehicles: {stats.availableVehicles}/{stats.totalVehicles} available");
+        Debug.Log($"Tasks: {stats.pendingTasks} pending, {stats.activeTasks} active, {stats.completedTasks} completed");
+
+        if (showDebugInfo)
+        {
+            Debug.Log("Active Tasks:");
+            foreach (DeliveryTask task in activeTasks)
+            {
+                Debug.Log($"  {task}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Get all active deliveries going TO a specific building
+    /// </summary>
+    public List<DeliveryTask> GetIncomingDeliveries(MonoBehaviour building)
+    {
+        return activeTasks.Where(t => t.destinationBuilding == building).ToList();
+    }
+
+    /// <summary>
+    /// Total quantity of a cargo type committed to arrive at a destination,
+    /// counting both pending (queued) and active (in-flight) tasks.
+    /// Use instead of raw storage space to avoid double-booking.
+    /// </summary>
+    public int GetReservedIncomingQuantity(MonoBehaviour destination, ResourceType cargoType)
+    {
+        int total = 0;
+
+        foreach (DeliveryTask t in pendingTasks)
+            if (t.destinationBuilding == destination && t.cargoType == cargoType)
+                total += t.quantity;
+
+        foreach (DeliveryTask t in activeTasks)
+            if (t.destinationBuilding == destination && t.cargoType == cargoType)
+                total += t.quantity;
+
+        return total;
+    }
+
+    /// <summary>
+    /// Total quantity of a cargo type committed to leave a source,
+    /// counting both pending and active tasks.
+    /// Use this to know how much of a kitchen's stock is already "spoken for".
+    /// </summary>
+    public int GetReservedOutgoingQuantity(MonoBehaviour source, ResourceType cargoType)
+    {
+        int total = 0;
+
+        foreach (DeliveryTask t in pendingTasks)
+            if (t.sourceBuilding == source && t.cargoType == cargoType)
+                total += t.quantity;
+
+        foreach (DeliveryTask t in activeTasks)
+            if (t.sourceBuilding == source && t.cargoType == cargoType)
+                total += t.quantity;
+
+        return total;
+    }
+
+
+    /// <summary>
+    /// Get all active deliveries going FROM a specific building
+    /// </summary>
+    public List<DeliveryTask> GetOutgoingDeliveries(MonoBehaviour building)
+    {
+        return activeTasks.Where(t => t.sourceBuilding == building).ToList();
+    }
+
+    /// <summary>
+    /// Get the vehicle assigned to a delivery task
+    /// </summary>
+    public Vehicle GetVehicleForTask(DeliveryTask task)
+    {
+        return availableVehicles.FirstOrDefault(v => v.currentTask != null && v.currentTask.taskId == task.taskId);
+    }
+
+    [ContextMenu("Print Delivery Statistics")]
+    public void DebugPrintStats()
+    {
+        PrintDeliveryStatistics();
+    }
+
+    [ContextMenu("Generate Test Task")]
+    public void GenerateTestTask()
+    {
+        GenerateAutoTasks();
+    }
+
+    [ContextMenu("Debug Vehicle Capacities")]
+    public void DebugVehicleCapacities()
+    {
+        Debug.Log("=== VEHICLE CAPACITY DEBUG ===");
+        foreach (Vehicle vehicle in availableVehicles)
+        {
+            Debug.Log($"{vehicle.GetVehicleName()}: Capacity {vehicle.GetMaxCapacity()}, Available: {vehicle.IsAvailable()}, Cargo Types: {string.Join(", ", vehicle.GetAllowedCargoTypes())}");
+        }
+
+        Debug.Log($"Pending tasks: {pendingTasks.Count}");
+        foreach (DeliveryTask task in pendingTasks)
+        {
+            Debug.Log($"  Pending: {task}");
+        }
+    }
+
+    [ContextMenu("Debug Active Tasks")]
+    public void DebugActiveTasks()
+    {
+        Debug.Log("=== ACTIVE TASKS DEBUG ===");
+        foreach (DeliveryTask task in activeTasks)
+        {
+            Debug.Log($"  Active: {task}");
+        }
+    }
+    
+    [ContextMenu("Test: Create Flood-Blocked Delivery")]
+    public void TestCreateFloodBlockedDelivery()
+    {
+        // Find kitchen and shelter
+        Building kitchen = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Kitchen);
+        Building shelter = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Shelter);
+        
+        if (kitchen == null || shelter == null)
+        {
+            Debug.LogWarning("Need kitchen and shelter for flood-blocked delivery test");
+            return;
+        }
+        
+        // First create flood between them
+        if (FloodSystem.Instance != null)
+        {
+            FloodSystem.Instance.TestCreateFloodPath();
+        }
+        
+        // Wait a frame for flood to be created
+        StartCoroutine(CreateBlockedDeliveryAfterFlood(kitchen, shelter));
+    }
+
+    System.Collections.IEnumerator CreateBlockedDeliveryAfterFlood(Building kitchen, Building shelter)
+    {
+        yield return new WaitForEndOfFrame();
+        
+        // Try to create delivery - should fail due to flood
+        List<DeliveryTask> tasks = CreateDeliveryTask(kitchen, shelter, ResourceType.FoodPacks, 5, 3);
+        
+        if (tasks.Count == 0)
+        {
+            Debug.Log("SUCCESS: Delivery creation blocked by flood as expected");
+        }
+        else
+        {
+            Debug.LogWarning("UNEXPECTED: Delivery was created despite flood blocking");
+        }
+    }
+
+    [ContextMenu("Test: Create Delivery Then Add Flood")]
+    public void TestCreateDeliveryThenFlood()
+    {
+        // Create normal delivery first
+        Building kitchen = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Kitchen);
+        Building shelter = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Shelter);
+        
+        if (kitchen == null || shelter == null)
+        {
+            Debug.LogWarning("Need kitchen and shelter for delivery-then-flood test");
+            return;
+        }
+        
+        // Create delivery
+        List<DeliveryTask> tasks = CreateDeliveryTask(kitchen, shelter, ResourceType.FoodPacks, 5, 3);
+        
+        if (tasks.Count > 0)
+        {
+            Debug.Log($"Created delivery task: {tasks[0]}");
+            
+            // Wait a few seconds then create flood
+            StartCoroutine(CreateFloodAfterDelay());
+        }
+    }
+
+    System.Collections.IEnumerator CreateFloodAfterDelay()
+    {
+        yield return new WaitForSeconds(3f);
+        
+        if (FloodSystem.Instance != null)
+        {
+            FloodSystem.Instance.TestCreateFloodAtVehicle();
+            Debug.Log("Added flood to block moving vehicle");
+        }
+    }
+}
+
+[System.Serializable]
+public class DeliveryStatistics
+{
+    public int totalVehicles;
+    public int availableVehicles;
+    public int busyVehicles;
+    public int pendingTasks;
+    public int activeTasks;
+    public int completedTasks;
+}

@@ -1,0 +1,528 @@
+﻿ID,Timestamp,RealTime,Day,Round,Category,MessageType,Content
+4a1cadf4-6c1d-4059-83c9-e1b9009101e2,0,9/22/2025 13:34,1,1,Metrics,Normal,"Game started - Day 1, Round 1"
+ad498a2c-e910-4256-9e11-c37f94e89a8b,0,9/22/2025 13:34,1,1,Metrics,Normal,"Global Variables initialized - Satisfaction: 50.0, Budget: $10000"
+d12920db-a2b0-47b1-8355-f52e6406199f,0,9/22/2025 13:34,1,1,Buildings,Normal,"Motel established at position (-4.41, 6.20)"
+7e7638a0-f0ac-46a1-8527-3286fe0780e1,0,9/22/2025 13:34,1,1,Buildings,Normal,"Found Community01 at (1.53, 6.77)"
+d509ada5-af3d-4600-89b1-3adcf5fc9ba5,0,9/22/2025 13:34,1,1,Buildings,Normal,"Found Community02 at (-8.64, -1.33)"
+fbd05dbd-a1f1-4a23-857a-dacd3b637b99,0,9/22/2025 13:34,1,1,Buildings,Normal,"Found Community03 at (9.29, 2.80)"
+7203bc66-8b74-4f0f-91a8-c4eeb2608bc3,0,9/22/2025 13:34,1,1,Buildings,Normal,"AbandonedSite_1 located at (0.00, 4.00)"
+18015ccb-3538-4b7f-b14b-4f67fe226a47,0,9/22/2025 13:34,1,1,Buildings,Normal,"AbandonedSite_2 located at (3.00, 4.00)"
+508b3b8d-83c3-4585-bbf8-4de954d09ebe,0,9/22/2025 13:34,1,1,Buildings,Normal,"AbandonedSite_3 located at (-3.00, 3.00)"
+7169f4a6-7b15-4cdb-9d8c-9777287329a8,0,9/22/2025 13:34,1,1,Buildings,Normal,"AbandonedSite_4 located at (-8.00, -4.00)"
+23d9fa49-f1fc-4c42-b34d-73177d457e82,0,9/22/2025 13:34,1,1,Buildings,Normal,"AbandonedSite_5 located at (6.00, -3.00)"
+fb234c5b-d967-496b-8f0a-fb98a8094b31,0,9/22/2025 13:34,1,1,Buildings,Normal,"AbandonedSite_6 located at (0.00, -2.00)"
+bde4144c-dcc7-434e-bf48-58e8eb3d50a3,0,9/22/2025 13:34,1,1,Buildings,Normal,"AbandonedSite_7 located at (-2.00, -2.00)"
+79506605-33ec-468c-94b7-1f84f6974a54,0,9/22/2025 13:34,1,1,Buildings,Normal,"AbandonedSite_8 located at (-12.00, -1.00)"
+2ddcb9c8-5f68-4f30-af73-c384ce221667,0,9/22/2025 13:34,1,1,Buildings,Normal,"AbandonedSite_9 located at (10.00, 5.00)"
+39ef0d95-3a07-4949-8fd7-38f4a15387ba,0,9/22/2025 13:34,1,1,Workers,Normal,"Created trained worker: Worker 1 (Trained) - Status: Free, Assignment: Unassigned, Workforce: 2"
+cf9d590f-8c12-490f-96c4-088f063d7787,0,9/22/2025 13:34,1,1,Workers,Normal,"Created trained worker: Worker 2 (Trained) - Status: Free, Assignment: Unassigned, Workforce: 2"
+6fe7b345-6a84-402c-8b18-22c6f27bc79d,0,9/22/2025 13:34,1,1,Workers,Normal,"Created trained worker: Worker 3 (Trained) - Status: Free, Assignment: Unassigned, Workforce: 2"
+dc4e3029-9eec-41dd-9646-c6e644894085,0,9/22/2025 13:34,1,1,Workers,Normal,"Created trained worker: Worker 4 (Trained) - Status: Free, Assignment: Unassigned, Workforce: 2"
+255e82bf-8ae3-4d71-959a-4edb1d5b7e9d,0,9/22/2025 13:34,1,1,Workers,Normal,"Created trained worker: Worker 5 (Trained) - Status: Free, Assignment: Unassigned, Workforce: 2"
+102b1489-0f3a-4221-a5f1-58652d6e4afa,0,9/22/2025 13:34,1,1,Workers,Normal,Created untrained worker: worker.Id
+9a4a30a9-ed0f-46bf-a4ce-8fa29ea51399,0,9/22/2025 13:34,1,1,Workers,Normal,Created untrained worker: worker.Id
+57b2850a-f039-4e39-a419-e054c6a331d9,0,9/22/2025 13:34,1,1,Workers,Normal,Created untrained worker: worker.Id
+ba113cd1-03a1-41b3-9141-63d0bc9c8f40,0,9/22/2025 13:34,1,1,Workers,Normal,Created untrained worker: worker.Id
+0be29a43-0a5c-4914-a582-0d57641b9d8b,0,9/22/2025 13:34,1,1,Workers,Normal,Created untrained worker: worker.Id
+a837b509-3ebd-4175-9b5b-9f05af55acaf,0,9/22/2025 13:34,1,1,Workers,Normal,Initialized worker pool with 5 trained and 5 untrained workers.
+5e3cb22b-d1a2-4dec-8b7f-beb4642a24ab,0,9/22/2025 13:34,1,1,Resources,Normal,Community01 storage initialized to 40 of Population
+7344abe2-2a43-4389-b2b8-21c3313412e2,0,9/22/2025 13:34,1,1,Resources,Normal,Community01 storage initialized to 40 of FoodPacks
+2b50febb-eac4-4783-97f5-86ecf55e4731,0,9/22/2025 13:34,1,1,Resources,Normal,Community01 game start resource is set to 40 Population
+b7d36ffd-a2f8-49a2-b00c-5a74888ddc8a,0,9/22/2025 13:34,1,1,Resources,Normal,Community01 game start resource is set to 40 FoodPacks
+c59dd96a-ed47-4861-bfc1-700869ffea10,0,9/22/2025 13:34,1,1,Resources,Normal,Motel storage initialized to 300 of Population
+936bfbf3-d9f3-4c69-9d85-9cd4239903f3,0,9/22/2025 13:34,1,1,Vehicles,Normal,Delivery System initialized with 3 vehicles
+e6914597-6643-42e7-b872-5abd6ba22482,0,9/22/2025 13:34,1,1,Player,Normal,Game started
+0f15a067-7bfb-4134-9080-32cd7f2febab,0,9/22/2025 13:34,1,1,Resources,Normal,Community03 storage initialized to 40 of Population
+720380be-e7ac-41a2-aa4b-55b801414557,0,9/22/2025 13:34,1,1,Resources,Normal,Community03 storage initialized to 40 of FoodPacks
+cbe60452-8520-47f6-8b78-d746ebc0de68,0,9/22/2025 13:34,1,1,Resources,Normal,Community03 game start resource is set to 40 Population
+2c6bbffb-c5d1-4420-b5ef-68dfa8afcc77,0,9/22/2025 13:34,1,1,Resources,Normal,Community03 game start resource is set to 40 FoodPacks
+06d7c991-4f8d-45c3-801b-21b7eb0098fd,0,9/22/2025 13:34,1,1,Resources,Normal,Community02 storage initialized to 40 of Population
+870f03a2-b155-451c-aff8-7a524f478fa7,0,9/22/2025 13:34,1,1,Resources,Normal,Community02 storage initialized to 40 of FoodPacks
+542885a5-f1ab-47cc-9fa2-91799926598a,0,9/22/2025 13:34,1,1,Resources,Normal,Community02 game start resource is set to 40 Population
+30df49fa-6745-47ae-ae85-6f28f2a65e02,0,9/22/2025 13:34,1,1,Resources,Normal,Community02 game start resource is set to 40 FoodPacks
+596c7586-d1a4-4132-bd08-ea5e2e5a9e6a,0,9/22/2025 13:34,1,1,Player,Normal,Exported 41 messages to CSV: game_logs_all_20250922_133458.csv
+01d9d180-1dea-46f9-bdea-8605ee25a31b,0,9/22/2025 13:35,1,1,Metrics,Normal,"Simulation started - Player waits 2.5s, game content runs at VeryFastx speed"
+2f615a2e-91ed-42c2-ba96-2f4ec539f601,10.02,9/22/2025 13:35,1,2,Tasks,Normal,Processing alert: Onboarding Day 1 Round 2
+4053ff6c-643a-45a3-b821-d587b42928ac,10.02,9/22/2025 13:35,1,2,Tasks,Normal,Created task from data: Onboarding Day 1 Round 2 (Alert)
+a4213151-0536-4592-908e-307b0e8c5a8e,10.02,9/22/2025 13:35,1,2,Resources,Normal,Community01 consumption cycle: 1/6 rounds
+4bef1f5c-a393-40bc-9564-bcdf6a0a9c40,10.02,9/22/2025 13:35,1,2,Resources,Normal,Community03 consumption cycle: 1/6 rounds
+21a4fef7-7d42-49bb-9c19-17f7e34f632d,10.02,9/22/2025 13:35,1,2,Resources,Normal,Community02 consumption cycle: 1/6 rounds
+f04eafa5-6f8e-419c-85eb-56da0d5a2887,10.02,9/22/2025 13:35,1,2,Environment,Normal,"Current weather: Sunny, Rain intensity: 0.00"
+2c45cd6d-d21b-4002-a7fc-1bf91bc05146,10.02,9/22/2025 13:35,1,2,Environment,Normal,"Flood tiles changed. Before: 0, after: 0, change: 0"
+13e4aeaf-4210-4077-ac96-5101a06d4b97,10.02,9/22/2025 13:35,1,2,Metrics,Normal,"Simulation ended - Now at Day 1, Time Segment 2"
+21782e19-7f7c-46d5-a810-a2035acb9912,10.02,9/22/2025 13:35,1,2,Buildings,Normal,Building initialized: Shelter at original site 5. Currently Under Construction.
+90f0e18d-bafd-484e-b11d-369b46bdc045,10.02,9/22/2025 13:35,1,2,Player,Normal,You created Shelter at AbandonedSite_5 - construction started
+bf496729-2e87-4431-94df-79f1900b0236,10.02,9/22/2025 13:35,1,2,Resources,Normal,Shelter_5 storage initialized to 10 of Population
+ce5b7a5f-cbab-4dd9-993b-f883a844bf08,10.02,9/22/2025 13:35,1,2,Resources,Normal,Shelter_5 storage initialized to 10 of FoodPacks
+b228948c-f0a2-4540-92e9-331eb44b7989,10.02,9/22/2025 13:35,1,2,Buildings,Normal,Building initialized: Shelter at original site 4. Currently Under Construction.
+9485c620-5289-4490-a005-64926c2eb418,10.02,9/22/2025 13:35,1,2,Player,Normal,You created Shelter at AbandonedSite_4 - construction started
+50d81ef3-ba6c-402d-8a90-329f51c99f54,10.02,9/22/2025 13:35,1,2,Resources,Normal,Shelter_4 storage initialized to 10 of Population
+db33ac42-acb8-4957-804e-e5b70d8dce47,10.02,9/22/2025 13:35,1,2,Resources,Normal,Shelter_4 storage initialized to 10 of FoodPacks
+052afe23-fc4d-4917-997c-4d72b3de0532,10.02,9/22/2025 13:35,1,2,Buildings,Normal,Building initialized: Shelter at original site 6. Currently Under Construction.
+5e5cfaba-ddfe-444e-aa53-953aefe03b97,10.02,9/22/2025 13:35,1,2,Player,Normal,You created Shelter at AbandonedSite_6 - construction started
+b9c511b4-f867-40b5-a7e1-b68831cdffec,10.02,9/22/2025 13:35,1,2,Resources,Normal,Shelter_6 storage initialized to 10 of Population
+a7de3f1f-1de1-47f7-b394-3785cc9228c9,10.02,9/22/2025 13:35,1,2,Resources,Normal,Shelter_6 storage initialized to 10 of FoodPacks
+1265011d-c4ac-483d-af1a-67db888c9c94,10.02,9/22/2025 13:35,1,2,Buildings,Normal,Building initialized: Kitchen at original site 0. Currently Under Construction.
+ed90372b-8461-402e-b493-49fe5c6c2bfa,10.02,9/22/2025 13:35,1,2,Player,Normal,You created Kitchen at AbandonedSite_0 - construction started
+07e91670-b925-4351-8c12-37331a37a3cb,10.02,9/22/2025 13:35,1,2,Resources,Normal,Kitchen_0 storage initialized to 20 of FoodPacks
+b77b446a-0ccf-4442-a76d-655467bf9223,10.02,9/22/2025 13:35,1,2,Metrics,Normal,"Simulation started - Player waits 2.5s, game content runs at VeryFastx speed"
+6efdfc57-9d5b-4347-af62-99578ceab43e,15.05,9/22/2025 13:35,1,2,Buildings,Normal,Kitchen construction completed at site 0 - Now needs worker assignment
+4b9b6b7a-d934-4f39-94f3-eb06d9a6e392,15.05,9/22/2025 13:35,1,2,Buildings,Normal,Shelter construction completed at site 6 - Now needs worker assignment
+3599d16e-7152-478a-ba50-dc63da0709ad,15.05,9/22/2025 13:35,1,2,Buildings,Normal,Shelter construction completed at site 4 - Now needs worker assignment
+a09a4df6-79a4-4b43-85ee-0dec4b949422,15.05,9/22/2025 13:35,1,2,Buildings,Normal,Shelter construction completed at site 5 - Now needs worker assignment
+27e359e4-67b7-42fc-b410-e8634f102d3f,20.04,9/22/2025 13:35,1,3,Tasks,Normal,Processing alert: Onboarding Day 1 Round 3
+f46f1b8c-cc57-48da-8e4c-ce8235680d86,20.04,9/22/2025 13:35,1,3,Tasks,Normal,Created task from data: Onboarding Day 1 Round 3 (Alert)
+bcd5f944-9131-45da-a468-18b372e62f46,20.04,9/22/2025 13:35,1,3,Resources,Normal,Community01 consumption cycle: 2/6 rounds
+94ba7567-962c-475d-a0f7-66461e61ef17,20.04,9/22/2025 13:35,1,3,Resources,Normal,Community03 consumption cycle: 2/6 rounds
+e8c65e0b-b516-4d25-ad16-3b5b7a2b8b02,20.04,9/22/2025 13:35,1,3,Resources,Normal,Community02 consumption cycle: 2/6 rounds
+fedcf9e5-18d9-4ca1-bbce-e66b15c4f41b,20.04,9/22/2025 13:35,1,3,Resources,Normal,Shelter_5 consumption cycle: 1/4 rounds
+730512ef-3507-4cfb-a647-976306b0a90b,20.04,9/22/2025 13:35,1,3,Resources,Normal,Shelter_4 consumption cycle: 1/4 rounds
+5b4ea5e8-20c4-4df6-9c73-ca7a5bf2f451,20.04,9/22/2025 13:35,1,3,Resources,Normal,Shelter_6 consumption cycle: 1/4 rounds
+7717cba1-eb72-4f17-bf89-28188101d556,20.04,9/22/2025 13:35,1,3,Environment,Normal,"Current weather: Sunny, Rain intensity: 0.00"
+d4678801-b526-4942-a62b-e36302c6ac43,20.04,9/22/2025 13:35,1,3,Environment,Normal,"Flood tiles changed. Before: 0, after: 0, change: 0"
+6eaae522-1751-476a-aace-31480f8274d5,20.04,9/22/2025 13:35,1,3,Metrics,Normal,"Simulation ended - Now at Day 1, Time Segment 3"
+e4939068-544d-49e0-bd6f-72c956970374,20.04,9/22/2025 13:35,1,3,Player,Normal,Modified Trained worker count by 1 for building Shelter at site 6
+341941a9-1b8c-491e-891f-cdfd6f3aab0c,20.04,9/22/2025 13:35,1,3,Player,Normal,Modified Trained worker count by 1 for building Shelter at site 6
+80a97a46-ac83-4f5b-8564-7d5a4b6f418f,20.04,9/22/2025 13:35,1,3,Workers,Normal,Released 0 workers from building 6
+cd6b2c23-b4f4-407c-97e9-38a34e3a52e0,20.04,9/22/2025 13:35,1,3,Player,Normal,Assigned 2 trained and 0 untrained workers to building Shelter at site 6
+3709f652-ee2a-48b2-bc51-d7f7e7106818,20.04,9/22/2025 13:35,1,3,Buildings,Normal,Shelter at site 6 is now operational with 4 workforce
+398e732c-8ae8-4172-8a18-288ff94a294f,20.04,9/22/2025 13:35,1,3,Player,Normal,Modified Trained worker count by 1 for building Shelter at site 4
+f8bfbc8f-7fa9-4746-88b5-5fa1a73ad4b1,20.04,9/22/2025 13:35,1,3,Player,Normal,Modified Trained worker count by 1 for building Shelter at site 4
+4a7662a3-acd8-4686-aa96-19562d002df7,20.04,9/22/2025 13:35,1,3,Workers,Normal,Released 0 workers from building 4
+7b56ff6a-79dc-4da3-8a5a-19563984d013,20.04,9/22/2025 13:35,1,3,Player,Normal,Assigned 2 trained and 0 untrained workers to building Shelter at site 4
+44cb842f-9396-4c23-868c-ba7df4662c84,20.04,9/22/2025 13:35,1,3,Buildings,Normal,Shelter at site 4 is now operational with 4 workforce
+d5e254fe-e5a5-4458-af3f-2f3020ecca3b,20.04,9/22/2025 13:35,1,3,Player,Normal,Modified Trained worker count by 1 for building Shelter at site 5
+9fab3fa4-e83b-43e4-8c4c-8dd9dd8c40b2,20.04,9/22/2025 13:35,1,3,Player,Normal,Modified Untrained worker count by 1 for building Shelter at site 5
+ac0c7f8e-2d46-41cd-8e0a-134f519bbe53,20.04,9/22/2025 13:35,1,3,Player,Normal,Modified Untrained worker count by 1 for building Shelter at site 5
+dccb8f08-bcee-4303-b39c-752accd4a7ae,20.04,9/22/2025 13:35,1,3,Workers,Normal,Released 0 workers from building 5
+74e15791-5777-4a6a-8684-f5d83fb6567b,20.04,9/22/2025 13:35,1,3,Player,Normal,Assigned 1 trained and 2 untrained workers to building Shelter at site 5
+7f1ae923-6cf6-483b-962a-eb11e5b468a0,20.04,9/22/2025 13:35,1,3,Buildings,Normal,Shelter at site 5 is now operational with 4 workforce
+72ce837d-f78f-47bc-a4ee-33bff4a39f36,20.04,9/22/2025 13:35,1,3,Workers,Normal,Created untrained worker: worker.Id
+74e64525-af4d-4cf5-b7f6-7bca1eae3946,20.04,9/22/2025 13:35,1,3,Player,Normal,Modified Untrained worker count by 1 for building Kitchen at site 0
+d4deb35f-7815-4733-b075-f38a7965ab7c,20.04,9/22/2025 13:35,1,3,Player,Normal,Modified Untrained worker count by 1 for building Kitchen at site 0
+ec3f1c02-46a2-42ff-a3de-2fb8ff536db4,20.04,9/22/2025 13:35,1,3,Player,Normal,Modified Untrained worker count by 1 for building Kitchen at site 0
+a9285bbc-a7d0-4310-ac8a-0a9318dc6e6f,20.04,9/22/2025 13:35,1,3,Player,Normal,Modified Untrained worker count by 1 for building Kitchen at site 0
+a1385546-edc8-4104-870c-100cb98c3a06,20.04,9/22/2025 13:35,1,3,Workers,Normal,Released 0 workers from building 0
+3f0b1e0d-f37a-4b12-a7bf-063030e1a051,20.04,9/22/2025 13:35,1,3,Player,Normal,Assigned 0 trained and 4 untrained workers to building Kitchen at site 0
+07c1d9ec-860d-406e-bc3d-015896409c41,20.04,9/22/2025 13:35,1,3,Buildings,Normal,Kitchen at site 0 is now operational with 4 workforce
+d7667900-3aaa-4520-ac3b-edb345f95e4b,20.04,9/22/2025 13:35,1,3,Metrics,Normal,"Simulation started - Player waits 2.5s, game content runs at VeryFastx speed"
+83dae15a-7711-4d1c-ae5c-61fff6c70891,30.06,9/22/2025 13:35,1,4,Tasks,Normal,Processing alert: Onboarding Day 1 Round 4
+461cccc5-7fc2-4ba4-a965-16062ab071ab,30.06,9/22/2025 13:35,1,4,Tasks,Normal,Created task from data: Onboarding Day 1 Round 4 (Alert)
+76ff5a9e-da06-4581-bda0-fd1caba6256d,30.06,9/22/2025 13:35,1,4,Resources,Normal,Community01 consumption cycle: 3/6 rounds
+1c85f1d6-3d47-4fb8-8ed4-af3f073fbe30,30.06,9/22/2025 13:35,1,4,Resources,Normal,Community03 consumption cycle: 3/6 rounds
+26cddd0c-9124-4660-bb6c-f0ce731d0777,30.06,9/22/2025 13:35,1,4,Resources,Normal,Community02 consumption cycle: 3/6 rounds
+d43df856-1ddf-4544-bf34-5c552b8536b1,30.06,9/22/2025 13:35,1,4,Resources,Normal,Shelter_5 consumption cycle: 2/4 rounds
+befbe212-8e0e-4e56-9c13-53571c6ac541,30.06,9/22/2025 13:35,1,4,Resources,Normal,Shelter_4 consumption cycle: 2/4 rounds
+11130aac-cbf4-48fe-af82-60253e2123e1,30.06,9/22/2025 13:35,1,4,Resources,Normal,Shelter_6 consumption cycle: 2/4 rounds
+716f35aa-0007-4904-9604-e73bdd6c56ff,30.06,9/22/2025 13:35,1,4,Resources,Normal,Kitchen_0 received 10 FoodPacks (10/20)
+bdda6d50-fa55-43ca-a853-8d24db592143,30.06,9/22/2025 13:35,1,4,Resources,Normal,Kitchen_0 produced 10 FoodPacks this round
+a11b8820-df5c-4775-9708-ca233f287e37,30.06,9/22/2025 13:35,1,4,Environment,Normal,"Current weather: Sunny, Rain intensity: 0.00"
+07099d9a-8df1-4c48-a9b0-48ad1a7e6b43,30.06,9/22/2025 13:35,1,4,Environment,Normal,"Flood tiles changed. Before: 0, after: 0, change: 0"
+2519333b-0822-4ec8-aac4-f3954423bcd6,30.06,9/22/2025 13:35,1,4,Metrics,Normal,"Simulation ended - Now at Day 1, Time Segment 4"
+b608e795-ca83-4d22-bc43-9f9ed6127a3f,30.06,9/22/2025 13:36,1,4,Metrics,Normal,"Simulation started - Player waits 2.5s, game content runs at VeryFastx speed"
+7419536e-5286-41b0-8292-5e7dce80d2ee,40.09,9/22/2025 13:36,1,5,Environment,Normal,The weather has changed from Sunny to MediumRain.
+bfe4c0de-4326-4cab-b342-e94b1b957229,40.09,9/22/2025 13:36,1,5,Metrics,Normal,Simulation paused by external system
+c50e7e28-6495-4882-aa3e-8cb8516dd4be,40.09,9/22/2025 13:36,1,5,Resources,Normal,Kitchen_0 lost 10 FoodPacks (0/20)
+f51305be-f041-46f7-8143-2005b791e7d2,40.09,9/22/2025 13:36,1,5,Resources,Normal,Kitchen_0 wasted 10 unused food packs at end of day
+597b1875-f1d1-4210-8651-68f59ed7307c,40.09,9/22/2025 13:36,1,5,Environment,Normal,"Current weather: MediumRain, Rain intensity: 0.60"
+a01c551d-fa5b-42da-8d77-9b30b4f8acc7,40.09,9/22/2025 13:36,1,5,Environment,Normal,"Flood tiles changed. Before: 0, after: 41, change: 41"
+eb009ed5-2279-4810-aa51-b0506ca5fabf,40.09,9/22/2025 13:36,1,5,Metrics,Normal,"Simulation ended - Day 1 complete, waiting for daily report"
+54c9dd57-88d0-40ff-bf69-7a15820267b0,40.09,9/22/2025 13:36,1,5,Metrics,Normal,Simulation resumed - ready for player interaction
+5d3ad290-2289-4906-8af4-fc7f39981e87,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Created task from data: Population Relocation (Demand)
+35849196-6c44-4cdb-a55b-838832fe9f48,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Generated task from database: Community_TransportRequest for facility Community03
+4ed21f00-28e5-41a7-abe2-6c1ef2bf795b,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Created task from data: Community Emergency Evacuation (Emergency)
+e9dad4e4-4452-4b1e-b1c1-5146b2263acf,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Generated task from database: Community_Flood_Damge for facility Community03
+fdf7ec92-3bc7-43e1-9f2d-1e3581d64bf0,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Created task from data: Community Emergency Evacuation (Emergency)
+8dbd0c73-3168-4c65-815f-2c4d710e9f08,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Generated task from database: Community_Flood_Damge for facility Community02
+29681d93-be9c-42e7-b655-5ec35637619d,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Created task from data: Daily Budget Allocation (Advisory)
+1884c5a1-a334-4884-9fce-f4197e901f95,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Processing alert: Flood Alert - Rising Water
+fe08aef5-c655-4c19-b462-6ed0a1cfb0cc,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Created task from data: Flood Alert - Rising Water (Alert)
+5fb6811f-9c94-4824-b008-bd3981730c4c,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Processing alert: Day 2 Start of Day Report
+496960cb-3055-4e0a-8e06-a97bc4c0bbe4,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Created task: Day 2 Start of Day Report (Alert) for Daily Report
+407b7ba6-652f-474d-b292-dbdd5ccf7058,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Processing alert: Day 2 Start of Day Report
+44b5f40b-73e6-44df-9043-541e3bfb74b4,40.09,9/22/2025 13:36,2,1,Resources,Normal,Community01 consumption cycle: 4/6 rounds
+75e3956e-3d47-4996-b9fc-e6ebd381bed5,40.09,9/22/2025 13:36,2,1,Resources,Normal,Community03 consumption cycle: 4/6 rounds
+acb7771c-c48d-4ea3-9440-98025fe858c0,40.09,9/22/2025 13:36,2,1,Resources,Normal,Community02 consumption cycle: 4/6 rounds
+20239cde-1a31-4f55-8920-af839150f1b5,40.09,9/22/2025 13:36,2,1,Resources,Normal,Shelter_5 consumption cycle: 3/4 rounds
+bc85d1ec-5b84-410e-a65b-3203520c0612,40.09,9/22/2025 13:36,2,1,Resources,Normal,Shelter_4 consumption cycle: 3/4 rounds
+0b2d5824-2298-49dd-a226-8dbe8e0f428d,40.09,9/22/2025 13:36,2,1,Resources,Normal,Shelter_6 consumption cycle: 3/4 rounds
+d3543e81-f217-43ac-99ac-45c095570e6f,40.09,9/22/2025 13:36,2,1,Resources,Normal,Kitchen_0 received 10 FoodPacks (10/20)
+9f01d27f-67f0-4a88-b4f4-bdca9cd388ee,40.09,9/22/2025 13:36,2,1,Resources,Normal,Kitchen_0 produced 10 FoodPacks this round
+fb2de3bf-4966-48e1-b258-e5e396d7352c,40.09,9/22/2025 13:36,2,1,Metrics,Normal,"Advanced to Day 2, Round 1"
+3f32beee-aa77-4f41-a03a-af5ba321737f,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Processing alert: Flood Alert - Rising Water
+417911b9-9162-488a-bcb3-c95e7294785c,40.09,9/22/2025 13:36,2,1,Metrics,Normal,Satisfaction: 50.0 → 60.0 (+10.0)
+b08d0b44-dbdb-488a-b7f9-b288d211bd68,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,"Delivery estimate from Community03 to Shelter_6: 18 tiles, 00:05"
+ab8ce146-f192-47f8-9923-eb7210588d6d,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,Created delivery task 1: Task 1: 6 Population from Community03 to Shelter_6 (Est: 00:05)
+f45f7d06-b7bc-4a02-9305-5904bcbb5090,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,"Delivery estimate from Community03 to Shelter_4: 11 tiles, 00:04"
+0631624f-381f-4943-995b-f86af0e0342f,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,Created delivery task 1: Task 2: 6 Population from Community03 to Shelter_4 (Est: 00:04)
+7e05d0ee-0f7d-46ba-af4b-3a1123876a86,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,"Delivery estimate from Community03 to Shelter_5: 16 tiles, 00:05"
+4d948139-14cf-4a06-acff-bc5736e31859,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,Created delivery task 1: Task 3: 6 Population from Community03 to Shelter_5 (Est: 00:05)
+d09aa8b3-8fe7-4865-bd82-d97b4e98bf09,40.09,9/22/2025 13:36,2,1,Metrics,Normal,Satisfaction: 60.0 → 70.0 (+10.0)
+9e375bf2-83fd-44fc-b25b-4346e8d4ee28,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,"Delivery estimate from Community02 to Shelter_6: 8 tiles, 00:03"
+163cbc92-8fd3-4fc0-839c-563acf7b84e2,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,Created delivery task 1: Task 4: 6 Population from Community02 to Shelter_6 (Est: 00:03)
+945c36ad-2855-4b14-a1a5-eabf2ae900ee,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,"Delivery estimate from Community02 to Shelter_4: 15 tiles, 00:05"
+5701dcc0-c52d-4051-a226-bd4d0cfe0e15,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,Created delivery task 1: Task 5: 6 Population from Community02 to Shelter_4 (Est: 00:05)
+5b138a94-347b-47ae-a615-6745a86518a2,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,"Delivery estimate from Community02 to Shelter_5: 10 tiles, 00:04"
+7e69ede9-621a-4cd4-a2b9-eb34de81d801,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,Created delivery task 1: Task 6: 6 Population from Community02 to Shelter_5 (Est: 00:04)
+bc9de0c7-cd3c-46ca-8f64-42cc6186b3c8,40.09,9/22/2025 13:36,2,1,Metrics,Normal,Satisfaction: 70.0 → 75.0 (+5.0)
+4e6ffddb-3c08-4406-ba33-0255acd756a3,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,"Delivery estimate from Community03 to Shelter_6: 18 tiles, 00:05"
+43c98eaf-8aa4-4bfd-b4c8-34482b5f6b70,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,Created delivery task 1: Task 7: 6 Population from Community03 to Shelter_6 (Est: 00:05)
+69333750-608d-487d-a3a8-24b36cb876b5,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,"Delivery estimate from Community03 to Shelter_4: 11 tiles, 00:04"
+dcd25053-7841-48b3-b92a-b0dfa828074f,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,Created delivery task 1: Task 8: 6 Population from Community03 to Shelter_4 (Est: 00:04)
+9193683f-4aee-4cc5-9760-ea26d554d590,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,"Delivery estimate from Community03 to Shelter_5: 16 tiles, 00:05"
+72fa29a0-f2c5-4c8b-ad12-d888ce560ead,40.09,9/22/2025 13:36,2,1,Vehicles,Normal,Created delivery task 1: Task 9: 6 Population from Community03 to Shelter_5 (Est: 00:05)
+e1cfa010-28ca-4f12-a3f5-a1fd2c4d93b5,40.09,9/22/2025 13:36,2,1,Metrics,Normal,"Budget: $10,000 → $13,000 (+$3,000)"
+eb295d9a-e178-4b46-8ec4-f98932c80eb9,40.09,9/22/2025 13:36,2,1,Tasks,Normal,Completed task: Daily Budget Allocation
+ef137c7b-2c14-4178-89aa-50da306e74d7,40.09,9/22/2025 13:36,2,1,Metrics,Normal,"Simulation started - Player waits 2.5s, game content runs at VeryFastx speed"
+e3abbbdb-4872-4eae-b43a-01ecc1b5acd2,40.35,9/22/2025 13:36,2,1,Vehicles,Normal,Assigned Task 1: 6 Population from Community03 to Shelter_6 to vehicle Vehicle3
+bb200f47-348c-4fb2-b4cf-c69c6771f44e,40.35,9/22/2025 13:36,2,1,Vehicles,Normal,Assigned Task 2: 6 Population from Community03 to Shelter_4 to vehicle Vehicle2
+74c65be2-e3e1-40e4-bc96-92fdfc440918,40.35,9/22/2025 13:36,2,1,Vehicles,Normal,Assigned Task 3: 6 Population from Community03 to Shelter_5 to vehicle Vehicle1
+7327199b-957a-4370-8ff8-305cf3bc06a4,42.45,9/22/2025 13:36,2,1,Resources,Normal,Community03 lost 6 Population (34/40)
+1eedaf8e-b448-444f-ab4e-a83fb5bca309,43.25,9/22/2025 13:36,2,1,Resources,Normal,Community03 lost 6 Population (28/40)
+f3834656-ad14-4d84-865c-c922b3fa2e84,44.06,9/22/2025 13:36,2,1,Resources,Normal,Community03 lost 6 Population (22/40)
+853d8b49-17f3-4669-9737-4d6d4919707c,45.82,9/22/2025 13:36,2,1,Resources,Normal,Shelter_4 received 6 Population (6/10)
+4f3aecc4-aea1-43df-8533-7ae5bd691136,45.82,9/22/2025 13:36,2,1,Buildings,Normal,"Registered 6 clients at Shelter_4 (Group: Vehicle_2_Community03_to_Shelter_4, Round: 4)"
+483afafe-17ba-4db6-9e19-efcd30bb2ece,45.94,9/22/2025 13:36,2,1,Resources,Normal,Shelter_6 received 6 Population (6/10)
+b6a26c49-21e5-4066-8f3d-3b8382a3dcd9,45.94,9/22/2025 13:36,2,1,Buildings,Normal,"Registered 6 clients at Shelter_6 (Group: Vehicle_1_Community03_to_Shelter_6, Round: 4)"
+292bdf7d-a590-467c-a24c-da62b5f71c46,46.41,9/22/2025 13:36,2,1,Vehicles,Normal,Assigned Task 4: 6 Population from Community02 to Shelter_6 to vehicle Vehicle3
+c7fc3a78-a047-47b2-9697-30aa86148c9d,46.41,9/22/2025 13:36,2,1,Vehicles,Normal,Assigned Task 5: 6 Population from Community02 to Shelter_4 to vehicle Vehicle2
+ba699be3-4eec-48b0-8e05-40758a065c0d,47.23,9/22/2025 13:36,2,1,Resources,Normal,Shelter_5 received 6 Population (6/10)
+e5d5a81f-f6f7-4fd1-84db-9d30bd5c9d6d,47.23,9/22/2025 13:36,2,1,Buildings,Normal,"Registered 6 clients at Shelter_5 (Group: Vehicle_3_Community03_to_Shelter_5, Round: 4)"
+423a5d48-3a43-41a1-ac13-a2c47ce31da5,47.41,9/22/2025 13:36,2,1,Vehicles,Normal,Assigned Task 6: 6 Population from Community02 to Shelter_5 to vehicle Vehicle1
+66592ea1-0618-45f0-a996-787baada500e,48.49,9/22/2025 13:36,2,1,Resources,Normal,Community02 lost 6 Population (34/40)
+d2debc7b-a808-4f9a-b646-2896c208931e,49.42,9/22/2025 13:36,2,1,Resources,Normal,Community02 lost 6 Population (28/40)
+a348ad46-2e5b-438a-a607-d44f6e4304b8,49.78,9/22/2025 13:36,2,1,Resources,Normal,Community02 lost 6 Population (22/40)
+13015bb3-3e12-4e7b-92d9-f52eabc2abfa,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Task 'Population Relocation' rounds remaining: 1
+fd0eba02-5aba-473c-8089-f3d0726202fa,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Task 'Community Emergency Evacuation' rounds remaining: 1
+4e7f8fa6-8fe1-48e5-b453-0fd4e264139d,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Task 'Community Emergency Evacuation' rounds remaining: 1
+15b1cd39-0ee1-4f73-b13a-30724f95b5cd,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Created task from data: Food Request From Shelter (Demand)
+319eb9ab-931c-46df-930a-053f93c11310,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Generated task from database: Shelter_FoodRequest for facility Shelter_6
+e2ea7bc8-e3e5-4814-918e-7c171b99fdaa,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Created task from data: Food Request From Shelter (Demand)
+668b41f1-d92c-4632-9d12-c52a27987224,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Generated task from database: Shelter_FoodRequest for facility Shelter_4
+69d53494-ca6d-450c-b9bd-9a704dda0611,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Created task from data: Food Request From Shelter (Demand)
+4ee2d3a9-28ff-4acd-995c-192a8ade019e,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Generated task from database: Shelter_FoodRequest for facility Shelter_5
+bed912e5-05bb-4677-b3b9-3e195e596165,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Created task from data: Shelter Flood Damage (Emergency)
+ab418285-0e66-413d-bd12-94a6fe981639,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Generated task from database: Shelter_Flood_Damage for facility Shelter_6
+b73bce33-48e7-4c07-8144-2fb4e8b62689,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Created task from data: Shelter Flood Damage (Emergency)
+71d7ce5f-5a03-4d0d-9d15-81143bcce323,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Generated task from database: Shelter_Flood_Damage for facility Shelter_4
+5f39ea72-5273-4af3-872f-2e1608de79c6,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Created task from data: Shelter Flood Damage (Emergency)
+83d7bf68-26be-471d-b098-d39baffdf2cb,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Generated task from database: Shelter_Flood_Damage for facility Shelter_5
+30da1475-545b-4849-9131-88b99a55f09b,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Created task from data: Population Relocation (Demand)
+2e28a33b-a8ae-4ebb-8ece-46cf667ce4cf,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Generated task from database: Community_TransportRequest for facility Community01
+7b7c423b-cf83-4055-a7ea-cac6fac165da,50.11,9/22/2025 13:36,2,2,Tasks,Normal,"Task Community Emergency Evacuation already exists for Community03, skipping"
+5cad52b2-e4a2-4fad-823d-a2985fc4ca94,50.11,9/22/2025 13:36,2,2,Tasks,Normal,"Task Community Emergency Evacuation already exists for Community02, skipping"
+14c463d5-71f2-4484-8950-378645d3226a,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Created task from data: Training Recommendation Alert (Advisory)
+a4dd9907-28f1-4713-bc56-0b495d446027,50.11,9/22/2025 13:36,2,2,Resources,Normal,Community01 consumption cycle: 5/6 rounds
+bc6a0bd2-72d4-43ad-a9f0-4ecaf1b95e89,50.11,9/22/2025 13:36,2,2,Resources,Normal,Community03 consumption cycle: 5/6 rounds
+8cfa2199-49ea-4994-8450-d27c303f6a89,50.11,9/22/2025 13:36,2,2,Resources,Normal,Community02 consumption cycle: 5/6 rounds
+843d558b-d4ab-4e64-8136-5159981603b0,50.11,9/22/2025 13:36,2,2,Resources,Normal,Shelter_5 lost 0 FoodPacks (0/10)
+4383f669-6669-4bfc-a78c-851f42ce9926,50.11,9/22/2025 13:36,2,2,Resources,Normal,"Shelter_5 fed 10 people after 4 rounds, consumed 0/10 food packs"
+b3bbce50-c0de-4dec-ae33-da1befb36336,50.11,9/22/2025 13:36,2,2,Resources,Normal,"Shelter_5 FOOD SHORTAGE: Need 10, only had 0"
+f42cb372-8e6f-495e-a2f9-9daf197d6bb6,50.11,9/22/2025 13:36,2,2,Resources,Normal,Shelter_4 lost 0 FoodPacks (0/10)
+ca3f2567-5cab-4e33-aab8-f99f5dece0d5,50.11,9/22/2025 13:36,2,2,Resources,Normal,"Shelter_4 fed 10 people after 4 rounds, consumed 0/10 food packs"
+03169351-6dbd-4f64-bc34-c6f26bca770b,50.11,9/22/2025 13:36,2,2,Resources,Normal,"Shelter_4 FOOD SHORTAGE: Need 10, only had 0"
+02ef688e-11d3-4848-8b0c-6f99269a58df,50.11,9/22/2025 13:36,2,2,Resources,Normal,Shelter_6 lost 0 FoodPacks (0/10)
+97e4e58b-0d99-4eef-9f97-36a05eec3a7f,50.11,9/22/2025 13:36,2,2,Resources,Normal,"Shelter_6 fed 10 people after 4 rounds, consumed 0/10 food packs"
+9fa8036b-22b9-4e2c-9f63-615a7feff324,50.11,9/22/2025 13:36,2,2,Resources,Normal,"Shelter_6 FOOD SHORTAGE: Need 10, only had 0"
+bd1a16c6-6670-4ec7-8aaf-0423915c1e61,50.11,9/22/2025 13:36,2,2,Resources,Normal,Kitchen_0 received 10 FoodPacks (20/20)
+b323c0c0-c227-4abe-b196-4c0606456554,50.11,9/22/2025 13:36,2,2,Resources,Normal,Kitchen_0 produced 10 FoodPacks this round
+3ec7ed4b-a301-4f3c-be61-321f6da10b5f,50.11,9/22/2025 13:36,2,2,Environment,Normal,"Current weather: MediumRain, Rain intensity: 0.60"
+c36f7285-f894-4af4-bb52-41bbfeaded19,50.11,9/22/2025 13:36,2,2,Environment,Normal,"Flood tiles changed. Before: 41, after: 18, change: -23"
+97617ec2-cc8c-4c50-82d0-3338ee1bffbc,50.11,9/22/2025 13:36,2,2,Metrics,Normal,"Simulation ended - Now at Day 2, Time Segment 2"
+edc4e085-daab-4c9d-9869-2d9ebbe20385,50.11,9/22/2025 13:36,2,2,Metrics,Normal,Satisfaction: 75.0 → 85.0 (+10.0)
+27d8bdce-bf1c-447c-a78e-8d09c56e1a65,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,"Delivery estimate from Shelter_6 to Shelter_4: 7 tiles, 00:03"
+f414f9c4-5285-4d10-9832-a507449bff07,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,Created delivery task 1: Task 10: 3 Population from Shelter_6 to Shelter_4 (Est: 00:03)
+7396deaa-0fa5-4158-a9e5-fd4b92929e76,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,"Delivery estimate from Shelter_6 to Shelter_5: 2 tiles, 00:02"
+ef10e96e-a87d-4ae8-a3fa-d71f7459a92e,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,Created delivery task 1: Task 11: 3 Population from Shelter_6 to Shelter_5 (Est: 00:02)
+c2f8019e-beca-432c-b172-e3659001f159,50.11,9/22/2025 13:36,2,2,Metrics,Normal,"Budget: $13,000 → $12,500 (+$-500)"
+f28630da-ba03-48bc-9a8a-cf873fbade0d,50.11,9/22/2025 13:36,2,2,Metrics,Normal,Satisfaction: 85.0 → 95.0 (+10.0)
+9fe40e22-2ff3-45a7-ac95-f389bef65ba1,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,"Delivery estimate from Shelter_4 to Motel: 18 tiles, 00:05"
+6174e146-d961-4d9c-8ddc-6dd9790dc03a,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,Created delivery task 1: Task 12: 6 Population from Shelter_4 to Motel (Est: 00:05)
+b54483fe-2ff3-4eec-96dd-693e339b0168,50.11,9/22/2025 13:36,2,2,Metrics,Normal,Satisfaction: 95.0 → 100.0 (+10.0)
+29c3ee04-474c-40bd-ad92-a083bc4910e9,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,"Delivery estimate from Shelter_5 to Shelter_6: 2 tiles, 00:02"
+c0f2f342-6187-42da-b910-778076121d50,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,Created delivery task 1: Task 13: 3 Population from Shelter_5 to Shelter_6 (Est: 00:02)
+f7df9a28-fc3f-458f-8f73-369d84d7163d,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,"Delivery estimate from Shelter_5 to Shelter_4: 5 tiles, 00:03"
+7e2af8a4-b974-4e7f-86b2-8cb95e34178d,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,Created delivery task 1: Task 14: 3 Population from Shelter_5 to Shelter_4 (Est: 00:03)
+449159d7-27f9-44de-a3a0-b7983dc62ee5,50.11,9/22/2025 13:36,2,2,Metrics,Normal,Satisfaction: 100.0 → 100.0 (+10.0)
+afa914d3-5c19-4d77-ac95-43d5b8ae7a7e,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,"Delivery estimate from Kitchen_0 to Shelter_4: 12 tiles, 00:04"
+efbd4403-965b-48ed-9fe4-6491a99d497d,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,Created delivery task 1: Task 15: 5 FoodPacks from Kitchen_0 to Shelter_4 (Est: 00:04)
+f95f93f0-23ec-4b0f-8f38-86b7b4ca9a3c,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,"Delivery estimate from Kitchen_0 to Shelter_5: 17 tiles, 00:05"
+3762e3ab-cd9b-495c-b31e-b2acc7fd80f0,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,Created delivery task 1: Task 16: 5 FoodPacks from Kitchen_0 to Shelter_5 (Est: 00:05)
+39e156ac-544e-425e-bf7e-2e367fbe2f5b,50.11,9/22/2025 13:36,2,2,Metrics,Normal,Satisfaction: 100.0 → 100.0 (+10.0)
+567c41e7-7166-4070-bbcf-759909fc1b0c,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,"Delivery estimate from Kitchen_0 to Shelter_6: 17 tiles, 00:05"
+3ca8cbb7-fdb5-44c6-9444-41ed82c4ff1b,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,Created delivery task 1: Task 17: 5 FoodPacks from Kitchen_0 to Shelter_6 (Est: 00:05)
+1f8b2fa2-816a-4d62-ba3b-890173c36217,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,"Delivery estimate from Kitchen_0 to Shelter_5: 17 tiles, 00:05"
+fa0028bc-a5df-47ca-b3d7-0c2add6d009e,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,Created delivery task 1: Task 18: 5 FoodPacks from Kitchen_0 to Shelter_5 (Est: 00:05)
+ba0c6581-136d-4754-9ef9-18d55a8742ea,50.11,9/22/2025 13:36,2,2,Metrics,Normal,Satisfaction: 100.0 → 100.0 (+10.0)
+3fbb284a-dbd5-4485-b141-e6dba1afd88c,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,"Delivery estimate from Kitchen_0 to Shelter_6: 17 tiles, 00:05"
+6d1d4c48-94c2-4d58-a8a6-c8772608438b,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,Created delivery task 1: Task 19: 5 FoodPacks from Kitchen_0 to Shelter_6 (Est: 00:05)
+9c6ea1e1-914d-4a75-b4c8-10e99d962f1a,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,"Delivery estimate from Kitchen_0 to Shelter_4: 12 tiles, 00:04"
+8231a617-edd3-41f5-8056-de4b856b5f37,50.11,9/22/2025 13:36,2,2,Vehicles,Normal,Created delivery task 1: Task 20: 5 FoodPacks from Kitchen_0 to Shelter_4 (Est: 00:04)
+4bae7f4c-d50a-417e-80c3-dbd5cbf2974b,50.11,9/22/2025 13:36,2,2,Metrics,Normal,Satisfaction: 100.0 → 100.0 (+5.0)
+2e206e75-a196-4aec-9acf-af34f4a0c682,50.11,9/22/2025 13:36,2,2,Metrics,Normal,"Budget: $12,500 → $10,500 (+$-2,000)"
+1616700c-acf0-4790-a926-3891f56cca55,50.11,9/22/2025 13:36,2,2,Resources,Normal,Community01 lost 20 Population (20/40)
+121bcb1c-0297-461d-8db3-a2e043050db2,50.11,9/22/2025 13:36,2,2,Resources,Normal,Motel received 20 Population (20/300)
+99b95e95-4111-4cfe-a345-dba12b31e0fd,50.11,9/22/2025 13:36,2,2,Tasks,Normal,Completed task: Population Relocation
+dbb60e2d-83ee-4b5d-88af-27f6b5db3eba,50.11,9/22/2025 13:37,2,2,Tasks,Normal,Completed task: Training Recommendation Alert
+15bd0878-d84f-49b9-8023-83c302e20c0a,50.11,9/22/2025 13:37,2,2,Metrics,Normal,"Simulation started - Player waits 2.5s, game content runs at VeryFastx speed"
+3e89fdab-a2d3-4239-9137-d0699830bd27,50.58,9/22/2025 13:37,2,2,Resources,Normal,Shelter_6 received 4 Population (10/10)
+644d7d04-236a-497b-8660-1364fb868707,50.58,9/22/2025 13:37,2,2,Buildings,Normal,"Registered 4 clients at Shelter_6 (Group: Vehicle_4_Community02_to_Shelter_6, Round: 5)"
+fe8adbe2-c078-4395-bedd-5d30d22cc620,51.44,9/22/2025 13:37,2,2,Vehicles,Normal,Assigned Task 7: 6 Population from Community03 to Shelter_6 to vehicle Vehicle3
+32764696-5e1a-4906-a622-0c335a11e114,52.14,9/22/2025 13:37,2,2,Resources,Normal,Shelter_5 received 4 Population (10/10)
+4700c018-1d90-4c3c-928f-4b60b33aa0e6,52.14,9/22/2025 13:37,2,2,Buildings,Normal,"Registered 4 clients at Shelter_5 (Group: Vehicle_6_Community02_to_Shelter_5, Round: 5)"
+26a48b34-17ec-43bd-8e5f-2411bccccc54,52.45,9/22/2025 13:37,2,2,Vehicles,Normal,Assigned Task 8: 6 Population from Community03 to Shelter_4 to vehicle Vehicle1
+5e577635-e504-4cfb-8c2b-69bcf6732d3a,52.52,9/22/2025 13:37,2,2,Resources,Normal,Shelter_4 received 4 Population (10/10)
+6352b7fe-d29c-4397-8270-44a07ae5f448,52.52,9/22/2025 13:37,2,2,Buildings,Normal,"Registered 4 clients at Shelter_4 (Group: Vehicle_5_Community02_to_Shelter_4, Round: 5)"
+ab488d87-445c-4ce3-910d-114a55914743,53.47,9/22/2025 13:37,2,2,Vehicles,Normal,Assigned Task 9: 6 Population from Community03 to Shelter_5 to vehicle Vehicle2
+f9217a8b-74dd-4307-8a50-704dd4f0b291,54.95,9/22/2025 13:37,2,2,Resources,Normal,Community03 lost 6 Population (16/40)
+0b130d84-abfe-4798-b309-6575f5b279ea,55.65,9/22/2025 13:37,2,2,Resources,Normal,Community03 lost 6 Population (10/40)
+8f2837e7-9c12-4331-a0b0-6895db8a5a2e,56.01,9/22/2025 13:37,2,2,Resources,Normal,Community03 lost 6 Population (4/40)
+291339ad-81bd-4685-b24d-a54baf71a21a,58.17,9/22/2025 13:37,2,2,Resources,Normal,Shelter_4 received 0 Population (10/10)
+fcb16fa6-87a1-4a22-a4bd-e3686e3ee897,58.43,9/22/2025 13:37,2,2,Resources,Normal,Shelter_6 received 0 Population (10/10)
+0dbd9c68-a599-4086-8443-b0263698fcfc,58.51,9/22/2025 13:37,2,2,Vehicles,Normal,Assigned Task 10: 3 Population from Shelter_6 to Shelter_4 to vehicle Vehicle3
+7cf9bd8a-5ee7-4037-8a65-4b949d331c6c,58.51,9/22/2025 13:37,2,2,Vehicles,Normal,Assigned Task 11: 3 Population from Shelter_6 to Shelter_5 to vehicle Vehicle1
+d03ff581-98a7-4228-acc4-7c9e6bf9c6c1,59.19,9/22/2025 13:37,2,2,Resources,Normal,Shelter_5 received 0 Population (10/10)
+add5d5d3-cde6-47b2-a4ad-2818b42f4e68,59.52,9/22/2025 13:37,2,2,Vehicles,Normal,Assigned Task 12: 6 Population from Shelter_4 to Motel to vehicle Vehicle2
+ca2ba096-2352-4b9e-bbf7-a5584cdce1a3,59.56,9/22/2025 13:37,2,2,Resources,Normal,Shelter_6 lost 3 Population (7/10)
+af25bdd3-7cea-446c-85ec-a2815a9cfe09,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Task 'Population Relocation' rounds remaining: 0
+6180b821-926f-4282-b0a2-05e1775592b1,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Task 'Community Emergency Evacuation' rounds remaining: 0
+dc128ef9-83c5-4469-9633-882125c39f6f,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Task 'Community Emergency Evacuation' rounds remaining: 0
+95c7dd7e-f2e8-4e3b-9973-f0c0f58b73a4,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Task 'Food Request From Shelter' rounds remaining: 2
+087f91bf-fd84-46b7-8205-d5f56e39a256,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Task 'Food Request From Shelter' rounds remaining: 2
+b520d475-a3c4-4ec8-b37c-6dc116ea8eb9,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Task 'Food Request From Shelter' rounds remaining: 2
+1936c7ed-37e5-47ef-9e16-3dec0e1a4d3b,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Task 'Shelter Flood Damage' rounds remaining: 1
+498d6f87-af6a-4973-bb0b-683611914e86,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Task 'Shelter Flood Damage' rounds remaining: 1
+061ffada-1365-48a1-b79d-e31f0392757c,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Task 'Shelter Flood Damage' rounds remaining: 1
+19e5e883-502f-4579-9e08-89351073f91c,60.14,9/22/2025 13:37,2,3,Tasks,Normal,"Task Food Request From Shelter already exists for Shelter_6, skipping"
+affdbfa4-3d86-48b0-8b19-c888fd92786a,60.14,9/22/2025 13:37,2,3,Tasks,Normal,"Task Food Request From Shelter already exists for Shelter_4, skipping"
+50533e49-0bdf-41fd-9323-71436eab7709,60.14,9/22/2025 13:37,2,3,Tasks,Normal,"Task Food Request From Shelter already exists for Shelter_5, skipping"
+88d9de11-8a4e-4d34-94cd-a68c25e82ef4,60.14,9/22/2025 13:37,2,3,Tasks,Normal,"Task Shelter Flood Damage already exists for Shelter_6, skipping"
+db8e30bd-cd14-4663-a54f-a600e913cf30,60.14,9/22/2025 13:37,2,3,Tasks,Normal,"Task Shelter Flood Damage already exists for Shelter_4, skipping"
+88ad0c66-84fe-4fbd-b779-84297d41cad5,60.14,9/22/2025 13:37,2,3,Tasks,Normal,"Task Shelter Flood Damage already exists for Shelter_5, skipping"
+4e69d482-e46c-48b9-83de-5473bab4b5f3,60.14,9/22/2025 13:37,2,3,Tasks,Normal,"Task Community Emergency Evacuation already exists for Community02, skipping"
+a6c300bb-2773-488a-a85e-99820ed5164b,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Created task from data: Training Recommendation Alert (Advisory)
+85440f46-2814-4377-9479-bf5579c1a99b,60.14,9/22/2025 13:37,2,3,Resources,Normal,Community01 lost 20 FoodPacks (20/40)
+055deccd-3a3f-4b1b-875e-c06b8a88906e,60.14,9/22/2025 13:37,2,3,Resources,Normal,"Community01 fed 20 people after 6 rounds, consumed 20/20 food packs"
+e3bedd03-8985-40fa-9d7e-8a4cee781bd0,60.14,9/22/2025 13:37,2,3,Resources,Normal,Community03 lost 4 FoodPacks (36/40)
+4851daeb-c922-4371-8d47-2a14f23f1f9f,60.14,9/22/2025 13:37,2,3,Resources,Normal,"Community03 fed 4 people after 6 rounds, consumed 4/4 food packs"
+5e01c006-2c67-488e-a142-a08c282b9c81,60.14,9/22/2025 13:37,2,3,Resources,Normal,Community02 lost 22 FoodPacks (18/40)
+260c6f6c-1625-4a84-8944-2a819fd73c12,60.14,9/22/2025 13:37,2,3,Resources,Normal,"Community02 fed 22 people after 6 rounds, consumed 22/22 food packs"
+317fc593-5635-43a8-b42b-d12518444b32,60.14,9/22/2025 13:37,2,3,Resources,Normal,Shelter_5 consumption cycle: 1/4 rounds
+e9c0f3c4-3bc0-44f4-9598-4671e16e2a57,60.14,9/22/2025 13:37,2,3,Resources,Normal,Shelter_4 consumption cycle: 1/4 rounds
+d175455f-0923-4754-a4cd-97be194cd7f8,60.14,9/22/2025 13:37,2,3,Resources,Normal,Shelter_6 consumption cycle: 1/4 rounds
+818962d2-8197-418c-8b16-6f0aabac808e,60.14,9/22/2025 13:37,2,3,Resources,Normal,Kitchen_0 cannot produce FoodPacks - storage full
+dbe747dd-a67c-41de-b23d-30526025bdf1,60.14,9/22/2025 13:37,2,3,Environment,Normal,"Current weather: MediumRain, Rain intensity: 0.60"
+041f1078-6239-40bf-a76e-a551a2431fc2,60.14,9/22/2025 13:37,2,3,Environment,Normal,"Flood tiles changed. Before: 18, after: 10, change: -8"
+55c78067-69de-45b4-acf3-143d78272384,60.14,9/22/2025 13:37,2,3,Metrics,Normal,"Simulation ended - Now at Day 2, Time Segment 3"
+cb80b6e4-9c70-4faa-9b62-7c83f8839e75,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Task marked as incomplete: Population Relocation
+2a2dc317-d092-494e-ac26-9cc19e2ec8ee,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Task marked as incomplete: Community Emergency Evacuation
+1c6d0e48-634d-47e4-9c0b-b49c46774142,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Task marked as incomplete: Community Emergency Evacuation
+a4b0ca77-57a7-4aa6-91da-d4c049807d73,60.14,9/22/2025 13:37,2,3,Tasks,Normal,Completed task: Training Recommendation Alert
+cccc3c6e-9a69-4671-8828-aee5ab2b17be,60.14,9/22/2025 13:37,2,3,Metrics,Normal,"Simulation started - Player waits 2.5s, game content runs at VeryFastx speed"
+cc13141b-b371-4fae-85ea-a837635f844b,60.47,9/22/2025 13:37,2,3,Resources,Normal,Shelter_6 lost 3 Population (4/10)
+d4ab6dc1-e559-4793-8021-2c589a97da4d,61.21,9/22/2025 13:37,2,3,Resources,Normal,Shelter_4 lost 6 Population (4/10)
+b58b2f5f-a8ac-453e-97dc-36c4505941c3,61.55,9/22/2025 13:37,2,3,Resources,Normal,Shelter_4 received 3 Population (7/10)
+e76d2b65-98dd-4e38-958e-46d1bbf7fc8b,61.55,9/22/2025 13:37,2,3,Buildings,Normal,"Registered 3 clients at Shelter_4 (Group: Vehicle_10_Shelter_6_to_Shelter_4, Round: 6)"
+a1507e95-5230-4027-886b-8e164ee79793,61.78,9/22/2025 13:37,2,3,Resources,Normal,Shelter_5 received 0 Population (10/10)
+6521b8df-348d-4282-b0fc-f5712a64abd3,62.57,9/22/2025 13:37,2,3,Vehicles,Normal,Assigned Task 13: 3 Population from Shelter_5 to Shelter_6 to vehicle Vehicle1
+b9a733f9-cbb2-44cd-8dcf-336a1839f58f,62.57,9/22/2025 13:37,2,3,Vehicles,Normal,Assigned Task 14: 3 Population from Shelter_5 to Shelter_4 to vehicle Vehicle3
+8e7f03d5-2c41-40d6-92f7-62d1c0a2913f,63.63,9/22/2025 13:37,2,3,Resources,Normal,Shelter_5 lost 3 Population (7/10)
+96fd2f5d-f05b-4a60-813c-1b241d14675b,64.23,9/22/2025 13:37,2,3,Resources,Normal,Shelter_5 lost 3 Population (4/10)
+137b04ea-37c9-4d31-8e19-a39f7b1fafe9,64.76,9/22/2025 13:37,2,3,Resources,Normal,Motel received 6 Population (26/300)
+026eaee2-be17-49a1-b794-343978ad1002,64.76,9/22/2025 13:37,2,3,Tasks,Normal,All deliveries completed for task: Shelter Flood Damage
+a3646601-bb08-489d-9d85-e513f54ac7e8,64.76,9/22/2025 13:37,2,3,Tasks,Normal,Completed task: Shelter Flood Damage
+74fd804f-d6f9-405d-ad00-0447500e7ff1,64.9,9/22/2025 13:37,2,3,Resources,Normal,Shelter_6 received 3 Population (7/10)
+6a5f445a-9e10-4fa1-8357-19cea9ef994a,64.9,9/22/2025 13:37,2,3,Buildings,Normal,"Registered 3 clients at Shelter_6 (Group: Vehicle_13_Shelter_5_to_Shelter_6, Round: 6)"
+2f618549-0cdf-40ab-b7ec-4d0223974c19,65.61,9/22/2025 13:37,2,3,Vehicles,Normal,Assigned Task 15: 5 FoodPacks from Kitchen_0 to Shelter_4 to vehicle Vehicle2
+38201c8a-cea2-471d-bbb9-94ccce2fc6d6,65.61,9/22/2025 13:37,2,3,Vehicles,Normal,Assigned Task 16: 5 FoodPacks from Kitchen_0 to Shelter_5 to vehicle Vehicle1
+cb6d7b8f-5228-4b55-858e-fef9a896945d,65.95,9/22/2025 13:37,2,3,Resources,Normal,Shelter_4 received 3 Population (10/10)
+37a15baf-7e1e-44fe-a4fd-bd2d5b2b40de,65.95,9/22/2025 13:37,2,3,Buildings,Normal,"Registered 3 clients at Shelter_4 (Group: Vehicle_14_Shelter_5_to_Shelter_4, Round: 6)"
+92f2c20b-aa73-45ec-825e-d1215d8a6e70,66.62,9/22/2025 13:37,2,3,Vehicles,Normal,Assigned Task 17: 5 FoodPacks from Kitchen_0 to Shelter_6 to vehicle Vehicle3
+5c37256d-71a3-4beb-847f-8d0401328beb,67.43,9/22/2025 13:37,2,3,Resources,Normal,Kitchen_0 lost 5 FoodPacks (15/20)
+65349b26-d3ba-4178-85c5-5734ee034b4f,68.95,9/22/2025 13:37,2,3,Resources,Normal,Kitchen_0 lost 5 FoodPacks (10/20)
+7602d946-aa96-40d3-b24e-bfb8b4664918,69.25,9/22/2025 13:37,2,3,Resources,Normal,Kitchen_0 lost 5 FoodPacks (5/20)
+25d6768d-6a39-42fe-b751-627af466f15a,70.05,9/22/2025 13:37,2,3,Resources,Normal,Shelter_4 received 5 FoodPacks (5/10)
+de477e2b-bccf-4c2f-9847-7ba11bf96a4d,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Task 'Food Request From Shelter' rounds remaining: 1
+9989a5f9-8923-4c9f-b53a-9f340d6c7cc7,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Task 'Food Request From Shelter' rounds remaining: 1
+ccfc0889-88a4-4e2f-be0f-143c9fe456e4,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Task 'Food Request From Shelter' rounds remaining: 1
+9d935745-bec0-4cca-80ec-85313cdd2ca8,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Task 'Shelter Flood Damage' rounds remaining: 0
+f089a328-5513-4194-99ad-488e51a86208,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Task 'Shelter Flood Damage' rounds remaining: 0
+12aa6f26-d0f2-4fdf-a4f2-c3cb8ce2c486,70.16,9/22/2025 13:37,2,4,Tasks,Normal,"Task Food Request From Shelter already exists for Shelter_6, skipping"
+8e44e113-b296-4c79-a7b2-224c92ae3a45,70.16,9/22/2025 13:37,2,4,Tasks,Normal,"Task Food Request From Shelter already exists for Shelter_5, skipping"
+7732776e-6f5d-49ba-a9bd-48df3cb0e2f6,70.16,9/22/2025 13:37,2,4,Tasks,Normal,"Task Shelter Flood Damage already exists for Shelter_6, skipping"
+b0e05c08-b7c4-4999-b821-b38155c98e8e,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Created task from data: Shelter Flood Damage (Emergency)
+6b02e854-a7ab-4fb7-87c9-4d8701724d57,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Generated task from database: Shelter_Flood_Damage for facility Shelter_4
+bd1a62ee-48a9-4f9e-b44e-cdc7c05f2344,70.16,9/22/2025 13:37,2,4,Tasks,Normal,"Task Shelter Flood Damage already exists for Shelter_5, skipping"
+6cea1f28-401e-4350-a3be-1fcd0e8d9ec7,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Created task from data: Community Emergency Evacuation (Emergency)
+444f392a-82cb-4615-ba19-33b12a8db782,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Generated task from database: Community_Flood_Damge for facility Community02
+a239bef2-4acb-47f1-8c73-4d63485c3a6d,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Created task from data: Training Recommendation Alert (Advisory)
+7a40c1d3-9af6-4a73-ae70-f348f6fe4d2f,70.16,9/22/2025 13:37,2,4,Resources,Normal,Community01 consumption cycle: 1/6 rounds
+5343f9e3-eccd-4b4a-91da-588eb77ea28f,70.16,9/22/2025 13:37,2,4,Resources,Normal,Community03 consumption cycle: 1/6 rounds
+52e56c9c-37df-4cd6-b30f-fe62a0596241,70.16,9/22/2025 13:37,2,4,Resources,Normal,Community02 consumption cycle: 1/6 rounds
+025c323d-dca4-4137-9bc0-63af9fb11322,70.16,9/22/2025 13:37,2,4,Resources,Normal,Shelter_5 consumption cycle: 2/4 rounds
+4e145021-c891-4199-93c9-b090fedb2159,70.16,9/22/2025 13:37,2,4,Resources,Normal,Shelter_4 consumption cycle: 2/4 rounds
+c1838822-c857-4099-81f0-a1be86db599b,70.16,9/22/2025 13:37,2,4,Resources,Normal,Shelter_6 consumption cycle: 2/4 rounds
+3034e2cf-efb9-4a33-8290-1518577cad54,70.16,9/22/2025 13:37,2,4,Resources,Normal,Kitchen_0 received 10 FoodPacks (15/20)
+323e4f2e-1e84-4458-a051-5c8ae942f636,70.16,9/22/2025 13:37,2,4,Resources,Normal,Kitchen_0 produced 10 FoodPacks this round
+ccc6664f-32fe-473a-b598-8a55e5b3d10d,70.16,9/22/2025 13:37,2,4,Environment,Normal,"Current weather: MediumRain, Rain intensity: 0.60"
+2a1eee6d-efe2-44b1-8f3d-52f3182b2367,70.16,9/22/2025 13:37,2,4,Environment,Normal,"Flood tiles changed. Before: 10, after: 6, change: -4"
+5959a5c5-ea5e-4387-8f50-045a441de4b5,70.16,9/22/2025 13:37,2,4,Metrics,Normal,"Simulation ended - Now at Day 2, Time Segment 4"
+3d61e256-1104-4f77-b822-7bebbd90c03f,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Task marked as incomplete: Shelter Flood Damage
+0e5699d9-bcbf-4420-af43-ded268668be8,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Task marked as incomplete: Shelter Flood Damage
+426c37f7-f81d-4ee4-8b8d-ef19d14f7380,70.16,9/22/2025 13:37,2,4,Metrics,Normal,"Budget: $10,500 → $5,500 (+$-5,000)"
+5c7da714-7bd8-41e2-9469-f4d48e0a3fd2,70.16,9/22/2025 13:37,2,4,Metrics,Normal,Satisfaction: 100.0 → 100.0 (+20.0)
+181609bb-3099-407a-9da1-5b65e9efc2b8,70.16,9/22/2025 13:37,2,4,Resources,Normal,Shelter_4 lost 10 Population (0/10)
+230cc40a-c281-4684-912f-3f61c914090a,70.16,9/22/2025 13:37,2,4,Resources,Normal,Motel received 10 Population (36/300)
+c282d5f3-21f1-4428-b26a-99832729e573,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Completed task: Shelter Flood Damage
+01e66480-5c2d-4caa-92b7-20c6aa32d46c,70.16,9/22/2025 13:37,2,4,Tasks,Normal,Completed task: Training Recommendation Alert
+09344874-be89-447a-b14a-9253e967ceb4,70.16,9/22/2025 13:37,2,4,Metrics,Normal,Satisfaction: 100.0 → 100.0 (+10.0)
+560d9f8a-0e9f-4250-b002-a4cf6ad50366,70.16,9/22/2025 13:37,2,4,Vehicles,Normal,"Delivery estimate from Community02 to Shelter_6: 8 tiles, 00:03"
+fc3e3fec-2d05-473c-9840-c0e7c63b9854,70.16,9/22/2025 13:37,2,4,Vehicles,Normal,Created delivery task 1: Task 21: 3 Population from Community02 to Shelter_6 (Est: 00:03)
+0a1bf75f-5a3f-4c29-b6c5-aaaba45a581c,70.16,9/22/2025 13:37,2,4,Vehicles,Normal,"Delivery estimate from Community02 to Shelter_4: 15 tiles, 00:05"
+cd11b396-a811-4317-9f06-34a6b61f0082,70.16,9/22/2025 13:37,2,4,Vehicles,Normal,Created delivery task 1: Task 22: 3 Population from Community02 to Shelter_4 (Est: 00:05)
+d7bc5514-7d3f-496d-bcc2-54ed96431cc8,70.16,9/22/2025 13:37,2,4,Vehicles,Normal,"Delivery estimate from Community02 to Shelter_5: 10 tiles, 00:04"
+8ff8e13e-442c-4057-81c6-69ce3c229b07,70.16,9/22/2025 13:37,2,4,Vehicles,Normal,Created delivery task 1: Task 23: 3 Population from Community02 to Shelter_5 (Est: 00:04)
+9a161ec7-3885-40e3-99c3-8796c82205fa,70.16,9/22/2025 13:37,2,4,Metrics,Normal,"Simulation started - Player waits 2.5s, game content runs at VeryFastx speed"
+28828dfe-b8c2-4797-8d71-75d33df4eb22,70.65,9/22/2025 13:37,2,4,Vehicles,Normal,Assigned Task 18: 5 FoodPacks from Kitchen_0 to Shelter_5 to vehicle Vehicle2
+fc176378-08f9-4051-a18e-fb04a0701f8a,72.22,9/22/2025 13:37,2,4,Resources,Normal,Shelter_5 received 5 FoodPacks (5/10)
+98b09e0b-5313-4a9e-afa7-f07d453291c8,72.6,9/22/2025 13:37,2,4,Resources,Normal,Shelter_6 received 5 FoodPacks (5/10)
+459d81b8-c665-4016-a785-997db76d9aaf,72.67,9/22/2025 13:37,2,4,Vehicles,Normal,Assigned Task 19: 5 FoodPacks from Kitchen_0 to Shelter_6 to vehicle Vehicle1
+15f300a8-ff64-47a6-aee3-7b7aa5c14cbb,72.67,9/22/2025 13:37,2,4,Vehicles,Normal,Assigned Task 20: 5 FoodPacks from Kitchen_0 to Shelter_4 to vehicle Vehicle3
+29bdff1b-a318-49a1-abe3-f8fa07e4d558,73.29,9/22/2025 13:37,2,4,Resources,Normal,Kitchen_0 lost 5 FoodPacks (10/20)
+2392dc58-7856-46bc-ad45-9ed60a1ecab5,75.96,9/22/2025 13:37,2,4,Resources,Normal,Kitchen_0 lost 5 FoodPacks (5/20)
+f16ea2d1-5523-4b69-8dac-cd5b14ccd4ee,75.96,9/22/2025 13:37,2,4,Resources,Normal,Kitchen_0 lost 5 FoodPacks (0/20)
+01f8ae62-aecd-483a-9ec2-c0e58033d4c6,76.6,9/22/2025 13:37,2,4,Resources,Normal,Shelter_5 received 5 FoodPacks (10/10)
+95ee9b9c-6ca7-4a24-a742-7ead7d2caca8,76.71,9/22/2025 13:37,2,4,Vehicles,Normal,Assigned Task 21: 3 Population from Community02 to Shelter_6 to vehicle Vehicle2
+b2e69f0f-7ba1-4310-a8e5-fd369a294ce5,78.6,9/22/2025 13:37,2,4,Resources,Normal,Shelter_4 received 5 FoodPacks (10/10)
+3d259262-7b97-4d07-8fdb-e3728a384f48,78.72,9/22/2025 13:37,2,4,Vehicles,Normal,Assigned Task 22: 3 Population from Community02 to Shelter_4 to vehicle Vehicle3
+e51274c6-f5ce-45e7-9e75-bcc09f1f91a0,79.07,9/22/2025 13:37,2,4,Resources,Normal,Community02 lost 3 Population (19/40)
+03ba39a3-8a08-4b10-b218-746283dcebe4,79.27,9/22/2025 13:37,2,4,Resources,Normal,Shelter_6 received 5 FoodPacks (10/10)
+668b14b2-8be0-4764-8d13-ae235fa54cee,79.74,9/22/2025 13:37,2,4,Vehicles,Normal,Assigned Task 23: 3 Population from Community02 to Shelter_5 to vehicle Vehicle1
+2e5f433b-1552-43a6-8bf2-f30064bf589c,80.17,9/22/2025 13:37,2,5,Environment,Normal,The weather has changed from MediumRain to Storm.
+57a06a57-fd4c-42d8-a4e5-b3e49c0beaa0,80.17,9/22/2025 13:37,2,5,Metrics,Normal,Simulation paused by external system
+4a096e6f-5655-49e6-ab5e-d2567274f4ce,80.17,9/22/2025 13:37,2,5,Resources,Normal,Shelter_5 lost 10 FoodPacks (0/10)
+22e78b58-05e8-4d06-8671-e269044ba86d,80.17,9/22/2025 13:37,2,5,Resources,Normal,Shelter_5 wasted 10 unused food packs at end of day
+c2493f0c-859b-4409-8098-0cc81932779f,80.17,9/22/2025 13:37,2,5,Resources,Normal,Shelter_4 lost 10 FoodPacks (0/10)
+02534cf3-53a9-4ed0-8c68-1bc821a9148c,80.17,9/22/2025 13:37,2,5,Resources,Normal,Shelter_4 wasted 10 unused food packs at end of day
+7b897d5b-5395-408a-a5ec-87b5ded03a4d,80.17,9/22/2025 13:37,2,5,Resources,Normal,Shelter_6 lost 10 FoodPacks (0/10)
+a1129a4e-9d0a-4f64-8a6c-8c84a5037b62,80.17,9/22/2025 13:37,2,5,Resources,Normal,Shelter_6 wasted 10 unused food packs at end of day
+0e63ce46-6c7c-4142-87fa-efc32d3b37f3,80.17,9/22/2025 13:37,2,5,Environment,Normal,"Current weather: Storm, Rain intensity: 1.00"
+863a954e-7921-4d5f-b3b5-cff501b8b5f4,80.17,9/22/2025 13:37,2,5,Environment,Normal,"Flood tiles changed. Before: 6, after: 42, change: 36"
+36d1e39c-0611-46b3-b2f0-91097485f683,80.17,9/22/2025 13:37,2,5,Metrics,Normal,"Simulation ended - Day 2 complete, waiting for daily report"
+3554c551-7c17-4469-9e83-05238efb4da4,80.17,9/22/2025 13:37,2,5,Metrics,Normal,Simulation resumed - ready for player interaction
+847e922e-88b8-4dd0-a8f9-28b6de3f8ec0,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Task 'Food Request From Shelter' rounds remaining: 0
+088c0f8b-c4b3-4f31-a3f7-03ada40e20d1,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Task 'Food Request From Shelter' rounds remaining: 0
+f4afa3ce-384c-495f-a598-6029d2c7a37d,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Task 'Food Request From Shelter' rounds remaining: 0
+fe16856d-d389-4008-94a4-aef03cc9d9dc,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Task 'Community Emergency Evacuation' rounds remaining: 1
+8cad4149-cb6d-4f28-9b6c-f664e7e26307,80.17,9/22/2025 13:37,3,1,Tasks,Normal,"Task Food Request From Shelter already exists for Shelter_6, skipping"
+360b0d99-b964-465e-9205-f20fdd852f99,80.17,9/22/2025 13:37,3,1,Tasks,Normal,"Task Food Request From Shelter already exists for Shelter_5, skipping"
+e910b29b-6f4d-4f28-86f2-4574b8fb9681,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Created task from data: Shelter Flood Damage (Emergency)
+aadd2708-a3ff-4d3f-a96e-d86131967a24,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Generated task from database: Shelter_Flood_Damage for facility Shelter_6
+1c6797f0-1b24-468a-a47c-123be4bc2b8d,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Created task from data: Shelter Flood Damage (Emergency)
+2136ea83-36b4-4c57-9cd3-20c1ff2f40fe,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Generated task from database: Shelter_Flood_Damage for facility Shelter_5
+e06787fc-0a17-4e5a-a55b-067baadceb7e,80.17,9/22/2025 13:37,3,1,Tasks,Normal,"Task Community Emergency Evacuation already exists for Community02, skipping"
+7214648e-4a50-4233-a434-7be3f0939102,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Created task from data: Daily Budget Allocation (Advisory)
+0b1fc76b-3ce5-4d24-93c2-865b818f2820,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Created task from data: Storm Funding Advisory (Advisory)
+7a546b8e-4996-430d-87a9-e449f23a47d9,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Processing alert: Day 3 Start of Day Report
+4451aff4-c311-4615-91d3-9487955613c4,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Created task: Day 3 Start of Day Report (Alert) for Daily Report
+8b109f58-d858-46ab-9fbf-92d33c1f9d43,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Processing alert: Day 3 Start of Day Report
+67157420-e6d8-4bdb-b08d-346b70fead12,80.17,9/22/2025 13:37,3,1,Resources,Normal,Community01 consumption cycle: 2/6 rounds
+670f640a-625d-406a-8168-958e3d9bb6ee,80.17,9/22/2025 13:37,3,1,Resources,Normal,Community03 consumption cycle: 2/6 rounds
+8b30efe2-f143-448a-adcc-be86479e96fd,80.17,9/22/2025 13:37,3,1,Resources,Normal,Community02 consumption cycle: 2/6 rounds
+dec585fd-ff4d-4469-8dbd-96ab1586e4c7,80.17,9/22/2025 13:37,3,1,Resources,Normal,Shelter_5 consumption cycle: 3/4 rounds
+a4f30ab9-617e-458b-bdce-4c3b454369fa,80.17,9/22/2025 13:37,3,1,Resources,Normal,Shelter_4 consumption cycle: 3/4 rounds
+e0e70fa0-aa10-49b5-8f11-0531e1316ca2,80.17,9/22/2025 13:37,3,1,Resources,Normal,Shelter_6 consumption cycle: 3/4 rounds
+729c689c-b7ad-4431-bcd2-97b8b046f405,80.17,9/22/2025 13:37,3,1,Resources,Normal,Kitchen_0 received 10 FoodPacks (10/20)
+e3a605d5-1b6f-4d21-a58b-f48a74fe77c3,80.17,9/22/2025 13:37,3,1,Resources,Normal,Kitchen_0 produced 10 FoodPacks this round
+5024957b-9598-450a-945c-8a15f06314a2,80.17,9/22/2025 13:37,3,1,Metrics,Normal,"Advanced to Day 3, Round 1"
+ce928c27-5116-4495-a3bb-9d66a62c4457,80.17,9/22/2025 13:37,3,1,Metrics,Normal,"Budget: $5,500 → $6,000 (+$500)"
+92deb835-158c-4dd2-99aa-2963638349d4,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Removed budget: -500 from task: Food Request From Shelter due to incomplete task
+3d27975a-f732-476a-8e39-55b0bde56ffe,80.17,9/22/2025 13:37,3,1,Metrics,Normal,Satisfaction: 100.0 → 85.0 (+-15.0)
+69a1f542-479c-496e-b893-7999c2cd8d89,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Removed satisfaction: 15 from task: Food Request From Shelter due to incomplete task
+f6460a0e-797e-4545-bea4-d35d21c33a79,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Task marked as incomplete: Food Request From Shelter
+3d15ff9c-28c2-431e-905e-125508f18ed5,80.17,9/22/2025 13:37,3,1,Metrics,Normal,"Budget: $6,000 → $6,500 (+$500)"
+1bf9cd64-ada3-4129-ae8a-1d38bfab4d24,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Removed budget: -500 from task: Food Request From Shelter due to incomplete task
+6e0687d9-43bc-45ad-88ed-4de56927703a,80.17,9/22/2025 13:37,3,1,Metrics,Normal,Satisfaction: 85.0 → 70.0 (+-15.0)
+a1802486-5b7b-45be-b67c-d30c33ce6e0a,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Removed satisfaction: 15 from task: Food Request From Shelter due to incomplete task
+7ef20c2c-e280-4ba5-a320-f308f08d98ea,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Task marked as incomplete: Food Request From Shelter
+ecc17d74-24d4-40eb-8d8b-c4bde0b229ad,80.17,9/22/2025 13:37,3,1,Metrics,Normal,"Budget: $6,500 → $7,000 (+$500)"
+bc21b294-4b17-41a3-8cfc-3d1eeeadf76f,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Removed budget: -500 from task: Food Request From Shelter due to incomplete task
+91c5cf91-9282-4c07-b908-3e1de5210d99,80.17,9/22/2025 13:37,3,1,Metrics,Normal,Satisfaction: 70.0 → 55.0 (+-15.0)
+d66a388d-aadb-4132-8504-9320099c2cd2,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Removed satisfaction: 15 from task: Food Request From Shelter due to incomplete task
+8b430e86-ea20-4b9e-bd9d-3dbd509b5f38,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Task marked as incomplete: Food Request From Shelter
+add7edd4-5d67-40f7-9d3b-b90a7d7e6d7a,80.17,9/22/2025 13:37,3,1,Metrics,Normal,Satisfaction: 55.0 → 65.0 (+10.0)
+85efdd43-4fc9-46de-9fb8-1442a66b7ce3,80.17,9/22/2025 13:37,3,1,Vehicles,Normal,"Delivery estimate from Shelter_6 to Shelter_4: 7 tiles, 00:03"
+7fab23e1-8623-4638-b959-470e334ba785,80.17,9/22/2025 13:37,3,1,Vehicles,Normal,Created delivery task 1: Task 24: 3 Population from Shelter_6 to Shelter_4 (Est: 00:03)
+8268334f-a865-48ee-8595-15778d5f145c,80.17,9/22/2025 13:37,3,1,Vehicles,Normal,"Delivery estimate from Shelter_6 to Shelter_5: 2 tiles, 00:02"
+06f236ff-5ac2-466a-baae-1237dd9e4008,80.17,9/22/2025 13:37,3,1,Vehicles,Normal,Created delivery task 1: Task 25: 3 Population from Shelter_6 to Shelter_5 (Est: 00:02)
+3141b869-c183-4644-bec2-59f613cba1d1,80.17,9/22/2025 13:37,3,1,Metrics,Normal,"Budget: $7,000 → $10,000 (+$3,000)"
+47e81a32-cbfe-416a-b83f-ac500bd45aae,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Completed task: Daily Budget Allocation
+761cb7f9-2255-4611-9418-fe5be4454161,80.17,9/22/2025 13:37,3,1,Metrics,Normal,"Budget: $10,000 → $20,000 (+$10,000)"
+49134833-f0ab-43c9-b211-75ee39c7621d,80.17,9/22/2025 13:37,3,1,Tasks,Normal,Completed task: Storm Funding Advisory
+918c3df9-63e2-4268-9f3f-eeb08da723dd,80.17,9/22/2025 13:37,3,1,Metrics,Normal,Satisfaction: 65.0 → 75.0 (+10.0)
+3e49f8eb-6e35-4e57-807e-fda9f61d6c8b,80.17,9/22/2025 13:37,3,1,Vehicles,Normal,"Delivery estimate from Shelter_5 to Shelter_6: 2 tiles, 00:02"
+1e6585b2-9caa-464d-bd39-44f869670728,80.17,9/22/2025 13:37,3,1,Vehicles,Normal,Created delivery task 1: Task 26: 2 Population from Shelter_5 to Shelter_6 (Est: 00:02)
+b336c2df-ed3d-4097-8752-09e0609b80fc,80.17,9/22/2025 13:37,3,1,Vehicles,Normal,"Delivery estimate from Shelter_5 to Shelter_4: 5 tiles, 00:03"
+312cd4a9-48d4-40ce-8997-bea5afdde367,80.17,9/22/2025 13:37,3,1,Vehicles,Normal,Created delivery task 1: Task 27: 2 Population from Shelter_5 to Shelter_4 (Est: 00:03)
+dc7417d0-fabf-4557-bc4d-27a5f64d853f,80.17,9/22/2025 13:37,3,1,Metrics,Normal,"Simulation started - Player waits 2.5s, game content runs at VeryFastx speed"
+fda2f3a2-7de7-4564-bb98-31ca49e77e64,81.18,9/22/2025 13:37,3,1,Resources,Normal,Shelter_6 received 3 Population (10/10)
+33c7744d-29d1-4241-afe4-a51de42afaa7,81.18,9/22/2025 13:37,3,1,Buildings,Normal,"Registered 3 clients at Shelter_6 (Group: Vehicle_21_Community02_to_Shelter_6, Round: 8)"
+8662eb82-ba61-4844-9b23-8b54da8e3dc1,81.77,9/22/2025 13:37,3,1,Vehicles,Normal,Assigned Task 24: 3 Population from Shelter_6 to Shelter_4 to vehicle Vehicle2
+2d6331c6-29b0-4d4c-83d8-838e8fd5069a,81.81,9/22/2025 13:37,3,1,Resources,Normal,Community02 lost 3 Population (16/40)
+28539a7d-b3b7-490f-a8c1-c08a8e407dfe,81.85,9/22/2025 13:37,3,1,Resources,Normal,Community02 lost 3 Population (13/40)
+e3d91ee9-f481-49f1-9ab6-6b6eaa1de0dd,82.82,9/22/2025 13:37,3,1,Resources,Normal,Shelter_6 lost 3 Population (7/10)
+bc392923-3368-43b1-8f47-8d37addad399,84.19,9/22/2025 13:37,3,1,Resources,Normal,Shelter_5 received 3 Population (7/10)
+a71a60cc-d1b1-4983-ba05-f9af2235c30e,84.19,9/22/2025 13:37,3,1,Buildings,Normal,"Registered 3 clients at Shelter_5 (Group: Vehicle_23_Community02_to_Shelter_5, Round: 8)"
+1aa0ec9d-3864-4fc1-99a9-168618f93b75,84.78,9/22/2025 13:37,3,1,Vehicles,Normal,Assigned Task 25: 3 Population from Shelter_6 to Shelter_5 to vehicle Vehicle1
+be3edf50-e53b-4a2c-a13b-f2ce0ebfcce1,84.82,9/22/2025 13:37,3,1,Resources,Normal,Shelter_4 received 3 Population (3/10)
+9c9642bb-06b0-4a96-bb7d-f519224c8e56,84.82,9/22/2025 13:37,3,1,Buildings,Normal,"Registered 3 clients at Shelter_4 (Group: Vehicle_24_Shelter_6_to_Shelter_4, Round: 8)"
+9139151f-d472-45a3-b151-8774cddf628f,84.87,9/22/2025 13:37,3,1,Resources,Normal,Shelter_4 received 3 Population (6/10)
+bf30d7fb-a407-4079-b747-8354c3b12511,84.87,9/22/2025 13:37,3,1,Buildings,Normal,"Registered 3 clients at Shelter_4 (Group: Vehicle_22_Community02_to_Shelter_4, Round: 8)"
+d4b8898d-4988-4a05-a0d4-1ad06e30b949,85.8,9/22/2025 13:37,3,1,Vehicles,Normal,Assigned Task 26: 2 Population from Shelter_5 to Shelter_6 to vehicle Vehicle2
+fbed81fb-61bd-4727-a0dd-92f8271cd9a5,85.8,9/22/2025 13:37,3,1,Vehicles,Normal,Assigned Task 27: 2 Population from Shelter_5 to Shelter_4 to vehicle Vehicle3
+106e4504-07b6-4635-b57a-ccd443b6a622,86.05,9/22/2025 13:37,3,1,Resources,Normal,Shelter_6 lost 3 Population (4/10)
+00e770a3-d8f9-462c-8d33-e9b173d73552,87.33,9/22/2025 13:37,3,1,Resources,Normal,Shelter_5 received 3 Population (10/10)
+284aeaf6-68a7-43ce-a8c2-af24d9fa729e,87.33,9/22/2025 13:37,3,1,Buildings,Normal,"Registered 3 clients at Shelter_5 (Group: Vehicle_25_Shelter_6_to_Shelter_5, Round: 8)"
+8c9c7c9e-c63e-44c9-9b35-343352012355,87.49,9/22/2025 13:37,3,1,Resources,Normal,Shelter_5 lost 2 Population (8/10)
+5a96c97a-7fb1-40b7-9410-077c56ebfc23,87.49,9/22/2025 13:37,3,1,Resources,Normal,Shelter_5 lost 2 Population (6/10)
+f50579a2-9a1d-4e68-9dcd-6ffa60ca363b,88.79,9/22/2025 13:37,3,1,Resources,Normal,Shelter_6 received 2 Population (6/10)
+379d9213-3954-4cbd-9c54-95f483598d97,88.79,9/22/2025 13:37,3,1,Buildings,Normal,"Registered 2 clients at Shelter_6 (Group: Vehicle_26_Shelter_5_to_Shelter_6, Round: 8)"
+33fc9142-6068-42db-8e73-f2d0647fec73,89.19,9/22/2025 13:37,3,1,Resources,Normal,Shelter_4 received 2 Population (8/10)
+d30945a5-d3df-4f94-bf78-3a7691ced03d,89.19,9/22/2025 13:37,3,1,Buildings,Normal,"Registered 2 clients at Shelter_4 (Group: Vehicle_27_Shelter_5_to_Shelter_4, Round: 8)"
+53b0fe25-4787-4413-8e15-29b71b2d48d9,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Task 'Community Emergency Evacuation' rounds remaining: 0
+ab1322c6-0903-4867-8159-7194926ee4b9,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Task 'Shelter Flood Damage' rounds remaining: 1
+7aa450ca-4e23-468d-b73c-b9f59195f20f,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Task 'Shelter Flood Damage' rounds remaining: 1
+e036e173-0e97-4b47-be60-a4ec430e000f,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Created task from data: Food Request From Shelter (Demand)
+9f98d244-c7db-404e-82a0-df30ad462632,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Generated task from database: Shelter_FoodRequest for facility Shelter_6
+24ba692e-f9e2-4c90-8cb8-fc97829af98c,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Created task from data: Food Request From Shelter (Demand)
+74281832-ff97-4f54-86e8-1fbaae66924f,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Generated task from database: Shelter_FoodRequest for facility Shelter_4
+64b1b241-b81f-4799-97bb-eaab258588d0,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Created task from data: Food Request From Shelter (Demand)
+03ee3d47-deed-4678-8831-896249f2c42b,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Generated task from database: Shelter_FoodRequest for facility Shelter_5
+96da2ac9-d3ca-4ce2-8b67-d36ad55b19cd,90.2,9/22/2025 13:37,3,2,Tasks,Normal,"Task Shelter Flood Damage already exists for Shelter_6, skipping"
+74bd24b1-4bbb-47ff-b294-44e52c3577f0,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Created task from data: Shelter Flood Damage (Emergency)
+921c738e-3d26-4426-8106-007915bb33c3,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Generated task from database: Shelter_Flood_Damage for facility Shelter_4
+8b2dd8a1-1241-41d7-bf6f-e9e750716576,90.2,9/22/2025 13:37,3,2,Tasks,Normal,"Task Shelter Flood Damage already exists for Shelter_5, skipping"
+846480df-a74e-4976-96c6-9bbef5946ab3,90.2,9/22/2025 13:37,3,2,Tasks,Normal,"Task Community Emergency Evacuation already exists for Community02, skipping"
+5afc285b-c738-49a5-b358-4e36ee455cc8,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Processing alert: Satisfaction Declining
+f0e5e7ee-2f60-41a8-9585-ff27e309edfd,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Created task from data: Satisfaction Declining (Alert)
+2c10ef09-74e2-4806-aa13-8dae53f1e853,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Generated task from database: Satisfaction_Alert for facility Shelter_6
+38a2f70b-3942-4cc6-8233-7ffe1b903acf,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Created task from data: Storm Funding Advisory (Advisory)
+6d3a3846-c40b-40b0-9773-99857ddb49a9,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Created task from data: Training Recommendation Alert (Advisory)
+18bd9b5d-e772-4842-91f8-73af9b1a12e1,90.2,9/22/2025 13:37,3,2,Resources,Normal,Community01 consumption cycle: 3/6 rounds
+f21051e5-133a-4a30-8ecf-9ce553608aa3,90.2,9/22/2025 13:37,3,2,Resources,Normal,Community03 consumption cycle: 3/6 rounds
+e29af459-d09b-4c60-ac5c-5a35bd7c2a94,90.2,9/22/2025 13:37,3,2,Resources,Normal,Community02 consumption cycle: 3/6 rounds
+88d66610-a338-4e6a-9e8d-888e2b3ca8eb,90.2,9/22/2025 13:37,3,2,Resources,Normal,Shelter_5 lost 0 FoodPacks (0/10)
+5fef0b67-ac4e-439c-a7c5-ac1eea5d5eb3,90.2,9/22/2025 13:37,3,2,Resources,Normal,"Shelter_5 fed 10 people after 4 rounds, consumed 0/10 food packs"
+7d22cffc-6b3e-4100-a514-daae54ba4333,90.2,9/22/2025 13:37,3,2,Resources,Normal,"Shelter_5 FOOD SHORTAGE: Need 10, only had 0"
+f36a8d55-f609-4010-83d5-5b417d4f0c19,90.2,9/22/2025 13:37,3,2,Resources,Normal,Shelter_4 lost 0 FoodPacks (0/10)
+362f51ae-711f-49ef-b6fc-a10b09fbb0b0,90.2,9/22/2025 13:37,3,2,Resources,Normal,"Shelter_4 fed 12 people after 4 rounds, consumed 0/12 food packs"
+c63e80cd-8e20-4ca5-a3e5-374fffa7291f,90.2,9/22/2025 13:37,3,2,Resources,Normal,"Shelter_4 FOOD SHORTAGE: Need 12, only had 0"
+43f74de9-26e9-4d4a-b1b7-4fd85cde51e3,90.2,9/22/2025 13:37,3,2,Resources,Normal,Shelter_6 lost 0 FoodPacks (0/10)
+fa56c930-5c52-40b6-8813-056ad1392c09,90.2,9/22/2025 13:37,3,2,Resources,Normal,"Shelter_6 fed 10 people after 4 rounds, consumed 0/10 food packs"
+e5e6525a-9c2b-4383-951d-f992863018c2,90.2,9/22/2025 13:37,3,2,Resources,Normal,"Shelter_6 FOOD SHORTAGE: Need 10, only had 0"
+dcc2c633-30da-425e-9a8c-96a82456f098,90.2,9/22/2025 13:37,3,2,Resources,Normal,Kitchen_0 received 10 FoodPacks (20/20)
+6d13e4ca-1ecc-454c-a59d-2a806b944b78,90.2,9/22/2025 13:37,3,2,Resources,Normal,Kitchen_0 produced 10 FoodPacks this round
+4a83a14c-353f-4abd-b6e6-782f138f0f39,90.2,9/22/2025 13:37,3,2,Environment,Normal,"Current weather: Storm, Rain intensity: 1.00"
+499071b6-8b2b-48a8-a2d2-4d2b768f0932,90.2,9/22/2025 13:37,3,2,Environment,Normal,"Flood tiles changed. Before: 42, after: 16, change: -26"
+89aabded-5bbf-4833-8e3e-6fb59d086623,90.2,9/22/2025 13:37,3,2,Metrics,Normal,"Simulation ended - Now at Day 3, Time Segment 2"
+78e88c4a-74df-4887-9a92-422bb6e75528,90.2,9/22/2025 13:37,3,2,Tasks,Normal,Task marked as incomplete: Community Emergency Evacuation
