@@ -682,8 +682,9 @@ public class TaskDetailUI : MonoBehaviour
 
             if (selectedChoice.immediateDelivery)
             {
-                ExecuteGeneratorDelivery(selectedChoice, immediate: true);
-                TaskSystem.Instance.CompleteTask(currentTask);
+                bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: true);
+                if (success)
+                    TaskSystem.Instance.CompleteTask(currentTask);
             }
             else if (selectedChoice.triggersDelivery)
             {
@@ -708,26 +709,26 @@ public class TaskDetailUI : MonoBehaviour
         if (categoryManager != null) categoryManager.RefreshTaskList();
     }
 
-    void ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)
+    bool ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)
     {
         switch (choice.deliveryCargoType)
         {
             case ResourceType.FoodPacks:
                 ExecuteFoodDelivery(choice, immediate);
-                break;
+                return true;
 
             case ResourceType.Population:
-                ExecuteClientRelocation(choice, immediate);
-                break;
+                return ExecuteClientRelocation(choice, immediate);
 
             default:
                 // Fallback for any other cargo type: single source→destination delivery
                 ExecuteFallbackDelivery(choice, immediate);
-                break;
+                return true;
         }
+        return true;
     }
 
-    
+
     // FOOD DELIVERY via FoodDeliveryHandler
     void ExecuteFoodDelivery(AgentChoice choice, bool immediate)
     {
@@ -750,27 +751,27 @@ public class TaskDetailUI : MonoBehaviour
     }
 
     // CLIENT RELOCATION via ClientRelocationHandler
-    void ExecuteClientRelocation(AgentChoice choice, bool immediate)
+    bool ExecuteClientRelocation(AgentChoice choice, bool immediate)
     {
         if (ClientRelocationHandler.Instance == null)
         {
             Debug.LogError("[TaskDetailUI] ClientRelocationHandler not found in scene");
-            return;
+            return false;
         }
 
-        // Derive target destination types from the choice destination setting
-        // (kept as a simple two-flag approach; no complex enum needed)
         bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
                     || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
         bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
                     && choice.destinationPrebuilt == PrebuiltBuildingType.Motel;
-        // If neither flag set (AutoFind), allow both
         if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
 
         if (immediate)
         {
-            ClientRelocationHandler.Instance.ExecuteImmediate(
+            bool success = ClientRelocationHandler.Instance.ExecuteImmediate(
                 currentTask, choice.deliveryQuantity, toShelter, toMotel);
+            if (!success)
+                ShowAgentErrorMessage("Could not relocate clients — no available shelter space.");
+            return success;
         }
         else
         {
@@ -778,6 +779,7 @@ public class TaskDetailUI : MonoBehaviour
                 currentTask, choice.deliveryQuantity, toShelter, toMotel);
             if (!success)
                 ShowAgentErrorMessage("Could not queue client relocation — check shelter/motel capacity.");
+            return success;
         }
     }
 
@@ -1106,9 +1108,17 @@ public class TaskDetailUI : MonoBehaviour
                     return true;
 
                 case ResourceType.Population:
-                    int totalPop = GetPopulationAtFacility(currentTask);
-                    if (totalPop <= 0) { errorMessage = "No clients at source facility"; return false; }
-                    return true;
+                {
+                    bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                                || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
+                    bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                                && choice.destinationPrebuilt == PrebuiltBuildingType.Motel;
+                    if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+                    return ClientRelocationHandler.Instance != null
+                        && ClientRelocationHandler.Instance.CanExecute(
+                            currentTask, choice.deliveryQuantity, toShelter, toMotel,
+                            out errorMessage, requireVehicle: false);
+                }
 
                 default:
                     return true; // Let it attempt, fail gracefully at execution

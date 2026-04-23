@@ -113,7 +113,7 @@ public class BuildingSystem : MonoBehaviour
             if (ConfirmationPopup.Instance != null)
             {
                 ConfirmationPopup.Instance.ShowPopup(
-                    message: $"Open a {buildingType} here?\n\nIt will take time to complete. Assign workers once it's opened to make sure it's functional. \n\n(This message won't appear again)",
+                    message: $"Open a {buildingType} here?\n\nIt takes {constructionRounds} rounds to complete. Assign workers once it's opened to make sure it's functional.\n\n(This message won't appear again)",
                     onConfirm: () => {
                         FirstTimeActionTracker.Instance.MarkConstructCompleted();
                         PerformConstruction(site, buildingType);

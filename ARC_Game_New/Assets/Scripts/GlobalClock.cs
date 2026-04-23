@@ -219,7 +219,7 @@ public class GlobalClock : MonoBehaviour
             if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstExecute())
             {
                 ConfirmationPopup.Instance.ShowPopup(
-                    message: "This is your first time proceed to next round. During the simulation phase, you won't be able to change your current decisions.\n\nDo you want to proceed?",
+                    message: $"Opening a facility takes {FindObjectOfType<BuildingSystem>()?.constructionRounds ?? 4} rounds. Only for today, the remaining rounds will be skipped automatically — you won’t be able to make any decisions during this time.\n\nFrom Day 2 onward, each click of this button advances time by 1 round.\n\nDo you want to proceed?",
                     onConfirm: () => {
                         FirstTimeActionTracker.Instance.MarkExecuteCompleted();
                         StartSimulation();
@@ -363,13 +363,13 @@ public class GlobalClock : MonoBehaviour
         Time.timeScale      = 0f;
         isWaitingForReport  = true;
 
-        executeButton?.GetComponentInChildren<TextMeshProUGUI>()?.SetText("View Report");
+        executeButton?.GetComponentInChildren<TextMeshProUGUI>()?.SetText("End Today");
         EnablePlayerInteractions();
         OnSimulationEnded?.Invoke();
 
         if (showDebugInfo)
             Debug.Log("Day 1 complete — all 4 rounds stepped through.");
-        GameLogPanel.Instance.LogMetricsChange("Day 1 complete — Click 'View Report' when ready.");
+        GameLogPanel.Instance.LogMetricsChange("Day 1 complete — Click 'End Today' when ready.");
     }
 
     bool HasActiveDeliveries()
@@ -456,13 +456,13 @@ public class GlobalClock : MonoBehaviour
         // Check if we just finished round 4
         if (currentTimeSegment >= 4)
         {
-            // Change button text to "View Report"
+            // Change button text to "End Today"
             if (executeButton != null)
             {
                 TextMeshProUGUI buttonText = executeButton.GetComponentInChildren<TextMeshProUGUI>();
                 if (buttonText != null)
                 {
-                    buttonText.text = "View Report";
+                    buttonText.text = "End Today";
                 }
             }
             isWaitingForReport = true;
@@ -479,8 +479,8 @@ public class GlobalClock : MonoBehaviour
 
             if (showDebugInfo)
             {
-                GameLogPanel.Instance.LogMetricsChange($"Day {currentDay} complete - Click 'View Report' when ready");
-                Debug.Log($"Day {currentDay} complete - Click 'View Report' when ready");
+                GameLogPanel.Instance.LogMetricsChange($"Day {currentDay} complete - Click 'End Today' when ready");
+                Debug.Log($"Day {currentDay} complete - Click 'End Today' when ready");
             }
         }
         else
@@ -544,13 +544,13 @@ public class GlobalClock : MonoBehaviour
             ActionTrackingManager.Instance.SetDayAndRound(currentDay, currentTimeSegment + 1);
         }
 
-        // Reset button text back to "Execute"
+        // Reset button text back to "Proceed"
         if (executeButton != null)
         {
             TextMeshProUGUI buttonText = executeButton.GetComponentInChildren<TextMeshProUGUI>();
             if (buttonText != null)
             {
-                buttonText.text = "Execute";
+                buttonText.text = "Proceed";
             }
         }
 
@@ -722,7 +722,7 @@ public class GlobalClock : MonoBehaviour
                 TextMeshProUGUI buttonText = executeButton.GetComponentInChildren<TextMeshProUGUI>();
                 if (buttonText != null)
                 {
-                    buttonText.text = "Execute";
+                    buttonText.text = "Proceed";
                 }
             }
             

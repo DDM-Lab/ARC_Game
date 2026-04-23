@@ -64,8 +64,8 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   agentMessages:
-  - messageText: Flood water detected at community center! Large population at risk.
-      Immediate mass evacuation required.
+  - messageText: Flood water detected at community! Large population at risk. Immediate
+      mass evacuation required.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05

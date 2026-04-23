@@ -65,17 +65,25 @@ public class AgentConversationUI : MonoBehaviour
     public Color activeAgentColor = Color.green;
     public Color inactiveAgentColor = Color.white;
     public Color inactiveTaskColor = Color.gray;
+    public Color selectedTaskColor = new Color(0.3f, 0.6f, 1f);
     
+    [Header("New Message Popup")]
+    public GameObject newMessagePopup;
+    public TextMeshProUGUI newMessageCountText;
+
     [Header("Debug")]
     public bool showDebugInfo = true;
-    
+
     private TaskOfficer currentSelectedAgent = TaskOfficer.DisasterOfficer;
     private bool isExpanded = false;
     private bool isAnimating = false;
+    private int newMessageCount = 0;
+    private bool suppressScrollToBottom = false;
     private List<GameTask> currentAgentTasks = new List<GameTask>();
     private GameTask currentSelectedTask = null;
     private AgentChoice localSelectedChoice = null;
     private List<GameObject> currentHistoricalTaskButtons = new List<GameObject>();
+    private Dictionary<GameTask, GameObject> taskButtonMap = new Dictionary<GameTask, GameObject>();
     private List<GameObject> currentConversationItems = new List<GameObject>();
     private TaskSystem taskSystem;
     
@@ -100,6 +108,10 @@ public class AgentConversationUI : MonoBehaviour
         }
 
         UpdateAgentNotifications();
+
+        if (newMessagePopup != null) newMessagePopup.SetActive(false);
+        if (conversationScrollView != null)
+            conversationScrollView.onValueChanged.AddListener(OnConversationScrollChanged);
     }
 
     void Update()
@@ -116,11 +128,31 @@ public class AgentConversationUI : MonoBehaviour
             taskSystem.OnTaskCompleted -= OnTaskChanged;
             taskSystem.OnTaskExpired   -= OnTaskChanged;
         }
+        if (conversationScrollView != null)
+            conversationScrollView.onValueChanged.RemoveListener(OnConversationScrollChanged);
     }
 
     void OnTaskChanged(GameTask _)
     {
         UpdateAgentNotifications();
+        RefreshHistoricalTasks();
+        if (!isExpanded) return;
+
+        bool wasAtBottom = IsAtScrollBottom();
+        int prevCount = currentConversationItems.Count;
+
+        suppressScrollToBottom = !wasAtBottom;
+        if (currentSelectedTask != null && currentSelectedTask.status == TaskStatus.Active)
+            DisplayTaskConversation(currentSelectedTask);
+        else
+            DisplayLatestConversation();
+        suppressScrollToBottom = false;
+
+        if (!wasAtBottom)
+        {
+            int delta = currentConversationItems.Count - prevCount;
+            if (delta > 0) ShowNewMessagePopup(delta);
+        }
     }
 
     void UpdateAgentNotifications()
@@ -221,6 +253,7 @@ public class AgentConversationUI : MonoBehaviour
         }
         else
         {
+            HideNewMessagePopup();
             if (agentBarImage != null) agentBarImage.sprite = DefaultAgentBarImage;
             UpdateAgentButtons();
         }
@@ -240,6 +273,7 @@ public class AgentConversationUI : MonoBehaviour
         }
 
         currentSelectedAgent = agent;
+        HideNewMessagePopup();
 
         if (!isExpanded)
         {
@@ -341,8 +375,9 @@ public class AgentConversationUI : MonoBehaviour
         }
 
         if (taskButton != null) taskButton.onClick.AddListener(() => SelectHistoricalTask(task));
-        
+
         currentHistoricalTaskButtons.Add(buttonObj);
+        taskButtonMap[task] = buttonObj;
     }
     
     void ClearHistoricalTaskButtons()
@@ -350,11 +385,43 @@ public class AgentConversationUI : MonoBehaviour
         foreach (GameObject button in currentHistoricalTaskButtons)
             if (button != null) Destroy(button);
         currentHistoricalTaskButtons.Clear();
+        taskButtonMap.Clear();
+    }
+
+    void UpdateSelectedTaskHighlight()
+    {
+        foreach (var kvp in taskButtonMap)
+        {
+            GameTask task = kvp.Key;
+            GameObject buttonObj = kvp.Value;
+            if (buttonObj == null) continue;
+
+            Image buttonImage = buttonObj.GetComponent<Image>();
+            TextMeshProUGUI buttonText = buttonObj.GetComponentInChildren<TextMeshProUGUI>();
+
+            bool isSelected = task == currentSelectedTask;
+            if (isSelected)
+            {
+                if (buttonImage != null) buttonImage.color = selectedTaskColor;
+                if (buttonText != null)  buttonText.color  = Color.white;
+            }
+            else if (task.status != TaskStatus.Active)
+            {
+                if (buttonImage != null) buttonImage.color = inactiveTaskColor;
+                if (buttonText != null)  buttonText.color  = inactiveTaskColor;
+            }
+            else
+            {
+                if (buttonImage != null) buttonImage.color = inactiveAgentColor;
+                if (buttonText != null)  buttonText.color  = Color.black;
+            }
+        }
     }
     
     void SelectHistoricalTask(GameTask task)
     {
         currentSelectedTask = task;
+        UpdateSelectedTaskHighlight();
         DisplayTaskConversation(task);
         if (showDebugInfo)
             Debug.Log($"Selected historical task: {task.taskTitle}");
@@ -368,6 +435,7 @@ public class AgentConversationUI : MonoBehaviour
         {
             GameTask latestTask = currentAgentTasks[0];
             currentSelectedTask = latestTask;
+            UpdateSelectedTaskHighlight();
             DisplayTaskConversation(latestTask);
         }
         else
@@ -448,7 +516,12 @@ public class AgentConversationUI : MonoBehaviour
 
         if (!tui.TryConfirmTask(currentSelectedTask, localSelectedChoice, out string errorMessage))
         {
+            bool wasAtBottom = IsAtScrollBottom();
             DisplaySystemMessage($"Error: {errorMessage}");
+            if (wasAtBottom)
+                ScrollToBottom();
+            else
+                ShowNewMessagePopup(1);
             return;
         }
 
@@ -537,8 +610,40 @@ public class AgentConversationUI : MonoBehaviour
         currentConversationItems.Clear();
     }
     
+    bool IsAtScrollBottom() =>
+        conversationScrollView == null || conversationScrollView.verticalNormalizedPosition <= 0.05f;
+
+    void OnConversationScrollChanged(Vector2 _)
+    {
+        if (IsAtScrollBottom()) HideNewMessagePopup();
+    }
+
+    void ShowNewMessagePopup(int delta)
+    {
+        newMessageCount += delta;
+        if (newMessagePopup != null)
+        {
+            newMessagePopup.SetActive(true);
+            if (newMessageCountText != null)
+                newMessageCountText.text = $"{newMessageCount} new message{(newMessageCount == 1 ? "" : "s")}";
+        }
+    }
+
+    void HideNewMessagePopup()
+    {
+        newMessageCount = 0;
+        if (newMessagePopup != null) newMessagePopup.SetActive(false);
+    }
+
+    public void OnNewMessagePopupClicked()
+    {
+        HideNewMessagePopup();
+        ScrollToBottom();
+    }
+
     void ScrollToBottom()
     {
+        if (suppressScrollToBottom) return;
         if (conversationScrollView != null)
             StartCoroutine(ScrollToBottomCoroutine());
     }

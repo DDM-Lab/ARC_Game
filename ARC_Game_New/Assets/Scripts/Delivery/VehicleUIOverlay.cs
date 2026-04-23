@@ -175,33 +175,24 @@ public class VehicleUIOverlay : MonoBehaviour
     {
         switch (vehicle.currentStatus)
         {
-            case VehicleStatus.Idle:
-                return "Idle";
-            case VehicleStatus.Loading:
-                return "Loading";
+            case VehicleStatus.Idle:     return "Available";
+            case VehicleStatus.Loading:  return "Picking up";
             case VehicleStatus.InTransit:
-                return "In Transit";
-            case VehicleStatus.Unloading:
-                return "Unloading";
-            case VehicleStatus.Damaged:
-                return "Damaged";
-            default:
-                return "Unknown";
+                return vehicle.GetTotalCargo() > 0 ? "En route" : "Returning";
+            case VehicleStatus.Unloading: return "Dropping off";
+            case VehicleStatus.Damaged:   return "Out of service";
+            default:                      return "";
         }
     }
-    
+
     string GetCargoText(Vehicle vehicle)
     {
         int totalCargo = vehicle.GetTotalCargo();
-        
-        if (totalCargo <= 0)
-        {
-            return "Empty";
-        }
-        
+        if (totalCargo <= 0) return "";
+
         ResourceType cargoType = vehicle.GetPrimaryCargoType();
-        string cargoTypeName = cargoType == ResourceType.Population ? "Clients" : "Food";
-        return $"{cargoTypeName}: {totalCargo}/{vehicle.maxCargoCapacity}";
+        string label = cargoType == ResourceType.Population ? "clients" : "food packs";
+        return $"{totalCargo} {label}";
     }
     
     void OnVehicleStatusChanged(Vehicle vehicle)

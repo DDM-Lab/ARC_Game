@@ -164,7 +164,7 @@ public class BuildingListItem : MonoBehaviour
         
         if (untrainedCount > 0)
         {
-            string untrainedText = untrainedCount == 1 ? "one untrained volunteer" : $"{untrainedCount} untrained volunteers";
+            string untrainedText = untrainedCount == 1 ? "one untrained worker" : $"{untrainedCount} untrained workers";
             parts.Add(untrainedText);
         }
         

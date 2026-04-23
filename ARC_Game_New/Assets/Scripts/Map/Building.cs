@@ -224,7 +224,7 @@ public class Building : MonoBehaviour
 
         Debug.Log($"{buildingType} at site {originalSiteId} deconstruction started");
         GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deconstruction started");
-        ToastManager.ShowToast($"{buildingType} is now closing — responders released.", ToastType.Info, true);
+        ToastManager.ShowToast($"{buildingType} is now closing — workers released.", ToastType.Info, true);
     }
 
     // Deconstruction Coroutine
@@ -396,7 +396,7 @@ public class Building : MonoBehaviour
                     NotifyStatsUpdate();
                     Debug.LogWarning($"{buildingType} at site {originalSiteId} deactivated - insufficient workforce");
                     GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deactivated - insufficient workforce");
-                    ToastManager.ShowToast($"{buildingType} is not functional - it needs more responders to operate!", ToastType.Warning, true);
+                    ToastManager.ShowToast($"{buildingType} is not functional - it needs more workers to operate!", ToastType.Warning, true);
                 }
             }
         }

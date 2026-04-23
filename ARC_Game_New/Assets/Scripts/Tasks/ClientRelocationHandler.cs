@@ -36,7 +36,7 @@ public class ClientRelocationHandler : MonoBehaviour
 
     public bool CanExecute(GameTask parentTask, int requestedQuantity,
                            bool includeShelters, bool includeMotels,
-                           out string errorMessage)
+                           out string errorMessage, bool requireVehicle = true)
     {
         errorMessage = "";
 
@@ -68,13 +68,16 @@ public class ClientRelocationHandler : MonoBehaviour
             return false;
         }
 
-        bool hasVehicle = FindObjectsOfType<Vehicle>()
-            .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.Population)
-                   && v.GetCurrentStatus() != VehicleStatus.Damaged);
-        if (!hasVehicle)
+        if (requireVehicle)
         {
-            errorMessage = "No undamaged vehicle available for client transport";
-            return false;
+            bool hasVehicle = FindObjectsOfType<Vehicle>()
+                .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.Population)
+                       && v.GetCurrentStatus() != VehicleStatus.Damaged);
+            if (!hasVehicle)
+            {
+                errorMessage = "No undamaged vehicle available for client transport";
+                return false;
+            }
         }
 
         return true;
@@ -150,19 +153,29 @@ public class ClientRelocationHandler : MonoBehaviour
     // PUBLIC: IMMEDIATE (teleport) DELIVERY
     // ─────────────────────────────────────────────────────────────────
 
-    public void ExecuteImmediate(GameTask parentTask, int requestedQuantity,
+    public bool ExecuteImmediate(GameTask parentTask, int requestedQuantity,
                                   bool includeShelters = true, bool includeMotels = false)
     {
         MonoBehaviour source = TaskSystem.Instance.FindTriggeringFacility(parentTask);
-        if (source == null) return;
+        if (source == null) return false;
 
         int available = GetPopulation(source);
         int toSend    = requestedQuantity > 0 ? Mathf.Min(requestedQuantity, available) : available;
-        if (toSend <= 0) return;
+        if (toSend <= 0) return false;
 
         DeliverySystem ds = DeliverySystem.Instance;
         var destinations  = GetDestinationsSorted(ds, includeShelters, includeMotels, source);
-        int remaining     = toSend;
+
+        if (destinations.Count == 0)
+        {
+            string destLabel = includeShelters && includeMotels ? "shelter or motel"
+                             : includeShelters ? "shelter" : "motel";
+            Debug.LogWarning($"[ClientRelocationHandler] No available {destLabel} for immediate relocation.");
+            return false;
+        }
+
+        int remaining  = toSend;
+        bool anyMoved  = false;
 
         foreach (var (dest, effectiveSpace) in destinations)
         {
@@ -181,6 +194,8 @@ public class ClientRelocationHandler : MonoBehaviour
             if (delivered < removed)
                 AddPopulation(source, removed - delivered);
 
+            if (delivered > 0) anyMoved = true;
+
             // Track client arrivals
             Building destBuilding = dest.GetComponent<Building>();
             if (destBuilding != null && ClientStayTracker.Instance != null && delivered > 0)
@@ -192,8 +207,10 @@ public class ClientRelocationHandler : MonoBehaviour
             remaining -= delivered;
 
             if (showDebugInfo)
-                Debug.Log($"[ClientRelocationTaskGenerator] Immediate {delivered} clients {source.name} → {dest.name}");
+                Debug.Log($"[ClientRelocationHandler] Immediate {delivered} clients {source.name} → {dest.name}");
         }
+
+        return anyMoved;
     }
 
     // ─────────────────────────────────────────────────────────────────

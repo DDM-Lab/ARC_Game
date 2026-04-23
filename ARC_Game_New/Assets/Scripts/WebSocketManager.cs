@@ -1,8 +1,15 @@
 using UnityEngine;
+using UnityEngine.Networking;
 using System;
 using System.Collections;
 using NativeWebSocket; // Install from: https://github.com/endel/NativeWebSocket
 using GameActions;
+
+[System.Serializable]
+class WebSocketConfig
+{
+    public string wsUrl;
+}
 
 public class WebSocketManager : MonoBehaviour
 {
@@ -45,24 +52,48 @@ public class WebSocketManager : MonoBehaviour
     {
         taskDetailUI = FindObjectOfType<TaskDetailUI>();
 
-        // Check if running in Unity headless mode (batchmode)
         if (Application.isBatchMode)
         {
             Debug.Log("Running in Unity headless mode (batchmode)");
             headlessMode = true;
             enableWebSocket = true;
             serverUrl = $"ws://localhost:{headlessPort}";
+            ConnectToServer();
+            return;
         }
 
         if (enableWebSocket)
-        {
-            ConnectToServer();
-        }
+            StartCoroutine(LoadConfigThenConnect());
         else
         {
             connectionStatus = "WebSocket Disabled";
             Debug.Log("WebSocket is disabled. Game will run in offline mode.");
         }
+    }
+
+    IEnumerator LoadConfigThenConnect()
+    {
+        string configPath = Application.streamingAssetsPath + "/config.json";
+        using (UnityWebRequest req = UnityWebRequest.Get(configPath))
+        {
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                var config = JsonUtility.FromJson<WebSocketConfig>(req.downloadHandler.text);
+                if (!string.IsNullOrEmpty(config?.wsUrl))
+                {
+                    serverUrl = config.wsUrl;
+                    Debug.Log($"[WebSocket] URL loaded from config.json: {serverUrl}");
+                }
+            }
+            else
+            {
+                Debug.Log($"[WebSocket] config.json not found, using Inspector value: {serverUrl}");
+            }
+        }
+
+        ConnectToServer();
     }
 
     void Update()

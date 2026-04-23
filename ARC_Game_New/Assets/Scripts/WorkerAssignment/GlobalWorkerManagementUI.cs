@@ -449,6 +449,12 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         currentListItems.Clear();
     }
 
+    public void RefreshCurrentTab()
+    {
+        ClearList();
+        UpdateRightPanel();
+    }
+
     public void OnManageButtonClicked(Building building)
     {
         if (individualManageUI != null)
