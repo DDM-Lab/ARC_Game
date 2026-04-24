@@ -28,10 +28,25 @@ public class PrebuiltBuilding : MonoBehaviour
 
     // Building functionality
     private bool isInitialized = false;
+    private int communityResidentCount;
 
+    void Awake()
+    {
+        StartCoroutine(InitializeWithCentralConfig());
+    }
     void Start()
     {
+        // StartCoroutine(InitializeWithCentralConfig());
         InitializePrebuiltBuilding();
+    }
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+        
+        communityResidentCount = GameDataManager.Instance.InitialResidentsPerCommunityNumber;
     }
 
     string GetTransportTaskStatus()
@@ -132,6 +147,21 @@ public class PrebuiltBuilding : MonoBehaviour
         {
             // Ensure community can store population
             // Initial population should be set in the inspector via initialResources
+            foreach (ResourceAmount amnt in resourceStorage.startingResources)
+            {
+                if (amnt.type == ResourceType.Population)
+                    amnt.amount = communityResidentCount;
+                    // force config value to override
+                    int current = resourceStorage.GetResourceAmount(ResourceType.Population);
+                    resourceStorage.RemoveResource(ResourceType.Population, current); 
+                    resourceStorage.AddResource(ResourceType.Population, communityResidentCount);
+                    Debug.Log($"resourcestorage community of ${communityResidentCount}");
+                    Debug.Log($"configurecommunity population: {GetCurrentPopulation()}");
+            } 
+
+        //     int current = resourceStorage.GetResourceAmount(ResourceType.Population);
+        // resourceStorage.RemoveResource(ResourceType.Population, current); 
+        // resourceStorage.AddResource(ResourceType.Population, communityResidentCount);
         }
 
         // Communities typically don't require road connection validation
@@ -191,6 +221,7 @@ public class PrebuiltBuilding : MonoBehaviour
     {
         int population = resourceStorage.GetResourceAmount(ResourceType.Population);
         int capacity = resourceStorage.GetResourceCapacity(ResourceType.Population);
+        Debug.Log($"UpdateCommunityVisuals: population - {population}");
 
         if (population == 0)
         {

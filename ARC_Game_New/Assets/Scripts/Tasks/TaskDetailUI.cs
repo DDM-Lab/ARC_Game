@@ -411,10 +411,7 @@ public class TaskDetailUI : MonoBehaviour
 
             if (choiceUI != null)
             {
-                if (currentTask.status == TaskStatus.Active)
-                    choiceUI.Initialize(choice, this);
-                else
-                    choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentTask.selectedChoiceId);
+                choiceUI.Initialize(choice, this);
             }
 
             currentConversationItems.Add(choiceItem);
@@ -569,32 +566,6 @@ public class TaskDetailUI : MonoBehaviour
         }
     }
 
-    public bool TryConfirmTask(GameTask task, AgentChoice choice, out string errorMessage)
-    {
-        errorMessage = null;
-        currentTask = task;
-        selectedChoice = choice;
-
-        numericalInputs.Clear();
-        foreach (var input in task.numericalInputs)
-            numericalInputs[input.inputId] = input;
-
-        if (task.isExpired) { errorMessage = "This task has expired and can no longer be completed."; return false; }
-
-        string numError;
-        if (!ValidateNumericalInputs(out numError)) { errorMessage = numError; return false; }
-
-        if (choice != null && (choice.triggersDelivery || choice.immediateDelivery || choice.enableMultipleDeliveries))
-        {
-            string delivError;
-            if (!ValidateChoiceDelivery(choice, out delivError)) { errorMessage = delivError; return false; }
-            ToastManager.ShowToast($"Delivery for task '{task.taskTitle}' is added to queue.", ToastType.Info, true);
-        }
-
-        CompleteTaskAction();
-        return true;
-    }
-
     void OnConfirmButtonClicked()
     {
         if (currentTask == null || TaskSystem.Instance == null) return;
@@ -657,9 +628,6 @@ public class TaskDetailUI : MonoBehaviour
             HandleMultiAgentChoiceSelection();
             return;
         }
-
-        if (selectedChoice != null)
-            currentTask.selectedChoiceId = selectedChoice.choiceId;
 
         // Apply choice impacts first
         if (selectedChoice != null)

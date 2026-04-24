@@ -36,8 +36,8 @@ MonoBehaviour:
   facilityStatusTriggers: []
   weatherTriggers:
   - conditionType: 2
-  requireAllTriggers: 1
-  isGlobalTask: 1
+  requireAllTriggers: 0
+  isGlobalTask: 0
   targetFacilityType: 1
   autoSelectFacility: 1
   specificFacility: {fileID: 0}

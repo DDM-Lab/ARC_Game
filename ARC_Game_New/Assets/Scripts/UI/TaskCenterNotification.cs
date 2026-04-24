@@ -13,9 +13,6 @@ public class TaskCenterNotification : MonoBehaviour
     public GameObject notificationDot;
     public TextMeshProUGUI taskCountText;
     
-    [Header("Settings")]
-    public bool showNotification = true;
-
     [Header("Notification Colors")]
     public Color normalColor = Color.white;
     
@@ -89,19 +86,27 @@ public class TaskCenterNotification : MonoBehaviour
         // Update task count text
         if (taskCountText != null)
         {
-            bool shouldShow = showNotification && activeTaskCount > 0;
-            taskCountText.gameObject.SetActive(shouldShow);
-            if (shouldShow)
+            if (activeTaskCount > 0)
+            {
                 taskCountText.text = activeTaskCount.ToString();
+                taskCountText.gameObject.SetActive(true);
+            }
+            else
+            {
+                taskCountText.gameObject.SetActive(false);
+            }
         }
         
+        // Update notification dot
         if (notificationDot != null)
         {
-            bool shouldShow = showNotification && activeTaskCount > 0;
-            notificationDot.SetActive(shouldShow);
-
-            if (shouldShow && notificationImage != null)
+            bool showNotification = activeTaskCount > 0;
+            notificationDot.SetActive(showNotification);
+            
+            if (showNotification && notificationImage != null)
+            {
                 notificationImage.color = normalColor;
+            }
         }
     }
     

@@ -115,19 +115,19 @@ public class AgentChoiceUI : MonoBehaviour
         }
     }
     
-    public void InitializeAsHistorical(AgentChoice choice, bool wasSelected = false)
+    public void InitializeAsHistorical(AgentChoice choice)
     {
-        Initialize(choice, null);
-
+        Initialize(choice, null); // null taskDetailUI for historical mode
+        
+        // Disable interaction in historical mode
         if (choiceButton != null)
         {
             choiceButton.interactable = false;
+            
+            // Visual indication it's historical
             Image buttonImage = choiceButton.GetComponent<Image>();
             if (buttonImage != null)
-                buttonImage.color = wasSelected ? selectedColor : Color.gray;
+                buttonImage.color = Color.gray;
         }
-
-        if (selectedIndicator != null)
-            selectedIndicator.gameObject.SetActive(wasSelected);
     }
 }

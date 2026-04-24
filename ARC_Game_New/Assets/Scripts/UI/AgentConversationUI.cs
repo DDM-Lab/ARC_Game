@@ -10,8 +10,6 @@ public class AgentConversationUI : MonoBehaviour
     [Header("Main Panel")]
     public GameObject mainPanel;
     public Button expandButton;
-    public Sprite expandButtonShrinkSprite;
-    public Sprite expandButtonExpandSprite;
     
     [Header("Agent Selection Bar")]
     public Button disasterOfficerButton;
@@ -42,29 +40,13 @@ public class AgentConversationUI : MonoBehaviour
     public GameObject numericalInputPrefab;
     public GameObject playerMessagePrefab;
     
-    [Header("Agent Notification Dots")]
-    public GameObject disasterOfficerDot;
-    public TextMeshProUGUI disasterOfficerCount;
-    public GameObject foodMassCaresDot;
-    public TextMeshProUGUI foodMassCareCount;
-    public GameObject lodgingMassCaresDot;
-    public TextMeshProUGUI lodgingMassCareCount;
-    public GameObject workforceServiceDot;
-    public TextMeshProUGUI workforceServiceCount;
-    public GameObject externalRelationshipDot;
-    public TextMeshProUGUI externalRelationshipCount;
-
-    [Header("Action Buttons")]
-    public Button confirmButton;
-
     [Header("Player Input")]
     public TMP_InputField playerInputField;
     public Button sendButton;
     
-    [Header("UI Colors")]
+    [Header("Filter Colors")]
     public Color activeAgentColor = Color.green;
     public Color inactiveAgentColor = Color.white;
-    public Color inactiveTaskColor = Color.gray;
     
     [Header("Debug")]
     public bool showDebugInfo = true;
@@ -74,75 +56,18 @@ public class AgentConversationUI : MonoBehaviour
     private bool isAnimating = false;
     private List<GameTask> currentAgentTasks = new List<GameTask>();
     private GameTask currentSelectedTask = null;
-    private AgentChoice localSelectedChoice = null;
     private List<GameObject> currentHistoricalTaskButtons = new List<GameObject>();
     private List<GameObject> currentConversationItems = new List<GameObject>();
-    private TaskSystem taskSystem;
     
     void Start()
     {
         SetupUI();
-
+        SelectAgent(TaskOfficer.DisasterOfficer);
+        
         if (expandedPanel != null)
         {
             expandedPanel.gameObject.SetActive(true);
             expandedPanel.sizeDelta = new Vector2(collapsedWidth, expandedPanel.sizeDelta.y);
-        }
-
-        UpdateExpandButtonSprite(false);
-
-        taskSystem = TaskSystem.Instance;
-        if (taskSystem != null)
-        {
-            taskSystem.OnTaskCreated   += OnTaskChanged;
-            taskSystem.OnTaskCompleted += OnTaskChanged;
-            taskSystem.OnTaskExpired   += OnTaskChanged;
-        }
-
-        UpdateAgentNotifications();
-    }
-
-    void Update()
-    {
-        if (Time.frameCount % 30 == 0)
-            UpdateAgentNotifications();
-    }
-
-    void OnDestroy()
-    {
-        if (taskSystem != null)
-        {
-            taskSystem.OnTaskCreated   -= OnTaskChanged;
-            taskSystem.OnTaskCompleted -= OnTaskChanged;
-            taskSystem.OnTaskExpired   -= OnTaskChanged;
-        }
-    }
-
-    void OnTaskChanged(GameTask _)
-    {
-        UpdateAgentNotifications();
-    }
-
-    void UpdateAgentNotifications()
-    {
-        if (taskSystem == null) return;
-        UpdateDot(TaskOfficer.DisasterOfficer,      disasterOfficerDot,    disasterOfficerCount);
-        UpdateDot(TaskOfficer.FoodMassCare,         foodMassCaresDot,      foodMassCareCount);
-        UpdateDot(TaskOfficer.LodgingMassCare,      lodgingMassCaresDot,   lodgingMassCareCount);
-        UpdateDot(TaskOfficer.WorkforceService,     workforceServiceDot,   workforceServiceCount);
-        UpdateDot(TaskOfficer.ExternalRelationship, externalRelationshipDot, externalRelationshipCount);
-    }
-
-    void UpdateDot(TaskOfficer officer, GameObject dot, TextMeshProUGUI countText)
-    {
-        int count = taskSystem.GetAllActiveTasks()
-            .Count(t => t.taskOfficer == officer && t.status == TaskStatus.Active);
-
-        if (dot != null)      dot.SetActive(count > 0);
-        if (countText != null)
-        {
-            countText.gameObject.SetActive(count > 0);
-            if (count > 0) countText.text = count.ToString();
         }
     }
 
@@ -161,9 +86,6 @@ public class AgentConversationUI : MonoBehaviour
             workforceServiceButton.onClick.AddListener(() => SelectAgent(TaskOfficer.WorkforceService));
         if (externalRelationshipButton != null)
             externalRelationshipButton.onClick.AddListener(() => SelectAgent(TaskOfficer.ExternalRelationship));
-
-        if (confirmButton != null)
-            confirmButton.onClick.AddListener(OnConfirmButtonClicked);
 
         if (sendButton != null)
             sendButton.onClick.AddListener(OnSendPlayerMessage);
@@ -212,8 +134,6 @@ public class AgentConversationUI : MonoBehaviour
         isAnimating = false;
 
 
-        UpdateExpandButtonSprite(expand);
-
         if (expand)
         {
             RefreshHistoricalTasks();
@@ -221,40 +141,21 @@ public class AgentConversationUI : MonoBehaviour
         }
         else
         {
-            if (agentBarImage != null) agentBarImage.sprite = DefaultAgentBarImage;
-            UpdateAgentButtons();
+            agentBarImage.sprite = DefaultAgentBarImage;
         }
     }
     
     void SelectAgent(TaskOfficer agent)
     {
-        if (isAnimating) return;
-
-        if (isExpanded && currentSelectedAgent == agent)
-        {
-            // Same agent clicked while expanded → collapse
-            isExpanded = false;
-            StartCoroutine(AnimateExpand(false));
-            GameLogPanel.Instance?.LogUIInteraction($"Agent conversation panel collapsed | agent={agent}");
-            return;
-        }
-
         currentSelectedAgent = agent;
-
-        if (!isExpanded)
-        {
-            isExpanded = true;
-            if (agentBarImage != null) agentBarImage.sprite = ExpandedAgentBarImage;
-            StartCoroutine(AnimateExpand(true));
-        }
-        else
+        UpdateAgentButtons();
+        
+        if (isExpanded)
         {
             RefreshHistoricalTasks();
             DisplayLatestConversation();
         }
-
-        UpdateAgentButtons();
-
+        
         if (showDebugInfo)
             Debug.Log($"Selected agent: {agent}");
         GameLogPanel.Instance?.LogUIInteraction($"Agent selected: {agent}");
@@ -262,26 +163,18 @@ public class AgentConversationUI : MonoBehaviour
     
     void UpdateAgentButtons()
     {
-        SetButtonColor(disasterOfficerButton,
-            isExpanded && currentSelectedAgent == TaskOfficer.DisasterOfficer ? activeAgentColor : inactiveAgentColor);
-        SetButtonColor(foodMassCareButton,
-            isExpanded && currentSelectedAgent == TaskOfficer.FoodMassCare ? activeAgentColor : inactiveAgentColor);
-        SetButtonColor(lodgingMassCareButton,
-            isExpanded && currentSelectedAgent == TaskOfficer.LodgingMassCare ? activeAgentColor : inactiveAgentColor);
-        SetButtonColor(workforceServiceButton,
-            isExpanded && currentSelectedAgent == TaskOfficer.WorkforceService ? activeAgentColor : inactiveAgentColor);
-        SetButtonColor(externalRelationshipButton,
-            isExpanded && currentSelectedAgent == TaskOfficer.ExternalRelationship ? activeAgentColor : inactiveAgentColor);
+        SetButtonColor(disasterOfficerButton, 
+            currentSelectedAgent == TaskOfficer.DisasterOfficer ? activeAgentColor : inactiveAgentColor);
+        SetButtonColor(foodMassCareButton, 
+            currentSelectedAgent == TaskOfficer.FoodMassCare ? activeAgentColor : inactiveAgentColor);
+        SetButtonColor(lodgingMassCareButton, 
+            currentSelectedAgent == TaskOfficer.LodgingMassCare ? activeAgentColor : inactiveAgentColor);
+        SetButtonColor(workforceServiceButton, 
+            currentSelectedAgent == TaskOfficer.WorkforceService ? activeAgentColor : inactiveAgentColor);
+        SetButtonColor(externalRelationshipButton, 
+            currentSelectedAgent == TaskOfficer.ExternalRelationship ? activeAgentColor : inactiveAgentColor);
     }
     
-    void UpdateExpandButtonSprite(bool expanded)
-    {
-        if (expandButton == null) return;
-        Image img = expandButton.GetComponent<Image>();
-        if (img == null) return;
-        img.sprite = expanded ? expandButtonExpandSprite : expandButtonShrinkSprite;
-    }
-
     void SetButtonColor(Button button, Color color)
     {
         if (button != null)
@@ -325,21 +218,7 @@ public class AgentConversationUI : MonoBehaviour
         Button taskButton = buttonObj.GetComponent<Button>();
         TextMeshProUGUI buttonText = buttonObj.GetComponentInChildren<TextMeshProUGUI>();
         
-        string label = task.taskTitle;
-        if      (task.status == TaskStatus.Expired)    label = "[Expired] " + label;
-        else if (task.status == TaskStatus.Completed)  label = "[Complete] " + label;
-        else if (task.status == TaskStatus.Incomplete) label = "[Incomplete] " + label;
-        else if (task.status == TaskStatus.InProgress) label = "[In Progress] " + label;
-
-        if (buttonText != null) buttonText.text = label;
-
-        if (task.status != TaskStatus.Active)
-        {
-            Image buttonImage = buttonObj.GetComponent<Image>();
-            if (buttonImage != null) buttonImage.color = inactiveTaskColor;
-            if (buttonText != null)  buttonText.color  = inactiveTaskColor;
-        }
-
+        if (buttonText != null) buttonText.text = task.taskTitle;
         if (taskButton != null) taskButton.onClick.AddListener(() => SelectHistoricalTask(task));
         
         currentHistoricalTaskButtons.Add(buttonObj);
@@ -381,79 +260,17 @@ public class AgentConversationUI : MonoBehaviour
     {
         if (task == null) return;
         ClearConversation();
-        localSelectedChoice = null;
-
-        bool isActive = task.status == TaskStatus.Active;
-
+        
         DisplaySystemMessage($"=== {task.taskTitle} ===");
-
+        
         foreach (AgentMessage message in task.agentMessages)
             DisplayAgentMessage(message);
-
         foreach (AgentChoice choice in task.agentChoices)
-        {
-            if (isActive) DisplayInteractiveChoice(choice);
-            else          DisplayHistoricalChoice(choice);
-        }
-
+            DisplayHistoricalChoice(choice);
         foreach (AgentNumericalInput input in task.numericalInputs)
-        {
-            if (isActive) DisplayInteractiveNumericalInput(input);
-            else          DisplayHistoricalNumericalInput(input);
-        }
-
-        if (confirmButton != null)
-            confirmButton.gameObject.SetActive(isActive);
-
+            DisplayHistoricalNumericalInput(input);
+        
         ScrollToBottom();
-    }
-
-    void DisplayInteractiveChoice(AgentChoice choice)
-    {
-        GameObject choiceItem = Instantiate(agentChoicePrefab, conversationContent);
-        AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
-        if (choiceUI != null)
-        {
-            choiceUI.Initialize(choice, null);
-            choiceUI.choiceButton.onClick.AddListener(() => OnLocalChoiceSelected(choice));
-        }
-        currentConversationItems.Add(choiceItem);
-    }
-
-    void DisplayInteractiveNumericalInput(AgentNumericalInput input)
-    {
-        GameObject inputItem = Instantiate(numericalInputPrefab, conversationContent);
-        NumericalInputUI inputUI = inputItem.GetComponent<NumericalInputUI>();
-        if (inputUI != null)
-            inputUI.Initialize(input, null);
-        currentConversationItems.Add(inputItem);
-    }
-
-    void OnLocalChoiceSelected(AgentChoice choice)
-    {
-        localSelectedChoice = choice;
-        foreach (GameObject item in currentConversationItems)
-        {
-            AgentChoiceUI choiceUI = item.GetComponent<AgentChoiceUI>();
-            if (choiceUI != null && choiceUI.GetChoice() != choice)
-                choiceUI.SetSelected(false);
-        }
-    }
-
-    void OnConfirmButtonClicked()
-    {
-        if (currentSelectedTask == null) return;
-        TaskDetailUI tui = FindObjectOfType<TaskDetailUI>();
-        if (tui == null) return;
-
-        if (!tui.TryConfirmTask(currentSelectedTask, localSelectedChoice, out string errorMessage))
-        {
-            DisplaySystemMessage($"Error: {errorMessage}");
-            return;
-        }
-
-        RefreshHistoricalTasks();
-        DisplayLatestConversation();
     }
     
     void DisplaySystemMessage(string message)
@@ -509,9 +326,9 @@ public class AgentConversationUI : MonoBehaviour
     {
         GameObject choiceItem = Instantiate(agentChoicePrefab, conversationContent);
         AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
-
+        
         if (choiceUI != null)
-            choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentSelectedTask?.selectedChoiceId);
+            choiceUI.InitializeAsHistorical(choice);
         currentConversationItems.Add(choiceItem);
     }
     
