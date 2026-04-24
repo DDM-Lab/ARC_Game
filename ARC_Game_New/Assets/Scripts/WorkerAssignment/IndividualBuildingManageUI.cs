@@ -255,15 +255,24 @@ public class IndividualBuildingManageUI : MonoBehaviour
 
     void ModifyWorkerCount(WorkerType workerType, int change)
     {
-        if (workerType == WorkerType.Trained)
+        if (change > 0 && currentBuilding != null)
         {
-            tempTrainedWorkers = Mathf.Max(0, tempTrainedWorkers + change);
-        }
-        else
-        {
-            tempUntrainedWorkers = Mathf.Max(0, tempUntrainedWorkers + change);
+            int workerValue  = workerType == WorkerType.Trained ? 2 : 1;
+            int projected    = (tempTrainedWorkers * 2) + tempUntrainedWorkers + workerValue;
+            int required     = currentBuilding.GetRequiredWorkforce();
+            if (projected > required)
+            {
+                ShowFeedback($"Facility only needs {required} workforce — no more workers required.", warningColor);
+                return;
+            }
         }
 
+        if (workerType == WorkerType.Trained)
+            tempTrainedWorkers = Mathf.Max(0, tempTrainedWorkers + change);
+        else
+            tempUntrainedWorkers = Mathf.Max(0, tempUntrainedWorkers + change);
+
+        ClearFeedback();
         UpdateWorkerControls();
         UpdateButtonStates();
 
@@ -305,8 +314,6 @@ public class IndividualBuildingManageUI : MonoBehaviour
 
         if (success)
         {
-            ShowFeedback("Worker assignment updated successfully!", successColor);
-
             // Update original values to reflect new state
             originalTrainedWorkers = tempTrainedWorkers;
             originalUntrainedWorkers = tempUntrainedWorkers;
@@ -315,11 +322,11 @@ public class IndividualBuildingManageUI : MonoBehaviour
             if (meetsRequirement && currentBuilding.NeedsWorker())
             {
                 currentBuilding.AssignWorker();
+                HideManageUI();
+                return;
             }
             else if (!meetsRequirement && currentBuilding.IsOperational())
             {
-                // Building will automatically transition to NeedWorker state
-                // when UpdateWorkerStatus detects insufficient workforce
                 currentBuilding.UpdateWorkerStatus();
             }
 
@@ -327,6 +334,7 @@ public class IndividualBuildingManageUI : MonoBehaviour
             currentBuilding.UpdateWorkerStatus();
             UpdateCurrentWorkforceDisplay();
             UpdateButtonStates();
+            ShowFeedback("Worker assignment updated successfully!", successColor);
         }
         else
         {

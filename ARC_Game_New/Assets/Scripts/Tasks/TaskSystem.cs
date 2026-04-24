@@ -740,6 +740,41 @@ public class TaskSystem : MonoBehaviour
                     continue;
                 }
 
+                // Per-facility lodging dedup: only one lodging task per facility at a time.
+                // Emergency tasks take priority — they evict any existing non-emergency lodging task.
+                if (taskData.taskTag == TaskTag.Lodging)
+                {
+                    var existingLodging = activeTasks
+                        .Where(t => t.taskTag == TaskTag.Lodging && t.affectedFacility == facilityName)
+                        .ToList();
+
+                    if (existingLodging.Count > 0)
+                    {
+                        if (taskData.taskType == TaskType.Emergency)
+                        {
+                            // Evict non-emergency lodging tasks to make room for the emergency one
+                            foreach (var stale in existingLodging.Where(t => t.taskType != TaskType.Emergency))
+                            {
+                                activeTasks.Remove(stale);
+                                Debug.Log($"Emergency lodging supersedes existing task for {facilityName} — removed '{stale.taskTitle}'");
+                                GameLogPanel.Instance.LogTaskEvent($"Emergency lodging supersedes '{stale.taskTitle}' for {facilityName}");
+                            }
+                            // If an emergency lodging task already exists, still skip
+                            if (activeTasks.Any(t => t.taskTag == TaskTag.Lodging && t.affectedFacility == facilityName))
+                            {
+                                Debug.Log($"Emergency lodging already active for {facilityName} — skipping {taskData.taskTitle}");
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            Debug.Log($"Lodging task already active for {facilityName} — skipping {taskData.taskTitle}");
+                            GameLogPanel.Instance.LogTaskEvent($"Lodging task already active for {facilityName} — skipping {taskData.taskTitle}");
+                            continue;
+                        }
+                    }
+                }
+
                 Debug.Log($"Creating task: {taskData.taskTitle} for facility: {facilityName}");
                 CreateTaskFromDatabase(taskData, facility);
             }
@@ -2645,14 +2680,14 @@ public class TaskSystem : MonoBehaviour
 
             // Get construction costs (assuming same cost for all buildings)
             constructionState.buildingConstructionCost = buildingSystem.shelterConstructionCost;
-            constructionState.constructionTimeDays = buildingSystem.constructionTime;
+            constructionState.constructionTimeDays = buildingSystem.constructionRounds;
             constructionState.deconstructionTimeDays = 3.0f; // Default deconstruction time
         }
         else
         {
             // Default values if BuildingSystem not found
             constructionState.buildingConstructionCost = 1000;
-            constructionState.constructionTimeDays = 5.0f;
+            constructionState.constructionTimeDays = 4f;
             constructionState.deconstructionTimeDays = 3.0f;
         }
 

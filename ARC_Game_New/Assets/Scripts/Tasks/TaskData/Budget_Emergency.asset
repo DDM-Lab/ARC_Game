@@ -68,7 +68,8 @@ MonoBehaviour:
     typingSpeed: 0.05
   agentChoices:
   - choiceId: 0
-    choiceText: Emergency allocation ($5,000) - Fast approval
+    choiceText: Emergency allocation ($5,000) - Fast approval, satisfaction - 5
+    agentReasoning: 
     choiceImpacts:
     - impactType: 1
       value: 5000
@@ -100,7 +101,8 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Disaster relief fund ($15,000) - 2 rounds delay
+    choiceText: Disaster relief fund ($15,000) - 2 rounds delay, satisfaction - 10
+    agentReasoning: 
     choiceImpacts:
     - impactType: 1
       value: 15000
@@ -132,10 +134,12 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 2
-    choiceText: Federal emergency grant ($30,000) - 3 rounds delay
+    choiceText: Federal emergency grant ($30,000) - 3 rounds delay, satisfaction
+      -15
+    agentReasoning: 
     choiceImpacts:
     - impactType: 1
-      value: 15000
+      value: 30000
       isCountdown: 0
       customLabel: 
     - impactType: 0

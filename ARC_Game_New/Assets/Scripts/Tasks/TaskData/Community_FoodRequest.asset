@@ -34,7 +34,7 @@ MonoBehaviour:
     condition: 0
   - facilityType: 3
     resourceType: 0
-    resourceThreshold: 10
+    resourceThreshold: 100
     condition: 3
   probabilityTriggers: []
   floodTileTriggers: []
@@ -78,7 +78,8 @@ MonoBehaviour:
     typingSpeed: 0
   agentChoices:
   - choiceId: 0
-    choiceText: Request 10 food packs from Kitchens (Quicker delivery)
+    choiceText: Request 100 meals from Kitchens (Quicker delivery)
+    agentReasoning: 
     choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
@@ -87,7 +88,7 @@ MonoBehaviour:
     enableMultipleDeliveries: 1
     multiDeliveryType: 2
     quantityType: 0
-    deliveryQuantity: 10
+    deliveryQuantity: 100
     deliveryPercentage: 0
     deliverAll: 0
     sourceType: 1
@@ -102,7 +103,8 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Request 20 food packs from Kitchens
+    choiceText: Request 200 food packs from Kitchens
+    agentReasoning: 
     choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
@@ -111,7 +113,7 @@ MonoBehaviour:
     enableMultipleDeliveries: 1
     multiDeliveryType: 2
     quantityType: 0
-    deliveryQuantity: 20
+    deliveryQuantity: 200
     deliveryPercentage: 0
     deliverAll: 0
     sourceType: 1
@@ -126,7 +128,8 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 2
-    choiceText: Helicopter deliver 10 food packs (immediate)
+    choiceText: Helicopter deliver 100 food packs (immediate)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 1
       value: -1000
@@ -139,7 +142,7 @@ MonoBehaviour:
     enableMultipleDeliveries: 0
     multiDeliveryType: 2
     quantityType: 0
-    deliveryQuantity: 10
+    deliveryQuantity: 100
     deliveryPercentage: 0
     deliverAll: 0
     sourceType: 1

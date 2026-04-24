@@ -112,7 +112,7 @@ public class DailyReportUI : MonoBehaviour
 
     // Default values
     private float currentSatisfaction = 50f;
-    private float currentEfficiency = 80f;
+    private float currentEfficiency = 0f;
 
     void Start()
     {
@@ -185,8 +185,16 @@ public class DailyReportUI : MonoBehaviour
     {
         currentMetrics = metrics;
         currentDayDisplay.text = GlobalClock.Instance.currentDay.ToString();
+
+        // Sync running totals from authoritative source before computing this day's delta
+        if (SatisfactionAndBudget.Instance != null)
+        {
+            currentSatisfaction = SatisfactionAndBudget.Instance.GetCurrentSatisfaction();
+            currentEfficiency = SatisfactionAndBudget.Instance.GetCurrentEfficiency();
+        }
+
         UpdateBottomPanels(metrics);
-        
+
         SaveCompletedReportToHistory();
         
         StartCoroutine(AnimateReportDisplay());
@@ -411,12 +419,12 @@ public class DailyReportUI : MonoBehaviour
 
         // Set initial values BEFORE fade in animation
         if (satisfactionValueText != null)
-            satisfactionValueText.text = $"{currentSatisfaction:F1}%";
+            satisfactionValueText.text = $"{currentSatisfaction:F1}";
         if (satisfactionBar != null)
             satisfactionBar.value = currentSatisfaction / 100f;
 
         float satisfactionChange = CalculateSatisfactionScore();
-        float newSatisfaction = Mathf.Clamp(currentSatisfaction + satisfactionChange, 0f, 100f);
+        float newSatisfaction = currentSatisfaction + satisfactionChange;
 
         satisfactionAnimationSection.alpha = 0f;
         float elapsed = 0f;
@@ -449,12 +457,12 @@ public class DailyReportUI : MonoBehaviour
 
         // Set initial values BEFORE fade in animation  
         if (efficiencyValueText != null)
-            efficiencyValueText.text = $"{currentEfficiency:F1}%";
+            efficiencyValueText.text = $"{currentEfficiency:F1}";
         if (efficiencyBar != null)
             efficiencyBar.value = currentEfficiency / 100f;
 
         float efficiencyChange = CalculateEfficiencyScore();
-        float newEfficiency = Mathf.Clamp(currentEfficiency + efficiencyChange, 0f, 100f);
+        float newEfficiency = currentEfficiency + efficiencyChange;
 
         efficiencyAnimationSection.alpha = 0f;
         float elapsed = 0f;
@@ -492,13 +500,13 @@ public class DailyReportUI : MonoBehaviour
             float progress = elapsed / barAnimationDuration;
             float currentValue = Mathf.Lerp(fromValue, toValue, progress);
 
-            valueText.text = $"{currentValue:F1}%";
+            valueText.text = $"{currentValue:F1}";
             valueBar.value = currentValue / 100f;
 
             yield return null;
         }
 
-        valueText.text = $"{toValue:F1}%";
+        valueText.text = $"{toValue:F1}";
         valueBar.value = toValue / 100f;
     }
 
@@ -534,9 +542,14 @@ public class DailyReportUI : MonoBehaviour
         float satisfactionChange = CalculateSatisfactionScore();
         float efficiencyChange = CalculateEfficiencyScore();
         
-        currentMetrics.finalSatisfactionValue = Mathf.Clamp(currentSatisfaction + satisfactionChange, 0f, 100f);
-        currentMetrics.finalEfficiencyValue = Mathf.Clamp(currentEfficiency + efficiencyChange, 0f, 100f);
+        currentMetrics.finalSatisfactionValue = currentSatisfaction + satisfactionChange;
+        currentMetrics.finalEfficiencyValue = currentEfficiency + efficiencyChange;
         currentMetrics.satisfactionChangeCalculated = satisfactionChange;
+
+        int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
+        // Sync both scores to HUD
+        SatisfactionAndBudget.Instance?.AddSatisfaction(satisfactionChange, $"Day {currentDay} report");
+        SatisfactionAndBudget.Instance?.AddEfficiency(efficiencyChange, $"Day {currentDay} efficiency");
         
         // Also store aggregate totals
         currentMetrics.foodSatisfaction = CalculateFoodSatisfactionTotal();
@@ -548,7 +561,7 @@ public class DailyReportUI : MonoBehaviour
         currentMetrics.budgetEfficiency = CalculateBudgetEfficiencyScore();
         
         // Save to history
-        int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
+        
         DailyReportData.Instance.SaveReportToHistory(currentDay, currentMetrics);
 
         // ── Log all metrics and scores ──────────────────────────────
@@ -674,7 +687,7 @@ public class DailyReportUI : MonoBehaviour
     {
         // Satisfaction
         if (satisfactionValueText != null)
-            satisfactionValueText.text = $"{metrics.finalSatisfactionValue:F1}%";
+            satisfactionValueText.text = $"{metrics.finalSatisfactionValue:F1}";
         
         if (satisfactionChangeText != null)
         {
@@ -690,7 +703,7 @@ public class DailyReportUI : MonoBehaviour
         
         // Efficiency
         if (efficiencyValueText != null)
-            efficiencyValueText.text = $"{metrics.finalEfficiencyValue:F1}%";
+            efficiencyValueText.text = $"{metrics.finalEfficiencyValue:F1}";
         
         if (efficiencyBar != null)
         {
@@ -866,7 +879,7 @@ public class DailyReportUI : MonoBehaviour
     float CalculateKitchenEfficiencyScore() 
     { 
         float foodInStorage = currentMetrics.currentFoodInStorage;
-        return Mathf.Clamp(5.0f - (foodInStorage * 0.5f), -5.0f, 5.0f);
+        return 5.0f - (foodInStorage * 0.05f);
     }
     
     /// <summary>

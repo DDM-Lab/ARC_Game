@@ -49,13 +49,6 @@ public class TutorialMessageUI : MonoBehaviour
     public Sprite externalRelationshipSprite;
     public Sprite foodMassCareSprite;
     
-    [Header("Agent Names")]
-    public string disasterOfficerName = "Disaster Officer";
-    public string workforceServiceName = "Workforce Service";
-    public string lodgingMassCareName = "Lodging & Mass Care";
-    public string externalRelationshipName = "External Relations";
-    public string foodMassCareName = "Food & Mass Care";
-    
     private List<TutorialMessage> currentMessages;
     private int currentMessageIndex = 0;
     private bool isTyping = false;
@@ -472,21 +465,10 @@ public class TutorialMessageUI : MonoBehaviour
     
     string GetAgentName(TaskOfficer officer)
     {
-        switch (officer)
-        {
-            case TaskOfficer.DisasterOfficer:
-                return disasterOfficerName;
-            case TaskOfficer.WorkforceService:
-                return workforceServiceName;
-            case TaskOfficer.LodgingMassCare:
-                return lodgingMassCareName;
-            case TaskOfficer.ExternalRelationship:
-                return externalRelationshipName;
-            case TaskOfficer.FoodMassCare:
-                return foodMassCareName;
-            default:
-                return disasterOfficerName;
-        }
+        if (AlertUIController.Instance != null)
+            return AlertUIController.Instance.GetOfficerName(officer);
+
+        return officer.ToString();
     }
     
     public bool IsActive()

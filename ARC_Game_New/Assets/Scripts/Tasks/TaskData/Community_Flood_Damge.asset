@@ -30,7 +30,7 @@ MonoBehaviour:
   resourceTriggers:
   - facilityType: 3
     resourceType: 0
-    resourceThreshold: 10
+    resourceThreshold: 100
     condition: 3
   probabilityTriggers: []
   floodTileTriggers: []
@@ -64,14 +64,15 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   agentMessages:
-  - messageText: Flood water detected at community center! Large population at risk.
-      Immediate mass evacuation required.
+  - messageText: Flood water detected at community! Large population at risk. Immediate
+      mass evacuation required.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
   agentChoices:
   - choiceId: 0
     choiceText: Evacuate 50% of community to shelters  (Satisfaction + 5)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 0
       value: 5
@@ -100,6 +101,7 @@ MonoBehaviour:
     prioritizeNearestDestination: 0
   - choiceId: 1
     choiceText: Full community evacuation to Shelters (Satisfaction + 15)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 0
       value: 15
@@ -128,6 +130,7 @@ MonoBehaviour:
     prioritizeNearestDestination: 1
   - choiceId: 2
     choiceText: 50% community evacuation to Motel (Immediate) (Satisfaction + 5)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 0
       value: 5

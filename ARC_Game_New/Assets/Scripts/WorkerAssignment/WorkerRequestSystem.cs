@@ -79,13 +79,13 @@ public class WorkerRequestSystem : MonoBehaviour
     void OnTaskExpired(GameTask task)
     {
         // Clear reference if request task expired
-        if (task.taskTitle == "Request Untrained Responders" && currentUntrainedRequestTask == task)
+        if (task.taskTitle == "Request Untrained Workers" && currentUntrainedRequestTask == task)
         {
             currentUntrainedRequestTask = null;
             if (showDebugInfo)
                 Debug.Log("Untrained request task expired - cleared reference");
         }
-        else if (task.taskTitle == "Request Trained Responders" && currentTrainedRequestTask == task)
+        else if (task.taskTitle == "Request Trained Workers" && currentTrainedRequestTask == task)
         {
             currentTrainedRequestTask = null;
             if (showDebugInfo)
@@ -162,10 +162,10 @@ public class WorkerRequestSystem : MonoBehaviour
         int arrivalDays = isUntrained ? untrainedArrivalDays : trainedArrivalDays;
         
         GameTask requestTask = taskSystem.CreateTask(
-            $"Request {workerTypeLabel} Responders",
+            $"Request {workerTypeLabel} Workers",
             TaskType.Other,
             "Worker Management",
-            $"Request additional {workerTypeLabel.ToLower()} responders to expand your workforce capacity."
+            $"Request additional {workerTypeLabel.ToLower()} workers to expand your workforce capacity."
         );
         
         // Set timing
@@ -176,30 +176,30 @@ public class WorkerRequestSystem : MonoBehaviour
         if (isUntrained)
         {
             requestTask.agentMessages.Add(new AgentMessage(
-                "We can recruit additional untrained volunteers from the community. They won't be as efficient as trained responders, but they're available quickly and cost less.",
+                "We can request additional untrained worker from other regions. It takes more untrained workers to do what trained workers do, but they're available quickly and cost less.",
                 taskSystem.workforceServiceSprite
             ));
             
             requestTask.agentMessages.Add(new AgentMessage(
-                $"Each untrained responder costs ${costPerWorker} and will arrive in {arrivalDays} day(s). They provide 1 workforce point each and can be trained later for better efficiency.",
+                $"Each untrained worker costs ${costPerWorker} and will arrive in {arrivalDays} {(arrivalDays == 1 ? "day" : "days")}. Each of them provides 1 workforce and can be trained later for better efficiency. They can be assigned to facilities upon arrival.",
                 taskSystem.workforceServiceSprite
             ));
         }
         else
         {
             requestTask.agentMessages.Add(new AgentMessage(
-                "We can recruit experienced, trained responders from neighboring regions. They're ready to work immediately at full efficiency.",
+                "We can request experienced, trained workers from other regions. They're ready to work at full efficiency.",
                 taskSystem.workforceServiceSprite
             ));
             
             requestTask.agentMessages.Add(new AgentMessage(
-                $"Each trained responder costs ${costPerWorker} and will arrive in {arrivalDays} day(s). They provide 2 workforce points and can be assigned to facilities immediately upon arrival.",
+                $"Each trained worker costs ${costPerWorker} and will arrive in {arrivalDays} {(arrivalDays == 1 ? "day" : "days")}. Each of them provides 2 workforce and can be assigned to facilities upon arrival.",
                 taskSystem.workforceServiceSprite
             ));
         }
         
         requestTask.agentMessages.Add(new AgentMessage(
-            $"How many {workerTypeLabel.ToLower()} responders would you like to request?",
+            $"How many {workerTypeLabel.ToLower()} workers would you like to request?",
             taskSystem.workforceServiceSprite
         ));
 
@@ -211,8 +211,8 @@ public class WorkerRequestSystem : MonoBehaviour
             20                                          // maxValue (reasonable cap)
         );
         
-        workerCountInput.inputLabel = $"{workerTypeLabel} Responders to Request";
-        workerCountInput.customDescription = $"Select how many {workerTypeLabel.ToLower()} responders to request (${costPerWorker} per worker, {arrivalDays} days)";
+        workerCountInput.inputLabel = $"{workerTypeLabel} Workers to Request";
+        workerCountInput.customDescription = $"Select how many {workerTypeLabel.ToLower()} workers to request (${costPerWorker} per worker, {arrivalDays} days)";
 
         requestTask.numericalInputs.Add(workerCountInput);
 
@@ -235,8 +235,8 @@ public class WorkerRequestSystem : MonoBehaviour
     void OnTaskCompleted(GameTask task)
     {
         // Check if this is a worker request task
-        bool isUntrainedRequest = task.taskTitle == "Request Untrained Responders";
-        bool isTrainedRequest = task.taskTitle == "Request Trained Responders";
+        bool isUntrainedRequest = task.taskTitle == "Request Untrained Workers";
+        bool isTrainedRequest = task.taskTitle == "Request Trained Workers";
         
         if (!isUntrainedRequest && !isTrainedRequest)
             return;
@@ -258,7 +258,7 @@ public class WorkerRequestSystem : MonoBehaviour
         
         if (workersToRequest <= 0)
         {
-            //ToastManager.ShowToast("No responders selected for request", ToastType.Warning, true);
+            //ToastManager.ShowToast("No workers selected for request", ToastType.Warning, true);
             return;
         }
         
@@ -277,7 +277,7 @@ public class WorkerRequestSystem : MonoBehaviour
         }
         
         // Deduct budget
-        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Requesting {workersToRequest} {workerType.ToString().ToLower()} responders");
+        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Requesting {workersToRequest} {workerType.ToString().ToLower()} workers");
 
         // Start worker request
         StartWorkerRequest(workersToRequest, workerType);
@@ -324,12 +324,14 @@ public class WorkerRequestSystem : MonoBehaviour
         
         activeRequestTasks.Add(requestTask);
 
+        FindObjectOfType<GlobalWorkerManagementUI>()?.RefreshCurrentTab();
+
         string workerTypeLabel = isUntrained ? "untrained" : "trained";
-        ToastManager.ShowToast($"Requested {workerCount} {workerTypeLabel} responders. Estimated Arrival Date: Day {arrivalDay}", ToastType.Success, true);
-        GameLogPanel.Instance.LogWorkerAction($"Requested {workerCount} {workerTypeLabel} responders (arrival Day {arrivalDay})");
+        ToastManager.ShowToast($"Requested {workerCount} {workerTypeLabel} workers. Estimated Arrival Date: Day {arrivalDay}", ToastType.Success, true);
+        GameLogPanel.Instance.LogWorkerAction($"Requested {workerCount} {workerTypeLabel} workers (arrival Day {arrivalDay})");
 
         if (showDebugInfo)
-            Debug.Log($"Worker request started on Day {currentDay} for {workerCount} {workerTypeLabel} responders, arrival day: {arrivalDay}");
+            Debug.Log($"Worker request started on Day {currentDay} for {workerCount} {workerTypeLabel} workers, arrival day: {arrivalDay}");
     }
     
     void OnDayChanged(int newDay)
@@ -378,8 +380,8 @@ public class WorkerRequestSystem : MonoBehaviour
         string workerTypeLabel = isUntrained ? "untrained" : "trained";
         Debug.Log($"Worker request completed: {workersArrived} {workerTypeLabel} workers arrived");
 
-        ToastManager.ShowToast($"{workersArrived} {workerTypeLabel} responders have arrived and are ready to work!", ToastType.Success, true);
-        GameLogPanel.Instance.LogWorkerAction($"Worker request complete: {workersArrived} {workerTypeLabel} responders arrived");
+        ToastManager.ShowToast($"{workersArrived} {workerTypeLabel} workers have arrived and are ready to work!", ToastType.Success, true);
+        GameLogPanel.Instance.LogWorkerAction($"Worker request complete: {workersArrived} {workerTypeLabel} workers arrived");
     }
     
     void OnDestroy()

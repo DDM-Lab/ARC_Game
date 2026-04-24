@@ -170,7 +170,7 @@ public class FacilityInfoPanel : MonoBehaviour
 
         // Status
         BuildingStatus status = building.GetCurrentStatus();
-        SetTextSafe(statusText, $"Status: {status}");
+        SetTextSafe(statusText, $"Status: {GetStatusDisplayName(status)}");
         SetTextColor(statusText, GetStatusColor(status));
 
         // Flood status
@@ -529,6 +529,18 @@ public class FacilityInfoPanel : MonoBehaviour
         if (ratio >= 0.7f) return warningColor; // Getting full
         if (ratio > 0) return goodColor;        // Has resources
         return normalColor;                     // Empty
+    }
+
+    string GetStatusDisplayName(BuildingStatus status)
+    {
+        switch (status)
+        {
+            case BuildingStatus.UnderConstruction: return "In Progress";
+            case BuildingStatus.NeedWorker: return "Need Worker";
+            case BuildingStatus.InUse: return "In Use";
+            case BuildingStatus.Disabled: return "Closed";
+            default: return status.ToString();
+        }
     }
 
     Color GetStatusColor(BuildingStatus status)

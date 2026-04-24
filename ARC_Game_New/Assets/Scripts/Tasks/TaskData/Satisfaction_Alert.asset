@@ -53,8 +53,8 @@ MonoBehaviour:
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
-  - messageText: Satisfaction is below 25 points. People are becoming restless. We
-      need to identify the cause and take immediate action to restore community morale.
+  - messageText: People are becoming restless. We need to identify the cause and
+      take immediate action to restore community morale.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
