@@ -66,6 +66,13 @@ public class InstructorConfigUI : MonoBehaviour
 
         ShowTab(0);
         SetStatus("Config editor ready.");
+
+        InstructorConfigManager.Instance.OnConfigChanged += RefreshVisuals;
+
+        RefreshVisuals();
+
+        ShowTab(0);
+        SetStatus("Config editor ready.");
     }
 
     void OnDestroy()
@@ -75,6 +82,8 @@ public class InstructorConfigUI : MonoBehaviour
 
         if (InstructorConfigManager.Instance != null)
             InstructorConfigManager.Instance.OnSaveComplete -= HandleSaveComplete;
+        if (InstructorConfigManager.Instance != null)
+            InstructorConfigManager.Instance.OnConfigChanged -= RefreshVisuals;
     }
 
     // ── Tab switching ─────────────────────────────────────────────────────────
@@ -160,5 +169,9 @@ public class InstructorConfigUI : MonoBehaviour
     void SetStatus(string msg)
     {
         if (statusLabel != null) statusLabel.text = msg;
+    }
+    void RefreshVisuals()
+    {
+        mapEditorCanvas?.ReloadFromConfig();
     }
 }
