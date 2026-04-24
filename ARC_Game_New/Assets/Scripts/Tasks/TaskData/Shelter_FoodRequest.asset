@@ -36,8 +36,7 @@ MonoBehaviour:
     resourceType: 0
     resourceThreshold: 0
     condition: 3
-  probabilityTriggers:
-  - probability: 0.2
+  probabilityTriggers: []
   floodTileTriggers: []
   floodedFacilityTriggers: []
   budgetTriggers: []

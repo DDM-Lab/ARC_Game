@@ -30,9 +30,6 @@ public class Building : MonoBehaviour
 
     [Header("Building Stats")]
     public int capacity = 10;
-    public int shelterCapacity = 10;
-    public int kitchenCapacity = 10;
-    public int caseworkCapacity = 10;
     public float operationalEfficiency = 1.0f;
 
     [Header("Worker Requirements")]
@@ -72,8 +69,6 @@ public class Building : MonoBehaviour
         buildingType = type;
         originalSiteId = siteId;
         currentStatus = BuildingStatus.UnderConstruction;
-        SetCapacityByType();
-        Debug.Log($"buildinginit: type - {buildingType}, capac - {capacity}");
 
         // Ensure progress bar is visible for construction
         if (constructionProgressBar != null)
@@ -93,7 +88,6 @@ public class Building : MonoBehaviour
 
     void Start()
     {
-        StartCoroutine(InitializeWithCentralConfig());
         if (buildingRenderer == null)
             buildingRenderer = GetComponent<SpriteRenderer>();
 
@@ -109,20 +103,6 @@ public class Building : MonoBehaviour
         {
             WorkerSystem.Instance.OnWorkerStatsChanged += UpdateWorkforceIndicator;
         }
-    }
-    IEnumerator InitializeWithCentralConfig()
-    {
-        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
-        {
-            yield return null;
-        }
-        shelterCapacity = GameDataManager.Instance.InitialShelterCapacity;
-        Debug.Log($"initwcc: sehtlerCapac - {shelterCapacity}");
-        kitchenCapacity = GameDataManager.Instance.InitialKitchenCapacity;
-        caseworkCapacity = GameDataManager.Instance.InitialCaseworkCapacity;
-        requiredWorkforce = GameDataManager.Instance.InitialRequiredWorkersPerLoc;
-        SetCapacityByType();
-        
     }
     void UpdateWorkforceIndicator()
     {
@@ -486,27 +466,6 @@ public class Building : MonoBehaviour
         }
     }
 
-    private void SetCapacityByType()
-    {
-        switch (buildingType)
-        {
-            case BuildingType.Shelter:
-                capacity = shelterCapacity;
-                Debug.Log($"setcapacbytype: shelterCapac - {shelterCapacity}");
-                break;
-            case BuildingType.Kitchen:
-                capacity = kitchenCapacity;
-                Debug.Log($"setcapacbytype: kitchenCapac - {kitchenCapacity}");
-                break;
-            case BuildingType.CaseworkSite:
-                capacity = caseworkCapacity;
-                Debug.Log($"setcapacbytype: caseworkCapac - {caseworkCapacity}");
-                break;
-            default:
-                capacity = 10; // Default fallback
-                break;
-        }
-    }
     // Getters
     public BuildingType GetBuildingType() => buildingType;
     public int GetOriginalSiteId() => originalSiteId;
@@ -519,7 +478,6 @@ public class Building : MonoBehaviour
     public float GetConstructionProgress() => constructionProgress;
     public float GetDeconstructionProgress() => deconstructionProgress; // NEW
     public int GetCapacity() => capacity;
-
     public float GetEfficiency() => operationalEfficiency;
     public int GetRequiredWorkforce() => requiredWorkforce;
 

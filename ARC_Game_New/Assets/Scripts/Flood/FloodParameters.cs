@@ -94,6 +94,7 @@ public class WeatherFloodData
     [Range(0f, 1f)]
     [Tooltip("Chance for flood to shrink during this weather")]
     public float shrinkageChance = 0f;
+    
     public WeatherFloodData()
     {
         // Set default values based on weather type
