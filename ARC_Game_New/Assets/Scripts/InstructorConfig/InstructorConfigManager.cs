@@ -45,6 +45,11 @@ public class InstructorConfigManager : MonoBehaviour
         }
     }
 
+    void Start()
+    {
+        StartCoroutine(SyncWithServerCoroutine());
+    }
+
     /// <summary>Reset to a blank config with default grid size.</summary>
     public void NewConfig()
     {
@@ -79,7 +84,33 @@ public class InstructorConfigManager : MonoBehaviour
         CurrentConfig.timestamp = DateTime.UtcNow.ToString("o");
         StartCoroutine(PostConfigCoroutine(GetConfigJson()));
     }
+    IEnumerator SyncWithServerCoroutine()
+    {
+        if (GameConfigLoader.Instance != null && GameConfigLoader.Instance.HasServerMapConfig())
+        {
+            CurrentConfig = GameConfigLoader.Instance.GetMapConfig();
+            NotifyConfigChanged();
+            Debug.Log("InstructorConfigManager: Synced from GameConfigLoader.");
+            yield break;
+        }
 
+        using (UnityWebRequest req = UnityWebRequest.Get(serverSaveUrl))
+        {
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                LoadFromJson(req.downloadHandler.text);
+                LoadFromJson(req.downloadHandler.text);
+                Debug.Log("InstructorConfigManager: Synced from Server.");
+            }
+            else
+            {
+                Debug.Log("InstructorConfigManager: No existing config found. Using defaults.");
+            }
+        }
+
+    }
     IEnumerator PostConfigCoroutine(string json)
     {
         IsSaving = true;
