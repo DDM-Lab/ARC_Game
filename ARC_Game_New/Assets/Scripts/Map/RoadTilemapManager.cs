@@ -399,5 +399,4 @@ public class RoadTilemapManager : MonoBehaviour
     {
         PrintRoadStatistics();
     }
-
 }

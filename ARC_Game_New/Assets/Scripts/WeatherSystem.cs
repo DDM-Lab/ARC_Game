@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEngine.UI;
-using System.Collections;
 using TMPro;
 using System;
 
@@ -42,7 +41,6 @@ public class WeatherSystem : MonoBehaviour
     
     // Current weather state
     private WeatherType currentWeather = WeatherType.Sunny;
-    private WeatherType startWeather = WeatherType.Sunny;
     
     // Events
     public event Action<WeatherType> OnWeatherChanged;
@@ -66,7 +64,6 @@ public class WeatherSystem : MonoBehaviour
     
     void Start()
     {
-        StartCoroutine(InitializeWithCentralConfig());
         InitializeWeatherSystem();
         SetupDebugPanelMethods();
 
@@ -80,21 +77,12 @@ public class WeatherSystem : MonoBehaviour
         //GenerateRandomWeather();
 
         // Set first day to Sunny
-        SetWeather(startWeather);
+        SetWeather(WeatherType.Sunny);
         
         if (showDebugInfo)
             Debug.Log("Weather System initialized");
     }
     
-    IEnumerator InitializeWithCentralConfig()
-    {
-        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
-        {
-            yield return null;
-        }
-        startWeather = GameDataManager.Instance.InitialWeather;
-        
-    }
     void InitializeWeatherSystem()
     {
         // Validate weather data
