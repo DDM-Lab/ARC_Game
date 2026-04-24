@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 using System;
+using System.Collections;
 
 [System.Serializable]
 public class DeliveryTask
@@ -15,6 +16,8 @@ public class DeliveryTask
     public bool isUrgent = false;
     public float timeCreated;
     public float estimatedTimeSeconds = 0f;
+    
+
 
     public DeliveryTask(MonoBehaviour source, MonoBehaviour destination, ResourceType cargo, int qty, int taskId)
     {
@@ -99,6 +102,7 @@ public class DeliverySystem : MonoBehaviour
     public event Action<DeliveryTask> OnTaskCreated;
     public event Action<DeliveryTask, Vehicle> OnTaskAssigned;
     public event Action<DeliveryTask> OnTaskCompleted;
+    public int ervCount = 3;
 
     public static DeliverySystem Instance { get; private set; }
 
@@ -110,24 +114,82 @@ public class DeliverySystem : MonoBehaviour
 
     void Start()
     {
-        // Find vehicles if not assigned
-        if (availableVehicles.Count == 0)
+        pendingTasks.Clear();
+        StartCoroutine(InitializeWithCentralConfig());
+    }
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
         {
-            Vehicle[] foundVehicles = FindObjectsOfType<Vehicle>();
-            availableVehicles.AddRange(foundVehicles);
+            yield return null;
         }
 
-        // Subscribe to vehicle events
+        int ervCount = GameDataManager.Instance.InitialERVCount;
+
+        AdjustSceneCount(ervCount);
+        availableVehicles.Clear();
+        availableVehicles.AddRange(FindObjectsOfType<Vehicle>());
+
         foreach (Vehicle vehicle in availableVehicles)
         {
             vehicle.OnDeliveryCompleted += OnVehicleDeliveryCompleted;
-            Debug.Log($"DeliverySystem subscribed to vehicle {vehicle.GetVehicleName()} events");
+            Debug.Log($"DeliverySystem: Finalized {vehicle.GetVehicleName()}");
         }
 
-        Debug.Log($"Delivery System initialized with {availableVehicles.Count} vehicles");
-        GameLogPanel.Instance.LogVehicleEvent($"Delivery System initialized with {availableVehicles.Count} vehicles");
+        Debug.Log($"Delivery System initialized with {availableVehicles.Count} vehicles.");
+        GameLogPanel.Instance.LogVehicleEvent($"Initialized with {availableVehicles.Count} vehicles (Config Target: {ervCount})");
+    }
 
-        pendingTasks.Clear();
+    public void AdjustSceneCount(int ervCount)
+    {
+        List<Vehicle> sceneVehicles = FindObjectsOfType<Vehicle>().ToList();
+        if (sceneVehicles.Count > ervCount)
+        {
+            int numberToRemove = sceneVehicles.Count - ervCount;
+            for (int i = 0; i < numberToRemove; i++)
+            {
+                if (sceneVehicles[i] != null)
+                    Destroy(sceneVehicles[i].gameObject);
+            }
+        }
+        else if (sceneVehicles.Count < ervCount)
+        {
+            int numberToAdd = ervCount-sceneVehicles.Count;
+            RoadTilemapManager roadManager = FindObjectOfType<RoadTilemapManager>();
+
+            if (roadManager != null)
+            {
+                List<Vector3Int> roadList = roadManager.GetAllRoadPositions().ToList();
+                if (roadList.Count > 0)
+                {
+                    for (int i = 0; i < numberToAdd; i++)
+                    {
+                        Vector3Int randomTile = roadList[UnityEngine.Random.Range(0, roadList.Count)];
+                        Vector3 spawnPos = roadManager.CellToWorld(randomTile);
+
+                        List<Vector3Int> neighbors = roadManager.GetRoadNeighbors(randomTile);
+                        Quaternion spawnRotation = Quaternion.identity;
+
+                        if (neighbors.Count > 0)
+                        {
+                            Vector3Int targetNeighbor = neighbors[UnityEngine.Random.Range(0, neighbors.Count)];
+                            Vector3Int dir = targetNeighbor - randomTile;
+                            float angle = 0;
+                            if (dir == Vector3Int.up) angle = 90;    
+                            else if (dir == Vector3Int.down) angle = 270; 
+                            else if (dir == Vector3Int.left) angle = 180; 
+                            else if (dir == Vector3Int.right) angle = 0;   
+                            spawnRotation = Quaternion.Euler(0, 0, angle);
+                        }
+                        GameObject newVehicleObj = Instantiate(vehiclePrefab, spawnPos, spawnRotation);
+                        Vehicle newVehicle = newVehicleObj.GetComponent<Vehicle>();
+                        if (newVehicle != null)
+                            AddVehicle(newVehicle);
+                    }
+                }
+            }
+        }
+        availableVehicles = FindObjectsOfType<Vehicle>().ToList();
     }
 
     void Update()

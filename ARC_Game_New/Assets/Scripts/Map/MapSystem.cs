@@ -1,5 +1,9 @@
 using UnityEngine;
+using UnityEngine.UI;
+using System.Collections;
 using System.Collections.Generic;
+using TMPro;
+using System;
 
 public class MapSystem : MonoBehaviour
 {
@@ -18,8 +22,20 @@ public class MapSystem : MonoBehaviour
     
     void Start()
     {
+        StartCoroutine(InitializeWithCentralConfig());
+        Debug.Log($"community#{numberOfCommunities}");
         InitializeMap();
         SetupCamera();
+    }
+
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+        
+        numberOfCommunities = GameDataManager.Instance.InitialCommunityNumber;
     }
 
     void InitializeMap()

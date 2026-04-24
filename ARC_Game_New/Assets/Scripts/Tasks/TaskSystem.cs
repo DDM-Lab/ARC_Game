@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 using System;
-
+using System.Collections;
 public enum TaskType
 {
     Emergency,
@@ -367,6 +367,10 @@ public class TaskSystem : MonoBehaviour
     // Task ID counter
     private int nextTaskId = 1;
 
+    public int numEmergencyTasks = 4;
+    public int currEmergencyTaskCount = 0;
+    public int lastEmergencyTaskRound = 0;
+
     // Events
     public event Action<GameTask> OnTaskCreated;
     public event Action<GameTask> OnTaskCompleted;
@@ -400,6 +404,7 @@ public class TaskSystem : MonoBehaviour
 
     void Start()
     {
+        StartCoroutine(InitializeWithCentralConfig());
         // Subscribe to global clock for round-based countdown
         if (GlobalClock.Instance != null)
         {
@@ -427,6 +432,16 @@ public class TaskSystem : MonoBehaviour
         if (showDebugInfo)
             Debug.Log("Task System initialized");
     }
+
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+        numEmergencyTasks = GameDataManager.Instance.InitialEmergencyTaskFrequency;
+    }
+    
 
     void Update()
     {
@@ -474,6 +489,14 @@ public class TaskSystem : MonoBehaviour
                 ExpireTask(task);
             }
         }
+    }
+
+    private int CalculateEmergencyInterval()
+    {
+        int totalRounds = GlobalClock.Instance.lastDay * GlobalClock.Instance.roundsPerDay; 
+        if (numEmergencyTasks <= 0) return 999;
+        int interval = totalRounds / numEmergencyTasks;
+        return Mathf.Max(2, interval);
     }
 
     /// <summary>
@@ -683,6 +706,9 @@ public class TaskSystem : MonoBehaviour
             return;
         }
 
+        int currentRound = GlobalClock.Instance != null ? (GlobalClock.Instance.lastDay * GlobalClock.Instance.roundsPerDay) : 0;
+        int dynamicInterval = CalculateEmergencyInterval();
+
         Debug.Log("Checking for triggered tasks per facility...");
 
         // Get tasks with their specific facilities
@@ -698,6 +724,22 @@ public class TaskSystem : MonoBehaviour
                 Debug.LogWarning("Found null TaskData in triggered results");
                 GameLogPanel.Instance.LogError("Found null TaskData in triggered results");
                 continue;
+            }
+            if (taskData.taskType == TaskType.Emergency)
+            {
+                // Gate 1: Total Game Limit
+                if (currEmergencyTaskCount >= numEmergencyTasks)
+                {
+                    if (showDebugInfo) Debug.Log($"[Limit] Skipping {taskData.taskTitle}: Max emergencies reached.");
+                    continue;
+                }
+
+                // Gate 2: Dynamic Round Spacing (Anti-Frontload)
+                if (currentRound < lastEmergencyTaskRound + dynamicInterval)
+                {
+                    if (showDebugInfo) Debug.Log($"[Spacing] Skipping {taskData.taskTitle}: Too soon since last emergency.");
+                    continue;
+                }
             }
 
             // Handle alert tasks (global check for duplicates)
@@ -725,7 +767,9 @@ public class TaskSystem : MonoBehaviour
                 }
 
                 Debug.Log($"Creating global task: {taskData.taskTitle}");
-                CreateTaskFromDatabase(taskData);
+                GameTask newTask = CreateTaskFromDatabase(taskData);
+                if (newTask != null && newTask.taskType == TaskType.Emergency)
+                lastEmergencyTaskRound = currentRound;
             }
             else
             {
@@ -741,7 +785,9 @@ public class TaskSystem : MonoBehaviour
                 }
 
                 Debug.Log($"Creating task: {taskData.taskTitle} for facility: {facilityName}");
-                CreateTaskFromDatabase(taskData, facility);
+                GameTask newTask = CreateTaskFromDatabase(taskData, facility);
+                if (newTask != null && newTask.taskType == TaskType.Emergency)
+                lastEmergencyTaskRound = currentRound;
             }
         }
     }
@@ -756,6 +802,7 @@ public class TaskSystem : MonoBehaviour
             GameLogPanel.Instance.LogError("TaskData is null in CreateTaskFromDatabase");
             return null;
         }
+
 
         // Find suitable facility that triggered the task
         MonoBehaviour triggeringFacility = taskDatabase.FindSuitableFacility(taskData);
@@ -775,6 +822,19 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
+
+                /*
+        levers debug - daliy amnt
+        */
+        foreach (TaskImpact impact in newTask.impacts)
+        {
+            switch (impact.impactType)
+            {
+                case ImpactType.Budget:
+                    Debug.Log($"Spawning task {newTask.taskTitle}. budget impact: {impact.value}");
+                    break;
+            }
+        }
 
         return newTask;
     }
@@ -1075,8 +1135,27 @@ public class TaskSystem : MonoBehaviour
             task.status = TaskStatus.Completed;
             activeTasks.Remove(task);
             completedTasks.Add(task);
-
+foreach (TaskImpact impact in task.impacts)
+        {
+            switch (impact.impactType)
+            {
+                case ImpactType.Budget:
+                    var budgetSystem = SatisfactionAndBudget.Instance;
+                    Debug.Log($"before Competed task {task.taskTitle}. budget impact: {impact.value}, satisfactionbudget: {budgetSystem.currentBudget}");
+                    break;
+            }
+        }
             OnTaskCompleted?.Invoke(task);
+                    foreach (TaskImpact impact in task.impacts)
+        {
+            switch (impact.impactType)
+            {
+                case ImpactType.Budget:
+                    var budgetSystem = SatisfactionAndBudget.Instance;
+                    Debug.Log($"Competed task {task.taskTitle}. budget impact: {impact.value}, satisfactionbudget: {budgetSystem.currentBudget}");
+                    break;
+            }
+        }
 
             if (taskCenterUI != null && taskCenterUI.taskCenterPanel.activeInHierarchy)
             {

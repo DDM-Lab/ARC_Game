@@ -78,6 +78,11 @@ public class BuildingResourceStorage : MonoBehaviour
             if (maxCapacities.ContainsKey(resource.type))
             {
                 int actualAmount = Mathf.Min(resource.amount, maxCapacities[resource.type]);
+                if (resource.type == ResourceType.Population)
+                {
+                    Debug.Log($"setstartingamnt: amount - {resource.amount}");
+                    Debug.Log($"setstartingamnt: maxCapacities[pop] - {maxCapacities[resource.type]}");
+                }
                 currentResources[resource.type] = actualAmount;
 
                 if (showDebugInfo)

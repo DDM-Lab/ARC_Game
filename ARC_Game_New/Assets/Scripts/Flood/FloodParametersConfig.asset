@@ -17,22 +17,72 @@ MonoBehaviour:
     expansionRate: 0
     spreadChanceMultiplier: 0.5
     shrinkageChance: 0.3
+    sunnyExpansionRate: 6
+    sunnyChanceMultiplier: 6
+    smallRainExpansionRate: 6
+    smallRainChanceMultiplier: 6
+    mediumRainExpansionRate: 6
+    mediumRainChanceMultiplier: 6
+    heavyRainExpansionRate: 6
+    heavyRainChanceMultiplier: 6
+    stormExpansionRate: 6
+    stormChanceMultiplier: 6
   - weatherType: 1
-    expansionRate: 2
-    spreadChanceMultiplier: 0.5
+    expansionRate: 0.5
+    spreadChanceMultiplier: 0.8
     shrinkageChance: 0.3
+    sunnyExpansionRate: 6
+    sunnyChanceMultiplier: 6
+    smallRainExpansionRate: 6
+    smallRainChanceMultiplier: 6
+    mediumRainExpansionRate: 6
+    mediumRainChanceMultiplier: 6
+    heavyRainExpansionRate: 6
+    heavyRainChanceMultiplier: 6
+    stormExpansionRate: 6
+    stormChanceMultiplier: 6
   - weatherType: 2
-    expansionRate: 3
-    spreadChanceMultiplier: 0.5
+    expansionRate: 1.5
+    spreadChanceMultiplier: 1
     shrinkageChance: 0.3
+    sunnyExpansionRate: 6
+    sunnyChanceMultiplier: 6
+    smallRainExpansionRate: 6
+    smallRainChanceMultiplier: 6
+    mediumRainExpansionRate: 6
+    mediumRainChanceMultiplier: 6
+    heavyRainExpansionRate: 6
+    heavyRainChanceMultiplier: 6
+    stormExpansionRate: 6
+    stormChanceMultiplier: 6
   - weatherType: 3
-    expansionRate: 4
-    spreadChanceMultiplier: 0.5
+    expansionRate: 3
+    spreadChanceMultiplier: 1.2
     shrinkageChance: 0.3
+    sunnyExpansionRate: 6
+    sunnyChanceMultiplier: 6
+    smallRainExpansionRate: 6
+    smallRainChanceMultiplier: 6
+    mediumRainExpansionRate: 6
+    mediumRainChanceMultiplier: 6
+    heavyRainExpansionRate: 6
+    heavyRainChanceMultiplier: 6
+    stormExpansionRate: 6
+    stormChanceMultiplier: 6
   - weatherType: 4
     expansionRate: 5
-    spreadChanceMultiplier: 0.5
+    spreadChanceMultiplier: 1.5
     shrinkageChance: 0.3
+    sunnyExpansionRate: 6
+    sunnyChanceMultiplier: 6
+    smallRainExpansionRate: 6
+    smallRainChanceMultiplier: 6
+    mediumRainExpansionRate: 6
+    mediumRainChanceMultiplier: 6
+    heavyRainExpansionRate: 6
+    heavyRainChanceMultiplier: 6
+    stormExpansionRate: 6
+    stormChanceMultiplier: 6
   baseSpreadChance: 0.7
   randomExpansionChance: 0.4
   maxRandomExpansionDistance: 5

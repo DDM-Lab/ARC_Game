@@ -63,6 +63,9 @@ public class GlobalClock : MonoBehaviour
     public event Action<int> OnTimeSegmentChanged;
     public event Action<int> OnDayChanged;
 
+    public int lastDay = 8;
+    public int roundsPerDay = 4;
+    
     public static event Action OnRoundEnd;
     // Singleton for easy access
     public static GlobalClock Instance { get; private set; }
@@ -84,6 +87,7 @@ public class GlobalClock : MonoBehaviour
 
     void Start()
     {
+        StartCoroutine(InitializeWithCentralConfig());
         InitializeTimeSystem();
         SetupUI();
         UpdateTimeDisplay();
@@ -98,6 +102,17 @@ public class GlobalClock : MonoBehaviour
         {
             ActionTrackingManager.Instance.SetDayAndRound(currentDay, currentTimeSegment + 1);
         }
+    }
+
+        IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+        lastDay = GameDataManager.Instance.InitialGameDays;
+        roundsPerDay = GameDataManager.Instance.InitialRoundsPerDay;
+        
     }
     
     void InitializeTimeSystem()
@@ -393,7 +408,7 @@ public class GlobalClock : MonoBehaviour
         EnablePlayerInteractions();
         
         // Check if we just finished round 4
-        if (currentTimeSegment >= 4)
+        if (currentTimeSegment >= roundsPerDay)
         {
             // Change button text to "View Report"
             if (executeButton != null)
@@ -407,12 +422,12 @@ public class GlobalClock : MonoBehaviour
             isWaitingForReport = true;
 
             // CHECK FOR END GAME (Round 4 of Day 8)
-            if (currentDay == 8 && currentTimeSegment >= 4)
+            if (currentDay ==  lastDay && currentTimeSegment >= roundsPerDay)
             {
                 if (EndGamePanel.Instance != null)
                 {
                     EndGamePanel.Instance.ShowEndGamePanel();
-                    Debug.Log("End game reached - Round 4 of Day 8");
+                    Debug.Log($"End game reached - Round {roundsPerDay} of Day {lastDay}");
                 }
             }
 
@@ -440,7 +455,7 @@ public class GlobalClock : MonoBehaviour
         currentTimeSegment++;
 
         // Check if day is complete (4 rounds = end of day)
-        if (currentTimeSegment >= 4)
+        if (currentTimeSegment >= roundsPerDay)
         {
             // Don't trigger OnDayChanged here anymore - wait for button click
             return; // Exit early, don't update display yet
@@ -675,7 +690,7 @@ public class GlobalClock : MonoBehaviour
     [ContextMenu("Print Current Time")]
     public void PrintCurrentTime()
     {
-        Debug.Log($"Current Time: Day {currentDay}, {GetCurrentTimeString()} (Segment {currentTimeSegment + 1}/4)");
+        Debug.Log($"Current Time: Day {currentDay}, {GetCurrentTimeString()} (Segment {currentTimeSegment + 1}/{roundsPerDay})");
         Debug.Log($"State: {currentState}, Speed: {currentTimeSpeed}x, Can Interact: {CanPlayerInteract()}");
         Debug.Log($"Waiting for Report: {isWaitingForReport}");
     }
