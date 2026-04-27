@@ -1,8 +1,9 @@
-using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.EventSystems;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 public class FacilityInfoManager : MonoBehaviour
 {
@@ -28,6 +29,7 @@ public class FacilityInfoManager : MonoBehaviour
     private Vector3 originalScale;
     private FacilityInfoPanel infoPanel;
     private bool isPanelOpen = false;
+    private Coroutine positionCoroutine;
     
     // Singleton
     public static FacilityInfoManager Instance { get; private set; }
@@ -194,64 +196,56 @@ public class FacilityInfoManager : MonoBehaviour
     void ShowFacilityPanel(MonoBehaviour facility)
     {
         if (facilityInfoPanel == null || infoPanel == null) return;
-        
-        // Position panel
-        Vector3 facilityScreenPos = mainCamera.WorldToScreenPoint(facility.transform.position);
-        Vector2 panelPosition = new Vector2(facilityScreenPos.x, facilityScreenPos.y) + panelOffset;
-        
-        // Keep panel in screen bounds
-        if (keepPanelInBounds)
+
+        if (positionCoroutine != null)
         {
-            panelPosition = ClampPanelToBounds(panelPosition);
+            StopCoroutine(positionCoroutine);
+            positionCoroutine = null;
         }
-        
-        // Convert to canvas local position
-        Vector2 localPos;
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(
-            uiCanvas.transform as RectTransform,
-            panelPosition,
-            uiCanvas.worldCamera,
-            out localPos
-        );
-        
-        RectTransform panelRect = facilityInfoPanel.GetComponent<RectTransform>();
-        panelRect.localPosition = localPos;
-        
-        // Update panel content
+
         infoPanel.UpdateFacilityInfo(facility);
-        
-        // Show panel
+
+        RectTransform panelRect = facilityInfoPanel.GetComponent<RectTransform>();
+
+        // Activate so layout components can run, then force an immediate rebuild
+        // so rect.size is accurate before we position (avoids a one-frame glitch)
         facilityInfoPanel.SetActive(true);
+        LayoutRebuilder.ForceRebuildLayoutImmediate(panelRect);
+
+        PositionPanel(facility, panelRect);
+
         isPanelOpen = true;
-        
         Debug.Log($"Opened facility panel for: {facility.name}");
         GameLogPanel.Instance?.LogUIInteraction($"Opened facility panel for: {facility.name}");
     }
-    
-    Vector2 ClampPanelToBounds(Vector2 panelPosition)
+
+    void PositionPanel(MonoBehaviour facility, RectTransform panelRect)
     {
-        if (facilityInfoPanel == null) return panelPosition;
-        
-        RectTransform panelRect = facilityInfoPanel.GetComponent<RectTransform>();
-        Vector2 panelSize = panelRect.sizeDelta;
-        
-        // Get screen bounds
-        float screenWidth = Screen.width;
-        float screenHeight = Screen.height;
-        
-        // Clamp X
-        if (panelPosition.x + panelSize.x > screenWidth)
-            panelPosition.x = screenWidth - panelSize.x - 20;
-        if (panelPosition.x < 20)
-            panelPosition.x = 20;
-            
-        // Clamp Y
-        if (panelPosition.y + panelSize.y > screenHeight)
-            panelPosition.y = screenHeight - panelSize.y - 20;
-        if (panelPosition.y < 20)
-            panelPosition.y = 20;
-            
-        return panelPosition;
+        RectTransform canvasRect = uiCanvas.transform as RectTransform;
+
+        Vector3 facilityScreenPos = mainCamera.WorldToScreenPoint(facility.transform.position);
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            canvasRect, facilityScreenPos, uiCanvas.worldCamera, out Vector2 localPos);
+
+        localPos += panelOffset;
+
+        Vector2 panelSize  = panelRect.rect.size;
+        Vector2 pivot      = panelRect.pivot;
+        Vector2 canvasMin  = canvasRect.rect.min;
+        Vector2 canvasMax  = canvasRect.rect.max;
+        float   pad        = 10f;
+
+        float leftEdge   = localPos.x - pivot.x        * panelSize.x;
+        float rightEdge  = localPos.x + (1f - pivot.x) * panelSize.x;
+        float bottomEdge = localPos.y - pivot.y        * panelSize.y;
+        float topEdge    = localPos.y + (1f - pivot.y) * panelSize.y;
+
+        if (rightEdge  > canvasMax.x - pad) localPos.x -= rightEdge  - (canvasMax.x - pad);
+        if (leftEdge   < canvasMin.x + pad) localPos.x -= leftEdge   - (canvasMin.x + pad);
+        if (topEdge    > canvasMax.y - pad) localPos.y -= topEdge    - (canvasMax.y - pad);
+        if (bottomEdge < canvasMin.y + pad) localPos.y -= bottomEdge - (canvasMin.y + pad);
+
+        panelRect.localPosition = localPos;
     }
     
     void HandleClickOutside()

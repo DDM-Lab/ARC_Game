@@ -78,7 +78,7 @@ MonoBehaviour:
     typingSpeed: 0.05
   agentChoices:
   - choiceId: 0
-    choiceText: Send to Shelters (Free, limited space)
+    choiceText: Send to Shelters
     agentReasoning: 
     choiceImpacts: []
     isSelected: 0
