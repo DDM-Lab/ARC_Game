@@ -5924,6 +5924,8 @@ MonoBehaviour:
   simulationDuration: 10
   currentDay: 1
   currentTimeSegment: 2
+  lastDay: 8
+  roundsPerDay: 4
   executeButton: {fileID: 1734780826}
   speedDropdown: {fileID: 1250581910}
   buildingStatsButton: {fileID: 287412885}
@@ -11045,7 +11047,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 28.3, y: -12.5}
+  m_AnchoredPosition: {x: 28.300003, y: -12.5}
   m_SizeDelta: {x: 56.6, y: 25}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &255322591
@@ -56377,6 +56379,9 @@ MonoBehaviour:
   taskDatabase: {fileID: 11400000, guid: 4c32bdbe0f0fd32418cc002f82665d98, type: 2}
   enableAutoTaskGeneration: 1
   showDebugInfo: 1
+  numEmergencyTasks: 4
+  currEmergencyTaskCount: 0
+  lastEmergencyTaskRound: 0
 --- !u!4 &978748997
 Transform:
   m_ObjectHideFlags: 0
@@ -65217,6 +65222,7 @@ MonoBehaviour:
   autoTaskInterval: 10
   prioritizeFoodDelivery: 1
   showDebugInfo: 1
+  ervCount: 3
 --- !u!114 &1185566963
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -97553,12 +97559,46 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   googleSheetsCsvUrl: https://docs.google.com/spreadsheets/d/e/2PACX-1vTGcKtnKuRq1dS-ZMMYKmepAEsfeaYhKlt8IMSkZ1xe-5_JApbSfTokI_VHFS8v0g3XIHWHWEPSdSzS/pub?gid=0&single=true&output=csv
-  mapConfigServerUrl: http://janus.hss.cmu.edu/cgi-bin/map_config.cgi
+  mapConfigServerUrl: http://janus.hss.cmu.edu/cgi-bin/new_map_config.cgi
   mapConfigTimeout: 5
   disableLoader: 1
   showDebugInfo: 1
   loadedInitialBudget: 5000
   loadedInitialSatisfaction: 50
+  loadedInitialCommunityNumber: 3
+  loadedInitialCommunityResidents: 40
+  loadedInitialGameDays: 8
+  loadedInitialGameRounds: 4
+  loadedInitialTrainedVols: 5
+  loadedInitialUntrainedVols: 5
+  loadedInitialBudgetDailyAllocs: 3000
+  loadedInitialWeather: 0
+  loadedInitialShelterCapacity: 10
+  loadedInitialKitchenCapacity: 10
+  loadedInitialCaseworkCapacity: 10
+  loadedInitialRequiredWorkers: 4
+  loadedInitialSunnyExpansionRate: 0
+  loadedInitialSunnySpreadChanceMultiplier: 0.5
+  loadedInitialSmallRainExpansionRate: 0.5
+  loadedInitialSmallRainSpreadChanceMultiplier: 0.8
+  loadedInitialMediumRainExpansionRate: 1.5
+  loadedInitialMediumRainSpreadChanceMultiplier: 1
+  loadedInitialHeavyRainExpansionRate: 3
+  loadedInitialHeavyRainSpreadChanceMultiplier: 1.2
+  loadedInitialStormExpansionRate: 5
+  loadedInitialStormSpreadChanceMultiplier: 1.5
+  loadedInitialFoodDemandFrequency: -1
+  loadedInitialShelterFloodThreshold: 2
+  loadedInitialShelterFloodRadius: 5
+  loadedInitialShelterFloodComparison: 0
+  loadedInitialERV: 3
+  loadedInitialExternalRelationFrequency: 3
+  loadedInitialEmergencyTaskFrequency: 4
+  dailyBudgetAlloc: {fileID: 0}
+  shelterFoodReq: {fileID: 0}
+  shelterFloodDmg: {fileID: 0}
+  budgetAdvisoryER: {fileID: 0}
+  budgetEmergencyER: {fileID: 0}
 --- !u!4 &1786209524
 Transform:
   m_ObjectHideFlags: 0

@@ -46,7 +46,19 @@ public class ParametersPanel : MonoBehaviour
 
     void OnEnable()
     {
+        if (InstructorConfigManager.Instance != null)
+        {
+            InstructorConfigManager.Instance.OnConfigChanged += LoadFromConfig;
+        }
+
         LoadFromConfig();
+    }
+    void OnDisable()
+    {
+        if (InstructorConfigManager.Instance != null)
+        {
+            InstructorConfigManager.Instance.OnConfigChanged -= LoadFromConfig;
+        }
     }
 
     // ── Load config → UI ──────────────────────────────────────────────────────

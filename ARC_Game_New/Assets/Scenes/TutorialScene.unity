@@ -50560,7 +50560,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   googleSheetsCsvUrl: https://docs.google.com/spreadsheets/d/e/2PACX-1vTGcKtnKuRq1dS-ZMMYKmepAEsfeaYhKlt8IMSkZ1xe-5_JApbSfTokI_VHFS8v0g3XIHWHWEPSdSzS/pub?gid=0&single=true&output=csv
-  mapConfigServerUrl: http://janus.hss.cmu.edu/cgi-bin/map_config.cgi
+  mapConfigServerUrl: http://janus.hss.cmu.edu/cgi-bin/new_map_config.cgi
   mapConfigTimeout: 5
   disableLoader: 0
   showDebugInfo: 1
@@ -73238,6 +73238,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   mainPanel: {fileID: 190412156}
   expandButton: {fileID: 1691991420}
+  expandButtonShrinkSprite: {fileID: 0}
+  expandButtonExpandSprite: {fileID: 0}
   disasterOfficerButton: {fileID: 743739456}
   foodMassCareButton: {fileID: 820434790}
   lodgingMassCareButton: {fileID: 1829770183}
@@ -73259,10 +73261,25 @@ MonoBehaviour:
   agentChoicePrefab: {fileID: 3689961598307848804, guid: 72a3ad1c507ebe74f9aab817763efaa6, type: 3}
   numericalInputPrefab: {fileID: 7478889527933163167, guid: 6669ca8554c6ce54da83cf31b79e81d7, type: 3}
   playerMessagePrefab: {fileID: 8827655810818551537, guid: 4316cf8f54d537a4b9ce187419922f47, type: 3}
+  disasterOfficerDot: {fileID: 0}
+  disasterOfficerCount: {fileID: 0}
+  foodMassCaresDot: {fileID: 0}
+  foodMassCareCount: {fileID: 0}
+  lodgingMassCaresDot: {fileID: 0}
+  lodgingMassCareCount: {fileID: 0}
+  workforceServiceDot: {fileID: 0}
+  workforceServiceCount: {fileID: 0}
+  externalRelationshipDot: {fileID: 0}
+  externalRelationshipCount: {fileID: 0}
+  confirmButton: {fileID: 0}
   playerInputField: {fileID: 960639470}
   sendButton: {fileID: 1576414584}
   activeAgentColor: {r: 0.5018867, g: 0.5018867, b: 0.5018867, a: 1}
   inactiveAgentColor: {r: 1, g: 1, b: 1, a: 1}
+  inactiveTaskColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  selectedTaskColor: {r: 0.3, g: 0.6, b: 1, a: 1}
+  newMessagePopup: {fileID: 0}
+  newMessageCountText: {fileID: 0}
   showDebugInfo: 1
 --- !u!114 &1223872961
 MonoBehaviour:
@@ -117085,6 +117102,7 @@ MonoBehaviour:
   taskCenterUI: {fileID: 0}
   notificationDot: {fileID: 1689211003}
   taskCountText: {fileID: 208989657}
+  showNotification: 1
   normalColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!114 &1947608164
 MonoBehaviour:
