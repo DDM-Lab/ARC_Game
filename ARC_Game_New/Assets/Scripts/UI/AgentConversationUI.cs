@@ -118,6 +118,9 @@ public class AgentConversationUI : MonoBehaviour
     {
         if (Time.frameCount % 30 == 0)
             UpdateAgentNotifications();
+
+        if (isExpanded && currentSelectedTask != null && currentSelectedTask.status == TaskStatus.Active)
+            UpdateChoiceValidation();
     }
 
     void OnDestroy()
@@ -487,10 +490,87 @@ public class AgentConversationUI : MonoBehaviour
         AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
         if (choiceUI != null)
         {
-            choiceUI.Initialize(choice, null);
+            choiceUI.Initialize(choice, null, PreviewChoiceRoute);
             choiceUI.choiceButton.onClick.AddListener(() => OnLocalChoiceSelected(choice));
         }
         currentConversationItems.Add(choiceItem);
+    }
+
+    MonoBehaviour ResolveFacility(string objectName)
+    {
+        if (string.IsNullOrEmpty(objectName)) return null;
+        var go = GameObject.Find(objectName);
+        if (go == null) return null;
+        return (MonoBehaviour)go.GetComponent<Building>() ?? go.GetComponent<PrebuiltBuilding>();
+    }
+
+    void UpdateChoiceValidation()
+    {
+        MonoBehaviour triggeringFacility = ResolveFacility(currentSelectedTask?.affectedFacility);
+
+        foreach (GameObject item in currentConversationItems)
+        {
+            AgentChoiceUI choiceUI = item.GetComponent<AgentChoiceUI>();
+            if (choiceUI == null) continue;
+
+            AgentChoice choice = choiceUI.GetChoice();
+            bool hasDelivery = choice.triggersDelivery || choice.immediateDelivery;
+            if (!hasDelivery) continue;
+
+            string errorMessage = "";
+            bool isValid = !choice.triggersDelivery
+                || TaskDetailUI.ValidateChoiceDelivery(currentSelectedTask, choice, out errorMessage);
+            choiceUI.SetValidationState(isValid, errorMessage);
+
+            bool canPreview = TaskSystem.Instance != null
+                && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
+                && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
+            choiceUI.SetPreviewVisible(canPreview);
+        }
+    }
+
+    void PreviewChoiceRoute(AgentChoice choice)
+    {
+        if (choice == null || currentSelectedTask == null || TaskSystem.Instance == null) return;
+
+        MonoBehaviour triggeringFacility = null;
+        if (!string.IsNullOrEmpty(currentSelectedTask.affectedFacility))
+        {
+            var go = GameObject.Find(currentSelectedTask.affectedFacility);
+            if (go != null)
+                triggeringFacility = (MonoBehaviour)go.GetComponent<Building>() ?? go.GetComponent<PrebuiltBuilding>();
+        }
+
+        MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
+        MonoBehaviour dest   = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+
+        if (source == null || dest == null)
+        {
+            Debug.LogWarning("[AgentConversationUI] Could not resolve route source or destination.");
+            return;
+        }
+
+        StartCoroutine(PeekForRoute(source, dest));
+    }
+
+    IEnumerator PeekForRoute(MonoBehaviour source, MonoBehaviour dest)
+    {
+        bool wasExpanded = isExpanded;
+        if (wasExpanded)
+        {
+            isExpanded = false;
+            yield return StartCoroutine(AnimateExpand(false));
+        }
+
+        FacilityHighlightSystem.Instance?.HighlightRoute(source, dest);
+        float wait = FacilityHighlightSystem.Instance?.TotalDuration ?? 2f;
+        yield return new WaitForSecondsRealtime(wait);
+
+        if (wasExpanded)
+        {
+            isExpanded = true;
+            yield return StartCoroutine(AnimateExpand(true));
+        }
     }
 
     void DisplayInteractiveNumericalInput(AgentNumericalInput input)

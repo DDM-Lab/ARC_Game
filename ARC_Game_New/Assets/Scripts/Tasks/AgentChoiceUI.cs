@@ -12,6 +12,7 @@ public class AgentChoiceUI : MonoBehaviour
     public TextMeshProUGUI choiceText;
     public TextMeshProUGUI descriptionText; // Optional: displays agentReasoning
     public Image selectedIndicator;
+    public Button previewButton;
 
     [Header("Colors")]
     public Color normalColor = Color.white;
@@ -27,7 +28,7 @@ public class AgentChoiceUI : MonoBehaviour
     private bool isValid = true;
     private string validationMessage = "";
 
-    public void Initialize(AgentChoice agentChoice, TaskDetailUI parent)
+    public void Initialize(AgentChoice agentChoice, TaskDetailUI parent, System.Action<AgentChoice> onPreviewRoute = null)
     {
         if (agentChoice == null)
         {
@@ -61,6 +62,22 @@ public class AgentChoiceUI : MonoBehaviour
             choiceButton.onClick.AddListener(OnChoiceClicked);
         }
 
+        if (previewButton != null)
+        {
+            previewButton.onClick.RemoveAllListeners();
+            bool hasDelivery = agentChoice.triggersDelivery || agentChoice.immediateDelivery;
+            bool hasHandler  = parent != null || onPreviewRoute != null;
+            bool showPreview = hasDelivery && hasHandler;
+            previewButton.gameObject.SetActive(showPreview);
+            if (showPreview)
+            {
+                if (onPreviewRoute != null)
+                    previewButton.onClick.AddListener(() => onPreviewRoute(choice));
+                else
+                    previewButton.onClick.AddListener(() => parent.PreviewChoiceRoute(choice));
+            }
+        }
+
         SetSelected(false);
     }
 
@@ -85,9 +102,11 @@ public class AgentChoiceUI : MonoBehaviour
         }
     }
 
-    public AgentChoice GetChoice()
+    public AgentChoice GetChoice() => choice;
+
+    public void SetPreviewVisible(bool visible)
     {
-        return choice;
+        if (previewButton != null) previewButton.gameObject.SetActive(visible);
     }
 
     public void SetValidationState(bool valid, string message)
@@ -117,7 +136,7 @@ public class AgentChoiceUI : MonoBehaviour
     
     public void InitializeAsHistorical(AgentChoice choice, bool wasSelected = false)
     {
-        Initialize(choice, null);
+        Initialize(choice, null); // parent=null disables preview button automatically
 
         if (choiceButton != null)
         {
