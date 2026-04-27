@@ -6060,6 +6060,8 @@ MonoBehaviour:
   simulationDuration: 10
   currentDay: 1
   currentTimeSegment: 2
+  lastDay: 8
+  roundsPerDay: 4
   executeButton: {fileID: 1734780826}
   speedDropdown: {fileID: 1250581910}
   buildingStatsButton: {fileID: 287412885}
@@ -56514,6 +56516,9 @@ MonoBehaviour:
   taskDatabase: {fileID: 11400000, guid: 4c32bdbe0f0fd32418cc002f82665d98, type: 2}
   enableAutoTaskGeneration: 1
   showDebugInfo: 1
+  numEmergencyTasks: 4
+  currEmergencyTaskCount: 0
+  lastEmergencyTaskRound: 0
 --- !u!4 &978748997
 Transform:
   m_ObjectHideFlags: 0
@@ -65354,6 +65359,7 @@ MonoBehaviour:
   autoTaskInterval: 10
   prioritizeFoodDelivery: 1
   showDebugInfo: 1
+  ervCount: 3
 --- !u!114 &1185566963
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -97690,7 +97696,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   googleSheetsCsvUrl: https://docs.google.com/spreadsheets/d/e/2PACX-1vTGcKtnKuRq1dS-ZMMYKmepAEsfeaYhKlt8IMSkZ1xe-5_JApbSfTokI_VHFS8v0g3XIHWHWEPSdSzS/pub?gid=0&single=true&output=csv
-  mapConfigServerUrl: http://janus.hss.cmu.edu/cgi-bin/map_config.cgi
+  mapConfigServerUrl: http://janus.hss.cmu.edu/cgi-bin/new_map_config.cgi
   mapConfigTimeout: 5
   disableLoader: 1
   showDebugInfo: 1

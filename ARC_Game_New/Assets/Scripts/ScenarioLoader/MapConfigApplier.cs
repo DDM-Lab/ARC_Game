@@ -42,7 +42,7 @@ public class MapConfigApplier : MonoBehaviour
 
     static readonly string[] CommunityNames =
     {
-        "Trinity", "Amherst", "Charleston", "Brookside", "Oakdale",
+        "Trinity", "Amherst", "Charleston", "Riverside", "Oakdale",
         "Maplewood", "Fairview", "Westbrook", "Lakewood", "Pinecrest"
     };
     const int MaxCommunities = 10;
@@ -298,7 +298,9 @@ public class MapConfigApplier : MonoBehaviour
             return;
         }
 
-        GameObject go = Instantiate(vehiclePrefab, pos, Quaternion.identity,
+        Vector3 vehiclePos = pos + new Vector3(0f, -0.5f, 0f);
+
+        GameObject go = Instantiate(vehiclePrefab, vehiclePos, Quaternion.identity,
             prebuiltParent != null ? prebuiltParent : transform);
 
         go.name = $"Vehicle_{index + 1}";
@@ -321,6 +323,7 @@ public class MapConfigApplier : MonoBehaviour
             if (hasVertical && !hasHorizontal)
             {
                 go.transform.rotation = Quaternion.AngleAxis(v.defaultAngle + 90f, Vector3.forward);
+                go.transform.position += new Vector3(-0.5f, 0f, 0f);
             }
 
             spawnedVehicles.Add(v);
@@ -401,8 +404,8 @@ public class MapConfigApplier : MonoBehaviour
     {
         Vector3 origin = GridToWorld(obj.gridX, obj.gridY);
         return origin + new Vector3(
-            (obj.width  - 1) * cellWorldSize * 0.5f,
-            (obj.height - 1) * cellWorldSize * 0.5f,
+            obj.width  * cellWorldSize * 0.5f,
+            obj.height * cellWorldSize * 0.5f,
             0f);
     }
 

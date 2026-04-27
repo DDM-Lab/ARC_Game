@@ -72,48 +72,19 @@ public class SatisfactionAndBudget : MonoBehaviour
 
     void Start()
     {
-        StartCoroutine(InitializeWithConfig());
+        StartCoroutine(InitializeWithCentralConfig());
     }
 
-    IEnumerator InitializeWithConfig()
+    IEnumerator InitializeWithCentralConfig()
     {
-        // Wait for config to load if using external config
-        if (useExternalConfig)
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
         {
-            if (configLoader == null)
-                configLoader = GameConfigLoader.Instance;
-            
-            if (configLoader != null)
-            {
-                // Wait for config to load (max 10 seconds)
-                float waitTime = 0f;
-                while (!configLoader.IsConfigLoaded() && waitTime < 10f)
-                {
-                    yield return new WaitForSeconds(0.1f);
-                    waitTime += 0.1f;
-                }
-                
-                // Apply loaded config
-                if (configLoader.IsConfigLoaded())
-                {
-                    currentBudget = configLoader.GetInitialBudget();
-                    currentSatisfaction = configLoader.GetInitialSatisfaction();
-                    
-                    if (showDebugInfo)
-                        Debug.Log($"SatisfactionAndBudget: Using config initialBudget = {currentBudget}; initialSatisfaction = {currentSatisfaction}");
-                }
-                else
-                {
-                    Debug.LogWarning("SatisfactionAndBudget: Config load timeout. Using inspector value.");
-                }
-            }
-            else
-            {
-                Debug.LogWarning("SatisfactionAndBudget: GameConfigLoader not found. Using inspector value.");
-            }
+            yield return null;
         }
-        
-        // Original Start() code continues here:
+
+        currentBudget = GameDataManager.Instance.InitialBudget;
+        currentSatisfaction = GameDataManager.Instance.InitialSatisfaction;
+
         InitializeValues();
         SetupFeedbackEffects();
         UpdateUI();
@@ -124,7 +95,7 @@ public class SatisfactionAndBudget : MonoBehaviour
         }
 
         if (showDebugInfo)
-            Debug.Log($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
+            Debug.Log($"SatisfactionAndBudget initialized from DataManager - Budget: {currentBudget}, Sat: {currentSatisfaction}");
         GameLogPanel.Instance.LogMetricsChange($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
     }
 
