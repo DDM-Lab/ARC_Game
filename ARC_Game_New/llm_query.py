@@ -205,13 +205,22 @@ def _build_prompt(
             f"Keep descriptions under 100 characters. Include cost and satisfaction projections."
         )
     else:
-        # Auto agent: execute immediately
+        # Auto agent: execute immediately with reasoning
+        max_actions = agent_cfg.get("max_actions_per_turn", 5)
         user_content = (
             f"Current situation:\n{state_text}\n\n"
             f"Available actions:\n{action_text}\n\n"
-            f"Respond with only the action index numbers you want to take, "
-            f"comma-separated (e.g. '0,3,5'). "
-            f"Respond with an empty string to pass."
+            f"Select up to {max_actions} actions and explain your strategic reasoning.\n\n"
+            f"Response format:\n"
+            f"ACTIONS: <comma-separated action indices, e.g. '0,3,5' or empty string to pass>\n"
+            f"REASONING: <2-4 sentences explaining your strategy and why you chose these actions>\n\n"
+            f"Example:\n"
+            f"ACTIONS: 0,1,5\n"
+            f"REASONING: Built a kitchen and shelter to address the immediate food and housing needs. "
+            f"The population is growing and satisfaction is dropping, so infrastructure is critical. "
+            f"I hired a trained worker to staff the kitchen immediately. "
+            f"This balances our budget while preventing satisfaction loss.\n\n"
+            f"Keep reasoning concise but informative. Explain your priorities and trade-offs."
         )
 
     messages.append({"role": "user", "content": user_content})

@@ -205,13 +205,17 @@ class AgentRouter:
         conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
         raw = query_llm(filtered_state, filtered_actions, agent, conversation)
 
+        # Parse structured response (ACTIONS + REASONING)
+        actions_str, reasoning = self._parse_auto_response(raw)
+
         # Validate LLM response
         indices, validation_errors = self._validate_action_indices(
-            raw, filtered_actions,
+            actions_str, filtered_actions,
             max_actions=agent.max_actions_per_package or len(filtered_actions),
             agent_name=agent.subagent_name
         )
-        print(f"[{agent.subagent_name}] LLM chose indices: {indices} (raw: '{raw}')")
+        print(f"[{agent.subagent_name}] LLM chose indices: {indices}")
+        print(f"[{agent.subagent_name}] Reasoning: {reasoning[:100]}...")
 
         results = []
         sat_before = _get_satisfaction(game_state)
@@ -246,8 +250,8 @@ class AgentRouter:
         self._log_turn(agent, filtered_state, filtered_actions, [], None, log_results,
                        sat_before, game_state, budget_before, raw, 0)
 
-        # Post action summary to director
-        await self._post_auto_summary(agent, results)
+        # Post action summary with reasoning to director
+        await self._post_auto_summary(agent, results, reasoning)
 
         return game_state, all_actions
 
@@ -895,22 +899,37 @@ Keep your responses concise and focused. You can discuss:
     def _filter_state(self, game_state: dict, agent: AgentConfig) -> dict:
         return filter_observation(game_state, agent.subobservation_space)
 
-    async def _post_auto_summary(self, agent: AgentConfig, results: dict):
-        """Post conversational summary after auto agent executes actions."""
+    async def _post_auto_summary(self, agent: AgentConfig, results: dict, reasoning: str = ""):
+        """
+        Post conversational summary with LLM-generated reasoning after auto agent executes actions.
+
+        Args:
+            agent: Agent configuration
+            results: Execution results dict with "executed" and "skipped" lists
+            reasoning: LLM-generated explanation from REASONING field
+        """
         executed_count = len(results.get("executed", []))
         skipped_count = len(results.get("skipped", []))
 
-        # Generate summary message
-        if executed_count > 0:
-            executed_actions = [item["action"]["description"] for item in results.get("executed", [])]
-            summary = f"I executed {executed_count} action(s): {', '.join(executed_actions[:3])}"
-            if executed_count > 3:
-                summary += f" and {executed_count - 3} more"
+        # Use LLM-generated reasoning as the main message content
+        # Add execution summary if there were issues
+        if reasoning:
+            summary = reasoning
+            # Append execution status if actions were skipped
+            if skipped_count > 0:
+                summary += f" (Note: {skipped_count} action(s) were invalid and skipped)"
         else:
-            summary = "I didn't execute any actions this turn"
+            # Fallback to template if no reasoning provided
+            if executed_count > 0:
+                executed_actions = [item["action"]["description"] for item in results.get("executed", [])]
+                summary = f"I executed {executed_count} action(s): {', '.join(executed_actions[:3])}"
+                if executed_count > 3:
+                    summary += f" and {executed_count - 3} more"
+            else:
+                summary = "I didn't execute any actions this turn"
 
-        if skipped_count > 0:
-            summary += f" ({skipped_count} action(s) were invalid/skipped)"
+            if skipped_count > 0:
+                summary += f" ({skipped_count} action(s) were invalid/skipped)"
 
         # Send message to message queue
         message = self.message_queue.send_message(
@@ -1126,6 +1145,44 @@ Keep your responses concise and focused. You can discuss:
             if line.strip():
                 return line.strip()[:200]
         return raw[:200]
+
+    def _parse_auto_response(self, raw: str) -> tuple[str, str]:
+        """
+        Parse auto agent response into actions and reasoning.
+
+        Expected format:
+            ACTIONS: 0,3,5
+            REASONING: Strategic explanation...
+
+        Returns:
+            (actions_str, reasoning_str) - e.g. ("0,3,5", "Built kitchen because...")
+        """
+        actions_str = ""
+        reasoning_str = ""
+
+        lines = raw.strip().split("\n")
+        for line in lines:
+            line = line.strip()
+            if line.startswith("ACTIONS:"):
+                actions_str = line.split(":", 1)[1].strip()
+            elif line.startswith("REASONING:"):
+                # Get everything after "REASONING:" (may span multiple lines)
+                idx = raw.find("REASONING:")
+                if idx >= 0:
+                    reasoning_str = raw[idx + len("REASONING:"):].strip()
+                    break
+
+        # Fallback: if no structured response, treat entire response as actions
+        if not actions_str:
+            # Try to extract comma-separated numbers
+            actions_str = raw.strip()
+            reasoning_str = "No reasoning provided."
+
+        # If no reasoning found, use default
+        if not reasoning_str:
+            reasoning_str = "Executed selected actions based on current priorities."
+
+        return actions_str, reasoning_str
 
     def _extract_coach_situation(self, raw: str) -> str:
         """Extract SITUATION line from coach response."""
