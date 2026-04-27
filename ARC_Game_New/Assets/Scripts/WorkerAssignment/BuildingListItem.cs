@@ -71,42 +71,7 @@ public class BuildingListItem : MonoBehaviour
     void UpdateBuildingName()
     {
         if (assignedBuilding == null) return;
-        
-        // Generate building name with numbering
-        string buildingTypeName = GetBuildingTypeName();
-        int buildingNumber = GetBuildingNumber();
-        
-        string displayName = $"{buildingTypeName} {buildingNumber}";
-        UpdateTextSafe(buildingNameText, displayName);
-    }
-    
-    string GetBuildingTypeName()
-    {
-        switch (assignedBuilding.GetBuildingType())
-        {
-            case BuildingType.Kitchen:
-                return "Kitchen";
-            case BuildingType.Shelter:
-                return "Shelter";
-            case BuildingType.CaseworkSite:
-                return "Casework Site";
-            default:
-                return "Building";
-        }
-    }
-    
-    int GetBuildingNumber()
-    {
-        if (globalWorkerManagementUI == null) return 1;
-        
-        // Get all buildings of the same type and find this building's position
-        var buildingsOfSameType = FindObjectsOfType<Building>()
-            .Where(b => b.GetBuildingType() == assignedBuilding.GetBuildingType())
-            .OrderBy(b => b.GetOriginalSiteId())
-            .ToList();
-        
-        int index = buildingsOfSameType.FindIndex(b => b == assignedBuilding);
-        return index + 1; // 1-based numbering
+        UpdateTextSafe(buildingNameText, assignedBuilding.GetDisplayName());
     }
 
     void UpdateDisplay()

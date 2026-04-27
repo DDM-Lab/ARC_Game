@@ -26,6 +26,7 @@ public class Building : MonoBehaviour
     [Header("Building Information")]
     [SerializeField] private BuildingType buildingType;
     [SerializeField] private int originalSiteId;
+    [SerializeField] private string buildingName = "";
     [SerializeField] private BuildingStatus currentStatus = BuildingStatus.UnderConstruction;
 
     [Header("Building Stats")]
@@ -455,6 +456,8 @@ public class Building : MonoBehaviour
     // Getters
     public BuildingType GetBuildingType() => buildingType;
     public int GetOriginalSiteId() => originalSiteId;
+    public string GetDisplayName() => !string.IsNullOrEmpty(buildingName) ? buildingName : $"{buildingType} {originalSiteId}";
+    public void SetBuildingName(string name) => buildingName = name;
     public BuildingStatus GetCurrentStatus() => currentStatus;
     public bool IsOperational() => currentStatus == BuildingStatus.InUse;
     public bool IsUnderConstruction() => currentStatus == BuildingStatus.UnderConstruction;

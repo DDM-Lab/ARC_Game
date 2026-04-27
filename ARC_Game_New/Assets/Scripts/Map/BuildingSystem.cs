@@ -29,6 +29,23 @@ public class BuildingSystem : MonoBehaviour
     private List<AbandonedSite> registeredSites = new List<AbandonedSite>();
     private AbandonedSite selectedSite;
 
+    private static readonly string[] greekNames =
+    {
+        "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta",
+        "Iota", "Kappa", "Lambda", "Mu", "Nu", "Xi", "Omicron", "Pi",
+        "Rho", "Sigma", "Tau", "Upsilon", "Phi", "Chi", "Psi", "Omega"
+    };
+    private Dictionary<BuildingType, int> buildingNameCounters = new Dictionary<BuildingType, int>();
+
+    private string GenerateBuildingName(BuildingType type)
+    {
+        if (!buildingNameCounters.ContainsKey(type))
+            buildingNameCounters[type] = 0;
+        int index = buildingNameCounters[type]++;
+        string typeName = type == BuildingType.CaseworkSite ? "Casework" : type.ToString();
+        return $"{typeName} {greekNames[index % greekNames.Length]}";
+    }
+
     void Start()
     {
         // Find WorkerSystem if not assigned
@@ -149,6 +166,7 @@ public class BuildingSystem : MonoBehaviour
                     buildingComponent.workerSystem = workerSystem;
 
                 buildingComponent.Initialize(buildingType, site.GetId(), constructionRounds);
+                buildingComponent.SetBuildingName(GenerateBuildingName(buildingType));
             }
 
             // Deduct construction cost

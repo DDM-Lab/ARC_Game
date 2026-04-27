@@ -136,7 +136,7 @@ public class FacilityInfoPanel : MonoBehaviour
     void UpdateBuildingInfo(Building building)
     {
         // Basic Info
-        SetTextSafe(facilityNameText, building.name);
+        SetTextSafe(facilityNameText, building.GetDisplayName());
         SetTextSafe(facilityTypeText, building.GetBuildingType().ToString());
         SetTextSafe(siteIdText, $"Site ID: {building.GetOriginalSiteId()}");
         SetTextSafe(positionText, $"Position: ({building.transform.position.x:F1}, {building.transform.position.y:F1})");
@@ -655,7 +655,7 @@ public class FacilityInfoPanel : MonoBehaviour
         
         Building b = building.GetComponent<Building>();
         if (b != null)
-            return $"{b.GetBuildingType()} (Site {b.GetOriginalSiteId()})";
+            return b.GetDisplayName();
         
         PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
         if (pb != null)

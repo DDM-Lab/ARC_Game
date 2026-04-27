@@ -198,6 +198,23 @@ public class TaskDetailUI : MonoBehaviour
         return sb.ToString();
     }
 
+    void OnFacilityLinkClicked(string facilityObjectName)
+    {
+        StopAllCoroutines();
+        isTyping = false;
+        currentTypingMessage = null;
+        StartCoroutine(PeekAtFacility(facilityObjectName));
+    }
+
+    IEnumerator PeekAtFacility(string facilityObjectName)
+    {
+        taskDetailPanel.SetActive(false);
+        FacilityHighlightSystem.Instance?.HighlightFacility(facilityObjectName);
+        float wait = FacilityHighlightSystem.Instance?.TotalDuration ?? 2f;
+        yield return new WaitForSecondsRealtime(wait);
+        taskDetailPanel.SetActive(true);
+    }
+
     public void CloseTaskDetail()
     {
         GameLogPanel.Instance?.LogUIInteraction($"Closed task: {currentTask?.taskTitle}");
@@ -342,7 +359,10 @@ public class TaskDetailUI : MonoBehaviour
             if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
                 yield break;
 
-            yield return StartCoroutine(DisplayAgentMessage(message, isFirstTimeShowing));
+            AgentMessage resolved = new AgentMessage(currentTask.ResolveFacilityName(message.messageText), message.agentAvatar);
+            resolved.useTypingEffect = message.useTypingEffect;
+            resolved.typingSpeed = message.typingSpeed;
+            yield return StartCoroutine(DisplayAgentMessage(resolved, isFirstTimeShowing));
         }
 
         // Check if panel is still active before displaying choices
@@ -376,10 +396,10 @@ public class TaskDetailUI : MonoBehaviour
 
         if (messageUI != null)
         {
-            messageUI.Initialize(message);
+            messageUI.Initialize(message, OnFacilityLinkClicked);
 
             // Only show typing effect if it's the first time AND conditions are met AND settings allow it
-            if (message.useTypingEffect && currentTask.status == TaskStatus.Active && 
+            if (message.useTypingEffect && currentTask.status == TaskStatus.Active &&
                 !currentTask.isExpired && isFirstTimeShowing && !SettingsPanel.SkipTyping)
             {
                 isTyping = true;

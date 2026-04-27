@@ -177,6 +177,15 @@ public class GameTask
         status = TaskStatus.Active;
         timeCreated = Time.time;
     }
+
+    public string ResolveFacilityName(string text)
+    {
+        string name = !string.IsNullOrEmpty(facilityDisplayName) ? facilityDisplayName : affectedFacility;
+        if (string.IsNullOrEmpty(affectedFacility))
+            return text.Replace("[facility_name]", name);
+        string linked = $"<link=\"{affectedFacility}\"><u><color=#5B9BD5>{name}</color></u></link>";
+        return text.Replace("[facility_name]", linked);
+    }
 }
 
 [System.Serializable]
@@ -795,7 +804,8 @@ public class TaskSystem : MonoBehaviour
         // Find suitable facility that triggered the task
         MonoBehaviour triggeringFacility = taskDatabase.FindSuitableFacility(taskData);
         string facilityName = triggeringFacility?.name ?? taskData.targetFacilityType.ToString();
-        string displayName = (triggeringFacility is PrebuiltBuilding pb) ? pb.GetBuildingName() : facilityName;
+        string displayName = triggeringFacility is PrebuiltBuilding pb ? pb.GetBuildingName() :
+                             triggeringFacility is Building bld ? bld.GetDisplayName() : facilityName;
 
         GameTask newTask = CreateTaskFromData(taskData);
         if (newTask == null)
@@ -1777,7 +1787,8 @@ public class TaskSystem : MonoBehaviour
 
         // Use the specific facility provided
         string facilityName = specificFacility?.name ?? taskData.targetFacilityType.ToString();
-        string displayName = (specificFacility is PrebuiltBuilding pb) ? pb.GetBuildingName() : facilityName;
+        string displayName = specificFacility is PrebuiltBuilding pb ? pb.GetBuildingName() :
+                             specificFacility is Building bld ? bld.GetDisplayName() : facilityName;
 
         GameTask newTask = CreateTaskFromData(taskData);
         if (newTask == null)

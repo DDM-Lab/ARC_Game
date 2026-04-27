@@ -15,7 +15,7 @@ MonoBehaviour:
   taskId: Community_TransportRequest
   taskTitle: Population Relocation From Community
   taskType: 1
-  description: 100 clients in this community need relocation. Choose where to send
+  description: 100 clients in [facility_name] need relocation. Choose where to send
     them based on available options and budget.
   taskImage: {fileID: 21300000, guid: 7099591f7bcf3f343aeb32a4fd0d27cb, type: 3}
   taskOfficer: 2
@@ -63,7 +63,7 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   agentMessages:
-  - messageText: We have 100 clients that need immediate relocation.
+  - messageText: We have 100 clients that need immediate relocation in [facility_name].
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05

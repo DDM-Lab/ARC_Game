@@ -15,7 +15,7 @@ MonoBehaviour:
   taskId: Community_Flood_Damge
   taskTitle: Community Emergency Evacuation
   taskType: 0
-  description: Flood has reached community center. Emergency relocation of residents
+  description: Flood has reached [facility_name]. Emergency relocation of residents
     required.
   taskImage: {fileID: 21300000, guid: 7099591f7bcf3f343aeb32a4fd0d27cb, type: 3}
   taskOfficer: 2
@@ -64,8 +64,8 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   agentMessages:
-  - messageText: Flood water detected at community! Large population at risk. Immediate
-      mass evacuation required.
+  - messageText: Flood water detected at [facility_name]! Large population at risk.
+      Immediate mass evacuation required.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05

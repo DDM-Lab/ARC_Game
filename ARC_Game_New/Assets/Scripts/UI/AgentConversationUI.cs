@@ -456,7 +456,12 @@ public class AgentConversationUI : MonoBehaviour
         DisplaySystemMessage($"=== {task.taskTitle} ===");
 
         foreach (AgentMessage message in task.agentMessages)
-            DisplayAgentMessage(message);
+        {
+            AgentMessage resolved = new AgentMessage(task.ResolveFacilityName(message.messageText), message.agentAvatar);
+            resolved.useTypingEffect = message.useTypingEffect;
+            resolved.typingSpeed = message.typingSpeed;
+            DisplayAgentMessage(resolved);
+        }
 
         foreach (AgentChoice choice in task.agentChoices)
         {
@@ -569,13 +574,38 @@ public class AgentConversationUI : MonoBehaviour
     {
         GameObject messageItem = Instantiate(agentMessagePrefab, conversationContent);
         AgentMessageUI messageUI = messageItem.GetComponent<AgentMessageUI>();
-        
+
         if (messageUI != null)
         {
-            messageUI.Initialize(message);
+            messageUI.Initialize(message, OnFacilityLinkClicked);
             messageUI.ShowFullMessage();
         }
         currentConversationItems.Add(messageItem);
+    }
+
+    void OnFacilityLinkClicked(string facilityObjectName)
+    {
+        StartCoroutine(PeekAtFacility(facilityObjectName));
+    }
+
+    IEnumerator PeekAtFacility(string facilityObjectName)
+    {
+        bool wasExpanded = isExpanded;
+        if (wasExpanded)
+        {
+            isExpanded = false;
+            yield return StartCoroutine(AnimateExpand(false));
+        }
+
+        FacilityHighlightSystem.Instance?.HighlightFacility(facilityObjectName);
+        float wait = FacilityHighlightSystem.Instance?.TotalDuration ?? 2f;
+        yield return new WaitForSecondsRealtime(wait);
+
+        if (wasExpanded)
+        {
+            isExpanded = true;
+            yield return StartCoroutine(AnimateExpand(true));
+        }
     }
     
     void DisplayHistoricalChoice(AgentChoice choice)

@@ -11045,7 +11045,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 28.3, y: -12.5}
+  m_AnchoredPosition: {x: 28.300003, y: -12.5}
   m_SizeDelta: {x: 56.6, y: 25}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &255322591
@@ -27408,6 +27408,7 @@ GameObject:
   - component: {fileID: 595964838}
   - component: {fileID: 595964839}
   - component: {fileID: 595964840}
+  - component: {fileID: 595964841}
   m_Layer: 0
   m_Name: UIManagers
   m_TagString: Untagged
@@ -27617,6 +27618,21 @@ MonoBehaviour:
   day1SetupMessage: "Opening facilities\u2026"
   day1CompleteMessage: Facilities ready soon...
   day1NoFacilitiesMessage: "Skipping setup time\u2026"
+--- !u!114 &595964841
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 595964833}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6fb3e48b5311754439bff83e86c2bd08, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  highlightColor: {r: 1, g: 0.85, b: 0.1, a: 1}
+  highlightDuration: 2
+  pulseFrequency: 3
 --- !u!1 &597780842
 GameObject:
   m_ObjectHideFlags: 0
@@ -45870,7 +45886,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &764452049
 RectTransform:
   m_ObjectHideFlags: 0
@@ -97559,6 +97575,40 @@ MonoBehaviour:
   showDebugInfo: 1
   loadedInitialBudget: 5000
   loadedInitialSatisfaction: 50
+  loadedInitialCommunityNumber: 3
+  loadedInitialCommunityResidents: 40
+  loadedInitialGameDays: 8
+  loadedInitialGameRounds: 4
+  loadedInitialTrainedVols: 5
+  loadedInitialUntrainedVols: 5
+  loadedInitialBudgetDailyAllocs: 3000
+  loadedInitialWeather: 0
+  loadedInitialShelterCapacity: 10
+  loadedInitialKitchenCapacity: 10
+  loadedInitialCaseworkCapacity: 10
+  loadedInitialRequiredWorkers: 4
+  loadedInitialSunnyExpansionRate: 0
+  loadedInitialSunnySpreadChanceMultiplier: 0.5
+  loadedInitialSmallRainExpansionRate: 0.5
+  loadedInitialSmallRainSpreadChanceMultiplier: 0.8
+  loadedInitialMediumRainExpansionRate: 1.5
+  loadedInitialMediumRainSpreadChanceMultiplier: 1
+  loadedInitialHeavyRainExpansionRate: 3
+  loadedInitialHeavyRainSpreadChanceMultiplier: 1.2
+  loadedInitialStormExpansionRate: 5
+  loadedInitialStormSpreadChanceMultiplier: 1.5
+  loadedInitialFoodDemandFrequency: -1
+  loadedInitialShelterFloodThreshold: 2
+  loadedInitialShelterFloodRadius: 5
+  loadedInitialShelterFloodComparison: 0
+  loadedInitialERV: 3
+  loadedInitialExternalRelationFrequency: 3
+  loadedInitialEmergencyTaskFrequency: 4
+  dailyBudgetAlloc: {fileID: 0}
+  shelterFoodReq: {fileID: 0}
+  shelterFloodDmg: {fileID: 0}
+  budgetAdvisoryER: {fileID: 0}
+  budgetEmergencyER: {fileID: 0}
 --- !u!4 &1786209524
 Transform:
   m_ObjectHideFlags: 0
