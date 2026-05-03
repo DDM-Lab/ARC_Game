@@ -158,9 +158,7 @@ public class IndividualBuildingManageUI : MonoBehaviour
     {
         if (currentBuilding == null) return;
 
-        // Building title
-        string buildingName = $"{currentBuilding.GetBuildingType()} {GetBuildingNumber()}";
-        UpdateTextSafe(buildingTitleText, buildingName);
+        UpdateTextSafe(buildingTitleText, currentBuilding.GetDisplayName());
 
         // Building status
         string statusText = $"Site {currentBuilding.GetOriginalSiteId()} - {currentBuilding.GetCurrentStatus()}";
@@ -170,17 +168,6 @@ public class IndividualBuildingManageUI : MonoBehaviour
         UpdateTextSafe(requiredWorkforceText, $"Required Workforce: {currentBuilding.GetRequiredWorkforce()}");
     }
 
-    int GetBuildingNumber()
-    {
-        // Get all buildings of the same type and find this building's position
-        var buildingsOfSameType = FindObjectsOfType<Building>()
-            .Where(b => b.GetBuildingType() == currentBuilding.GetBuildingType())
-            .OrderBy(b => b.GetOriginalSiteId())
-            .ToList();
-
-        int index = buildingsOfSameType.FindIndex(b => b == currentBuilding);
-        return index + 1; // 1-based numbering
-    }
 
     void UpdateCurrentWorkforceDisplay()
     {

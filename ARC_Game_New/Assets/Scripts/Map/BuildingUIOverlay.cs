@@ -172,8 +172,7 @@ public class BuildingUIOverlay : MonoBehaviour
                 TextMeshProUGUI labelTextComponent = labelText.GetComponent<TextMeshProUGUI>();
                 if (labelTextComponent != null)
                 {
-                    // get the facility name and id
-                    labelTextComponent.text = $"{building.GetBuildingType()} ({building.GetOriginalSiteId()})";
+                    labelTextComponent.text = building.GetDisplayName();
                 }
             }
         }

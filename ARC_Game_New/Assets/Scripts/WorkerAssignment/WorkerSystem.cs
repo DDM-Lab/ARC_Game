@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System;
@@ -42,6 +43,7 @@ public class WorkerSystem : MonoBehaviour
 
     void Start()
     {
+        StartCoroutine(InitializeWithCentralConfig());
         InitializeWorkerPool();
 
         // =====================================================
@@ -83,7 +85,17 @@ public class WorkerSystem : MonoBehaviour
     {
         // FIX: Removed OnDayChanged unsubscribe (no longer subscribed)
     }
-    
+
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+        initialTrainedWorkers = GameDataManager.Instance.InitialTrainedVolunteerCount;
+        initialUntrainedWorkers = GameDataManager.Instance.InitialUntrainedVolunteerCount;
+    }
+
     void InitializeWorkerPool()
     {
         // Create initial trained workers

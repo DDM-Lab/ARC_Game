@@ -340,6 +340,20 @@ public class GameConfigLoader : MonoBehaviour
 
     IEnumerator LoadMapConfigFromServer()
     {
+        // Override mapConfigServerUrl from config.json if present
+        string configPath = Application.streamingAssetsPath + "/config.json";
+        using (UnityWebRequest cfgReq = UnityWebRequest.Get(configPath))
+        {
+            cfgReq.timeout = 3;
+            yield return cfgReq.SendWebRequest();
+            if (cfgReq.result == UnityWebRequest.Result.Success)
+            {
+                var cfg = JsonUtility.FromJson<AppConfig>(cfgReq.downloadHandler.text);
+                if (!string.IsNullOrEmpty(cfg?.mapConfigUrl))
+                    mapConfigServerUrl = cfg.mapConfigUrl;
+            }
+        }
+
         if (string.IsNullOrEmpty(mapConfigServerUrl))
         {
             if (showDebugInfo)

@@ -15,8 +15,8 @@ MonoBehaviour:
   taskId: Shelter_Flood_Damage
   taskTitle: Shelter Flood Damage
   taskType: 0
-  description: A shelter has been severely damaged by flood water. We need to relocate
-    the residents immediately.
+  description: '[facility_name] has been severely damaged by flood water. We need
+    to relocate the residents immediately.'
   taskImage: {fileID: 21300000, guid: 09373f204d0d14b488fa491635b79346, type: 3}
   taskOfficer: 2
   taskTag: 2
@@ -64,7 +64,7 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   agentMessages:
-  - messageText: We have a critical situation. One of our shelters has been severely
+  - messageText: We have a critical situation. [facility_name] has been severely
       damaged by flood water. The building is no longer safe for habitation. Water
       has compromised the structure and electrical systems.
     agentAvatar: {fileID: 0}
@@ -78,6 +78,7 @@ MonoBehaviour:
   agentChoices:
   - choiceId: 0
     choiceText: Evacuate all residents to other shelters (Satisfaction + 10)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 0
       value: 10
@@ -106,6 +107,7 @@ MonoBehaviour:
     prioritizeNearestDestination: 0
   - choiceId: 1
     choiceText: Evacuate all residents to Motel (Satisfaction + 10)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 0
       value: 10
@@ -135,6 +137,7 @@ MonoBehaviour:
   - choiceId: 2
     choiceText: Helicopter evacuation to Motel (Immediate, $5000, Satisfaction +
       10)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 1
       value: -5000

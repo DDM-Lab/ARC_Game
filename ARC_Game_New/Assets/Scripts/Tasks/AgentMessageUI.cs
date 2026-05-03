@@ -4,7 +4,6 @@ using UnityEngine;
 using TMPro;
 using UnityEngine.UI;
 
-// Agent Message UI Component
 public class AgentMessageUI : MonoBehaviour
 {
     [Header("UI Components")]
@@ -23,6 +22,7 @@ public class AgentMessageUI : MonoBehaviour
     private bool isSkipped = false;
     private RectTransform parentRectTransform;
     private LayoutElement layoutElement;
+    private System.Action<string> onFacilityClick;
 
     void Awake()
     {
@@ -37,21 +37,35 @@ public class AgentMessageUI : MonoBehaviour
             layoutElement = gameObject.AddComponent<LayoutElement>();
     }
 
-    public void Initialize(AgentMessage agentMessage)
+    public void Initialize(AgentMessage agentMessage, System.Action<string> facilityClickCallback = null)
     {
         message = agentMessage;
         fullMessage = agentMessage.messageText;
+        onFacilityClick = facilityClickCallback;
 
-        // Set avatar
         if (agentAvatar != null && agentMessage.agentAvatar != null)
             agentAvatar.sprite = agentMessage.agentAvatar;
 
-        // Initially hide text for typing effect
         if (messageText != null)
             messageText.text = "";
-            
-        // Calculate and set initial height based on full message
+
         UpdateHeightForText(fullMessage);
+    }
+
+    void Update()
+    {
+        if (onFacilityClick == null || messageText == null || !Input.GetMouseButtonDown(0)) return;
+
+        Camera cam = messageText.canvas?.renderMode == RenderMode.ScreenSpaceOverlay
+            ? null
+            : messageText.canvas?.worldCamera;
+
+        int linkIndex = TMP_TextUtilities.FindIntersectingLink(messageText, Input.mousePosition, cam);
+        if (linkIndex >= 0)
+        {
+            string linkId = messageText.textInfo.linkInfo[linkIndex].GetLinkID();
+            onFacilityClick.Invoke(linkId);
+        }
     }
 
     public IEnumerator PlayTypingEffect(float typingSpeed)
@@ -59,25 +73,25 @@ public class AgentMessageUI : MonoBehaviour
         if (messageText == null || string.IsNullOrEmpty(fullMessage))
             yield break;
 
-        messageText.text = "";
-        
-        // Set height for full message at start to prevent layout jumping
+        // Set full text first so TMP can parse tags, then reveal character by character
+        messageText.text = fullMessage;
         UpdateHeightForText(fullMessage);
+        messageText.ForceMeshUpdate();
+        int totalChars = messageText.textInfo.characterCount;
+        messageText.maxVisibleCharacters = 0;
 
-        for (int i = 0; i <= fullMessage.Length; i++)
+        for (int i = 0; i <= totalChars; i++)
         {
             if (isSkipped)
             {
                 ShowFullMessage();
                 yield break;
             }
-            messageText.text = fullMessage.Substring(0, i);
-            
-            // Optional: Update height dynamically during typing (may cause slight jitter)
-            // UpdateHeightForText(messageText.text);
-            
+            messageText.maxVisibleCharacters = i;
             yield return new WaitForSecondsRealtime(typingSpeed);
         }
+
+        messageText.maxVisibleCharacters = int.MaxValue;
     }
 
     public void ShowFullMessage()
@@ -85,6 +99,7 @@ public class AgentMessageUI : MonoBehaviour
         if (messageText != null)
         {
             messageText.text = fullMessage;
+            messageText.maxVisibleCharacters = int.MaxValue;
             UpdateHeightForText(fullMessage);
         }
     }

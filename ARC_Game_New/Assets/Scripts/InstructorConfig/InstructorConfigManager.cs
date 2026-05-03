@@ -1,7 +1,8 @@
-using UnityEngine;
-using UnityEngine.Networking;
 using System;
 using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Networking;
 
 /// <summary>
 /// Singleton that owns the MapConfig being edited.
@@ -72,7 +73,7 @@ public class InstructorConfigManager : MonoBehaviour
     /// POST the current config JSON to the configured server URL.
     /// Fires OnSaveComplete when done (on main thread).
     /// </summary>
-    public void SaveToServer()
+    public void SaveToServer(string fileName = "latest_map_config.json")
     {
         if (string.IsNullOrEmpty(serverSaveUrl))
         {
@@ -81,8 +82,9 @@ public class InstructorConfigManager : MonoBehaviour
             return;
         }
 
+        string reqUrl = $"{serverSaveUrl}?file={fileName}";
         CurrentConfig.timestamp = DateTime.UtcNow.ToString("o");
-        StartCoroutine(PostConfigCoroutine(GetConfigJson()));
+        StartCoroutine(PostConfigCoroutine(reqUrl, GetConfigJson()));
     }
     IEnumerator SyncWithServerCoroutine()
     {
@@ -111,14 +113,66 @@ public class InstructorConfigManager : MonoBehaviour
         }
 
     }
-    IEnumerator PostConfigCoroutine(string json)
+    // load easy/med/hard
+    public void LoadPresetFromServer(string fileName, bool isMapOnly)
+    {
+        string requestUrl = $"{serverSaveUrl}?file={fileName}";
+        StartCoroutine(GetPresetCoroutine(requestUrl, isMapOnly));
+    }
+
+    IEnumerator GetPresetCoroutine(string url, bool isMapOnly)
+    {
+        using (UnityWebRequest req = UnityWebRequest.Get(url))
+        {
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                string json = req.downloadHandler.text;
+                if (string.IsNullOrEmpty(json))
+                {
+                    Debug.LogError("InstructorConfigManager: Server ret. empty string");
+                    yield break;
+                }
+
+                try
+                {
+                    MapConfig preset = JsonUtility.FromJson<MapConfig>(json);
+                    if (isMapOnly)
+                    {
+                        CurrentConfig.landLayer = preset.landLayer;
+                        CurrentConfig.riverLayer = preset.riverLayer;
+                        CurrentConfig.blockingLayer = preset.blockingLayer;
+                        CurrentConfig.roadLayer = preset.roadLayer;
+                        CurrentConfig.objects = preset.objects;
+                    }
+                    else
+                    {
+                        CurrentConfig.parameters = preset.parameters;
+                    }
+                    NotifyConfigChanged();
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"InstructorConfigManager: Failed to parse config JSON: {e.Message}!");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"InstructorConfigManager: Preset not found/server error: {req.error}!");
+            }
+        }
+    }
+
+    IEnumerator PostConfigCoroutine(string url, string json)
     {
         IsSaving = true;
 
         byte[] body = System.Text.Encoding.UTF8.GetBytes(json);
-        using (UnityWebRequest req = new UnityWebRequest(serverSaveUrl, "POST"))
+        //using (UnityWebRequest req = new UnityWebRequest(serverSaveUrl, "POST"))
+        using (UnityWebRequest req = new UnityWebRequest(url, "POST"))
         {
-            req.uploadHandler   = new UploadHandlerRaw(body);
+            req.uploadHandler = new UploadHandlerRaw(body);
             req.downloadHandler = new DownloadHandlerBuffer();
             req.SetRequestHeader("Content-Type", "application/json");
             req.timeout = 10;
@@ -141,8 +195,14 @@ public class InstructorConfigManager : MonoBehaviour
     /// Load a config from a JSON string (e.g. fetched from server).
     /// Returns false if parsing fails.
     /// </summary>
+
     public bool LoadFromJson(string json)
     {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            Debug.LogWarning("InstructorConfigManager: Got empty JSON string");
+            return false;
+        }
         try
         {
             MapConfig loaded = JsonUtility.FromJson<MapConfig>(json);
@@ -153,8 +213,53 @@ public class InstructorConfigManager : MonoBehaviour
         }
         catch (Exception ex)
         {
-            Debug.LogError($"InstructorConfigManager: Failed to parse config JSON – {ex.Message}");
+            Debug.LogError($"InstructorConfigManager: Parse error... {ex.Message}");
             return false;
         }
+    }
+
+    // only serialize map/param
+    [Serializable]
+    private class MapOnlyWrapper
+    {
+        public int gridWidth;
+        public int gridHeight;
+        public bool[] landLayer;
+        public bool[] riverLayer;
+        public bool[] blockingLayer;
+        public bool[] roadLayer;
+        public List<PlacedObjectData> objects;
+    }
+
+    [Serializable]
+    private class ParamsOnlyWrapper
+    {
+        public ScenarioParameters parameters;
+    }
+
+    public void SaveMapOnly(string fileName)
+    {
+        var data = new MapOnlyWrapper
+        {
+            gridWidth = CurrentConfig.gridWidth,
+            gridHeight = CurrentConfig.gridHeight,
+            landLayer = CurrentConfig.landLayer,
+            riverLayer = CurrentConfig.riverLayer,
+            blockingLayer = CurrentConfig.blockingLayer,
+            roadLayer = CurrentConfig.roadLayer,
+            objects = CurrentConfig.objects
+        };
+        string json = JsonUtility.ToJson(data);
+        StartCoroutine(PostConfigCoroutine($"{serverSaveUrl}?file={fileName}", json));
+    }
+
+    public void SaveParamsOnly(string fileName)
+    {
+        var data = new ParamsOnlyWrapper
+        {
+            parameters = CurrentConfig.parameters
+        };
+        string json = JsonUtility.ToJson(data);
+        StartCoroutine(PostConfigCoroutine($"{serverSaveUrl}?file={fileName}", json));
     }
 }

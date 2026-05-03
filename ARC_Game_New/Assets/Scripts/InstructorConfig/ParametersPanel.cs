@@ -24,6 +24,9 @@ public class ParametersPanel : MonoBehaviour
     {
         public enum RowType { Slider, Dropdown} // for enums like weather type etc.
         [Tooltip("Must match a switch-case in GetValue/SetValue")]
+        [TextArea(3, 10)]
+        public string description;  
+        public Button infoButton;   
         public string paramName;
         public RowType controlType; 
         public Slider          slider;
@@ -39,6 +42,10 @@ public class ParametersPanel : MonoBehaviour
     [Header("Parameter Rows")]
     public ParameterRow[] rows;
 
+    [Header("Sidebar Popup References")]
+    public GameObject infoPanelRoot;   
+    public TextMeshProUGUI infoText;    
+
     // Guard against feedback loops when we programmatically set UI values
     bool _syncing;
 
@@ -46,7 +53,19 @@ public class ParametersPanel : MonoBehaviour
 
     void OnEnable()
     {
+        if (InstructorConfigManager.Instance != null)
+        {
+            InstructorConfigManager.Instance.OnConfigChanged += LoadFromConfig;
+        }
+
         LoadFromConfig();
+    }
+    void OnDisable()
+    {
+        if (InstructorConfigManager.Instance != null)
+        {
+            InstructorConfigManager.Instance.OnConfigChanged -= LoadFromConfig;
+        }
     }
 
     // ── Load config → UI ──────────────────────────────────────────────────────
@@ -106,9 +125,29 @@ public class ParametersPanel : MonoBehaviour
             row.inputField.onEndEdit.RemoveAllListeners();
             row.inputField.onEndEdit.AddListener(s => OnInputChanged(capturedRow, s));
 
+            if (row.infoButton != null)
+            {
+                row.infoButton.onClick.RemoveAllListeners();
+                row.infoButton.onClick.AddListener(() => ToggleInfoPanel(capturedRow.description));
+            }
+
             _syncing = false;
         }
-}
+
+        void ToggleInfoPanel(string description)
+        {
+            if (infoPanelRoot == null) return;
+            if (infoPanelRoot.activeSelf && infoText.text == description)
+            {
+                infoPanelRoot.SetActive(false);
+            }
+            else
+            {
+                infoPanelRoot.SetActive(true);
+                infoText.text = description;
+            }
+        }
+    }
 
     // ── Callbacks ─────────────────────────────────────────────────────────────
 

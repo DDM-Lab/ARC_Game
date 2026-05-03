@@ -1,1 +1,5 @@
-{ "wsUrl": "ws://janus.hss.cmu.edu/agent-ws" }
+{
+  "wsUrl": "ws://janus.hss.cmu.edu/agent-ws",
+  "mapConfigUrl": "http://janus.hss.cmu.edu/cgi-bin/map_config.cgi",
+  "logServerUrl": "http://janus.hss.cmu.edu/cgi-bin/save_game_logs.py"
+}

@@ -198,6 +198,52 @@ public class TaskDetailUI : MonoBehaviour
         return sb.ToString();
     }
 
+    void OnFacilityLinkClicked(string facilityObjectName)
+    {
+        StopAllCoroutines();
+        isTyping = false;
+        currentTypingMessage = null;
+        StartCoroutine(PeekAtFacility(facilityObjectName));
+    }
+
+    IEnumerator PeekAtFacility(string facilityObjectName)
+    {
+        taskDetailPanel.SetActive(false);
+        FacilityHighlightSystem.Instance?.HighlightFacility(facilityObjectName);
+        float wait = FacilityHighlightSystem.Instance?.TotalDuration ?? 2f;
+        yield return new WaitForSecondsRealtime(wait);
+        taskDetailPanel.SetActive(true);
+    }
+
+    public void PreviewChoiceRoute(AgentChoice choice)
+    {
+        if (choice == null || currentTask == null || TaskSystem.Instance == null) return;
+
+        MonoBehaviour triggeringFacility = ResolveTriggeringFacility();
+        MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
+        MonoBehaviour dest   = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+
+        if (source == null || dest == null)
+        {
+            Debug.LogWarning("[PreviewChoiceRoute] Could not resolve source or destination.");
+            return;
+        }
+
+        StopAllCoroutines();
+        isTyping = false;
+        currentTypingMessage = null;
+        StartCoroutine(PeekForRoute(source, dest));
+    }
+
+    IEnumerator PeekForRoute(MonoBehaviour source, MonoBehaviour dest)
+    {
+        taskDetailPanel.SetActive(false);
+        FacilityHighlightSystem.Instance?.HighlightRoute(source, dest);
+        float wait = FacilityHighlightSystem.Instance?.TotalDuration ?? 2f;
+        yield return new WaitForSecondsRealtime(wait);
+        taskDetailPanel.SetActive(true);
+    }
+
     public void CloseTaskDetail()
     {
         GameLogPanel.Instance?.LogUIInteraction($"Closed task: {currentTask?.taskTitle}");
@@ -342,7 +388,10 @@ public class TaskDetailUI : MonoBehaviour
             if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
                 yield break;
 
-            yield return StartCoroutine(DisplayAgentMessage(message, isFirstTimeShowing));
+            AgentMessage resolved = new AgentMessage(currentTask.ResolveFacilityName(message.messageText), message.agentAvatar);
+            resolved.useTypingEffect = message.useTypingEffect;
+            resolved.typingSpeed = message.typingSpeed;
+            yield return StartCoroutine(DisplayAgentMessage(resolved, isFirstTimeShowing));
         }
 
         // Check if panel is still active before displaying choices
@@ -376,10 +425,10 @@ public class TaskDetailUI : MonoBehaviour
 
         if (messageUI != null)
         {
-            messageUI.Initialize(message);
+            messageUI.Initialize(message, OnFacilityLinkClicked);
 
             // Only show typing effect if it's the first time AND conditions are met AND settings allow it
-            if (message.useTypingEffect && currentTask.status == TaskStatus.Active && 
+            if (message.useTypingEffect && currentTask.status == TaskStatus.Active &&
                 !currentTask.isExpired && isFirstTimeShowing && !SettingsPanel.SkipTyping)
             {
                 isTyping = true;
@@ -1091,7 +1140,10 @@ public class TaskDetailUI : MonoBehaviour
     }
 
     //  ---------CHOICE DELIVERY VALIDATION ---------
-    bool ValidateChoiceDelivery(AgentChoice choice, out string errorMessage)
+    bool ValidateChoiceDelivery(AgentChoice choice, out string errorMessage) =>
+        ValidateChoiceDelivery(currentTask, choice, out errorMessage);
+
+    public static bool ValidateChoiceDelivery(GameTask task, AgentChoice choice, out string errorMessage)
     {
         errorMessage = "";
 
@@ -1116,7 +1168,7 @@ public class TaskDetailUI : MonoBehaviour
                     if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
                     return ClientRelocationHandler.Instance != null
                         && ClientRelocationHandler.Instance.CanExecute(
-                            currentTask, choice.deliveryQuantity, toShelter, toMotel,
+                            task, choice.deliveryQuantity, toShelter, toMotel,
                             out errorMessage, requireVehicle: false);
                 }
 
@@ -1130,7 +1182,7 @@ public class TaskDetailUI : MonoBehaviour
         {
             case ResourceType.FoodPacks:
                 return FoodDeliveryHandler.Instance != null
-                    && FoodDeliveryHandler.Instance.CanExecute(currentTask, choice.deliveryQuantity, out errorMessage);
+                    && FoodDeliveryHandler.Instance.CanExecute(task, choice.deliveryQuantity, out errorMessage);
 
             case ResourceType.Population:
                 bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
@@ -1140,10 +1192,10 @@ public class TaskDetailUI : MonoBehaviour
                 if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
                 return ClientRelocationHandler.Instance != null
                     && ClientRelocationHandler.Instance.CanExecute(
-                        currentTask, choice.deliveryQuantity, toShelter, toMotel, out errorMessage);
+                        task, choice.deliveryQuantity, toShelter, toMotel, out errorMessage);
 
             default:
-                bool hasVehicle = FindObjectsOfType<Vehicle>()
+                bool hasVehicle = UnityEngine.Object.FindObjectsOfType<Vehicle>()
                     .Any(v => v.GetAllowedCargoTypes().Contains(choice.deliveryCargoType)
                         && v.GetCurrentStatus() != VehicleStatus.Damaged);
                 if (!hasVehicle) errorMessage = $"No undamaged vehicle for {choice.deliveryCargoType}";
@@ -2472,22 +2524,36 @@ public class TaskDetailUI : MonoBehaviour
 
     void UpdateChoiceValidation()
     {
+        MonoBehaviour triggeringFacility = ResolveTriggeringFacility();
+
         foreach (GameObject item in currentConversationItems)
         {
             AgentChoiceUI choiceUI = item.GetComponent<AgentChoiceUI>();
-            if (choiceUI != null)
-            {
-                AgentChoice choice = choiceUI.GetChoice();
-                if (choice.triggersDelivery)
-                {
-                    string errorMessage;
-                    bool isValid = ValidateChoiceDelivery(choice, out errorMessage);
+            if (choiceUI == null) continue;
 
-                    // Update choice appearance based on validity
-                    choiceUI.SetValidationState(isValid, errorMessage);
-                }
-            }
+            AgentChoice choice = choiceUI.GetChoice();
+            bool hasDelivery = choice.triggersDelivery || choice.immediateDelivery;
+            if (!hasDelivery) continue;
+
+            // Validation state (colors/message)
+            string errorMessage = "";
+            bool isValid = !choice.triggersDelivery || ValidateChoiceDelivery(choice, out errorMessage);
+            choiceUI.SetValidationState(isValid, errorMessage);
+
+            // Preview button — hide when route can't be resolved
+            bool canPreview = TaskSystem.Instance != null
+                && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
+                && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
+            choiceUI.SetPreviewVisible(canPreview);
         }
+    }
+
+    MonoBehaviour ResolveTriggeringFacility()
+    {
+        if (currentTask == null || string.IsNullOrEmpty(currentTask.affectedFacility)) return null;
+        var go = GameObject.Find(currentTask.affectedFacility);
+        if (go == null) return null;
+        return (MonoBehaviour)go.GetComponent<Building>() ?? go.GetComponent<PrebuiltBuilding>();
     }
 
     public void PreventScrollReset()
