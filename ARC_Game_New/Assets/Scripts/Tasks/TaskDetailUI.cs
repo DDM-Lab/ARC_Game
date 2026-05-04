@@ -1607,6 +1607,14 @@ public class TaskDetailUI : MonoBehaviour
 
     void ShowAgentErrorMessage(string errorText)
     {
+        // If the task panel is not visible (e.g. called via AgentConversationUI), fall back to a toast
+        if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
+        {
+            ToastManager.ShowToast(errorText, ToastType.Warning, true);
+            if (showDebugInfo) Debug.Log($"ShowAgentErrorMessage (panel inactive, toast fallback): {errorText}");
+            return;
+        }
+
         // Create a temporary agent message to show the error
         GameObject errorMessageItem = Instantiate(agentMessagePrefab, conversationContent);
         AgentMessageUI messageUI = errorMessageItem.GetComponent<AgentMessageUI>();
@@ -2544,8 +2552,9 @@ public class TaskDetailUI : MonoBehaviour
             bool isValid = !choice.triggersDelivery || ValidateChoiceDelivery(choice, out errorMessage);
             choiceUI.SetValidationState(isValid, errorMessage);
 
-            // Preview button — hide when route can't be resolved
-            bool canPreview = TaskSystem.Instance != null
+            // Preview button — hide when choice is invalid or route can't be resolved
+            bool canPreview = isValid
+                && TaskSystem.Instance != null
                 && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
                 && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
             choiceUI.SetPreviewVisible(canPreview);

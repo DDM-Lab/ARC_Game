@@ -663,8 +663,8 @@ public class DailyReportUI : MonoBehaviour
         SetSectionValueFormatted(foodUtilizationTotal, metrics.kitchenEfficiencyScore);
         int storedFoodInStorage = Mathf.RoundToInt(metrics.mealUsageRate); // mealUsageRate now stores food pack count
         SetSectionSentence(foodUsageSummary, storedFoodInStorage == 0
-            ? "No food packs remaining in storage. No waste!"
-            : $"{storedFoodInStorage} food pack(s) in storage will go to waste.");
+            ? "No meals remaining in storage. No waste!"
+            : $"{storedFoodInStorage} meal(s) in storage will go to waste.");
         SetSectionValueFormatted(kitchenEfficiencyScore, metrics.kitchenEfficiencyScore);
         
         SetSectionValueFormatted(shelterUtilizationTotal, metrics.shelterEfficiencyScore);
@@ -966,8 +966,8 @@ public class DailyReportUI : MonoBehaviour
     {
         int foodInStorage = currentMetrics.currentFoodInStorage;
         if (foodInStorage == 0)
-            return "No food packs remaining in storage. No waste!";
-        return $"{foodInStorage} food pack(s) in storage will go to waste.";
+            return "No meals remaining in storage. No waste!";
+        return $"{foodInStorage} meal(s) in storage will go to waste.";
     }
 
     string GenerateShelterUsageSummaryText()

@@ -103,7 +103,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Request 200 food packs from Kitchens
+    choiceText: Request 200 meals from Kitchens
     agentReasoning: 
     choiceImpacts: []
     isSelected: 0
@@ -128,7 +128,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 2
-    choiceText: Helicopter deliver 100 food packs (immediate)
+    choiceText: Helicopter deliver 100 meals (immediate)
     agentReasoning: 
     choiceImpacts:
     - impactType: 1

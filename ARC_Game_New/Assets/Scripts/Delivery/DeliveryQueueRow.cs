@@ -27,7 +27,7 @@ public class DeliveryQueueRow : MonoBehaviour
         // Cargo
         if (cargoText != null)
         {
-            string cargoLabel = delivery.cargoType == ResourceType.Population ? "clients" : "food packs";
+            string cargoLabel = delivery.cargoType == ResourceType.Population ? "clients" : "meals";
             cargoText.text = $"{delivery.quantity}x {cargoLabel}";
         }
 
@@ -99,7 +99,7 @@ public class DeliveryQueueRow : MonoBehaviour
         PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
         if (pb != null) return pb.GetBuildingName();
         Building b = building.GetComponent<Building>();
-        if (b != null) return $"{b.GetBuildingType()} (Site {b.GetOriginalSiteId()})";
+        if (b != null) return b.GetDisplayName();
         return building.name;
     }
 }

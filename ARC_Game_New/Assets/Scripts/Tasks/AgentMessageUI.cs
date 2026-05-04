@@ -151,7 +151,8 @@ public class AgentMessageUI : MonoBehaviour
         messageText.text = originalText;
         
         // Force layout rebuild if in a layout group
-        LayoutRebuilder.ForceRebuildLayoutImmediate(parentRectTransform);
+        if (parentRectTransform != null)
+            LayoutRebuilder.ForceRebuildLayoutImmediate(parentRectTransform);
     }
     
     // Public method to manually recalculate height if needed

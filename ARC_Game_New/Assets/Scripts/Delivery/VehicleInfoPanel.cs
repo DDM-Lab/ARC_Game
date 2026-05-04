@@ -259,7 +259,7 @@ public class VehicleInfoPanel : MonoBehaviour
         }
         
         ResourceType cargoType = currentVehicle.GetPrimaryCargoType();
-        string cargoTypeName = cargoType == ResourceType.Population ? "Clients" : "Food Packs";
+        string cargoTypeName = cargoType == ResourceType.Population ? "Clients" : "Meals";
         return $"Cargo: {cargoTypeName} ({totalCargo}/{currentVehicle.maxCargoCapacity})";
     }
     

@@ -1274,7 +1274,14 @@ public class TaskSystem : MonoBehaviour
             // Show task result popup
             if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other) && (task.taskType != TaskType.Advisory))
             {
-                TaskResultManager.Instance.ShowTaskResult(task);
+                // If the task had choices but the player never acted (status was never set to InProgress),
+                // make it explicit that inaction caused the failure.
+                bool noActionTaken = task.agentChoices != null && task.agentChoices.Count > 0
+                                     && task.status != TaskStatus.InProgress;
+                string reason = noActionTaken
+                    ? "No action was taken. The task expired before you responded."
+                    : "";
+                TaskResultManager.Instance.ShowTaskResult(task, reason);
             }
         }
     }

@@ -225,7 +225,8 @@ public class Vehicle : MonoBehaviour
         if (currentPath.Count == 0)
         {
             if (showDebugInfo)
-                Debug.LogError($"Vehicle {vehicleName} could not find flood-free path to {targetPos}");
+                Debug.LogWarning($"Vehicle {vehicleName} could not find flood-free path to {targetPos} — treating as flood blockage");
+            StopVehicleDueToFlood();
             yield break;
         }
 
@@ -292,6 +293,13 @@ public class Vehicle : MonoBehaviour
         // Trigger vehicle repair task
         TriggerVehicleRepairTask();
 
+        // Remove the delivery from DeliverySystem's active list so it doesn't hang in the queue
+        if (currentTask != null)
+        {
+            DeliverySystem.Instance?.RemoveActiveDeliveryTask(currentTask.taskId);
+            currentTask = null;
+        }
+
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} stopped due to flood at position {transform.position}");
     }
@@ -307,7 +315,7 @@ public class Vehicle : MonoBehaviour
             {
                 bool hasLoaded = currentCargo.Any(kv => kv.Value > 0);
                 string phase = hasLoaded ? "en route to drop-off" : "en route to pick-up";
-                string cargoLabel = currentTask.cargoType == ResourceType.Population ? "clients" : "food packs";
+                string cargoLabel = currentTask.cargoType == ResourceType.Population ? "clients" : "meals";
                 string src = GetBuildingDisplayName(currentTask.sourceBuilding);
                 string dst = GetBuildingDisplayName(currentTask.destinationBuilding);
                 string reason =
@@ -334,7 +342,7 @@ public class Vehicle : MonoBehaviour
         PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
         if (pb != null) return pb.GetBuildingName();
         Building b = building.GetComponent<Building>();
-        if (b != null) return $"{b.GetBuildingType()} (Site {b.GetOriginalSiteId()})";
+        if (b != null) return b.GetDisplayName();
         return building.name;
     }
 
