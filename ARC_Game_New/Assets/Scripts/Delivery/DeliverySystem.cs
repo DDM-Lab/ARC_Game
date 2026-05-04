@@ -703,6 +703,25 @@ public class DeliverySystem : MonoBehaviour
         return new List<DeliveryTask>(activeTasks);
     }
 
+    /// <summary>
+    /// Get all pending (queued but not yet assigned) delivery tasks (for UI display)
+    /// </summary>
+    public List<DeliveryTask> GetPendingTasks()
+    {
+        return new List<DeliveryTask>(pendingTasks);
+    }
+
+    /// <summary>
+    /// Find the vehicle currently executing a specific delivery task id
+    /// </summary>
+    public Vehicle GetVehicleForTask(int deliveryTaskId)
+    {
+        foreach (Vehicle v in availableVehicles)
+            if (v.currentTask != null && v.currentTask.taskId == deliveryTaskId)
+                return v;
+        return null;
+    }
+
     public bool HasPendingOrActiveDeliveries()
     {
         return pendingTasks.Count > 0 || activeTasks.Count > 0;

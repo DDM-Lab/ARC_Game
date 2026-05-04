@@ -17,7 +17,11 @@
       "Bash(git add *)",
       "Bash(grep -v \"^\\\\+\\\\s*$\")",
       "Bash(grep -v \"^-\\\\s*$\")",
-      "Bash(grep -v \"^-\\\\s*//\")"
+      "Bash(grep -v \"^-\\\\s*//\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Shanzhi\\\\Documents\\\\GitHub\\\\ARC_Game\\\\ARC_Game_New\\\\Assets\\\\Scripts\" -Recurse -Filter \"*.cs\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(xargs grep *)"
     ]
   }
 }

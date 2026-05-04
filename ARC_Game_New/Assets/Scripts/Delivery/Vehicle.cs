@@ -302,13 +302,22 @@ public class Vehicle : MonoBehaviour
         if (currentTask != null)
         {
             GameTask relatedTask = FindRelatedGameTask();
-            
-            // Only handle delivery failure if we found a related game task
+
             if (relatedTask != null)
             {
-                TaskSystem.Instance?.HandleDeliveryFailure(relatedTask);
+                bool hasLoaded = currentCargo.Any(kv => kv.Value > 0);
+                string phase = hasLoaded ? "en route to drop-off" : "en route to pick-up";
+                string cargoLabel = currentTask.cargoType == ResourceType.Population ? "clients" : "food packs";
+                string src = GetBuildingDisplayName(currentTask.sourceBuilding);
+                string dst = GetBuildingDisplayName(currentTask.destinationBuilding);
+                string reason =
+                    $"Vehicle \"{vehicleName}\" was {phase} ({currentTask.quantity} {cargoLabel} from {src} to {dst}) " +
+                    $"when it was stopped by flooding. The delivery has been halted. " +
+                    $"Satisfaction penalty: {relatedTask.deliveryFailureSatisfactionPenalty}.";
+
+                TaskSystem.Instance?.HandleDeliveryFailure(relatedTask, reason);
             }
-            
+
             // Always create road blockage task if we have a delivery task
             FloodTaskGenerator.Instance?.CreateRoadBlockageTask(this, currentTask);
         }
@@ -317,6 +326,16 @@ public class Vehicle : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Vehicle {vehicleName} blocked by flood but has no delivery task - skipping road blockage task");
         }
+    }
+
+    static string GetBuildingDisplayName(MonoBehaviour building)
+    {
+        if (building == null) return "Unknown";
+        PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
+        if (pb != null) return pb.GetBuildingName();
+        Building b = building.GetComponent<Building>();
+        if (b != null) return $"{b.GetBuildingType()} (Site {b.GetOriginalSiteId()})";
+        return building.name;
     }
 
     void TriggerVehicleRepairTask()

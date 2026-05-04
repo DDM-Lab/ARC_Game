@@ -658,7 +658,7 @@ public class TaskSystem : MonoBehaviour
         return task.linkedDeliveryTaskIds.All(id => completed.Any(d => d.taskId == id));
     }
 
-    public void HandleDeliveryFailure(GameTask task)
+    public void HandleDeliveryFailure(GameTask task, string reason = "")
     {
         if (task == null)
         {
@@ -690,7 +690,9 @@ public class TaskSystem : MonoBehaviour
             // Show task result popup with delivery failure reason
             if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
             {
-                TaskResultManager.Instance.ShowTaskResult(task, $"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
+                if (string.IsNullOrEmpty(reason))
+                    reason = $"Delivery failed for task: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}.";
+                TaskResultManager.Instance.ShowTaskResult(task, reason);
             }
         }
     }
