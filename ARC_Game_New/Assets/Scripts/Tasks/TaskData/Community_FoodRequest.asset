@@ -17,7 +17,7 @@ MonoBehaviour:
   taskType: 1
   description: '[facility_name] has people but no food supplies. We need to request
     emergency food delivery from the nearest kitchen.'
-  taskImage: {fileID: 21300000, guid: 7099591f7bcf3f343aeb32a4fd0d27cb, type: 3}
+  taskImage: {fileID: 21300000, guid: a2ba475e51fc353469fa5bc8ff4de77f, type: 3}
   taskOfficer: 4
   taskTag: 1
   roundTriggers: []
@@ -95,7 +95,7 @@ MonoBehaviour:
     sourceBuilding: 0
     sourcePrebuilt: 0
     specificSourceName: 
-    destinationType: 2
+    destinationType: 3
     destinationBuilding: 1
     destinationPrebuilt: 0
     specificDestinationName: 
@@ -120,7 +120,7 @@ MonoBehaviour:
     sourceBuilding: 0
     sourcePrebuilt: 0
     specificSourceName: 
-    destinationType: 2
+    destinationType: 3
     destinationBuilding: 1
     destinationPrebuilt: 0
     specificDestinationName: 
@@ -149,7 +149,7 @@ MonoBehaviour:
     sourceBuilding: 0
     sourcePrebuilt: 0
     specificSourceName: 
-    destinationType: 2
+    destinationType: 3
     destinationBuilding: 1
     destinationPrebuilt: 0
     specificDestinationName: 

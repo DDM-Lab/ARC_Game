@@ -30,7 +30,7 @@ public class TaskResultPopup : MonoBehaviour
     void Start()
     {
         if (closeButton != null)
-            closeButton.onClick.AddListener(() => Destroy(gameObject));
+            closeButton.onClick.AddListener(() => { TaskResultManager.Instance?.OnPopupClosed(); Destroy(gameObject); });
         
         if (viewDetailsButton != null)
             viewDetailsButton.onClick.AddListener(OnViewDetailsClicked);
@@ -137,6 +137,7 @@ public class TaskResultPopup : MonoBehaviour
             Debug.LogWarning("TaskDetailUI not found!");
         }
         
+        TaskResultManager.Instance?.OnPopupClosed();
         Destroy(gameObject);
     }
 }

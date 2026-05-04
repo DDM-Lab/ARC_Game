@@ -16,6 +16,7 @@ public class TaskDetailUI : MonoBehaviour
 
     [Header("Left Panel - Task Description")]
     public Image taskImage;
+    public Sprite defaultTaskImage;
     public TextMeshProUGUI taskTitleText;
     public TextMeshProUGUI facilityText;
     public TextMeshProUGUI descriptionText;
@@ -282,7 +283,7 @@ public class TaskDetailUI : MonoBehaviour
 
         // Update task info
         if (taskImage != null)
-            taskImage.sprite = currentTask.taskImage;
+            taskImage.sprite = currentTask.taskImage ?? defaultTaskImage;
 
         if (taskTitleText != null)
             taskTitleText.text = currentTask.taskTitle;
@@ -291,7 +292,10 @@ public class TaskDetailUI : MonoBehaviour
             facilityText.text = string.IsNullOrEmpty(currentTask.facilityDisplayName) ? currentTask.affectedFacility : currentTask.facilityDisplayName;
 
         if (descriptionText != null)
-            descriptionText.text = currentTask.description;
+        {
+            string facilityName = string.IsNullOrEmpty(currentTask.facilityDisplayName) ? currentTask.affectedFacility : currentTask.facilityDisplayName;
+            descriptionText.text = currentTask.description.Replace("[facility_name]", facilityName);
+        }
 
         if (taskTypeImage != null)
         {
