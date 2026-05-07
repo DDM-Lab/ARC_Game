@@ -25179,14 +25179,14 @@ RectTransform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 1343299881}
   - {fileID: 722890613}
+  - {fileID: 1343299881}
   m_Father: {fileID: 797681952}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: -388}
-  m_SizeDelta: {x: 340, y: 64}
+  m_AnchoredPosition: {x: 602.1, y: -399}
+  m_SizeDelta: {x: 235.21, y: 64}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &515993795
 MonoBehaviour:
@@ -25207,7 +25207,7 @@ MonoBehaviour:
     m_Bottom: 10
   m_ChildAlignment: 0
   m_Spacing: 0
-  m_ChildForceExpandWidth: 1
+  m_ChildForceExpandWidth: 0
   m_ChildForceExpandHeight: 1
   m_ChildControlWidth: 0
   m_ChildControlHeight: 0
@@ -25234,7 +25234,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: d6790a7dcf10c97448e2b575192cfb1d, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 65cef239701f5184db0711a7c20820b0, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -44670,7 +44670,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 246.72, y: 40}
+  m_SizeDelta: {x: 166.55, y: 40}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &722890614
 MonoBehaviour:
@@ -59396,7 +59396,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 8.32, y: -313.32}
+  m_AnchoredPosition: {x: 280, y: -387}
   m_SizeDelta: {x: 400, y: 77.05}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1026589710
@@ -59428,8 +59428,8 @@ MonoBehaviour:
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4281132260
-  m_fontColor: {r: 0.89433956, g: 0.89433956, b: 0.17380556, a: 1}
+    rgba: 4289593343
+  m_fontColor: {r: 1, g: 1, b: 0.6792453, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
@@ -63295,6 +63295,7 @@ GameObject:
   - component: {fileID: 1105357441}
   - component: {fileID: 1105357443}
   - component: {fileID: 1105357444}
+  - component: {fileID: 1105357445}
   m_Layer: 5
   m_Name: AlertUIPanel
   m_TagString: Untagged
@@ -63364,6 +63365,19 @@ MonoBehaviour:
   lodgingMassCareSprite: {fileID: 21300000, guid: 941cebf6bbf755c4dbe5a2dbdb31b1f4, type: 3}
   externalRelationshipSprite: {fileID: 21300000, guid: ab959cd0f0c172345ae5d1e39e4005e5, type: 3}
   foodMassCareSprite: {fileID: 21300000, guid: 491e4111ec4c9ec438404c035888a5d6, type: 3}
+--- !u!114 &1105357445
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1105357440}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1485b2269f0fb4b438671fe1b75fbdd6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  targetText: {fileID: 383087057}
 --- !u!1 &1107026671
 GameObject:
   m_ObjectHideFlags: 0
@@ -72094,7 +72108,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 151.5, y: 40}
+  m_SizeDelta: {x: 63.13, y: 40}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1298771422
 MonoBehaviour:
@@ -72116,7 +72130,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Simulation Speed
+  m_text: Sim Speed
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: ad881f4c28b597942977dda570c5317c, type: 2}
   m_sharedMaterial: {fileID: 6377536458067307535, guid: ad881f4c28b597942977dda570c5317c, type: 2}
@@ -72179,7 +72193,7 @@ MonoBehaviour:
   m_VertexBufferAutoSizeReduction: 0
   m_useMaxVisibleDescender: 1
   m_pageToDisplay: 1
-  m_margin: {x: 0, y: 0, z: 0, w: 0}
+  m_margin: {x: -28.067274, y: 0, z: 0, w: 0}
   m_isUsingLegacyAnimationComponent: 0
   m_isVolumetricText: 0
   m_hasFontAssetChanged: 0
@@ -103566,6 +103580,7 @@ GameObject:
   - component: {fileID: 1843684325}
   - component: {fileID: 1843684327}
   - component: {fileID: 1843684326}
+  - component: {fileID: 1843684328}
   m_Layer: 5
   m_Name: AlertUIPanel (TutorialMessageUI
   m_TagString: Untagged
@@ -103635,6 +103650,19 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1843684324}
   m_CullTransparentMesh: 1
+--- !u!114 &1843684328
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1843684324}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1485b2269f0fb4b438671fe1b75fbdd6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  targetText: {fileID: 70405001}
 --- !u!1 &1846952786
 GameObject:
   m_ObjectHideFlags: 0
