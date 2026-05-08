@@ -48640,6 +48640,7 @@ MonoBehaviour:
   playSprite: {fileID: 21300000, guid: 44bbb14b59706a24b8de48489025d74e, type: 3}
   playerActionMessage: Game paused for decisions. Click Execute to begin simulation.
   speedLockedMessage: Cannot change speed during active simulation.
+  skipRoundMessage: "Skipping this round \u2014 no deliveries in progress."
   displayDuration: 3
   fadeInDuration: 0.3
   fadeOutDuration: 0.3
@@ -65965,7 +65966,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1164501840
 MonoBehaviour:
   m_ObjectHideFlags: 0

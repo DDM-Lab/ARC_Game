@@ -27,6 +27,11 @@ public class ClockAnimationUI : MonoBehaviour
 
     public static ClockAnimationUI Instance { get; private set; }
 
+    private bool isPaused = false;
+
+    public void Pause()  { isPaused = true; }
+    public void Resume() { isPaused = false; }
+
     void Awake()
     {
         if (Instance == null) Instance = this;
@@ -91,6 +96,7 @@ public class ClockAnimationUI : MonoBehaviour
             {
                 if (clockImage != null) clockImage.sprite = frames[i];
                 yield return new WaitForSecondsRealtime(frameDuration);
+                while (isPaused) yield return null;
             }
     }
 
@@ -112,6 +118,7 @@ public class ClockAnimationUI : MonoBehaviour
             {
                 if (clockImage != null) clockImage.sprite = frames[i];
                 yield return new WaitForSecondsRealtime(frameDuration);
+                while (isPaused) yield return null;
             }
 
         onComplete?.Invoke();
