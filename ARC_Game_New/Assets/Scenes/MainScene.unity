@@ -26616,6 +26616,8 @@ GameObject:
   - component: {fileID: 550057046}
   - component: {fileID: 550057047}
   - component: {fileID: 550057048}
+  - component: {fileID: 550057050}
+  - component: {fileID: 550057049}
   m_Layer: 0
   m_Name: MapBuildingWorkerManager
   m_TagString: Untagged
@@ -26792,6 +26794,31 @@ MonoBehaviour:
   positiveColor: {r: 0.2, g: 0.6, b: 0.2, a: 1}
   negativeColor: {r: 0.6, g: 0.2, b: 0.2, a: 1}
   neutralColor: {r: 0.6, g: 0.4, b: 0.2, a: 1}
+--- !u!114 &550057049
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 550057041}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3e751445468ecf3459bd6e3e77f2ded2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &550057050
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 550057041}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 903333c13c2d15c499365d3c33127bb2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  showDebugInfo: 1
 --- !u!1 &555145402
 GameObject:
   m_ObjectHideFlags: 0

@@ -681,6 +681,17 @@ public class TaskDetailUI : MonoBehaviour
             }
         }
 
+        // Validate worker assignment if this task is managed by WorkerAssignmentHandler
+        if (WorkerAssignmentHandler.Instance != null)
+        {
+            string workerError;
+            if (!WorkerAssignmentHandler.Instance.ValidateForConfirm(currentTask, out workerError))
+            {
+                ShowAgentErrorMessage(workerError);
+                return;
+            }
+        }
+
         // Check if this is the first time confirming a task
         /*if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstTaskConfirm())
         {
