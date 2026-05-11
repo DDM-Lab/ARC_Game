@@ -598,6 +598,13 @@ public class Vehicle : MonoBehaviour
         return currentCargo.ContainsKey(type) ? currentCargo[type] : 0;
     }
 
+    public void ClearAllCargo()
+    {
+        var keys = new System.Collections.Generic.List<ResourceType>(currentCargo.Keys);
+        foreach (var key in keys)
+            currentCargo[key] = 0;
+    }
+
     /// <summary>
     /// Check if vehicle is available for new tasks
     /// </summary>
