@@ -48,7 +48,7 @@ public class FoodDeliveryHandler : MonoBehaviour
 
         if (effectiveNeed <= 0)
         {
-            errorMessage = $"{alreadyInbound} food packs already inbound — need is covered";
+            errorMessage = $"{alreadyInbound} meals already inbound — need is covered";
             return false;
         }
 
@@ -56,7 +56,10 @@ public class FoodDeliveryHandler : MonoBehaviour
         int totalEffective = GetTotalEffectiveFood(ds);
         if (totalEffective <= 0)
         {
-            errorMessage = "No food packs available across any kitchen";
+            int totalRawStock = GetTotalRawFood();
+            errorMessage = totalRawStock > 0
+                ? "All available meals are already scheduled for other deliveries"
+                : "No meals available across any kitchen";
             return false;
         }
 
@@ -183,6 +186,13 @@ public class FoodDeliveryHandler : MonoBehaviour
             .Where(k => k.effectiveStock > 0)
             .OrderByDescending(k => k.effectiveStock)
             .ToList();
+    }
+
+    int GetTotalRawFood()
+    {
+        return FindObjectsOfType<Building>()
+            .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
+            .Sum(b => GetStorage(b)?.GetResourceAmount(ResourceType.FoodPacks) ?? 0);
     }
 
     int GetTotalEffectiveFood(DeliverySystem ds)

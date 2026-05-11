@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using TMPro;
 using System.Collections.Generic;
 
@@ -8,392 +9,227 @@ public class VehicleInfoPanel : MonoBehaviour
     [Header("Panel References")]
     public GameObject infoPanel;
     public Button closeButton;
-    
+
     [Header("Info Display")]
-    public TextMeshProUGUI vehicleIdText;
-    public TextMeshProUGUI statusText;
-    public TextMeshProUGUI sourceText;
+    public TextMeshProUGUI vehicleNameText;
+    public TextMeshProUGUI missionText;
     public TextMeshProUGUI destinationText;
-    public TextMeshProUGUI cargoText;
-    public TextMeshProUGUI etaText;
-    public TextMeshProUGUI vehicleCountText; // Shows "Vehicle 2/3" when multiple at same position
-    
+
     [Header("Route Visualization")]
-    public PathHighlighter pathHighlighter;
-    
+    public DeliveryRouteVisualizer routeVisualizer;
+
     [Header("Click Detection")]
-    public float clickRadius = 1f; // Radius to detect overlapping vehicles
-    
-    private Vehicle currentVehicle;
-    private Vector3 lastClickPosition;
-    private List<Vehicle> vehiclesAtClickPosition = new List<Vehicle>();
-    private int currentVehicleIndex = 0;
-    
+    public float clickRadius = 1f;
+
+    [Header("Panel Positioning")]
+    public Canvas uiCanvas;
+
     public static VehicleInfoPanel Instance { get; private set; }
-    
+
+    private Vehicle         currentVehicle;
+    private RectTransform   panelRect;
+    private Vector3         lastClickPosition;
+    private Vector3         lastMouseScreenPos;
+    private List<Vehicle>   vehiclesAtClickPosition = new List<Vehicle>();
+    private int             currentVehicleIndex = 0;
+    private int             vehicleClickFrame   = -1; // frame in which a vehicle was last clicked
+
     void Awake()
     {
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
-        {
-            Destroy(gameObject);
-        }
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
     }
-    
+
     void Start()
     {
         if (closeButton != null)
-        {
             closeButton.onClick.AddListener(ClosePanel);
-        }
-        
+
         if (infoPanel != null)
         {
             infoPanel.SetActive(false);
+            panelRect = infoPanel.GetComponent<RectTransform>();
         }
-        
-        if (pathHighlighter == null)
-        {
-            pathHighlighter = FindObjectOfType<PathHighlighter>();
-        }
+
+        if (uiCanvas == null)
+            uiCanvas = FindObjectOfType<Canvas>();
+
+        if (routeVisualizer == null)
+            routeVisualizer = FindObjectOfType<DeliveryRouteVisualizer>();
     }
-    
-    /// <summary>
-    /// Handle vehicle click - called from Vehicle.cs
-    /// </summary>
+
+    // ── Vehicle click entry (called from Vehicle.OnMouseDown) ─────────
+
     public void OnVehicleClicked(Vector3 clickPosition)
     {
-        // Only allow clicks when game is paused
-        if (Time.timeScale != 0f)
-        {
-            return;
-        }
-        
-        // Check if clicking same position
+        if (Time.timeScale != 0f) return;
+
+        vehicleClickFrame  = Time.frameCount;
+        lastMouseScreenPos = Input.mousePosition;
+
         bool samePosition = Vector3.Distance(clickPosition, lastClickPosition) < 0.1f;
-        
+
         if (!samePosition)
         {
-            // New position - find all vehicles at this position
             lastClickPosition = clickPosition;
             vehiclesAtClickPosition = GetVehiclesAtPosition(clickPosition);
             currentVehicleIndex = 0;
-            
-            if (vehiclesAtClickPosition.Count == 0)
-            {
-                ClosePanel();
-                return;
-            }
+            if (vehiclesAtClickPosition.Count == 0) { ClosePanel(); return; }
         }
         else
         {
-            // Same position - cycle to next vehicle
-            if (vehiclesAtClickPosition.Count == 0)
-            {
-                ClosePanel();
-                return;
-            }
-            
+            if (vehiclesAtClickPosition.Count == 0) { ClosePanel(); return; }
             currentVehicleIndex = (currentVehicleIndex + 1) % vehiclesAtClickPosition.Count;
         }
-        
-        // Show info for selected vehicle
+
         ShowVehicleInfo(vehiclesAtClickPosition[currentVehicleIndex]);
     }
-    
+
     List<Vehicle> GetVehiclesAtPosition(Vector3 position)
     {
-        List<Vehicle> vehicles = new List<Vehicle>();
-        Vehicle[] allVehicles = FindObjectsOfType<Vehicle>();
-        
-        foreach (Vehicle vehicle in allVehicles)
-        {
-            if (Vector3.Distance(vehicle.transform.position, position) <= clickRadius)
-            {
-                vehicles.Add(vehicle);
-            }
-        }
-        
+        var vehicles = new List<Vehicle>();
+        foreach (Vehicle v in FindObjectsOfType<Vehicle>())
+            if (Vector3.Distance(v.transform.position, position) <= clickRadius)
+                vehicles.Add(v);
         return vehicles;
     }
-    
-    /// <summary>
-    /// Show vehicle information panel
-    /// </summary>
+
+    // ── Show / update ─────────────────────────────────────────────────
+
     public void ShowVehicleInfo(Vehicle vehicle)
     {
-        if (vehicle == null)
-        {
-            ClosePanel();
-            return;
-        }
-        
-        currentVehicle = vehicle;
-        
-        // Show panel
-        if (infoPanel != null)
-        {
-            infoPanel.SetActive(true);
-        }
+        if (vehicle == null) { ClosePanel(); return; }
 
-        // Log Vehicle Info Panel Display
+        currentVehicle = vehicle;
+
+        if (infoPanel != null) infoPanel.SetActive(true);
+
+        UpdatePanelContent();
+        PositionAtClick();
+        ShowRouteVisualization();
+
         GameLogPanel.Instance?.LogUIInteraction(
             $"Opened vehicle panel: Vehicle #{currentVehicle.vehicleId}" +
-            $" | status={currentVehicle.currentStatus}" +
-            $" | cargo={GetCargoText()}" +
-            $" | source={GetBuildingName(currentVehicle.sourceBuilding)}" +
-            $" | destination={GetBuildingName(currentVehicle.destinationBuilding)}" +
-            " | " + GetCargoText() +
-            " | " + GetETAText()
-            );
-
-        // Update all text fields
-        UpdatePanelContent();
-        
-        // Show route visualization if vehicle has a path
-        ShowRouteVisualization();
+            $" | destination={GetBuildingName(currentVehicle.destinationBuilding)}");
     }
-    
+
     void UpdatePanelContent()
     {
-        if (currentVehicle == null)
-            return;
-        
-        // Vehicle ID
-        if (vehicleIdText != null)
+        if (currentVehicle == null) return;
+
+        if (vehicleNameText != null)
+            vehicleNameText.text = $"Id: Vehicle #{currentVehicle.vehicleId}";
+
+        if (missionText != null)
         {
-            vehicleIdText.text = $"Vehicle #{currentVehicle.vehicleId}";
+            int    qty  = currentVehicle.GetTotalCargo();
+            string type = currentVehicle.GetPrimaryCargoType() == ResourceType.Population ? "clients" : "meals";
+            string src  = GetBuildingName(currentVehicle.sourceBuilding);
+            missionText.text = qty > 0
+                ? $"Mission: {qty}x {type} from {src}"
+                : $"Mission: Picking up from {src}";
         }
-        
-        // Status
-        if (statusText != null)
-        {
-            statusText.text = $"Status: {GetStatusText(currentVehicle.currentStatus)}";
-        }
-        
-        // Source
-        if (sourceText != null)
-        {
-            string sourceName = GetBuildingName(currentVehicle.sourceBuilding);
-            sourceText.text = $"Source: {sourceName}";
-        }
-        
-        // Destination
+
         if (destinationText != null)
-        {
-            string destName = GetBuildingName(currentVehicle.destinationBuilding);
-            destinationText.text = $"Destination: {destName}";
-        }
-        
-        // Cargo
-        if (cargoText != null)
-        {
-            cargoText.text = GetCargoText();
-        }
-        
-        // ETA
-        if (etaText != null)
-        {
-            etaText.text = GetETAText();
-        }
-        
-        // Vehicle count (if multiple at same position)
-        if (vehicleCountText != null)
-        {
-            if (vehiclesAtClickPosition.Count > 1)
-            {
-                vehicleCountText.text = $"Vehicle {currentVehicleIndex + 1}/{vehiclesAtClickPosition.Count}";
-                vehicleCountText.gameObject.SetActive(true);
-            }
-            else
-            {
-                vehicleCountText.gameObject.SetActive(false);
-            }
-        }
+            destinationText.text = $"Destination: {GetBuildingName(currentVehicle.destinationBuilding)}";
     }
-    
-    string GetStatusText(VehicleStatus status)
+
+    // ── Panel positioning ─────────────────────────────────────────────
+
+    void PositionAtClick()
     {
-        switch (status)
-        {
-            case VehicleStatus.Idle:
-                return "Idle";
-            case VehicleStatus.Loading:
-                return "Loading";
-            case VehicleStatus.InTransit:
-                return "In Transit";
-            case VehicleStatus.Unloading:
-                return "Unloading";
-            case VehicleStatus.Damaged:
-                return "Damaged";
-            default:
-                return "Unknown";
-        }
+        if (panelRect == null || uiCanvas == null) return;
+
+        RectTransform canvasRect = uiCanvas.transform as RectTransform;
+
+        LayoutRebuilder.ForceRebuildLayoutImmediate(panelRect);
+
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            canvasRect, lastMouseScreenPos, uiCanvas.worldCamera, out Vector2 localPos);
+
+        // Clamp so the panel stays within canvas bounds
+        Vector2 panelSize  = panelRect.rect.size;
+        Vector2 pivot      = panelRect.pivot;
+        Vector2 canvasMin  = canvasRect.rect.min;
+        Vector2 canvasMax  = canvasRect.rect.max;
+        const float pad    = 10f;
+
+        float leftEdge   = localPos.x - pivot.x         * panelSize.x;
+        float rightEdge  = localPos.x + (1f - pivot.x)  * panelSize.x;
+        float bottomEdge = localPos.y - pivot.y         * panelSize.y;
+        float topEdge    = localPos.y + (1f - pivot.y)  * panelSize.y;
+
+        if (rightEdge  > canvasMax.x - pad) localPos.x -= rightEdge  - (canvasMax.x - pad);
+        if (leftEdge   < canvasMin.x + pad) localPos.x -= leftEdge   - (canvasMin.x + pad);
+        if (topEdge    > canvasMax.y - pad) localPos.y -= topEdge    - (canvasMax.y - pad);
+        if (bottomEdge < canvasMin.y + pad) localPos.y -= bottomEdge - (canvasMin.y + pad);
+
+        panelRect.localPosition = localPos;
     }
-    
-    string GetBuildingName(MonoBehaviour building)
-    {
-        if (building == null) return "Unknown";
-        
-        Building b = building.GetComponent<Building>();
-        if (b != null)
-            return $"{b.GetBuildingType()} (Site {b.GetOriginalSiteId()})";
-        
-        PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
-        if (pb != null)
-            return pb.GetBuildingName();
-        
-        return building.name;
-    }
-    
-    string GetCargoText()
-    {
-        int totalCargo = currentVehicle.GetTotalCargo();
-        
-        if (totalCargo <= 0)
-        {
-            return "Cargo: Empty";
-        }
-        
-        ResourceType cargoType = currentVehicle.GetPrimaryCargoType();
-        string cargoTypeName = cargoType == ResourceType.Population ? "Clients" : "Food Packs";
-        return $"Cargo: {cargoTypeName} ({totalCargo}/{currentVehicle.maxCargoCapacity})";
-    }
-    
-    string GetETAText()
-    {
-        if (currentVehicle.currentStatus == VehicleStatus.Idle || 
-            currentVehicle.currentStatus == VehicleStatus.Damaged)
-        {
-            return "ETA: N/A";
-        }
-        
-        if (currentVehicle.currentPath == null || currentVehicle.currentPath.Count == 0)
-        {
-            return "ETA: Unknown";
-        }
-        
-        // Calculate remaining distance
-        float remainingDistance = CalculateRemainingDistance();
-        
-        // Calculate ETA based on speed
-        float eta = remainingDistance / currentVehicle.moveSpeed;
-        
-        // Format ETA
-        if (eta < 60f)
-        {
-            return $"ETA: {eta:F1} seconds";
-        }
-        else
-        {
-            float minutes = eta / 60f;
-            return $"ETA: {minutes:F1} minutes";
-        }
-    }
-    
-    float CalculateRemainingDistance()
-    {
-        if (currentVehicle.currentPath == null || currentVehicle.currentPath.Count == 0)
-            return 0f;
-        
-        float distance = 0f;
-        
-        // Find closest waypoint to vehicle
-        int closestIndex = FindClosestPathIndex();
-        
-        // Distance from vehicle to closest waypoint
-        distance += Vector3.Distance(currentVehicle.transform.position, currentVehicle.currentPath[closestIndex]);
-        
-        // Distance along remaining path
-        for (int i = closestIndex; i < currentVehicle.currentPath.Count - 1; i++)
-        {
-            distance += Vector3.Distance(currentVehicle.currentPath[i], currentVehicle.currentPath[i + 1]);
-        }
-        
-        return distance;
-    }
-    
-    int FindClosestPathIndex()
-    {
-        if (currentVehicle.currentPath == null || currentVehicle.currentPath.Count == 0)
-            return 0;
-        
-        int closestIndex = 0;
-        float closestDistance = float.MaxValue;
-        
-        for (int i = 0; i < currentVehicle.currentPath.Count; i++)
-        {
-            float dist = Vector3.Distance(currentVehicle.transform.position, currentVehicle.currentPath[i]);
-            if (dist < closestDistance)
-            {
-                closestDistance = dist;
-                closestIndex = i;
-            }
-        }
-        
-        return closestIndex;
-    }
-    
+
+    // ── Route visualization ───────────────────────────────────────────
+
     void ShowRouteVisualization()
     {
-        if (pathHighlighter == null || currentVehicle == null)
-            return;
-        
-        pathHighlighter.ClearHighlights();
-        
-        // Show current path if available
-        if (currentVehicle.currentPath != null && currentVehicle.currentPath.Count > 0)
-        {
-            // Create path from current position to destination
-            List<Vector3> visualPath = new List<Vector3>();
-            visualPath.Add(currentVehicle.transform.position); // Start from current position
-            visualPath.AddRange(currentVehicle.currentPath); // Add remaining path
-            
-            pathHighlighter.HighlightPath(visualPath);
-        }
+        if (routeVisualizer == null || currentVehicle == null) return;
+
+        List<Vector3> path = currentVehicle.currentPath;
+        if (path == null || path.Count == 0) { routeVisualizer.HideRoute(); return; }
+
+        Vector3 sourcePos = currentVehicle.sourceBuilding != null
+            ? currentVehicle.sourceBuilding.transform.position : path[0];
+        Vector3 destPos = currentVehicle.destinationBuilding != null
+            ? currentVehicle.destinationBuilding.transform.position : path[path.Count - 1];
+
+        routeVisualizer.ShowRoute(path, sourcePos, destPos);
     }
-    
+
+    // ── Close ─────────────────────────────────────────────────────────
+
     public void ClosePanel()
     {
-        GameLogPanel.Instance?.LogUIInteraction("Closed vehicle panel for Vehicle #{currentVehicle.vehicleId}");
-
-        if (infoPanel != null)
-        {
-            infoPanel.SetActive(false);
-        }
-        
-        // Clear route visualization
-        if (pathHighlighter != null)
-        {
-            pathHighlighter.ClearHighlights();
-        }
-        
+        if (infoPanel != null) infoPanel.SetActive(false);
+        routeVisualizer?.HideRoute();
         currentVehicle = null;
         vehiclesAtClickPosition.Clear();
         currentVehicleIndex = 0;
-        lastClickPosition = Vector3.positiveInfinity; // force fresh lookup on next click
+        lastClickPosition = Vector3.positiveInfinity;
+        GameLogPanel.Instance?.LogUIInteraction("Closed vehicle panel");
     }
-    
+
+    // ── Update ────────────────────────────────────────────────────────
+
     void Update()
     {
-        // Auto-close if current vehicle is destroyed
-        if (currentVehicle == null && infoPanel != null && infoPanel.activeSelf)
+        if (infoPanel == null || !infoPanel.activeSelf) return;
+
+        // Auto-close if vehicle disappears
+        if (currentVehicle == null) { ClosePanel(); return; }
+
+        // Refresh content every frame (status changes while watching)
+        UpdatePanelContent();
+
+        // Close when player clicks anywhere that isn't the panel or a vehicle
+        if (Input.GetMouseButtonDown(0))
         {
-            ClosePanel();
-        }
-        
-        // Update content if panel is open
-        if (infoPanel != null && infoPanel.activeSelf && currentVehicle != null)
-        {
-            UpdatePanelContent();
+            bool clickedVehicle = vehicleClickFrame == Time.frameCount;
+            bool clickedUI      = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
+            if (!clickedVehicle && !clickedUI)
+                ClosePanel();
         }
     }
-    
-    public bool IsPanelOpen()
+
+    // ── Helpers ───────────────────────────────────────────────────────
+
+    string GetBuildingName(MonoBehaviour building)
     {
-        return infoPanel != null && infoPanel.activeSelf;
+        if (building == null) return "Unknown";
+        Building b = building.GetComponent<Building>();
+        if (b != null) return b.GetDisplayName();
+        PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
+        if (pb != null) return pb.GetBuildingName();
+        return building.name;
     }
+
+    public bool IsPanelOpen() => infoPanel != null && infoPanel.activeSelf;
 }

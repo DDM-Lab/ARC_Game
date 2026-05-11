@@ -67,7 +67,9 @@ public class AgentChoiceUI : MonoBehaviour
             previewButton.onClick.RemoveAllListeners();
             bool hasDelivery = agentChoice.triggersDelivery || agentChoice.immediateDelivery;
             bool hasHandler  = parent != null || onPreviewRoute != null;
-            bool showPreview = hasDelivery && hasHandler;
+            // Immediate food-pack delivery comes from an external source, not a mapped route
+            bool isImmediateFoodOrder = agentChoice.immediateDelivery && agentChoice.deliveryCargoType == ResourceType.FoodPacks;
+            bool showPreview = hasDelivery && hasHandler && !isImmediateFoodOrder;
             previewButton.gameObject.SetActive(showPreview);
             if (showPreview)
             {

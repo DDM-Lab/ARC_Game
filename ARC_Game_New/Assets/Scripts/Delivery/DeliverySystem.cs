@@ -219,8 +219,11 @@ public class DeliverySystem : MonoBehaviour
             return false;
         }
 
-        Vector3 sourcePos = source.transform.position;
-        Vector3 destPos = destination.transform.position;
+        RoadConnection srcRoad = source.GetComponent<RoadConnection>();
+        Vector3 sourcePos = srcRoad != null ? srcRoad.GetRoadConnectionPoint() : source.transform.position;
+
+        RoadConnection dstRoad = destination.GetComponent<RoadConnection>();
+        Vector3 destPos = dstRoad != null ? dstRoad.GetRoadConnectionPoint() : destination.transform.position;
 
         estimate = pathfinder.EstimateDeliveryTime(sourcePos, destPos);
 
@@ -381,6 +384,21 @@ public class DeliverySystem : MonoBehaviour
         return cancelled;
     }
 
+    /// <summary>
+    /// Remove a delivery task from the active list without cancelling the vehicle.
+    /// Used when a vehicle is stopped externally (e.g., flood) and has already cleaned itself up.
+    /// </summary>
+    public void RemoveActiveDeliveryTask(int taskId)
+    {
+        DeliveryTask activeTask = activeTasks.FirstOrDefault(t => t.taskId == taskId);
+        if (activeTask != null)
+        {
+            activeTasks.Remove(activeTask);
+            OnTaskCompleted?.Invoke(activeTask);
+            if (showDebugInfo)
+                Debug.Log($"Removed active delivery task {taskId} (vehicle stopped externally)");
+        }
+    }
 
     /// <summary>
     /// Get maximum vehicle capacity for specific cargo type
@@ -389,11 +407,20 @@ public class DeliverySystem : MonoBehaviour
     {
         int maxCapacity = 0;
 
+        // Check Inspector-assigned list first
         foreach (Vehicle vehicle in availableVehicles)
         {
-            if (vehicle.GetAllowedCargoTypes().Contains(cargoType))
-            {
+            if (vehicle != null && vehicle.GetAllowedCargoTypes().Contains(cargoType))
                 maxCapacity = Mathf.Max(maxCapacity, vehicle.GetMaxCapacity());
+        }
+
+        // Fall back to scene-wide search so validation and execution stay consistent
+        if (maxCapacity <= 0)
+        {
+            foreach (Vehicle vehicle in FindObjectsOfType<Vehicle>())
+            {
+                if (vehicle.GetAllowedCargoTypes().Contains(cargoType))
+                    maxCapacity = Mathf.Max(maxCapacity, vehicle.GetMaxCapacity());
             }
         }
 
@@ -701,6 +728,25 @@ public class DeliverySystem : MonoBehaviour
     public List<DeliveryTask> GetActiveTasks()
     {
         return new List<DeliveryTask>(activeTasks);
+    }
+
+    /// <summary>
+    /// Get all pending (queued but not yet assigned) delivery tasks (for UI display)
+    /// </summary>
+    public List<DeliveryTask> GetPendingTasks()
+    {
+        return new List<DeliveryTask>(pendingTasks);
+    }
+
+    /// <summary>
+    /// Find the vehicle currently executing a specific delivery task id
+    /// </summary>
+    public Vehicle GetVehicleForTask(int deliveryTaskId)
+    {
+        foreach (Vehicle v in availableVehicles)
+            if (v.currentTask != null && v.currentTask.taskId == deliveryTaskId)
+                return v;
+        return null;
     }
 
     public bool HasPendingOrActiveDeliveries()

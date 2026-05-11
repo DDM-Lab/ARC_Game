@@ -158,13 +158,13 @@ public class FacilityInfoPanel : MonoBehaviour
             HideField(populationText);
         }
 
-        // Food packs — Kitchen only
-        if (type == BuildingType.Kitchen && storage != null)
+        // Meals — any building that has food storage capacity
+        if (storage != null && storage.GetResourceCapacity(ResourceType.FoodPacks) > 0)
         {
             int food = storage.GetResourceAmount(ResourceType.FoodPacks);
             int foodCap = storage.GetResourceCapacity(ResourceType.FoodPacks);
             ShowField(foodPacksText);
-            SetTextSafe(foodPacksText, $"Food Packs: {food}/{foodCap}");
+            SetTextSafe(foodPacksText, $"Meals: {food}/{foodCap}");
             SetTextColor(foodPacksText, GetResourceColor(food, foodCap));
         }
         else
@@ -198,7 +198,6 @@ public class FacilityInfoPanel : MonoBehaviour
         HideField(untrainedWorkersText);
         HideField(totalWorkforceText);
         HideField(capacityText);
-        HideField(foodPacksText);
 
         int population = prebuilt.GetCurrentPopulation();
         int populationCap = prebuilt.GetPopulationCapacity();
@@ -209,6 +208,21 @@ public class FacilityInfoPanel : MonoBehaviour
         string statusLabel = population >= populationCap ? "Full" : population > 0 ? "Occupied" : "Vacant";
         SetTextSafe(statusText, $"Status: {statusLabel}");
         SetTextColor(statusText, population >= populationCap ? errorColor : population > 0 ? goodColor : normalColor);
+
+        // Meals — show for any prebuilt building with food storage
+        var prebuiltStorage = prebuilt.GetResourceStorage();
+        if (prebuiltStorage != null && prebuiltStorage.GetResourceCapacity(ResourceType.FoodPacks) > 0)
+        {
+            int food = prebuiltStorage.GetResourceAmount(ResourceType.FoodPacks);
+            int foodCap = prebuiltStorage.GetResourceCapacity(ResourceType.FoodPacks);
+            ShowField(foodPacksText);
+            SetTextSafe(foodPacksText, $"Meals: {food}/{foodCap}");
+            SetTextColor(foodPacksText, GetResourceColor(food, foodCap));
+        }
+        else
+        {
+            HideField(foodPacksText);
+        }
 
         if (motelCostText != null)
         {

@@ -522,7 +522,8 @@ public class AgentConversationUI : MonoBehaviour
                 || TaskDetailUI.ValidateChoiceDelivery(currentSelectedTask, choice, out errorMessage);
             choiceUI.SetValidationState(isValid, errorMessage);
 
-            bool canPreview = TaskSystem.Instance != null
+            bool canPreview = isValid
+                && TaskSystem.Instance != null
                 && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
                 && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
             choiceUI.SetPreviewVisible(canPreview);
