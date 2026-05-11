@@ -21,21 +21,21 @@ public class MotelCostManager : MonoBehaviour
 
     void Start()
     {
-        if (motel == null)
-        {
-            // Find the Motel PrebuiltBuilding in the scene
-            foreach (var pb in FindObjectsOfType<PrebuiltBuilding>())
-            {
-                if (pb.GetPrebuiltType() == PrebuiltBuildingType.Motel)
-                {
-                    motel = pb;
-                    break;
-                }
-            }
-        }
-
         if (GlobalClock.Instance != null)
             GlobalClock.Instance.OnDayChanged += OnDayChanged;
+    }
+
+    void EnsureMotelReference()
+    {
+        if (motel != null) return;
+        foreach (var pb in FindObjectsOfType<PrebuiltBuilding>())
+        {
+            if (pb.GetPrebuiltType() == PrebuiltBuildingType.Motel)
+            {
+                motel = pb;
+                break;
+            }
+        }
     }
 
     void OnDestroy()
@@ -54,6 +54,7 @@ public class MotelCostManager : MonoBehaviour
 
     void ChargeMotelCost()
     {
+        EnsureMotelReference();
         if (motel == null || SatisfactionAndBudget.Instance == null) return;
 
         int residents = motel.GetCurrentPopulation();
@@ -80,6 +81,7 @@ public class MotelCostManager : MonoBehaviour
     /// <summary>Returns the cost that would be charged right now (for display in FacilityInfoPanel).</summary>
     public float GetCurrentDailyCost()
     {
+        EnsureMotelReference();
         if (motel == null) return 0f;
         return motel.GetCurrentPopulation() * costPerPersonPerDay;
     }

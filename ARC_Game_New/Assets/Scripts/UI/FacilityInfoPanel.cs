@@ -135,6 +135,8 @@ public class FacilityInfoPanel : MonoBehaviour
 
     void UpdateBuildingInfo(Building building)
     {
+        HideField(motelCostText);
+
         BuildingType type = building.GetBuildingType();
 
         if (type == BuildingType.CaseworkSite)
@@ -263,12 +265,14 @@ public class FacilityInfoPanel : MonoBehaviour
             if (type == PrebuiltBuildingType.Motel)
             {
                 var costMgr = FindObjectOfType<MotelCostManager>();
-                if (costMgr != null)
-                {
-                    float dailyCost = costMgr.GetCurrentDailyCost();
-                    motelCostText.text = $"Daily Cost: ${dailyCost:F0}/day";
-                    motelCostText.color = dailyCost > 0 ? warningColor : normalColor;
-                }
+                float rate = costMgr != null ? costMgr.costPerPersonPerDay : 200f;
+                int residents = prebuilt.GetCurrentPopulation();
+                float dailyCost = residents * rate;
+                string costLine = $"Lodging rate: ${rate:F0}/person/day";
+                if (residents > 0)
+                    costLine += $"\nCurrent daily cost: ${dailyCost:F0}/day ({residents} clients)";
+                motelCostText.text = costLine;
+                motelCostText.color = dailyCost > 0 ? warningColor : normalColor;
                 motelCostText.gameObject.SetActive(true);
             }
             else
