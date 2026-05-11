@@ -10,8 +10,7 @@ public enum VehicleStatus
     Loading,
     InTransit,
     Unloading,
-    Returning,
-    Damaged  
+    Damaged
 }
 
 public class Vehicle : MonoBehaviour
@@ -391,9 +390,7 @@ public class Vehicle : MonoBehaviour
             case VehicleStatus.Unloading:
                 vehicleRenderer.color = unloadingColor;
                 break;
-            case VehicleStatus.Returning:
-                vehicleRenderer.color = inTransitColor;
-                break;
+
             case VehicleStatus.Damaged:
                 vehicleRenderer.color = damagedColor;
                 break;

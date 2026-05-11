@@ -950,17 +950,15 @@ public class TaskDetailUI : MonoBehaviour
             case NumericalInputType.UntrainedWorkers:
                 if (WorkerSystem.Instance != null)
                 {
-                    // For REQUEST tasks, validate budget
+                    // For REQUEST tasks, validate budget using untrained cost
                     if (currentTask.taskTitle.Contains("Request"))
                     {
                         if (WorkerRequestSystem.Instance != null && SatisfactionAndBudget.Instance != null)
                         {
-                            int costPerWorker = currentTask.taskTitle.Contains("Untrained") 
-                                ? WorkerRequestSystem.Instance.untrainedWorkerCost 
-                                : WorkerRequestSystem.Instance.trainedWorkerCost;
+                            int costPerWorker = WorkerRequestSystem.Instance.untrainedWorkerCost;
                             int totalCost = value * costPerWorker;
                             int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
-                            
+
                             if (totalCost > availableBudget)
                             {
                                 return $"Insufficient budget. Requesting {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";

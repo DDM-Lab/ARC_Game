@@ -48,15 +48,29 @@ public class WorkerAssignmentHandler : MonoBehaviour
 
         int buildingId = building.GetOriginalSiteId();
 
-        // Re-open existing task if one is already open for this building
-        if (pendingTasks.TryGetValue(buildingId, out GameTask existing) && existing != null)
-        {
-            FindObjectOfType<TaskDetailUI>()?.ShowTaskDetail(existing);
-            return;
-        }
-
         WorkerSystem ws = WorkerSystem.Instance ?? FindObjectOfType<WorkerSystem>();
         if (ws == null) { Debug.LogError("[WorkerAssignmentHandler] WorkerSystem not found"); return; }
+
+        // Re-open existing task — but only if it is still active in TaskSystem.
+        // CloseTaskDetail removes Other-type tasks from activeTasks without completing them,
+        // leaving a stale entry in pendingTasks that would silently fail on the next confirm.
+        if (pendingTasks.TryGetValue(buildingId, out GameTask existing) && existing != null)
+        {
+            bool stillActive = TaskSystem.Instance != null
+                && TaskSystem.Instance.activeTasks.Contains(existing);
+
+            if (stillActive)
+            {
+                bool locked = WorkerAssignmentTracker.Instance != null
+                    && WorkerAssignmentTracker.Instance.IsLockedForRelease(buildingId);
+                RefreshTaskMaxValues(existing, building, ws, locked);
+                FindObjectOfType<TaskDetailUI>()?.ShowTaskDetail(existing);
+                return;
+            }
+
+            // Stale task — discard and fall through to create a fresh one
+            pendingTasks.Remove(buildingId);
+        }
 
         bool hasWorkers = ws.GetWorkersByBuildingId(buildingId).Count > 0;
         bool isLocked = WorkerAssignmentTracker.Instance != null
@@ -74,6 +88,36 @@ public class WorkerAssignmentHandler : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────
     // TASK CONSTRUCTION
     // ─────────────────────────────────────────────────────────────────
+
+    void RefreshTaskMaxValues(GameTask task, Building building, WorkerSystem ws, bool isLocked)
+    {
+        if (task.numericalInputs.Count < 2) return;
+
+        int buildingId       = building.GetOriginalSiteId();
+        List<Worker> current = ws.GetWorkersByBuildingId(buildingId);
+        int currentTrained   = current.Count(w => w.Type == WorkerType.Trained);
+        int currentUntrained = current.Count(w => w.Type == WorkerType.Untrained);
+        int currentHeadCount = currentTrained + currentUntrained;
+
+        WorkerStatistics stats   = ws.GetWorkerStatistics();
+        int availableTrained     = stats.trainedFree   + currentTrained;
+        int availableUntrained   = stats.untrainedFree + currentUntrained;
+
+        int maxTrained, maxUntrained;
+        if (isLocked)
+        {
+            maxTrained   = Mathf.Min(availableTrained,   currentHeadCount);
+            maxUntrained = Mathf.Min(availableUntrained, currentHeadCount);
+        }
+        else
+        {
+            maxTrained   = availableTrained;
+            maxUntrained = availableUntrained;
+        }
+
+        task.numericalInputs[0].maxValue = maxTrained;
+        task.numericalInputs[1].maxValue = maxUntrained;
+    }
 
     GameTask BuildTask(Building building, WorkerSystem ws, bool hasWorkers, bool isLocked)
     {

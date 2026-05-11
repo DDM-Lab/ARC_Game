@@ -163,7 +163,6 @@ public class TaskResultPopup : MonoBehaviour
                     VehicleStatus.Loading    => "Loading cargo",
                     VehicleStatus.Unloading  => "Unloading cargo",
                     VehicleStatus.Damaged    => "Vehicle damaged (flood)",
-                    VehicleStatus.Returning  => "Returning to base",
                     _                        => "Vehicle assigned"
                 };
             }

@@ -56,7 +56,6 @@ public class DeliveryQueueRow : MonoBehaviour
                     VehicleStatus.Loading                  => "Loading",
                     VehicleStatus.Unloading                => "Unloading",
                     VehicleStatus.Damaged                  => "Damaged",
-                    VehicleStatus.Returning                => "Returning",
                     _                                      => "In progress"
                 };
             }
