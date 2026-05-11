@@ -122,12 +122,17 @@ public class VehicleInfoPanel : MonoBehaviour
 
         if (missionText != null)
         {
-            int    qty  = currentVehicle.GetTotalCargo();
-            string type = currentVehicle.GetPrimaryCargoType() == ResourceType.Population ? "clients" : "meals";
-            string src  = GetBuildingName(currentVehicle.sourceBuilding);
-            missionText.text = qty > 0
-                ? $"Mission: {qty}x {type} from {src}"
-                : $"Mission: None";
+            DeliveryTask task = currentVehicle.currentTask;
+            if (task != null)
+            {
+                string type = task.cargoType == ResourceType.Population ? "clients" : "meals";
+                string src  = GetBuildingName(currentVehicle.sourceBuilding);
+                missionText.text = $"Mission: {task.quantity}x {type} from {src}";
+            }
+            else
+            {
+                missionText.text = "Mission: None";
+            }
         }
 
         if (destinationText != null)

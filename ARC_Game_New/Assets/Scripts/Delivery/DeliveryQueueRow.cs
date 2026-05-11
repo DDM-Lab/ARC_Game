@@ -89,8 +89,21 @@ public class DeliveryQueueRow : MonoBehaviour
     {
         if (associatedVehicle == null) return;
 
-        if (VehicleInfoPanel.Instance != null)
-            VehicleInfoPanel.Instance.ShowVehicleInfo(associatedVehicle);
+        // Close the vehicle info panel if open — just show the route on the map.
+        VehicleInfoPanel.Instance?.ClosePanel();
+
+        DeliveryRouteVisualizer visualizer = FindObjectOfType<DeliveryRouteVisualizer>();
+        if (visualizer == null) return;
+
+        var path = associatedVehicle.currentPath;
+        if (path == null || path.Count == 0) return;
+
+        Vector3 srcPos  = associatedVehicle.sourceBuilding != null
+            ? associatedVehicle.sourceBuilding.transform.position : path[0];
+        Vector3 destPos = associatedVehicle.destinationBuilding != null
+            ? associatedVehicle.destinationBuilding.transform.position : path[path.Count - 1];
+
+        visualizer.ShowRoute(path, srcPos, destPos);
     }
 
     static string GetBuildingDisplayName(MonoBehaviour building)

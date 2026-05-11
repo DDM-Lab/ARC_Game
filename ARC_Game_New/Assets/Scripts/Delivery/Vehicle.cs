@@ -440,8 +440,6 @@ public class Vehicle : MonoBehaviour
         if (currentTask == null || sourceBuilding == null)
             yield break;
 
-        yield return new WaitForSeconds(1f);
-
         BuildingResourceStorage sourceStorage = GetBuildingResourceStorage(sourceBuilding);
 
         if (sourceStorage != null)
@@ -484,9 +482,6 @@ public class Vehicle : MonoBehaviour
     {
         if (currentTask == null || destinationBuilding == null)
             yield break;
-
-        // Simulate unloading time
-        yield return new WaitForSeconds(1f);
 
         // Try to deliver resources to destination building
         BuildingResourceStorage destStorage = GetBuildingResourceStorage(destinationBuilding);
