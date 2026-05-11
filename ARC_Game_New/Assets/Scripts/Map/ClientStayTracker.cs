@@ -106,14 +106,51 @@ public class ClientStayTracker : MonoBehaviour
 
     void Start()
     {
-        // Subscribe to round changes
         if (GlobalClock.Instance != null)
-        {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
-        }
-        
+
+        StartCoroutine(SubscribeToTaskEvents());
+
         if (showDebugInfo)
             Debug.Log("ClientStayTracker initialized");
+    }
+
+    System.Collections.IEnumerator SubscribeToTaskEvents()
+    {
+        while (TaskSystem.Instance == null)
+            yield return null;
+
+        TaskSystem.Instance.OnTaskExpired += OnCaseworkTaskFinished;
+        TaskSystem.Instance.OnTaskCompleted += OnCaseworkTaskFinished;
+    }
+
+    void OnDestroy()
+    {
+        if (TaskSystem.Instance != null)
+        {
+            TaskSystem.Instance.OnTaskExpired -= OnCaseworkTaskFinished;
+            TaskSystem.Instance.OnTaskCompleted -= OnCaseworkTaskFinished;
+        }
+    }
+
+    void OnCaseworkTaskFinished(GameTask task)
+    {
+        if (task.taskTag != TaskTag.BackToHome) return;
+
+        string desc = task.description ?? "";
+        const string marker = "|CLIENT_GROUP_ID:";
+        int idx = desc.IndexOf(marker);
+        if (idx < 0) return;
+
+        if (!int.TryParse(desc.Substring(idx + marker.Length), out int groupId)) return;
+
+        ClientGroup group = clientGroups.FirstOrDefault(g => g.groupId == groupId);
+        if (group != null)
+        {
+            group.caseworkRequestGenerated = false;
+            if (showDebugInfo)
+                Debug.Log($"[ClientStayTracker] Casework request re-enabled for group {groupId} — task ended without resolution");
+        }
     }
 
     void OnRoundChanged(int newRound)
@@ -206,28 +243,6 @@ public class ClientStayTracker : MonoBehaviour
 
 
     /// <summary>
-    /// Move client group to different shelter
-    /// </summary>
-    public bool MoveClientGroup(int groupId, MonoBehaviour newShelter)
-    {
-        ClientGroup group = clientGroups.FirstOrDefault(g => g.groupId == groupId);
-        if (group != null)
-        {
-            MonoBehaviour oldShelter = group.currentShelter;
-            group.currentShelter = newShelter;
-            // Note: We don't reset arrival time - they carry their stay duration
-
-            if (showDebugInfo)
-                Debug.Log($"Moved {group.groupName} from {oldShelter?.name} to {newShelter.name}");
-
-            GameLogPanel.Instance.LogBuildingStatus($"Moved {group.groupName} from {oldShelter?.name} to {newShelter.name}");
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
     /// Check all client groups for casework requests and overstays
     /// </summary>
     void CheckClientStayDurations()
@@ -278,54 +293,60 @@ public class ClientStayTracker : MonoBehaviour
     {
         if (TaskSystem.Instance == null) return;
 
-        string description = string.Format(caseworkTaskDescription, group.GetRoundsInShelter(currentRound));
+        string shelterDisplayName = GetShelterDisplayName(group.currentShelter);
         string facilityName = group.currentShelter?.name ?? "Unknown Shelter";
+        int roundsInShelter = group.GetRoundsInShelter(currentRound);
+        string description = string.Format(caseworkTaskDescription, roundsInShelter);
 
         GameTask caseworkTask = TaskSystem.Instance.CreateTask(
             caseworkTaskTitle,
             TaskType.Advisory,
             facilityName,
             description);
-        
-        
+
+        caseworkTask.facilityDisplayName = shelterDisplayName;
         caseworkTask.taskOfficer = TaskOfficer.LodgingMassCare;
-        // Tag for daily report classification
         caseworkTask.taskTag = TaskTag.BackToHome;
         caseworkTask.roundsRemaining = 3;
 
-        // Add task details
         caseworkTask.impacts.Add(new TaskImpact(ImpactType.Clients, group.clientCount, false, "Clients Requesting Casework"));
-        caseworkTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, group.GetRoundsInShelter(currentRound), false, "Rounds in Shelter"));
+        caseworkTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, roundsInShelter, false, "Rounds in Shelter"));
 
-        // Add agent messages
-        caseworkTask.agentMessages.Add(new AgentMessage($"We have {group.clientCount} clients who have been in {facilityName} for {group.GetRoundsInShelter(currentRound)} rounds."));
-        caseworkTask.agentMessages.Add(new AgentMessage("They are requesting casework assistance to find permanent housing."));
+        caseworkTask.agentMessages.Add(new AgentMessage(
+            $"{group.clientCount} clients at [facility_name] have been in the shelter for {roundsInShelter} rounds and are requesting to return to their communities. Send them to a casework site to resolve their cases."));
         caseworkTask.agentMessages.Add(new AgentMessage("How would you like to respond?"));
 
-        // Add choices
-        AgentChoice sendToCasework = new AgentChoice(1, $"Send {group.groupName} to casework site (Satisfaction + 10)");
+        AgentChoice sendToCasework = new AgentChoice(1,
+            $"Send {group.clientCount} clients to a casework site (+10 satisfaction)");
         sendToCasework.triggersDelivery = true;
         sendToCasework.enableMultipleDeliveries = true;
-        sendToCasework.multiDeliveryType = AgentChoice.MultiDeliveryType.SingleSourceMultiDest; // enable multi delivery
+        sendToCasework.multiDeliveryType = AgentChoice.MultiDeliveryType.SingleSourceMultiDest;
         sendToCasework.deliveryCargoType = ResourceType.Population;
         sendToCasework.deliveryQuantity = group.clientCount;
         sendToCasework.sourceType = DeliverySourceType.RequestingFacility;
         sendToCasework.destinationType = DeliveryDestinationType.SpecificBuilding;
-        sendToCasework.destinationBuilding = BuildingType.CaseworkSite; // Assuming you have this building type
+        sendToCasework.destinationBuilding = BuildingType.CaseworkSite;
         sendToCasework.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10));
         caseworkTask.agentChoices.Add(sendToCasework);
 
-        AgentChoice delay = new AgentChoice(2, "Ask them to wait longer (Satisfaction -5)");
+        AgentChoice delay = new AgentChoice(2, "Ask them to wait longer (-10 satisfaction)");
         delay.triggersDelivery = false;
-        delay.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5));
+        delay.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -10));
         caseworkTask.agentChoices.Add(delay);
 
-        // Store reference to client group in task description for removal after completion
         caseworkTask.description += $"|CLIENT_GROUP_ID:{group.groupId}";
 
         if (showDebugInfo)
-            Debug.Log($"ClientStayTracker generated casework task for {group.groupName} ({group.clientCount} clients) at {facilityName}");
-        GameLogPanel.Instance.LogTaskEvent($"ClientStayTracker generated casework task for {group.groupName} ({group.clientCount} clients) at {facilityName}");
+            Debug.Log($"ClientStayTracker generated casework task for {group.clientCount} clients at {shelterDisplayName}");
+        GameLogPanel.Instance.LogTaskEvent($"ClientStayTracker generated casework task for {group.clientCount} clients at {shelterDisplayName}");
+    }
+
+    string GetShelterDisplayName(MonoBehaviour shelter)
+    {
+        if (shelter == null) return "Unknown Shelter";
+        Building b = shelter.GetComponent<Building>();
+        if (b != null) return b.GetDisplayName();
+        return shelter.name;
     }
 
     /// <summary>

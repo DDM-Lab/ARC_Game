@@ -66,14 +66,31 @@ public class EndGamePanel : MonoBehaviour
     void OnViewReportClicked()
     {
         HideEndGamePanel();
-        
-        // Show daily report
-        if (DailyReportManager.Instance != null)
+
+        DailyReportManager mgr = DailyReportManager.Instance;
+
+        // Instance can be null if its scene was unloaded; fall back to searching the scene
+        if (mgr == null)
         {
-            DailyReportManager.Instance.ShowDailyReport();
+            mgr = FindObjectOfType<DailyReportManager>();
+            Debug.LogWarning("[EndGamePanel] DailyReportManager.Instance was null — found via FindObjectOfType");
         }
-        
-        Debug.Log("Opening final daily report from end game panel");
+
+        if (mgr == null)
+        {
+            Debug.LogError("[EndGamePanel] DailyReportManager not found in scene. Cannot open report.");
+            return;
+        }
+
+        if (!mgr.gameObject.activeInHierarchy)
+        {
+            Debug.LogError("[EndGamePanel] DailyReportManager GameObject is inactive. Cannot start coroutine.");
+            mgr.gameObject.SetActive(true);
+        }
+
+        Debug.Log("[EndGamePanel] Calling ShowDailyReport(forceShow: true)");
+        mgr.ShowDailyReport(forceShow: true);
+
         GameLogPanel.Instance?.LogUIInteraction("Opening final daily report from end game panel");
     }
 }

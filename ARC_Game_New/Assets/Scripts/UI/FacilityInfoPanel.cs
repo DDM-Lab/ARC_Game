@@ -144,13 +144,14 @@ public class FacilityInfoPanel : MonoBehaviour
 
         BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
 
-        // Population — Shelter only
-        if (type == BuildingType.Shelter && storage != null)
+        // Population — Shelter and CaseworkSite
+        if (storage != null && (type == BuildingType.Shelter || type == BuildingType.CaseworkSite))
         {
             int pop = storage.GetResourceAmount(ResourceType.Population);
             int popCap = storage.GetResourceCapacity(ResourceType.Population);
             ShowField(populationText);
-            SetTextSafe(populationText, $"Residents: {pop}/{popCap}");
+            string label = type == BuildingType.CaseworkSite ? "Clients" : "Residents";
+            SetTextSafe(populationText, $"{label}: {pop}/{popCap}");
             SetTextColor(populationText, GetResourceColor(pop, popCap));
         }
         else
@@ -172,7 +173,17 @@ public class FacilityInfoPanel : MonoBehaviour
             HideField(foodPacksText);
         }
 
-        HideField(capacityText);
+        // CaseworkSite note
+        if (type == BuildingType.CaseworkSite)
+        {
+            ShowField(capacityText);
+            SetTextSafe(capacityText, "Clients in casework will leave by themselves once their cases are resolved.");
+            SetTextColor(capacityText, normalColor);
+        }
+        else
+        {
+            HideField(capacityText);
+        }
 
         // Workers — single line, no breakdown
         UpdateWorkerInfo(building);

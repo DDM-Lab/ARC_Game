@@ -50562,7 +50562,7 @@ MonoBehaviour:
   googleSheetsCsvUrl: https://docs.google.com/spreadsheets/d/e/2PACX-1vTGcKtnKuRq1dS-ZMMYKmepAEsfeaYhKlt8IMSkZ1xe-5_JApbSfTokI_VHFS8v0g3XIHWHWEPSdSzS/pub?gid=0&single=true&output=csv
   mapConfigServerUrl: http://janus.hss.cmu.edu/cgi-bin/new_map_config.cgi
   mapConfigTimeout: 5
-  disableLoader: 0
+  disableLoader: 1
   showDebugInfo: 1
   loadedInitialBudget: 0
   loadedInitialSatisfaction: 0
