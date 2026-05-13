@@ -77,19 +77,24 @@ crashlytics-build.properties
 # Assets/TextMesh Pro/
 
 .vscode
-<<<<<<< HEAD
+.idea
 .worktrees/
 
 # Python cache
 __pycache__/
 *.pyc
 
+# Python virtualenvs
+.venv/
+
 # API keys and secrets
+.env
 llm.key
 *.key
 
 # Test and rollout data
 rollout_*/
+rollouts/
 *_test/
 *.log
 *.jsonl
@@ -107,10 +112,3 @@ build_headless.sh
 
 # Environment files
 environment.yml
-=======
-.idea
-
-# Python
-__pycache__/
-*.pyc
->>>>>>> b6edf20fa900aceca91afffa36b265a907928f65
