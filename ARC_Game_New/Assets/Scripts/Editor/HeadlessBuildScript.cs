@@ -34,6 +34,13 @@ public class HeadlessBuildScript
         BuildHeadless(buildPath, BuildTarget.StandaloneLinux64, BuildTargetGroup.Standalone);
     }
 
+    [MenuItem("Build/Headless macOS")]
+    public static void BuildMacOS()
+    {
+        string buildPath = "Build/Headless/macOS/ARC_Headless.app";
+        BuildHeadless(buildPath, BuildTarget.StandaloneOSX, BuildTargetGroup.Standalone);
+    }
+
     private static void BuildHeadless(string buildPath, BuildTarget target, BuildTargetGroup targetGroup)
     {
         Debug.Log($"[HeadlessBuild] Starting headless build for {target}");
