@@ -178,7 +178,7 @@ public class MapConfig
     {
         errorMessage = "";
         bool hasRiver = false, hasRoad = false, hasLand = false;
-        int communities = 0, motels = 0, abandoned = 0;
+        int communities = 0, motels = 0, abandoned = 0, vehicles = 0;
 
         for (int i = 0; i < landLayer.Length; i++)
         {
@@ -192,6 +192,7 @@ public class MapConfig
             if (obj.type == PlacedObjectType.Community) communities++;
             if (obj.type == PlacedObjectType.Motel) motels++;
             if (obj.type == PlacedObjectType.AbandonedSite) abandoned++;
+            if (obj.type == PlacedObjectType.Vehicle) vehicles++;
         }
 
         // rules
@@ -199,7 +200,7 @@ public class MapConfig
         else if (communities < 1 || communities > 8) errorMessage = $"Communities must be between 1-8 (Found: {communities}).";
         else if (motels != 1) errorMessage = "Map must have exactly 1 Motel.";
         else if (abandoned < 3) errorMessage = $"Need at least 3 Abandoned Sites (Found: {abandoned}).";
-        else if (parameters.initialERVCount < 1) errorMessage = "Starting Vehicles must be at least 1.";
+        else if (vehicles < 1) errorMessage = "Starting Vehicles must be at least 1.";
 
         return string.IsNullOrEmpty(errorMessage);
     }
