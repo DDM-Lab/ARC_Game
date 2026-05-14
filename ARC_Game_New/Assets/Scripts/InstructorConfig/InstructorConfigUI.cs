@@ -206,9 +206,29 @@ public class InstructorConfigUI : MonoBehaviour
 
     void OnSaveMapPresetClicked()
     {
-        string fileName = $"{presetNames[mapPresetDropdown.value]}_map_config.json";
-        SetStatus($"InstructorConfigUI: Saving Map Layout to {fileName}");
-        InstructorConfigManager.Instance.SaveMapOnly(fileName);
+        //string fileName = $"{presetNames[mapPresetDropdown.value]}_map_config.json";
+        //SetStatus($"InstructorConfigUI: Saving Map Layout to {fileName}");
+        //InstructorConfigManager.Instance.SaveMapOnly(fileName);
+        // 1. Validate the current map configuration first
+        if (InstructorConfigManager.Instance.CurrentConfig.ValidateMap(out string error))
+        {
+            string fileName = $"{presetNames[mapPresetDropdown.value]}_map_config.json";
+            SetStatus($"InstructorConfigUI: Saving Map Layout to {fileName}");
+            InstructorConfigManager.Instance.SaveMapOnly(fileName);
+        }
+        else
+        {
+            if (ConfirmationPopup.Instance != null)
+            {
+                ConfirmationPopup.Instance.ShowPopup(
+                    message: error,
+                    onConfirm: () => { Debug.Log("User acknowledged map error."); },
+                    onCancel: null,
+                    title: "Map Validation Failed"
+                );
+            }
+            SetStatus($"<color=red>Error: {error}</color>");
+        }
     }
 
     void OnSaveParamPresetClicked()
