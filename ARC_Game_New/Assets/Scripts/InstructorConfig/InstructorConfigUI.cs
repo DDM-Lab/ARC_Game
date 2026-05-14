@@ -158,10 +158,29 @@ public class InstructorConfigUI : MonoBehaviour
 
     void OnSaveToServerClicked()
     {
-        if (InstructorConfigManager.Instance.IsSaving) return;
-        SetStatus("Saving to server…");
-        saveToServerButton.interactable = false;
-        InstructorConfigManager.Instance.SaveToServer("latest_map_config.json");
+        //if (InstructorConfigManager.Instance.IsSaving) return;
+        //SetStatus("Saving to server…");
+        //saveToServerButton.interactable = false;
+        //InstructorConfigManager.Instance.SaveToServer("latest_map_config.json");
+        if (InstructorConfigManager.Instance.CurrentConfig.ValidateMap(out string error))
+        {
+            if (InstructorConfigManager.Instance.IsSaving) return;
+            saveToServerButton.interactable = false;
+            InstructorConfigManager.Instance.SaveToServer("latest_map_config.json");
+        }
+        else
+        {
+            if (ConfirmationPopup.Instance != null)
+            {
+                ConfirmationPopup.Instance.ShowPopup(
+                    message: error,
+                    onConfirm: () => { Debug.Log("User acknowledged error."); },
+                    onCancel: null, 
+                    title: "Validation Failed"
+                );
+            }
+            SetStatus($"<color=red>Error: {error}</color>");
+        }
     }
 
     void HandleSaveComplete(bool success, string message)

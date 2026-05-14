@@ -173,4 +173,34 @@ public class MapConfig
         SetBlocking(x, y, false);
         SetRoad    (x, y, false);
     }
+
+    public bool ValidateMap(out string errorMessage)
+    {
+        errorMessage = "";
+        bool hasRiver = false, hasRoad = false, hasLand = false;
+        int communities = 0, motels = 0, abandoned = 0;
+
+        for (int i = 0; i < landLayer.Length; i++)
+        {
+            if (landLayer[i]) hasLand = true;
+            if (riverLayer[i]) hasRiver = true;
+            if (roadLayer[i]) hasRoad = true;
+        }
+
+        foreach (var obj in objects)
+        {
+            if (obj.type == PlacedObjectType.Community) communities++;
+            if (obj.type == PlacedObjectType.Motel) motels++;
+            if (obj.type == PlacedObjectType.AbandonedSite) abandoned++;
+        }
+
+        // rules
+        if (!hasRiver || !hasRoad || !hasLand) errorMessage = "Missing required terrain (River, Road, or Land).";
+        else if (communities < 1 || communities > 8) errorMessage = $"Communities must be between 1-8 (Found: {communities}).";
+        else if (motels != 1) errorMessage = "Map must have exactly 1 Motel.";
+        else if (abandoned < 3) errorMessage = $"Need at least 3 Abandoned Sites (Found: {abandoned}).";
+        else if (parameters.initialERVCount < 1) errorMessage = "Starting Vehicles must be at least 1.";
+
+        return string.IsNullOrEmpty(errorMessage);
+    }
 }
