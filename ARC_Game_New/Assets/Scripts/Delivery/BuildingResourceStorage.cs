@@ -69,7 +69,7 @@ public class BuildingResourceStorage : MonoBehaviour
         
         OnStorageUpdated?.Invoke();
     }
-    
+
     void SetStartingResources()
     {
         // Set general game start resources (population, etc.)

@@ -157,9 +157,14 @@ public class GameDataManager : MonoBehaviour
             if (configLoader.HasServerMapConfig())
             {
                 Debug.Log($"GameDataManager: Overriding Baseline with Instructor Config (v{config.schemaVersion})");
+                Debug.Log("GameDataManager: Panel Daily Budget: " + p.dailyBudgetAllocation);
 
                 InitialBudget = p.initialBudget;
+
                 InitialDailyBudgetAddition = (int)p.dailyBudgetAllocation;
+                //configLoader.loadedInitialBudgetDailyAllocs = InitialDailyBudgetAddition;
+                //configLoader.ApplyInitBudgetAllocation();
+
                 InitialSatisfaction = (float)p.initialSatisfaction;
                 InitialCommunityNumber = p.numberOfCommunities;
                 InitialGameDays = p.gameDurationDays;
@@ -179,6 +184,21 @@ public class GameDataManager : MonoBehaviour
                 InitialShelterFloodThreshold = p.shelterFloodThreshold;
                 InitialShelterFloodRadius = p.shelterFloodRadius;
                 InitialShelterFloodComparison = p.shelterFloodComparisonType;
+
+                configLoader.loadedInitialBudgetDailyAllocs = InitialDailyBudgetAddition;
+                configLoader.loadedInitialFoodDemandFrequency = p.foodDemandProbability;
+                configLoader.loadedInitialExternalRelationFrequency = (int)p.externalRelationFrequency;
+
+                configLoader.ApplyInitBudgetAllocation();        
+                configLoader.ApplyInitFoodDemandFrequency();     
+                configLoader.ApplyInitExternalRelationFrequency(); 
+
+                configLoader.loadedInitialShelterFloodThreshold = (int)p.shelterFloodThreshold;
+                configLoader.loadedInitialShelterFloodRadius = (int)p.shelterFloodRadius;
+                configLoader.loadedInitialShelterFloodComparison = p.shelterFloodComparisonType;
+                configLoader.ApplyInitShelterFloodDamage();
+
+
             }
             else
             {

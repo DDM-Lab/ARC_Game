@@ -30,6 +30,9 @@ public class Building : MonoBehaviour
 
     [Header("Building Stats")]
     public int capacity = 10;
+    private int kitchenCapac = 10;
+    private int shelterCapac = 10;
+    private int caseworkCapac = 10;
     public float operationalEfficiency = 1.0f;
 
     [Header("Worker Requirements")]
@@ -85,6 +88,7 @@ public class Building : MonoBehaviour
 
     void Start()
     {
+        StartCoroutine(InitializeWithCentralConfig());
         if (buildingRenderer == null)
             buildingRenderer = GetComponent<SpriteRenderer>();
 
@@ -99,6 +103,27 @@ public class Building : MonoBehaviour
         if (WorkerSystem.Instance != null)
         {
             WorkerSystem.Instance.OnWorkerStatsChanged += UpdateWorkforceIndicator;
+        }
+    }
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+        requiredWorkforce = GameDataManager.Instance.InitialRequiredWorkersPerLoc;
+        shelterCapac = GameDataManager.Instance.InitialKitchenCapacity;
+        caseworkCapac = GameDataManager.Instance.InitialCaseworkCapacity;
+        kitchenCapac = GameDataManager.Instance.InitialKitchenCapacity;
+        if (buildingType == BuildingType.Kitchen)
+        {
+            capacity = kitchenCapac;
+        } else if (buildingType == BuildingType.CaseworkSite)
+        {
+            capacity = caseworkCapac;
+        } else
+        {
+            capacity = shelterCapac;
         }
     }
     void UpdateWorkforceIndicator()

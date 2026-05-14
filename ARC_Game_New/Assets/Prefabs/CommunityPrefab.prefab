@@ -109,6 +109,7 @@ MonoBehaviour:
   normalColor: {r: 1, g: 1, b: 1, a: 1}
   fullColor: {r: 1, g: 1, b: 1, a: 1}
   emptyColor: {r: 0.8, g: 0.8, b: 0.8, a: 1}
+  communityStartingResidentNum: 40
   enableManualTasks: 1
 --- !u!114 &2165042768836177851
 MonoBehaviour:
@@ -127,9 +128,7 @@ MonoBehaviour:
     maxCapacity: 400
   - resourceType: 1
     maxCapacity: 400
-  startingResources:
-  - type: 0
-    amount: 400
+  startingResources: []
   startingFoodPacks: 0
   enableFoodWaste: 0
   roundProduction: []

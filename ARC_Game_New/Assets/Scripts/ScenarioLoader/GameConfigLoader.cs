@@ -412,8 +412,9 @@ public class GameConfigLoader : MonoBehaviour
     public MapConfig GetMapConfig() => loadedMapConfig;
 
 
-    void ApplyInitBudgetAllocation()
+    public void ApplyInitBudgetAllocation()
     {
+        Debug.Log("GameConfigLoader: ApplyInitBudgetAlloc Called");
         if (dailyBudgetAlloc != null)
         {
             dailyBudgetAlloc.impacts[0].value = loadedInitialBudgetDailyAllocs;
@@ -421,12 +422,12 @@ public class GameConfigLoader : MonoBehaviour
             dailyBudgetAlloc.agentChoices[0].choiceImpacts[0].value = loadedInitialBudgetDailyAllocs;
             dailyBudgetAlloc.agentChoices[0].choiceText = $"Receive ${loadedInitialBudgetDailyAllocs} Budget";
             
-            if (showDebugInfo)
+            //if (showDebugInfo)
                 Debug.Log($"Applied {loadedInitialBudgetDailyAllocs} to SO");
         }
     }
 
-    void ApplyInitFoodDemandFrequency()
+    public void ApplyInitFoodDemandFrequency()
     {
         if (loadedInitialFoodDemandFrequency < 0) return;
         if (shelterFoodReq != null)
@@ -446,7 +447,7 @@ public class GameConfigLoader : MonoBehaviour
         }
     }
 
-void ApplyInitExternalRelationFrequency()
+public void ApplyInitExternalRelationFrequency()
 {
     if (budgetAdvisoryER == null && budgetEmergencyER == null) return;
     int advisoryInterval;
@@ -470,7 +471,7 @@ void ApplyInitExternalRelationFrequency()
     if (budgetEmergencyER != null) ApplyTrigger(budgetEmergencyER, emergencyInterval);
 }
 
-void ApplyTrigger(TaskData task, int interval)
+public void ApplyTrigger(TaskData task, int interval)
 {
     DayTrigger trigger = new DayTrigger
     {
@@ -488,7 +489,7 @@ void ApplyTrigger(TaskData task, int interval)
         task.dayTriggers[0] = trigger;
     }
 }
-    void ApplyInitShelterFloodDamage()
+    public void ApplyInitShelterFloodDamage()
     {
         if (shelterFloodDmg == null) return;
 
@@ -507,6 +508,8 @@ void ApplyTrigger(TaskData task, int interval)
             shelterFloodDmg.floodedFacilityTriggers[0] = trigger;
         else
             shelterFloodDmg.floodedFacilityTriggers.Add(trigger);
+
+        Debug.Log("shelter flood damage applied");
     }
 
     /// <summary>
