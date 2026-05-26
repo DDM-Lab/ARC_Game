@@ -68,18 +68,24 @@ public class WebSocketManager : MonoBehaviour
         if (PlayerPrefs.HasKey("arc_config_name"))
             configName = PlayerPrefs.GetString("arc_config_name");
 
-        // Check if running in Unity headless mode (batchmode)
+        // Headless / gym training mode: auto-connect immediately.
         if (Application.isBatchMode)
         {
             Debug.Log("Running in Unity headless mode (batchmode)");
             headlessMode = true;
             enableWebSocket = true;
             serverUrl = $"ws://localhost:{headlessPort}";
+            ConnectToServer();
+            return;
         }
 
+        // Editor / standalone: defer to the ServerLauncherUI. The launcher
+        // pulls the config catalog from the router, lets the user pick one,
+        // then invokes ConnectToServer() with the chosen settings.
         if (enableWebSocket)
         {
-            ConnectToServer();
+            connectionStatus = "Awaiting launcher";
+            Debug.Log("[WS] Awaiting launcher to call ConnectToServer()…");
         }
         else
         {
