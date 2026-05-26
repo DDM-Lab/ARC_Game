@@ -14,6 +14,13 @@ public class WebSocketManager : MonoBehaviour
     public float reconnectDelay = 5f;
     public int maxReconnectAttempts = 3;
 
+    [Header("Session Identity")]
+    // The router validates this against its keys file / ARC_API_KEYS env.
+    // Defaults to the dev key the router uses when no keys file is supplied.
+    public string apiKey = "dev-local-key";
+    // Config name (without .json) the router should load for this session.
+    public string configName = "openai_multi_agent_config_local";
+
     [Header("Headless Mode (for RL training)")]
     public bool headlessMode = false; // Set true for gym environment mode
     public int headlessPort = 9876; // Port for gym environment communication
@@ -23,6 +30,9 @@ public class WebSocketManager : MonoBehaviour
     // Flips to true after the first successful connect of this play session.
     // Used to suppress re-sending game_start on transient reconnects.
     private bool gameStartSentThisSession = false;
+    // Server-assigned session id from hello_ack. Empty until the handshake
+    // completes; reset on each fresh connection.
+    private string sessionId = "";
     public string connectionStatus = "Not Connected";
 
     private WebSocket websocket;
@@ -47,6 +57,16 @@ public class WebSocketManager : MonoBehaviour
     void Start()
     {
         taskDetailUI = FindObjectOfType<TaskDetailUI>();
+
+        // Pull server URL, API key, and config name from PlayerPrefs if a
+        // previous launcher screen saved them. Inspector values act as
+        // defaults the first time a user runs the game.
+        if (PlayerPrefs.HasKey("arc_server_url"))
+            serverUrl = PlayerPrefs.GetString("arc_server_url");
+        if (PlayerPrefs.HasKey("arc_api_key"))
+            apiKey = PlayerPrefs.GetString("arc_api_key");
+        if (PlayerPrefs.HasKey("arc_config_name"))
+            configName = PlayerPrefs.GetString("arc_config_name");
 
         // Check if running in Unity headless mode (batchmode)
         if (Application.isBatchMode)
@@ -98,20 +118,18 @@ public class WebSocketManager : MonoBehaviour
             {
                 isConnected = true;
                 reconnectAttempts = 0;
-                connectionStatus = "Connected";
-                Debug.Log($"✅ Connected to vLLM server at {serverUrl}");
+                sessionId = "";
+                connectionStatus = "Authenticating...";
+                Debug.Log($"✅ Connected to router at {serverUrl}");
 
-                // Notify router that a fresh play session has started so it can
-                // clear its in-memory conversation history. Only fires once per
-                // play session — transient reconnects within the same session
-                // preserve router-side state.
-                if (!gameStartSentThisSession)
-                {
-                    SendRawMessage("{\"type\":\"game_start\",\"timestamp\":\""
-                                   + System.DateTime.UtcNow.ToString("o") + "\"}");
-                    gameStartSentThisSession = true;
-                    Debug.Log("[WS] game_start sent");
-                }
+                // Multi-tenant hello handshake. Router will reply with
+                // hello_ack (success) or hello_error (rejection) before any
+                // gameplay traffic flows.
+                string hello = "{\"type\":\"hello\""
+                               + ",\"api_key\":\"" + EscapeJson(apiKey) + "\""
+                               + ",\"config\":\"" + EscapeJson(configName) + "\"}";
+                SendRawMessage(hello);
+                Debug.Log($"[WS] hello sent (config={configName})");
             };
 
             // Event handler: Message received
@@ -280,6 +298,18 @@ public class WebSocketManager : MonoBehaviour
                 return;
             }
 
+            // Multi-tenant handshake — must run before any gameplay traffic.
+            if (data.Contains("\"hello_ack\""))
+            {
+                HandleHelloAck(data);
+                return;
+            }
+            if (data.Contains("\"hello_error\""))
+            {
+                HandleHelloError(data);
+                return;
+            }
+
             // Handle new multi-agent router message types
             if (data.Contains("\"choices_proposal\""))
             {
@@ -374,6 +404,60 @@ public class WebSocketManager : MonoBehaviour
         {
             Debug.LogError($"Failed to parse message: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Minimal JSON string escaper for the hello frame. NativeWebSocket sends
+    /// raw text so we have to hand-build the payload here; bigger payloads
+    /// elsewhere already use a real serializer.
+    /// </summary>
+    private static string EscapeJson(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        return s.Replace("\\", "\\\\").Replace("\"", "\\\"")
+                .Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+    }
+
+    /// <summary>
+    /// Handshake success. Stash the server-assigned session id and now
+    /// (and only now) send game_start so the router clears any leftover
+    /// in-memory state from a previous session.
+    /// </summary>
+    private void HandleHelloAck(string data)
+    {
+        // Extract session_id without pulling in a JSON dependency — the
+        // payload is tiny and we only need one field.
+        int idx = data.IndexOf("\"session_id\"");
+        if (idx >= 0)
+        {
+            int colon = data.IndexOf(':', idx);
+            int firstQuote = data.IndexOf('"', colon + 1);
+            int secondQuote = data.IndexOf('"', firstQuote + 1);
+            if (firstQuote > 0 && secondQuote > firstQuote)
+                sessionId = data.Substring(firstQuote + 1, secondQuote - firstQuote - 1);
+        }
+        connectionStatus = "Connected";
+        Debug.Log($"[WS] hello_ack received (session={sessionId})");
+
+        if (!gameStartSentThisSession)
+        {
+            SendRawMessage("{\"type\":\"game_start\",\"timestamp\":\""
+                           + System.DateTime.UtcNow.ToString("o") + "\"}");
+            gameStartSentThisSession = true;
+            Debug.Log("[WS] game_start sent");
+        }
+    }
+
+    /// <summary>
+    /// Handshake rejection (bad key, unknown config, etc). Surface in the
+    /// status string and let the server close us; reconnect would just be
+    /// rejected again with the same credentials.
+    /// </summary>
+    private void HandleHelloError(string data)
+    {
+        connectionStatus = "Auth failed";
+        Debug.LogWarning($"[WS] hello_error: {data}");
+        enableWebSocket = false; // suppress auto-reconnect on credential errors
     }
 
     /// <summary>

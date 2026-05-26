@@ -1,18 +1,23 @@
 """
-ARC Game Multi-Agent Router.
+ARC Game Multi-Agent Router (multi-tenant service).
 
-Orchestrates subagents and director each round:
-  1. Receives begin_round from Unity
-  2. Queries each subagent LLM in turn-order with filtered state/actions
-  3. Executes auto agent actions via Unity WebSocket
-  4. Sends choices_proposal for choices agents, waits for choice_made
-  5. Signals director_turn to Unity
-  6. Logs everything to episode_log.jsonl
+Runs as a FastAPI service that hosts many concurrent Unity clients. Each
+client opens a WebSocket, sends a ``hello`` frame with its API key + chosen
+config name, and the server constructs an isolated :class:`Session` to drive
+that game.
+
+Flow per session:
+  1. WebSocket accepted; first frame must be ``{type: hello, api_key, config}``
+  2. Server validates the key, loads the named config, creates a Session
+  3. Server replies ``{type: hello_ack, session_id, ...}``
+  4. From that point the existing message protocol takes over:
+     begin_round, choice_made, director_message, request_reproposal, etc.
 
 Usage:
-    python agent_router.py --config config/agents_config.json \
-                           --port 8000 \
-                           --log episode_log.jsonl
+    python agent_router.py --keys-file config/keys.json \
+                           --config-dir config/ \
+                           --port 9876 \
+                           --log-dir logs/sessions
 """
 from __future__ import annotations
 
@@ -21,10 +26,12 @@ import json
 import argparse
 import os
 import sys
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Header, HTTPException
 from fastapi.responses import JSONResponse
 import uvicorn
 
@@ -56,17 +63,33 @@ def _enumerate_actions(game_state: dict) -> list[dict]:
         return []
 
 
-class AgentRouter:
-    def __init__(self, config: RouterConfig, log_path: str = "episode_log.jsonl"):
+class Session:
+    """One isolated game session for a single connected Unity client.
+
+    Owns all per-user state: WebSocket, message queue, episode logger, pending
+    choice/action futures, choice context, and round counter. Many sessions
+    can run concurrently inside the same FastAPI process.
+    """
+
+    def __init__(
+        self,
+        config: RouterConfig,
+        session_id: str,
+        api_key_label: str,
+        log_path: str,
+        websocket: WebSocket,
+    ):
         self.config = config
+        self.session_id = session_id
+        self.api_key_label = api_key_label
         self.logger = EpisodeLogger(log_path)
-        self.message_queue = MessageQueue()  # Conversation management
+        self.message_queue = MessageQueue()
         self.episode_id: str = self.logger.new_episode()
         self.round_num: int = 0
-        self._websocket: Optional[WebSocket] = None  # set when Unity connects
-        self._pending_choice: Optional[asyncio.Future] = None  # asyncio.Future when waiting for choice_made
-        self._pending_action: Optional[asyncio.Future] = None  # asyncio.Future when waiting for action result
-        self._choice_context: dict = {}  # Store game state/actions for reproposal {agent_name: (state, actions)}
+        self._websocket: WebSocket = websocket
+        self._pending_choice: Optional[asyncio.Future] = None
+        self._pending_action: Optional[asyncio.Future] = None
+        self._choice_context: dict = {}
         self._director_agent: Optional[AgentConfig] = self._find_director()
 
     def _find_director(self) -> Optional[AgentConfig]:
@@ -78,21 +101,19 @@ class AgentRouter:
 
     # ── WebSocket Handler ────────────────────────────────────────
 
-    async def handle_websocket(self, websocket: WebSocket):
-        """Handle WebSocket connection from Unity."""
-        await websocket.accept()
-        self._websocket = websocket
-        print("[router] Unity connected. Waiting for begin_round...")
-
+    async def run(self):
+        """Drive the per-session receive loop. Caller has already accepted
+        the WebSocket and completed the hello handshake.
+        """
+        print(f"[router][{self.api_key_label}] session {self.session_id[:8]} active.")
         try:
             while True:
-                raw_msg = await websocket.receive_text()
+                raw_msg = await self._websocket.receive_text()
                 await self._handle_message(raw_msg)
         except Exception as e:
-            print(f"[router] WebSocket error: {e}")
+            print(f"[router][{self.api_key_label}] WebSocket error: {e}")
         finally:
-            self._websocket = None
-            print("[router] Unity disconnected.")
+            print(f"[router][{self.api_key_label}] session {self.session_id[:8]} closed.")
 
     # ── Message Dispatch ─────────────────────────────────────────
 
@@ -1725,63 +1746,282 @@ def _get_budget(state: dict) -> float:
     return state.get("satisfactionAndBudget", {}).get("budget", 0)
 
 
-# ── FastAPI Server Setup ─────────────────────────────────────────
+# ── Multi-tenant Service ─────────────────────────────────────────
 
 app = FastAPI()
-router_instance: Optional[AgentRouter] = None
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for Unity to connect to."""
-    global router_instance
-    if router_instance:
-        await router_instance.handle_websocket(websocket)
-    else:
-        await websocket.close(code=1011, reason="Router not initialized")
+class AgentService:
+    """Process-wide service state: API keys, config catalog, live sessions."""
+
+    def __init__(self, keys: Dict[str, dict], config_dir: Path, log_dir: Path):
+        self.keys = keys                      # api_key -> {label, ...}
+        self.config_dir = config_dir
+        self.log_dir = log_dir
+        self.sessions: Dict[str, Session] = {}  # session_id -> Session
+
+    def label_for(self, api_key: str) -> Optional[str]:
+        meta = self.keys.get(api_key)
+        return meta.get("label") if meta else None
+
+    def list_configs(self) -> List[dict]:
+        """Return public-facing config descriptors derived from filesystem."""
+        out: List[dict] = []
+        for path in sorted(self.config_dir.glob("*.json")):
+            if path.name.startswith("keys"):
+                continue  # skip the keys file even if it lives in config_dir
+            try:
+                cfg = load_config(str(path))
+            except Exception as e:
+                print(f"[router] Skipping unloadable config {path.name}: {e}")
+                continue
+            agents = [
+                {"name": a.subagent_name, "role": a.role, "actor_type": a.actor_type}
+                for a in cfg.agents
+            ]
+            out.append({"name": path.stem, "path": path.name, "agents": agents})
+        return out
+
+    def resolve_config(self, name: str) -> Optional[Path]:
+        """Map a config name (without .json) to its path under config_dir."""
+        candidate = self.config_dir / f"{name}.json"
+        if candidate.exists():
+            return candidate
+        # Allow callers to pass an explicit relative or absolute path too.
+        as_path = Path(name)
+        if as_path.is_absolute() and as_path.exists():
+            return as_path
+        return None
+
+    def log_path_for(self, session_id: str, key_label: str) -> str:
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        safe_label = re.sub(r"[^A-Za-z0-9_-]+", "_", key_label or "anon")
+        return str(self.log_dir / f"session_{ts}_{safe_label}_{session_id[:8]}.jsonl")
 
 
-@app.websocket("/")
-async def websocket_root_endpoint(websocket: WebSocket):
-    """WebSocket endpoint at root path (for Unity compatibility)."""
-    global router_instance
-    if router_instance:
-        await router_instance.handle_websocket(websocket)
-    else:
-        await websocket.close(code=1011, reason="Router not initialized")
+service: Optional[AgentService] = None
 
 
-@app.get("/health")
-async def root_http():
-    return {"status": "ARC Game Multi-Agent Router", "version": "1.0"}
+def _load_keys(path: Optional[Path]) -> Dict[str, dict]:
+    """Load API keys from a JSON file, env var, or fall back to a dev key.
+
+    JSON file format::
+
+        { "ck_abc...": {"label": "Conner"}, "ck_xyz...": {"label": "Erin"} }
+
+    Env var ``ARC_API_KEYS`` accepts either a JSON object of the same shape,
+    or a comma-separated list (each key gets a generic label).
+    """
+    if path is not None:
+        with open(path, "r") as f:
+            data = json.load(f)
+        return {k: (v if isinstance(v, dict) else {"label": str(v)}) for k, v in data.items()}
+
+    env = os.environ.get("ARC_API_KEYS")
+    if env:
+        try:
+            data = json.loads(env)
+            if isinstance(data, dict):
+                return {k: (v if isinstance(v, dict) else {"label": str(v)})
+                        for k, v in data.items()}
+        except json.JSONDecodeError:
+            pass
+        out: Dict[str, dict] = {}
+        for i, key in enumerate(s.strip() for s in env.split(",") if s.strip()):
+            out[key] = {"label": f"user{i+1}"}
+        return out
+
+    # Dev fallback for local testing.
+    dev_key = "dev-local-key"
+    print(f"[router] No --keys-file or ARC_API_KEYS env; accepting dev key '{dev_key}'")
+    return {dev_key: {"label": "dev"}}
+
+
+def _bearer_to_key(auth: Optional[str]) -> Optional[str]:
+    """Pull the key out of an ``Authorization: Bearer <key>`` header."""
+    if not auth:
+        return None
+    parts = auth.strip().split(None, 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip()
+    return None
 
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "router_active": router_instance is not None}
+    return {
+        "status": "healthy",
+        "live_sessions": len(service.sessions) if service else 0,
+        "version": "2.0",
+    }
+
+
+@app.get("/configs")
+async def list_configs(authorization: Optional[str] = Header(default=None)):
+    if service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    key = _bearer_to_key(authorization)
+    if key is None or key not in service.keys:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return {"configs": service.list_configs()}
+
+
+async def _handshake(websocket: WebSocket) -> Optional[Session]:
+    """Accept a WebSocket, perform the hello handshake, return a Session.
+
+    On any handshake failure the WebSocket is closed and ``None`` is returned.
+    """
+    await websocket.accept()
+    if service is None:
+        await websocket.send_text(json.dumps({"type": "hello_error", "error": "service_not_ready"}))
+        await websocket.close(code=1011, reason="Service not initialized")
+        return None
+
+    try:
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=15.0)
+    except asyncio.TimeoutError:
+        await websocket.close(code=1008, reason="hello timeout")
+        return None
+
+    try:
+        msg = json.loads(raw)
+    except json.JSONDecodeError:
+        await websocket.send_text(json.dumps({"type": "hello_error", "error": "bad_json"}))
+        await websocket.close(code=1008, reason="hello must be JSON")
+        return None
+
+    if msg.get("type") != "hello":
+        await websocket.send_text(json.dumps({
+            "type": "hello_error",
+            "error": "expected_hello",
+            "got": msg.get("type"),
+        }))
+        await websocket.close(code=1008, reason="expected hello frame")
+        return None
+
+    api_key = msg.get("api_key")
+    config_name = msg.get("config")
+    if not api_key or api_key not in service.keys:
+        await websocket.send_text(json.dumps({"type": "hello_error", "error": "invalid_api_key"}))
+        await websocket.close(code=1008, reason="invalid api key")
+        return None
+    if not config_name:
+        await websocket.send_text(json.dumps({"type": "hello_error", "error": "missing_config"}))
+        await websocket.close(code=1008, reason="missing config")
+        return None
+
+    config_path = service.resolve_config(config_name)
+    if config_path is None:
+        await websocket.send_text(json.dumps({
+            "type": "hello_error",
+            "error": "unknown_config",
+            "config": config_name,
+        }))
+        await websocket.close(code=1008, reason="unknown config")
+        return None
+
+    try:
+        cfg = load_config(str(config_path))
+    except Exception as e:
+        await websocket.send_text(json.dumps({
+            "type": "hello_error",
+            "error": "config_load_failed",
+            "detail": str(e),
+        }))
+        await websocket.close(code=1011, reason="config load failed")
+        return None
+
+    session_id = str(uuid.uuid4())
+    key_label = service.label_for(api_key) or "anon"
+    log_path = service.log_path_for(session_id, key_label)
+    session = Session(
+        config=cfg,
+        session_id=session_id,
+        api_key_label=key_label,
+        log_path=log_path,
+        websocket=websocket,
+    )
+    service.sessions[session_id] = session
+
+    await websocket.send_text(json.dumps({
+        "type": "hello_ack",
+        "session_id": session_id,
+        "config": config_name,
+        "agents": [a.subagent_name for a in cfg.agents],
+        "label": key_label,
+    }))
+    print(f"[router] hello_ack -> {key_label} (session {session_id[:8]}, "
+          f"config={config_name}, agents={len(cfg.agents)})")
+    return session
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    session = await _handshake(websocket)
+    if session is None:
+        return
+    try:
+        await session.run()
+    finally:
+        service.sessions.pop(session.session_id, None)
+
+
+@app.websocket("/")
+async def websocket_root_endpoint(websocket: WebSocket):
+    """Alias path for clients that connect at the root."""
+    session = await _handshake(websocket)
+    if session is None:
+        return
+    try:
+        await session.run()
+    finally:
+        service.sessions.pop(session.session_id, None)
 
 
 def main():
-    global router_instance
+    global service
 
-    parser = argparse.ArgumentParser(description="ARC Game Multi-Agent Router")
-    parser.add_argument("--config", default="config/agents_config.json",
-                        help="Path to agents_config.json")
-    parser.add_argument("--port", type=int, default=8000,
+    parser = argparse.ArgumentParser(description="ARC Game Multi-Agent Router (multi-tenant)")
+    parser.add_argument("--config-dir", default="config",
+                        help="Directory containing config JSON files to expose to clients")
+    parser.add_argument("--keys-file", default=None,
+                        help="JSON file mapping api_key -> {label}. "
+                             "If omitted, reads ARC_API_KEYS env var; if that's also "
+                             "absent, falls back to a single 'dev-local-key' for testing.")
+    parser.add_argument("--log-dir", default="logs/sessions",
+                        help="Directory for per-session episode log files")
+    parser.add_argument("--port", type=int, default=9876,
                         help="Port to listen on for Unity connections")
-    parser.add_argument("--log", default="episode_log.jsonl",
-                        help="Episode log output path")
+    # Legacy single-config flag is no longer used; configs are chosen per-session
+    # via the hello frame. Kept here only so old launch scripts don't fail hard.
+    parser.add_argument("--config", default=None,
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--log", default=None,
+                        help=argparse.SUPPRESS)
     args = parser.parse_args()
 
-    # Load config and create router instance
-    config = load_config(args.config)
-    router_instance = AgentRouter(config=config, log_path=args.log)
+    if args.config is not None:
+        print(f"[router] NOTE: --config is ignored in multi-tenant mode "
+              f"(clients pick a config via the hello frame).")
+    if args.log is not None:
+        print(f"[router] NOTE: --log is ignored; logs go to --log-dir as one file per session.")
 
-    print(f"[router] Starting server on port {args.port}...")
-    print(f"[router] Loaded {len(config.agents)} agents from {args.config}")
-    print(f"[router] Waiting for Unity to connect at ws://localhost:{args.port}/ws")
+    keys = _load_keys(Path(args.keys_file) if args.keys_file else None)
+    service = AgentService(
+        keys=keys,
+        config_dir=Path(args.config_dir),
+        log_dir=Path(args.log_dir),
+    )
 
-    # Start FastAPI server
+    print(f"[router] Starting service on port {args.port}")
+    print(f"[router] Config catalog: {service.config_dir} "
+          f"({len(service.list_configs())} configs visible)")
+    print(f"[router] Authorized keys: {[m.get('label') for m in keys.values()]}")
+    print(f"[router] Session logs: {service.log_dir}")
+    print(f"[router] Clients connect to ws://localhost:{args.port}/ws "
+          f"and send a hello frame.")
+
     uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="info")
 
 
