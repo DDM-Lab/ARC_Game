@@ -111,19 +111,32 @@ public class Building : MonoBehaviour
         {
             yield return null;
         }
+        BuildingResourceStorage storage = GetComponent<BuildingResourceStorage>();
         requiredWorkforce = GameDataManager.Instance.InitialRequiredWorkersPerLoc;
-        shelterCapac = GameDataManager.Instance.InitialKitchenCapacity;
-        caseworkCapac = GameDataManager.Instance.InitialCaseworkCapacity;
-        kitchenCapac = GameDataManager.Instance.InitialKitchenCapacity;
+
+        int shelterPopCapac = GameDataManager.Instance.InitialShelterCapacity;
+        int kitchenPopCapac = GameDataManager.Instance.InitialKitchenCapacity;
+        int caseworkPopCapac = GameDataManager.Instance.InitialCaseworkCapacity;
+
+        int kitchenFoodCapac = GameDataManager.Instance.InitialKitchenFoodCapac;
+        int shelterFoodCapac = GameDataManager.Instance.InitialShelterFoodCapac;
+
         if (buildingType == BuildingType.Kitchen)
         {
-            capacity = kitchenCapac;
-        } else if (buildingType == BuildingType.CaseworkSite)
+            capacity = kitchenPopCapac;
+            storage.UpdateMaxCapacity(ResourceType.Population, kitchenPopCapac);
+            storage.UpdateMaxCapacity(ResourceType.FoodPacks, kitchenFoodCapac);
+        }
+        else if (buildingType == BuildingType.CaseworkSite)
         {
-            capacity = caseworkCapac;
-        } else
+            capacity = caseworkPopCapac;
+            storage.UpdateMaxCapacity(ResourceType.Population, caseworkPopCapac);
+        }
+        else if (buildingType == BuildingType.Shelter)
         {
-            capacity = shelterCapac;
+            capacity = shelterPopCapac;
+            storage.UpdateMaxCapacity(ResourceType.Population, shelterPopCapac);
+            storage.UpdateMaxCapacity(ResourceType.FoodPacks, shelterFoodCapac);
         }
     }
     void UpdateWorkforceIndicator()

@@ -237,7 +237,9 @@ public class ParametersPanel : MonoBehaviour
 
         // Buildings
         "kitchenCapacity" => p.kitchenCapacity, // h
+        "kitchenFoodCapacity" => p.kitchenFoodCapac,
         "shelterCapacity" => p.shelterCapacity, // h
+        "shelterFoodCapacity" => p.shelterFoodCapac,
         "caseworkCapacity" => p.caseworkCapacity, // h
         "initialERVCount" => p.initialERVCount, // h
 
@@ -304,7 +306,9 @@ public class ParametersPanel : MonoBehaviour
 
             // Buildings
             case "kitchenCapacity": p.kitchenCapacity = (int)v; break;
+            case "kitchenFoodCapacity": p.kitchenFoodCapac = (int)v; break;
             case "shelterCapacity": p.shelterCapacity = (int)v; break;
+            case "shelterFoodCapacity": p.shelterFoodCapac = (int)v; break;
             case "caseworkCapacity": p.caseworkCapacity = (int)v; break;
             case "initialERVCount": p.initialERVCount = (int)v; break;
 

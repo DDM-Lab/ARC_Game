@@ -23,7 +23,9 @@ public class GameDataManager : MonoBehaviour
     public int defaultDailyBudgetAllocs = 3000; // dailyBudgetAllocation
     public WeatherType defaultInitialWeather = WeatherType.Sunny; // done
     public int defaultKitchenCapacity = 10; // done
+    public int defaultKitchenFoodCapac = 20; // done
     public int defaultShelterCapacity = 10; // done
+    public int defaultShelterFoodCapac = 40; // done
     public int defaultCaseworkCapacity = 10; // done
     public int defaultRequiredWorkersPerLoc = 4; // done
     public float defaultSunnyExpansionRate = 0f;
@@ -59,7 +61,9 @@ public class GameDataManager : MonoBehaviour
     public int InitialDailyBudgetAddition { get; private set; }
     public WeatherType InitialWeather {get; private set;}
     public int InitialKitchenCapacity { get; private set; }
+    public int InitialKitchenFoodCapac { get; private set; }
     public int InitialShelterCapacity { get; private set; }
+    public int InitialShelterFoodCapac { get; private set; }
     public int InitialCaseworkCapacity { get; private set; }
     public int InitialRequiredWorkersPerLoc {get; private set; }
     public float InitialSunnyExpansionRate {get; private set; }
@@ -120,7 +124,9 @@ public class GameDataManager : MonoBehaviour
             InitialDailyBudgetAddition = configLoader.GetInitialBudgetDailyAdditions();
             InitialWeather = configLoader.GetInitialWeather();
             InitialKitchenCapacity = configLoader.GetInitialKitchenCapacity();
+            InitialKitchenFoodCapac = configLoader.GetInitialKitchenFoodCapacity();
             InitialShelterCapacity = configLoader.GetInitialShelterCapacity();
+            InitialShelterFoodCapac = configLoader.GetInitialShelterFoodCapacity();
             InitialCaseworkCapacity = configLoader.GetInitialCaseworkCapacity();
             InitialRequiredWorkersPerLoc = configLoader.GetInitialNeededWorkersPerLoc();
             InitialSunnyExpansionRate = configLoader.GetInitialSunnyFloodExpansionRate();
@@ -174,7 +180,9 @@ public class GameDataManager : MonoBehaviour
                 InitialTrainedVolunteerCount = p.initialTrainedVolunteerCount;
                 InitialUntrainedVolunteerCount = p.initialUntrainedVolunteerCount;
                 InitialKitchenCapacity = p.kitchenCapacity;
+                InitialKitchenFoodCapac = p.kitchenFoodCapac;
                 InitialShelterCapacity = p.shelterCapacity;
+                InitialShelterFoodCapac = p.shelterFoodCapac;
                 InitialCaseworkCapacity = p.caseworkCapacity;
                 InitialRequiredWorkersPerLoc = p.requiredWorkerUnitsPerLoc;
                 InitialERVCount = p.initialERVCount;
@@ -216,7 +224,9 @@ public class GameDataManager : MonoBehaviour
                 p.initialUntrainedVolunteerCount = InitialUntrainedVolunteerCount;
                 p.initialWorkerCount = InitialTrainedVolunteerCount + InitialUntrainedVolunteerCount;
                 p.kitchenCapacity = InitialKitchenCapacity;
+                p.kitchenFoodCapac = InitialKitchenFoodCapac;
                 p.shelterCapacity = InitialShelterCapacity;
+                p.shelterFoodCapac = InitialKitchenFoodCapac;
                 p.caseworkCapacity = InitialCaseworkCapacity;
                 p.requiredWorkerUnitsPerLoc = InitialRequiredWorkersPerLoc;
                 p.initialERVCount = InitialERVCount;
@@ -248,7 +258,9 @@ public class GameDataManager : MonoBehaviour
         InitialDailyBudgetAddition =defaultDailyBudgetAllocs;
         InitialWeather = defaultInitialWeather;
         InitialKitchenCapacity = defaultKitchenCapacity;
+        InitialKitchenFoodCapac = defaultKitchenFoodCapac;
         InitialShelterCapacity = defaultShelterCapacity;
+        InitialShelterFoodCapac = defaultShelterFoodCapac;
         InitialCaseworkCapacity = defaultCaseworkCapacity;
         InitialRequiredWorkersPerLoc = defaultRequiredWorkersPerLoc;
         InitialSunnyExpansionRate = defaultSunnyExpansionRate;

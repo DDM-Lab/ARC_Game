@@ -1,6 +1,7 @@
-using UnityEngine;
-using System.Collections.Generic;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
 
 public class BuildingResourceStorage : MonoBehaviour
 {
@@ -425,7 +426,7 @@ public class BuildingResourceStorage : MonoBehaviour
     public int GetMaxCapacity(ResourceType resourceType)
     {
         return maxCapacities[resourceType];
-    }
+    } 
     
 
     
@@ -433,6 +434,33 @@ public class BuildingResourceStorage : MonoBehaviour
     public void DebugForceDailyReset()
     {
         HandleDailyReset();
+    }
+
+    public void UpdateMaxCapacity(ResourceType type, int newMax)
+    {
+        if (maxCapacities.ContainsKey(type))
+        {
+            maxCapacities[type] = newMax;
+        }
+        else
+        {
+            maxCapacities.Add(type, newMax);
+            if (!currentResources.ContainsKey(type)) currentResources.Add(type, 0);
+        }
+        var listEntry = resourceCapacities.FirstOrDefault(rc => rc.resourceType == type);
+        if (listEntry != null)
+        {
+            listEntry.maxCapacity = newMax;
+        }
+        else
+        {
+            resourceCapacities.Add(new ResourceCapacity
+            {
+                resourceType = type,
+                maxCapacity = newMax
+            });
+        }
+        OnStorageUpdated?.Invoke();
     }
 }
 

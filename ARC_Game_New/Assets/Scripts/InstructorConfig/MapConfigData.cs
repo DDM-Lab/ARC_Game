@@ -64,7 +64,9 @@ public class ScenarioParameters
 
     // Buildings
     public int kitchenCapacity    = 10; // new
+    public int kitchenFoodCapac = 20;
     public int shelterCapacity    = 10; // new
+    public int shelterFoodCapac = 40;
     public int caseworkCapacity   = 10; // new
     public int initialERVCount           = 3; // new
 

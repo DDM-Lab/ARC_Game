@@ -36,7 +36,9 @@ public class GameConfigLoader : MonoBehaviour
     public int loadedInitialBudgetDailyAllocs=3000;
     public WeatherType loadedInitialWeather = WeatherType.Sunny;
     public int loadedInitialShelterCapacity = 10;
+    public int loadedInitialShelterFoodCapac = 40;
     public int loadedInitialKitchenCapacity = 10;
+    public int loadedInitialKitchenFoodCapac = 20;
     public int loadedInitialCaseworkCapacity = 10;
     public int loadedInitialRequiredWorkers = 4;
     public float loadedInitialSunnyExpansionRate = 0f;
@@ -220,10 +222,21 @@ public class GameConfigLoader : MonoBehaviour
                     loadedInitialKitchenCapacity = kitchenCapac;
                     Debug.Log($"gameconfigloader:kitchencpac - {loadedInitialKitchenCapacity}");
             }
+            else if (parameter.Equals("initialKitchenFoodCapacity", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int kitchenFoodCapac))
+                    loadedInitialKitchenFoodCapac = kitchenFoodCapac;
+                Debug.Log($"gameconfigloader:kitchencpac - {loadedInitialKitchenCapacity}");
+            }
             else if (parameter.Equals("initialShelterCapacity", System.StringComparison.OrdinalIgnoreCase))
             {
                 if (int.TryParse(value, out int shelterCapac))
                     loadedInitialShelterCapacity = shelterCapac;
+            }
+            else if (parameter.Equals("initialShelterFoodCapacity", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int shelterFoodCapac))
+                    loadedInitialShelterFoodCapac = shelterFoodCapac;
             }
             else if (parameter.Equals("initialCaseworkCapacity", System.StringComparison.OrdinalIgnoreCase))
             {
@@ -569,9 +582,17 @@ public void ApplyTrigger(TaskData task, int interval)
     {
         return loadedInitialKitchenCapacity;
     }
+    public int GetInitialKitchenFoodCapacity()
+    {
+        return loadedInitialKitchenFoodCapac;
+    }
     public int GetInitialShelterCapacity()
     {
         return loadedInitialShelterCapacity;
+    }
+    public int GetInitialShelterFoodCapacity()
+    {
+        return loadedInitialShelterFoodCapac;
     }
     public int GetInitialCaseworkCapacity()
     {
