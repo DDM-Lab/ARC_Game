@@ -1088,8 +1088,13 @@ public class TaskSystem : MonoBehaviour
             GameLogPanel.Instance.LogTaskEvent($"Completed task: {task.taskTitle}");
             // ToastManager.ShowToast($"Completed task: {task.taskTitle}", ToastType.Success, true);
 
-            // Show task result popup
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other) )
+            // Show task result popup. Multi-agent recommendation tasks (those that
+            // carry a multiAgentProposal — the choices-agent flow) are silent on
+            // completion; the conversation panel is their UI surface.
+            if (TaskResultManager.Instance != null
+                && task.taskType != TaskType.Alert
+                && task.taskType != TaskType.Other
+                && task.multiAgentProposal == null)
             {
                 TaskResultManager.Instance.ShowTaskResult(task);
             }

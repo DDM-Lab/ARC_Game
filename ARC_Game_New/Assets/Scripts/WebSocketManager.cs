@@ -20,6 +20,9 @@ public class WebSocketManager : MonoBehaviour
 
     [Header("Status")]
     public bool isConnected = false;
+    // Flips to true after the first successful connect of this play session.
+    // Used to suppress re-sending game_start on transient reconnects.
+    private bool gameStartSentThisSession = false;
     public string connectionStatus = "Not Connected";
 
     private WebSocket websocket;
@@ -97,6 +100,18 @@ public class WebSocketManager : MonoBehaviour
                 reconnectAttempts = 0;
                 connectionStatus = "Connected";
                 Debug.Log($"✅ Connected to vLLM server at {serverUrl}");
+
+                // Notify router that a fresh play session has started so it can
+                // clear its in-memory conversation history. Only fires once per
+                // play session — transient reconnects within the same session
+                // preserve router-side state.
+                if (!gameStartSentThisSession)
+                {
+                    SendRawMessage("{\"type\":\"game_start\",\"timestamp\":\""
+                                   + System.DateTime.UtcNow.ToString("o") + "\"}");
+                    gameStartSentThisSession = true;
+                    Debug.Log("[WS] game_start sent");
+                }
             };
 
             // Event handler: Message received
@@ -516,6 +531,15 @@ public class WebSocketManager : MonoBehaviour
                 }
             }
 
+            // Before the existing multi-agent task gets cleared, snapshot its
+            // current reasoning + choices into the per-officer chat history so
+            // prior proposals stay visible across reproposals.
+            if (AgentConversationUI.Instance != null
+                && System.Enum.TryParse(proposal.talkinghead, out TaskOfficer archiveOfficer))
+            {
+                AgentConversationUI.Instance.ArchiveExistingProposal(archiveOfficer);
+            }
+
             // Create or update a special multi-agent task for this officer
             GameTask multiAgentTask = TaskSystem.Instance.GetOrCreateMultiAgentTask(
                 proposal.talkinghead,
@@ -527,6 +551,15 @@ public class WebSocketManager : MonoBehaviour
 
             // Apply the LLM content to display in the UI
             TaskSystem.Instance.ApplyLLMTaskContent(llmContent);
+
+            // If the user is currently viewing this officer's tab, re-render so the
+            // newly proposed/reproposed choices appear immediately. Without this,
+            // the task data updates but the panel only refreshes on next tab switch.
+            if (AgentConversationUI.Instance != null
+                && System.Enum.TryParse(proposal.talkinghead, out TaskOfficer officerEnum))
+            {
+                AgentConversationUI.Instance.OnChoicesProposalApplied(officerEnum);
+            }
 
             Debug.Log($"✅ Displayed {proposal.packages.Length} choice packages in {proposal.talkinghead} tab");
         }

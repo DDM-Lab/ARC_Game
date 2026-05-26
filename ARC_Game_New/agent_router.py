@@ -22,7 +22,7 @@ import argparse
 import os
 import sys
 from datetime import datetime, timezone
-from typing import List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
 
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import JSONResponse
@@ -113,10 +113,15 @@ class AgentRouter:
             return
         print(f"[router] Received message type: {msg_type}")
 
-        if msg_type == "begin_round" or msg_type == "request_agent_decision":
-            # request_agent_decision is the old message type from original LLM integration
+        if msg_type == "begin_round":
             # Run as background task so receive loop stays active for choice_made messages
             asyncio.create_task(self._handle_begin_round(msg))
+        elif msg_type == "request_agent_decision":
+            # Legacy single-agent message; GlobalClock still emits it alongside begin_round.
+            # Ignore to avoid running the round twice per simulation tick.
+            print("[router] Ignoring legacy 'request_agent_decision' (begin_round drives the round).")
+        elif msg_type == "game_start":
+            self._handle_game_start(msg)
         elif msg_type == "choice_made":
             await self._handle_choice_made(msg)
         elif msg_type == "director_message":
@@ -205,8 +210,9 @@ class AgentRouter:
         conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
         raw = query_llm(filtered_state, filtered_actions, agent, conversation)
 
-        # Parse structured response (ACTIONS + REASONING)
-        actions_str, reasoning = self._parse_auto_response(raw)
+        # Parse structured response (ACTIONS + REASONING + EXPECTED_IMPACT + NEXT_STEPS)
+        parsed = self._parse_auto_response(raw)
+        actions_str = parsed["actions_str"]
 
         # Validate LLM response
         indices, validation_errors = self._validate_action_indices(
@@ -215,7 +221,7 @@ class AgentRouter:
             agent_name=agent.subagent_name
         )
         print(f"[{agent.subagent_name}] LLM chose indices: {indices}")
-        print(f"[{agent.subagent_name}] Reasoning: {reasoning[:100]}...")
+        print(f"[{agent.subagent_name}] Reasoning: {parsed['reasoning'][:100]}...")
 
         results = []
         sat_before = _get_satisfaction(game_state)
@@ -250,8 +256,8 @@ class AgentRouter:
         self._log_turn(agent, filtered_state, filtered_actions, [], None, log_results,
                        sat_before, game_state, budget_before, raw, 0)
 
-        # Post action summary with reasoning to director
-        await self._post_auto_summary(agent, results, reasoning)
+        # Post action summary with sectioned rationale to director
+        await self._post_auto_summary(agent, results, parsed)
 
         return game_state, all_actions
 
@@ -388,15 +394,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         sat_before = _get_satisfaction(game_state)
         budget_before = _get_budget(game_state)
 
-        await self._send({
-            "type": "choices_proposal",
-            "agent_name": agent.subagent_name,
-            "talkinghead": agent.talkinghead_endpoint,
-            "reasoning": reasoning,
-            "packages": packages,
-            "available_actions": filtered_actions,  # Full action objects for Unity to execute
-            "timestamp": _now(),
-        })
+        await self._send_choices_proposal(agent, packages, filtered_actions, reasoning)
 
         # Check if director is autonomous or manual
         if self._director_agent and self._director_agent.actor_type == "auto":
@@ -517,6 +515,18 @@ Respond with ONLY the package index number (0, 1, or 2).
     def _handle_round_end(self, msg: dict):
         print(f"[router] Round {self.round_num} ended.")
 
+    def _handle_game_start(self, msg: dict):
+        """Unity signals a fresh play session — wipe conversation state.
+
+        Fires once per Unity Play session on websocket open. Clears the in-memory
+        MessageQueue and resets the round counter + per-agent reproposal context so
+        the new game starts with no stale conversation, no archived choice context.
+        """
+        self.message_queue.clear_all()
+        self.round_num = 0
+        self._choice_context.clear()
+        print("[router] 🆕 game_start received — message queue cleared, round counter reset.")
+
     async def _handle_director_message(self, msg: dict):
         """Handle conversational message from director to an agent."""
         to_agent_name = msg.get("to_agent")
@@ -555,60 +565,224 @@ Respond with ONLY the package index number (0, 1, or 2).
             print(f"[router] Agent '{to_agent_name}' not found")
             return
 
-        # Generate immediate response from the agent
         conversation = self.message_queue.get_conversation(to_agent_name, "Director")
+
+        # For choices agents with an active proposal context, force a single-path
+        # decision: CLARIFY, REPROPOSE, or CHAT. This avoids the previous bug where
+        # the agent both asked clarifying questions AND auto-reproposed.
+        if agent.actor_type == "choices" and agent.subagent_name in self._choice_context:
+            decision = self._classify_director_intent(agent, conversation)
+            intent = decision.get("intent", "CHAT")
+            payload = (decision.get("payload") or "").strip()
+
+            print(f"[router]   Intent={intent} for {to_agent_name}")
+
+            if intent == "REPROPOSE":
+                ack = payload or "Generating new options based on your feedback."
+                await self._send_agent_response(agent, ack, "agent_response")
+                await self._repropose_choices(agent)
+                return
+
+            if intent == "CLARIFY":
+                question = payload or "Could you clarify what you'd like me to change about the options?"
+                await self._send_agent_response(agent, question, "agent_response")
+                return
+
+            # CHAT: payload IS the reply when present.
+            if payload:
+                await self._send_agent_response(agent, payload, "agent_response")
+                return
+            # Otherwise fall through to the legacy free-form generator below.
+
+        # Default path: free-form conversational response.
         response_text = self._generate_conversational_response(agent, conversation)
+        await self._send_agent_response(agent, response_text, "agent_response")
 
-        print(f"[router] {to_agent_name} → Director: {response_text[:50]}...")
-
-        # Store agent response in queue
+    async def _send_agent_response(self, agent: AgentConfig, response_text: str, msg_type: str):
+        """Persist + log + push an agent's conversational reply to the Director."""
         response_message = self.message_queue.send_message(
-            from_agent=to_agent_name,
+            from_agent=agent.subagent_name,
             to_agent="Director",
             content=response_text,
-            msg_type="agent_response",
-            round_num=self.round_num
+            msg_type=msg_type,
+            round_num=self.round_num,
         )
-
-        # Log agent response
         self.logger.log_event({
             "event_type": "conversation_message",
             "round": self.round_num,
-            "from": to_agent_name,
+            "from": agent.subagent_name,
             "to": "Director",
             "content": response_text,
-            "message_type": "agent_response",
+            "message_type": msg_type,
             "message_id": response_message["id"],
-            "timestamp": response_message["timestamp"]
+            "timestamp": response_message["timestamp"],
         })
-
-        # Send agent response to Unity for display
         await self._send({
             "type": "agent_message",
-            "agent_name": to_agent_name,
+            "agent_name": agent.subagent_name,
             "talkinghead_endpoint": agent.talkinghead_endpoint,
             "content": response_text,
-            "message_type": "agent_response",
+            "message_type": msg_type,
             "round": self.round_num,
-            "timestamp": response_message["timestamp"]
+            "timestamp": response_message["timestamp"],
         })
+        print(f"[router] {agent.subagent_name} → Director: {response_text[:60]}...")
 
-        # Detect if director is requesting new choices
-        reproposal_keywords = [
-            "new choices", "new options", "different choices", "different options",
-            "repropose", "re-propose", "regenerate", "try again",
-            "give me new", "show me new", "other choices", "other options",
-            "don't want", "not those", "something else"
-        ]
+    def _build_observation_snapshot(self, agent: AgentConfig) -> str:
+        """Compact factual ground-truth snapshot for the CLARIFY branch.
 
-        content_lower = content.lower()
-        if any(keyword in content_lower for keyword in reproposal_keywords):
-            # Check if this agent is a choices agent and has active context
-            if agent.actor_type == "choices" and agent.subagent_name in self._choice_context:
-                print(f"[router] 🔄 Detected reproposal request - generating new choices...")
-                await self._repropose_choices(agent)
+        Dumps the demand/capacity-relevant subtrees of the most recent
+        filtered observation as JSON so the LLM can quote real numbers
+        (clients waiting, building capacities, worker counts, open tasks)
+        rather than restating what's already in chat memory (day/budget).
+        Returns "" if no context is stashed.
+        """
+        ctx = self._choice_context.get(agent.subagent_name)
+        if ctx is None:
+            return ""
+        filtered_state, _filtered_actions, _gs, _all = ctx
+
+        # Keep only the subtrees that actually inform shelter-vs-kitchen-style
+        # trade-offs. Skip session/budget — the agent already cited those when
+        # generating its prior REASONING and they're in the chat history.
+        relevant_keys = (
+            "constructionState",
+            "mapState",
+            "workers",
+            "workforceState",
+            "logistics",
+            "tasks",
+        )
+        slice_ = {
+            k: filtered_state[k]
+            for k in relevant_keys
+            if k in filtered_state and filtered_state[k] is not None
+        }
+        if not slice_:
+            return ""
+
+        try:
+            payload = json.dumps(slice_, default=str)
+        except Exception:
+            return ""
+
+        # Soft cap to avoid burning the whole context on the snapshot.
+        MAX_CHARS = 4000
+        if len(payload) > MAX_CHARS:
+            payload = payload[:MAX_CHARS] + "…(truncated)"
+
+        return (
+            "Observation facts (use these as ground truth when citing capacity, demand, worker counts, "
+            "open tasks, or building inventory — do NOT invent numbers):\n"
+            + payload
+        )
+
+    def _classify_director_intent(self, agent: AgentConfig, conversation: list) -> dict:
+        """Single-call classification: does the Director want CLARIFY, REPROPOSE, or CHAT?
+
+        Returns ``{"intent": <str>, "payload": <str>}``. The payload doubles as
+        the message to send back: a clarifying question, a one-sentence
+        acknowledgement of reproposal, or a free-form reply.
+        """
+        import anthropic
+        import openai
+
+        provider = (agent.llm_provider or "anthropic").lower()
+
+        messages = []
+        for entry in conversation:
+            sender = entry.get("from")
+            if sender == "Director":
+                messages.append({"role": "user", "content": entry.get("content", "")})
+            elif sender == agent.subagent_name:
+                messages.append({"role": "assistant", "content": entry.get("content", "")})
+        if not messages:
+            messages = [{"role": "user", "content": "Decide and respond."}]
+
+        system_prompt = (
+            f"You are {agent.subagent_name}, a choices agent in the ARC disaster-response game. "
+            "You previously proposed strategy packages to the Director, and the Director has now "
+            "messaged you. Decide EXACTLY ONE response path:\n\n"
+            "  REPROPOSE — they want a fresh set of packages and you have enough information to commit.\n"
+            "  CLARIFY   — you genuinely need more information before you could repropose.\n"
+            "  CHAT      — they are not asking for new packages (a question, thanks, small talk).\n\n"
+            "Reply with exactly two lines:\n"
+            "DECISION: <REPROPOSE | CLARIFY | CHAT>\n"
+            "PAYLOAD:\n"
+            "  - If REPROPOSE: a one-sentence acknowledgement.\n"
+            "  - If CLARIFY: 1-3 short sentences that *reduce* the Director's cognitive load. State the "
+            "relevant facts first — situation + concrete trade-off (costs, capacity gains, impacts), grounded in "
+            "real numbers from the observation. Then EITHER:\n"
+            "      • offer a light recommendation when one option clearly fits the Director's stated priority "
+            "(e.g. 'If budget matters most, the kitchen is the better fit at $1k vs $1.5k.'), OR\n"
+            "      • ask ONE short clarifying question only when the choice is genuinely ambiguous given what "
+            "they've said.\n"
+            "    Do not do both. Do not trail off with a vague question when the answer is obvious from facts "
+            "you already have. Never invent numbers; only quote facts from the observation or chat.\n"
+            "  - If CHAT: a brief conversational reply.\n\n"
+            "Do not ask a clarifying question AND repropose. Be decisive."
+        )
+        if agent.system_prompt:
+            system_prompt += f"\n\nAgent role: {agent.system_prompt}"
+
+        # Inject a brief observation snapshot (budget, satisfaction, day/segment)
+        # so the CLARIFY branch can ground its facts in the actual game state,
+        # not just whatever has been mentioned in chat so far.
+        obs_summary = self._build_observation_snapshot(agent)
+        if obs_summary:
+            system_prompt += f"\n\n{obs_summary}"
+
+        raw = ""
+        try:
+            if provider == "anthropic":
+                api_key = os.environ.get(agent.api_key_env or "ANTHROPIC_API_KEY")
+                if not api_key:
+                    return {"intent": "CHAT", "payload": ""}
+                client = anthropic.Anthropic(api_key=api_key)
+                resp = client.messages.create(
+                    model=agent.llm_model or "claude-sonnet-4-6",
+                    max_tokens=400,
+                    system=system_prompt,
+                    messages=messages,
+                )
+                raw = resp.content[0].text
+            elif provider == "openai":
+                api_key = os.environ.get(agent.api_key_env or "OPENAI_API_KEY")
+                if not api_key:
+                    return {"intent": "CHAT", "payload": ""}
+                base_url = getattr(agent, "llm_endpoint", None)
+                client = (
+                    openai.OpenAI(api_key=api_key, base_url=base_url) if base_url
+                    else openai.OpenAI(api_key=api_key)
+                )
+                resp = client.chat.completions.create(
+                    model=agent.llm_model or "gpt-4o-mini",
+                    max_tokens=400,
+                    messages=[{"role": "system", "content": system_prompt}] + messages,
+                )
+                raw = resp.choices[0].message.content or ""
             else:
-                print(f"[router] Note: Reproposal detected but agent is not in choices mode or has no context")
+                return {"intent": "CHAT", "payload": ""}
+        except Exception as e:
+            print(f"[router] Intent classification failed for {agent.subagent_name}: {e}")
+            return {"intent": "CHAT", "payload": ""}
+
+        intent = "CHAT"
+        payload = ""
+        for raw_line in raw.split("\n"):
+            line = raw_line.strip()
+            if line.upper().startswith("DECISION:"):
+                val = line.split(":", 1)[1].strip().upper()
+                # Strip trailing punctuation/markdown the model occasionally adds.
+                val = val.strip("*` _.")
+                if val in ("REPROPOSE", "CLARIFY", "CHAT"):
+                    intent = val
+            elif line.upper().startswith("PAYLOAD:"):
+                idx = raw.upper().find("PAYLOAD:")
+                payload = raw[idx + len("PAYLOAD:"):].strip()
+                break
+
+        return {"intent": intent, "payload": payload}
 
     async def _handle_request_reproposal(self, msg: dict):
         """Handle director requesting an agent to repropose choices."""
@@ -653,9 +827,24 @@ Respond with ONLY the package index number (0, 1, or 2).
         await self._repropose_choices(agent)
 
     def _get_agent_by_name(self, agent_name: str) -> Optional[AgentConfig]:
-        """Find agent by subagent_name."""
+        """Find agent by subagent_name, with talkinghead_endpoint fallback.
+
+        Unity's AgentConfigLoader sometimes can't resolve the subagent_name
+        for the currently-selected tab (config not loaded, enum match misses)
+        and falls back to sending the TaskOfficer enum string (e.g.
+        ``"DisasterOfficer"``) as ``to_agent``. Accept either form so the
+        message still routes to the right agent.
+        """
+        if not agent_name:
+            return None
         for agent in self.config.agents:
             if agent.subagent_name == agent_name:
+                return agent
+        # Talkinghead fallback (case-insensitive).
+        name_lower = agent_name.lower()
+        for agent in self.config.agents:
+            th = (agent.talkinghead_endpoint or "")
+            if th.lower() == name_lower:
                 return agent
         return None
 
@@ -687,19 +876,20 @@ Respond with ONLY the package index number (0, 1, or 2).
                 role = "assistant"
                 messages.append({"role": role, "content": entry.get("content", "")})
 
-        # Create system prompt
-        system_prompt = f"""You are {agent.subagent_name}, an AI agent helping manage disaster response in the ARC Game.
-
-You are having a conversation with the Director (the human player). Respond naturally and helpfully to their messages.
-
-Keep your responses concise and focused. You can discuss:
-- Your recent actions and decisions
-- Your understanding of the current situation
-- Questions or clarifications about the disaster response
-- Coordination with other agents"""
+        # System prompt — tight and informational. Matches the style of the
+        # auto-agent action prompt so chat replies stay short and on-task.
+        system_prompt = (
+            f"You are {agent.subagent_name}, an internal operator reporting to the Director on disaster response.\n\n"
+            f"Reply to the Director's last message in 1–3 short sentences. Be direct and informational.\n\n"
+            f"Hard rules:\n"
+            f"- No greetings, sign-offs, role-play, or 'Yes, Director' style flourishes.\n"
+            f"- Do not wrap your reply in quotation marks.\n"
+            f"- Stick to: what you did this round, why, current constraints, what you plan next.\n"
+            f"- If the Director asks for an action, briefly say whether you will do it or why you can't."
+        )
 
         if agent.system_prompt:
-            system_prompt += f"\n\nAdditional context: {agent.system_prompt}"
+            system_prompt += f"\n\nAgent role: {agent.system_prompt}"
 
         # Query the LLM
         try:
@@ -711,7 +901,7 @@ Keep your responses concise and focused. You can discuss:
                 client = anthropic.Anthropic(api_key=api_key)
                 response = client.messages.create(
                     model=agent.llm_model or "claude-sonnet-4-6",
-                    max_tokens=500,
+                    max_tokens=200,
                     system=system_prompt,
                     messages=messages
                 )
@@ -732,7 +922,7 @@ Keep your responses concise and focused. You can discuss:
                 msgs = [{"role": "system", "content": system_prompt}] + messages
                 response = client.chat.completions.create(
                     model=agent.llm_model or "gpt-4",
-                    max_tokens=500,
+                    max_tokens=200,
                     messages=msgs
                 )
                 return response.choices[0].message.content
@@ -793,6 +983,10 @@ Keep your responses concise and focused. You can discuss:
         # Track running state
         running_budget = _get_budget(initial_state)
         free_workers = self._count_free_workers(initial_state)
+        # Sites already targeted by a construction action this turn. Prevents
+        # an agent from queueing e.g. Shelter@site9 + Kitchen@site9 in the
+        # same batch (only one building fits per site).
+        used_construction_sites: set = set()
 
         results = {
             'executed': [],
@@ -805,7 +999,9 @@ Keep your responses concise and focused. You can discuss:
         for idx in action_indices:
             action = valid_actions[idx]
             action_cost = action.get('cost', 0)
-            action_type = action.get('actionType', 'unknown')
+            # Note: enumerated actions use snake_case `action_type`; the older
+            # `actionType` lookup elsewhere in this file is a stale leftover.
+            action_type = action.get('action_type') or action.get('actionType', 'unknown')
             action_desc = action.get('description', '?')
 
             # Check budget
@@ -821,6 +1017,17 @@ Keep your responses concise and focused. You can discuss:
                 results['skipped'].append({'index': idx, 'reason': msg})
                 print(f"[{agent_name}]   ⚠️  Skipping action {idx} ({action_type}): {msg}")
                 continue
+
+            # Reject duplicate construction at the same site this turn
+            if action_type == 'construction':
+                site_id = (action.get('construction') or {}).get('site_id')
+                if site_id is not None:
+                    if site_id in used_construction_sites:
+                        msg = f"Site {site_id} already targeted by an earlier construction action this turn"
+                        results['skipped'].append({'index': idx, 'reason': msg})
+                        print(f"[{agent_name}]   ⚠️  Skipping action {idx} ({action_type}): {msg}")
+                        continue
+                    used_construction_sites.add(site_id)
 
             # Execute action
             try:
@@ -899,37 +1106,54 @@ Keep your responses concise and focused. You can discuss:
     def _filter_state(self, game_state: dict, agent: AgentConfig) -> dict:
         return filter_observation(game_state, agent.subobservation_space)
 
-    async def _post_auto_summary(self, agent: AgentConfig, results: dict, reasoning: str = ""):
+    async def _post_auto_summary(self, agent: AgentConfig, results: dict, parsed: dict):
         """
-        Post conversational summary with LLM-generated reasoning after auto agent executes actions.
+        Post a sectioned summary to the director after an auto agent acts.
+
+        The "Actions Executed" section is filled deterministically from
+        ``results`` (router-authoritative); the remaining sections come from
+        the LLM's parsed response.
 
         Args:
             agent: Agent configuration
-            results: Execution results dict with "executed" and "skipped" lists
-            reasoning: LLM-generated explanation from REASONING field
+            results: Execution results dict with "executed" / "skipped" / "errors" lists
+            parsed: Dict from _parse_auto_response with keys
+                actions_str, reasoning, expected_impact, next_steps
         """
-        executed_count = len(results.get("executed", []))
-        skipped_count = len(results.get("skipped", []))
+        executed = results.get("executed", [])
+        skipped = results.get("skipped", [])
+        errors = results.get("errors", [])
 
-        # Use LLM-generated reasoning as the main message content
-        # Add execution summary if there were issues
-        if reasoning:
-            summary = reasoning
-            # Append execution status if actions were skipped
-            if skipped_count > 0:
-                summary += f" (Note: {skipped_count} action(s) were invalid and skipped)"
+        # Section 1: Actions Executed — router-authoritative (no LLM hallucination).
+        action_lines = ["**Actions Executed**"]
+        if executed:
+            for item in executed:
+                action = item.get("action") or {}
+                desc = action.get("description", "?")
+                cost = action.get("cost", 0)
+                try:
+                    cost_str = f"${cost:,}"
+                except (TypeError, ValueError):
+                    cost_str = f"${cost}"
+                action_lines.append(f"• {desc} ({cost_str})")
         else:
-            # Fallback to template if no reasoning provided
-            if executed_count > 0:
-                executed_actions = [item["action"]["description"] for item in results.get("executed", [])]
-                summary = f"I executed {executed_count} action(s): {', '.join(executed_actions[:3])}"
-                if executed_count > 3:
-                    summary += f" and {executed_count - 3} more"
-            else:
-                summary = "I didn't execute any actions this turn"
+            action_lines.append("• (no actions taken)")
+        for item in skipped:
+            action_lines.append(f"• [skipped] {item.get('reason', 'invalid')}")
+        for item in errors:
+            action_lines.append(f"• [failed] {item.get('error', 'unknown error')}")
 
-            if skipped_count > 0:
-                summary += f" ({skipped_count} action(s) were invalid/skipped)"
+        sections = ["\n".join(action_lines)]
+
+        # Sections 2–4: from the LLM
+        if parsed.get("reasoning"):
+            sections.append(f"**Reasoning**\n{parsed['reasoning']}")
+        if parsed.get("expected_impact"):
+            sections.append(f"**Expected Impact**\n{parsed['expected_impact']}")
+        if parsed.get("next_steps"):
+            sections.append(f"**Planned Next Steps**\n{parsed['next_steps']}")
+
+        summary = "\n\n".join(sections)
 
         # Send message to message queue
         message = self.message_queue.send_message(
@@ -965,93 +1189,147 @@ Keep your responses concise and focused. You can discuss:
 
         print(f"[router] {agent.subagent_name} → Director: {summary[:60]}...")
 
+    async def _send_choices_proposal(
+        self,
+        agent: AgentConfig,
+        packages: List[dict],
+        filtered_actions: List[dict],
+        reasoning: str,
+    ):
+        """Push a choices_proposal payload to Unity.
+
+        Used by both the initial proposal in _run_choices and the reproposal
+        path so the UI always renders cards through the same select-then-confirm
+        machinery (HandleChoicesProposal → multi-agent task → DisplayInteractiveChoice).
+        """
+        await self._send({
+            "type": "choices_proposal",
+            "agent_name": agent.subagent_name,
+            "talkinghead": agent.talkinghead_endpoint,
+            "reasoning": reasoning,
+            "packages": packages,
+            "available_actions": filtered_actions,
+            "timestamp": _now(),
+        })
+
     async def _repropose_choices(self, agent: AgentConfig):
-        """Agent generates new choices based on director feedback."""
+        """Agent generates new choices based on director feedback.
+
+        Uses the same Unity rendering path as the original proposal: a
+        choices_proposal payload routed through HandleChoicesProposal. This
+        keeps the select-then-confirm UX and lets _run_choices, which is still
+        awaiting _pending_choice, receive the choice_made via the existing flow.
+        """
         print(f"[router] {agent.subagent_name} reproposing choices...")
 
-        # Get stored context from original proposal
         context = self._choice_context.get(agent.subagent_name)
         if not context:
             print(f"[router] Warning: No stored context for {agent.subagent_name} - cannot repropose")
             return
 
         filtered_state, filtered_actions, game_state, all_actions = context
-
-        # Get conversation including director's feedback
         conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
 
-        # Regenerate packages with conversation context
         raw = query_llm(filtered_state, filtered_actions, agent, conversation)
         packages = self._parse_packages_response(
             raw, filtered_actions,
             num_choices=agent.num_choices or 3,
             max_per_package=agent.max_actions_per_package or 4,
         )
-
+        reasoning = self._extract_reasoning(raw)
         print(f"[router]   Reproposed {len(packages)} packages to director.")
 
-        # Extract reasoning from structured response
-        reasoning = self._extract_reasoning(raw)
-
-        # Create message with embedded choices
-        response_content = f"I've generated {len(packages)} new options based on your feedback!"
-
-        message = self.message_queue.send_message(
-            from_agent=agent.subagent_name,
-            to_agent="Director",
-            content=response_content,
-            msg_type="choice_revision",
-            round_num=self.round_num
-        )
-
-        # Log message
-        self.logger.log_event({
-            "event_type": "conversation_message",
-            "round": self.round_num,
-            "from": agent.subagent_name,
-            "to": "Director",
-            "content": response_content,
-            "message_type": "choice_revision",
-            "message_id": message["id"],
-            "timestamp": message["timestamp"]
-        })
-
-        # Send combined message with embedded choices to Unity
-        await self._send({
-            "type": "agent_message_with_choices",
-            "agent_name": agent.subagent_name,
-            "talkinghead_endpoint": agent.talkinghead_endpoint,
-            "content": response_content,
-            "message_type": "choice_revision",
-            "round": self.round_num,
-            "timestamp": message["timestamp"],
-            "reasoning": reasoning,
-            "packages": packages,
-            "available_actions": filtered_actions
-        })
-
-        # Also log the reproposed packages
         self.logger.log_event({
             "event_type": "choices_reproposed",
             "round": self.round_num,
             "agent_name": agent.subagent_name,
-            "to": "Director",
-            "content": message["content"],
-            "message_type": "choice_revision",
-            "message_id": message["id"],
-            "timestamp": message["timestamp"]
+            "num_packages": len(packages),
+            "timestamp": _now(),
         })
 
-        # Send to Unity
-        await self._send({
-            "type": "agent_message",
-            "agent_name": agent.subagent_name,
-            "talkinghead_endpoint": agent.talkinghead_endpoint,
-            "content": message["content"],
-            "message_type": "choice_revision",
-            "round": self.round_num,
-            "timestamp": message["timestamp"]
-        })
+        await self._send_choices_proposal(agent, packages, filtered_actions, reasoning)
+
+    def _resolve_construction_site_conflicts(
+        self,
+        indices: List[int],
+        actions: List[dict],
+        package_label: str,
+    ) -> Tuple[List[int], int]:
+        """Resolve same-site construction conflicts in a package.
+
+        Two buildings can't share a site (Unity will fail the second build).
+        For each construction action that targets a site already used by an
+        earlier action in the same package, try to substitute a sibling action
+        of the same ``building_type`` at an unused site. If no alternative
+        exists (every site is already taken or no sibling action), the
+        offending index is dropped.
+
+        Returns ``(resolved_indices, dropped_count)``. ``dropped_count``
+        counts only the actions we *couldn't* salvage by remapping — caller
+        uses it to decide whether to mark the package label as partial.
+        """
+        # Index lookup: (building_type, site_id) -> action index.
+        by_building_site: Dict[Tuple[str, int], int] = {}
+        for i, a in enumerate(actions):
+            atype = a.get('action_type') or a.get('actionType')
+            if atype != 'construction':
+                continue
+            cons = a.get('construction') or {}
+            bt = cons.get('building_type')
+            sid = cons.get('site_id')
+            if bt is None or sid is None:
+                continue
+            by_building_site[(bt, sid)] = i
+
+        used_sites: set = set()
+        kept: List[int] = []
+        dropped: int = 0
+
+        for idx in indices:
+            action = actions[idx] if 0 <= idx < len(actions) else None
+            if action is None:
+                continue
+
+            atype = action.get('action_type') or action.get('actionType')
+            if atype != 'construction':
+                kept.append(idx)
+                continue
+
+            cons = action.get('construction') or {}
+            building_type = cons.get('building_type')
+            site_id = cons.get('site_id')
+
+            # Non-construction or missing site info — pass through.
+            if site_id is None:
+                kept.append(idx)
+                continue
+
+            # No conflict — claim the site.
+            if site_id not in used_sites:
+                used_sites.add(site_id)
+                kept.append(idx)
+                continue
+
+            # Conflict — look for the same building type at an unused site.
+            remapped = False
+            for (alt_bt, alt_sid), alt_idx in by_building_site.items():
+                if alt_bt != building_type:
+                    continue
+                if alt_sid in used_sites:
+                    continue
+                if alt_idx in kept:
+                    continue
+                print(f"[{package_label}] ↪️  Remapped {building_type} site {site_id} → {alt_sid} (action {idx} → {alt_idx})")
+                kept.append(alt_idx)
+                used_sites.add(alt_sid)
+                remapped = True
+                break
+
+            if not remapped:
+                print(f"[{package_label}] ⚠️  Dropped {building_type} at site {site_id}: no alternative site available")
+                dropped += 1
+
+        return kept, dropped
 
     def _validate_action_indices(
         self,
@@ -1146,43 +1424,49 @@ Keep your responses concise and focused. You can discuss:
                 return line.strip()[:200]
         return raw[:200]
 
-    def _parse_auto_response(self, raw: str) -> tuple[str, str]:
+    def _parse_auto_response(self, raw: str) -> dict:
         """
-        Parse auto agent response into actions and reasoning.
+        Parse auto agent response into sectioned rationale.
 
-        Expected format:
+        Expected format (each header on its own line, sections may span lines):
             ACTIONS: 0,3,5
-            REASONING: Strategic explanation...
+            REASONING: ...
+            EXPECTED_IMPACT: ...
+            NEXT_STEPS: ...
 
-        Returns:
-            (actions_str, reasoning_str) - e.g. ("0,3,5", "Built kitchen because...")
+        Returns dict: {actions_str, reasoning, expected_impact, next_steps}.
+        Missing sections fall back to sensible defaults.
         """
-        actions_str = ""
-        reasoning_str = ""
+        section_headers = ["ACTIONS", "REASONING", "EXPECTED_IMPACT", "NEXT_STEPS"]
+        sections = {h: "" for h in section_headers}
+        current = None
 
-        lines = raw.strip().split("\n")
-        for line in lines:
-            line = line.strip()
-            if line.startswith("ACTIONS:"):
-                actions_str = line.split(":", 1)[1].strip()
-            elif line.startswith("REASONING:"):
-                # Get everything after "REASONING:" (may span multiple lines)
-                idx = raw.find("REASONING:")
-                if idx >= 0:
-                    reasoning_str = raw[idx + len("REASONING:"):].strip()
+        for raw_line in raw.split("\n"):
+            line = raw_line.strip()
+            matched = False
+            for h in section_headers:
+                prefix = f"{h}:"
+                if line.startswith(prefix):
+                    current = h
+                    sections[h] = line[len(prefix):].strip()
+                    matched = True
                     break
+            if not matched and current and line:
+                sections[current] = (sections[current] + " " + line).strip()
 
-        # Fallback: if no structured response, treat entire response as actions
-        if not actions_str:
-            # Try to extract comma-separated numbers
-            actions_str = raw.strip()
-            reasoning_str = "No reasoning provided."
+        # Treat the whole response as a comma-list if the LLM skipped the ACTIONS header.
+        if not sections["ACTIONS"]:
+            sections["ACTIONS"] = raw.strip()
 
-        # If no reasoning found, use default
-        if not reasoning_str:
-            reasoning_str = "Executed selected actions based on current priorities."
+        if not sections["REASONING"]:
+            sections["REASONING"] = "Executed selected actions based on current priorities."
 
-        return actions_str, reasoning_str
+        return {
+            "actions_str": sections["ACTIONS"],
+            "reasoning": sections["REASONING"],
+            "expected_impact": sections["EXPECTED_IMPACT"],
+            "next_steps": sections["NEXT_STEPS"],
+        }
 
     def _extract_coach_situation(self, raw: str) -> str:
         """Extract SITUATION line from coach response."""
@@ -1318,6 +1602,10 @@ Keep your responses concise and focused. You can discuss:
                     print(f"[choices] ⚠️  Package {pkg_idx+1} has no valid indices, skipping")
                     continue
 
+                indices, dropped = self._resolve_construction_site_conflicts(
+                    indices, actions, f"PKG{pkg_idx+1}"
+                )
+
                 # Build description: "Outcome | Action1, Action2, ..."
                 action_list = ", ".join([actions[i].get("description", "?") for i in indices])
                 if outcome:
@@ -1325,9 +1613,15 @@ Keep your responses concise and focused. You can discuss:
                 else:
                     description = action_list
 
+                # Mark the label as partial only when we had to drop actions
+                # (remapping preserved the strategy intent, dropping did not).
+                label = strategy_name or f"Option {pkg_idx + 1}"
+                if dropped > 0:
+                    label = f"{label} [partial]"
+
                 packages.append({
                     "package_index": pkg_idx,
-                    "label": strategy_name or f"Option {pkg_idx + 1}",
+                    "label": label,
                     "description": description,
                     "confidence": 0.8,
                     "action_indices": indices,
@@ -1346,13 +1640,21 @@ Keep your responses concise and focused. You can discuss:
                     print(f"[choices] ⚠️  Package {pkg_idx+1} has no valid indices, skipping")
                     continue
 
+                indices, dropped = self._resolve_construction_site_conflicts(
+                    indices, actions, f"PKG{pkg_idx+1}"
+                )
+
                 # Generate package description from action descriptions
                 descriptions = [actions[i].get("description", "?") for i in indices]
                 description = ", ".join(descriptions)
 
+                label = f"Option {pkg_idx + 1}"
+                if dropped > 0:
+                    label = f"{label} [partial]"
+
                 packages.append({
                     "package_index": pkg_idx,
-                    "label": f"Option {pkg_idx + 1}",
+                    "label": label,
                     "description": description,
                     "confidence": 0.8,
                     "action_indices": indices,

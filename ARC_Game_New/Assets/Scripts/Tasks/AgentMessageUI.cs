@@ -59,23 +59,24 @@ public class AgentMessageUI : MonoBehaviour
         if (messageText == null || string.IsNullOrEmpty(fullMessage))
             yield break;
 
-        messageText.text = "";
-        
-        // Set height for full message at start to prevent layout jumping
+        // Lock in the full text and box height once, then reveal characters
+        // via TMP's maxVisibleCharacters. Mutating .text every frame would
+        // re-run layout inside the parent VerticalLayoutGroup and fight the
+        // ScrollRect when the user is trying to scroll manually.
+        messageText.text = fullMessage;
+        messageText.maxVisibleCharacters = 0;
         UpdateHeightForText(fullMessage);
+        messageText.ForceMeshUpdate();
 
-        for (int i = 0; i <= fullMessage.Length; i++)
+        int totalChars = messageText.textInfo.characterCount;
+        for (int i = 0; i <= totalChars; i++)
         {
             if (isSkipped)
             {
-                ShowFullMessage();
+                messageText.maxVisibleCharacters = totalChars;
                 yield break;
             }
-            messageText.text = fullMessage.Substring(0, i);
-            
-            // Optional: Update height dynamically during typing (may cause slight jitter)
-            // UpdateHeightForText(messageText.text);
-            
+            messageText.maxVisibleCharacters = i;
             yield return new WaitForSecondsRealtime(typingSpeed);
         }
     }
@@ -85,6 +86,7 @@ public class AgentMessageUI : MonoBehaviour
         if (messageText != null)
         {
             messageText.text = fullMessage;
+            messageText.maxVisibleCharacters = int.MaxValue;
             UpdateHeightForText(fullMessage);
         }
     }

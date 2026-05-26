@@ -85,6 +85,27 @@ public class AgentConversationUI : MonoBehaviour
     // Store inline choice data for selection
     private Dictionary<int, InlineChoiceData> inlineChoiceDataMap = new Dictionary<int, InlineChoiceData>();
 
+    // Per-officer history of conversation entries: agent messages, player
+    // messages, and archived historical choice cards. These are not tied to
+    // the currently active GameTask, so they must be replayed manually when
+    // the user switches to a tab.
+    private enum EntryKind { AgentMessage, PlayerMessage, HistoricalChoice }
+    private class ConversationEntry
+    {
+        public EntryKind kind;
+        public string content;           // text content for AgentMessage / PlayerMessage
+        public Sprite avatar;            // officer sprite for AgentMessage
+        public AgentChoice archivedChoice; // populated when kind == HistoricalChoice
+    }
+    private Dictionary<TaskOfficer, List<ConversationEntry>> conversationHistory = new Dictionary<TaskOfficer, List<ConversationEntry>>();
+
+    // Per-officer chronological insertion point for the next archived proposal.
+    // Whenever a new choices_proposal arrives, we record "the current proposal lives
+    // at this index in history" and insert the OLD proposal's archived entries there
+    // when it gets replaced. Without this, chat messages that arrive between
+    // proposals would visually jump above the archive on reproposal.
+    private Dictionary<TaskOfficer, int> proposalInsertIndex = new Dictionary<TaskOfficer, int>();
+
     [System.Serializable]
     private class InlineChoiceData
     {
@@ -390,23 +411,177 @@ public class AgentConversationUI : MonoBehaviour
     
     void DisplayLatestConversation()
     {
+        ClearConversation();
+
+        // Render free-form chat history first (player messages, auto summaries,
+        // classifier acks). The current task — which holds the latest choice
+        // cards — renders below, keeping the active click target at the bottom.
+        DisplayConversationHistory(currentSelectedAgent);
+
         if (currentAgentTasks.Count > 0)
         {
             GameTask latestTask = currentAgentTasks[0];
             currentSelectedTask = latestTask;
-            DisplayTaskConversation(latestTask);
+            DisplayTaskConversation(latestTask, clearFirst: false);
         }
-        else
+        else if (!HasConversationHistory(currentSelectedAgent))
         {
-            ClearConversation();
             DisplayNoTasksMessage();
         }
     }
+
+    void RecordAgentMessage(TaskOfficer officer, string content)
+    {
+        AppendHistory(officer, new ConversationEntry
+        {
+            kind = EntryKind.AgentMessage,
+            content = content,
+            avatar = GetOfficerAvatar(officer),
+        });
+    }
+
+    void RecordPlayerMessage(TaskOfficer officer, string content)
+    {
+        AppendHistory(officer, new ConversationEntry
+        {
+            kind = EntryKind.PlayerMessage,
+            content = content,
+        });
+    }
+
+    void RecordArchivedChoice(TaskOfficer officer, AgentChoice choice)
+    {
+        AppendHistory(officer, new ConversationEntry
+        {
+            kind = EntryKind.HistoricalChoice,
+            archivedChoice = choice,
+        });
+    }
+
+    void AppendHistory(TaskOfficer officer, ConversationEntry entry)
+    {
+        if (!conversationHistory.TryGetValue(officer, out var list))
+        {
+            list = new List<ConversationEntry>();
+            conversationHistory[officer] = list;
+        }
+        list.Add(entry);
+    }
+
+    bool HasConversationHistory(TaskOfficer officer)
+    {
+        return conversationHistory.TryGetValue(officer, out var list) && list.Count > 0;
+    }
+
+    void DisplayConversationHistory(TaskOfficer officer)
+    {
+        if (!conversationHistory.TryGetValue(officer, out var entries) || entries.Count == 0)
+            return;
+        foreach (var entry in entries)
+        {
+            switch (entry.kind)
+            {
+                case EntryKind.PlayerMessage:
+                    InstantiatePlayerMessage(entry.content);
+                    break;
+                case EntryKind.HistoricalChoice:
+                    if (entry.archivedChoice != null)
+                        DisplayHistoricalChoice(entry.archivedChoice);
+                    break;
+                case EntryKind.AgentMessage:
+                default:
+                    DisplayAgentMessage(new AgentMessage(entry.content, entry.avatar));
+                    break;
+            }
+        }
+        ScrollToBottom();
+    }
+
+    void InstantiatePlayerMessage(string content)
+    {
+        if (playerMessagePrefab == null || conversationContent == null) return;
+        GameObject item = Instantiate(playerMessagePrefab, conversationContent);
+        TextMeshProUGUI text = item.GetComponentInChildren<TextMeshProUGUI>();
+        if (text != null) text.text = content;
+        currentConversationItems.Add(item);
+    }
+
+    /// <summary>
+    /// Called by WebSocketManager.HandleChoicesProposal after task data has been
+    /// refreshed via ApplyLLMTaskContent. Forces a re-render of the conversation
+    /// panel if the user is currently viewing that officer's tab so newly
+    /// reproposed choices show up immediately instead of only after a tab switch.
+    /// </summary>
+    public void OnChoicesProposalApplied(TaskOfficer officer)
+    {
+        if (officer != currentSelectedAgent || !isExpanded) return;
+        RefreshHistoricalTasks();
+        DisplayLatestConversation();
+    }
+
+    /// <summary>
+    /// Called by WebSocketManager.HandleChoicesProposal BEFORE GetOrCreateMultiAgentTask
+    /// clears the current proposal. Inserts the existing proposal's agent messages and
+    /// choice cards into per-officer conversation history at the chronological position
+    /// where that proposal arrived — NOT at the end. This keeps subsequent player
+    /// messages and acks in their original visual position when a reproposal lands.
+    /// After archiving, advances the insertion point to the current end of history so
+    /// the just-arriving proposal will, in turn, be archived at its own arrival point
+    /// the next time around.
+    /// </summary>
+    public void ArchiveExistingProposal(TaskOfficer officer)
+    {
+        if (TaskSystem.Instance == null) return;
+        GameTask existing = TaskSystem.Instance.activeTasks.FirstOrDefault(
+            t => t.taskId == -1 && t.taskOfficer == officer);
+
+        int insertAt = proposalInsertIndex.TryGetValue(officer, out var idx) ? idx : 0;
+
+        if (existing != null && (existing.agentMessages.Count > 0 || existing.agentChoices.Count > 0))
+        {
+            // Build the entries we want to insert (reasoning bubbles + each choice card).
+            var entries = new List<ConversationEntry>();
+            foreach (AgentMessage msg in existing.agentMessages)
+            {
+                if (string.IsNullOrEmpty(msg.messageText)) continue;
+                entries.Add(new ConversationEntry
+                {
+                    kind = EntryKind.AgentMessage,
+                    content = msg.messageText,
+                    avatar = msg.agentAvatar != null ? msg.agentAvatar : GetOfficerAvatar(officer),
+                });
+            }
+            foreach (AgentChoice choice in existing.agentChoices)
+            {
+                entries.Add(new ConversationEntry
+                {
+                    kind = EntryKind.HistoricalChoice,
+                    archivedChoice = choice,
+                });
+            }
+
+            if (entries.Count > 0)
+            {
+                if (!conversationHistory.TryGetValue(officer, out var list))
+                {
+                    list = new List<ConversationEntry>();
+                    conversationHistory[officer] = list;
+                }
+                insertAt = Mathf.Clamp(insertAt, 0, list.Count);
+                list.InsertRange(insertAt, entries);
+            }
+        }
+
+        // The newly-arriving proposal "lives" at the current end of history.
+        // The next archive (whenever the user reproposes again) inserts there.
+        int newCount = conversationHistory.TryGetValue(officer, out var current) ? current.Count : 0;
+        proposalInsertIndex[officer] = newCount;
+    }
     
-    void DisplayTaskConversation(GameTask task)
+    void DisplayTaskConversation(GameTask task, bool clearFirst = true)
     {
         if (task == null) return;
-        ClearConversation();
+        if (clearFirst) ClearConversation();
         localSelectedChoice = null;
 
         bool isActive = task.status == TaskStatus.Active;
@@ -485,6 +660,7 @@ public class AgentConversationUI : MonoBehaviour
     void DisplaySystemMessage(string message)
     {
         GameObject messageItem = Instantiate(agentMessagePrefab, conversationContent);
+        NormalizeBubbleRect(messageItem);
         AgentMessageUI messageUI = messageItem.GetComponent<AgentMessageUI>();
         
         if (messageUI != null)
@@ -521,14 +697,34 @@ public class AgentConversationUI : MonoBehaviour
     void DisplayAgentMessage(AgentMessage message)
     {
         GameObject messageItem = Instantiate(agentMessagePrefab, conversationContent);
+        NormalizeBubbleRect(messageItem);
         AgentMessageUI messageUI = messageItem.GetComponent<AgentMessageUI>();
-        
+
         if (messageUI != null)
         {
             messageUI.Initialize(message);
             messageUI.ShowFullMessage();
         }
         currentConversationItems.Add(messageItem);
+    }
+
+    /// <summary>
+    /// The agent message prefab ships with a baked-in offset (anchoredPosition.x ~= 312)
+    /// and a zero-width root that the conversation panel's VerticalLayoutGroup does NOT
+    /// expand (Child Force Expand Width = false). Long auto-agent summaries render off
+    /// the right edge of the panel. Force the root to top-stretch within the parent so
+    /// VLG can place it correctly and width tracks the panel.
+    /// </summary>
+    void NormalizeBubbleRect(GameObject bubble)
+    {
+        if (bubble == null) return;
+        RectTransform rt = bubble.GetComponent<RectTransform>();
+        if (rt == null) return;
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(0.5f, 1f);
+        rt.anchoredPosition = Vector2.zero;
+        rt.sizeDelta = new Vector2(0f, rt.sizeDelta.y);
     }
     
     void DisplayHistoricalChoice(AgentChoice choice)
@@ -583,11 +779,14 @@ public class AgentConversationUI : MonoBehaviour
     /// </summary>
     public void AddAgentMessage(TaskOfficer officer, string content, string messageType)
     {
-        // Only display if this is the currently selected agent
-        if (officer != currentSelectedAgent)
+        // Persist to per-officer history first so tab switches can replay it.
+        RecordAgentMessage(officer, content);
+
+        // Only display now if this is the currently selected agent
+        if (officer != currentSelectedAgent || !isExpanded)
         {
             if (showDebugInfo)
-                Debug.Log($"Message from {officer} (not selected), not displaying in UI");
+                Debug.Log($"Message from {officer} stored (not currently displayed)");
             return;
         }
 
@@ -595,12 +794,13 @@ public class AgentConversationUI : MonoBehaviour
         if (agentMessagePrefab != null && conversationContent != null)
         {
             GameObject messageItem = Instantiate(agentMessagePrefab, conversationContent);
+            NormalizeBubbleRect(messageItem);
             AgentMessageUI messageUI = messageItem.GetComponent<AgentMessageUI>();
 
             if (messageUI != null)
             {
-                // Create AgentMessage data for the UI component
-                var agentMsg = new AgentMessage(content, null); // Avatar can be null
+                // Use the correct officer avatar so the live render matches the replay.
+                var agentMsg = new AgentMessage(content, GetOfficerAvatar(officer));
                 messageUI.Initialize(agentMsg);
                 StartCoroutine(messageUI.PlayTypingEffect(0.02f));
             }
@@ -630,11 +830,15 @@ public class AgentConversationUI : MonoBehaviour
         // Update the task's choices data first
         UpdateTaskChoices(officer, reasoning, packages, availableActions);
 
-        // Only display if this is the currently selected agent
-        if (officer != currentSelectedAgent)
+        // The conversational text is not persisted on the task itself,
+        // so record it for tab-switch replay.
+        RecordAgentMessage(officer, content);
+
+        // Only display now if this is the currently selected agent
+        if (officer != currentSelectedAgent || !isExpanded)
         {
             if (showDebugInfo)
-                Debug.Log($"Message with choices from {officer} (not selected), not displaying in UI");
+                Debug.Log($"Message with choices from {officer} stored (not currently displayed)");
             return;
         }
 
@@ -642,12 +846,13 @@ public class AgentConversationUI : MonoBehaviour
         if (agentMessagePrefab != null && conversationContent != null)
         {
             GameObject messageItem = Instantiate(agentMessagePrefab, conversationContent);
+            NormalizeBubbleRect(messageItem);
             AgentMessageUI messageUI = messageItem.GetComponent<AgentMessageUI>();
 
             if (messageUI != null)
             {
-                // Create AgentMessage data for the UI component
-                var agentMsg = new AgentMessage(content, null);
+                // Use the correct officer avatar so the live render matches the replay.
+                var agentMsg = new AgentMessage(content, GetOfficerAvatar(officer));
                 messageUI.Initialize(agentMsg);
                 StartCoroutine(messageUI.PlayTypingEffect(0.02f));
             }
@@ -919,13 +1124,12 @@ public class AgentConversationUI : MonoBehaviour
         {
             string message = playerInputField.text;
 
+            // Persist before render so tab switches replay it.
+            RecordPlayerMessage(currentSelectedAgent, message);
+
             // Display player message in UI
-            GameObject messageItem = Instantiate(playerMessagePrefab, conversationContent);
-            TextMeshProUGUI messageText = messageItem.GetComponentInChildren<TextMeshProUGUI>();
+            InstantiatePlayerMessage(message);
 
-            if (messageText != null) messageText.text = message;
-
-            currentConversationItems.Add(messageItem);
             playerInputField.text = "";
             StartCoroutine(ScrollToBottomCoroutine());
 
