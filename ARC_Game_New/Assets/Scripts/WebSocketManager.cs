@@ -9,7 +9,7 @@ public class WebSocketManager : MonoBehaviour
     public static WebSocketManager Instance { get; private set; }
 
     [Header("Server Settings")]
-    public string serverUrl = "ws://localhost:8000/ws";
+    public string serverUrl = "ws://localhost:9876/ws";
     public bool enableWebSocket = true; // Master toggle - set to false to play without server
     public float reconnectDelay = 5f;
     public int maxReconnectAttempts = 3;
