@@ -178,15 +178,6 @@ public class GameTask
         status = TaskStatus.Active;
         timeCreated = Time.time;
     }
-
-    public string ResolveFacilityName(string text)
-    {
-        string name = !string.IsNullOrEmpty(facilityDisplayName) ? facilityDisplayName : affectedFacility;
-        if (string.IsNullOrEmpty(affectedFacility))
-            return text.Replace("[facility_name]", name);
-        string linked = $"<link=\"{affectedFacility}\"><u><color=#5B9BD5>{name}</color></u></link>";
-        return text.Replace("[facility_name]", linked);
-    }
 }
 
 [System.Serializable]
@@ -658,7 +649,7 @@ public class TaskSystem : MonoBehaviour
         return task.linkedDeliveryTaskIds.All(id => completed.Any(d => d.taskId == id));
     }
 
-    public void HandleDeliveryFailure(GameTask task, string reason = "")
+    public void HandleDeliveryFailure(GameTask task)
     {
         if (task == null)
         {
@@ -690,9 +681,7 @@ public class TaskSystem : MonoBehaviour
             // Show task result popup with delivery failure reason
             if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
             {
-                if (string.IsNullOrEmpty(reason))
-                    reason = $"Delivery failed for task: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}.";
-                TaskResultManager.Instance.ShowTaskResult(task, reason);
+                TaskResultManager.Instance.ShowTaskResult(task, $"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
             }
         }
     }
@@ -854,8 +843,7 @@ public class TaskSystem : MonoBehaviour
         // Find suitable facility that triggered the task
         MonoBehaviour triggeringFacility = taskDatabase.FindSuitableFacility(taskData);
         string facilityName = triggeringFacility?.name ?? taskData.targetFacilityType.ToString();
-        string displayName = triggeringFacility is PrebuiltBuilding pb ? pb.GetBuildingName() :
-                             triggeringFacility is Building bld ? bld.GetDisplayName() : facilityName;
+        string displayName = (triggeringFacility is PrebuiltBuilding pb) ? pb.GetBuildingName() : facilityName;
 
         GameTask newTask = CreateTaskFromData(taskData);
         if (newTask == null)
@@ -1274,14 +1262,7 @@ public class TaskSystem : MonoBehaviour
             // Show task result popup
             if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other) && (task.taskType != TaskType.Advisory))
             {
-                // If the task had choices but the player never acted (status was never set to InProgress),
-                // make it explicit that inaction caused the failure.
-                bool noActionTaken = task.agentChoices != null && task.agentChoices.Count > 0
-                                     && task.status != TaskStatus.InProgress;
-                string reason = noActionTaken
-                    ? "No action was taken. The task expired before you responded."
-                    : "";
-                TaskResultManager.Instance.ShowTaskResult(task, reason);
+                TaskResultManager.Instance.ShowTaskResult(task);
             }
         }
     }
@@ -1844,8 +1825,7 @@ public class TaskSystem : MonoBehaviour
 
         // Use the specific facility provided
         string facilityName = specificFacility?.name ?? taskData.targetFacilityType.ToString();
-        string displayName = specificFacility is PrebuiltBuilding pb ? pb.GetBuildingName() :
-                             specificFacility is Building bld ? bld.GetDisplayName() : facilityName;
+        string displayName = (specificFacility is PrebuiltBuilding pb) ? pb.GetBuildingName() : facilityName;
 
         GameTask newTask = CreateTaskFromData(taskData);
         if (newTask == null)

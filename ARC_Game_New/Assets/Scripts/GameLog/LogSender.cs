@@ -70,16 +70,11 @@ public class LogSender : MonoBehaviour
     {
         CurrentStatus = SendStatus.Sending;
         LastStatusMessage = "Sending logs...";
-
-        string url = !string.IsNullOrEmpty(WebSocketManager.LoadedConfig?.logServerUrl)
-            ? WebSocketManager.LoadedConfig.logServerUrl
-            : serverUrl;
-
-        Debug.Log($"[LogSender] Sending {jsonPayload.Length} bytes to {url}");
+        Debug.Log($"[LogSender] Sending {jsonPayload.Length} bytes to {serverUrl}");
 
         byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
 
-        using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
+        using (UnityWebRequest request = new UnityWebRequest(serverUrl, "POST"))
         {
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);
             request.downloadHandler = new DownloadHandlerBuffer();

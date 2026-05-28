@@ -287,8 +287,6 @@ public class GlobalClock : MonoBehaviour
         GameLogPanel.Instance.LogMetricsChange($"Time speed set to {currentTimeSpeed}x");
     }
     
-    public bool IsSkippingSimulation { get; private set; }
-
     void StartSimulation()
     {
         if (isSimulationRunning) return;
@@ -317,7 +315,6 @@ public class GlobalClock : MonoBehaviour
         {
             // No deliveries — skip simulation, just play fast clock animation
             Time.timeScale = 0f;
-            IsSkippingSimulation = true;
 
             if (showDebugInfo)
                 Debug.Log("No active deliveries — skipping simulation.");
@@ -456,7 +453,6 @@ public class GlobalClock : MonoBehaviour
     void EndSimulation()
     {
         isSimulationRunning = false;
-        IsSkippingSimulation = false;
         currentState = TimeState.Paused;
         
         // Pause Unity's time again for player interaction phase

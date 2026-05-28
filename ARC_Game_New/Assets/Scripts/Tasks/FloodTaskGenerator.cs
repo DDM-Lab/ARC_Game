@@ -79,8 +79,7 @@ public class FloodTaskGenerator : MonoBehaviour
         }
 
         string taskTitle = "Road Blockage Emergency";
-        string cargoLabel = originalDelivery.cargoType == ResourceType.Population ? "clients" : "meals";
-        string description = $"Vehicle {blockedVehicle.GetVehicleName()} is blocked by flood while transporting {originalDelivery.quantity} {cargoLabel}. Choose how to handle this emergency.";
+        string description = $"Vehicle {blockedVehicle.GetVehicleName()} is blocked by flood while transporting {originalDelivery.quantity} {originalDelivery.cargoType}. Choose how to handle this emergency.";
 
         GameTask roadBlockageTask = TaskSystem.Instance.CreateTask(
             taskTitle, TaskType.Emergency, "Emergency Response", description);
@@ -98,7 +97,7 @@ public class FloodTaskGenerator : MonoBehaviour
 
         // Add agent messages
         roadBlockageTask.agentMessages.Add(new AgentMessage($"Emergency! Vehicle {blockedVehicle.GetVehicleName()} is blocked by flood!", TaskSystem.Instance.foodMassCareSprite));
-        roadBlockageTask.agentMessages.Add(new AgentMessage($"The vehicle was transporting {originalDelivery.quantity} {cargoLabel} from {originalDelivery.sourceBuilding.name} to {originalDelivery.destinationBuilding.name}.", TaskSystem.Instance.foodMassCareSprite));
+        roadBlockageTask.agentMessages.Add(new AgentMessage($"The vehicle was transporting {originalDelivery.quantity} {originalDelivery.cargoType} from {originalDelivery.sourceBuilding.name} to {originalDelivery.destinationBuilding.name}.", TaskSystem.Instance.foodMassCareSprite));
         roadBlockageTask.agentMessages.Add(new AgentMessage("We need to decide how to handle this situation immediately.", TaskSystem.Instance.foodMassCareSprite));
 
         // Create choices based on cargo type

@@ -6,17 +6,14 @@ using NativeWebSocket; // Install from: https://github.com/endel/NativeWebSocket
 using GameActions;
 
 [System.Serializable]
-public class AppConfig
+class WebSocketConfig
 {
     public string wsUrl;
-    public string mapConfigUrl;
-    public string logServerUrl;
 }
 
 public class WebSocketManager : MonoBehaviour
 {
     public static WebSocketManager Instance { get; private set; }
-    public static AppConfig LoadedConfig { get; private set; }
 
     [Header("Server Settings")]
     public string serverUrl = "ws://localhost:8000/ws";
@@ -83,15 +80,11 @@ public class WebSocketManager : MonoBehaviour
 
             if (req.result == UnityWebRequest.Result.Success)
             {
-                var config = JsonUtility.FromJson<AppConfig>(req.downloadHandler.text);
-                if (config != null)
+                var config = JsonUtility.FromJson<WebSocketConfig>(req.downloadHandler.text);
+                if (!string.IsNullOrEmpty(config?.wsUrl))
                 {
-                    LoadedConfig = config;
-                    if (!string.IsNullOrEmpty(config.wsUrl))
-                    {
-                        serverUrl = config.wsUrl;
-                        Debug.Log($"[WebSocket] URL loaded from config.json: {serverUrl}");
-                    }
+                    serverUrl = config.wsUrl;
+                    Debug.Log($"[WebSocket] URL loaded from config.json: {serverUrl}");
                 }
             }
             else

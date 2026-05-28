@@ -20,7 +20,6 @@ public class SimulationPauseUI : MonoBehaviour
     [Header("Messages")]
     public string playerActionMessage = "Game paused for decisions. Click Execute to begin simulation.";
     public string speedLockedMessage = "Cannot change speed during active simulation.";
-    public string skipRoundMessage = "Skipping this round — no deliveries in progress.";
     
     [Header("Popup Settings")]
     public float displayDuration = 3f;
@@ -82,17 +81,16 @@ public class SimulationPauseUI : MonoBehaviour
     {
         isInSimulation = false;
         isPaused = false;
-        ClockAnimationUI.Instance?.Resume();
-
+        
         if (pausePanel != null)
             pausePanel.SetActive(true);
-
+        
         if (pauseResumeButton != null)
             pauseResumeButton.interactable = false;
-
+        
         if (buttonImage != null)
             buttonImage.sprite = pauseSprite;
-
+        
         if (speedDropdown != null)
             speedDropdown.interactable = true;
     }
@@ -101,17 +99,15 @@ public class SimulationPauseUI : MonoBehaviour
     {
         isInSimulation = true;
         isPaused = false;
-
-        bool isSkipping = GlobalClock.Instance != null && GlobalClock.Instance.IsSkippingSimulation;
-
+        
         if (pauseResumeButton != null)
-            pauseResumeButton.interactable = !isSkipping;
-
+            pauseResumeButton.interactable = true;
+        
         if (speedDropdown != null)
             speedDropdown.interactable = false;
-
+        
         UpdateButtonSprite();
-
+        
         if (pausePanel != null)
             pausePanel.SetActive(true);
     }
@@ -127,29 +123,23 @@ public class SimulationPauseUI : MonoBehaviour
         {
             ShowHoverText(playerActionMessage);
         }
-        else if (GlobalClock.Instance != null && GlobalClock.Instance.IsSkippingSimulation)
-        {
-            ShowHoverText(skipRoundMessage);
-        }
     }
     
     void OnPauseResumeClicked()
     {
         if (!isInSimulation || GlobalClock.Instance == null) return;
-
+        
         isPaused = !isPaused;
-
+        
         if (isPaused)
         {
             Time.timeScale = 0f;
-            ClockAnimationUI.Instance?.Pause();
         }
         else
         {
             Time.timeScale = (int)GlobalClock.Instance.currentTimeSpeed;
-            ClockAnimationUI.Instance?.Resume();
         }
-
+        
         UpdateButtonSprite();
         GameLogPanel.Instance?.LogUIInteraction($"Simulation {(isPaused ? "paused" : "resumed")}");
     }

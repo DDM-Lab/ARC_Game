@@ -457,17 +457,13 @@ public class GlobalWorkerManagementUI : MonoBehaviour
 
     public void OnManageButtonClicked(Building building)
     {
-        if (WorkerAssignmentHandler.Instance != null)
+        if (individualManageUI != null)
         {
-            WorkerAssignmentHandler.Instance.OpenForBuilding(building);
-        }
-        else if (individualManageUI != null)
-        {
-            // Fallback to legacy UI if handler not in scene
             individualManageUI.ShowManageUI(building);
+            Debug.Log($"Opening individual manage UI for {building.GetBuildingType()} at site {building.GetOriginalSiteId()}");
+            GameLogPanel.Instance?.LogUIInteraction(
+            $"Opening individual manage UI for {building.GetBuildingType()} at site {building.GetOriginalSiteId()}");
         }
-        GameLogPanel.Instance?.LogUIInteraction(
-            $"Manage clicked for {building.GetBuildingType()} at site {building.GetOriginalSiteId()}");
     }
 
     void OnCloseButtonClicked()

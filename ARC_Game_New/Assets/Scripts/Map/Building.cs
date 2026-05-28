@@ -26,11 +26,13 @@ public class Building : MonoBehaviour
     [Header("Building Information")]
     [SerializeField] private BuildingType buildingType;
     [SerializeField] private int originalSiteId;
-    [SerializeField] private string buildingName = "";
     [SerializeField] private BuildingStatus currentStatus = BuildingStatus.UnderConstruction;
 
     [Header("Building Stats")]
     public int capacity = 10;
+    private int kitchenCapac = 10;
+    private int shelterCapac = 10;
+    private int caseworkCapac = 10;
     public float operationalEfficiency = 1.0f;
 
     [Header("Worker Requirements")]
@@ -86,6 +88,7 @@ public class Building : MonoBehaviour
 
     void Start()
     {
+        StartCoroutine(InitializeWithCentralConfig());
         if (buildingRenderer == null)
             buildingRenderer = GetComponent<SpriteRenderer>();
 
@@ -100,6 +103,40 @@ public class Building : MonoBehaviour
         if (WorkerSystem.Instance != null)
         {
             WorkerSystem.Instance.OnWorkerStatsChanged += UpdateWorkforceIndicator;
+        }
+    }
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+        BuildingResourceStorage storage = GetComponent<BuildingResourceStorage>();
+        requiredWorkforce = GameDataManager.Instance.InitialRequiredWorkersPerLoc;
+
+        int shelterPopCapac = GameDataManager.Instance.InitialShelterCapacity;
+        int kitchenPopCapac = GameDataManager.Instance.InitialKitchenCapacity;
+        int caseworkPopCapac = GameDataManager.Instance.InitialCaseworkCapacity;
+
+        int kitchenFoodCapac = GameDataManager.Instance.InitialKitchenFoodCapac;
+        int shelterFoodCapac = GameDataManager.Instance.InitialShelterFoodCapac;
+
+        if (buildingType == BuildingType.Kitchen)
+        {
+            capacity = kitchenPopCapac;
+            storage.UpdateMaxCapacity(ResourceType.Population, kitchenPopCapac);
+            storage.UpdateMaxCapacity(ResourceType.FoodPacks, kitchenFoodCapac);
+        }
+        else if (buildingType == BuildingType.CaseworkSite)
+        {
+            capacity = caseworkPopCapac;
+            storage.UpdateMaxCapacity(ResourceType.Population, caseworkPopCapac);
+        }
+        else if (buildingType == BuildingType.Shelter)
+        {
+            capacity = shelterPopCapac;
+            storage.UpdateMaxCapacity(ResourceType.Population, shelterPopCapac);
+            storage.UpdateMaxCapacity(ResourceType.FoodPacks, shelterFoodCapac);
         }
     }
     void UpdateWorkforceIndicator()
@@ -456,8 +493,6 @@ public class Building : MonoBehaviour
     // Getters
     public BuildingType GetBuildingType() => buildingType;
     public int GetOriginalSiteId() => originalSiteId;
-    public string GetDisplayName() => !string.IsNullOrEmpty(buildingName) ? buildingName : $"{buildingType} {originalSiteId}";
-    public void SetBuildingName(string name) => buildingName = name;
     public BuildingStatus GetCurrentStatus() => currentStatus;
     public bool IsOperational() => currentStatus == BuildingStatus.InUse;
     public bool IsUnderConstruction() => currentStatus == BuildingStatus.UnderConstruction;

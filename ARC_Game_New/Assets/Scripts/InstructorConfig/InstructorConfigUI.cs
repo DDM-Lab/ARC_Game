@@ -46,6 +46,18 @@ public class InstructorConfigUI : MonoBehaviour
     [Header("Scene Names")]
     public string titleSceneName = "TitleScene";
 
+    [Header("Validation Rules UI")]
+    public Toggle validationToggle;
+    public GameObject rulesTextPanel;
+    public Button retractRulesBtn;
+
+    [Header("Individual Rule Texts")]
+    public TextMeshProUGUI txtTerrain;
+    public TextMeshProUGUI txtCommunities;
+    public TextMeshProUGUI txtMotel;
+    public TextMeshProUGUI txtAbandoned;
+    public TextMeshProUGUI txtVehicles;
+
     private string[] presetNames = { "easy", "medium", "hard" };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -67,6 +79,7 @@ public class InstructorConfigUI : MonoBehaviour
         mapPresetDropdown.onValueChanged.AddListener(index => OnMapDropdownChanged(index));
         paramPresetDropdown.onValueChanged.AddListener(index => OnParamDropdownChanged(index));
 
+
         // File import callback
         if (fileIOBridge != null)
             fileIOBridge.OnFileImported += OnFileImported;
@@ -83,6 +96,13 @@ public class InstructorConfigUI : MonoBehaviour
 
         ShowTab(0);
         SetStatus("Config editor ready.");
+
+        // Rules Validation UI
+        validationToggle.onValueChanged.AddListener(OnToggleRules);
+        retractRulesBtn.onClick.AddListener(() => {
+            validationToggle.isOn = false; 
+        });
+        rulesTextPanel.SetActive(validationToggle.isOn);
     }
 
     void OnDestroy()
@@ -158,10 +178,18 @@ public class InstructorConfigUI : MonoBehaviour
 
     void OnSaveToServerClicked()
     {
-        if (InstructorConfigManager.Instance.IsSaving) return;
-        SetStatus("Saving to server…");
-        saveToServerButton.interactable = false;
-        InstructorConfigManager.Instance.SaveToServer("latest_map_config.json");
+        bool isValid = RefreshRulesVisuals();
+        if (isValid)
+        {
+            if (InstructorConfigManager.Instance.IsSaving) return;
+            saveToServerButton.interactable = false;
+            InstructorConfigManager.Instance.SaveToServer("latest_map_config.json");
+        }
+        else
+        {
+            validationToggle.isOn = true;
+            SetStatus("<color=red>Save Blocked: Invalid Map</color>");
+        }
     }
 
     void HandleSaveComplete(bool success, string message)
@@ -187,9 +215,18 @@ public class InstructorConfigUI : MonoBehaviour
 
     void OnSaveMapPresetClicked()
     {
-        string fileName = $"{presetNames[mapPresetDropdown.value]}_map_config.json";
-        SetStatus($"InstructorConfigUI: Saving Map Layout to {fileName}");
-        InstructorConfigManager.Instance.SaveMapOnly(fileName);
+        bool isValid = RefreshRulesVisuals();
+        if (isValid)
+        {
+            string fileName = $"{presetNames[mapPresetDropdown.value]}_map_config.json";
+            SetStatus($"InstructorConfigUI: Saving Map Layout to {fileName}");
+            InstructorConfigManager.Instance.SaveMapOnly(fileName);
+        }
+        else
+        {
+            validationToggle.isOn = true;
+            SetStatus("<color=red>Save Blocked: Invalid Map</color>");
+        }
     }
 
     void OnSaveParamPresetClicked()
@@ -218,5 +255,33 @@ public class InstructorConfigUI : MonoBehaviour
     void RefreshVisuals()
     {
         mapEditorCanvas?.ReloadFromConfig();
+        if (validationToggle.isOn)
+        {
+            RefreshRulesVisuals();
+        }
+    }
+    private bool RefreshRulesVisuals()
+    {
+        var report = InstructorConfigManager.Instance.CurrentConfig.GetDetailedValidation();
+
+        txtTerrain.color = report.terrainOk ? Color.green : Color.red;
+        txtCommunities.color = report.communityOk ? Color.green : Color.red;
+        txtMotel.color = report.motelOk ? Color.green : Color.red;
+        txtAbandoned.color = report.abandonedOk ? Color.green : Color.red;
+        txtVehicles.color = report.vehicleOk ? Color.green : Color.red;
+
+        return report.IsAllValid;
+    }
+    void OnToggleRules(bool show)
+    {
+        if (show)
+        {
+            RefreshRulesVisuals();
+            rulesTextPanel.SetActive(true);
+        }
+        else
+        {
+            rulesTextPanel.SetActive(false);
+        }
     }
 }

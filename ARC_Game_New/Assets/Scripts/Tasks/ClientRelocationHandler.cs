@@ -57,14 +57,14 @@ public class ClientRelocationHandler : MonoBehaviour
         DeliverySystem ds = DeliverySystem.Instance;
         if (ds == null) { errorMessage = "DeliverySystem not found"; return false; }
 
-        int totalEffectiveSpace = GetDestinationsSorted(ds, includeShelters, includeMotels, source, filterByPath: true)
+        int totalEffectiveSpace = GetDestinationsSorted(ds, includeShelters, includeMotels, source)
             .Sum(d => d.effectiveSpace);
 
         if (totalEffectiveSpace <= 0)
         {
             string destLabel = includeShelters && includeMotels ? "shelter/motel"
                              : includeShelters ? "shelter" : "motel";
-            errorMessage = $"No reachable {destLabel} with available space — routes may be blocked by flooding";
+            errorMessage = $"No space available at any {destLabel}";
             return false;
         }
 
@@ -218,8 +218,7 @@ public class ClientRelocationHandler : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────
 
     List<(MonoBehaviour dest, int effectiveSpace)> GetDestinationsSorted(
-        DeliverySystem ds, bool includeShelters, bool includeMotels, MonoBehaviour excludeSource,
-        bool filterByPath = false)
+        DeliverySystem ds, bool includeShelters, bool includeMotels, MonoBehaviour excludeSource)
     {
         var results = new List<(MonoBehaviour, int)>();
 
@@ -255,16 +254,6 @@ public class ClientRelocationHandler : MonoBehaviour
                 if (effectiveSpace > 0)
                     results.Add((motel, effectiveSpace));
             }
-        }
-
-        // Filter by pathfinding reachability when requested (used at validation time)
-        if (filterByPath && ds != null)
-        {
-            results = results.Where(r =>
-            {
-                DeliveryTimeEstimate est;
-                return ds.CanCreateDeliveryWithEstimate(excludeSource, r.Item1, out est);
-            }).ToList();
         }
 
         // Sort: shelters first if preferred, then most space

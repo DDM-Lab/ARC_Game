@@ -94,7 +94,13 @@ public class ConfirmationPopup : MonoBehaviour
         // Show popup
         if (popupPanel != null)
             popupPanel.SetActive(true);
-        
+
+        if (cancelButton != null)
+        {
+            // hide cancel if no cancel action applicable
+            cancelButton.gameObject.SetActive(onCancel != null);
+        }
+
         // Immediate first update
         AdjustPopupHeightImmediate();
         

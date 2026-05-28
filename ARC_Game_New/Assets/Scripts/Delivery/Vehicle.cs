@@ -225,8 +225,7 @@ public class Vehicle : MonoBehaviour
         if (currentPath.Count == 0)
         {
             if (showDebugInfo)
-                Debug.LogWarning($"Vehicle {vehicleName} could not find flood-free path to {targetPos} — treating as flood blockage");
-            StopVehicleDueToFlood();
+                Debug.LogError($"Vehicle {vehicleName} could not find flood-free path to {targetPos}");
             yield break;
         }
 
@@ -293,13 +292,6 @@ public class Vehicle : MonoBehaviour
         // Trigger vehicle repair task
         TriggerVehicleRepairTask();
 
-        // Remove the delivery from DeliverySystem's active list so it doesn't hang in the queue
-        if (currentTask != null)
-        {
-            DeliverySystem.Instance?.RemoveActiveDeliveryTask(currentTask.taskId);
-            currentTask = null;
-        }
-
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} stopped due to flood at position {transform.position}");
     }
@@ -310,22 +302,13 @@ public class Vehicle : MonoBehaviour
         if (currentTask != null)
         {
             GameTask relatedTask = FindRelatedGameTask();
-
+            
+            // Only handle delivery failure if we found a related game task
             if (relatedTask != null)
             {
-                bool hasLoaded = currentCargo.Any(kv => kv.Value > 0);
-                string phase = hasLoaded ? "en route to drop-off" : "en route to pick-up";
-                string cargoLabel = currentTask.cargoType == ResourceType.Population ? "clients" : "meals";
-                string src = GetBuildingDisplayName(currentTask.sourceBuilding);
-                string dst = GetBuildingDisplayName(currentTask.destinationBuilding);
-                string reason =
-                    $"Vehicle \"{vehicleName}\" was {phase} ({currentTask.quantity} {cargoLabel} from {src} to {dst}) " +
-                    $"when it was stopped by flooding. The delivery has been halted. " +
-                    $"Satisfaction penalty: {relatedTask.deliveryFailureSatisfactionPenalty}.";
-
-                TaskSystem.Instance?.HandleDeliveryFailure(relatedTask, reason);
+                TaskSystem.Instance?.HandleDeliveryFailure(relatedTask);
             }
-
+            
             // Always create road blockage task if we have a delivery task
             FloodTaskGenerator.Instance?.CreateRoadBlockageTask(this, currentTask);
         }
@@ -334,16 +317,6 @@ public class Vehicle : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Vehicle {vehicleName} blocked by flood but has no delivery task - skipping road blockage task");
         }
-    }
-
-    static string GetBuildingDisplayName(MonoBehaviour building)
-    {
-        if (building == null) return "Unknown";
-        PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
-        if (pb != null) return pb.GetBuildingName();
-        Building b = building.GetComponent<Building>();
-        if (b != null) return b.GetDisplayName();
-        return building.name;
     }
 
     void TriggerVehicleRepairTask()

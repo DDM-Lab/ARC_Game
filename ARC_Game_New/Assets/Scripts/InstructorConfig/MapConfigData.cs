@@ -64,7 +64,9 @@ public class ScenarioParameters
 
     // Buildings
     public int kitchenCapacity    = 10; // new
+    public int kitchenFoodCapac = 20;
     public int shelterCapacity    = 10; // new
+    public int shelterFoodCapac = 40;
     public int caseworkCapacity   = 10; // new
     public int initialERVCount           = 3; // new
 
@@ -173,4 +175,44 @@ public class MapConfig
         SetBlocking(x, y, false);
         SetRoad    (x, y, false);
     }
+
+    public ValidationReport GetDetailedValidation()
+    {
+        ValidationReport report = new ValidationReport();
+        bool hasRiver = false, hasRoad = false, hasLand = false;
+        int communities = 0, motels = 0, abandoned = 0, vehicles = 0;
+
+        for (int i = 0; i < landLayer.Length; i++)
+        {
+            if (landLayer[i]) hasLand = true;
+            if (riverLayer[i]) hasRiver = true;
+            if (roadLayer[i]) hasRoad = true;
+        }
+
+        foreach (var obj in objects)
+        {
+            if (obj.type == PlacedObjectType.Community) communities++;
+            if (obj.type == PlacedObjectType.Motel) motels++;
+            if (obj.type == PlacedObjectType.AbandonedSite) abandoned++;
+            if (obj.type == PlacedObjectType.Vehicle) vehicles++;
+        }
+
+        report.terrainOk = hasRiver && hasRoad && hasLand;
+        report.communityOk = (communities >= 1 && communities <= 8);
+        report.motelOk = (motels == 1);
+        report.abandonedOk = (abandoned >= 3);
+        report.vehicleOk = (vehicles >= 1);
+
+        return report;
+    }
+}
+
+public struct ValidationReport
+{
+    public bool terrainOk;
+    public bool communityOk;
+    public bool motelOk;
+    public bool abandonedOk;
+    public bool vehicleOk;
+    public bool IsAllValid => terrainOk && communityOk && motelOk && abandonedOk && vehicleOk;
 }

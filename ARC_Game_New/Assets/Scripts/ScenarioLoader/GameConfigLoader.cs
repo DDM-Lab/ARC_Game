@@ -36,7 +36,9 @@ public class GameConfigLoader : MonoBehaviour
     public int loadedInitialBudgetDailyAllocs=3000;
     public WeatherType loadedInitialWeather = WeatherType.Sunny;
     public int loadedInitialShelterCapacity = 10;
+    public int loadedInitialShelterFoodCapac = 40;
     public int loadedInitialKitchenCapacity = 10;
+    public int loadedInitialKitchenFoodCapac = 20;
     public int loadedInitialCaseworkCapacity = 10;
     public int loadedInitialRequiredWorkers = 4;
     public float loadedInitialSunnyExpansionRate = 0f;
@@ -220,10 +222,21 @@ public class GameConfigLoader : MonoBehaviour
                     loadedInitialKitchenCapacity = kitchenCapac;
                     Debug.Log($"gameconfigloader:kitchencpac - {loadedInitialKitchenCapacity}");
             }
+            else if (parameter.Equals("initialKitchenFoodCapacity", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int kitchenFoodCapac))
+                    loadedInitialKitchenFoodCapac = kitchenFoodCapac;
+                Debug.Log($"gameconfigloader:kitchencpac - {loadedInitialKitchenCapacity}");
+            }
             else if (parameter.Equals("initialShelterCapacity", System.StringComparison.OrdinalIgnoreCase))
             {
                 if (int.TryParse(value, out int shelterCapac))
                     loadedInitialShelterCapacity = shelterCapac;
+            }
+            else if (parameter.Equals("initialShelterFoodCapacity", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int shelterFoodCapac))
+                    loadedInitialShelterFoodCapac = shelterFoodCapac;
             }
             else if (parameter.Equals("initialCaseworkCapacity", System.StringComparison.OrdinalIgnoreCase))
             {
@@ -340,20 +353,6 @@ public class GameConfigLoader : MonoBehaviour
 
     IEnumerator LoadMapConfigFromServer()
     {
-        // Override mapConfigServerUrl from config.json if present
-        string configPath = Application.streamingAssetsPath + "/config.json";
-        using (UnityWebRequest cfgReq = UnityWebRequest.Get(configPath))
-        {
-            cfgReq.timeout = 3;
-            yield return cfgReq.SendWebRequest();
-            if (cfgReq.result == UnityWebRequest.Result.Success)
-            {
-                var cfg = JsonUtility.FromJson<AppConfig>(cfgReq.downloadHandler.text);
-                if (!string.IsNullOrEmpty(cfg?.mapConfigUrl))
-                    mapConfigServerUrl = cfg.mapConfigUrl;
-            }
-        }
-
         if (string.IsNullOrEmpty(mapConfigServerUrl))
         {
             if (showDebugInfo)
@@ -426,8 +425,9 @@ public class GameConfigLoader : MonoBehaviour
     public MapConfig GetMapConfig() => loadedMapConfig;
 
 
-    void ApplyInitBudgetAllocation()
+    public void ApplyInitBudgetAllocation()
     {
+        Debug.Log("GameConfigLoader: ApplyInitBudgetAlloc Called");
         if (dailyBudgetAlloc != null)
         {
             dailyBudgetAlloc.impacts[0].value = loadedInitialBudgetDailyAllocs;
@@ -435,12 +435,12 @@ public class GameConfigLoader : MonoBehaviour
             dailyBudgetAlloc.agentChoices[0].choiceImpacts[0].value = loadedInitialBudgetDailyAllocs;
             dailyBudgetAlloc.agentChoices[0].choiceText = $"Receive ${loadedInitialBudgetDailyAllocs} Budget";
             
-            if (showDebugInfo)
+            //if (showDebugInfo)
                 Debug.Log($"Applied {loadedInitialBudgetDailyAllocs} to SO");
         }
     }
 
-    void ApplyInitFoodDemandFrequency()
+    public void ApplyInitFoodDemandFrequency()
     {
         if (loadedInitialFoodDemandFrequency < 0) return;
         if (shelterFoodReq != null)
@@ -460,7 +460,7 @@ public class GameConfigLoader : MonoBehaviour
         }
     }
 
-void ApplyInitExternalRelationFrequency()
+public void ApplyInitExternalRelationFrequency()
 {
     if (budgetAdvisoryER == null && budgetEmergencyER == null) return;
     int advisoryInterval;
@@ -484,7 +484,7 @@ void ApplyInitExternalRelationFrequency()
     if (budgetEmergencyER != null) ApplyTrigger(budgetEmergencyER, emergencyInterval);
 }
 
-void ApplyTrigger(TaskData task, int interval)
+public void ApplyTrigger(TaskData task, int interval)
 {
     DayTrigger trigger = new DayTrigger
     {
@@ -502,7 +502,7 @@ void ApplyTrigger(TaskData task, int interval)
         task.dayTriggers[0] = trigger;
     }
 }
-    void ApplyInitShelterFloodDamage()
+    public void ApplyInitShelterFloodDamage()
     {
         if (shelterFloodDmg == null) return;
 
@@ -521,6 +521,8 @@ void ApplyTrigger(TaskData task, int interval)
             shelterFloodDmg.floodedFacilityTriggers[0] = trigger;
         else
             shelterFloodDmg.floodedFacilityTriggers.Add(trigger);
+
+        Debug.Log("shelter flood damage applied");
     }
 
     /// <summary>
@@ -580,9 +582,17 @@ void ApplyTrigger(TaskData task, int interval)
     {
         return loadedInitialKitchenCapacity;
     }
+    public int GetInitialKitchenFoodCapacity()
+    {
+        return loadedInitialKitchenFoodCapac;
+    }
     public int GetInitialShelterCapacity()
     {
         return loadedInitialShelterCapacity;
+    }
+    public int GetInitialShelterFoodCapacity()
+    {
+        return loadedInitialShelterFoodCapac;
     }
     public int GetInitialCaseworkCapacity()
     {
