@@ -10,8 +10,7 @@ public enum VehicleStatus
     Loading,
     InTransit,
     Unloading,
-    Returning,
-    Damaged  
+    Damaged
 }
 
 public class Vehicle : MonoBehaviour
@@ -391,9 +390,7 @@ public class Vehicle : MonoBehaviour
             case VehicleStatus.Unloading:
                 vehicleRenderer.color = unloadingColor;
                 break;
-            case VehicleStatus.Returning:
-                vehicleRenderer.color = inTransitColor;
-                break;
+
             case VehicleStatus.Damaged:
                 vehicleRenderer.color = damagedColor;
                 break;
@@ -440,8 +437,6 @@ public class Vehicle : MonoBehaviour
         if (currentTask == null || sourceBuilding == null)
             yield break;
 
-        yield return new WaitForSeconds(1f);
-
         BuildingResourceStorage sourceStorage = GetBuildingResourceStorage(sourceBuilding);
 
         if (sourceStorage != null)
@@ -484,9 +479,6 @@ public class Vehicle : MonoBehaviour
     {
         if (currentTask == null || destinationBuilding == null)
             yield break;
-
-        // Simulate unloading time
-        yield return new WaitForSeconds(1f);
 
         // Try to deliver resources to destination building
         BuildingResourceStorage destStorage = GetBuildingResourceStorage(destinationBuilding);
@@ -604,6 +596,13 @@ public class Vehicle : MonoBehaviour
     public int GetCargoAmount(ResourceType type)
     {
         return currentCargo.ContainsKey(type) ? currentCargo[type] : 0;
+    }
+
+    public void ClearAllCargo()
+    {
+        var keys = new System.Collections.Generic.List<ResourceType>(currentCargo.Keys);
+        foreach (var key in keys)
+            currentCargo[key] = 0;
     }
 
     /// <summary>

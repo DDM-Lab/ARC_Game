@@ -14115,8 +14115,6 @@ RectTransform:
   - {fileID: 1392831234}
   - {fileID: 1475660720}
   - {fileID: 797681952}
-  - {fileID: 989742549}
-  - {fileID: 1287429738}
   - {fileID: 378467279}
   - {fileID: 1181144876}
   - {fileID: 1615301454}
@@ -14126,6 +14124,8 @@ RectTransform:
   - {fileID: 1047144032}
   - {fileID: 530385324}
   - {fileID: 2103902861}
+  - {fileID: 989742549}
+  - {fileID: 1287429738}
   - {fileID: 133791603}
   - {fileID: 242685145}
   - {fileID: 1180798375}
@@ -65475,7 +65475,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1164501840
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -97506,7 +97506,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1762326899}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c97b5428fad49bf4cb6b7db6d336f3bb, type: 3}
   m_Name: 
@@ -101917,8 +101917,8 @@ GameObject:
   - component: {fileID: 1826804387}
   - component: {fileID: 1826804386}
   - component: {fileID: 1826804385}
-  - component: {fileID: 1826804388}
   - component: {fileID: 1826804389}
+  - component: {fileID: 1826804390}
   m_Layer: 5
   m_Name: FacilityInfoPanel
   m_TagString: Untagged
@@ -102024,7 +102024,21 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1826804383}
   m_CullTransparentMesh: 1
---- !u!114 &1826804388
+--- !u!114 &1826804389
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1826804383}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3245ec927659c4140ac4f8d17403cc18, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_HorizontalFit: 0
+  m_VerticalFit: 2
+--- !u!114 &1826804390
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -102061,20 +102075,6 @@ MonoBehaviour:
   motelCostText: {fileID: 744767246}
   expectedDeliveriesText: {fileID: 266678250}
   outgoingDeliveriesText: {fileID: 1154271633}
---- !u!114 &1826804389
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1826804383}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3245ec927659c4140ac4f8d17403cc18, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_HorizontalFit: 0
-  m_VerticalFit: 2
 --- !u!1 &1827589896
 GameObject:
   m_ObjectHideFlags: 0

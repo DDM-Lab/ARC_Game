@@ -135,7 +135,43 @@ public class FacilityInfoPanel : MonoBehaviour
 
     void UpdateBuildingInfo(Building building)
     {
+        HideField(motelCostText);
+
         BuildingType type = building.GetBuildingType();
+
+        if (type == BuildingType.CaseworkSite)
+        {
+            SetTextSafe(facilityNameText, building.GetDisplayName());
+            HideField(facilityTypeText);
+            HideField(siteIdText);
+            HideField(positionText);
+
+            BuildingResourceStorage cs = building.GetComponent<BuildingResourceStorage>();
+            if (cs != null)
+            {
+                int pop = cs.GetResourceAmount(ResourceType.Population);
+                int popCap = cs.GetResourceCapacity(ResourceType.Population);
+                ShowField(populationText);
+                SetTextSafe(populationText, $"Clients: {pop}/{popCap}");
+                SetTextColor(populationText, GetResourceColor(pop, popCap));
+            }
+            else { HideField(populationText); }
+
+            HideField(foodPacksText);
+            ShowField(capacityText);
+            SetTextSafe(capacityText, "Clients in casework will leave by themselves once their cases are resolved.");
+            SetTextColor(capacityText, normalColor);
+            HideField(workersHeaderText);
+            HideField(trainedWorkersText);
+            HideField(untrainedWorkersText);
+            HideField(totalWorkforceText);
+            HideField(statusText);
+            HideField(floodStatusText);
+            HideField(roadConnectionText);
+            HideField(tasksHeaderText);
+            HideField(motelCostText);
+            return;
+        }
 
         SetTextSafe(facilityNameText, building.GetDisplayName());
         SetTextSafe(facilityTypeText, type.ToString());
@@ -144,13 +180,13 @@ public class FacilityInfoPanel : MonoBehaviour
 
         BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
 
-        // Population — Shelter only
-        if (type == BuildingType.Shelter && storage != null)
+        // Population — Shelter only (CaseworkSite handled above)
+        if (storage != null && type == BuildingType.Shelter)
         {
             int pop = storage.GetResourceAmount(ResourceType.Population);
             int popCap = storage.GetResourceCapacity(ResourceType.Population);
             ShowField(populationText);
-            SetTextSafe(populationText, $"Residents: {pop}/{popCap}");
+            SetTextSafe(populationText, $"Clients: {pop}/{popCap}");
             SetTextColor(populationText, GetResourceColor(pop, popCap));
         }
         else
@@ -202,7 +238,7 @@ public class FacilityInfoPanel : MonoBehaviour
         int population = prebuilt.GetCurrentPopulation();
         int populationCap = prebuilt.GetPopulationCapacity();
         ShowField(populationText);
-        SetTextSafe(populationText, $"Residents: {population}/{populationCap}");
+        SetTextSafe(populationText, $"Clients: {population}/{populationCap}");
         SetTextColor(populationText, GetResourceColor(population, populationCap));
 
         string statusLabel = population >= populationCap ? "Full" : population > 0 ? "Occupied" : "Vacant";
@@ -229,12 +265,14 @@ public class FacilityInfoPanel : MonoBehaviour
             if (type == PrebuiltBuildingType.Motel)
             {
                 var costMgr = FindObjectOfType<MotelCostManager>();
-                if (costMgr != null)
-                {
-                    float dailyCost = costMgr.GetCurrentDailyCost();
-                    motelCostText.text = $"Daily Cost: ${dailyCost:F0}/day";
-                    motelCostText.color = dailyCost > 0 ? warningColor : normalColor;
-                }
+                float rate = costMgr != null ? costMgr.costPerPersonPerDay : 200f;
+                int residents = prebuilt.GetCurrentPopulation();
+                float dailyCost = residents * rate;
+                string costLine = $"Lodging rate: ${rate:F0}/person/day";
+                if (residents > 0)
+                    costLine += $"\nCurrent daily cost: ${dailyCost:F0}/day ({residents} clients)";
+                motelCostText.text = costLine;
+                motelCostText.color = dailyCost > 0 ? warningColor : normalColor;
                 motelCostText.gameObject.SetActive(true);
             }
             else

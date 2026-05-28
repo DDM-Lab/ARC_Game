@@ -747,6 +747,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   buildingType: 2
   originalSiteId: 0
+  buildingName: 
   currentStatus: 0
   capacity: 40
   operationalEfficiency: 1

@@ -178,7 +178,7 @@ public class VehicleUIOverlay : MonoBehaviour
             case VehicleStatus.Idle:     return "Available";
             case VehicleStatus.Loading:  return "Picking up";
             case VehicleStatus.InTransit:
-                return vehicle.GetTotalCargo() > 0 ? "En route" : "Returning";
+                return vehicle.GetTotalCargo() > 0 ? "En route" : "On the way";
             case VehicleStatus.Unloading: return "Dropping off";
             case VehicleStatus.Damaged:   return "Out of service";
             default:                      return "";

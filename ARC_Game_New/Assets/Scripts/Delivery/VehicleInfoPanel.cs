@@ -122,12 +122,17 @@ public class VehicleInfoPanel : MonoBehaviour
 
         if (missionText != null)
         {
-            int    qty  = currentVehicle.GetTotalCargo();
-            string type = currentVehicle.GetPrimaryCargoType() == ResourceType.Population ? "clients" : "meals";
-            string src  = GetBuildingName(currentVehicle.sourceBuilding);
-            missionText.text = qty > 0
-                ? $"Mission: {qty}x {type} from {src}"
-                : $"Mission: Picking up from {src}";
+            DeliveryTask task = currentVehicle.currentTask;
+            if (task != null)
+            {
+                string type = task.cargoType == ResourceType.Population ? "clients" : "meals";
+                string src  = GetBuildingName(currentVehicle.sourceBuilding);
+                missionText.text = $"Mission: {task.quantity}x {type} from {src}";
+            }
+            else
+            {
+                missionText.text = "Mission: None";
+            }
         }
 
         if (destinationText != null)
@@ -209,12 +214,13 @@ public class VehicleInfoPanel : MonoBehaviour
         // Refresh content every frame (status changes while watching)
         UpdatePanelContent();
 
-        // Close when player clicks anywhere that isn't the panel or a vehicle
+        // Close when player clicks anywhere that isn't this panel or a vehicle
         if (Input.GetMouseButtonDown(0))
         {
-            bool clickedVehicle = vehicleClickFrame == Time.frameCount;
-            bool clickedUI      = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
-            if (!clickedVehicle && !clickedUI)
+            bool clickedVehicle   = vehicleClickFrame == Time.frameCount;
+            bool clickedThisPanel = panelRect != null && RectTransformUtility.RectangleContainsScreenPoint(
+                panelRect, Input.mousePosition, uiCanvas?.worldCamera);
+            if (!clickedVehicle && !clickedThisPanel)
                 ClosePanel();
         }
     }
@@ -223,7 +229,7 @@ public class VehicleInfoPanel : MonoBehaviour
 
     string GetBuildingName(MonoBehaviour building)
     {
-        if (building == null) return "Unknown";
+        if (building == null) return "None";
         Building b = building.GetComponent<Building>();
         if (b != null) return b.GetDisplayName();
         PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();

@@ -741,21 +741,25 @@ public class TaskDetailUI : MonoBehaviour
             }
             // Log choice selection for the task
             GameLogPanel.Instance?.LogUIInteraction($"Choice selected: '{selectedChoice.choiceText}' for task '{currentTask.taskTitle}'");
-            
-            ApplyChoiceImpacts(selectedChoice);
 
             if (selectedChoice.immediateDelivery)
             {
                 bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: true);
                 if (success)
+                {
+                    ApplyChoiceImpacts(selectedChoice);
                     TaskSystem.Instance.CompleteTask(currentTask);
+                }
             }
             else if (selectedChoice.triggersDelivery)
             {
-                ExecuteGeneratorDelivery(selectedChoice, immediate: false);
+                bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: false);
+                if (success)
+                    ApplyChoiceImpacts(selectedChoice);
             }
             else
             {
+                ApplyChoiceImpacts(selectedChoice);
                 TaskSystem.Instance.CompleteTask(currentTask);
             }
         }
@@ -817,6 +821,15 @@ public class TaskDetailUI : MonoBehaviour
     // CLIENT RELOCATION via ClientRelocationHandler
     bool ExecuteClientRelocation(AgentChoice choice, bool immediate)
     {
+        // Non-shelter SpecificBuilding destinations (e.g. CaseworkSite) use the fallback path.
+        // Shelter stays in ClientRelocationHandler so it can distribute across multiple shelters.
+        if (choice.destinationType == DeliveryDestinationType.SpecificBuilding
+            && choice.destinationBuilding != BuildingType.Shelter)
+        {
+            ExecuteFallbackDelivery(choice, immediate);
+            return true;
+        }
+
         if (ClientRelocationHandler.Instance == null)
         {
             Debug.LogError("[TaskDetailUI] ClientRelocationHandler not found in scene");
@@ -937,17 +950,15 @@ public class TaskDetailUI : MonoBehaviour
             case NumericalInputType.UntrainedWorkers:
                 if (WorkerSystem.Instance != null)
                 {
-                    // For REQUEST tasks, validate budget
+                    // For REQUEST tasks, validate budget using untrained cost
                     if (currentTask.taskTitle.Contains("Request"))
                     {
                         if (WorkerRequestSystem.Instance != null && SatisfactionAndBudget.Instance != null)
                         {
-                            int costPerWorker = currentTask.taskTitle.Contains("Untrained") 
-                                ? WorkerRequestSystem.Instance.untrainedWorkerCost 
-                                : WorkerRequestSystem.Instance.trainedWorkerCost;
+                            int costPerWorker = WorkerRequestSystem.Instance.untrainedWorkerCost;
                             int totalCost = value * costPerWorker;
                             int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
-                            
+
                             if (totalCost > availableBudget)
                             {
                                 return $"Insufficient budget. Requesting {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
@@ -1200,6 +1211,20 @@ public class TaskDetailUI : MonoBehaviour
                     && FoodDeliveryHandler.Instance.CanExecute(task, choice.deliveryQuantity, out errorMessage);
 
             case ResourceType.Population:
+                // Non-shelter SpecificBuilding (e.g. CaseworkSite): verify it exists on the map.
+                // SpecificBuilding+Shelter falls through to ClientRelocationHandler validation below.
+                if (choice.destinationType == DeliveryDestinationType.SpecificBuilding
+                    && choice.destinationBuilding != BuildingType.Shelter)
+                {
+                    bool exists = UnityEngine.Object.FindObjectsOfType<Building>()
+                        .Any(b => b.GetBuildingType() == choice.destinationBuilding && b.IsOperational());
+                    if (!exists)
+                    {
+                        errorMessage = $"There is no {choice.destinationBuilding} currently built on the map. Build one first to use this option.";
+                        return false;
+                    }
+                    return true;
+                }
                 bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
                             || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
                 bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt

@@ -57,7 +57,8 @@ public class ClientRelocationHandler : MonoBehaviour
         DeliverySystem ds = DeliverySystem.Instance;
         if (ds == null) { errorMessage = "DeliverySystem not found"; return false; }
 
-        int totalEffectiveSpace = GetDestinationsSorted(ds, includeShelters, includeMotels, source, filterByPath: true)
+        // Immediate delivery is a teleport — skip path check. Vehicle delivery requires a reachable road.
+        int totalEffectiveSpace = GetDestinationsSorted(ds, includeShelters, includeMotels, source, filterByPath: requireVehicle)
             .Sum(d => d.effectiveSpace);
 
         if (totalEffectiveSpace <= 0)
