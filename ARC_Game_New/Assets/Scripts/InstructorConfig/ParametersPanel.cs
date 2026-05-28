@@ -37,20 +37,45 @@ public class ParametersPanel : MonoBehaviour
         public float maxValue = 100f;
         [Tooltip("True = whole numbers only (int parameter)")]
         public bool  isInt    = true;
+
+        public RectTransform rootRect; 
+        public TextMeshProUGUI labelText;
+        public Image backgroundImage; 
+        [HideInInspector] public Vector3 originalScale = Vector3.one;
     }
 
     [Header("Parameter Rows")]
     public ParameterRow[] rows;
 
     [Header("Sidebar Popup References")]
-    public GameObject infoPanelRoot;   
-    public TextMeshProUGUI infoText;    
+    public GameObject infoPanelRoot;
+    public TextMeshProUGUI infoTitleText;       
+    public TextMeshProUGUI infoDescriptionText; 
+    public RectTransform viewportRect; 
+    public RectTransform rowsidemarker; 
+
+    [Header("Highlight Settings")]
+    public float highlightScale = 1.05f;
+    public Color highlightColor = new Color(1f, 0.95f, 0.8f, 1f); 
+
+    private Color originalRowColor;
+
+    private ParameterRow _currentlyActiveRow;
 
     // Guard against feedback loops when we programmatically set UI values
     bool _syncing;
 
+
     // ─────────────────────────────────────────────────────────────────────────
 
+    void Start()
+    {
+        // Cache original colors and scales
+        if (rows.Length > 0 && rows[0].backgroundImage != null)
+            originalRowColor = rows[0].backgroundImage.color;
+
+        foreach (var row in rows) row.originalScale = row.rootRect.localScale;
+    }
     void OnEnable()
     {
         if (InstructorConfigManager.Instance != null)
@@ -128,26 +153,92 @@ public class ParametersPanel : MonoBehaviour
             if (row.infoButton != null)
             {
                 row.infoButton.onClick.RemoveAllListeners();
-                row.infoButton.onClick.AddListener(() => ToggleInfoPanel(capturedRow.description));
+                row.infoButton.onClick.AddListener(() => ToggleInfoPanel(capturedRow));
             }
 
             _syncing = false;
         }
 
-        void ToggleInfoPanel(string description)
+        void ToggleInfoPanel(ParameterRow row)
         {
             if (infoPanelRoot == null) return;
-            if (infoPanelRoot.activeSelf && infoText.text == description)
+
+            if (infoPanelRoot.activeSelf && _currentlyActiveRow == row)
             {
+                SetHighlight(row, false);
                 infoPanelRoot.SetActive(false);
+                _currentlyActiveRow = null;
+                return;
             }
-            else
-            {
-                infoPanelRoot.SetActive(true);
-                infoText.text = description;
-            }
+
+            if (_currentlyActiveRow != null) SetHighlight(_currentlyActiveRow, false);
+
+            _currentlyActiveRow = row;
+            infoTitleText.text = $"More info on {row.labelText.text}";
+            infoDescriptionText.text = row.description;
+            infoPanelRoot.SetActive(true);
+
+            SetHighlight(row, true);
+            PositionInfoPanel(row);
         }
     }
+
+    void PositionInfoPanel(ParameterRow row)
+    {
+        RectTransform panelRect = infoPanelRoot.GetComponent<RectTransform>();
+
+        LayoutGroup[] groups = panelRect.GetComponentsInChildren<LayoutGroup>();
+        for (int i = groups.Length - 1; i >= 0; i--)
+        {
+            LayoutRebuilder.ForceRebuildLayoutImmediate(groups[i].GetComponent<RectTransform>());
+        }
+
+        LayoutRebuilder.ForceRebuildLayoutImmediate(panelRect);
+
+        Vector3[] rowCorners = new Vector3[4];
+        row.rootRect.GetWorldCorners(rowCorners);
+        float rowTopY = rowCorners[1].y;
+        float rowBottomY = rowCorners[0].y;
+
+        Vector3[] viewCorners = new Vector3[4];
+        viewportRect.GetWorldCorners(viewCorners);
+        float viewBottomY = viewCorners[0].y;
+
+        Vector3[] panelCorners = new Vector3[4];
+        panelRect.GetWorldCorners(panelCorners);
+        float panelWorldHeight = panelCorners[1].y - panelCorners[0].y;
+
+        bool fitsDownwards = (rowTopY - panelWorldHeight) > viewBottomY;
+
+        if (fitsDownwards)
+        {
+            panelRect.pivot = new Vector2(0, 1);
+            panelRect.position = new Vector3(rowsidemarker.position.x, rowTopY, 0);
+        }
+        else
+        {
+            panelRect.pivot = new Vector2(0, 0);
+            panelRect.position = new Vector3(rowsidemarker.position.x, rowBottomY, 0);
+        }
+
+        panelRect.localPosition = new Vector3(panelRect.localPosition.x, panelRect.localPosition.y, 0);
+    }
+
+    void SetHighlight(ParameterRow row, bool active)
+    {
+        if (row.rootRect == null) return;
+
+        float scaleAmount = active ? 1.01f : 1f;
+        row.rootRect.localScale = row.originalScale * scaleAmount;
+
+        if (row.backgroundImage != null)
+        {
+            Color highlightColor = new Color(0.75f, 0.55f, 0.35f, 1f);
+            row.backgroundImage.color = active ? highlightColor : originalRowColor;
+        }
+    }
+
+
 
     // ── Callbacks ─────────────────────────────────────────────────────────────
 
@@ -189,23 +280,6 @@ public class ParametersPanel : MonoBehaviour
 
     // ── Parameter get/set ─────────────────────────────────────────────────────
     //  Extend these switches whenever ScenarioParameters gains new fields.
-
-    //static float GetValue(ScenarioParameters p, string name) => name switch
-    //{
-    //    "initialBudget"          => p.initialBudget, //have 
-    //    "dailyBudgetAllocation"  => p.dailyBudgetAllocation, //have
-    //    "foodCostPerPerson"      => p.foodCostPerPerson,
-    //    "shelterCostPerPerson"   => p.shelterCostPerPerson,
-    //    "workerTrainingCost"     => p.workerTrainingCost,
-    //    "initialSatisfaction"    => p.initialSatisfaction, // have
-    //    "totalPopulation"        => p.totalPopulation,
-    //    "numberOfCommunities"    => p.numberOfCommunities, // have
-    //    "initialWorkerCount"     => p.initialWorkerCount,
-    //    "gameDurationDays"       => p.gameDurationDays, // have
-    //    "dayDurationSeconds"     => p.dayDurationSeconds,
-    //    _                        => 0f,
-
-    //};
     static float GetValue(ScenarioParameters p, string name) => name switch
     {
         // Economy
@@ -255,24 +329,6 @@ public class ParametersPanel : MonoBehaviour
 
         _ => 0f,
     };
-
-    //static void SetValue(ScenarioParameters p, string name, float v)
-    //{
-    //    switch (name)
-    //    {
-    //        case "initialBudget":         p.initialBudget         = (int)v; break;
-    //        case "dailyBudgetAllocation": p.dailyBudgetAllocation = v;      break;
-    //        case "foodCostPerPerson":     p.foodCostPerPerson     = v;      break;
-    //        case "shelterCostPerPerson":  p.shelterCostPerPerson  = v;      break;
-    //        case "workerTrainingCost":    p.workerTrainingCost    = v;      break;
-    //        case "initialSatisfaction":   p.initialSatisfaction   = (int)v; break;
-    //        case "totalPopulation":       p.totalPopulation       = (int)v; break;
-    //        case "numberOfCommunities":   p.numberOfCommunities   = (int)v; break;
-    //        case "initialWorkerCount":    p.initialWorkerCount    = (int)v; break;
-    //        case "gameDurationDays":      p.gameDurationDays      = (int)v; break;
-    //        case "dayDurationSeconds":    p.dayDurationSeconds    = v;      break;
-    //    }
-    //}
     static void SetValue(ScenarioParameters p, string name, float v)
     {
         switch (name)
