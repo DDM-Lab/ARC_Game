@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import argparse
+import hashlib
 import os
 import sys
 import uuid
@@ -33,6 +34,7 @@ from typing import Dict, List, Tuple, Optional
 
 from fastapi import FastAPI, WebSocket, Header, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from agent_config import AgentConfig, RouterConfig, load_config
@@ -113,6 +115,15 @@ class Session:
         except Exception as e:
             print(f"[router][{self.api_key_label}] WebSocket error: {e}")
         finally:
+            try:
+                self.logger.log_event({
+                    "event_type": "session_end",
+                    "session_id": self.session_id,
+                    "label": self.api_key_label,
+                    "rounds_played": self.round_num,
+                })
+            except Exception:
+                pass
             print(f"[router][{self.api_key_label}] session {self.session_id[:8]} closed.")
 
     # ── Message Dispatch ─────────────────────────────────────────
@@ -229,7 +240,7 @@ class Session:
     ) -> Tuple[dict, List[dict]]:
         # Get conversation history from message queue
         conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
-        raw = query_llm(filtered_state, filtered_actions, agent, conversation)
+        raw = await asyncio.to_thread(query_llm, filtered_state, filtered_actions, agent, conversation)
 
         # Parse structured response (ACTIONS + REASONING + EXPECTED_IMPACT + NEXT_STEPS)
         parsed = self._parse_auto_response(raw)
@@ -326,7 +337,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         director_actions = []  # Director doesn't need action list
         conversation = []  # No conversation history for director (for now)
 
-        raw_response = query_llm(director_state, director_actions, self._director_agent, conversation)
+        raw_response = await asyncio.to_thread(query_llm, director_state, director_actions, self._director_agent, conversation)
 
         # Parse index from response
         selected_idx = self._parse_director_choice(raw_response, len(packages))
@@ -398,7 +409,7 @@ Respond with ONLY the package index number (0, 1, or 2).
     ) -> Tuple[dict, List[dict]]:
         # Get conversation history from message queue
         conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
-        raw = query_llm(filtered_state, filtered_actions, agent, conversation)
+        raw = await asyncio.to_thread(query_llm, filtered_state, filtered_actions, agent, conversation)
         packages = self._parse_packages_response(
             raw, filtered_actions,
             num_choices=agent.num_choices or 3,
@@ -476,7 +487,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         """Run coach agent - provides strategic analysis and recommendations without execution."""
         # Get conversation history from message queue
         conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
-        raw = query_llm(filtered_state, filtered_actions, agent, conversation)
+        raw = await asyncio.to_thread(query_llm, filtered_state, filtered_actions, agent, conversation)
 
         # Parse coach response
         recommendations = self._parse_coach_response(
@@ -592,7 +603,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         # decision: CLARIFY, REPROPOSE, or CHAT. This avoids the previous bug where
         # the agent both asked clarifying questions AND auto-reproposed.
         if agent.actor_type == "choices" and agent.subagent_name in self._choice_context:
-            decision = self._classify_director_intent(agent, conversation)
+            decision = await asyncio.to_thread(self._classify_director_intent, agent, conversation)
             intent = decision.get("intent", "CHAT")
             payload = (decision.get("payload") or "").strip()
 
@@ -616,7 +627,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             # Otherwise fall through to the legacy free-form generator below.
 
         # Default path: free-form conversational response.
-        response_text = self._generate_conversational_response(agent, conversation)
+        response_text = await asyncio.to_thread(self._generate_conversational_response, agent, conversation)
         await self._send_agent_response(agent, response_text, "agent_response")
 
     async def _send_agent_response(self, agent: AgentConfig, response_text: str, msg_type: str):
@@ -1251,7 +1262,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         filtered_state, filtered_actions, game_state, all_actions = context
         conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
 
-        raw = query_llm(filtered_state, filtered_actions, agent, conversation)
+        raw = await asyncio.to_thread(query_llm, filtered_state, filtered_actions, agent, conversation)
         packages = self._parse_packages_response(
             raw, filtered_actions,
             num_choices=agent.num_choices or 3,
@@ -1759,10 +1770,27 @@ class AgentService:
         self.config_dir = config_dir
         self.log_dir = log_dir
         self.sessions: Dict[str, Session] = {}  # session_id -> Session
+        self.started_at = datetime.now(timezone.utc)
+
+    def sessions_by_label(self) -> Dict[str, int]:
+        """Live session count grouped by API-key label (for monitoring)."""
+        counts: Dict[str, int] = {}
+        for s in self.sessions.values():
+            counts[s.api_key_label] = counts.get(s.api_key_label, 0) + 1
+        return counts
 
     def label_for(self, api_key: str) -> Optional[str]:
         meta = self.keys.get(api_key)
         return meta.get("label") if meta else None
+
+    def allowed_configs_for(self, api_key: str) -> Optional[set]:
+        """Configs this key may use. Returns None when unrestricted (no
+        ``configs`` list on the key → all configs allowed)."""
+        meta = self.keys.get(api_key) or {}
+        cfgs = meta.get("configs")
+        if not cfgs:
+            return None
+        return set(cfgs)
 
     def list_configs(self) -> List[dict]:
         """Return public-facing config descriptors derived from filesystem."""
@@ -1779,7 +1807,17 @@ class AgentService:
                 {"name": a.subagent_name, "role": a.role, "actor_type": a.actor_type}
                 for a in cfg.agents
             ]
-            out.append({"name": path.stem, "path": path.name, "agents": agents})
+            # Optional human-facing title for the client dropdown; falls back
+            # to the filename stem. Read raw so configs need no schema change.
+            title = path.stem
+            try:
+                with open(path) as f:
+                    raw = json.load(f)
+                title = raw.get("title") or raw.get("display_name") or path.stem
+            except Exception:
+                pass
+            out.append({"name": path.stem, "title": title,
+                        "path": path.name, "agents": agents})
         return out
 
     def resolve_config(self, name: str) -> Optional[Path]:
@@ -1793,11 +1831,33 @@ class AgentService:
             return as_path
         return None
 
-    def log_path_for(self, session_id: str, key_label: str) -> str:
-        self.log_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    def user_dir(self, key_label: str) -> Path:
+        """Per-user log directory: logs are grouped by API-key label so each
+        user's games live together (logs/sessions/<label>/)."""
         safe_label = re.sub(r"[^A-Za-z0-9_-]+", "_", key_label or "anon")
-        return str(self.log_dir / f"session_{ts}_{safe_label}_{session_id[:8]}.jsonl")
+        d = self.log_dir / safe_label
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def log_path_for(self, session_id: str, key_label: str) -> str:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return str(self.user_dir(key_label) / f"session_{ts}_{session_id[:8]}.jsonl")
+
+    def record_session(self, key_label: str, key_fp: str, session_id: str,
+                       config_name: str, log_file: str) -> None:
+        """Append a one-line manifest entry to the user's session index so
+        every game a user plays is catalogued (id, config, log file, time)."""
+        entry = {
+            "session_id": session_id,
+            "label": key_label,
+            "key_fingerprint": key_fp,
+            "config": config_name,
+            "log_file": Path(log_file).name,
+            "started_at": _now(),
+        }
+        index = self.user_dir(key_label) / "_sessions_index.jsonl"
+        with open(index, "a") as f:
+            f.write(json.dumps(entry) + "\n")
 
 
 service: Optional[AgentService] = None
@@ -1850,9 +1910,15 @@ def _bearer_to_key(auth: Optional[str]) -> Optional[str]:
 
 @app.get("/health")
 async def health():
+    if service is None:
+        return {"status": "starting", "live_sessions": 0, "version": "2.0"}
+    uptime = (datetime.now(timezone.utc) - service.started_at).total_seconds()
     return {
         "status": "healthy",
-        "live_sessions": len(service.sessions) if service else 0,
+        "live_sessions": len(service.sessions),
+        "sessions_by_label": service.sessions_by_label(),
+        "uptime_seconds": round(uptime, 1),
+        "configs_available": len(service.list_configs()),
         "version": "2.0",
     }
 
@@ -1864,7 +1930,11 @@ async def list_configs(authorization: Optional[str] = Header(default=None)):
     key = _bearer_to_key(authorization)
     if key is None or key not in service.keys:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return {"configs": service.list_configs()}
+    configs = service.list_configs()
+    allowed = service.allowed_configs_for(key)
+    if allowed is not None:
+        configs = [c for c in configs if c["name"] in allowed]
+    return {"configs": configs}
 
 
 async def _handshake(websocket: WebSocket) -> Optional[Session]:
@@ -1911,6 +1981,16 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
         await websocket.close(code=1008, reason="missing config")
         return None
 
+    allowed = service.allowed_configs_for(api_key)
+    if allowed is not None and config_name not in allowed:
+        await websocket.send_text(json.dumps({
+            "type": "hello_error",
+            "error": "config_not_allowed",
+            "config": config_name,
+        }))
+        await websocket.close(code=1008, reason="config not allowed for this key")
+        return None
+
     config_path = service.resolve_config(config_name)
     if config_path is None:
         await websocket.send_text(json.dumps({
@@ -1943,6 +2023,19 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
         websocket=websocket,
     )
     service.sessions[session_id] = session
+
+    # Catalogue this game under the user (per-key index) and stamp a
+    # session_start header at the top of the session's own log.
+    key_fp = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12]
+    service.record_session(key_label, key_fp, session_id, config_name, log_path)
+    session.logger.log_event({
+        "event_type": "session_start",
+        "session_id": session_id,
+        "label": key_label,
+        "key_fingerprint": key_fp,
+        "config": config_name,
+        "agents": [a.subagent_name for a in cfg.agents],
+    })
 
     await websocket.send_text(json.dumps({
         "type": "hello_ack",
@@ -1993,6 +2086,11 @@ def main():
                         help="Directory for per-session episode log files")
     parser.add_argument("--port", type=int, default=9876,
                         help="Port to listen on for Unity connections")
+    parser.add_argument("--cors-origins", default="*",
+                        help="Comma-separated origins allowed for browser (WebGL) "
+                             "clients, or '*' for any. Only needed when the WebGL "
+                             "page is served from a different origin than this "
+                             "router; harmless behind a same-origin reverse proxy.")
     # Legacy single-config flag is no longer used; configs are chosen per-session
     # via the hello frame. Kept here only so old launch scripts don't fail hard.
     parser.add_argument("--config", default=None,
@@ -2021,6 +2119,20 @@ def main():
     print(f"[router] Session logs: {service.log_dir}")
     print(f"[router] Clients connect to ws://localhost:{args.port}/ws "
           f"and send a hello frame.")
+
+    # CORS lets a browser-based (WebGL) client call /configs from another
+    # origin. WebSockets aren't subject to CORS, so this mainly covers the
+    # /configs + /health fetches. Auth is via Bearer header (not cookies),
+    # so wildcard origins without credentials is safe.
+    origins = (["*"] if args.cors_origins.strip() == "*"
+               else [o.strip() for o in args.cors_origins.split(",") if o.strip()])
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    print(f"[router] CORS allow_origins = {origins}")
 
     uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="info")
 

@@ -1,4 +1,5 @@
 {
+  "title": "Scenario 1: Choice Agent",
   "agent_order_rule": "sequential",
   "agents": [
     {

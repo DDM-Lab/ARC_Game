@@ -91,6 +91,7 @@ __pycache__/
 .env
 llm.key
 *.key
+config/keys.json
 
 # Test and rollout data
 rollout_*/
