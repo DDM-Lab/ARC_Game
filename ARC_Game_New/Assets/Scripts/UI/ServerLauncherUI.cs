@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -30,9 +31,15 @@ public class ServerLauncherUI : MonoBehaviour
 
     // ── UI references (built in BuildUI) ────────────────────────────
     GameObject root;
+    GraphicRaycaster launcherRaycaster;
     TMP_InputField urlField;
     TMP_InputField keyField;
-    TMP_Dropdown configDropdown;
+    Button configSelectorButton;
+    TMP_Text configSelectorLabel;
+    GameObject configListPanel;
+    GraphicRaycaster configListRaycaster;
+    bool configListOpen = false;
+    int selectedConfigIndex = -1;
     Button connectButton;
     Button startButton;
     TMP_Text statusText;
@@ -43,6 +50,16 @@ public class ServerLauncherUI : MonoBehaviour
     List<ConfigInfo> fetchedConfigs = new List<ConfigInfo>();
     bool fetching = false;
     bool connecting = false;
+
+    // When Start Game is pressed in a scene that has no WebSocketManager yet
+    // (e.g. the title screen of a build), we stash the chosen settings and
+    // connect automatically once the scene that owns the manager loads.
+    bool pendingConnect = false;
+    string pendingUrl, pendingKey, pendingConfig;
+
+    // Optional config name requested via ?config=... in the page URL (WebGL),
+    // auto-selected once the catalog loads.
+    string desiredConfig;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void AutoInstantiate()
@@ -61,14 +78,66 @@ public class ServerLauncherUI : MonoBehaviour
         LoadPrefs();
         SetStatus("Enter server URL + API key, then click Connect.", Color.gray);
         SetStartEnabled(false);
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        ClipboardInit();   // enable Cmd/Ctrl+V paste of the API key in the browser
+#endif
+
+        // If the page URL carried an API key (e.g. a personalized link
+        // ?key=ck_...&config=...), use it and auto-load the catalog so the
+        // player never has to type into the text box.
+        string urlKey = UrlParam("key");
+        if (!string.IsNullOrEmpty(urlKey))
+        {
+            keyField.text = urlKey;
+            SetStatus("Loading from your link…", new Color(0.75f, 0.78f, 0.82f));
+            StartCoroutine(FetchConfigs());
+        }
+    }
+
+    // The Day-1 tutorial (TutorialMessageUI.DisableGameInteractions) disables the
+    // GraphicRaycaster on every canvas except its own when it pauses the game on
+    // scene load. That kills clicks on this launcher even though it renders on top.
+    // As a modal pre-game gate, re-assert our own raycaster while we're visible so
+    // the launcher stays interactive regardless of what the game does underneath.
+    // (uGUI input is processed on unscaled time, so this works at timeScale == 0.)
+    void Update()
+    {
+        if (root != null && root.activeSelf &&
+            launcherRaycaster != null && !launcherRaycaster.enabled)
+        {
+            launcherRaycaster.enabled = true;
+        }
+        // The dropdown list rides its own canvas/raycaster; keep it live too.
+        if (configListOpen && configListRaycaster != null && !configListRaycaster.enabled)
+        {
+            configListRaycaster.enabled = true;
+        }
+        // Deferred connect: the WebSocketManager lives in the game scene, so if
+        // Start Game was pressed earlier (on the title screen), connect as soon
+        // as that scene loads and the manager appears.
+        if (pendingConnect && WebSocketManager.Instance != null)
+        {
+            pendingConnect = false;
+            ApplyAndConnect(WebSocketManager.Instance);
+        }
     }
 
     // ── PlayerPrefs ────────────────────────────────────────────────
 
     void LoadPrefs()
     {
-        urlField.text = PlayerPrefs.GetString(PREFS_URL, DEFAULT_URL);
-        keyField.text = PlayerPrefs.GetString(PREFS_KEY, DEFAULT_KEY);
+        if (Application.platform == RuntimePlatform.WebGLPlayer)
+            urlField.text = DefaultServerUrl();   // always same-origin for hosted builds
+        else
+            urlField.text = PlayerPrefs.GetString(PREFS_URL, DEFAULT_URL);
+
+        // In the browser, don't pre-fill a dev key — make users enter their own.
+        string defaultKey = (Application.platform == RuntimePlatform.WebGLPlayer) ? "" : DEFAULT_KEY;
+        keyField.text = PlayerPrefs.GetString(PREFS_KEY, defaultKey);
+
+        // A config requested via ?config=... is auto-selected after the fetch.
+        desiredConfig = UrlParam("config");
     }
 
     void SavePrefs(string configName)
@@ -77,6 +146,42 @@ public class ServerLauncherUI : MonoBehaviour
         PlayerPrefs.SetString(PREFS_KEY, keyField.text.Trim());
         PlayerPrefs.SetString(PREFS_CFG, configName);
         PlayerPrefs.Save();
+    }
+
+    // ── Clipboard paste ────────────────────────────────────────────
+#if UNITY_WEBGL && !UNITY_EDITOR
+    [DllImport("__Internal")] static extern string PromptApiKey();
+    [DllImport("__Internal")] static extern void ClipboardInit();
+#endif
+
+    void PasteApiKey()
+    {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        // Native browser dialog: a real text box with full paste (⌘V/Ctrl+V) and
+        // typing support, no clipboard-permission restrictions.
+        string s = PromptApiKey();
+        if (!string.IsNullOrEmpty(s)) ApplyPasted(s);
+        else SetStatus("No key entered.", new Color(0.95f, 0.55f, 0.35f));
+#else
+        string clip = GUIUtility.systemCopyBuffer;
+        if (!string.IsNullOrEmpty(clip)) ApplyPasted(clip);
+        else SetStatus("Clipboard is empty.", new Color(0.95f, 0.55f, 0.35f));
+#endif
+    }
+
+    // Bonus path: called from ClipboardPaste.jslib's paste listener via
+    // SendMessage when a browser does deliver the event — must stay public.
+    public void OnClipboardPasted(string text)
+    {
+        if (root == null || !root.activeSelf) return;        // ignore in-game pastes
+        if (!string.IsNullOrEmpty(text)) ApplyPasted(text);
+    }
+
+    void ApplyPasted(string text)
+    {
+        if (keyField == null) return;
+        keyField.text = text.Trim();
+        SetStatus("Pasted from clipboard.", new Color(0.55f, 0.85f, 0.6f));
     }
 
     // ── UI Construction ────────────────────────────────────────────
@@ -93,7 +198,7 @@ public class ServerLauncherUI : MonoBehaviour
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920, 1080);
         scaler.matchWidthOrHeight = 0.5f;
-        root.AddComponent<GraphicRaycaster>();
+        launcherRaycaster = root.AddComponent<GraphicRaycaster>();
 
         // ── Backdrop (swallows clicks) ──────────────────────────────
         var backdrop = MakePanel(root.transform, new Color(0f, 0f, 0f, 0.72f));
@@ -120,12 +225,29 @@ public class ServerLauncherUI : MonoBehaviour
         AddSpacer(card.transform, 4);
 
         // ── Server URL ──────────────────────────────────────────────
-        MakeLabel(card.transform, "Server URL");
+        // On a hosted WebGL deployment the router is same-origin (served via
+        // the reverse proxy), so we derive the URL from the page and hide this
+        // field — players only enter their API key.
+        var urlLabel = MakeLabel(card.transform, "Server URL");
         urlField = MakeInput(card.transform, DEFAULT_URL, password: false);
+        if (Application.platform == RuntimePlatform.WebGLPlayer)
+        {
+            urlLabel.gameObject.SetActive(false);
+            urlField.gameObject.SetActive(false);
+        }
 
         // ── API Key ────────────────────────────────────────────────
+        // Visible (not masked): it's a shared access token, not a password, and
+        // showing it prevents "looks filled but is empty" placeholder confusion
+        // and stops the browser from trying to autofill a saved password here.
         MakeLabel(card.transform, "API Key");
-        keyField = MakeInput(card.transform, DEFAULT_KEY, password: true);
+        keyField = MakeInput(card.transform, "Enter your API key", password: false);
+        // Paste button: WebGL can't Cmd/Ctrl+V into input fields (Unity's paste
+        // reads its own buffer, not the browser clipboard), so offer an explicit
+        // clipboard read. Works on native too (reads the OS copy buffer).
+        var pasteButton = MakeButton(card.transform, "Paste / enter API key",
+                                     out _, height: 30, bg: new Color(0.28f, 0.30f, 0.36f));
+        pasteButton.onClick.AddListener(PasteApiKey);
 
         // ── Connect Button ─────────────────────────────────────────
         AddSpacer(card.transform, 4);
@@ -140,11 +262,19 @@ public class ServerLauncherUI : MonoBehaviour
                               new Color(0.75f, 0.78f, 0.82f), 36);
         statusText.enableWordWrapping = true;
 
-        // ── Config dropdown ────────────────────────────────────────
+        // ── Config dropdown (custom, built from Buttons) ────────────
+        // A TMP_Dropdown built at runtime proved unreliable (popup list
+        // wouldn't render), so this is a hand-rolled dropdown: a selector
+        // button that toggles a list panel of one button per config. The
+        // list lives on its own Canvas (overrideSorting) so it draws above
+        // the rest of the launcher and doesn't disturb the card's layout.
         MakeLabel(card.transform, "Config");
-        configDropdown = MakeDropdown(card.transform);
-        configDropdown.onValueChanged.AddListener(_ =>
-            SetStartEnabled(configDropdown.value >= 0 && fetchedConfigs.Count > 0));
+        configSelectorButton = MakeButton(card.transform, "(connect to load configs)  ▼",
+                                          out configSelectorLabel, height: 40,
+                                          bg: new Color(0.08f, 0.09f, 0.11f));
+        configSelectorButton.onClick.AddListener(ToggleConfigList);
+        configSelectorButton.interactable = false;
+        BuildConfigListPanel();
 
         AddSpacer(card.transform, 8);
 
@@ -206,11 +336,11 @@ public class ServerLauncherUI : MonoBehaviour
         return t;
     }
 
-    static void MakeLabel(Transform parent, string content)
+    static TMP_Text MakeLabel(Transform parent, string content)
     {
-        MakeText(parent, content, 14, FontStyles.Bold,
-                 TextAlignmentOptions.Left,
-                 new Color(0.70f, 0.74f, 0.80f), 20);
+        return MakeText(parent, content, 14, FontStyles.Bold,
+                        TextAlignmentOptions.Left,
+                        new Color(0.70f, 0.74f, 0.80f), 20);
     }
 
     static TMP_InputField MakeInput(Transform parent, string defaultText, bool password)
@@ -306,130 +436,6 @@ public class ServerLauncherUI : MonoBehaviour
         return btn;
     }
 
-    static TMP_Dropdown MakeDropdown(Transform parent)
-    {
-        var go = new GameObject("Dropdown",
-                                typeof(RectTransform), typeof(Image),
-                                typeof(LayoutElement), typeof(TMP_Dropdown));
-        go.transform.SetParent(parent, false);
-        go.GetComponent<Image>().color = new Color(0.08f, 0.09f, 0.11f, 1f);
-        go.GetComponent<LayoutElement>().preferredHeight = 40;
-        var dd = go.GetComponent<TMP_Dropdown>();
-
-        // Label (currently-selected option text)
-        var label = MakeText(go.transform, "(none yet)", 16, FontStyles.Normal,
-                             TextAlignmentOptions.MidlineLeft,
-                             new Color(0.92f, 0.93f, 0.95f), 40);
-        var lblRT = label.rectTransform;
-        lblRT.anchorMin = new Vector2(0, 0);
-        lblRT.anchorMax = new Vector2(1, 1);
-        lblRT.offsetMin = new Vector2(10, 6);
-        lblRT.offsetMax = new Vector2(-30, -6);
-
-        // Arrow
-        var arrow = new GameObject("Arrow",
-                                    typeof(RectTransform), typeof(Image));
-        arrow.transform.SetParent(go.transform, false);
-        arrow.GetComponent<Image>().color = new Color(0.6f, 0.63f, 0.7f);
-        var aRT = arrow.GetComponent<RectTransform>();
-        aRT.anchorMin = new Vector2(1, 0.5f);
-        aRT.anchorMax = new Vector2(1, 0.5f);
-        aRT.pivot = new Vector2(1, 0.5f);
-        aRT.sizeDelta = new Vector2(12, 12);
-        aRT.anchoredPosition = new Vector2(-12, 0);
-
-        // Template (TMP_Dropdown needs this to spawn the option list)
-        var template = new GameObject("Template",
-                                       typeof(RectTransform), typeof(Image),
-                                       typeof(ScrollRect), typeof(CanvasGroup));
-        template.transform.SetParent(go.transform, false);
-        template.SetActive(false);
-        template.GetComponent<Image>().color = new Color(0.10f, 0.11f, 0.13f, 1f);
-        var tRT = template.GetComponent<RectTransform>();
-        tRT.anchorMin = new Vector2(0, 0);
-        tRT.anchorMax = new Vector2(1, 0);
-        tRT.pivot = new Vector2(0.5f, 1f);
-        tRT.anchoredPosition = new Vector2(0, 2);
-        tRT.sizeDelta = new Vector2(0, 180);
-
-        // Viewport
-        var viewport = new GameObject("Viewport",
-                                       typeof(RectTransform), typeof(Mask),
-                                       typeof(Image));
-        viewport.transform.SetParent(template.transform, false);
-        viewport.GetComponent<Image>().color = new Color(0, 0, 0, 0.001f);
-        viewport.GetComponent<Mask>().showMaskGraphic = false;
-        var vRT = viewport.GetComponent<RectTransform>();
-        vRT.anchorMin = Vector2.zero;
-        vRT.anchorMax = Vector2.one;
-        vRT.offsetMin = Vector2.zero;
-        vRT.offsetMax = Vector2.zero;
-
-        // Content
-        var content = new GameObject("Content", typeof(RectTransform));
-        content.transform.SetParent(viewport.transform, false);
-        var cRT = content.GetComponent<RectTransform>();
-        cRT.anchorMin = new Vector2(0, 1);
-        cRT.anchorMax = new Vector2(1, 1);
-        cRT.pivot = new Vector2(0.5f, 1);
-        cRT.sizeDelta = new Vector2(0, 36);
-
-        // Item
-        var item = new GameObject("Item",
-                                   typeof(RectTransform), typeof(Toggle),
-                                   typeof(LayoutElement));
-        item.transform.SetParent(content.transform, false);
-        item.GetComponent<LayoutElement>().preferredHeight = 36;
-        var itemRT = item.GetComponent<RectTransform>();
-        itemRT.anchorMin = new Vector2(0, 0.5f);
-        itemRT.anchorMax = new Vector2(1, 0.5f);
-        itemRT.sizeDelta = new Vector2(0, 36);
-
-        // Item background (highlighted color)
-        var itemBg = new GameObject("Item Background",
-                                     typeof(RectTransform), typeof(Image));
-        itemBg.transform.SetParent(item.transform, false);
-        itemBg.GetComponent<Image>().color = new Color(0.20f, 0.45f, 0.85f, 0.45f);
-        var bgRT = itemBg.GetComponent<RectTransform>();
-        bgRT.anchorMin = Vector2.zero;
-        bgRT.anchorMax = Vector2.one;
-        bgRT.offsetMin = bgRT.offsetMax = Vector2.zero;
-
-        // Item label
-        var itemLabel = new GameObject("Item Label", typeof(RectTransform));
-        itemLabel.transform.SetParent(item.transform, false);
-        var itemLabelText = itemLabel.AddComponent<TextMeshProUGUI>();
-        itemLabelText.text = "";
-        itemLabelText.fontSize = 16;
-        itemLabelText.color = new Color(0.92f, 0.93f, 0.95f);
-        itemLabelText.alignment = TextAlignmentOptions.MidlineLeft;
-        var ilRT = itemLabel.GetComponent<RectTransform>();
-        ilRT.anchorMin = Vector2.zero;
-        ilRT.anchorMax = Vector2.one;
-        ilRT.offsetMin = new Vector2(12, 0);
-        ilRT.offsetMax = new Vector2(-12, 0);
-
-        var itemToggle = item.GetComponent<Toggle>();
-        itemToggle.targetGraphic = itemBg.GetComponent<Image>();
-        itemToggle.graphic = itemBg.GetComponent<Image>();
-        itemToggle.isOn = false;
-
-        // Wire dropdown
-        var scroll = template.GetComponent<ScrollRect>();
-        scroll.viewport = vRT;
-        scroll.content = cRT;
-        scroll.horizontal = false;
-        scroll.vertical = true;
-
-        dd.template = tRT;
-        dd.captionText = label;
-        dd.itemText = itemLabelText;
-        dd.ClearOptions();
-        dd.options = new List<TMP_Dropdown.OptionData>();
-
-        return dd;
-    }
-
     static Color Lighten(Color c, float delta)
     {
         return new Color(
@@ -461,6 +467,92 @@ public class ServerLauncherUI : MonoBehaviour
         if (connectButton != null) connectButton.interactable = enabled;
         if (connectButtonLabel != null)
             connectButtonLabel.text = enabled ? "Connect & Load Configs" : "Fetching…";
+    }
+
+    void BuildConfigListPanel()
+    {
+        configListPanel = new GameObject("ConfigList",
+            typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster),
+            typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+        configListPanel.transform.SetParent(configSelectorButton.transform, false);
+
+        var rt = configListPanel.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0, 0);
+        rt.anchorMax = new Vector2(1, 0);
+        rt.pivot = new Vector2(0.5f, 1f);     // hang downward from selector's bottom
+        rt.anchoredPosition = new Vector2(0, -2);
+
+        var canvas = configListPanel.GetComponent<Canvas>();
+        canvas.overrideSorting = true;
+        canvas.sortingOrder = 6000;           // above the launcher canvas (5000)
+        configListRaycaster = configListPanel.GetComponent<GraphicRaycaster>();
+
+        configListPanel.GetComponent<Image>().color = new Color(0.10f, 0.11f, 0.13f, 1f);
+
+        var vlg = configListPanel.GetComponent<VerticalLayoutGroup>();
+        vlg.padding = new RectOffset(4, 4, 4, 4);
+        vlg.spacing = 2;
+        vlg.childForceExpandWidth = true;
+        vlg.childForceExpandHeight = false;
+        vlg.childControlWidth = true;
+        vlg.childControlHeight = true;
+
+        configListPanel.GetComponent<ContentSizeFitter>().verticalFit =
+            ContentSizeFitter.FitMode.PreferredSize;
+
+        configListPanel.SetActive(false);
+    }
+
+    void PopulateConfigList()
+    {
+        if (configListPanel == null) return;
+        for (int i = configListPanel.transform.childCount - 1; i >= 0; i--)
+            Destroy(configListPanel.transform.GetChild(i).gameObject);
+
+        for (int i = 0; i < fetchedConfigs.Count; i++)
+        {
+            var c = fetchedConfigs[i];
+            int n = (c.agents != null) ? c.agents.Length : 0;
+            int idx = i; // capture for the closure
+            var b = MakeButton(configListPanel.transform, $"{DisplayName(c)}  ({n} agents)",
+                               out _, height: 34, bg: new Color(0.16f, 0.17f, 0.21f));
+            b.onClick.AddListener(() => SelectConfig(idx));
+        }
+    }
+
+    void ToggleConfigList()
+    {
+        if (fetchedConfigs.Count == 0) return;
+        configListOpen = !configListOpen;
+        configListPanel.SetActive(configListOpen);
+    }
+
+    void SelectConfig(int index)
+    {
+        if (index < 0 || index >= fetchedConfigs.Count) return;
+        selectedConfigIndex = index;
+        RefreshConfigLabel();
+        configListOpen = false;
+        configListPanel.SetActive(false);
+        SetStartEnabled(true);
+    }
+
+    void RefreshConfigLabel()
+    {
+        if (configSelectorLabel == null) return;
+        if (selectedConfigIndex < 0 || selectedConfigIndex >= fetchedConfigs.Count)
+        {
+            configSelectorLabel.text = "(connect to load configs)  ▼";
+            return;
+        }
+        var c = fetchedConfigs[selectedConfigIndex];
+        int n = (c.agents != null) ? c.agents.Length : 0;
+        configSelectorLabel.text = $"{DisplayName(c)}  ({n} agents)  ▼";
+    }
+
+    static string DisplayName(ConfigInfo c)
+    {
+        return !string.IsNullOrEmpty(c.title) ? c.title : c.name;
     }
 
     // ── Fetch /configs ─────────────────────────────────────────────
@@ -512,33 +604,31 @@ public class ServerLauncherUI : MonoBehaviour
         fetchedConfigs.Clear();
         if (parsed != null && parsed.configs != null) fetchedConfigs.AddRange(parsed.configs);
 
+        // Collapse any open list, then rebuild it from the fresh results.
+        configListOpen = false;
+        if (configListPanel != null) configListPanel.SetActive(false);
+        PopulateConfigList();
+
         if (fetchedConfigs.Count == 0)
         {
             SetStatus("Server returned no configs.",
                       new Color(0.95f, 0.55f, 0.35f));
-            configDropdown.ClearOptions();
+            selectedConfigIndex = -1;
+            RefreshConfigLabel();
+            if (configSelectorButton != null) configSelectorButton.interactable = false;
         }
         else
         {
-            var opts = new List<TMP_Dropdown.OptionData>();
+            // Selection priority: ?config= from the link, else last-used, else first.
+            string preferred = !string.IsNullOrEmpty(desiredConfig)
+                ? desiredConfig : PlayerPrefs.GetString(PREFS_CFG, "");
+            selectedConfigIndex = 0;
             for (int i = 0; i < fetchedConfigs.Count; i++)
-            {
-                var c = fetchedConfigs[i];
-                int n = (c.agents != null) ? c.agents.Length : 0;
-                opts.Add(new TMP_Dropdown.OptionData($"{c.name}  ({n} agents)"));
-            }
-            configDropdown.ClearOptions();
-            configDropdown.AddOptions(opts);
+                if (fetchedConfigs[i].name == preferred) { selectedConfigIndex = i; break; }
+            RefreshConfigLabel();
+            if (configSelectorButton != null) configSelectorButton.interactable = true;
 
-            // Pre-select last-used config if it's still there.
-            string lastCfg = PlayerPrefs.GetString(PREFS_CFG, "");
-            int found = 0;
-            for (int i = 0; i < fetchedConfigs.Count; i++)
-                if (fetchedConfigs[i].name == lastCfg) { found = i; break; }
-            configDropdown.value = found;
-            configDropdown.RefreshShownValue();
-
-            SetStatus($"Loaded {fetchedConfigs.Count} configs.",
+            SetStatus($"Loaded {fetchedConfigs.Count} configs. Click the box to choose.",
                       new Color(0.55f, 0.85f, 0.6f));
             SetStartEnabled(true);
         }
@@ -552,7 +642,7 @@ public class ServerLauncherUI : MonoBehaviour
     IEnumerator StartGame()
     {
         if (connecting) yield break;
-        if (configDropdown.value < 0 || configDropdown.value >= fetchedConfigs.Count)
+        if (selectedConfigIndex < 0 || selectedConfigIndex >= fetchedConfigs.Count)
         {
             SetStatus("Pick a config first.", new Color(0.95f, 0.55f, 0.35f));
             yield break;
@@ -563,32 +653,91 @@ public class ServerLauncherUI : MonoBehaviour
         SetConnectEnabled(false);
         if (startButtonLabel != null) startButtonLabel.text = "Connecting…";
 
-        var chosen = fetchedConfigs[configDropdown.value];
+        var chosen = fetchedConfigs[selectedConfigIndex];
         SavePrefs(chosen.name);
 
-        var wsm = WebSocketManager.Instance;
-        if (wsm == null)
-        {
-            SetStatus("WebSocketManager not present in scene.", Color.red);
-            connecting = false;
-            SetStartEnabled(true);
-            SetConnectEnabled(true);
-            if (startButtonLabel != null) startButtonLabel.text = "Start Game";
-            yield break;
-        }
+        // Stash the chosen settings so we can apply them to the
+        // WebSocketManager whether it exists now or appears in a later scene.
+        pendingUrl = urlField.text.Trim();
+        pendingKey = keyField.text.Trim();
+        pendingConfig = chosen.name;
 
-        wsm.serverUrl = urlField.text.Trim();
-        wsm.apiKey = keyField.text.Trim();
-        wsm.configName = chosen.name;
+        var wsm = WebSocketManager.Instance;
+        if (wsm != null)
+        {
+            // The manager is in this scene (e.g. playing MainScene in the
+            // Editor) — connect right away.
+            ApplyAndConnect(wsm);
+            if (root != null) root.SetActive(false);
+        }
+        else
+        {
+            // No manager yet (e.g. the title screen of a build). This launcher
+            // object survives scene loads (DontDestroyOnLoad); Update() will
+            // connect once the scene that owns the WebSocketManager loads.
+            pendingConnect = true;
+            SetStatus("Settings saved — the game will connect when it loads.",
+                      new Color(0.55f, 0.85f, 0.6f));
+            if (root != null) root.SetActive(false);
+        }
+    }
+
+    void ApplyAndConnect(WebSocketManager wsm)
+    {
+        wsm.serverUrl = pendingUrl;
+        wsm.apiKey = pendingKey;
+        wsm.configName = pendingConfig;
         wsm.enableWebSocket = true;
         wsm.ConnectToServer();
-
-        // Hide the launcher once we've handed off; WebSocketManager handles
-        // hello/ack/game_start from here.
-        if (root != null) root.SetActive(false);
     }
 
     // ── Helpers ────────────────────────────────────────────────────
+
+    // Hosted WebGL: derive the router's same-origin wss:// URL from the page
+    // address so the build needs no baked-in server address. Falls back to the
+    // localhost default in the Editor / native players.
+    static string DefaultServerUrl()
+    {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        string page = Application.absoluteURL;
+        if (!string.IsNullOrEmpty(page))
+        {
+            try
+            {
+                var uri = new System.Uri(page);
+                string scheme = uri.Scheme == "https" ? "wss" : "ws";
+                return $"{scheme}://{uri.Authority}/ws";
+            }
+            catch { }
+        }
+#endif
+        return DEFAULT_URL;
+    }
+
+    // Read a query-string parameter from the hosting page URL (WebGL only).
+    // Lets a personalized link supply the API key / config, e.g.
+    //   https://arc.example.edu/?key=ck_alice...&config=openai_multi_agent_config_local
+    static string UrlParam(string name)
+    {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        string url = Application.absoluteURL;
+        if (string.IsNullOrEmpty(url)) return null;
+        int q = url.IndexOf('?');
+        if (q < 0) return null;
+        string query = url.Substring(q + 1);
+        int hash = query.IndexOf('#');
+        if (hash >= 0) query = query.Substring(0, hash);
+        foreach (string pair in query.Split('&'))
+        {
+            int eq = pair.IndexOf('=');
+            if (eq <= 0) continue;
+            string k = System.Uri.UnescapeDataString(pair.Substring(0, eq));
+            if (k == name)
+                return System.Uri.UnescapeDataString(pair.Substring(eq + 1));
+        }
+#endif
+        return null;
+    }
 
     static string WsToHttp(string wsUrl)
     {
@@ -611,7 +760,7 @@ public class ServerLauncherUI : MonoBehaviour
     [Serializable]
     class ConfigsResponse { public ConfigInfo[] configs; }
     [Serializable]
-    public class ConfigInfo { public string name; public string path; public AgentInfo[] agents; }
+    public class ConfigInfo { public string name; public string title; public string path; public AgentInfo[] agents; }
     [Serializable]
     public class AgentInfo { public string name; public string role; public string actor_type; }
 }
