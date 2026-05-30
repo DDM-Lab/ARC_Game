@@ -1,0 +1,36 @@
+# ARC Game — reverse proxy for WebGL deployment (Caddy v2)
+#
+# Serves the WebGL client at / and proxies the agent_router endpoints at the
+# SAME ORIGIN. That gives you three things for free:
+#   • TLS / HTTPS  (Caddy auto-provisions a cert for a real domain)
+#   • wss://       (the browser upgrades over the same secure origin)
+#   • no CORS      (client and router share an origin)
+#
+# ── Setup ────────────────────────────────────────────────────────────────
+#   1. Build the WebGL client:   ./build_client.sh webgl     -> Build/Client/WebGL
+#        In Unity Player Settings → WebGL → Publishing Settings, set
+#        Compression Format = Gzip and enable "Decompression Fallback".
+#        That lets any static host serve the files without special
+#        Content-Encoding headers (simplest, most robust).
+#   2. Run the router on this host:  ./run_router.sh          (listens on :9876)
+#   3. Replace arc.example.edu below with your Janus hostname/domain.
+#   4. Start Caddy from the project dir:  caddy run --config deploy/Caddyfile
+#
+# ── Local test without a domain (HTTP only) ──────────────────────────────
+#   Replace the site address "arc.example.edu" with ":8080" and browse to
+#   http://localhost:8080  (the launcher will derive ws://localhost:8080/ws).
+
+arc.example.edu {
+	encode gzip
+
+	# Router endpoints → local agent_router. reverse_proxy upgrades WebSockets
+	# automatically, so /ws works over wss:// at this same origin.
+	@router path /ws /configs /health
+	reverse_proxy @router localhost:9876
+
+	# Everything else → the static WebGL build.
+	# Path is relative to where you launch caddy (the project root); use an
+	# absolute path here if you run caddy from elsewhere.
+	root * Build/Client/WebGL
+	file_server
+}
