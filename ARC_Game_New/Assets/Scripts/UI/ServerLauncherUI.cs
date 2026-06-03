@@ -150,18 +150,18 @@ public class ServerLauncherUI : MonoBehaviour
 
     // ── Clipboard paste ────────────────────────────────────────────
 #if UNITY_WEBGL && !UNITY_EDITOR
-    [DllImport("__Internal")] static extern string PromptApiKey();
+    // PromptApiKey now shows an HTML overlay and delivers the result
+    // asynchronously via OnClipboardPasted — it returns void.
+    [DllImport("__Internal")] static extern void PromptApiKey();
     [DllImport("__Internal")] static extern void ClipboardInit();
 #endif
 
     void PasteApiKey()
     {
 #if UNITY_WEBGL && !UNITY_EDITOR
-        // Native browser dialog: a real text box with full paste (⌘V/Ctrl+V) and
-        // typing support, no clipboard-permission restrictions.
-        string s = PromptApiKey();
-        if (!string.IsNullOrEmpty(s)) ApplyPasted(s);
-        else SetStatus("No key entered.", new Color(0.95f, 0.55f, 0.35f));
+        // Opens an HTML <input> overlay directly in the browser DOM.
+        // Result arrives via OnClipboardPasted once the user confirms.
+        PromptApiKey();
 #else
         string clip = GUIUtility.systemCopyBuffer;
         if (!string.IsNullOrEmpty(clip)) ApplyPasted(clip);
