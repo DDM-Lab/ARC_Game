@@ -36,7 +36,8 @@ MonoBehaviour:
     resourceType: 0
     resourceThreshold: 0
     condition: 3
-  probabilityTriggers: []
+  probabilityTriggers:
+  - probability: 0.2
   floodTileTriggers: []
   floodedFacilityTriggers: []
   budgetTriggers: []
@@ -67,7 +68,7 @@ MonoBehaviour:
     customLabel: 
   agentMessages:
   - messageText: We have an urgent food shortage situation at [facility_name]! There
-      are people here but no food packs remaining.
+      are people here but no meals remaining.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0

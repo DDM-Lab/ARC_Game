@@ -870,7 +870,7 @@ public class DailyReportUI : MonoBehaviour
     // =========================================================================
     
     /// <summary>
-    /// NEW FORMULA: Penalize food packs left in storage at end of day.
+    /// NEW FORMULA: Penalize meals left in storage at end of day.
     /// These packs WILL become waste when the day advances.
     /// 0 packs in storage = +5.0 (perfect, no waste)
     /// 10 packs = 0 (baseline)

@@ -311,7 +311,7 @@ public class AgentNumericalInput
             case NumericalInputType.TrainedWorkers:
                 return "Trained Workers";
             case NumericalInputType.FoodPacks:
-                return "Food Packs";
+                return "mealss";
             default:
                 return "Value";
         }
@@ -1820,7 +1820,7 @@ public class TaskSystem : MonoBehaviour
         {
             case ImpactType.Satisfaction: return "Satisfaction";
             case ImpactType.Budget: return "Budget";
-            case ImpactType.FoodPacks: return "Food Packs Amount";
+            case ImpactType.FoodPacks: return "mealss Amount";
             case ImpactType.Clients: return "Clients Amount";
             case ImpactType.Workforce: return "Workforce Required";
             case ImpactType.TotalTime: return "Estimated Time";
@@ -1881,7 +1881,7 @@ public class TaskSystem : MonoBehaviour
         foodTask.agentMessages.Add(new AgentMessage("We need to decide how to respond quickly. What would you like to do?"));
 
         // Add agent choices with delivery options
-        AgentChoice choice1 = new AgentChoice(1, "Emergency food distribution from nearby kitchen (50 food packs, $2000)");
+        AgentChoice choice1 = new AgentChoice(1, "Emergency food distribution from nearby kitchen (50 meals, $2000)");
         choice1.triggersDelivery = true;
         choice1.deliveryCargoType = ResourceType.FoodPacks;
         choice1.deliveryQuantity = 50;
@@ -1893,7 +1893,7 @@ public class TaskSystem : MonoBehaviour
         choice1.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 15));
         foodTask.agentChoices.Add(choice1);
 
-        AgentChoice choice2 = new AgentChoice(2, "Limited food distribution (10 food packs, $1000)");
+        AgentChoice choice2 = new AgentChoice(2, "Limited food distribution (10 meals, $1000)");
         choice2.triggersDelivery = true;
         choice2.deliveryCargoType = ResourceType.FoodPacks;
         choice2.deliveryQuantity = 10;

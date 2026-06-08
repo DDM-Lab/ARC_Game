@@ -566,7 +566,7 @@ public class DeliverySystem : MonoBehaviour
     /// </summary>
     void GenerateFoodDeliveryTasks()
     {
-        // Find kitchens with food packs
+        // Find kitchens with meals
         Building[] kitchens = FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Kitchen).ToArray();
 
         // Find shelters that need food

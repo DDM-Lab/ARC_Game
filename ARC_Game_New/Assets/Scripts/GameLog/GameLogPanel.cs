@@ -550,8 +550,8 @@ public class GameLogPanel : MonoBehaviour
     {
         LogBuildingStatus("Kitchen started food production");
         LogBuildingStatus("Shelter damaged by flood");
-        LogResourceChange("Produced 10 food packs");
-        LogResourceChange("Consumed 5 food packs");
+        LogResourceChange("Produced 10 meals");
+        LogResourceChange("Consumed 5 meals");
         LogWorkerAction("Assigned 2 trained workers to Kitchen");
         LogWorkerAction("Worker training completed");
         LogTaskEvent("Emergency food task completed");

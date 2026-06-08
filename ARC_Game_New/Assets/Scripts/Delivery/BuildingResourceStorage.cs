@@ -182,7 +182,7 @@ public class BuildingResourceStorage : MonoBehaviour
 
                 if (showDebugInfo)
                 {
-                    Debug.Log($"{gameObject.name} fed {totalPeopleToFeed} people after {consumptionRoundInterval} rounds, consumed {foodConsumed}/{foodNeeded} food packs");
+                    Debug.Log($"{gameObject.name} fed {totalPeopleToFeed} people after {consumptionRoundInterval} rounds, consumed {foodConsumed}/{foodNeeded} meals");
 
                     if (foodConsumed < foodNeeded)
                     {
@@ -190,7 +190,7 @@ public class BuildingResourceStorage : MonoBehaviour
                     }
                 }
 
-                GameLogPanel.Instance.LogResourceChange($"{gameObject.name} fed {totalPeopleToFeed} people after {consumptionRoundInterval} rounds, consumed {foodConsumed}/{foodNeeded} food packs");
+                GameLogPanel.Instance.LogResourceChange($"{gameObject.name} fed {totalPeopleToFeed} people after {consumptionRoundInterval} rounds, consumed {foodConsumed}/{foodNeeded} meals");
                 if (foodConsumed < foodNeeded)
                 {
                     GameLogPanel.Instance.LogResourceChange($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
@@ -242,18 +242,18 @@ public class BuildingResourceStorage : MonoBehaviour
                 RemoveResource(ResourceType.FoodPacks, wastedFood);
 
                 if (showDebugInfo)
-                    Debug.Log($"{gameObject.name} wasted {wastedFood} unused food packs at end of day");
-                GameLogPanel.Instance.LogResourceChange($"{gameObject.name} wasted {wastedFood} unused food packs at end of day");
+                    Debug.Log($"{gameObject.name} wasted {wastedFood} unused meals at end of day");
+                GameLogPanel.Instance.LogResourceChange($"{gameObject.name} wasted {wastedFood} unused meals at end of day");
             }
         }
         
-        // Add starting food packs at the start of each day
+        // Add starting meals at the start of each day
         if (startingFoodPacks > 0)
         {
             int actualAdded = AddResource(ResourceType.FoodPacks, startingFoodPacks);
             if (showDebugInfo)
-                Debug.Log($"{gameObject.name} received {actualAdded} starting food packs at start of day");
-            GameLogPanel.Instance.LogResourceChange($"{gameObject.name} received {actualAdded} starting food packs at start of day");
+                Debug.Log($"{gameObject.name} received {actualAdded} starting meals at start of day");
+            GameLogPanel.Instance.LogResourceChange($"{gameObject.name} received {actualAdded} starting meals at start of day");
         }
         
     }

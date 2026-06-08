@@ -532,9 +532,9 @@ public class Building : MonoBehaviour
         
         if (sourceKitchen != null)
         {
-            int requestAmount = 5; // Request 5 food packs
+            int requestAmount = 5; // Request 5 mealss
             deliverySystem.CreateDeliveryTask(sourceKitchen, this, ResourceType.FoodPacks, requestAmount, 5);
-            Debug.Log($"{name} requested {requestAmount} food packs from {sourceKitchen.name}");
+            Debug.Log($"{name} requested {requestAmount} mealss from {sourceKitchen.name}");
         }
         else
         {
@@ -575,7 +575,7 @@ public class Building : MonoBehaviour
         {
             int sendAmount = Mathf.Min(storage.GetResourceAmount(ResourceType.FoodPacks), 3);
             deliverySystem.CreateDeliveryTask(this, targetShelter, ResourceType.FoodPacks, sendAmount, 5);
-            Debug.Log($"{name} sending {sendAmount} food packs to {targetShelter.name}");
+            Debug.Log($"{name} sending {sendAmount} mealss to {targetShelter.name}");
         }
         else
         {

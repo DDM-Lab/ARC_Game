@@ -11,7 +11,7 @@ public class DeliveryQueueRow : MonoBehaviour
 {
     [Header("Text Fields")]
     public TextMeshProUGUI statusText;   // "Delivering" / "Picking up" / "Queued" / "Damaged"
-    public TextMeshProUGUI cargoText;    // "5x food packs"
+    public TextMeshProUGUI cargoText;    // "5x meals"
     public TextMeshProUGUI routeText;    // "Kitchen  →  Community 1"
     public TextMeshProUGUI etaText;      // "ETA: 00:42" or "Queued"
 

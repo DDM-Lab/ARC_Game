@@ -191,7 +191,7 @@ public class VehicleUIOverlay : MonoBehaviour
         if (totalCargo <= 0) return "";
 
         ResourceType cargoType = vehicle.GetPrimaryCargoType();
-        string label = cargoType == ResourceType.Population ? "clients" : "food packs";
+        string label = cargoType == ResourceType.Population ? "clients" : "meals";
         return $"{totalCargo} {label}";
     }
     

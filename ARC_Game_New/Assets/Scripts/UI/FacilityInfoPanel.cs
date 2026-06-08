@@ -642,7 +642,7 @@ public class FacilityInfoPanel : MonoBehaviour
         int clients = incoming.Where(d => d.cargoType == ResourceType.Population).Sum(d => d.quantity);
         
         string message = "";
-        if (foodPacks > 0) message += $"{foodPacks} food packs on the way. ";
+        if (foodPacks > 0) message += $"{foodPacks} meals on the way. ";
         if (clients > 0) message += $"{clients} clients on the way.";
         
         expectedDeliveriesText.text = message.Trim();
@@ -673,7 +673,7 @@ public class FacilityInfoPanel : MonoBehaviour
             
             string destName = GetBuildingDisplayName(group.Key);
             
-            if (foodPacks > 0) message += $"{foodPacks} food packs leaving, going to {destName}. ";
+            if (foodPacks > 0) message += $"{foodPacks} meals leaving, going to {destName}. ";
             if (clients > 0) message += $"{clients} clients leaving, going to {destName}. ";
         }
         

@@ -1033,7 +1033,7 @@ public class TaskDetailUI : MonoBehaviour
                 // Check food pack availability
                 if (value > 0)
                 {
-                    // Find kitchen with available food packs
+                    // Find kitchen with available meals
                     Building[] kitchens = FindObjectsOfType<Building>()
                         .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
                         .ToArray();
@@ -1048,7 +1048,7 @@ public class TaskDetailUI : MonoBehaviour
                     
                     if (value > totalAvailable)
                     {
-                        return $"Not enough food packs. You requested {value} but only have {totalAvailable} available across all kitchens.";
+                        return $"Not enough meals. You requested {value} but only have {totalAvailable} available across all kitchens.";
                     }
                 }
                 break;
