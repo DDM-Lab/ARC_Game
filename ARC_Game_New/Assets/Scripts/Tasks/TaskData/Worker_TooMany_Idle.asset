@@ -56,7 +56,7 @@ MonoBehaviour:
     useTypingEffect: 1
     typingSpeed: 0.05
   - messageText: You need more untrained workers to do what the trained worker do,
-      and putting untrained workers into training increase their satisfaction.
+      and putting untrained workers into training increases their satisfaction.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
