@@ -22517,9 +22517,9 @@ MonoBehaviour:
     streamName: 2
     agent: 1
     messages:
-    - "The disaster is approaching. Your priority today is to set up facilities.
-      Choose good locations and open shelters and kitchens. Don\u2019t overbuild\u2014you
-      can close and rebuild at any time. "
+    - "It looks like the weather is getting worse, it is time to prepare. Your priority
+      today is to set up facilities. Choose good locations and open shelters and
+      kitchens. Don\u2019t overbuild\u2014you can close and reopen at any time. "
     - "I recommend starting with two kitchens and two shelters to provide space and
       a steady food supply\u2014but it\u2019s up to you."
   feedbackStream:
