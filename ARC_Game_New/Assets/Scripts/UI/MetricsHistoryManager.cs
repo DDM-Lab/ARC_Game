@@ -165,7 +165,7 @@ public class MetricsHistoryManager : MonoBehaviour
         // Update tab colors
         UpdateTabColors();
 
-        GameLogPanel.Instance?.LogUIInteraction($"Metrics panel: switched to Satisfaction tab | day={currentDay}");
+        GameLogPanel.Instance?.LogUIInteraction("game_state", "metrics_tab", $"tab=satisfaction | day={currentDay}");
         
         // Open panel if not already open
         if (!isPanelExpanded)
@@ -190,7 +190,7 @@ public class MetricsHistoryManager : MonoBehaviour
         // Update tab colors
         UpdateTabColors();
 
-        GameLogPanel.Instance?.LogUIInteraction($"Metrics panel: switched to Budget tab | day={currentDay}");
+        GameLogPanel.Instance?.LogUIInteraction("game_state", "metrics_tab", $"tab=budget | day={currentDay}");
         
         // Open panel if not already open
         if (!isPanelExpanded)
@@ -238,7 +238,7 @@ public class MetricsHistoryManager : MonoBehaviour
             metricsPanel.sizeDelta = new Vector2(metricsPanel.sizeDelta.x, collapsedHeight);
         
         ClearMetricItems();
-        GameLogPanel.Instance?.LogUIInteraction("Metrics panel closed");
+        GameLogPanel.Instance?.LogUIInteraction("game_state", "metrics_closed");
         if (showDebugInfo)
             Debug.Log("Metrics panel closed immediately");
     }

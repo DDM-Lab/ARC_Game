@@ -232,7 +232,9 @@ public class AgentConversationUI : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log($"Agent conversation panel {(isExpanded ? "expanding" : "collapsing")}");
-        GameLogPanel.Instance?.LogUIInteraction($"Agent conversation panel {(isExpanded ? "expanded" : "collapsed")} | agent={currentSelectedAgent}");
+        GameLogPanel.Instance?.LogUIInteraction("agent_info",
+            isExpanded ? "conversation_expanded" : "conversation_collapsed",
+            $"agent={currentSelectedAgent}");
     }
 
     IEnumerator AnimateExpand(bool expand)
@@ -282,7 +284,8 @@ public class AgentConversationUI : MonoBehaviour
             // Same agent clicked while expanded → collapse
             isExpanded = false;
             StartCoroutine(AnimateExpand(false));
-            GameLogPanel.Instance?.LogUIInteraction($"Agent conversation panel collapsed | agent={agent}");
+            GameLogPanel.Instance?.LogUIInteraction("agent_info",
+                "conversation_collapsed", $"agent={agent}");
             return;
         }
 
@@ -304,7 +307,8 @@ public class AgentConversationUI : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Selected agent: {agent}");
-        GameLogPanel.Instance?.LogUIInteraction($"Agent selected: {agent}");
+        GameLogPanel.Instance?.LogUIInteraction("agent_info",
+            "agent_selected", $"agent={agent}");
     }
     
     void UpdateAgentButtons()
@@ -405,8 +409,8 @@ public class AgentConversationUI : MonoBehaviour
         DisplayTaskConversation(task);
         if (showDebugInfo)
             Debug.Log($"Selected historical task: {task.taskTitle}");
-        GameLogPanel.Instance?.LogUIInteraction(
-        $"Historical task viewed | agent={currentSelectedAgent} | task=[{task.taskType}] {task.taskTitle} | status={task.status}");
+        GameLogPanel.Instance?.LogUIInteraction("agent_info", "historical_task_viewed",
+            $"agent={currentSelectedAgent} | task=[{task.taskType}] {task.taskTitle} | status={task.status}");
     }
     
     void DisplayLatestConversation()
@@ -1031,6 +1035,8 @@ public class AgentConversationUI : MonoBehaviour
     void OnInlineChoiceClicked(int packageIndex)
     {
         Debug.Log($"[AgentConversationUI] Inline choice clicked: {packageIndex}");
+        GameLogPanel.Instance?.LogUIInteraction("choice", "choice_clicked",
+            $"agent={currentSelectedAgent} | package_index={packageIndex}");
 
         // Retrieve stored data for this choice
         if (!inlineChoiceDataMap.ContainsKey(packageIndex))

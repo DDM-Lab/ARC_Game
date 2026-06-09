@@ -65,6 +65,17 @@ def _enumerate_actions(game_state: dict) -> list[dict]:
         return []
 
 
+# Canonical actor block for the human player (the manual director). Agent-driven
+# actors are built per-agent by Session._actor_for(). See the "action" event
+# schema in the per-actor logging design.
+HUMAN_DIRECTOR_ACTOR = {
+    "kind": "human",
+    "name": "Director",
+    "role": "director",
+    "actor_type": "manual",
+}
+
+
 class Session:
     """One isolated game session for a single connected Unity client.
 
@@ -88,6 +99,8 @@ class Session:
         self.message_queue = MessageQueue()
         self.episode_id: str = self.logger.new_episode()
         self.round_num: int = 0
+        self.day: int = 1
+        self.segment: int = 0
         self._websocket: WebSocket = websocket
         self._pending_choice: Optional[asyncio.Future] = None
         self._pending_action: Optional[asyncio.Future] = None
@@ -100,6 +113,52 @@ class Session:
             if agent.role == "director":
                 return agent
         return None
+
+    # ── Per-actor action logging ─────────────────────────────────
+
+    def _actor_for(self, agent: Optional[AgentConfig]) -> dict:
+        """Build the `actor` block for a logged action.
+
+        Mapping: subagent → llm_agent; director + manual → human;
+        director + LLM-driven (auto/llm/choices/coach) → auto_director.
+        Falls back to the human director if the agent can't be resolved.
+        """
+        if agent is None:
+            return dict(HUMAN_DIRECTOR_ACTOR)
+        if agent.role == "director":
+            kind = "human" if agent.actor_type == "manual" else "auto_director"
+        else:
+            kind = "llm_agent"
+        return {
+            "kind": kind,
+            "name": agent.subagent_name,
+            "role": agent.role,
+            "actor_type": agent.actor_type,
+        }
+
+    def _log_action(self, actor: dict, category: str, name: str,
+                    payload: dict, click_seq=None, client_ts=None) -> None:
+        """Append one unified, actor-tagged `action` event to the session JSONL.
+
+        `timestamp` (added by log_event) is server-receive time — authoritative for
+        ordering. `client_ts` is the Unity-side UTC stamp from the originating
+        frame, for precise human-action timing (e.g. time-to-complete-task).
+        """
+        self.logger.log_event({
+            "event_type": "action",
+            "schema_version": 1,
+            "session_id": self.session_id,
+            "episode_id": self.episode_id,
+            "round": self.round_num,
+            "day": self.day,
+            "segment": self.segment,
+            "actor": actor,
+            "category": category,
+            "name": name,
+            "payload": payload,
+            "click_seq": click_seq,
+            "client_ts": client_ts,
+        })
 
     # ── WebSocket Handler ────────────────────────────────────────
 
@@ -162,6 +221,10 @@ class Session:
             await self._handle_request_reproposal(msg)
         elif msg_type == "round_end":
             self._handle_round_end(msg)
+        elif msg_type == "client_event":
+            self._handle_client_event(msg)
+        elif msg_type == "gui_event":
+            self._handle_gui_event(msg)
         else:
             print(f"[router] Unknown message type: {msg_type}")
 
@@ -169,6 +232,8 @@ class Session:
 
     async def _handle_begin_round(self, msg: dict):
         self.round_num += 1
+        self.day = msg.get("day", self.day)
+        self.segment = msg.get("segment", self.segment)
         game_state = msg.get("game_state", {})
         print(f"\n[router] === Round {self.round_num} | "
               f"Day {msg.get('day', 1)} Seg {msg.get('segment', 0)} ===")
@@ -532,6 +597,20 @@ Respond with ONLY the package index number (0, 1, or 2).
               f"results={len(msg.get('execution_results', []))} actions")
         print(f"[router]    _pending_choice state: {self._pending_choice}, "
               f"done={self._pending_choice.done() if self._pending_choice else 'N/A'}")
+        # Human game action: the director picked (and Unity already executed) a
+        # package. Log it independently of the pending-choice Future.
+        self._log_action(
+            HUMAN_DIRECTOR_ACTOR,
+            "game_action",
+            "choice_made",
+            {
+                "agent_name": msg.get("agent_name"),
+                "package_index": msg.get("package_index"),
+                "execution_results": msg.get("execution_results", []),
+            },
+            click_seq=msg.get("click_seq"),
+            client_ts=msg.get("timestamp"),
+        )
         if self._pending_choice and not self._pending_choice.done():
             print(f"[router]    ✅ Setting result on pending Future")
             self._pending_choice.set_result(msg)
@@ -547,6 +626,42 @@ Respond with ONLY the package index number (0, 1, or 2).
     def _handle_round_end(self, msg: dict):
         print(f"[router] Round {self.round_num} ended.")
 
+    def _handle_client_event(self, msg: dict):
+        """Human decision-support UI interaction from Unity (Tier-1 ui_interaction).
+
+        e.g. opening an agent's conversation, switching officers, selecting/
+        switching a choice package, clicking confirm, opening metrics. The raw
+        click coords arrive separately via gui_event; this carries the meaning.
+        """
+        name = msg.get("name")
+        if not name:
+            return
+        # category defaults to ui_interaction but the client may send "game_action"
+        # for direct human actions (build/worker/deconstruct via the UI).
+        self._log_action(
+            HUMAN_DIRECTOR_ACTOR,
+            msg.get("category", "ui_interaction"),
+            name,
+            msg.get("payload", {}),
+            click_seq=msg.get("click_seq"),
+            client_ts=msg.get("timestamp"),
+        )
+
+    def _handle_gui_event(self, msg: dict):
+        """Raw human mouse click from Unity (every click) → unified log.
+
+        Provides the GUI-control-training stream and the unproductive-click
+        signal. payload carries screen/normalized coords + the UI element hit.
+        """
+        self._log_action(
+            HUMAN_DIRECTOR_ACTOR,
+            "ui_interaction",
+            "click",
+            msg.get("payload", {}),
+            click_seq=msg.get("click_seq"),
+            client_ts=msg.get("timestamp"),
+        )
+
     def _handle_game_start(self, msg: dict):
         """Unity signals a fresh play session — wipe conversation state.
 
@@ -556,6 +671,8 @@ Respond with ONLY the package index number (0, 1, or 2).
         """
         self.message_queue.clear_all()
         self.round_num = 0
+        self.day = 1
+        self.segment = 0
         self._choice_context.clear()
         print("[router] 🆕 game_start received — message queue cleared, round counter reset.")
 
@@ -583,11 +700,13 @@ Respond with ONLY the package index number (0, 1, or 2).
         self.logger.log_event({
             "event_type": "conversation_message",
             "round": self.round_num,
+            "actor": HUMAN_DIRECTOR_ACTOR,
             "from": "Director",
             "to": to_agent_name,
             "content": content,
             "message_type": "director_message",
             "message_id": message["id"],
+            "click_seq": msg.get("click_seq"),
             "timestamp": message["timestamp"]
         })
 
@@ -642,6 +761,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         self.logger.log_event({
             "event_type": "conversation_message",
             "round": self.round_num,
+            "actor": self._actor_for(agent),
             "from": agent.subagent_name,
             "to": "Director",
             "content": response_text,
@@ -841,6 +961,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             self.logger.log_event({
                 "event_type": "conversation_message",
                 "round": self.round_num,
+                "actor": HUMAN_DIRECTOR_ACTOR,
                 "from": "Director",
                 "to": agent_name,
                 "content": feedback,
@@ -1026,6 +1147,10 @@ Respond with ONLY the package index number (0, 1, or 2).
             'errors': []
         }
 
+        # Actor for the unified action log: server-side execution is agent-driven
+        # (llm_agent, or auto_director when the director runs autonomously).
+        actor = self._actor_for(self._get_agent_by_name(agent_name))
+
         current_state = initial_state
 
         for idx in action_indices:
@@ -1079,15 +1204,42 @@ Respond with ONLY the package index number (0, 1, or 2).
                     free_workers = self._count_free_workers(new_state)
 
                     print(f"[{agent_name}]      Budget: ${running_budget:,}, Free workers: {free_workers}")
+                    self._log_action(actor, "game_action", "execute_action", {
+                        "index": idx,
+                        "action_id": action.get('action_id'),
+                        "action_type": action_type,
+                        "description": action_desc,
+                        "cost": action_cost,
+                        "success": True,
+                        "error_message": None,
+                    })
                 else:
                     error_msg = result.get('error_message', 'Unknown error')
                     results['errors'].append({'index': idx, 'error': error_msg})
                     print(f"[{agent_name}]   ✗ Action {idx} failed: {error_msg}")
+                    self._log_action(actor, "game_action", "execute_action", {
+                        "index": idx,
+                        "action_id": action.get('action_id'),
+                        "action_type": action_type,
+                        "description": action_desc,
+                        "cost": action_cost,
+                        "success": False,
+                        "error_message": error_msg,
+                    })
 
             except Exception as e:
                 msg = f"Exception during execution: {e}"
                 results['errors'].append({'index': idx, 'error': str(e)})
                 print(f"[{agent_name}]   ✗ Action {idx} exception: {e}")
+                self._log_action(actor, "game_action", "execute_action", {
+                    "index": idx,
+                    "action_id": action.get('action_id'),
+                    "action_type": action_type,
+                    "description": action_desc,
+                    "cost": action_cost,
+                    "success": False,
+                    "error_message": f"exception: {e}",
+                })
 
         # Summary
         print(f"[{agent_name}] Execution summary: "
@@ -1200,6 +1352,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         self.logger.log_event({
             "event_type": "conversation_message",
             "round": self.round_num,
+            "actor": self._actor_for(agent),
             "from": agent.subagent_name,
             "to": "Director",
             "content": summary,

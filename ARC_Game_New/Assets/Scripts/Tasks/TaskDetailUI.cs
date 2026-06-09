@@ -504,6 +504,10 @@ public class TaskDetailUI : MonoBehaviour
 
     public void OnChoiceSelected(AgentChoice choice)
     {
+        // A switch is selecting a choice when a *different* one was already active.
+        AgentChoice previous = selectedChoice;
+        bool isSwitch = previous != null && previous != choice;
+
         // Deselect other choices
         foreach (GameObject item in currentConversationItems)
         {
@@ -519,6 +523,11 @@ public class TaskDetailUI : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Selected choice: {choice.choiceText}");
+        GameLogPanel.Instance?.LogUIInteraction("choice",
+            isSwitch ? "choice_switched" : "choice_selected",
+            isSwitch
+                ? $"task={currentTask?.taskTitle} | from=[{previous.choiceId}] {previous.choiceText} | to=[{choice.choiceId}] {choice.choiceText}"
+                : $"task={currentTask?.taskTitle} | choice=[{choice.choiceId}] {choice.choiceText}");
     }
 
     void UpdateActionButtons()
@@ -591,6 +600,11 @@ public class TaskDetailUI : MonoBehaviour
     void OnConfirmButtonClicked()
     {
         if (currentTask == null || TaskSystem.Instance == null) return;
+
+        GameLogPanel.Instance?.LogUIInteraction("choice", "choice_confirm_clicked",
+            selectedChoice != null
+                ? $"task={currentTask.taskTitle} | choice=[{selectedChoice.choiceId}] {selectedChoice.choiceText}"
+                : $"task={currentTask.taskTitle} | choice=none");
 
         if (currentTask.isExpired)
         {

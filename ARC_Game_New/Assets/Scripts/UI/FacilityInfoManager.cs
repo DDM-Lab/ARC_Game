@@ -225,7 +225,7 @@ public class FacilityInfoManager : MonoBehaviour
         isPanelOpen = true;
         
         Debug.Log($"Opened facility panel for: {facility.name}");
-        GameLogPanel.Instance?.LogUIInteraction($"Opened facility panel for: {facility.name}");
+        GameLogPanel.Instance?.LogUIInteraction("game_state", "facility_opened", $"facility={facility.name}");
     }
     
     Vector2 ClampPanelToBounds(Vector2 panelPosition)
@@ -283,7 +283,7 @@ public class FacilityInfoManager : MonoBehaviour
     
     public void CloseFacilityPanel()
     {
-        GameLogPanel.Instance?.LogUIInteraction($"Closed facility panel for: {currentSelectedFacility.name}");
+        GameLogPanel.Instance?.LogUIInteraction("game_state", "facility_closed", $"facility={currentSelectedFacility.name}");
 
         if (facilityInfoPanel != null)
         {

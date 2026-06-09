@@ -196,6 +196,21 @@ public class GameLogPanel : MonoBehaviour
     public void LogError(string message) => AddLogMessage(message, LogMessageType.Error, LogCategory.Player);
     public void LogUIInteraction(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.UI);
 
+    /// <summary>
+    /// Structured UI interaction: logs locally AND forwards a semantic
+    /// ui_interaction event to the router (per-actor unified log), correlated to
+    /// the current click via GuiInteractionRecorder.LastClickSeq. Use this for
+    /// decision-support interactions (open agent conversation, switch officer,
+    /// select/switch a choice package, confirm, open metrics, inspect facility).
+    /// </summary>
+    public void LogUIInteraction(string category, string name, string detail = null)
+    {
+        AddLogMessage(detail != null ? $"{name} | {detail}" : name,
+                      LogMessageType.Normal, LogCategory.UI);
+        WebSocketManager.Instance?.SendClientEvent(
+            category, name, detail, GuiInteractionRecorder.LastClickSeq);
+    }
+
     #endregion
 
     void AddLogMessage(string content, LogMessageType type, LogCategory category)

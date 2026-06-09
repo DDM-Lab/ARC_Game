@@ -92,7 +92,11 @@ public class BuildingSystem : MonoBehaviour
     {
         if (selectedSite != null)
         {
+            string siteName = selectedSite.name;
             CreateBuildingImmediately(selectedSite, buildingType);
+            // Human direct game action (bypasses ActionExecutor / the agent path).
+            GameLogPanel.Instance?.LogUIInteraction("game_action", "construction",
+                $"building={buildingType} | site={siteName}");
             selectedSite.SetSelected(false); // Clear highlight
             selectedSite = null;
         }

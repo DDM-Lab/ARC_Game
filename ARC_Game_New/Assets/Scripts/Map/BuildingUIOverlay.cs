@@ -522,6 +522,9 @@ public class BuildingUIOverlay : MonoBehaviour
                     onConfirm: () => {
                         // This executes when user clicks Confirm
                         building.StartDeconstruction();
+                        // Human direct game action (deconstruction via the UI).
+                        GameLogPanel.Instance?.LogUIInteraction("game_action", "deconstruction",
+                            $"building={building.GetBuildingType()} | site={building.GetOriginalSiteId()}");
                         Debug.Log($"User confirmed deconstruction of {building.name}");
                     },
                     onCancel: () => {

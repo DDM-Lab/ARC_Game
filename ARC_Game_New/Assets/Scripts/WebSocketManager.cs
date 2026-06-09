@@ -798,6 +798,7 @@ public class WebSocketManager : MonoBehaviour
                 + $"\"package_index\":{packageIndex},"
                 + $"\"execution_results\":{executionResultsJson},"
                 + $"\"game_state\":{gameStateJson},"
+                + $"\"click_seq\":{GuiInteractionRecorder.LastClickSeq},"
                 + $"\"timestamp\":\"{System.DateTime.UtcNow:o}\"}}";
         SendRawMessage(msg);
         Debug.Log($"[WS] choice_made sent (agent={agentName}, package={packageIndex})");
@@ -819,12 +820,66 @@ public class WebSocketManager : MonoBehaviour
         {
             to_agent = toAgent,
             content = content,
+            click_seq = GuiInteractionRecorder.LastClickSeq,
             timestamp = (System.DateTime.UtcNow - new System.DateTime(1970, 1, 1)).TotalSeconds
         };
 
         SendRawMessage(JsonUtility.ToJson(msg));
         Debug.Log($"[WS] director_message sent to {toAgent}: {content}");
     }
+
+    // ── Action / interaction logging (per-actor unified log) ─────────
+    // These mirror human UI interactions to the router so they land, actor-tagged,
+    // in the per-session JSONL. Guarded by isConnected so the headless/gym build
+    // (which has no human UI) never emits them.
+
+    /// <summary>
+    /// Send a semantic human UI interaction (Tier-1 ui_interaction): opening an
+    /// agent's conversation, switching officers, selecting/switching a choice
+    /// package, clicking confirm, opening metrics, etc. The raw click coords are
+    /// sent separately by GuiInteractionRecorder; clickSeq joins the two.
+    /// </summary>
+    public void SendClientEvent(string category, string name, string detail, long clickSeq)
+    {
+        if (!isConnected) return;
+        string msg = "{\"type\":\"client_event\",\"actor_kind\":\"human\","
+            + $"\"category\":\"{EscapeJson(category)}\",\"name\":\"{EscapeJson(name)}\","
+            + $"\"payload\":{{\"detail\":\"{EscapeJson(detail ?? string.Empty)}\"}},"
+            + $"\"click_seq\":{clickSeq},"
+            + $"\"timestamp\":\"{System.DateTime.UtcNow:o}\"}}";
+        SendRawMessage(msg);
+    }
+
+    /// <summary>
+    /// Send one raw mouse click (Tier-2 every-click trace) with screen/normalized
+    /// coordinates and the UI element hit. hitName == null means the click landed
+    /// on no UI element (coords-only record).
+    /// </summary>
+    public void SendGuiEvent(long clickSeq, int button,
+        float sx, float sy, float sw, float sh, float nx, float ny,
+        string canvasName, float clx, float cly,
+        string hitName, string hitType, string hitPath)
+    {
+        if (!isConnected) return;
+        string hitJson = hitName == null ? "null"
+            : $"{{\"name\":\"{EscapeJson(hitName)}\",\"type\":\"{EscapeJson(hitType)}\",\"path\":\"{EscapeJson(hitPath)}\"}}";
+        string canvasJson = canvasName == null ? "null"
+            : $"{{\"name\":\"{EscapeJson(canvasName)}\",\"local_x\":{F(clx)},\"local_y\":{F(cly)}}}";
+        string payload = $"{{\"button\":{button},"
+            + $"\"screen\":{{\"x\":{F(sx)},\"y\":{F(sy)},\"w\":{F(sw)},\"h\":{F(sh)}}},"
+            + $"\"normalized\":{{\"x\":{F(nx)},\"y\":{F(ny)}}},"
+            + $"\"canvas\":{canvasJson},\"hit\":{hitJson}}}";
+        string msg = $"{{\"type\":\"gui_event\",\"click_seq\":{clickSeq},"
+            + $"\"payload\":{payload},"
+            + $"\"timestamp\":\"{System.DateTime.UtcNow:o}\"}}";
+        SendRawMessage(msg);
+    }
+
+    // Invariant-culture float formatting so coords never serialize with a comma
+    // decimal separator on non-US locales (which would corrupt the JSON).
+    // (EscapeJson already exists above and is reused here.)
+    private static string F(float v) =>
+        v.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Send request to agent to repropose choices with feedback.
@@ -1194,5 +1249,6 @@ public class DirectorMessage
     public string type = "director_message";
     public string to_agent;
     public string content;
+    public long click_seq = -1;
     public double timestamp;
 }
