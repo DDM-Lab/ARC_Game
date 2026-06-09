@@ -63,6 +63,10 @@ public class PlayerBuildScript
     [MenuItem("Build/Client/WebGL")]
     public static void BuildWebGL()
     {
+        // Full-window, high-DPI template (Assets/WebGLTemplates/ARC) so the game
+        // fills the browser and renders crisply on Retina instead of stretching a
+        // fixed 900x640 canvas. "PROJECT:" namespaces a template under Assets/.
+        PlayerSettings.WebGL.template = "PROJECT:ARC";
         Build("Build/Client/WebGL", BuildTarget.WebGL,
               BuildTargetGroup.WebGL, isStandalone: false);
     }

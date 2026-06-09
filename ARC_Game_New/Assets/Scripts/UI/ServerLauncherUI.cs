@@ -80,6 +80,12 @@ public class ServerLauncherUI : MonoBehaviour
         SetStartEnabled(false);
 
 #if UNITY_WEBGL && !UNITY_EDITOR
+        // By default Unity captures ALL keyboard input at the document level and
+        // preventDefault()s it, so a DOM <input> (our key-entry overlay) never
+        // shows typed/pasted characters. Turning this off makes Unity grab the
+        // keyboard only while the game canvas is focused — the overlay works, and
+        // gameplay/keyboard resume the moment the user clicks back on the canvas.
+        WebGLInput.captureAllKeyboardInput = false;
         ClipboardInit();   // enable Cmd/Ctrl+V paste of the API key in the browser
 #endif
 

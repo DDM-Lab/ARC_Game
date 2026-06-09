@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>{{{ PRODUCT_NAME }}}</title>
+    <style>
+      /* Fixed, centered, high-DPI canvas at the game's native 1280x910 (1.4:1).
+         Unity keeps the WebGL render target matched to the canvas' CSS size *
+         window.devicePixelRatio (matchWebGLToCanvasSize, on by default), so the
+         box is crisp on Retina without stretching the UI to the window shape.
+         max-* caps keep it on-screen on smaller displays. */
+      html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0c10; }
+      body { display: flex; align-items: center; justify-content: center; }
+      #unity-container { position: relative; width: 1280px; height: 910px; max-width: 100vw; max-height: 100vh; }
+      #unity-canvas { width: 1280px; height: 910px; max-width: 100vw; max-height: 100vh; display: block; background: #0b0c10; }
+      #unity-loading-bar { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none; }
+      #unity-progress-bar-empty { width: 240px; height: 12px; background: #2a2d36; border-radius: 6px; overflow: hidden; }
+      #unity-progress-bar-full { width: 0%; height: 100%; background: #3472da; transition: width .1s ease; }
+      #unity-footer { position: absolute; right: 12px; bottom: 10px; display: flex; align-items: center; gap: 10px; }
+      #unity-build-title { color: #6b7280; font: 12px sans-serif; }
+      #unity-fullscreen-button { width: 26px; height: 26px; background: rgba(255,255,255,.14); border-radius: 5px; cursor: pointer; }
+      #unity-fullscreen-button:hover { background: rgba(255,255,255,.28); }
+      #unity-warning { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); }
+    </style>
+  </head>
+  <body>
+    <div id="unity-container">
+      <canvas id="unity-canvas" tabindex="-1"></canvas>
+      <div id="unity-loading-bar">
+        <div id="unity-progress-bar-empty"><div id="unity-progress-bar-full"></div></div>
+      </div>
+      <div id="unity-warning"></div>
+      <div id="unity-footer">
+        <div id="unity-build-title">{{{ PRODUCT_NAME }}}</div>
+        <div id="unity-fullscreen-button" title="Fullscreen"></div>
+      </div>
+    </div>
+    <script>
+      var canvas = document.querySelector("#unity-canvas");
+      var loadingBar = document.querySelector("#unity-loading-bar");
+      var progressBarFull = document.querySelector("#unity-progress-bar-full");
+      var fullscreenButton = document.querySelector("#unity-fullscreen-button");
+      var warningBanner = document.querySelector("#unity-warning");
+
+      function unityShowBanner(msg, type) {
+        var div = document.createElement('div');
+        div.innerHTML = msg;
+        warningBanner.appendChild(div);
+        if (type == 'error') div.style = 'background: #b00020; color:#fff; padding: 10px;';
+        else { if (type == 'warning') div.style = 'background: #f0c000; padding: 10px;';
+          setTimeout(function () { warningBanner.removeChild(div); }, 5000); }
+      }
+
+      var buildUrl = "Build";
+      var config = {
+        dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}",
+        frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}",
+        codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "{{{ COMPANY_NAME }}}",
+        productName: "{{{ PRODUCT_NAME }}}",
+        productVersion: "{{{ PRODUCT_VERSION }}}",
+        showBanner: unityShowBanner,
+      };
+
+      loadingBar.style.display = "block";
+      var script = document.createElement("script");
+      script.src = buildUrl + "/{{{ LOADER_FILENAME }}}";
+      script.onload = () => {
+        createUnityInstance(canvas, config, (p) => { progressBarFull.style.width = 100 * p + "%"; })
+          .then((unityInstance) => {
+            loadingBar.style.display = "none";
+            fullscreenButton.onclick = () => unityInstance.SetFullscreen(1);
+          })
+          .catch((message) => { alert(message); });
+      };
+      document.body.appendChild(script);
+    </script>
+  </body>
+</html>
