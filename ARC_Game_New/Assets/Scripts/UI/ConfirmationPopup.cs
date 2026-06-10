@@ -76,6 +76,15 @@ public class ConfirmationPopup : MonoBehaviour
     /// <param name="title">Optional title for the popup</param>
     public void ShowPopup(string message, Action onConfirm, Action onCancel = null, string title = "Confirm Action")
     {
+        // Headless / gym mode has no one to click "Confirm". Auto-accept so that
+        // confirmation-gated actions (construction, deconstruction, first-time
+        // tutorial prompts) proceed instead of silently stalling.
+        if (Application.isBatchMode)
+        {
+            onConfirm?.Invoke();
+            return;
+        }
+
         // Store callbacks
         onConfirmCallback = onConfirm;
         onCancelCallback = onCancel;

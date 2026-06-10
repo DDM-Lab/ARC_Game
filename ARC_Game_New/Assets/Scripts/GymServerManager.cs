@@ -236,6 +236,9 @@ public class GymServerManager : MonoBehaviour
                 case "execute_action":
                     return HandleExecuteAction(request);
 
+                case "advance_time":
+                    return HandleAdvanceTime();
+
                 default:
                     return JsonUtility.ToJson(new GymResponse
                     {
@@ -389,6 +392,38 @@ public class GymServerManager : MonoBehaviour
             type = "error",
             error = "Timeout waiting for action execution"
         });
+    }
+
+    // Advance the simulation by exactly one round (time segment), running the
+    // real dynamics decoupled from wall-clock (see GlobalClock.GymAdvanceRound).
+    // Blocks until the round completes, then returns the updated game state.
+    string HandleAdvanceTime()
+    {
+        if (GlobalClock.Instance == null)
+        {
+            return JsonUtility.ToJson(new GymResponse { type = "error", error = "GlobalClock not found" });
+        }
+
+        lock (actionQueueLock)
+        {
+            mainThreadActions.Enqueue(() => GlobalClock.Instance.GymAdvanceRound());
+        }
+
+        // Wait for the round to actually start, then finish. With captureDeltaTime
+        // the window runs as fast as the CPU renders frames (sub-second), but allow
+        // generous headroom in case of slow hardware.
+        bool sawRunning = false;
+        int ticks = 0;
+        while (ticks < 6000) // up to 60s safety cap
+        {
+            bool running = GlobalClock.Instance.IsSimulationRunning();
+            if (running) sawRunning = true;
+            else if (sawRunning) break; // started then ended -> round complete
+            Thread.Sleep(10);
+            ticks++;
+        }
+
+        return HandleGetGameState();
     }
 
     void OnApplicationQuit()

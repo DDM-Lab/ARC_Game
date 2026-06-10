@@ -164,6 +164,9 @@ class ARCGameGymEnv(gym.Env):
                 self.sock.settimeout(5.0)
                 self.sock.connect(("localhost", self.unity_port))
                 self.connected = True
+                # Raise the per-request timeout now that we're connected: a step
+                # advances a full simulation round server-side.
+                self.sock.settimeout(60.0)
                 print(f"✅ Connected to Unity Gym Server")
                 return
 
@@ -316,14 +319,18 @@ class ARCGameGymEnv(gym.Env):
                 print(f"❌ Unexpected response type: {response.get('type')}")
                 break
 
-        # Request updated game state
-        response = self._send_request({"type": "get_game_state"})
+        # Advance the simulation by one round. All actions for this turn have been
+        # executed above; advancing runs the round's dynamics (construction
+        # completion, deliveries, demand, satisfaction) decoupled from real time,
+        # and returns the post-advance game state.
+        response = self._send_request({"type": "advance_time"})
 
         if response.get("type") != "game_state":
-            raise RuntimeError("Failed to get game state after action execution")
+            raise RuntimeError("Failed to advance simulation / get game state")
 
         game_state_json = response.get("game_state", "{}")
         self.game_state = json.loads(game_state_json)
+        self.current_round += 1
 
         # Calculate reward (satisfaction delta)
         sat_budget = self.game_state.get("satisfactionAndBudget", {})

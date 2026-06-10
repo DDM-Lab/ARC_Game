@@ -111,8 +111,13 @@ public class ActionExecutor : MonoBehaviour
             return Failure(action.action_id, $"Insufficient budget (need ${action.cost}, have ${currentBudget})");
         }
 
-        // Execute construction
-        buildingSystem.CreateBuildingImmediately(site, buildingType);
+        // Execute construction — report a real failure if nothing was built
+        // (e.g. site unavailable, no prefab) instead of silently succeeding.
+        bool built = buildingSystem.CreateBuildingImmediately(site, buildingType);
+        if (!built)
+        {
+            return Failure(action.action_id, $"Construction did not complete for {buildingType} at site {p.site_id}");
+        }
 
         if (logActions)
         {

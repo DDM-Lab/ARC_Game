@@ -316,6 +316,41 @@ public class GlobalClock : MonoBehaviour
         StartCoroutine(SimulationCoroutine(playerWaitTime));
     }
 
+    // ── Headless / gym control ───────────────────────────────────
+    // (IsSimulationRunning() already exists below for querying round state.)
+
+    // When true, the gym driver runs simulation windows decoupled from real
+    // time via Time.captureDeltaTime, so a round completes as fast as the CPU
+    // can render frames (no wall-clock wait) while staying deterministic.
+    private bool gymInstantMode = false;
+    private const float GYM_FIXED_DELTA = 0.05f; // game-seconds advanced per frame
+
+    /// <summary>
+    /// Advance exactly one round for the gym/headless driver. Runs the real
+    /// simulation window (so construction completes and deliveries/demand/
+    /// satisfaction update via the normal deltaTime + end-of-round events),
+    /// rolling over to the next day when a day finishes. Bypasses the
+    /// player-facing confirmation popups. No-op if a round is already running.
+    /// </summary>
+    public void GymAdvanceRound()
+    {
+        if (isSimulationRunning) return;
+        // Run as fast as possible, decoupled from wall-clock: each frame advances
+        // GYM_FIXED_DELTA game-seconds and the engine doesn't wait for real time.
+        gymInstantMode = true;
+        Time.captureDeltaTime = GYM_FIXED_DELTA;
+        currentTimeSpeed = TimeSpeed.Normal; // captureDeltaTime drives speed now
+        // Remove any frame-rate cap / vsync so frames run as fast as the CPU allows.
+        QualitySettings.vSyncCount = 0;
+        Application.targetFrameRate = -1;
+        // If the previous round completed a day (segment hit 4), roll over first.
+        if (currentTimeSegment >= 4)
+        {
+            ProceedToNextDay();
+        }
+        StartSimulation();
+    }
+
     void RequestLLMAgentDecision()
     {
         // Check if WebSocket is connected
@@ -365,8 +400,15 @@ public class GlobalClock : MonoBehaviour
         
         while (elapsed < playerWaitTime)
         {
-            // Use unscaledDeltaTime when paused (timeScale = 0), use deltaTime when running
-            if (Time.timeScale > 0)
+            // Gym instant mode: count Time.deltaTime, which Time.captureDeltaTime
+            // overrides — so the window completes in playerWaitTime/captureDeltaTime
+            // frames that render back-to-back (no real-time wait). Normal play uses
+            // unscaledDeltaTime so the wait tracks wall-clock as before.
+            if (gymInstantMode)
+            {
+                elapsed += Time.deltaTime;
+            }
+            else if (Time.timeScale > 0)
             {
                 elapsed += Time.unscaledDeltaTime;
             }
@@ -380,10 +422,13 @@ public class GlobalClock : MonoBehaviour
     {
         isSimulationRunning = false;
         currentState = TimeState.Paused;
-        
+
         // Pause Unity's time again for player interaction phase
         Time.timeScale = 0f;
-        
+        // Gym instant mode: stop decoupled time so the paused phase between rounds
+        // doesn't keep advancing game-time. GymAdvanceRound() re-arms it next round.
+        if (gymInstantMode) Time.captureDeltaTime = 0f;
+
         // Advance to next time segment
         AdvanceTimeSegment();
 

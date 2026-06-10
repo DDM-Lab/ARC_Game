@@ -102,18 +102,25 @@ public class BuildingSystem : MonoBehaviour
         }
     }
     
-    public void CreateBuildingImmediately(AbandonedSite site, BuildingType buildingType)
+    public bool CreateBuildingImmediately(AbandonedSite site, BuildingType buildingType)
     {
         if (!site.IsAvailable())
         {
             Debug.LogWarning($"Site {site.GetId()} is not available for construction");
             GameLogPanel.Instance.LogError($"Site {site.GetId()} is not available for construction but was attempted to build {buildingType}");
-            return;
+            return false;
         }
 
         // Check if this is the first time constructing
         if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstConstruct())
         {
+            // Headless/gym: no popup to confirm — complete the tutorial gate and
+            // build synchronously so we can report a real success/failure.
+            if (Application.isBatchMode)
+            {
+                FirstTimeActionTracker.Instance.MarkConstructCompleted();
+                return PerformConstruction(site, buildingType);
+            }
             if (ConfirmationPopup.Instance != null)
             {
                 ConfirmationPopup.Instance.ShowPopup(
@@ -124,16 +131,16 @@ public class BuildingSystem : MonoBehaviour
                     },
                     title: $"Convert into {buildingType}?"
                 );
-                return;
+                return true; // interactive UI: construction proceeds on confirm
             }
         }
-        PerformConstruction(site, buildingType);
+        return PerformConstruction(site, buildingType);
     }
 
-    // Actual construction logic
-    private void PerformConstruction(AbandonedSite site, BuildingType buildingType)
+    // Actual construction logic. Returns true if the building was created.
+    private bool PerformConstruction(AbandonedSite site, BuildingType buildingType)
     {
-        
+
         // Get the prefab for the building type
         GameObject buildingPrefab = GetBuildingPrefab(buildingType);
 
@@ -181,11 +188,13 @@ public class BuildingSystem : MonoBehaviour
 
             Debug.Log($"You created {buildingType} at AbandonedSite_{site.GetId()} - construction started");
             GameLogPanel.Instance.LogPlayerAction($"You created {buildingType} at AbandonedSite_{site.GetId()} - construction started");
+            return true;
         }
         else
         {
             Debug.LogError($"No prefab found for building type: {buildingType}");
             GameLogPanel.Instance.LogError($"No prefab found for building type: {buildingType}");
+            return false;
         }
     }
 
