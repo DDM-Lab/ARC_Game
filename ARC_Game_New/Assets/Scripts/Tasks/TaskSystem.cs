@@ -2296,6 +2296,14 @@ public class TaskSystem : MonoBehaviour
 
     private TaskContext GetTaskContextFromTask(GameTask task)
     {
+        List<TaskChoiceBrief> choices = null;
+        if (task.agentChoices != null && task.agentChoices.Count > 0)
+        {
+            choices = new List<TaskChoiceBrief>();
+            foreach (AgentChoice c in task.agentChoices)
+                choices.Add(new TaskChoiceBrief { choiceId = c.choiceId, choiceText = c.choiceText });
+        }
+
         return new TaskContext
         {
             taskId = task.taskId,
@@ -2303,7 +2311,8 @@ public class TaskSystem : MonoBehaviour
             taskDescription = task.description,
             taskType = task.taskType.ToString(),
             affectedFacility = task.affectedFacility,
-            roundsRemaining = task.roundsRemaining
+            roundsRemaining = task.roundsRemaining,
+            choices = choices
         };
     }
 

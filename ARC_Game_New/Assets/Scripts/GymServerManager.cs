@@ -239,6 +239,9 @@ public class GymServerManager : MonoBehaviour
                 case "advance_time":
                     return HandleAdvanceTime();
 
+                case "select_task_choice":
+                    return HandleSelectTaskChoice(request);
+
                 default:
                     return JsonUtility.ToJson(new GymResponse
                     {
@@ -394,6 +397,49 @@ public class GymServerManager : MonoBehaviour
         });
     }
 
+    // Select a choice on an active task (the decision lever for choice tasks)
+    // and complete it via the same logic the UI uses.
+    string HandleSelectTaskChoice(GymRequest request)
+    {
+        string result = null;
+        bool completed = false;
+
+        lock (actionQueueLock)
+        {
+            mainThreadActions.Enqueue(() =>
+            {
+                try
+                {
+                    TaskDetailUI ui = FindObjectOfType<TaskDetailUI>();
+                    if (ui == null)
+                    {
+                        result = JsonUtility.ToJson(new GymResponse { type = "error", error = "TaskDetailUI not found" });
+                    }
+                    else
+                    {
+                        bool ok = ui.SelectTaskChoiceHeadless(request.taskId, request.choiceId);
+                        result = JsonUtility.ToJson(new GymResponse
+                        {
+                            type = "action_result",
+                            success = ok,
+                            error = ok ? null : $"Task {request.taskId} or choice {request.choiceId} not found"
+                        });
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[GymServer] Error selecting task choice: {e}");
+                    result = JsonUtility.ToJson(new GymResponse { type = "error", error = e.Message });
+                }
+                finally { completed = true; }
+            });
+        }
+
+        int timeout = 0;
+        while (!completed && timeout < 500) { Thread.Sleep(10); timeout++; }
+        return result ?? JsonUtility.ToJson(new GymResponse { type = "error", error = "Timeout selecting task choice" });
+    }
+
     // Advance the simulation by exactly one round (time segment), running the
     // real dynamics decoupled from wall-clock (see GlobalClock.GymAdvanceRound).
     // Blocks until the round completes, then returns the updated game state.
@@ -471,8 +517,10 @@ public class GymServerManager : MonoBehaviour
 [Serializable]
 public class GymRequest
 {
-    public string type;          // "get_game_state" or "execute_action"
+    public string type;          // "get_game_state" | "execute_action" | "advance_time" | "select_task_choice"
     public string action;        // JSON string of GameAction (for execute_action)
+    public int taskId = -1;      // for select_task_choice
+    public int choiceId = -1;    // for select_task_choice
 }
 
 [Serializable]

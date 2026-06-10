@@ -715,6 +715,28 @@ public class TaskDetailUI : MonoBehaviour
         if (categoryManager != null) categoryManager.RefreshTaskList();
     }
 
+    /// <summary>
+    /// Headless / gym entry point: select a choice on an active task by id and
+    /// complete it, reusing the exact CompleteTaskAction path (apply impacts +
+    /// trigger delivery + complete) the UI uses. Returns false if the task or
+    /// choice can't be found. No UI interaction required.
+    /// </summary>
+    public bool SelectTaskChoiceHeadless(int taskId, int choiceId)
+    {
+        if (TaskSystem.Instance == null || TaskSystem.Instance.activeTasks == null) return false;
+        GameTask task = TaskSystem.Instance.activeTasks.FirstOrDefault(t => t.taskId == taskId);
+        if (task == null) return false;
+        AgentChoice choice = task.agentChoices != null
+            ? task.agentChoices.FirstOrDefault(c => c.choiceId == choiceId)
+            : null;
+        if (choice == null) return false;
+
+        currentTask = task;
+        selectedChoice = choice;
+        CompleteTaskAction();
+        return true;
+    }
+
     void ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)
     {
         switch (choice.deliveryCargoType)

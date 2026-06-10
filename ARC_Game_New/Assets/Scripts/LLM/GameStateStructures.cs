@@ -15,6 +15,16 @@ public class TaskContext
     public string taskType;
     public string affectedFacility;
     public int roundsRemaining;
+    // Choices the task offers, if any (bare minimum: id + text). Select one via
+    // the gym 'select_task_choice' action / the UI. Empty for non-choice tasks.
+    public List<TaskChoiceBrief> choices;
+}
+
+[System.Serializable]
+public class TaskChoiceBrief
+{
+    public int choiceId;
+    public string choiceText;
 }
 
 [System.Serializable]

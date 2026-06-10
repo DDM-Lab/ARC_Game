@@ -380,6 +380,21 @@ class ARCGameGymEnv(gym.Env):
             print(f"⚠️  Failed to parse action: '{action_str}'")
             return []
 
+    def select_task_choice(self, task_id: int, choice_id: int) -> bool:
+        """Answer a choice task: select choice_id on task_id and complete it.
+
+        This is the decision lever for choice tasks (e.g. Food Requests), applying
+        the choice's impacts + delivery via the same path the UI uses. Distinct
+        from the construction/worker/transfer GameActions in step()'s action list.
+        Returns True on success.
+        """
+        response = self._send_request({
+            "type": "select_task_choice",
+            "taskId": int(task_id),
+            "choiceId": int(choice_id),
+        })
+        return bool(response.get("success", False))
+
     def get_valid_actions(self) -> List[Dict[str, Any]]:
         """Get list of currently valid actions"""
         return self.valid_actions
