@@ -1171,7 +1171,7 @@ public class TaskSystem : MonoBehaviour
             // Apply penalties for incomplete emergency/demand tasks
             if (task.status == TaskStatus.Incomplete)
             {
-                //ApplyTaskPenalties(task);
+                ApplyTaskPenalties(task);
             }
 
             OnTaskExpired?.Invoke(task);
@@ -1249,7 +1249,7 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            //ApplyTaskPenalties(task);
+            ApplyTaskPenalties(task);
             OnTaskCompleted?.Invoke(task);
 
             if (showDebugInfo)
