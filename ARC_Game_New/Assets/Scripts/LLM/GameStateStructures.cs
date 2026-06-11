@@ -41,6 +41,30 @@ public class GameStatePayload
     public DailyMetrics dailyMetrics;
     public WorkforceState workforceState;
     public ConstructionState constructionState;
+    public RewardMetrics rewardMetrics;
+}
+
+// Raw cumulative quantities for the (Python-side) reward function. Unity reports
+// facts only; scoring/weighting/clamping happens in Python.
+[System.Serializable]
+public class RewardMetrics
+{
+    // Needs-met (Food/Lodging Demand/Emergency tasks): fulfilled / resolved
+    public int foodResolved;
+    public int foodFulfilled;
+    public int lodgingResolved;
+    public int lodgingFulfilled;
+    // Worker allocation summed across rounds (person-rounds)
+    public long cumWorkingWorkers;
+    public long cumTrainingWorkers;
+    public long cumIdleWorkers;
+    public int roundsCompleted;
+    public int daysCompleted;
+    public int totalWorkers;        // current present workforce
+    // Cumulative spend by service category
+    public int foodSpend;
+    public int lodgingSpend;
+    public int workerSpend;
 }
 
 [System.Serializable]

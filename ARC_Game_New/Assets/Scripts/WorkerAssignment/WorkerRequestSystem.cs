@@ -277,7 +277,7 @@ public class WorkerRequestSystem : MonoBehaviour
         }
         
         // Deduct budget
-        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Requesting {workersToRequest} {workerType.ToString().ToLower()} responders");
+        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $"Requesting {workersToRequest} {workerType.ToString().ToLower()} responders");
 
         // Start worker request
         StartWorkerRequest(workersToRequest, workerType);

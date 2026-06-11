@@ -63,6 +63,7 @@ public class MotelCostManager : MonoBehaviour
 
         SatisfactionAndBudget.Instance.RemoveBudget(
             (int)totalCost,
+            SatisfactionAndBudget.SpendCategory.Lodging,
             $"Motel housing: {residents} residents × ${costPerPersonPerDay:F0}/day");
 
         // Toast notification

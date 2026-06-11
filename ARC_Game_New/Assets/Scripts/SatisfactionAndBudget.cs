@@ -384,6 +384,30 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         AddBudget(-amount, description);
     }
+
+    // ── Cumulative spend by category (for the cost-efficiency reward metric) ──
+    public enum SpendCategory { Other, Food, Lodging, Worker }
+    private int cumFoodSpend = 0, cumLodgingSpend = 0, cumWorkerSpend = 0;
+    public int CumulativeFoodSpend => cumFoodSpend;
+    public int CumulativeLodgingSpend => cumLodgingSpend;
+    public int CumulativeWorkerSpend => cumWorkerSpend;
+
+    /// <summary>
+    /// Spend attributed to a service category so Python can compute cost
+    /// efficiency. Food = kitchen construction + food-choice costs; Lodging =
+    /// shelter construction + motel charges + lodging-choice costs; Worker =
+    /// request + training costs. Everything else stays Other (excluded).
+    /// </summary>
+    public void RemoveBudget(int amount, SpendCategory category, string description = "")
+    {
+        if (amount > 0)
+        {
+            if (category == SpendCategory.Food) cumFoodSpend += amount;
+            else if (category == SpendCategory.Lodging) cumLodgingSpend += amount;
+            else if (category == SpendCategory.Worker) cumWorkerSpend += amount;
+        }
+        AddBudget(-amount, description);
+    }
     
     /// <summary>
     /// Add small amount to budget

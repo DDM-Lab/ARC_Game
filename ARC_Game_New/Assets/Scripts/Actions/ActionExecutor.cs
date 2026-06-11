@@ -147,7 +147,7 @@ public class ActionExecutor : MonoBehaviour
                 {
                     workerSystem.CreateUntrainedWorker();
                 }
-                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, $"Hired {p.quantity} untrained workers");
+                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Hired {p.quantity} untrained workers");
 
                 if (logActions)
                 {
@@ -160,7 +160,7 @@ public class ActionExecutor : MonoBehaviour
                 {
                     workerSystem.CreateTrainedWorker();
                 }
-                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, $"Hired {p.quantity} trained workers");
+                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Hired {p.quantity} trained workers");
 
                 if (logActions)
                 {
@@ -186,7 +186,7 @@ public class ActionExecutor : MonoBehaviour
                     workerSystem.CreateTrainedWorker();
                 }
 
-                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, $"Trained {p.quantity} workers");
+                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Trained {p.quantity} workers");
 
                 if (logActions)
                 {

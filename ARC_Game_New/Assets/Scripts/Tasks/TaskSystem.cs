@@ -1076,6 +1076,7 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
+            RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: true);
             OnTaskCompleted?.Invoke(task);
 
             if (taskCenterUI != null && taskCenterUI.taskCenterPanel.activeInHierarchy)
@@ -1174,6 +1175,7 @@ public class TaskSystem : MonoBehaviour
                 ApplyTaskPenalties(task);
             }
 
+            RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
             OnTaskExpired?.Invoke(task);
 
             if (showDebugInfo)
@@ -1250,6 +1252,7 @@ public class TaskSystem : MonoBehaviour
             completedTasks.Add(task);
 
             ApplyTaskPenalties(task);
+            RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
             OnTaskCompleted?.Invoke(task);
 
             if (showDebugInfo)
@@ -2233,6 +2236,9 @@ public class TaskSystem : MonoBehaviour
 
         // All Active Tasks
         state.allActiveTasks = GetAllActiveTaskContexts();
+
+        // Reward metrics (raw cumulative quantities; Python computes the score)
+        state.rewardMetrics = RewardMetricsTracker.Instance?.BuildPayload();
 
         // Map State
         state.mapState = GetMapState();

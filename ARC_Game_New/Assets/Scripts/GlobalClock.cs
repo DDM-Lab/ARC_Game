@@ -429,6 +429,9 @@ public class GlobalClock : MonoBehaviour
         // doesn't keep advancing game-time. GymAdvanceRound() re-arms it next round.
         if (gymInstantMode) Time.captureDeltaTime = 0f;
 
+        // Accumulate per-round reward metrics (worker allocation, rounds).
+        RewardMetricsTracker.Instance?.OnRoundEnded();
+
         // Advance to next time segment
         AdvanceTimeSegment();
 

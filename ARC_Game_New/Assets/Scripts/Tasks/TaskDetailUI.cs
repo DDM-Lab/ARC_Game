@@ -1570,6 +1570,15 @@ public class TaskDetailUI : MonoBehaviour
 
     void ShowAgentErrorMessage(string errorText)
     {
+        // Headless / gym: don't render conversation UI (typing effects, message
+        // prefabs, etc. NRE without an active panel). Log and bail so the error
+        // path (e.g. a delivery that can't be sourced) fails gracefully.
+        if (Application.isBatchMode || agentMessagePrefab == null || conversationContent == null)
+        {
+            GameLogPanel.Instance?.LogTaskEvent($"[TaskDetail] {errorText}");
+            return;
+        }
+
         // Create a temporary agent message to show the error
         GameObject errorMessageItem = Instantiate(agentMessagePrefab, conversationContent);
         AgentMessageUI messageUI = errorMessageItem.GetComponent<AgentMessageUI>();
@@ -2313,9 +2322,14 @@ public class TaskDetailUI : MonoBehaviour
                         }
                         else
                         {
-                            // Costs are always immediate
+                            // Costs are always immediate. Attribute to the task's
+                            // service category (food vs lodging) for cost-efficiency.
+                            var choiceCat = currentTask.taskTag == TaskTag.Food ? SatisfactionAndBudget.SpendCategory.Food
+                                          : currentTask.taskTag == TaskTag.Lodging ? SatisfactionAndBudget.SpendCategory.Lodging
+                                          : SatisfactionAndBudget.SpendCategory.Other;
                             SatisfactionAndBudget.Instance.RemoveBudget(
                                 -(int)impact.value,
+                                choiceCat,
                                 $"Task [{currentTask.taskTitle}] cost");
                             ToastManager.ShowToast(
                                 $"Budget decreased by ${-impact.value:N0}",

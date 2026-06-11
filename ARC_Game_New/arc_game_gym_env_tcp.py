@@ -45,6 +45,72 @@ sys.path.append(str(Path(__file__).parent))
 from action_enumerator import ActionEnumerator
 
 
+# ── Reward weights (TUNE THESE) ───────────────────────────────────────────────
+# All scoring lives here in Python so it can be retuned without a Unity rebuild.
+# Satisfaction is higher-better; Cost-Efficiency is lower-better and is SUBTRACTED.
+REWARD_WEIGHTS = {
+    # Satisfaction (needs-met ratios are clamped to [0,1])
+    "w_food": 1.0,
+    "w_lodging": 1.0,
+    "w_workeruse": 1.0,
+    # Worker-use blend (utilization > training > idle; idle = 0 per design)
+    "w_working": 1.0,
+    "w_training": 0.5,
+    "w_idle": 0.0,
+    # Cost-efficiency ($ per unit service). Small weights bring $/service into the
+    # same scale as satisfaction; each cost term is capped (NOT clamped to 1).
+    "w_food_cost": 0.0002,
+    "w_lodging_cost": 0.0002,
+    "w_worker_cost": 0.0002,
+    "cost_term_cap": 1.0,   # max contribution of any single cost term
+}
+
+
+def _clamp01(x: float) -> float:
+    return 0.0 if x < 0 else (1.0 if x > 1.0 else x)
+
+
+def compute_score(rm: dict, w: dict = REWARD_WEIGHTS):
+    """Compute (satisfaction, cost_efficiency, score) from Unity's rewardMetrics.
+
+    score = satisfaction - cost_efficiency. The per-step reward is the delta of
+    score between rounds (telescopes to the final score).
+    """
+    if not rm:
+        return 0.0, 0.0, 0.0
+
+    def ratio(num, den):
+        return (num / den) if den else 0.0
+
+    # ── Satisfaction (higher better) ──
+    food = _clamp01(ratio(rm.get("foodFulfilled", 0), rm.get("foodResolved", 0))) * w["w_food"]
+    lodging = _clamp01(ratio(rm.get("lodgingFulfilled", 0), rm.get("lodgingResolved", 0))) * w["w_lodging"]
+
+    days = max(rm.get("daysCompleted", 1), 1)
+    total_workers = max(rm.get("totalWorkers", 0), 1)
+    worker_capacity = days * total_workers
+    worker_use = _clamp01(
+        (w["w_working"] * rm.get("cumWorkingWorkers", 0)
+         + w["w_training"] * rm.get("cumTrainingWorkers", 0)
+         + w["w_idle"] * rm.get("cumIdleWorkers", 0)) / worker_capacity
+    ) * w["w_workeruse"]
+
+    satisfaction = food + lodging + worker_use
+
+    # ── Cost-efficiency (lower better; capped, not clamped-to-1) ──
+    def cost_term(spend, service, weight):
+        # service==0 with spend>0 => maximally inefficient => hits the cap.
+        val = (spend / max(service, 1)) * weight
+        return min(val, w["cost_term_cap"])
+
+    c_food = cost_term(rm.get("foodSpend", 0), rm.get("foodFulfilled", 0), w["w_food_cost"])
+    c_lodging = cost_term(rm.get("lodgingSpend", 0), rm.get("lodgingFulfilled", 0), w["w_lodging_cost"])
+    c_worker = cost_term(rm.get("workerSpend", 0), rm.get("cumWorkingWorkers", 0), w["w_worker_cost"])
+    cost_efficiency = c_food + c_lodging + c_worker
+
+    return satisfaction, cost_efficiency, satisfaction - cost_efficiency
+
+
 class ARCGameGymEnv(gym.Env):
     """
     Gymnasium environment for ARC Game using TCP socket communication
@@ -246,6 +312,9 @@ class ARCGameGymEnv(gym.Env):
         sat_budget = self.game_state.get("satisfactionAndBudget", {})
         self.previous_satisfaction = float(sat_budget.get("satisfaction", 50.0))
 
+        # Composite reward baseline (Satisfaction - CostEfficiency); reward is its delta.
+        _, _, self.previous_score = compute_score(self.game_state.get("rewardMetrics") or {})
+
         # Enumerate valid actions
         self.action_enumerator = ActionEnumerator(self.game_state)
         self.valid_actions = self.action_enumerator.enumerate_all_actions()
@@ -332,11 +401,18 @@ class ARCGameGymEnv(gym.Env):
         self.game_state = json.loads(game_state_json)
         self.current_round += 1
 
-        # Calculate reward (satisfaction delta)
+        # Composite reward: per-step delta of (Satisfaction - CostEfficiency),
+        # computed in Python from Unity's raw rewardMetrics (telescopes to the
+        # final score over the episode). Raw satisfaction delta kept in info.
         sat_budget = self.game_state.get("satisfactionAndBudget", {})
         current_satisfaction = float(sat_budget.get("satisfaction", 0.0))
-        reward = current_satisfaction - self.previous_satisfaction
+        satisfaction_delta = current_satisfaction - self.previous_satisfaction
         self.previous_satisfaction = current_satisfaction
+
+        satisfaction_score, cost_efficiency, score = compute_score(
+            self.game_state.get("rewardMetrics") or {})
+        reward = score - getattr(self, "previous_score", 0.0)
+        self.previous_score = score
 
         # Re-enumerate valid actions
         self.action_enumerator = ActionEnumerator(self.game_state)
@@ -354,7 +430,12 @@ class ARCGameGymEnv(gym.Env):
             "segment": session.get("currentTimeSegment", 0),
             "budget": sat_budget.get("budget", 0.0),
             "satisfaction": current_satisfaction,
-            "satisfaction_delta": reward,
+            "satisfaction_delta": satisfaction_delta,
+            "reward": reward,
+            "score": score,
+            "satisfaction_score": satisfaction_score,
+            "cost_efficiency": cost_efficiency,
+            "reward_metrics": self.game_state.get("rewardMetrics"),
             "executed_actions": [a.get("description", "") for a in executed_actions],
             "execution_results": execution_results,
             "valid_action_count": len(self.valid_actions),

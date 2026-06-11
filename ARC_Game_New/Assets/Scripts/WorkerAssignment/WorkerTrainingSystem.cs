@@ -192,7 +192,7 @@ public class WorkerTrainingSystem : MonoBehaviour
             return;
         }
         
-        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Training {workersToTrain} responders");
+        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $"Training {workersToTrain} responders");
         StartWorkerTraining(workersToTrain);
     }
     
