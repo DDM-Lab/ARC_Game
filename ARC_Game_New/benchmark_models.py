@@ -73,16 +73,31 @@ def chat(client, model, messages, max_tokens=2000):
     return content, (rtrace if isinstance(rtrace, str) else None)
 
 
-def ask(client, model, state):
-    """Return (decision_dict, raw_content, reasoning_trace). raw_content is the full
-    visible response (kept verbatim so we can inspect any prose/think the model emits)."""
+def _parse_decision(content):
+    """Lenient JSON extraction from an LLM response. Models (esp. gemini) sometimes
+    wrap JSON in code fences or emit trailing commas; a single malformed response
+    should degrade to a no-op round, never crash the episode."""
     import re
+    m = re.search(r"\{.*\}", content or "", re.S)
+    if not m:
+        return {"choices": [], "actions": []}, False
+    raw = m.group(0)
+    for candidate in (raw, re.sub(r",\s*([}\]])", r"\1", raw)):  # try as-is, then strip trailing commas
+        try:
+            return json.loads(candidate), True
+        except Exception:
+            continue
+    return {"choices": [], "actions": []}, False
+
+
+def ask(client, model, state):
+    """Return (decision_dict, raw_content, reasoning_trace, parsed_ok). raw_content is
+    the full visible response (kept verbatim so we can inspect any prose/think emitted)."""
     content, rtrace = chat(client, model, [
         {"role": "system", "content": smoke.SYSTEM_PROMPT},
         {"role": "user", "content": "State:\n" + json.dumps(state) + "\n\nJSON decision:"}])
-    m = re.search(r"\{.*\}", content, re.S)
-    dec = json.loads(m.group(0)) if m else {"choices": [], "actions": []}
-    return dec, content, rtrace
+    dec, ok = _parse_decision(content)
+    return dec, content, rtrace, ok
 
 
 # ── One episode ─────────────────────────────────────────────────────────────
@@ -115,8 +130,12 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                 dec = {"choices": [], "actions": []}            # no-op
             else:
                 try:
-                    dec, raw, rtrace = ask(client, model, state)
+                    dec, raw, rtrace, parsed_ok = ask(client, model, state)
+                    if not parsed_ok:
+                        # one unparseable response -> no-op this round, keep playing
+                        rec["parse_failures"] = rec.get("parse_failures", 0) + 1
                 except Exception as e:
+                    # hard API/network error: end the episode
                     rec["error"] = f"LLM error r{rnd}: {e}"
                     break
             # task choices
