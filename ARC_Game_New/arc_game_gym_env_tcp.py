@@ -386,8 +386,12 @@ class ARCGameGymEnv(gym.Env):
         action_indexes = self._parse_action_string(action)
 
         if not action_indexes:
-            print("⚠️  No valid action indexes, executing no-op (action 0)")
-            action_indexes = [0] if self.valid_actions else []
+            # TRUE no-op: submitting no actions must do NOTHING. Previously this fell
+            # back to action index 0 — which is a real action (usually Build Kitchen) —
+            # so every empty-action turn silently built (and paid for) a kitchen. That
+            # confounded the benchmark: passive agents were force-fed $1k builds.
+            print("ℹ️  No actions submitted — true no-op this round")
+            action_indexes = []
 
         # Execute actions via Unity
         executed_actions = []
