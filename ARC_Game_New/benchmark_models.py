@@ -146,13 +146,23 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                         nsel += 1
                 except Exception:
                     pass
-            # actions: count requested / invalid before executing
+            # actions: count requested / invalid; tally the per-turn category mix
+            # (the model's intended strategy: game-action types + task-choice by task type)
             req = [int(a) for a in dec.get("actions", []) if str(a).lstrip("-").isdigit()]
             actions_requested += len(req)
             invalid_idx += sum(1 for a in req if a < 0 or a >= n_valid)
+            act_cats = {}
+            tmap = {t["taskId"]: t.get("type", "?") for t in state.get("tasks", [])}
+            for c in dec.get("choices", []):
+                try:
+                    cat = "choice:" + str(tmap.get(int(c["taskId"]), "?"))
+                except Exception:
+                    cat = "choice:?"
+                act_cats[cat] = act_cats.get(cat, 0) + 1
             for a in req:
                 if 0 <= a < n_valid:
-                    at = state["actions"][a].get("type")
+                    at = state["actions"][a].get("type") or "?"
+                    act_cats[at] = act_cats.get(at, 0) + 1
                     if at == "construction": built = True
                     if at == "worker": hired = True
             obs, reward, term, trunc, info = env.step(",".join(str(a) for a in req))
@@ -172,6 +182,8 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                 "foodFul": rm.get("foodFulfilled"), "foodRes": rm.get("foodResolved"),
                 "lodgFul": rm.get("lodgingFulfilled"), "lodgRes": rm.get("lodgingResolved"),
                 "nSel": nsel, "nReq": len(req), "nFail": sum(1 for r in exres if not r.get("success")),
+                "actCats": act_cats,   # {category: count attempted this turn} — strategy mix
+
                 "note": (dec.get("note") or "")[:80],
                 "reasoning": (dec.get("reasoning") or "")[:1500],   # model's own rationale (JSON field)
                 "raw": (raw or "")[:4000],                          # full visible response verbatim

@@ -200,6 +200,44 @@ def main():
         fig.tight_layout(rect=[0, 0, 1, 0.96])
         fig.savefig(outdir / "reward_components.png", dpi=130); plt.close(fig)
 
+    # ── 5. Action mix per turn (stacked bars) ───────────────────────────────
+    # Height of each turn's bar = mean number of actions executed that turn (handles
+    # the multi-action, variable action space); segments = category share. Read L→R
+    # for the strategy/trajectory. Only runs with rd["actCats"] carry this.
+    has_acts = any(rd.get("actCats") for _, recs in conds for r in recs for rd in r["rounds"])
+    if has_acts:
+        cats = set()
+        for _, recs in conds:
+            for r in recs:
+                for rd in r["rounds"]:
+                    cats.update((rd.get("actCats") or {}).keys())
+        order = sorted(cats, key=lambda c: (c.startswith("choice:"), c))  # game actions, then choices
+        cmap = {c: plt.cm.tab20.colors[i % 20] for i, c in enumerate(order)}
+        nrow = len(conds)
+        fig, axs = plt.subplots(nrow, len(models), figsize=(5.6 * len(models), 4.3 * nrow), squeeze=False)
+        for ci, (clabel, recs) in enumerate(conds):
+            for mi, m in enumerate(models):
+                ax = axs[ci][mi]
+                eps = [r for r in recs if r["model"] == m and r["rounds"] and
+                       any(rd.get("actCats") for rd in r["rounds"])]
+                maxr = max((len(r["rounds"]) for r in eps), default=0)
+                bottoms = [0.0] * maxr
+                for c in order:
+                    means = [mean([(r["rounds"][t].get("actCats") or {}).get(c, 0)
+                                   for r in eps if len(r["rounds"]) > t]) for t in range(maxr)]
+                    if sum(means) == 0:
+                        continue
+                    ax.bar(range(maxr), means, bottom=bottoms, color=cmap[c], label=c, width=0.9)
+                    bottoms = [b + v for b, v in zip(bottoms, means)]
+                ax.set_title(f"{short(m)} — {clabel} (n={len(eps)})")
+                ax.set_xlabel("turn"); ax.set_ylabel("mean actions / turn")
+                if mi == len(models) - 1:
+                    ax.legend(fontsize=6, ncol=1, loc="upper right")
+        fig.suptitle("Action mix per turn (stacked = mean count of each category per turn)",
+                     fontsize=13, weight="bold")
+        fig.tight_layout(rect=[0, 0, 1, 0.96])
+        fig.savefig(outdir / "action_mix.png", dpi=130); plt.close(fig)
+
     print(f"wrote plots to {outdir}/")
     for f in sorted(outdir.glob("*.png")):
         print("  ", f)
