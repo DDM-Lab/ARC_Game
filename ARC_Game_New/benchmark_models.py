@@ -115,7 +115,10 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
     env = ARCGameGymEnv(unity_exe_path=HEADLESS_EXE, unity_port=port,
                         auto_start_unity=True, max_episode_steps=rounds + 5,
                         unity_log_path=ulog)
-    rec = {"model": model, "episode": ep_idx, "rounds": [], "error": None, "show_impacts": show_impacts}
+    rec = {"model": model, "episode": ep_idx, "rounds": [], "error": None, "show_impacts": show_impacts,
+           # constant per run, stored per episode so each record is a self-contained
+           # (system + per-round obs + response) corpus for offline finetuning.
+           "system_prompt": smoke.SYSTEM_PROMPT}
     try:
         env.reset()
         total = 0.0
@@ -186,8 +189,13 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
 
                 "note": (dec.get("note") or "")[:80],
                 "reasoning": (dec.get("reasoning") or "")[:1500],   # model's own rationale (JSON field)
-                "raw": (raw or "")[:4000],                          # full visible response verbatim
-                "reasoningTrace": (rtrace or "")[:4000] or None,    # provider hidden CoT if surfaced
+                # Finetuning-complete (prompt -> completion): the FULL observation the
+                # model saw and its FULL untruncated response. obs is the user-message
+                # content (state). parsed_ok flags whether the response was valid JSON.
+                "obs": state,
+                "raw": raw or "",
+                "reasoningTrace": rtrace or None,
+                "parsed_ok": (parsed_ok if not validate else None),
             })
             if term or trunc:
                 rec["terminated"] = bool(term)
