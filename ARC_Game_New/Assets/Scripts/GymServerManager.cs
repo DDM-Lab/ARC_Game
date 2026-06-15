@@ -126,6 +126,13 @@ public class GymServerManager : MonoBehaviour
             listenerThread.IsBackground = true;
             listenerThread.Start();
 
+            // Cap the frame rate up front so the headless loop sleeps (~1% CPU) instead
+            // of busy-spinning at ~50-67% of a core before the first round runs. The
+            // gym round itself (GlobalClock.GymAdvanceRound) uncaps for speed and
+            // EndSimulation restores this cap afterwards.
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = 10;
+
             Debug.Log($"[GymServer] ✅ Gym server listening on port {gymServerPort}");
         }
         catch (Exception e)

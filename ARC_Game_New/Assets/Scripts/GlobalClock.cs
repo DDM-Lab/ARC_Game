@@ -323,7 +323,15 @@ public class GlobalClock : MonoBehaviour
     // time via Time.captureDeltaTime, so a round completes as fast as the CPU
     // can render frames (no wall-clock wait) while staying deterministic.
     private bool gymInstantMode = false;
-    private const float GYM_FIXED_DELTA = 0.05f; // game-seconds advanced per frame
+    // Game-seconds advanced per frame during a gym round. A coarse step keeps rounds
+    // fast and cheap: a ~10s round needs ~33 frames at 0.3 vs ~200 at 0.05. The sim is
+    // deterministic and headless (no rendering/physics smoothness to preserve), and
+    // delivery WaitForSeconds etc. still resolve within a frame or two.
+    private const float GYM_FIXED_DELTA = 0.3f;
+    // Idle frame cap while paused between rounds (and at startup before the first
+    // round). Low enough that the headless loop sleeps (~1% CPU) instead of spinning,
+    // high enough that the gym main-thread action queue still drains promptly.
+    private const int GYM_IDLE_FPS = 10;
 
     /// <summary>
     /// Advance exactly one round for the gym/headless driver. Runs the real
@@ -435,8 +443,8 @@ public class GlobalClock : MonoBehaviour
             // allows, but it is never restored — so between rounds (and during the
             // multi-second LLM decision) the headless player loop would otherwise spin
             // at thousands of idle fps, pinning a CPU core for nothing. A low cap frees
-            // the core while paused; Update() still drains the gym action queue at 10fps.
-            Application.targetFrameRate = 10;
+            // the core while paused; Update() still drains the gym action queue.
+            Application.targetFrameRate = GYM_IDLE_FPS;
         }
 
         // Accumulate per-round reward metrics (worker allocation, rounds).

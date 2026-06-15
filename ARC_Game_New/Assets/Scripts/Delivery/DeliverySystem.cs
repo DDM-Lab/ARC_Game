@@ -36,25 +36,29 @@ public class DeliveryTask
     }
 
     // Helper methods to get positions
+    // Unity null checks below (not ?.): a deconstructed building is a fake-null
+    // destroyed object that throws on .transform/.GetComponent.
     public Vector3 GetSourcePosition()
     {
-        return sourceBuilding.transform.position;
+        return sourceBuilding != null ? sourceBuilding.transform.position : Vector3.zero;
     }
 
     public Vector3 GetDestinationPosition()
     {
-        return destinationBuilding.transform.position;
+        return destinationBuilding != null ? destinationBuilding.transform.position : Vector3.zero;
     }
 
     // Helper methods to get road connection points
     public Vector3 GetSourceRoadConnection()
     {
+        if (sourceBuilding == null) return Vector3.zero;
         RoadConnection roadConnection = sourceBuilding.GetComponent<RoadConnection>();
         return roadConnection != null ? roadConnection.GetRoadConnectionPoint() : sourceBuilding.transform.position;
     }
 
     public Vector3 GetDestinationRoadConnection()
     {
+        if (destinationBuilding == null) return Vector3.zero;
         RoadConnection roadConnection = destinationBuilding.GetComponent<RoadConnection>();
         return roadConnection != null ? roadConnection.GetRoadConnectionPoint() : destinationBuilding.transform.position;
     }
@@ -369,6 +373,16 @@ public class DeliverySystem : MonoBehaviour
         foreach (DeliveryTask task in sortedTasks)
         {
             if (availableVehicleList.Count == 0) break;
+
+            // Drop orphaned tasks whose source/destination building was deconstructed.
+            // They can never be assigned and would otherwise be retried (and NRE on the
+            // destroyed object) every frame for the rest of the episode.
+            if (task == null || task.GetSource() == null || task.GetDestination() == null)
+            {
+                pendingTasks = new Queue<DeliveryTask>(pendingTasks.Where(t => t != task));
+                Debug.LogWarning($"[DeliverySystem] Dropping delivery task with missing source/destination building");
+                continue;
+            }
 
             // Find suitable vehicle for this task
             Vehicle suitableVehicle = FindSuitableVehicle(task, availableVehicleList);
