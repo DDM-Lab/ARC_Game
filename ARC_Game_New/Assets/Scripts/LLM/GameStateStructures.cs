@@ -25,6 +25,17 @@ public class TaskChoiceBrief
 {
     public int choiceId;
     public string choiceText;
+    // Sparse: only the choice's non-zero impacts (e.g. Budget +5000, Satisfaction +10,
+    // Budget -2000 cost). Always populated in the payload; the Python observation layer
+    // decides whether to surface it to the model (ablation toggle).
+    public List<ChoiceImpactBrief> impacts;
+}
+
+[System.Serializable]
+public class ChoiceImpactBrief
+{
+    public string type;   // ImpactType name (Budget, Satisfaction, Clients, ...)
+    public int value;     // signed: positive = gain (e.g. funding), negative = cost
 }
 
 [System.Serializable]

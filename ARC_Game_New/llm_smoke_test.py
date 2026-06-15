@@ -77,11 +77,16 @@ def compact_action(i, a):
     return o
 
 
-def summarize(env):
+def summarize(env, show_impacts=True):
     """Compress the game state into the observation the LLM sees.
 
     NOTE: this is the main lever for giving the model a fair view of the game.
     If the agent seems confused, enrich this before blaming the model.
+
+    show_impacts: when True, each task choice includes its sparse impacts list
+    (e.g. Budget +5000, Satisfaction +10) so the agent can reason about funding /
+    cost tradeoffs. Toggle off for the no-observation-impacts ablation. (Unity always
+    sends impacts in the payload; this only controls what the model is shown.)
     """
     gs = env.game_state
     sb = gs.get("satisfactionAndBudget", {})
@@ -95,7 +100,13 @@ def summarize(env):
                      "pop": f.get("currentPopulation"), "cap": f.get("populationCapacity")})
     tasks = []
     for t in gs.get("allActiveTasks", []):
-        ch = [{"choiceId": c["choiceId"], "text": c["choiceText"][:70]} for c in (t.get("choices") or [])]
+        ch = []
+        for c in (t.get("choices") or []):
+            o = {"choiceId": c["choiceId"], "text": c["choiceText"][:70]}
+            if show_impacts and c.get("impacts"):
+                # compact: e.g. {"Budget": 5000, "Satisfaction": 10}
+                o["impacts"] = {i["type"]: i["value"] for i in c["impacts"]}
+            ch.append(o)
         tasks.append({"taskId": t["taskId"], "type": t["taskType"], "title": t["taskTitle"],
                       "roundsLeft": t.get("roundsRemaining"), "choices": ch})
     acts = env.get_valid_actions()

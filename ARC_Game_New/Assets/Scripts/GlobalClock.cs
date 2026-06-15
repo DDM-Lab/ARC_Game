@@ -414,7 +414,14 @@ public class GlobalClock : MonoBehaviour
             // unscaledDeltaTime so the wait tracks wall-clock as before.
             if (gymInstantMode)
             {
-                elapsed += Time.deltaTime;
+                // Re-assert the decoupled step every frame and advance the window timer
+                // by the SAME fixed amount, so a round always runs a bounded, fast
+                // number of frames (playerWaitTime / GYM_FIXED_DELTA) and the game
+                // advances 0.3 game-seconds/frame deterministically. Relying on
+                // Time.deltaTime here occasionally let the window fall back to real-time
+                // (~10 wall-seconds, ~14k frames), which blew the gym request timeout.
+                Time.captureDeltaTime = GYM_FIXED_DELTA;
+                elapsed += GYM_FIXED_DELTA;
             }
             else if (Time.timeScale > 0)
             {

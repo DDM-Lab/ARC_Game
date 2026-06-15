@@ -2319,7 +2319,19 @@ public class TaskSystem : MonoBehaviour
         {
             choices = new List<TaskChoiceBrief>();
             foreach (AgentChoice c in task.agentChoices)
-                choices.Add(new TaskChoiceBrief { choiceId = c.choiceId, choiceText = c.choiceText });
+            {
+                var brief = new TaskChoiceBrief { choiceId = c.choiceId, choiceText = c.choiceText };
+                // Sparse impacts: expose only the choice's non-zero consequences so the
+                // agent can reason about budget/satisfaction tradeoffs (e.g. funding choices).
+                if (c.choiceImpacts != null && c.choiceImpacts.Count > 0)
+                {
+                    brief.impacts = new List<ChoiceImpactBrief>();
+                    foreach (TaskImpact imp in c.choiceImpacts)
+                        if (imp.value != 0)
+                            brief.impacts.Add(new ChoiceImpactBrief { type = imp.impactType.ToString(), value = imp.value });
+                }
+                choices.Add(brief);
+            }
         }
 
         return new TaskContext

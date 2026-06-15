@@ -243,8 +243,9 @@ class ARCGameGymEnv(gym.Env):
                 self.sock.connect(("localhost", self.unity_port))
                 self.connected = True
                 # Raise the per-request timeout now that we're connected: a step
-                # advances a full simulation round server-side.
-                self.sock.settimeout(60.0)
+                # advances a full simulation round server-side. Generous headroom for
+                # heavy delivery rounds under multi-worker CPU contention.
+                self.sock.settimeout(120.0)
                 print(f"✅ Connected to Unity Gym Server")
                 return
 

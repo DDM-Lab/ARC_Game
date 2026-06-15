@@ -86,7 +86,7 @@ def ask(client, model, state):
 
 
 # ── One episode ─────────────────────────────────────────────────────────────
-def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=None, log_dir=None):
+def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=None, log_dir=None, show_impacts=True):
     """Fresh Unity process -> play `rounds` -> structured per-episode record.
 
     If port_pool (a Queue) is given, lease a unique port for the lifetime of this
@@ -96,11 +96,11 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
     ulog = None
     if log_dir:
         safe = model.replace("/", "_").replace(":", "_")
-        ulog = str(Path(log_dir) / f"unity_{safe}_ep{ep_idx}.log")
+        ulog = str((Path(log_dir) / f"unity_{safe}_ep{ep_idx}.log").resolve())
     env = ARCGameGymEnv(unity_exe_path=HEADLESS_EXE, unity_port=port,
                         auto_start_unity=True, max_episode_steps=rounds + 5,
                         unity_log_path=ulog)
-    rec = {"model": model, "episode": ep_idx, "rounds": [], "error": None}
+    rec = {"model": model, "episode": ep_idx, "rounds": [], "error": None, "show_impacts": show_impacts}
     try:
         env.reset()
         total = 0.0
@@ -108,7 +108,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
         min_budget = float("inf")
         built = hired = False
         for rnd in range(rounds):
-            state = smoke.summarize(env)
+            state = smoke.summarize(env, show_impacts=show_impacts)
             n_valid = len(state["actions"])
             raw = rtrace = None
             if validate:
@@ -240,6 +240,11 @@ def main():
     ap.add_argument("--models", default=",".join(DEFAULT_MODELS))
     ap.add_argument("--out", default="benchmark_results")
     ap.add_argument("--validate", action="store_true")
+    # Ablation toggle: show each task choice's sparse impacts (Budget/Satisfaction/...)
+    # in the observation. Unity always sends them; this controls what the model sees.
+    ap.add_argument("--no-impacts", dest="impacts", action="store_false",
+                    help="hide choice impacts from the observation (ablation baseline)")
+    ap.set_defaults(impacts=True)
     args = ap.parse_args()
 
     if not Path(HEADLESS_EXE).exists():
@@ -260,6 +265,7 @@ def main():
     print(f"=== Benchmark: {len(models)} models x {args.episodes} eps x {args.rounds} rounds "
           f"= {len(jobs)} episodes, {args.workers} worker(s) ===")
     print(f"    models: {models}")
+    print(f"    observation choice-impacts: {'SHOWN' if args.impacts else 'HIDDEN (ablation)'}")
 
     port_pool = queue.Queue()
     for w in range(args.workers):
@@ -272,7 +278,7 @@ def main():
         futs = {}
         for model, ep in jobs:
             futs[ex.submit(run_episode, model, ep, args.rounds, None, client,
-                           False, port_pool, str(ulog_dir))] = (model, ep)
+                           False, port_pool, str(ulog_dir), args.impacts)] = (model, ep)
         for fut in as_completed(futs):
             model, ep = futs[fut]
             rec = fut.result()
