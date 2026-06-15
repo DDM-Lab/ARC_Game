@@ -87,6 +87,30 @@ def main():
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     fig.savefig(outdir / "compare_trajectories.png", dpi=130); plt.close(fig)
 
+    # ── Fig 3: reward components (one panel per component, models overlaid) ──
+    COMPS = [("sat_food", "Satisfaction: food"), ("sat_lodging", "Satisfaction: lodging"),
+             ("sat_worker_use", "Satisfaction: worker-use"),
+             ("cost_food", "Cost: food"), ("cost_lodging", "Cost: lodging"),
+             ("cost_worker", "Cost: worker")]
+    if any((rd.get("comps") for recs in by.values() for r in recs for rd in r["rounds"])):
+        fig, axs = plt.subplots(2, 3, figsize=(18, 9))
+        for (key, title), a in zip(COMPS, axs.flat):
+            for m in models:
+                eps = [r for r in by[m] if r["rounds"] and r["rounds"][0].get("comps")]
+                if not eps:
+                    continue
+                maxr = max(len(r["rounds"]) for r in eps)
+                ys = [mean([(r["rounds"][t].get("comps") or {}).get(key)
+                            for r in eps if len(r["rounds"]) > t]) for t in range(maxr)]
+                a.plot(range(len(ys)), ys, color=cmap[m], lw=2.0, label=short(m))
+            a.set_title(title + " (cumulative, mean)"); a.set_xlabel("round")
+            a.axhline(0, color="grey", lw=.4)
+        axs.flat[0].legend(fontsize=7, loc="lower right")
+        fig.suptitle(args.title + " — reward components (satisfaction terms +, cost terms −)",
+                     fontsize=14, weight="bold")
+        fig.tight_layout(rect=[0, 0, 1, 0.96])
+        fig.savefig(outdir / "compare_components.png", dpi=130); plt.close(fig)
+
     print(f"wrote comparison plots ({len(models)} models) to {outdir}/")
     for m in models:
         print(f"   {short(m):22} n={len(by[m])}")
