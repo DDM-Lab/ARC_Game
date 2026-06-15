@@ -100,8 +100,103 @@ def ask(client, model, state):
     return dec, content, rtrace, ok
 
 
+# ── Non-learning baseline policies (operate on the full env, not the prompt) ──
+from arc_game_gym_env_tcp import REWARD_WEIGHTS
+
+
+def _impacts_dict(choice):
+    return {i.get("type"): i.get("value", 0) for i in (choice.get("impacts") or [])}
+
+
+def greedy_decision(env, w=REWARD_WEIGHTS):
+    """Myopic, reward-mirrored greedy baseline (no learning, no API).
+
+    Choices: per task pick the choice maximizing a reward-mirrored value built from
+      the exposed impacts — funding (Budget>0) is scaled, demand fulfillment is worth
+      ~w_food/w_lodging, costs are penalized with the reward's w_*_cost. Take the best
+      if its value > 0; skip otherwise.
+    Actions: assign free workers to NeedWorker buildings (cost 0, immediately enables
+      InUse -> fulfillment + worker-use). Deliberately does NOT build/hire/train — those
+      cost now and pay later, so a strictly myopic policy skips them (the under-investment
+      is the intended diagnostic; the discounted-flow variant adds them)."""
+    gs = env.game_state or {}
+    va = env.valid_actions or []
+    choices = []
+    for t in gs.get("allActiveTasks", []) or []:
+        tcs = t.get("choices") or []
+        if not tcs:
+            continue
+        demand = t.get("taskType") in ("Demand", "Emergency")
+        best, best_v = None, 0.0
+        for c in tcs:
+            imp = _impacts_dict(c)
+            b = float(imp.get("Budget", 0) or 0)
+            s = float(imp.get("Satisfaction", 0) or 0)
+            if b > 0:                                   # funding choice
+                v = b / 10000.0 + 0.01 * s
+            else:                                       # acting / waiting
+                cost = -b
+                acting = (cost > 0) or (s >= 10)
+                v = (1.0 if (acting and demand) else 0.0) + 0.01 * s - w["w_food_cost"] * cost
+            if v > best_v:
+                best_v, best = v, c
+        if best is not None:
+            choices.append({"taskId": t["taskId"], "choiceId": best["choiceId"]})
+
+    # worker assignment: staff NeedWorker buildings, prefer trained, respect free pool
+    wf = gs.get("workforceState", {}) or {}
+    ft = int(wf.get("freeTrainedWorkers", 0) or 0)
+    fu = int(wf.get("freeUntrainedWorkers", 0) or 0)
+    by_building = {}
+    for i, a in enumerate(va):
+        if a.get("action_type") == "worker_assignment":
+            by_building.setdefault(a.get("building_name"), []).append((i, a))
+    actions = []
+    needs = [(f.get("facilityName"), (f.get("requiredWorkforce") or 0) - (f.get("assignedWorkforce") or 0))
+             for f in gs.get("mapState", {}).get("facilities", []) or []
+             if f.get("buildingStatus") == "NeedWorker"]
+    for bname, _need in sorted(needs, key=lambda x: -x[1]):
+        cands = sorted(by_building.get(bname, []),
+                       key=lambda x: (x[1].get("worker_type") != "trained", -(x[1].get("quantity") or 0)))
+        for i, a in cands:
+            wt, q = a.get("worker_type"), int(a.get("quantity") or 0)
+            avail = ft if wt == "trained" else fu
+            if 0 < q <= avail:
+                actions.append(i)
+                if wt == "trained":
+                    ft -= q
+                else:
+                    fu -= q
+                break
+    return {"choices": choices, "actions": actions,
+            "note": "greedy", "reasoning": "myopic reward-mirrored: fulfill+fund via best choice, staff NeedWorker buildings"}
+
+
+def random_decision(env, rng_seed=0):
+    """Random valid actions + one random choice per task (lower-bound baseline).
+    Deterministic-ish per call via a simple LCG over valid_action count (no global RNG)."""
+    va = env.valid_actions or []
+    gs = env.game_state or {}
+    # vary selection by env step + action count without Math.random-style globals
+    seed = (env.current_step * 1103515245 + len(va) * 12345 + rng_seed) & 0x7fffffff
+    actions = []
+    for i in range(len(va)):
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff
+        if (seed % 5) == 0:        # ~20% of valid actions
+            actions.append(i)
+    choices = []
+    for t in gs.get("allActiveTasks", []) or []:
+        tcs = t.get("choices") or []
+        if tcs:
+            seed = (seed * 1103515245 + 12345) & 0x7fffffff
+            c = tcs[seed % len(tcs)]
+            choices.append({"taskId": t["taskId"], "choiceId": c["choiceId"]})
+    return {"choices": choices, "actions": actions[:8], "note": "random", "reasoning": "random baseline"}
+
+
 # ── One episode ─────────────────────────────────────────────────────────────
-def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=None, log_dir=None, show_impacts=True):
+def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=None, log_dir=None,
+                show_impacts=True, policy="llm"):
     """Fresh Unity process -> play `rounds` -> structured per-episode record.
 
     If port_pool (a Queue) is given, lease a unique port for the lifetime of this
@@ -128,10 +223,14 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
         for rnd in range(rounds):
             state = smoke.summarize(env, show_impacts=show_impacts)
             n_valid = len(state["actions"])
-            raw = rtrace = None
-            if validate:
+            raw = rtrace = None; parsed_ok = None
+            if validate or policy == "noop":
                 dec = {"choices": [], "actions": []}            # no-op
-            else:
+            elif policy == "greedy":
+                dec = greedy_decision(env); raw = json.dumps(dec)
+            elif policy == "random":
+                dec = random_decision(env); raw = json.dumps(dec)
+            else:                                               # llm
                 try:
                     dec, raw, rtrace, parsed_ok = ask(client, model, state)
                     if not parsed_ok:
@@ -195,7 +294,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                 "obs": state,
                 "raw": raw or "",
                 "reasoningTrace": rtrace or None,
-                "parsed_ok": (parsed_ok if not validate else None),
+                "parsed_ok": parsed_ok,
             })
             if term or trunc:
                 rec["terminated"] = bool(term)
@@ -377,6 +476,10 @@ def main():
     ap.add_argument("--wandb", action="store_true", help="log results to Weights & Biases")
     ap.add_argument("--wandb-project", default="cpulling/CORA_RL",
                     help="entity/project (default cpulling/CORA_RL)")
+    ap.add_argument("--policy", choices=["llm", "greedy", "random", "noop"], default="llm",
+                    help="llm = benchmark the --models; greedy/random/noop = non-learning baseline (no API)")
+    ap.add_argument("--base-port", type=int, default=BASE_PORT,
+                    help="gym base port; bump to run concurrently with another benchmark")
     args = ap.parse_args()
 
     if not Path(HEADLESS_EXE).exists():
@@ -388,8 +491,13 @@ def main():
         print(json.dumps(rec.get("summary") or {"error": rec.get("error")}, indent=2))
         return
 
-    models = [m.strip() for m in args.models.split(",") if m.strip()]
-    client = openai.OpenAI(api_key=smoke.load_env_key(), base_url=smoke.GATEWAY_BASE)
+    # Non-learning baselines need no LLM: one pseudo-model labelled by the policy.
+    if args.policy != "llm":
+        models = [args.policy]
+        client = None
+    else:
+        models = [m.strip() for m in args.models.split(",") if m.strip()]
+        client = openai.OpenAI(api_key=smoke.load_env_key(), base_url=smoke.GATEWAY_BASE)
     outdir = Path(args.out); outdir.mkdir(parents=True, exist_ok=True)
     jsonl = outdir / "episodes.jsonl"
 
@@ -401,7 +509,7 @@ def main():
 
     port_pool = queue.Queue()
     for w in range(args.workers):
-        port_pool.put(BASE_PORT + w)
+        port_pool.put(args.base_port + w)
 
     ulog_dir = outdir / "unity_logs"; ulog_dir.mkdir(exist_ok=True)
 
@@ -410,7 +518,7 @@ def main():
         futs = {}
         for model, ep in jobs:
             futs[ex.submit(run_episode, model, ep, args.rounds, None, client,
-                           False, port_pool, str(ulog_dir), args.impacts)] = (model, ep)
+                           False, port_pool, str(ulog_dir), args.impacts, args.policy)] = (model, ep)
         for fut in as_completed(futs):
             model, ep = futs[fut]
             rec = fut.result()
