@@ -148,6 +148,8 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                 "sat": info["satisfaction"], "budget": info["budget"],
                 "satScore": round(info["satisfaction_score"], 4),
                 "costEff": round(info["cost_efficiency"], 4),
+                # full reward breakdown (cumulative-to-date) for per-component graphing
+                "comps": {k: round(v, 4) for k, v in (info.get("score_components") or {}).items()},
                 "foodFul": rm.get("foodFulfilled"), "foodRes": rm.get("foodResolved"),
                 "lodgFul": rm.get("lodgingFulfilled"), "lodgRes": rm.get("lodgingResolved"),
                 "nSel": nsel, "nReq": len(req), "nFail": sum(1 for r in exres if not r.get("success")),

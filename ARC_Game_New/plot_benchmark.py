@@ -157,6 +157,49 @@ def main():
     traj_plot("sat", "Satisfaction over rounds (faint=episodes, bold=mean)",
               "satisfaction_trajectories.png", hline=50)
 
+    # ── 4. Reward components over rounds (per model) ────────────────────────
+    # Each component is cumulative-to-date; satisfaction terms are positive, cost
+    # terms subtract (plotted negative), and `score` is the net. Only runs produced
+    # after component logging was added carry rd["comps"]; skip otherwise.
+    COMP = [("sat_food", "food (sat)", "tab:green", +1),
+            ("sat_lodging", "lodging (sat)", "tab:olive", +1),
+            ("sat_worker_use", "worker-use (sat)", "tab:blue", +1),
+            ("cost_food", "food cost", "tab:red", -1),
+            ("cost_lodging", "lodging cost", "tab:orange", -1),
+            ("cost_worker", "worker cost", "tab:brown", -1)]
+    has_comps = any(rd.get("comps") for _, recs in conds for r in recs for rd in r["rounds"])
+    if has_comps and len(conds) >= 1:
+        # one row per condition, one column per model
+        nrow = len(conds)
+        fig, axs = plt.subplots(nrow, len(models), figsize=(5.5 * len(models), 4.3 * nrow), squeeze=False)
+        for ci, (clabel, recs) in enumerate(conds):
+            for mi, m in enumerate(models):
+                ax = axs[ci][mi]
+                eps = [r for r in recs if r["model"] == m and r["rounds"] and r["rounds"][0].get("comps")]
+                maxr = max((len(r["rounds"]) for r in eps), default=0)
+                for key, klabel, col, sign in COMP:
+                    means = []
+                    for t in range(maxr):
+                        vals = [sign * r["rounds"][t]["comps"].get(key, 0.0)
+                                for r in eps if len(r["rounds"]) > t and r["rounds"][t].get("comps")]
+                        means.append(mean(vals))
+                    ax.plot(range(len(means)), means, color=col, lw=1.8, label=klabel)
+                # net score (bold)
+                score_means = []
+                for t in range(maxr):
+                    vals = [r["rounds"][t]["comps"].get("score", 0.0)
+                            for r in eps if len(r["rounds"]) > t and r["rounds"][t].get("comps")]
+                    score_means.append(mean(vals))
+                ax.plot(range(len(score_means)), score_means, color="black", lw=2.6, label="net score")
+                ax.axhline(0, color="grey", lw=.5)
+                ax.set_title(f"{short(m)} — {clabel} (n={len(eps)})")
+                ax.set_xlabel("round"); ax.set_ylabel("cumulative contribution")
+                if mi == 0 and ci == 0: ax.legend(fontsize=7, ncol=2)
+        fig.suptitle("Reward components over rounds (satisfaction terms +, cost terms −, bold=net score)",
+                     fontsize=13, weight="bold")
+        fig.tight_layout(rect=[0, 0, 1, 0.96])
+        fig.savefig(outdir / "reward_components.png", dpi=130); plt.close(fig)
+
     print(f"wrote plots to {outdir}/")
     for f in sorted(outdir.glob("*.png")):
         print("  ", f)

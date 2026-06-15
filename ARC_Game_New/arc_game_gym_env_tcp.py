@@ -70,14 +70,21 @@ def _clamp01(x: float) -> float:
     return 0.0 if x < 0 else (1.0 if x > 1.0 else x)
 
 
-def compute_score(rm: dict, w: dict = REWARD_WEIGHTS):
-    """Compute (satisfaction, cost_efficiency, score) from Unity's rewardMetrics.
+def compute_score_components(rm: dict, w: dict = REWARD_WEIGHTS) -> dict:
+    """Full breakdown of the composite reward from Unity's rewardMetrics.
 
-    score = satisfaction - cost_efficiency. The per-step reward is the delta of
-    score between rounds (telescopes to the final score).
+    Returns every term so each can be logged/graphed independently:
+      satisfaction sub-terms: sat_food, sat_lodging, sat_worker_use
+      cost-efficiency sub-terms: cost_food, cost_lodging, cost_worker
+      aggregates: satisfaction, cost_efficiency, score (= satisfaction - cost_efficiency)
+    The per-step reward is the delta of `score` between rounds (telescopes to the
+    final score). All values are cumulative-to-date (so deltas are per-round).
     """
+    keys = ["sat_food", "sat_lodging", "sat_worker_use",
+            "cost_food", "cost_lodging", "cost_worker",
+            "satisfaction", "cost_efficiency", "score"]
     if not rm:
-        return 0.0, 0.0, 0.0
+        return {k: 0.0 for k in keys}
 
     def ratio(num, den):
         return (num / den) if den else 0.0
@@ -108,7 +115,18 @@ def compute_score(rm: dict, w: dict = REWARD_WEIGHTS):
     c_worker = cost_term(rm.get("workerSpend", 0), rm.get("cumWorkingWorkers", 0), w["w_worker_cost"])
     cost_efficiency = c_food + c_lodging + c_worker
 
-    return satisfaction, cost_efficiency, satisfaction - cost_efficiency
+    return {
+        "sat_food": food, "sat_lodging": lodging, "sat_worker_use": worker_use,
+        "cost_food": c_food, "cost_lodging": c_lodging, "cost_worker": c_worker,
+        "satisfaction": satisfaction, "cost_efficiency": cost_efficiency,
+        "score": satisfaction - cost_efficiency,
+    }
+
+
+def compute_score(rm: dict, w: dict = REWARD_WEIGHTS):
+    """Backward-compatible: (satisfaction, cost_efficiency, score)."""
+    c = compute_score_components(rm, w)
+    return c["satisfaction"], c["cost_efficiency"], c["score"]
 
 
 class ARCGameGymEnv(gym.Env):
@@ -422,8 +440,8 @@ class ARCGameGymEnv(gym.Env):
         satisfaction_delta = current_satisfaction - self.previous_satisfaction
         self.previous_satisfaction = current_satisfaction
 
-        satisfaction_score, cost_efficiency, score = compute_score(
-            self.game_state.get("rewardMetrics") or {})
+        comps = compute_score_components(self.game_state.get("rewardMetrics") or {})
+        satisfaction_score, cost_efficiency, score = comps["satisfaction"], comps["cost_efficiency"], comps["score"]
         reward = score - getattr(self, "previous_score", 0.0)
         self.previous_score = score
 
@@ -448,6 +466,7 @@ class ARCGameGymEnv(gym.Env):
             "score": score,
             "satisfaction_score": satisfaction_score,
             "cost_efficiency": cost_efficiency,
+            "score_components": comps,   # sat_food/sat_lodging/sat_worker_use/cost_food/cost_lodging/cost_worker
             "reward_metrics": self.game_state.get("rewardMetrics"),
             "executed_actions": [a.get("description", "") for a in executed_actions],
             "execution_results": execution_results,
