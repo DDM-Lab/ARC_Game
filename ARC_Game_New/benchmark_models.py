@@ -86,15 +86,20 @@ def ask(client, model, state):
 
 
 # ── One episode ─────────────────────────────────────────────────────────────
-def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=None):
+def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=None, log_dir=None):
     """Fresh Unity process -> play `rounds` -> structured per-episode record.
 
     If port_pool (a Queue) is given, lease a unique port for the lifetime of this
     episode so concurrent episodes never collide on a port (scheduling-safe)."""
     if port_pool is not None:
         port = port_pool.get()
+    ulog = None
+    if log_dir:
+        safe = model.replace("/", "_").replace(":", "_")
+        ulog = str(Path(log_dir) / f"unity_{safe}_ep{ep_idx}.log")
     env = ARCGameGymEnv(unity_exe_path=HEADLESS_EXE, unity_port=port,
-                        auto_start_unity=True, max_episode_steps=rounds + 5)
+                        auto_start_unity=True, max_episode_steps=rounds + 5,
+                        unity_log_path=ulog)
     rec = {"model": model, "episode": ep_idx, "rounds": [], "error": None}
     try:
         env.reset()
@@ -260,12 +265,14 @@ def main():
     for w in range(args.workers):
         port_pool.put(BASE_PORT + w)
 
+    ulog_dir = outdir / "unity_logs"; ulog_dir.mkdir(exist_ok=True)
+
     records = []
     with open(jsonl, "w") as fh, ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = {}
         for model, ep in jobs:
             futs[ex.submit(run_episode, model, ep, args.rounds, None, client,
-                           False, port_pool)] = (model, ep)
+                           False, port_pool, str(ulog_dir))] = (model, ep)
         for fut in as_completed(futs):
             model, ep = futs[fut]
             rec = fut.result()

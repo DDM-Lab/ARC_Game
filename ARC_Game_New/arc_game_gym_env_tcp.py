@@ -128,7 +128,8 @@ class ARCGameGymEnv(gym.Env):
         max_episode_steps: int = 100,
         render_mode: Optional[str] = None,
         auto_start_unity: bool = True,
-        connection_timeout: float = 30.0
+        connection_timeout: float = 30.0,
+        unity_log_path: Optional[str] = None
     ):
         """
         Initialize the ARC Game Gym Environment
@@ -141,6 +142,9 @@ class ARCGameGymEnv(gym.Env):
             render_mode: Render mode ('human', 'ansi', or None)
             auto_start_unity: Whether to automatically start Unity process
             connection_timeout: Seconds to wait for Unity connection
+            unity_log_path: If set, Unity writes its log to this file; otherwise the
+                log is discarded. Either way the process's stdout/stderr go to
+                DEVNULL so the (unread) pipe can never fill and deadlock Unity.
         """
         super().__init__()
 
@@ -154,6 +158,7 @@ class ARCGameGymEnv(gym.Env):
         self.unity_process = None
         self.unity_exe_path = unity_exe_path
         self.auto_start_unity = auto_start_unity
+        self.unity_log_path = unity_log_path
 
         # TCP socket connection
         self.sock = None
@@ -194,6 +199,13 @@ class ARCGameGymEnv(gym.Env):
         print(f"   Port: {self.unity_port}")
 
         try:
+            # Unity logs voluminously (e.g. per-frame TMP warnings). Route the log to
+            # a file (or discard it), and send the process stdout/stderr to DEVNULL.
+            # NEVER use an unread subprocess.PIPE here: Unity blocks once the ~64KB
+            # OS pipe buffer fills, which freezes its main thread mid-episode and the
+            # gym times out (looks like a day-transition hang). Writing to -logFile
+            # decouples logging from the pipe entirely.
+            log_arg = self.unity_log_path if self.unity_log_path else "-"
             self.unity_process = subprocess.Popen(
                 [
                     str(unity_path),
@@ -201,10 +213,10 @@ class ARCGameGymEnv(gym.Env):
                     "-nographics",
                     "-gym-server",  # Enable gym server mode
                     "-gym-port", str(self.unity_port),
-                    "-logFile", "-",  # Log to stdout
+                    "-logFile", log_arg,
                 ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL
             )
             print(f"✅ Unity process started (PID: {self.unity_process.pid})")
