@@ -143,23 +143,23 @@ def greedy_decision(env, w=REWARD_WEIGHTS):
         if best is not None:
             choices.append({"taskId": t["taskId"], "choiceId": best["choiceId"]})
 
-    # worker assignment: staff NeedWorker buildings, prefer trained, respect free pool
+    # worker assignment: worker_assignment actions nest their fields under
+    # a["assignment"] (to_dict pops the top-level building_name/worker_type/quantity).
+    # The enumerator only emits these for buildings that need workers AND when free
+    # workers exist, so take them directly (prefer trained; fill each building once).
     wf = gs.get("workforceState", {}) or {}
     ft = int(wf.get("freeTrainedWorkers", 0) or 0)
     fu = int(wf.get("freeUntrainedWorkers", 0) or 0)
     by_building = {}
     for i, a in enumerate(va):
         if a.get("action_type") == "worker_assignment":
-            by_building.setdefault(a.get("building_name"), []).append((i, a))
+            asg = a.get("assignment") or {}
+            by_building.setdefault(asg.get("building_name"), []).append((i, asg))
     actions = []
-    needs = [(f.get("facilityName"), (f.get("requiredWorkforce") or 0) - (f.get("assignedWorkforce") or 0))
-             for f in gs.get("mapState", {}).get("facilities", []) or []
-             if f.get("buildingStatus") == "NeedWorker"]
-    for bname, _need in sorted(needs, key=lambda x: -x[1]):
-        cands = sorted(by_building.get(bname, []),
-                       key=lambda x: (x[1].get("worker_type") != "trained", -(x[1].get("quantity") or 0)))
-        for i, a in cands:
-            wt, q = a.get("worker_type"), int(a.get("quantity") or 0)
+    for bname, cands in by_building.items():
+        for i, asg in sorted(cands, key=lambda x: (x[1].get("worker_type") != "trained",
+                                                   -(x[1].get("quantity") or 0))):
+            wt, q = asg.get("worker_type"), int(asg.get("quantity") or 0)
             avail = ft if wt == "trained" else fu
             if 0 < q <= avail:
                 actions.append(i)
