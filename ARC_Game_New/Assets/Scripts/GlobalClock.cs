@@ -427,7 +427,17 @@ public class GlobalClock : MonoBehaviour
         Time.timeScale = 0f;
         // Gym instant mode: stop decoupled time so the paused phase between rounds
         // doesn't keep advancing game-time. GymAdvanceRound() re-arms it next round.
-        if (gymInstantMode) Time.captureDeltaTime = 0f;
+        if (gymInstantMode)
+        {
+            Time.captureDeltaTime = 0f;
+            // Re-cap the frame rate for the paused phase. GymAdvanceRound() uncaps it
+            // (targetFrameRate = -1) so the active sim window runs as fast as the CPU
+            // allows, but it is never restored — so between rounds (and during the
+            // multi-second LLM decision) the headless player loop would otherwise spin
+            // at thousands of idle fps, pinning a CPU core for nothing. A low cap frees
+            // the core while paused; Update() still drains the gym action queue at 10fps.
+            Application.targetFrameRate = 10;
+        }
 
         // Accumulate per-round reward metrics (worker allocation, rounds).
         RewardMetricsTracker.Instance?.OnRoundEnded();

@@ -189,6 +189,14 @@ public class Vehicle : MonoBehaviour
         Debug.Log($"Vehicle {vehicleName} loading cargo");
         yield return StartCoroutine(LoadCargo());
 
+        // LoadCargo aborts (nulling currentTask and resetting the vehicle to Idle)
+        // when the source building has no cargo. Stop the run here instead of
+        // dereferencing the now-null currentTask in the steps below.
+        if (currentTask == null)
+        {
+            yield break;
+        }
+
         // Step 3: Move to destination building
         SetStatus(VehicleStatus.InTransit);
         Vector3 destPos = currentTask.GetDestinationRoadConnection();

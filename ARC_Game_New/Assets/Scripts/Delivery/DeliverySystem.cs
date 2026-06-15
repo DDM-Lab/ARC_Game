@@ -28,7 +28,11 @@ public class DeliveryTask
 
     public override string ToString()
     {
-        return $"Task {taskId}: {quantity} {cargoType} from {sourceBuilding.name} to {destinationBuilding.name}";
+        // Unity null-check (not ?.): a deconstructed building is a fake-null
+        // destroyed object that passes ?. but throws on .name.
+        string src = sourceBuilding != null ? sourceBuilding.name : "Unknown";
+        string dst = destinationBuilding != null ? destinationBuilding.name : "Unknown";
+        return $"Task {taskId}: {quantity} {cargoType} from {src} to {dst}";
     }
 
     // Helper methods to get positions

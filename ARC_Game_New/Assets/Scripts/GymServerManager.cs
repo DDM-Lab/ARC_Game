@@ -213,6 +213,38 @@ public class GymServerManager : MonoBehaviour
         }
     }
 
+    // Build an error response WITHOUT JsonUtility, so it is safe to call from the
+    // client thread. JsonUtility.ToJson is NOT thread-safe: serializing an error on
+    // the client thread (e.g. a timeout fallback) can run concurrently with a late
+    // main-thread ToJson and corrupt Unity's shared native serialization state — a
+    // hard native crash. All client-thread responses go through here instead.
+    static string ErrorJson(string error)
+    {
+        return "{\"type\":\"error\",\"error\":\"" + EscapeJson(error ?? "") + "\"}";
+    }
+
+    static string EscapeJson(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        var sb = new System.Text.StringBuilder(s.Length + 8);
+        foreach (char c in s)
+        {
+            switch (c)
+            {
+                case '"': sb.Append("\\\""); break;
+                case '\\': sb.Append("\\\\"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                default:
+                    if (c < 0x20) sb.Append("\\u").Append(((int)c).ToString("x4"));
+                    else sb.Append(c);
+                    break;
+            }
+        }
+        return sb.ToString();
+    }
+
     string HandleMessage(string message)
     {
         try
@@ -221,11 +253,7 @@ public class GymServerManager : MonoBehaviour
 
             if (request == null || string.IsNullOrEmpty(request.type))
             {
-                return JsonUtility.ToJson(new GymResponse
-                {
-                    type = "error",
-                    error = "Invalid request: missing type"
-                });
+                return ErrorJson("Invalid request: missing type");
             }
 
             switch (request.type)
@@ -243,21 +271,13 @@ public class GymServerManager : MonoBehaviour
                     return HandleSelectTaskChoice(request);
 
                 default:
-                    return JsonUtility.ToJson(new GymResponse
-                    {
-                        type = "error",
-                        error = $"Unknown request type: {request.type}"
-                    });
+                    return ErrorJson($"Unknown request type: {request.type}");
             }
         }
         catch (Exception e)
         {
             Debug.LogError($"[GymServer] Error handling message: {e}");
-            return JsonUtility.ToJson(new GymResponse
-            {
-                type = "error",
-                error = e.Message
-            });
+            return ErrorJson(e.Message);
         }
     }
 
@@ -316,11 +336,7 @@ public class GymServerManager : MonoBehaviour
             timeout++;
         }
 
-        return result ?? JsonUtility.ToJson(new GymResponse
-        {
-            type = "error",
-            error = "Timeout waiting for game state"
-        });
+        return result ?? ErrorJson("Timeout waiting for game state");
     }
 
     string HandleExecuteAction(GymRequest request)
@@ -390,11 +406,7 @@ public class GymServerManager : MonoBehaviour
             timeout++;
         }
 
-        return result ?? JsonUtility.ToJson(new GymResponse
-        {
-            type = "error",
-            error = "Timeout waiting for action execution"
-        });
+        return result ?? ErrorJson("Timeout waiting for action execution");
     }
 
     // Select a choice on an active task (the decision lever for choice tasks)
@@ -437,7 +449,7 @@ public class GymServerManager : MonoBehaviour
 
         int timeout = 0;
         while (!completed && timeout < 500) { Thread.Sleep(10); timeout++; }
-        return result ?? JsonUtility.ToJson(new GymResponse { type = "error", error = "Timeout selecting task choice" });
+        return result ?? ErrorJson("Timeout selecting task choice");
     }
 
     // Advance the simulation by exactly one round (time segment), running the

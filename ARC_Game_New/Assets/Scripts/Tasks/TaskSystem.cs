@@ -2218,6 +2218,12 @@ public class TaskSystem : MonoBehaviour
     {
         GameStatePayload state = new GameStatePayload();
 
+        // Backstop: get_game_state must never throw (a throw makes the gym return an
+        // error and abort the episode). If any sub-builder hits a stray NRE despite
+        // its own guards, return the partially-populated state instead.
+        try
+        {
+
         // Session Info
         state.sessionInfo = GetSessionInfo();
 
@@ -2260,6 +2266,12 @@ public class TaskSystem : MonoBehaviour
 
         // Construction State
         state.constructionState = GetConstructionState();
+
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[TaskSystem] GetCurrentGameState hit an error; returning partial state: {e.Message}");
+        }
 
         return state;
     }
@@ -2328,6 +2340,10 @@ public class TaskSystem : MonoBehaviour
         mapState.facilities = new List<FacilityState>();
         mapState.vehicles = new List<VehicleState>();
 
+        // Defensive net: a stray destroyed-object deref must never fail the whole
+        // gym get_game_state. Collect what we can; return partial state on error.
+        try
+        {
         // Collect building states
         Building[] buildings = FindObjectsOfType<Building>();
         foreach (Building building in buildings)
@@ -2420,7 +2436,13 @@ public class TaskSystem : MonoBehaviour
 
             if (vehicle.currentTask != null)
             {
-                vehicleState.currentTask = $"{vehicle.currentTask.cargoType} delivery: {vehicle.currentTask.GetSource()?.name} → {vehicle.currentTask.GetDestination()?.name}";
+                // Unity null-check (not ?.): a deconstructed source/destination is a
+                // fake-null destroyed object that passes ?. but throws on .name.
+                var src = vehicle.currentTask.GetSource();
+                var dst = vehicle.currentTask.GetDestination();
+                string srcName = src != null ? src.name : "Unknown";
+                string dstName = dst != null ? dst.name : "Unknown";
+                vehicleState.currentTask = $"{vehicle.currentTask.cargoType} delivery: {srcName} → {dstName}";
             }
             else
             {
@@ -2449,6 +2471,11 @@ public class TaskSystem : MonoBehaviour
                 };
                 mapState.abandonedSites.Add(siteState);
             }
+        }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[TaskSystem] GetMapState failed; returning partial map state: {e.Message}");
         }
 
         return mapState;
@@ -2528,31 +2555,45 @@ public class TaskSystem : MonoBehaviour
         Logistics logistics = new Logistics();
         logistics.activeDeliveries = new List<ActiveDelivery>();
 
-        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-        // VehicleStatus uses Idle, not Available
-        logistics.availableVehicles = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.Idle);
-        logistics.vehiclesInTransit = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.InTransit);
-        logistics.damagedVehicles = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.Damaged);
-
-        // Collect active deliveries
-        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
-        if (deliverySystem != null)
+        // Defensive throughout: this runs on every gym get_game_state. A null vehicle
+        // or dangling delivery task (e.g. left by an aborted delivery) must NOT throw,
+        // or the gym's state request never returns and the episode hangs.
+        try
         {
-            List<DeliveryTask> activeTasks = deliverySystem.GetActiveTasks();
-            foreach (DeliveryTask task in activeTasks)
-            {
-                ActiveDelivery delivery = new ActiveDelivery();
-                delivery.deliveryId = task.taskId;
-                delivery.cargoType = task.cargoType.ToString();
-                delivery.quantity = task.quantity;
-                // Use GetSource() and GetDestination() methods
-                delivery.source = task.GetSource()?.name ?? "Unknown";
-                delivery.destination = task.GetDestination()?.name ?? "Unknown";
-                delivery.status = "Active"; // DeliveryTask doesn't have status field
-                delivery.progress = 0.5f; // Could be calculated from vehicle position if needed
+            Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+            // VehicleStatus uses Idle, not Available
+            logistics.availableVehicles = vehicles.Count(v => v != null && v.GetCurrentStatus() == VehicleStatus.Idle);
+            logistics.vehiclesInTransit = vehicles.Count(v => v != null && v.GetCurrentStatus() == VehicleStatus.InTransit);
+            logistics.damagedVehicles = vehicles.Count(v => v != null && v.GetCurrentStatus() == VehicleStatus.Damaged);
 
-                logistics.activeDeliveries.Add(delivery);
+            // Collect active deliveries
+            DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+            if (deliverySystem != null)
+            {
+                List<DeliveryTask> activeTasks = deliverySystem.GetActiveTasks();
+                if (activeTasks != null)
+                {
+                    foreach (DeliveryTask task in activeTasks)
+                    {
+                        if (task == null) continue;
+                        ActiveDelivery delivery = new ActiveDelivery();
+                        delivery.deliveryId = task.taskId;
+                        delivery.cargoType = task.cargoType.ToString();
+                        delivery.quantity = task.quantity;
+                        // Use GetSource() and GetDestination() methods
+                        delivery.source = task.GetSource()?.name ?? "Unknown";
+                        delivery.destination = task.GetDestination()?.name ?? "Unknown";
+                        delivery.status = "Active"; // DeliveryTask doesn't have status field
+                        delivery.progress = 0.5f; // Could be calculated from vehicle position if needed
+
+                        logistics.activeDeliveries.Add(delivery);
+                    }
+                }
             }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[TaskSystem] GetLogisticsState failed; returning partial logistics: {e.Message}");
         }
 
         return logistics;

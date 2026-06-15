@@ -279,7 +279,9 @@ public class ClientStayTracker : MonoBehaviour
         if (TaskSystem.Instance == null) return;
 
         string description = string.Format(caseworkTaskDescription, group.GetRoundsInShelter(currentRound));
-        string facilityName = group.currentShelter?.name ?? "Unknown Shelter";
+        // Use Unity's overloaded null check (not ?.): a deconstructed shelter is a
+        // "fake-null" destroyed UnityEngine.Object that passes ?. but throws on .name.
+        string facilityName = group.currentShelter != null ? group.currentShelter.name : "Unknown Shelter";
 
         GameTask caseworkTask = TaskSystem.Instance.CreateTask(
             caseworkTaskTitle,
