@@ -265,6 +265,92 @@ def print_table(agg):
         print("".join(str(c).ljust(w) for c, (_, w) in zip(row, cols)))
 
 
+_WB_COMP = ["sat_food", "sat_lodging", "sat_worker_use", "cost_food", "cost_lodging", "cost_worker"]
+
+
+def log_wandb(records, project, condition, episodes, rounds):
+    """Log one WandB run per model with game/* metrics matching the Verlog RL runs,
+    so benchmark and RL overlay on the same project. Two series per run:
+      - per-step (step/*): mean across episodes at each round   (x-axis = round)
+      - per-episode (ep/*): each episode's summary               (x-axis = episode)
+    Metric names mirror the env's info['metrics'] game/* keys."""
+    try:
+        import wandb
+    except ImportError:
+        print("⚠️  wandb not installed; skipping WandB logging (pip install wandb)")
+        return
+    entity, _, proj = project.partition("/")
+    if not proj:
+        entity, proj = None, project
+
+    def avg(vals):
+        vals = [v for v in vals if v is not None]
+        return sum(vals) / len(vals) if vals else None
+
+    by = {}
+    for r in records:
+        by.setdefault(r["model"], []).append(r)
+
+    for model, recs in by.items():
+        ok = [r for r in recs if r.get("rounds") and not r.get("error")]
+        if not ok:
+            continue
+        short = (model.split("/")[-1].replace("us.anthropic.", "")
+                 .replace("-20251001-v1:0", "").replace(":0", ""))
+        wandb.init(entity=entity, project=proj, reinit=True,
+                   name=f"bench-{short}-{condition}", group=f"benchmark-{condition}",
+                   job_type="benchmark", tags=["benchmark", condition, short],
+                   config={"model": model, "condition": condition, "episodes": episodes,
+                           "rounds": rounds, "n_completed": len(ok), "source": "llm_benchmark"})
+        wandb.define_metric("round"); wandb.define_metric("step/*", step_metric="round")
+        wandb.define_metric("episode"); wandb.define_metric("ep/*", step_metric="episode")
+
+        # ── per-step series: mean across episodes at each round ──
+        maxr = max(len(r["rounds"]) for r in ok)
+        for t in range(maxr):
+            at = [r["rounds"][t] for r in ok if len(r["rounds"]) > t]
+            if not at:
+                continue
+            row = {"round": t,
+                   "step/game/satisfaction": avg([rd.get("sat") for rd in at]),
+                   "step/game/budget": avg([rd.get("budget") for rd in at]),
+                   "step/game/satisfaction_score": avg([rd.get("satScore") for rd in at]),
+                   "step/game/cost_efficiency": avg([rd.get("costEff") for rd in at]),
+                   "step/game/reward": avg([rd.get("reward") for rd in at]),
+                   "step/game/score": avg([rd.get("sumR") for rd in at])}
+            for c in _WB_COMP:
+                row["step/game/" + c] = avg([(rd.get("comps") or {}).get(c) for rd in at])
+            wandb.log({k: v for k, v in row.items() if v is not None})
+
+        # ── per-episode series ──
+        for r in sorted(ok, key=lambda r: r["episode"]):
+            s = r["summary"]; rds = r["rounds"]; last = rds[-1].get("comps") or {}
+            row = {"episode": r["episode"],
+                   "ep/game/score": s.get("finalScore"), "ep/totalReward": s.get("totalReward"),
+                   "ep/game/satisfaction_final": s.get("finalSat"),
+                   "ep/game/satisfaction_mean": avg([rd.get("sat") for rd in rds]),
+                   "ep/game/finalBudget": s.get("finalBudget"), "ep/game/minBudget": s.get("minBudget"),
+                   "ep/game/foodFulfill": s.get("foodFulfillRate"),
+                   "ep/game/lodgingFulfill": s.get("lodgingFulfillRate"),
+                   "ep/actionFailures": s.get("actionFailures"),
+                   "ep/wentNegative": 1.0 if s.get("wentNegative") else 0.0,
+                   "ep/terminated": 1.0 if s.get("terminated") else 0.0}
+            for c in _WB_COMP:
+                if c in last:
+                    row["ep/game/" + c + "_final"] = last[c]
+            wandb.log({k: v for k, v in row.items() if v is not None})
+
+        # ── run-level summary (means over episodes) ──
+        S = [r["summary"] for r in ok]
+        for src, dst in [("totalReward", "totalReward"), ("finalSat", "finalSat"),
+                         ("foodFulfillRate", "foodFulfill"), ("lodgingFulfillRate", "lodgingFulfill"),
+                         ("minBudget", "minBudget"), ("finalBudget", "finalBudget")]:
+            wandb.run.summary["mean/" + dst] = avg([x.get(src) for x in S])
+        wandb.finish()
+
+    print(f"WandB: logged {len(by)} model run(s) to {project} (condition={condition})")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--episodes", type=int, default=20)
@@ -278,6 +364,11 @@ def main():
     ap.add_argument("--no-impacts", dest="impacts", action="store_false",
                     help="hide choice impacts from the observation (ablation baseline)")
     ap.set_defaults(impacts=True)
+    # WandB: log one run per model with game/* + behavior metrics matching the RL runs,
+    # so benchmark and Verlog RL are directly comparable on the same WandB project.
+    ap.add_argument("--wandb", action="store_true", help="log results to Weights & Biases")
+    ap.add_argument("--wandb-project", default="cpulling/CORA_RL",
+                    help="entity/project (default cpulling/CORA_RL)")
     args = ap.parse_args()
 
     if not Path(HEADLESS_EXE).exists():
@@ -326,6 +417,10 @@ def main():
     (outdir / "summary.json").write_text(json.dumps(agg, indent=2))
     print_table(agg)
     print(f"\nPer-episode: {jsonl}\nSummary:     {outdir/'summary.json'}")
+
+    if args.wandb:
+        cond = "impacts" if args.impacts else "no_impacts"
+        log_wandb(records, args.wandb_project, cond, args.episodes, args.rounds)
 
 
 if __name__ == "__main__":

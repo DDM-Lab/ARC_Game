@@ -116,3 +116,5 @@ environment.yml
 
 # Benchmark run artifacts
 benchmark_results/
+
+wandb/

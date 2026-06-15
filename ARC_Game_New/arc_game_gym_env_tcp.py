@@ -467,6 +467,25 @@ class ARCGameGymEnv(gym.Env):
             "satisfaction_score": satisfaction_score,
             "cost_efficiency": cost_efficiency,
             "score_components": comps,   # sat_food/sat_lodging/sat_worker_use/cost_food/cost_lodging/cost_worker
+            # Flat scalar metrics for WandB. Verlog's _env_metrics collects info["metrics"]
+            # per step and logs each key (np.mean over the rollout); the LLM benchmark logs
+            # the SAME keys, so RL runs and benchmark runs are directly comparable. Keep
+            # everything here scalar (np.mean-safe) and prefixed game/ (parallels behavior/).
+            "metrics": {
+                "game/satisfaction": current_satisfaction,
+                "game/budget": float(sat_budget.get("budget", 0.0)),
+                "game/satisfaction_delta": satisfaction_delta,
+                "game/reward": reward,
+                "game/score": score,
+                "game/satisfaction_score": satisfaction_score,
+                "game/cost_efficiency": cost_efficiency,
+                "game/sat_food": comps["sat_food"],
+                "game/sat_lodging": comps["sat_lodging"],
+                "game/sat_worker_use": comps["sat_worker_use"],
+                "game/cost_food": comps["cost_food"],
+                "game/cost_lodging": comps["cost_lodging"],
+                "game/cost_worker": comps["cost_worker"],
+            },
             "reward_metrics": self.game_state.get("rewardMetrics"),
             "executed_actions": [a.get("description", "") for a in executed_actions],
             "execution_results": execution_results,
