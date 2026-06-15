@@ -680,16 +680,21 @@ public class Vehicle : MonoBehaviour
 
     void OnMouseDown()
     {
-        // Only allow clicks when game is paused
         if (Time.timeScale != 0f)
             return;
-        
+        if (UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject())
+        {
+            return;
+        }
+
         if (VehicleInfoPanel.Instance != null)
         {
             VehicleInfoPanel.Instance.OnVehicleClicked(transform.position);
         }
+
     }
-    
+
+
     void OnDestroy()
     {
         if (VehicleUIOverlay.Instance != null)
