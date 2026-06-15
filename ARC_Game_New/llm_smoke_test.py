@@ -65,7 +65,8 @@ ENTITIES & RULES (mechanics only — no strategy is given):
 - Each round you submit actions + choices; then time advances one round.
 
 RESPOND ONLY with JSON:
-{"choices":[{"taskId":<int>,"choiceId":<int>}...], "actions":[<action_index>...], "note":"<=20 words"}
+{"reasoning":"<your step-by-step rationale for THIS round's decision>",
+ "choices":[{"taskId":<int>,"choiceId":<int>}...], "actions":[<action_index>...], "note":"<=20 words"}
 """
 
 
