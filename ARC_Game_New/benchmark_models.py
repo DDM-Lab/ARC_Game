@@ -172,6 +172,122 @@ def greedy_decision(env, w=REWARD_WEIGHTS):
             "note": "greedy", "reasoning": "myopic reward-mirrored: fulfill+fund via best choice, staff NeedWorker buildings"}
 
 
+# ── Potential-shaping baseline (greedy selection + a hand-crafted state potential) ──
+# Builds shelter/kitchen capacity toward anticipated demand (anchored to community
+# population, capped by the empirical arrival rate, horizon-discounted), staffs them
+# to claim worker_use, and fulfills via the cheapest *effective* option.
+_POT_MIN_HORIZON = 4        # don't build with fewer rounds left — can't amortize
+_POT_KITCHEN_TARGET = 2     # operational kitchens to aim for (food + worker employment)
+_POT_BUDGET_RESERVE = 1500  # keep this much budget before discretionary building
+_FULFILL_KW = ("send", "deliver", "evacuat", "reloc", "distribut", "purchase",
+               "provide", "transfer", "airlift", "truck", "helicopter", "shelter",
+               "motel", "casework", "fund", "allocat")
+_WAIT_KW = ("wait", "decline", "conserve", "ignore", "later", "do nothing", "hold off")
+
+
+def _is_fulfilling(text):
+    t = (text or "").lower()
+    if any(k in t for k in _WAIT_KW):
+        return False
+    return any(k in t for k in _FULFILL_KW)
+
+
+def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
+    gs = env.game_state or {}
+    va = env.valid_actions or []
+    facs = gs.get("mapState", {}).get("facilities", []) or []
+    wf = gs.get("workforceState", {}) or {}
+    budget = float((gs.get("satisfactionAndBudget") or {}).get("budget", 0) or 0)
+    rounds_left = max(0, rounds_total - rnd)
+
+    # demand anchor: community population (known from round 0); shelters substitute for
+    # the (paid) motel, so target free shelter capacity ~ P.
+    P = sum((f.get("currentPopulation") or 0) for f in facs if f.get("buildingType") == "Community") or 120
+    shelter_cap = sum((f.get("populationCapacity") or 0) for f in facs if f.get("buildingType") == "Shelter")
+    n_kitchens = sum(1 for f in facs if f.get("buildingType") == "Kitchen")
+    ft = int(wf.get("freeTrainedWorkers", 0) or 0)
+    fu = int(wf.get("freeUntrainedWorkers", 0) or 0)
+    have_free_shelter = shelter_cap > 0
+
+    actions, choices = [], []
+
+    # ── choices: prefer the cheapest *effective* fulfillment ──
+    for t in gs.get("allActiveTasks", []) or []:
+        tcs = t.get("choices") or []
+        if not tcs:
+            continue
+        demand = t.get("taskType") in ("Demand", "Emergency")
+        best, best_v = None, 0.0
+        for c in tcs:
+            imp = _impacts_dict(c)
+            b = float(imp.get("Budget", 0) or 0)
+            s = float(imp.get("Satisfaction", 0) or 0)
+            low = (c.get("choiceText") or "").lower()
+            if b > 0:                                    # funding
+                v = b / 10000.0 + 0.01 * s
+            else:
+                cost = -b
+                fulfilling = demand and (_is_fulfilling(low) or cost > 0 or s >= 10)
+                pref = 0.0                               # prefer free-shelter > free-motel > paid
+                if "shelter" in low and cost == 0:
+                    pref = 0.3 if have_free_shelter else -0.5   # free shelter only works if built
+                elif "motel" in low and cost == 0:
+                    pref = 0.1
+                v = (1.0 if fulfilling else 0.0) + pref + 0.01 * s - w["w_food_cost"] * cost
+            if v > best_v:
+                best_v, best = v, c
+        if best is not None:
+            choices.append({"taskId": t["taskId"], "choiceId": best["choiceId"]})
+
+    # ── build (the potential term): only with enough horizon + budget headroom ──
+    def find_build(btype):
+        cands = [(i, a) for i, a in enumerate(va) if a.get("action_type") == "construction"
+                 and (a.get("construction") or {}).get("building_type") == btype]
+        return min(cands, key=lambda x: x[1].get("cost") or 0) if cands else None
+    if rounds_left >= _POT_MIN_HORIZON and budget >= _POT_BUDGET_RESERVE:
+        target = None
+        if shelter_cap < P:
+            target = find_build("Shelter")
+        if target is None and n_kitchens < _POT_KITCHEN_TARGET:
+            target = find_build("Kitchen")
+        if target and (target[1].get("cost") or 0) <= budget - _POT_BUDGET_RESERVE:
+            actions.append(target[0])
+            budget -= (target[1].get("cost") or 0)
+
+    # ── assign free workers to NeedWorker buildings (claims worker_use immediately) ──
+    by_building = {}
+    for i, a in enumerate(va):
+        if a.get("action_type") == "worker_assignment":
+            asg = a.get("assignment") or {}
+            by_building.setdefault(asg.get("building_name"), []).append((i, asg))
+    for bname, cands in by_building.items():
+        for i, asg in sorted(cands, key=lambda x: (x[1].get("worker_type") != "trained",
+                                                   -(x[1].get("quantity") or 0))):
+            wt, q = asg.get("worker_type"), int(asg.get("quantity") or 0)
+            avail = ft if wt == "trained" else fu
+            if 0 < q <= avail:
+                actions.append(i)
+                if wt == "trained":
+                    ft -= q
+                else:
+                    fu -= q
+                break
+
+    # ── hire (untrained) if buildings need more workers than we have free ──
+    need = sum(max(0, (f.get("requiredWorkforce") or 0) - (f.get("assignedWorkforce") or 0))
+               for f in facs if f.get("buildingStatus") == "NeedWorker")
+    if need > (ft + fu) and budget >= _POT_BUDGET_RESERVE:
+        for i, a in enumerate(va):
+            if (a.get("action_type") == "worker"
+                    and (a.get("worker") or {}).get("worker_action_type") == "hire_untrained"
+                    and (a.get("cost") or 0) <= budget - _POT_BUDGET_RESERVE):
+                actions.append(i)
+                break
+
+    return {"choices": choices, "actions": actions, "note": "potential",
+            "reasoning": f"potential: P={P} shelterCap={shelter_cap} kitchens={n_kitchens} roundsLeft={rounds_left}"}
+
+
 def random_decision(env, rng_seed=0):
     """Random valid actions + one random choice per task (lower-bound baseline).
     Deterministic-ish per call via a simple LCG over valid_action count (no global RNG)."""
@@ -228,6 +344,8 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                 dec = {"choices": [], "actions": []}            # no-op
             elif policy == "greedy":
                 dec = greedy_decision(env); raw = json.dumps(dec)
+            elif policy == "potential":
+                dec = potential_decision(env, rnd, rounds); raw = json.dumps(dec)
             elif policy == "random":
                 dec = random_decision(env); raw = json.dumps(dec)
             else:                                               # llm
@@ -476,8 +594,8 @@ def main():
     ap.add_argument("--wandb", action="store_true", help="log results to Weights & Biases")
     ap.add_argument("--wandb-project", default="cpulling/CORA_RL",
                     help="entity/project (default cpulling/CORA_RL)")
-    ap.add_argument("--policy", choices=["llm", "greedy", "random", "noop"], default="llm",
-                    help="llm = benchmark the --models; greedy/random/noop = non-learning baseline (no API)")
+    ap.add_argument("--policy", choices=["llm", "greedy", "potential", "random", "noop"], default="llm",
+                    help="llm = benchmark the --models; greedy/potential/random/noop = non-learning baseline (no API)")
     ap.add_argument("--base-port", type=int, default=BASE_PORT,
                     help="gym base port; bump to run concurrently with another benchmark")
     args = ap.parse_args()
