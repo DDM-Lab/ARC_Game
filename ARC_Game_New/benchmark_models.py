@@ -213,6 +213,27 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
     shelter_cap = sum((f.get("populationCapacity") or 0) for f in facs if f.get("buildingType") == "Shelter")
     n_kitchens = sum(1 for f in facs if f.get("buildingType") == "Kitchen")
 
+    # ── free-shelter-when-ready: for lodging tasks, if there's CONFIRMED free shelter
+    # space, switch from greedy's paid choice to the free "Send to Shelters" option
+    # (saves the motel/helicopter cost). Track remaining space so we don't over-promise;
+    # fall back to the reliable paid choice once shelters fill. ──
+    free_shelter_space = sum(max(0, (f.get("populationCapacity") or 0) - (f.get("currentPopulation") or 0))
+                             for f in facs if f.get("buildingType") == "Shelter")
+    _RELOC_EST = 20  # conservative per-task relocation estimate (quantity not in obs)
+    if free_shelter_space >= _RELOC_EST:
+        tasks_by_id = {t["taskId"]: t for t in (gs.get("allActiveTasks") or [])}
+        for ch in choices:
+            t = tasks_by_id.get(ch["taskId"])
+            is_lodging = t and any(k in (t.get("taskTitle") or "")
+                                   for k in ("Relocation", "Population", "Lodging"))
+            if is_lodging and free_shelter_space >= _RELOC_EST:
+                free_shelter = next((c for c in (t.get("choices") or [])
+                                     if "shelter" in (c.get("choiceText") or "").lower()
+                                     and not _impacts_dict(c).get("Budget")), None)
+                if free_shelter:
+                    ch["choiceId"] = free_shelter["choiceId"]   # override to free option
+                    free_shelter_space -= _RELOC_EST
+
     # ── build (the potential term): only with enough horizon + budget headroom ──
     def find_build(btype):
         cands = [(i, a) for i, a in enumerate(va) if a.get("action_type") == "construction"
