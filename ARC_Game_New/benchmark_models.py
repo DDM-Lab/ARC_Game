@@ -196,48 +196,22 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
     gs = env.game_state or {}
     va = env.valid_actions or []
     facs = gs.get("mapState", {}).get("facilities", []) or []
-    wf = gs.get("workforceState", {}) or {}
     budget = float((gs.get("satisfactionAndBudget") or {}).get("budget", 0) or 0)
     rounds_left = max(0, rounds_total - rnd)
 
-    # demand anchor: community population (known from round 0); shelters substitute for
-    # the (paid) motel, so target free shelter capacity ~ P.
+    # Reuse greedy's RELIABLE choices + worker assignments (it prefers the acting/
+    # immediate options that actually fulfill). Potential adds *building* on top — the
+    # free/deferred options fail until infrastructure is stocked, so don't switch to
+    # them; keep reliable fulfillment and let building pay off via worker_use + capacity.
+    base = greedy_decision(env, w)
+    choices = base["choices"]
+    actions = list(base["actions"])  # already includes worker assignments
+
+    # demand anchor: community population (known from round 0); target free shelter
+    # capacity ~ P so we can eventually relocate for free instead of paying motel.
     P = sum((f.get("currentPopulation") or 0) for f in facs if f.get("buildingType") == "Community") or 120
     shelter_cap = sum((f.get("populationCapacity") or 0) for f in facs if f.get("buildingType") == "Shelter")
     n_kitchens = sum(1 for f in facs if f.get("buildingType") == "Kitchen")
-    ft = int(wf.get("freeTrainedWorkers", 0) or 0)
-    fu = int(wf.get("freeUntrainedWorkers", 0) or 0)
-    have_free_shelter = shelter_cap > 0
-
-    actions, choices = [], []
-
-    # ── choices: prefer the cheapest *effective* fulfillment ──
-    for t in gs.get("allActiveTasks", []) or []:
-        tcs = t.get("choices") or []
-        if not tcs:
-            continue
-        demand = t.get("taskType") in ("Demand", "Emergency")
-        best, best_v = None, 0.0
-        for c in tcs:
-            imp = _impacts_dict(c)
-            b = float(imp.get("Budget", 0) or 0)
-            s = float(imp.get("Satisfaction", 0) or 0)
-            low = (c.get("choiceText") or "").lower()
-            if b > 0:                                    # funding
-                v = b / 10000.0 + 0.01 * s
-            else:
-                cost = -b
-                fulfilling = demand and (_is_fulfilling(low) or cost > 0 or s >= 10)
-                pref = 0.0                               # prefer free-shelter > free-motel > paid
-                if "shelter" in low and cost == 0:
-                    pref = 0.3 if have_free_shelter else -0.5   # free shelter only works if built
-                elif "motel" in low and cost == 0:
-                    pref = 0.1
-                v = (1.0 if fulfilling else 0.0) + pref + 0.01 * s - w["w_food_cost"] * cost
-            if v > best_v:
-                best_v, best = v, c
-        if best is not None:
-            choices.append({"taskId": t["taskId"], "choiceId": best["choiceId"]})
 
     # ── build (the potential term): only with enough horizon + budget headroom ──
     def find_build(btype):
@@ -254,29 +228,14 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
             actions.append(target[0])
             budget -= (target[1].get("cost") or 0)
 
-    # ── assign free workers to NeedWorker buildings (claims worker_use immediately) ──
-    by_building = {}
-    for i, a in enumerate(va):
-        if a.get("action_type") == "worker_assignment":
-            asg = a.get("assignment") or {}
-            by_building.setdefault(asg.get("building_name"), []).append((i, asg))
-    for bname, cands in by_building.items():
-        for i, asg in sorted(cands, key=lambda x: (x[1].get("worker_type") != "trained",
-                                                   -(x[1].get("quantity") or 0))):
-            wt, q = asg.get("worker_type"), int(asg.get("quantity") or 0)
-            avail = ft if wt == "trained" else fu
-            if 0 < q <= avail:
-                actions.append(i)
-                if wt == "trained":
-                    ft -= q
-                else:
-                    fu -= q
-                break
+    # (worker assignments are already in `base` from greedy_decision — don't redo them)
 
     # ── hire (untrained) if buildings need more workers than we have free ──
+    wf = gs.get("workforceState", {}) or {}
+    free_workers = int(wf.get("freeTrainedWorkers", 0) or 0) + int(wf.get("freeUntrainedWorkers", 0) or 0)
     need = sum(max(0, (f.get("requiredWorkforce") or 0) - (f.get("assignedWorkforce") or 0))
                for f in facs if f.get("buildingStatus") == "NeedWorker")
-    if need > (ft + fu) and budget >= _POT_BUDGET_RESERVE:
+    if need > free_workers and budget >= _POT_BUDGET_RESERVE:
         for i, a in enumerate(va):
             if (a.get("action_type") == "worker"
                     and (a.get("worker") or {}).get("worker_action_type") == "hire_untrained"
