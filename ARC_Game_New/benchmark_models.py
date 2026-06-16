@@ -177,7 +177,7 @@ def greedy_decision(env, w=REWARD_WEIGHTS):
 # population, capped by the empirical arrival rate, horizon-discounted), staffs them
 # to claim worker_use, and fulfills via the cheapest *effective* option.
 _POT_MIN_HORIZON = 4        # don't build with fewer rounds left — can't amortize
-_POT_KITCHEN_TARGET = 3     # kitchens to build — enough to employ the ~10-12 workforce (worker_use)
+_POT_KITCHEN_TARGET = 2     # operational kitchens to aim for (food + worker employment)
 _POT_BUDGET_RESERVE = 1500  # keep this much budget before discretionary building
 _POT_SHELTER_COVERAGE = 1e9  # θ: route lodging to free shelter only when space >= θ×need.
                              # Set huge = OFF: deferred shelter relocations are unreliable
@@ -269,12 +269,15 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
         cands = [(i, a) for i, a in enumerate(va) if a.get("action_type") == "construction"
                  and (a.get("construction") or {}).get("building_type") == btype]
         return min(cands, key=lambda x: x[1].get("cost") or 0) if cands else None
-    # Build only KITCHENS, just enough to employ the workforce (worker_use). Shelters
-    # are NOT built: lodging goes to the prebuilt Motel reliably, so shelters would be
-    # unused, and their construction is tagged as lodging cost (caps cost_lodging).
-    if (rounds_left >= _POT_MIN_HORIZON and budget >= _POT_BUDGET_RESERVE
-            and n_kitchens < _POT_KITCHEN_TARGET):
-        target = find_build("Kitchen")
+    # Build shelters then kitchens. Shelters are NOT wasted: they give the FREE deferred
+    # "Send to Shelters" relocation a destination with space, so it can actually complete
+    # (kitchens-only dropped reward 1.35 -> 1.10 and lodging too — shelters absorb relocations).
+    if rounds_left >= _POT_MIN_HORIZON and budget >= _POT_BUDGET_RESERVE:
+        target = None
+        if shelter_cap < P:
+            target = find_build("Shelter")
+        if target is None and n_kitchens < _POT_KITCHEN_TARGET:
+            target = find_build("Kitchen")
         if target and (target[1].get("cost") or 0) <= budget - _POT_BUDGET_RESERVE:
             actions.append(target[0])
             budget -= (target[1].get("cost") or 0)
