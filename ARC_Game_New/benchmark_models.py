@@ -177,7 +177,7 @@ def greedy_decision(env, w=REWARD_WEIGHTS):
 # population, capped by the empirical arrival rate, horizon-discounted), staffs them
 # to claim worker_use, and fulfills via the cheapest *effective* option.
 _POT_MIN_HORIZON = 4        # don't build with fewer rounds left — can't amortize
-_POT_KITCHEN_TARGET = 2     # operational kitchens to aim for (food + worker employment)
+_POT_KITCHEN_TARGET = 3     # kitchens to build — enough to employ the ~10-12 workforce (worker_use)
 _POT_BUDGET_RESERVE = 1500  # keep this much budget before discretionary building
 _POT_SHELTER_COVERAGE = 1e9  # θ: route lodging to free shelter only when space >= θ×need.
                              # Set huge = OFF: deferred shelter relocations are unreliable
@@ -230,11 +230,16 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
         t = tasks_by_id.get(ch["taskId"])
         if not is_lodging(t):
             continue
-        motel = next((c for c in (t.get("choices") or [])
-                      if "motel" in (c.get("choiceText") or "").lower()
-                      and _impacts_dict(c).get("Budget")), None)   # paid immediate motel option
-        if motel:
-            ch["choiceId"] = motel["choiceId"]
+        cs = t.get("choices") or []
+        # prefer the FREE "Send to Motel" (deferred, but Motel has 300 capacity → always
+        # completes) over the $3000 immediate Helicopter-to-Motel; fall back to helicopter.
+        free_motel = next((c for c in cs if "motel" in (c.get("choiceText") or "").lower()
+                           and not _impacts_dict(c).get("Budget")), None)
+        paid_motel = next((c for c in cs if "motel" in (c.get("choiceText") or "").lower()
+                           and _impacts_dict(c).get("Budget")), None)
+        pick = free_motel or paid_motel
+        if pick:
+            ch["choiceId"] = pick["choiceId"]
 
     # ── free-shelter-when-ready (demand-aware): for lodging tasks, switch from greedy's
     # reliable paid choice to the free "Send to Shelters" option ONLY when free shelter
@@ -263,12 +268,12 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
         cands = [(i, a) for i, a in enumerate(va) if a.get("action_type") == "construction"
                  and (a.get("construction") or {}).get("building_type") == btype]
         return min(cands, key=lambda x: x[1].get("cost") or 0) if cands else None
-    if rounds_left >= _POT_MIN_HORIZON and budget >= _POT_BUDGET_RESERVE:
-        target = None
-        if shelter_cap < P:
-            target = find_build("Shelter")
-        if target is None and n_kitchens < _POT_KITCHEN_TARGET:
-            target = find_build("Kitchen")
+    # Build only KITCHENS, just enough to employ the workforce (worker_use). Shelters
+    # are NOT built: lodging goes to the prebuilt Motel reliably, so shelters would be
+    # unused, and their construction is tagged as lodging cost (caps cost_lodging).
+    if (rounds_left >= _POT_MIN_HORIZON and budget >= _POT_BUDGET_RESERVE
+            and n_kitchens < _POT_KITCHEN_TARGET):
+        target = find_build("Kitchen")
         if target and (target[1].get("cost") or 0) <= budget - _POT_BUDGET_RESERVE:
             actions.append(target[0])
             budget -= (target[1].get("cost") or 0)
