@@ -226,18 +226,19 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
     # (Motel has 300 capacity → always fully relocates) over Helicopter-to-Shelters,
     # which routes to the (insufficient) built shelter and only partially relocates.
     # Runs BEFORE free-shelter so a fully-covered free shelter can still override it. ──
+    # NOTE: the FREE "Send to Motel" is a DEFERRED choice that does not reliably resolve
+    # (lodging collapsed to ~0.17 and cost_lodging stayed capped when we tried it) — so we
+    # take the PAID immediate Helicopter-to-Motel, which always fully relocates (Motel cap
+    # 300). cost_lodging caps at 1.0 either way; the satisfaction it buys is worth it.
     for ch in choices:
         t = tasks_by_id.get(ch["taskId"])
         if not is_lodging(t):
             continue
         cs = t.get("choices") or []
-        # prefer the FREE "Send to Motel" (deferred, but Motel has 300 capacity → always
-        # completes) over the $3000 immediate Helicopter-to-Motel; fall back to helicopter.
-        free_motel = next((c for c in cs if "motel" in (c.get("choiceText") or "").lower()
-                           and not _impacts_dict(c).get("Budget")), None)
         paid_motel = next((c for c in cs if "motel" in (c.get("choiceText") or "").lower()
                            and _impacts_dict(c).get("Budget")), None)
-        pick = free_motel or paid_motel
+        any_motel = next((c for c in cs if "motel" in (c.get("choiceText") or "").lower()), None)
+        pick = paid_motel or any_motel
         if pick:
             ch["choiceId"] = pick["choiceId"]
 
