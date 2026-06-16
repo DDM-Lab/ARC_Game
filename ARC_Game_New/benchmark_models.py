@@ -176,6 +176,8 @@ def greedy_decision(env, w=REWARD_WEIGHTS):
 # Builds shelter/kitchen capacity toward anticipated demand (anchored to community
 # population, capped by the empirical arrival rate, horizon-discounted), staffs them
 # to claim worker_use, and fulfills via the cheapest *effective* option.
+_POT_MODE = os.environ.get("POT_MODE", "baseline")     # "baseline" | "demandsupply"
+_POT_DS_COVERAGE = float(os.environ.get("POT_DS_COVERAGE", "1.0"))  # shelter-cap target as fraction of P
 _POT_MIN_HORIZON = 4        # don't build with fewer rounds left — can't amortize
 _POT_KITCHEN_TARGET = 2     # operational kitchens to aim for (food + worker employment)
 _POT_BUDGET_RESERVE = 1500  # keep this much budget before discretionary building
@@ -221,6 +223,78 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
 
     def is_lodging(t):
         return t and any(k in (t.get("taskTitle") or "") for k in ("Relocation", "Population", "Lodging"))
+
+    def find_build(btype):
+        cands = [(i, a) for i, a in enumerate(va) if a.get("action_type") == "construction"
+                 and (a.get("construction") or {}).get("building_type") == btype]
+        return min(cands, key=lambda x: x[1].get("cost") or 0) if cands else None
+
+    # ════════════════════════════════════════════════════════════════════════════
+    # DEMAND-SUPPLY MODE (POT_MODE=demandsupply): grounded in the Unity audit —
+    #   Motel = $0 upfront but $200/person/DAY recurring (MotelCostManager).
+    #   Shelter = $1000 + 4 workers, then $0/day forever (10 beds).
+    # So the cost-optimal housing is a STAFFED shelter, and the cheapest *reliable*
+    # way to fill it is the $3000 immediate Helicopter-to-Shelters (~$75/person once
+    # for a 40-person community) — vs the "free" motel that bills $200/person/day.
+    # Policy: build+staff shelter capacity toward demand (≈ community pop P), then
+    # route each relocation into shelter space via the reliable immediate helicopter
+    # while shelter beds last; spill to the motel only when shelters are full.
+    # ════════════════════════════════════════════════════════════════════════════
+    if _POT_MODE == "demandsupply":
+        shel_free = sum(max(0, (f.get("populationCapacity") or 0) - (f.get("currentPopulation") or 0))
+                        for f in facs if f.get("buildingType") == "Shelter"
+                        and f.get("buildingStatus") == "InUse")
+        pop_by_fac = {f.get("facilityName"): (f.get("currentPopulation") or 0) for f in facs}
+
+        def _pick(cs, *kws, paid=None):
+            for c in cs:
+                txt = (c.get("choiceText") or "").lower()
+                if all(k in txt for k in kws):
+                    has_cost = bool(_impacts_dict(c).get("Budget"))
+                    if paid is None or has_cost == paid:
+                        return c
+            return None
+
+        for ch in choices:
+            t = tasks_by_id.get(ch["taskId"])
+            if not is_lodging(t):
+                continue
+            cs = t.get("choices") or []
+            need = pop_by_fac.get(t.get("affectedFacility")) or 40
+            if shel_free >= need:
+                # reliable immediate evac INTO a staffed shelter ($0/day thereafter)
+                pick = (_pick(cs, "helicopter", "shelter", paid=True)
+                        or _pick(cs, "evacuation", "shelter")
+                        or _pick(cs, "shelter", paid=False))
+                if pick:
+                    ch["choiceId"] = pick["choiceId"]
+                    shel_free -= need
+            # else: shelters full → leave greedy's choice (motel/helicopter spill)
+
+        # build+staff shelters toward demand coverage, then kitchens for food + workers
+        if rounds_left >= _POT_MIN_HORIZON and budget >= _POT_BUDGET_RESERVE:
+            target = None
+            if shelter_cap < _POT_DS_COVERAGE * P:
+                target = find_build("Shelter")
+            if target is None and n_kitchens < _POT_KITCHEN_TARGET:
+                target = find_build("Kitchen")
+            if target and (target[1].get("cost") or 0) <= budget - _POT_BUDGET_RESERVE:
+                actions.append(target[0])
+                budget -= (target[1].get("cost") or 0)
+
+        wf = gs.get("workforceState", {}) or {}
+        free_workers = int(wf.get("freeTrainedWorkers", 0) or 0) + int(wf.get("freeUntrainedWorkers", 0) or 0)
+        need_w = sum(max(0, (f.get("requiredWorkforce") or 0) - (f.get("assignedWorkforce") or 0))
+                     for f in facs if f.get("buildingStatus") == "NeedWorker")
+        if need_w > free_workers and budget >= _POT_BUDGET_RESERVE:
+            for i, a in enumerate(va):
+                if (a.get("action_type") == "worker"
+                        and (a.get("worker") or {}).get("worker_action_type") == "hire_untrained"
+                        and (a.get("cost") or 0) <= budget - _POT_BUDGET_RESERVE):
+                    actions.append(i)
+                    break
+        return {"choices": choices, "actions": actions, "note": "potential-ds",
+                "reasoning": f"demandsupply: P={P} shelterCap={shelter_cap} shelFree={shel_free} kitchens={n_kitchens}"}
 
     # ── NO motel-routing override. We tried forcing the $3000 immediate Helicopter-to-Motel
     # for every lodging task; it REGRESSED reward (1.44 -> 1.35) and pinned cost_lodging at the

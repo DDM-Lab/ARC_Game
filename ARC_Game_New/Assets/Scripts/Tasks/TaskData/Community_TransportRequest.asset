@@ -46,7 +46,7 @@ MonoBehaviour:
   targetFacilityType: 3
   autoSelectFacility: 0
   specificFacility: {fileID: 0}
-  roundsRemaining: 2
+  roundsRemaining: 4
   realTimeRemaining: 300
   hasRealTimeLimit: 0
   impacts:
@@ -102,7 +102,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Send to Motel
+    choiceText: 'Send to Motel (free now, then $200/person/day ongoing)'
     choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
@@ -154,7 +154,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 3
-    choiceText: Helicopter Evacuation to Motel (Immediate, $3000)
+    choiceText: 'Helicopter Evacuation to Motel (Immediate, $3000, then $200/person/day ongoing)'
     choiceImpacts:
     - impactType: 1
       value: -3000

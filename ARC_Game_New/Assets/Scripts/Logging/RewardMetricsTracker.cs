@@ -53,20 +53,44 @@ public class RewardMetricsTracker : MonoBehaviour
         cumIdle     += s.trainedFree + s.untrainedFree;
     }
 
-    /// <summary>Record a Food/Lodging task being resolved (completed or expired).</summary>
+    /// <summary>Record a Food/Lodging task being resolved (completed or expired).
+    /// PEOPLE-BASED (B1/B2): resolved is credited by the task's demand quantity and fulfilled by
+    /// how many were actually delivered/housed (task.deliveredQuantity), so the metric tracks
+    /// people served, not choices clicked. A task that "completes" but delivered 0 (e.g. an
+    /// immediate evac with no valid destination) adds demand but no fulfillment. If a task carries
+    /// no demand quantity (non-quantified Food/Lodging task), fall back to the legacy 1-per-task
+    /// count gated on `fulfilled`.</summary>
     public void RecordTaskResolution(GameTask task, bool fulfilled)
     {
         if (task == null) return;
+        if (task.taskTag != TaskTag.Food && task.taskTag != TaskTag.Lodging) return;
+
+        int demand = task.demandQuantity;
+        int delivered = Mathf.Clamp(task.deliveredQuantity, 0, Mathf.Max(demand, task.deliveredQuantity));
+        int resolvedAdd = demand > 0 ? demand : 1;
+        int fulfilledAdd = demand > 0 ? Mathf.Min(delivered, demand) : (fulfilled ? 1 : 0);
+
         if (task.taskTag == TaskTag.Food)
         {
-            foodResolved++;
-            if (fulfilled) foodFulfilled++;
+            foodResolved += resolvedAdd;
+            foodFulfilled += fulfilledAdd;
         }
-        else if (task.taskTag == TaskTag.Lodging)
+        else // Lodging
         {
-            lodgingResolved++;
-            if (fulfilled) lodgingFulfilled++;
+            lodgingResolved += resolvedAdd;
+            lodgingFulfilled += fulfilledAdd;
         }
+    }
+
+    /// <summary>A delivery that arrived AFTER its task already resolved still physically housed
+    /// people — credit fulfillment retroactively (D4), capped so fulfilled never exceeds resolved.</summary>
+    public void AddLateDelivery(GameTask task, int delivered)
+    {
+        if (task == null || delivered <= 0) return;
+        if (task.taskTag == TaskTag.Food)
+            foodFulfilled = Mathf.Min(foodResolved, foodFulfilled + delivered);
+        else if (task.taskTag == TaskTag.Lodging)
+            lodgingFulfilled = Mathf.Min(lodgingResolved, lodgingFulfilled + delivered);
     }
 
     public RewardMetrics BuildPayload()

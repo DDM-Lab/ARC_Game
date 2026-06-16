@@ -149,6 +149,14 @@ public class GameTask
     public float deliveryFailureSatisfactionPenalty = 10f;
     public List<int> linkedDeliveryTaskIds = new List<int>(); // support multiple linked delivery tasks
 
+    [Header("Demand / Fulfillment accounting (people-based)")]
+    // demandQuantity = number of people this Food/Lodging task needs served (set at creation).
+    // deliveredQuantity = number actually delivered/housed so far (accumulated by the immediate
+    // and deferred relocation/delivery paths). RewardMetricsTracker credits resolved/fulfilled
+    // by these counts so the metric reflects PEOPLE HOUSED, not choices clicked. See B1/B2.
+    public int demandQuantity = 0;
+    public int deliveredQuantity = 0;
+
     public float timeCreated;
     public bool isExpired 
     { 
@@ -596,6 +604,16 @@ public class TaskSystem : MonoBehaviour
             Debug.Log($"[TaskSystem] Delivery {deliveryTask.taskId} completed for task '{parentTask.taskTitle}'" +
                     (wasAlreadyCompleted ? " (task was already closed)" : ""));
 
+        // People-based fulfillment (B2/D4): a completed population delivery housed deliveryTask.quantity
+        // people — credit it to the parent task even if the task was already closed (late delivery still
+        // physically relocated people; RecordTaskResolution already ran, so also credit the tracker directly).
+        if (deliveryTask.cargoType == ResourceType.Population && deliveryTask.quantity > 0)
+        {
+            parentTask.deliveredQuantity += deliveryTask.quantity;
+            if (wasAlreadyCompleted)
+                RewardMetricsTracker.Instance?.AddLateDelivery(parentTask, deliveryTask.quantity);
+        }
+
         // If the parent task is still in progress, check if all its deliveries are done
         if (!wasAlreadyCompleted && parentTask.status == TaskStatus.InProgress)
         {
@@ -672,6 +690,11 @@ public class TaskSystem : MonoBehaviour
             Debug.Log("Attempting to generate tasks from database...");
             GenerateTasksFromDatabase();
         }
+
+        // B4: background population mover — auto-relocate displaced residents into available
+        // shelters/motels each round (no-op if DeliverySystem.enableAutoTasks is false).
+        if (newSegment != 3)
+            DeliverySystem.Instance?.RunBackgroundHousing();
     }
 
     void GenerateTasksFromDatabase()
@@ -1474,6 +1497,20 @@ public class TaskSystem : MonoBehaviour
         // Set delivery time limit from task data
         newTask.deliveryTimeLimit = taskData.deliveryTimeLimit;
         newTask.deliveryFailureSatisfactionPenalty = taskData.deliveryFailureSatisfactionPenalty;
+
+        // Demand quantity for people-based fulfillment (B2). Scoped to LODGING (relocation): demand =
+        // the largest delivery quantity among its delivery choices = the people to be housed.
+        // RewardMetricsTracker then credits resolved/fulfilled by PEOPLE for lodging. Food is left on
+        // the legacy per-task path (we don't track food delivered quantity, and food fulfillment
+        // already works), so demandQuantity stays 0 for food and the tracker falls back accordingly.
+        if (newTask.taskTag == TaskTag.Lodging)
+        {
+            int demand = 0;
+            foreach (AgentChoice c in newTask.agentChoices)
+                if (c.triggersDelivery || c.immediateDelivery)
+                    demand = Mathf.Max(demand, c.deliveryQuantity);
+            newTask.demandQuantity = demand;
+        }
 
         activeTasks.Add(newTask);
         OnTaskCreated?.Invoke(newTask);
@@ -2320,6 +2357,20 @@ public class TaskSystem : MonoBehaviour
             choices = new List<TaskChoiceBrief>();
             foreach (AgentChoice c in task.agentChoices)
             {
+                // B5/D5: don't offer a population-relocation choice whose destination(s) can't
+                // house anyone right now (no shelter/motel space). Same shelter/motel derivation
+                // as ExecuteClientRelocation.
+                if (c.deliveryCargoType == ResourceType.Population && (c.triggersDelivery || c.immediateDelivery)
+                        && ClientRelocationHandler.Instance != null)
+                {
+                    bool toShelter = c.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                                  || c.destinationPrebuilt != PrebuiltBuildingType.Motel;
+                    bool toMotel   = c.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                                  && c.destinationPrebuilt == PrebuiltBuildingType.Motel;
+                    if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+                    if (!ClientRelocationHandler.Instance.HasDestinationSpace(task, toShelter, toMotel))
+                        continue;
+                }
                 var brief = new TaskChoiceBrief { choiceId = c.choiceId, choiceText = c.choiceText };
                 // Sparse impacts: expose only the choice's non-zero consequences so the
                 // agent can reason about budget/satisfaction tradeoffs (e.g. funding choices).

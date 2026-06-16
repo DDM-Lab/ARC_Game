@@ -689,8 +689,13 @@ public class TaskDetailUI : MonoBehaviour
 
             if (selectedChoice.immediateDelivery)
             {
-                ExecuteGeneratorDelivery(selectedChoice, immediate: true);
-                TaskSystem.Instance.CompleteTask(currentTask);
+                int moved = ExecuteGeneratorDelivery(selectedChoice, immediate: true);
+                // B1: an immediate relocation that physically moved 0 people (no valid destination)
+                // must NOT be credited as fulfilled. moved == -1 means "not a gated relocation"
+                // (food/other) → complete normally. moved == 0 → leave the task open (it will expire
+                // and record demand with 0 delivered).
+                if (moved != 0)
+                    TaskSystem.Instance.CompleteTask(currentTask);
             }
             else if (selectedChoice.triggersDelivery)
             {
@@ -737,22 +742,23 @@ public class TaskDetailUI : MonoBehaviour
         return true;
     }
 
-    void ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)
+    // Returns people MOVED for an immediate population relocation (0 = nothing moved → caller must
+    // NOT mark the task fulfilled, B1). Returns -1 for food/other/deferred ("not gated, proceed").
+    int ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)
     {
         switch (choice.deliveryCargoType)
         {
             case ResourceType.FoodPacks:
                 ExecuteFoodDelivery(choice, immediate);
-                break;
+                return -1;
 
             case ResourceType.Population:
-                ExecuteClientRelocation(choice, immediate);
-                break;
+                return ExecuteClientRelocation(choice, immediate);
 
             default:
                 // Fallback for any other cargo type: single source→destination delivery
                 ExecuteFallbackDelivery(choice, immediate);
-                break;
+                return -1;
         }
     }
 
@@ -778,13 +784,14 @@ public class TaskDetailUI : MonoBehaviour
         }
     }
 
-    // CLIENT RELOCATION via ClientRelocationHandler
-    void ExecuteClientRelocation(AgentChoice choice, bool immediate)
+    // CLIENT RELOCATION via ClientRelocationHandler.
+    // Returns people moved (immediate), or -1 for the deferred path (completion gated later).
+    int ExecuteClientRelocation(AgentChoice choice, bool immediate)
     {
         if (ClientRelocationHandler.Instance == null)
         {
             Debug.LogError("[TaskDetailUI] ClientRelocationHandler not found in scene");
-            return;
+            return -1;
         }
 
         // Derive target destination types from the choice destination setting
@@ -798,8 +805,11 @@ public class TaskDetailUI : MonoBehaviour
 
         if (immediate)
         {
-            ClientRelocationHandler.Instance.ExecuteImmediate(
+            int moved = ClientRelocationHandler.Instance.ExecuteImmediate(
                 currentTask, choice.deliveryQuantity, toShelter, toMotel);
+            if (moved <= 0)
+                ShowAgentErrorMessage("No shelter/motel space available — no one could be relocated.");
+            return moved;
         }
         else
         {
@@ -807,6 +817,7 @@ public class TaskDetailUI : MonoBehaviour
                 currentTask, choice.deliveryQuantity, toShelter, toMotel);
             if (!success)
                 ShowAgentErrorMessage("Could not queue client relocation — check shelter/motel capacity.");
+            return -1;
         }
     }
 

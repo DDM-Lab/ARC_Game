@@ -80,6 +80,20 @@ public class ClientRelocationHandler : MonoBehaviour
         return true;
     }
 
+    /// <summary>D5/B5 gate: is there any free space at the choice's destination(s) right now?
+    /// Source-population + destination-space only (no vehicle check — immediate teleport needs no
+    /// vehicle, and vehicle availability is transient). Used to hide relocation choices that
+    /// physically can't house anyone.</summary>
+    public bool HasDestinationSpace(GameTask parentTask, bool includeShelters, bool includeMotels)
+    {
+        MonoBehaviour source = TaskSystem.Instance.FindTriggeringFacility(parentTask);
+        if (source == null) return false;
+        if (GetPopulation(source) <= 0) return false;
+        DeliverySystem ds = DeliverySystem.Instance;
+        if (ds == null) return false;
+        return GetDestinationsSorted(ds, includeShelters, includeMotels, source).Sum(d => d.effectiveSpace) > 0;
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // PUBLIC: QUEUED (vehicle) DELIVERY
     // ─────────────────────────────────────────────────────────────────
@@ -150,19 +164,22 @@ public class ClientRelocationHandler : MonoBehaviour
     // PUBLIC: IMMEDIATE (teleport) DELIVERY
     // ─────────────────────────────────────────────────────────────────
 
-    public void ExecuteImmediate(GameTask parentTask, int requestedQuantity,
+    /// Returns the number of people ACTUALLY relocated (0 if no valid destination / no space).
+    /// Callers gate task completion + fulfillment credit on this being > 0 (B1).
+    public int ExecuteImmediate(GameTask parentTask, int requestedQuantity,
                                   bool includeShelters = true, bool includeMotels = false)
     {
         MonoBehaviour source = TaskSystem.Instance.FindTriggeringFacility(parentTask);
-        if (source == null) return;
+        if (source == null) return 0;
 
         int available = GetPopulation(source);
         int toSend    = requestedQuantity > 0 ? Mathf.Min(requestedQuantity, available) : available;
-        if (toSend <= 0) return;
+        if (toSend <= 0) return 0;
 
         DeliverySystem ds = DeliverySystem.Instance;
         var destinations  = GetDestinationsSorted(ds, includeShelters, includeMotels, source);
         int remaining     = toSend;
+        int totalDelivered = 0;
 
         foreach (var (dest, effectiveSpace) in destinations)
         {
@@ -190,10 +207,15 @@ public class ClientRelocationHandler : MonoBehaviour
             }
 
             remaining -= delivered;
+            totalDelivered += delivered;
 
             if (showDebugInfo)
                 Debug.Log($"[ClientRelocationTaskGenerator] Immediate {delivered} clients {source.name} → {dest.name}");
         }
+
+        // People-based fulfillment accounting (B2): record how many actually moved.
+        if (parentTask != null) parentTask.deliveredQuantity += totalDelivered;
+        return totalDelivered;
     }
 
     // ─────────────────────────────────────────────────────────────────

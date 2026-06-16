@@ -88,7 +88,7 @@ public class DeliverySystem : MonoBehaviour
     public float taskAssignmentInterval = 1f; // Check for new assignments every second
 
     [Header("Auto-Task Generation")]
-    public bool enableAutoTasks = false;
+    public bool enableAutoTasks = true;  // B4: background population housing runs each round (RunBackgroundHousing)
     public float autoTaskInterval = 10f; // Generate tasks every 10 seconds
     public bool prioritizeFoodDelivery = true;
 
@@ -491,6 +491,17 @@ public class DeliverySystem : MonoBehaviour
         GeneratePopulationTransportTasks();
     }
 
+    /// <summary>B4: background population mover. Once per round, automatically relocate displaced
+    /// community residents into available shelters/motels (shelters preferred = cheaper). The
+    /// created transports are linked to the matching open lodging demand inside
+    /// GeneratePopulationTransportTasks so housing people also satisfies that demand (D4).
+    /// Gated by enableAutoTasks so it can be disabled per scenario.</summary>
+    public void RunBackgroundHousing()
+    {
+        if (!enableAutoTasks) return;
+        GeneratePopulationTransportTasks();
+    }
+
     /// <summary>
     /// Generate food delivery tasks from kitchens to shelters
     /// </summary>
@@ -557,6 +568,18 @@ public class DeliverySystem : MonoBehaviour
         {
             if (community.GetCurrentPopulation() <= 0) continue;
 
+            // B4: only auto-relocate communities that actually have an OPEN lodging demand. This
+            // makes the background mover a completion-assistant for genuine displacement, not a
+            // drain that empties healthy communities into the motel (and runs up the $200/day bill).
+            string communityName = ((MonoBehaviour)community).name;
+            GameTask demandTask = TaskSystem.Instance != null && TaskSystem.Instance.activeTasks != null
+                ? TaskSystem.Instance.activeTasks.FirstOrDefault(t =>
+                    t.taskTag == TaskTag.Lodging
+                    && t.status != TaskStatus.Completed
+                    && t.affectedFacility == communityName)
+                : null;
+            if (demandTask == null) continue;
+
             // Find best destination (prefer shelters over motels)
             MonoBehaviour bestDestination = null; // Changed from Building to MonoBehaviour
             int bestAvailableSpace = 0;
@@ -593,7 +616,15 @@ public class DeliverySystem : MonoBehaviour
             if (bestDestination != null && bestAvailableSpace > 0)
             {
                 int transportAmount = Mathf.Min(community.GetCurrentPopulation(), bestAvailableSpace, 3); // Limit to 3 people per trip
-                CreateDeliveryTask(community, bestDestination, ResourceType.Population, transportAmount, 3);
+                var created = CreateDeliveryTask(community, bestDestination, ResourceType.Population, transportAmount, 3);
+
+                // D4: link this auto-transport to the community's open lodging demand (resolved at the
+                // top of the loop) so housing the people also credits fulfillment.
+                if (created != null && created.Count > 0)
+                {
+                    TaskSystem.Instance.LinkDeliveriesToTask(demandTask, created);
+                    TaskSystem.Instance.SetTaskInProgress(demandTask);
+                }
             }
         }
     }

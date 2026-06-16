@@ -232,6 +232,24 @@ public class ActionExecutor : MonoBehaviour
             return Failure(action.action_id, "Failed to create delivery (route may be blocked or no vehicles available)");
         }
 
+        // B3/D4: a population transfer should satisfy the matching open lodging demand. Link these
+        // deliveries to an active Lodging task for the SOURCE community so that, when they complete,
+        // OnDeliveryTaskCompleted credits deliveredQuantity and completes the task — instead of the
+        // people landing in the motel with no demand satisfied.
+        if (resourceType == ResourceType.Population && TaskSystem.Instance != null
+                && TaskSystem.Instance.activeTasks != null)
+        {
+            GameTask demandTask = TaskSystem.Instance.activeTasks.FirstOrDefault(t =>
+                t.taskTag == TaskTag.Lodging
+                && t.status != TaskStatus.Completed
+                && t.affectedFacility == source.name);
+            if (demandTask != null)
+            {
+                TaskSystem.Instance.LinkDeliveriesToTask(demandTask, tasks);
+                TaskSystem.Instance.SetTaskInProgress(demandTask);
+            }
+        }
+
         if (logActions)
         {
             Debug.Log($"✅ Created transfer: {p.quantity} {p.resource_type} from {p.source_facility} to {p.destination_facility}");
