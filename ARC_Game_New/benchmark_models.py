@@ -179,8 +179,11 @@ def greedy_decision(env, w=REWARD_WEIGHTS):
 _POT_MIN_HORIZON = 4        # don't build with fewer rounds left — can't amortize
 _POT_KITCHEN_TARGET = 2     # operational kitchens to aim for (food + worker employment)
 _POT_BUDGET_RESERVE = 1500  # keep this much budget before discretionary building
-_POT_SHELTER_COVERAGE = 1.0  # θ: route lodging to free shelter only when space >= θ×need
-                             # (1.0 = conservative/full-coverage; <1 = aggressive)
+_POT_SHELTER_COVERAGE = 1e9  # θ: route lodging to free shelter only when space >= θ×need.
+                             # Set huge = OFF: deferred shelter relocations are unreliable
+                             # (travel/expiry) and cost lodging fulfillment vs the reliable
+                             # immediate option, so free-shelter routing is disabled by
+                             # default. Lower (e.g. 1.0) to re-enable the cost-vs-fulfillment trade.
 _FULFILL_KW = ("send", "deliver", "evacuat", "reloc", "distribut", "purchase",
                "provide", "transfer", "airlift", "truck", "helicopter", "shelter",
                "motel", "casework", "fund", "allocat")
