@@ -222,25 +222,14 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
     def is_lodging(t):
         return t and any(k in (t.get("taskTitle") or "") for k in ("Relocation", "Population", "Lodging"))
 
-    # ── motel-routing: for lodging, prefer the reliable immediate Helicopter-to-MOTEL
-    # (Motel has 300 capacity → always fully relocates) over Helicopter-to-Shelters,
-    # which routes to the (insufficient) built shelter and only partially relocates.
-    # Runs BEFORE free-shelter so a fully-covered free shelter can still override it. ──
-    # NOTE: the FREE "Send to Motel" is a DEFERRED choice that does not reliably resolve
-    # (lodging collapsed to ~0.17 and cost_lodging stayed capped when we tried it) — so we
-    # take the PAID immediate Helicopter-to-Motel, which always fully relocates (Motel cap
-    # 300). cost_lodging caps at 1.0 either way; the satisfaction it buys is worth it.
-    for ch in choices:
-        t = tasks_by_id.get(ch["taskId"])
-        if not is_lodging(t):
-            continue
-        cs = t.get("choices") or []
-        paid_motel = next((c for c in cs if "motel" in (c.get("choiceText") or "").lower()
-                           and _impacts_dict(c).get("Budget")), None)
-        any_motel = next((c for c in cs if "motel" in (c.get("choiceText") or "").lower()), None)
-        pick = paid_motel or any_motel
-        if pick:
-            ch["choiceId"] = pick["choiceId"]
+    # ── NO motel-routing override. We tried forcing the $3000 immediate Helicopter-to-Motel
+    # for every lodging task; it REGRESSED reward (1.44 -> 1.35) and pinned cost_lodging at the
+    # cap (1.0 = $5000+ spent per person housed). cost_lodging is NOT structurally capped — it
+    # caps only when you overspend per fulfilled relocation. Greedy's myopic choice already
+    # PREFERS the free "Send to Shelters/Motel" (cost 0 → scores higher than the −$0.6 helicopter),
+    # which houses people at $0 when it completes, keeping cost_lodging ~0.78 (uncapped). The real
+    # lodging bottleneck is FULFILLMENT reliability (lodgingFulfilled ~6 of ~14 resolved), which
+    # caps sat_lodging AND inflates $/person together — not the cost term itself. ──
 
     # ── free-shelter-when-ready (demand-aware): for lodging tasks, switch from greedy's
     # reliable paid choice to the free "Send to Shelters" option ONLY when free shelter
