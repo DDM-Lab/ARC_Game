@@ -217,6 +217,24 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
     P = sum((f.get("currentPopulation") or 0) for f in facs if f.get("buildingType") == "Community") or 120
     shelter_cap = sum((f.get("populationCapacity") or 0) for f in facs if f.get("buildingType") == "Shelter")
     n_kitchens = sum(1 for f in facs if f.get("buildingType") == "Kitchen")
+    tasks_by_id = {t["taskId"]: t for t in (gs.get("allActiveTasks") or [])}
+
+    def is_lodging(t):
+        return t and any(k in (t.get("taskTitle") or "") for k in ("Relocation", "Population", "Lodging"))
+
+    # ── motel-routing: for lodging, prefer the reliable immediate Helicopter-to-MOTEL
+    # (Motel has 300 capacity → always fully relocates) over Helicopter-to-Shelters,
+    # which routes to the (insufficient) built shelter and only partially relocates.
+    # Runs BEFORE free-shelter so a fully-covered free shelter can still override it. ──
+    for ch in choices:
+        t = tasks_by_id.get(ch["taskId"])
+        if not is_lodging(t):
+            continue
+        motel = next((c for c in (t.get("choices") or [])
+                      if "motel" in (c.get("choiceText") or "").lower()
+                      and _impacts_dict(c).get("Budget")), None)   # paid immediate motel option
+        if motel:
+            ch["choiceId"] = motel["choiceId"]
 
     # ── free-shelter-when-ready (demand-aware): for lodging tasks, switch from greedy's
     # reliable paid choice to the free "Send to Shelters" option ONLY when free shelter
@@ -227,12 +245,9 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
                              for f in facs if f.get("buildingType") == "Shelter")
     if free_shelter_space > 0:
         pop_by_facility = {f.get("facilityName"): (f.get("currentPopulation") or 0) for f in facs}
-        tasks_by_id = {t["taskId"]: t for t in (gs.get("allActiveTasks") or [])}
         for ch in choices:
             t = tasks_by_id.get(ch["taskId"])
-            is_lodging = t and any(k in (t.get("taskTitle") or "")
-                                   for k in ("Relocation", "Population", "Lodging"))
-            if not is_lodging:
+            if not is_lodging(t):
                 continue
             need = pop_by_facility.get(t.get("affectedFacility")) or 40  # 40 = a community
             if free_shelter_space >= _POT_SHELTER_COVERAGE * need:
