@@ -179,6 +179,8 @@ def greedy_decision(env, w=REWARD_WEIGHTS):
 _POT_MIN_HORIZON = 4        # don't build with fewer rounds left — can't amortize
 _POT_KITCHEN_TARGET = 2     # operational kitchens to aim for (food + worker employment)
 _POT_BUDGET_RESERVE = 1500  # keep this much budget before discretionary building
+_POT_SHELTER_COVERAGE = 1.0  # θ: route lodging to free shelter only when space >= θ×need
+                             # (1.0 = conservative/full-coverage; <1 = aggressive)
 _FULFILL_KW = ("send", "deliver", "evacuat", "reloc", "distribut", "purchase",
                "provide", "transfer", "airlift", "truck", "helicopter", "shelter",
                "motel", "casework", "fund", "allocat")
@@ -213,26 +215,30 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
     shelter_cap = sum((f.get("populationCapacity") or 0) for f in facs if f.get("buildingType") == "Shelter")
     n_kitchens = sum(1 for f in facs if f.get("buildingType") == "Kitchen")
 
-    # ── free-shelter-when-ready: for lodging tasks, if there's CONFIRMED free shelter
-    # space, switch from greedy's paid choice to the free "Send to Shelters" option
-    # (saves the motel/helicopter cost). Track remaining space so we don't over-promise;
-    # fall back to the reliable paid choice once shelters fill. ──
+    # ── free-shelter-when-ready (demand-aware): for lodging tasks, switch from greedy's
+    # reliable paid choice to the free "Send to Shelters" option ONLY when free shelter
+    # space fully covers that task's relocation need — so the deferred relocation
+    # completes (no partial-fulfillment loss). Need = the affected community's population
+    # (no fixed guess). θ=_POT_SHELTER_COVERAGE dials aggressive(<1) ↔ conservative(=1). ──
     free_shelter_space = sum(max(0, (f.get("populationCapacity") or 0) - (f.get("currentPopulation") or 0))
                              for f in facs if f.get("buildingType") == "Shelter")
-    _RELOC_EST = 20  # conservative per-task relocation estimate (quantity not in obs)
-    if free_shelter_space >= _RELOC_EST:
+    if free_shelter_space > 0:
+        pop_by_facility = {f.get("facilityName"): (f.get("currentPopulation") or 0) for f in facs}
         tasks_by_id = {t["taskId"]: t for t in (gs.get("allActiveTasks") or [])}
         for ch in choices:
             t = tasks_by_id.get(ch["taskId"])
             is_lodging = t and any(k in (t.get("taskTitle") or "")
                                    for k in ("Relocation", "Population", "Lodging"))
-            if is_lodging and free_shelter_space >= _RELOC_EST:
+            if not is_lodging:
+                continue
+            need = pop_by_facility.get(t.get("affectedFacility")) or 40  # 40 = a community
+            if free_shelter_space >= _POT_SHELTER_COVERAGE * need:
                 free_shelter = next((c for c in (t.get("choices") or [])
                                      if "shelter" in (c.get("choiceText") or "").lower()
                                      and not _impacts_dict(c).get("Budget")), None)
                 if free_shelter:
                     ch["choiceId"] = free_shelter["choiceId"]   # override to free option
-                    free_shelter_space -= _RELOC_EST
+                    free_shelter_space -= need
 
     # ── build (the potential term): only with enough horizon + budget headroom ──
     def find_build(btype):
