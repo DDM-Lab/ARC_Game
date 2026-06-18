@@ -180,6 +180,12 @@ _POT_MODE = os.environ.get("POT_MODE", "baseline")     # "baseline" | "demandsup
 _POT_DS_COVERAGE = float(os.environ.get("POT_DS_COVERAGE", "1.0"))  # shelter-cap target as fraction of P
 _POT_MIN_HORIZON = 4        # don't build with fewer rounds left — can't amortize
 _POT_KITCHEN_TARGET = 2     # operational kitchens to aim for (food + worker employment)
+_POT_CASEWORK_BUILD_ROUND = 0  # build the casework site EARLY. The workforce is capped (~3-4 operational
+                               # buildings), and a building only gets staffed if free workers exist when it's
+                               # built — deferring the casework build to ~round 8 left it permanently
+                               # NeedWorker (workers already committed to shelters) → 0 processed. Building it
+                               # first claims its 4 workers up front, which is the only way it stays operational.
+                               # The cost (~one shelter's staffing → lower lodging) is inherent to the worker cap.
 _POT_BUDGET_RESERVE = 1500  # keep this much budget before discretionary building
 _POT_SHELTER_COVERAGE = 1e9  # θ: route lodging to free shelter only when space >= θ×need.
                              # Set huge = OFF: deferred shelter relocations are unreliable
@@ -333,13 +339,14 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
         cands = [(i, a) for i, a in enumerate(va) if a.get("action_type") == "construction"
                  and (a.get("construction") or {}).get("building_type") == btype]
         return min(cands, key=lambda x: x[1].get("cost") or 0) if cands else None
-    # Build order: ONE casework site FIRST (so it exists well before the first return-home
-    # requests arrive ~round 13 — once it's up + staffed, greedy's choice logic already routes
-    # "Casework Request" tasks to it, so there's no smarter policy needed), then shelters toward
-    # demand (they give the free deferred relocation a destination), then kitchens for food+workers.
+    # Build order: shelters toward demand (free relocation destinations) + kitchens (food+workers)
+    # EARLY, then ONE casework site once round >= _POT_CASEWORK_BUILD_ROUND — deferring it keeps the
+    # capped workforce on shelters during the early relocation waves, then staffs casework just before
+    # the first return-home requests (~round 13). Once it's up, greedy's choice logic routes
+    # "Casework Request" tasks to it (no smarter policy needed).
     if rounds_left >= _POT_MIN_HORIZON and budget >= _POT_BUDGET_RESERVE:
         target = None
-        if n_casework < 1:
+        if n_casework < 1 and rnd >= _POT_CASEWORK_BUILD_ROUND:
             target = find_build("CaseworkSite")
         if target is None and shelter_cap < P:
             target = find_build("Shelter")
