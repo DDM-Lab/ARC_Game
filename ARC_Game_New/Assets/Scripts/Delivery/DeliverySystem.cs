@@ -88,7 +88,12 @@ public class DeliverySystem : MonoBehaviour
     public float taskAssignmentInterval = 1f; // Check for new assignments every second
 
     [Header("Auto-Task Generation")]
-    public bool enableAutoTasks = true;  // B4: background population housing runs each round (RunBackgroundHousing)
+    // DISABLED: the agent (RL, baseline, or human) must make relocation decisions itself — a
+    // background mover that auto-houses people pre-empts those choices (and, in the human client,
+    // silently resolved tasks before the player could act). RunBackgroundHousing is a no-op while
+    // this is false. Agent-driven relocation (task choices + transfer_population) still satisfies
+    // demand and still feeds casework.
+    public bool enableAutoTasks = false;
     public float autoTaskInterval = 10f; // Generate tasks every 10 seconds
     public bool prioritizeFoodDelivery = true;
 

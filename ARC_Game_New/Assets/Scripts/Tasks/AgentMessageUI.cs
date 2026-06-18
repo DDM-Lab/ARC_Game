@@ -105,18 +105,22 @@ public class AgentMessageUI : MonoBehaviour
         // Temporarily set the text to calculate size
         string originalText = messageText.text;
         messageText.text = text;
-        
-        // Force update the text mesh to get accurate measurements
-        messageText.ForceMeshUpdate();
-        
-        // Get the preferred height of the text
-        float textHeight = messageText.preferredHeight;
-        
-        // Calculate total height needed
-        float totalHeight = textHeight + paddingTop + paddingBottom + additionalHeightBuffer;
-        
-        // Ensure minimum height
-        totalHeight = Mathf.Max(totalHeight, minHeight);
+
+        // Force update the text mesh to get accurate measurements. TMP can throw a
+        // NullReferenceException here when the font asset is missing/unresolved — that must
+        // NOT abort the caller (e.g. an error-message display), or the task panel hangs and
+        // the player gets no feedback. Guard it and fall back to minHeight.
+        float totalHeight = minHeight;
+        try
+        {
+            messageText.ForceMeshUpdate();
+            float textHeight = messageText.preferredHeight;
+            totalHeight = Mathf.Max(textHeight + paddingTop + paddingBottom + additionalHeightBuffer, minHeight);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[AgentMessageUI] height calc skipped ({e.GetType().Name}) — likely a missing TMP font asset; using minHeight.");
+        }
         
         // Apply height to parent object
         if (parentRectTransform != null)
@@ -136,9 +140,13 @@ public class AgentMessageUI : MonoBehaviour
         
         // Restore original text
         messageText.text = originalText;
-        
-        // Force layout rebuild if in a layout group
-        LayoutRebuilder.ForceRebuildLayoutImmediate(parentRectTransform);
+
+        // Force layout rebuild if in a layout group (also TMP-sensitive — guard it).
+        if (parentRectTransform != null)
+        {
+            try { LayoutRebuilder.ForceRebuildLayoutImmediate(parentRectTransform); }
+            catch (System.Exception) { /* missing font / TMP issue — non-fatal */ }
+        }
     }
     
     // Public method to manually recalculate height if needed

@@ -175,6 +175,7 @@ public class BuildingSystem : MonoBehaviour
                 // Kitchens count as food-service spend, shelters as lodging spend.
                 var spendCat = buildingType == BuildingType.Kitchen ? SatisfactionAndBudget.SpendCategory.Food
                              : buildingType == BuildingType.Shelter ? SatisfactionAndBudget.SpendCategory.Lodging
+                             : buildingType == BuildingType.CaseworkSite ? SatisfactionAndBudget.SpendCategory.Casework
                              : SatisfactionAndBudget.SpendCategory.Other;
                 SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, spendCat, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
                 ToastManager.ShowToast($"Construction cost of {constructionCost} deducted for building {buildingType}", ToastType.Info, true);

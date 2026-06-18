@@ -200,8 +200,46 @@ public class ClientStayTracker : MonoBehaviour
                 remainingToRemove = 0;
             }
         }
-        
+
+        // Casework throughput for the reward: these people were processed home.
+        RewardMetricsTracker.Instance?.RecordCaseworkProcessed(totalRemoved);
         return totalRemoved;
+    }
+
+    /// <summary>A building whose displaced residents should be tracked for casework — a Shelter
+    /// OR the Motel. (Bug fix: motel residents were never tracked, so they never generated
+    /// casework requests and could never be processed home.)</summary>
+    public static bool IsLodgingBuilding(MonoBehaviour b)
+    {
+        if (b == null) return false;
+        Building bld = b.GetComponent<Building>();
+        if (bld != null && bld.GetBuildingType() == BuildingType.Shelter) return true;
+        PrebuiltBuilding pb = b.GetComponent<PrebuiltBuilding>();
+        return pb != null && pb.GetPrebuiltType() == PrebuiltBuildingType.Motel;
+    }
+
+    public static bool IsCaseworkSite(MonoBehaviour b)
+    {
+        Building bld = b != null ? b.GetComponent<Building>() : null;
+        return bld != null && bld.GetBuildingType() == BuildingType.CaseworkSite;
+    }
+
+    /// <summary>Centralized population-delivery hook (replaces the scattered shelter-only
+    /// branches in Vehicle / TaskDetailUI / ClientRelocationHandler). A delivery to a shelter OR
+    /// motel registers a tracked client group; a delivery to a casework site processes that many
+    /// people home from the source lodging building.</summary>
+    public void HandlePopulationDelivery(MonoBehaviour source, MonoBehaviour dest, int count, int taskId)
+    {
+        if (count <= 0 || dest == null) return;
+        if (IsCaseworkSite(dest))
+        {
+            if (source != null) RemoveClientsByQuantity(source, count);
+        }
+        else if (IsLodgingBuilding(dest))
+        {
+            string src = source != null ? source.name : "?";
+            RegisterClientArrival(dest, count, $"Relocate_{taskId}_{src}_to_{dest.name}");
+        }
     }
 
 
@@ -277,6 +315,9 @@ public class ClientStayTracker : MonoBehaviour
     void GenerateCaseworkTask(ClientGroup group)
     {
         if (TaskSystem.Instance == null) return;
+
+        // Casework demand for the reward: these people now need processing home.
+        RewardMetricsTracker.Instance?.RecordCaseworkRequested(group.clientCount);
 
         string description = string.Format(caseworkTaskDescription, group.GetRoundsInShelter(currentRound));
         // Use Unity's overloaded null check (not ?.): a deconstructed shelter is a

@@ -691,10 +691,8 @@ public class TaskSystem : MonoBehaviour
             GenerateTasksFromDatabase();
         }
 
-        // B4: background population mover — auto-relocate displaced residents into available
-        // shelters/motels each round (no-op if DeliverySystem.enableAutoTasks is false).
-        if (newSegment != 3)
-            DeliverySystem.Instance?.RunBackgroundHousing();
+        // (Background auto-housing removed: the agent/player must make every relocation decision
+        // itself. GeneratePopulationTransportTasks is no longer invoked from the round loop.)
     }
 
     void GenerateTasksFromDatabase()

@@ -386,11 +386,12 @@ public class SatisfactionAndBudget : MonoBehaviour
     }
 
     // ── Cumulative spend by category (for the cost-efficiency reward metric) ──
-    public enum SpendCategory { Other, Food, Lodging, Worker }
-    private int cumFoodSpend = 0, cumLodgingSpend = 0, cumWorkerSpend = 0;
+    public enum SpendCategory { Other, Food, Lodging, Worker, Casework }
+    private int cumFoodSpend = 0, cumLodgingSpend = 0, cumWorkerSpend = 0, cumCaseworkSpend = 0;
     public int CumulativeFoodSpend => cumFoodSpend;
     public int CumulativeLodgingSpend => cumLodgingSpend;
     public int CumulativeWorkerSpend => cumWorkerSpend;
+    public int CumulativeCaseworkSpend => cumCaseworkSpend;
 
     /// <summary>
     /// Spend attributed to a service category so Python can compute cost
@@ -405,6 +406,7 @@ public class SatisfactionAndBudget : MonoBehaviour
             if (category == SpendCategory.Food) cumFoodSpend += amount;
             else if (category == SpendCategory.Lodging) cumLodgingSpend += amount;
             else if (category == SpendCategory.Worker) cumWorkerSpend += amount;
+            else if (category == SpendCategory.Casework) cumCaseworkSpend += amount;
         }
         AddBudget(-amount, description);
     }

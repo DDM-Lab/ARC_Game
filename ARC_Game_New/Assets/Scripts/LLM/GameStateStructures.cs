@@ -65,6 +65,9 @@ public class RewardMetrics
     public int foodFulfilled;
     public int lodgingResolved;
     public int lodgingFulfilled;
+    // Casework / return-home (people who requested casework vs people actually processed home)
+    public int caseworkRequested;
+    public int caseworkProcessed;
     // Worker allocation summed across rounds (person-rounds)
     public long cumWorkingWorkers;
     public long cumTrainingWorkers;
@@ -76,6 +79,7 @@ public class RewardMetrics
     public int foodSpend;
     public int lodgingSpend;
     public int workerSpend;
+    public int caseworkSpend;
 }
 
 [System.Serializable]

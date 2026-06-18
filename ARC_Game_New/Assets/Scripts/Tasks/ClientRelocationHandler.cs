@@ -94,6 +94,45 @@ public class ClientRelocationHandler : MonoBehaviour
         return GetDestinationsSorted(ds, includeShelters, includeMotels, source).Sum(d => d.effectiveSpace) > 0;
     }
 
+    /// <summary>Can a relocation choice actually be carried out right now? Returns false + a
+    /// human-readable reason when not — used to disable the choice and tell the player why.
+    /// Immediate (helicopter) only needs destination space (it teleports). Deferred (road) also
+    /// needs an undamaged population vehicle AND a flood-free route to a destination with space.</summary>
+    public bool CheckFeasibility(GameTask parentTask, bool includeShelters, bool includeMotels,
+                                 bool immediate, out string reason)
+    {
+        reason = "";
+        MonoBehaviour source = TaskSystem.Instance.FindTriggeringFacility(parentTask);
+        if (source == null) { reason = "Source facility not found"; return false; }
+        if (GetPopulation(source) <= 0) { reason = "No residents left to relocate"; return false; }
+
+        DeliverySystem ds = DeliverySystem.Instance;
+        if (ds == null) { reason = "Delivery system unavailable"; return false; }
+
+        var dests = GetDestinationsSorted(ds, includeShelters, includeMotels, source);
+        string destLabel = includeShelters && includeMotels ? "shelter/motel"
+                         : includeShelters ? "shelter" : "motel";
+        if (dests.Sum(d => d.effectiveSpace) <= 0) { reason = $"No space available at any {destLabel}"; return false; }
+
+        // Immediate teleport needs no road or vehicle — space is enough.
+        if (immediate) return true;
+
+        // Deferred road delivery needs an undamaged population-capable vehicle...
+        bool hasVehicle = FindObjectsOfType<Vehicle>()
+            .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.Population)
+                   && v.GetCurrentStatus() != VehicleStatus.Damaged);
+        if (!hasVehicle) { reason = "No undamaged vehicle available"; return false; }
+
+        // ...and a flood-free route to at least one destination that has space.
+        foreach (var (dest, space) in dests)
+        {
+            if (space <= 0) continue;
+            if (ds.CanCreateDeliveryWithEstimate(source, dest, out _)) return true;
+        }
+        reason = $"All routes to the {destLabel} are blocked by flooding";
+        return false;
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // PUBLIC: QUEUED (vehicle) DELIVERY
     // ─────────────────────────────────────────────────────────────────
@@ -198,13 +237,10 @@ public class ClientRelocationHandler : MonoBehaviour
             if (delivered < removed)
                 AddPopulation(source, removed - delivered);
 
-            // Track client arrivals
-            Building destBuilding = dest.GetComponent<Building>();
-            if (destBuilding != null && ClientStayTracker.Instance != null && delivered > 0)
-            {
-                string groupName = $"Relocate_{parentTask.taskId}_{source.name}_to_{dest.name}";
-                ClientStayTracker.Instance.RegisterClientArrival(destBuilding, delivered, groupName);
-            }
+            // Track arrivals at shelter OR motel for casework (centralized; fixes the
+            // motel-not-tracked bug — motels now generate casework like shelters).
+            if (ClientStayTracker.Instance != null && delivered > 0)
+                ClientStayTracker.Instance.HandlePopulationDelivery(source, dest, delivered, parentTask.taskId);
 
             remaining -= delivered;
             totalDelivered += delivered;

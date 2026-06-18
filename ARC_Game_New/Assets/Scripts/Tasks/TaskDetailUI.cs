@@ -404,6 +404,7 @@ public class TaskDetailUI : MonoBehaviour
 
     void DisplayAgentChoices()
     {
+        bool live = currentTask.status == TaskStatus.Active || currentTask.status == TaskStatus.InProgress;
         foreach (AgentChoice choice in currentTask.agentChoices)
         {
             GameObject choiceItem = Instantiate(agentChoicePrefab, conversationContent);
@@ -411,16 +412,57 @@ public class TaskDetailUI : MonoBehaviour
 
             if (choiceUI != null)
             {
-                if (currentTask.status == TaskStatus.Active || currentTask.status == TaskStatus.InProgress)
+                if (live)
+                {
                     choiceUI.Initialize(choice, this);
+                    // Proactively disable a relocation choice that can't be executed right now
+                    // (no space, no vehicle, or all routes flood-blocked) and show the reason
+                    // inline, instead of letting the player pick it and fail on Confirm.
+                    string reason;
+                    if (!IsChoiceFeasible(choice, out reason))
+                        choiceUI.SetValidationState(false, reason);
+                }
                 else
+                {
                     choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentTask.selectedChoiceId);
+                }
             }
 
             currentConversationItems.Add(choiceItem);
         }
 
         ScrollToBottom();
+    }
+
+    /// <summary>True (with no reason) if the choice is non-delivery or currently executable;
+    /// false + reason when a delivery choice can't be carried out now (so it can be disabled with
+    /// an inline explanation). Immediate/helicopter choices airlift externally and stay valid;
+    /// deferred (road/kitchen) choices need the infrastructure + a clear route.</summary>
+    bool IsChoiceFeasible(AgentChoice choice, out string reason)
+    {
+        reason = "";
+        if (!(choice.triggersDelivery || choice.immediateDelivery))
+            return true;
+
+        if (choice.deliveryCargoType == ResourceType.FoodPacks)
+        {
+            // Immediate food = external airlift (no kitchen needed). Deferred = from kitchens.
+            if (choice.immediateDelivery || FoodDeliveryHandler.Instance == null) return true;
+            return FoodDeliveryHandler.Instance.CanExecute(currentTask, choice.deliveryQuantity, out reason);
+        }
+
+        if (choice.deliveryCargoType == ResourceType.Population && ClientRelocationHandler.Instance != null)
+        {
+            bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                          || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
+            bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                          && choice.destinationPrebuilt == PrebuiltBuildingType.Motel;
+            if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+            return ClientRelocationHandler.Instance.CheckFeasibility(
+                currentTask, toShelter, toMotel, choice.immediateDelivery, out reason);
+        }
+
+        return true;
     }
 
     void DisplayNumericalInputs()
@@ -1590,6 +1632,10 @@ public class TaskDetailUI : MonoBehaviour
             return;
         }
 
+        // Also surface it as a toast — a reliable channel independent of the inline message
+        // (which can render blank if a TMP font asset is missing).
+        ToastManager.ShowToast(errorText, ToastType.Warning, true);
+
         // Create a temporary agent message to show the error
         GameObject errorMessageItem = Instantiate(agentMessagePrefab, conversationContent);
         AgentMessageUI messageUI = errorMessageItem.GetComponent<AgentMessageUI>();
@@ -2237,36 +2283,11 @@ public class TaskDetailUI : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Immediate delivery completed: {actualDelivered} {choice.deliveryCargoType} from {source.name} to {destination.name}");
 
-        // NEW: Track client arrivals at shelters for immediate delivery
+        // Track population movement for casework (shelter OR motel arrivals; casework-site
+        // deliveries process people home) — centralized, fixes the motel-not-tracked bug.
         if (choice.deliveryCargoType == ResourceType.Population && ClientStayTracker.Instance != null && actualDelivered > 0)
         {
-            Building sourceBuilding = source.GetComponent<Building>();
-            Building destBuilding = destination.GetComponent<Building>();
-            PrebuiltBuilding sourcePrebuilt = source.GetComponent<PrebuiltBuilding>();
-            PrebuiltBuilding destPrebuilt = destination.GetComponent<PrebuiltBuilding>();
-
-            // Case 1: Community to Shelter
-            if (sourcePrebuilt != null && sourcePrebuilt.GetPrebuiltType() == PrebuiltBuildingType.Community &&
-                destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
-            {
-                string groupName = $"Immediate_{currentTask.taskId}_{sourcePrebuilt.name}_to_{destBuilding.name}";
-                ClientStayTracker.Instance.RegisterClientArrival(destBuilding, actualDelivered, groupName);
-            }
-            // Case 2: Shelter to Shelter
-            else if (sourceBuilding != null && sourceBuilding.GetBuildingType() == BuildingType.Shelter &&
-                    destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
-            {
-                string groupName = $"Immediate_{currentTask.taskId}_{sourceBuilding.name}_to_{destBuilding.name}";
-                ClientStayTracker.Instance.RegisterClientArrival(destBuilding, actualDelivered, groupName);
-            }
-            // Case 3: Shelter to Casework
-            else if (sourceBuilding != null && sourceBuilding.GetBuildingType() == BuildingType.Shelter &&
-                    destBuilding != null && destBuilding.GetBuildingType() == BuildingType.CaseworkSite)
-            {
-                int removed = ClientStayTracker.Instance.RemoveClientsByQuantity(sourceBuilding, actualDelivered);
-                if (showDebugInfo)
-                    Debug.Log($"Removed {removed} clients from {sourceBuilding.name} for immediate casework");
-            }
+            ClientStayTracker.Instance.HandlePopulationDelivery(source, destination, actualDelivered, currentTask.taskId);
         }
     }
 

@@ -23,6 +23,8 @@ public class RewardMetricsTracker : MonoBehaviour
 
     // Needs-met (task resolution, Food / Lodging tagged tasks only)
     private int foodResolved, foodFulfilled, lodgingResolved, lodgingFulfilled;
+    // Casework / return-home: people who requested casework vs people actually processed home
+    private int caseworkRequested, caseworkProcessed;
     // Worker allocation, summed across rounds (person-rounds)
     private long cumWorking, cumTraining, cumIdle;
     private int roundsCompleted;
@@ -82,6 +84,19 @@ public class RewardMetricsTracker : MonoBehaviour
         }
     }
 
+    /// <summary>Casework demand: N people requested casework (return-home) after their shelter/motel
+    /// stay. Called when a casework request is generated.</summary>
+    public void RecordCaseworkRequested(int people)
+    {
+        if (people > 0) caseworkRequested += people;
+    }
+
+    /// <summary>Casework throughput: N people were actually processed home via a casework site.</summary>
+    public void RecordCaseworkProcessed(int people)
+    {
+        if (people > 0) caseworkProcessed += people;
+    }
+
     /// <summary>A delivery that arrived AFTER its task already resolved still physically housed
     /// people — credit fulfillment retroactively (D4), capped so fulfilled never exceeds resolved.</summary>
     public void AddLateDelivery(GameTask task, int delivered)
@@ -109,6 +124,8 @@ public class RewardMetricsTracker : MonoBehaviour
             foodFulfilled = foodFulfilled,
             lodgingResolved = lodgingResolved,
             lodgingFulfilled = lodgingFulfilled,
+            caseworkRequested = caseworkRequested,
+            caseworkProcessed = caseworkProcessed,
             cumWorkingWorkers = cumWorking,
             cumTrainingWorkers = cumTraining,
             cumIdleWorkers = cumIdle,
@@ -118,6 +135,7 @@ public class RewardMetricsTracker : MonoBehaviour
             foodSpend = sb != null ? sb.CumulativeFoodSpend : 0,
             lodgingSpend = sb != null ? sb.CumulativeLodgingSpend : 0,
             workerSpend = sb != null ? sb.CumulativeWorkerSpend : 0,
+            caseworkSpend = sb != null ? sb.CumulativeCaseworkSpend : 0,
         };
     }
 }

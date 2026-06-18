@@ -95,10 +95,11 @@ public class AgentChoiceUI : MonoBehaviour
         isValid = valid;
         validationMessage = message;
 
-        // Update button appearance
+        // Update button appearance — disable the checkbox for an invalid choice so it can't be
+        // selected (a non-interactable Button won't fire OnChoiceClicked), and grey it out.
         if (choiceButton != null)
         {
-            //choiceButton.interactable = valid;
+            choiceButton.interactable = valid;
 
             Image buttonImage = choiceButton.GetComponent<Image>();
             if (buttonImage != null)
@@ -107,11 +108,12 @@ public class AgentChoiceUI : MonoBehaviour
             }
         }
 
-        // Show validation message
+        // Show the inline reason (e.g. "All routes blocked by flood") in red under the choice.
         if (validationText != null)
         {
             validationText.text = valid ? "" : message;
             validationText.color = Color.red;
+            validationText.gameObject.SetActive(!valid);
         }
     }
     
