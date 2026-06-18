@@ -219,6 +219,7 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
     P = sum((f.get("currentPopulation") or 0) for f in facs if f.get("buildingType") == "Community") or 120
     shelter_cap = sum((f.get("populationCapacity") or 0) for f in facs if f.get("buildingType") == "Shelter")
     n_kitchens = sum(1 for f in facs if f.get("buildingType") == "Kitchen")
+    n_casework = sum(1 for f in facs if f.get("buildingType") == "CaseworkSite")
     tasks_by_id = {t["taskId"]: t for t in (gs.get("allActiveTasks") or [])}
 
     def is_lodging(t):
@@ -332,12 +333,15 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
         cands = [(i, a) for i, a in enumerate(va) if a.get("action_type") == "construction"
                  and (a.get("construction") or {}).get("building_type") == btype]
         return min(cands, key=lambda x: x[1].get("cost") or 0) if cands else None
-    # Build shelters then kitchens. Shelters are NOT wasted: they give the FREE deferred
-    # "Send to Shelters" relocation a destination with space, so it can actually complete
-    # (kitchens-only dropped reward 1.35 -> 1.10 and lodging too — shelters absorb relocations).
+    # Build order: ONE casework site FIRST (so it exists well before the first return-home
+    # requests arrive ~round 13 — once it's up + staffed, greedy's choice logic already routes
+    # "Casework Request" tasks to it, so there's no smarter policy needed), then shelters toward
+    # demand (they give the free deferred relocation a destination), then kitchens for food+workers.
     if rounds_left >= _POT_MIN_HORIZON and budget >= _POT_BUDGET_RESERVE:
         target = None
-        if shelter_cap < P:
+        if n_casework < 1:
+            target = find_build("CaseworkSite")
+        if target is None and shelter_cap < P:
             target = find_build("Shelter")
         if target is None and n_kitchens < _POT_KITCHEN_TARGET:
             target = find_build("Kitchen")
@@ -360,8 +364,8 @@ def potential_decision(env, rnd=0, rounds_total=18, w=REWARD_WEIGHTS):
                 actions.append(i)
                 break
 
-    return {"choices": choices, "actions": actions, "note": "potential",
-            "reasoning": f"potential: P={P} shelterCap={shelter_cap} kitchens={n_kitchens} roundsLeft={rounds_left}"}
+    return {"choices": choices, "actions": actions, "note": "rules-based",
+            "reasoning": f"rules-based: P={P} shelterCap={shelter_cap} kitchens={n_kitchens} casework={n_casework} roundsLeft={rounds_left}"}
 
 
 def random_decision(env, rng_seed=0):
@@ -420,7 +424,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                 dec = {"choices": [], "actions": []}            # no-op
             elif policy == "greedy":
                 dec = greedy_decision(env); raw = json.dumps(dec)
-            elif policy == "potential":
+            elif policy == "rules-based":
                 dec = potential_decision(env, rnd, rounds); raw = json.dumps(dec)
             elif policy == "random":
                 dec = random_decision(env); raw = json.dumps(dec)
@@ -670,8 +674,8 @@ def main():
     ap.add_argument("--wandb", action="store_true", help="log results to Weights & Biases")
     ap.add_argument("--wandb-project", default="cpulling/CORA_RL",
                     help="entity/project (default cpulling/CORA_RL)")
-    ap.add_argument("--policy", choices=["llm", "greedy", "potential", "random", "noop"], default="llm",
-                    help="llm = benchmark the --models; greedy/potential/random/noop = non-learning baseline (no API)")
+    ap.add_argument("--policy", choices=["llm", "greedy", "rules-based", "random", "noop"], default="llm",
+                    help="llm = benchmark the --models; greedy/rules-based/random/noop = non-learning baseline (no API)")
     ap.add_argument("--base-port", type=int, default=BASE_PORT,
                     help="gym base port; bump to run concurrently with another benchmark")
     args = ap.parse_args()

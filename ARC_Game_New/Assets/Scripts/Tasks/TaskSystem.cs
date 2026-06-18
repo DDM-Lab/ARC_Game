@@ -2357,8 +2357,11 @@ public class TaskSystem : MonoBehaviour
             {
                 // B5/D5: don't offer a population-relocation choice whose destination(s) can't
                 // house anyone right now (no shelter/motel space). Same shelter/motel derivation
-                // as ExecuteClientRelocation.
+                // as ExecuteClientRelocation. NOTE: this gate is only for shelter/motel relocation —
+                // a "send to casework site" choice (destination CaseworkSite) is return-home
+                // processing, NOT a shelter relocation, so it must NOT be gated on shelter space.
                 if (c.deliveryCargoType == ResourceType.Population && (c.triggersDelivery || c.immediateDelivery)
+                        && c.destinationBuilding != BuildingType.CaseworkSite
                         && ClientRelocationHandler.Instance != null)
                 {
                     bool toShelter = c.destinationType != DeliveryDestinationType.SpecificPrebuilt

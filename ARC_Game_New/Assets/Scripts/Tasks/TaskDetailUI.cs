@@ -451,6 +451,12 @@ public class TaskDetailUI : MonoBehaviour
             return FoodDeliveryHandler.Instance.CanExecute(currentTask, choice.deliveryQuantity, out reason);
         }
 
+        // "Send to casework site" is return-home processing, not a shelter/motel relocation —
+        // don't gate it on shelter space (that wrongly hid the only casework-processing choice).
+        if (choice.deliveryCargoType == ResourceType.Population
+                && choice.destinationBuilding == BuildingType.CaseworkSite)
+            return true;
+
         if (choice.deliveryCargoType == ResourceType.Population && ClientRelocationHandler.Instance != null)
         {
             bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
@@ -788,6 +794,17 @@ public class TaskDetailUI : MonoBehaviour
     // NOT mark the task fulfilled, B1). Returns -1 for food/other/deferred ("not gated, proceed").
     int ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)
     {
+        // Multi-destination deliveries (e.g. "Send to casework site" — SingleSourceMultiDest,
+        // destinationBuilding=CaseworkSite) use a dedicated path that honors destinationBuilding,
+        // so casework processing actually routes to the CaseworkSite and triggers return-home
+        // removal. Without this, such choices fell through to ExecuteClientRelocation (shelter/
+        // motel) and casework was never processed.
+        if (choice.enableMultipleDeliveries)
+        {
+            ExecuteMultipleDeliveries(choice);
+            return -1;
+        }
+
         switch (choice.deliveryCargoType)
         {
             case ResourceType.FoodPacks:
