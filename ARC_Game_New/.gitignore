@@ -116,5 +116,13 @@ environment.yml
 
 # Benchmark run artifacts
 benchmark_results/
+bench_*/
+analysis_cora_components/
+bench_plots/
+render_frames*/
+# Generated render / state dumps (regenerable via the scripts)
+arc_dashboard.png
+arc_map_grid.json
+arc_midgame_state.json
 
 wandb/

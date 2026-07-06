@@ -1,1 +1,4 @@
 Builds/
+
+# macOS
+.DS_Store
