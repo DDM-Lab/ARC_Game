@@ -130,19 +130,29 @@ public class WorkerRequestSystem : MonoBehaviour
             taskSystem.workforceServiceSprite
         ));
 
-        AgentNumericalInput untrainedInput = new AgentNumericalInput(
-            1,
-            NumericalInputType.UntrainedWorkers,
-            0,
-            0,
-            20
-        );
-        untrainedInput.inputLabel = "Untrained Workers to Request";
-        untrainedInput.customDescription = $"${untrainedWorkerCost}/worker · arrives in {untrainedArrivalDays} {(untrainedArrivalDays == 1 ? "day" : "days")} · 1 workforce each";
-        requestTask.numericalInputs.Add(untrainedInput);
+        //AgentNumericalInput untrainedInput = new AgentNumericalInput(
+        //    1,
+        //    NumericalInputType.UntrainedWorkers,
+        //    0,
+        //    0,
+        //    20
+        //);
+        //untrainedInput.inputLabel = "Untrained Workers to Request";
+        //untrainedInput.customDescription = $"${untrainedWorkerCost}/worker · arrives in {untrainedArrivalDays} {(untrainedArrivalDays == 1 ? "day" : "days")} · 1 workforce each";
+        //requestTask.numericalInputs.Add(untrainedInput);
 
+        //AgentNumericalInput trainedInput = new AgentNumericalInput(
+        //    2,
+        //    NumericalInputType.TrainedWorkers,
+        //    0,
+        //    0,
+        //    20
+        //);
+        //trainedInput.inputLabel = "Trained Workers to Request";
+        //trainedInput.customDescription = $"${trainedWorkerCost}/worker · arrives in {trainedArrivalDays} {(trainedArrivalDays == 1 ? "day" : "days")} · 2 workforce each";
+        //requestTask.numericalInputs.Add(trainedInput);
         AgentNumericalInput trainedInput = new AgentNumericalInput(
-            2,
+            1, // Updated ID to 1
             NumericalInputType.TrainedWorkers,
             0,
             0,
@@ -151,6 +161,17 @@ public class WorkerRequestSystem : MonoBehaviour
         trainedInput.inputLabel = "Trained Workers to Request";
         trainedInput.customDescription = $"${trainedWorkerCost}/worker · arrives in {trainedArrivalDays} {(trainedArrivalDays == 1 ? "day" : "days")} · 2 workforce each";
         requestTask.numericalInputs.Add(trainedInput);
+
+        AgentNumericalInput untrainedInput = new AgentNumericalInput(
+            2, // Updated ID to 2
+            NumericalInputType.UntrainedWorkers,
+            0,
+            0,
+            20
+        );
+        untrainedInput.inputLabel = "Untrained Workers to Request";
+        untrainedInput.customDescription = $"${untrainedWorkerCost}/worker · arrives in {untrainedArrivalDays} {(untrainedArrivalDays == 1 ? "day" : "days")} · 1 workforce each";
+        requestTask.numericalInputs.Add(untrainedInput);
 
         currentRequestTask = requestTask;
 
@@ -175,8 +196,10 @@ public class WorkerRequestSystem : MonoBehaviour
             return;
         }
 
-        int untrainedToRequest = task.numericalInputs[0].currentValue;
-        int trainedToRequest = task.numericalInputs[1].currentValue;
+        //int untrainedToRequest = task.numericalInputs[0].currentValue;
+        //int trainedToRequest = task.numericalInputs[1].currentValue;
+        int trainedToRequest = task.numericalInputs[0].currentValue;
+        int untrainedToRequest = task.numericalInputs[1].currentValue;
 
         if (untrainedToRequest <= 0 && trainedToRequest <= 0)
             return;

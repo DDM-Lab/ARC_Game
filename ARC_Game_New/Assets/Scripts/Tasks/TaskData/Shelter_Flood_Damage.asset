@@ -36,11 +36,11 @@ MonoBehaviour:
   floodTileTriggers: []
   floodedFacilityTriggers:
   - facilityType: 3
-    comparison: 1
-    floodTileThreshold: 2
+    comparison: 4
+    floodTileThreshold: 4
     specificBuildingType: 1
     specificPrebuiltType: 0
-    detectionRadius: 2
+    detectionRadius: 5
   budgetTriggers: []
   satisfactionTriggers: []
   workforceTriggers: []
@@ -135,8 +135,8 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 1
   - choiceId: 2
-    choiceText: Helicopter evacuation to Motel (Immediate, $5000, Satisfaction +
-      10)
+    choiceText: Rapid Response Vehicle evacuation to Motel (Immediate, $5000, Satisfaction
+      + 10)
     agentReasoning: 
     choiceImpacts:
     - impactType: 1

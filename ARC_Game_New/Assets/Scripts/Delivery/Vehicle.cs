@@ -27,6 +27,12 @@ public class Vehicle : MonoBehaviour
     [Header("Visual Components")]
     public SpriteRenderer vehicleRenderer;
     public GameObject cargoIndicator; // Visual indicator of cargo
+    public SpriteRenderer glowIndicator; // color coded status
+
+    [Header("Glow State Colors")]
+    public Color availableGlowColor = new Color(0f, 1f, 0.2f, 1f);   // Green
+    public Color activeGlowColor = new Color(1f, 0.8f, 0f, 1f);      // Yellow
+    public Color damagedGlowColor = new Color(1f, 0.1f, 0.1f, 1f);   // Red
 
     [Header("Vehicle Direction")]
     public bool enableDirectionRotation = true;
@@ -376,23 +382,48 @@ public class Vehicle : MonoBehaviour
     {
         if (vehicleRenderer == null) return;
 
+        //switch (currentStatus)
+        //{
+        //    case VehicleStatus.Idle:
+        //        vehicleRenderer.color = idleColor;
+        //        break;
+        //    case VehicleStatus.Loading:
+        //        vehicleRenderer.color = loadingColor;
+        //        break;
+        //    case VehicleStatus.InTransit:
+        //        vehicleRenderer.color = inTransitColor;
+        //        break;
+        //    case VehicleStatus.Unloading:
+        //        vehicleRenderer.color = unloadingColor;
+        //        break;
+
+        //    case VehicleStatus.Damaged:
+        //        vehicleRenderer.color = damagedColor;
+        //        break;
+        //}
+
+        //color coded version
         switch (currentStatus)
         {
             case VehicleStatus.Idle:
                 vehicleRenderer.color = idleColor;
+                if (glowIndicator != null) glowIndicator.color = availableGlowColor; 
                 break;
             case VehicleStatus.Loading:
                 vehicleRenderer.color = loadingColor;
+                if (glowIndicator != null) glowIndicator.color = activeGlowColor;    
                 break;
             case VehicleStatus.InTransit:
                 vehicleRenderer.color = inTransitColor;
+                if (glowIndicator != null) glowIndicator.color = activeGlowColor;    
                 break;
             case VehicleStatus.Unloading:
                 vehicleRenderer.color = unloadingColor;
+                if (glowIndicator != null) glowIndicator.color = activeGlowColor;    
                 break;
-
             case VehicleStatus.Damaged:
                 vehicleRenderer.color = damagedColor;
+                if (glowIndicator != null) glowIndicator.color = damagedGlowColor;   
                 break;
         }
 
@@ -671,11 +702,21 @@ public class Vehicle : MonoBehaviour
     {
         if (Time.timeScale != 0f) return; // Only when paused
         transform.localScale = Vector3.one * 1.1f;
+        //show status text on hover
+        if (VehicleUIOverlay.Instance != null)
+        {
+            VehicleUIOverlay.Instance.SetOverlayVisibility(this, true);
+        }
     }
 
     void OnMouseExit()
     {
         transform.localScale = Vector3.one;
+        //hide status text leaving hover
+        if (VehicleUIOverlay.Instance != null)
+        {
+            VehicleUIOverlay.Instance.SetOverlayVisibility(this, false);
+        }
     }
 
     void OnMouseDown()
@@ -704,7 +745,7 @@ public class Vehicle : MonoBehaviour
     }
 
     // Getters
-    public int GetVehicleId() => vehicleId;
+    public int GetVehicleId() => vehicleId; 
     public string GetVehicleName() => vehicleName;
     public VehicleStatus GetCurrentStatus() => currentStatus;
     public int GetMaxCapacity() => maxCargoCapacity;
@@ -712,7 +753,7 @@ public class Vehicle : MonoBehaviour
     public ResourceType GetCurrentCargoType() => GetPrimaryCargoType();
     public List<ResourceType> GetAllowedCargoTypes() => new List<ResourceType>(allowedCargoTypes);
     public DeliveryTask GetCurrentTask() => currentTask;
-
+     
     [ContextMenu("Print Vehicle Status")]
     public void DebugPrintStatus()
     {

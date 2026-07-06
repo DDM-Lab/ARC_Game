@@ -128,7 +128,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 2
-    choiceText: Helicopter Evacuation to Shelters (Immediate, $3000)
+    choiceText: Rapid Response Vehicle Evacuation to Shelters (Immediate, $3000)
     agentReasoning: 
     choiceImpacts:
     - impactType: 1
@@ -157,7 +157,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 3
-    choiceText: Helicopter Evacuation to Motel (Immediate, $3000)
+    choiceText: Rapid Response Vehicle Evacuation to Motel (Immediate, $3000)
     agentReasoning: 
     choiceImpacts:
     - impactType: 1

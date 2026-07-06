@@ -491,6 +491,7 @@ public class AgentConversationUI : MonoBehaviour
         if (choiceUI != null)
         {
             choiceUI.Initialize(choice, null, PreviewChoiceRoute);
+            //choiceUI.Initialize(choice, null, null);
             choiceUI.choiceButton.onClick.AddListener(() => OnLocalChoiceSelected(choice));
         }
         currentConversationItems.Add(choiceItem);
@@ -521,8 +522,10 @@ public class AgentConversationUI : MonoBehaviour
             bool isValid = !choice.triggersDelivery
                 || TaskDetailUI.ValidateChoiceDelivery(currentSelectedTask, choice, out errorMessage);
             choiceUI.SetValidationState(isValid, errorMessage);
+            bool isImmediateFoodOrder = choice.immediateDelivery && choice.deliveryCargoType == ResourceType.FoodPacks;
 
             bool canPreview = isValid
+                && !isImmediateFoodOrder
                 && TaskSystem.Instance != null
                 && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
                 && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
@@ -532,6 +535,7 @@ public class AgentConversationUI : MonoBehaviour
 
     void PreviewChoiceRoute(AgentChoice choice)
     {
+        Debug.Log("RET RET HERE");
         if (choice == null || currentSelectedTask == null || TaskSystem.Instance == null) return;
 
         MonoBehaviour triggeringFacility = null;
@@ -547,10 +551,12 @@ public class AgentConversationUI : MonoBehaviour
 
         if (source == null || dest == null)
         {
+            Debug.Log("RET HERERERE");
             Debug.LogWarning("[AgentConversationUI] Could not resolve route source or destination.");
             return;
         }
 
+        Debug.Log("HERERERERE");
         StartCoroutine(PeekForRoute(source, dest));
     }
 

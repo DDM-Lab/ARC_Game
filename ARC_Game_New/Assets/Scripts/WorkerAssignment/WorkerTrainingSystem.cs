@@ -144,7 +144,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         AgentNumericalInput workerCountInput = new AgentNumericalInput(
             1,
             NumericalInputType.UntrainedWorkers,
-            1,
+            0,
             0,
             maxTrainable
         );

@@ -518,6 +518,7 @@ public class WebSocketManager : MonoBehaviour
             // Add agent reasoning as a message
             if (!string.IsNullOrEmpty(proposal.reasoning))
             {
+                string cleanReasoning = TaskSystem.Instance.ConvertSiteNamesToFriendly(proposal.reasoning);
                 llmContent.messages.Add(proposal.reasoning);
             }
 
@@ -526,14 +527,25 @@ public class WebSocketManager : MonoBehaviour
             {
                 foreach (var pkg in proposal.packages)
                 {
+                    string cleanLabel = TaskSystem.Instance.ConvertSiteNamesToFriendly(pkg.label);
+                    string cleanDescription = TaskSystem.Instance.ConvertSiteNamesToFriendly(pkg.description);
+
                     llmContent.choices.Add(new LLMAgentChoice
                     {
                         choiceId = pkg.package_index,
-                        choiceText = pkg.label,
-                        agentReasoning = pkg.description,
+                        choiceText = cleanLabel,
+                        agentReasoning = cleanDescription,
                         confidence = pkg.confidence,
                         impacts = new System.Collections.Generic.List<LLMImpact>()
                     });
+                    //llmContent.choices.Add(new LLMAgentChoice
+                    //{
+                    //    choiceId = pkg.package_index,
+                    //    choiceText = pkg.label,
+                    //    agentReasoning = pkg.description,
+                    //    confidence = pkg.confidence,
+                    //    impacts = new System.Collections.Generic.List<LLMImpact>()
+                    //});
                 }
             }
 

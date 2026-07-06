@@ -2587,9 +2587,11 @@ public class TaskDetailUI : MonoBehaviour
             string errorMessage = "";
             bool isValid = !choice.triggersDelivery || ValidateChoiceDelivery(choice, out errorMessage);
             choiceUI.SetValidationState(isValid, errorMessage);
+            bool isImmediateFoodOrder = choice.immediateDelivery && choice.deliveryCargoType == ResourceType.FoodPacks;
 
             // Preview button — hide when choice is invalid or route can't be resolved
             bool canPreview = isValid
+                && !isImmediateFoodOrder
                 && TaskSystem.Instance != null
                 && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
                 && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;

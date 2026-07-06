@@ -70,6 +70,7 @@ public class AgentChoiceUI : MonoBehaviour
             // Immediate food-pack delivery comes from an external source, not a mapped route
             bool isImmediateFoodOrder = agentChoice.immediateDelivery && agentChoice.deliveryCargoType == ResourceType.FoodPacks;
             bool showPreview = hasDelivery && hasHandler && !isImmediateFoodOrder;
+            Debug.Log("AgentChoiceUI:" + choiceText.text + ", isImmediateFoodOrder = " + isImmediateFoodOrder.ToString() + ", showPreview = " + showPreview.ToString());
             previewButton.gameObject.SetActive(showPreview);
             if (showPreview)
             {

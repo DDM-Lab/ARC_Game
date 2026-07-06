@@ -80,6 +80,7 @@ public class DeliveryQueueRow : MonoBehaviour
         {
             bool canLocate = vehicle != null && vehicle.currentStatus != VehicleStatus.Idle;
             locateButton.interactable = canLocate;
+            locateButton.onClick.RemoveAllListeners();
             locateButton.onClick.AddListener(OnLocateClicked);
         }
     }

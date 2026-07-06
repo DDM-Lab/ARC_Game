@@ -54,7 +54,19 @@ public class DeliveryQueuePanel : MonoBehaviour
         if (panel == null) return;
         bool next = !panel.activeSelf;
         panel.SetActive(next);
-        if (next) RefreshList();
+        //if (next) RefreshList();
+        if (next)
+        {
+            RefreshList();
+        }
+        else
+        {
+            DeliveryRouteVisualizer visualizer = FindObjectOfType<DeliveryRouteVisualizer>();
+            if (visualizer != null)
+            {
+                visualizer.HideRoute();
+            }
+        }
     }
 
     public void RefreshList()

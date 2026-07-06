@@ -674,7 +674,7 @@ public class FacilityInfoPanel : MonoBehaviour
             string destName = GetBuildingDisplayName(group.Key);
             
             if (foodPacks > 0) message += $"{foodPacks} meals leaving, going to {destName}. ";
-            if (clients > 0) message += $"{clients} clients leaving, going to {destName}. ";
+            if (clients > 0) message += $"{clients} evacuees leaving, going to {destName}. ";
         }
         
         outgoingDeliveriesText.text = message.Trim();

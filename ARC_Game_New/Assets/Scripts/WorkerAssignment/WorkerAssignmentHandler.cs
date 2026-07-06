@@ -323,7 +323,7 @@ public class WorkerAssignmentHandler : MonoBehaviour
         if (isLocked && newHeadCount < currentHeadCount)
         {
             errorMessage = $"Workers committed last round cannot be released. " +
-                           $"You may only swap trained ↔ untrained — keep the same total of {currentHeadCount} workers.";
+                           $"You may only redistribute trained & untrained — keep the same total of {currentHeadCount} workers.";
             return false;
         }
 

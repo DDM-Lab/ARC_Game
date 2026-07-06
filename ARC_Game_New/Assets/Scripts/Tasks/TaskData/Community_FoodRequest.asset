@@ -128,7 +128,7 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 2
-    choiceText: Helicopter deliver 100 meals (immediate)
+    choiceText: Rapid Response Vehicle deliver 100 meals (immediate)
     agentReasoning: 
     choiceImpacts:
     - impactType: 1

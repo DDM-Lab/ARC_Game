@@ -2970,4 +2970,36 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
+public string ConvertSiteNamesToFriendly(string text)
+{
+    if (string.IsNullOrEmpty(text)) return text;
+
+    Building[] buildings = UnityEngine.Object.FindObjectsOfType<Building>();
+
+    var sortedBuildings = buildings.OrderByDescending(b => $"{b.GetBuildingType()}_{b.GetOriginalSiteId()}".Length);
+
+    foreach (Building building in sortedBuildings)
+    {
+        string rawLlmToken = $"{building.GetBuildingType()}_{building.GetOriginalSiteId()}";
+
+        string gameObjectName = building.name;
+
+        string friendlyDisplayName = building.GetDisplayName();
+
+        if (!string.IsNullOrEmpty(friendlyDisplayName))
+        {
+            if (text.Contains(rawLlmToken))
+            {
+                text = text.Replace(rawLlmToken, friendlyDisplayName);
+            }
+            if (text.Contains(gameObjectName))
+            {
+                text = text.Replace(gameObjectName, friendlyDisplayName);
+            }
+        }
+    }
+
+    return text;
+}
+
 }

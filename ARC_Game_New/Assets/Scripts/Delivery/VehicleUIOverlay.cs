@@ -8,6 +8,7 @@ public class VehicleUIOverlay : MonoBehaviour
     [Header("UI Settings")]
     public Vector2 uiOffset = new Vector2(0, 50f); // Offset above vehicle
     
+
     [Header("UI Prefab")]
     public GameObject vehicleOverlayPrefab; // Prefab with cargo and status text
     
@@ -77,6 +78,7 @@ public class VehicleUIOverlay : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Created UI overlay for Vehicle {vehicle.vehicleId}");
         }
+        uiOverlay.SetActive(false);
     }
     
     /// <summary>
@@ -230,5 +232,13 @@ public class VehicleUIOverlay : MonoBehaviour
             return vehicleUIMap[vehicle];
         }
         return null;
+    }
+
+    public void SetOverlayVisibility(Vehicle vehicle, bool isVisible)
+    {
+        if (vehicleUIMap.ContainsKey(vehicle) && vehicleUIMap[vehicle] != null)
+        {
+            vehicleUIMap[vehicle].SetActive(isVisible);
+        }
     }
 }

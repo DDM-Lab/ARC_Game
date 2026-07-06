@@ -128,19 +128,8 @@ public class WorkerReturnSystem : MonoBehaviour
             taskSystem.workforceServiceSprite
         ));
 
-        AgentNumericalInput untrainedInput = new AgentNumericalInput(
-            1,
-            NumericalInputType.UntrainedWorkers,
-            0,
-            0,
-            maxUntrained
-        );
-        untrainedInput.inputLabel = "Untrained Workers to Return";
-        untrainedInput.customDescription = $"Select how many untrained workers to send back (0–{maxUntrained} available)";
-        returnTask.numericalInputs.Add(untrainedInput);
-
         AgentNumericalInput trainedInput = new AgentNumericalInput(
-            2,
+            1, // Updated ID to 1
             NumericalInputType.TrainedWorkers,
             0,
             0,
@@ -149,6 +138,17 @@ public class WorkerReturnSystem : MonoBehaviour
         trainedInput.inputLabel = "Trained Workers to Return";
         trainedInput.customDescription = $"Select how many trained workers to send back (0–{maxTrained} available)";
         returnTask.numericalInputs.Add(trainedInput);
+
+        AgentNumericalInput untrainedInput = new AgentNumericalInput(
+            2, // Updated ID to 2
+            NumericalInputType.UntrainedWorkers,
+            0,
+            0,
+            maxUntrained
+        );
+        untrainedInput.inputLabel = "Untrained Workers to Return";
+        untrainedInput.customDescription = $"Select how many untrained workers to send back (0–{maxUntrained} available)";
+        returnTask.numericalInputs.Add(untrainedInput);
 
         currentReturnTask = returnTask;
 
@@ -173,8 +173,8 @@ public class WorkerReturnSystem : MonoBehaviour
             return;
         }
 
-        int untrainedToReturn = task.numericalInputs[0].currentValue;
-        int trainedToReturn = task.numericalInputs[1].currentValue;
+        int trainedToReturn = task.numericalInputs[0].currentValue;
+        int untrainedToReturn = task.numericalInputs[1].currentValue;
 
         if (untrainedToReturn <= 0 && trainedToReturn <= 0)
             return;
