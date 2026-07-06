@@ -160,7 +160,12 @@ class ARCGameGymEnv(gym.Env):
         render_mode: Optional[str] = None,
         auto_start_unity: bool = True,
         connection_timeout: float = 30.0,
-        unity_log_path: Optional[str] = None
+        unity_log_path: Optional[str] = None,
+        frame_capture: str = "off",
+        frame_dir: Optional[str] = None,
+        frame_resolution: Tuple[int, int] = (640, 360),
+        frame_include_base64: bool = False,
+        manual_transfers: bool = True,
     ):
         """
         Initialize the ARC Game Gym Environment
@@ -176,6 +181,27 @@ class ARCGameGymEnv(gym.Env):
             unity_log_path: If set, Unity writes its log to this file; otherwise the
                 log is discarded. Either way the process's stdout/stderr go to
                 DEVNULL so the (unread) pipe can never fill and deadlock Unity.
+            frame_capture: Real Unity camera frame capture mode, surfaced in info as
+                info["frame_path"] (and optionally info["frame_base64"]). One of:
+                  "off"       — no capture (default; max headless speed, unchanged).
+                  "step"      — capture a PNG every step.
+                  "game_time" — capture only when the in-game day/round changes.
+                NOTE: capture requires the RENDER-capable headless build
+                (HeadlessBuildScript.BuildMacOSRender, a Player build with graphics)
+                launched WITHOUT -nographics. The default Server build cannot render.
+                When auto_start_unity launches the process, -nographics is dropped
+                automatically whenever frame_capture != "off".
+            frame_dir: Output directory for captured PNGs (relative paths resolve to
+                Unity's working directory). Defaults Unity-side to "render_frames".
+            frame_resolution: (width, height) of captured frames.
+            frame_include_base64: Also return the PNG as base64 in info["frame_base64"]
+                (more bytes over TCP; default off — use the on-disk path instead).
+            manual_transfers: When True (default), the enumerated action surface includes
+                standalone resource_transfer actions (move food/people between facilities,
+                gated only on a free vehicle). When False ("human-faithful" mode), those are
+                removed so transfers can ONLY happen via task choices — matching the human GUI,
+                which never exposed a manual transfer control. Affects only this gym env's
+                action list; the human server path and RL use their own enumerator instances.
         """
         super().__init__()
 
@@ -184,6 +210,13 @@ class ARCGameGymEnv(gym.Env):
         self.max_episode_steps = max_episode_steps
         self.unity_port = unity_port
         self.connection_timeout = connection_timeout
+
+        # Frame-capture config (default off => no behavior/speed change).
+        self.frame_capture = (frame_capture or "off").lower()
+        self.frame_dir = frame_dir
+        self.frame_resolution = frame_resolution
+        self.frame_include_base64 = frame_include_base64
+        self.manual_transfers = manual_transfers
 
         # Unity process management
         self.unity_process = None
@@ -213,6 +246,9 @@ class ARCGameGymEnv(gym.Env):
 
         self._connect_socket()
 
+        # Tell Unity how/whether to capture frames (no-op when "off").
+        self._configure_render()
+
         # Register cleanup
         atexit.register(self.close)
 
@@ -237,15 +273,20 @@ class ARCGameGymEnv(gym.Env):
             # gym times out (looks like a day-transition hang). Writing to -logFile
             # decouples logging from the pipe entirely.
             log_arg = self.unity_log_path if self.unity_log_path else "-"
+            # -nographics disables the GPU device, which makes camera frame capture
+            # impossible. Drop it ONLY when capture is requested (and then the binary
+            # must be the render-capable Player build). Default path keeps -nographics
+            # for max speed and unchanged behavior.
+            cmd = [str(unity_path), "-batchmode"]
+            if self.frame_capture == "off":
+                cmd.append("-nographics")
+            cmd += [
+                "-gym-server",  # Enable gym server mode
+                "-gym-port", str(self.unity_port),
+                "-logFile", log_arg,
+            ]
             self.unity_process = subprocess.Popen(
-                [
-                    str(unity_path),
-                    "-batchmode",
-                    "-nographics",
-                    "-gym-server",  # Enable gym server mode
-                    "-gym-port", str(self.unity_port),
-                    "-logFile", log_arg,
-                ],
+                cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL
@@ -324,6 +365,39 @@ class ARCGameGymEnv(gym.Env):
         except json.JSONDecodeError as e:
             raise RuntimeError(f"Invalid JSON from Unity: {e}")
 
+    def _configure_render(self):
+        """Send frame-capture config to Unity. No-op (still sent) when off so the
+        server resets to a known state. Failures are non-fatal (older builds without
+        the configure_render handler just error, which we swallow)."""
+        if self.frame_capture == "off" and not self.frame_dir:
+            # Nothing to enable; skip the round-trip on the hot default path.
+            return
+        try:
+            w, h = self.frame_resolution
+            self._send_request({
+                "type": "configure_render",
+                "renderMode": self.frame_capture,
+                "renderWidth": int(w),
+                "renderHeight": int(h),
+                "renderDir": self.frame_dir or "",
+                "renderIncludeBase64": bool(self.frame_include_base64),
+            })
+        except Exception as e:
+            print(f"⚠️  configure_render failed (frame capture may be unavailable): {e}")
+
+    @staticmethod
+    def _frame_info(response: dict) -> Dict[str, Any]:
+        """Pull frame_path/frame_base64 (if any) out of a Unity response into an
+        info-dict fragment. Empty when no frame was captured."""
+        out = {}
+        path = response.get("frame_path")
+        if path:
+            out["frame_path"] = path
+        b64 = response.get("frame_base64")
+        if b64:
+            out["frame_base64"] = b64
+        return out
+
     def reset(
         self,
         seed: Optional[int] = None,
@@ -360,8 +434,7 @@ class ARCGameGymEnv(gym.Env):
         _, _, self.previous_score = compute_score(self.game_state.get("rewardMetrics") or {})
 
         # Enumerate valid actions
-        self.action_enumerator = ActionEnumerator(self.game_state)
-        self.valid_actions = self.action_enumerator.enumerate_all_actions()
+        self._enumerate_valid_actions()
 
         # Build info
         session = self.game_state.get("sessionInfo", {})
@@ -463,8 +536,7 @@ class ARCGameGymEnv(gym.Env):
         self.previous_score = score
 
         # Re-enumerate valid actions
-        self.action_enumerator = ActionEnumerator(self.game_state)
-        self.valid_actions = self.action_enumerator.enumerate_all_actions()
+        self._enumerate_valid_actions()
 
         # Check termination conditions
         terminated = current_satisfaction <= 0
@@ -512,6 +584,10 @@ class ARCGameGymEnv(gym.Env):
             "step": self.current_step
         }
 
+        # Real camera frame (only present when frame_capture != "off"): the advance
+        # response carries the PNG path (and optional base64) captured post-round.
+        info.update(self._frame_info(response))
+
         return self.game_state, reward, terminated, truncated, info
 
     def _parse_action_string(self, action_str: str) -> List[int]:
@@ -545,6 +621,20 @@ class ARCGameGymEnv(gym.Env):
             "choiceId": int(choice_id),
         })
         return bool(response.get("success", False))
+
+    def _enumerate_valid_actions(self):
+        """Enumerate this round's valid actions and apply the transfer-availability policy.
+
+        When self.manual_transfers is False (human-faithful mode), standalone
+        resource_transfer actions are dropped so transfers can only occur via task choices,
+        matching the human GUI. Default True keeps the full action surface. Indices into
+        self.valid_actions stay consistent across the menu, parser, and execute paths because
+        every consumer reads this single (already-filtered) list."""
+        self.action_enumerator = ActionEnumerator(self.game_state)
+        actions = self.action_enumerator.enumerate_all_actions()
+        if not self.manual_transfers:
+            actions = [a for a in actions if a.get("action_type") != "resource_transfer"]
+        self.valid_actions = actions
 
     def get_valid_actions(self) -> List[Dict[str, Any]]:
         """Get list of currently valid actions"""

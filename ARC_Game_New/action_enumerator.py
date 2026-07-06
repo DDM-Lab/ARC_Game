@@ -156,8 +156,8 @@ class ActionEnumerator:
 
     # Game constants
     UNTRAINED_WORKER_COST = 100
-    TRAINED_WORKER_COST = 500
-    TRAINING_COST_PER_WORKER = 50
+    TRAINED_WORKER_COST = 300
+    TRAINING_COST_PER_WORKER = 500
     BUILDING_CONSTRUCTION_COST = 1000
     BUILDING_REQUIRED_WORKFORCE = 4
 
@@ -250,18 +250,16 @@ class ActionEnumerator:
 
         budget = daily_metrics.get('currentBudget', 0)
         untrained_workers = workforce_state.get('freeUntrainedWorkers', 0)
-        new_workers_today = workforce_state.get('newWorkersHiredToday', 0)
+        # No per-day hiring ceiling: hiring is limited only by budget. The
+        # per-action bundle cap below keeps the enumerated action list bounded
+        # (a policy can still hire every round and issue multiple hire actions).
+        MAX_HIRE_BUNDLE = 5
 
-        # Daily hiring limit (assuming 5 workers max per day)
-        DAILY_HIRE_LIMIT = 5
-        can_hire = new_workers_today < DAILY_HIRE_LIMIT
-
-        # 1. Hire Untrained Workers (quantities: 1-5)
-        if can_hire and budget >= self.UNTRAINED_WORKER_COST:
+        # 1. Hire Untrained Workers (quantities: 1-MAX_HIRE_BUNDLE per action)
+        if budget >= self.UNTRAINED_WORKER_COST:
             max_affordable = min(
                 budget // self.UNTRAINED_WORKER_COST,
-                DAILY_HIRE_LIMIT - new_workers_today,
-                5  # Maximum 5 at once
+                MAX_HIRE_BUNDLE
             )
 
             for quantity in range(1, max_affordable + 1):
@@ -276,24 +274,21 @@ class ActionEnumerator:
                     cost=total_cost,
                     quantity=quantity,
                     requirements={
-                        'budget': total_cost,
-                        'daily_hire_limit': can_hire
+                        'budget': total_cost
                     },
                     effects={
                         'budget': -total_cost,
-                        'untrained_workers': quantity,
-                        'new_workers_today': quantity
+                        'untrained_workers': quantity
                     }
                 )
 
                 self.actions.append(action)
 
-        # 2. Hire Trained Workers (quantities: 1-5)
-        if can_hire and budget >= self.TRAINED_WORKER_COST:
+        # 2. Hire Trained Workers (quantities: 1-MAX_HIRE_BUNDLE per action)
+        if budget >= self.TRAINED_WORKER_COST:
             max_affordable = min(
                 budget // self.TRAINED_WORKER_COST,
-                DAILY_HIRE_LIMIT - new_workers_today,
-                5
+                MAX_HIRE_BUNDLE
             )
 
             for quantity in range(1, max_affordable + 1):
@@ -308,13 +303,11 @@ class ActionEnumerator:
                     cost=total_cost,
                     quantity=quantity,
                     requirements={
-                        'budget': total_cost,
-                        'daily_hire_limit': can_hire
+                        'budget': total_cost
                     },
                     effects={
                         'budget': -total_cost,
-                        'trained_workers': quantity,
-                        'new_workers_today': quantity
+                        'trained_workers': quantity
                     }
                 )
 
