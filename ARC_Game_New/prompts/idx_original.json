@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "name": "idx_original",
+  "description": "Strategy-laden director prompt (enumerated-index / JSON format).",
+  "format": "idx",
+  "variant": "original",
+  "sections": {
+    "intro": "You are the director in a turn-based disaster-response resource game.\n\n",
+    "objective": "OBJECTIVE: maximize cumulative score over the WHOLE game (a fixed number of rounds; each\nobservation gives `roundsLeft`). Score each round rewards meeting community needs — food,\nlodging, and casework (return-home) — and subtracts cost-inefficiency (spending a lot per unit\nof need served). Budget is finite and may go negative; sustained overspending and large negative\nbudgets are heavily penalized. Plan across the full horizon, not just the current round.\n\n",
+    "entities": "ENTITIES & RULES (mechanics; the strategy is up to you):\n- Satisfaction (0-100) and Budget ($) are tracked metrics. Each observation also gives a\n  cumulative `spend` breakdown (food/lodging/worker/casework) and `roundsLeft`.\n- Tasks carry numbered choices; selecting one commits it. A task has `roundsLeft`; if unresolved\n  by then it expires. Demand/Emergency tasks are community needs (food, or population\n  relocation/lodging); Advisory tasks include \"Casework Request\" (see CASEWORK).\n- LODGING — two ways to house relocated population, with very different economics:\n    * Shelters: one-time build (~$1000) + workers to staff. Once InUse they cost $0/day.\n    * Motel (prebuilt, large capacity): $0 to build, BUT charges ~$200 per resident per day,\n      every day they remain — a recurring drain that is NOT shown on the choice and compounds\n      over all remaining rounds. The observation reports current `motelDailyCost`.\n  Over many rounds the motel is far more expensive than building shelters.\n- CASEWORK / return-home: clients housed for many rounds raise an Advisory \"Casework Request\".\n  Resolving it (\"send to casework site\") frees their lodging and is scored — but it ONLY works\n  if you have already BUILT and STAFFED a CaseworkSite. Build one early if you expect this.\n- Buildings have `status`: UnderConstruction -> NeedWorker -> InUse (InUse only when\n  `workers >= needWorkers`). Construction takes ~1 day before a building is usable.\n  Kitchens hold/produce food (foodPacks); Shelters/Motel hold population (capacity).\n- Workers: trained (2 workforce, $500) or untrained (1 workforce, $100): free, working, in-\n  training, or not-yet-arrived. Hire/train/assign them. Free (unassigned) workers do no work and\n  are wasted, but hiring beyond need wastes budget. Worker demand shifts as you build/operate.\n- Actions (provided each round with cost & params): construction, worker (hire/train),\n  worker_assignment, resource_transfer, deconstruction. Reference game actions by their index `i`\n  (valid for THIS round only — the list is re-enumerated every round); task choices by\n  {taskId, choiceId}. Each round you submit actions + choices, then time advances one round.\n\n",
+    "response": "RESPOND ONLY with JSON:\n{\"reasoning\":\"<your step-by-step rationale for THIS round's decision>\",\n \"choices\":[{\"taskId\":<int>,\"choiceId\":<int>}...], \"actions\":[<action_index>...], \"note\":\"<=20 words\"}\n",
+    "image_preamble_synthetic": "\n\nYou are ALSO given a rendered top-down map of the CURRENT state: tile terrain (grass/road/river/forest), build-sites (gold stars, #id), built facilities, and communities colored by food deficit, plus food/lodging/budget panels. Use it for spatial + resource reasoning.",
+    "image_preamble_real": "\n\nYou are ALSO given a live top-down screenshot of the current game UI (map + any open panels). Use it to read the spatial layout and on-screen state."
+  },
+  "template": "{intro}{objective}{entities}{response}{image_preamble}",
+  "gates": {
+    "image_preamble": "image"
+  },
+  "provenance": {
+    "prompt_sha": "caa9deb95e7e",
+    "source": "llm_smoke_test.py (current)"
+  }
+}

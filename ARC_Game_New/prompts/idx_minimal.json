@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "name": "idx_minimal",
+  "description": "PIMMUR minimal-control prompt (enumerated-index / JSON format).",
+  "format": "idx",
+  "variant": "minimal",
+  "sections": {
+    "intro": "You are the director in a turn-based disaster-response resource game.\n\n",
+    "objective": "OBJECTIVE: maximize cumulative score over the WHOLE game (a fixed number of rounds; each\nobservation gives `roundsLeft`). Each round the score rewards meeting community needs — food,\nlodging, and casework (return-home) — and subtracts cost-inefficiency (spend per unit of need\nserved). Budget ($) is finite and may go negative.\n\n",
+    "entities": "ENTITIES & RULES (mechanics only — no strategy is given):\n- Satisfaction (0-100) and Budget ($) are tracked metrics. Each observation also gives a\n  cumulative `spend` breakdown (food/lodging/worker/casework) and `roundsLeft`.\n- Tasks carry numbered choices; selecting one commits it. A task has `roundsLeft`; if unresolved\n  by then it expires. Demand/Emergency tasks are community needs (food, or population\n  relocation/lodging); Advisory tasks include \"Casework Request\".\n- LODGING: relocated population can be housed in Shelters or in the prebuilt Motel. A Shelter must\n  be built (~$1000) and staffed before it is InUse. The Motel needs no construction; it charges a\n  per-resident daily cost reported as `motelDailyCost`.\n- CASEWORK / return-home: a \"Casework Request\" can be resolved only if a CaseworkSite has already\n  been built and staffed.\n- Buildings have `status`: UnderConstruction -> NeedWorker -> InUse (InUse only when\n  `workers >= needWorkers`). Construction takes ~1 day. Kitchens hold/produce food (foodPacks);\n  Shelters/Motel hold population (capacity).\n- Workers: trained (2 workforce, $500) or untrained (1 workforce, $100): free, working, in-\n  training, or not-yet-arrived. You may hire, train (untrained->trained), and assign workers to\n  buildings.\n- Actions (provided each round with cost & params): construction, worker (hire/train),\n  worker_assignment, resource_transfer, deconstruction. Reference game actions by their index `i`\n  (valid for THIS round only — the list is re-enumerated every round); task choices by\n  {taskId, choiceId}. Each round you submit actions + choices, then time advances one round.\n\n",
+    "response": "RESPOND ONLY with JSON:\n{\"reasoning\":\"<your step-by-step rationale for THIS round's decision>\",\n \"choices\":[{\"taskId\":<int>,\"choiceId\":<int>}...], \"actions\":[<action_index>...], \"note\":\"<=20 words\"}\n",
+    "image_preamble_synthetic": "\n\nYou are ALSO given a rendered top-down map of the CURRENT state: tile terrain (grass/road/river/forest), build-sites (gold stars, #id), built facilities, and communities colored by food deficit, plus food/lodging/budget panels. Use it for spatial + resource reasoning.",
+    "image_preamble_real": "\n\nYou are ALSO given a live top-down screenshot of the current game UI (map + any open panels). Use it to read the spatial layout and on-screen state."
+  },
+  "template": "{intro}{objective}{entities}{response}{image_preamble}",
+  "gates": {
+    "image_preamble": "image"
+  },
+  "provenance": {
+    "prompt_sha": "d320591c06ae",
+    "source": "llm_smoke_test.py (current)"
+  }
+}
