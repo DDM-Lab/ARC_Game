@@ -41,9 +41,41 @@ public class HeadlessBuildScript
         BuildHeadless(buildPath, BuildTarget.StandaloneOSX, BuildTargetGroup.Standalone);
     }
 
-    private static void BuildHeadless(string buildPath, BuildTarget target, BuildTargetGroup targetGroup)
+    // ── Render-capable headless build ──────────────────────────────────────────
+    // The normal headless builds use the Dedicated Server subtarget, which STRIPS
+    // all rendering modules — so Camera.Render()/ReadPixels cannot produce an image
+    // there no matter the runtime flags. The render-capable build below is a normal
+    // standalone Player build (graphics modules kept). Run it WITHOUT -nographics so
+    // a GPU device exists for offscreen RenderTexture capture. It is otherwise
+    // identical (same scene, same -gym-server entry point) and a bit larger/slower
+    // to launch, so it's a separate target used only when frame capture is wanted.
+    [MenuItem("Build/Headless macOS (Render)")]
+    public static void BuildMacOSRender()
     {
-        Debug.Log($"[HeadlessBuild] Starting headless build for {target}");
+        string buildPath = "Build/HeadlessRender/macOS/ARC_HeadlessRender.app";
+        BuildHeadless(buildPath, BuildTarget.StandaloneOSX, BuildTargetGroup.Standalone, server: false);
+    }
+
+    [MenuItem("Build/Headless Windows (Render)")]
+    public static void BuildWindowsRender()
+    {
+        string buildPath = "Build/HeadlessRender/Windows/ARC_HeadlessRender.exe";
+        BuildHeadless(buildPath, BuildTarget.StandaloneWindows64, BuildTargetGroup.Standalone, server: false);
+    }
+
+    [MenuItem("Build/Headless Linux (Render)")]
+    public static void BuildLinuxRender()
+    {
+        string buildPath = "Build/HeadlessRender/Linux/ARC_HeadlessRender.x86_64";
+        BuildHeadless(buildPath, BuildTarget.StandaloneLinux64, BuildTargetGroup.Standalone, server: false);
+    }
+
+    // server=true  -> Dedicated Server subtarget (no graphics modules; max-speed default).
+    // server=false -> normal standalone Player (graphics kept); required for frame
+    //                 capture. Launch the Player build WITHOUT -nographics.
+    private static void BuildHeadless(string buildPath, BuildTarget target, BuildTargetGroup targetGroup, bool server = true)
+    {
+        Debug.Log($"[HeadlessBuild] Starting {(server ? "server" : "render-capable player")} build for {target}");
         Debug.Log($"[HeadlessBuild] Output path: {buildPath}");
 
         // Configure build options
@@ -56,11 +88,15 @@ public class HeadlessBuildScript
             options = BuildOptions.None,
         };
 
-        // Enable headless mode (server build)
-        // This is the critical flag that makes Unity run without graphics
-        EditorUserBuildSettings.standaloneBuildSubtarget = StandaloneBuildSubtarget.Server;
+        // Server subtarget runs without graphics (the critical flag for the fast
+        // headless default). Player subtarget keeps the render pipeline so the gym
+        // can capture camera frames (must then be launched without -nographics).
+        EditorUserBuildSettings.standaloneBuildSubtarget =
+            server ? StandaloneBuildSubtarget.Server : StandaloneBuildSubtarget.Player;
 
-        Debug.Log("[HeadlessBuild] Enabled Server Build (headless mode)");
+        Debug.Log(server
+            ? "[HeadlessBuild] Enabled Server Build (headless, no graphics)"
+            : "[HeadlessBuild] Player Build (graphics kept for frame capture)");
 
         // Perform the build
         BuildReport report = BuildPipeline.BuildPlayer(buildPlayerOptions);

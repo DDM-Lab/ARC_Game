@@ -140,6 +140,22 @@ public class BuildingSystem : MonoBehaviour
     // Actual construction logic. Returns true if the building was created.
     private bool PerformConstruction(AbandonedSite site, BuildingType buildingType)
     {
+        // No-debt gate (default): reject construction before anything is built or charged
+        // if the budget can't cover it. Honors allowNegativeBudget (RL) which permits overspend.
+        // This is the single chokepoint for GUI, batchmode-tutorial, and gym/agent construction.
+        int plannedCost = buildingType switch
+        {
+            BuildingType.Kitchen => kitchenConstructionCost,
+            BuildingType.Shelter => shelterConstructionCost,
+            BuildingType.CaseworkSite => caseworkSiteConstructionCost,
+            _ => 0,
+        };
+        if (SatisfactionAndBudget.Instance != null && plannedCost > 0 &&
+            !SatisfactionAndBudget.Instance.WouldAllowSpend(plannedCost))
+        {
+            GameLogPanel.Instance.LogError($"Cannot afford {buildingType} construction (${plannedCost}) at AbandonedSite_{site.GetId()} — budget ${SatisfactionAndBudget.Instance.GetCurrentBudget()}");
+            return false;
+        }
 
         // Get the prefab for the building type
         GameObject buildingPrefab = GetBuildingPrefab(buildingType);

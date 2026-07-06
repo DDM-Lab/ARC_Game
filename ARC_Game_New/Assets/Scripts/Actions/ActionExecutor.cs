@@ -367,8 +367,11 @@ public class ActionExecutor : MonoBehaviour
 
     bool HasBudget(int cost)
     {
+        // Honors the no-debt policy: when SatisfactionAndBudget.allowNegativeBudget is
+        // false (default), discretionary actions (construction/hire/train) are rejected
+        // if the budget can't cover them; when true, they may drive the budget negative.
         return SatisfactionAndBudget.Instance != null &&
-               SatisfactionAndBudget.Instance.GetCurrentBudget() >= cost;
+               SatisfactionAndBudget.Instance.WouldAllowSpend(cost);
     }
 
     ActionExecutionResult Success(string actionId)

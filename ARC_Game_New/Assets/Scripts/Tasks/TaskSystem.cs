@@ -2382,6 +2382,21 @@ public class TaskSystem : MonoBehaviour
                         if (imp.value != 0)
                             brief.impacts.Add(new ChoiceImpactBrief { type = imp.impactType.ToString(), value = imp.value });
                 }
+                // Forward structured destination so Python policies don't need to parse choiceText.
+                // CaseworkSite is checked first: a casework choice's name includes the client group
+                // name, which may contain "Motel" or "Shelter" (the group's origin) and would
+                // confuse any substring-based classification.
+                if (c.triggersDelivery || c.immediateDelivery)
+                {
+                    if (c.destinationBuilding == BuildingType.CaseworkSite)
+                        brief.destinationCategory = "CaseworkSite";
+                    else if (c.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                             && c.destinationPrebuilt == PrebuiltBuildingType.Motel)
+                        brief.destinationCategory = "Motel";
+                    else
+                        brief.destinationCategory = c.destinationBuilding.ToString();
+                    brief.deliveryQuantity = c.deliveryQuantity;
+                }
                 choices.Add(brief);
             }
         }

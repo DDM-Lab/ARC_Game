@@ -186,7 +186,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         
         int totalCost = workersToTrain * trainingCostPerWorker;
         
-        if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.CanAfford(totalCost))
+        if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
         {
             GameLogPanel.Instance.LogError($"Cannot afford responder training: ${totalCost}");
             return;

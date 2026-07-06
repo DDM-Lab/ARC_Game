@@ -704,13 +704,34 @@ public class TaskDetailUI : MonoBehaviour
     }
 
     // The actual task completion logic
-    private void CompleteTaskAction()
+    // Returns true if the task action was completed; false if it was rejected before
+    // taking effect (e.g. the chosen option's immediate cost exceeds the budget under
+    // the no-debt policy). On rejection nothing is applied and the task stays open.
+    private bool CompleteTaskAction()
     {
         // Check if this is a multi-agent choice proposal (taskId == -1)
         if (currentTask != null && currentTask.taskId == -1 && currentTask.multiAgentProposal != null)
         {
             HandleMultiAgentChoiceSelection();
-            return;
+            return true;
+        }
+
+        // No-debt gate (default): reject a costly choice before applying ANY of its impacts
+        // or deliveries if the budget can't cover the immediate cost. Honors allowNegativeBudget
+        // (RL), which permits overspend. Passive charges are unaffected — this only gates the
+        // discretionary, agent/player-initiated choice commit. Common chokepoint for both the
+        // GUI (OnConfirmButtonClicked) and the gym (SelectTaskChoiceHeadless).
+        if (selectedChoice != null && SatisfactionAndBudget.Instance != null)
+        {
+            int choiceCost = GetChoiceImmediateCost(selectedChoice);
+            if (choiceCost > 0 && !SatisfactionAndBudget.Instance.WouldAllowSpend(choiceCost))
+            {
+                GameLogPanel.Instance?.LogError(
+                    $"Cannot afford choice '{selectedChoice.choiceText}' (${choiceCost:N0}) for task '{currentTask.taskTitle}' — budget ${SatisfactionAndBudget.Instance.GetCurrentBudget():N0}");
+                ShowAgentErrorMessage(
+                    $"Insufficient budget: this option costs ${choiceCost:N0} but only ${SatisfactionAndBudget.Instance.GetCurrentBudget():N0} is available.");
+                return false;
+            }
         }
 
         if (selectedChoice != null)
@@ -766,28 +787,76 @@ public class TaskDetailUI : MonoBehaviour
 
         CategoryTaskManager categoryManager = FindObjectOfType<CategoryTaskManager>();
         if (categoryManager != null) categoryManager.RefreshTaskList();
+
+        return true;
+    }
+
+    // Immediate (non-deferred) cost of committing this choice: the sum of negative Budget
+    // impacts. Positive Budget impacts are incoming funds (scheduled, possibly delayed) and
+    // do NOT offset the up-front cost. Used by the no-debt gate to reject unaffordable choices.
+    int GetChoiceImmediateCost(AgentChoice choice)
+    {
+        int cost = 0;
+        if (choice != null && choice.choiceImpacts != null)
+        {
+            foreach (TaskImpact impact in choice.choiceImpacts)
+            {
+                if (impact.impactType == ImpactType.Budget && impact.value < 0)
+                    cost += -(int)impact.value;
+            }
+        }
+        return cost;
     }
 
     /// <summary>
     /// Headless / gym entry point: select a choice on an active task by id and
     /// complete it, reusing the exact CompleteTaskAction path (apply impacts +
     /// trigger delivery + complete) the UI uses. Returns false if the task or
-    /// choice can't be found. No UI interaction required.
+    /// choice can't be found, or if the choice was rejected (e.g. unaffordable
+    /// under the no-debt policy). No UI interaction required.
     /// </summary>
     public bool SelectTaskChoiceHeadless(int taskId, int choiceId)
     {
-        if (TaskSystem.Instance == null || TaskSystem.Instance.activeTasks == null) return false;
+        return SelectTaskChoiceHeadless(taskId, choiceId, out _);
+    }
+
+    /// <summary>
+    /// Overload that reports why the selection failed (for accurate gym error messages):
+    /// "not found" vs "rejected — insufficient budget under the no-debt policy".
+    /// </summary>
+    public bool SelectTaskChoiceHeadless(int taskId, int choiceId, out string failReason)
+    {
+        failReason = null;
+        if (TaskSystem.Instance == null || TaskSystem.Instance.activeTasks == null)
+        {
+            failReason = "TaskSystem not ready";
+            return false;
+        }
         GameTask task = TaskSystem.Instance.activeTasks.FirstOrDefault(t => t.taskId == taskId);
-        if (task == null) return false;
+        if (task == null)
+        {
+            failReason = $"Task {taskId} not found among active tasks";
+            return false;
+        }
         AgentChoice choice = task.agentChoices != null
             ? task.agentChoices.FirstOrDefault(c => c.choiceId == choiceId)
             : null;
-        if (choice == null) return false;
+        if (choice == null)
+        {
+            failReason = $"Choice {choiceId} not found on task {taskId}";
+            return false;
+        }
 
         currentTask = task;
         selectedChoice = choice;
-        CompleteTaskAction();
-        return true;
+        // Propagate rejection (e.g. unaffordable under the no-debt policy) so the gym can
+        // report the action as failed rather than silently treating it as completed. The only
+        // way CompleteTaskAction returns false for a found choice is the no-debt budget gate.
+        bool ok = CompleteTaskAction();
+        if (!ok)
+            failReason = $"Choice {choiceId} on task {taskId} rejected: insufficient budget " +
+                         $"(${GetChoiceImmediateCost(choice):N0}) under the no-debt policy";
+        return ok;
     }
 
     // Returns people MOVED for an immediate population relocation (0 = nothing moved → caller must

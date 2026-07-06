@@ -29,6 +29,12 @@ public class TaskChoiceBrief
     // Budget -2000 cost). Always populated in the payload; the Python observation layer
     // decides whether to surface it to the model (ablation toggle).
     public List<ChoiceImpactBrief> impacts;
+    // Structured delivery destination — avoids choiceText parsing in non-LLM policies.
+    // "Motel" | "Shelter" | "CaseworkSite" | "Kitchen" | ... for delivery choices; null otherwise.
+    public string destinationCategory;
+    // Expected delivery quantity (people for relocation, food units, etc.).
+    // Only meaningful when destinationCategory is non-null.
+    public int deliveryQuantity;
 }
 
 [System.Serializable]

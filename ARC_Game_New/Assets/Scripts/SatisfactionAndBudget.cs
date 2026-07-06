@@ -16,7 +16,16 @@ public class SatisfactionAndBudget : MonoBehaviour
     public int currentBudget = 10000;
     public int maxBudget = 999999;
     public int minBudget = -999999;
-    
+
+    [Tooltip("When false (default), discretionary spending — construction, hiring, training, and costly task choices — is rejected before it executes if the budget can't cover it: agents cannot go into debt. Passive charges (motel upkeep, task-failure penalties) still apply and may drive the budget negative. When true, discretionary spending is allowed to go negative (for RL). Overridable at runtime via the ARC_ALLOW_NEGATIVE_BUDGET env var (1/true/yes).")]
+    public bool allowNegativeBudget = false;
+
+    // True once the initial budget/satisfaction from config (or the fallback) has been
+    // applied to the live fields. Until then, currentBudget/currentSatisfaction still hold
+    // the inspector defaults. Observers (e.g. the gym) should call EnsureConfigApplied()
+    // before reading, so the first observation never reports the stale default.
+    public bool ConfigApplied { get; private set; } = false;
+
     [Header("Amount Presets")]
     public float satisfactionSmallAmount = 5f;
     public float satisfactionMediumAmount = 15f;
@@ -57,6 +66,20 @@ public class SatisfactionAndBudget : MonoBehaviour
         {
             Instance = this;
             DontDestroyOnLoad(gameObject);
+
+            // Runtime override of the no-debt policy (e.g. RL training). The serialized
+            // field is the default; the env var, if set, wins. Accepts 1/true/yes (on)
+            // and 0/false/no (off).
+            string envNeg = System.Environment.GetEnvironmentVariable("ARC_ALLOW_NEGATIVE_BUDGET");
+            if (!string.IsNullOrEmpty(envNeg))
+            {
+                string v = envNeg.Trim().ToLowerInvariant();
+                if (v == "1" || v == "true" || v == "yes")
+                    allowNegativeBudget = true;
+                else if (v == "0" || v == "false" || v == "no")
+                    allowNegativeBudget = false;
+                Debug.Log($"[Budget] allowNegativeBudget overridden by ARC_ALLOW_NEGATIVE_BUDGET='{envNeg}' -> {allowNegativeBudget}");
+            }
         }
         else
         {
@@ -87,27 +110,22 @@ public class SatisfactionAndBudget : MonoBehaviour
                     yield return new WaitForSeconds(0.1f);
                     waitTime += 0.1f;
                 }
-                
-                // Apply loaded config
-                if (configLoader.IsConfigLoaded())
-                {
-                    currentBudget = configLoader.GetInitialBudget();
-                    currentSatisfaction = configLoader.GetInitialSatisfaction();
-                    
-                    if (showDebugInfo)
-                        Debug.Log($"SatisfactionAndBudget: Using config initialBudget = {currentBudget}; initialSatisfaction = {currentSatisfaction}");
-                }
-                else
-                {
+
+                // Apply loaded config (idempotent; shared with EnsureConfigApplied)
+                EnsureConfigApplied();
+                if (!ConfigApplied)
                     Debug.LogWarning("SatisfactionAndBudget: Config load timeout. Using inspector value.");
-                }
             }
             else
             {
                 Debug.LogWarning("SatisfactionAndBudget: GameConfigLoader not found. Using inspector value.");
             }
         }
-        
+
+        // Mark applied regardless (no external config, missing loader, or load timeout all
+        // fall back to the inspector values) so observers never wait forever.
+        ConfigApplied = true;
+
         // Original Start() code continues here:
         InitializeValues();
         SetupFeedbackEffects();
@@ -121,6 +139,38 @@ public class SatisfactionAndBudget : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
         GameLogPanel.Instance.LogMetricsChange($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
+    }
+
+    /// <summary>
+    /// Apply the initial budget/satisfaction from config to the live fields if it hasn't
+    /// happened yet. Idempotent and safe to call from anywhere (e.g. the gym before building
+    /// its first observation), so the first reported budget reflects the configured value
+    /// rather than the stale inspector default. No-op once ConfigApplied is true. If external
+    /// config is requested but not yet loaded, this leaves the fields untouched (the Start
+    /// coroutine applies them once the load completes / times out).
+    /// </summary>
+    public void EnsureConfigApplied()
+    {
+        if (ConfigApplied) return;
+
+        if (!useExternalConfig)
+        {
+            ConfigApplied = true;
+            return;
+        }
+
+        if (configLoader == null)
+            configLoader = GameConfigLoader.Instance;
+
+        if (configLoader != null && configLoader.IsConfigLoaded())
+        {
+            currentBudget       = configLoader.GetInitialBudget();
+            currentSatisfaction = configLoader.GetInitialSatisfaction();
+            ConfigApplied       = true;
+            if (showDebugInfo)
+                Debug.Log($"SatisfactionAndBudget: Using config initialBudget = {currentBudget}; initialSatisfaction = {currentSatisfaction}");
+        }
+        // else: external config not ready yet — leave fields as-is; the coroutine will apply.
     }
 
     void SetupFeedbackEffects()
@@ -482,7 +532,21 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         return currentBudget >= cost;
     }
-    
+
+    /// <summary>
+    /// Whether a discretionary spend of <paramref name="cost"/> is permitted right now.
+    /// Honors the no-debt policy: when allowNegativeBudget is false, the spend is only
+    /// permitted if the budget can cover it (CanAfford); when true, it is always permitted
+    /// (the budget is allowed to go negative, e.g. for RL). This is the single gate that
+    /// all discretionary spend sites (construction, hiring, training, costly task choices)
+    /// should consult before charging. Passive charges (motel upkeep, task-failure
+    /// penalties) must NOT use this gate — they always apply.
+    /// </summary>
+    public bool WouldAllowSpend(int cost)
+    {
+        return allowNegativeBudget || CanAfford(cost);
+    }
+
     /// <summary>
     /// Try to spend budget (returns true if successful)
     /// </summary>

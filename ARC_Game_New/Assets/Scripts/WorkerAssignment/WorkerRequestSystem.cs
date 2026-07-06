@@ -268,8 +268,8 @@ public class WorkerRequestSystem : MonoBehaviour
         // Calculate cost
         int totalCost = workersToRequest * costPerWorker;
         
-        // Check budget
-        if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.CanAfford(totalCost))
+        // Check budget (honors the no-debt policy; allows overspend when allowNegativeBudget is on)
+        if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
         {
             //ToastManager.ShowToast($"Insufficient budget! Need ${totalCost}", ToastType.Warning, true);
             GameLogPanel.Instance.LogError($"Cannot afford worker request: ${totalCost}");
