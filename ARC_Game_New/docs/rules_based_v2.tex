@@ -1,0 +1,274 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage[htt]{hyphenat}
+\usepackage{seqsplit}
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+
+\definecolor{unityblue}{HTML}{2C5F9E}
+\definecolor{pyorange}{HTML}{C9560B}
+\definecolor{okgreen}{HTML}{1B7A3D}
+\newcommand{\code}[1]{{\texttt{\small #1}}}
+\newcommand{\unity}[1]{{\color{unityblue}\texttt{\small #1}}}
+\newcommand{\py}[1]{{\color{pyorange}\texttt{\small #1}}}
+\newcommand{\clip}{\operatorname{clip}_{[0,1]}}
+\setlength{\emergencystretch}{3em}
+
+\title{\textbf{The \texttt{rules-based-v2} Reference Policy\\ in the ARC Disaster-Response Environment}}
+\author{ARC\_Game RL --- technical reference}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent \py{rules-based-v2} (\py{improved\_rules\_based\_decision} in \py{benchmark\_models.py})
+is a non-learning, API-free heuristic that repairs the four documented flaws of the baseline
+\py{rules-based} policy: it builds and hires \emph{multiple} units per turn, invests in capacity
+\emph{ahead} of demand (bounded by what it can staff), chooses build sites \emph{geographically},
+and \emph{deploys} its budget rather than hoarding a fixed reserve. Its task choices use a value
+function with the motel's recurring cost \emph{priced in}, so relocations route into free shelters
+automatically. In an 8-episode smoke it scores $\approx 3.0$ vs the baseline's $2.5$ (full food,
+$93\%$ lodging, casework $0.43$). Reward terms are defined in the companion \emph{Reward Scoring}
+document.
+\end{abstract}
+
+\tableofcontents
+\vspace{1em}
+
+% =====================================================================
+\section{Hardcoded Limits and Constants}
+% =====================================================================
+
+The policy has two kinds of constants: \textbf{policy hyperparameters} it chooses, and
+\textbf{environment limits} it must respect (these are enforced by the simulator / action
+enumerator, not by the policy). Table~\ref{tab:consts} lists both.
+
+\renewcommand{\arraystretch}{1.25}
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.5cm} l >{\raggedright\arraybackslash}p{8.0cm}}
+\toprule
+\textbf{Symbol (code)} & \textbf{Value} & \textbf{Role} \\
+\midrule
+\multicolumn{3}{l}{\textit{Policy hyperparameters (set in \py{benchmark\_models.py})}}\\
+\midrule
+$B_{\text{turn}}$ (\py{\_V2\_BUILD\_PER\_TURN}) & $3$ & Max new buildings appended in one turn. \\
+$U_{\max}$ (\py{\_V2\_PIPELINE\_CAP}) & $4$ & Max concurrent \emph{unstaffed} buildings (UnderConstruction / NeedWorker) allowed before building pauses. \\
+$\beta$ (\py{\_V2\_OP\_BUFFER}) & $\$3000$ & Cash kept before any discretionary build/hire --- sized to fund a reactive paid food airlift, \emph{not} hoarded. \\
+$K_{\text{tgt}}$ (\py{\_POT\_KITCHEN\_TARGET}) & $2$ & Target number of kitchens. \\
+$\rho$ (\py{\_ROUNDS\_PER\_DAY}) & $4$ & Rounds per in-game day (motel bills per day). \\
+$\sigma$ (\py{\_V2\_SHELTER\_BEDS}) & $10$ & Population capacity per shelter (for sizing). \\
+$\delta_{\text{shel}}$ (in-code) & $100$ & Penalty subtracted from a shelter choice that lacks space. \\
+\midrule
+\multicolumn{3}{l}{\textit{Environment limits the policy respects (enforced by the simulator)}}\\
+\midrule
+$H_{\text{day}}$ (\py{DAILY\_HIRE\_LIMIT}) & $5$/day & Max workers hired per in-game day; hire actions bundle quantities $1$–$5$. \\
+$\omega$ (\py{BUILDING\_REQUIRED\_WORKFORCE}) & $4$ & Workers to operate a building (used to size staffing). \\
+$m$ (motel rate) & $\$200$/person/day & Recurring motel charge priced into the choice value. \\
+$w_c$ (\py{w\_food\_cost}) & $0.0002$ & Reward cost weight, reused so the choice value matches the reward scale. \\
+\bottomrule
+\end{tabular}
+\caption{Constants in \py{rules-based-v2}. Policy hyperparameters are tunable; environment limits
+are fixed by the simulator and merely respected by the policy.}
+\label{tab:consts}
+\end{table}
+
+% =====================================================================
+\section{Decision Pipeline}
+% =====================================================================
+
+Each round the policy returns task-choice selections $C$ and a list of game-action indices $X$,
+built in five stages:
+\begin{enumerate}[leftmargin=1.6em, itemsep=1pt]
+\item \textbf{Reactive core} --- inherit the greedy policy's zero-cost worker assignments (staff
+buildings that need workers).
+\item \textbf{Long-term task choices} --- answer every open task with a choice scored by a value
+function that prices in the motel's recurring cost (\S\ref{sec:choice}).
+\item \textbf{Staffing-aware capacity target} --- decide \emph{what} to build, bounded by what can
+be staffed over the horizon (\S\ref{sec:invest}).
+\item \textbf{Geographic, multi-build construction} --- decide \emph{where} and append several
+builds, paced by a staffable pipeline and the cash buffer (\S\ref{sec:build}).
+\item \textbf{Multi-hire} --- hire the largest affordable batch to close the staffing gap
+(\S\ref{sec:hire}).
+\end{enumerate}
+
+% =====================================================================
+\section{Stage 2: The Long-Term Choice Value Function}
+\label{sec:choice}
+% =====================================================================
+
+For an active task $t$ with demand indicator $D(t)=\mathbf{1}[\text{taskType}\in\{\text{Demand},\text{Emergency}\}]$,
+each choice $c$ exposes a budget impact $b(c)$ and satisfaction impact $s(c)$. Choices are first
+\emph{classified by destination} from the choice text $\tau(c)$ (lower-cased), guarding against a
+client group's \emph{name} containing ``Motel''/``Shelter'':
+\begin{align}
+\text{cw}(c) &= [\text{``casework''} \in \tau(c)], \\
+\text{mo}(c) &= [\text{``motel''} \in \tau(c)] \wedge \neg\,\text{cw}(c), \\
+\text{sh}(c) &= [\text{``shelter''} \in \tau(c)] \wedge \neg\,\text{mo}(c) \wedge \neg\,\text{cw}(c).
+\end{align}
+With $\mathrm{cost}(c)=\max(0,-b(c))$ and the \emph{acting} predicate
+$\alpha(c) = [\mathrm{cost}(c)>0] \vee [s(c)\ge 10]$, the value is
+\begin{equation}
+v(c) =
+\begin{cases}
+\dfrac{b(c)}{10^4} + 10^{-2} s(c), & b(c) > 0\ \ \text{(funding)}\\[10pt]
+\mathbf{1}[\alpha(c)\wedge D(t)] + 10^{-2}s(c) - w_c\big(\mathrm{cost}(c) + R(c)\big), & b(c) \le 0\ \ \text{(acting/waiting)}
+\end{cases}
+\label{eq:v2val}
+\end{equation}
+where the key addition over the myopic greedy value is the \textbf{long-term recurring cost} of the
+motel, charged over the remaining days of the episode:
+\begin{equation}
+R(c) = \begin{cases} m \cdot q(c) \cdot \max\!\big(1,\ \text{roundsLeft}/\rho\big), & \text{mo}(c)\\[4pt] 0, & \text{otherwise,}\end{cases}
+\end{equation}
+with $m = \$200$/person/day and $q(c)$ the relocation quantity (\code{deliveryQuantity}, default $20$).
+Because $w_c\,R(c)$ is large early (many days left) and shrinks to near zero late, shelters
+dominate the motel for most of the episode and the motel becomes acceptable only near the end ---
+so \emph{relocation routing into shelters emerges from the value function}, with no separate
+override. The \emph{acting} predicate ensures free non-acting options (e.g.\ ``request from
+kitchens'', which fails without a kitchen) score $0$ and lose to the reliable paid action.
+
+\paragraph{Per-task selection with a shelter-space guard.} For each task the policy takes the
+highest-value choice, but first subtracts $\delta_{\text{shel}}=100$ from any shelter choice that
+cannot fit the relocation (so it falls back to the motel rather than a deferred shelter delivery
+that would fail). Let $g$ be the current free shelter space (sum over \emph{InUse} shelters) and
+$p_t$ the affected community's population (default $20$):
+\begin{equation}
+\hat v(c) = v(c) - \delta_{\text{shel}}\cdot \mathbf{1}\big[\text{sh}(c)\wedge g < p_t\big].
+\end{equation}
+The best choice $c^\star=\arg\max_c \hat v(c)$ is committed iff $\hat v(c^\star)>0$ \emph{or} it
+fulfils a real demand ($\alpha(c^\star)\wedge D(t)$); if a shelter choice is taken, $g$ is decremented
+by $p_t$ (Algorithm~\ref{alg:choice}).
+
+\begin{algorithm}[h]
+\DontPrintSemicolon
+\SetKwInOut{Input}{input}\SetKwInOut{Output}{output}
+\Input{active tasks; free shelter space $g$; roundsLeft}
+\Output{choices $C$}
+$C \leftarrow \emptyset$\;
+\ForEach{active task $t$ with choices}{
+  $D \leftarrow \mathbf{1}[\text{taskType}\in\{\text{Demand},\text{Emergency}\}]$;\quad $p_t \leftarrow$ affected community pop (default 20)\;
+  $c^\star \leftarrow \arg\max_{c}\ \hat v(c)$ \tcp*{Eq.~\eqref{eq:v2val} + shelter-space guard}
+  \If{$\hat v(c^\star) > 0$ \textbf{or} $c^\star$ fulfils a demand}{
+    add $(t, c^\star)$ to $C$\;
+    \If{$c^\star$ is a shelter choice \textbf{and} $g \ge p_t$}{ $g \mathrel{-}= p_t$ }
+  }
+}
+\Return $C$\;
+\caption{\textsc{LongTermChoiceSelection}}
+\label{alg:choice}
+\end{algorithm}
+
+% =====================================================================
+\section{Stage 3: Staffing-Aware Capacity Target}
+\label{sec:invest}
+% =====================================================================
+
+The policy invests \emph{ahead} of demand, but never queues more capacity than it can \emph{staff}:
+hiring is capped at $H_{\text{day}}=5$/day and each building needs $\omega=4$ workers, so chasing
+the full displaced population would just create unstaffable buildings. Let $W$ be the current total
+workers (free $+$ working), and $\text{roundsLeft}$ the rounds remaining; the staffable building
+budget is
+\begin{align}
+d &= \big\lceil \text{roundsLeft}/\rho \big\rceil \quad\text{(days left)}, &
+W_{\max} &= W + H_{\text{day}}\cdot d, \\
+N_{\max} &= \big\lfloor W_{\max}/\omega \big\rfloor, &
+N_{\text{budget}} &= \max\!\big(0,\ N_{\max} - N_{\text{exist}}\big),
+\end{align}
+where $N_{\text{exist}} = n_{\text{cw}} + n_{\text{kit}} + n_{\text{shel}}$ counts all current
+buildings. The shelter shortfall toward the known displaced population $P$ (sum of community
+populations) is $n_{\text{need}} = \big\lceil \max(0, P-\text{shelterCap})/\sigma \big\rceil$.
+The build wishlist is then assembled \textbf{kitchens before shelters} (food is a full reward point
+hard-gated by a kitchen) and truncated to the staffable budget:
+\begin{equation}
+\begin{aligned}
+\textsc{want} &= \big[\textsc{CaseworkSite}\big]_{n_{\text{cw}}<1} \ \Vert\ \big[\textsc{Kitchen}\big]^{(K_{\text{tgt}}-n_{\text{kit}})} \ \Vert\ \big[\textsc{Shelter}\big]^{\,n_{\text{need}}},\\
+\textsc{want} &\leftarrow \textsc{want}[\,:N_{\text{budget}}\,] \quad\text{(truncate to the staffable budget).}
+\end{aligned}
+\end{equation}
+
+% =====================================================================
+\section{Stage 4: Geographic, Multi-Build Construction}
+\label{sec:build}
+% =====================================================================
+
+\paragraph{Where to build.} Each available site $s$ is ranked by distance from its world position
+to the nearest community, with a large penalty for flood-blocked routes (so shelters sit close to
+the communities they serve and avoid blocked sites):
+\begin{equation}
+\operatorname{rank}(s) = \min_{c\,\in\,\text{communities}} \lVert \mathrm{pos}(s) - \mathrm{pos}(c)\rVert_2 \;+\; 10^{6}\cdot \mathbf{1}\big[\mathrm{name}(s)\in \text{blockedRoutes}\big].
+\end{equation}
+
+\paragraph{How many.} The policy walks \textsc{want} in priority order and appends a build at the
+best-ranked unused site for each type, stopping when any guard trips: the per-turn cap
+$B_{\text{turn}}=3$, the unstaffed-pipeline cap $U_{\max}=4$ (current unstaffed $+$ queued), or the
+cash buffer (a build is only committed if $\mathrm{cost} \le \text{budget} - \beta$). Building is
+skipped entirely when fewer than $2$ rounds remain.
+
+% =====================================================================
+\section{Stage 5: Multi-Hire}
+\label{sec:hire}
+% =====================================================================
+
+The staffing gap counts workers needed by currently-understaffed buildings \emph{plus} four per
+building queued this turn, minus the free pool $f$:
+\begin{equation}
+\text{gap} = \max\!\Big(0,\ \textstyle\sum_{b\,\in\,\text{NeedWorker}}\!\big(\text{required}(b)-\text{assigned}(b)\big) \;+\; \omega\cdot|\text{built}| \;-\; f\Big).
+\end{equation}
+If $\text{gap}>0$, the policy appends the single \unity{hire\_untrained} action with the
+\emph{largest} quantity whose cost fits the buffer ($\le \text{budget}-\beta$). The action
+enumerator already caps the offered quantity at the remaining daily limit, so one action hires up
+to $5$ workers --- the most the environment permits in a day.
+
+% =====================================================================
+\section{The Complete Policy}
+% =====================================================================
+
+\begin{algorithm}[h]
+\DontPrintSemicolon
+\SetKwInOut{Input}{input}\SetKwInOut{Output}{output}
+\Input{game state; round $r$; total rounds $T$;\quad $\text{roundsLeft}=\max(0,T-r)$}
+\Output{choices $C$; action indices $X$}
+$X \leftarrow$ greedy worker assignments (reactive core)\;
+$C \leftarrow \textsc{LongTermChoiceSelection}(\cdot)$ \tcp*{Algorithm~\ref{alg:choice}}
+\BlankLine
+compute $P$, shelterCap, $n_{\text{cw}}, n_{\text{kit}}, n_{\text{shel}}$, $W$, budget\;
+$N_{\text{budget}} \leftarrow \max(0, \lfloor (W + 5\lceil \text{roundsLeft}/\rho\rceil)/\omega \rfloor - N_{\text{exist}})$\;
+$\textsc{want} \leftarrow ([\textsc{Casework}]_{n_{\text{cw}}<1}\Vert[\textsc{Kitchen}]^{K_{\text{tgt}}-n_{\text{kit}}}\Vert[\textsc{Shelter}]^{n_{\text{need}}})[\,:N_{\text{budget}}]$\;
+rank available sites by $\operatorname{rank}(s)$\;
+\BlankLine
+\If{$\mathrm{roundsLeft} \ge 2$}{
+  \ForEach{$\text{btype} \in \textsc{want}$}{
+    \If{$|\text{built}| \ge B_{\text{turn}}$ \textbf{or} $\text{unstaffed}+|\text{built}| \ge U_{\max}$}{\textbf{break}}
+    $s \leftarrow$ best-ranked unused site offering \text{btype}\;
+    \If{$s$ exists \textbf{and} $\mathrm{cost}(s) \le \text{budget}-\beta$}{
+      append build$(s)$ to $X$;\quad $\text{budget}\mathrel{-}=\mathrm{cost}(s)$;\quad mark $s$ built\;
+    }
+  }
+}
+\BlankLine
+$\text{gap} \leftarrow \max(0,\ \text{need}_{\text{now}} + \omega|\text{built}| - f)$\;
+\If{$\text{gap} > 0$}{
+  append the largest-quantity \unity{hire\_untrained} with $\mathrm{cost}\le\text{budget}-\beta$ to $X$\;
+}
+\Return $(C, X)$\;
+\caption{\textsc{ImprovedRulesBasedPolicy} (\py{improved\_rules\_based\_decision})}
+\label{alg:v2}
+\end{algorithm}
+
+\paragraph{Empirical note.} On an 8-episode smoke (18 rounds), \py{rules-based-v2} scored
+$\approx \textcolor{okgreen}{3.01}$ vs the baseline \py{rules-based} $2.49$ and the best LLM
+(gpt-5.4) $2.25$: full food ($1.0$), lodging $0.93$ ($93\%$ fulfilment vs the baseline's $53\%$),
+casework $0.43$ (vs $0.32$), at equal cost-efficiency and a healthier final budget. Numbers are a
+smoke, not a final benchmark.
+
+\end{document}
