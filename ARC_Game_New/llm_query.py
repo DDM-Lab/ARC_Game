@@ -12,6 +12,8 @@ from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 import ollama
 
+from obs_encoder import render_state_text, _num
+
 load_dotenv(Path(__file__).parent / ".env")
 
 # Import optional providers
@@ -137,21 +139,15 @@ def _build_prompt(
             formatted_content = f"[{label}] {content}"
             messages.append({"role": role, "content": formatted_content})
 
-    # Current state summary
-    session = game_state.get("sessionInfo", {})
-    sat_budget = game_state.get("satisfactionAndBudget", {})
-    state_text = (
-        f"Day {session.get('currentDay', '?')}, "
-        f"Segment {session.get('currentTimeSegment', '?')}. "
-        f"Satisfaction: {sat_budget.get('satisfaction', '?')}. "
-        f"Budget: ${sat_budget.get('budget', '?'):,}."
-        if isinstance(sat_budget.get('budget'), (int, float))
-        else f"Day {session.get('currentDay', '?')}."
-    )
+    # Current state summary — grounded, engine-computed facts (facilities, worker
+    # pools, open tasks with per-choice impacts, spend). See obs_encoder.py.
+    state_text = render_state_text(game_state)
 
-    # Action list
+    # Action list. NOTE: action dicts use snake_case `action_type` (from
+    # ActionEnumerator.to_dict), not `actionType`; the old camelCase read always
+    # rendered "[?]". Cost is real engine data — surface it as ground truth.
     action_lines = [
-        f"{i}. [{a.get('actionType','?')}] {a.get('description','?')} (cost: ${a.get('cost', 0)})"
+        f"{i}. [{a.get('action_type','?')}] {a.get('description','?')} (cost: ${_num(a.get('cost')):,})"
         for i, a in enumerate(actions)
     ]
     action_text = "\n".join(action_lines) if action_lines else "(no valid actions)"
@@ -190,17 +186,31 @@ def _build_prompt(
             f"Current situation:\n{state_text}\n\n"
             f"Available actions:\n{action_text}\n\n"
             f"Propose {num_choices} strategy packages, up to {max_per_package} action indices each.\n\n"
-            f"Response format:\n"
+            f"GROUNDING: the situation above lists real, engine-computed numbers — each action's cost, "
+            f"cumulative spend, worker pools, facility state, and each open task choice's exact impacts "
+            f"(e.g. [Budget +5000] [Satisfaction +10]). A package's cost is the SUM of its actions' listed "
+            f"costs — compute it, do not estimate. Do NOT invent satisfaction/budget numbers that are not "
+            f"shown: if an outcome isn't given, describe it qualitatively (e.g. 'adds shelter capacity').\n\n"
+            f"DIVERSITY (critical): the {num_choices} packages MUST be genuinely DIFFERENT strategies — NOT "
+            f"the same plan at different spend levels. Each must differ in FOCUS. Pick distinct focuses from: "
+            f"food, shelter, workforce, respond to an open task, or conserve budget. Vary WHAT the option "
+            f"prioritizes, not just how much it spends. Include at least one low-cost / conserve option; if an "
+            f"open task offers a reward, make one package take it. If two of your packages would touch the same "
+            f"kinds of actions, replace one with a different focus.\n\n"
+            f"Response format — each PACKAGE has FOUR fields separated by '|':\n"
+            f"  name | indices | what it does | why pick it\n"
             f"REASONING: 2 short sentences. First names the key constraint (budget, gap, pressing task). Second says why these options.\n"
-            f"PACKAGE1: <name, 2-4 words> | <indices> | <cost + key impact, max ~60 chars>\n"
-            f"PACKAGE2: <name, 2-4 words> | <indices> | <cost + key impact, max ~60 chars>\n"
-            f"PACKAGE3: <name, 2-4 words> | <indices> | <cost + key impact, max ~60 chars>\n\n"
-            f"Example:\n"
-            f"REASONING: Budget is $4k and shelter capacity trails population. These options trade shelter expansion against reserve for next-round flood costs.\n"
-            f"PACKAGE1: Cheap Food | 0,5,7 | $1.5k; +10 satisfaction\n"
-            f"PACKAGE2: Shelter First | 1,2,8 | $3.6k; +15 satisfaction\n"
-            f"PACKAGE3: Balanced | 0,1,5 | $2.4k; +12 satisfaction\n\n"
-            f"Hard limits: PACKAGE name ≤ 4 words, PACKAGE description ≤ 60 chars. REASONING ≤ 2 sentences, no paragraphs.\n"
+            f"PACKAGE1: <name, 2-4 words> | <indices> | <what it does, no $ amount, ~55 chars> | <why choose it — the trade-off, ~70 chars>\n"
+            f"PACKAGE2: <name, 2-4 words> | <indices> | <what it does, no $ amount, ~55 chars> | <why choose it — the trade-off, ~70 chars>\n"
+            f"PACKAGE3: <name, 2-4 words> | <indices> | <what it does, no $ amount, ~55 chars> | <why choose it — the trade-off, ~70 chars>\n\n"
+            f"Example (each option has a DIFFERENT focus; the 'why' names the trade-off with NO numbers):\n"
+            f"REASONING: Budget is tight and shelter capacity trails population. These options trade shelter expansion against food and keeping a reserve for next-round flood costs.\n"
+            f"PACKAGE1: Cheap Food | 0,5,7 | restocks kitchen food | cheapest fix; keeps a reserve but ignores housing\n"
+            f"PACKAGE2: Shelter First | 1,2,8 | adds shelter capacity | houses people now, but little left for floods\n"
+            f"PACKAGE3: Fund + Balance | 0,1,5 | build + task choice 3 [Budget +5000] | unlocks budget for next round; slower now\n\n"
+            f"Hard limits: name ≤ 4 words, 'what it does' ≤ 60 chars, 'why' ≤ 70 chars. In 'why' give the QUALITATIVE "
+            f"trade-off (what it gains vs gives up) — do NOT put ANY $ amounts in 'what it does' OR 'why'; the $cost "
+            f"and remaining budget ('leaves $X') are computed and shown automatically. REASONING ≤ 2 sentences.\n"
             f"Constraint: do not include two construction actions targeting the same site in one package."
         )
     else:
@@ -209,15 +219,20 @@ def _build_prompt(
         user_content = (
             f"Current situation:\n{state_text}\n\n"
             f"Available actions:\n{action_text}\n\n"
+            f"GROUNDING: the situation above lists real, engine-computed numbers — each action's cost, "
+            f"cumulative spend, worker pools, facility state, and each open task choice's exact impacts. "
+            f"Total cost is the SUM of the chosen actions' listed costs — compute it, do not estimate. Do "
+            f"NOT invent satisfaction/budget numbers that are not shown; describe unquantified effects "
+            f"qualitatively.\n\n"
             f"Pick up to {max_actions} actions. Reply with EXACTLY these four lines:\n"
             f"ACTIONS: <comma-separated indices, or empty>\n"
             f"REASONING: <one short sentence: why these actions, now>\n"
-            f"EXPECTED_IMPACT: <one short sentence: cost spent, satisfaction/capacity changes>\n"
+            f"EXPECTED_IMPACT: <one short sentence: summed cost spent, and capacity/task effects>\n"
             f"NEXT_STEPS: <one short clause: what you'd do next, or what would change your plan>\n\n"
             f"Example:\n"
             f"ACTIONS: 0,1,5\n"
             f"REASONING: Closing the housing/food gap before satisfaction drops further.\n"
-            f"EXPECTED_IMPACT: Spends ~$2,400; +30 shelter, +1 staffed kitchen, +~12 satisfaction.\n"
+            f"EXPECTED_IMPACT: Spends $2,400; adds shelter capacity and staffs the kitchen.\n"
             f"NEXT_STEPS: Watch flood tasks; pause new builds if budget < $5k.\n\n"
             f"One sentence per section. Write 'None.' if a section truly does not apply.\n"
             f"Constraint: do not include two construction actions targeting the same site this turn."

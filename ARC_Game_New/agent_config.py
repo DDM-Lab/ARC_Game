@@ -43,6 +43,12 @@ class AgentConfig:
     system_prompt: Optional[str]
     use_global_prompt: bool = True         # Prepend global prompt before system_prompt
     can_address: list[str] = field(default_factory=list)
+    # --- Choices-agent reliability + explainability (opt-in; safe defaults) ---
+    choices_max_retries: int = 1           # extra LLM re-queries if a parse underdelivers
+    choices_min_packages: int = 1          # floor below which we retry / fall back
+    choices_fallback: bool = True          # synthesize deterministic packages to fill the set
+    explain_grounded: bool = True          # prepend engine-computed $cost to each package desc
+    explain_summary: bool = True           # prepend grounded context to the pre-choices summary
     # Runtime state — not from config
     conversation_history: list[dict] = field(default_factory=list, init=False)
 
@@ -124,6 +130,11 @@ def load_config(path: str) -> RouterConfig:
             system_prompt=entry.get("system_prompt"),
             use_global_prompt=entry.get("use_global_prompt", True),
             can_address=entry.get("can_address", []),
+            choices_max_retries=entry.get("choices_max_retries", 1),
+            choices_min_packages=entry.get("choices_min_packages", 1),
+            choices_fallback=entry.get("choices_fallback", True),
+            explain_grounded=entry.get("explain_grounded", True),
+            explain_summary=entry.get("explain_summary", True),
         ))
 
     return RouterConfig(

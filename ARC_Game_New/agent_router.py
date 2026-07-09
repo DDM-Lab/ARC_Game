@@ -42,6 +42,13 @@ from agent_filters import filter_observation, filter_actions
 from agent_ordering import get_agent_order
 from episode_logger import EpisodeLogger
 from llm_query import query_llm
+from choices_reliability import (
+    dedupe_packages,
+    enforce_diversity,
+    apply_grounded_explanations,
+    build_fallback_packages,
+    compose_summary,
+)
 from message_queue import MessageQueue
 import re
 
@@ -206,7 +213,8 @@ class Session:
 
         if msg_type == "begin_round":
             # Run as background task so receive loop stays active for choice_made messages
-            asyncio.create_task(self._handle_begin_round(msg))
+            _t = asyncio.create_task(self._handle_begin_round(msg))
+            _t.add_done_callback(self._on_round_task_done)
         elif msg_type == "request_agent_decision":
             # Legacy single-agent message; GlobalClock still emits it alongside begin_round.
             # Ignore to avoid running the round twice per simulation tick.
@@ -263,6 +271,21 @@ class Session:
         await self._send({"type": "director_turn", "game_state": game_state,
                           "timestamp": _now()})
         print("[router] director_turn sent.")
+
+    def _on_round_task_done(self, task: "asyncio.Task"):
+        """Surface exceptions from the fire-and-forget begin_round task.
+
+        Without this, any error inside _handle_begin_round is swallowed and the
+        round dies silently (no re-proposal on later turns). Log it loudly.
+        """
+        if task.cancelled():
+            print("[router] ⚠️  begin_round task was CANCELLED")
+            return
+        exc = task.exception()
+        if exc is not None:
+            import traceback
+            print(f"[router] ❌ begin_round task FAILED: {type(exc).__name__}: {exc}")
+            traceback.print_exception(type(exc), exc, exc.__traceback__)
 
     async def _run_subagent(
         self,
@@ -474,19 +497,18 @@ Respond with ONLY the package index number (0, 1, or 2).
     ) -> Tuple[dict, List[dict]]:
         # Get conversation history from message queue
         conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
-        raw = await asyncio.to_thread(query_llm, filtered_state, filtered_actions, agent, conversation)
-        packages = self._parse_packages_response(
-            raw, filtered_actions,
-            num_choices=agent.num_choices or 3,
-            max_per_package=agent.max_actions_per_package or 4,
+        raw, packages = await self._query_and_parse_choices(
+            agent, filtered_state, filtered_actions, conversation
         )
         print(f"[router]   Proposing {len(packages)} packages to director.")
 
         # Store context for potential reproposal
         self._choice_context[agent.subagent_name] = (filtered_state, filtered_actions, game_state, all_actions)
 
-        # Extract reasoning from structured response
-        reasoning = self._extract_reasoning(raw)
+        # Reliability + explainability layer (dedupe, grounded cost, fallback, summary).
+        packages, reasoning = self._finalize_choice_packages(
+            agent, packages, filtered_actions, game_state, raw
+        )
 
         sat_before = _get_satisfaction(game_state)
         budget_before = _get_budget(game_state)
@@ -1415,13 +1437,12 @@ Respond with ONLY the package index number (0, 1, or 2).
         filtered_state, filtered_actions, game_state, all_actions = context
         conversation = self.message_queue.get_conversation(agent.subagent_name, "Director")
 
-        raw = await asyncio.to_thread(query_llm, filtered_state, filtered_actions, agent, conversation)
-        packages = self._parse_packages_response(
-            raw, filtered_actions,
-            num_choices=agent.num_choices or 3,
-            max_per_package=agent.max_actions_per_package or 4,
+        raw, packages = await self._query_and_parse_choices(
+            agent, filtered_state, filtered_actions, conversation
         )
-        reasoning = self._extract_reasoning(raw)
+        packages, reasoning = self._finalize_choice_packages(
+            agent, packages, filtered_actions, game_state, raw
+        )
         print(f"[router]   Reproposed {len(packages)} packages to director.")
 
         self.logger.log_event({
@@ -1777,6 +1798,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 strategy_name = segments[0].strip()
                 indices_str = segments[1].strip()
                 outcome = segments[2].strip() if len(segments) > 2 else ""
+                rationale = segments[3].strip() if len(segments) > 3 else ""
 
                 # Parse and validate action indices
                 indices, errors = self._validate_action_indices(
@@ -1808,6 +1830,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                     "package_index": pkg_idx,
                     "label": label,
                     "description": description,
+                    "rationale": rationale,
                     "confidence": 0.8,
                     "action_indices": indices,
                 })
@@ -1846,6 +1869,90 @@ Respond with ONLY the package index number (0, 1, or 2).
                 })
 
         return packages
+
+    async def _query_and_parse_choices(
+        self,
+        agent: AgentConfig,
+        filtered_state: dict,
+        filtered_actions: List[dict],
+        conversation: list,
+    ) -> Tuple[str, list]:
+        """Query the LLM for choice packages, re-querying up to choices_max_retries
+        times if the parse yields fewer than choices_min_packages VALID packages
+        (the common empty/malformed-response failure). Returns (raw, packages) from
+        the best attempt so far. The deterministic fallback in _finalize_choice_packages
+        is the hard guarantee; this just gives the model another shot first."""
+        num_choices = agent.num_choices or 3
+        max_per_package = agent.max_actions_per_package or 4
+        min_pkgs = max(1, agent.choices_min_packages)
+
+        raw = await asyncio.to_thread(query_llm, filtered_state, filtered_actions, agent, conversation)
+        packages = self._parse_packages_response(raw, filtered_actions, num_choices, max_per_package)
+
+        attempts = 0
+        while len(dedupe_packages(packages)) < min_pkgs and attempts < agent.choices_max_retries:
+            attempts += 1
+            print(f"[choices] ⚠️  only {len(packages)} valid package(s) (< {min_pkgs}); "
+                  f"retry {attempts}/{agent.choices_max_retries}")
+            retry_raw = await asyncio.to_thread(query_llm, filtered_state, filtered_actions, agent, conversation)
+            retry_pkgs = self._parse_packages_response(retry_raw, filtered_actions, num_choices, max_per_package)
+            # Keep whichever attempt produced more valid packages.
+            if len(retry_pkgs) > len(packages):
+                raw, packages = retry_raw, retry_pkgs
+            if len(dedupe_packages(packages)) >= min_pkgs:
+                break
+
+        return raw, packages
+
+    def _finalize_choice_packages(
+        self,
+        agent: AgentConfig,
+        packages: list,
+        filtered_actions: List[dict],
+        game_state: dict,
+        raw: str,
+    ) -> Tuple[list, str]:
+        """Apply the reliability + explainability layer to parsed packages.
+
+        Order: dedupe -> grounded per-package explanations -> deterministic
+        fallback fill -> contiguous reindex -> grounded pre-choices summary.
+        Each step is gated on the agent's opt-in flags (see agent_config.py), so
+        with all flags off this is just a dedupe + reindex passthrough.
+        Returns (packages, reasoning) ready for _send_choices_proposal.
+        """
+        reasoning = self._extract_reasoning(raw)
+
+        packages = dedupe_packages(packages)
+        # Drop near-duplicate strategies (same plan at a different spend level) so the
+        # human sees genuinely different bets; the fallback below refills distinct
+        # archetypes for any slot this frees up.
+        before_div = len(packages)
+        packages = enforce_diversity(packages, filtered_actions)
+        if len(packages) < before_div:
+            print(f"[choices] diversity guard dropped {before_div - len(packages)} "
+                  f"near-duplicate package(s)")
+        if agent.explain_grounded:
+            packages = apply_grounded_explanations(packages, filtered_actions, game_state)
+
+        num_choices = agent.num_choices or 3
+        if agent.choices_fallback and len(packages) < num_choices:
+            before = len(packages)
+            packages = build_fallback_packages(
+                packages, filtered_actions, game_state,
+                num_choices=num_choices,
+                max_per_package=agent.max_actions_per_package or 4,
+            )
+            if len(packages) > before:
+                print(f"[choices] fallback filled {len(packages) - before} package(s) "
+                      f"({before} from LLM, {len(packages)} total)")
+
+        for n, p in enumerate(packages):
+            p["package_index"] = n
+
+        if agent.explain_summary:
+            reasoning = compose_summary(reasoning, packages, filtered_actions, game_state)
+
+        return packages, reasoning
 
     def _update_conv_history(
         self,
