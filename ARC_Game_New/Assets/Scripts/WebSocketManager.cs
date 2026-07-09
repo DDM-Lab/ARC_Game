@@ -760,9 +760,15 @@ public class WebSocketManager : MonoBehaviour
     /// Send begin_round to the agent router with current game state.
     /// Call this when the game advances to a new time segment.
     /// </summary>
-    public void SendBeginRound(int round, int day, int segment)
+    /// <summary>
+    /// Send begin_round to the router. Returns true only if the frame was
+    /// actually sent (connected AND game state serializable). Callers that
+    /// retry until success (the human first-proposal one-shot) rely on this
+    /// bool so they don't flip their "done" flag before the state is ready.
+    /// </summary>
+    public bool SendBeginRound(int round, int day, int segment)
     {
-        if (!isConnected) return;
+        if (!isConnected) return false;
 
         GameStatePayload gameState = null;
         if (TaskSystem.Instance != null)
@@ -773,7 +779,7 @@ public class WebSocketManager : MonoBehaviour
         if (gameState == null)
         {
             Debug.LogWarning("[WS] SendBeginRound: could not get game state.");
-            return;
+            return false;
         }
 
         var msg = new BeginRoundMessage
@@ -786,7 +792,16 @@ public class WebSocketManager : MonoBehaviour
         };
         SendRawMessage(JsonUtility.ToJson(msg));
         Debug.Log($"[WS] begin_round sent (round={round}, day={day}, seg={segment})");
+        return true;
     }
+
+    /// <summary>
+    /// True once the game_start frame has been sent for this session (right
+    /// after hello_ack). The router clears its queue and resets its round
+    /// counter on game_start, so a begin_round sent before it would be
+    /// discarded — the human first-proposal must wait for this.
+    /// </summary>
+    public bool HasSentGameStart() => gameStartSentThisSession;
 
     /// <summary>
     /// Send choice_made back to router after player selects a package.

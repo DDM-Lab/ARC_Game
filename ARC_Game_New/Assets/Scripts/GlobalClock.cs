@@ -82,6 +82,25 @@ public class GlobalClock : MonoBehaviour
         }
     }
 
+    // Human/router mode only: has the FIRST planning-phase proposal (Day 1,
+    // Round 1) been requested yet? The Update() one-shot below retries every
+    // frame until the router link is live and the game state is serializable,
+    // then flips this true and never fires again.
+    private bool initialProposalSent = false;
+
+    void Update()
+    {
+        // Kick off the very first agent proposal once everything is ready.
+        // RequestAgentProposal() is a no-op in gym mode and until game_start
+        // has been sent, so this is safe to poll every frame. It returns true
+        // only when begin_round was actually sent (game state ready).
+        if (!initialProposalSent)
+        {
+            if (RequestAgentProposal())
+                initialProposalSent = true;
+        }
+    }
+
     void Start()
     {
         InitializeTimeSystem();
@@ -91,7 +110,7 @@ public class GlobalClock : MonoBehaviour
         if (showDebugInfo)
             Debug.Log("Global Clock initialized - Game starts paused at Day 1, Time Segment 1");
             
-        GameLogPanel.Instance.LogMetricsChange($"Game started - Day {currentDay}, Round {currentTimeSegment + 1}");
+        GameLogPanel.Instance?.LogMetricsChange($"Game started - Day {currentDay}, Round {currentTimeSegment + 1}");
         
         // Update ActionTrackingManager at start
         if (ActionTrackingManager.Instance != null)
@@ -277,7 +296,7 @@ public class GlobalClock : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Time speed changed to {currentTimeSpeed}x");
-        GameLogPanel.Instance.LogMetricsChange($"Time speed set to {currentTimeSpeed}x");
+        GameLogPanel.Instance?.LogMetricsChange($"Time speed set to {currentTimeSpeed}x");
     }
     
     void StartSimulation()
@@ -287,11 +306,21 @@ public class GlobalClock : MonoBehaviour
         // Request LLM agent decision before simulation starts (legacy path)
         RequestLLMAgentDecision();
 
-        // Notify agent router of new round (multi-agent router path)
-        int roundNumber = (currentDay - 1) * 4 + currentTimeSegment + 1;
-        if (WebSocketManager.Instance != null && WebSocketManager.Instance.isConnected)
+        // Notify agent router of a new round. GYM ONLY: in gym mode this
+        // begin_round drives the agents each RL round, coupled to the sim step
+        // (GymAdvanceRound -> StartSimulation). In human/router play the
+        // proposal is fired separately at the START of each planning phase (see
+        // RequestAgentProposal(): Update() for round 1, EndSimulation() on
+        // segment advance, ProceedToNextDay() on day advance), so the Execute
+        // button here only runs the simulation on already-selected actions —
+        // no proposal/sim race.
+        if (gymInstantMode)
         {
-            WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, currentTimeSegment);
+            int roundNumber = (currentDay - 1) * 4 + currentTimeSegment + 1;
+            if (WebSocketManager.Instance != null && WebSocketManager.Instance.isConnected)
+            {
+                WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, currentTimeSegment);
+            }
         }
 
         isSimulationRunning = true;
@@ -311,9 +340,31 @@ public class GlobalClock : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Simulation started - Player waits {playerWaitTime}s, game content runs at {currentTimeSpeed}x speed");
-        GameLogPanel.Instance.LogMetricsChange($"Simulation started - Player waits {playerWaitTime}s, game content runs at {currentTimeSpeed}x speed");
+        GameLogPanel.Instance?.LogMetricsChange($"Simulation started - Player waits {playerWaitTime}s, game content runs at {currentTimeSpeed}x speed");
         // Start simulation coroutine
         StartCoroutine(SimulationCoroutine(playerWaitTime));
+    }
+
+    /// <summary>
+    /// Human/router mode: request a fresh set of agent proposals for the
+    /// CURRENT planning phase WITHOUT running the simulation. Fired on entering
+    /// every planning phase (game start, each in-day segment advance, each day
+    /// advance) so the player always has up-to-date options to review before
+    /// clicking Execute. Returns true only if begin_round was actually sent.
+    ///
+    /// No-op in gym mode (gymInstantMode drives its own begin_round via
+    /// StartSimulation) and until game_start has been sent (the router resets
+    /// its round counter / clears its queue on game_start, so an earlier
+    /// begin_round would be discarded).
+    /// </summary>
+    bool RequestAgentProposal()
+    {
+        if (gymInstantMode) return false;
+        if (WebSocketManager.Instance == null || !WebSocketManager.Instance.isConnected) return false;
+        if (!WebSocketManager.Instance.HasSentGameStart()) return false;
+
+        int roundNumber = (currentDay - 1) * 4 + currentTimeSegment + 1;
+        return WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, currentTimeSegment);
     }
 
     // ── Headless / gym control ───────────────────────────────────
@@ -352,9 +403,30 @@ public class GlobalClock : MonoBehaviour
         QualitySettings.vSyncCount = 0;
         Application.targetFrameRate = -1;
         // If the previous round completed a day (segment hit 4), roll over first.
+        //
+        // ROBUSTNESS (headless Server subtarget): ProceedToNextDay() fans out
+        // OnDayChanged to ~8 subscribers and touches several UI-adjacent systems.
+        // In the -Server standalone build (rendering/UI modules stripped) one of
+        // those handlers can dereference a null singleton and throw. If that
+        // exception escaped, StartSimulation() below would never run, the sim
+        // state machine would never flip isSimulationRunning true→false, and the
+        // gym network thread in GymServerManager.HandleAdvanceTime() would spin
+        // its full 60 s safety cap every turn — collapsing rollout throughput to
+        // ~zero (observed on the cluster, futex_wait deadlock). Catch, log the
+        // FULL stack so the offending subscriber is identifiable from the Unity
+        // log, and fall through to StartSimulation() so the round still runs.
         if (currentTimeSegment >= 4)
         {
-            ProceedToNextDay();
+            try
+            {
+                ProceedToNextDay();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[GlobalClock] GymAdvanceRound: ProceedToNextDay() threw during day rollover " +
+                               $"(now Day {currentDay}, segment {currentTimeSegment}); starting the round anyway " +
+                               $"to keep the gym loop alive. Full exception:\n{e}");
+            }
         }
         StartSimulation();
     }
@@ -399,7 +471,7 @@ public class GlobalClock : MonoBehaviour
         }
 
         WebSocketManager.Instance.SendRawMessage(json);
-        GameLogPanel.Instance.LogMetricsChange($"Requested AI decision for Day {currentDay}, Round {currentTimeSegment + 1}");
+        GameLogPanel.Instance?.LogMetricsChange($"Requested AI decision for Day {currentDay}, Round {currentTimeSegment + 1}");
     }
     
     IEnumerator SimulationCoroutine(float playerWaitTime)
@@ -491,7 +563,7 @@ public class GlobalClock : MonoBehaviour
 
             if (showDebugInfo)
             {
-                GameLogPanel.Instance.LogMetricsChange($"Day {currentDay} complete - Click 'View Report' when ready");
+                GameLogPanel.Instance?.LogMetricsChange($"Day {currentDay} complete - Click 'View Report' when ready");
                 Debug.Log($"Day {currentDay} complete - Click 'View Report' when ready");
             }
         }
@@ -499,11 +571,15 @@ public class GlobalClock : MonoBehaviour
         {
             if (showDebugInfo)
             {
-                GameLogPanel.Instance.LogMetricsChange($"Simulation ended - Now at Day {currentDay}, Round {currentTimeSegment + 1}");
+                GameLogPanel.Instance?.LogMetricsChange($"Simulation ended - Now at Day {currentDay}, Round {currentTimeSegment + 1}");
                 Debug.Log($"Simulation ended - Now at Day {currentDay}, Round {currentTimeSegment + 1}");
             }
+
+            // Entering the next in-day planning phase: request fresh agent
+            // proposals for the new segment. No-op in gym mode.
+            RequestAgentProposal();
         }
-        
+
         // Notify other systems
         OnSimulationEnded?.Invoke();
     }
@@ -581,7 +657,12 @@ public class GlobalClock : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Advanced to Day {currentDay}, Round 1");
-        GameLogPanel.Instance.LogMetricsChange($"Advanced to Day {currentDay}, Round 1");
+        GameLogPanel.Instance?.LogMetricsChange($"Advanced to Day {currentDay}, Round 1");
+
+        // New day's first planning phase: request fresh agent proposals for
+        // Round 1. No-op in gym mode (GymAdvanceRound drives begin_round via
+        // StartSimulation instead).
+        RequestAgentProposal();
     }
 
     public void PauseSimulation()
@@ -596,7 +677,7 @@ public class GlobalClock : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log("Simulation paused by external system");
-        GameLogPanel.Instance.LogMetricsChange("Simulation paused by external system");
+        GameLogPanel.Instance?.LogMetricsChange("Simulation paused by external system");
     }
 
     public void ResumeSimulation()
@@ -607,7 +688,7 @@ public class GlobalClock : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log("Simulation resumed - ready for player interaction");
-        GameLogPanel.Instance.LogMetricsChange("Simulation resumed - ready for player interaction");
+        GameLogPanel.Instance?.LogMetricsChange("Simulation resumed - ready for player interaction");
     }
 
     void DisablePlayerInteractions()
