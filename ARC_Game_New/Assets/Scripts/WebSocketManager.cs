@@ -1084,19 +1084,18 @@ public class WebSocketManager : MonoBehaviour
     /// </summary>
     string FormatPackageDescription(ActionPackage package, GameAction[] availableActions)
     {
-        System.Text.StringBuilder desc = new System.Text.StringBuilder();
-
-        // Add package description from LLM if available
+        // The grounded description already reads "$cost · <engine action summary>\nWhy: ..."
+        // — the action summary is built server-side from the engine's OWN action list, so we
+        // do NOT append a separate "Actions:" block here. It duplicated the summary and could
+        // show engine numbers that contradicted the model's prose. Use the description directly.
         if (!string.IsNullOrEmpty(package.description))
-        {
-            desc.AppendLine(package.description);
-        }
+            return package.description.TrimEnd();
 
-        // Add action list
+        // Fallback only: no description was supplied — list the engine actions so the
+        // card is never blank.
+        System.Text.StringBuilder desc = new System.Text.StringBuilder();
         if (package.action_indices != null && package.action_indices.Length > 0 && availableActions != null)
         {
-            if (desc.Length > 0) desc.AppendLine(); // Add spacing
-
             desc.AppendLine("Actions:");
             foreach (int idx in package.action_indices)
             {
