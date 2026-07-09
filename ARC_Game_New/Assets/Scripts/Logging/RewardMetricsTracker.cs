@@ -44,6 +44,18 @@ public class RewardMetricsTracker : MonoBehaviour
         else { Destroy(gameObject); }
     }
 
+    /// <summary>Zero every cumulative accumulator for a fresh episode. This object is
+    /// auto-instantiated once per process via RuntimeInitializeOnLoadMethod and is
+    /// DontDestroyOnLoad, so a gym scene-reload reset does NOT recreate it — the gym
+    /// reset path must call this explicitly, or metrics leak across episodes.</summary>
+    public void ResetForNewEpisode()
+    {
+        foodResolved = foodFulfilled = lodgingResolved = lodgingFulfilled = 0;
+        caseworkRequested = caseworkProcessed = 0;
+        cumWorking = cumTraining = cumIdle = 0;
+        roundsCompleted = 0;
+    }
+
     /// <summary>Called by GlobalClock at the end of each simulated round.</summary>
     public void OnRoundEnded()
     {

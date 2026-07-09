@@ -45,6 +45,25 @@ public class ActionExecutor : MonoBehaviour
     }
 
     /// <summary>
+    /// Re-resolve scene-object references after a gym reset_game scene reload.
+    /// This ActionExecutor persists across the reload because it shares the
+    /// DontDestroyOnLoad "WebSocketManager" GameObject (preserved gym infra), so its
+    /// serialized buildingSystem/workerSystem/deliverySystem refs still point at the
+    /// destroyed old scene's systems (Unity fake-null). Called by GymServerManager's
+    /// ResetRoutine once the freshly-loaded scene has settled so the new systems exist.
+    /// </summary>
+    public void ReresolveSceneRefs()
+    {
+        buildingSystem = FindObjectOfType<BuildingSystem>();
+        workerSystem = WorkerSystem.Instance;
+        deliverySystem = FindObjectOfType<DeliverySystem>();
+
+        if (buildingSystem == null) Debug.LogError("ActionExecutor.ReresolveSceneRefs: BuildingSystem not found after reload!");
+        if (workerSystem == null) Debug.LogError("ActionExecutor.ReresolveSceneRefs: WorkerSystem not found after reload!");
+        if (deliverySystem == null) Debug.LogError("ActionExecutor.ReresolveSceneRefs: DeliverySystem not found after reload!");
+    }
+
+    /// <summary>
     /// Execute a game action
     /// Returns result indicating success/failure
     /// </summary>

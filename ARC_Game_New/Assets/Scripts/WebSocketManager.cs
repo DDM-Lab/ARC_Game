@@ -54,6 +54,15 @@ public class WebSocketManager : MonoBehaviour
         }
     }
 
+    /// <summary>Drop cached references to scene objects (e.g. after a gym in-process
+    /// reset reloads MainScene). This manager is DontDestroyOnLoad and survives the
+    /// reload, so its cached TaskDetailUI would otherwise dangle at the destroyed old
+    /// instance. Re-resolved lazily on next use / next Start.</summary>
+    public void ClearSceneRefs()
+    {
+        taskDetailUI = null;
+    }
+
     void Start()
     {
         taskDetailUI = FindObjectOfType<TaskDetailUI>();

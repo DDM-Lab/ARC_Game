@@ -235,6 +235,10 @@ class ARCGameGymEnv(gym.Env):
         self.action_enumerator = None
         self.current_step = 0
         self.current_round = 0
+        # Number of reset() calls so far. The first reset runs against a freshly
+        # launched Unity already at Day 1 (no server reset needed); every later reset
+        # must trigger an in-process scene reload via the reset_game RPC.
+        self._reset_count = 0
 
         # Define spaces
         self.observation_space = gym.spaces.Dict({})  # Flexible dict
@@ -416,6 +420,20 @@ class ARCGameGymEnv(gym.Env):
         self.current_step = 0
         self.current_round = 0
 
+        # In-process hard reset for episode 2+. The first reset() runs against a
+        # freshly launched Unity that already booted MainScene at Day 1, so it needs no
+        # server-side reset. Every subsequent reset() must tell Unity to tear down the
+        # game-state singletons and reload the scene, otherwise a recycled process
+        # (restart_unity_each_episode=False) stays frozen past finalDay. The benchmark
+        # spawns a fresh process per episode, so its single reset never takes this path.
+        if self._reset_count > 0:
+            reset_resp = self._send_request({"type": "reset_game"})
+            if reset_resp.get("type") != "reset_done":
+                raise RuntimeError(
+                    f"Expected reset_done from reset_game, got: {reset_resp.get('type')}"
+                )
+        self._reset_count += 1
+
         # Request game state from Unity
         response = self._send_request({"type": "get_game_state"})
 
@@ -515,7 +533,12 @@ class ARCGameGymEnv(gym.Env):
         # and returns the post-advance game state.
         response = self._send_request({"type": "advance_time"})
 
-        if response.get("type") != "game_state":
+        # advance_time returns "game_state" normally, or "game_over" if the clock is
+        # already at the finite-horizon terminal (last round of finalDay). In the latter
+        # case Unity refuses to advance into post-finalDay "overtime" and returns the
+        # current state re-tagged; the embedded game_state is unchanged (still carries
+        # sessionInfo.isGameOver=true), so both types are valid terminal-safe responses.
+        if response.get("type") not in ("game_state", "game_over"):
             raise RuntimeError("Failed to advance simulation / get game state")
 
         game_state_json = response.get("game_state", "{}")
@@ -538,16 +561,23 @@ class ARCGameGymEnv(gym.Env):
         # Re-enumerate valid actions
         self._enumerate_valid_actions()
 
-        # Check termination conditions
-        terminated = current_satisfaction <= 0
+        # Check termination conditions. The game is a finite-horizon MDP that ends
+        # after finalDay's last round; Unity surfaces that via sessionInfo.isGameOver.
+        # Treat it (and satisfaction bottoming out) as a genuine terminal state so the
+        # RL loop resets instead of advancing into meaningless post-finalDay rounds
+        # (which is what previously froze recycled processes past finalDay).
+        session = self.game_state.get("sessionInfo", {})
+        game_over = bool(session.get("isGameOver", False))
+        terminated = current_satisfaction <= 0 or game_over
         truncated = self.current_step >= self.max_episode_steps
 
         # Build info
-        session = self.game_state.get("sessionInfo", {})
         info = {
             "day": session.get("currentDay", 1),
             "round": session.get("currentRound", 0),
             "segment": session.get("currentTimeSegment", 0),
+            "final_day": session.get("finalDay", 0),
+            "game_over": game_over,
             "budget": sat_budget.get("budget", 0.0),
             "satisfaction": current_satisfaction,
             "satisfaction_delta": satisfaction_delta,

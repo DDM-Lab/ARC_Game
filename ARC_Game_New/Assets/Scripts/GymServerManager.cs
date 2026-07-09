@@ -1,9 +1,11 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Collections;
 using System.Collections.Generic;
 using GameActions;
 
@@ -37,6 +39,11 @@ public class GymServerManager : MonoBehaviour
     // Whether enabled frame captures should also return base64 in the response
     // (set via configure_render). Path-only by default — cheaper over TCP.
     private bool renderIncludeBase64 = false;
+
+    // reset_game handshake: cleared when a reset is requested, flipped true by the
+    // reset coroutine once MainScene has fully reloaded to a fresh Day 1. Written on
+    // the main thread, polled on the client thread → volatile.
+    private volatile bool resetComplete = false;
 
     void Awake()
     {
@@ -153,13 +160,41 @@ public class GymServerManager : MonoBehaviour
             while (isListening)
             {
                 TcpClient client = tcpListener.AcceptTcpClient();
+
+                // Single-client enforcement. This server is designed for exactly one gym
+                // client (one env : one Unity process). A SECOND concurrent connection is
+                // never legitimate — it means a wrapper double-spawn / port mix-up landed
+                // two envs on the same Unity. It is also actively dangerous: every request
+                // is parsed with JsonUtility.FromJson on its own client thread, and Unity's
+                // JsonUtility is NOT thread-safe (the same reason ErrorJson is hand-rolled).
+                // Two client threads serializing concurrently can corrupt Unity's native
+                // serialization state and hard-crash the process mid-response — which looks
+                // exactly like the observed silent death (log ends mid-state-serialization,
+                // the gym's env.step() then blocks forever on a dead socket). So reject the
+                // extra connection loudly instead of letting it crash the server.
+                bool alreadyServing;
                 lock (clients)
                 {
-                    clients.Add(client);
-                    connectedClients = clients.Count;
+                    PruneDeadClients();
+                    alreadyServing = clients.Count > 0;
+                    if (!alreadyServing)
+                    {
+                        clients.Add(client);
+                        connectedClients = clients.Count;
+                    }
                 }
 
-                Debug.Log($"[GymServer] Client connected from {client.Client.RemoteEndPoint}");
+                if (alreadyServing)
+                {
+                    string who = SafeRemoteEndpoint(client);
+                    Debug.LogWarning($"[GymServer] REJECTING second client from {who}: this server " +
+                                     $"already has an active client. This is almost certainly a wrapper " +
+                                     $"double-spawn (two envs → one Unity). Close it; keeping the first.");
+                    try { client.Close(); } catch { }
+                    continue;
+                }
+
+                Debug.Log($"[GymServer] Client connected from {SafeRemoteEndpoint(client)}");
 
                 Thread clientThread = new Thread(() => HandleClient(client));
                 clientThread.IsBackground = true;
@@ -173,6 +208,29 @@ public class GymServerManager : MonoBehaviour
                 Debug.LogError($"[GymServer] Listener error: {e}");
             }
         }
+    }
+
+    // Drop any clients whose socket is no longer connected, so a client that
+    // disconnected ungracefully (half-open) does not permanently block a legitimate
+    // reconnect under single-client enforcement. Caller must hold lock(clients).
+    void PruneDeadClients()
+    {
+        for (int i = clients.Count - 1; i >= 0; i--)
+        {
+            TcpClient c = clients[i];
+            if (c == null || !c.Connected)
+            {
+                try { c?.Close(); } catch { }
+                clients.RemoveAt(i);
+            }
+        }
+        connectedClients = clients.Count;
+    }
+
+    static string SafeRemoteEndpoint(TcpClient client)
+    {
+        try { return client.Client.RemoteEndPoint?.ToString() ?? "unknown"; }
+        catch { return "unknown"; }
     }
 
     void HandleClient(TcpClient client)
@@ -189,16 +247,33 @@ public class GymServerManager : MonoBehaviour
                     int bytesRead = stream.Read(buffer, 0, buffer.Length);
                     if (bytesRead > 0)
                     {
-                        string message = Encoding.UTF8.GetString(buffer, 0, bytesRead).Trim();
+                        string chunk = Encoding.UTF8.GetString(buffer, 0, bytesRead);
 
-                        // Handle message and send response
-                        string response = HandleMessage(message);
+                        // Newline framing. The protocol is newline-delimited JSON, but TCP
+                        // does not preserve message boundaries: one stream.Read can return
+                        // several coalesced messages ("{...}\n{...}"). Parsing the raw chunk
+                        // as a single JSON object then throws "JSON parse error: Invalid
+                        // value" (seen at startup when the wrapper sends its handshake + first
+                        // command back-to-back). Split on newlines and dispatch each message.
+                        // If the chunk carries no newline at all, fall back to the original
+                        // whole-chunk behavior — strictly no worse than before, and never
+                        // buffers/blocks waiting for a delimiter a client might not send.
+                        string[] messages = chunk.IndexOf('\n') >= 0
+                            ? chunk.Split('\n')
+                            : new[] { chunk };
 
-                        if (!string.IsNullOrEmpty(response))
+                        foreach (string raw in messages)
                         {
-                            byte[] responseBytes = Encoding.UTF8.GetBytes(response + "\n");
-                            stream.Write(responseBytes, 0, responseBytes.Length);
-                            stream.Flush();
+                            string message = raw.Trim();
+                            if (message.Length == 0) continue; // skip blank/keepalive lines
+
+                            string response = HandleMessage(message);
+                            if (!string.IsNullOrEmpty(response))
+                            {
+                                byte[] responseBytes = Encoding.UTF8.GetBytes(response + "\n");
+                                stream.Write(responseBytes, 0, responseBytes.Length);
+                                stream.Flush();
+                            }
                         }
                     }
                 }
@@ -292,6 +367,9 @@ public class GymServerManager : MonoBehaviour
 
                 case "capture_frame":
                     return HandleCaptureFrame();
+
+                case "reset_game":
+                    return HandleResetGame();
 
                 default:
                     return ErrorJson($"Unknown request type: {request.type}");
@@ -866,6 +944,28 @@ public class GymServerManager : MonoBehaviour
             return JsonUtility.ToJson(new GymResponse { type = "error", error = "GlobalClock not found" });
         }
 
+        // Finite-horizon guard. Once the last round of finalDay has run, the episode is
+        // over. GlobalClock.GymAdvanceRound()/StartSimulation() have NO day cap, so a
+        // wrapper that keeps calling advance_time past the terminal marches the game into
+        // "overtime" (Day finalDay+1, +2, ...) indefinitely. Each overtime round is a
+        // clean Start/Stop, so Unity never deadlocks — but a wrapper whose terminal check
+        // is `day > finalDay` (strict) silently overruns exactly one round into Day
+        // finalDay+1 before it stops stepping, and with no reset wired Unity then idles
+        // between rounds at GYM_IDLE_FPS. That is the "mid-Day-9 freeze" observed on the
+        // cluster: not a hang, just Unity correctly waiting for a command that never comes.
+        //
+        // Fix: refuse to advance once terminal. Return the current state re-tagged
+        // type="game_over" (the embedded game_state still carries sessionInfo.isGameOver,
+        // so this is backward compatible) — an unambiguous, idempotent terminal the
+        // wrapper resets on regardless of how it detects the horizon.
+        if (IsFiniteHorizonOver(out int goDay, out int goSeg, out int goFinalDay))
+        {
+            Debug.Log($"[GymServer] advance_time at finite-horizon terminal " +
+                      $"(Day {goDay} R{goSeg + 1}, finalDay {goFinalDay}); returning game_over " +
+                      $"WITHOUT advancing the clock (no overtime).");
+            return GameOverJson();
+        }
+
         lock (actionQueueLock)
         {
             mainThreadActions.Enqueue(() => GlobalClock.Instance.GymAdvanceRound());
@@ -888,6 +988,182 @@ public class GymServerManager : MonoBehaviour
         // Capture a frame (no-op unless render capture was enabled) and return the
         // post-advance state. Falls through to a plain game_state when capture is Off.
         return HandleGetGameStateWithFrame();
+    }
+
+    // Finite-horizon terminal test. Mirrors TaskSystem.GetSessionInfo's isGameOver
+    // (currentDay > finalDay || (currentDay == finalDay && currentRound >= 4)) so the
+    // gym server can refuse to advance the clock past the last round of finalDay.
+    // currentRound here is GlobalClock.GetCurrentTimeSegment() (0-based; it reads 4 only
+    // after the day's 4th round has completed) — identical to what GetSessionInfo uses.
+    bool IsFiniteHorizonOver(out int day, out int seg, out int finalDay)
+    {
+        day = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 0;
+        seg = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 0;
+        finalDay = DailyReportManager.Instance != null ? DailyReportManager.Instance.finalDay : 8;
+        return day > finalDay || (day == finalDay && seg >= 4);
+    }
+
+    // Terminal response: the full current game_state payload, re-tagged type="game_over".
+    // Backward compatible — the embedded game_state field is unchanged (and already
+    // carries sessionInfo.isGameOver == true); only the envelope type differs from
+    // "game_state". Runs the FromJson/ToJson on the client thread only AFTER
+    // HandleGetGameState() (which marshals to and blocks on the main thread) has fully
+    // returned, so there is no concurrent-JsonUtility hazard — same pattern as
+    // HandleGetGameStateWithFrame's frame-field splice.
+    string GameOverJson()
+    {
+        string stateJson = HandleGetGameState();
+        try
+        {
+            GymResponse resp = JsonUtility.FromJson<GymResponse>(stateJson);
+            if (resp != null && resp.type == "game_state")
+            {
+                resp.type = "game_over";
+                return JsonUtility.ToJson(resp);
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[GymServer] GameOverJson re-tag failed ({e.Message}); returning plain state.");
+        }
+        return stateJson;
+    }
+
+    // Reset the game to a fresh Day-1 state IN-PROCESS, without restarting Unity. RL
+    // loops that recycle one Unity process across many episodes
+    // (restart_unity_each_episode=False) need this; the benchmark spawns a fresh
+    // process per episode and never hits it.
+    //
+    // All game-state singletons are scene-placed in MainScene AND DontDestroyOnLoad, so
+    // a plain LoadScene would reload the scene but the fresh copies would self-destruct
+    // against the surviving old singletons (their Awake sees Instance != null). So we
+    // (1) destroy the old game-state DontDestroyOnLoad objects first — keeping only the
+    // gym/network/logging infra, which owns this coroutine + the live TCP socket and
+    // must survive — then (2) LoadSceneAsync(MainScene, Single) to rebuild the
+    // game-state singletons fresh at Day 1. Infra created via RuntimeInitializeOnLoad
+    // (RewardMetricsTracker/GymCameraCapture/ServerLauncherUI/GuiInteractionRecorder) is
+    // NOT recreated by a scene reload, so it is preserved; RewardMetricsTracker is
+    // additionally zeroed, else its cumulative accumulators leak across episodes.
+    string HandleResetGame()
+    {
+        resetComplete = false;
+
+        lock (actionQueueLock)
+        {
+            mainThreadActions.Enqueue(() =>
+            {
+                try
+                {
+                    StartCoroutine(ResetRoutine());
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[GymServer] reset_game failed to start: {e}");
+                    resetComplete = true; // unblock the client thread
+                }
+            });
+        }
+
+        // Scene reload + a few settle frames is well under a second, but allow generous
+        // headroom on slow/headless hardware (same 60s-class cap style as advance_time).
+        int ticks = 0;
+        while (!resetComplete && ticks < 3000) // up to 30s safety cap
+        {
+            Thread.Sleep(10);
+            ticks++;
+        }
+
+        if (!resetComplete)
+            return ErrorJson("reset_game timed out waiting for scene reload");
+
+        return "{\"type\":\"reset_done\"}";
+    }
+
+    // GameObjects that must survive a reset: this manager (coroutine + TCP socket),
+    // network/logging infra, and GameConfigLoader (KEEP its cached config so reset is
+    // fast and needs no network re-fetch). Resolved via FindObjectOfType so absent
+    // infra (e.g. GuiInteractionRecorder is skipped in batch mode; GymCameraCapture
+    // only exists once render capture is configured) is simply not added — null-safe.
+    HashSet<GameObject> BuildResetPreserveSet()
+    {
+        var keep = new HashSet<GameObject>();
+        keep.Add(gameObject); // this GymServerManager
+        KeepIfPresent<WebSocketManager>(keep);
+        KeepIfPresent<GameConfigLoader>(keep);
+        KeepIfPresent<GymCameraCapture>(keep);
+        KeepIfPresent<ServerLauncherUI>(keep);
+        KeepIfPresent<GuiInteractionRecorder>(keep);
+        KeepIfPresent<RewardMetricsTracker>(keep);
+        return keep;
+    }
+
+    void KeepIfPresent<T>(HashSet<GameObject> keep) where T : Component
+    {
+        var obj = FindObjectOfType<T>();
+        if (obj != null) keep.Add(obj.gameObject);
+    }
+
+    IEnumerator ResetRoutine()
+    {
+        Scene active = SceneManager.GetActiveScene();
+        int buildIndex = active.buildIndex;
+
+        // Preserve infra; zero the reward accumulators that survive the reload; drop
+        // cached scene refs on preserved infra so they re-resolve after the reload.
+        HashSet<GameObject> keep = BuildResetPreserveSet();
+        RewardMetricsTracker.Instance?.ResetForNewEpisode();
+        WebSocketManager.Instance?.ClearSceneRefs();
+
+        // Destroy every DontDestroyOnLoad game-state root not in the keep set. These
+        // live in Unity's dedicated DontDestroyOnLoad scene; enumerate it via a temp
+        // object placed there.
+        var probe = new GameObject("[ResetProbe]");
+        DontDestroyOnLoad(probe);
+        keep.Add(probe);
+        Scene ddol = probe.scene;
+        var destroyedNames = new List<string>();
+        var keptNames = new List<string>();
+        foreach (GameObject root in ddol.GetRootGameObjects())
+        {
+            if (!keep.Contains(root))
+            {
+                destroyedNames.Add(root.name);
+                Destroy(root);
+            }
+            else if (root != probe)
+            {
+                keptNames.Add(root.name);
+            }
+        }
+        Destroy(probe);
+        Debug.Log($"[GymServer] reset teardown — destroyed DDOL roots: [{string.Join(", ", destroyedNames)}]; " +
+                  $"kept: [{string.Join(", ", keptNames)}]");
+
+        // Let end-of-frame destruction actually run so the reloaded scene's fresh
+        // singletons see Instance == null (Unity reports destroyed objects as null in
+        // the == overload) and claim the slot instead of self-destructing.
+        yield return null;
+
+        // Rebuild MainScene from scratch → fresh Day-1 game-state singletons.
+        AsyncOperation op = SceneManager.LoadSceneAsync(buildIndex, LoadSceneMode.Single);
+        while (op != null && !op.isDone)
+            yield return null;
+
+        // Give the reloaded scene's Awake/Start chain a couple frames to re-establish
+        // Day 1 (GlobalClock.InitializeTimeSystem) and re-apply cached config
+        // (SatisfactionAndBudget.EnsureConfigApplied on its fresh ConfigApplied=false).
+        yield return null;
+        yield return null;
+
+        // ActionExecutor persists across the reload (it shares the preserved
+        // DontDestroyOnLoad "WebSocketManager" GameObject), so its serialized system
+        // refs still point at the destroyed old scene. Re-point them at the fresh
+        // BuildingSystem/WorkerSystem/DeliverySystem now that the reload has settled.
+        ActionExecutor.Instance?.ReresolveSceneRefs();
+
+        int day = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : -1;
+        Debug.Log($"[GymServer] reset_game complete — reloaded MainScene (build {buildIndex}); now Day {day}.");
+        resetComplete = true;
     }
 
     void OnApplicationQuit()

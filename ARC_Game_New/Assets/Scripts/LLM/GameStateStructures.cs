@@ -96,6 +96,11 @@ public class SessionInfo
     public string currentGameTime;
     public float simulationSpeed;
     public bool isPaused;
+    // Finite-horizon terminal signal for the gym: the game ends after finalDay's last
+    // round (EndGamePanel shows at Day finalDay, Round 4). isGameOver lets the Python
+    // env terminate the episode there instead of advancing into meaningless Day 9+.
+    public int finalDay;
+    public bool isGameOver;
 }
 
 [System.Serializable]

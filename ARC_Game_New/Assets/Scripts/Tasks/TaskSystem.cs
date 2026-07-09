@@ -2323,6 +2323,14 @@ public class TaskSystem : MonoBehaviour
             info.currentGameTime = $"Day {info.currentDay}, Round {info.currentRound}";
             info.simulationSpeed = GlobalClock.Instance.IsSimulationRunning() ? 1.0f : 0.0f;
             info.isPaused = !GlobalClock.Instance.IsSimulationRunning();
+
+            // Finite-horizon terminal: game is over once the last round of finalDay
+            // has run (EndGamePanel condition is Day finalDay, segment >= 4) or the
+            // clock has already rolled past finalDay.
+            int finalDay = DailyReportManager.Instance != null ? DailyReportManager.Instance.finalDay : 8;
+            info.finalDay = finalDay;
+            info.isGameOver = info.currentDay > finalDay
+                              || (info.currentDay == finalDay && info.currentRound >= 4);
         }
 
         return info;
