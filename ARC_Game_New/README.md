@@ -13,6 +13,12 @@ A Unity-based disaster relief operations game with multi-agent AI support for re
   - Common configuration patterns and examples
   - Troubleshooting and optimization tips
 
+- **[Choices Agent Guide](CHOICES_AGENT.md)** - Run, understand, and extend the choices agent (the one that proposes selectable action packages)
+  - Architecture: change the router, it flows through to the game (no client rebuild)
+  - Running the router locally, keys/secrets, REST + WebSocket protocol
+  - Repropose / clarify / chat classifier and the reliability layer
+  - Building the Unity client (macOS / WebGL) for distribution
+
 ### Quick Start
 
 1. **Configure your agents** - Edit or create a config file in `config/`
