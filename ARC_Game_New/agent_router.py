@@ -32,9 +32,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
-from fastapi import FastAPI, WebSocket, Header, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.websockets import WebSocketState
 import uvicorn
 
 from agent_config import AgentConfig, RouterConfig, load_config
@@ -48,6 +49,7 @@ from choices_reliability import (
     apply_grounded_explanations,
     build_fallback_packages,
     compose_summary,
+    append_repropose_hint,
 )
 from message_queue import MessageQueue
 import re
@@ -707,12 +709,26 @@ Respond with ONLY the package index number (0, 1, or 2).
             print(f"[router] Invalid director_message: missing to_agent or content")
             return
 
-        print(f"[router] Director → {to_agent_name}: {content[:50]}...")
+        # Resolve the agent config FIRST and canonicalize the conversation key on
+        # subagent_name. Unity may address the agent by either its subagent_name
+        # or its talkinghead_endpoint (see _get_agent_by_name), and every other
+        # reader/writer (proposal recording, _send_agent_response, _run_choices,
+        # _repropose_choices) keys the thread by subagent_name. Keying by the raw
+        # to_agent (e.g. the talkinghead endpoint "FoodMassCare") split the thread
+        # so classify/clarify/chat never saw the agent's own prior turns or the
+        # packages it proposed — the "I don't have a record of what I proposed" bug.
+        agent = self._get_agent_by_name(to_agent_name)
+        if not agent:
+            print(f"[router] Agent '{to_agent_name}' not found")
+            return
+        convo_key = agent.subagent_name
+
+        print(f"[router] Director → {convo_key}: {content[:50]}...")
 
         # Store director message in queue
         message = self.message_queue.send_message(
             from_agent="Director",
-            to_agent=to_agent_name,
+            to_agent=convo_key,
             content=content,
             msg_type="director_message",
             round_num=self.round_num
@@ -724,7 +740,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             "round": self.round_num,
             "actor": HUMAN_DIRECTOR_ACTOR,
             "from": "Director",
-            "to": to_agent_name,
+            "to": convo_key,
             "content": content,
             "message_type": "director_message",
             "message_id": message["id"],
@@ -732,13 +748,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             "timestamp": message["timestamp"]
         })
 
-        # Find the agent config
-        agent = self._get_agent_by_name(to_agent_name)
-        if not agent:
-            print(f"[router] Agent '{to_agent_name}' not found")
-            return
-
-        conversation = self.message_queue.get_conversation(to_agent_name, "Director")
+        conversation = self.message_queue.get_conversation(convo_key, "Director")
 
         # For choices agents with an active proposal context, force a single-path
         # decision: CLARIFY, REPROPOSE, or CHAT. This avoids the previous bug where
@@ -876,7 +886,11 @@ Respond with ONLY the package index number (0, 1, or 2).
         system_prompt = (
             f"You are {agent.subagent_name}, a choices agent in the ARC disaster-response game. "
             "You previously proposed strategy packages to the Director, and the Director has now "
-            "messaged you. Decide EXACTLY ONE response path:\n\n"
+            "messaged you. The EXACT options you proposed are recorded earlier in this "
+            "conversation as your own turn beginning 'Here are the exact options I proposed'. "
+            "Treat that as your reliable memory: when asked what you proposed or why, quote those "
+            "options accurately. NEVER say you lack a record of your proposals — you have it above.\n\n"
+            "Decide EXACTLY ONE response path:\n\n"
             "  REPROPOSE — they want a fresh set of packages and you have enough information to commit.\n"
             "  CLARIFY   — you genuinely need more information before you could repropose.\n"
             "  CHAT      — they are not asking for new packages (a question, thanks, small talk).\n\n"
@@ -1110,8 +1124,24 @@ Respond with ONLY the package index number (0, 1, or 2).
             return "I'm having trouble responding right now."
 
     async def _send(self, payload: dict):
-        if self._websocket:
-            await self._websocket.send_text(json.dumps(payload))
+        ws = self._websocket
+        if ws is None:
+            return
+        # A user closing/reloading the tab mid-round drops the socket while a
+        # background begin_round task is still emitting frames. Sending on a
+        # closed socket makes Starlette raise RuntimeError ("websocket.send
+        # after websocket.close"), which surfaced as a flood of unhandled task
+        # exceptions. Skip the send once the socket is no longer connected, and
+        # swallow the close-race so a mid-round disconnect can't crash the task.
+        if (ws.client_state != WebSocketState.CONNECTED
+                or ws.application_state != WebSocketState.CONNECTED):
+            return
+        try:
+            await ws.send_text(json.dumps(payload))
+        except (WebSocketDisconnect, RuntimeError) as e:
+            # Socket closed between the state check and the send — benign for
+            # the demo (client disconnected); drop the frame instead of raising.
+            print(f"[router][{self.api_key_label}] dropped send (socket closed): {e}")
 
     async def _execute_action(self, agent_name: str, action: dict) -> Tuple[dict, dict]:
         """Send execute_action to Unity, wait for result via Future, return (result, updated_state)."""
@@ -1418,6 +1448,41 @@ Respond with ONLY the package index number (0, 1, or 2).
             "available_actions": filtered_actions,
             "timestamp": _now(),
         })
+
+        # Record the proposal into the persistent conversation so the agent has
+        # a memory of what it actually offered. Without this, get_conversation()
+        # only contains chat text, and the classify/clarify/repropose LLM calls
+        # see no record of the packages — leading the agent to say things like
+        # "I don't have a record of the strategy packages I previously proposed."
+        memory = self._format_proposal_for_memory(packages)
+        if memory:
+            self.message_queue.send_message(
+                from_agent=agent.subagent_name,
+                to_agent="Director",
+                content=memory,
+                msg_type="choices_proposal",
+                round_num=self.round_num,
+            )
+
+    @staticmethod
+    def _format_proposal_for_memory(packages: List[dict]) -> str:
+        """Render a faithful record of a choices proposal for conversation memory.
+
+        Recorded as one of the agent's own turns so it can later quote exactly
+        what it offered when the Director asks it to explain, clarify, or repropose.
+        Deliberately NOT the compose_summary blob (that carries the repropose hint
+        and a day/budget preamble that read as meta-noise); just the packages, with
+        a generous description budget so the record never looks truncated — a
+        truncated-looking record made the model distrust and disown it.
+        """
+        lines = ["Here are the exact options I proposed to the Director this round:"]
+        for i, p in enumerate(packages):
+            label = (p.get("label") or f"Option {i + 1}").strip()
+            desc = " ".join((p.get("description") or "").split())
+            if len(desc) > 500:
+                desc = desc[:500].rstrip() + "…"
+            lines.append(f"{i + 1}) {label} — {desc}" if desc else f"{i + 1}) {label}")
+        return "\n".join(lines)
 
     async def _repropose_choices(self, agent: AgentConfig):
         """Agent generates new choices based on director feedback.
@@ -1951,6 +2016,11 @@ Respond with ONLY the package index number (0, 1, or 2).
 
         if agent.explain_summary:
             reasoning = compose_summary(reasoning, packages, filtered_actions, game_state)
+
+        # Discoverability: tell the director they can chat to request a fresh set.
+        # Independent of explain_summary so the nudge rides with the proposal either way.
+        if agent.choices_repropose_hint:
+            reasoning = append_repropose_hint(reasoning)
 
         return packages, reasoning
 

@@ -227,7 +227,10 @@ def compose_summary(reasoning: str, packages: List[dict], actions: List[dict],
     bits = []
     day = obs.get("day")
     if day is not None:
-        bits.append(f"Day {day}/{obs['finalDay']}" if obs.get("finalDay") is not None else f"Day {day}")
+        # finalDay lives on the raw payload's sessionInfo, not on the canonical obs
+        # (the shared benchmark encoder emits only `day`=currentDay, no horizon key).
+        final_day = (game_state or {}).get("sessionInfo", {}).get("finalDay")
+        bits.append(f"Day {day}/{final_day}" if final_day is not None else f"Day {day}")
     if obs.get("budget") is not None:
         bits.append(f"budget {_money(obs['budget'])}")
     costs = [summed_cost(p.get("action_indices") or [], actions) for p in packages]
@@ -239,6 +242,19 @@ def compose_summary(reasoning: str, packages: List[dict], actions: List[dict],
     if ctx and reasoning:
         return _trim(f"{ctx}. {reasoning}", _MAX_SUMMARY_CHARS)
     return _trim(ctx or reasoning, _MAX_SUMMARY_CHARS)
+
+
+REPROPOSE_HINT = ("You can also talk to me and ask me to repropose choices or clarify.")
+
+
+def append_repropose_hint(reasoning: str) -> str:
+    """Append a one-line discoverability nudge telling the director they can chat
+    to request a fresh set of choices. Idempotent: won't double-append if the hint
+    is already present (e.g. carried over across a reproposal)."""
+    reasoning = (reasoning or "").strip()
+    if REPROPOSE_HINT in reasoning:
+        return reasoning
+    return f"{reasoning}\n\n{REPROPOSE_HINT}" if reasoning else REPROPOSE_HINT
 
 
 def _urgent_task_action_indices(actions: List[dict], max_n: int) -> List[int]:

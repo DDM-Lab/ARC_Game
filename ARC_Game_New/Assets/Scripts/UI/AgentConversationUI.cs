@@ -215,7 +215,13 @@ public class AgentConversationUI : MonoBehaviour
         if (sendButton != null)
             sendButton.onClick.AddListener(OnSendPlayerMessage);
         if (playerInputField != null)
+        {
             playerInputField.onSubmit.AddListener(OnPlayerInputSubmit);
+            // Discoverability: the conversation box is how the director asks for a
+            // fresh set of options, so make that explicit in the prompt text.
+            if (playerInputField.placeholder is TMP_Text ph)
+                ph.text = "Ask me for different options…";
+        }
 
         if (agentBarImage != null && DefaultAgentBarImage != null)
             agentBarImage.sprite = DefaultAgentBarImage;
@@ -601,6 +607,11 @@ public class AgentConversationUI : MonoBehaviour
             else          DisplayHistoricalChoice(choice);
         }
 
+        // Keep the "type anything" card visible on tab-switch replay of an
+        // active proposal, matching the initial live render.
+        if (isActive && task.agentChoices.Count > 0)
+            AddFreeTextChoiceCard(currentSelectedAgent);
+
         foreach (AgentNumericalInput input in task.numericalInputs)
         {
             if (isActive) DisplayInteractiveNumericalInput(input);
@@ -909,6 +920,10 @@ public class AgentConversationUI : MonoBehaviour
 
                     currentConversationItems.Add(choiceItem);
                 }
+
+                // A 4th "type anything" card lets the director free-text the agent
+                // (repropose / clarify / chat) right in the choices list.
+                AddFreeTextChoiceCard(officer);
             }
 
             StartCoroutine(ScrollToBottomCoroutine());
@@ -1149,6 +1164,270 @@ public class AgentConversationUI : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Player sent message to {currentSelectedAgent} ({agentName}): {message}");
         }
+    }
+
+    // Adds a live, inline "type anything" input card below the choice buttons so the
+    // director can free-text the agent (repropose / clarify / chat) without leaving the
+    // choices list. Cloned from the persistent playerInputField so it inherits the
+    // project's TMP_InputField styling — no editor wiring or new prefab required.
+    void AddFreeTextChoiceCard(TaskOfficer officer)
+    {
+        if (playerInputField == null || conversationContent == null)
+        {
+            Debug.LogWarning($"[FreeTextCard] skipped — playerInputField null? {playerInputField == null}, content null? {conversationContent == null}");
+            return;
+        }
+
+        // Build a row that mirrors a choice card's three-column layout so it lines up
+        // column-for-column: [agent-icon gap | beige input panel | checkbox]. The choice
+        // card root is a 550-wide HorizontalLayoutGroup; rather than replicate its layout
+        // internals, we make an equal-width root and copy the live ChoiceSection / checkbox
+        // X-positions from a sibling card after layout (see AlignFreeTextCard).
+        GameObject card = new GameObject("FreeTextChoiceCard", typeof(RectTransform));
+        card.transform.SetParent(conversationContent, false);
+        card.transform.localScale = Vector3.one;
+        RectTransform rt = card.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(0f, 1f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.sizeDelta = new Vector2(550f, 56f); // root width == choice card; refined below
+        LayoutElement cardLE = card.AddComponent<LayoutElement>();
+        cardLE.minHeight = 56f;
+        cardLE.preferredHeight = 56f;
+        cardLE.minWidth = 550f;
+        cardLE.preferredWidth = 550f;
+
+        // The input panel — a clone of the chat input field. Instantiate detached, then
+        // parent with worldPositionStays=false so the clone takes the layout group's local
+        // space (the parented overload keeps world scale and collapses it to invisible).
+        GameObject panel = Instantiate(playerInputField.gameObject);
+        panel.name = "FreeTextPanel";
+        panel.transform.SetParent(card.transform, false);
+        panel.transform.localScale = Vector3.one;
+        panel.SetActive(true);
+        RectTransform prt = panel.GetComponent<RectTransform>();
+        prt.anchorMin = new Vector2(0f, 1f);
+        prt.anchorMax = new Vector2(0f, 1f);
+        prt.pivot = new Vector2(0.5f, 0.5f);
+        prt.sizeDelta = new Vector2(400f, 46f);      // aligned to ChoiceSection below
+        prt.anchoredPosition = new Vector2(277f, -28f);
+
+        Image bg = panel.GetComponent<Image>();
+        if (bg == null) bg = panel.AddComponent<Image>();
+        bg.color = new Color(1f, 1f, 1f, 1f);
+        bg.raycastTarget = true;
+
+        Color textColor = new Color(0.239f, 0.184f, 0.176f, 1f); // descriptionText baked color
+
+        TMP_InputField field = panel.GetComponent<TMP_InputField>();
+        TaskOfficer captured = officer;
+        if (field != null)
+        {
+            field.text = "";
+            field.interactable = true;
+            if (field.placeholder is TMP_Text ph)
+            {
+                ph.text = "Type anything here — ask me to repropose or clarify…";
+                ph.color = new Color(textColor.r, textColor.g, textColor.b, 0.55f);
+                ph.enabled = true;
+            }
+            if (field.textComponent != null)
+                field.textComponent.color = textColor;
+
+            field.onSubmit.RemoveAllListeners();
+            field.onSubmit.AddListener((string msg) => OnFreeTextCardSubmit(captured, field, msg));
+        }
+
+        // Checkbox column — sits where the choice cards' checkbox is (far right). Clicking it
+        // submits the typed text, mirroring "select this option" on the other cards.
+        GameObject check = new GameObject("FreeTextCheckbox", typeof(RectTransform), typeof(Image));
+        check.transform.SetParent(card.transform, false);
+        check.transform.localScale = Vector3.one;
+        RectTransform crt = check.GetComponent<RectTransform>();
+        crt.anchorMin = new Vector2(0f, 1f);
+        crt.anchorMax = new Vector2(0f, 1f);
+        crt.pivot = new Vector2(0.5f, 0.5f);
+        crt.sizeDelta = new Vector2(30f, 30f);
+        crt.anchoredPosition = new Vector2(513f, -28f);
+        Image checkImg = check.GetComponent<Image>();
+        Button checkBtn = check.AddComponent<Button>();
+        checkBtn.onClick.RemoveAllListeners();
+        checkBtn.onClick.AddListener(() => { if (field != null) OnFreeTextCardSubmit(captured, field, field.text); });
+
+        // Copy the exact ChoiceSection / checkbox styling + X positions from a live choice
+        // card once layout has run, so the panel and checkbox share the cards' columns.
+        StartCoroutine(AlignFreeTextCard(card, panel, bg, check, checkImg, field));
+
+        Debug.Log($"[FreeTextCard] added for {officer}; field null? {field == null}; "
+                  + $"sibling#{card.transform.GetSiblingIndex()}");
+
+        currentConversationItems.Add(card);
+    }
+
+    // Align the free-text card's input panel and checkbox to a live choice card's columns.
+    // Runs post-layout so the choice card's HorizontalLayoutGroup has already positioned its
+    // ChoiceSection / ButtonSection; we copy those X positions (root widths are equal, so an
+    // equal anchoredPosition.x lands in the same column) plus the beige sprite/color.
+    System.Collections.IEnumerator AlignFreeTextCard(GameObject card, GameObject panel,
+        Image bg, GameObject check, Image checkImg, TMP_InputField field)
+    {
+        yield return new WaitForEndOfFrame();
+        if (card == null || conversationContent == null) yield break;
+
+        AgentChoiceUI sample = null;
+        foreach (Transform child in conversationContent)
+        {
+            var ui = child.GetComponent<AgentChoiceUI>();
+            if (ui != null) { sample = ui; break; }
+        }
+        if (sample == null) yield break;
+
+        RectTransform rt = card.GetComponent<RectTransform>();
+        float cardH = rt != null ? rt.rect.height : 56f;
+
+        // Match the choice card root width so equal child X positions line up.
+        RectTransform srt = sample.transform as RectTransform;
+        if (rt != null && srt != null && srt.rect.width > 1f)
+            rt.sizeDelta = new Vector2(srt.rect.width, rt.sizeDelta.y);
+
+        // Panel <- ChoiceSection (the beige background: descriptionText -> statLayout -> section).
+        TMP_Text body = sample.descriptionText != null ? sample.descriptionText : sample.choiceText;
+        Image section = (body != null && body.transform.parent != null && body.transform.parent.parent != null)
+            ? body.transform.parent.parent.GetComponent<Image>() : null;
+        if (section != null && panel != null)
+        {
+            RectTransform sectRT = section.rectTransform;
+            RectTransform prt = panel.GetComponent<RectTransform>();
+            prt.anchorMin = new Vector2(0f, 1f);
+            prt.anchorMax = new Vector2(0f, 1f);
+            prt.pivot = new Vector2(0.5f, 0.5f);
+            if (sectRT.rect.width > 1f)
+                prt.sizeDelta = new Vector2(sectRT.rect.width, prt.sizeDelta.y);
+            prt.anchoredPosition = new Vector2(sectRT.anchoredPosition.x, -cardH * 0.5f);
+            if (bg != null)
+            {
+                bg.sprite = section.sprite;
+                bg.type = section.type;
+                bg.color = section.color;
+                bg.fillCenter = section.fillCenter;
+                bg.pixelsPerUnitMultiplier = section.pixelsPerUnitMultiplier;
+            }
+        }
+        if (body != null && field != null)
+        {
+            if (field.textComponent != null) field.textComponent.color = body.color;
+            if (field.placeholder is TMP_Text ph2)
+                ph2.color = new Color(body.color.r, body.color.g, body.color.b, 0.55f);
+        }
+
+        // Checkbox <- the choice card's checkbox column (choiceButton lives in ButtonSection).
+        if (sample.choiceButton != null && check != null)
+        {
+            RectTransform brt = sample.choiceButton.transform as RectTransform;
+            RectTransform bsec = brt != null ? brt.parent as RectTransform : null;
+            float checkX = bsec != null ? bsec.anchoredPosition.x
+                         : (brt != null ? brt.anchoredPosition.x : 513f);
+            RectTransform crt = check.GetComponent<RectTransform>();
+            crt.anchoredPosition = new Vector2(checkX, -cardH * 0.5f);
+            Image bimg = sample.choiceButton.GetComponent<Image>();
+            if (bimg != null && checkImg != null)
+            {
+                checkImg.sprite = bimg.sprite;
+                checkImg.type = bimg.type;
+                checkImg.color = bimg.color;
+                checkImg.fillCenter = bimg.fillCenter;
+                checkImg.pixelsPerUnitMultiplier = bimg.pixelsPerUnitMultiplier;
+            }
+        }
+    }
+
+    void OnFreeTextCardSubmit(TaskOfficer officer, TMP_InputField field, string message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return;
+
+        RecordPlayerMessage(officer, message);
+        InstantiatePlayerMessage(message);
+        if (field != null) field.text = "";
+        StartCoroutine(ScrollToBottomCoroutine());
+
+        string agentName = GetCurrentAgentName(officer);
+        if (WebSocketManager.Instance != null && !string.IsNullOrEmpty(agentName))
+            WebSocketManager.Instance.SendDirectorMessage(agentName, message);
+
+        if (showDebugInfo)
+            Debug.Log($"Free-text card → {officer} ({agentName}): {message}");
+    }
+
+    // Copies the visible look of a real choice card onto the free-text card: its beige
+    // panel sprite/tint, its narrower visible width (the ChoiceSection panel is ~400px,
+    // inset within the 550px card root), and returns that card's body-text color via
+    // `textColor`. No-op (keeps the baked prefab fallbacks) if no sibling card is present.
+    void MatchChoiceCardStyle(RectTransform rt, Image bg, ref Color textColor)
+    {
+        if (conversationContent == null) return;
+
+        AgentChoiceUI sample = null;
+        foreach (Transform child in conversationContent)
+        {
+            var ui = child.GetComponent<AgentChoiceUI>();
+            if (ui != null) { sample = ui; break; }
+        }
+        if (sample == null) return;
+
+        // Body text color — descriptionText is the field the card actually renders into.
+        TMP_Text bodyText = sample.descriptionText != null ? sample.descriptionText : sample.choiceText;
+        if (bodyText != null) textColor = bodyText.color;
+
+        // The beige panel is ChoiceSection = descriptionText -> statLayout -> ChoiceSection.
+        Image section = null;
+        if (bodyText != null && bodyText.transform.parent != null && bodyText.transform.parent.parent != null)
+            section = bodyText.transform.parent.parent.GetComponent<Image>();
+        if (section == null || bg == null) return;
+
+        bg.sprite = section.sprite;
+        bg.type = section.type;
+        bg.color = section.color;
+        bg.fillCenter = section.fillCenter;
+        bg.pixelsPerUnitMultiplier = section.pixelsPerUnitMultiplier;
+
+        // Match the panel's visible width (fixed-anchor, so its sizeDelta.x is reliable).
+        RectTransform sectionRt = section.rectTransform;
+        if (rt != null && sectionRt != null && sectionRt.rect.width > 1f)
+            rt.sizeDelta = new Vector2(sectionRt.rect.width, rt.sizeDelta.y);
+    }
+
+    // Sets the card's LayoutElement width to the content column width so the vertical
+    // layout group renders it full-width instead of collapsing it to a zero-width sliver.
+    void ApplyCardWidth(LayoutElement le)
+    {
+        RectTransform parentRt = conversationContent as RectTransform;
+        if (parentRt == null || le == null) return;
+        float w = parentRt.rect.width;
+        var vlg = conversationContent.GetComponent<VerticalLayoutGroup>();
+        if (vlg != null) w -= (vlg.padding.left + vlg.padding.right);
+        if (w > 1f)
+        {
+            le.minWidth = w;
+            le.preferredWidth = w;
+        }
+    }
+
+    System.Collections.IEnumerator LogCardSizeNextFrame(GameObject card)
+    {
+        yield return new WaitForEndOfFrame();
+        if (card == null) yield break;
+        RectTransform rt = card.GetComponent<RectTransform>();
+        // If layout still shows zero width (parent not resolved when first applied),
+        // recompute now that the column width is final and force a rebuild.
+        if (rt != null && rt.rect.width < 1f)
+        {
+            ApplyCardWidth(card.GetComponent<LayoutElement>());
+            RectTransform parentRt = conversationContent as RectTransform;
+            if (parentRt != null) LayoutRebuilder.ForceRebuildLayoutImmediate(parentRt);
+        }
+        Vector2 size = rt != null ? rt.rect.size : Vector2.zero;
+        Debug.Log($"[FreeTextCard] post-layout size={size} activeInHierarchy={card.activeInHierarchy} "
+                  + $"worldPos={card.transform.position}");
     }
 
     string GetCurrentAgentName(TaskOfficer officer)

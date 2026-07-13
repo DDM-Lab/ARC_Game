@@ -1,0 +1,9 @@
+<linker>
+  <!-- Engine code stripping is enabled (ProjectSettings stripEngineCode: 1). The
+       WebGL keyboard-capture toggle in ServerLauncherUI is set reflectively (the
+       WebGLModule assembly is not in the player Assembly-CSharp reference set), so
+       there is no static reference to keep the module in the build. Preserve it so
+       Type.GetType("UnityEngine.WebGLInput, UnityEngine.WebGLModule") resolves at
+       run time instead of being stripped to a silent no-op. -->
+  <assembly fullname="UnityEngine.WebGLModule" preserve="all"/>
+</linker>

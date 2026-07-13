@@ -25,6 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from arc_game_gym_env_tcp import ARCGameGymEnv
+import obs_encoder  # SHARED canonical encoder (this module is its source of truth; router uses it too)
 import openai
 
 # ── Config ────────────────────────────────────────────────────────────────
@@ -583,15 +584,18 @@ def parse_commands(text, env):
     return {"actions": actions, "choices": choices, "parsed": parsed, "errors": errors}
 
 
+# ── OBSERVATION ENCODER ─────────────────────────────────────────────────────
+# The encoder now lives in the SHARED `obs_encoder` module (this file is its source
+# of truth; the live agent router imports the same module). These are thin wrappers
+# that (a) forward the benchmark's A/B toggles `_NEW`/`_V2` as explicit params, and
+# (b) unpack `env` into `(env.game_state, env.get_valid_actions())` so obs_encoder has
+# no gym/benchmark coupling. Output is byte-identical to the pre-refactor inline code
+# (guarded by a golden equivalence test), so in-flight benchmark runs are unaffected.
+MOTEL_COST_PER_PERSON_PER_DAY = obs_encoder.MOTEL_COST_PER_PERSON_PER_DAY  # re-export (back-compat)
+
+
 def compact_action(i, a):
-    desc = a.get("description", "")
-    o = {"i": i, "type": a.get("action_type"), "desc": desc if _NEW else desc[:48], "cost": a.get("cost")}
-    if a.get("action_type") == "construction":
-        o["required_workers"] = a.get("required_workers", 4)
-    return o
-
-
-MOTEL_COST_PER_PERSON_PER_DAY = 200  # mirror of MotelCostManager.costPerPersonPerDay (display hint only)
+    return obs_encoder.compact_action(i, a, new=_NEW)
 
 
 def summarize(env, show_impacts=True, rounds_left=None):
@@ -607,72 +611,9 @@ def summarize(env, show_impacts=True, rounds_left=None):
     rounds_left: rounds remaining in the EPISODE (game horizon), so the model can size
     recurring costs against the time left. None -> field omitted.
     """
-    gs = env.game_state
-    sb = gs.get("satisfactionAndBudget", {})
-    wf = gs.get("workforceState", {})
-    facs = []
-    for f in gs.get("mapState", {}).get("facilities", []):
-        facs.append({"name": f.get("facilityName"), "type": f.get("buildingType"),
-                     "status": f.get("buildingStatus"), "workers": f.get("assignedWorkforce"),
-                     "needWorkers": f.get("requiredWorkforce"),
-                     "food": (f.get("resources") or {}).get("foodPacks"),
-                     "pop": f.get("currentPopulation"), "cap": f.get("populationCapacity")})
-    tasks = []
-    for t in gs.get("allActiveTasks", []):
-        ch = []
-        for c in (t.get("choices") or []):
-            o = {"choiceId": c["choiceId"],
-                 "text": (c["choiceText"][:(200 if _V2 else 90)] if _NEW else c["choiceText"][:70])}
-            if show_impacts and c.get("impacts"):
-                # compact: e.g. {"Budget": 5000, "Satisfaction": 10}
-                o["impacts"] = {i["type"]: i["value"] for i in c["impacts"]}
-            ch.append(o)
-        td = {"taskId": t["taskId"], "type": t["taskType"], "title": t["taskTitle"],
-              "roundsLeft": t.get("roundsRemaining"), "choices": ch}
-        if _NEW:
-            # taskDescription explains the task (esp. casework: "in shelter for N rounds...").
-            # Strip the internal "|CLIENT_GROUP_ID:..." routing suffix before showing the model.
-            desc = (t.get("taskDescription") or "").split("|", 1)[0].strip()
-            if desc:
-                td["desc"] = desc[:120]
-            # minimal_v2: surface `affects` only when it names a facility that actually exists
-            # this round — some tasks (e.g. the daily budget Advisory) carry a generic placeholder
-            # like "Shelter" that matches no real facility (a confusing dangling reference). Plain
-            # `minimal` keeps the raw affectedFacility (the un-fixed behavior) for the A/B control.
-            _aff = t.get("affectedFacility")
-            if _aff and (not _V2 or _aff in {f.get("name") for f in facs}):
-                td["affects"] = _aff
-        tasks.append(td)
-    acts = env.get_valid_actions()
-    obs = {
-        "day": gs.get("sessionInfo", {}).get("currentDay"),
-        "budget": sb.get("budget"), "satisfaction": sb.get("satisfaction"),
-        "workers": {"freeTrained": wf.get("freeTrainedWorkers"), "freeUntrained": wf.get("freeUntrainedWorkers"),
-                    "working": wf.get("workingTrainedWorkers", 0) + wf.get("workingUntrainedWorkers", 0),
-                    "inTraining": wf.get("untrainedWorkersInTraining")},
-        "logistics": {"vehiclesFree": gs.get("logistics", {}).get("availableVehicles")},
-        "facilities": facs,
-        "tasks": tasks,
-        "actions": [compact_action(i, a) for i, a in enumerate(acts)],
-    }
-    if _NEW:
-        if rounds_left is not None:
-            obs["roundsLeft"] = rounds_left
-        # Cumulative per-category spend (already in the reward-metrics payload) so the model can
-        # see where its budget went — esp. lodging (which silently accrues the motel per-day charge).
-        rm = gs.get("rewardMetrics") or {}
-        spend = {k: rm.get(src) for k, src in
-                 (("food", "foodSpend"), ("lodging", "lodgingSpend"),
-                  ("worker", "workerSpend"), ("casework", "caseworkSpend"))
-                 if rm.get(src) is not None}
-        if spend:
-            obs["spend"] = spend
-        # Current daily motel burn = motel residents x per-day rate (recurring; not on the choice).
-        motel_pop = sum((f.get("pop") or 0) for f in facs
-                        if "motel" in (str(f.get("type", "")) + str(f.get("name", ""))).lower())
-        if motel_pop > 0:
-            obs["motelDailyCost"] = motel_pop * MOTEL_COST_PER_PERSON_PER_DAY
-    return obs
+    return obs_encoder.build_observation(env.game_state, env.get_valid_actions(),
+                                         new=_NEW, v2=_V2,
+                                         show_impacts=show_impacts, rounds_left=rounds_left)
 
 
 def summarize_commands(env, show_impacts=True, rounds_left=None):
@@ -681,205 +622,21 @@ def summarize_commands(env, show_impacts=True, rounds_left=None):
     available construction `sites` (id+name) and a fixed `costs` block — so the model can form
     <build>/<hire>/<staff>/<task> commands from state alone. The big token saving is dropping the
     ~70-entry action list."""
-    obs = summarize(env, show_impacts=show_impacts, rounds_left=rounds_left)
-    obs.pop("actions", None)
-    cs = env.game_state.get("constructionState", {})
-    obs["sites"] = [{"id": s.get("siteId"), "name": s.get("siteName")}
-                    for s in cs.get("availableSites", []) if s.get("isAvailable")]
-    obs["costs"] = {"build": cs.get("buildingConstructionCost", 1000),
-                    "hireUntrained": 100, "hireTrained": 300, "train": 500}
-    # AFFORDANCE BLOCK — what is actually executable THIS round, derived from the same
-    # valid-action set the parser/menu use (so it can never contradict them). This is the
-    # compact replacement for the dropped idx menu: it tells the model which commands will
-    # land instead of making it infer availability from raw state (the cause of the bulk of
-    # cmd rejections: staff with no free workers, transfer with no idle vehicle, hire when
-    # no bundle is offered). `staffNow` reflects CURRENT free workers; workers you <hire>
-    # this turn become staffable too (executed after the hire — see the prompt).
-    # `needStaff` is the AUTHORITATIVE set of valid <staff> targets: every BUILT building still
-    # short of workers, by EXACT facility name, regardless of whether free workers exist yet. The
-    # model must staff only names from here (kills both residual staff-error classes: invented
-    # names copied from the example, and staffing already-full / not-yet-built buildings).
-    need_staff = {}
-    for f in obs.get("facilities", []):
-        if f.get("status") in ("NeedWorker", "InUse"):
-            rem = (f.get("needWorkers") or 0) - (f.get("workers") or 0)
-            if rem > 0 and f.get("name"):
-                need_staff[f["name"]] = rem
-    hire_kinds, train_max, build_sites = set(), 0, set()
-    staff_now, transfers = {}, set()
-    for a in env.get_valid_actions():
-        t = a.get("action_type")
-        # Type-specific fields are nested (worker/assignment/construction/transfer), mirroring
-        # parse_commands and the *Action.to_dict() shapes — read them the same way here.
-        if t == "worker":
-            w = a.get("worker", {})
-            wt = w.get("worker_action_type")
-            if wt == "hire_untrained":   hire_kinds.add("untrained")
-            elif wt == "hire_trained":   hire_kinds.add("trained")
-            elif wt == "train_untrained": train_max = max(train_max, w.get("quantity", 0))
-        elif t == "worker_assignment":
-            asg = a.get("assignment", {})
-            b = asg.get("building_name")
-            if b is not None:
-                staff_now[b] = max(staff_now.get(b, 0), asg.get("quantity", 0))
-        elif t == "construction":
-            sid = a.get("construction", {}).get("site_id")
-            if sid is not None:
-                build_sites.add(sid)
-        elif t == "resource_transfer":
-            tr = a.get("transfer", {})
-            transfers.add((tr.get("resource_type"), tr.get("source_facility"),
-                           tr.get("destination_facility")))
-    obs["available"] = {
-        "hire": sorted(hire_kinds),                 # kinds you can hire (budget-permitting)
-        "trainUntrainedMax": train_max,             # untrained workers you can train now
-        "needStaff": need_staff,                    # {building: workforce still needed} — the ONLY valid <staff> targets
-        "staffNow": staff_now,                      # subset assignable RIGHT NOW from current free workers
-        "buildSites": sorted(build_sites),          # site ids you can build on
-        "transfers": [{"resource": r, "from": s, "to": d}   # valid transfers (empty if no idle vehicle)
-                      for (r, s, d) in sorted(transfers, key=lambda x: tuple(map(str, x)))],
-    }
-    return obs
-
-
-def _fac_row(f):
-    """One schema-once facilities row: 'name type status workers/need food pop/cap'."""
-    st = f.get("status") or ("Passive" if _V2 else "-")
-    return (f"{f.get('name')} {f.get('type')} {st} "
-            f"{f.get('workers',0)}/{f.get('needWorkers',0)} {f.get('food',0)} "
-            f"{f.get('pop',0)}/{f.get('cap',0)}")
-
-
-def _fac_dyn(f):
-    """The dynamic (turn-to-turn mutable) fields of a facility — identity (name/type) excluded.
-    Two facilities with equal _fac_dyn render an identical row, so a row is 'unchanged' iff these match."""
-    return (f.get("status"), f.get("workers", 0), f.get("needWorkers", 0),
-            f.get("food", 0), f.get("pop", 0), f.get("cap", 0))
-
-
-def _render_scalars(obs):
-    g = obs.get
-    L = [f"day {g('day')} | budget {g('budget')} | satisfaction {g('satisfaction')} | "
-         f"roundsLeft {g('roundsLeft')}"
-         + (f" | motelDailyCost {obs['motelDailyCost']}" if obs.get("motelDailyCost") else "")]
-    w = obs.get("workers", {})
-    L.append(f"workers: freeTrained {w.get('freeTrained',0)} freeUntrained {w.get('freeUntrained',0)} "
-             f"working {w.get('working',0)} inTraining {w.get('inTraining',0)}")
-    L.append(f"logistics: vehiclesFree {obs.get('logistics',{}).get('vehiclesFree',0)}")
-    L.append("spend: " + " ".join(f"{k} {v}" for k, v in obs.get("spend", {}).items()))
-    L.append("costs: " + " ".join(f"{k} {v}" for k, v in obs.get("costs", {}).items()))
-    return L
-
-
-def _render_facilities(obs):
-    facs = obs.get("facilities", [])
-    if not facs:
-        return []
-    L = ["facilities [name type status workers/need food pop/cap]:"]
-    L += ["  " + _fac_row(f) for f in facs]
-    return L
-
-
-def _render_tasks(obs):
-    tasks = obs.get("tasks", [])
-    if not tasks:
-        return []
-    L = ["tasks [id type \"title\" affects (roundsLeft)]:"]
-    for t in tasks:
-        L.append(f"  [{t.get('taskId')}] {t.get('type')} \"{t.get('title')}\" "
-                 f"{t.get('affects','')} ({t.get('roundsLeft')} left)")
-        for ch in t.get("choices", []):
-            imp = ch.get("impacts")
-            imps = (" " + " ".join(f"[{k} {v}]" for k, v in imp.items())) if imp else ""
-            L.append(f"    {ch.get('choiceId')}: {ch.get('text')}{imps}")
-    return L
-
-
-def _render_sites(obs):
-    sites = obs.get("sites", [])
-    if not sites:
-        return []
-    return ["sites (ids): " + ",".join(str(s.get("id")) for s in sites)]
-
-
-def _render_available(obs):
-    av = obs.get("available", {})
-    if not av:
-        return []
-    L = ["available:"]
-    if av.get("hire"):
-        L.append(f"  hire: {','.join(av['hire'])} | trainUntrainedMax {av.get('trainUntrainedMax',0)}")
-    else:
-        L.append(f"  hire: none | trainUntrainedMax {av.get('trainUntrainedMax',0)}")
-    ns = av.get("needStaff")
-    if ns is not None:
-        L.append("  needStaff: " + (" ".join(f"{k}:{v}" for k, v in ns.items()) or "(none)"))
-    sn = av.get("staffNow", {})
-    L.append("  staffNow: " + (" ".join(f"{k}:{v}" for k, v in sn.items()) or "(none)"))
-    bs = av.get("buildSites", [])
-    L.append("  buildSites: " + (",".join(str(x) for x in bs) if bs else "(none)"))
-    tr = av.get("transfers", [])
-    if tr:
-        byres = {}
-        for e in tr:
-            d = byres.setdefault(e.get("resource"), (set(), set()))
-            d[0].add(e.get("from")); d[1].add(e.get("to"))
-        L.append("  transfers:")
-        for res, (frm, to) in byres.items():
-            L.append(f"    {res} from[{','.join(sorted(frm))}] to[{','.join(sorted(to))}]")
-    elif not _V2:
-        # Plain `minimal` keeps the (often empty) transfers affordance line — the un-fixed control.
-        L.append("  transfers: (none)")
-    # minimal_v2 drops the empty line entirely: in task_only mode transfers are always empty
-    # (relocation is via task choices, not <transfer>), so "(none)" is just a dead reference.
-    return L
+    return obs_encoder.build_observation_commands(env.game_state, env.get_valid_actions(),
+                                                  new=_NEW, v2=_V2,
+                                                  show_impacts=show_impacts, rounds_left=rounds_left)
 
 
 def render_state_compact(obs):
     """Render the cmd observation dict as a COMPACT TEXT block instead of json.dumps(obs).
-    Same information the policy acts on, but with the structural bloat removed (the four
-    culprits found in the token breakdown), per the representation research:
-      - facilities: schema-once tabular (legend line + one row each) — kills per-row key repetition.
-      - tasks: drop the natural-language `desc` prose (distractor; restates title); compact choices.
-      - sites: drop decorative names (build uses the id, which also lives in available.buildSites).
-      - available.transfers: collapse the source x destination cross-product to per-resource endpoints.
-      - scalars/affordances: key-value lines, decision-relevant fields up top (primacy).
-    Lossless w.r.t. what's actionable; only prose and enumerated redundancy are dropped.
-    Returns a string ready to drop into the user message in place of json.dumps(obs)."""
-    return "\n".join(_render_scalars(obs) + _render_facilities(obs) + _render_tasks(obs)
-                     + _render_sites(obs) + _render_available(obs))
+    (Delegates to obs_encoder; forwards the minimal_v2 fix-layer toggle.)"""
+    return obs_encoder.render_state_compact(obs, v2=_V2)
 
 
 def render_state_delta(obs, prev_obs):
-    """History-carrying DELTA rendering: identical to render_state_compact EXCEPT the facilities
-    block is diffed against the previous turn (unchanged rows omitted; +new / ~changed shown in
-    FULL, -removed by name). Everything actionable — scalars, tasks, the whole `available` block
-    (needStaff/staffNow/buildSites/transfers) — stays FULL, so the policy never has to reconstruct
-    valid actions from diffs (the error-prone aggregation case). The facilities table is the safe
-    diff target: it is low-churn (built once, then persists) and its actionable content is already
-    mirrored in available.needStaff/staffNow.
-
-    Cache-safe: a turn's rendering is a pure function of (obs, prev_obs) — both fixed once produced —
-    so the same turn serializes byte-identically every time it reappears in the append-only context,
-    preserving the prefix KV-cache. prev_obs=None (first turn) falls back to the full compact render."""
-    if not prev_obs:
-        return render_state_compact(obs)
-    facs = obs.get("facilities", []) or []
-    prev_by = {f.get("name"): f for f in (prev_obs.get("facilities", []) or [])}
-    cur_names = {f.get("name") for f in facs}
-    rows = []
-    for f in facs:
-        pf = prev_by.get(f.get("name"))
-        if pf is None:
-            rows.append("  + " + _fac_row(f))                       # newly built
-        elif _fac_dyn(f) != _fac_dyn(pf):
-            rows.append("  ~ " + _fac_row(f))                       # dynamic fields changed
-    rows += [f"  - {n}" for n in prev_by if n not in cur_names]     # removed/deconstructed
-    fac_block = ["facilities Δ (vs last turn; unchanged omitted; +new ~changed -removed) "
-                 "[name type status workers/need food pop/cap]:"]
-    fac_block += rows if rows else ["  (no change)"]
-    return "\n".join(_render_scalars(obs) + fac_block + _render_tasks(obs)
-                     + _render_sites(obs) + _render_available(obs))
+    """History-carrying DELTA rendering (facilities block diffed vs the previous turn; everything
+    actionable stays full). Delegates to obs_encoder; forwards the minimal_v2 toggle."""
+    return obs_encoder.render_state_delta(obs, prev_obs, v2=_V2)
 
 
 def ask(client, model, state):

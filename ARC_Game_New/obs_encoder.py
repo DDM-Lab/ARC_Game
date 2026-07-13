@@ -1,121 +1,125 @@
-"""Grounded observation encoder for the live agent router.
+"""Shared observation encoder — the SINGLE source of truth for BOTH the offline
+benchmark and the live agent router.
 
-Ports the benchmark's rich observation encoding (`llm_smoke_test.summarize` /
-`render_state_compact`) into the live router path so that BOTH the auto and
-choices agents see real, engine-computed game facts — facility state, worker
-pools, open tasks with their *per-choice impacts*, logistics, and cumulative
-spend — instead of the previous four-fact snapshot (day/segment/satisfaction/
-budget). The goal is grounding: the model should quote numbers the engine
-already computed, not invent them.
+Design decision (2026-07-08, user directive): the router and the benchmark must
+use the *same* obs encoder, and the benchmark's encoder is canonical. This module
+is therefore a VERBATIM port of the benchmark encoder that previously lived in
+``llm_smoke_test.py`` (``summarize`` / ``summarize_commands`` / ``render_state_*``),
+with only two mechanical changes so it can be shared:
 
-Design notes:
-  * Takes a plain ``game_state`` dict (the router already has this) rather than
-    an ``env`` object, so it has no coupling to the gym/benchmark harness.
-  * Reads the authoritative ``GameStatePayload`` field names (see
-    Assets/Scripts/LLM/GameStateStructures.cs): ``satisfactionAndBudget``,
-    ``workforceState``, ``mapState.facilities``, ``allActiveTasks[...].choices
-    [...].impacts``, ``logistics.availableVehicles``, ``constructionState``,
-    ``rewardMetrics``.
-  * Every section is GUARDED on the presence of its top-level source key, so a
-    restricted ``subobservation_space`` (which drops keys via
-    ``filter_observation``) degrades to fewer sections instead of emitting
-    misleading zeros. Full-payload (``["all"]``) configs — every choices agent —
-    get the complete view.
+  1. the two A/B ablation module globals ``_NEW`` / ``_V2`` are lifted into explicit
+     ``new`` / ``v2`` keyword parameters, and
+  2. the ``env`` argument is replaced by explicit ``(game_state, actions)`` — where
+     ``actions`` is exactly ``env.get_valid_actions()`` — so the module has no
+     coupling to the gym/benchmark harness and the router (which holds only a raw
+     ``game_state`` dict) can call it directly.
 
-This module is intentionally standalone; the benchmark keeps its own copy of the
-encoding (with its A/B ablation flags) untouched.
+Consumers:
+  * benchmark: ``llm_smoke_test.py`` keeps thin ``summarize(env)`` /
+    ``render_state_compact(obs)`` wrappers that forward its ``_NEW`` / ``_V2``
+    globals here — so benchmark output is BYTE-IDENTICAL to before (guarded by a
+    golden equivalence test; the benchmark A/B toggles are unchanged).
+  * router: ``llm_query`` / ``choices_reliability`` call ``render_state_text`` /
+    ``build_observation`` here with ``new=True, v2=True`` (the enriched, fixed view).
+
+Field names are the authoritative ``GameStatePayload`` keys (see
+Assets/Scripts/LLM/GameStateStructures.cs): ``satisfactionAndBudget``,
+``workforceState``, ``mapState.facilities``, ``allActiveTasks[...].choices[...].impacts``,
+``logistics.availableVehicles``, ``constructionState``, ``rewardMetrics``.
 """
 from __future__ import annotations
 
 MOTEL_COST_PER_PERSON_PER_DAY = 200  # mirror of MotelCostManager.costPerPersonPerDay (display hint only)
 
-# Static action costs, mirrored from ActionEnumerator, shown so the model can
-# reason about affordability without inventing prices.
-_STATIC_COSTS = {"hireUntrained": 100, "hireTrained": 300, "train": 500}
-
 
 def _num(v, default=0):
+    """Router-facing numeric coercion for $-formatting in llm_query / choices_reliability:
+    isinstance-based so a stray string/None formats as ``default`` instead of raising.
+    NOTE: the canonical obs-builder below deliberately does NOT use this — it mirrors the
+    benchmark's inline ``.get(..., 0)`` — so keep this helper only for router callers."""
     return v if isinstance(v, (int, float)) else default
 
 
-def build_observation(game_state: dict) -> dict:
-    """Compress the router's game_state into a structured observation dict.
+# ─────────────────────────────────────────────────────────────────────────────
+# CANONICAL ENCODER  (verbatim port of the benchmark's summarize/render_* — _NEW->new,
+# _V2->v2, env.game_state->game_state, env.get_valid_actions()->actions)
+# ─────────────────────────────────────────────────────────────────────────────
 
-    Mirrors ``llm_smoke_test.summarize`` (with its enrichments always on) but
-    reads the game_state directly and omits sections whose source key is absent.
+def compact_action(i, a, *, new):
+    desc = a.get("description", "")
+    o = {"i": i, "type": a.get("action_type"), "desc": desc if new else desc[:48], "cost": a.get("cost")}
+    if a.get("action_type") == "construction":
+        o["required_workers"] = a.get("required_workers", 4)
+    return o
+
+
+def build_observation(game_state, actions=None, *, new=True, v2=True,
+                      show_impacts=True, rounds_left=None):
+    """Compress the game state into the observation the LLM sees (== benchmark ``summarize``).
+
+    ``actions`` is the list from ``env.get_valid_actions()``; the enumerated ``actions``
+    menu is included iff it is provided (the router passes ``None`` — it formats the
+    action menu separately — and reads only the state fields).
+
+    show_impacts: when True, each task choice includes its sparse impacts list
+    (e.g. Budget +5000, Satisfaction +10) so the agent can reason about funding /
+    cost tradeoffs. Toggle off for the no-observation-impacts ablation.
+    rounds_left: rounds remaining in the EPISODE (game horizon), so the model can size
+    recurring costs against the time left. None -> field omitted.
     """
     gs = game_state or {}
-    obs: dict = {}
-
-    session = gs.get("sessionInfo") or {}
-    obs["day"] = session.get("currentDay")
-    if session.get("finalDay") is not None:
-        obs["finalDay"] = session.get("finalDay")
-
-    if "satisfactionAndBudget" in gs:
-        sb = gs.get("satisfactionAndBudget") or {}
-        obs["budget"] = sb.get("budget")
-        obs["satisfaction"] = sb.get("satisfaction")
-
-    if "workforceState" in gs:
-        wf = gs.get("workforceState") or {}
-        obs["workers"] = {
-            "freeTrained": wf.get("freeTrainedWorkers"),
-            "freeUntrained": wf.get("freeUntrainedWorkers"),
-            "working": _num(wf.get("workingTrainedWorkers")) + _num(wf.get("workingUntrainedWorkers")),
-            "inTraining": wf.get("untrainedWorkersInTraining"),
-        }
-
-    if "logistics" in gs:
-        obs["logistics"] = {"vehiclesFree": (gs.get("logistics") or {}).get("availableVehicles")}
-
+    sb = gs.get("satisfactionAndBudget", {})
+    wf = gs.get("workforceState", {})
     facs = []
-    if "mapState" in gs:
-        for f in (gs.get("mapState") or {}).get("facilities", []) or []:
-            facs.append({
-                "name": f.get("facilityName"), "type": f.get("buildingType"),
-                "status": f.get("buildingStatus"), "workers": f.get("assignedWorkforce"),
-                "needWorkers": f.get("requiredWorkforce"),
-                "food": (f.get("resources") or {}).get("foodPacks"),
-                "pop": f.get("currentPopulation"), "cap": f.get("populationCapacity"),
-            })
-        obs["facilities"] = facs
-
-    if "allActiveTasks" in gs:
-        tasks = []
-        fac_names = {f.get("name") for f in facs}
-        for t in gs.get("allActiveTasks") or []:
-            ch = []
-            for c in (t.get("choices") or []):
-                o = {"choiceId": c.get("choiceId"), "text": (c.get("choiceText") or "")[:200]}
-                if c.get("impacts"):
-                    # compact: e.g. {"Budget": 5000, "Satisfaction": 10}
-                    o["impacts"] = {i.get("type"): i.get("value") for i in c["impacts"]}
-                ch.append(o)
-            td = {"taskId": t.get("taskId"), "type": t.get("taskType"),
-                  "title": t.get("taskTitle"), "roundsLeft": t.get("roundsRemaining"),
-                  "choices": ch}
+    for f in gs.get("mapState", {}).get("facilities", []):
+        facs.append({"name": f.get("facilityName"), "type": f.get("buildingType"),
+                     "status": f.get("buildingStatus"), "workers": f.get("assignedWorkforce"),
+                     "needWorkers": f.get("requiredWorkforce"),
+                     "food": (f.get("resources") or {}).get("foodPacks"),
+                     "pop": f.get("currentPopulation"), "cap": f.get("populationCapacity")})
+    tasks = []
+    for t in gs.get("allActiveTasks", []):
+        ch = []
+        for c in (t.get("choices") or []):
+            o = {"choiceId": c["choiceId"],
+                 "text": (c["choiceText"][:(200 if v2 else 90)] if new else c["choiceText"][:70])}
+            if show_impacts and c.get("impacts"):
+                # compact: e.g. {"Budget": 5000, "Satisfaction": 10}
+                o["impacts"] = {i["type"]: i["value"] for i in c["impacts"]}
+            ch.append(o)
+        td = {"taskId": t["taskId"], "type": t["taskType"], "title": t["taskTitle"],
+              "roundsLeft": t.get("roundsRemaining"), "choices": ch}
+        if new:
+            # taskDescription explains the task (esp. casework: "in shelter for N rounds...").
             # Strip the internal "|CLIENT_GROUP_ID:..." routing suffix before showing the model.
             desc = (t.get("taskDescription") or "").split("|", 1)[0].strip()
             if desc:
                 td["desc"] = desc[:120]
-            # Only surface `affects` when it names a facility that actually exists this
-            # round — some tasks carry a generic placeholder matching no real facility.
-            aff = t.get("affectedFacility")
-            if aff and (not facs or aff in fac_names):
-                td["affects"] = aff
-            tasks.append(td)
-        obs["tasks"] = tasks
-
-    if "constructionState" in gs:
-        cs = gs.get("constructionState") or {}
-        obs["costs"] = {"build": cs.get("buildingConstructionCost", 1000), **_STATIC_COSTS}
-        sites = [{"id": s.get("siteId"), "name": s.get("siteName")}
-                 for s in cs.get("availableSites", []) or [] if s.get("isAvailable")]
-        if sites:
-            obs["sites"] = sites
-
-    if "rewardMetrics" in gs:
+            # minimal_v2: surface `affects` only when it names a facility that actually exists
+            # this round — some tasks (e.g. the daily budget Advisory) carry a generic placeholder
+            # like "Shelter" that matches no real facility (a confusing dangling reference). Plain
+            # `minimal` keeps the raw affectedFacility (the un-fixed behavior) for the A/B control.
+            _aff = t.get("affectedFacility")
+            if _aff and (not v2 or _aff in {f.get("name") for f in facs}):
+                td["affects"] = _aff
+        tasks.append(td)
+    obs = {
+        "day": gs.get("sessionInfo", {}).get("currentDay"),
+        "budget": sb.get("budget"), "satisfaction": sb.get("satisfaction"),
+        "workers": {"freeTrained": wf.get("freeTrainedWorkers"), "freeUntrained": wf.get("freeUntrainedWorkers"),
+                    "working": wf.get("workingTrainedWorkers", 0) + wf.get("workingUntrainedWorkers", 0),
+                    "inTraining": wf.get("untrainedWorkersInTraining")},
+        "logistics": {"vehiclesFree": gs.get("logistics", {}).get("availableVehicles")},
+        "facilities": facs,
+        "tasks": tasks,
+    }
+    if actions is not None:
+        obs["actions"] = [compact_action(i, a, new=new) for i, a in enumerate(actions)]
+    if new:
+        if rounds_left is not None:
+            obs["roundsLeft"] = rounds_left
+        # Cumulative per-category spend (already in the reward-metrics payload) so the model can
+        # see where its budget went — esp. lodging (which silently accrues the motel per-day charge).
         rm = gs.get("rewardMetrics") or {}
         spend = {k: rm.get(src) for k, src in
                  (("food", "foodSpend"), ("lodging", "lodgingSpend"),
@@ -123,81 +127,240 @@ def build_observation(game_state: dict) -> dict:
                  if rm.get(src) is not None}
         if spend:
             obs["spend"] = spend
-
-    # Current daily motel burn = motel residents x per-day rate (recurring; not on any choice).
-    if facs:
-        motel_pop = sum(_num(f.get("pop")) for f in facs
+        # Current daily motel burn = motel residents x per-day rate (recurring; not on the choice).
+        motel_pop = sum((f.get("pop") or 0) for f in facs
                         if "motel" in (str(f.get("type", "")) + str(f.get("name", ""))).lower())
         if motel_pop > 0:
             obs["motelDailyCost"] = motel_pop * MOTEL_COST_PER_PERSON_PER_DAY
-
     return obs
 
 
-def _fac_row(f):
-    st = f.get("status") or "-"
+def build_observation_commands(game_state, actions, *, new=True, v2=True,
+                               show_impacts=True, rounds_left=None):
+    """State-only observation for the command-tag format (== benchmark ``summarize_commands``):
+    identical game facts as ``build_observation``, but WITHOUT the enumerated ``actions`` menu.
+    Instead exposes the slots a command can target — available construction ``sites`` (id+name)
+    and a fixed ``costs`` block — so the model can form <build>/<hire>/<staff>/<task> commands
+    from state alone. The big token saving is dropping the ~70-entry action list."""
+    obs = build_observation(game_state, actions, new=new, v2=v2,
+                            show_impacts=show_impacts, rounds_left=rounds_left)
+    obs.pop("actions", None)
+    cs = (game_state or {}).get("constructionState", {})
+    obs["sites"] = [{"id": s.get("siteId"), "name": s.get("siteName")}
+                    for s in cs.get("availableSites", []) if s.get("isAvailable")]
+    obs["costs"] = {"build": cs.get("buildingConstructionCost", 1000),
+                    "hireUntrained": 100, "hireTrained": 300, "train": 500}
+    # AFFORDANCE BLOCK — what is actually executable THIS round, derived from the same
+    # valid-action set the parser/menu use (so it can never contradict them). This is the
+    # compact replacement for the dropped idx menu: it tells the model which commands will
+    # land instead of making it infer availability from raw state (the cause of the bulk of
+    # cmd rejections: staff with no free workers, transfer with no idle vehicle, hire when
+    # no bundle is offered). `staffNow` reflects CURRENT free workers; workers you <hire>
+    # this turn become staffable too (executed after the hire — see the prompt).
+    # `needStaff` is the AUTHORITATIVE set of valid <staff> targets: every BUILT building still
+    # short of workers, by EXACT facility name, regardless of whether free workers exist yet. The
+    # model must staff only names from here (kills both residual staff-error classes: invented
+    # names copied from the example, and staffing already-full / not-yet-built buildings).
+    need_staff = {}
+    for f in obs.get("facilities", []):
+        if f.get("status") in ("NeedWorker", "InUse"):
+            rem = (f.get("needWorkers") or 0) - (f.get("workers") or 0)
+            if rem > 0 and f.get("name"):
+                need_staff[f["name"]] = rem
+    hire_kinds, train_max, build_sites = set(), 0, set()
+    staff_now, transfers = {}, set()
+    for a in actions:
+        t = a.get("action_type")
+        # Type-specific fields are nested (worker/assignment/construction/transfer), mirroring
+        # parse_commands and the *Action.to_dict() shapes — read them the same way here.
+        if t == "worker":
+            w = a.get("worker", {})
+            wt = w.get("worker_action_type")
+            if wt == "hire_untrained":   hire_kinds.add("untrained")
+            elif wt == "hire_trained":   hire_kinds.add("trained")
+            elif wt == "train_untrained": train_max = max(train_max, w.get("quantity", 0))
+        elif t == "worker_assignment":
+            asg = a.get("assignment", {})
+            b = asg.get("building_name")
+            if b is not None:
+                staff_now[b] = max(staff_now.get(b, 0), asg.get("quantity", 0))
+        elif t == "construction":
+            sid = a.get("construction", {}).get("site_id")
+            if sid is not None:
+                build_sites.add(sid)
+        elif t == "resource_transfer":
+            tr = a.get("transfer", {})
+            transfers.add((tr.get("resource_type"), tr.get("source_facility"),
+                           tr.get("destination_facility")))
+    obs["available"] = {
+        "hire": sorted(hire_kinds),                 # kinds you can hire (budget-permitting)
+        "trainUntrainedMax": train_max,             # untrained workers you can train now
+        "needStaff": need_staff,                    # {building: workforce still needed} — the ONLY valid <staff> targets
+        "staffNow": staff_now,                      # subset assignable RIGHT NOW from current free workers
+        "buildSites": sorted(build_sites),          # site ids you can build on
+        "transfers": [{"resource": r, "from": s, "to": d}   # valid transfers (empty if no idle vehicle)
+                      for (r, s, d) in sorted(transfers, key=lambda x: tuple(map(str, x)))],
+    }
+    return obs
+
+
+def _fac_row(f, *, v2):
+    """One schema-once facilities row: 'name type status workers/need food pop/cap'."""
+    st = f.get("status") or ("Passive" if v2 else "-")
     return (f"{f.get('name')} {f.get('type')} {st} "
-            f"{_num(f.get('workers'))}/{_num(f.get('needWorkers'))} food:{_num(f.get('food'))} "
-            f"pop:{_num(f.get('pop'))}/{_num(f.get('cap'))}")
+            f"{f.get('workers',0)}/{f.get('needWorkers',0)} {f.get('food',0)} "
+            f"{f.get('pop',0)}/{f.get('cap',0)}")
+
+
+def _fac_dyn(f):
+    """The dynamic (turn-to-turn mutable) fields of a facility — identity (name/type) excluded.
+    Two facilities with equal _fac_dyn render an identical row, so a row is 'unchanged' iff these match."""
+    return (f.get("status"), f.get("workers", 0), f.get("needWorkers", 0),
+            f.get("food", 0), f.get("pop", 0), f.get("cap", 0))
 
 
 def _render_scalars(obs):
-    day = obs.get("day")
-    horizon = f" of {obs['finalDay']}" if obs.get("finalDay") is not None else ""
-    head = f"day {day}{horizon}"
-    if "budget" in obs:
-        head += f" | budget ${_num(obs.get('budget')):,} | satisfaction {obs.get('satisfaction')}"
-    if obs.get("motelDailyCost"):
-        head += f" | motelDailyCost ${obs['motelDailyCost']:,}/day"
-    L = [head]
-    w = obs.get("workers")
-    if w is not None:
-        L.append(f"workers: freeTrained {_num(w.get('freeTrained'))} "
-                 f"freeUntrained {_num(w.get('freeUntrained'))} "
-                 f"working {_num(w.get('working'))} inTraining {_num(w.get('inTraining'))}")
-    if "logistics" in obs:
-        L.append(f"logistics: vehiclesFree {_num(obs['logistics'].get('vehiclesFree'))}")
-    if obs.get("spend"):
-        L.append("spend so far: " + " ".join(f"{k} ${_num(v):,}" for k, v in obs["spend"].items()))
-    if obs.get("costs"):
-        L.append("unit costs: " + " ".join(f"{k} ${_num(v):,}" for k, v in obs["costs"].items()))
+    g = obs.get
+    L = [f"day {g('day')} | budget {g('budget')} | satisfaction {g('satisfaction')} | "
+         f"roundsLeft {g('roundsLeft')}"
+         + (f" | motelDailyCost {obs['motelDailyCost']}" if obs.get("motelDailyCost") else "")]
+    w = obs.get("workers", {})
+    L.append(f"workers: freeTrained {w.get('freeTrained',0)} freeUntrained {w.get('freeUntrained',0)} "
+             f"working {w.get('working',0)} inTraining {w.get('inTraining',0)}")
+    L.append(f"logistics: vehiclesFree {obs.get('logistics',{}).get('vehiclesFree',0)}")
+    L.append("spend: " + " ".join(f"{k} {v}" for k, v in obs.get("spend", {}).items()))
+    L.append("costs: " + " ".join(f"{k} {v}" for k, v in obs.get("costs", {}).items()))
     return L
 
 
-def _render_facilities(obs):
-    facs = obs.get("facilities")
+def _render_facilities(obs, *, v2):
+    facs = obs.get("facilities", [])
     if not facs:
         return []
     L = ["facilities [name type status workers/need food pop/cap]:"]
-    L += ["  " + _fac_row(f) for f in facs]
+    L += ["  " + _fac_row(f, v2=v2) for f in facs]
     return L
 
 
 def _render_tasks(obs):
-    tasks = obs.get("tasks")
+    tasks = obs.get("tasks", [])
     if not tasks:
         return []
-    L = ["open tasks [id type \"title\" affects (roundsLeft)]:"]
+    L = ["tasks [id type \"title\" affects (roundsLeft)]:"]
     for t in tasks:
         L.append(f"  [{t.get('taskId')}] {t.get('type')} \"{t.get('title')}\" "
                  f"{t.get('affects','')} ({t.get('roundsLeft')} left)")
-        if t.get("desc"):
-            L.append(f"    {t['desc']}")
         for ch in t.get("choices", []):
             imp = ch.get("impacts")
-            imps = (" -> " + " ".join(f"[{k} {v:+d}]" if isinstance(v, int) else f"[{k} {v}]"
-                                      for k, v in imp.items())) if imp else ""
-            L.append(f"    choice {ch.get('choiceId')}: {ch.get('text')}{imps}")
+            imps = (" " + " ".join(f"[{k} {v}]" for k, v in imp.items())) if imp else ""
+            L.append(f"    {ch.get('choiceId')}: {ch.get('text')}{imps}")
     return L
 
 
-def render_state_text(game_state: dict) -> str:
-    """Render the router game_state as a compact, grounded text block.
+def _render_sites(obs):
+    sites = obs.get("sites", [])
+    if not sites:
+        return []
+    return ["sites (ids): " + ",".join(str(s.get("id")) for s in sites)]
+
+
+def _render_available(obs, *, v2):
+    av = obs.get("available", {})
+    if not av:
+        return []
+    L = ["available:"]
+    if av.get("hire"):
+        L.append(f"  hire: {','.join(av['hire'])} | trainUntrainedMax {av.get('trainUntrainedMax',0)}")
+    else:
+        L.append(f"  hire: none | trainUntrainedMax {av.get('trainUntrainedMax',0)}")
+    ns = av.get("needStaff")
+    if ns is not None:
+        L.append("  needStaff: " + (" ".join(f"{k}:{v}" for k, v in ns.items()) or "(none)"))
+    sn = av.get("staffNow", {})
+    L.append("  staffNow: " + (" ".join(f"{k}:{v}" for k, v in sn.items()) or "(none)"))
+    bs = av.get("buildSites", [])
+    L.append("  buildSites: " + (",".join(str(x) for x in bs) if bs else "(none)"))
+    tr = av.get("transfers", [])
+    if tr:
+        byres = {}
+        for e in tr:
+            d = byres.setdefault(e.get("resource"), (set(), set()))
+            d[0].add(e.get("from")); d[1].add(e.get("to"))
+        L.append("  transfers:")
+        for res, (frm, to) in byres.items():
+            L.append(f"    {res} from[{','.join(sorted(frm))}] to[{','.join(sorted(to))}]")
+    elif not v2:
+        # Plain `minimal` keeps the (often empty) transfers affordance line — the un-fixed control.
+        L.append("  transfers: (none)")
+    # minimal_v2 drops the empty line entirely: in task_only mode transfers are always empty
+    # (relocation is via task choices, not <transfer>), so "(none)" is just a dead reference.
+    return L
+
+
+def render_state_compact(obs, *, v2=True):
+    """Render the cmd observation dict as a COMPACT TEXT block instead of json.dumps(obs).
+    Same information the policy acts on, but with the structural bloat removed (the four
+    culprits found in the token breakdown), per the representation research:
+      - facilities: schema-once tabular (legend line + one row each) — kills per-row key repetition.
+      - tasks: drop the natural-language `desc` prose (distractor; restates title); compact choices.
+      - sites: drop decorative names (build uses the id, which also lives in available.buildSites).
+      - available.transfers: collapse the source x destination cross-product to per-resource endpoints.
+      - scalars/affordances: key-value lines, decision-relevant fields up top (primacy).
+    Lossless w.r.t. what's actionable; only prose and enumerated redundancy are dropped.
+    Returns a string ready to drop into the user message in place of json.dumps(obs)."""
+    return "\n".join(_render_scalars(obs) + _render_facilities(obs, v2=v2) + _render_tasks(obs)
+                     + _render_sites(obs) + _render_available(obs, v2=v2))
+
+
+def render_state_delta(obs, prev_obs, *, v2=True):
+    """History-carrying DELTA rendering: identical to render_state_compact EXCEPT the facilities
+    block is diffed against the previous turn (unchanged rows omitted; +new / ~changed shown in
+    FULL, -removed by name). Everything actionable — scalars, tasks, the whole `available` block
+    (needStaff/staffNow/buildSites/transfers) — stays FULL, so the policy never has to reconstruct
+    valid actions from diffs (the error-prone aggregation case). The facilities table is the safe
+    diff target: it is low-churn (built once, then persists) and its actionable content is already
+    mirrored in available.needStaff/staffNow.
+
+    Cache-safe: a turn's rendering is a pure function of (obs, prev_obs) — both fixed once produced —
+    so the same turn serializes byte-identically every time it reappears in the append-only context,
+    preserving the prefix KV-cache. prev_obs=None (first turn) falls back to the full compact render."""
+    if not prev_obs:
+        return render_state_compact(obs, v2=v2)
+    facs = obs.get("facilities", []) or []
+    prev_by = {f.get("name"): f for f in (prev_obs.get("facilities", []) or [])}
+    cur_names = {f.get("name") for f in facs}
+    rows = []
+    for f in facs:
+        pf = prev_by.get(f.get("name"))
+        if pf is None:
+            rows.append("  + " + _fac_row(f, v2=v2))                 # newly built
+        elif _fac_dyn(f) != _fac_dyn(pf):
+            rows.append("  ~ " + _fac_row(f, v2=v2))                 # dynamic fields changed
+    rows += [f"  - {n}" for n in prev_by if n not in cur_names]     # removed/deconstructed
+    fac_block = ["facilities Δ (vs last turn; unchanged omitted; +new ~changed -removed) "
+                 "[name type status workers/need food pop/cap]:"]
+    fac_block += rows if rows else ["  (no change)"]
+    return "\n".join(_render_scalars(obs) + fac_block + _render_tasks(obs)
+                     + _render_sites(obs) + _render_available(obs, v2=v2))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ROUTER CONVENIENCE — the live router holds only a raw game_state dict (no env, no
+# episode horizon). This builds the canonical obs and renders it in the SAME compact
+# format the benchmark uses. roundsLeft is derived from the session horizon so the
+# scalar line shows a real number rather than "roundsLeft None".
+# ─────────────────────────────────────────────────────────────────────────────
+
+def render_state_text(game_state, *, new=True, v2=True):
+    """Render the router's game_state as the canonical compact text block.
 
     Drop-in replacement for the old threadbare ``state_text`` in
-    ``llm_query._build_prompt``. Sections absent from the (possibly filtered)
-    game_state are simply omitted.
-    """
-    obs = build_observation(game_state)
-    lines = _render_scalars(obs) + _render_facilities(obs) + _render_tasks(obs)
-    return "\n".join(lines) if lines else "(no observation available)"
+    ``llm_query._build_prompt``, now producing the exact same rendering the
+    benchmark policy sees (``render_state_compact``)."""
+    si = (game_state or {}).get("sessionInfo", {})
+    rounds_left = None
+    fd, cd = si.get("finalDay"), si.get("currentDay")
+    if fd is not None and cd is not None:
+        rounds_left = _num(fd) - _num(cd)
+    obs = build_observation(game_state, None, new=new, v2=v2, rounds_left=rounds_left)
+    return render_state_compact(obs, v2=v2) or "(no observation available)"

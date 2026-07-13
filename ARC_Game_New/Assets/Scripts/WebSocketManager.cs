@@ -648,8 +648,10 @@ public class WebSocketManager : MonoBehaviour
             // Store proposal metadata on the task for later reference
             multiAgentTask.multiAgentProposal = proposal;
 
-            // Apply the LLM content to display in the UI
-            TaskSystem.Instance.ApplyLLMTaskContent(llmContent);
+            // Apply the LLM content to display in the UI. Pass the exact officer task
+            // (not by id): all officers' proposals share taskId == -1, so an id lookup
+            // would cross-wire proposals between officers in multi-agent scenarios.
+            TaskSystem.Instance.ApplyLLMTaskContent(multiAgentTask, llmContent);
 
             // If the user is currently viewing this officer's tab, re-render so the
             // newly proposed/reproposed choices appear immediately. Without this,
@@ -658,6 +660,16 @@ public class WebSocketManager : MonoBehaviour
                 && System.Enum.TryParse(proposal.talkinghead, out TaskOfficer officerEnum))
             {
                 AgentConversationUI.Instance.OnChoicesProposalApplied(officerEnum);
+            }
+
+            // The proposal also renders in the task-detail panel (opened from the Task
+            // Center). If that panel is currently showing this officer's proposal,
+            // re-render it in place so reproposed options appear immediately instead of
+            // only after close/reopen.
+            if (taskDetailUI != null
+                && System.Enum.TryParse(proposal.talkinghead, out TaskOfficer detailOfficer))
+            {
+                taskDetailUI.RefreshProposalIfShowing(detailOfficer);
             }
 
             Debug.Log($"✅ Displayed {proposal.packages.Length} choice packages in {proposal.talkinghead} tab");

@@ -165,7 +165,48 @@ public class TaskDetailUI : MonoBehaviour
 
             GameLogPanel.Instance?.LogUIInteraction($"Opened task: [{currentTask.taskType}] {currentTask.taskTitle} at {currentTask.affectedFacility}");
             GameLogPanel.Instance?.LogTaskEvent(SerializeTaskContent(currentTask));
+
+            // Make the repropose affordance discoverable on the choices proposal.
+            SetReproposePlaceholder();
         }
+    }
+
+    /// <summary>
+    /// Re-render this panel's agent conversation if it is currently showing the
+    /// multi-agent proposal for <paramref name="officer"/>. Called when a
+    /// choices_proposal (initial or reproposed) arrives so the newly proposed
+    /// options replace the stale ones in place, instead of only appearing after
+    /// the panel is closed and reopened.
+    /// </summary>
+    public void RefreshProposalIfShowing(TaskOfficer officer)
+    {
+        if (currentTask == null || taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
+            return;
+        if (currentTask.taskId != -1 || currentTask.taskOfficer != officer)
+            return;
+
+        // currentTask.agentMessages / agentChoices were already replaced with the new
+        // proposal by TaskSystem.GetOrCreateMultiAgentTask + ApplyLLMTaskContent, so a
+        // plain re-render (isFirstTimeShowing:false → no typing effect) shows the fresh
+        // options immediately.
+        StartAgentConversation(false);
+        SetReproposePlaceholder();
+    }
+
+    /// <summary>
+    /// Make the "you can ask me to repropose" affordance discoverable: when the
+    /// current task is a multi-agent proposal, prompt the free-text box with an
+    /// explicit hint. No-op for regular tasks (keeps their existing placeholder).
+    /// </summary>
+    void SetReproposePlaceholder()
+    {
+        if (playerInputField == null) return;
+        bool isProposal = currentTask != null && currentTask.taskId == -1
+            && currentTask.multiAgentProposal != null;
+        if (!isProposal) return;
+        var ph = playerInputField.placeholder as TMP_Text;
+        if (ph != null)
+            ph.text = "Ask me for different options…";
     }
 
     string SerializeTaskContent(GameTask task)
@@ -431,7 +472,267 @@ public class TaskDetailUI : MonoBehaviour
             currentConversationItems.Add(choiceItem);
         }
 
+        // A 4th "type anything" card lets the director free-text the agent (repropose /
+        // clarify / chat) right in the choices list, when the proposal is still live.
+        if (live)
+            AddFreeTextChoiceCard();
+
         ScrollToBottom();
+    }
+
+    // Clones the persistent playerInputField into the choices list as an inline
+    // "type anything" card, so the director can free-text the agent without hunting
+    // for the bottom chat bar. Reuses the existing TMP_InputField styling — no new prefab.
+    void AddFreeTextChoiceCard()
+    {
+        if (playerInputField == null || conversationContent == null)
+        {
+            Debug.LogWarning($"[FreeTextCard] skipped — playerInputField null? {playerInputField == null}, content null? {conversationContent == null}");
+            return;
+        }
+
+        // Build a row that mirrors a choice card's three-column layout so it lines up
+        // column-for-column: [agent-icon gap | beige input panel | checkbox]. Rather than
+        // replicate the choice card's HorizontalLayoutGroup internals, we make an equal-width
+        // root and copy the live ChoiceSection / checkbox X positions from a sibling card
+        // after layout (see AlignFreeTextCard).
+        GameObject card = new GameObject("FreeTextChoiceCard", typeof(RectTransform));
+        card.transform.SetParent(conversationContent, false);
+        card.transform.localScale = Vector3.one;
+        RectTransform rt = card.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(0f, 1f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.sizeDelta = new Vector2(550f, 56f); // root width == choice card; refined below
+        LayoutElement cardLE = card.AddComponent<LayoutElement>();
+        cardLE.minHeight = 56f;
+        cardLE.preferredHeight = 56f;
+        cardLE.minWidth = 550f;
+        cardLE.preferredWidth = 550f;
+
+        // The input panel — a clone of the chat input field. Instantiate detached, then
+        // parent with worldPositionStays=false (the parented overload keeps world scale and
+        // collapses the clone to an invisible sliver).
+        GameObject panel = Instantiate(playerInputField.gameObject);
+        panel.name = "FreeTextPanel";
+        panel.transform.SetParent(card.transform, false);
+        panel.transform.localScale = Vector3.one;
+        panel.SetActive(true);
+        RectTransform prt = panel.GetComponent<RectTransform>();
+        prt.anchorMin = new Vector2(0f, 1f);
+        prt.anchorMax = new Vector2(0f, 1f);
+        prt.pivot = new Vector2(0.5f, 0.5f);
+        prt.sizeDelta = new Vector2(400f, 46f);      // aligned to ChoiceSection below
+        prt.anchoredPosition = new Vector2(277f, -28f);
+
+        Image bg = panel.GetComponent<Image>();
+        if (bg == null) bg = panel.AddComponent<Image>();
+        bg.color = new Color(1f, 1f, 1f, 1f);
+        bg.raycastTarget = true;
+
+        Color textColor = new Color(0.239f, 0.184f, 0.176f, 1f);
+
+        TMP_InputField field = panel.GetComponent<TMP_InputField>();
+        if (field != null)
+        {
+            field.text = "";
+            field.interactable = true;
+            if (field.placeholder is TMP_Text ph)
+            {
+                ph.text = "Type anything here — ask me to repropose or clarify…";
+                ph.color = new Color(textColor.r, textColor.g, textColor.b, 0.55f);
+                ph.enabled = true;
+            }
+            if (field.textComponent != null)
+                field.textComponent.color = textColor;
+
+            field.onSubmit.RemoveAllListeners();
+            field.onSubmit.AddListener((string msg) => OnFreeTextCardSubmit(field, msg));
+        }
+
+        // Checkbox column — sits where the choice cards' checkbox is (far right). Clicking it
+        // submits the typed text, mirroring "select this option" on the other cards.
+        GameObject check = new GameObject("FreeTextCheckbox", typeof(RectTransform), typeof(Image));
+        check.transform.SetParent(card.transform, false);
+        check.transform.localScale = Vector3.one;
+        RectTransform crt = check.GetComponent<RectTransform>();
+        crt.anchorMin = new Vector2(0f, 1f);
+        crt.anchorMax = new Vector2(0f, 1f);
+        crt.pivot = new Vector2(0.5f, 0.5f);
+        crt.sizeDelta = new Vector2(30f, 30f);
+        crt.anchoredPosition = new Vector2(513f, -28f);
+        Image checkImg = check.GetComponent<Image>();
+        Button checkBtn = check.AddComponent<Button>();
+        checkBtn.onClick.RemoveAllListeners();
+        checkBtn.onClick.AddListener(() => { if (field != null) OnFreeTextCardSubmit(field, field.text); });
+
+        // Copy the exact ChoiceSection / checkbox styling + X positions from a live choice
+        // card once layout has run, so the panel and checkbox share the cards' columns.
+        StartCoroutine(AlignFreeTextCard(card, panel, bg, check, checkImg, field));
+
+        currentConversationItems.Add(card);
+    }
+
+    // Align the free-text card's input panel and checkbox to a live choice card's columns.
+    // Runs post-layout so the choice card's HorizontalLayoutGroup has already positioned its
+    // ChoiceSection / ButtonSection; we copy those X positions (root widths are equal, so an
+    // equal anchoredPosition.x lands in the same column) plus the beige sprite/color.
+    System.Collections.IEnumerator AlignFreeTextCard(GameObject card, GameObject panel,
+        Image bg, GameObject check, Image checkImg, TMP_InputField field)
+    {
+        yield return new WaitForEndOfFrame();
+        if (card == null || conversationContent == null) yield break;
+
+        AgentChoiceUI sample = null;
+        foreach (Transform child in conversationContent)
+        {
+            var ui = child.GetComponent<AgentChoiceUI>();
+            if (ui != null) { sample = ui; break; }
+        }
+        if (sample == null) yield break;
+
+        RectTransform rt = card.GetComponent<RectTransform>();
+        float cardH = rt != null ? rt.rect.height : 56f;
+
+        RectTransform srt = sample.transform as RectTransform;
+        if (rt != null && srt != null && srt.rect.width > 1f)
+            rt.sizeDelta = new Vector2(srt.rect.width, rt.sizeDelta.y);
+
+        // Panel <- ChoiceSection (the beige background: descriptionText -> statLayout -> section).
+        TMP_Text body = sample.descriptionText != null ? sample.descriptionText : sample.choiceText;
+        Image section = (body != null && body.transform.parent != null && body.transform.parent.parent != null)
+            ? body.transform.parent.parent.GetComponent<Image>() : null;
+        if (section != null && panel != null)
+        {
+            RectTransform sectRT = section.rectTransform;
+            RectTransform prt = panel.GetComponent<RectTransform>();
+            prt.anchorMin = new Vector2(0f, 1f);
+            prt.anchorMax = new Vector2(0f, 1f);
+            prt.pivot = new Vector2(0.5f, 0.5f);
+            if (sectRT.rect.width > 1f)
+                prt.sizeDelta = new Vector2(sectRT.rect.width, prt.sizeDelta.y);
+            prt.anchoredPosition = new Vector2(sectRT.anchoredPosition.x, -cardH * 0.5f);
+            if (bg != null)
+            {
+                bg.sprite = section.sprite;
+                bg.type = section.type;
+                bg.color = section.color;
+                bg.fillCenter = section.fillCenter;
+                bg.pixelsPerUnitMultiplier = section.pixelsPerUnitMultiplier;
+            }
+        }
+        if (body != null && field != null)
+        {
+            if (field.textComponent != null) field.textComponent.color = body.color;
+            if (field.placeholder is TMP_Text ph2)
+                ph2.color = new Color(body.color.r, body.color.g, body.color.b, 0.55f);
+        }
+
+        // Checkbox <- the choice card's checkbox column (choiceButton lives in ButtonSection).
+        if (sample.choiceButton != null && check != null)
+        {
+            RectTransform brt = sample.choiceButton.transform as RectTransform;
+            RectTransform bsec = brt != null ? brt.parent as RectTransform : null;
+            float checkX = bsec != null ? bsec.anchoredPosition.x
+                         : (brt != null ? brt.anchoredPosition.x : 513f);
+            RectTransform crt = check.GetComponent<RectTransform>();
+            crt.anchoredPosition = new Vector2(checkX, -cardH * 0.5f);
+            Image bimg = sample.choiceButton.GetComponent<Image>();
+            if (bimg != null && checkImg != null)
+            {
+                checkImg.sprite = bimg.sprite;
+                checkImg.type = bimg.type;
+                checkImg.color = bimg.color;
+                checkImg.fillCenter = bimg.fillCenter;
+                checkImg.pixelsPerUnitMultiplier = bimg.pixelsPerUnitMultiplier;
+            }
+        }
+    }
+
+    void OnFreeTextCardSubmit(TMP_InputField field, string message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return;
+
+        // Route through the director_message path (repropose/clarify/chat classifier),
+        // exactly like the bottom chat bar for a multi-agent proposal.
+        if (WebSocketManager.Instance != null && WebSocketManager.Instance.IsConnected()
+            && currentTask != null && currentTask.taskId == -1 && currentTask.multiAgentProposal != null)
+        {
+            WebSocketManager.Instance.SendDirectorMessage(
+                currentTask.multiAgentProposal.agent_name, message);
+        }
+
+        GameObject messageItem = Instantiate(playerMessagePrefab, conversationContent);
+        TextMeshProUGUI messageText = messageItem.GetComponentInChildren<TextMeshProUGUI>();
+        if (messageText != null) messageText.text = message;
+        currentConversationItems.Add(messageItem);
+        GameLogPanel.Instance?.LogUIInteraction($"Player message sent | message={message}");
+
+        if (field != null) field.text = "";
+        ScrollToBottom();
+    }
+
+    // Copies a real choice card's beige panel sprite/tint + visible width onto the free-text
+    // card, and returns that card's body-text color. No-op (keeps prefab fallbacks) if no
+    // sibling choice card is present to sample.
+    void MatchChoiceCardStyle(RectTransform rt, Image bg, ref Color textColor)
+    {
+        if (conversationContent == null) return;
+
+        AgentChoiceUI sample = null;
+        foreach (Transform child in conversationContent)
+        {
+            var ui = child.GetComponent<AgentChoiceUI>();
+            if (ui != null) { sample = ui; break; }
+        }
+        if (sample == null) return;
+
+        TMP_Text bodyText = sample.descriptionText != null ? sample.descriptionText : sample.choiceText;
+        if (bodyText != null) textColor = bodyText.color;
+
+        // The beige panel is ChoiceSection = descriptionText -> statLayout -> ChoiceSection.
+        Image section = null;
+        if (bodyText != null && bodyText.transform.parent != null && bodyText.transform.parent.parent != null)
+            section = bodyText.transform.parent.parent.GetComponent<Image>();
+        if (section == null || bg == null) return;
+
+        bg.sprite = section.sprite;
+        bg.type = section.type;
+        bg.color = section.color;
+        bg.fillCenter = section.fillCenter;
+        bg.pixelsPerUnitMultiplier = section.pixelsPerUnitMultiplier;
+
+        RectTransform sectionRt = section.rectTransform;
+        if (rt != null && sectionRt != null && sectionRt.rect.width > 1f)
+            rt.sizeDelta = new Vector2(sectionRt.rect.width, rt.sizeDelta.y);
+    }
+
+    void ApplyCardWidth(LayoutElement le)
+    {
+        RectTransform parentRt = conversationContent as RectTransform;
+        if (parentRt == null || le == null) return;
+        float w = parentRt.rect.width;
+        var vlg = conversationContent.GetComponent<VerticalLayoutGroup>();
+        if (vlg != null) w -= (vlg.padding.left + vlg.padding.right);
+        if (w > 1f)
+        {
+            le.minWidth = w;
+            le.preferredWidth = w;
+        }
+    }
+
+    System.Collections.IEnumerator FixCardWidthNextFrame(GameObject card)
+    {
+        yield return new WaitForEndOfFrame();
+        if (card == null) yield break;
+        RectTransform rt = card.GetComponent<RectTransform>();
+        if (rt != null && rt.rect.width < 1f)
+        {
+            ApplyCardWidth(card.GetComponent<LayoutElement>());
+            RectTransform parentRt = conversationContent as RectTransform;
+            if (parentRt != null) LayoutRebuilder.ForceRebuildLayoutImmediate(parentRt);
+        }
+        Debug.Log($"[FreeTextCard/TaskDetail] post-layout size={(rt != null ? rt.rect.size : Vector2.zero)}");
     }
 
     /// <summary>True (with no reason) if the choice is non-delivery or currently executable;
@@ -2504,7 +2805,20 @@ public class TaskDetailUI : MonoBehaviour
             // Send to vLLM server if WebSocket is connected
             if (WebSocketManager.Instance != null && WebSocketManager.Instance.IsConnected())
             {
-                WebSocketManager.Instance.SendMessage(message, currentTask.taskId);
+                // Multi-agent choice proposals (taskId == -1) must be routed through the
+                // director_message path so the router runs its repropose/clarify/chat
+                // intent classifier. The legacy SendMessage(...) emits a "task_message"
+                // type that has NO server handler and is silently dropped — which is why
+                // reproposing from this panel appeared to do nothing.
+                if (currentTask.taskId == -1 && currentTask.multiAgentProposal != null)
+                {
+                    WebSocketManager.Instance.SendDirectorMessage(
+                        currentTask.multiAgentProposal.agent_name, message);
+                }
+                else
+                {
+                    WebSocketManager.Instance.SendMessage(message, currentTask.taskId);
+                }
             }
             else
             {

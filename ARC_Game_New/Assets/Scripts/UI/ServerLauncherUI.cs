@@ -85,7 +85,15 @@ public class ServerLauncherUI : MonoBehaviour
         // shows typed/pasted characters. Turning this off makes Unity grab the
         // keyboard only while the game canvas is focused — the overlay works, and
         // gameplay/keyboard resume the moment the user clicks back on the canvas.
-        WebGLInput.captureAllKeyboardInput = false;
+        //
+        // WebGLInput lives in UnityEngine.WebGLModule, which Unity does NOT add to
+        // the player Assembly-CSharp reference set in this project (every other
+        // UnityEngine.*Module is referenced, but not WebGLModule) — a direct
+        // reference gives CS0103 at player-compile time. Set the property
+        // reflectively so there is no compile-time dependency on that assembly; the
+        // module still ships in the WebGL runtime, so it resolves at run time.
+        var webglInput = System.Type.GetType("UnityEngine.WebGLInput, UnityEngine.WebGLModule");
+        webglInput?.GetProperty("captureAllKeyboardInput")?.SetValue(null, false);
         ClipboardInit();   // enable Cmd/Ctrl+V paste of the API key in the browser
 #endif
 

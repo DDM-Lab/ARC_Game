@@ -2848,6 +2848,26 @@ public class TaskSystem : MonoBehaviour
             return;
         }
 
+        ApplyLLMTaskContent(task, llmContent);
+    }
+
+    /// <summary>
+    /// Apply LLM content to a SPECIFIC task instance. Required for multi-agent
+    /// choice proposals: every officer's proposal shares taskId == -1, so resolving
+    /// the target by id (GetTaskById) would return whichever officer's -1 task is
+    /// first in the list, cross-wiring one officer's proposal onto another's task in
+    /// multi-officer scenarios. Callers that already hold the exact task (e.g.
+    /// WebSocketManager.HandleChoicesProposal via GetOrCreateMultiAgentTask) pass it
+    /// here directly.
+    /// </summary>
+    public void ApplyLLMTaskContent(GameTask task, LLMTaskContent llmContent)
+    {
+        if (task == null || llmContent == null)
+        {
+            Debug.LogError("ApplyLLMTaskContent(task, content) called with a null argument");
+            return;
+        }
+
         Debug.Log($"Applying LLM content to task: {task.taskTitle}");
 
         // Clear existing agent messages and choices

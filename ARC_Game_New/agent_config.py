@@ -49,6 +49,7 @@ class AgentConfig:
     choices_fallback: bool = True          # synthesize deterministic packages to fill the set
     explain_grounded: bool = True          # prepend engine-computed $cost to each package desc
     explain_summary: bool = True           # prepend grounded context to the pre-choices summary
+    choices_repropose_hint: bool = True    # append "you can ask me to repropose" nudge to the summary
     # Runtime state — not from config
     conversation_history: list[dict] = field(default_factory=list, init=False)
 
@@ -135,6 +136,7 @@ def load_config(path: str) -> RouterConfig:
             choices_fallback=entry.get("choices_fallback", True),
             explain_grounded=entry.get("explain_grounded", True),
             explain_summary=entry.get("explain_summary", True),
+            choices_repropose_hint=entry.get("choices_repropose_hint", True),
         ))
 
     return RouterConfig(
