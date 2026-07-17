@@ -29,6 +29,8 @@ Assets/Scripts/LLM/GameStateStructures.cs): ``satisfactionAndBudget``,
 """
 from __future__ import annotations
 
+import os
+
 MOTEL_COST_PER_PERSON_PER_DAY = 200  # mirror of MotelCostManager.costPerPersonPerDay (display hint only)
 
 
@@ -242,13 +244,90 @@ def _render_facilities(obs, *, v2):
     return L
 
 
+# Enable stable, title-based task IDs (e.g. BUDGET_DAILY, FOOD_C01) instead of
+# the drifting integer taskId Unity assigns each turn. Same title→token across
+# ALL turns so the policy can learn "BUDGET_DAILY = free money" once, rather
+# than re-discovering it every day when its integer id changes. Parser
+# (llm_smoke_test.parse_commands) accepts either form during the transition.
+_STABLE_TASK_TOKENS = os.environ.get("ARC_STABLE_TASK_TOKENS", "0").strip() == "1"
+
+
+def _short_affects(a: str) -> str:
+    """Compact facility-name suffix used by stable_task_token, e.g. Community01→C01,
+    Shelter_0→S0, Motel→MOTEL, CaseworkSite_2→CS2. Deterministic across turns."""
+    if not a:
+        return "X"
+    a = a.strip()
+    up = a.upper()
+    if up == "MOTEL":
+        return "MOTEL"
+    if up == "MAINTENANCE":
+        return "MAINT"
+    if up.startswith("COMMUNITY"):
+        tail = a[len("Community"):]
+        return f"C{tail}" if tail.isdigit() or tail == "" else f"C{tail.upper()}"
+    if up.startswith("SHELTER"):
+        tail = a[len("Shelter"):].lstrip("_")
+        return f"S{tail}" if tail else "S"
+    if up.startswith("KITCHEN"):
+        tail = a[len("Kitchen"):].lstrip("_")
+        return f"K{tail}" if tail else "K"
+    if up.startswith("CASEWORKSITE"):
+        tail = a[len("CaseworkSite"):].lstrip("_")
+        return f"CS{tail}" if tail else "CS"
+    if up.startswith("CASEWORK"):
+        return "CASE"
+    # unknown facility label → uppercase, alphanumeric-only
+    return "".join(c for c in a.upper() if c.isalnum()) or "X"
+
+
+def stable_task_token(t: dict) -> str:
+    """Map (title, affects) → stable identifier that is constant across game days.
+    Falls back to `TASK_<taskId>` for unknown titles so we never break the API."""
+    title = (t.get("title") or "")
+    affects = t.get("affects") or ""
+    tl = title.lower()
+    if "daily budget" in tl:
+        return "BUDGET_DAILY"
+    if "emergency budget" in tl:
+        return "BUDGET_EMERGENCY"
+    if "storm funding" in tl:
+        return "FUND_STORM"
+    if "training recommendation" in tl:
+        return "TRAIN_REC"
+    if "worker shortage" in tl:
+        return "WORKER_ADVICE"
+    if "workforce optimization" in tl:
+        return "ALERT_WORKFORCE"
+    if "flood alert" in tl:
+        return "ALERT_FLOOD"
+    if "food request from community" in tl:
+        return f"FOOD_{_short_affects(affects)}"
+    if "food request from shelter" in tl:
+        return f"FOOD_{_short_affects(affects)}"
+    if "population relocation" in tl:
+        return f"RELOC_{_short_affects(affects)}"
+    if "community emergency evacuation" in tl:
+        return f"EVAC_{_short_affects(affects)}"
+    if "casework request" in tl:
+        return f"CASEWORK_{_short_affects(affects)}"
+    if "vehicle repair" in tl:
+        return "REPAIR_VEHICLE"
+    if "shelter flood damage" in tl:
+        return f"FLOOD_{_short_affects(affects)}"
+    if "start of day report" in tl:
+        return "REPORT_DAY"
+    return f"TASK_{t.get('taskId', 'X')}"  # unknown title → back-compat
+
+
 def _render_tasks(obs):
     tasks = obs.get("tasks", [])
     if not tasks:
         return []
     L = ["tasks [id type \"title\" affects (roundsLeft)]:"]
     for t in tasks:
-        L.append(f"  [{t.get('taskId')}] {t.get('type')} \"{t.get('title')}\" "
+        tid = stable_task_token(t) if _STABLE_TASK_TOKENS else t.get('taskId')
+        L.append(f"  [{tid}] {t.get('type')} \"{t.get('title')}\" "
                  f"{t.get('affects','')} ({t.get('roundsLeft')} left)")
         for ch in t.get("choices", []):
             imp = ch.get("impacts")

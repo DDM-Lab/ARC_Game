@@ -526,8 +526,27 @@ def parse_commands(text, env):
                 p = split(body, 2)
                 if not p:
                     errors.append(f"task: need TASK_ID,CHOICE_ID got '{body}'"); continue
-                choices.append({"taskId": int(float(p[0])), "choiceId": int(float(p[1]))})
-                parsed.append(f"task {p[0]}/{p[1]}")
+                # Accept either the raw integer taskId or a stable identifier like
+                # BUDGET_DAILY / FOOD_C01 / RELOC_C02 — see obs_encoder.stable_task_token.
+                # The stable token is what the model sees in the observation when
+                # ARC_STABLE_TASK_TOKENS=1; the integer form is kept for back-compat
+                # (benchmarks, old checkpoints, human debugging).
+                raw = p[0].strip()
+                try:
+                    task_id = int(float(raw))
+                except ValueError:
+                    from obs_encoder import stable_task_token as _stt
+                    task_id = None
+                    for t in (env.game_state.get("allActiveTasks", []) or []):
+                        if _stt({"title": t.get("taskTitle"),
+                                 "affects": t.get("affectedFacility"),
+                                 "taskId": t.get("taskId")}) == raw:
+                            task_id = int(t["taskId"])
+                            break
+                    if task_id is None:
+                        errors.append(f"task: unknown stable token '{raw}' (not in this turn's tasks)"); continue
+                choices.append({"taskId": task_id, "choiceId": int(float(p[1]))})
+                parsed.append(f"task {raw}/{p[1]}")
 
             elif cmd == "transfer":
                 # Manual resource transfer (only enumerated when the env runs with manual_transfers).
