@@ -206,9 +206,15 @@ public class WorkerRequestSystem : MonoBehaviour
 
         int totalCost = (untrainedToRequest * untrainedWorkerCost) + (trainedToRequest * trainedWorkerCost);
 
-        if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.CanAfford(totalCost))
+        //if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.CanAfford(totalCost))
+        //{
+        //    GameLogPanel.Instance.LogError($"Cannot afford worker request: ${totalCost}");
+        //    return;
+        //}
+
+        if (SatisfactionAndBudget.Instance == null)
         {
-            GameLogPanel.Instance.LogError($"Cannot afford worker request: ${totalCost}");
+            GameLogPanel.Instance.LogError($"Game error, unable to allocate: ${totalCost}");
             return;
         }
 

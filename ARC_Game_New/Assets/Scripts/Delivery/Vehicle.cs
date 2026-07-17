@@ -188,22 +188,26 @@ public class Vehicle : MonoBehaviour
         Vector3 sourcePos = currentTask.GetSourceRoadConnection();
         Debug.Log($"Vehicle {vehicleName} moving to source: {sourcePos}");
         yield return StartCoroutine(MoveToPosition(sourcePos));
+        if (currentTask == null) yield break;
 
         // Step 2: Load cargo
         SetStatus(VehicleStatus.Loading);
         Debug.Log($"Vehicle {vehicleName} loading cargo");
         yield return StartCoroutine(LoadCargo());
+        if (currentTask == null) yield break;
 
         // Step 3: Move to destination building
         SetStatus(VehicleStatus.InTransit);
         Vector3 destPos = currentTask.GetDestinationRoadConnection();
         Debug.Log($"Vehicle {vehicleName} moving to destination: {destPos}");
         yield return StartCoroutine(MoveToPosition(destPos));
+        if (currentTask == null) yield break;
 
         // Step 4: Unload cargo
         SetStatus(VehicleStatus.Unloading);
         Debug.Log($"Vehicle {vehicleName} unloading cargo");
         yield return StartCoroutine(UnloadCargo());
+        if (currentTask == null) yield break;
 
         // Step 5: Complete delivery
         Debug.Log($"Vehicle {vehicleName} completing delivery");

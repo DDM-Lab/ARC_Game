@@ -959,10 +959,10 @@ public class TaskDetailUI : MonoBehaviour
                             int totalCost = value * costPerWorker;
                             int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
 
-                            if (totalCost > availableBudget)
-                            {
-                                return $"Insufficient budget. Requesting {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
-                            }
+                            //if (totalCost > availableBudget)
+                            //{
+                            //    return $"Insufficient budget. Requesting {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
+                            //}
                         }
                         break;
                     }
@@ -976,10 +976,10 @@ public class TaskDetailUI : MonoBehaviour
                             int totalCost = value * WorkerTrainingSystem.Instance.trainingCostPerWorker;
                             int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
                             
-                            if (totalCost > availableBudget)
-                            {
-                                return $"Insufficient budget. Training {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
-                            }
+                            //if (totalCost > availableBudget)
+                            //{
+                            //    return $"Insufficient budget. Training {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
+                            //}
                         }
                         
                         // Then check worker availability
@@ -1012,10 +1012,10 @@ public class TaskDetailUI : MonoBehaviour
                             int totalCost = value * costPerWorker;
                             int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
                             
-                            if (totalCost > availableBudget)
-                            {
-                                return $"Insufficient budget. Requesting {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
-                            }
+                            //if (totalCost > availableBudget)
+                            //{
+                            //    return $"Insufficient budget. Requesting {value} workers costs ${totalCost:N0} but you only have ${availableBudget:N0}.";
+                            //}
                         }
                         break;
                     }
@@ -1182,8 +1182,34 @@ public class TaskDetailUI : MonoBehaviour
             switch (choice.deliveryCargoType)
             {
                 case ResourceType.FoodPacks:
-                    // Immediate food delivery assumes fast food / external order — no kitchen stock required.
-                    return true;
+                {
+                    MonoBehaviour destination = TaskSystem.Instance.FindTriggeringFacility(task);
+                    if (destination == null)
+                    {
+                        errorMessage = $"Cannot find destination facility '{task.affectedFacility}'";
+                        return false;
+                    }
+                    DeliverySystem ds = DeliverySystem.Instance;
+                    if (ds == null) { errorMessage = "DeliverySystem not found"; return false; }
+                    int alreadyInbound = ds.GetReservedIncomingQuantity(destination, ResourceType.FoodPacks);
+                    int effectiveNeed = Mathf.Max(0, choice.deliveryQuantity - alreadyInbound);
+                    if (effectiveNeed <= 0)
+                    {
+                        errorMessage = $"{alreadyInbound} meals already inbound — need is covered";
+                        return false;
+                    }
+                    bool hasVehicle = UnityEngine.Object.FindObjectsOfType<Vehicle>()
+                        .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.FoodPacks)
+                                && v.GetCurrentStatus() != VehicleStatus.Damaged);
+
+                    if (!hasVehicle)
+                    {
+                        errorMessage = "No undamaged vehicle available for food delivery";
+                        return false;
+                    }
+                    return true; 
+                }
+
 
                 case ResourceType.Population:
                 {

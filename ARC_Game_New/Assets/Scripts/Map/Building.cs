@@ -202,6 +202,8 @@ public class Building : MonoBehaviour
         // Release all workers immediately
         ReleaseAllWorkers();
 
+        DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
+
         // Change status to deconstructing
         currentStatus = BuildingStatus.Deconstructing;
         deconstructionProgress = 0f;
@@ -498,8 +500,10 @@ public class Building : MonoBehaviour
 
         if (WorkerSystem.Instance != null)
             WorkerSystem.Instance.OnWorkerStatsChanged -= UpdateWorkforceIndicator;
+        DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
     }
-    
+
+
     [Header("Manual Task Debug")]
     public bool enableManualTasks = true;
 
@@ -653,4 +657,5 @@ public class Building : MonoBehaviour
             StartDeconstruction();
         }
     }
+
 }

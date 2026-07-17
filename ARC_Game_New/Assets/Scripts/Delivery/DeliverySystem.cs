@@ -877,26 +877,26 @@ public class DeliverySystem : MonoBehaviour
             Debug.Log($"  Active: {task}");
         }
     }
-    
+
     [ContextMenu("Test: Create Flood-Blocked Delivery")]
     public void TestCreateFloodBlockedDelivery()
     {
         // Find kitchen and shelter
         Building kitchen = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Kitchen);
         Building shelter = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Shelter);
-        
+
         if (kitchen == null || shelter == null)
         {
             Debug.LogWarning("Need kitchen and shelter for flood-blocked delivery test");
             return;
         }
-        
+
         // First create flood between them
         if (FloodSystem.Instance != null)
         {
             FloodSystem.Instance.TestCreateFloodPath();
         }
-        
+
         // Wait a frame for flood to be created
         StartCoroutine(CreateBlockedDeliveryAfterFlood(kitchen, shelter));
     }
@@ -904,10 +904,10 @@ public class DeliverySystem : MonoBehaviour
     System.Collections.IEnumerator CreateBlockedDeliveryAfterFlood(Building kitchen, Building shelter)
     {
         yield return new WaitForEndOfFrame();
-        
+
         // Try to create delivery - should fail due to flood
         List<DeliveryTask> tasks = CreateDeliveryTask(kitchen, shelter, ResourceType.FoodPacks, 5, 3);
-        
+
         if (tasks.Count == 0)
         {
             Debug.Log("SUCCESS: Delivery creation blocked by flood as expected");
@@ -924,20 +924,20 @@ public class DeliverySystem : MonoBehaviour
         // Create normal delivery first
         Building kitchen = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Kitchen);
         Building shelter = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Shelter);
-        
+
         if (kitchen == null || shelter == null)
         {
             Debug.LogWarning("Need kitchen and shelter for delivery-then-flood test");
             return;
         }
-        
+
         // Create delivery
         List<DeliveryTask> tasks = CreateDeliveryTask(kitchen, shelter, ResourceType.FoodPacks, 5, 3);
-        
+
         if (tasks.Count > 0)
         {
             Debug.Log($"Created delivery task: {tasks[0]}");
-            
+
             // Wait a few seconds then create flood
             StartCoroutine(CreateFloodAfterDelay());
         }
@@ -946,16 +946,39 @@ public class DeliverySystem : MonoBehaviour
     System.Collections.IEnumerator CreateFloodAfterDelay()
     {
         yield return new WaitForSeconds(3f);
-        
+
         if (FloodSystem.Instance != null)
         {
             FloodSystem.Instance.TestCreateFloodAtVehicle();
             Debug.Log("Added flood to block moving vehicle");
         }
     }
+    public void CancelAllDeliveriesInvolving(MonoBehaviour building)
+    {
+        var toCancel = pendingTasks
+            .Where(t => t.sourceBuilding == building || t.destinationBuilding == building)
+            .Concat(activeTasks.Where(t => t.sourceBuilding == building || t.destinationBuilding == building))
+            .Select(t => t.taskId)
+            .Distinct()
+            .ToList();
+
+        foreach (int id in toCancel)
+            CancelDeliveryTask(id);
+
+        if (showDebugInfo && toCancel.Count > 0)
+            Debug.Log($"Cancelled {toCancel.Count} deliveries involving destroyed building '{building.name}'");
+
+        if (toCancel.Count > 0)
+        {
+            string label = building.name;
+            ToastManager.ShowToast(
+                $"{toCancel.Count} deliver {(toCancel.Count > 1 ? "ies" : "y")} to/from {label} cancelled",
+                ToastType.Warning, true);
+        }
+    }
 }
 
-[System.Serializable]
+    [System.Serializable]
 public class DeliveryStatistics
 {
     public int totalVehicles;

@@ -48,8 +48,8 @@ MonoBehaviour:
   impacts: []
   agentMessages:
   - messageText: "Just a reminder\u2014You may want to consider closing unnecessary
-      buildings to improve resource allocation efficiency. The simulation will conclude
-      after Day 8."
+      buildings to improve resource allocation efficiency. Take into account weather
+      conditions for this tradeoff.The simulation will conclude after Day 8."
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05

@@ -320,17 +320,29 @@ public class WorkerAssignmentHandler : MonoBehaviour
             && WorkerAssignmentTracker.Instance.IsLockedForRelease(buildingId);
         int currentHeadCount = ws.GetWorkersByBuildingId(buildingId).Count;
 
-        if (isLocked && newHeadCount < currentHeadCount)
+        //if (isLocked && newHeadCount < currentHeadCount)
+        //{
+        //    errorMessage = $"Workers committed previously cannot be released. " +
+        //                   $"You may only redistribute trained & untrained — keep the same total of {currentHeadCount} workers.";
+        //    return false;
+        //}
+
+        //if (isLocked && newHeadCount > currentHeadCount)
+        //{
+        //    errorMessage = $"You cannot add workers beyond the {currentHeadCount} already locked in. " +
+        //                   $"Only composition swaps are allowed.";
+        //    return false;
+        //}
+
+        if (isLocked && newWorkforce < currentHeadCount)
         {
-            errorMessage = $"Workers committed last round cannot be released. " +
-                           $"You may only redistribute trained & untrained — keep the same total of {currentHeadCount} workers.";
+            errorMessage = $"Workers committed previously cannot be released.";
             return false;
         }
 
         if (isLocked && newHeadCount > currentHeadCount)
         {
-            errorMessage = $"You cannot add workers beyond the {currentHeadCount} already locked in. " +
-                           $"Only composition swaps are allowed.";
+            errorMessage = $"You cannot add workers beyond the {currentHeadCount} already locked in.";
             return false;
         }
 

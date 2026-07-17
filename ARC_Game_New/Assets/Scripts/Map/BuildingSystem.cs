@@ -334,10 +334,27 @@ public class BuildingSystem : MonoBehaviour
         
         int siteId = building.GetOriginalSiteId();
         Vector3 buildingPosition = building.transform.position;
-        
+        // === ADDED DEBUG BLOCK START ===
+        Debug.Log($"[DECONSTRUCT TRACE] Trying to find Site ID: {siteId} for building {building.name}");
+        registeredSites.RemoveAll(s => s == null);
+        Debug.Log($"[DECONSTRUCT TRACE] Total registered sites currently in list: {registeredSites.Count}");
+
+        foreach (var s in registeredSites)
+        {
+            if (s == null)
+            {
+                Debug.LogError("[DECONSTRUCT TRACE] Found a NULL reference inside your registeredSites list!");
+            }
+            else
+            {
+                Debug.Log($"[DECONSTRUCT TRACE] Valid site in list has ID: {s.GetId()}");
+            }
+        }
+
         // Find the corresponding abandoned site
-        AbandonedSite site = registeredSites.Find(s => s.GetId() == siteId);
-        
+        //AbandonedSite site = registeredSites.Find(s => s.GetId() == siteId);
+        AbandonedSite site = registeredSites.Find(s => s != null && s.gameObject != null && s.GetId() == siteId);
+
         if (site == null)
         {
             Debug.LogError($"Cannot deconstruct: AbandonedSite {siteId} not found");
