@@ -85,17 +85,36 @@ public class AgentConversationUI : MonoBehaviour
     // Store inline choice data for selection
     private Dictionary<int, InlineChoiceData> inlineChoiceDataMap = new Dictionary<int, InlineChoiceData>();
 
+    // Select-then-confirm state for the live inline proposal. Clicking a choice
+    // card only highlights it (records inlineSelectedPackageIndex + deselects the
+    // sibling cards tracked in inlineChoiceCardUIs); the shared panel confirmButton
+    // (-> OnConfirmButtonClicked) is what actually executes the selected package.
+    // Mirrors the task path (TaskDetailUI: OnChoiceSelected highlights, the same
+    // confirmButton executes on confirm).
+    private int inlineSelectedPackageIndex = -1;
+    private List<AgentChoiceUI> inlineChoiceCardUIs = new List<AgentChoiceUI>();
+
     // Per-officer history of conversation entries: agent messages, player
     // messages, and archived historical choice cards. These are not tied to
     // the currently active GameTask, so they must be replayed manually when
     // the user switches to a tab.
-    private enum EntryKind { AgentMessage, PlayerMessage, HistoricalChoice }
+    private enum EntryKind { AgentMessage, PlayerMessage, HistoricalChoice, InlineProposal }
     private class ConversationEntry
     {
         public EntryKind kind;
         public string content;           // text content for AgentMessage / PlayerMessage
         public Sprite avatar;            // officer sprite for AgentMessage
         public AgentChoice archivedChoice; // populated when kind == HistoricalChoice
+
+        // Populated when kind == InlineProposal. A continuous agent's proposal is
+        // rendered as choice cards inline in the chat timeline (no GameTask), so it
+        // must be replayed in posted order on tab switch / reopen. Only the most
+        // recent proposal for an officer stays interactive (proposalLive); earlier
+        // ones render as historical (non-clickable) cards.
+        public ActionPackage[] proposalPackages;
+        public GameAction[] proposalActions;
+        public string proposalAgentName;
+        public bool proposalLive;
     }
     private Dictionary<TaskOfficer, List<ConversationEntry>> conversationHistory = new Dictionary<TaskOfficer, List<ConversationEntry>>();
 
@@ -468,6 +487,27 @@ public class AgentConversationUI : MonoBehaviour
         });
     }
 
+    // Record a continuous agent's inline proposal at its posted position in the
+    // timeline. Any prior inline proposal for this officer is demoted to historical
+    // so only the latest set of cards stays clickable.
+    void RecordInlineProposal(TaskOfficer officer, ActionPackage[] packages,
+                              GameAction[] availableActions, string agentName)
+    {
+        if (conversationHistory.TryGetValue(officer, out var existing))
+        {
+            foreach (var e in existing)
+                if (e.kind == EntryKind.InlineProposal) e.proposalLive = false;
+        }
+        AppendHistory(officer, new ConversationEntry
+        {
+            kind = EntryKind.InlineProposal,
+            proposalPackages = packages,
+            proposalActions = availableActions,
+            proposalAgentName = agentName,
+            proposalLive = true,
+        });
+    }
+
     void AppendHistory(TaskOfficer officer, ConversationEntry entry)
     {
         if (!conversationHistory.TryGetValue(officer, out var list))
@@ -497,6 +537,10 @@ public class AgentConversationUI : MonoBehaviour
                 case EntryKind.HistoricalChoice:
                     if (entry.archivedChoice != null)
                         DisplayHistoricalChoice(entry.archivedChoice);
+                    break;
+                case EntryKind.InlineProposal:
+                    RenderInlineProposal(officer, entry.proposalPackages,
+                        entry.proposalActions, entry.proposalAgentName, entry.proposalLive);
                     break;
                 case EntryKind.AgentMessage:
                 default:
@@ -658,6 +702,11 @@ public class AgentConversationUI : MonoBehaviour
 
     void OnConfirmButtonClicked()
     {
+        // Continuous-agent inline proposals have no backing GameTask — if one is
+        // selected, the panel Confirm executes it directly.
+        if (TryInlineConfirm())
+            return;
+
         if (currentSelectedTask == null) return;
         TaskDetailUI tui = FindObjectOfType<TaskDetailUI>();
         if (tui == null) return;
@@ -772,6 +821,12 @@ public class AgentConversationUI : MonoBehaviour
         foreach (GameObject item in currentConversationItems)
             if (item != null) Destroy(item);
         currentConversationItems.Clear();
+
+        // Drop any live inline-proposal selection tied to the cards we just destroyed,
+        // so a stale pick can't hijack the panel Confirm after a tab switch. A live
+        // proposal for the newly displayed officer re-populates this via RenderInlineProposal.
+        inlineChoiceCardUIs.Clear();
+        inlineSelectedPackageIndex = -1;
     }
     
     void ScrollToBottom()
@@ -842,12 +897,16 @@ public class AgentConversationUI : MonoBehaviour
         ActionPackage[] packages,
         GameAction[] availableActions)
     {
-        // Update the task's choices data first
-        UpdateTaskChoices(officer, reasoning, packages, availableActions);
+        bool hasPackages = packages != null && packages.Length > 0;
 
-        // The conversational text is not persisted on the task itself,
-        // so record it for tab-switch replay.
+        // Continuous agents render proposals INLINE in the chat timeline — no
+        // GameTask is created. Persist the lead-in text and the proposal itself as
+        // ordered timeline entries so they replay in posted order on tab switch /
+        // reopen (the split "history first, task last" render is what reordered them).
         RecordAgentMessage(officer, content);
+        string agentName = GetCurrentAgentName(officer);
+        if (hasPackages)
+            RecordInlineProposal(officer, packages, availableActions, agentName);
 
         // Only display now if this is the currently selected agent
         if (officer != currentSelectedAgent || !isExpanded)
@@ -880,57 +939,93 @@ public class AgentConversationUI : MonoBehaviour
 
             currentConversationItems.Add(messageItem);
 
-            // Add inline choice cards below the message
-            if (agentChoicePrefab != null && packages != null && packages.Length > 0)
-            {
-                // Store inline choice data
-                string agentName = GetCurrentAgentName(officer);
-                foreach (var package in packages)
-                {
-                    // Store data for this choice using package_index
-                    inlineChoiceDataMap[package.package_index] = new InlineChoiceData
-                    {
-                        agentName = agentName,
-                        packages = packages,
-                        availableActions = availableActions
-                    };
-
-                    GameObject choiceItem = Instantiate(agentChoicePrefab, conversationContent);
-
-                    // Use AgentChoiceUI component to properly set up the choice display
-                    AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
-                    if (choiceUI != null)
-                    {
-                        // Create AgentChoice with formatted text and description
-                        string choiceText = FormatPackageActions(package, availableActions);
-                        AgentChoice choice = new AgentChoice(package.package_index, choiceText);
-                        choice.agentReasoning = FormatChoiceDescription(package, availableActions);
-
-                        // Initialize without parent (null) since inline choices are handled differently
-                        choiceUI.Initialize(choice, null);
-
-                        // Override click handler for inline choice selection
-                        if (choiceUI.choiceButton != null)
-                        {
-                            int capturedIndex = package.package_index; // Capture for closure
-                            choiceUI.choiceButton.onClick.RemoveAllListeners();
-                            choiceUI.choiceButton.onClick.AddListener(() => OnInlineChoiceClicked(capturedIndex));
-                        }
-                    }
-
-                    currentConversationItems.Add(choiceItem);
-                }
-
-                // A 4th "type anything" card lets the director free-text the agent
-                // (repropose / clarify / chat) right in the choices list.
-                AddFreeTextChoiceCard(officer);
-            }
+            // Add inline choice cards below the message (interactive — this is the
+            // latest live proposal).
+            if (hasPackages)
+                RenderInlineProposal(officer, packages, availableActions, agentName, interactive: true);
 
             StartCoroutine(ScrollToBottomCoroutine());
 
             if (showDebugInfo)
-                Debug.Log($"Added {messageType} message with {packages.Length} choices from {officer}");
+                Debug.Log($"Added {messageType} message with {(packages != null ? packages.Length : 0)} choices from {officer}");
         }
+    }
+
+    /// <summary>
+    /// Render a continuous agent's proposal as inline choice cards under the current
+    /// conversation flow. Used both for the live proposal and for in-order replay on
+    /// tab switch. When interactive, each card is clickable (executes the package and
+    /// sends choice_made) and a free-text "type anything" card is appended; otherwise
+    /// the cards render as historical (non-clickable) so only the latest proposal is live.
+    /// </summary>
+    void RenderInlineProposal(TaskOfficer officer, ActionPackage[] packages,
+                              GameAction[] availableActions, string agentName, bool interactive)
+    {
+        if (agentChoicePrefab == null || conversationContent == null
+            || packages == null || packages.Length == 0)
+            return;
+
+        // Fresh select-then-confirm state for this live proposal render. Only one
+        // proposal is live/visible at a time (RecordInlineProposal demotes prior
+        // ones), so the tracking lists are rebuilt per interactive render.
+        if (interactive)
+        {
+            inlineChoiceCardUIs.Clear();
+            inlineSelectedPackageIndex = -1;
+            // A live inline proposal is confirmed via the shared panel Confirm button;
+            // make sure it's visible (a prior historical-task view may have hidden it).
+            if (confirmButton != null)
+                confirmButton.gameObject.SetActive(true);
+        }
+
+        foreach (var package in packages)
+        {
+            if (interactive)
+            {
+                // Store data so the confirm handler can execute this package.
+                inlineChoiceDataMap[package.package_index] = new InlineChoiceData
+                {
+                    agentName = agentName,
+                    packages = packages,
+                    availableActions = availableActions
+                };
+            }
+
+            GameObject choiceItem = Instantiate(agentChoicePrefab, conversationContent);
+            AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
+            if (choiceUI != null)
+            {
+                string choiceText = FormatPackageActions(package, availableActions);
+                AgentChoice choice = new AgentChoice(package.package_index, choiceText);
+                choice.agentReasoning = FormatChoiceDescription(package, availableActions);
+
+                if (interactive)
+                {
+                    choiceUI.Initialize(choice, null);
+                    inlineChoiceCardUIs.Add(choiceUI);
+                    if (choiceUI.choiceButton != null)
+                    {
+                        int capturedIndex = package.package_index; // Capture for closure
+                        // Clicking a card only SELECTS (highlights) it — the inline
+                        // confirm button below is what executes. Mirrors the task path.
+                        choiceUI.choiceButton.onClick.RemoveAllListeners();
+                        choiceUI.choiceButton.onClick.AddListener(() => OnInlineChoiceSelected(capturedIndex));
+                    }
+                }
+                else
+                {
+                    // Superseded proposal — render as a non-clickable historical card.
+                    choiceUI.InitializeAsHistorical(choice, false);
+                }
+            }
+
+            currentConversationItems.Add(choiceItem);
+        }
+
+        // A "type anything" card lets the director free-text the agent (repropose /
+        // clarify / chat) right in the choices list — only for the live proposal.
+        if (interactive)
+            AddFreeTextChoiceCard(officer);
     }
 
     void UpdateTaskChoices(TaskOfficer officer, string reasoning, ActionPackage[] packages, GameAction[] availableActions)
@@ -1047,18 +1142,47 @@ public class AgentConversationUI : MonoBehaviour
         return desc.ToString().TrimEnd();
     }
 
-    void OnInlineChoiceClicked(int packageIndex)
+    // Clicking a choice card only SELECTS it: highlight this card, un-highlight the
+    // siblings, and record the pick. Nothing executes until the panel Confirm button
+    // is pressed (OnConfirmButtonClicked -> TryInlineConfirm). Mirrors the task path's
+    // OnChoiceSelected.
+    void OnInlineChoiceSelected(int packageIndex)
     {
-        Debug.Log($"[AgentConversationUI] Inline choice clicked: {packageIndex}");
-        GameLogPanel.Instance?.LogUIInteraction("choice", "choice_clicked",
+        Debug.Log($"[AgentConversationUI] Inline choice selected: {packageIndex}");
+        GameLogPanel.Instance?.LogUIInteraction("choice", "choice_selected",
             $"agent={currentSelectedAgent} | package_index={packageIndex}");
 
-        // Retrieve stored data for this choice
+        // Only selectable while the proposal is still live (present in the data map).
         if (!inlineChoiceDataMap.ContainsKey(packageIndex))
         {
-            Debug.LogError($"[AgentConversationUI] No data found for inline choice {packageIndex}");
+            Debug.LogWarning($"[AgentConversationUI] Inline choice {packageIndex} is no longer selectable");
             return;
         }
+
+        inlineSelectedPackageIndex = packageIndex;
+
+        // Highlight the picked card, clear the rest (single-select). The shared panel
+        // confirmButton (OnConfirmButtonClicked) executes it.
+        foreach (var card in inlineChoiceCardUIs)
+        {
+            if (card == null) continue;
+            var c = card.GetChoice();
+            card.SetSelected(c != null && c.choiceId == packageIndex);
+        }
+    }
+
+    // Execute the currently-selected inline package. Invoked from OnConfirmButtonClicked
+    // (the shared panel Confirm button) when a live inline proposal is selected.
+    // Returns true if it handled the confirm, false if there was nothing to confirm.
+    bool TryInlineConfirm()
+    {
+        int packageIndex = inlineSelectedPackageIndex;
+        if (packageIndex < 0 || !inlineChoiceDataMap.ContainsKey(packageIndex))
+            return false;
+
+        Debug.Log($"[AgentConversationUI] Inline confirm for package {packageIndex}");
+        GameLogPanel.Instance?.LogUIInteraction("choice", "choice_confirm_clicked",
+            $"agent={currentSelectedAgent} | package_index={packageIndex}");
 
         InlineChoiceData data = inlineChoiceDataMap[packageIndex];
 
@@ -1076,13 +1200,30 @@ public class AgentConversationUI : MonoBehaviour
         if (selectedPackage == null)
         {
             Debug.LogError($"[AgentConversationUI] Package not found for choice {packageIndex}");
-            return;
+            return false;
         }
 
         Debug.Log($"[AgentConversationUI] Executing inline choice package {packageIndex} with {selectedPackage.action_indices.Length} actions");
 
+        // Consume the whole proposal on confirm: clear every package index that shared
+        // this InlineChoiceData so a second confirm can't re-run ExecuteInlineChoicePackage
+        // and double-execute. The router's _pending_choice is single-shot too, so later
+        // confirms are dead anyway.
+        foreach (var pkg in data.packages)
+            inlineChoiceDataMap.Remove(pkg.package_index);
+        inlineSelectedPackageIndex = -1;
+
+        // Mark the latest inline proposal historical so a tab-reopen replays it as
+        // non-clickable rather than resurrecting live cards.
+        if (conversationHistory.TryGetValue(currentSelectedAgent, out var hist))
+        {
+            foreach (var e in hist)
+                if (e.kind == EntryKind.InlineProposal) e.proposalLive = false;
+        }
+
         // Execute actions (similar to TaskDetailUI.ExecuteActionPackage)
         StartCoroutine(ExecuteInlineChoicePackage(data.agentName, packageIndex, selectedPackage, data.availableActions));
+        return true;
     }
 
     System.Collections.IEnumerator ExecuteInlineChoicePackage(
@@ -1106,28 +1247,50 @@ public class AgentConversationUI : MonoBehaviour
                 if (ActionExecutor.Instance != null)
                 {
                     var result = ActionExecutor.Instance.ExecuteAction(action);
-                    executionResults.Add(JsonUtility.ToJson(new {
-                        success = result.success,
-                        action = actionName,
-                        error_message = result.error_message
-                    }));
+                    // Build the result JSON by hand (mirrors TaskDetailUI): Unity's
+                    // JsonUtility.ToJson silently serializes an anonymous type to "{}"
+                    // because it only emits public *fields* of [Serializable] types,
+                    // not the properties of an anon object. That produced [{},{},...],
+                    // so the router read every action as success=null → "FAILED" and
+                    // the continuous agent re-did the whole package. Emit the exact
+                    // shape the router reads: action_index, action_id, success, error.
+                    executionResults.Add(
+                        $"{{\"action_index\":{actionIdx}," +
+                        $"\"action_id\":\"{action.action_id}\"," +
+                        $"\"success\":{(result.success ? "true" : "false")}," +
+                        $"\"error\":{(result.error_message != null ? "\"" + result.error_message.Replace("\"", "\\\"") + "\"" : "null")}}}");
                 }
                 else
                 {
                     Debug.LogError("[AgentConversationUI] ActionExecutor.Instance is null!");
-                    executionResults.Add(JsonUtility.ToJson(new {
-                        success = false,
-                        action = actionName,
-                        error_message = "ActionExecutor not found"
-                    }));
+                    executionResults.Add(
+                        $"{{\"action_index\":{actionIdx}," +
+                        $"\"action_id\":\"{action.action_id}\"," +
+                        $"\"success\":false," +
+                        $"\"error\":\"ActionExecutor not found\"}}");
                 }
 
-                yield return new WaitForSeconds(0.1f); // Brief delay between actions
+                // Use REALTIME wait: the game is paused (Time.timeScale = 0) during the
+                // planning/proposal phase, so WaitForSeconds (scaled) would hang forever
+                // after the first action and SendChoiceMade below would never fire,
+                // leaving the router's _pending_choice blocked. The task-confirm path
+                // (TaskDetailUI) executes actions with no wait at all, so a tiny realtime
+                // delay is more than enough.
+                yield return new WaitForSecondsRealtime(0.02f); // Brief delay between actions
             }
         }
 
-        // Get current game state (simplified - would need proper serialization)
-        string gameStateJson = "{}"; // TODO: Serialize current game state
+        // Serialize the post-execution game state so the router can re-enumerate
+        // actions from the authoritative state (the continuous agent's
+        // _continuous_propose continues its turn from this). Mirrors the
+        // task-confirm path (TaskDetailUI); without it the router would adopt an
+        // empty {} state and corrupt the agent's continuation.
+        string gameStateJson = "{}";
+        if (TaskSystem.Instance != null)
+        {
+            var gs = TaskSystem.Instance.GetCurrentGameState();
+            if (gs != null) gameStateJson = JsonUtility.ToJson(gs);
+        }
 
         string executionResultsJson = "[" + string.Join(",", executionResults) + "]";
 

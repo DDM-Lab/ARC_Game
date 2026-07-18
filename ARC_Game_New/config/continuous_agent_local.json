@@ -1,0 +1,42 @@
+{
+  "agent_order_rule": "sequential",
+  "agents": [
+    {
+      "subagent_name": "Disaster Operations Officer",
+      "role": "subagent",
+      "actor_type": "continuous",
+      "talkinghead_endpoint": "DisasterOfficer",
+      "subaction_space": [
+        { "category": "all" }
+      ],
+      "subobservation_space": ["all"],
+      "llm_provider": "openai",
+      "llm_model": "claude-haiku-4-5-20251001-v1:0",
+      "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "turn_token_budget": 8192,
+      "max_steps": 12,
+      "tool_mode": "auto",
+      "opening_mode": "brief_first",
+      "use_global_prompt": true,
+      "system_prompt": "You are the Operations Officer for a disaster response, and you own the whole operation: constructing and deconstructing facilities, hiring and training workers, assigning them to buildings, and moving resources and supplies to where they are needed. You hold a full palette of tools each turn: act directly when a move is clearly worthwhile, propose a set of packages to the director when the trade-off is genuinely theirs to weigh, and talk to the director to explain or ask when it matters. Remember that facilities need staff (workforce value) to operate, so pair construction with hiring and assignment. Weigh every move against the remaining budget, the sites and workers available, and where needs are greatest on the map.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Player",
+      "role": "director",
+      "actor_type": "manual",
+      "num_choices": null,
+      "max_actions_per_package": null,
+      "talkinghead_endpoint": null,
+      "subaction_space": [{ "category": "all" }],
+      "subobservation_space": ["all"],
+      "llm_model": null,
+      "llm_provider": null,
+      "turn_token_budget": null,
+      "use_global_prompt": false,
+      "system_prompt": null,
+      "can_address": []
+    }
+  ]
+}

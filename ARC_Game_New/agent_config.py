@@ -9,7 +9,7 @@ from typing import Optional
 
 
 VALID_ROLES = {"subagent", "director"}
-VALID_ACTOR_TYPES = {"auto", "choices", "manual", "llm", "coach"}
+VALID_ACTOR_TYPES = {"auto", "choices", "manual", "llm", "coach", "continuous"}
 VALID_CATEGORIES = {"construction", "deconstruction", "worker",
                     "worker_assignment", "resource_transfer", "all"}
 VALID_OBS_KEYS = {"sessionInfo", "satisfactionAndBudget", "workers",
@@ -50,6 +50,26 @@ class AgentConfig:
     explain_grounded: bool = True          # prepend engine-computed $cost to each package desc
     explain_summary: bool = True           # prepend grounded context to the pre-choices summary
     choices_repropose_hint: bool = True    # append "you can ask me to repropose" nudge to the summary
+    # --- Continuous-agent (tool-using loop) knobs (opt-in; safe defaults) ---
+    # The continuous agent holds the full tool palette every step and picks which
+    # tool to use — interaction style is emergent, not imposed. `tools` MAY narrow
+    # the palette but None means "all"; it is never the router gating per-turn.
+    tools: Optional[list[str]] = None      # tool-name allowlist; None = full palette
+    max_steps: int = 8                     # max tool-call steps per turn (loop guard)
+    tool_mode: str = "auto"                # "auto" | "native" | "text" (ReAct fallback)
+    # Opening posture: how the agent engages before the director has given any
+    # direction. "emergent" = no imposed style (pure tool-user); "brief_first" =
+    # open with a situation briefing + ask, instead of acting unprompted. This is
+    # the human's autonomy dial (à la Claude Code permission modes), moved OUT of
+    # the agent's prompt so the agent itself stays un-handheld.
+    opening_mode: str = "emergent"         # "emergent" | "brief_first"
+    # Planning-phase ledger enforcement. The paused-phase observation is frozen, so
+    # the agent can't see its own queued actions and may repeat them. "annotate" =
+    # mark already-committed actions inline (advisory; the model may still pick
+    # them). "block" = the harness no-ops a re-execution of a non-repeatable action
+    # already committed this phase (staleness-style, à la Claude Code read-before-
+    # edit) — grounding, not style-gating.
+    ledger_mode: str = "annotate"          # "annotate" | "block"
     # Runtime state — not from config
     conversation_history: list[dict] = field(default_factory=list, init=False)
 
@@ -62,6 +82,19 @@ class AgentConfig:
         for entry in self.subaction_space:
             if entry.get("category") not in VALID_CATEGORIES:
                 raise ValueError(f"Invalid action category '{entry}' for agent '{self.subagent_name}'.")
+            # Optional building-type sub-scope (see agent_filters.filter_actions).
+            # Case-insensitive substring match against a construction building_type
+            # ("Kitchen"/"Shelter"/"CaseworkSite") or an assignment/deconstruction
+            # building_name ("Kitchen Alpha"). Must be a list of strings if present.
+            btypes = entry.get("building_types")
+            if btypes is not None and (
+                not isinstance(btypes, list)
+                or not all(isinstance(b, str) for b in btypes)
+            ):
+                raise ValueError(
+                    f"building_types must be a list of strings, got {btypes!r} "
+                    f"for agent '{self.subagent_name}'."
+                )
         for key in self.subobservation_space:
             if key not in VALID_OBS_KEYS:
                 raise ValueError(f"Invalid observation key '{key}' for agent '{self.subagent_name}'.")
@@ -73,7 +106,7 @@ class AgentConfig:
 
     @property
     def is_llm_driven(self) -> bool:
-        return self.actor_type in {"auto", "choices", "llm", "coach"}
+        return self.actor_type in {"auto", "choices", "llm", "coach", "continuous"}
 
     @property
     def action_categories(self) -> set[str]:
@@ -137,6 +170,11 @@ def load_config(path: str) -> RouterConfig:
             explain_grounded=entry.get("explain_grounded", True),
             explain_summary=entry.get("explain_summary", True),
             choices_repropose_hint=entry.get("choices_repropose_hint", True),
+            tools=entry.get("tools"),
+            max_steps=entry.get("max_steps", 8),
+            tool_mode=entry.get("tool_mode", "auto"),
+            opening_mode=entry.get("opening_mode", "emergent"),
+            ledger_mode=entry.get("ledger_mode", "annotate"),
         ))
 
     return RouterConfig(

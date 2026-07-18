@@ -42,7 +42,10 @@ from agent_config import AgentConfig, RouterConfig, load_config
 from agent_filters import filter_observation, filter_actions
 from agent_ordering import get_agent_order
 from episode_logger import EpisodeLogger
-from llm_query import query_llm
+from llm_query import query_llm, load_global_prompt
+from continuous_agent import build_tools, run_tool_step
+from cmd_parser import parse_commands  # SHARED command-grammar parser (benchmark + router)
+from obs_encoder import render_state_text, _num
 from choices_reliability import (
     dedupe_packages,
     enforce_diversity,
@@ -53,6 +56,30 @@ from choices_reliability import (
 )
 from message_queue import MessageQueue
 import re
+
+# Action types that are site/target-bound and NOT legitimately repeatable within a
+# planning phase (building a site, demolishing it, assigning workers to a specific
+# building are idempotent). Quantity actions — hiring more workers, transferring
+# more people — CAN legitimately repeat, so ledger_mode="block" leaves them alone.
+_NON_REPEATABLE_TYPES = {"construction", "deconstruction", "worker_assignment"}
+
+
+class _CmdParseShim:
+    """Adapts the router's (filtered_actions, game_state) to the env-shaped contract
+    cmd_parser.parse_commands expects: get_valid_actions(), game_state, valid_actions.
+
+    valid_actions is a private COPY of the agent's current menu, so the parser's
+    <staff> synth-append (which mutates env.valid_actions to add a worker_assignment
+    action executable this turn) does NOT touch the router's real action list. The
+    resolved indices returned by parse_commands point into THIS copy.
+    """
+
+    def __init__(self, filtered_actions: List[dict], game_state: dict):
+        self.valid_actions = list(filtered_actions)
+        self.game_state = game_state
+
+    def get_valid_actions(self) -> List[dict]:
+        return self.valid_actions
 
 
 def _enumerate_actions(game_state: dict) -> list[dict]:
@@ -114,6 +141,51 @@ class Session:
         self._pending_choice: Optional[asyncio.Future] = None
         self._pending_action: Optional[asyncio.Future] = None
         self._choice_context: dict = {}
+        # Freshest game state/action enumeration seen this session. Needed so a
+        # continuous agent can re-enter its tool loop on a mid-round
+        # director_message (which carries no game_state of its own).
+        self._latest_game_state: dict = {}
+        self._latest_all_actions: List[dict] = []
+        # Per-officer turn locks (lazily created in _agent_lock). Serialize two
+        # turns of the SAME officer (transcript integrity) while letting DIFFERENT
+        # officers run concurrently. Replaces the old session-global
+        # _continuous_turn_lock, which serialized ALL officers and so precluded the
+        # concurrency we now want. Cross-officer Unity contention is handled at the
+        # finer boundaries below.
+        self._agent_turn_locks: Dict[str, asyncio.Lock] = {}
+        # Serializes ONLY the Unity mutation critical section (create-future → send
+        # → await result). Unity processes one execute_action at a time and results
+        # correlate by timing, not id, so at most one request may be in flight —
+        # otherwise concurrent officers clobber the single-slot _pending_action and
+        # scramble each other's results. Short-held: the slow LLM tool-loop thinking
+        # runs OUTSIDE this lock, so officers still overlap where it matters.
+        self._unity_commit_lock: asyncio.Lock = asyncio.Lock()
+        # Serializes the human's ATTENTION for propose_choices. Only one proposal
+        # can sit on the single-slot _pending_choice + one modal UI at a time. Held
+        # for the whole time a proposal is pending on screen (up to 5min) — but does
+        # NOT block other officers' execute_game_action commits (that's the separate
+        # commit lock), so a parked proposal never freezes the acting officers.
+        self._director_attention_lock: asyncio.Lock = asyncio.Lock()
+        # Ledger of actions a continuous agent has committed during the current
+        # paused planning phase. The observable game state is FROZEN while paused
+        # (budget/population/facilities don't move until the round simulates), so a
+        # re-reading agent can't see its own queued work and re-proposes duplicates
+        # (which then fail "site not available"). We surface this ledger in each
+        # turn's opening context and clear it when the round advances (world catches
+        # up). Grounding only — never gates the agent's choices.
+        self._committed_this_phase: List[str] = []
+        # Persistent per-agent tool-loop transcript for continuous agents. Unlike
+        # every other actor type (which rebuilds its prompt from the MessageQueue
+        # each turn), a continuous agent carries ONE growing OpenAI-shape
+        # conversation for the whole game: every step's reasoning, tool call, and
+        # tool result stays visible across activations AND across rounds. Keyed by
+        # subagent_name; reset only on game_start.
+        self._continuous_transcripts: Dict[str, List[dict]] = {}
+        # How many Director→agent messages we've already folded into each agent's
+        # transcript. Re-entry injects only NEW director input — the agent's own
+        # outputs are already present as assistant/tool turns, so re-pulling the
+        # whole conversation would duplicate them.
+        self._director_injected_count: Dict[str, int] = {}
         self._director_agent: Optional[AgentConfig] = self._find_director()
 
     def _find_director(self) -> Optional[AgentConfig]:
@@ -248,6 +320,21 @@ class Session:
         print(f"\n[router] === Round {self.round_num} | "
               f"Day {msg.get('day', 1)} Seg {msg.get('segment', 0)} ===")
 
+        # A new round means the human advanced without acting on any proposal
+        # still on screen. Release an officer parked at propose_choices so it stops
+        # holding _director_attention_lock (else the next proposer — and, if it is
+        # the same officer, this round's turn behind its per-agent lock — would wait
+        # out the full 5min proposal timeout, appearing frozen).
+        self._supersede_pending_choice("new round started")
+
+        # The round advanced: the world simulates and the fresh game_state now
+        # reflects everything queued last phase. The committed-this-phase ledger is
+        # stale — drop it so it doesn't double-count into the new phase.
+        if self._committed_this_phase:
+            print(f"[router]   🧾 Clearing planning-phase ledger "
+                  f"({len(self._committed_this_phase)} committed action(s)).")
+            self._committed_this_phase = []
+
         # Validate game state has required fields
         self._validate_game_state(game_state)
 
@@ -263,11 +350,44 @@ class Session:
             []
         )
 
-        # Run each subagent
-        for agent in ordered:
+        # Stash the freshest state so a mid-round director_message to a
+        # continuous agent can re-enter its tool loop (see _handle_director_message)
+        # and so the concurrent officers below read a consistent starting snapshot.
+        self._latest_game_state = game_state
+        self._latest_all_actions = all_actions
+
+        # Split by actor_type. Non-continuous actors (auto/choices/coach) keep the
+        # sequential, state-threading semantics they were designed around — they run
+        # first, one after another. Continuous officers then run their tool-loops
+        # CONCURRENTLY: each reads the freshest shared snapshot and publishes its
+        # result, while the Unity socket is arbitrated by the commit/attention locks.
+        continuous = [a for a in ordered if a.actor_type == "continuous"]
+        others = [a for a in ordered if a.actor_type != "continuous"]
+
+        for agent in others:
             game_state, all_actions = await self._run_subagent(
                 agent, game_state, all_actions
             )
+            self._latest_game_state = game_state
+            self._latest_all_actions = all_actions
+
+        if continuous:
+            print(f"[router] Running {len(continuous)} continuous officer(s) "
+                  f"concurrently: {[a.subagent_name for a in continuous]}")
+            results = await asyncio.gather(
+                *[self._run_continuous_concurrent(agent) for agent in continuous],
+                return_exceptions=True,
+            )
+            for agent, res in zip(continuous, results):
+                if isinstance(res, Exception):
+                    import traceback
+                    print(f"[router] ❌ officer {agent.subagent_name} FAILED: "
+                          f"{type(res).__name__}: {res}")
+                    traceback.print_exception(type(res), res, res.__traceback__)
+            # Officers published their results into _latest_* as they finished; the
+            # director_turn should carry the post-officers world.
+            game_state = self._latest_game_state
+            all_actions = self._latest_all_actions
 
         # Signal director turn
         await self._send({"type": "director_turn", "game_state": game_state,
@@ -315,6 +435,10 @@ class Session:
             )
         elif agent.actor_type == "coach":
             game_state, all_actions = await self._run_coach(
+                agent, filtered_state, filtered_actions, game_state, all_actions
+            )
+        elif agent.actor_type == "continuous":
+            game_state, all_actions = await self._run_continuous(
                 agent, filtered_state, filtered_actions, game_state, all_actions
             )
 
@@ -455,31 +579,38 @@ Respond with ONLY the package index number (0, 1, or 2).
         exec_results = []
 
         for action in actions:
-            loop = asyncio.get_event_loop()
-            self._pending_action = loop.create_future()
+            # Same single-in-flight discipline as _execute_action: hold the commit
+            # lock across arm-future → send → await so concurrent officers can't
+            # clobber the single-slot _pending_action. Per-action (not whole-batch)
+            # so a long package doesn't block other officers longer than necessary.
+            async with self._unity_commit_lock:
+                loop = asyncio.get_event_loop()
+                self._pending_action = loop.create_future()
 
-            # Send execute_action to Unity
-            await self._send({
-                "type": "execute_action",
-                "action": action,
-                "timestamp": _now(),
-            })
+                # Send execute_action to Unity
+                await self._send({
+                    "type": "execute_action",
+                    "action": action,
+                    "timestamp": _now(),
+                })
 
-            try:
-                result_msg = await asyncio.wait_for(self._pending_action, timeout=30.0)
-                self._pending_action = None
+                try:
+                    result_msg = await asyncio.wait_for(self._pending_action, timeout=30.0)
+                except asyncio.TimeoutError:
+                    result_msg = None
+                finally:
+                    self._pending_action = None
 
+            if result_msg is not None:
                 exec_results.append({
                     "action_id": action.get("action_id", "unknown"),
                     "success": result_msg.get("success", False),
                     "error_message": result_msg.get("error_message", "")
                 })
-
                 # Update game state from result
                 if "game_state" in result_msg:
                     game_state = result_msg["game_state"]
-
-            except asyncio.TimeoutError:
+            else:
                 print(f"[router]   ⚠️  Timeout executing action {action.get('action_id', 'unknown')}")
                 exec_results.append({
                     "action_id": action.get("action_id", "unknown"),
@@ -487,7 +618,63 @@ Respond with ONLY the package index number (0, 1, or 2).
                     "error_message": "Timeout waiting for Unity execution"
                 })
 
+        # Publish freshest global state (same authority as _execute_action).
+        self._publish_state(game_state)
         return exec_results, game_state
+
+    async def _await_director_choice(
+        self,
+        packages: List[dict],
+        filtered_actions: List[dict],
+        game_state: dict,
+        reasoning: str,
+    ) -> Tuple[Optional[int], List[dict], dict, bool]:
+        """Resolve which package the director picks and gather its execution results.
+
+        Shared by _run_choices (Task Center) and _continuous_propose (inline). For an
+        autonomous director we select + execute via Unity here; for a manual director
+        the client executes and returns execution_results in choice_made, so we only
+        arm _pending_choice and await it.
+
+        Returns (selected_idx, exec_results, game_state, superseded). selected_idx is
+        None when nothing landed (invalid pick, timeout, or a superseded proposal).
+        """
+        # Autonomous director: pick + execute immediately.
+        if self._director_agent and self._director_agent.actor_type == "auto":
+            print("[router]   🤖 Autonomous director selecting package...")
+            selected_idx = await self._autonomous_director_select(packages, game_state, reasoning)
+            if selected_idx is not None and 0 <= selected_idx < len(packages):
+                print(f"[router]   ✅ Director selected package {selected_idx}")
+                actions_to_execute = [filtered_actions[i]
+                                      for i in packages[selected_idx]["action_indices"]
+                                      if i < len(filtered_actions)]
+                exec_results, game_state = await self._execute_actions_via_unity(
+                    actions_to_execute, game_state)
+            else:
+                print(f"[router]   ⚠️  Invalid package index {selected_idx}, skipping execution")
+                selected_idx = None
+                exec_results = []
+            return selected_idx, exec_results, game_state, False
+
+        # Manual director: the client executes; we await its choice_made frame.
+        loop = asyncio.get_event_loop()
+        self._pending_choice = loop.create_future()
+        print("[router]   ⏳ Awaiting director choice (5min timeout)...")
+        try:
+            choice_msg = await asyncio.wait_for(self._pending_choice, timeout=300.0)
+            if choice_msg.get("superseded"):
+                print("[router]   ↩️  Proposal superseded before the director chose.")
+                return None, [], game_state, True
+            print("[router]   ✅ Received director choice!")
+            selected_idx = choice_msg.get("package_index", 0)
+            exec_results = choice_msg.get("execution_results", [])
+            game_state = choice_msg.get("game_state", game_state)
+            return selected_idx, exec_results, game_state, False
+        except asyncio.TimeoutError:
+            print("[router]   ⚠️  Timeout (5min) waiting for choice_made.")
+            return None, [], game_state, False
+        finally:
+            self._pending_choice = None
 
     async def _run_choices(
         self,
@@ -517,45 +704,8 @@ Respond with ONLY the package index number (0, 1, or 2).
 
         await self._send_choices_proposal(agent, packages, filtered_actions, reasoning)
 
-        # Check if director is autonomous or manual
-        if self._director_agent and self._director_agent.actor_type == "auto":
-            # Autonomous director: Query LLM to select package
-            print(f"[router]   🤖 Autonomous director selecting package...")
-            selected_idx = await self._autonomous_director_select(packages, game_state, reasoning)
-            print(f"[router]   ✅ Director selected package {selected_idx}")
-
-            # Execute selected package via Unity
-            if selected_idx is not None and 0 <= selected_idx < len(packages):
-                selected_package = packages[selected_idx]
-                action_indices = selected_package["action_indices"]
-                actions_to_execute = [filtered_actions[i] for i in action_indices if i < len(filtered_actions)]
-
-                exec_results, game_state = await self._execute_actions_via_unity(actions_to_execute, game_state)
-            else:
-                print(f"[router]   ⚠️  Invalid package index {selected_idx}, skipping execution")
-                selected_idx = None
-                exec_results = []
-        else:
-            # Manual director: Wait for choice_made from Unity
-            # Timeout set to 5 minutes for human director decision time
-            loop = asyncio.get_event_loop()
-            self._pending_choice = loop.create_future()
-            print(f"[router]   ⏳ Waiting for director to select a package (5min timeout)...")
-
-            try:
-                choice_msg = await asyncio.wait_for(self._pending_choice, timeout=300.0)
-                self._pending_choice = None
-                print(f"[router]   ✅ Received director choice!")
-
-                selected_idx = choice_msg.get("package_index", 0)
-                exec_results = choice_msg.get("execution_results", [])
-                game_state = choice_msg.get("game_state", game_state)
-            except asyncio.TimeoutError:
-                print(f"[router]   ⚠️  Timeout (5min) waiting for choice_made from {agent.subagent_name}")
-                print(f"[router]   Skipping - no action taken.")
-                self._pending_choice = None
-                selected_idx = None
-                exec_results = []
+        selected_idx, exec_results, game_state, _superseded = await self._await_director_choice(
+            packages, filtered_actions, game_state, reasoning)
 
         # Re-enumerate after director selected and Unity executed
         all_actions = _enumerate_actions(game_state)
@@ -614,6 +764,662 @@ Respond with ONLY the package index number (0, 1, or 2).
         self._log_turn(agent, filtered_state, filtered_actions, recommendations, None,
                        [], sat_before, game_state, budget_before, raw, 0)
         return game_state, all_actions
+
+    # ── Continuous agent (tool-using loop) ───────────────────────────────
+    #
+    # A single provider-agnostic tool loop. The agent holds the FULL tool
+    # palette every step (execute / propose / talk / read / list / finish) and
+    # chooses which to use — interaction *style* is emergent from those choices,
+    # never imposed by the router. There is no safety floor in Phase 1: an
+    # execute is committed on the agent's own judgment and the engine reports
+    # the honest result. See continuous_agent.py and CONTINUOUS_AGENT.md.
+
+    # Guidance appended to the system prompt. Encodes the 2026 interaction-style
+    # findings as *judgment for the model to weigh*, not as gates in code.
+    _CONTINUOUS_TOOL_POLICY = (
+        "You are operating as a continuous agent with a full palette of tools. "
+        "Each step you may take ONE or more tool calls, or stop. Pick tools by "
+        "reading the situation — nothing forces a particular style on you:\n"
+        "- execute_game_action: act directly and immediately. Use it when you are "
+        "confident and the action is within your remit; you commit it yourself.\n"
+        "- propose_choices: hand the decision to the human director as selectable "
+        "packages. Use it when the call is genuinely theirs, the stakes or ambiguity "
+        "are high, or you want their steer. The director's review time is scarce — "
+        "propose only when it adds real value, and keep packages genuinely distinct.\n"
+        "- talk_to_director: explain, ask a clarifying question, or flag something. "
+        "Keep explanations grounded in the real state numbers; they build calibrated "
+        "trust, not blind acceptance. Ask only when the answer would change what you do.\n"
+        "- read_state / list_actions: refresh your view; indices change after you act.\n"
+        "- finish: end your turn when nothing further is worth doing.\n"
+        "Prefer acting over narrating. Do not ask permission for things clearly in "
+        "your remit; do not act unilaterally on things that are clearly the director's "
+        "to decide. Ground every number you cite in the state you were given.\n"
+        "CRITICAL: never claim to have built, hired, staffed, moved, or changed "
+        "anything unless you actually called execute_game_action (or the director "
+        "selected a package you proposed) THIS turn and saw a success result. If an "
+        "action you want is not in your available action list, say so plainly and "
+        "explain what is blocking it — do not pretend it happened."
+    )
+
+    def _agent_lock(self, name: str) -> asyncio.Lock:
+        """Per-agent turn lock (lazily created). Serializes turns for ONE officer
+        while letting DIFFERENT officers overlap — the granularity that makes
+        officers concurrent yet keeps each officer's single persistent transcript
+        from being corrupted by two of its own turns interleaving tool_call/tool
+        pairs (e.g. a begin_round turn overlapping a director_message turn)."""
+        lock = self._agent_turn_locks.get(name)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._agent_turn_locks[name] = lock
+        return lock
+
+    async def _run_continuous(
+        self,
+        agent: AgentConfig,
+        filtered_state: dict,
+        filtered_actions: List[dict],
+        game_state: dict,
+        all_actions: List[dict],
+    ) -> Tuple[dict, List[dict]]:
+        """Serialize turns FOR THIS OFFICER, then drive one turn.
+
+        Uses a per-agent lock (not a session-global one): two turns for the SAME
+        officer never overlap (transcript integrity), but different officers run
+        their tool-loops concurrently. Cross-officer contention over the single
+        Unity socket is handled at the finer boundaries instead — _unity_commit_lock
+        (mutations) and _director_attention_lock (proposals) — so a peer parked at
+        propose_choices doesn't freeze the officers still acting. Callers on the
+        receive-loop path (director_message) must invoke this from a background task
+        so awaiting the lock never blocks the loop (else choice_made could deadlock).
+        """
+        async with self._agent_lock(agent.subagent_name):
+            return await self._run_continuous_inner(
+                agent, filtered_state, filtered_actions, game_state, all_actions
+            )
+
+    async def _run_continuous_concurrent(self, agent: AgentConfig) -> None:
+        """Drive one continuous officer's turn for a begin_round, reading the
+        freshest shared snapshot and publishing its result for peers + the director.
+
+        Spawned once per officer inside an asyncio.gather in _handle_begin_round, so
+        all officers' tool-loops overlap. Each officer's LLM thinking runs fully in
+        parallel; only the Unity mutation and proposal boundaries serialize (via the
+        commit / attention locks inside the tool dispatch). A peer's build lands in
+        _latest_game_state, so an officer that acts later in its loop re-enumerates
+        against it — and if two officers race the same site, the engine rejects the
+        loser with an honest 'site not available' (surfaced, never hidden)."""
+        gs = self._latest_game_state
+        if not gs:
+            return
+        all_actions = self._latest_all_actions or _enumerate_actions(gs)
+        filtered_state = self._filter_state(gs, agent)
+        filtered_actions = filter_actions(all_actions, agent.subaction_space)
+        if not filtered_actions:
+            print(f"[router]   {agent.subagent_name}: no in-scope actions — skipping.")
+            return
+        # NB: we do NOT publish this officer's LOCAL end-of-turn game_state to
+        # _latest_*. Under concurrency that would regress the snapshot — an officer
+        # that executed early but finished late holds a local copy that never saw a
+        # peer's later build. Instead _publish_state() in the Unity commit path
+        # keeps _latest_* at the freshest GLOBAL state after every mutation, so it
+        # is always monotone-fresh for the director_turn and mid-round re-entry.
+        await self._run_continuous(
+            agent, filtered_state, filtered_actions, gs, all_actions
+        )
+
+    def _publish_state(self, game_state: dict) -> None:
+        """Record the freshest full game_state seen by the router as the shared
+        _latest_* snapshot. Called from the Unity commit chokepoints (every
+        execute result carries the authoritative post-mutation global state) so
+        concurrent officers and the post-gather director_turn always read the
+        latest world, independent of which officer's turn happens to finish last."""
+        if game_state:
+            self._latest_game_state = game_state
+            self._latest_all_actions = _enumerate_actions(game_state)
+
+    async def _run_continuous_for_message(self, agent: AgentConfig) -> None:
+        """Drive a continuous turn triggered by a mid-round director_message.
+
+        Recomputes the filtered state/actions from the FRESHEST session snapshot
+        at execution time (not at message-arrival time). Because this officer's
+        turns serialize on its per-agent lock, this task may run after another of
+        its turns (e.g. one that built facilities via propose_choices) has already
+        updated _latest_game_state — so the agent sees the result of that turn.
+        """
+        gs = self._latest_game_state
+        if not gs:
+            return
+        filtered_state = self._filter_state(gs, agent)
+        all_actions = self._latest_all_actions or _enumerate_actions(gs)
+        filtered_actions = filter_actions(all_actions, agent.subaction_space)
+        # _latest_* is kept fresh by _publish_state() in the commit path; no
+        # end-of-turn local publish here (see _run_continuous_concurrent).
+        await self._run_continuous(
+            agent, filtered_state, filtered_actions, gs, all_actions
+        )
+
+    async def _run_continuous_inner(
+        self,
+        agent: AgentConfig,
+        filtered_state: dict,
+        filtered_actions: List[dict],
+        game_state: dict,
+        all_actions: List[dict],
+    ) -> Tuple[dict, List[dict]]:
+        """Drive one turn of the continuous (tool-using) agent."""
+        tools = build_tools(agent.tools)
+        agent_cfg = vars(agent)  # run_tool_step reads provider/model/endpoint/key/budget
+        max_steps = agent.max_steps or 8
+
+        # The continuous agent carries ONE growing transcript for the whole game.
+        # Seed the system message once, fold in any director input that arrived
+        # since our last activation, then append this activation's live-state turn.
+        # The tool loop below appends its assistant/tool turns to this same list,
+        # so every prior step stays visible across activations and rounds.
+        name = agent.subagent_name
+        messages = self._continuous_transcripts.setdefault(name, [])
+        if not messages:
+            messages.append(self._continuous_system_message(agent))
+        director_entries = [
+            e for e in self.message_queue.get_conversation(name, "Director")
+            if e.get("from") == "Director"
+        ]
+        already = self._director_injected_count.get(name, 0)
+        for e in director_entries[already:]:
+            messages.append({"role": "user", "content": f"[Director] {e.get('content', '')}"})
+        self._director_injected_count[name] = len(director_entries)
+        director_has_spoken = len(director_entries) > 0
+        messages.append(self._continuous_turn_message(
+            agent, filtered_state, filtered_actions, director_has_spoken))
+
+        sat_before = _get_satisfaction(game_state)
+        budget_before = _get_budget(game_state)
+        executed_total = 0
+
+        print(f"[router]   ▶ Continuous agent {agent.subagent_name}: "
+              f"{len(filtered_actions)} actions, up to {max_steps} steps, "
+              f"tools={[t['function']['name'] for t in tools]}")
+
+        for step in range(max_steps):
+            resp = await asyncio.to_thread(
+                run_tool_step, messages, tools, agent_cfg, agent.tool_mode
+            )
+            if resp.get("error"):
+                print(f"[router]   ⚠️  Continuous step {step} error: {resp['error']}")
+                break
+
+            tool_calls = resp.get("tool_calls") or []
+
+            # Record the assistant turn (text + any tool_calls) in OpenAI shape so
+            # the next step sees its own reasoning and calls.
+            assistant_msg: dict = {"role": "assistant", "content": resp.get("content")}
+            if tool_calls:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {"name": tc["name"], "arguments": json.dumps(tc["arguments"])},
+                    }
+                    for tc in tool_calls
+                ]
+            messages.append(assistant_msg)
+
+            if not tool_calls:
+                # No tool → the agent is done; surface any closing text.
+                if resp.get("content"):
+                    await self._send_agent_response(agent, resp["content"], "agent_response")
+                print(f"[router]   ⏹ Continuous agent finished at step {step} (no tool call).")
+                break
+
+            stop = False
+            for tc in tool_calls:
+                result_str, game_state, all_actions, filtered_actions, meta = \
+                    await self._dispatch_continuous_tool(
+                        agent, tc, game_state, all_actions, filtered_actions
+                    )
+                # Every tool_call id MUST get a matching tool result before the
+                # next assistant turn (OpenAI/Anthropic protocol requirement).
+                messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
+                executed_total += meta.get("executed", 0)
+                if meta.get("finish"):
+                    stop = True
+            if stop:
+                print(f"[router]   ⏹ Continuous agent called finish at step {step}.")
+                break
+        else:
+            print(f"[router]   ⏹ Continuous agent hit max_steps ({max_steps}).")
+
+        self._log_turn(agent, filtered_state, filtered_actions, [], None,
+                       [], sat_before, game_state, budget_before,
+                       f"[continuous] {executed_total} action(s) executed", 0)
+        print(f"[router]   ✓ Continuous agent {agent.subagent_name}: "
+              f"{executed_total} action(s) executed this turn.")
+        return game_state, all_actions
+
+    def _continuous_system_message(self, agent: AgentConfig) -> dict:
+        """The system message (role + global prompt + tool policy). Built ONCE per
+        game — it seeds the persistent transcript and never changes mid-game."""
+        use_global = agent.use_global_prompt
+        global_prompt = load_global_prompt() if use_global else ""
+        agent_prompt = agent.system_prompt or (
+            "You are an officer in a disaster-relief operation."
+        )
+        if global_prompt:
+            system = f"{global_prompt}\n\n---\n\nAGENT ROLE: {agent_prompt}"
+        else:
+            system = agent_prompt
+        system = f"{system}\n\n---\n\n{self._CONTINUOUS_TOOL_POLICY}"
+        return {"role": "system", "content": system}
+
+    def _continuous_turn_message(
+        self,
+        agent: AgentConfig,
+        filtered_state: dict,
+        filtered_actions: List[dict],
+        director_has_spoken: bool,
+    ) -> dict:
+        """The per-activation user turn: re-grounds the agent on the LIVE state,
+        action list, and planning-phase ledger. Appended fresh each activation on
+        top of the persistent transcript, because the world advances between
+        activations even though the trajectory before it stays visible."""
+        # Opening posture (the human's autonomy dial, kept OUT of the agent prompt).
+        # In "brief_first" the director wants to be oriented before the agent acts —
+        # but only until they've given direction; after that the agent is emergent.
+        # "emergent" (default) injects nothing: pure tool-user from step 1.
+        closing = "Decide what to do."
+        if getattr(agent, "opening_mode", "emergent") == "brief_first" and not director_has_spoken:
+            closing = (
+                "The director has not given you any direction yet. Do NOT commit any "
+                "builds, hires, or transfers. Send EXACTLY ONE short talk_to_director "
+                "message — at most 3 sentences: the single biggest need, the budget "
+                "remaining, and one recommendation — then immediately call finish. Do "
+                "NOT send a second message or a status follow-up; wait for the director."
+            )
+        state_text = render_state_text(filtered_state)
+        action_text = self._render_action_list(filtered_actions)
+        return {
+            "role": "user",
+            "content": (
+                f"It is your turn. Current situation:\n{state_text}\n\n"
+                f"{self._committed_ledger_text()}"
+                f"Actions available to you now:\n{action_text}\n\n"
+                f"{closing}"
+            ),
+        }
+
+    def _build_continuous_messages(
+        self,
+        agent: AgentConfig,
+        filtered_state: dict,
+        filtered_actions: List[dict],
+    ) -> List[dict]:
+        """Assemble a full COLD-START message list (system + prior director
+        conversation + current turn).
+
+        This is what a continuous turn looks like with an empty transcript. The
+        live loop does NOT call this per turn — it appends to the persistent
+        transcript (see _run_continuous_inner) so the whole game's trajectory
+        accumulates. Kept for cold-start equivalence and out-of-band inspection."""
+        messages: List[dict] = [self._continuous_system_message(agent)]
+        director_has_spoken = False
+        for entry in self.message_queue.get_conversation(agent.subagent_name, "Director"):
+            content = entry.get("content", "")
+            if entry.get("from") == "Director":
+                director_has_spoken = True
+                messages.append({"role": "user", "content": f"[Director] {content}"})
+            else:
+                messages.append({"role": "assistant", "content": content})
+        messages.append(self._continuous_turn_message(
+            agent, filtered_state, filtered_actions, director_has_spoken))
+        return messages
+
+    def _committed_ledger_text(self) -> str:
+        """Render the planning-phase ledger as a context block (empty if none).
+
+        The paused-phase observation is frozen and doesn't reflect the agent's own
+        queued actions, so without this the agent re-proposes what it already
+        committed. Ends with a blank line so it slots cleanly between the state and
+        the action list in the opening message.
+        """
+        if not self._committed_this_phase:
+            return ""
+        items = "\n".join(f"  - {c}" for c in self._committed_this_phase)
+        return (
+            "Already committed this planning phase (queued — the situation above "
+            "does NOT reflect these yet; do NOT repeat them):\n"
+            f"{items}\n\n"
+        )
+
+    @staticmethod
+    def _action_ledger_key(action: dict) -> str:
+        """Canonical ledger string for an action (used to record AND to match)."""
+        return f"[{action.get('action_type', '?')}] {action.get('description', '?')}"
+
+    def _record_committed(self, action: dict) -> None:
+        """Append a succeeded action to the planning-phase ledger (deduped)."""
+        line = self._action_ledger_key(action)
+        if line not in self._committed_this_phase:
+            self._committed_this_phase.append(line)
+
+    def _render_action_list(self, filtered_actions: List[dict]) -> str:
+        """Render the filtered actions as an indexed list (index == execute index).
+
+        Actions already committed this planning phase are flagged INLINE — at the
+        exact index the model chooses — because a separate 'do not repeat' block
+        upstream isn't decisive enough on its own (the model re-executes anyway).
+        The action stays in the list (no gating); it's just truthfully marked.
+        """
+        if not filtered_actions:
+            return "(no valid actions available to you)"
+        committed = set(self._committed_this_phase)
+        lines = []
+        for i, a in enumerate(filtered_actions):
+            done = " ⚠️ ALREADY COMMITTED THIS PHASE — do NOT pick again" \
+                if self._action_ledger_key(a) in committed else ""
+            lines.append(
+                f"{i}. [{a.get('action_type', '?')}] {a.get('description', '?')} "
+                f"(cost: ${_num(a.get('cost')):,}){done}"
+            )
+        return "\n".join(lines)
+
+    async def _dispatch_continuous_tool(
+        self,
+        agent: AgentConfig,
+        tool_call: dict,
+        game_state: dict,
+        all_actions: List[dict],
+        filtered_actions: List[dict],
+    ) -> Tuple[str, dict, List[dict], List[dict], dict]:
+        """Execute one tool call against the real game backends.
+
+        Returns (result_text, game_state, all_actions, filtered_actions, meta).
+        `meta` = {"executed": int, "finish": bool}. No gating: the agent's chosen
+        tool is carried out and the honest result is returned to it.
+        """
+        name = tool_call.get("name")
+        args = tool_call.get("arguments") or {}
+        meta = {"executed": 0, "finish": False}
+
+        if name == "read_state":
+            return render_state_text(self._filter_state(game_state, agent)), \
+                game_state, all_actions, filtered_actions, meta
+
+        if name == "list_actions":
+            filtered_actions = filter_actions(all_actions, agent.subaction_space)
+            return "Actions available to you now:\n" + self._render_action_list(filtered_actions), \
+                game_state, all_actions, filtered_actions, meta
+
+        if name == "execute_game_action":
+            idx = args.get("index")
+            if not isinstance(idx, int) or not (0 <= idx < len(filtered_actions)):
+                return (f"ERROR: index {idx!r} is out of range "
+                        f"(0..{len(filtered_actions) - 1}). Call list_actions to refresh."), \
+                    game_state, all_actions, filtered_actions, meta
+            action = filtered_actions[idx]
+            # ledger_mode="block": staleness-style no-op (à la Claude Code's
+            # read-before-edit). A non-repeatable action already committed this
+            # phase is NOT re-sent to the engine — the frozen paused-phase state
+            # can't reflect it yet, and re-doing it would just fail engine-side.
+            # This is grounding (the truth: it's already queued), not style-gating;
+            # repeatable actions (hire/transfer) are never blocked.
+            if (getattr(agent, "ledger_mode", "annotate") == "block"
+                    and action.get("action_type") in _NON_REPEATABLE_TYPES
+                    and self._action_ledger_key(action) in set(self._committed_this_phase)):
+                print(f"[router]   ⛔ Blocked re-execution (already committed this "
+                      f"phase): {self._action_ledger_key(action)}")
+                self._log_action(
+                    self._actor_for(agent), "game_action", "execute_game_action",
+                    {"index": idx, "action": action, "success": False,
+                     "error": "blocked_already_committed", "note": args.get("note")},
+                )
+                body = (f"NOT executed — action {idx} "
+                        f"[{action.get('action_type','?')}] {action.get('description','?')} "
+                        "was already committed this planning phase. It is queued and "
+                        "will take effect when the round simulates; re-doing it is a "
+                        "no-op. Pick a different action or finish.")
+                body += "\n\nActions available to you now:\n" + self._render_action_list(filtered_actions)
+                return body, game_state, all_actions, filtered_actions, meta
+            result, new_state = await self._execute_action(agent.subagent_name, action)
+            success = bool(result.get("success"))
+            err = result.get("error_message") or ""
+            self._log_action(
+                self._actor_for(agent), "game_action", "execute_game_action",
+                {"index": idx, "action": action, "success": success,
+                 "error": err, "note": args.get("note")},
+            )
+            if new_state:
+                game_state = new_state
+                all_actions = _enumerate_actions(game_state)
+                filtered_actions = filter_actions(all_actions, agent.subaction_space)
+            if success:
+                self._record_committed(action)
+                # Per-action visibility (coding-agent style): announce each
+                # committed action to the director as it happens, so the human can
+                # watch what the agent is doing instead of only seeing an
+                # end-of-turn summary. Sent on the same channel talk_to_director
+                # uses (renders in the current client); the emoji marker + optional
+                # one-line `note` distinguish it from conversational replies.
+                # Announce the ground-truth action only (the engine's own
+                # description). We deliberately do NOT echo the model's free-text
+                # `note`: it sometimes disagrees with the action actually executed
+                # (e.g. names a different community / number), which reads to the
+                # human as a hallucinated transfer. The action description is
+                # authoritative; the model's rationale still lives in its summary.
+                narration = (f"🔨 {action.get('action_type', 'action')}: "
+                             f"{action.get('description', '(action)')}")
+                await self._send_agent_response(agent, narration, "agent_response")
+            meta["executed"] = 1 if success else 0
+            desc = f"[{action.get('action_type','?')}] {action.get('description','?')}"
+            body = (f"Executed action {idx} {desc}. success={success}."
+                    + (f" engine: {err}" if err else ""))
+            body += "\n\nUpdated actions:\n" + self._render_action_list(filtered_actions)
+            return body, game_state, all_actions, filtered_actions, meta
+
+        if name == "execute_commands":
+            commands = str(args.get("commands") or "").strip()
+            if not commands:
+                return "ERROR: empty commands.", game_state, all_actions, filtered_actions, meta
+            # Resolve intent tags against the agent's CURRENT menu. The shim isolates
+            # the parser's <staff> synth-append from the router's real action list;
+            # resolved indices point into shim.valid_actions (menu + any synth action).
+            shim = _CmdParseShim(filtered_actions, game_state)
+            parsed = parse_commands(commands, shim)
+            resolved = [i for i in parsed["actions"] if 0 <= i < len(shim.valid_actions)]
+            actions_to_run = [shim.valid_actions[i] for i in resolved]
+            # Executed as-chosen: a failed action (e.g. "site not available") is an honest
+            # policy signal returned to the agent, NOT auto-remapped or hidden. Mirrors the
+            # continuous-propose stance; no site-conflict resolution here by design.
+            exec_results, game_state = (
+                await self._execute_actions_via_unity(actions_to_run, game_state)
+                if actions_to_run else ([], game_state)
+            )
+            executed = 0
+            lines = []
+            for action, r in zip(actions_to_run, exec_results):
+                success = bool(r.get("success"))
+                err = r.get("error_message") or ""
+                self._log_action(
+                    self._actor_for(agent), "game_action", "execute_commands",
+                    {"action": action, "success": success, "error": err,
+                     "commands": commands, "note": args.get("note")},
+                )
+                desc = action.get("description", "(action)")
+                if success:
+                    executed += 1
+                    self._record_committed(action)
+                    # Per-action visibility, same channel/marker as execute_game_action.
+                    await self._send_agent_response(
+                        agent, f"🔨 {action.get('action_type', 'action')}: {desc}", "agent_response")
+                    lines.append(f"  ✅ {desc}")
+                else:
+                    lines.append(f"  ❌ {desc}" + (f" — {err}" if err else ""))
+            # Refresh the menu after mutating the world.
+            all_actions = _enumerate_actions(game_state)
+            filtered_actions = filter_actions(all_actions, agent.subaction_space)
+            meta["executed"] = executed
+            parts = [f"Ran {len(actions_to_run)} action(s) from your commands; {executed} succeeded."]
+            if parsed["parsed"]:
+                parts.append("Resolved: " + "; ".join(parsed["parsed"]))
+            if lines:
+                parts.append("\n".join(lines))
+            if parsed["errors"]:
+                parts.append("Unresolved commands (NOT executed — fix and retry, or pick a "
+                             "different move):\n  " + "\n  ".join(parsed["errors"]))
+            if not actions_to_run and not parsed["errors"]:
+                parts.append("No command tags recognized. Use e.g. <build>Kitchen,1</build>.")
+            body = "\n".join(parts)
+            body += "\n\nUpdated actions:\n" + self._render_action_list(filtered_actions)
+            return body, game_state, all_actions, filtered_actions, meta
+
+        if name == "propose_choices":
+            result_text, game_state, all_actions, filtered_actions, executed, superseded = \
+                await self._continuous_propose(agent, args, game_state, all_actions, filtered_actions)
+            meta["executed"] = executed
+            # A superseded proposal (director advanced the round or sent a new
+            # instruction) ends this turn: the follow-up turn — the new round's
+            # subagent or the director-message task — handles what comes next.
+            # Without this the parked turn could immediately re-propose and
+            # re-block the lock.
+            if superseded:
+                meta["finish"] = True
+            return result_text, game_state, all_actions, filtered_actions, meta
+
+        if name == "talk_to_director":
+            message = str(args.get("message") or "").strip()
+            if not message:
+                return "ERROR: empty message.", game_state, all_actions, filtered_actions, meta
+            await self._send_agent_response(agent, message, "agent_response")
+            return "Message delivered to the director.", \
+                game_state, all_actions, filtered_actions, meta
+
+        if name == "finish":
+            note = str(args.get("note") or "").strip()
+            if note:
+                await self._send_agent_response(agent, note, "agent_response")
+            meta["finish"] = True
+            return "Turn ended.", game_state, all_actions, filtered_actions, meta
+
+        return f"ERROR: unknown tool {name!r}.", game_state, all_actions, filtered_actions, meta
+
+    async def _continuous_propose(
+        self,
+        agent: AgentConfig,
+        args: dict,
+        game_state: dict,
+        all_actions: List[dict],
+        filtered_actions: List[dict],
+    ) -> Tuple[str, dict, List[dict], List[dict], int, bool]:
+        """Handle a propose_choices tool call: send cards, await the director's pick.
+
+        Reuses the existing choices machinery (_send_choices_proposal + the
+        choice_made Future). Blocks until the human director selects (or the
+        autonomous director picks), then returns the outcome to the agent.
+        """
+        raw_packages = args.get("packages") or []
+        reasoning = str(args.get("reasoning") or "").strip()
+
+        # Sanitize the model-authored packages into the shape the client renders.
+        packages: List[dict] = []
+        for p in raw_packages:
+            if not isinstance(p, dict):
+                continue
+            indices = [i for i in (p.get("action_indices") or [])
+                       if isinstance(i, int) and 0 <= i < len(filtered_actions)]
+            packages.append({
+                "package_index": len(packages),
+                "label": str(p.get("label") or f"Option {len(packages) + 1}"),
+                "description": str(p.get("description") or ""),
+                "action_indices": indices,
+            })
+        if not packages:
+            return ("ERROR: no valid packages (each needs action_indices into the "
+                    "current action list).", game_state, all_actions, filtered_actions, 0, False)
+
+        # Continuous agents render proposals INLINE in the chat timeline (a single
+        # agent_message_with_choices frame) rather than as a Task Center task. This
+        # keeps the cards in posted order with the surrounding narration and creates
+        # no GameTask. The classic workflow agents still use _send_choices_proposal.
+        # Snapshot the action list the packages were built against: filtered_actions
+        # is reassigned to the fresh post-execution list below, but the package's
+        # action_indices point into THIS pre-execution list (used for the ledger).
+        proposed_actions = list(filtered_actions)
+
+        # Only one proposal may occupy the director's attention (single-slot
+        # _pending_choice + one modal card) at a time. Hold the attention lock from
+        # putting the card up through the director's pick so concurrent officers'
+        # proposals queue rather than overwrite each other. This lock is distinct
+        # from the commit lock, so officers can still execute_game_action while a
+        # proposal is parked here awaiting the human.
+        async with self._director_attention_lock:
+            await self._send_inline_proposal(agent, packages, filtered_actions, reasoning)
+            selected_idx, exec_results, game_state, superseded = await self._await_director_choice(
+                packages, filtered_actions, game_state, reasoning)
+
+        all_actions = _enumerate_actions(game_state)
+        filtered_actions = filter_actions(all_actions, agent.subaction_space)
+
+        executed = sum(1 for r in exec_results if (r or {}).get("success"))
+        if superseded:
+            body = ("The director withdrew the proposal without selecting a package "
+                    "(they advanced the round or sent a new instruction). No action "
+                    "taken — read the latest director message and state, then decide.")
+        elif selected_idx is None:
+            body = "The director did not select a package (no action taken)."
+        else:
+            label = packages[selected_idx]["label"] if 0 <= selected_idx < len(packages) else "?"
+            total = len(exec_results)
+            pkg_indices = packages[selected_idx].get("action_indices", []) \
+                if 0 <= selected_idx < len(packages) else []
+            # Enumerate the ENGINE's per-action outcome. The package label is the
+            # agent's intent, not ground truth — some actions in a package fail
+            # (e.g. a site already built on). Without this line-by-line result the
+            # agent narrates the whole package as done and hallucinates successes.
+            lines = []
+            for pos, r in enumerate(exec_results):
+                r = r or {}
+                ok = r.get("success")
+                aid = r.get("action_id") or r.get("action_index")
+                err = (r.get("error") or "").strip()
+                mark = "SUCCESS" if ok else "FAILED"
+                lines.append(f"  - {aid}: {mark}" + (f" — {err}" if err and not ok else ""))
+                # Ledger the succeeded actions so later turns this phase don't
+                # re-propose them (order matches the package's action_indices).
+                if ok and pos < len(pkg_indices):
+                    ai = pkg_indices[pos]
+                    if 0 <= ai < len(proposed_actions):
+                        committed = proposed_actions[ai]
+                        self._record_committed(committed)
+                        # Per-action visibility parity with execute_game_action /
+                        # execute_commands: narrate each executed action (esp. a build)
+                        # to the director so a chosen package's effects show up in the
+                        # chat timeline as they land — not only in the agent's summary.
+                        await self._send_agent_response(
+                            agent,
+                            f"🔨 {committed.get('action_type', 'action')}: "
+                            f"{committed.get('description', '(action)')}",
+                            "agent_response",
+                        )
+            detail = "\n".join(lines) if lines else "  (engine reported no results)"
+            body = (f"The director selected package {selected_idx} ({label}). "
+                    f"{executed}/{total} action(s) SUCCEEDED. Engine results:\n{detail}\n"
+                    "Report ONLY the SUCCESS lines as done. Do NOT claim any FAILED "
+                    "action happened — treat failures as not executed and adapt.")
+        body += "\n\nUpdated actions:\n" + self._render_action_list(filtered_actions)
+        return body, game_state, all_actions, filtered_actions, executed, superseded
+
+    def _supersede_pending_choice(self, reason: str) -> None:
+        """Release a continuous turn parked at propose_choices awaiting the human.
+
+        That turn holds _director_attention_lock while awaiting _pending_choice (up
+        to 5min). If the human moves on without picking, that lock would starve
+        every later proposer. Resolving the future with a 'superseded' sentinel lets
+        the parked turn unwind and free the lock promptly. No-op if nothing is
+        pending (a real choice_made still resolves normally via _handle_choice_made).
+        """
+        pc = self._pending_choice
+        if pc is not None and not pc.done():
+            print(f"[router]   ⏭  Superseding pending proposal ({reason}).")
+            pc.set_result({"superseded": True, "reason": reason})
 
     async def _handle_choice_made(self, msg: dict):
         print(f"[router] 📨 choice_made received: agent={msg.get('agent_name')}, "
@@ -698,6 +1504,10 @@ Respond with ONLY the package index number (0, 1, or 2).
         self.day = 1
         self.segment = 0
         self._choice_context.clear()
+        # A continuous agent's transcript spans a whole game; a fresh game must
+        # start it clean (no stale trajectory bleeding across games).
+        self._continuous_transcripts.clear()
+        self._director_injected_count.clear()
         print("[router] 🆕 game_start received — message queue cleared, round counter reset.")
 
     async def _handle_director_message(self, msg: dict):
@@ -749,6 +1559,32 @@ Respond with ONLY the package index number (0, 1, or 2).
         })
 
         conversation = self.message_queue.get_conversation(convo_key, "Director")
+
+        # Continuous agents: the director's message is a fresh trigger to ACT, not
+        # just to chat. Re-enter the tool loop so the agent can actually execute /
+        # propose / talk in response — otherwise it would only narrate (and, as
+        # seen, hallucinate) actions it never took. The director's message is
+        # already in `conversation`, so the loop sees the request in context.
+        if agent.actor_type == "continuous":
+            if self._latest_game_state:
+                # The director redirecting mid-proposal ("I don't like these,
+                # build X" / "repropose") supersedes their own pending proposal —
+                # withdraw it so the parked turn releases _director_attention_lock
+                # and this new instruction isn't starved behind the 5min choice wait.
+                # No-op if no proposal is pending.
+                self._supersede_pending_choice("director sent a new instruction")
+                # Run in a background task so awaiting this officer's per-agent lock
+                # never blocks the receive loop. If we awaited inline while the same
+                # officer's begin_round turn held its lock (parked at propose_choices),
+                # the loop couldn't process the choice_made that would release it →
+                # deadlock.
+                # The task re-reads _latest_game_state at run time (after the lock
+                # frees), so a turn that follows a build observes the post-build
+                # world instead of the stale pre-build snapshot.
+                _t = asyncio.create_task(self._run_continuous_for_message(agent))
+                _t.add_done_callback(self._on_round_task_done)
+                return
+            # No state yet (message before any begin_round): fall through to chat.
 
         # For choices agents with an active proposal context, force a single-path
         # decision: CLARIFY, REPROPOSE, or CHAT. This avoids the previous bug where
@@ -1144,27 +1980,39 @@ Respond with ONLY the package index number (0, 1, or 2).
             print(f"[router][{self.api_key_label}] dropped send (socket closed): {e}")
 
     async def _execute_action(self, agent_name: str, action: dict) -> Tuple[dict, dict]:
-        """Send execute_action to Unity, wait for result via Future, return (result, updated_state)."""
-        await self._send({
-            "type": "execute_action",
-            "agent_name": agent_name,
-            "action": action,
-            "timestamp": _now(),
-        })
+        """Send execute_action to Unity, wait for result via Future, return (result, updated_state).
 
-        # Wait for action result via Future (delivered by message handler)
-        loop = asyncio.get_event_loop()
-        self._pending_action = loop.create_future()
-
-        try:
-            result = await asyncio.wait_for(self._pending_action, timeout=10.0)
-            self._pending_action = None
-        except asyncio.TimeoutError:
-            print(f"[router]   ⚠️  Timeout waiting for action result")
-            self._pending_action = None
-            return {"success": False, "error_message": "Timeout"}, {}
+        The whole create-future → send → await critical section runs under
+        _unity_commit_lock so concurrent officers never have two requests in flight
+        against the single-slot _pending_action (results correlate by timing only).
+        The future is armed BEFORE the send so a fast Unity reply can't land in an
+        empty slot and get dropped as a stray.
+        """
+        async with self._unity_commit_lock:
+            loop = asyncio.get_event_loop()
+            self._pending_action = loop.create_future()
+            await self._send({
+                "type": "execute_action",
+                "agent_name": agent_name,
+                "action": action,
+                "timestamp": _now(),
+            })
+            try:
+                # 30s to match the batch path (_execute_actions_via_unity). Construction
+                # and other non-instant actions can take >10s on the Unity side; the old
+                # 10s window returned spurious "Timeout" false-failures (and dropped the
+                # late result as a stray), so the agent never saw the action land.
+                result = await asyncio.wait_for(self._pending_action, timeout=30.0)
+            except asyncio.TimeoutError:
+                print(f"[router]   ⚠️  Timeout waiting for action result")
+                return {"success": False, "error_message": "Timeout"}, {}
+            finally:
+                self._pending_action = None
 
         game_state = result.get("game_state", {})
+        # Freshest authoritative global state — publish so concurrent officers and
+        # the post-gather director_turn always read the latest world.
+        self._publish_state(game_state)
         return result, game_state
 
     async def _execute_validated_actions(
@@ -1426,34 +2274,17 @@ Respond with ONLY the package index number (0, 1, or 2).
 
         print(f"[router] {agent.subagent_name} → Director: {summary[:60]}...")
 
-    async def _send_choices_proposal(
-        self,
-        agent: AgentConfig,
-        packages: List[dict],
-        filtered_actions: List[dict],
-        reasoning: str,
-    ):
-        """Push a choices_proposal payload to Unity.
+    async def _send_proposal(self, agent: AgentConfig, packages: List[dict], frame: dict):
+        """Send a proposal frame to Unity and record it into conversation memory.
 
-        Used by both the initial proposal in _run_choices and the reproposal
-        path so the UI always renders cards through the same select-then-confirm
-        machinery (HandleChoicesProposal → multi-agent task → DisplayInteractiveChoice).
+        `frame` is the fully-built outgoing payload — choices_proposal for the Task
+        Center path, agent_message_with_choices for the inline path. The memory
+        record is identical either way: without it get_conversation() holds only
+        chat text, so the classify/clarify/repropose LLM calls see no record of the
+        packages and the agent says things like "I don't have a record of the
+        strategy packages I previously proposed."
         """
-        await self._send({
-            "type": "choices_proposal",
-            "agent_name": agent.subagent_name,
-            "talkinghead": agent.talkinghead_endpoint,
-            "reasoning": reasoning,
-            "packages": packages,
-            "available_actions": filtered_actions,
-            "timestamp": _now(),
-        })
-
-        # Record the proposal into the persistent conversation so the agent has
-        # a memory of what it actually offered. Without this, get_conversation()
-        # only contains chat text, and the classify/clarify/repropose LLM calls
-        # see no record of the packages — leading the agent to say things like
-        # "I don't have a record of the strategy packages I previously proposed."
+        await self._send(frame)
         memory = self._format_proposal_for_memory(packages)
         if memory:
             self.message_queue.send_message(
@@ -1463,6 +2294,57 @@ Respond with ONLY the package index number (0, 1, or 2).
                 msg_type="choices_proposal",
                 round_num=self.round_num,
             )
+
+    async def _send_choices_proposal(
+        self,
+        agent: AgentConfig,
+        packages: List[dict],
+        filtered_actions: List[dict],
+        reasoning: str,
+    ):
+        """Push a choices_proposal payload to Unity (Task Center render path).
+
+        Used by both the initial proposal in _run_choices and the reproposal
+        path so the UI always renders cards through the same select-then-confirm
+        machinery (HandleChoicesProposal → multi-agent task → DisplayInteractiveChoice).
+        """
+        await self._send_proposal(agent, packages, {
+            "type": "choices_proposal",
+            "agent_name": agent.subagent_name,
+            "talkinghead": agent.talkinghead_endpoint,
+            "reasoning": reasoning,
+            "packages": packages,
+            "available_actions": filtered_actions,
+            "timestamp": _now(),
+        })
+
+    async def _send_inline_proposal(
+        self,
+        agent: AgentConfig,
+        packages: List[dict],
+        filtered_actions: List[dict],
+        reasoning: str,
+    ):
+        """Push an inline agent_message_with_choices frame to Unity (inline render path).
+
+        Used by continuous agents: the client renders the proposal as choice cards
+        inline in the chat timeline (AddAgentMessageWithChoices) — in posted order,
+        with NO Task Center task. The choice_made round-trip is identical to the
+        task-backed path, so _pending_choice resolution is unchanged.
+        """
+        content = reasoning or "Here are a few options — pick one."
+        await self._send_proposal(agent, packages, {
+            "type": "agent_message_with_choices",
+            "agent_name": agent.subagent_name,
+            "talkinghead_endpoint": agent.talkinghead_endpoint,
+            "content": content,
+            "message_type": "agent_response",
+            "reasoning": reasoning,
+            "packages": packages,
+            "available_actions": filtered_actions,
+            "round": self.round_num,
+            "timestamp": _now(),
+        })
 
     @staticmethod
     def _format_proposal_for_memory(packages: List[dict]) -> str:

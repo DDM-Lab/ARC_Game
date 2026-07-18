@@ -1,0 +1,113 @@
+{
+  "_comment": "Four scoped continuous officers + one manual director. Each officer holds the full continuous tool palette but sees ONLY its slice of the action space (via subaction_space + building_types) and a tailored observation slice. Scopes are non-overlapping: Workforce owns the labor POOL (hire/train); Lodging/Food/External each own construction + staffing + deconstruction for their building type; External also owns all resource transfers. agent_order_rule stays 'sequential' for the pre-concurrency engine; concurrency comes from the dispatch change, not this field.",
+  "agent_order_rule": "sequential",
+  "agents": [
+    {
+      "subagent_name": "Workforce Officer",
+      "role": "subagent",
+      "actor_type": "continuous",
+      "talkinghead_endpoint": "WorkforceService",
+      "subaction_space": [
+        { "category": "worker" }
+      ],
+      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "workers", "buildings"],
+      "llm_provider": "openai",
+      "llm_model": "claude-haiku-4-5-20251001-v1:0",
+      "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "turn_token_budget": 8192,
+      "max_steps": 8,
+      "tool_mode": "auto",
+      "opening_mode": "emergent",
+      "use_global_prompt": true,
+      "system_prompt": "You are the Workforce Officer. You own the labor POOL only: hiring untrained workers, hiring trained workers, and training untrained workers into trained ones. You do NOT construct, staff, or move resources — the Lodging, Food, and External officers assign workers to their own facilities and you supply the pool they draw from. Read the buildings' staffing gaps to anticipate demand, but your levers are hire and train. Weigh every hire/train against remaining budget: trained workers cost more but are ready immediately; untrained are cheaper but must be trained before they count as skilled labor. Keep a healthy free-worker buffer so the facility officers are never blocked for lack of staff, but do not overspend the budget on idle labor.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Lodging Officer",
+      "role": "subagent",
+      "actor_type": "continuous",
+      "talkinghead_endpoint": "LodgingMassCare",
+      "subaction_space": [
+        { "category": "construction", "building_types": ["Shelter"] },
+        { "category": "worker_assignment", "building_types": ["Shelter"] },
+        { "category": "deconstruction", "building_types": ["Shelter"] }
+      ],
+      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "workers", "buildings", "tasks", "constructionState", "mapState"],
+      "llm_provider": "openai",
+      "llm_model": "claude-haiku-4-5-20251001-v1:0",
+      "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "turn_token_budget": 8192,
+      "max_steps": 8,
+      "tool_mode": "auto",
+      "opening_mode": "emergent",
+      "use_global_prompt": true,
+      "system_prompt": "You are the Lodging Officer, responsible for mass-care SHELTER only. Your levers are: build shelters at available sites, assign workers to shelters, and deconstruct shelters you no longer need. You do NOT build kitchens or casework sites, hire workers, or move resources — those belong to the Food, Workforce, and External officers. A shelter needs staff (workforce value) to actually house people, so pair every shelter you build with assigning workers to it, drawing from the free-worker pool the Workforce Officer maintains. Prioritize shelters where the map shows the greatest unmet lodging need, and weigh each build against remaining budget and free sites.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Food Officer",
+      "role": "subagent",
+      "actor_type": "continuous",
+      "talkinghead_endpoint": "FoodMassCare",
+      "subaction_space": [
+        { "category": "construction", "building_types": ["Kitchen"] },
+        { "category": "worker_assignment", "building_types": ["Kitchen"] },
+        { "category": "deconstruction", "building_types": ["Kitchen"] }
+      ],
+      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "workers", "buildings", "tasks", "constructionState", "mapState"],
+      "llm_provider": "openai",
+      "llm_model": "claude-haiku-4-5-20251001-v1:0",
+      "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "turn_token_budget": 8192,
+      "max_steps": 8,
+      "tool_mode": "auto",
+      "opening_mode": "emergent",
+      "use_global_prompt": true,
+      "system_prompt": "You are the Food Officer, responsible for mass-care KITCHENS only. Your levers are: build kitchens at available sites, assign workers to kitchens, and deconstruct kitchens you no longer need. You do NOT build shelters or casework sites, hire workers, or move resources — those belong to the Lodging, Workforce, and External officers. A kitchen needs staff (workforce value) to produce food packs, so pair every kitchen you build with assigning workers to it, drawing from the free-worker pool the Workforce Officer maintains. Prioritize kitchens where the map shows the greatest unmet food need, and weigh each build against remaining budget and free sites.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "External Relations Officer",
+      "role": "subagent",
+      "actor_type": "continuous",
+      "talkinghead_endpoint": "ExternalRelationship",
+      "subaction_space": [
+        { "category": "resource_transfer" },
+        { "category": "construction", "building_types": ["CaseworkSite"] },
+        { "category": "worker_assignment", "building_types": ["CaseworkSite"] },
+        { "category": "deconstruction", "building_types": ["CaseworkSite"] }
+      ],
+      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "workers", "buildings", "tasks", "logistics", "mapState"],
+      "llm_provider": "openai",
+      "llm_model": "claude-haiku-4-5-20251001-v1:0",
+      "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "turn_token_budget": 8192,
+      "max_steps": 8,
+      "tool_mode": "auto",
+      "opening_mode": "emergent",
+      "use_global_prompt": true,
+      "system_prompt": "You are the External Relations Officer. You own logistics and casework: moving resources (food packs, population) between facilities with available vehicles, plus building, staffing, and deconstructing CASEWORK sites. You do NOT touch shelters, kitchens, or worker hiring — those belong to the Lodging, Food, and Workforce officers. Your job is to keep supply flowing to where it is consumed: route food packs from kitchens to shelters that are short, relocate population toward available capacity, and stand up casework sites where the map shows unmet casework need. Weigh transfers against vehicle availability and each casework build against remaining budget and free sites.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Player",
+      "role": "director",
+      "actor_type": "manual",
+      "num_choices": null,
+      "max_actions_per_package": null,
+      "talkinghead_endpoint": null,
+      "subaction_space": [{ "category": "all" }],
+      "subobservation_space": ["all"],
+      "llm_model": null,
+      "llm_provider": null,
+      "turn_token_budget": null,
+      "use_global_prompt": false,
+      "system_prompt": null,
+      "can_address": []
+    }
+  ]
+}
