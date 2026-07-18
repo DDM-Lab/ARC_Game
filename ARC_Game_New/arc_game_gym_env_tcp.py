@@ -35,6 +35,8 @@ from typing import Dict, Tuple, Any, Optional, List
 from pathlib import Path
 import sys
 import json
+import os
+import signal
 import subprocess
 import time
 import atexit
@@ -43,6 +45,96 @@ import socket
 # Import action enumerator
 sys.path.append(str(Path(__file__).parent))
 from action_enumerator import ActionEnumerator
+
+
+# ── Orphan-Unity registry ─────────────────────────────────────────────────────
+# Track every Unity process this Python interpreter spawns in a per-parent-PID
+# file under /tmp. If we die uncleanly (Ray SIGKILL, sbatch preemption, …),
+# the next launch's atexit sweep or an operator can read the file and reap the
+# leftover process groups. Sweep also runs at atexit for graceful shutdowns —
+# start_new_session=True below detaches Unity from our session, so parent exit
+# alone does NOT kill Unity; we must actively signal the process group.
+_LIVE_UNITY_REGISTRY = Path(
+    os.environ.get("ARC_GAME_UNITY_REGISTRY")
+    or f"/tmp/arc_game_unity_pgids_{os.getpid()}.txt"
+)
+
+
+def _registry_append(pgid: int, port: int) -> None:
+    """Record a Unity process group we own so close()/atexit can reap it."""
+    try:
+        with open(_LIVE_UNITY_REGISTRY, "a") as f:
+            f.write(f"{pgid}\t{port}\t{time.time():.0f}\n")
+    except OSError:
+        pass  # Non-fatal — we still hold the popen handle for graceful close
+
+
+def _registry_remove(pgid: int) -> None:
+    """Drop a pgid from the registry once we've reaped it ourselves."""
+    try:
+        if not _LIVE_UNITY_REGISTRY.exists():
+            return
+        keep = []
+        with open(_LIVE_UNITY_REGISTRY) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    row_pgid = int(line.split("\t", 1)[0])
+                except ValueError:
+                    keep.append(line)
+                    continue
+                if row_pgid != pgid:
+                    keep.append(line)
+        with open(_LIVE_UNITY_REGISTRY, "w") as f:
+            f.writelines(keep)
+    except OSError:
+        pass
+
+
+def _kill_process_group(pgid: int, timeout: float = 5.0) -> None:
+    """SIGTERM the pgid, then SIGKILL after `timeout` if it's still alive.
+
+    Silent on ProcessLookupError (already dead / never existed)."""
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            os.killpg(pgid, 0)  # check liveness without signalling
+        except ProcessLookupError:
+            return
+        time.sleep(0.1)
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _sweep_registry() -> None:
+    """Reap every pgid we've spawned. Registered as atexit so parent shutdown
+    (including sys.exit) tears Unity down; if the parent dies uncleanly it
+    won't run, but the registry file remains for the next launch to inspect."""
+    try:
+        if not _LIVE_UNITY_REGISTRY.exists():
+            return
+        with open(_LIVE_UNITY_REGISTRY) as f:
+            for line in f:
+                try:
+                    pgid = int(line.split("\t", 1)[0])
+                except (ValueError, IndexError):
+                    continue
+                _kill_process_group(pgid, timeout=2.0)
+    finally:
+        try:
+            _LIVE_UNITY_REGISTRY.unlink()
+        except OSError:
+            pass
+
+
+atexit.register(_sweep_registry)
 
 
 # ── Reward weights (TUNE THESE) ───────────────────────────────────────────────
@@ -257,13 +349,50 @@ class ARCGameGymEnv(gym.Env):
         atexit.register(self.close)
 
     def _start_unity_process(self):
-        """Start Unity headless build process with gym server mode"""
+        """Start Unity headless build process with gym server mode.
+
+        Skips the spawn if a Unity server is already listening on our port
+        (belt-and-suspenders against the wrapper's env cache — a repeat
+        factory call inside the same Ray worker must never race a duplicate
+        Unity onto an occupied port; the fixed Unity build now rejects the
+        second client explicitly, and a colliding spawn just wedges).
+
+        Popen uses start_new_session=True so Unity lives in its own process
+        group. close() and the module-level atexit sweep reap that group,
+        preventing the orphan pileup that accumulated during a run's earlier
+        crash-and-retry cycles.
+        """
         if not self.unity_exe_path:
             raise ValueError("unity_exe_path required when auto_start_unity=True")
 
         unity_path = Path(self.unity_exe_path)
         if not unity_path.exists():
             raise FileNotFoundError(f"Unity executable not found: {unity_path}")
+
+        # Skip if something is already listening — either our own earlier spawn
+        # (repeat factory call in the same worker) or a foreign one. In both
+        # cases spawning again wastes a Unity process and, with the fixed
+        # single-client build, guarantees a hang. _connect_socket will decide
+        # whether the existing listener is usable.
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.settimeout(0.25)
+        already_alive = False
+        try:
+            probe.connect(("127.0.0.1", self.unity_port))
+            already_alive = True
+        except (ConnectionRefusedError, OSError):
+            already_alive = False
+        finally:
+            try:
+                probe.close()
+            except OSError:
+                pass
+        if already_alive:
+            print(
+                f"ℹ️  Unity already listening on port {self.unity_port}; "
+                f"skipping duplicate spawn"
+            )
+            return
 
         print(f"🎮 Starting Unity with Gym Server...")
         print(f"   Executable: {unity_path}")
@@ -293,8 +422,10 @@ class ARCGameGymEnv(gym.Env):
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
             )
+            _registry_append(self.unity_process.pid, self.unity_port)
             print(f"✅ Unity process started (PID: {self.unity_process.pid})")
             print(f"   Waiting for gym server to initialize...")
 
@@ -724,17 +855,22 @@ class ARCGameGymEnv(gym.Env):
             self.sock = None
             self.connected = False
 
-        # Terminate Unity process
+        # Terminate Unity process — kill the entire process group Popen created
+        # via start_new_session=True so any child Unity crash-handler / helper
+        # dies too (Popen.terminate() only signals the immediate PID).
         if self.unity_process:
-            print(f"🛑 Terminating Unity process (PID: {self.unity_process.pid})")
+            pid = self.unity_process.pid
+            print(f"🛑 Terminating Unity process (PID: {pid})")
             try:
-                self.unity_process.terminate()
-                self.unity_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                print("⚠️  Unity process did not terminate, forcing kill")
-                self.unity_process.kill()
-            except:
+                pgid = os.getpgid(pid)
+            except (ProcessLookupError, PermissionError):
+                pgid = pid
+            _kill_process_group(pgid, timeout=5.0)
+            try:
+                self.unity_process.wait(timeout=1.0)
+            except (subprocess.TimeoutExpired, OSError):
                 pass
+            _registry_remove(pgid)
             self.unity_process = None
 
         print("✅ Environment closed")
