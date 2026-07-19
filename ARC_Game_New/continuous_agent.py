@@ -89,7 +89,9 @@ TOOL_SCHEMAS: Dict[str, dict] = {
                 "most recent action list. You commit this on your own judgment — it "
                 "changes the game. Returns the engine's real success/failure (including "
                 "reasons like insufficient budget) and a refreshed action list so you "
-                "can decide your next move."
+                "can decide your next move. The list also includes 'task_choice' rows "
+                "(answer a choice-task that reached you) — pick one by index to answer "
+                "the task with that choice, exactly like any other action."
             ),
             "parameters": {
                 "type": "object",
@@ -127,6 +129,7 @@ TOOL_SCHEMAS: Dict[str, dict] = {
                 "  <staff>BUILDING,N</staff>           assign N workforce to a built building\n"
                 "  <deconstruct>BUILDING</deconstruct> BUILDING=name substring\n"
                 "  <transfer>RESOURCE,SRC,DEST,QTY</transfer>  RESOURCE=food|people\n"
+                "  <task>TASK_ID,CHOICE_ID</task>      answer a choice-task in your scope\n"
                 "Example: \"<build>Kitchen,1</build>\\n<hire>untrained,4</hire>\\n<staff>Kitchen,4</staff>\""
             ),
             "parameters": {

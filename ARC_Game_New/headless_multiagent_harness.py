@@ -131,6 +131,28 @@ async def run(rounds, model, exe, unity_port):
                 "error_message": resp.get("error"),
                 "game_state": gs,
             })
+        elif t == "select_task_choice":
+            frames.setdefault("select_task_choice", 0)
+            frames["select_task_choice"] += 1
+            tid, cid = payload.get("taskId"), payload.get("choiceId")
+            try:
+                resp = await gym_call({"type": "select_task_choice",
+                                       "taskId": tid, "choiceId": cid})
+                st = await gym_call({"type": "get_game_state"})
+                gs = (json.loads(st.get("game_state", "{}"))
+                      if st.get("type") == "game_state" else {})
+            except Exception as e:  # noqa: BLE001 — surface, don't crash the round
+                resp, gs = {"success": False, "error": str(e)}, {}
+                print(f"[bridge] choice error t{tid} c{cid}: {e}")
+            ok = bool(resp.get("success"))
+            print(f"[bridge] select_task_choice t{tid} c{cid} "
+                  f"[{'ok' if ok else 'FAIL: ' + str(resp.get('error'))}]")
+            await sess._handle_action_result({
+                "success": ok,
+                "action_id": f"choice_{tid}_{cid}",
+                "error_message": resp.get("error"),
+                "game_state": gs,
+            })
         elif t == "director_turn":
             frames["director_turn"] += 1
         else:
@@ -138,6 +160,9 @@ async def run(rounds, model, exe, unity_port):
             print(f"[bridge] frame: {t}")
 
     sess._send = bridge_send
+    # The gym-TCP bridge CAN execute task-choice answers (GymServerManager has
+    # HandleSelectTaskChoice); tell the Session so execute_commands sends them.
+    sess._task_choice_supported = True
 
     # ── Rounds. Officers run concurrently (real LLMs); driver-as-director advances.
     t0 = time.time()

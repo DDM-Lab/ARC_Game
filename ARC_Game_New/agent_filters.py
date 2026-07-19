@@ -39,18 +39,26 @@ def _building_token_of(action: dict) -> str:
 def _action_matches_entry(action: dict, entry: dict) -> bool:
     """True if `action` is admitted by a single subaction_space entry.
 
-    An entry is {"category": <cat>} optionally plus {"building_types": [...]}.
-    - category "all" admits everything (building_types ignored — "all" means all).
+    An entry is {"category": <cat>} optionally plus {"building_types": [...]}, or
+    (for task_choice) an optional {"group": <slug>} sub-predicate.
+    - category "all" admits everything (sub-predicates ignored — "all" means all).
     - Otherwise action_type must equal the category.
-    - If building_types is given, the action's building token must contain one of
-      them (case-insensitive substring, so "Kitchen" matches "Kitchen Alpha").
-      An action with no building token is excluded when building_types is set.
+    - task_choice: if "group" is given, the action's task_choice group must equal
+      it (one coarse group per officer domain). No "group" → any task_choice.
+    - Other categories: if building_types is given, the action's building token must
+      contain one of them (case-insensitive substring, so "Kitchen" matches
+      "Kitchen Alpha"). An action with no building token is excluded then.
     """
     cat = entry.get("category")
     if cat == "all":
         return True
     if action.get("action_type") != cat:
         return False
+    if cat == "task_choice":
+        group = entry.get("group")
+        if not group:
+            return True
+        return (action.get("task_choice") or {}).get("group") == group
     btypes = entry.get("building_types")
     if not btypes:
         return True

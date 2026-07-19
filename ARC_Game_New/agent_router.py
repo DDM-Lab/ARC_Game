@@ -45,7 +45,7 @@ from episode_logger import EpisodeLogger
 from llm_query import query_llm, load_global_prompt
 from continuous_agent import build_tools, run_tool_step
 from cmd_parser import parse_commands  # SHARED command-grammar parser (benchmark + router)
-from obs_encoder import render_state_text, _num
+from obs_encoder import render_state_text, _num, task_officer, task_group
 from choices_reliability import (
     dedupe_packages,
     enforce_diversity,
@@ -92,13 +92,43 @@ def _enumerate_actions(game_state: dict) -> list[dict]:
         from action_enumerator import ActionEnumerator
         enumerator = ActionEnumerator(game_state)
         # enumerate_all_actions() already returns list of dicts
-        return enumerator.enumerate_all_actions()
+        actions = enumerator.enumerate_all_actions()
     except ImportError:
         print("[router] action_enumerator not available — action list empty.")
-        return []
+        actions = []
     except Exception as e:
         print(f"[router] action_enumerator error: {e}")
-        return []
+        actions = []
+    # Choice-tasks become first-class 'task_choice' pseudo-actions so officers can
+    # answer them through the same index-based menu (execute_game_action) and the
+    # same subaction_space gate as every other action — no bespoke task path.
+    return actions + _enumerate_task_choices(game_state)
+
+
+def _enumerate_task_choices(game_state: dict) -> list[dict]:
+    """Enumerate each active choice-task's options as 'task_choice' pseudo-actions.
+
+    One row per (task, choice), tagged with the coarse task_group so the ordinary
+    filter_actions path ({"category":"task_choice","group":<slug>}) gates which
+    officer may answer which task — jurisdiction enforced by the normal action
+    filter, not a separate check. Carries taskId/choiceId for execution.
+    """
+    out = []
+    for t in (game_state.get("allActiveTasks") or []):
+        tid = t.get("taskId")
+        grp = task_group(t)
+        title = t.get("taskTitle") or t.get("title") or f"task {tid}"
+        for c in (t.get("choices") or []):
+            cid = c.get("choiceId")
+            text = (c.get("choiceText") or c.get("text") or "").strip()
+            out.append({
+                "action_type": "task_choice",
+                "description": f'answer task "{title}" → choice {cid}: {text}',
+                "cost": 0,
+                "task_choice": {"taskId": tid, "choiceId": cid,
+                                "group": grp, "taskTitle": title},
+            })
+    return out
 
 
 # Canonical actor block for the human player (the manual director). Agent-driven
@@ -140,6 +170,12 @@ class Session:
         self._websocket: WebSocket = websocket
         self._pending_choice: Optional[asyncio.Future] = None
         self._pending_action: Optional[asyncio.Future] = None
+        # Whether this transport can execute a task-choice answer (select_task_choice).
+        # Live WebSocket clients handle it (WebSocketManager.select_task_choice ->
+        # TaskDetailUI.SelectTaskChoiceHeadless), so enable it whenever a real
+        # websocket is attached. The headless harness constructs a Session with
+        # websocket=None and sets this True itself once it wires the gym-TCP bridge.
+        self._task_choice_supported: bool = websocket is not None
         self._choice_context: dict = {}
         # Freshest game state/action enumeration seen this session. Needed so a
         # continuous agent can re-enter its tool loop on a mid-round
@@ -240,6 +276,58 @@ class Session:
             "click_seq": click_seq,
             "client_ts": client_ts,
         })
+
+    # ── Action-outcome instrumentation ───────────────────────────
+    # These enrich every logged continuous-agent action with an engine-truth
+    # `outcome` plus factual state deltas, so post-hoc analysis can separate
+    # three failure classes that all look identical in the old logs:
+    #   • can't-execute  → outcome in {"invalid","rejected"}
+    #   • misunderstanding (inert success) → outcome=="ok" but state_changed
+    #        is False (or, for a task_choice, task_closed is False)
+    #   • model judgment → outcome=="ok" + state_changed, read via the deltas
+    #        and cross-agent conflicts
+    # `outcome` is engine truth, NOT interpretation:
+    #   invalid  = never reached the engine (bad index / out-of-scope / no such
+    #              task) — the model referenced something outside its space
+    #   rejected = reached the engine, engine refused (success=False)
+    #   ok       = engine accepted (success=True)
+    @staticmethod
+    def _state_metrics(gs: dict) -> dict:
+        """Snapshot the factual signals an action can move."""
+        tasks = gs.get("allActiveTasks") or []
+        return {
+            "budget": _get_budget(gs),
+            "satisfaction": _get_satisfaction(gs),
+            "active_tasks": frozenset(
+                t.get("taskId") for t in tasks if t.get("taskId") is not None),
+        }
+
+    @staticmethod
+    def _outcome_fields(outcome: str, before: dict | None = None,
+                        after: dict | None = None, *,
+                        is_choice: bool = False, tid=None) -> dict:
+        """Build the outcome/delta payload fragment merged into a logged action.
+
+        `before`/`after` are _state_metrics snapshots taken around the engine
+        call. For pre-engine failures (invalid), pass neither — deltas are null.
+        """
+        f = {"outcome": outcome}
+        if before is not None and after is not None:
+            d_budget = after["budget"] - before["budget"]
+            d_sat = after["satisfaction"] - before["satisfaction"]
+            tasks_changed = before["active_tasks"] != after["active_tasks"]
+            f["budget_delta"] = d_budget
+            f["satisfaction_delta"] = d_sat
+            # `state_changed` is a fact (did any tracked signal move), NOT a
+            # judgment. A success with state_changed=False is the inert-success
+            # signature of a game misunderstanding.
+            f["state_changed"] = bool(d_budget or d_sat or tasks_changed)
+            if is_choice:
+                # A choice closes iff its task left the active set. success=True
+                # with task_closed=False = the deferred-choice "inert" case.
+                f["task_closed"] = (tid is not None
+                                    and tid not in after["active_tasks"])
+        return f
 
     # ── WebSocket Handler ────────────────────────────────────────
 
@@ -621,6 +709,53 @@ Respond with ONLY the package index number (0, 1, or 2).
         # Publish freshest global state (same authority as _execute_action).
         self._publish_state(game_state)
         return exec_results, game_state
+
+    def _may_answer_task(self, agent: "AgentConfig", task: dict) -> bool:
+        """True if `agent`'s subaction_space admits this task's coarse group.
+
+        Probes the SAME filter every action goes through (a synthetic task_choice
+        row), so a {"category":"all"} director and a
+        {"category":"task_choice","group":<slug>} officer are both handled by one
+        code path — the config is the single source of truth for who answers what.
+        """
+        probe = {"action_type": "task_choice",
+                 "task_choice": {"group": task_group(task)}}
+        return bool(filter_actions([probe], agent.subaction_space))
+
+    async def _execute_choice_via_unity(
+        self,
+        task_id: int,
+        choice_id: int,
+        game_state: dict,
+    ) -> Tuple[dict, dict]:
+        """Answer a choice task via Unity (select_task_choice) and await the result.
+
+        Mirrors _execute_actions_via_unity's single-in-flight discipline (hold the
+        commit lock across arm-future → send → await so concurrent officers can't
+        clobber the single-slot _pending_action). The frame shape matches the gym
+        env's select_task_choice (`taskId`/`choiceId`, camelCase). Returns
+        (result_msg, game_state) with game_state refreshed from the result.
+        """
+        async with self._unity_commit_lock:
+            loop = asyncio.get_event_loop()
+            self._pending_action = loop.create_future()
+            await self._send({
+                "type": "select_task_choice",
+                "taskId": int(task_id),
+                "choiceId": int(choice_id),
+                "timestamp": _now(),
+            })
+            try:
+                result_msg = await asyncio.wait_for(self._pending_action, timeout=30.0)
+            except asyncio.TimeoutError:
+                result_msg = None
+            finally:
+                self._pending_action = None
+        if result_msg is not None and "game_state" in result_msg:
+            game_state = result_msg["game_state"]
+        self._publish_state(game_state)
+        return (result_msg or {"success": False,
+                               "error_message": "Timeout selecting task choice"}), game_state
 
     async def _await_director_choice(
         self,
@@ -1114,8 +1249,10 @@ Respond with ONLY the package index number (0, 1, or 2).
         committed = set(self._committed_this_phase)
         lines = []
         for i, a in enumerate(filtered_actions):
-            done = " ⚠️ ALREADY COMMITTED THIS PHASE — do NOT pick again" \
-                if self._action_ledger_key(a) in committed else ""
+            if self._action_ledger_key(a) in committed:
+                done = " ⚠️ ALREADY COMMITTED THIS PHASE — do NOT pick again"
+            else:
+                done = ""
             lines.append(
                 f"{i}. [{a.get('action_type', '?')}] {a.get('description', '?')} "
                 f"(cost: ${_num(a.get('cost')):,}){done}"
@@ -1152,10 +1289,50 @@ Respond with ONLY the package index number (0, 1, or 2).
         if name == "execute_game_action":
             idx = args.get("index")
             if not isinstance(idx, int) or not (0 <= idx < len(filtered_actions)):
+                # Model referenced an action outside its space — an action-space
+                # error that used to be invisible. Log it as outcome=invalid so
+                # "can't-execute" is measurable, then return the honest error.
+                self._log_action(
+                    self._actor_for(agent), "game_action", "execute_game_action",
+                    {"index": idx, "success": False, "error": "index_out_of_range",
+                     "n_available": len(filtered_actions), "note": args.get("note"),
+                     **self._outcome_fields("invalid")},
+                )
                 return (f"ERROR: index {idx!r} is out of range "
                         f"(0..{len(filtered_actions) - 1}). Call list_actions to refresh."), \
                     game_state, all_actions, filtered_actions, meta
             action = filtered_actions[idx]
+            # A task_choice row answers a choice-task rather than mutating the world
+            # directly. It reached this menu only if the officer's subaction_space
+            # admits its group (filter_actions), so jurisdiction is already enforced.
+            if action.get("action_type") == "task_choice":
+                tc = action.get("task_choice") or {}
+                tid, cid = tc.get("taskId"), tc.get("choiceId")
+                if not self._task_choice_supported:
+                    return (f"NOT executed — task-choice answering is unavailable on "
+                            f"this transport."), game_state, all_actions, filtered_actions, meta
+                before = self._state_metrics(game_state)
+                r, game_state = await self._execute_choice_via_unity(tid, cid, game_state)
+                ok = bool(r.get("success"))
+                err = r.get("error_message") or ""
+                self._log_action(
+                    self._actor_for(agent), "game_action", "select_task_choice",
+                    {"taskId": tid, "choiceId": cid, "index": idx, "success": ok,
+                     "error": err, "note": args.get("note"),
+                     **self._outcome_fields(
+                         "ok" if ok else "rejected", before,
+                         self._state_metrics(game_state), is_choice=True, tid=tid)},
+                )
+                if ok:
+                    await self._send_agent_response(
+                        agent, f"🗳️ answered task {tid} → choice {cid}", "agent_response")
+                all_actions = _enumerate_actions(game_state)
+                filtered_actions = filter_actions(all_actions, agent.subaction_space)
+                meta["executed"] = 1 if ok else 0
+                body = (f"Answered task {tid} with choice {cid}. success={ok}."
+                        + (f" engine: {err}" if err else ""))
+                body += "\n\nUpdated actions:\n" + self._render_action_list(filtered_actions)
+                return body, game_state, all_actions, filtered_actions, meta
             # ledger_mode="block": staleness-style no-op (à la Claude Code's
             # read-before-edit). A non-repeatable action already committed this
             # phase is NOT re-sent to the engine — the frozen paused-phase state
@@ -1179,13 +1356,17 @@ Respond with ONLY the package index number (0, 1, or 2).
                         "no-op. Pick a different action or finish.")
                 body += "\n\nActions available to you now:\n" + self._render_action_list(filtered_actions)
                 return body, game_state, all_actions, filtered_actions, meta
+            before = self._state_metrics(game_state)
             result, new_state = await self._execute_action(agent.subagent_name, action)
             success = bool(result.get("success"))
             err = result.get("error_message") or ""
             self._log_action(
                 self._actor_for(agent), "game_action", "execute_game_action",
                 {"index": idx, "action": action, "success": success,
-                 "error": err, "note": args.get("note")},
+                 "error": err, "note": args.get("note"),
+                 **self._outcome_fields(
+                     "ok" if success else "rejected", before,
+                     self._state_metrics(new_state or game_state))},
             )
             if new_state:
                 game_state = new_state
@@ -1238,10 +1419,14 @@ Respond with ONLY the package index number (0, 1, or 2).
             for action, r in zip(actions_to_run, exec_results):
                 success = bool(r.get("success"))
                 err = r.get("error_message") or ""
+                # Deltas aren't per-action-attributable inside a batched Unity
+                # commit, so log engine-truth outcome only (ok/rejected). The
+                # single-action execute_game_action path carries the deltas.
                 self._log_action(
                     self._actor_for(agent), "game_action", "execute_commands",
                     {"action": action, "success": success, "error": err,
-                     "commands": commands, "note": args.get("note")},
+                     "commands": commands, "note": args.get("note"),
+                     **self._outcome_fields("ok" if success else "rejected")},
                 )
                 desc = action.get("description", "(action)")
                 if success:
@@ -1253,6 +1438,65 @@ Respond with ONLY the package index number (0, 1, or 2).
                     lines.append(f"  ✅ {desc}")
                 else:
                     lines.append(f"  ❌ {desc}" + (f" — {err}" if err else ""))
+            # Answer any choice tasks (<task>ID,choiceId</task>). Scope is enforced
+            # via the SAME subaction_space filter as every action (_may_answer_task):
+            # an officer may only answer tasks whose coarse group its config admits —
+            # an out-of-scope pick is an honest policy signal, NOT silently executed.
+            # Same as-chosen stance as actions: no auto-remap, failures returned.
+            choice_lines = []
+            answered = 0
+            by_id = {t.get("taskId"): t for t in (game_state.get("allActiveTasks") or [])}
+            for ch in parsed["choices"]:
+                tid, cid = ch.get("taskId"), ch.get("choiceId")
+                task = by_id.get(tid)
+                if task is None:
+                    # Model named a task that isn't active — action-space error.
+                    self._log_action(
+                        self._actor_for(agent), "game_action", "select_task_choice",
+                        {"taskId": tid, "choiceId": cid, "success": False,
+                         "error": "no_such_active_task", "commands": commands,
+                         "note": args.get("note"), **self._outcome_fields("invalid")},
+                    )
+                    choice_lines.append(f"  ❌ task {tid}: no such active task")
+                    continue
+                if not self._may_answer_task(agent, task):
+                    # Answered a task outside this officer's scope — action-space error.
+                    self._log_action(
+                        self._actor_for(agent), "game_action", "select_task_choice",
+                        {"taskId": tid, "choiceId": cid, "success": False,
+                         "error": "out_of_scope", "group": task_group(task),
+                         "commands": commands, "note": args.get("note"),
+                         **self._outcome_fields("invalid")},
+                    )
+                    choice_lines.append(
+                        f"  ❌ task {tid}: outside your action scope "
+                        f"(group {task_group(task)}) — not answered")
+                    continue
+                if not self._task_choice_supported:
+                    choice_lines.append(
+                        f"  ⏸ task {tid} choice {cid}: task-choice execution "
+                        f"unavailable on this transport yet")
+                    continue
+                before = self._state_metrics(game_state)
+                r, game_state = await self._execute_choice_via_unity(tid, cid, game_state)
+                ok = bool(r.get("success"))
+                err = r.get("error_message") or ""
+                self._log_action(
+                    self._actor_for(agent), "game_action", "select_task_choice",
+                    {"taskId": tid, "choiceId": cid, "success": ok,
+                     "error": err, "commands": commands, "note": args.get("note"),
+                     **self._outcome_fields(
+                         "ok" if ok else "rejected", before,
+                         self._state_metrics(game_state), is_choice=True, tid=tid)},
+                )
+                if ok:
+                    answered += 1
+                    await self._send_agent_response(
+                        agent, f"🗳️ answered task {tid} → choice {cid}", "agent_response")
+                    choice_lines.append(f"  ✅ answered task {tid} with choice {cid}")
+                else:
+                    choice_lines.append(
+                        f"  ❌ task {tid} choice {cid}" + (f" — {err}" if err else ""))
             # Refresh the menu after mutating the world.
             all_actions = _enumerate_actions(game_state)
             filtered_actions = filter_actions(all_actions, agent.subaction_space)
@@ -1262,10 +1506,24 @@ Respond with ONLY the package index number (0, 1, or 2).
                 parts.append("Resolved: " + "; ".join(parsed["parsed"]))
             if lines:
                 parts.append("\n".join(lines))
+            if parsed["choices"]:
+                parts.append(f"Answered {answered}/{len(parsed['choices'])} choice-task(s).")
+            if choice_lines:
+                parts.append("\n".join(choice_lines))
             if parsed["errors"]:
+                # A command that didn't resolve to any real action/task is the
+                # execute_commands analog of an out-of-range index: an action-space
+                # error. Log each so "can't-execute" stays measurable on this path.
+                for e in parsed["errors"]:
+                    self._log_action(
+                        self._actor_for(agent), "game_action", "execute_commands",
+                        {"success": False, "error": "unresolved_command",
+                         "detail": e, "commands": commands, "note": args.get("note"),
+                         **self._outcome_fields("invalid")},
+                    )
                 parts.append("Unresolved commands (NOT executed — fix and retry, or pick a "
                              "different move):\n  " + "\n  ".join(parsed["errors"]))
-            if not actions_to_run and not parsed["errors"]:
+            if not actions_to_run and not parsed["choices"] and not parsed["errors"]:
                 parts.append("No command tags recognized. Use e.g. <build>Kitchen,1</build>.")
             body = "\n".join(parts)
             body += "\n\nUpdated actions:\n" + self._render_action_list(filtered_actions)
@@ -2188,7 +2446,32 @@ Respond with ONLY the package index number (0, 1, or 2).
             print(f"[router] ✓ Game state validated: Budget=${budget}, Satisfaction={satisfaction}")
 
     def _filter_state(self, game_state: dict, agent: AgentConfig) -> dict:
-        return filter_observation(game_state, agent.subobservation_space)
+        filtered = filter_observation(game_state, agent.subobservation_space)
+        # Tasks obs bug + jurisdiction routing. filter_observation copies keys by
+        # name, but the raw game_state key is `allActiveTasks` while configs list the
+        # ENCODED name `tasks` — so tasks were silently dropped and obs_encoder (which
+        # reads `allActiveTasks`) rendered none. Re-inject under the raw key, narrowed
+        # to this agent's jurisdiction so each officer sees only the tasks Unity would
+        # route to it (task_officer mirrors the hardcoded Unity assignment). An agent
+        # with no talkinghead_endpoint (the director) sees all active tasks.
+        obs_space = agent.subobservation_space or []
+        # Per-group obs gating (config-driven, matches the action-space scheme):
+        # "tasks:<group>" entries narrow the visible tasks to those groups. Bare
+        # "tasks" keeps the back-compat behavior — all tasks Unity would route to
+        # this officer (jurisdiction via task_officer). The director ("all") already
+        # gets allActiveTasks through filter_observation and skips this block.
+        task_groups = {e.split(":", 1)[1] for e in obs_space
+                       if isinstance(e, str) and e.startswith("tasks:")}
+        if task_groups:
+            active = game_state.get("allActiveTasks") or []
+            filtered["allActiveTasks"] = [t for t in active if task_group(t) in task_groups]
+        elif "tasks" in obs_space:
+            active = game_state.get("allActiveTasks") or []
+            ep = agent.talkinghead_endpoint
+            if ep:
+                active = [t for t in active if task_officer(t) == ep]
+            filtered["allActiveTasks"] = list(active)
+        return filtered
 
     async def _post_auto_summary(self, agent: AgentConfig, results: dict, parsed: dict):
         """

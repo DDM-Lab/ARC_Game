@@ -320,6 +320,61 @@ def stable_task_token(t: dict) -> str:
     return f"TASK_{t.get('taskId', 'X')}"  # unknown title → back-compat
 
 
+# TaskOfficer routing — mirrors the AUTHORITATIVE Unity hardcoding. Unity assigns
+# each task a TaskOfficer at creation (per-generator hardcoding in
+# FloodTaskGenerator / WorkerRequestSystem / WorkerTrainingSystem / ClientStayTracker,
+# plus per-TaskData asset fields for budget/food) but does NOT serialize taskOfficer
+# into game_state (TaskContext omits it), so it cannot be read back. We reconstruct
+# the same routing from the task title. The returned strings are the exact TaskOfficer
+# enum names — identical to the config `talkinghead_endpoint` values — so the router
+# can hand each officer only its jurisdiction's tasks.
+_TASK_OFFICER_DEFAULT = "DisasterOfficer"
+
+
+def task_officer(t: dict) -> str:
+    """Return the TaskOfficer enum name that owns task ``t``, mirroring the Unity
+    hardcoded routing. Reads either the obs-shaped ``title`` or the raw ``taskTitle``.
+    Unknown / global tasks fall back to DisasterOfficer (the Unity default)."""
+    tl = (t.get("title") or t.get("taskTitle") or "").lower()
+    # External Relationship: daily/emergency budget + external storm funding.
+    if "budget" in tl or "funding" in tl:
+        return "ExternalRelationship"
+    # Workforce Service: training recommendations, worker-shortage advice, requests.
+    if "training" in tl or "worker" in tl or "workforce" in tl:
+        return "WorkforceService"
+    # Food Mass Care: food requests from communities/shelters.
+    if "food request" in tl:
+        return "FoodMassCare"
+    # Lodging Mass Care: sheltering — relocation, evacuation, casework, flood repairs.
+    if ("flood" in tl or "relocation" in tl or "evacuation" in tl
+            or "casework" in tl or "repair" in tl or "road blockage" in tl):
+        return "LodgingMassCare"
+    return _TASK_OFFICER_DEFAULT
+
+
+# Coarse task-group slugs — one bucket per officer domain. Used for config-driven
+# gating of choice-tasks in BOTH spaces: subaction_space entries
+# {"category": "task_choice", "group": <slug>} and subobservation_space entries
+# "tasks:<slug>". The coarse group is a 1:1 slug of the TaskOfficer that owns the
+# task (task_officer above), so gating by group stays consistent with the
+# authoritative Unity jurisdiction routing instead of introducing a second source
+# of truth.
+_OFFICER_TASK_GROUP = {
+    "ExternalRelationship": "budget",
+    "WorkforceService": "workforce",
+    "FoodMassCare": "food",
+    "LodgingMassCare": "lodging",
+    "DisasterOfficer": "disaster",
+}
+
+
+def task_group(t: dict) -> str:
+    """Return the coarse task-group slug that owns task ``t`` — one per officer
+    domain: budget / workforce / food / lodging / disaster. A thin slug over
+    task_officer, so group-gating matches the authoritative jurisdiction routing."""
+    return _OFFICER_TASK_GROUP.get(task_officer(t), "disaster")
+
+
 def _render_tasks(obs):
     tasks = obs.get("tasks", [])
     if not tasks:

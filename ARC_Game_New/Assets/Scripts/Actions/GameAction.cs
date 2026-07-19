@@ -100,4 +100,20 @@ namespace GameActions
         public string error_message;
         public string timestamp;
     }
+
+    /// <summary>
+    /// Message format for answering a choice task from the WebSocket (a router
+    /// officer selecting a choice on one of its jurisdiction's tasks). Mirrors the
+    /// gym-TCP select_task_choice request so both transports share one contract.
+    /// The reply reuses ActionExecutionResult (which carries no `type` field), so
+    /// the router routes it to its action-result handler exactly like execute_action.
+    /// </summary>
+    [System.Serializable]
+    public class TaskChoiceMessage
+    {
+        public string type = "select_task_choice";
+        public int taskId;
+        public int choiceId;
+        public string timestamp;
+    }
 }

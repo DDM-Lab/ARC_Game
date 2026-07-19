@@ -386,6 +386,56 @@ public class WebSocketManager : MonoBehaviour
                 return;
             }
 
+            // Check if this is a task-choice answer (a router officer selecting a
+            // choice on one of its jurisdiction's tasks). Mirrors the gym-TCP
+            // HandleSelectTaskChoice path: resolve to TaskDetailUI.SelectTaskChoiceHeadless
+            // and reply with an ActionExecutionResult (no `type`) so the router's
+            // action-result handler resolves the officer's pending choice future.
+            if (actionMsg != null && actionMsg.type == "select_task_choice")
+            {
+                TaskChoiceMessage choiceMsg = null;
+                try { choiceMsg = JsonUtility.FromJson<TaskChoiceMessage>(data); }
+                catch { }
+
+                var choiceResult = new ActionExecutionResult
+                {
+                    action_id = choiceMsg != null
+                        ? $"choice_{choiceMsg.taskId}_{choiceMsg.choiceId}" : "choice_unknown",
+                    timestamp = DateTime.UtcNow.ToString("o")
+                };
+
+                if (choiceMsg == null)
+                {
+                    choiceResult.success = false;
+                    choiceResult.error_message = "Malformed select_task_choice message";
+                }
+                else
+                {
+                    if (taskDetailUI == null)
+                        taskDetailUI = FindObjectOfType<TaskDetailUI>();
+
+                    if (taskDetailUI == null)
+                    {
+                        choiceResult.success = false;
+                        choiceResult.error_message = "TaskDetailUI not available";
+                    }
+                    else
+                    {
+                        string failReason;
+                        bool ok = taskDetailUI.SelectTaskChoiceHeadless(
+                            choiceMsg.taskId, choiceMsg.choiceId, out failReason);
+                        choiceResult.success = ok;
+                        choiceResult.error_message = ok ? null : failReason;
+                        Debug.Log($"🗳️ select_task_choice task {choiceMsg.taskId} " +
+                                  $"choice {choiceMsg.choiceId}: " +
+                                  (ok ? "✅ Success" : "❌ " + failReason));
+                    }
+                }
+
+                SendRawMessage(JsonUtility.ToJson(choiceResult));
+                return;
+            }
+
             // Parse JSON response (existing handlers)
             var response = JsonUtility.FromJson<LLMResponse>(data);
 

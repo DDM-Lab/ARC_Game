@@ -11,7 +11,11 @@ from typing import Optional
 VALID_ROLES = {"subagent", "director"}
 VALID_ACTOR_TYPES = {"auto", "choices", "manual", "llm", "coach", "continuous"}
 VALID_CATEGORIES = {"construction", "deconstruction", "worker",
-                    "worker_assignment", "resource_transfer", "all"}
+                    "worker_assignment", "resource_transfer", "task_choice", "all"}
+# Coarse task-group slugs (obs_encoder.task_group) — one per officer domain. Used
+# both as the {"category":"task_choice","group":<slug>} sub-scope in subaction_space
+# and as the "tasks:<slug>" narrowing in subobservation_space.
+VALID_TASK_GROUPS = {"budget", "workforce", "food", "lodging", "disaster"}
 VALID_OBS_KEYS = {"sessionInfo", "satisfactionAndBudget", "workers",
                   "buildings", "tasks", "constructionState",
                   "mapState", "logistics", "all"}
@@ -82,6 +86,14 @@ class AgentConfig:
         for entry in self.subaction_space:
             if entry.get("category") not in VALID_CATEGORIES:
                 raise ValueError(f"Invalid action category '{entry}' for agent '{self.subagent_name}'.")
+            # task_choice takes an optional {"group": <slug>} sub-scope (one coarse
+            # group per officer domain). A missing group means "any task_choice".
+            if entry.get("category") == "task_choice":
+                grp = entry.get("group")
+                if grp is not None and grp not in VALID_TASK_GROUPS:
+                    raise ValueError(
+                        f"Invalid task_choice group '{grp}' for agent "
+                        f"'{self.subagent_name}'. Must be one of {VALID_TASK_GROUPS}.")
             # Optional building-type sub-scope (see agent_filters.filter_actions).
             # Case-insensitive substring match against a construction building_type
             # ("Kitchen"/"Shelter"/"CaseworkSite") or an assignment/deconstruction
@@ -96,6 +108,16 @@ class AgentConfig:
                     f"for agent '{self.subagent_name}'."
                 )
         for key in self.subobservation_space:
+            # "tasks:<group>" narrows visible tasks to a coarse group (parallel to
+            # the task_choice action sub-scope). Bare "tasks" keeps its jurisdiction
+            # narrowing. Validate the suffix against the known groups.
+            if isinstance(key, str) and key.startswith("tasks:"):
+                grp = key.split(":", 1)[1]
+                if grp not in VALID_TASK_GROUPS:
+                    raise ValueError(
+                        f"Invalid task obs group '{key}' for agent "
+                        f"'{self.subagent_name}'. Must be tasks:<{'|'.join(sorted(VALID_TASK_GROUPS))}>.")
+                continue
             if key not in VALID_OBS_KEYS:
                 raise ValueError(f"Invalid observation key '{key}' for agent '{self.subagent_name}'.")
         if self.talkinghead_endpoint not in VALID_TALKINGHEADS:
