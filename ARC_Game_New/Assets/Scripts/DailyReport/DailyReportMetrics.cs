@@ -29,16 +29,16 @@ using UnityEngine;
 ///     workerUtilizationScore = ((100 - idleWorkerRate) - 50) * 0.1; (CalculateWorkerUtilizationScore P.S.idleWorkerRate = [1,100])
 /// 
 ///   Total Satisfaction Change = Food + Lodging + Worker Training
-///   Final Satisfaction = Clamp(previous + change, 0, 100)
+///   Final Satisfaction = previous + change (unclamped)
 ///
 /// EFFICIENCY SCORE FORMULA:
-///   Kitchen Efficiency  = 5.0 - foodInStorage * 0.5 clamped to [-5, 5]
+///   Kitchen Efficiency  = 5.0 - foodInStorage * 0.5 (unclamped)
 ///   Shelter Efficiency  = (shelterOccupancyRate - 50) * 0.1
 ///   Worker Efficiency   = (100 - idleWorkerRate - 50) * 0.1
 ///   Budget Efficiency   = (70 - budgetUsageRate) * 0.2
 ///
 ///   Total Efficiency Change = sum of all four
-///   Final Efficiency = Clamp(previous + change, 0, 100)
+///   Final Efficiency = previous + change (unclamped)
 /// ============================================================================
 
 [System.Serializable]

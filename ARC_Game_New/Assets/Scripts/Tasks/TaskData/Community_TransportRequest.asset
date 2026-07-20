@@ -15,9 +15,9 @@ MonoBehaviour:
   taskId: Community_TransportRequest
   taskTitle: Population Relocation From Community
   taskType: 1
-  description: 20 clients in this community need relocation. Choose where to send
+  description: 100 clients in [facility_name] need relocation. Choose where to send
     them based on available options and budget.
-  taskImage: {fileID: 21300000, guid: 7099591f7bcf3f343aeb32a4fd0d27cb, type: 3}
+  taskImage: {fileID: 21300000, guid: a2ba475e51fc353469fa5bc8ff4de77f, type: 3}
   taskOfficer: 2
   taskTag: 2
   roundTriggers: []
@@ -30,7 +30,7 @@ MonoBehaviour:
   resourceTriggers:
   - facilityType: 3
     resourceType: 0
-    resourceThreshold: 30
+    resourceThreshold: 200
     condition: 3
   probabilityTriggers:
   - probability: 0.5
@@ -46,7 +46,7 @@ MonoBehaviour:
   targetFacilityType: 3
   autoSelectFacility: 0
   specificFacility: {fileID: 0}
-  roundsRemaining: 4
+  roundsRemaining: 2
   realTimeRemaining: 300
   hasRealTimeLimit: 0
   impacts:
@@ -63,7 +63,7 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   agentMessages:
-  - messageText: We have 20 people that need immediate relocation.
+  - messageText: We have 100 clients that need immediate relocation in [facility_name].
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
@@ -78,7 +78,8 @@ MonoBehaviour:
     typingSpeed: 0.05
   agentChoices:
   - choiceId: 0
-    choiceText: Send to Shelters (Free, limited space)
+    choiceText: Send to Shelters
+    agentReasoning: 
     choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
@@ -87,7 +88,7 @@ MonoBehaviour:
     enableMultipleDeliveries: 1
     multiDeliveryType: 1
     quantityType: 0
-    deliveryQuantity: 20
+    deliveryQuantity: 100
     deliveryPercentage: 0
     deliverAll: 0
     sourceType: 3
@@ -102,7 +103,8 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: 'Send to Motel (free now, then $200/person/day ongoing)'
+    choiceText: Send to Motel
+    agentReasoning: 
     choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
@@ -111,7 +113,7 @@ MonoBehaviour:
     enableMultipleDeliveries: 0
     multiDeliveryType: 0
     quantityType: 0
-    deliveryQuantity: 20
+    deliveryQuantity: 100
     deliveryPercentage: 0
     deliverAll: 0
     sourceType: 3
@@ -126,7 +128,8 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 2
-    choiceText: Helicopter Evacuation to Shelters (Immediate, $3000)
+    choiceText: Rapid Response Vehicle Evacuation to Shelters (Immediate, $3000)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 1
       value: -3000
@@ -139,7 +142,7 @@ MonoBehaviour:
     enableMultipleDeliveries: 1
     multiDeliveryType: 1
     quantityType: 0
-    deliveryQuantity: 20
+    deliveryQuantity: 100
     deliveryPercentage: 0
     deliverAll: 0
     sourceType: 3
@@ -154,7 +157,8 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 3
-    choiceText: 'Helicopter Evacuation to Motel (Immediate, $3000, then $200/person/day ongoing)'
+    choiceText: Rapid Response Vehicle Evacuation to Motel (Immediate, $3000)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 1
       value: -3000
@@ -167,7 +171,7 @@ MonoBehaviour:
     enableMultipleDeliveries: 0
     multiDeliveryType: 0
     quantityType: 0
-    deliveryQuantity: 20
+    deliveryQuantity: 100
     deliveryPercentage: 0
     deliverAll: 0
     sourceType: 3

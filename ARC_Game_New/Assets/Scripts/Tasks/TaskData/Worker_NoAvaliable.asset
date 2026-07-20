@@ -57,7 +57,7 @@ MonoBehaviour:
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
-  - messageText: Consider recruiting workers from external sources or redistributing
+  - messageText: Consider requesting workers from external sources or redistributing
       staff from other facilities.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1

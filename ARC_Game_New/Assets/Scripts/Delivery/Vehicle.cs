@@ -10,8 +10,7 @@ public enum VehicleStatus
     Loading,
     InTransit,
     Unloading,
-    Returning,
-    Damaged  
+    Damaged
 }
 
 public class Vehicle : MonoBehaviour
@@ -28,6 +27,12 @@ public class Vehicle : MonoBehaviour
     [Header("Visual Components")]
     public SpriteRenderer vehicleRenderer;
     public GameObject cargoIndicator; // Visual indicator of cargo
+    public SpriteRenderer glowIndicator; // color coded status
+
+    [Header("Glow State Colors")]
+    public Color availableGlowColor = new Color(0f, 1f, 0.2f, 1f);   // Green
+    public Color activeGlowColor = new Color(1f, 0.8f, 0f, 1f);      // Yellow
+    public Color damagedGlowColor = new Color(1f, 0.1f, 0.1f, 1f);   // Red
 
     [Header("Vehicle Direction")]
     public bool enableDirectionRotation = true;
@@ -183,11 +188,13 @@ public class Vehicle : MonoBehaviour
         Vector3 sourcePos = currentTask.GetSourceRoadConnection();
         Debug.Log($"Vehicle {vehicleName} moving to source: {sourcePos}");
         yield return StartCoroutine(MoveToPosition(sourcePos));
+        if (currentTask == null) yield break;
 
         // Step 2: Load cargo
         SetStatus(VehicleStatus.Loading);
         Debug.Log($"Vehicle {vehicleName} loading cargo");
         yield return StartCoroutine(LoadCargo());
+        if (currentTask == null) yield break;
 
         // LoadCargo aborts (nulling currentTask and resetting the vehicle to Idle)
         // when the source building has no cargo. Stop the run here instead of
@@ -202,11 +209,13 @@ public class Vehicle : MonoBehaviour
         Vector3 destPos = currentTask.GetDestinationRoadConnection();
         Debug.Log($"Vehicle {vehicleName} moving to destination: {destPos}");
         yield return StartCoroutine(MoveToPosition(destPos));
+        if (currentTask == null) yield break;
 
         // Step 4: Unload cargo
         SetStatus(VehicleStatus.Unloading);
         Debug.Log($"Vehicle {vehicleName} unloading cargo");
         yield return StartCoroutine(UnloadCargo());
+        if (currentTask == null) yield break;
 
         // Step 5: Complete delivery
         Debug.Log($"Vehicle {vehicleName} completing delivery");
@@ -233,7 +242,8 @@ public class Vehicle : MonoBehaviour
         if (currentPath.Count == 0)
         {
             if (showDebugInfo)
-                Debug.LogError($"Vehicle {vehicleName} could not find flood-free path to {targetPos}");
+                Debug.LogWarning($"Vehicle {vehicleName} could not find flood-free path to {targetPos} — treating as flood blockage");
+            StopVehicleDueToFlood();
             yield break;
         }
 
@@ -300,6 +310,13 @@ public class Vehicle : MonoBehaviour
         // Trigger vehicle repair task
         TriggerVehicleRepairTask();
 
+        // Remove the delivery from DeliverySystem's active list so it doesn't hang in the queue
+        if (currentTask != null)
+        {
+            DeliverySystem.Instance?.RemoveActiveDeliveryTask(currentTask.taskId);
+            currentTask = null;
+        }
+
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} stopped due to flood at position {transform.position}");
     }
@@ -310,13 +327,22 @@ public class Vehicle : MonoBehaviour
         if (currentTask != null)
         {
             GameTask relatedTask = FindRelatedGameTask();
-            
-            // Only handle delivery failure if we found a related game task
+
             if (relatedTask != null)
             {
-                TaskSystem.Instance?.HandleDeliveryFailure(relatedTask);
+                bool hasLoaded = currentCargo.Any(kv => kv.Value > 0);
+                string phase = hasLoaded ? "en route to drop-off" : "en route to pick-up";
+                string cargoLabel = currentTask.cargoType == ResourceType.Population ? "clients" : "meals";
+                string src = GetBuildingDisplayName(currentTask.sourceBuilding);
+                string dst = GetBuildingDisplayName(currentTask.destinationBuilding);
+                string reason =
+                    $"Vehicle \"{vehicleName}\" was {phase} ({currentTask.quantity} {cargoLabel} from {src} to {dst}) " +
+                    $"when it was stopped by flooding. The delivery has been halted. " +
+                    $"Satisfaction penalty: {relatedTask.deliveryFailureSatisfactionPenalty}.";
+
+                TaskSystem.Instance?.HandleDeliveryFailure(relatedTask, reason);
             }
-            
+
             // Always create road blockage task if we have a delivery task
             FloodTaskGenerator.Instance?.CreateRoadBlockageTask(this, currentTask);
         }
@@ -325,6 +351,16 @@ public class Vehicle : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Vehicle {vehicleName} blocked by flood but has no delivery task - skipping road blockage task");
         }
+    }
+
+    static string GetBuildingDisplayName(MonoBehaviour building)
+    {
+        if (building == null) return "Unknown";
+        PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
+        if (pb != null) return pb.GetBuildingName();
+        Building b = building.GetComponent<Building>();
+        if (b != null) return b.GetDisplayName();
+        return building.name;
     }
 
     void TriggerVehicleRepairTask()
@@ -358,25 +394,48 @@ public class Vehicle : MonoBehaviour
     {
         if (vehicleRenderer == null) return;
 
+        //switch (currentStatus)
+        //{
+        //    case VehicleStatus.Idle:
+        //        vehicleRenderer.color = idleColor;
+        //        break;
+        //    case VehicleStatus.Loading:
+        //        vehicleRenderer.color = loadingColor;
+        //        break;
+        //    case VehicleStatus.InTransit:
+        //        vehicleRenderer.color = inTransitColor;
+        //        break;
+        //    case VehicleStatus.Unloading:
+        //        vehicleRenderer.color = unloadingColor;
+        //        break;
+
+        //    case VehicleStatus.Damaged:
+        //        vehicleRenderer.color = damagedColor;
+        //        break;
+        //}
+
+        //color coded version
         switch (currentStatus)
         {
             case VehicleStatus.Idle:
                 vehicleRenderer.color = idleColor;
+                if (glowIndicator != null) glowIndicator.color = availableGlowColor; 
                 break;
             case VehicleStatus.Loading:
                 vehicleRenderer.color = loadingColor;
+                if (glowIndicator != null) glowIndicator.color = activeGlowColor;    
                 break;
             case VehicleStatus.InTransit:
                 vehicleRenderer.color = inTransitColor;
+                if (glowIndicator != null) glowIndicator.color = activeGlowColor;    
                 break;
             case VehicleStatus.Unloading:
                 vehicleRenderer.color = unloadingColor;
-                break;
-            case VehicleStatus.Returning:
-                vehicleRenderer.color = inTransitColor;
+                if (glowIndicator != null) glowIndicator.color = activeGlowColor;    
                 break;
             case VehicleStatus.Damaged:
                 vehicleRenderer.color = damagedColor;
+                if (glowIndicator != null) glowIndicator.color = damagedGlowColor;   
                 break;
         }
 
@@ -421,8 +480,6 @@ public class Vehicle : MonoBehaviour
         if (currentTask == null || sourceBuilding == null)
             yield break;
 
-        yield return new WaitForSeconds(1f);
-
         BuildingResourceStorage sourceStorage = GetBuildingResourceStorage(sourceBuilding);
 
         if (sourceStorage != null)
@@ -465,9 +522,6 @@ public class Vehicle : MonoBehaviour
     {
         if (currentTask == null || destinationBuilding == null)
             yield break;
-
-        // Simulate unloading time
-        yield return new WaitForSeconds(1f);
 
         // Try to deliver resources to destination building
         BuildingResourceStorage destStorage = GetBuildingResourceStorage(destinationBuilding);
@@ -563,6 +617,13 @@ public class Vehicle : MonoBehaviour
         return currentCargo.ContainsKey(type) ? currentCargo[type] : 0;
     }
 
+    public void ClearAllCargo()
+    {
+        var keys = new System.Collections.Generic.List<ResourceType>(currentCargo.Keys);
+        foreach (var key in keys)
+            currentCargo[key] = 0;
+    }
+
     /// <summary>
     /// Check if vehicle is available for new tasks
     /// </summary>
@@ -629,25 +690,40 @@ public class Vehicle : MonoBehaviour
     {
         if (Time.timeScale != 0f) return; // Only when paused
         transform.localScale = Vector3.one * 1.1f;
+        //show status text on hover
+        if (VehicleUIOverlay.Instance != null)
+        {
+            VehicleUIOverlay.Instance.SetOverlayVisibility(this, true);
+        }
     }
 
     void OnMouseExit()
     {
         transform.localScale = Vector3.one;
+        //hide status text leaving hover
+        if (VehicleUIOverlay.Instance != null)
+        {
+            VehicleUIOverlay.Instance.SetOverlayVisibility(this, false);
+        }
     }
 
     void OnMouseDown()
     {
-        // Only allow clicks when game is paused
         if (Time.timeScale != 0f)
             return;
-        
+        if (UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject())
+        {
+            return;
+        }
+
         if (VehicleInfoPanel.Instance != null)
         {
             VehicleInfoPanel.Instance.OnVehicleClicked(transform.position);
         }
+
     }
-    
+
+
     void OnDestroy()
     {
         if (VehicleUIOverlay.Instance != null)
@@ -657,7 +733,7 @@ public class Vehicle : MonoBehaviour
     }
 
     // Getters
-    public int GetVehicleId() => vehicleId;
+    public int GetVehicleId() => vehicleId; 
     public string GetVehicleName() => vehicleName;
     public VehicleStatus GetCurrentStatus() => currentStatus;
     public int GetMaxCapacity() => maxCargoCapacity;
@@ -665,7 +741,7 @@ public class Vehicle : MonoBehaviour
     public ResourceType GetCurrentCargoType() => GetPrimaryCargoType();
     public List<ResourceType> GetAllowedCargoTypes() => new List<ResourceType>(allowedCargoTypes);
     public DeliveryTask GetCurrentTask() => currentTask;
-
+     
     [ContextMenu("Print Vehicle Status")]
     public void DebugPrintStatus()
     {

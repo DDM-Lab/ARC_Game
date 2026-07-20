@@ -34,6 +34,10 @@ public class InstructorConfigUI : MonoBehaviour
     public Button          clearButton;
     public Button          backButton;
     public TextMeshProUGUI statusLabel;
+    public TMP_Dropdown mapPresetDropdown;
+    public TMP_Dropdown paramPresetDropdown;
+    public Button saveMapPresetBtn;
+    public Button saveParamPresetBtn;
 
     [Header("References")]
     public MapEditorCanvas mapEditorCanvas;
@@ -41,6 +45,8 @@ public class InstructorConfigUI : MonoBehaviour
 
     [Header("Scene Names")]
     public string titleSceneName = "TitleScene";
+
+    private string[] presetNames = { "easy", "medium", "hard" };
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -56,6 +62,10 @@ public class InstructorConfigUI : MonoBehaviour
         saveToServerButton.onClick.AddListener(OnSaveToServerClicked);
         clearButton       .onClick.AddListener(OnClearClicked);
         backButton        .onClick.AddListener(OnBackClicked);
+        saveMapPresetBtn.onClick.AddListener(OnSaveMapPresetClicked);
+        saveParamPresetBtn.onClick.AddListener(OnSaveParamPresetClicked);
+        mapPresetDropdown.onValueChanged.AddListener(index => OnMapDropdownChanged(index));
+        paramPresetDropdown.onValueChanged.AddListener(index => OnParamDropdownChanged(index));
 
         // File import callback
         if (fileIOBridge != null)
@@ -63,6 +73,13 @@ public class InstructorConfigUI : MonoBehaviour
 
         // Server save callback
         InstructorConfigManager.Instance.OnSaveComplete += HandleSaveComplete;
+
+        ShowTab(0);
+        SetStatus("Config editor ready.");
+
+        InstructorConfigManager.Instance.OnConfigChanged += RefreshVisuals;
+
+        RefreshVisuals();
 
         ShowTab(0);
         SetStatus("Config editor ready.");
@@ -75,6 +92,8 @@ public class InstructorConfigUI : MonoBehaviour
 
         if (InstructorConfigManager.Instance != null)
             InstructorConfigManager.Instance.OnSaveComplete -= HandleSaveComplete;
+        if (InstructorConfigManager.Instance != null)
+            InstructorConfigManager.Instance.OnConfigChanged -= RefreshVisuals;
     }
 
     // ── Tab switching ─────────────────────────────────────────────────────────
@@ -85,6 +104,12 @@ public class InstructorConfigUI : MonoBehaviour
         parametersPanel.SetActive(tab == 1);
         mapEditorTabButton .interactable = tab != 0;
         parametersTabButton.interactable = tab != 1;
+
+        if (mapPresetDropdown != null) mapPresetDropdown.gameObject.SetActive(tab == 0);
+        if (saveMapPresetBtn != null) saveMapPresetBtn.gameObject.SetActive(tab == 0);
+
+        if (paramPresetDropdown != null) paramPresetDropdown.gameObject.SetActive(tab == 1);
+        if (saveParamPresetBtn != null) saveParamPresetBtn.gameObject.SetActive(tab == 1);
     }
 
     // ── Save to file (browser download) ──────────────────────────────────────
@@ -136,13 +161,42 @@ public class InstructorConfigUI : MonoBehaviour
         if (InstructorConfigManager.Instance.IsSaving) return;
         SetStatus("Saving to server…");
         saveToServerButton.interactable = false;
-        InstructorConfigManager.Instance.SaveToServer();
+        InstructorConfigManager.Instance.SaveToServer("latest_map_config.json");
     }
 
     void HandleSaveComplete(bool success, string message)
     {
         saveToServerButton.interactable = true;
         SetStatus(message);
+    }
+
+    // separate easy/med/hard 
+    void OnMapDropdownChanged(int index)
+    {
+        string fileName = $"{presetNames[index]}_map_config.json";
+        SetStatus($"InstructorConfigUI: Loading Map Config: {fileName}");
+        InstructorConfigManager.Instance.LoadPresetFromServer(fileName, true);
+    }
+
+    void OnParamDropdownChanged(int index)
+    {
+        string fileName = $"{presetNames[index]}_param_config.json";
+        SetStatus($"InstructorConfigUI: Loading Param Config: {fileName}");
+        InstructorConfigManager.Instance.LoadPresetFromServer(fileName, false);
+    }
+
+    void OnSaveMapPresetClicked()
+    {
+        string fileName = $"{presetNames[mapPresetDropdown.value]}_map_config.json";
+        SetStatus($"InstructorConfigUI: Saving Map Layout to {fileName}");
+        InstructorConfigManager.Instance.SaveMapOnly(fileName);
+    }
+
+    void OnSaveParamPresetClicked()
+    {
+        string fileName = $"{presetNames[paramPresetDropdown.value]}_param_config.json";
+        SetStatus($"InstructorConfigUI: Saving Params to {fileName}");
+        InstructorConfigManager.Instance.SaveParamsOnly(fileName);
     }
 
     // ── Clear / Back ──────────────────────────────────────────────────────────
@@ -160,5 +214,9 @@ public class InstructorConfigUI : MonoBehaviour
     void SetStatus(string msg)
     {
         if (statusLabel != null) statusLabel.text = msg;
+    }
+    void RefreshVisuals()
+    {
+        mapEditorCanvas?.ReloadFromConfig();
     }
 }

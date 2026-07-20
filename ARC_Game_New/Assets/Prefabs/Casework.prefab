@@ -456,8 +456,8 @@ Transform:
   m_GameObject: {fileID: 5542234910153243227}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalPosition: {x: -0.5277, y: 0, z: 0}
+  m_LocalScale: {x: 0.1277, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 4413020491373674753}
@@ -747,6 +747,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   buildingType: 2
   originalSiteId: 0
+  buildingName: 
   currentStatus: 0
   capacity: 40
   operationalEfficiency: 1
@@ -777,7 +778,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   resourceCapacities:
   - resourceType: 0
-    maxCapacity: 40
+    maxCapacity: 400
   startingResources: []
   startingFoodPacks: 0
   enableFoodWaste: 1

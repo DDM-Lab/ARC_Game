@@ -116,7 +116,7 @@ public class NumericalInputUI : MonoBehaviour
             case NumericalInputType.TrainedWorkers:
                 return "Trained Workers";
             case NumericalInputType.FoodPacks:
-                return "Food Packs";
+                return "Meals";
             default:
                 return "Value Input";
         }

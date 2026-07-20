@@ -36,7 +36,7 @@ public class ClientRelocationHandler : MonoBehaviour
 
     public bool CanExecute(GameTask parentTask, int requestedQuantity,
                            bool includeShelters, bool includeMotels,
-                           out string errorMessage)
+                           out string errorMessage, bool requireVehicle = true)
     {
         errorMessage = "";
 
@@ -57,24 +57,28 @@ public class ClientRelocationHandler : MonoBehaviour
         DeliverySystem ds = DeliverySystem.Instance;
         if (ds == null) { errorMessage = "DeliverySystem not found"; return false; }
 
-        int totalEffectiveSpace = GetDestinationsSorted(ds, includeShelters, includeMotels, source)
+        // Immediate delivery is a teleport — skip path check. Vehicle delivery requires a reachable road.
+        int totalEffectiveSpace = GetDestinationsSorted(ds, includeShelters, includeMotels, source, filterByPath: requireVehicle)
             .Sum(d => d.effectiveSpace);
 
         if (totalEffectiveSpace <= 0)
         {
             string destLabel = includeShelters && includeMotels ? "shelter/motel"
                              : includeShelters ? "shelter" : "motel";
-            errorMessage = $"No space available at any {destLabel}";
+            errorMessage = $"No reachable {destLabel} with available space — routes may be blocked by flooding";
             return false;
         }
 
-        bool hasVehicle = FindObjectsOfType<Vehicle>()
-            .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.Population)
-                   && v.GetCurrentStatus() != VehicleStatus.Damaged);
-        if (!hasVehicle)
+        if (requireVehicle)
         {
-            errorMessage = "No undamaged vehicle available for client transport";
-            return false;
+            bool hasVehicle = FindObjectsOfType<Vehicle>()
+                .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.Population)
+                       && v.GetCurrentStatus() != VehicleStatus.Damaged);
+            if (!hasVehicle)
+            {
+                errorMessage = "No undamaged vehicle available for client transport";
+                return false;
+            }
         }
 
         return true;
@@ -217,6 +221,16 @@ public class ClientRelocationHandler : MonoBehaviour
 
         DeliverySystem ds = DeliverySystem.Instance;
         var destinations  = GetDestinationsSorted(ds, includeShelters, includeMotels, source);
+
+        // main-bugfixes guard: nothing reachable to receive them.
+        if (destinations.Count == 0)
+        {
+            string destLabel = includeShelters && includeMotels ? "shelter or motel"
+                             : includeShelters ? "shelter" : "motel";
+            Debug.LogWarning($"[ClientRelocationHandler] No available {destLabel} for immediate relocation.");
+            return 0;
+        }
+
         int remaining     = toSend;
         int totalDelivered = 0;
 
@@ -246,7 +260,7 @@ public class ClientRelocationHandler : MonoBehaviour
             totalDelivered += delivered;
 
             if (showDebugInfo)
-                Debug.Log($"[ClientRelocationTaskGenerator] Immediate {delivered} clients {source.name} → {dest.name}");
+                Debug.Log($"[ClientRelocationHandler] Immediate {delivered} clients {source.name} → {dest.name}");
         }
 
         // People-based fulfillment accounting (B2): record how many actually moved.
@@ -259,7 +273,8 @@ public class ClientRelocationHandler : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────
 
     List<(MonoBehaviour dest, int effectiveSpace)> GetDestinationsSorted(
-        DeliverySystem ds, bool includeShelters, bool includeMotels, MonoBehaviour excludeSource)
+        DeliverySystem ds, bool includeShelters, bool includeMotels, MonoBehaviour excludeSource,
+        bool filterByPath = false)
     {
         var results = new List<(MonoBehaviour, int)>();
 
@@ -295,6 +310,16 @@ public class ClientRelocationHandler : MonoBehaviour
                 if (effectiveSpace > 0)
                     results.Add((motel, effectiveSpace));
             }
+        }
+
+        // Filter by pathfinding reachability when requested (used at validation time)
+        if (filterByPath && ds != null)
+        {
+            results = results.Where(r =>
+            {
+                DeliveryTimeEstimate est;
+                return ds.CanCreateDeliveryWithEstimate(excludeSource, r.Item1, out est);
+            }).ToList();
         }
 
         // Sort: shelters first if preferred, then most space

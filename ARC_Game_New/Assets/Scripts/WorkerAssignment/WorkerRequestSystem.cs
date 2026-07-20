@@ -6,13 +6,12 @@ using System.Collections.Generic;
 public class WorkerRequestSystem : MonoBehaviour
 {
     [Header("UI References")]
-    public Button requestUntrainedButton;
-    public Button requestTrainedButton;
-    
+    public Button requestWorkersButton;
+
     [Header("Request Settings - Untrained")]
     public int untrainedWorkerCost = 100;
     public int untrainedArrivalDays = 1;
-    
+
     [Header("Request Settings - Trained")]
     public int trainedWorkerCost = 300;
     public int trainedArrivalDays = 1;
@@ -25,13 +24,10 @@ public class WorkerRequestSystem : MonoBehaviour
     [Header("Debug")]
     public bool showDebugInfo = true;
 
-    [Header("Task Tracking")]
-    private GameTask currentUntrainedRequestTask = null;
-    private GameTask currentTrainedRequestTask = null;
+    private GameTask currentRequestTask = null;
 
-    // Track request tasks
     private List<RequestTask> activeRequestTasks = new List<RequestTask>();
-    
+
     public static WorkerRequestSystem Instance { get; private set; }
 
     void Awake()
@@ -46,20 +42,17 @@ public class WorkerRequestSystem : MonoBehaviour
             Destroy(gameObject);
         }
     }
-    
+
     void Start()
     {
         SetupUI();
         SubscribeToEvents();
     }
-    
+
     void SetupUI()
     {
-        if (requestUntrainedButton != null)
-            requestUntrainedButton.onClick.AddListener(OnRequestUntrainedButtonClicked);
-        
-        if (requestTrainedButton != null)
-            requestTrainedButton.onClick.AddListener(OnRequestTrainedButtonClicked);
+        if (requestWorkersButton != null)
+            requestWorkersButton.onClick.AddListener(OnRequestWorkersButtonClicked);
     }
 
     void SubscribeToEvents()
@@ -75,25 +68,18 @@ public class WorkerRequestSystem : MonoBehaviour
             GlobalClock.Instance.OnDayChanged += OnDayChanged;
         }
     }
-    
+
     void OnTaskExpired(GameTask task)
     {
-        // Clear reference if request task expired
-        if (task.taskTitle == "Request Untrained Responders" && currentUntrainedRequestTask == task)
+        if (task == currentRequestTask)
         {
-            currentUntrainedRequestTask = null;
+            currentRequestTask = null;
             if (showDebugInfo)
-                Debug.Log("Untrained request task expired - cleared reference");
-        }
-        else if (task.taskTitle == "Request Trained Responders" && currentTrainedRequestTask == task)
-        {
-            currentTrainedRequestTask = null;
-            if (showDebugInfo)
-                Debug.Log("Trained request task expired - cleared reference");
+                Debug.Log("Worker request task expired - cleared reference");
         }
     }
-    
-    public void OnRequestUntrainedButtonClicked()
+
+    public void OnRequestWorkersButtonClicked()
     {
         if (workerSystem == null)
             workerSystem = WorkerSystem.Instance;
@@ -104,215 +90,156 @@ public class WorkerRequestSystem : MonoBehaviour
             return;
         }
 
-        // Check if there's already an active untrained request task
-        if (currentUntrainedRequestTask != null &&
-            TaskSystem.Instance.GetAllActiveTasks().Contains(currentUntrainedRequestTask))
+        if (currentRequestTask != null &&
+            TaskSystem.Instance.GetAllActiveTasks().Contains(currentRequestTask))
         {
-            // Open existing task
             if (taskDetailUI != null)
             {
-                taskDetailUI.ShowTaskDetail(currentUntrainedRequestTask);
+                taskDetailUI.ShowTaskDetail(currentRequestTask);
                 if (showDebugInfo)
-                    Debug.Log("Reopened existing untrained worker request task");
+                    Debug.Log("Reopened existing worker request task");
             }
             return;
         }
-        
-        // Create untrained worker request task
-        CreateWorkerRequestTask(WorkerType.Untrained);
-    }
-    
-    public void OnRequestTrainedButtonClicked()
-    {
-        if (workerSystem == null)
-            workerSystem = WorkerSystem.Instance;
 
-        if (workerSystem == null)
-        {
-            Debug.LogError("WorkerSystem not found!");
-            return;
-        }
-
-        // Check if there's already an active trained request task
-        if (currentTrainedRequestTask != null &&
-            TaskSystem.Instance.GetAllActiveTasks().Contains(currentTrainedRequestTask))
-        {
-            // Open existing task
-            if (taskDetailUI != null)
-            {
-                taskDetailUI.ShowTaskDetail(currentTrainedRequestTask);
-                if (showDebugInfo)
-                    Debug.Log("Reopened existing trained worker request task");
-            }
-            return;
-        }
-        
-        // Create trained worker request task
-        CreateWorkerRequestTask(WorkerType.Trained);
+        CreateWorkerRequestTask();
     }
-    
-    void CreateWorkerRequestTask(WorkerType workerType)
+
+    void CreateWorkerRequestTask()
     {
         if (taskSystem == null)
             taskSystem = TaskSystem.Instance;
-        
-        bool isUntrained = (workerType == WorkerType.Untrained);
-        string workerTypeLabel = isUntrained ? "Untrained" : "Trained";
-        int costPerWorker = isUntrained ? untrainedWorkerCost : trainedWorkerCost;
-        int arrivalDays = isUntrained ? untrainedArrivalDays : trainedArrivalDays;
-        
+
         GameTask requestTask = taskSystem.CreateTask(
-            $"Request {workerTypeLabel} Responders",
+            "Request Additional Workers",
             TaskType.Other,
             "Worker Management",
-            $"Request additional {workerTypeLabel.ToLower()} responders to expand your workforce capacity."
+            "Request untrained or trained workers from other regions to expand your workforce."
         );
-        
-        // Set timing
+
         requestTask.roundsRemaining = 5;
         requestTask.taskOfficer = TaskOfficer.WorkforceService;
-        
-        // Add agent messages
-        if (isUntrained)
-        {
-            requestTask.agentMessages.Add(new AgentMessage(
-                "We can recruit additional untrained volunteers from the community. They won't be as efficient as trained responders, but they're available quickly and cost less.",
-                taskSystem.workforceServiceSprite
-            ));
-            
-            requestTask.agentMessages.Add(new AgentMessage(
-                $"Each untrained responder costs ${costPerWorker} and will arrive in {arrivalDays} day(s). They provide 1 workforce point each and can be trained later for better efficiency.",
-                taskSystem.workforceServiceSprite
-            ));
-        }
-        else
-        {
-            requestTask.agentMessages.Add(new AgentMessage(
-                "We can recruit experienced, trained responders from neighboring regions. They're ready to work immediately at full efficiency.",
-                taskSystem.workforceServiceSprite
-            ));
-            
-            requestTask.agentMessages.Add(new AgentMessage(
-                $"Each trained responder costs ${costPerWorker} and will arrive in {arrivalDays} day(s). They provide 2 workforce points and can be assigned to facilities immediately upon arrival.",
-                taskSystem.workforceServiceSprite
-            ));
-        }
-        
+
         requestTask.agentMessages.Add(new AgentMessage(
-            $"How many {workerTypeLabel.ToLower()} responders would you like to request?",
+            "We can bring in additional workers from other regions. Untrained workers are cheaper and arrive quickly, but each only contributes 1 workforce point. Trained workers cost more, but hit the ground running at 2 workforce points each.",
             taskSystem.workforceServiceSprite
         ));
 
-        AgentNumericalInput workerCountInput = new AgentNumericalInput(
-            1,                                          // inputId
-            isUntrained ? NumericalInputType.UntrainedWorkers : NumericalInputType.TrainedWorkers,
-            1,                                          // currentValue (default to 1)
-            0,                                          // minValue
-            20                                          // maxValue (reasonable cap)
+        requestTask.agentMessages.Add(new AgentMessage(
+            $"Untrained: ${untrainedWorkerCost}/worker, arrives in {untrainedArrivalDays} {(untrainedArrivalDays == 1 ? "day" : "days")}. Trained: ${trainedWorkerCost}/worker, arrives in {trainedArrivalDays} {(trainedArrivalDays == 1 ? "day" : "days")}. How many of each would you like to request?",
+            taskSystem.workforceServiceSprite
+        ));
+
+        //AgentNumericalInput untrainedInput = new AgentNumericalInput(
+        //    1,
+        //    NumericalInputType.UntrainedWorkers,
+        //    0,
+        //    0,
+        //    20
+        //);
+        //untrainedInput.inputLabel = "Untrained Workers to Request";
+        //untrainedInput.customDescription = $"${untrainedWorkerCost}/worker · arrives in {untrainedArrivalDays} {(untrainedArrivalDays == 1 ? "day" : "days")} · 1 workforce each";
+        //requestTask.numericalInputs.Add(untrainedInput);
+
+        //AgentNumericalInput trainedInput = new AgentNumericalInput(
+        //    2,
+        //    NumericalInputType.TrainedWorkers,
+        //    0,
+        //    0,
+        //    20
+        //);
+        //trainedInput.inputLabel = "Trained Workers to Request";
+        //trainedInput.customDescription = $"${trainedWorkerCost}/worker · arrives in {trainedArrivalDays} {(trainedArrivalDays == 1 ? "day" : "days")} · 2 workforce each";
+        //requestTask.numericalInputs.Add(trainedInput);
+        AgentNumericalInput trainedInput = new AgentNumericalInput(
+            1, // Updated ID to 1
+            NumericalInputType.TrainedWorkers,
+            0,
+            0,
+            20
         );
-        
-        workerCountInput.inputLabel = $"{workerTypeLabel} Responders to Request";
-        workerCountInput.customDescription = $"Select how many {workerTypeLabel.ToLower()} responders to request (${costPerWorker} per worker, {arrivalDays} days)";
+        trainedInput.inputLabel = "Trained Workers to Request";
+        trainedInput.customDescription = $"${trainedWorkerCost}/worker · arrives in {trainedArrivalDays} {(trainedArrivalDays == 1 ? "day" : "days")} · 2 workforce each";
+        requestTask.numericalInputs.Add(trainedInput);
 
-        requestTask.numericalInputs.Add(workerCountInput);
+        AgentNumericalInput untrainedInput = new AgentNumericalInput(
+            2, // Updated ID to 2
+            NumericalInputType.UntrainedWorkers,
+            0,
+            0,
+            20
+        );
+        untrainedInput.inputLabel = "Untrained Workers to Request";
+        untrainedInput.customDescription = $"${untrainedWorkerCost}/worker · arrives in {untrainedArrivalDays} {(untrainedArrivalDays == 1 ? "day" : "days")} · 1 workforce each";
+        requestTask.numericalInputs.Add(untrainedInput);
 
-        // Store reference to current task
-        if (isUntrained)
-            currentUntrainedRequestTask = requestTask;
-        else
-            currentTrainedRequestTask = requestTask;
-        
-        // Show task detail immediately
+        currentRequestTask = requestTask;
+
         if (taskDetailUI != null)
-        {
             taskDetailUI.ShowTaskDetail(requestTask);
-        }
-        
+
         if (showDebugInfo)
-            Debug.Log($"Created {workerTypeLabel.ToLower()} worker request task");
+            Debug.Log("Created combined worker request task");
     }
 
     void OnTaskCompleted(GameTask task)
     {
-        // Check if this is a worker request task
-        bool isUntrainedRequest = task.taskTitle == "Request Untrained Responders";
-        bool isTrainedRequest = task.taskTitle == "Request Trained Responders";
-        
-        if (!isUntrainedRequest && !isTrainedRequest)
+        if (task.taskTitle != "Request Additional Workers")
             return;
 
-        // Clear current task reference when completed
-        if (isUntrainedRequest && currentUntrainedRequestTask == task)
-            currentUntrainedRequestTask = null;
-        else if (isTrainedRequest && currentTrainedRequestTask == task)
-            currentTrainedRequestTask = null;
-        
-        // Get the number of workers to request from numerical input
-        if (task.numericalInputs.Count == 0)
+        if (currentRequestTask == task)
+            currentRequestTask = null;
+
+        if (task.numericalInputs.Count < 2)
         {
-            Debug.LogError("No numerical input found in worker request task!");
+            Debug.LogError("Worker request task is missing numerical inputs!");
             return;
         }
-        
-        int workersToRequest = task.numericalInputs[0].currentValue;
-        
-        if (workersToRequest <= 0)
-        {
-            //ToastManager.ShowToast("No responders selected for request", ToastType.Warning, true);
+
+        //int untrainedToRequest = task.numericalInputs[0].currentValue;
+        //int trainedToRequest = task.numericalInputs[1].currentValue;
+        int trainedToRequest = task.numericalInputs[0].currentValue;
+        int untrainedToRequest = task.numericalInputs[1].currentValue;
+
+        if (untrainedToRequest <= 0 && trainedToRequest <= 0)
             return;
-        }
-        
-        WorkerType workerType = isUntrainedRequest ? WorkerType.Untrained : WorkerType.Trained;
-        int costPerWorker = isUntrainedRequest ? untrainedWorkerCost : trainedWorkerCost;
-        
-        // Calculate cost
-        int totalCost = workersToRequest * costPerWorker;
-        
+
+        int totalCost = (untrainedToRequest * untrainedWorkerCost) + (trainedToRequest * trainedWorkerCost);
+
         // Check budget (honors the no-debt policy; allows overspend when allowNegativeBudget is on)
         if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
         {
-            //ToastManager.ShowToast($"Insufficient budget! Need ${totalCost}", ToastType.Warning, true);
             GameLogPanel.Instance.LogError($"Cannot afford worker request: ${totalCost}");
             return;
         }
-        
-        // Deduct budget
-        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $"Requesting {workersToRequest} {workerType.ToString().ToLower()} responders");
 
-        // Start worker request
-        StartWorkerRequest(workersToRequest, workerType);
+        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $"Requesting {untrainedToRequest} untrained and {trainedToRequest} trained workers");
+
+        if (untrainedToRequest > 0)
+            StartWorkerRequest(untrainedToRequest, WorkerType.Untrained);
+        if (trainedToRequest > 0)
+            StartWorkerRequest(trainedToRequest, WorkerType.Trained);
     }
-    
+
     void StartWorkerRequest(int workerCount, WorkerType workerType)
     {
         bool isUntrained = (workerType == WorkerType.Untrained);
         int arrivalDays = isUntrained ? untrainedArrivalDays : trainedArrivalDays;
-        
-        // Calculate arrival day
+
         int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
         int arrivalDay = currentDay + arrivalDays;
-        
-        // Create workers with NotArrived status
+
         List<Worker> incomingWorkers = new List<Worker>();
-        
+
         for (int i = 0; i < workerCount; i++)
         {
-            Worker worker;
-            if (isUntrained)
-            {
-                // Untrained workers use NotArrived status
-                worker = workerSystem.CreateUntrainedWorker(UntrainedWorkerStatus.NotArrived);
-                incomingWorkers.Add(worker);
-            }
-            else
-            {
-                // Trained workers use NotArrived status
-                worker = workerSystem.CreateTrainedWorker(TrainedWorkerStatus.NotArrived);
-                incomingWorkers.Add(worker);
-            }
+            Worker worker = isUntrained
+                ? workerSystem.CreateUntrainedWorker(UntrainedWorkerStatus.NotArrived)
+                : workerSystem.CreateTrainedWorker(TrainedWorkerStatus.NotArrived);
+            incomingWorkers.Add(worker);
         }
-        
-        RequestTask requestTask = new RequestTask
+
+        activeRequestTasks.Add(new RequestTask
         {
             workers = incomingWorkers,
             workerType = workerType,
@@ -320,68 +247,57 @@ public class WorkerRequestSystem : MonoBehaviour
             requestDay = currentDay,
             arrivalDay = arrivalDay,
             isCompleted = false
-        };
-        
-        activeRequestTasks.Add(requestTask);
+        });
 
-        string workerTypeLabel = isUntrained ? "untrained" : "trained";
-        ToastManager.ShowToast($"Requested {workerCount} {workerTypeLabel} responders. Estimated Arrival Date: Day {arrivalDay}", ToastType.Success, true);
-        GameLogPanel.Instance.LogWorkerAction($"Requested {workerCount} {workerTypeLabel} responders (arrival Day {arrivalDay})");
+        FindObjectOfType<GlobalWorkerManagementUI>()?.RefreshCurrentTab();
+
+        string label = isUntrained ? "untrained" : "trained";
+        ToastManager.ShowToast($"Requested {workerCount} {label} workers. Estimated Arrival Date: Day {arrivalDay}", ToastType.Success, true);
+        GameLogPanel.Instance.LogWorkerAction($"Requested {workerCount} {label} workers (arrival Day {arrivalDay})");
 
         if (showDebugInfo)
-            Debug.Log($"Worker request started on Day {currentDay} for {workerCount} {workerTypeLabel} responders, arrival day: {arrivalDay}");
+            Debug.Log($"Worker request started on Day {currentDay} for {workerCount} {label} workers, arrival day: {arrivalDay}");
     }
-    
+
     void OnDayChanged(int newDay)
     {
         foreach (RequestTask request in activeRequestTasks)
         {
             if (!request.isCompleted && newDay >= request.arrivalDay)
-            {
                 CompleteWorkerRequest(request);
-            }
         }
     }
-    
+
     void CompleteWorkerRequest(RequestTask request)
     {
         int workersArrived = 0;
         bool isUntrained = (request.workerType == WorkerType.Untrained);
 
-        if (isUntrained)
+        foreach (Worker worker in request.workers)
         {
-            // Create untrained workers on arrival (they were not pre-created)
-            foreach (Worker worker in request.workers)
-            {
-                if (worker != null && worker.Type == WorkerType.Untrained && worker.GetCurrentStatus() == "NotArrived")
-                {
-                    worker.SetUntrainedStatus(UntrainedWorkerStatus.Free);
-                    workersArrived++;
-                }
-            }
-        }
-        else
-        {
-            // Trained workers: change from NotArrived to Free
-            foreach (Worker worker in request.workers)
-            {
-                if (worker != null && worker.Type == WorkerType.Trained && worker.GetCurrentStatus() == "NotArrived")
-                {
-                    worker.SetTrainedStatus(TrainedWorkerStatus.Free);
-                    workersArrived++;
-                }
-            }
-        }
-        
-        request.isCompleted = true;
-        
-        string workerTypeLabel = isUntrained ? "untrained" : "trained";
-        Debug.Log($"Worker request completed: {workersArrived} {workerTypeLabel} workers arrived");
+            if (worker == null) continue;
 
-        ToastManager.ShowToast($"{workersArrived} {workerTypeLabel} responders have arrived and are ready to work!", ToastType.Success, true);
-        GameLogPanel.Instance.LogWorkerAction($"Worker request complete: {workersArrived} {workerTypeLabel} responders arrived");
+            if (isUntrained && worker.Type == WorkerType.Untrained && worker.GetCurrentStatus() == "NotArrived")
+            {
+                worker.SetUntrainedStatus(UntrainedWorkerStatus.Free);
+                workersArrived++;
+            }
+            else if (!isUntrained && worker.Type == WorkerType.Trained && worker.GetCurrentStatus() == "NotArrived")
+            {
+                worker.SetTrainedStatus(TrainedWorkerStatus.Free);
+                workersArrived++;
+            }
+        }
+
+        request.isCompleted = true;
+
+        string label = isUntrained ? "untrained" : "trained";
+        Debug.Log($"Worker request completed: {workersArrived} {label} workers arrived");
+
+        ToastManager.ShowToast($"{workersArrived} {label} workers have arrived and are ready to work!", ToastType.Success, true);
+        GameLogPanel.Instance.LogWorkerAction($"Worker request complete: {workersArrived} {label} workers arrived");
     }
-    
+
     void OnDestroy()
     {
         if (TaskSystem.Instance != null)
@@ -389,7 +305,7 @@ public class WorkerRequestSystem : MonoBehaviour
             TaskSystem.Instance.OnTaskCompleted -= OnTaskCompleted;
             TaskSystem.Instance.OnTaskExpired -= OnTaskExpired;
         }
-        
+
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnDayChanged -= OnDayChanged;
@@ -399,14 +315,14 @@ public class WorkerRequestSystem : MonoBehaviour
     [System.Serializable]
     public class RequestTask
     {
-        public List<Worker> workers;            // For trained workers (created with NotArrived status)
+        public List<Worker> workers;
         public WorkerType workerType;
         public int workerCount;
         public int requestDay;
         public int arrivalDay;
         public bool isCompleted = false;
     }
-    
+
     public List<RequestTask> GetActiveRequestTasks()
     {
         return new List<RequestTask>(activeRequestTasks);

@@ -138,7 +138,7 @@ public class ResourceFlowManager : MonoBehaviour
                 emergencyTask.isUrgent = true;
                 
                 if (showDebugInfo)
-                    Debug.Log($"Emergency food delivery requested: {urgentAmount} food packs to {shelter.name}");
+                    Debug.Log($"Emergency food delivery requested: {urgentAmount} meals to {shelter.name}");
             }
         }
     }
@@ -467,7 +467,7 @@ public class ResourceFlowManager : MonoBehaviour
             totalPopulation += prebuilt.GetCurrentPopulation();
         }
         
-        Debug.Log($"Resource Flow Status - Population: {totalPopulation}, Food Packs: {totalFoodPacks}, Deliveries: {totalFoodDeliveries} food, {totalPopulationTransports} population");
+        Debug.Log($"Resource Flow Status - Population: {totalPopulation}, Meals: {totalFoodPacks}, Deliveries: {totalFoodDeliveries} food, {totalPopulationTransports} population");
     }
     
     /// <summary>
@@ -527,7 +527,7 @@ public class ResourceFlowManager : MonoBehaviour
         Debug.Log("=== RESOURCE FLOW STATISTICS ===");
         Debug.Log($"Total Deliveries - Food: {stats.totalFoodDeliveries}, Population: {stats.totalPopulationTransports}, Return Home: {stats.totalReturnHomeTransports}");
         Debug.Log($"Population Distribution - Communities: {stats.populationInCommunities}, Buildings: {stats.totalPopulationInBuildings}, Motels: {stats.populationInMotels}");
-        Debug.Log($"Food Packs in Buildings: {stats.totalFoodPacksInBuildings}");
+        Debug.Log($"meals in Buildings: {stats.totalFoodPacksInBuildings}");
     }
 }
 

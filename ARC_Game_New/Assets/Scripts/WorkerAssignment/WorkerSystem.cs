@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System;
@@ -42,6 +43,7 @@ public class WorkerSystem : MonoBehaviour
 
     void Start()
     {
+        StartCoroutine(InitializeWithCentralConfig());
         InitializeWorkerPool();
 
         // =====================================================
@@ -83,7 +85,17 @@ public class WorkerSystem : MonoBehaviour
     {
         // FIX: Removed OnDayChanged unsubscribe (no longer subscribed)
     }
-    
+
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+        initialTrainedWorkers = GameDataManager.Instance.InitialTrainedVolunteerCount;
+        initialUntrainedWorkers = GameDataManager.Instance.InitialUntrainedVolunteerCount;
+    }
+
     void InitializeWorkerPool()
     {
         // Create initial trained workers
@@ -262,6 +274,13 @@ public class WorkerSystem : MonoBehaviour
         return totalWorkers > 0 ? (float)idleWorkers / totalWorkers * 100 : 0;
     }
 
+    public float GetIdleUntrainedWorkerPercentage()
+    {
+        int totalWorkers = GetUntrainedWorkersCount();
+        int idleWorkers = GetAvailableUntrainedWorkers();
+        return totalWorkers > 0 ? (float)idleWorkers / totalWorkers * 100 : 0;
+    }
+
     public void ReturnWorkersFromBuilding(int buildingId, int workforceAmount=4)
     {
         List<Worker> buildingWorkers = GetWorkersByBuildingId(buildingId);
@@ -362,7 +381,7 @@ public class WorkerStatistics
     public int untrainedNotArrived = 0;
     
     public int GetTotalTrained() { return trainedWorking + trainedFree + trainedNotArrived; }
-    public int GetTotalUntrained() { return untrainedWorking + untrainedFree + untrainedTraining; }
+    public int GetTotalUntrained() { return untrainedWorking + untrainedFree + untrainedTraining + untrainedNotArrived; }
     public int GetTotalWorkers() { return GetTotalTrained() + GetTotalUntrained(); }
     public int GetAvailableWorkforce() { return (trainedFree * 2) + untrainedFree; }
 }

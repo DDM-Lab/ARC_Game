@@ -768,6 +768,7 @@ public class WorkforceTrigger : TaskTrigger
         CurrentAvailableWorkforce,      // Current available workforce amount
         TrainedUntrainedRatio, // Trained vs Untrained workforce ratio
         IdleWorkerPercentage,   // Idle worker percentage
+        IdleUntrainedWorkerPercentage
     }
 
     public enum ComparisonType
@@ -798,6 +799,11 @@ public class WorkforceTrigger : TaskTrigger
             case WorkforceConditionType.IdleWorkerPercentage:
                 float idlePercentage = WorkerSystem.Instance.GetIdleWorkerPercentage();
                 return CheckComparison(idlePercentage, targetValue);
+
+            case WorkforceConditionType.IdleUntrainedWorkerPercentage:
+                float idleUntrainedPercentage = WorkerSystem.Instance.GetIdleUntrainedWorkerPercentage();
+                Debug.Log("idleUntrainedPercentage: " + idleUntrainedPercentage);
+                return CheckComparison(idleUntrainedPercentage, targetValue);
 
             default:
                 return false;

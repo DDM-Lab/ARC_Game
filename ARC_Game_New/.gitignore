@@ -126,3 +126,6 @@ arc_map_grid.json
 arc_midgame_state.json
 
 wandb/
+
+# Local Claude Code settings (from main-bugfixes)
+.claude/settings.local.json

@@ -96,34 +96,47 @@ public class DailyReportManager : MonoBehaviour
         SetupHistoryNavigation();
     }
 
-    public void ShowDailyReport()
+    public void ShowDailyReport(bool forceShow = false)
     {
-        if (dailyReportPanel == null || isTransitioning) return;
-        
-        // Add cooldown to prevent duplicate reports
-        if (Time.unscaledTime - lastReportTime < reportCooldown)
+        Debug.Log($"[DailyReportManager] ShowDailyReport called. forceShow={forceShow}, dailyReportPanel={(dailyReportPanel == null ? "NULL" : dailyReportPanel.name)}, isTransitioning={isTransitioning}");
+
+        if (dailyReportPanel == null)
         {
-            Debug.Log($"Report cooldown active - skipping duplicate ShowDailyReport call");
+            Debug.LogError("[DailyReportManager] dailyReportPanel is NULL — report cannot be shown. Check inspector assignment.");
             return;
         }
-        lastReportTime = Time.unscaledTime;
-        
-        // Pause the simulation
-        if (globalClock != null)
+
+        if (!forceShow)
         {
-            globalClock.PauseSimulation();
+            if (isTransitioning) { Debug.Log("[DailyReportManager] Blocked: isTransitioning"); return; }
+            if (Time.unscaledTime - lastReportTime < reportCooldown)
+            {
+                Debug.Log($"[DailyReportManager] Blocked: cooldown ({Time.unscaledTime - lastReportTime:F2}s < {reportCooldown}s)");
+                return;
+            }
         }
-        
-        // Start fade in transition
+        else if (isTransitioning)
+        {
+            Debug.Log("[DailyReportManager] forceShow=true — stopping active transition");
+            StopAllCoroutines();
+            isTransitioning = false;
+        }
+
+        lastReportTime = Time.unscaledTime;
+
+        if (globalClock != null)
+            globalClock.PauseSimulation();
+
+        Debug.Log("[DailyReportManager] Starting FadeInReportWithData coroutine");
         StartCoroutine(FadeInReportWithData());
-        
-        Debug.Log("Daily report displayed - waiting for player to read and continue to next day");
-        GameLogPanel.Instance.LogPlayerAction("Daily report displayed - waiting for player to read and continue to next day");
+
+        GameLogPanel.Instance?.LogPlayerAction("Daily report displayed - waiting for player to read and continue to next day");
     }
 
     IEnumerator FadeInReportWithData()
     {
-        // Reset all elements to hidden AFTER panel is activated but BEFORE fade in
+        Debug.Log($"[DailyReportManager] FadeInReportWithData started. reportUI={(reportUI == null ? "NULL" : "OK")}");
+
         if (reportUI != null)
         {
             reportUI.ResetAllElementsToHidden();

@@ -48,8 +48,8 @@ public class RequestGroupItemUI : MonoBehaviour
         if (workersRequestedText != null)
         {
             workersRequestedText.text = isCompleted ? 
-                $"{requestTask.workerCount} Responders (Arrived)" : 
-                $"{requestTask.workerCount} {workerTypeLabel} Responders En Route";
+                $"{requestTask.workerCount} Workers (Arrived)" : 
+                $"{requestTask.workerCount} {workerTypeLabel} Workers En Route";
         }
         
         // Day range with arrival message

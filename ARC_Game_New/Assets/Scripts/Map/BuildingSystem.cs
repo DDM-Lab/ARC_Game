@@ -10,7 +10,7 @@ public class BuildingSystem : MonoBehaviour
     public GameObject caseworkSitePrefab;
     
     [Header("Construction Settings")]
-    public float constructionTime = 5f; // Base construction time in seconds
+    public int constructionRounds = 4;
     
     [Header("UI References")]
     public BuildingSelectionUI buildingSelectionUI;
@@ -28,6 +28,23 @@ public class BuildingSystem : MonoBehaviour
 
     private List<AbandonedSite> registeredSites = new List<AbandonedSite>();
     private AbandonedSite selectedSite;
+
+    private static readonly string[] greekNames =
+    {
+        "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta",
+        "Iota", "Kappa", "Lambda", "Mu", "Nu", "Xi", "Omicron", "Pi",
+        "Rho", "Sigma", "Tau", "Upsilon", "Phi", "Chi", "Psi", "Omega"
+    };
+    private Dictionary<BuildingType, int> buildingNameCounters = new Dictionary<BuildingType, int>();
+
+    private string GenerateBuildingName(BuildingType type)
+    {
+        if (!buildingNameCounters.ContainsKey(type))
+            buildingNameCounters[type] = 0;
+        int index = buildingNameCounters[type]++;
+        string typeName = type == BuildingType.CaseworkSite ? "Casework" : type.ToString();
+        return $"{typeName} {greekNames[index % greekNames.Length]}";
+    }
 
     void Start()
     {
@@ -124,7 +141,7 @@ public class BuildingSystem : MonoBehaviour
             if (ConfirmationPopup.Instance != null)
             {
                 ConfirmationPopup.Instance.ShowPopup(
-                    message: $"Convert this abandoned site into a {buildingType}?\n\nConversion will take time to complete. Assign workers once the conversion is complete. Are you sure to proceed? (This is a one-time tutorial prompt)",
+                    message: $"Open a {buildingType} here?\n\nIt takes {constructionRounds} rounds to complete. Assign workers once it's opened to make sure it's functional.\n\n(This message won't appear again)",
                     onConfirm: () => {
                         FirstTimeActionTracker.Instance.MarkConstructCompleted();
                         PerformConstruction(site, buildingType);
@@ -175,7 +192,8 @@ public class BuildingSystem : MonoBehaviour
                 if (workerSystem != null)
                     buildingComponent.workerSystem = workerSystem;
 
-                buildingComponent.Initialize(buildingType, site.GetId());
+                buildingComponent.Initialize(buildingType, site.GetId(), constructionRounds);
+                buildingComponent.SetBuildingName(GenerateBuildingName(buildingType));
             }
 
             // Deduct construction cost
@@ -194,7 +212,7 @@ public class BuildingSystem : MonoBehaviour
                              : buildingType == BuildingType.CaseworkSite ? SatisfactionAndBudget.SpendCategory.Casework
                              : SatisfactionAndBudget.SpendCategory.Other;
                 SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, spendCat, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
-                ToastManager.ShowToast($"Construction cost of {constructionCost} deducted for building {buildingType}", ToastType.Info, true);
+                ToastManager.ShowToast($"Opening cost of {constructionCost} deducted for {buildingType}", ToastType.Info, true);
                 GameLogPanel.Instance.LogPlayerAction($"Construction cost of {constructionCost} deducted for building {buildingType} at AbandonedSite_{site.GetId()}");
             }
 
@@ -350,10 +368,27 @@ public class BuildingSystem : MonoBehaviour
         
         int siteId = building.GetOriginalSiteId();
         Vector3 buildingPosition = building.transform.position;
-        
+        // === ADDED DEBUG BLOCK START ===
+        Debug.Log($"[DECONSTRUCT TRACE] Trying to find Site ID: {siteId} for building {building.name}");
+        registeredSites.RemoveAll(s => s == null);
+        Debug.Log($"[DECONSTRUCT TRACE] Total registered sites currently in list: {registeredSites.Count}");
+
+        foreach (var s in registeredSites)
+        {
+            if (s == null)
+            {
+                Debug.LogError("[DECONSTRUCT TRACE] Found a NULL reference inside your registeredSites list!");
+            }
+            else
+            {
+                Debug.Log($"[DECONSTRUCT TRACE] Valid site in list has ID: {s.GetId()}");
+            }
+        }
+
         // Find the corresponding abandoned site
-        AbandonedSite site = registeredSites.Find(s => s.GetId() == siteId);
-        
+        //AbandonedSite site = registeredSites.Find(s => s.GetId() == siteId);
+        AbandonedSite site = registeredSites.Find(s => s != null && s.gameObject != null && s.GetId() == siteId);
+
         if (site == null)
         {
             Debug.LogError($"Cannot deconstruct: AbandonedSite {siteId} not found");

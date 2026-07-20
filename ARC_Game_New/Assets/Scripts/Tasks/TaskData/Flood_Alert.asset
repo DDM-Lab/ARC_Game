@@ -49,13 +49,8 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts: []
   agentMessages:
-  - messageText: Weather station reports rising flood levels. Current count exceeds
-      10 tiles.
-    agentAvatar: {fileID: 0}
-    useTypingEffect: 1
-    typingSpeed: 0.05
-  - messageText: We should consider evacuating vulnerable areas and checking our
-      emergency supplies.
+  - messageText: Weather station reports rising flood levels. We should be prepated
+      for evacuating vulnerable areas and checking our emergency supplies.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05

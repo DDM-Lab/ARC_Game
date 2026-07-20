@@ -15,9 +15,9 @@ MonoBehaviour:
   taskId: Community_Flood_Damge
   taskTitle: Community Emergency Evacuation
   taskType: 0
-  description: Flood has reached community center. Emergency relocation of residents
+  description: Flood has reached [facility_name]. Emergency relocation of residents
     required.
-  taskImage: {fileID: 21300000, guid: 7099591f7bcf3f343aeb32a4fd0d27cb, type: 3}
+  taskImage: {fileID: 21300000, guid: a2ba475e51fc353469fa5bc8ff4de77f, type: 3}
   taskOfficer: 2
   taskTag: 2
   roundTriggers: []
@@ -30,7 +30,7 @@ MonoBehaviour:
   resourceTriggers:
   - facilityType: 3
     resourceType: 0
-    resourceThreshold: 10
+    resourceThreshold: 100
     condition: 3
   probabilityTriggers: []
   floodTileTriggers: []
@@ -51,7 +51,7 @@ MonoBehaviour:
   targetFacilityType: 3
   autoSelectFacility: 1
   specificFacility: {fileID: 0}
-  roundsRemaining: 4
+  roundsRemaining: 2
   realTimeRemaining: 300
   hasRealTimeLimit: 0
   impacts:
@@ -64,7 +64,7 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   agentMessages:
-  - messageText: Flood water detected at community center! Large population at risk.
+  - messageText: Flood water detected at [facility_name]! Large population at risk.
       Immediate mass evacuation required.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
@@ -72,6 +72,7 @@ MonoBehaviour:
   agentChoices:
   - choiceId: 0
     choiceText: Evacuate 50% of community to shelters  (Satisfaction + 5)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 0
       value: 5
@@ -100,6 +101,7 @@ MonoBehaviour:
     prioritizeNearestDestination: 0
   - choiceId: 1
     choiceText: Full community evacuation to Shelters (Satisfaction + 15)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 0
       value: 15
@@ -127,7 +129,8 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 1
   - choiceId: 2
-    choiceText: '50% community evacuation to Motel (Immediate) (Satisfaction + 5, then $200/person/day ongoing)'
+    choiceText: 50% community evacuation to Motel (Immediate) (Satisfaction + 5)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 0
       value: 5

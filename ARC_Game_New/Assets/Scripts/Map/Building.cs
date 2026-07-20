@@ -26,6 +26,7 @@ public class Building : MonoBehaviour
     [Header("Building Information")]
     [SerializeField] private BuildingType buildingType;
     [SerializeField] private int originalSiteId;
+    [SerializeField] private string buildingName = "";
     [SerializeField] private BuildingStatus currentStatus = BuildingStatus.UnderConstruction;
 
     [Header("Building Stats")]
@@ -55,35 +56,32 @@ public class Building : MonoBehaviour
     [Header("UI Components")]
     public SpriteWorkforceIndicator mapWorkforceIndicator;
 
-    [Header("Deconstruction Settings")] // NEW SECTION
+    [Header("Deconstruction Settings")]
     public float deconstructionTime = 3f;
     private float deconstructionProgress = 0f;
     private Coroutine deconstructionCoroutine;
 
     private float constructionProgress = 0f;
-    private Coroutine constructionCoroutine;
-    private AbandonedSite abandonedSiteComponent; // Reference to AbandonedSite
+    private int constructionRoundsTotal;
+    private int constructionRoundsElapsed;
+    private AbandonedSite abandonedSiteComponent;
 
-    public void Initialize(BuildingType type, int siteId)
+    public void Initialize(BuildingType type, int siteId, int constructionRounds = 4)
     {
         buildingType = type;
         originalSiteId = siteId;
         currentStatus = BuildingStatus.UnderConstruction;
 
-        // Ensure progress bar is visible for construction
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(true);
 
-        // Hide workforce indicator during construction
         if (mapWorkforceIndicator != null)
             mapWorkforceIndicator.gameObject.SetActive(false);
 
-        // Start construction immediately
-        StartConstruction();
+        StartConstruction(constructionRounds);
 
         Debug.Log($"Player chose to convert site {originalSiteId} into {buildingType}. Construction will start during simulation period.");
         GameLogPanel.Instance.LogBuildingStatus($"Player chose to convert site {originalSiteId} into {buildingType}. Construction will start during simulation period.");
-        //ToastManager.ShowToast($"You chose to change an abandoned site at {originalSiteId} into {buildingType}. Currently Under Construction.", ToastType.Info, true);
     }
 
     void Start()
@@ -113,47 +111,36 @@ public class Building : MonoBehaviour
         }
     }
 
-    public void StartConstruction(float constructionTime = 5f)
+    public void StartConstruction(int rounds = 4)
     {
-        if (constructionCoroutine != null)
-        {
-            StopCoroutine(constructionCoroutine);
-        }
+        constructionRoundsTotal   = Mathf.Max(1, rounds);
+        constructionRoundsElapsed = 0;
+        constructionProgress      = 0f;
+        currentStatus             = BuildingStatus.UnderConstruction;
 
-        currentStatus = BuildingStatus.UnderConstruction;
-        constructionProgress = 0f;
-
-        // Show progress bar, hide worker button, hide workforce indicator
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(true);
 
         if (mapWorkforceIndicator != null)
             mapWorkforceIndicator.gameObject.SetActive(false);
 
-        // Start construction
-        constructionCoroutine = StartCoroutine(ConstructionCoroutine(constructionTime));
+        GlobalClock.OnRoundEnd += OnConstructionRoundEnd;
 
         UpdateBuildingVisual();
     }
 
-    IEnumerator ConstructionCoroutine(float constructionTime)
+    void OnConstructionRoundEnd()
     {
-        float elapsedTime = 0f;
+        constructionRoundsElapsed++;
+        constructionProgress = (float)constructionRoundsElapsed / constructionRoundsTotal;
+        UpdateConstructionProgress(constructionProgress);
+        UpdateBuildingVisual();
 
-        while (elapsedTime < constructionTime)
+        if (constructionRoundsElapsed >= constructionRoundsTotal)
         {
-            elapsedTime += Time.deltaTime;
-            constructionProgress = elapsedTime / constructionTime;
-
-            // Update progress bar
-            UpdateConstructionProgress(constructionProgress);
-            UpdateBuildingVisual();
-
-            yield return null;
+            GlobalClock.OnRoundEnd -= OnConstructionRoundEnd;
+            CompleteConstruction();
         }
-
-        // Construction completed
-        CompleteConstruction();
     }
 
     void UpdateConstructionProgress(float progress)
@@ -215,6 +202,8 @@ public class Building : MonoBehaviour
         // Release all workers immediately
         ReleaseAllWorkers();
 
+        DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
+
         // Change status to deconstructing
         currentStatus = BuildingStatus.Deconstructing;
         deconstructionProgress = 0f;
@@ -238,7 +227,7 @@ public class Building : MonoBehaviour
 
         Debug.Log($"{buildingType} at site {originalSiteId} deconstruction started");
         GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deconstruction started");
-        ToastManager.ShowToast($"{buildingType} deconstruction started - responders released. ", ToastType.Info, true);
+        ToastManager.ShowToast($"{buildingType} is now closing — workers released.", ToastType.Info, true);
     }
 
     // Deconstruction Coroutine
@@ -410,7 +399,7 @@ public class Building : MonoBehaviour
                     NotifyStatsUpdate();
                     Debug.LogWarning($"{buildingType} at site {originalSiteId} deactivated - insufficient workforce");
                     GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deactivated - insufficient workforce");
-                    ToastManager.ShowToast($"{buildingType} is not functional - it needs more responders to operate!", ToastType.Warning, true);
+                    ToastManager.ShowToast($"{buildingType} is not functional - it needs more workers to operate!", ToastType.Warning, true);
                 }
             }
         }
@@ -469,6 +458,8 @@ public class Building : MonoBehaviour
     // Getters
     public BuildingType GetBuildingType() => buildingType;
     public int GetOriginalSiteId() => originalSiteId;
+    public string GetDisplayName() => !string.IsNullOrEmpty(buildingName) ? buildingName : $"{buildingType} {originalSiteId}";
+    public void SetBuildingName(string name) => buildingName = name;
     public BuildingStatus GetCurrentStatus() => currentStatus;
     public bool IsOperational() => currentStatus == BuildingStatus.InUse;
     public bool IsUnderConstruction() => currentStatus == BuildingStatus.UnderConstruction;
@@ -476,6 +467,7 @@ public class Building : MonoBehaviour
     public bool IsDisabled() => currentStatus == BuildingStatus.Disabled;
     public bool IsDeconstructing() => currentStatus == BuildingStatus.Deconstructing; // NEW
     public float GetConstructionProgress() => constructionProgress;
+    public int   GetRoundsRemaining()      => Mathf.Max(0, constructionRoundsTotal - constructionRoundsElapsed);
     public float GetDeconstructionProgress() => deconstructionProgress; // NEW
     public int GetCapacity() => capacity;
     public float GetEfficiency() => operationalEfficiency;
@@ -504,12 +496,14 @@ public class Building : MonoBehaviour
 
     void OnDestroy()
     {
+        GlobalClock.OnRoundEnd -= OnConstructionRoundEnd;
+
         if (WorkerSystem.Instance != null)
-        {
             WorkerSystem.Instance.OnWorkerStatsChanged -= UpdateWorkforceIndicator;
-        }
+        DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
     }
-    
+
+
     [Header("Manual Task Debug")]
     public bool enableManualTasks = true;
 
@@ -542,9 +536,9 @@ public class Building : MonoBehaviour
         
         if (sourceKitchen != null)
         {
-            int requestAmount = 5; // Request 5 food packs
+            int requestAmount = 5; // Request 5 mealss
             deliverySystem.CreateDeliveryTask(sourceKitchen, this, ResourceType.FoodPacks, requestAmount, 5);
-            Debug.Log($"{name} requested {requestAmount} food packs from {sourceKitchen.name}");
+            Debug.Log($"{name} requested {requestAmount} mealss from {sourceKitchen.name}");
         }
         else
         {
@@ -585,7 +579,7 @@ public class Building : MonoBehaviour
         {
             int sendAmount = Mathf.Min(storage.GetResourceAmount(ResourceType.FoodPacks), 3);
             deliverySystem.CreateDeliveryTask(this, targetShelter, ResourceType.FoodPacks, sendAmount, 5);
-            Debug.Log($"{name} sending {sendAmount} food packs to {targetShelter.name}");
+            Debug.Log($"{name} sending {sendAmount} mealss to {targetShelter.name}");
         }
         else
         {
@@ -663,4 +657,5 @@ public class Building : MonoBehaviour
             StartDeconstruction();
         }
     }
+
 }

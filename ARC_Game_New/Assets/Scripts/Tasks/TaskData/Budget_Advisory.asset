@@ -63,10 +63,11 @@ MonoBehaviour:
     typingSpeed: 0.05
   agentChoices:
   - choiceId: 0
-    choiceText: Request pre-disaster funding ($5,000) - 2 rounds delay
+    choiceText: Request pre-disaster funding ($50,000) - 2 rounds delay
+    agentReasoning: 
     choiceImpacts:
     - impactType: 1
-      value: 5000
+      value: 50000
       isCountdown: 0
       customLabel: 
     isSelected: 0
@@ -91,10 +92,11 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Request pre-disaster funding ($10,000) - 4 rounds delay
+    choiceText: Request pre-disaster funding ($100,000) - 4 rounds delay
+    agentReasoning: 
     choiceImpacts:
     - impactType: 1
-      value: 10000
+      value: 100000
       isCountdown: 0
       customLabel: 
     isSelected: 0
@@ -120,6 +122,7 @@ MonoBehaviour:
     prioritizeNearestDestination: 0
   - choiceId: 2
     choiceText: Wait and see - conserve current budget (add satisfaction)
+    agentReasoning: 
     choiceImpacts:
     - impactType: 0
       value: 5

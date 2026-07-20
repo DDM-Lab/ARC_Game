@@ -1,12 +1,22 @@
 using UnityEngine;
+using UnityEngine.Networking;
 using System;
 using System.Collections;
 using NativeWebSocket; // Install from: https://github.com/endel/NativeWebSocket
 using GameActions;
 
+[System.Serializable]
+public class AppConfig
+{
+    public string wsUrl;
+    public string mapConfigUrl;
+    public string logServerUrl;
+}
+
 public class WebSocketManager : MonoBehaviour
 {
     public static WebSocketManager Instance { get; private set; }
+    public static AppConfig LoadedConfig { get; private set; }
 
     [Header("Server Settings")]
     public string serverUrl = "ws://localhost:9876/ws";
@@ -101,6 +111,35 @@ public class WebSocketManager : MonoBehaviour
             connectionStatus = "WebSocket Disabled";
             Debug.Log("WebSocket is disabled. Game will run in offline mode.");
         }
+    }
+
+    IEnumerator LoadConfigThenConnect()
+    {
+        string configPath = Application.streamingAssetsPath + "/config.json";
+        using (UnityWebRequest req = UnityWebRequest.Get(configPath))
+        {
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                var config = JsonUtility.FromJson<AppConfig>(req.downloadHandler.text);
+                if (config != null)
+                {
+                    LoadedConfig = config;
+                    if (!string.IsNullOrEmpty(config.wsUrl))
+                    {
+                        serverUrl = config.wsUrl;
+                        Debug.Log($"[WebSocket] URL loaded from config.json: {serverUrl}");
+                    }
+                }
+            }
+            else
+            {
+                Debug.Log($"[WebSocket] config.json not found, using Inspector value: {serverUrl}");
+            }
+        }
+
+        ConnectToServer();
     }
 
     void Update()
@@ -658,6 +697,7 @@ public class WebSocketManager : MonoBehaviour
             // Add agent reasoning as a message
             if (!string.IsNullOrEmpty(proposal.reasoning))
             {
+                string cleanReasoning = TaskSystem.Instance.ConvertSiteNamesToFriendly(proposal.reasoning);
                 llmContent.messages.Add(proposal.reasoning);
             }
 
@@ -666,17 +706,27 @@ public class WebSocketManager : MonoBehaviour
             {
                 foreach (var pkg in proposal.packages)
                 {
-                    // Build detailed description: package description + action list
+                    // Friendly site names for the human-visible label; our detailed
+                    // description (package + action list) for the agent-facing reasoning.
+                    string cleanLabel = TaskSystem.Instance.ConvertSiteNamesToFriendly(pkg.label);
                     string detailedDescription = FormatPackageDescription(pkg, proposal.available_actions);
 
                     llmContent.choices.Add(new LLMAgentChoice
                     {
                         choiceId = pkg.package_index,
-                        choiceText = pkg.label,
+                        choiceText = cleanLabel,
                         agentReasoning = detailedDescription,
                         confidence = pkg.confidence,
                         impacts = new System.Collections.Generic.List<LLMImpact>()
                     });
+                    //llmContent.choices.Add(new LLMAgentChoice
+                    //{
+                    //    choiceId = pkg.package_index,
+                    //    choiceText = pkg.label,
+                    //    agentReasoning = pkg.description,
+                    //    confidence = pkg.confidence,
+                    //    impacts = new System.Collections.Generic.List<LLMImpact>()
+                    //});
                 }
             }
 

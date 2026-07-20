@@ -8,6 +8,7 @@ public class VehicleUIOverlay : MonoBehaviour
     [Header("UI Settings")]
     public Vector2 uiOffset = new Vector2(0, 50f); // Offset above vehicle
     
+
     [Header("UI Prefab")]
     public GameObject vehicleOverlayPrefab; // Prefab with cargo and status text
     
@@ -77,6 +78,7 @@ public class VehicleUIOverlay : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Created UI overlay for Vehicle {vehicle.vehicleId}");
         }
+        uiOverlay.SetActive(false);
     }
     
     /// <summary>
@@ -175,33 +177,24 @@ public class VehicleUIOverlay : MonoBehaviour
     {
         switch (vehicle.currentStatus)
         {
-            case VehicleStatus.Idle:
-                return "Idle";
-            case VehicleStatus.Loading:
-                return "Loading";
+            case VehicleStatus.Idle:     return "Available";
+            case VehicleStatus.Loading:  return "Picking up";
             case VehicleStatus.InTransit:
-                return "In Transit";
-            case VehicleStatus.Unloading:
-                return "Unloading";
-            case VehicleStatus.Damaged:
-                return "Damaged";
-            default:
-                return "Unknown";
+                return vehicle.GetTotalCargo() > 0 ? "En route" : "On the way";
+            case VehicleStatus.Unloading: return "Dropping off";
+            case VehicleStatus.Damaged:   return "Out of service";
+            default:                      return "";
         }
     }
-    
+
     string GetCargoText(Vehicle vehicle)
     {
         int totalCargo = vehicle.GetTotalCargo();
-        
-        if (totalCargo <= 0)
-        {
-            return "Empty";
-        }
-        
+        if (totalCargo <= 0) return "";
+
         ResourceType cargoType = vehicle.GetPrimaryCargoType();
-        string cargoTypeName = cargoType == ResourceType.Population ? "Clients" : "Food";
-        return $"{cargoTypeName}: {totalCargo}/{vehicle.maxCargoCapacity}";
+        string label = cargoType == ResourceType.Population ? "clients" : "meals";
+        return $"{totalCargo} {label}";
     }
     
     void OnVehicleStatusChanged(Vehicle vehicle)
@@ -239,5 +232,13 @@ public class VehicleUIOverlay : MonoBehaviour
             return vehicleUIMap[vehicle];
         }
         return null;
+    }
+
+    public void SetOverlayVisibility(Vehicle vehicle, bool isVisible)
+    {
+        if (vehicleUIMap.ContainsKey(vehicle) && vehicleUIMap[vehicle] != null)
+        {
+            vehicleUIMap[vehicle].SetActive(isVisible);
+        }
     }
 }

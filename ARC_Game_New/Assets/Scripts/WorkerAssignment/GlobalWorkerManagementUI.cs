@@ -386,7 +386,10 @@ public class GlobalWorkerManagementUI : MonoBehaviour
     {
         if (buildingSystem == null) return new List<Building>();
         List<Building> allBuildings = buildingSystem.GetAllBuildings();
-        return allBuildings.Where(b => b.GetBuildingType() == buildingType).ToList();
+        //return allBuildings.Where(b => b.GetBuildingType() == buildingType).ToList();
+        return allBuildings
+        .Where(b => b.GetBuildingType() == buildingType && b.GetCurrentStatus() != BuildingStatus.Disabled && b.GetCurrentStatus() != BuildingStatus.Deconstructing)
+        .ToList();
     }
 
     void CreateBuildingListItem(Building building)
@@ -449,15 +452,25 @@ public class GlobalWorkerManagementUI : MonoBehaviour
         currentListItems.Clear();
     }
 
+    public void RefreshCurrentTab()
+    {
+        ClearList();
+        UpdateRightPanel();
+    }
+
     public void OnManageButtonClicked(Building building)
     {
-        if (individualManageUI != null)
+        if (WorkerAssignmentHandler.Instance != null)
         {
-            individualManageUI.ShowManageUI(building);
-            Debug.Log($"Opening individual manage UI for {building.GetBuildingType()} at site {building.GetOriginalSiteId()}");
-            GameLogPanel.Instance?.LogUIInteraction(
-            $"Opening individual manage UI for {building.GetBuildingType()} at site {building.GetOriginalSiteId()}");
+            WorkerAssignmentHandler.Instance.OpenForBuilding(building);
         }
+        else if (individualManageUI != null)
+        {
+            // Fallback to legacy UI if handler not in scene
+            individualManageUI.ShowManageUI(building);
+        }
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Manage clicked for {building.GetBuildingType()} at site {building.GetOriginalSiteId()}");
     }
 
     void OnCloseButtonClicked()

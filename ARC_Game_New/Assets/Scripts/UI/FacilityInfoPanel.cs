@@ -96,7 +96,7 @@ public class FacilityInfoPanel : MonoBehaviour
             int trained   = workers?.Count(w => w.Type == WorkerType.Trained) ?? 0;
             int untrained = workers?.Count(w => w.Type == WorkerType.Untrained) ?? 0;
 
-            sb.Append($"FACILITY_VIEW | name={b.name} | type={b.GetBuildingType()} | site={b.GetOriginalSiteId()}");
+            sb.Append($"FACILITY_VIEW | name={b.name} | type={b.GetBuildingType()}");
             sb.Append($" | status={b.GetCurrentStatus()}");
             sb.Append($" | population={pop}/{popCap} | food={food}/{foodCap}");
             sb.Append($" | workers={trained}trained+{untrained}untrained | workforce={b.GetAssignedWorkforce()}/{b.GetRequiredWorkforce()}");
@@ -135,106 +135,144 @@ public class FacilityInfoPanel : MonoBehaviour
 
     void UpdateBuildingInfo(Building building)
     {
-        // Basic Info
-        SetTextSafe(facilityNameText, building.name);
-        SetTextSafe(facilityTypeText, building.GetBuildingType().ToString());
-        SetTextSafe(siteIdText, $"Site ID: {building.GetOriginalSiteId()}");
-        SetTextSafe(positionText, $"Position: ({building.transform.position.x:F1}, {building.transform.position.y:F1})");
+        HideField(motelCostText);
 
-        // Resources
-        BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
-        if (storage != null)
+        BuildingType type = building.GetBuildingType();
+
+        if (type == BuildingType.CaseworkSite)
         {
-            int population = storage.GetResourceAmount(ResourceType.Population);
-            int populationCap = storage.GetResourceCapacity(ResourceType.Population);
-            int foodPacks = storage.GetResourceAmount(ResourceType.FoodPacks);
-            int foodCap = storage.GetResourceCapacity(ResourceType.FoodPacks);
+            SetTextSafe(facilityNameText, building.GetDisplayName());
+            HideField(facilityTypeText);
+            HideField(siteIdText);
+            HideField(positionText);
 
-            SetTextSafe(populationText, $"Population: {population}/{populationCap}");
-            SetTextSafe(foodPacksText, $"Food Packs: {foodPacks}/{foodCap}");
-            SetTextSafe(capacityText, $"Total Capacity: {building.GetCapacity()}");
+            BuildingResourceStorage cs = building.GetComponent<BuildingResourceStorage>();
+            if (cs != null)
+            {
+                int pop = cs.GetResourceAmount(ResourceType.Population);
+                int popCap = cs.GetResourceCapacity(ResourceType.Population);
+                ShowField(populationText);
+                SetTextSafe(populationText, $"Clients: {pop}/{popCap}");
+                SetTextColor(populationText, GetResourceColor(pop, popCap));
+            }
+            else { HideField(populationText); }
 
-            // Color coding for resources
-            SetTextColor(populationText, GetResourceColor(population, populationCap));
-            SetTextColor(foodPacksText, GetResourceColor(foodPacks, foodCap));
+            HideField(foodPacksText);
+            ShowField(capacityText);
+            SetTextSafe(capacityText, "Clients in casework will leave by themselves once their cases are resolved.");
+            SetTextColor(capacityText, normalColor);
+            HideField(workersHeaderText);
+            HideField(trainedWorkersText);
+            HideField(untrainedWorkersText);
+            HideField(totalWorkforceText);
+            HideField(statusText);
+            HideField(floodStatusText);
+            HideField(roadConnectionText);
+            HideField(tasksHeaderText);
+            HideField(motelCostText);
+            return;
+        }
+
+        SetTextSafe(facilityNameText, building.GetDisplayName());
+        SetTextSafe(facilityTypeText, type.ToString());
+        HideField(siteIdText);
+        HideField(positionText);
+
+        BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
+
+        // Population — Shelter only (CaseworkSite handled above)
+        if (storage != null && type == BuildingType.Shelter)
+        {
+            int pop = storage.GetResourceAmount(ResourceType.Population);
+            int popCap = storage.GetResourceCapacity(ResourceType.Population);
+            ShowField(populationText);
+            SetTextSafe(populationText, $"Clients: {pop}/{popCap}");
+            SetTextColor(populationText, GetResourceColor(pop, popCap));
         }
         else
         {
-            SetTextSafe(populationText, "Population: N/A");
-            SetTextSafe(foodPacksText, "Food Packs: N/A");
-            SetTextSafe(capacityText, $"Capacity: {building.GetCapacity()}");
+            HideField(populationText);
         }
 
-        // Workers
+        // Meals — any building that has food storage capacity
+        if (storage != null && storage.GetResourceCapacity(ResourceType.FoodPacks) > 0)
+        {
+            int food = storage.GetResourceAmount(ResourceType.FoodPacks);
+            int foodCap = storage.GetResourceCapacity(ResourceType.FoodPacks);
+            ShowField(foodPacksText);
+            SetTextSafe(foodPacksText, $"Meals: {food}/{foodCap}");
+            SetTextColor(foodPacksText, GetResourceColor(food, foodCap));
+        }
+        else
+        {
+            HideField(foodPacksText);
+        }
+
+        HideField(capacityText);
+
+        // Workers — single line, no breakdown
         UpdateWorkerInfo(building);
 
-        // Status
         BuildingStatus status = building.GetCurrentStatus();
-        SetTextSafe(statusText, $"Status: {status}");
+        SetTextSafe(statusText, $"Status: {GetStatusDisplayName(status)}");
         SetTextColor(statusText, GetStatusColor(status));
 
-        // Flood status
         UpdateFloodStatus(building.gameObject);
-
-        // Road connection
         UpdateRoadConnection(building.gameObject);
     }
 
     void UpdatePrebuiltBuildingInfo(PrebuiltBuilding prebuilt)
     {
-        // Basic Info
-        SetTextSafe(facilityNameText, prebuilt.GetBuildingName());
-        SetTextSafe(facilityTypeText, prebuilt.GetPrebuiltType().ToString());
-        SetTextSafe(siteIdText, $"Building ID: {prebuilt.GetBuildingId()}");
-        SetTextSafe(positionText, $"Position: ({prebuilt.transform.position.x:F1}, {prebuilt.transform.position.y:F1})");
+        PrebuiltBuildingType type = prebuilt.GetPrebuiltType();
 
-        // Resources
+        SetTextSafe(facilityNameText, prebuilt.GetBuildingName());
+        SetTextSafe(facilityTypeText, type.ToString());
+        HideField(siteIdText);
+        HideField(positionText);
+        HideField(workersHeaderText);
+        HideField(trainedWorkersText);
+        HideField(untrainedWorkersText);
+        HideField(totalWorkforceText);
+        HideField(capacityText);
+
         int population = prebuilt.GetCurrentPopulation();
         int populationCap = prebuilt.GetPopulationCapacity();
-
-        SetTextSafe(populationText, $"Population: {population}/{populationCap}");
+        ShowField(populationText);
+        SetTextSafe(populationText, $"Clients: {population}/{populationCap}");
         SetTextColor(populationText, GetResourceColor(population, populationCap));
 
-        BuildingResourceStorage storage = prebuilt.GetResourceStorage();
-        if (storage != null)
+        string statusLabel = population >= populationCap ? "Full" : population > 0 ? "Occupied" : "Vacant";
+        SetTextSafe(statusText, $"Status: {statusLabel}");
+        SetTextColor(statusText, population >= populationCap ? errorColor : population > 0 ? goodColor : normalColor);
+
+        // Meals — show for any prebuilt building with food storage
+        var prebuiltStorage = prebuilt.GetResourceStorage();
+        if (prebuiltStorage != null && prebuiltStorage.GetResourceCapacity(ResourceType.FoodPacks) > 0)
         {
-            int foodPacks = storage.GetResourceAmount(ResourceType.FoodPacks);
-            int foodCap = storage.GetResourceCapacity(ResourceType.FoodPacks);
-            SetTextSafe(foodPacksText, $"Food Packs: {foodPacks}/{foodCap}");
-            SetTextColor(foodPacksText, GetResourceColor(foodPacks, foodCap));
+            int food = prebuiltStorage.GetResourceAmount(ResourceType.FoodPacks);
+            int foodCap = prebuiltStorage.GetResourceCapacity(ResourceType.FoodPacks);
+            ShowField(foodPacksText);
+            SetTextSafe(foodPacksText, $"Meals: {food}/{foodCap}");
+            SetTextColor(foodPacksText, GetResourceColor(food, foodCap));
         }
         else
         {
-            SetTextSafe(foodPacksText, "Food Packs: N/A");
+            HideField(foodPacksText);
         }
 
-        SetTextSafe(capacityText, $"Capacity: {populationCap}");
-
-        // Workers (Prebuilt buildings typically don't have workers)
-        SetTextSafe(workersHeaderText, "Workers: N/A (Prebuilt)");
-        SetTextSafe(trainedWorkersText, "Trained: N/A");
-        SetTextSafe(untrainedWorkersText, "Untrained: N/A");
-        SetTextSafe(totalWorkforceText, "Workforce: N/A");
-
-        // Status
-        string statusText = population > 0 ? "Occupied" : "Vacant";
-        if (population >= populationCap) statusText = "Full";
-
-        SetTextSafe(this.statusText, $"Status: {statusText}");
-        SetTextColor(this.statusText, population >= populationCap ? errorColor : (population > 0 ? goodColor : normalColor));
-
-        // Motel daily cost (only shown for Motel type)
         if (motelCostText != null)
         {
-            if (prebuilt.GetPrebuiltType() == PrebuiltBuildingType.Motel)
+            if (type == PrebuiltBuildingType.Motel)
             {
                 var costMgr = FindObjectOfType<MotelCostManager>();
-                if (costMgr != null)
-                {
-                    float dailyCost = costMgr.GetCurrentDailyCost();
-                    motelCostText.text = $"Daily Cost: ${dailyCost:F0} ({population} residents × ${costMgr.costPerPersonPerDay:F0}/day)";
-                    motelCostText.color = dailyCost > 0 ? warningColor : normalColor;
-                }
+                float rate = costMgr != null ? costMgr.costPerPersonPerDay : 200f;
+                int residents = prebuilt.GetCurrentPopulation();
+                float dailyCost = residents * rate;
+                string costLine = $"Lodging rate: ${rate:F0}/person/day";
+                if (residents > 0)
+                    costLine += $"\nCurrent daily cost: ${dailyCost:F0}/day ({residents} clients)";
+                motelCostText.text = costLine;
+                motelCostText.color = dailyCost > 0 ? warningColor : normalColor;
                 motelCostText.gameObject.SetActive(true);
             }
             else
@@ -243,39 +281,22 @@ public class FacilityInfoPanel : MonoBehaviour
             }
         }
 
-        // Flood status
         UpdateFloodStatus(prebuilt.gameObject);
-
-        // Road connection
         UpdateRoadConnection(prebuilt.gameObject);
     }
 
     void UpdateWorkerInfo(Building building)
     {
-        if (WorkerSystem.Instance == null)
-        {
-            SetTextSafe(workersHeaderText, "Workers: System Unavailable");
-            SetTextSafe(trainedWorkersText, "");
-            SetTextSafe(untrainedWorkersText, "");
-            SetTextSafe(totalWorkforceText, "");
-            return;
-        }
+        HideField(trainedWorkersText);
+        HideField(untrainedWorkersText);
+        HideField(totalWorkforceText);
 
-        var assignedWorkers = WorkerSystem.Instance.GetWorkersByBuildingId(building.GetOriginalSiteId());
-        int trainedWorkers = assignedWorkers.Count(w => w.Type == WorkerType.Trained);
-        int untrainedWorkers = assignedWorkers.Count(w => w.Type == WorkerType.Untrained);
-        int totalWorkforce = building.GetAssignedWorkforce();
-        int requiredWorkforce = building.GetRequiredWorkforce();
+        int assigned = building.GetAssignedWorkforce();
+        int required = building.GetRequiredWorkforce();
 
-        SetTextSafe(workersHeaderText, $"Workers ({assignedWorkers.Count} assigned):");
-        SetTextSafe(trainedWorkersText, $"Trained: {trainedWorkers}");
-        SetTextSafe(untrainedWorkersText, $"Untrained: {untrainedWorkers}");
-        SetTextSafe(totalWorkforceText, $"Workforce: {totalWorkforce}/{requiredWorkforce}");
-
-        // Color coding for workforce
-        Color workforceColor = totalWorkforce >= requiredWorkforce ? goodColor :
-                              totalWorkforce > 0 ? warningColor : errorColor;
-        SetTextColor(totalWorkforceText, workforceColor);
+        ShowField(workersHeaderText);
+        SetTextSafe(workersHeaderText, $"Workers: {assigned}/{required}");
+        SetTextColor(workersHeaderText, assigned >= required ? goodColor : assigned > 0 ? warningColor : errorColor);
     }
 
     void UpdateFloodStatus(GameObject facilityObj)
@@ -531,6 +552,18 @@ public class FacilityInfoPanel : MonoBehaviour
         return normalColor;                     // Empty
     }
 
+    string GetStatusDisplayName(BuildingStatus status)
+    {
+        switch (status)
+        {
+            case BuildingStatus.UnderConstruction: return "In Progress";
+            case BuildingStatus.NeedWorker: return "Need Worker";
+            case BuildingStatus.InUse: return "In Use";
+            case BuildingStatus.Disabled: return "Closed";
+            default: return status.ToString();
+        }
+    }
+
     Color GetStatusColor(BuildingStatus status)
     {
         switch (status)
@@ -568,6 +601,16 @@ public class FacilityInfoPanel : MonoBehaviour
             textComponent.color = color;
     }
 
+    void HideField(TextMeshProUGUI field)
+    {
+        if (field != null) field.gameObject.SetActive(false);
+    }
+
+    void ShowField(TextMeshProUGUI field)
+    {
+        if (field != null) field.gameObject.SetActive(true);
+    }
+
     void OnCloseButtonClicked()
     {
         if (FacilityInfoManager.Instance != null)
@@ -599,7 +642,7 @@ public class FacilityInfoPanel : MonoBehaviour
         int clients = incoming.Where(d => d.cargoType == ResourceType.Population).Sum(d => d.quantity);
         
         string message = "";
-        if (foodPacks > 0) message += $"{foodPacks} food packs on the way. ";
+        if (foodPacks > 0) message += $"{foodPacks} meals on the way. ";
         if (clients > 0) message += $"{clients} clients on the way.";
         
         expectedDeliveriesText.text = message.Trim();
@@ -630,8 +673,8 @@ public class FacilityInfoPanel : MonoBehaviour
             
             string destName = GetBuildingDisplayName(group.Key);
             
-            if (foodPacks > 0) message += $"{foodPacks} food packs leaving, going to {destName}. ";
-            if (clients > 0) message += $"{clients} clients leaving, going to {destName}. ";
+            if (foodPacks > 0) message += $"{foodPacks} meals leaving, going to {destName}. ";
+            if (clients > 0) message += $"{clients} evacuees leaving, going to {destName}. ";
         }
         
         outgoingDeliveriesText.text = message.Trim();
@@ -643,7 +686,7 @@ public class FacilityInfoPanel : MonoBehaviour
         
         Building b = building.GetComponent<Building>();
         if (b != null)
-            return $"{b.GetBuildingType()} (Site {b.GetOriginalSiteId()})";
+            return b.GetDisplayName();
         
         PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
         if (pb != null)

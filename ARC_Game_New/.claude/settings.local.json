@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.unity3d.com)",
+      "Bash(git checkout *)",
+      "Bash(git reset *)",
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "Bash(git revert *)",
+      "Bash(git branch *)",
+      "Bash(git fetch *)",
+      "Bash(grep -v \"\\\\.cs$\")",
+      "Bash(grep -v \"\\\\.meta$\")",
+      "Bash(grep -v \"\\\\.png$\")",
+      "Bash(grep -v \"\\\\.gif$\")",
+      "Bash(xargs -I{} sh -c 'echo \"=== {} ===\" && git diff main levers -- \"{}\" | grep \"^+\" | grep -v \"^+++\" | grep -i \"GameDataManager\\\\|InitializeWithCentral\\\\|InitialBudget\\\\|InitialSatisfaction\\\\|InitialWorker\\\\|InitialERV\\\\|InitialFlood\\\\|InitialRound\\\\|InitialDay\\\\|InitialEmergency\"')",
+      "Bash(git add *)",
+      "Bash(grep -v \"^\\\\+\\\\s*$\")",
+      "Bash(grep -v \"^-\\\\s*$\")",
+      "Bash(grep -v \"^-\\\\s*//\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Shanzhi\\\\Documents\\\\GitHub\\\\ARC_Game\\\\ARC_Game_New\\\\Assets\\\\Scripts\" -Recurse -Filter \"*.cs\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(xargs grep *)"
+    ]
+  }
+}

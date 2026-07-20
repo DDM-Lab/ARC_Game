@@ -82,7 +82,7 @@ public class BuildingUIOverlay : MonoBehaviour
             UpdateUIPosition(building, uiOverlay);
             
             // Set initial state for construction
-            SetConstructionState(uiOverlay);
+            SetConstructionState(uiOverlay, building);
             
             // Subscribe to building status changes
             StartCoroutine(MonitorBuildingStatus(building));
@@ -172,8 +172,7 @@ public class BuildingUIOverlay : MonoBehaviour
                 TextMeshProUGUI labelTextComponent = labelText.GetComponent<TextMeshProUGUI>();
                 if (labelTextComponent != null)
                 {
-                    // get the facility name and id
-                    labelTextComponent.text = $"{building.GetBuildingType()} ({building.GetOriginalSiteId()})";
+                    labelTextComponent.text = building.GetDisplayName();
                 }
             }
         }
@@ -206,22 +205,24 @@ public class BuildingUIOverlay : MonoBehaviour
         return uiOverlay;
     }
     
-    private void SetConstructionState(GameObject uiOverlay)
+    private void SetConstructionState(GameObject uiOverlay, Building building)
     {
-        // Set InfoText to "Under Construction"
+        UpdateConstructionText(uiOverlay, building.GetRoundsRemaining());
+    }
+
+    private void UpdateConstructionText(GameObject uiOverlay, int roundsLeft)
+    {
         Transform textBG = uiOverlay.transform.Find("TextBG");
-        if (textBG != null)
-        {
-            Transform infoText = textBG.Find("InfoText");
-            if (infoText != null)
-            {
-                TextMeshProUGUI textComponent = infoText.GetComponent<TextMeshProUGUI>();
-                if (textComponent != null)
-                {
-                    textComponent.text = "Under Conversion";
-                }
-            }
-        }
+        if (textBG == null) return;
+        Transform infoText = textBG.Find("InfoText");
+        if (infoText == null) return;
+        TextMeshProUGUI textComponent = infoText.GetComponent<TextMeshProUGUI>();
+        if (textComponent == null) return;
+
+        string roundText = roundsLeft == 1 ? "1 round left"
+                         : roundsLeft > 1  ? $"{roundsLeft} rounds left"
+                         : "Almost done...";
+        textComponent.text = $"In Progress\n{roundText}";
     }
     
     private void UpdateUIPosition(Building building, GameObject uiOverlay)
@@ -304,8 +305,12 @@ public class BuildingUIOverlay : MonoBehaviour
                 OnDeconstructionStarted(building);
             }
             
+            // Refresh rounds-remaining text while under construction
+            if (currentStatus == BuildingStatus.UnderConstruction && buildingUIMap.ContainsKey(building))
+                UpdateConstructionText(buildingUIMap[building], building.GetRoundsRemaining());
+
             previousStatus = currentStatus;
-            
+
             // Update UI position in case building moved
             if (buildingUIMap.ContainsKey(building))
             {
@@ -463,7 +468,7 @@ public class BuildingUIOverlay : MonoBehaviour
                 TextMeshProUGUI textComponent = infoText.GetComponent<TextMeshProUGUI>();
                 if (textComponent != null)
                 {
-                    textComponent.text = "Deconstructing...";
+                    textComponent.text = "Closing...";
                 }
             }
         }
@@ -515,7 +520,7 @@ public class BuildingUIOverlay : MonoBehaviour
             // Show confirmation popup instead of immediately deconstructing
             if (ConfirmationPopup.Instance != null)
             {
-                string message = $"Are you sure you want to deconstruct {building.GetBuildingType()} at site {building.GetOriginalSiteId()}?\n\nThis action cannot be undone.";
+                string message = $"Are you sure you want to close this {building.GetBuildingType()} at site {building.GetOriginalSiteId()}?\n";
                 
                 ConfirmationPopup.Instance.ShowPopup(
                     message: message,
@@ -531,7 +536,7 @@ public class BuildingUIOverlay : MonoBehaviour
                         // This executes when user clicks Cancel (optional)
                         Debug.Log($"User cancelled deconstruction of {building.name}");
                     },
-                    title: "Deconstruct Building"
+                    title: "Close Facility"
                 );
             }
             else

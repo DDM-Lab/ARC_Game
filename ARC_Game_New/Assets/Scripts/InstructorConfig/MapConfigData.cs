@@ -36,23 +36,54 @@ public class PlacedObjectData
 public class ScenarioParameters
 {
     // Economy
-    public int   initialBudget          = 15000;
-    public float dailyBudgetAllocation  = 2000f;
+    public int   initialBudget          = 15000; // have
+    public float dailyBudgetAllocation  = 2000f; // have
     public float foodCostPerPerson      = 10f;
     public float shelterCostPerPerson   = 5f;
     public float workerTrainingCost     = 500f;
 
     // Population & Satisfaction
-    public int   initialSatisfaction    = 80;
-    public int   totalPopulation        = 200;
-    public int   numberOfCommunities    = 3;
+    public int   initialSatisfaction    = 80; // have
+    public int   totalPopulation        = 200; 
+    public int   numberOfCommunities    = 3; // have
+    public int   residentsPerCommunity  = 40; // new
 
     // Workers
-    public int   initialWorkerCount     = 10;
+    public int   initialWorkerCount             = 10;
+    public int   initialTrainedVolunteerCount   = 5; //new
+    public int   initialUntrainedVolunteerCount = 5; //new
+    public int   requiredWorkerUnitsPerLoc      = 4; // new
 
     // Timing
-    public int   gameDurationDays       = 8;
+    public int   gameDurationDays       = 8; // have
     public float dayDurationSeconds     = 120f;
+    public int   roundsPerDay           = 4; // new 
+
+    // Weather
+    public WeatherType initialWeather = WeatherType.Sunny; // new
+
+    // Buildings
+    public int kitchenCapacity    = 10; // new
+    public int shelterCapacity    = 10; // new
+    public int caseworkCapacity   = 10; // new
+    public int initialERVCount           = 3; // new
+
+    // Tasks
+    public float foodDemandProbability         = -1f; // new
+    public int   externalRelationFrequency     = 3; // new
+    public int   emergencyTaskFrequency        = 4; // new
+    //public FloodedFacilityTrigger defaultShelterFloodDamage = new FloodedFacilityTrigger
+    //{
+    //    facilityType = FloodedFacilityTrigger.FacilityFloodType.SpecificBuildingType,
+    //    comparison = FloodedFacilityTrigger.ComparisonType.AtLeast,
+    //    floodTileThreshold = 2,
+    //    specificBuildingType = BuildingType.Shelter,
+    //    specificPrebuiltType = PrebuiltBuildingType.Community,
+    //    detectionRadius = 5
+    //}; // new
+    public int shelterFloodThreshold = 2; // new'
+    public int shelterFloodRadius    = 5; // new'
+    public FloodedFacilityTrigger.ComparisonType shelterFloodComparisonType = FloodedFacilityTrigger.ComparisonType.AtLeast; // new'
 }
 
 // ─── Full Map Config (serialized to JSON) ─────────────────────────────────────

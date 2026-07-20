@@ -62,8 +62,45 @@ public class FloodSystem : MonoBehaviour
 
     void Start()
     {
+        StartCoroutine(InitializeWithCentralConfig());
         InitializeFloodSystem();
         SubscribeToEvents();
+    }
+
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+
+        foreach (var data in floodParameters.weatherFloodRates)
+        {
+            switch (data.weatherType)
+            {
+                case WeatherType.Sunny:
+                    data.expansionRate = GameDataManager.Instance.InitialSunnyExpansionRate;
+                    data.spreadChanceMultiplier = GameDataManager.Instance.InitialSunnySpreadChanceMultiplier;
+                    break;
+                case WeatherType.SmallRain:
+                    data.expansionRate = GameDataManager.Instance.InitialSmallRainExpansionRate;
+                    data.spreadChanceMultiplier = GameDataManager.Instance.InitialSmallRainSpreadChanceMultiplier;
+                    break;
+                case WeatherType.MediumRain:
+                    data.expansionRate = GameDataManager.Instance.InitialMediumRainExpansionRate;
+                    data.spreadChanceMultiplier = GameDataManager.Instance.InitialMediumRainSpreadChanceMultiplier;
+                    break;
+                case WeatherType.HeavyRain:
+                    data.expansionRate = GameDataManager.Instance.InitialHeavyRainExpansionRate;
+                    data.spreadChanceMultiplier = GameDataManager.Instance.InitialHeavyRainSpreadChanceMultiplier;
+                    break;
+                case WeatherType.Storm:
+                    data.expansionRate = GameDataManager.Instance.InitialStormExpansionRate;
+                    data.spreadChanceMultiplier = GameDataManager.Instance.InitialStormSpreadChanceMultiplier;
+                    break;
+            }
+        }
+        Debug.Log("FloodSystem: Expansion rates updated from Config.");
     }
 
     void InitializeFloodSystem()

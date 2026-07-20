@@ -398,15 +398,15 @@ public class AlertUIController : MonoBehaviour
         }
     }
 
-    string GetOfficerName(TaskOfficer officer)
+    public string GetOfficerName(TaskOfficer officer)
     {
         switch (officer)
         {
-            case TaskOfficer.DisasterOfficer: return "Disaster Officer";
-            case TaskOfficer.WorkforceService: return "Workforce Service";
-            case TaskOfficer.LodgingMassCare: return "Lodging Mass Care";
+            case TaskOfficer.DisasterOfficer: return "Regional Disaster Officer";
+            case TaskOfficer.WorkforceService: return "Workforce";
+            case TaskOfficer.LodgingMassCare: return "Logistics ";
             case TaskOfficer.ExternalRelationship: return "External Relationship";
-            case TaskOfficer.FoodMassCare: return "Food Mass Care";
+            case TaskOfficer.FoodMassCare: return "Mass Care";
             default: return "Officer";
         }
     }

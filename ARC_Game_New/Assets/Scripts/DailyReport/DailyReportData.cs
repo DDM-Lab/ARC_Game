@@ -300,7 +300,7 @@ public class DailyReportData : MonoBehaviour
         metrics.expiredFoodPacks = todayExpiredFood;
         metrics.currentFoodInStorage = CalculateCurrentFoodStorage();
         
-        // FIX: mealUsageRate now represents food packs in storage (upcoming waste).
+        // FIX: mealUsageRate now represents meals in storage (upcoming waste).
         // Store the raw count so DailyReportUI can display it directly.
         // The efficiency score calculation in DailyReportUI uses this value.
         metrics.mealUsageRate = metrics.currentFoodInStorage;

@@ -38,8 +38,8 @@ public class TrainingGroupItemUI : MonoBehaviour
         if (workersInTrainingText != null)
         {
             workersInTrainingText.text = isCompleted ? 
-                $"{trainingTask.workerCount} Responders (Completed)" : 
-                $"{trainingTask.workerCount} Responders in Training";
+                $"{trainingTask.workerCount} Workers (Completed)" : 
+                $"{trainingTask.workerCount} Workers in Training";
             
         }
         

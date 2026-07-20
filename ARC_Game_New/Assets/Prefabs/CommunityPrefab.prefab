@@ -77,7 +77,7 @@ SpriteRenderer:
   m_SortingLayerID: 92941517
   m_SortingLayer: 2
   m_SortingOrder: 0
-  m_Sprite: {fileID: 21300000, guid: 272a4dba84f76c941acbc3ed05dd4227, type: 3}
+  m_Sprite: {fileID: 21300000, guid: b2c1cb49e283bdf41aecd55b46948c07, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -124,12 +124,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   resourceCapacities:
   - resourceType: 0
-    maxCapacity: 40
+    maxCapacity: 400
   - resourceType: 1
-    maxCapacity: 40
+    maxCapacity: 400
   startingResources:
   - type: 0
-    amount: 40
+    amount: 400
   startingFoodPacks: 0
   enableFoodWaste: 0
   roundProduction: []
@@ -192,12 +192,12 @@ BoxCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 3.08, y: 3.06}
+    oldSize: {x: 4.89, y: 2.42}
     newSize: {x: 2.51, y: 1.18}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
   serializedVersion: 2
-  m_Size: {x: 2.5, y: 2.5}
+  m_Size: {x: 5, y: 2}
   m_EdgeRadius: 0

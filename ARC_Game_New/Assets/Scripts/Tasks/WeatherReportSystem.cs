@@ -69,229 +69,147 @@ public class WeatherReportSystem : MonoBehaviour
         GameTask report = TaskSystem.Instance.CreateTask($"Day {GlobalClock.Instance.GetCurrentDay()} Start of Day Report", TaskType.Alert, "Daily Report", "Daily weather and disaster situation report");
 
         report.taskImage = reportTaskImage;
-        
-        // Generate report messages
         report.agentMessages = new List<AgentMessage>();
-        
-        // Weather Report and disaster report
-        string weatherReport = GenerateWeatherReport();
-        string disasterReport = GenerateDisasterReport();  
-        report.agentMessages.Add(new AgentMessage(weatherReport + "\n" + disasterReport, null));
-        
-        // Forecast
-        string forecast = GenerateForecast();
-        report.agentMessages.Add(new AgentMessage(forecast, null));
 
-        // Emergency preparedness
-        string preparednessAdvice = GeneratePreparednessAdvice();
-        report.agentMessages.Add(new AgentMessage(preparednessAdvice, null));
+        report.agentMessages.Add(new AgentMessage(GenerateSituationSummary(), null));
+        report.agentMessages.Add(new AgentMessage(GenerateActionableOutlook(), null));
 
         return report;
     }
-    
-    string GenerateWeatherReport()
+
+    string GenerateSituationSummary()
     {
-        if (weatherSystem == null)
-            return "Weather system offline - unable to generate report.";
-        
-        WeatherType currentWeather = weatherSystem.GetCurrentWeather();
-        float rainIntensity = weatherSystem.GetRainIntensity();
+        string summary = "Good morning. Here's the situation:\n";
 
-        string report = $"Here is your daily weather report:\nCurrent weather: {currentWeather}";
-
-        if (weatherSystem.IsRaining())
+        // Weather
+        if (weatherSystem != null)
         {
-            report += $"\nRain intensity: {rainIntensity:F1}";
-
-            if (rainIntensity > 0.7f)
+            switch (weatherSystem.GetCurrentWeather())
             {
-                report += " (Heavy rain - flood risk HIGH)";
-                FloodingExpansionText.text = "High";
-            }
-            else if (rainIntensity > 0.4f)
-            {
-                report += " (Moderate rain - flood risk MEDIUM)";
-                FloodingExpansionText.text = "Medium";
-            }
-            else
-            {
-                report += " (Light rain - flood risk LOW)";
-                FloodingExpansionText.text = "Low";
+                case WeatherType.Sunny:
+                    summary += "☀️ Weather: Clear — no rain expected today.\n";
+                    FloodingExpansionText.text = "None";
+                    break;
+                case WeatherType.SmallRain:
+                    summary += "🌦️ Weather: Light rain — minor flooding possible in low areas.\n";
+                    FloodingExpansionText.text = "Low";
+                    break;
+                case WeatherType.MediumRain:
+                    summary += "🌧️ Weather: Steady rain — flooding likely to spread.\n";
+                    FloodingExpansionText.text = "Medium";
+                    break;
+                case WeatherType.HeavyRain:
+                    summary += "🌧️ Weather: Heavy rain — flooding will worsen today.\n";
+                    FloodingExpansionText.text = "High";
+                    break;
+                case WeatherType.Storm:
+                    summary += "⛈️ Weather: Storm — severe flooding expected. High risk of new emergencies.\n";
+                    FloodingExpansionText.text = "High";
+                    break;
             }
         }
-        else
-        {
-            report += "\nNo precipitation expected - flood risk MINIMAL";
-            FloodingExpansionText.text = "None";
-        }
-        
-        return report;
-    }
-    
-    string GenerateDisasterReport()
-    {
-        if (floodSystem == null)
-            return "Flood monitoring system offline.";
-        
-        int currentFloodTiles = floodSystem.GetFloodTileCount();
-        string report;
 
-        if (currentFloodTiles == 0)
+        // Flood situation
+        if (floodSystem != null)
         {
-            report = "✅ No active flood areas detected.\nAll facilities operating at normal capacity.";
-        }
-        else
-        {
-            report = $"⚠️ Active flood coverage: {currentFloodTiles} tiles";
-
-            // Check affected facilities
+            int floodTiles = floodSystem.GetFloodTileCount();
             int affectedFacilities = CountFloodAffectedFacilities();
-            if (affectedFacilities > 0)
-            {
-                report += $"\n🏠 Facilities impacted by flood: {affectedFacilities}";
-                report += "\nCapacity reductions may be in effect.";
-                LodgingDemandText.text = "High";
-            }
-            else
-            {
-                report += "\nNo facilities currently affected by flood.";
-                LodgingDemandText.text = "Normal";
-            }
 
-            // Flood severity assessment
-            if (currentFloodTiles > 20)
+            if (floodTiles == 0)
             {
-                report += "\n🚨 MAJOR flood event - emergency protocols active";
-                EmergencyPossibilityText.text = "High";
+                summary += "✅ Flooding: None — all areas are clear.\n";
+                LodgingDemandText.text = "Normal";
+                EmergencyPossibilityText.text = "Low";
             }
-            else if (currentFloodTiles > 10)
+            else if (floodTiles <= 10)
             {
-                report += "\n⚠️ MODERATE flood event - monitor closely";
+                summary += "⚠️ Flooding: Limited to a small area.";
+                if (affectedFacilities > 0)
+                {
+                    summary += $" {affectedFacilities} shelter(s) affected — capacity reduced.";
+                    LodgingDemandText.text = "High";
+                }
+                else
+                {
+                    summary += " No shelters directly affected.";
+                    LodgingDemandText.text = "Normal";
+                }
+                summary += "\n";
+                EmergencyPossibilityText.text = "Low";
+            }
+            else if (floodTiles <= 20)
+            {
+                summary += $"⚠️ Flooding: Spreading across several neighborhoods.";
+                if (affectedFacilities > 0)
+                {
+                    summary += $" {affectedFacilities} shelter(s) flooded — displaced residents need housing.";
+                    LodgingDemandText.text = "High";
+                }
+                else
+                {
+                    LodgingDemandText.text = "Normal";
+                }
+                summary += "\n";
                 EmergencyPossibilityText.text = "Medium";
             }
             else
             {
-                report += "\n📊 MINOR flood event - manageable impact";
-                EmergencyPossibilityText.text = "Low";
+                summary += $"🚨 Flooding: Large parts of the city are underwater.";
+                if (affectedFacilities > 0)
+                {
+                    summary += $" {affectedFacilities} shelter(s) are flooded — many residents need immediate housing.";
+                    LodgingDemandText.text = "High";
+                }
+                else
+                {
+                    LodgingDemandText.text = "High";
+                }
+                summary += "\n";
+                EmergencyPossibilityText.text = "High";
             }
         }
-        return report;
-    }
 
-    string GenerateForecast()
-    {
-        string forecast = "Expected conditions for today:\n";
-
-        // Weather forecast
-        if (weatherSystem != null)
-        {
-            WeatherType currentWeather = weatherSystem.GetCurrentWeather();
-            float rainIntensity = weatherSystem.GetRainIntensity();
-
-            switch (currentWeather)
-            {
-                case WeatherType.Sunny:
-                    forecast += "☀️ Clear skies - optimal conditions for operations\n";
-                    break;
-                case WeatherType.SmallRain:
-                    forecast += "☁️ Overcast conditions - normal operations expected\n";
-                    break;
-                case WeatherType.MediumRain:
-                    forecast += "🌧️ Continued rain - monitor flood development\n";
-                    break;
-                case WeatherType.HeavyRain:
-                    forecast += "🌧️ Severe Rain - monitor flood development\n";
-                    break;
-                case WeatherType.Storm:
-                    forecast += "⛈️ Storm conditions - high flood risk\n";
-                    break;
-            }
-
-            // Resource demand forecast
-            forecast += GenerateResourceDemandForecast();
-
-            return forecast;
-        }
-        else
-        {
-            Debug.LogWarning("weatherSystem is null for forecast generation.");
-            return "Weather monitoring system offline. No forecast available for today.";
-        }
-    }
-    
-    string GenerateResourceDemandForecast()
-    {
-        string demand = "\n📦 Resource Demand Forecast:\n";
-        
-        // Get current day for demand patterns
-        int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
-
-        // Simple demand patterns based on day
-        if (currentDay % 3 == 0)
-        {
-            demand += "• HIGH demand for food supplies expected\n";
-            demand += "• Population movement may increase\n";
-            FoodDemandText.text = "High";
-        }
-        else if (currentDay % 2 == 0)
-        {
-            demand += "• MODERATE resource consumption expected\n";
-            demand += "• Normal population stability\n";
-            FoodDemandText.text = "Medium";
-        }
-        else
-        {
-            demand += "• LOW to NORMAL demand anticipated\n";
-            demand += "• Stable resource requirements\n";
-            FoodDemandText.text = "Low";
-        }
-
-        // Weather-based adjustments
+        // Food demand (weather-driven)
         if (weatherSystem != null && weatherSystem.IsRaining())
         {
-            demand += "• Increased shelter demand due to weather\n";
-            demand += "• Emergency supplies may be needed\n";
+            FoodDemandText.text = weatherSystem.GetRainIntensity() > 0.5f ? "High" : "Medium";
+        }
+        else
+        {
+            FoodDemandText.text = "Normal";
         }
 
-        return demand;
+        return summary;
     }
-    
-    string GeneratePreparednessAdvice()
-    {
-        string advice = "💡 Preparedness Recommendations:\n";
-        
-        // Weather-based advice
-        if (weatherSystem != null)
-        {
-            float rainIntensity = weatherSystem.GetRainIntensity();
 
-            if (rainIntensity > 0.6f)
-            {
-                advice += "• Prepare for potential evacuations\n";
-                advice += "• Ensure emergency vehicles are ready\n";
-                advice += "• Monitor shelter capacity closely\n";
-                
-            }
-            else if (rainIntensity > 0.3f)
-            {
-                advice += "• Keep emergency supplies accessible\n";
-                advice += "• Monitor flood-prone areas\n";
-            }
-            else
-            {
-                advice += "• Routine maintenance and restocking\n";
-                advice += "• Normal operational procedures\n";
-            }
-        }
-        
-        // Flood-based advice
-        if (floodSystem != null && floodSystem.GetFloodTileCount() > 0)
+    string GenerateActionableOutlook()
+    {
+        if (weatherSystem == null) return "No forecast available.";
+
+        string outlook = "What to focus on today:\n";
+        float rain = weatherSystem.GetRainIntensity();
+        bool flooding = floodSystem != null && floodSystem.GetFloodTileCount() > 0;
+        int affectedFacilities = flooding ? CountFloodAffectedFacilities() : 0;
+
+        if (rain > 0.6f || (floodSystem != null && floodSystem.GetFloodTileCount() > 20))
         {
-            advice += "• Review evacuation routes for blocked paths\n";
-            advice += "• Consider alternative transportation methods if roads are flooded\n";
+            outlook += "• Expect rescue and evacuation requests — keep vehicles ready.\n";
+            outlook += "• Shelters may fill up quickly. Open additional capacity if you can.\n";
         }
-        
-        return advice;
+        else if (rain > 0.3f || flooding)
+        {
+            outlook += "• Monitor shelter availability — demand may rise.\n";
+            if (flooding) outlook += "• Some roads may be blocked. Plan deliveries around flood areas.\n";
+        }
+        else
+        {
+            outlook += "• Conditions are stable — good time to train staff or restock supplies.\n";
+        }
+
+        if (affectedFacilities > 0)
+            outlook += $"• {affectedFacilities} shelter(s) are out of action due to flooding. Relocate residents as soon as possible.\n";
+
+        return outlook;
     }
     
     int CountFloodAffectedFacilities()

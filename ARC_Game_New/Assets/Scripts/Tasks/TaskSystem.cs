@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System;
@@ -185,6 +186,15 @@ public class GameTask
         status = TaskStatus.Active;
         timeCreated = Time.time;
     }
+
+    public string ResolveFacilityName(string text)
+    {
+        string name = !string.IsNullOrEmpty(facilityDisplayName) ? facilityDisplayName : affectedFacility;
+        if (string.IsNullOrEmpty(affectedFacility))
+            return text.Replace("[facility_name]", name);
+        string linked = $"<link=\"{affectedFacility}\"><u><color=#5B9BD5>{name}</color></u></link>";
+        return text.Replace("[facility_name]", linked);
+    }
 }
 
 [System.Serializable]
@@ -309,7 +319,7 @@ public class AgentNumericalInput
             case NumericalInputType.TrainedWorkers:
                 return "Trained Workers";
             case NumericalInputType.FoodPacks:
-                return "Food Packs";
+                return "mealss";
             default:
                 return "Value";
         }
@@ -375,6 +385,10 @@ public class TaskSystem : MonoBehaviour
     // Task ID counter
     private int nextTaskId = 1;
 
+    public int numEmergencyTasks = 4;
+    public int currEmergencyTaskCount = 0;
+    public int lastEmergencyTaskRound = 0;
+
     // Events
     public event Action<GameTask> OnTaskCreated;
     public event Action<GameTask> OnTaskCompleted;
@@ -408,6 +422,7 @@ public class TaskSystem : MonoBehaviour
 
     void Start()
     {
+        StartCoroutine(InitializeWithCentralConfig());
         // Subscribe to global clock for round-based countdown
         if (GlobalClock.Instance != null)
         {
@@ -434,6 +449,23 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log("Task System initialized");
+    }
+
+    IEnumerator InitializeWithCentralConfig()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        {
+            yield return null;
+        }
+        numEmergencyTasks = GameDataManager.Instance.InitialEmergencyTaskFrequency;
+    }
+
+    private int CalculateEmergencyInterval()
+    {
+        int totalRounds = GlobalClock.Instance.lastDay * GlobalClock.Instance.roundsPerDay;
+        if (numEmergencyTasks <= 0) return 999;
+        int interval = totalRounds / numEmergencyTasks;
+        return Mathf.Max(2, interval);
     }
 
     void Update()
@@ -644,7 +676,7 @@ public class TaskSystem : MonoBehaviour
         return task.linkedDeliveryTaskIds.All(id => completed.Any(d => d.taskId == id));
     }
 
-    public void HandleDeliveryFailure(GameTask task)
+    public void HandleDeliveryFailure(GameTask task, string reason = "")
     {
         if (task == null)
         {
@@ -676,7 +708,9 @@ public class TaskSystem : MonoBehaviour
             // Show task result popup with delivery failure reason
             if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
             {
-                TaskResultManager.Instance.ShowTaskResult(task, $"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
+                if (string.IsNullOrEmpty(reason))
+                    reason = $"Delivery failed for task: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}.";
+                TaskResultManager.Instance.ShowTaskResult(task, reason);
             }
         }
     }
@@ -712,6 +746,9 @@ public class TaskSystem : MonoBehaviour
 
         Debug.Log($"Found {triggeredTasksWithFacilities.Count} triggered task-facility combinations");
 
+        int currentRound = GlobalClock.Instance != null ? (GlobalClock.Instance.lastDay * GlobalClock.Instance.roundsPerDay) : 0;
+        int dynamicInterval = CalculateEmergencyInterval();
+
         foreach (var (taskData, facility) in triggeredTasksWithFacilities)
         {
             if (taskData == null)
@@ -719,6 +756,23 @@ public class TaskSystem : MonoBehaviour
                 Debug.LogWarning("Found null TaskData in triggered results");
                 GameLogPanel.Instance.LogError("Found null TaskData in triggered results");
                 continue;
+            }
+
+            if (taskData.taskType == TaskType.Emergency)
+            {
+                // Gate 1: Total Game Limit
+                if (currEmergencyTaskCount >= numEmergencyTasks)
+                {
+                    if (showDebugInfo) Debug.Log($"[Limit] Skipping {taskData.taskTitle}: Max emergencies reached.");
+                    continue;
+                }
+
+                // Gate 2: Dynamic Round Spacing (Anti-Frontload)
+                if (currentRound < lastEmergencyTaskRound + dynamicInterval)
+                {
+                    if (showDebugInfo) Debug.Log($"[Spacing] Skipping {taskData.taskTitle}: Too soon since last emergency.");
+                    continue;
+                }
             }
 
             // Handle alert tasks (global check for duplicates)
@@ -746,7 +800,12 @@ public class TaskSystem : MonoBehaviour
                 }
 
                 Debug.Log($"Creating global task: {taskData.taskTitle}");
-                CreateTaskFromDatabase(taskData);
+                GameTask newTask = CreateTaskFromDatabase(taskData);
+                if (newTask != null && newTask.taskType == TaskType.Emergency)
+                {
+                    currEmergencyTaskCount++;
+                    lastEmergencyTaskRound = currentRound;
+                }
             }
             else
             {
@@ -759,6 +818,41 @@ public class TaskSystem : MonoBehaviour
                     Debug.Log($"Task {taskData.taskTitle} already exists for {facilityName}, skipping");
                     GameLogPanel.Instance.LogTaskEvent($"Task {taskData.taskTitle} already exists for {facilityName}, skipping");
                     continue;
+                }
+
+                // Per-facility lodging dedup: only one lodging task per facility at a time.
+                // Emergency tasks take priority — they evict any existing non-emergency lodging task.
+                if (taskData.taskTag == TaskTag.Lodging)
+                {
+                    var existingLodging = activeTasks
+                        .Where(t => t.taskTag == TaskTag.Lodging && t.affectedFacility == facilityName)
+                        .ToList();
+
+                    if (existingLodging.Count > 0)
+                    {
+                        if (taskData.taskType == TaskType.Emergency)
+                        {
+                            // Evict non-emergency lodging tasks to make room for the emergency one
+                            foreach (var stale in existingLodging.Where(t => t.taskType != TaskType.Emergency))
+                            {
+                                activeTasks.Remove(stale);
+                                Debug.Log($"Emergency lodging supersedes existing task for {facilityName} — removed '{stale.taskTitle}'");
+                                GameLogPanel.Instance.LogTaskEvent($"Emergency lodging supersedes '{stale.taskTitle}' for {facilityName}");
+                            }
+                            // If an emergency lodging task already exists, still skip
+                            if (activeTasks.Any(t => t.taskTag == TaskTag.Lodging && t.affectedFacility == facilityName))
+                            {
+                                Debug.Log($"Emergency lodging already active for {facilityName} — skipping {taskData.taskTitle}");
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            Debug.Log($"Lodging task already active for {facilityName} — skipping {taskData.taskTitle}");
+                            GameLogPanel.Instance.LogTaskEvent($"Lodging task already active for {facilityName} — skipping {taskData.taskTitle}");
+                            continue;
+                        }
+                    }
                 }
 
                 Debug.Log($"Creating task: {taskData.taskTitle} for facility: {facilityName}");
@@ -781,7 +875,8 @@ public class TaskSystem : MonoBehaviour
         // Find suitable facility that triggered the task
         MonoBehaviour triggeringFacility = taskDatabase.FindSuitableFacility(taskData);
         string facilityName = triggeringFacility?.name ?? taskData.targetFacilityType.ToString();
-        string displayName = (triggeringFacility is PrebuiltBuilding pb) ? pb.GetBuildingName() : facilityName;
+        string displayName = triggeringFacility is PrebuiltBuilding pb ? pb.GetBuildingName() :
+                             triggeringFacility is Building bld ? bld.GetDisplayName() : facilityName;
 
         GameTask newTask = CreateTaskFromData(taskData);
         if (newTask == null)
@@ -1207,7 +1302,14 @@ public class TaskSystem : MonoBehaviour
             // Show task result popup
             if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other) && (task.taskType != TaskType.Advisory))
             {
-                TaskResultManager.Instance.ShowTaskResult(task);
+                // If the task had choices but the player never acted (status was never set to InProgress),
+                // make it explicit that inaction caused the failure.
+                bool noActionTaken = task.agentChoices != null && task.agentChoices.Count > 0
+                                     && task.status != TaskStatus.InProgress;
+                string reason = noActionTaken
+                    ? "No action was taken. The task expired before you responded."
+                    : "";
+                TaskResultManager.Instance.ShowTaskResult(task, reason);
             }
         }
     }
@@ -1761,7 +1863,7 @@ public class TaskSystem : MonoBehaviour
         {
             case ImpactType.Satisfaction: return "Satisfaction";
             case ImpactType.Budget: return "Budget";
-            case ImpactType.FoodPacks: return "Food Packs Amount";
+            case ImpactType.FoodPacks: return "mealss Amount";
             case ImpactType.Clients: return "Clients Amount";
             case ImpactType.Workforce: return "Workforce Required";
             case ImpactType.TotalTime: return "Estimated Time";
@@ -1785,7 +1887,8 @@ public class TaskSystem : MonoBehaviour
 
         // Use the specific facility provided
         string facilityName = specificFacility?.name ?? taskData.targetFacilityType.ToString();
-        string displayName = (specificFacility is PrebuiltBuilding pb) ? pb.GetBuildingName() : facilityName;
+        string displayName = specificFacility is PrebuiltBuilding pb ? pb.GetBuildingName() :
+                             specificFacility is Building bld ? bld.GetDisplayName() : facilityName;
 
         GameTask newTask = CreateTaskFromData(taskData);
         if (newTask == null)
@@ -1821,7 +1924,7 @@ public class TaskSystem : MonoBehaviour
         foodTask.agentMessages.Add(new AgentMessage("We need to decide how to respond quickly. What would you like to do?"));
 
         // Add agent choices with delivery options
-        AgentChoice choice1 = new AgentChoice(1, "Emergency food distribution from nearby kitchen (50 food packs, $2000)");
+        AgentChoice choice1 = new AgentChoice(1, "Emergency food distribution from nearby kitchen (50 meals, $2000)");
         choice1.triggersDelivery = true;
         choice1.deliveryCargoType = ResourceType.FoodPacks;
         choice1.deliveryQuantity = 50;
@@ -1833,7 +1936,7 @@ public class TaskSystem : MonoBehaviour
         choice1.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 15));
         foodTask.agentChoices.Add(choice1);
 
-        AgentChoice choice2 = new AgentChoice(2, "Limited food distribution (10 food packs, $1000)");
+        AgentChoice choice2 = new AgentChoice(2, "Limited food distribution (10 meals, $1000)");
         choice2.triggersDelivery = true;
         choice2.deliveryCargoType = ResourceType.FoodPacks;
         choice2.deliveryQuantity = 10;
@@ -2815,14 +2918,14 @@ public class TaskSystem : MonoBehaviour
 
             // Get construction costs (assuming same cost for all buildings)
             constructionState.buildingConstructionCost = buildingSystem.shelterConstructionCost;
-            constructionState.constructionTimeDays = buildingSystem.constructionTime;
+            constructionState.constructionTimeDays = buildingSystem.constructionRounds;
             constructionState.deconstructionTimeDays = 3.0f; // Default deconstruction time
         }
         else
         {
             // Default values if BuildingSystem not found
             constructionState.buildingConstructionCost = 1000;
-            constructionState.constructionTimeDays = 5.0f;
+            constructionState.constructionTimeDays = 4f;
             constructionState.deconstructionTimeDays = 3.0f;
         }
 
@@ -3056,5 +3159,37 @@ public class TaskSystem : MonoBehaviour
             return NumericalInputType.Budget;
         }
     }
+
+public string ConvertSiteNamesToFriendly(string text)
+{
+    if (string.IsNullOrEmpty(text)) return text;
+
+    Building[] buildings = UnityEngine.Object.FindObjectsOfType<Building>();
+
+    var sortedBuildings = buildings.OrderByDescending(b => $"{b.GetBuildingType()}_{b.GetOriginalSiteId()}".Length);
+
+    foreach (Building building in sortedBuildings)
+    {
+        string rawLlmToken = $"{building.GetBuildingType()}_{building.GetOriginalSiteId()}";
+
+        string gameObjectName = building.name;
+
+        string friendlyDisplayName = building.GetDisplayName();
+
+        if (!string.IsNullOrEmpty(friendlyDisplayName))
+        {
+            if (text.Contains(rawLlmToken))
+            {
+                text = text.Replace(rawLlmToken, friendlyDisplayName);
+            }
+            if (text.Contains(gameObjectName))
+            {
+                text = text.Replace(gameObjectName, friendlyDisplayName);
+            }
+        }
+    }
+
+    return text;
+}
 
 }
