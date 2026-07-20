@@ -113,21 +113,7 @@ public class DeliverySystem : MonoBehaviour
     void Start()
     {
         pendingTasks.Clear();
-        StartCoroutine(InitializeWithCentralConfig());
-    }
-
-    IEnumerator InitializeWithCentralConfig()
-    {
-        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
-        {
-            yield return null;
-        }
-
-        ervCount = GameDataManager.Instance.InitialERVCount;
-
-        AdjustSceneCount(ervCount);
-        availableVehicles.Clear();
-        availableVehicles.AddRange(FindObjectsOfType<Vehicle>());
+        //StartCoroutine(InitializeWithCentralConfig());
 
         foreach (Vehicle vehicle in availableVehicles)
         {
@@ -138,6 +124,29 @@ public class DeliverySystem : MonoBehaviour
         Debug.Log($"Delivery System initialized with {availableVehicles.Count} vehicles.");
         GameLogPanel.Instance.LogVehicleEvent($"Initialized with {availableVehicles.Count} vehicles (Config Target: {ervCount})");
     }
+
+    //IEnumerator InitializeWithCentralConfig()
+    //{
+    //    while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+    //    {
+    //        yield return null;
+    //    }
+
+    //    ervCount = GameDataManager.Instance.InitialERVCount;
+
+    //    AdjustSceneCount(ervCount);
+    //    availableVehicles.Clear();
+    //    availableVehicles.AddRange(FindObjectsOfType<Vehicle>());
+
+    //    foreach (Vehicle vehicle in availableVehicles)
+    //    {
+    //        vehicle.OnDeliveryCompleted += OnVehicleDeliveryCompleted;
+    //        Debug.Log($"DeliverySystem: Finalized {vehicle.GetVehicleName()}");
+    //    }
+
+    //    Debug.Log($"Delivery System initialized with {availableVehicles.Count} vehicles.");
+    //    GameLogPanel.Instance.LogVehicleEvent($"Initialized with {availableVehicles.Count} vehicles (Config Target: {ervCount})");
+    //}
 
     public void AdjustSceneCount(int targetCount)
     {
@@ -323,6 +332,7 @@ public class DeliverySystem : MonoBehaviour
             taskNumber++;
         }
 
+
         return createdTasks;
     }
 
@@ -399,6 +409,7 @@ public class DeliverySystem : MonoBehaviour
                 Debug.Log($"Removed active delivery task {taskId} (vehicle stopped externally)");
         }
     }
+
 
     /// <summary>
     /// Get maximum vehicle capacity for specific cargo type
@@ -541,10 +552,13 @@ public class DeliverySystem : MonoBehaviour
             DailyReportData.Instance.RecordDeliveryCompleted(completedTask);
         }
 
-        activeTasks.Remove(completedTask);
+        //activeTasks.Remove(completedTask);
+        activeTasks.RemoveAll(t => t.taskId == completedTask.taskId);
         completedTasks.Add(completedTask);
         OnTaskCompleted?.Invoke(completedTask);
     }
+
+
 
     /// <summary>
     /// Generate automatic delivery tasks based on building needs
