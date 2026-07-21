@@ -81,3 +81,9 @@ crashlytics-build.properties
 # Python
 __pycache__/
 *.pyc.claude/settings.local.json
+
+# Virtual environment
+.venv/
+
+# LLM API keys
+config/keys.json
