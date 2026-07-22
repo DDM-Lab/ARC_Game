@@ -101,7 +101,7 @@ MonoBehaviour:
     specificDestinationName: 
     budgetDelayRounds: 0
     prioritizeNearestSource: 0
-    prioritizeNearestDestination: 0
+    prioritizeNearestDestination: 1
   - choiceId: 1
     choiceText: Send to Motel
     agentReasoning: 
@@ -126,7 +126,7 @@ MonoBehaviour:
     specificDestinationName: 
     budgetDelayRounds: 0
     prioritizeNearestSource: 0
-    prioritizeNearestDestination: 0
+    prioritizeNearestDestination: 1
   - choiceId: 2
     choiceText: Rapid Response Vehicle Evacuation to Shelters (Immediate, $3000)
     agentReasoning: 

@@ -126,7 +126,7 @@ MonoBehaviour:
     destinationPrebuilt: 0
     specificDestinationName: 
     budgetDelayRounds: 0
-    prioritizeNearestSource: 0
+    prioritizeNearestSource: 1
     prioritizeNearestDestination: 0
   - choiceId: 2
     choiceText: Rapid Response Vehicle deliver 100 meals (Immediate, $1000)

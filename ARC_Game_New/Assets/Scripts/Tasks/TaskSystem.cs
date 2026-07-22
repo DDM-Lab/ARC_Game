@@ -1685,16 +1685,18 @@ public class TaskSystem : MonoBehaviour
                 Building[] buildings = FindObjectsOfType<Building>()
                     .Where(b => b.GetBuildingType() == choice.sourceBuilding)
                     .Where(b => b != triggeringFacility || choice.destinationType != DeliveryDestinationType.RequestingFacility) // Conditional exclude
+                    .Where(b => IsValidDeliverySource(b, choice.deliveryCargoType))
                     .ToArray();
 
                 if (buildings.Length == 0) return null;
 
                 if (choice.prioritizeNearestSource && triggeringFacility != null)
                 {
-                    return FindNearestBuilding(choice.sourceBuilding, triggeringFacility?.transform.position,
-                                        choice.deliveryCargoType, true);
+                    return buildings
+                    .OrderBy(b => Vector3.Distance(b.transform.position, triggeringFacility.transform.position))
+                    .FirstOrDefault();
                 }
-                return buildings[0];
+                return buildings.FirstOrDefault();
 
 
             case DeliverySourceType.SpecificPrebuilt:
@@ -1705,16 +1707,18 @@ public class TaskSystem : MonoBehaviour
                 PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>()
                 .Where(p => p.GetPrebuiltType() == choice.sourcePrebuilt)
                 .Where(p => p != triggeringFacility || choice.destinationType != DeliveryDestinationType.RequestingFacility)
+                .Where(b => IsValidDeliverySource(b, choice.deliveryCargoType))
                 .ToArray();
 
                 if (prebuilts.Length == 0) return null;
 
                 if (choice.prioritizeNearestSource && triggeringFacility != null)
                 {
-                    return FindNearestPrebuiltBuilding(choice.sourcePrebuilt, triggeringFacility?.transform.position,
-                                                choice.deliveryCargoType, true);
+                    return prebuilts
+                    .OrderBy(b => Vector3.Distance(b.transform.position, triggeringFacility.transform.position))
+                    .FirstOrDefault();
                 }
-                return prebuilts[0];
+                return prebuilts.FirstOrDefault();
 
 
             case DeliverySourceType.AutoFind:
@@ -1747,6 +1751,7 @@ public class TaskSystem : MonoBehaviour
                 .Where(b => b.GetBuildingType() == choice.destinationBuilding)
                 .Where(b => b.IsOperational()) // Only operational buildings
                 .Where(b => b != triggeringFacility) // Exclude source facility
+                .Where(b => IsValidDeliveryDestination(b, choice.deliveryCargoType))
                 .ToArray();
 
                 if (buildings.Length == 0)
@@ -1758,10 +1763,14 @@ public class TaskSystem : MonoBehaviour
 
                 if (choice.prioritizeNearestDestination && triggeringFacility != null)
                 {
-                    return FindNearestBuilding(choice.destinationBuilding, triggeringFacility?.transform.position,
-                                        choice.deliveryCargoType, false);
+                    //return FindNearestBuilding(choice.destinationBuilding, triggeringFacility?.transform.position,
+                    //                    choice.deliveryCargoType, false);
+                    return buildings
+                    .OrderBy(b => Vector3.Distance(b.transform.position, triggeringFacility.transform.position))
+                    .FirstOrDefault();
                 }
-                return buildings[0];
+                //return buildings[0];
+                return buildings.FirstOrDefault();
 
 
 
@@ -1770,6 +1779,7 @@ public class TaskSystem : MonoBehaviour
                 PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>()
                     .Where(p => p.GetPrebuiltType() == choice.destinationPrebuilt)
                     .Where(p => p != triggeringFacility) // Exclude source facility
+                    .Where(p => IsValidDeliveryDestination(p, choice.deliveryCargoType))
                     .ToArray();
 
                 if (prebuilts.Length == 0)
@@ -1781,10 +1791,13 @@ public class TaskSystem : MonoBehaviour
 
                 if (choice.prioritizeNearestDestination && triggeringFacility != null)
                 {
-                    return FindNearestPrebuiltBuilding(choice.destinationPrebuilt, triggeringFacility?.transform.position,
-                                            choice.deliveryCargoType, false);
+                    //return FindNearestPrebuiltBuilding(choice.destinationPrebuilt, triggeringFacility?.transform.position,
+                    //                        choice.deliveryCargoType, false);
+                    return prebuilts
+                    .OrderBy(p => Vector3.Distance(p.transform.position, triggeringFacility.transform.position))
+                    .FirstOrDefault();
                 }
-                return prebuilts[0];
+                return prebuilts.FirstOrDefault();
 
 
             case DeliveryDestinationType.AutoFind:
@@ -1793,6 +1806,43 @@ public class TaskSystem : MonoBehaviour
                 return FindBestDeliveryDestination(choice.deliveryCargoType, triggeringFacility?.transform.position);
         }
     }
+
+    /// <summary>
+    /// Validates a facility as a source for a cargo type
+    /// </summary>
+    private bool IsValidDeliverySource(MonoBehaviour facility, ResourceType cargo)
+    {
+        if (facility == null) return false;
+        if (facility is Building building && !building.IsOperational()) return false;
+        BuildingResourceStorage storage = facility.GetComponent<BuildingResourceStorage>();
+        if (storage != null)
+        {
+            int availableStock = storage.GetResourceAmount(cargo);
+            if (availableStock <= 0) return false; // source must have cargo
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Validates a facility as a destination for a cargo type
+    /// </summary>
+    private bool IsValidDeliveryDestination(MonoBehaviour facility, ResourceType cargo)
+    {
+        if (facility == null) return false;
+        if (facility is Building building && !building.IsOperational()) return false;
+        BuildingResourceStorage storage = facility.GetComponent<BuildingResourceStorage>();
+        if (storage != null)
+        {
+            int currentAmount = storage.GetResourceAmount(cargo);
+            int capacity = storage.GetResourceCapacity(cargo);
+
+            if (currentAmount >= capacity) return false; // source must have room for cargo
+        }
+
+        return true;
+    }
+
 
     public void CompleteAlertTask(GameTask alertTask)
     {

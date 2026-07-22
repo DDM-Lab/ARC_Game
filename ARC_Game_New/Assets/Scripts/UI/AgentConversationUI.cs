@@ -227,6 +227,15 @@ public class AgentConversationUI : MonoBehaviour
     {
         isAnimating = true;
 
+        if (expand)
+        {
+            Debug.Log("Expand animating!");
+        }
+        else
+        {
+            Debug.Log("Contract animating!");
+        }
+
         float startWidth = expandedPanel.sizeDelta.x;
         float targetWidth = expand ? expandedWidth : collapsedWidth;
         float elapsed = 0f;
@@ -557,26 +566,40 @@ public class AgentConversationUI : MonoBehaviour
         }
 
         Debug.Log("HERERERERE");
-        StartCoroutine(PeekForRoute(source, dest));
+        GameTask taskToRestore = currentSelectedTask;
+        StartCoroutine(PeekForRoute(source, dest, taskToRestore));
     }
 
-    IEnumerator PeekForRoute(MonoBehaviour source, MonoBehaviour dest)
+
+    IEnumerator PeekForRoute(MonoBehaviour source, MonoBehaviour dest, GameTask taskToRestore)
     {
         bool wasExpanded = isExpanded;
+
         if (wasExpanded)
         {
             isExpanded = false;
             yield return StartCoroutine(AnimateExpand(false));
         }
 
-        FacilityHighlightSystem.Instance?.HighlightRoute(source, dest);
-        float wait = FacilityHighlightSystem.Instance?.TotalDuration ?? 2f;
-        yield return new WaitForSecondsRealtime(wait);
+        // callback to FacilityHighlightSystem to notify AgentConversationUI panel when done
+        FacilityHighlightSystem.Instance?.PreviewRouteAndCallback(source, dest, () =>
+        {
+            StartCoroutine(RestoreUIAfterPreview(wasExpanded, taskToRestore));
+        });
+    }
+
+    private IEnumerator RestoreUIAfterPreview(bool wasExpanded, GameTask taskToRestore)
+    {
 
         if (wasExpanded)
         {
             isExpanded = true;
             yield return StartCoroutine(AnimateExpand(true));
+        }
+
+        if (taskToRestore != null)
+        {
+            DisplayTaskConversation(taskToRestore);
         }
     }
 
@@ -672,29 +695,37 @@ public class AgentConversationUI : MonoBehaviour
 
     void OnFacilityLinkClicked(string facilityObjectName)
     {
-        StartCoroutine(PeekAtFacility(facilityObjectName));
+        StartCoroutine(PeekAtFacility(facilityObjectName, currentSelectedTask));
     }
 
-    IEnumerator PeekAtFacility(string facilityObjectName)
+    IEnumerator PeekAtFacility(string facilityObjectName, GameTask taskToRestore)
     {
         bool wasExpanded = isExpanded;
+
         if (wasExpanded)
         {
             isExpanded = false;
             yield return StartCoroutine(AnimateExpand(false));
         }
+        FacilityHighlightSystem.Instance?.HighlightFacilityWithCallback(facilityObjectName, () =>
+        {
+            StartCoroutine(RestoreUIAfterFacilityPeek(wasExpanded, taskToRestore));
+        });
+    }
 
-        FacilityHighlightSystem.Instance?.HighlightFacility(facilityObjectName);
-        float wait = FacilityHighlightSystem.Instance?.TotalDuration ?? 2f;
-        yield return new WaitForSecondsRealtime(wait);
-
+    private IEnumerator RestoreUIAfterFacilityPeek(bool wasExpanded, GameTask taskToRestore)
+    {
         if (wasExpanded)
         {
             isExpanded = true;
             yield return StartCoroutine(AnimateExpand(true));
         }
+        if (taskToRestore != null)
+        {
+            DisplayTaskConversation(taskToRestore);
+        }
     }
-    
+
     void DisplayHistoricalChoice(AgentChoice choice)
     {
         GameObject choiceItem = Instantiate(agentChoicePrefab, conversationContent);
