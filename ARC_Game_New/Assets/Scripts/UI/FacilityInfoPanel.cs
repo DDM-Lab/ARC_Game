@@ -628,9 +628,12 @@ public class FacilityInfoPanel : MonoBehaviour
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
         if (deliverySystem == null || expectedDeliveriesText == null)
             return;
-        
-        List<DeliveryTask> incoming = deliverySystem.GetIncomingDeliveries(facility);
-        
+
+        //List<DeliveryTask> incoming = deliverySystem.GetIncomingDeliveries(facility);
+        List<DeliveryTask> incoming = deliverySystem.GetIncomingDeliveries(facility)
+        .Concat(deliverySystem.GetPendingTasks().Where(t => t.destinationBuilding == facility))
+        .ToList();
+
         if (incoming.Count == 0)
         {
             expectedDeliveriesText.text = "No deliveries expected";
@@ -653,9 +656,13 @@ public class FacilityInfoPanel : MonoBehaviour
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
         if (deliverySystem == null || outgoingDeliveriesText == null)
             return;
-        
-        List<DeliveryTask> outgoing = deliverySystem.GetOutgoingDeliveries(facility);
-        
+
+        //List<DeliveryTask> outgoing = deliverySystem.GetOutgoingDeliveries(facility);
+        List<DeliveryTask> outgoing = deliverySystem.GetOutgoingDeliveries(facility)
+        .Concat(deliverySystem.GetPendingTasks().Where(t => t.sourceBuilding == facility))
+        .ToList();
+
+
         if (outgoing.Count == 0)
         {
             outgoingDeliveriesText.text = "No outgoing deliveries";

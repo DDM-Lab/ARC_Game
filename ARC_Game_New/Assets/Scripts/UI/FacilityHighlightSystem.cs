@@ -189,12 +189,10 @@ public class FacilityHighlightSystem : MonoBehaviour
 
     private IEnumerator RunRoutePreviewSequence(MonoBehaviour source, MonoBehaviour dest, System.Action onComplete)
     {
-        HighlightRoute(source, dest);
-
-        yield return new WaitForSecondsRealtime(TotalDuration);
-
+        yield return StartCoroutine(RunRouteHighlight(source, dest));
         onComplete?.Invoke();
     }
+
 
     /// <summary>
     /// Used to notify when done with facility highlight, since Highlight hides all UI.
@@ -206,13 +204,7 @@ public class FacilityHighlightSystem : MonoBehaviour
 
     private IEnumerator RunFacilityHighlightSequence(string facilityObjectName, System.Action onComplete)
     {
-        // Start single facility highlight (pan camera + pulse)
-        HighlightFacility(facilityObjectName);
-
-        // Wait safely on this persistent manager
-        yield return new WaitForSecondsRealtime(TotalDuration);
-
-        // Notify UI that highlight is complete
+        yield return StartCoroutine(RunHighlight(facilityObjectName));
         onComplete?.Invoke();
     }
 }

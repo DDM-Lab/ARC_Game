@@ -545,7 +545,24 @@ public class DeliverySystem : MonoBehaviour
     void OnVehicleDeliveryCompleted(Vehicle vehicle, DeliveryTask completedTask)
     {
         Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
-
+        if (completedTask.cargoType == ResourceType.Population && ClientStayTracker.Instance != null)
+        {
+            if (completedTask.destinationBuilding != null)
+            {
+                ClientStayTracker.Instance.RegisterClientArrival(
+                    completedTask.destinationBuilding,
+                    completedTask.quantity,
+                    $"VehicleDeliv_{completedTask.taskId}"
+                );
+            }
+            if (completedTask.sourceBuilding != null)
+            {
+                ClientStayTracker.Instance.RemoveClientsByQuantity(
+                    completedTask.sourceBuilding,
+                    completedTask.quantity
+                );
+            }
+        }
         // Report to daily tracking
         if (DailyReportData.Instance != null)
         {

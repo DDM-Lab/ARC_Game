@@ -584,23 +584,24 @@ public class AgentConversationUI : MonoBehaviour
         // callback to FacilityHighlightSystem to notify AgentConversationUI panel when done
         FacilityHighlightSystem.Instance?.PreviewRouteAndCallback(source, dest, () =>
         {
+            if (!gameObject.activeInHierarchy)
+            {
+                Debug.LogWarning("[AgentConversationUI] Panel inactive when restore callback fired — skipping.");
+                return;
+            }
             StartCoroutine(RestoreUIAfterPreview(wasExpanded, taskToRestore));
         });
     }
 
     private IEnumerator RestoreUIAfterPreview(bool wasExpanded, GameTask taskToRestore)
     {
-
         if (wasExpanded)
         {
             isExpanded = true;
             yield return StartCoroutine(AnimateExpand(true));
         }
-
         if (taskToRestore != null)
-        {
             DisplayTaskConversation(taskToRestore);
-        }
     }
 
     void DisplayInteractiveNumericalInput(AgentNumericalInput input)
@@ -709,6 +710,11 @@ public class AgentConversationUI : MonoBehaviour
         }
         FacilityHighlightSystem.Instance?.HighlightFacilityWithCallback(facilityObjectName, () =>
         {
+            if (!gameObject.activeInHierarchy)
+            {
+                Debug.LogWarning("[AgentConversationUI] Panel inactive when restore callback fired — skipping.");
+                return;
+            }
             StartCoroutine(RestoreUIAfterFacilityPeek(wasExpanded, taskToRestore));
         });
     }
