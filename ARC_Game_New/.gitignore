@@ -82,6 +82,7 @@ crashlytics-build.properties
 
 # Python cache
 __pycache__/
+
 *.pyc
 
 # Python virtualenvs
@@ -129,3 +130,12 @@ wandb/
 
 # Local Claude Code settings (from main-bugfixes)
 .claude/settings.local.json
+
+*.pyc.claude/settings.local.json
+
+# Virtual environment
+.venv/
+
+# LLM API keys
+config/keys.json
+

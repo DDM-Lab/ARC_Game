@@ -244,6 +244,12 @@ public class ClientRelocationHandler : MonoBehaviour
             int removed = RemovePopulation(source, sendAmount);
             if (removed <= 0) continue;
 
+            // Remove from tracker on source facility
+            if (ClientStayTracker.Instance != null)
+            {
+                ClientStayTracker.Instance.RemoveClientsByQuantity(source, removed);
+            }
+
             // Add to destination
             int delivered = AddPopulation(dest, removed);
 
@@ -251,10 +257,26 @@ public class ClientRelocationHandler : MonoBehaviour
             if (delivered < removed)
                 AddPopulation(source, removed - delivered);
 
-            // Track arrivals at shelter OR motel for casework (centralized; fixes the
+
+
+
+
+            // Track client arrivals
+            Building destBuilding = dest.GetComponent<Building>();
+            //if (destBuilding != null && ClientStayTracker.Instance != null && delivered > 0)
+            //{
+            //    string groupName = $"Relocate_{parentTask.taskId}_{source.name}_to_{dest.name}";
+            //    ClientStayTracker.Instance.RegisterClientArrival(destBuilding, delivered, groupName);
+            //}
+            // Track client arrivals for both Shelters and Motels
+             // Track arrivals at shelter OR motel for casework (centralized; fixes the
             // motel-not-tracked bug — motels now generate casework like shelters).
             if (ClientStayTracker.Instance != null && delivered > 0)
+            {
+                string groupName = $"Relocate_{parentTask.taskId}_{source.name}_to_{dest.name}";
+                ClientStayTracker.Instance.RegisterClientArrival(dest, delivered, groupName);
                 ClientStayTracker.Instance.HandlePopulationDelivery(source, dest, delivered, parentTask.taskId);
+            }
 
             remaining -= delivered;
             totalDelivered += delivered;

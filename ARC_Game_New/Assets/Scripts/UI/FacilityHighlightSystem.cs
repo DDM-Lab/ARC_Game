@@ -178,4 +178,33 @@ public class FacilityHighlightSystem : MonoBehaviour
 
         return null;
     }
+
+    /// <summary>
+    /// Used to notify when done with route highlight, since Highlight hides all UI.
+    /// </summary>
+    public void PreviewRouteAndCallback(MonoBehaviour source, MonoBehaviour dest, System.Action onComplete)
+    {
+        StartCoroutine(RunRoutePreviewSequence(source, dest, onComplete));
+    }
+
+    private IEnumerator RunRoutePreviewSequence(MonoBehaviour source, MonoBehaviour dest, System.Action onComplete)
+    {
+        yield return StartCoroutine(RunRouteHighlight(source, dest));
+        onComplete?.Invoke();
+    }
+
+
+    /// <summary>
+    /// Used to notify when done with facility highlight, since Highlight hides all UI.
+    /// </summary>
+    public void HighlightFacilityWithCallback(string facilityObjectName, System.Action onComplete)
+    {
+        StartCoroutine(RunFacilityHighlightSequence(facilityObjectName, onComplete));
+    }
+
+    private IEnumerator RunFacilityHighlightSequence(string facilityObjectName, System.Action onComplete)
+    {
+        yield return StartCoroutine(RunHighlight(facilityObjectName));
+        onComplete?.Invoke();
+    }
 }

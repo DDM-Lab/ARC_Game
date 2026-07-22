@@ -257,6 +257,9 @@ public class WorkerRequestSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Worker request started on Day {currentDay} for {workerCount} {label} workers, arrival day: {arrivalDay}");
+
+        RequestTask newTask = activeRequestTasks[activeRequestTasks.Count - 1];
+        DeliveryQueuePanel.Instance?.OnItemAdded(newTask);
     }
 
     void OnDayChanged(int newDay)

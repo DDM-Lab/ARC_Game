@@ -106,10 +106,10 @@ MonoBehaviour:
   allowedCargoTypes: 0000000001000000
   vehicleRenderer: {fileID: 7589427587040128936}
   cargoIndicator: {fileID: 7159830015408954970}
-  glowIndicator: {fileID: 7733671233437161687}
-  availableGlowColor: {r: 0, g: 1, b: 0.2, a: 0.49411765}
-  activeGlowColor: {r: 1, g: 0.8, b: 0, a: 0.49019608}
-  damagedGlowColor: {r: 1, g: 0.1, b: 0.1, a: 0.4862745}
+  glowIndicator: {fileID: 7589427587040128936}
+  availableGlowColor: {r: 1, g: 1, b: 1, a: 1}
+  activeGlowColor: {r: 0.9921287, g: 0.86329776, b: 0.2535158, a: 1}
+  damagedGlowColor: {r: 1, g: 0.36109495, b: 0.36109495, a: 1}
   enableDirectionRotation: 1
   rotationSpeed: 10
   defaultAngle: 180
@@ -236,7 +236,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &6442686064627100965
 Transform:
   m_ObjectHideFlags: 0
