@@ -240,6 +240,10 @@ public class WorkerTrainingSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Training started on Day {currentDay} for {workerCount} workers, completion day: {completionDay}");
+
+        // Add at the bottom of StartWorkerTraining() inside WorkerTrainingSystem.cs
+        TrainingTask newTask = activeTrainingTasks[activeTrainingTasks.Count - 1];
+        DeliveryQueuePanel.Instance?.OnItemAdded(newTask);
     }
     
     void OnDayChanged(int newDay)

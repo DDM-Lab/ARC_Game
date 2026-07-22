@@ -728,6 +728,22 @@ public class TaskDetailUI : MonoBehaviour
         // Apply choice impacts first
         if (selectedChoice != null)
         {
+            // queue budget row
+            if (selectedChoice.budgetDelayRounds > 0)
+            {
+                var budgetImpact = selectedChoice.choiceImpacts
+                    .FirstOrDefault(i => i.impactType == ImpactType.Budget);
+
+                if (budgetImpact != null && budgetImpact.value != 0)
+                {
+                    Debug.Log("budget here");
+                    DelayedBudgetManager.Instance?.AddDelayedBudget(
+                        currentTask.taskTitle,
+                        budgetImpact.value,
+                        selectedChoice.budgetDelayRounds
+                    );
+                }
+            }
             // Log numerical input for the task
             if (currentTask.numericalInputs != null && currentTask.numericalInputs.Count > 0)
             {
