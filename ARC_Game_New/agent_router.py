@@ -3339,13 +3339,16 @@ class AgentService:
         return str(self.user_dir(key_label) / f"session_{ts}_{session_id[:8]}.jsonl")
 
     def record_session(self, key_label: str, key_fp: str, session_id: str,
-                       config_name: str, log_file: str) -> None:
+                       config_name: str, log_file: str,
+                       player_id: Optional[str] = None) -> None:
         """Append a one-line manifest entry to the user's session index so
-        every game a user plays is catalogued (id, config, log file, time)."""
+        every game a user plays is catalogued (id, config, log file, time).
+        player_id is the client's persistent localStorage UUID (may be None)."""
         entry = {
             "session_id": session_id,
             "label": key_label,
             "key_fingerprint": key_fp,
+            "player_id": player_id,
             "config": config_name,
             "log_file": Path(log_file).name,
             "started_at": _now(),
@@ -3467,6 +3470,13 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
 
     api_key = msg.get("api_key")
     config_name = msg.get("config")
+    # Optional client-supplied persistent player id (localStorage UUID). It is
+    # UNTRUSTED input: sanitize to a bounded safe charset and only ever store it
+    # as a log VALUE, never as a path component. Absent/blank -> None (anonymous).
+    raw_pid = msg.get("player_id")
+    player_id = None
+    if isinstance(raw_pid, str):
+        player_id = re.sub(r"[^A-Za-z0-9_-]", "", raw_pid)[:64] or None
     if not api_key or api_key not in service.keys:
         await websocket.send_text(json.dumps({"type": "hello_error", "error": "invalid_api_key"}))
         await websocket.close(code=1008, reason="invalid api key")
@@ -3517,17 +3527,20 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
         log_path=log_path,
         websocket=websocket,
     )
+    session.player_id = player_id
     service.sessions[session_id] = session
 
     # Catalogue this game under the user (per-key index) and stamp a
     # session_start header at the top of the session's own log.
     key_fp = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12]
-    service.record_session(key_label, key_fp, session_id, config_name, log_path)
+    service.record_session(key_label, key_fp, session_id, config_name, log_path,
+                           player_id=player_id)
     session.logger.log_event({
         "event_type": "session_start",
         "session_id": session_id,
         "label": key_label,
         "key_fingerprint": key_fp,
+        "player_id": player_id,
         "config": config_name,
         "agents": [a.subagent_name for a in cfg.agents],
     })
@@ -3538,6 +3551,7 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
         "config": config_name,
         "agents": [a.subagent_name for a in cfg.agents],
         "label": key_label,
+        "player_id": player_id,
     }))
     print(f"[router] hello_ack -> {key_label} (session {session_id[:8]}, "
           f"config={config_name}, agents={len(cfg.agents)})")

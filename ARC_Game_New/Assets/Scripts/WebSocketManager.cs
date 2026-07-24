@@ -181,6 +181,7 @@ public class WebSocketManager : MonoBehaviour
                 // gameplay traffic flows.
                 string hello = "{\"type\":\"hello\""
                                + ",\"api_key\":\"" + EscapeJson(apiKey) + "\""
+                               + ",\"player_id\":\"" + EscapeJson(GetOrCreatePlayerId()) + "\""
                                + ",\"config\":\"" + EscapeJson(configName) + "\"}";
                 SendRawMessage(hello);
                 Debug.Log($"[WS] hello sent (config={configName})");
@@ -520,6 +521,24 @@ public class WebSocketManager : MonoBehaviour
         if (string.IsNullOrEmpty(s)) return "";
         return s.Replace("\\", "\\\\").Replace("\"", "\\\"")
                 .Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+    }
+
+    /// <summary>
+    /// Persistent per-browser player id. In WebGL, PlayerPrefs is backed by the
+    /// browser's IndexedDB (idbfs), so this UUID survives reloads and new game
+    /// sessions exactly like a localStorage id — it lets us differentiate
+    /// individual players who share one API key. Generated once, then reused.
+    /// </summary>
+    private string GetOrCreatePlayerId()
+    {
+        string id = PlayerPrefs.GetString("arc_player_id", "");
+        if (string.IsNullOrEmpty(id))
+        {
+            id = System.Guid.NewGuid().ToString();
+            PlayerPrefs.SetString("arc_player_id", id);
+            PlayerPrefs.Save();
+        }
+        return id;
     }
 
     /// <summary>

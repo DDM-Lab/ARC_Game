@@ -139,3 +139,7 @@ wandb/
 # LLM API keys
 config/keys.json
 
+config/keys.json.bak*
+keys.json.bak*
+logs/sessions/
+router.log
