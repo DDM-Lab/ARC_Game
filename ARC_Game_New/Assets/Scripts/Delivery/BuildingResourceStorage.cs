@@ -179,6 +179,8 @@ public class BuildingResourceStorage : MonoBehaviour
             if (foodNeeded > 0)
             {
                 int foodConsumed = RemoveResource(ResourceType.FoodPacks, foodNeeded);
+                if (DailyReportData.Instance != null)
+                    DailyReportData.Instance.RecordFoodConsumptionCumulative(foodConsumed, foodNeeded);
 
                 if (showDebugInfo)
                 {
@@ -238,6 +240,9 @@ public class BuildingResourceStorage : MonoBehaviour
             {
                 // Report to daily tracking
                 DailyReportData.Instance.RecordFoodWasted(wastedFood);
+
+                DailyReportData.Instance.RecordFoodWasteCumulative(wastedFood);
+
                 
                 RemoveResource(ResourceType.FoodPacks, wastedFood);
 

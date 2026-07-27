@@ -31,12 +31,13 @@ public class BuildingSystem : MonoBehaviour
 
     private static readonly string[] greekNames =
     {
-        "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta",
-        "Iota", "Kappa", "Lambda", "Mu", "Nu", "Xi", "Omicron", "Pi",
-        "Rho", "Sigma", "Tau", "Upsilon", "Phi", "Chi", "Psi", "Omega"
+        "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel",
+        "India", "Juliet", "Kilo", "Lima", "Mike", "November", "Oscar", "Papa",
+        "Quebec", "Romeo", "Sierra", "Tango", "Uniform", "Victor", "Whiskey", "X-ray",
+        "Yankee", "Zulu"
     };
     private Dictionary<BuildingType, int> buildingNameCounters = new Dictionary<BuildingType, int>();
-
+    public IReadOnlyList<AbandonedSite> RegisteredSites => registeredSites;
     private string GenerateBuildingName(BuildingType type)
     {
         if (!buildingNameCounters.ContainsKey(type))
@@ -206,12 +207,23 @@ public class BuildingSystem : MonoBehaviour
             };
             if (SatisfactionAndBudget.Instance != null && constructionCost > 0)
             {
+
                 // Kitchens count as food-service spend, shelters as lodging spend.
                 var spendCat = buildingType == BuildingType.Kitchen ? SatisfactionAndBudget.SpendCategory.Food
                              : buildingType == BuildingType.Shelter ? SatisfactionAndBudget.SpendCategory.Lodging
                              : buildingType == BuildingType.CaseworkSite ? SatisfactionAndBudget.SpendCategory.Casework
                              : SatisfactionAndBudget.SpendCategory.Other;
                 SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, spendCat, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
+
+                // SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
+                if (DailyReportData.Instance != null)
+                    {
+                        if (buildingType == BuildingType.Kitchen)
+                            DailyReportData.Instance.RecordFoodSpendCumulative(constructionCost);
+                        else if (buildingType == BuildingType.Shelter)
+                            DailyReportData.Instance.RecordLodgingSpendCumulative(constructionCost);
+                    }
+
                 ToastManager.ShowToast($"Opening cost of {constructionCost} deducted for {buildingType}", ToastType.Info, true);
                 GameLogPanel.Instance.LogPlayerAction($"Construction cost of {constructionCost} deducted for building {buildingType} at AbandonedSite_{site.GetId()}");
             }

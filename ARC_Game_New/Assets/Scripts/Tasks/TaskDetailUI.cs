@@ -2901,6 +2901,13 @@ public class TaskDetailUI : MonoBehaviour
                                 -(int)impact.value,
                                 choiceCat,
                                 $"Task [{currentTask.taskTitle}] cost");
+                            if (DailyReportData.Instance != null)
+                            {
+                                if (currentTask.taskTag == TaskTag.Food)
+                                    DailyReportData.Instance.RecordFoodSpendCumulative(impact.value);
+                                else if (currentTask.taskTag == TaskTag.Lodging)
+                                    DailyReportData.Instance.RecordLodgingSpendCumulative(impact.value);
+                            }
                             ToastManager.ShowToast(
                                 $"Budget decreased by ${-impact.value:N0}",
                                 ToastType.Info, true);

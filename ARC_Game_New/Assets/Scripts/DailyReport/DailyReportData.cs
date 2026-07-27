@@ -39,7 +39,47 @@ public class DailyReportData : MonoBehaviour
     
     // Track what we've already processed
     private HashSet<int> processedTaskIds = new HashSet<int>();
+
+    //NEW
+    // =========================================================================
+    // Cummulative Tracked Vars
+    // =========================================================================
+
+    // Mainly Scores
+    [Header("Overall metrics")]
+    private int cumulativeRoundsElapsed = 0;  //here
+
+    [Header("Cumulative Food Satisfaction + Food Waste")]
+    private int cumulativeFoodPacksConsumedByClients = 0;  // record
+    private int cumulativeFoodPacksNeededByClients = 0;    // record
+    private int cumulativeFoodPacksWasted = 0;            // record
+                                        
+
+
+    [Header("Cumulative Lodging")]
+    private int cumulativeLodgingNightsConsumed = 0; //here
+    private int cumulativeLodgingNightsNeeded = 0;  //here
+
+
+    [Header("Cumulative Worker Use")]
+    private int cumulativeIdleWorkerRounds = 0; //here
+    private int cumulativeWorkingWorkerRounds = 0; //here
+    private int cumulativeTrainingWorkerRounds = 0; //here
+    private int cumulativeWorkerPoolRounds = 0; 
     
+
+    [Header("Cumulative - Casework")]
+    private int cumulativeClientRoundsAwaitingCasework = 0; // here
+    private int cumulativeClientsRequestedCasework = 0; //here
+
+    // Mainly Cost-eff
+    [Header("Cumulative - Cost-Efficiency Spend")] //record all
+    private float cumulativeFoodSpend = 0f;
+    private float cumulativeLodgingSpend = 0f;
+    private float cumulativeWorkerRequestCost = 0f;
+    private float cumulativeWorkerTrainingCost = 0f;
+    //END NEW
+
     // Singleton
     public static DailyReportData Instance { get; private set; }
     
@@ -94,8 +134,34 @@ public class DailyReportData : MonoBehaviour
         {
             GlobalClock.Instance.OnSimulationStarted += OnRoundStarted;
         }
+
+
+        //NEW
+        GlobalClock.OnRoundEnd += AccumulateRoundMetrics;
+
+        if (ClientStayTracker.Instance != null)
+            ClientStayTracker.Instance.OnCaseworkRequested += OnCaseworkRequested;
+
+        if (GlobalClock.Instance != null)
+            GlobalClock.Instance.OnDayChanged += OnDayChangedForLodgingNights;
+        //END NEW
     }
-    
+
+    //NEW
+    void OnDestroy()
+    {
+        
+        if (ClientStayTracker.Instance != null)
+            ClientStayTracker.Instance.OnCaseworkRequested -= OnCaseworkRequested;
+        if (GlobalClock.Instance != null) {
+            GlobalClock.OnRoundEnd -= AccumulateRoundMetrics;
+            GlobalClock.Instance.OnDayChanged -= OnDayChangedForLodgingNights;
+        }
+            
+    }
+    //END NEW
+
+
     void SyncWithExistingTasks()
     {
         if (taskSystem == null) return;
@@ -154,6 +220,8 @@ public class DailyReportData : MonoBehaviour
         }
         dayStartPopulation = CalculateTotalPopulation();
     }
+
+
     
     void OnTaskCompleted(GameTask task)
     {
@@ -229,11 +297,122 @@ public class DailyReportData : MonoBehaviour
         todayTaskCosts = 0f;
         todayBudgetReceived = 0f;
     }
-    
+
+    //NEW
+    // =========================================================================
+    // CUMULATIVE ROUND-LEVEL ACCUMULATION
+    // =========================================================================
+
+    void AccumulateRoundMetrics()
+    {
+        if (workerSystem == null) workerSystem = FindObjectOfType<WorkerSystem>();
+        if (workerSystem != null)
+        {
+            var stats = workerSystem.GetWorkerStatistics();
+            int idle = stats.trainedFree + stats.untrainedFree;
+            int working = stats.trainedWorking + stats.untrainedWorking;
+            int training = stats.untrainedTraining;
+            int total = stats.GetTotalWorkers();
+
+            cumulativeIdleWorkerRounds += idle;
+            cumulativeWorkingWorkerRounds += working;
+            cumulativeTrainingWorkerRounds += training;
+            cumulativeWorkerPoolRounds += total;
+        }
+
+        cumulativeRoundsElapsed++;
+
+        if (ClientStayTracker.Instance != null)
+        {
+            foreach (var group in ClientStayTracker.Instance.clientGroups)
+            {
+                if (group.clientsWithCaseworkNeed > 0 && !group.hasDeparted)
+                    cumulativeClientRoundsAwaitingCasework += group.clientsWithCaseworkNeed;
+            }
+        }
+    }
+
+    void OnCaseworkRequested(ClientGroup group)
+    {
+        cumulativeClientsRequestedCasework += group.clientsWithCaseworkNeed;
+    }
+
+    void OnDayChangedForLodgingNights(int newDay)
+    {
+        int housedTonight = 0;
+        if (ClientStayTracker.Instance != null)
+        {
+            housedTonight = ClientStayTracker.Instance.clientGroups.Sum(g => g.clientCount);
+            cumulativeLodgingNightsConsumed += housedTonight;
+        }
+
+        if (taskSystem != null)
+        {
+            int neededTonight = taskSystem.activeTasks
+                .Where(t => t.taskTag == TaskTag.Lodging)
+                .SelectMany(t => t.impacts)
+                .Where(i => i.impactType == ImpactType.Clients)
+                .Sum(i => i.value);
+
+            cumulativeLodgingNightsNeeded += housedTonight + neededTonight; 
+        }
+    }
+
+    public void RecordFoodConsumptionCumulative(int consumed, int needed)
+    {
+        cumulativeFoodPacksConsumedByClients += consumed;
+        cumulativeFoodPacksNeededByClients += needed;
+    }
+
+    public void RecordFoodWasteCumulative(int amount)
+    {
+        cumulativeFoodPacksWasted += amount;
+    }
+
+
+    public void RecordFoodSpendCumulative(float amount)
+    {
+        cumulativeFoodSpend += amount;
+    }
+
+    public void RecordLodgingSpendCumulative(float amount)
+    {
+        cumulativeLodgingSpend += amount;
+    }
+
+    public void RecordWorkerRequestCostCumulative(float amount)
+    {
+        cumulativeWorkerRequestCost += amount;
+    }
+
+    public void RecordWorkerTrainingCostCumulative(float amount)
+    {
+        cumulativeWorkerTrainingCost += amount;
+    }
+
+    public int GetCumulativeFoodPacksConsumedByClients() => cumulativeFoodPacksConsumedByClients;
+    public int GetCumulativeFoodPacksNeededByClients() => cumulativeFoodPacksNeededByClients;
+    public int GetCumulativeFoodPacksWasted() => cumulativeFoodPacksWasted;
+    public int GetCumulativeIdleWorkerRounds() => cumulativeIdleWorkerRounds;
+    public int GetCumulativeWorkingWorkerRounds() => cumulativeWorkingWorkerRounds;
+    public int GetCumulativeTrainingWorkerRounds() => cumulativeTrainingWorkerRounds;
+    public int GetCumulativeWorkerPoolRounds() => cumulativeWorkerPoolRounds;
+    public int GetCumulativeClientRoundsAwaitingCasework() => cumulativeClientRoundsAwaitingCasework;
+    public int GetCumulativeClientsRequestedCasework() => cumulativeClientsRequestedCasework;
+    public float GetCumulativeFoodSpend() => cumulativeFoodSpend;
+    public float GetCumulativeLodgingSpend() => cumulativeLodgingSpend;
+    public float GetCumulativeWorkerRequestCost() => cumulativeWorkerRequestCost;
+    public float GetCumulativeWorkerTrainingCost() => cumulativeWorkerTrainingCost;
+
+    public int GetCumulativeLodgingNightsConsumed() => cumulativeLodgingNightsConsumed;
+    public int GetCumulativeLodgingNightsNeeded() => cumulativeLodgingNightsNeeded;   
+    public int GetCumulativeRoundsElapsed() => cumulativeRoundsElapsed;
+    //END NEW
+
     // =========================================================================
     // GENERATE DAILY REPORT
     // =========================================================================
-    
+
     public DailyReportMetrics GenerateDailyReport()
     {
         FindSystemReferences();

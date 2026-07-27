@@ -39,6 +39,9 @@ using UnityEngine;
 ///
 ///   Total Efficiency Change = sum of all four
 ///   Final Efficiency = previous + change (unclamped)
+///   
+/// ^^OLD------------------------------------------------------------------------------------------
+/// 
 /// ============================================================================
 
 [System.Serializable]
@@ -166,5 +169,32 @@ public class DailyReportMetrics
     public float shelterEfficiencyScore;
     public float workerEfficiencyScore;
     public float budgetEfficiencyScore;
+
+    //NEW
+    [Header("Cumulative Satisfaction")]
+    public int cumFoodPacksConsumedByClients;
+    public int cumFoodPacksNeededByClients;
+    public int cumFoodPacksWasted;  
+    public int cumIdleWorkerRounds;
+    public int cumWorkingWorkerRounds;
+    public int cumTrainingWorkerRounds;
+    public int cumClientRoundsAwaitingCasework;
+    public int cumClientsRequestedCasework;
+    public int cumLodgingNightsConsumed;
+    public int cumLodgingNightsNeeded;
+
+    [Header("Cumulative Cost-Eff")]
+    public float cumFoodSpend;
+    public float cumLodgingSpend;
+    public float cumWorkerRequestCost;
+    public float cumWorkerTrainingCost;
+
+
+    [Header("Live Score (0-1, before ×10,000 scale)")]
+    public float liveSatisfactionScore;
+    public float liveCostEfficiencyScore;
+    public float satFoodScore, satLodgingScore, satWorkerScore, satWasteScore, satCaseworkScore;
+    public float costFoodScore, costLodgingScore, costWorkerScore;
+    public float costEfficiencyChangeCalculated;
 
 } 
