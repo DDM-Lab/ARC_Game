@@ -68,6 +68,58 @@ TOOL_SCHEMAS: Dict[str, dict] = {
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    "get_facilities": {
+        "type": "function",
+        "function": {
+            "name": "get_facilities",
+            "description": (
+                "Return ONLY the facilities table (each facility's name, type, "
+                "status, staffing vs. need, food, and population). A focused slice "
+                "of read_state — use it when you just need the buildings, without "
+                "the rest of the state."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    "get_workforce": {
+        "type": "function",
+        "function": {
+            "name": "get_workforce",
+            "description": (
+                "Return ONLY the headline scalars: day, budget, satisfaction, the "
+                "shared worker pool (free trained / free untrained / working / in "
+                "training), and current spend/costs. Use it to check money and labor "
+                "before hiring, training, or staffing."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    "get_tasks": {
+        "type": "function",
+        "function": {
+            "name": "get_tasks",
+            "description": (
+                "Return ONLY the active tasks in YOUR jurisdiction, each with its "
+                "stable token (e.g. FOOD_C01), title, rounds left, and answer "
+                "choices. Use it to see what needs answering without the rest of "
+                "the state."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    "get_logistics": {
+        "type": "function",
+        "function": {
+            "name": "get_logistics",
+            "description": (
+                "Return ONLY the logistics/affordance block: open build sites, who "
+                "needs staffing, staff-now options, hire/train capacity, and valid "
+                "resource-transfer endpoints. Use it to see what you can act on right "
+                "now before composing command tags."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
     "list_actions": {
         "type": "function",
         "function": {
@@ -80,32 +132,61 @@ TOOL_SCHEMAS: Dict[str, dict] = {
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
-    "execute_game_action": {
+    "responsibility_lookup": {
         "type": "function",
         "function": {
-            "name": "execute_game_action",
+            "name": "responsibility_lookup",
             "description": (
-                "Execute ONE available game action immediately, by its index from the "
-                "most recent action list. You commit this on your own judgment — it "
-                "changes the game. Returns the engine's real success/failure (including "
-                "reasons like insufficient budget) and a refreshed action list so you "
-                "can decide your next move. The list also includes 'task_choice' rows "
-                "(answer a choice-task that reached you) — pick one by index to answer "
-                "the task with that choice, exactly like any other action."
+                "Check WHO is responsible for an action OR a task before you do it, "
+                "answer it, or name a colleague. Read-only — it does not change the "
+                "game. Three ways to use it:\n"
+                "- Give a `task` (its token like FOOD_C01, its numeric id, or a bit of "
+                "its title) to find which officer answers that task.\n"
+                "- Give a `category` (and a `building_type` where it applies) to find "
+                "which officer owns that kind of game action.\n"
+                "- Give nothing to see the whole roster of officers and what each owns.\n"
+                "It always returns the responsible officer, whether it is in YOUR "
+                "scope, and the full roster. Use it whenever you are about to act or "
+                "answer near the edge of your role, or before telling the director "
+                "something is someone else's job, so you name the RIGHT officer instead "
+                "of guessing. If the owner is not you, do NOT do it or claim it — tell "
+                "the director it belongs to the named officer."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "index": {
-                        "type": "integer",
-                        "description": "Index of the action from the latest action list.",
-                    },
-                    "note": {
+                    "task": {
                         "type": "string",
-                        "description": "Optional one-line rationale for the record.",
+                        "description": (
+                            "A task to look up ownership of: its stable token (e.g. "
+                            "FOOD_C01, RELOC_C02, BUDGET_DAILY), its numeric task id, or "
+                            "a distinctive part of its title. Resolved against the tasks "
+                            "currently active in the game."
+                        ),
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["construction", "worker_assignment",
+                                 "deconstruction", "worker", "resource_transfer"],
+                        "description": (
+                            "The kind of action to look up: construction (build a "
+                            "facility), worker_assignment (staff a built facility), "
+                            "deconstruction, worker (hire/train the shared labor pool), "
+                            "or resource_transfer (move food/people). Omit to see the "
+                            "whole roster."
+                        ),
+                    },
+                    "building_type": {
+                        "type": "string",
+                        "enum": ["Kitchen", "Shelter", "CaseworkSite"],
+                        "description": (
+                            "For construction / worker_assignment / deconstruction, "
+                            "which building type. Ignored for worker and "
+                            "resource_transfer."
+                        ),
                     },
                 },
-                "required": ["index"],
+                "required": [],
             },
         },
     },
@@ -129,7 +210,9 @@ TOOL_SCHEMAS: Dict[str, dict] = {
                 "  <staff>BUILDING,N</staff>           assign N workforce to a built building\n"
                 "  <deconstruct>BUILDING</deconstruct> BUILDING=name substring\n"
                 "  <transfer>RESOURCE,SRC,DEST,QTY</transfer>  RESOURCE=food|people\n"
-                "  <task>TASK_ID,CHOICE_ID</task>      answer a choice-task in your scope\n"
+                "  <task>TASK,CHOICE_ID</task>        answer a choice-task in your scope;\n"
+                "                                     TASK is the stable token shown in the\n"
+                "                                     options (e.g. FOOD_C01, BUDGET_DAILY)\n"
                 "Example: \"<build>Kitchen,1</build>\\n<hire>untrained,4</hire>\\n<staff>Kitchen,4</staff>\""
             ),
             "parameters": {
@@ -172,23 +255,28 @@ TOOL_SCHEMAS: Dict[str, dict] = {
                         "items": {
                             "type": "object",
                             # Property order is emission order: label + the
-                            # structured action_indices come BEFORE the prose
-                            # description, so if a completion is ever truncated it
-                            # loses (optional) description text, never the indices
-                            # the package is worthless without.
+                            # structured commands come BEFORE the prose description,
+                            # so if a completion is ever truncated it loses (optional)
+                            # description text, never the command tags the package is
+                            # worthless without.
                             "properties": {
                                 "label": {"type": "string", "description": "Short name, 2-4 words."},
-                                "action_indices": {
-                                    "type": "array",
-                                    "items": {"type": "integer"},
-                                    "description": "Indices from the latest action list to bundle. Emit this first.",
+                                "commands": {
+                                    "type": "string",
+                                    "description": (
+                                        "The actions this package bundles, as command tags — "
+                                        "SAME grammar as execute_commands (e.g. "
+                                        "<build>Kitchen,3</build>, <hire>untrained,4</hire>), "
+                                        "one tag per line. The director executes exactly these "
+                                        "if they pick this package. Emit this first."
+                                    ),
                                 },
                                 "description": {
                                     "type": "string",
                                     "description": "1-2 sentences: what this package does and why pick it.",
                                 },
                             },
-                            "required": ["label", "action_indices"],
+                            "required": ["label", "commands"],
                         },
                     },
                 },

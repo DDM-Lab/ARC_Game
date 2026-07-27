@@ -90,6 +90,22 @@ public class AgentConversationUI : MonoBehaviour
     private List<GameObject> currentConversationItems = new List<GameObject>();
     private TaskSystem taskSystem;
 
+    // ── "officer is generating" waiting indicator ────────────────────────
+    // Transient UI state (NOT conversation history): which officers currently
+    // have an LLM turn in flight. The bubble is an ephemeral GameObject appended
+    // below the conversation for the displayed officer only; on tab switch the
+    // panel re-renders from history and RefreshTypingIndicator re-adds it if that
+    // officer is still generating. Cleared when the officer's response frame
+    // arrives, on director_turn (round end), or by a timeout backstop.
+    private readonly HashSet<TaskOfficer> generatingOfficers = new HashSet<TaskOfficer>();
+    private readonly Dictionary<TaskOfficer, float> generatingDeadline = new Dictionary<TaskOfficer, float>();
+    private GameObject typingIndicatorItem;
+    private Coroutine generatingWatchdog;
+    // Backstop: an officer can end its turn without sending any client frame
+    // (a silent turn). director_turn clears begin_round bubbles, but a lone
+    // director_message to a silent officer has no round-end signal, so auto-clear.
+    private const float GeneratingTimeoutSeconds = 90f;
+
     // Store inline choice data for selection
     private Dictionary<int, InlineChoiceData> inlineChoiceDataMap = new Dictionary<int, InlineChoiceData>();
 
@@ -537,6 +553,118 @@ public class AgentConversationUI : MonoBehaviour
         {
             DisplayNoTasksMessage();
         }
+
+        // Re-add the waiting bubble last if this officer is still generating.
+        RefreshTypingIndicator();
+    }
+
+    // ── waiting-indicator API (called by WebSocketManager) ───────────────
+
+    /// <summary>Mark one officer as generating (true) or done (false) and, if it
+    /// is the officer on screen, show/hide the waiting bubble immediately.</summary>
+    public void SetOfficerGenerating(TaskOfficer officer, bool generating)
+    {
+        if (generating)
+        {
+            generatingOfficers.Add(officer);
+            generatingDeadline[officer] = Time.realtimeSinceStartup + GeneratingTimeoutSeconds;
+            EnsureGeneratingWatchdog();
+        }
+        else
+        {
+            generatingOfficers.Remove(officer);
+            generatingDeadline.Remove(officer);
+        }
+        if (officer == currentSelectedAgent) RefreshTypingIndicator();
+    }
+
+    /// <summary>Mark every configured (non-director) officer as generating — used
+    /// on begin_round, where all continuous officers are dispatched at once.</summary>
+    public void MarkRoundGenerating()
+    {
+        AgentConfigLoader loader = FindObjectOfType<AgentConfigLoader>();
+        if (loader == null || !loader.IsLoaded || loader.Config?.agents == null) return;
+        foreach (var agent in loader.Config.agents)
+        {
+            // The human director's endpoint (e.g. "Player") does not parse to a
+            // TaskOfficer, so TryParse naturally skips it.
+            if (System.Enum.TryParse(agent.talkinghead_endpoint, out TaskOfficer officer))
+                SetOfficerGenerating(officer, true);
+        }
+    }
+
+    /// <summary>Clear all waiting bubbles — used on director_turn (round end).</summary>
+    public void ClearAllGenerating()
+    {
+        generatingOfficers.Clear();
+        generatingDeadline.Clear();
+        RefreshTypingIndicator();
+    }
+
+    // Destroy any live indicator, then re-add one at the bottom if the displayed
+    // officer is still generating and the panel is open.
+    void RefreshTypingIndicator()
+    {
+        if (typingIndicatorItem != null)
+        {
+            Destroy(typingIndicatorItem);
+            typingIndicatorItem = null;
+        }
+        if (!isExpanded || !generatingOfficers.Contains(currentSelectedAgent)) return;
+
+        typingIndicatorItem = CreateTypingIndicator(currentSelectedAgent);
+        StartCoroutine(ScrollToBottomCoroutine());
+    }
+
+    // Build the waiting bubble by reusing the agent-message prefab (so it matches
+    // real bubbles: avatar + speech bubble), but drive it with TypingIndicatorUI
+    // instead of AgentMessageUI's text/height logic.
+    GameObject CreateTypingIndicator(TaskOfficer officer)
+    {
+        if (agentMessagePrefab == null || conversationContent == null) return null;
+
+        GameObject item = Instantiate(agentMessagePrefab, conversationContent);
+        NormalizeBubbleRect(item);
+
+        TextMeshProUGUI text = null;
+        AgentMessageUI messageUI = item.GetComponent<AgentMessageUI>();
+        if (messageUI != null)
+        {
+            if (messageUI.agentAvatar != null)
+                messageUI.agentAvatar.sprite = GetOfficerAvatar(officer);
+            text = messageUI.messageText;
+            messageUI.enabled = false; // we own the text; don't run its height/link logic
+        }
+        if (text == null) text = item.GetComponentInChildren<TextMeshProUGUI>();
+
+        LayoutElement le = item.GetComponent<LayoutElement>();
+        if (le != null) { le.minHeight = 60f; le.preferredHeight = 60f; }
+
+        item.AddComponent<TypingIndicatorUI>().Begin(text);
+        return item;
+    }
+
+    void EnsureGeneratingWatchdog()
+    {
+        if (generatingWatchdog == null)
+            generatingWatchdog = StartCoroutine(GeneratingWatchdogLoop());
+    }
+
+    // Backstop only: clears bubbles whose officer never sent a terminating frame.
+    IEnumerator GeneratingWatchdogLoop()
+    {
+        var wait = new WaitForSecondsRealtime(1f);
+        while (generatingOfficers.Count > 0)
+        {
+            float now = Time.realtimeSinceStartup;
+            List<TaskOfficer> expired = null;
+            foreach (var kv in generatingDeadline)
+                if (now >= kv.Value) (expired ??= new List<TaskOfficer>()).Add(kv.Key);
+            if (expired != null)
+                foreach (var off in expired) SetOfficerGenerating(off, false);
+            yield return wait;
+        }
+        generatingWatchdog = null;
     }
 
     void RecordAgentMessage(TaskOfficer officer, string content)
@@ -1048,6 +1176,15 @@ public class AgentConversationUI : MonoBehaviour
         foreach (GameObject item in currentConversationItems)
             if (item != null) Destroy(item);
         currentConversationItems.Clear();
+
+        // The waiting bubble is tracked separately from currentConversationItems;
+        // drop it here so a stale one can't linger after a re-render. If the
+        // officer is still generating, RefreshTypingIndicator re-adds it below.
+        if (typingIndicatorItem != null)
+        {
+            Destroy(typingIndicatorItem);
+            typingIndicatorItem = null;
+        }
 
         // Drop any live inline-proposal selection tied to the cards we just destroyed,
         // so a stale pick can't hijack the panel Confirm after a tab switch. A live
@@ -1581,6 +1718,8 @@ public class AgentConversationUI : MonoBehaviour
             if (WebSocketManager.Instance != null && !string.IsNullOrEmpty(agentName))
             {
                 WebSocketManager.Instance.SendDirectorMessage(agentName, message);
+                // Show the waiting bubble until this officer responds.
+                SetOfficerGenerating(currentSelectedAgent, true);
             }
 
             if (showDebugInfo)
@@ -1774,7 +1913,10 @@ public class AgentConversationUI : MonoBehaviour
 
         string agentName = GetCurrentAgentName(officer);
         if (WebSocketManager.Instance != null && !string.IsNullOrEmpty(agentName))
+        {
             WebSocketManager.Instance.SendDirectorMessage(agentName, message);
+            SetOfficerGenerating(officer, true);
+        }
 
         if (showDebugInfo)
             Debug.Log($"Free-text card → {officer} ({agentName}): {message}");

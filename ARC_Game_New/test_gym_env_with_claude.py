@@ -13,7 +13,7 @@ from pathlib import Path
 # Add current directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from arc_game_gym_env import ARCGameGymEnv
+from arc_game_gym_env_tcp import ARCGameGymEnv
 import anthropic
 
 
@@ -68,15 +68,16 @@ def format_game_state_for_claude(env, info):
                 lines.append(f"  ... and {len(facilities) - 5} more")
             lines.append("")
 
-    # Available actions (limit to first 15 for token efficiency)
+    # Available actions (limit to first 15 for token efficiency). Shown as plain
+    # descriptions — the policy composes command tags from the grammar, not indices.
     lines.append(f"AVAILABLE ACTIONS (showing 15 of {len(env.valid_actions)}):")
-    for i, action in enumerate(env.valid_actions[:15]):
+    for action in env.valid_actions[:15]:
         desc = action.get('description', 'Unknown')
         cost = action.get('cost', 0)
-        lines.append(f"{i}. {desc} (Cost: ${cost:,})")
+        lines.append(f"  - {desc} (Cost: ${cost:,})")
 
     if len(env.valid_actions) > 15:
-        lines.append(f"... and {len(env.valid_actions) - 15} more actions")
+        lines.append(f"  ... and {len(env.valid_actions) - 15} more actions")
 
     return "\n".join(lines)
 
@@ -97,14 +98,22 @@ Key strategies:
 - Balance budget - don't overspend early
 - Prioritize actions that address immediate needs
 
-Respond with ONLY the action number (e.g., "5"). No explanation needed."""
+Respond with one or more COMMAND TAGS, one per line, choosing from this grammar:
+  <build>TYPE,SITE</build>          e.g. <build>Kitchen,1</build>  (TYPE: Kitchen|Shelter|CaseworkSite)
+  <hire>KIND,N</hire>               e.g. <hire>untrained,4</hire>  (KIND: untrained|trained)
+  <train>N</train>                  e.g. <train>2</train>
+  <staff>BUILDING,N</staff>         e.g. <staff>Kitchen Alpha,2</staff>
+  <deconstruct>NAME</deconstruct>   e.g. <deconstruct>Kitchen Alpha</deconstruct>
+  <transfer>food|people,SRC,DST,N</transfer>
+  <task>TOKEN,CHOICE</task>         answer a listed task
+Emit ONLY tags (no prose). To do nothing this round, respond with an empty line."""
 
     try:
         print(f"\n🤖 Querying Claude (step {step_num})...")
 
         message = client.messages.create(
             model="claude-sonnet-4-5-20250929",
-            max_tokens=10,
+            max_tokens=200,
             temperature=0.7,
             system=system_prompt,
             messages=[{"role": "user", "content": prompt}]
@@ -112,21 +121,14 @@ Respond with ONLY the action number (e.g., "5"). No explanation needed."""
 
         response = message.content[0].text.strip()
         print(f"   Claude's response: '{response}'")
-
-        # Extract number from response
-        import re
-        match = re.search(r'\b(\d+)\b', response)
-        if match:
-            action_idx = match.group(1)
-            return action_idx
-        else:
-            print(f"   ⚠️  Could not parse action number, defaulting to 0")
-            return "0"
+        # The response IS the action: the shared parser resolves the tags against
+        # the round's menu (unresolved tags no-op and surface in info["parse_errors"]).
+        return response
 
     except Exception as e:
         print(f"   ❌ Claude API error: {e}")
-        print(f"   Defaulting to action 0")
-        return "0"
+        print(f"   Defaulting to no-op this round")
+        return ""
 
 
 def main():
@@ -210,31 +212,15 @@ def main():
             print(f"   Budget: ${info['budget']:,.0f}")
             print(f"   Valid actions: {len(env.valid_actions)}")
 
-            # Get Claude's decision
-            action_idx_str = query_claude(prompt, api_key, step)
+            # Get Claude's decision: a command-tag string (the env parses it).
+            action_tags = query_claude(prompt, api_key, step)
+            print(f"\n➡️  Submitting command tags:\n{action_tags or '   (empty — no-op)'}")
 
-            # Validate action
-            try:
-                action_idx = int(action_idx_str)
-                if action_idx >= len(env.valid_actions):
-                    print(f"   ⚠️  Action {action_idx} out of range, using 0")
-                    action_idx = 0
-                    action_idx_str = "0"
-            except ValueError:
-                print(f"   ⚠️  Invalid action format, using 0")
-                action_idx = 0
-                action_idx_str = "0"
-
-            # Show selected action
-            if 0 <= action_idx < len(env.valid_actions):
-                selected_action = env.valid_actions[action_idx]
-                print(f"\n➡️  Selected Action {action_idx}:")
-                print(f"   {selected_action.get('description', 'Unknown')}")
-                print(f"   Cost: ${selected_action.get('cost', 0):,}")
-
-            # Execute action
-            obs, reward, terminated, truncated, info = env.step(action_idx_str)
+            # Execute the tags. Resolution + no-op-on-unresolved happens in step().
+            obs, reward, terminated, truncated, info = env.step(action_tags)
             total_reward += reward
+            if info.get('parse_errors'):
+                print(f"   ⚠️  Unresolved tags: {info['parse_errors']}")
 
             # Show results
             print(f"\n📊 Step Results:")

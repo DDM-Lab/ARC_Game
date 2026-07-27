@@ -778,6 +778,8 @@ public class WebSocketManager : MonoBehaviour
             if (AgentConversationUI.Instance != null
                 && System.Enum.TryParse(proposal.talkinghead, out TaskOfficer officerEnum))
             {
+                // Proposal arrived: this officer is done generating.
+                AgentConversationUI.Instance.SetOfficerGenerating(officerEnum, false);
                 AgentConversationUI.Instance.OnChoicesProposalApplied(officerEnum);
             }
 
@@ -808,6 +810,10 @@ public class WebSocketManager : MonoBehaviour
         try
         {
             Debug.Log("[WS] director_turn received - unlocking player GUI.");
+            // Round over: every officer has finished, so clear any waiting bubbles
+            // (including officers that ended their turn without sending a frame).
+            if (AgentConversationUI.Instance != null)
+                AgentConversationUI.Instance.ClearAllGenerating();
             // TODO: notify UI layer that player's turn has started
         }
         catch (Exception ex)
@@ -830,6 +836,9 @@ public class WebSocketManager : MonoBehaviour
                 // Forward to conversation UI
                 if (AgentConversationUI.Instance != null)
                 {
+                    // Response arrived: drop this officer's waiting bubble before
+                    // the message is appended so the message lands at the bottom.
+                    AgentConversationUI.Instance.SetOfficerGenerating(officer, false);
                     AgentConversationUI.Instance.AddAgentMessage(officer, msg.content, msg.message_type);
                 }
                 else
@@ -862,6 +871,7 @@ public class WebSocketManager : MonoBehaviour
                 // Forward to conversation UI with embedded choices
                 if (AgentConversationUI.Instance != null)
                 {
+                    AgentConversationUI.Instance.SetOfficerGenerating(officer, false);
                     AgentConversationUI.Instance.AddAgentMessageWithChoices(
                         officer,
                         msg.content,
@@ -923,6 +933,10 @@ public class WebSocketManager : MonoBehaviour
         };
         SendRawMessage(JsonUtility.ToJson(msg));
         Debug.Log($"[WS] begin_round sent (round={round}, day={day}, seg={segment})");
+        // All continuous officers are dispatched at once on begin_round; show a
+        // waiting bubble on each until its proposal/message arrives (or director_turn).
+        if (AgentConversationUI.Instance != null)
+            AgentConversationUI.Instance.MarkRoundGenerating();
         return true;
     }
 

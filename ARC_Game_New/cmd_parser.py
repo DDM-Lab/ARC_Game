@@ -20,6 +20,28 @@ file's body and every caller updates together.
 """
 import re
 
+
+class ParserEnv:
+    """Minimal env adapter satisfying parse_commands' contract, shared by every
+    non-router caller (gym, benchmark) so they don't each hand-roll a stub.
+
+    Holds the round's enumerated menu + raw game_state and exposes the three
+    things parse_commands reads: get_valid_actions(), game_state, valid_actions.
+    valid_actions is a private COPY of the menu, so the parser's <staff>
+    synth-append (it appends a worker_assignment action so <staff> is executable
+    this turn) mutates only this object — the caller then executes the resolved
+    indices against THIS object's valid_actions, not its own list. The live
+    router aliases its _CmdParseShim to this class (one shim, every arm).
+    """
+
+    def __init__(self, valid_actions, game_state):
+        self.valid_actions = list(valid_actions)
+        self.game_state = game_state
+
+    def get_valid_actions(self):
+        return self.valid_actions
+
+
 # Aliases the model may type for each building type -> canonical enumerator building_type.
 _BUILD_ALIASES = {
     "kitchen": "Kitchen", "kitchens": "Kitchen",

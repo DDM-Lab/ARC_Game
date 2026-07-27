@@ -65,6 +65,19 @@ EXPECTED_SCOPE = {
     "External Relations Officer": {"build_CaseworkSite_3", "xfer_food_1"},
 }
 
+# Under the tags-only vocabulary each officer WRITES a command tag (via
+# execute_commands), not an index. These tags each resolve to exactly one
+# in-scope action_id; the reverse map lets us attribute executed frames back to
+# the officer that issued them (the tags path executes via _execute_actions_via_unity,
+# which — unlike _execute_action — carries no officer name).
+OFFICER_TAG = {
+    "Workforce Officer": ("<hire>untrained,1</hire>", "hire_untrained_1"),
+    "Lodging Officer": ("<build>Shelter,2</build>", "build_Shelter_2"),
+    "Food Officer": ("<build>Kitchen,1</build>", "build_Kitchen_1"),
+    "External Relations Officer": ("<build>CaseworkSite,3</build>", "build_CaseworkSite_3"),
+}
+ACTIONID_TO_OFFICER = {aid: name for name, (_tag, aid) in OFFICER_TAG.items()}
+
 
 def base_state(v=0):
     return {
@@ -130,7 +143,7 @@ async def run_dispatch_test():
     with tempfile.TemporaryDirectory() as td:
         sess = Session(cfg, "sess-disp", "test", os.path.join(td, "log.jsonl"), websocket=None)
 
-        executed_by_officer = {}          # name -> list of action_ids executed
+        executed_ids = []                 # every action_id Unity was told to execute
         concurrency = {"n": 0, "cur": 0}
         director_turn_state = {"v": None}
 
@@ -138,6 +151,7 @@ async def run_dispatch_test():
             t = payload.get("type")
             if t == "execute_action":
                 action = payload["action"]
+                executed_ids.append(action["action_id"])
 
                 async def resolve():
                     await asyncio.sleep(0.005)
@@ -151,7 +165,10 @@ async def run_dispatch_test():
 
         sess._send = fake_send
 
-        # Scripted officer: step 0 executes its first in-scope action, step 1 finishes.
+        # Scripted officer: step 0 WRITES its in-scope command tag (tags-only
+        # vocabulary; execute_game_action is gone). Food also emits an OUT-OF-SCOPE
+        # <build>Shelter,...> tag — it must NOT resolve against Food's scoped menu,
+        # proving the tags path enforces the same scope the index path did.
         step_counters = {}
 
         def fake_run_tool_step(messages, tools, agent_cfg, tool_mode):
@@ -165,38 +182,47 @@ async def run_dispatch_test():
                 import time as _t
                 _t.sleep(0.02)  # run_tool_step is called via asyncio.to_thread → real overlap
                 concurrency["cur"] -= 1
+                tag = OFFICER_TAG[name][0]
+                if name == "Food Officer":
+                    tag += "\n<build>Shelter,2</build>"  # peer's action — must be filtered out
                 return {"content": f"{name} acting",
-                        "tool_calls": [{"id": f"{name}-0", "name": "execute_game_action",
-                                        "arguments": {"index": 0, "note": "act"}}]}
+                        "tool_calls": [{"id": f"{name}-0", "name": "execute_commands",
+                                        "arguments": {"commands": tag, "note": "act"}}]}
             return {"content": f"{name} done", "tool_calls": []}  # finish (no tool call)
 
         agent_router.run_tool_step = fake_run_tool_step
         agent_router._enumerate_actions = fake_enumerate
 
-        # Capture executions by tapping _execute_action.
-        orig_exec = sess._execute_action
-
-        async def tap_exec(agent_name, action):
-            executed_by_officer.setdefault(agent_name, []).append(action["action_id"])
-            return await orig_exec(agent_name, action)
-        sess._execute_action = tap_exec
-
         await sess._handle_begin_round({"type": "begin_round", "day": 1, "segment": 0,
                                         "game_state": base_state(1)})
+
+        # Reconstruct per-officer executions from the execute_action frames (each
+        # tag resolves to a single, officer-unique action_id).
+        executed_by_officer = {}
+        for aid in executed_ids:
+            owner = ACTIONID_TO_OFFICER.get(aid)
+            executed_by_officer.setdefault(owner, []).append(aid)
 
         # (2) concurrency
         assert concurrency["n"] >= 2, \
             f"officers did NOT overlap (max concurrent={concurrency['n']}) — dispatch is serial"
         print(f"[2] CONCURRENT DISPATCH ok: max {concurrency['n']} officers overlapping")
 
-        # (3) scoping — each officer executed only in-scope actions
+        # (3) scoping — each officer executed only in-scope actions. Food's peer
+        # (out-of-scope) <build>Shelter,2</build> tag must NOT have resolved: exactly
+        # 4 frames total (one per officer), and no action attributed to a foreign owner.
+        assert None not in executed_by_officer, \
+            f"an executed action_id had no owner (leak?): {executed_ids}"
         for name, ids in executed_by_officer.items():
             scope = EXPECTED_SCOPE.get(name, set())
             bad = [i for i in ids if i not in scope]
             assert not bad, f"{name} executed OUT-OF-SCOPE actions {bad} (scope={scope})"
-        print(f"[3] HARD SCOPING ok: {[(n, executed_by_officer.get(n)) for n in EXPECTED_SCOPE]}")
+        assert len(executed_ids) == len(EXPECTED_SCOPE), \
+            f"expected exactly {len(EXPECTED_SCOPE)} executions (no scope leak), got {executed_ids}"
+        print(f"[3] HARD SCOPING ok (tags path): {[(n, executed_by_officer.get(n)) for n in EXPECTED_SCOPE]}"
+              " — Food's out-of-scope Shelter tag filtered")
 
-        # every officer with a non-empty scope should have executed its index-0 action
+        # every officer should have executed exactly its one in-scope tag
         acted = set(executed_by_officer.keys())
         assert acted == set(EXPECTED_SCOPE.keys()), \
             f"not all officers acted: {acted} vs {set(EXPECTED_SCOPE)}"

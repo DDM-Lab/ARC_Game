@@ -104,6 +104,16 @@ def build_observation(game_state, actions=None, *, new=True, v2=True,
             _aff = t.get("affectedFacility")
             if _aff and (not v2 or _aff in {f.get("name") for f in facs}):
                 td["affects"] = _aff
+        # Stable identity token — computed from the RAW affectedFacility, NOT the
+        # v2-guarded display `affects` above. cmd_parser (cmd_parser.py:189) and the
+        # router (_norm_task_for_token) both recompute the token from raw
+        # affectedFacility when resolving a <task> tag; the display guard only hides
+        # dangling facility refs for readability and must not mangle task identity.
+        # Without this, a community food request renders as FOOD_X (affects stripped)
+        # while the parser expects FOOD_C01 → the <task> tag never resolves.
+        td["token"] = stable_task_token({"title": t.get("taskTitle"),
+                                         "affects": t.get("affectedFacility"),
+                                         "taskId": t.get("taskId")})
         tasks.append(td)
     obs = {
         "day": gs.get("sessionInfo", {}).get("currentDay"),
@@ -248,8 +258,10 @@ def _render_facilities(obs, *, v2):
 # the drifting integer taskId Unity assigns each turn. Same title→token across
 # ALL turns so the policy can learn "BUDGET_DAILY = free money" once, rather
 # than re-discovering it every day when its integer id changes. Parser
-# (llm_smoke_test.parse_commands) accepts either form during the transition.
-_STABLE_TASK_TOKENS = os.environ.get("ARC_STABLE_TASK_TOKENS", "0").strip() == "1"
+# (cmd_parser.parse_commands) accepts either form. ON by default; set
+# ARC_STABLE_TASK_TOKENS=0 to restore the legacy drifting-integer rendering
+# (e.g. to keep an in-flight benchmark on its original numeric baseline).
+_STABLE_TASK_TOKENS = os.environ.get("ARC_STABLE_TASK_TOKENS", "1").strip() == "1"
 
 
 def _short_affects(a: str) -> str:
@@ -381,7 +393,7 @@ def _render_tasks(obs):
         return []
     L = ["tasks [id type \"title\" affects (roundsLeft)]:"]
     for t in tasks:
-        tid = stable_task_token(t) if _STABLE_TASK_TOKENS else t.get('taskId')
+        tid = (t.get('token') or stable_task_token(t)) if _STABLE_TASK_TOKENS else t.get('taskId')
         L.append(f"  [{tid}] {t.get('type')} \"{t.get('title')}\" "
                  f"{t.get('affects','')} ({t.get('roundsLeft')} left)")
         for ch in t.get("choices", []):
@@ -485,16 +497,64 @@ def render_state_delta(obs, prev_obs, *, v2=True):
 # scalar line shows a real number rather than "roundsLeft None".
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _rounds_left(game_state):
+    """roundsLeft derived from the session horizon (None if unknown)."""
+    si = (game_state or {}).get("sessionInfo", {})
+    fd, cd = si.get("finalDay"), si.get("currentDay")
+    return _num(fd) - _num(cd) if fd is not None and cd is not None else None
+
+
+def _router_obs(game_state, *, new=True, v2=True):
+    """Build the canonical observation dict for a router game_state, deriving
+    roundsLeft from the session horizon. Shared by render_state_text and the
+    granular section getters so all of them see one identical observation."""
+    return build_observation(game_state, None, new=new, v2=v2,
+                             rounds_left=_rounds_left(game_state))
+
+
 def render_state_text(game_state, *, new=True, v2=True):
     """Render the router's game_state as the canonical compact text block.
 
     Drop-in replacement for the old threadbare ``state_text`` in
     ``llm_query._build_prompt``, now producing the exact same rendering the
     benchmark policy sees (``render_state_compact``)."""
-    si = (game_state or {}).get("sessionInfo", {})
-    rounds_left = None
-    fd, cd = si.get("finalDay"), si.get("currentDay")
-    if fd is not None and cd is not None:
-        rounds_left = _num(fd) - _num(cd)
-    obs = build_observation(game_state, None, new=new, v2=v2, rounds_left=rounds_left)
-    return render_state_compact(obs, v2=v2) or "(no observation available)"
+    return render_state_compact(_router_obs(game_state, new=new, v2=v2), v2=v2) \
+        or "(no observation available)"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GRANULAR SECTION GETTERS — one slice of the full observation each, so a
+# continuous officer can pull just the detail it needs (facilities / workforce /
+# tasks / logistics) instead of re-dumping the whole read_state every time. Each
+# renders the SAME section of the SAME canonical obs render_state_text uses, so
+# there is no second source of truth. Tasks inherit the stable-token rendering.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def render_facilities_text(game_state, *, new=True, v2=True):
+    """Just the facilities table (name/type/status/workers/food/pop)."""
+    return "\n".join(_render_facilities(_router_obs(game_state, new=new, v2=v2), v2=v2)) \
+        or "(no facilities built yet)"
+
+
+def render_workforce_text(game_state, *, new=True, v2=True):
+    """The scalar block: day/budget/satisfaction + workforce pool + spend/costs."""
+    return "\n".join(_render_scalars(_router_obs(game_state, new=new, v2=v2))) \
+        or "(no workforce data)"
+
+
+def render_tasks_text(game_state, *, new=True, v2=True):
+    """Just the active-tasks block (stable tokens + choices)."""
+    return "\n".join(_render_tasks(_router_obs(game_state, new=new, v2=v2))) \
+        or "(no active tasks)"
+
+
+def render_logistics_text(game_state, actions, *, new=True, v2=True):
+    """Sites + the `available` affordance block (hire/needStaff/staffNow/
+    buildSites/transfers) — what the officer can act on right now. Derived from
+    the enumerated ``actions`` (the same valid-action set the parser/menu use, so
+    it can never contradict them); render_state's actions=None path leaves this
+    block empty, which is why this getter takes the actions explicitly."""
+    obs = build_observation_commands(game_state, actions or [], new=new, v2=v2,
+                                     rounds_left=_rounds_left(game_state))
+    return "\n".join(_render_sites(obs) + _render_available(obs, v2=v2)) \
+        or "(no logistics/affordances available)"

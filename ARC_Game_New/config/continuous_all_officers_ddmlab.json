@@ -1,0 +1,203 @@
+{
+  "_comment": "DDMLab deployment twin of continuous_all_officers_anthropic.json. Identical roster/scopes; each officer calls api.anthropic.com directly (provider=anthropic, model=claude-sonnet-4-6) using the DDMLab org key read from env var DDMLAB_ANTHROPIC_API_KEY (set in the gitignored .env). Use this for shared/DDMLab demos so billing goes to the lab key, not a personal key.",
+  "agent_order_rule": "sequential",
+  "agents": [
+    {
+      "subagent_name": "Disaster Operations Officer",
+      "role": "subagent",
+      "actor_type": "continuous",
+      "talkinghead_endpoint": "DisasterOfficer",
+      "subaction_space": [
+        {
+          "category": "construction"
+        },
+        {
+          "category": "deconstruction"
+        },
+        {
+          "category": "task_choice",
+          "group": "disaster"
+        }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "buildings",
+        "constructionState",
+        "mapState",
+        "tasks:disaster"
+      ],
+      "llm_provider": "anthropic",
+      "llm_model": "claude-sonnet-4-6",
+      "api_key_env": "DDMLAB_ANTHROPIC_API_KEY",
+      "turn_token_budget": 8192,
+      "max_steps": 8,
+      "tool_mode": "auto",
+      "opening_mode": "brief_first",
+      "use_global_prompt": true,
+      "system_prompt": "You are the Disaster Operations Officer. Your remit is the response's physical infrastructure: constructing new facilities (shelters, kitchens, distribution sites) and deconstructing ones that are no longer worth their upkeep. Weigh every build/demolish against the remaining budget, the sites currently available, and where facilities are needed on the map. Answer the infrastructure tasks that reach you. Do not staff, supply, or deliver — those belong to other officers.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Workforce Service Officer",
+      "role": "subagent",
+      "actor_type": "continuous",
+      "talkinghead_endpoint": "WorkforceService",
+      "subaction_space": [
+        {
+          "category": "worker"
+        },
+        {
+          "category": "worker_assignment"
+        },
+        {
+          "category": "task_choice",
+          "group": "workforce"
+        }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "workers",
+        "buildings",
+        "tasks:workforce"
+      ],
+      "llm_provider": "anthropic",
+      "llm_model": "claude-sonnet-4-6",
+      "api_key_env": "DDMLAB_ANTHROPIC_API_KEY",
+      "turn_token_budget": 8192,
+      "max_steps": 8,
+      "tool_mode": "auto",
+      "opening_mode": "brief_first",
+      "use_global_prompt": true,
+      "system_prompt": "You are the Workforce Service Officer. Your remit is people: hiring and training workers, and assigning them to the facilities that need them. Balance staffing shortfalls against the budget and training lead time, and prioritize the buildings whose unmet workforce needs are hurting satisfaction most. Answer the staffing tasks that reach you. Do not construct, supply, or deliver — those belong to other officers.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Lodging Mass Care Officer",
+      "role": "subagent",
+      "actor_type": "continuous",
+      "talkinghead_endpoint": "LodgingMassCare",
+      "subaction_space": [
+        {
+          "category": "construction"
+        },
+        {
+          "category": "worker_assignment"
+        },
+        {
+          "category": "task_choice",
+          "group": "lodging"
+        }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "buildings",
+        "constructionState",
+        "mapState",
+        "tasks:lodging"
+      ],
+      "llm_provider": "anthropic",
+      "llm_model": "claude-sonnet-4-6",
+      "api_key_env": "DDMLAB_ANTHROPIC_API_KEY",
+      "turn_token_budget": 8192,
+      "max_steps": 8,
+      "tool_mode": "auto",
+      "opening_mode": "brief_first",
+      "use_global_prompt": true,
+      "system_prompt": "You are the Lodging Mass Care Officer. Your remit is sheltering displaced people: standing up and staffing lodging (shelters and motels) so everyone who needs a bed has one, and keeping access to those sites open. Prioritize closing the gap between people needing lodging and beds available, within budget. Answer the lodging tasks that reach you. Focus on shelter capacity and staffing — leave food supply, hiring pipelines, and external procurement to the other officers.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Food Mass Care Officer",
+      "role": "subagent",
+      "actor_type": "continuous",
+      "talkinghead_endpoint": "FoodMassCare",
+      "subaction_space": [
+        {
+          "category": "resource_transfer"
+        },
+        {
+          "category": "worker_assignment"
+        },
+        {
+          "category": "task_choice",
+          "group": "food"
+        }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "logistics",
+        "buildings",
+        "mapState",
+        "tasks:food"
+      ],
+      "llm_provider": "anthropic",
+      "llm_model": "claude-sonnet-4-6",
+      "api_key_env": "DDMLAB_ANTHROPIC_API_KEY",
+      "turn_token_budget": 8192,
+      "max_steps": 8,
+      "tool_mode": "auto",
+      "opening_mode": "brief_first",
+      "use_global_prompt": true,
+      "system_prompt": "You are the Food Mass Care Officer. Your remit is feeding people: keeping kitchens stocked and staffed and moving food to where it is needed. Transfer food/supplies between buildings and assign staff to kitchens so meal demand is met. Prioritize sites where food shortfalls are driving down satisfaction, and respect vehicle/inventory limits and the budget. Answer the food-request tasks that reach you. Leave construction, general hiring, and external procurement to the other officers.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "External Relationship Officer",
+      "role": "subagent",
+      "actor_type": "continuous",
+      "talkinghead_endpoint": "ExternalRelationship",
+      "subaction_space": [
+        {
+          "category": "resource_transfer"
+        },
+        {
+          "category": "task_choice",
+          "group": "budget"
+        }
+      ],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "logistics",
+        "mapState",
+        "tasks:budget"
+      ],
+      "llm_provider": "anthropic",
+      "llm_model": "claude-sonnet-4-6",
+      "api_key_env": "DDMLAB_ANTHROPIC_API_KEY",
+      "turn_token_budget": 8192,
+      "max_steps": 8,
+      "tool_mode": "auto",
+      "opening_mode": "brief_first",
+      "use_global_prompt": true,
+      "system_prompt": "You are the External Relationship Officer. Your remit is bringing in resources from outside the operation: external orders, airlifts, and donated supplies routed to where they are needed most. Inject outside supply to relieve the worst shortfalls quickly, especially when internal stock cannot cover demand in time. Weigh speed against cost and the budget. Answer the external-procurement tasks that reach you. Leave construction, staffing, and internal kitchen operations to the other officers.",
+      "can_address": []
+    },
+    {
+      "subagent_name": "Player",
+      "role": "director",
+      "actor_type": "manual",
+      "num_choices": null,
+      "max_actions_per_package": null,
+      "talkinghead_endpoint": null,
+      "subaction_space": [
+        {
+          "category": "all"
+        }
+      ],
+      "subobservation_space": [
+        "all"
+      ],
+      "llm_model": null,
+      "llm_provider": null,
+      "turn_token_budget": null,
+      "use_global_prompt": false,
+      "system_prompt": null,
+      "can_address": []
+    }
+  ]
+}

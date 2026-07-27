@@ -73,7 +73,7 @@ class AgentConfig:
     # them). "block" = the harness no-ops a re-execution of a non-repeatable action
     # already committed this phase (staleness-style, à la Claude Code read-before-
     # edit) — grounding, not style-gating.
-    ledger_mode: str = "annotate"          # "annotate" | "block"
+    ledger_mode: str = "block"             # "block" | "annotate"
     # Runtime state — not from config
     conversation_history: list[dict] = field(default_factory=list, init=False)
 
@@ -196,7 +196,7 @@ def load_config(path: str) -> RouterConfig:
             max_steps=entry.get("max_steps", 8),
             tool_mode=entry.get("tool_mode", "auto"),
             opening_mode=entry.get("opening_mode", "emergent"),
-            ledger_mode=entry.get("ledger_mode", "annotate"),
+            ledger_mode=entry.get("ledger_mode", "block"),
         ))
 
     return RouterConfig(

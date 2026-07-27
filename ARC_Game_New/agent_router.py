@@ -44,8 +44,12 @@ from agent_ordering import get_agent_order
 from episode_logger import EpisodeLogger
 from llm_query import query_llm, load_global_prompt
 from continuous_agent import build_tools, run_tool_step
-from cmd_parser import parse_commands  # SHARED command-grammar parser (benchmark + router)
-from obs_encoder import render_state_text, _num, task_officer, task_group
+from cmd_parser import parse_commands, ParserEnv  # SHARED parser + env shim (benchmark + router + gym)
+from obs_encoder import (
+    render_state_text, _num, task_officer, task_group, stable_task_token,
+    render_facilities_text, render_workforce_text, render_tasks_text,
+    render_logistics_text,
+)
 from choices_reliability import (
     dedupe_packages,
     enforce_diversity,
@@ -64,22 +68,11 @@ import re
 _NON_REPEATABLE_TYPES = {"construction", "deconstruction", "worker_assignment"}
 
 
-class _CmdParseShim:
-    """Adapts the router's (filtered_actions, game_state) to the env-shaped contract
-    cmd_parser.parse_commands expects: get_valid_actions(), game_state, valid_actions.
-
-    valid_actions is a private COPY of the agent's current menu, so the parser's
-    <staff> synth-append (which mutates env.valid_actions to add a worker_assignment
-    action executable this turn) does NOT touch the router's real action list. The
-    resolved indices returned by parse_commands point into THIS copy.
-    """
-
-    def __init__(self, filtered_actions: List[dict], game_state: dict):
-        self.valid_actions = list(filtered_actions)
-        self.game_state = game_state
-
-    def get_valid_actions(self) -> List[dict]:
-        return self.valid_actions
+# The router's parser shim IS the shared cmd_parser.ParserEnv — one shim across
+# every arm (router, gym, benchmark). Kept as a named alias because call sites and
+# comments reference _CmdParseShim; the isolation semantics (private valid_actions
+# copy so <staff> synth-append never touches the router's real list) live there.
+_CmdParseShim = ParserEnv
 
 
 def _enumerate_actions(game_state: dict) -> list[dict]:
@@ -915,8 +908,12 @@ Respond with ONLY the package index number (0, 1, or 2).
         "You are operating as a continuous agent with a full palette of tools. "
         "Each step you may take ONE or more tool calls, or stop. Pick tools by "
         "reading the situation — nothing forces a particular style on you:\n"
-        "- execute_game_action: act directly and immediately. Use it when you are "
-        "confident and the action is within your remit; you commit it yourself.\n"
+        "- execute_commands: act directly and immediately. Write what you want as "
+        "command tags (e.g. <build>Kitchen,3</build>, <hire>untrained,4</hire>, "
+        "<task>FOOD_C01,1</task>) — one tag per action, composed from the OPTIONS list "
+        "you were shown. You describe WHAT you want, never a menu index; the tags are "
+        "resolved against the live state and committed on your own judgment. Use it when "
+        "you are confident and the action is within your remit.\n"
         "- propose_choices: hand the decision to the human director as selectable "
         "packages. Use it when the call is genuinely theirs, the stakes or ambiguity "
         "are high, or you want their steer. The director's review time is scarce — "
@@ -924,16 +921,26 @@ Respond with ONLY the package index number (0, 1, or 2).
         "- talk_to_director: explain, ask a clarifying question, or flag something. "
         "Keep explanations grounded in the real state numbers; they build calibrated "
         "trust, not blind acceptance. Ask only when the answer would change what you do.\n"
-        "- read_state / list_actions: refresh your view; indices change after you act.\n"
+        "- read_state / list_actions: refresh your view of the state and the OPTIONS "
+        "you can act on. get_facilities / get_workforce / get_tasks / get_logistics pull "
+        "one focused slice when you don't need the whole picture.\n"
+        "- responsibility_lookup: check who owns an action OR who answers a task, and "
+        "whether it is yours, before acting/answering near your role's edge or naming a "
+        "colleague. Use it so you name the RIGHT officer instead of guessing.\n"
         "- finish: end your turn when nothing further is worth doing.\n"
         "Prefer acting over narrating. Do not ask permission for things clearly in "
         "your remit; do not act unilaterally on things that are clearly the director's "
         "to decide. Ground every number you cite in the state you were given.\n"
         "CRITICAL: never claim to have built, hired, staffed, moved, or changed "
-        "anything unless you actually called execute_game_action (or the director "
+        "anything unless you actually called execute_commands (or the director "
         "selected a package you proposed) THIS turn and saw a success result. If an "
         "action you want is not in your available action list, say so plainly and "
-        "explain what is blocking it — do not pretend it happened."
+        "explain what is blocking it — do not pretend it happened.\n"
+        "STAY IN YOUR LANE: you may only act on, and answer tasks within, your own "
+        "remit. If something the situation needs — an action or a task — is not yours, "
+        "do NOT do it or claim it — call responsibility_lookup to find the officer who "
+        "owns it, then tell the director it belongs to that officer by their correct "
+        "name. Never invent a colleague's name or role from memory; look it up."
     )
 
     def _agent_lock(self, name: str) -> asyncio.Lock:
@@ -1033,6 +1040,35 @@ Respond with ONLY the package index number (0, 1, or 2).
             agent, filtered_state, filtered_actions, gs, all_actions
         )
 
+    # Keep this many most-recent activation turns (each: one user re-grounding +
+    # its assistant/tool steps) when compacting a continuous transcript. The system
+    # message and the current turn are always retained; only OLD tool-spam is shed.
+    _CONTINUOUS_KEEP_TURNS = 8
+
+    @staticmethod
+    def _compact_transcript(messages: List[dict], keep_turns: int) -> List[dict]:
+        """Bound a continuous transcript to system + the last `keep_turns` turns.
+
+        A continuous officer carries ONE transcript for the whole game; left
+        unbounded it accretes step-by-step tool JSON (read_state dumps, action
+        lists) that crowds out context and inflates cost. We shed only OLD turns.
+
+        Cut ONLY at a user-role boundary. Each activation's re-grounding is a
+        user message; assistant(tool_calls) → tool(result) pairs always sit
+        BETWEEN two user messages, so cutting at a user message can never orphan
+        a tool result from its call (an OpenAI/Anthropic protocol violation).
+        The committed ledger survives because it is re-rendered into every
+        activation's user turn (see _continuous_turn_message), so it is always
+        inside the retained window — never something we can drop.
+        """
+        if len(messages) <= 2:
+            return messages
+        system, body = messages[0], messages[1:]
+        starts = [i for i, m in enumerate(body) if m.get("role") == "user"]
+        if len(starts) <= keep_turns:
+            return messages
+        return [system] + body[starts[-keep_turns]:]
+
     async def _run_continuous_inner(
         self,
         agent: AgentConfig,
@@ -1066,6 +1102,14 @@ Respond with ONLY the package index number (0, 1, or 2).
         director_has_spoken = len(director_entries) > 0
         messages.append(self._continuous_turn_message(
             agent, filtered_state, filtered_actions, director_has_spoken))
+
+        # Bound the ever-growing per-officer transcript: keep the system message and
+        # the last N activation turns (the current one always included), shedding old
+        # tool-spam. The committed ledger rides inside each turn message, so it is
+        # never dropped. Reassign both the persistent store and the local handle so
+        # the loop below appends onto the compacted list.
+        messages = self._compact_transcript(messages, self._CONTINUOUS_KEEP_TURNS)
+        self._continuous_transcripts[name] = messages
 
         sat_before = _get_satisfaction(game_state)
         budget_before = _get_budget(game_state)
@@ -1124,6 +1168,21 @@ Respond with ONLY the package index number (0, 1, or 2).
         else:
             print(f"[router]   ⏹ Continuous agent hit max_steps ({max_steps}).")
 
+        # Make an empty turn EXPLICIT. In text (ReAct) mode a step can end with no
+        # parseable tool call and the turn silently commits nothing; without a marker
+        # the next activation's transcript looks like the officer simply skipped a
+        # beat. Record a grounding note (model-facing only, not sent to the director)
+        # so the officer sees it took no action and can decide deliberately next time.
+        if executed_total == 0:
+            messages.append({
+                "role": "user",
+                "content": ("[note] This turn ended with no game action taken. If that "
+                            "was intentional (nothing to do, or waiting on the "
+                            "director), fine — otherwise act next turn."),
+            })
+            print(f"[router]   ⏸ Continuous agent {agent.subagent_name}: "
+                  "no action taken this turn (noted).")
+
         self._log_turn(agent, filtered_state, filtered_actions, [], None,
                        [], sat_before, game_state, budget_before,
                        f"[continuous] {executed_total} action(s) executed", 0)
@@ -1171,7 +1230,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "NOT send a second message or a status follow-up; wait for the director."
             )
         state_text = render_state_text(filtered_state)
-        action_text = self._render_action_list(filtered_actions)
+        action_text = self._render_options_compact(filtered_actions, filtered_state)
         return {
             "role": "user",
             "content": (
@@ -1259,6 +1318,346 @@ Respond with ONLY the package index number (0, 1, or 2).
             )
         return "\n".join(lines)
 
+    def _render_options_compact(self, filtered_actions: List[dict], game_state: dict) -> str:
+        """Compact, tag-oriented affordance view: read-surface == write-surface.
+
+        Replaces the indexed `_render_action_list` for the tags-only officers. It
+        lists WHAT is available grouped by command (BUILD/HIRE/TRAIN/STAFF/…), and
+        the model composes the exact `<tag>` from the grammar in the tool schema —
+        so nothing the model reads references a volatile integer index that could
+        drift or be hallucinated. Two invariants vs the indexed list:
+
+        (a) TASK rows carry the stable task token (obs_encoder.stable_task_token,
+            computed from the RAW task so it matches what cmd_parser accepts), not a
+            turn-to-turn taskId.
+        (b) Committed non-repeatable affordances are pulled OUT of the available set
+            and listed under an ALREADY-COMMITTED footer with the ⚠️ marker,
+            reusing `_action_ledger_key` so the identity matches the ledger block.
+
+        Everything shown round-trips through cmd_parser.parse_commands back to an
+        action in `filtered_actions` (verified hermetically).
+        """
+        if not filtered_actions:
+            return "(no valid actions available to you)"
+        committed = set(self._committed_this_phase)
+        avail, done = [], []
+        for a in filtered_actions:
+            (done if self._action_ledger_key(a) in committed else avail).append(a)
+
+        sites: dict = {}          # site_id -> [site_name, {building_types}]
+        hire = {"untrained": 0, "trained": 0}
+        train = 0
+        staff: dict = {}          # building_name -> max assignable quantity
+        decon: List[str] = []
+        transfer: List[str] = []
+        tasks: dict = {}          # taskId -> {token, title, choices:[(cid, text)]}
+
+        for a in avail:
+            t = a.get("action_type")
+            if t == "construction":
+                c = a.get("construction", {})
+                sid, bt = c.get("site_id"), c.get("building_type")
+                desc = a.get("description", "")
+                nm = desc.split(" at ", 1)[-1] if " at " in desc else str(sid)
+                sites.setdefault(sid, [nm, set()])[1].add(bt)
+            elif t == "worker":
+                w = a.get("worker", {})
+                wat, q = w.get("worker_action_type"), (w.get("quantity") or 0)
+                if wat == "hire_untrained":
+                    hire["untrained"] = max(hire["untrained"], q)
+                elif wat == "hire_trained":
+                    hire["trained"] = max(hire["trained"], q)
+                elif wat == "train_untrained":
+                    train = max(train, q)
+            elif t == "worker_assignment":
+                # action_enumerator nests these fields under "assignment" (see
+                # WorkerAssignmentAction.to_dict), NOT "worker_assignment".
+                wa = a.get("assignment", {})
+                bn, q = wa.get("building_name"), (wa.get("quantity") or 0)
+                if bn:
+                    staff[bn] = max(staff.get(bn, 0), q)
+            elif t == "deconstruction":
+                bn = a.get("deconstruction", {}).get("building_name")
+                if bn and bn not in decon:
+                    decon.append(bn)
+            elif t == "resource_transfer":
+                tr = a.get("transfer", {})
+                res = "food" if tr.get("resource_type") == "FoodPacks" else "people"
+                transfer.append(f"{res},{tr.get('source_facility')},"
+                                f"{tr.get('destination_facility')} (up to {tr.get('quantity')})")
+            elif t == "task_choice":
+                tc = a.get("task_choice", {})
+                tid, cid = tc.get("taskId"), tc.get("choiceId")
+                if tid not in tasks:
+                    raw = next((x for x in (game_state.get("allActiveTasks") or [])
+                                if x.get("taskId") == tid), None)
+                    tok = (stable_task_token(self._norm_task_for_token(raw))
+                           if raw else f"TASK_{tid}")
+                    tasks[tid] = {"token": tok, "title": tc.get("taskTitle") or "", "choices": []}
+                desc = a.get("description", "")
+                marker = f"choice {cid}: "
+                text = desc.split(marker, 1)[-1] if marker in desc else ""
+                tasks[tid]["choices"].append((cid, text))
+
+        lines = ["What you can do now — write each as a command tag "
+                 "(exact grammar is in the execute_commands tool schema):"]
+        if sites:
+            lines.append("  BUILD  <build>TYPE,SITE</build>:")
+            for sid in sorted(sites, key=lambda s: (s is None, s)):
+                nm, types = sites[sid]
+                lines.append(f"    site {sid} ({nm}): {', '.join(sorted(types))}")
+        hires = []
+        if hire["untrained"]:
+            hires.append(f"untrained up to {hire['untrained']}")
+        if hire["trained"]:
+            hires.append(f"trained up to {hire['trained']}")
+        if hires:
+            lines.append("  HIRE  <hire>untrained|trained,N</hire>: " + "  |  ".join(hires))
+        if train:
+            lines.append(f"  TRAIN  <train>N</train>: up to {train} untrained")
+        if staff:
+            lines.append("  STAFF  <staff>BUILDING,N</staff>: "
+                         + "  ".join(f"{b} (up to {q})" for b, q in staff.items()))
+        if decon:
+            lines.append("  DECONSTRUCT  <deconstruct>NAME</deconstruct>: " + ", ".join(decon))
+        if transfer:
+            lines.append("  TRANSFER  <transfer>food|people,SRC,DST,N</transfer>: "
+                         + "  ".join(transfer))
+        for tid, tk in tasks.items():
+            opts = "  ".join(f"[{cid}] {txt}" for cid, txt in tk["choices"])
+            lines.append(f'  TASK  <task>{tk["token"]},CHOICE</task>  "{tk["title"]}": {opts}')
+        if done:
+            lines.append("")
+            lines.append("⚠️ ALREADY COMMITTED THIS PHASE — do NOT pick these again:")
+            for a in done:
+                lines.append(f"  - [{a.get('action_type', '?')}] {a.get('description', '?')}")
+        return "\n".join(lines)
+
+    def _tags_to_indices(
+        self, commands: str, filtered_actions: List[dict], game_state: dict
+    ) -> Tuple[List[int], List[str]]:
+        """Resolve command tags to indices INTO filtered_actions (for propose_choices).
+
+        A proposal package bundles `action_indices` that index into filtered_actions
+        — the exact list the Unity client renders and executes against. This maps the
+        tags-only vocabulary onto those indices so proposals need no client change and
+        no separate write-surface. Contrast execute_commands, whose resolved indices
+        may point PAST filtered_actions into the shim's <staff> synth-append; here we
+        must land every kept action back inside filtered_actions.
+
+        - A non-<staff> tag resolves (via the shared parser) to an index
+          < len(filtered_actions): the shim's valid_actions is a copy, so that IS a
+          position in filtered_actions — keep it.
+        - A <staff> tag makes the parser SYNTHESIZE a worker_assignment action
+          appended at index >= len(filtered_actions) (absent from filtered_actions).
+          Its prose ("Assign workforce N to X") differs BY CONSTRUCTION from the
+          enumerated assignment's prose ("Assign N trained worker(s) to X"), so
+          _action_ledger_key is a guaranteed false-negative here; identity-match
+          it back STRUCTURALLY on (building_name, quantity) instead. Drop-with-
+          reason if no assignment at that quantity is offered this turn (e.g. the
+          request outran the free-worker pool).
+        - <task> tags land in parsed["choices"] (no home in the action-index
+          contract) — dropped with a reason: tasks are answered via execute_commands,
+          not bundled into a proposal.
+        - Parser errors are surfaced as reasons.
+
+        Returns (indices, reasons): indices into filtered_actions (deduped,
+        order-preserving); reasons are human-readable drop notes for logging. Never
+        emits an index that mis-points — an unresolved tag is dropped, not guessed.
+        """
+        shim = _CmdParseShim(filtered_actions, game_state)
+        parsed = parse_commands(commands, shim)
+        n = len(filtered_actions)
+        # Structural index for <staff> synth-match: (building_name, quantity) ->
+        # position in filtered_actions. Prefer the untrained variant (the synth is
+        # always untrained) but fall back to whatever assignment exists at that
+        # (building, quantity). This is the CORRECT identity for worker_assignment
+        # — the two code paths render different prose for the same executable action.
+        assign_to_idx: dict = {}
+        for i, a in enumerate(filtered_actions):
+            if a.get("action_type") == "worker_assignment":
+                asg = a.get("assignment", {})
+                k = (asg.get("building_name"), asg.get("quantity"))
+                if k not in assign_to_idx or asg.get("worker_type") == "untrained":
+                    assign_to_idx[k] = i
+        indices: List[int] = []
+        reasons: List[str] = []
+        seen: set = set()
+        for i in parsed["actions"]:
+            if 0 <= i < n:
+                idx: Optional[int] = i
+            elif 0 <= i < len(shim.valid_actions):
+                synth = shim.valid_actions[i]
+                asg = synth.get("assignment", {})
+                idx = assign_to_idx.get((asg.get("building_name"), asg.get("quantity")))
+                if idx is None:
+                    reasons.append(
+                        f"staffing {asg.get('quantity')} to "
+                        f"'{asg.get('building_name')}' — not offered at that "
+                        "quantity this turn (check the free-worker pool)")
+                    continue
+            else:
+                continue
+            if idx not in seen:
+                seen.add(idx)
+                indices.append(idx)
+        for ch in parsed["choices"]:
+            reasons.append(f"task {ch.get('taskId')} choice {ch.get('choiceId')} — "
+                           "answer tasks with execute_commands, not a proposal package")
+        for e in parsed.get("errors", []):
+            reasons.append(str(e))
+        return indices, reasons
+
+    # ---- role grounding: who owns which action ---------------------------
+    # The construction/staff/deconstruct trio is what a building-scoped officer
+    # owns for its building type(s); rendered as one phrase in the roster.
+    _CWD_CATS = ("construction", "worker_assignment", "deconstruction")
+
+    def _owning_agents(self, probe: dict) -> List[str]:
+        """subagent_names of every NON-director officer whose subaction_space
+        admits `probe`.
+
+        Runs the SAME filter_actions gate that governs execution, so the owner
+        reported here can never disagree with who may actually run the action.
+        Catch-all ({"category":"all"}) agents — the human director — are skipped:
+        a fallback that admits everything is nobody's specific owner.
+        """
+        owners = []
+        for a in self.config.agents:
+            if a.role == "director":
+                continue
+            if any(e.get("category") == "all" for e in a.subaction_space):
+                continue
+            if filter_actions([probe], a.subaction_space):
+                owners.append(a.subagent_name)
+        return owners
+
+    def _scope_phrase(self, space: List[dict]) -> str:
+        """Compact human phrase for one officer's subaction_space."""
+        cwd = set(self._CWD_CATS)
+        label = {"worker": "hire/train workers",
+                 "resource_transfer": "resource transfers"}
+        btypes, plain = [], []
+        for e in space:
+            cat = e.get("category")
+            if cat == "all":
+                return "everything (director)"
+            bt = e.get("building_types")
+            if cat in cwd and bt:
+                for b in bt:
+                    if b not in btypes:
+                        btypes.append(b)
+            elif cat in cwd:
+                plain.append(cat)
+            elif cat == "task_choice":
+                grp = e.get("group")
+                plain.append(f"answer {grp} tasks" if grp else "answer tasks")
+            else:
+                plain.append(label.get(cat, cat))
+        parts = []
+        if btypes:
+            parts.append("build / staff / deconstruct " + " & ".join(btypes))
+        parts += plain
+        return "; ".join(parts) if parts else "(nothing)"
+
+    def _roster_lines(self, caller: AgentConfig) -> str:
+        rows = []
+        for a in self.config.agents:
+            if a.role == "director":
+                continue
+            you = " (you)" if a.subagent_name == caller.subagent_name else ""
+            rows.append(f"  • {a.subagent_name}{you} — "
+                        f"{self._scope_phrase(a.subaction_space)}")
+        return "Officers and what each owns:\n" + "\n".join(rows)
+
+    @staticmethod
+    def _norm_task_for_token(t: dict) -> dict:
+        """Raw allActiveTasks row → the {title, affects} shape stable_task_token
+        and task_officer read, so a token computed here matches what the agent saw
+        in its observation."""
+        return {"title": t.get("taskTitle") or t.get("title") or "",
+                "affects": t.get("affectedFacility") or t.get("affects") or "",
+                "taskId": t.get("taskId")}
+
+    def _resolve_task(self, game_state: dict, query: str) -> Optional[dict]:
+        """Find the active task the agent means by `query`: a numeric taskId, a
+        stable token (FOOD_C01…), or a distinctive title substring. Returns the
+        raw task dict, or None if nothing matches."""
+        q = str(query).strip()
+        ql = q.lower()
+        if not ql:
+            return None
+        tasks = game_state.get("allActiveTasks") or []
+        if q.lstrip("-").isdigit():  # 1. exact taskId
+            for t in tasks:
+                if str(t.get("taskId")) == q:
+                    return t
+        for t in tasks:            # 2. exact stable token
+            if stable_task_token(self._norm_task_for_token(t)).lower() == ql:
+                return t
+        for t in tasks:            # 3. title substring
+            title = (t.get("taskTitle") or t.get("title") or "").lower()
+            if title and ql in title:
+                return t
+        return None
+
+    def _owner_lines(self, agent: AgentConfig, what: str, owners: List[str],
+                     roster: str, no_owner_hint: str) -> str:
+        """Shared head + your-scope + roster rendering for both lookup modes."""
+        mine = agent.subagent_name in owners
+        if not owners:
+            head = f"{what} → {no_owner_hint}"
+            you_line = (f"It is not yours (you are {agent.subagent_name}). Do not do it "
+                        f"or claim it — raise it with the director.")
+        elif mine:
+            head = (f"{what} → owned by {owners[0]}." if len(owners) == 1
+                    else f"{what} → owned by {', '.join(owners)}.")
+            you_line = f"This IS in your scope — you ({agent.subagent_name}) may handle it."
+        else:
+            head = (f"{what} → owned by {owners[0]}." if len(owners) == 1
+                    else f"{what} → owned by {', '.join(owners)}.")
+            to_whom = owners[0] if len(owners) == 1 else "the responsible officer"
+            you_line = (f"This is NOT in your scope (you are {agent.subagent_name}). "
+                        f"Do not do it or claim it — tell the director it belongs to "
+                        f"{to_whom}.")
+        return f"{head}\n{you_line}\n\n{roster}"
+
+    def _responsibility_lookup_text(self, agent: AgentConfig, args: dict,
+                                    game_state: dict) -> str:
+        """Answer a responsibility_lookup tool call as readable text."""
+        roster = self._roster_lines(agent)
+
+        # --- task mode: who answers this task ---
+        task_q = str(args.get("task") or "").strip()
+        if task_q:
+            t = self._resolve_task(game_state, task_q)
+            if t is None:
+                return (f"No active task matches {task_q!r}. Check read_state for the "
+                        f"current tasks (by token or id), then look it up.\n\n{roster}")
+            grp = task_group(t)
+            token = stable_task_token(self._norm_task_for_token(t))
+            title = t.get("taskTitle") or t.get("title") or f"task {t.get('taskId')}"
+            probe = {"action_type": "task_choice", "task_choice": {"group": grp}}
+            owners = self._owning_agents(probe)
+            what = f'task "{title}" [{token}, id {t.get("taskId")}], a {grp}-domain task'
+            hint = (f"no officer answers {grp}-domain tasks in this scenario — it is "
+                    f"the director's call.")
+            return self._owner_lines(agent, what, owners, roster, hint)
+
+        # --- action mode: who owns this kind of action ---
+        category = str(args.get("category") or "").strip()
+        if not category:
+            return roster
+        building_type = str(args.get("building_type") or "").strip() or None
+        probe = {"action_type": category}
+        if building_type:
+            # flat fallback consumed by agent_filters._building_token_of
+            probe["building_type"] = building_type
+        owners = self._owning_agents(probe)
+        what = category + (f" of {building_type}" if building_type else "")
+        hint = "no officer owns it — it may be the director's call, or not in play here."
+        return self._owner_lines(agent, what, owners, roster, hint)
+
     async def _dispatch_continuous_tool(
         self,
         agent: AgentConfig,
@@ -1281,120 +1680,31 @@ Respond with ONLY the package index number (0, 1, or 2).
             return render_state_text(self._filter_state(game_state, agent)), \
                 game_state, all_actions, filtered_actions, meta
 
+        # Granular getters — one slice of the same filtered observation each, so an
+        # officer can pull just the detail it needs without re-dumping read_state.
+        # get_logistics needs the officer's enumerated actions (the affordance block
+        # is derived from them); the others are pure state slices.
+        if name in ("get_facilities", "get_workforce", "get_tasks", "get_logistics"):
+            fs = self._filter_state(game_state, agent)
+            if name == "get_logistics":
+                text = render_logistics_text(fs, filtered_actions)
+            else:
+                text = {
+                    "get_facilities": render_facilities_text,
+                    "get_workforce": render_workforce_text,
+                    "get_tasks": render_tasks_text,
+                }[name](fs)
+            return text, game_state, all_actions, filtered_actions, meta
+
         if name == "list_actions":
             filtered_actions = filter_actions(all_actions, agent.subaction_space)
-            return "Actions available to you now:\n" + self._render_action_list(filtered_actions), \
+            return ("Actions available to you now:\n"
+                    + self._render_options_compact(filtered_actions, game_state)), \
                 game_state, all_actions, filtered_actions, meta
 
-        if name == "execute_game_action":
-            idx = args.get("index")
-            if not isinstance(idx, int) or not (0 <= idx < len(filtered_actions)):
-                # Model referenced an action outside its space — an action-space
-                # error that used to be invisible. Log it as outcome=invalid so
-                # "can't-execute" is measurable, then return the honest error.
-                self._log_action(
-                    self._actor_for(agent), "game_action", "execute_game_action",
-                    {"index": idx, "success": False, "error": "index_out_of_range",
-                     "n_available": len(filtered_actions), "note": args.get("note"),
-                     **self._outcome_fields("invalid")},
-                )
-                return (f"ERROR: index {idx!r} is out of range "
-                        f"(0..{len(filtered_actions) - 1}). Call list_actions to refresh."), \
-                    game_state, all_actions, filtered_actions, meta
-            action = filtered_actions[idx]
-            # A task_choice row answers a choice-task rather than mutating the world
-            # directly. It reached this menu only if the officer's subaction_space
-            # admits its group (filter_actions), so jurisdiction is already enforced.
-            if action.get("action_type") == "task_choice":
-                tc = action.get("task_choice") or {}
-                tid, cid = tc.get("taskId"), tc.get("choiceId")
-                if not self._task_choice_supported:
-                    return (f"NOT executed — task-choice answering is unavailable on "
-                            f"this transport."), game_state, all_actions, filtered_actions, meta
-                before = self._state_metrics(game_state)
-                r, game_state = await self._execute_choice_via_unity(tid, cid, game_state)
-                ok = bool(r.get("success"))
-                err = r.get("error_message") or ""
-                self._log_action(
-                    self._actor_for(agent), "game_action", "select_task_choice",
-                    {"taskId": tid, "choiceId": cid, "index": idx, "success": ok,
-                     "error": err, "note": args.get("note"),
-                     **self._outcome_fields(
-                         "ok" if ok else "rejected", before,
-                         self._state_metrics(game_state), is_choice=True, tid=tid)},
-                )
-                if ok:
-                    await self._send_agent_response(
-                        agent, f"🗳️ answered task {tid} → choice {cid}", "agent_response")
-                all_actions = _enumerate_actions(game_state)
-                filtered_actions = filter_actions(all_actions, agent.subaction_space)
-                meta["executed"] = 1 if ok else 0
-                body = (f"Answered task {tid} with choice {cid}. success={ok}."
-                        + (f" engine: {err}" if err else ""))
-                body += "\n\nUpdated actions:\n" + self._render_action_list(filtered_actions)
-                return body, game_state, all_actions, filtered_actions, meta
-            # ledger_mode="block": staleness-style no-op (à la Claude Code's
-            # read-before-edit). A non-repeatable action already committed this
-            # phase is NOT re-sent to the engine — the frozen paused-phase state
-            # can't reflect it yet, and re-doing it would just fail engine-side.
-            # This is grounding (the truth: it's already queued), not style-gating;
-            # repeatable actions (hire/transfer) are never blocked.
-            if (getattr(agent, "ledger_mode", "annotate") == "block"
-                    and action.get("action_type") in _NON_REPEATABLE_TYPES
-                    and self._action_ledger_key(action) in set(self._committed_this_phase)):
-                print(f"[router]   ⛔ Blocked re-execution (already committed this "
-                      f"phase): {self._action_ledger_key(action)}")
-                self._log_action(
-                    self._actor_for(agent), "game_action", "execute_game_action",
-                    {"index": idx, "action": action, "success": False,
-                     "error": "blocked_already_committed", "note": args.get("note")},
-                )
-                body = (f"NOT executed — action {idx} "
-                        f"[{action.get('action_type','?')}] {action.get('description','?')} "
-                        "was already committed this planning phase. It is queued and "
-                        "will take effect when the round simulates; re-doing it is a "
-                        "no-op. Pick a different action or finish.")
-                body += "\n\nActions available to you now:\n" + self._render_action_list(filtered_actions)
-                return body, game_state, all_actions, filtered_actions, meta
-            before = self._state_metrics(game_state)
-            result, new_state = await self._execute_action(agent.subagent_name, action)
-            success = bool(result.get("success"))
-            err = result.get("error_message") or ""
-            self._log_action(
-                self._actor_for(agent), "game_action", "execute_game_action",
-                {"index": idx, "action": action, "success": success,
-                 "error": err, "note": args.get("note"),
-                 **self._outcome_fields(
-                     "ok" if success else "rejected", before,
-                     self._state_metrics(new_state or game_state))},
-            )
-            if new_state:
-                game_state = new_state
-                all_actions = _enumerate_actions(game_state)
-                filtered_actions = filter_actions(all_actions, agent.subaction_space)
-            if success:
-                self._record_committed(action)
-                # Per-action visibility (coding-agent style): announce each
-                # committed action to the director as it happens, so the human can
-                # watch what the agent is doing instead of only seeing an
-                # end-of-turn summary. Sent on the same channel talk_to_director
-                # uses (renders in the current client); the emoji marker + optional
-                # one-line `note` distinguish it from conversational replies.
-                # Announce the ground-truth action only (the engine's own
-                # description). We deliberately do NOT echo the model's free-text
-                # `note`: it sometimes disagrees with the action actually executed
-                # (e.g. names a different community / number), which reads to the
-                # human as a hallucinated transfer. The action description is
-                # authoritative; the model's rationale still lives in its summary.
-                narration = (f"🔨 {action.get('action_type', 'action')}: "
-                             f"{action.get('description', '(action)')}")
-                await self._send_agent_response(agent, narration, "agent_response")
-            meta["executed"] = 1 if success else 0
-            desc = f"[{action.get('action_type','?')}] {action.get('description','?')}"
-            body = (f"Executed action {idx} {desc}. success={success}."
-                    + (f" engine: {err}" if err else ""))
-            body += "\n\nUpdated actions:\n" + self._render_action_list(filtered_actions)
-            return body, game_state, all_actions, filtered_actions, meta
+        if name == "responsibility_lookup":
+            return self._responsibility_lookup_text(agent, args, game_state), \
+                game_state, all_actions, filtered_actions, meta
 
         if name == "execute_commands":
             commands = str(args.get("commands") or "").strip()
@@ -1407,6 +1717,25 @@ Respond with ONLY the package index number (0, 1, or 2).
             parsed = parse_commands(commands, shim)
             resolved = [i for i in parsed["actions"] if 0 <= i < len(shim.valid_actions)]
             actions_to_run = [shim.valid_actions[i] for i in resolved]
+            # ledger_mode="block": staleness-style no-op (à la Claude Code's
+            # read-before-edit), ported here from the removed execute_game_action path
+            # so the tags surface enforces it too. A NON-repeatable action already
+            # committed this phase is NOT re-sent to the engine — the frozen
+            # paused-phase state can't reflect the queued action yet, so re-doing it
+            # would just fail engine-side. This is grounding (it IS already queued),
+            # not style-gating; repeatable actions (hire/train/transfer) are never
+            # blocked. The other actions in the same batch still run.
+            blocked = []
+            if getattr(agent, "ledger_mode", "annotate") == "block":
+                committed = set(self._committed_this_phase)
+                keep = []
+                for a in actions_to_run:
+                    if (a.get("action_type") in _NON_REPEATABLE_TYPES
+                            and self._action_ledger_key(a) in committed):
+                        blocked.append(a)
+                    else:
+                        keep.append(a)
+                actions_to_run = keep
             # Executed as-chosen: a failed action (e.g. "site not available") is an honest
             # policy signal returned to the agent, NOT auto-remapped or hidden. Mirrors the
             # continuous-propose stance; no site-conflict resolution here by design.
@@ -1416,6 +1745,17 @@ Respond with ONLY the package index number (0, 1, or 2).
             )
             executed = 0
             lines = []
+            for a in blocked:
+                self._log_action(
+                    self._actor_for(agent), "game_action", "execute_commands",
+                    {"action": a, "success": False, "error": "blocked_already_committed",
+                     "commands": commands, "note": args.get("note"),
+                     **self._outcome_fields("invalid")},
+                )
+                print(f"[router]   ⛔ Blocked re-execution (already committed this "
+                      f"phase): {self._action_ledger_key(a)}")
+                lines.append(f"  ⛔ {a.get('description', '(action)')} — already committed "
+                             f"this phase (queued; re-doing is a no-op)")
             for action, r in zip(actions_to_run, exec_results):
                 success = bool(r.get("success"))
                 err = r.get("error_message") or ""
@@ -1501,7 +1841,11 @@ Respond with ONLY the package index number (0, 1, or 2).
             all_actions = _enumerate_actions(game_state)
             filtered_actions = filter_actions(all_actions, agent.subaction_space)
             meta["executed"] = executed
-            parts = [f"Ran {len(actions_to_run)} action(s) from your commands; {executed} succeeded."]
+            summary = f"Ran {len(actions_to_run)} action(s) from your commands; {executed} succeeded."
+            if blocked:
+                summary += (f" {len(blocked)} already-committed action(s) were skipped "
+                            f"(queued from earlier this phase).")
+            parts = [summary]
             if parsed["parsed"]:
                 parts.append("Resolved: " + "; ".join(parsed["parsed"]))
             if lines:
@@ -1523,10 +1867,11 @@ Respond with ONLY the package index number (0, 1, or 2).
                     )
                 parts.append("Unresolved commands (NOT executed — fix and retry, or pick a "
                              "different move):\n  " + "\n  ".join(parsed["errors"]))
-            if not actions_to_run and not parsed["choices"] and not parsed["errors"]:
+            if (not actions_to_run and not blocked
+                    and not parsed["choices"] and not parsed["errors"]):
                 parts.append("No command tags recognized. Use e.g. <build>Kitchen,1</build>.")
             body = "\n".join(parts)
-            body += "\n\nUpdated actions:\n" + self._render_action_list(filtered_actions)
+            body += "\n\nUpdated actions:\n" + self._render_options_compact(filtered_actions, game_state)
             return body, game_state, all_actions, filtered_actions, meta
 
         if name == "propose_choices":
@@ -1577,21 +1922,42 @@ Respond with ONLY the package index number (0, 1, or 2).
         reasoning = str(args.get("reasoning") or "").strip()
 
         # Sanitize the model-authored packages into the shape the client renders.
+        # The model emits command tags (uniform vocabulary with execute_commands);
+        # _tags_to_indices maps each package's tags onto positions in filtered_actions,
+        # producing the same action_indices the client already consumes — so the
+        # outbound payload and _await_director_choice stay byte-identical (no Unity
+        # change). A package that resolves to zero actions is dropped with a reason;
+        # never mis-index.
         packages: List[dict] = []
+        drop_notes: List[str] = []
         for p in raw_packages:
             if not isinstance(p, dict):
                 continue
-            indices = [i for i in (p.get("action_indices") or [])
-                       if isinstance(i, int) and 0 <= i < len(filtered_actions)]
+            label = str(p.get("label") or f"Option {len(packages) + 1}")
+            commands = str(p.get("commands") or "").strip()
+            if commands:
+                indices, reasons = self._tags_to_indices(commands, filtered_actions, game_state)
+            else:
+                indices, reasons = [], ["empty commands"]
+            for r in reasons:
+                print(f"[router]   ⤷ propose_choices: package '{label}': {r}")
+            if not indices:
+                note = f"package '{label}' dropped (no resolvable actions"
+                note += f"; {'; '.join(reasons)})" if reasons else ")"
+                drop_notes.append(note)
+                continue
             packages.append({
                 "package_index": len(packages),
-                "label": str(p.get("label") or f"Option {len(packages) + 1}"),
+                "label": label,
                 "description": str(p.get("description") or ""),
                 "action_indices": indices,
             })
         if not packages:
-            return ("ERROR: no valid packages (each needs action_indices into the "
-                    "current action list).", game_state, all_actions, filtered_actions, 0, False)
+            msg = ("ERROR: no valid packages — each package's `commands` must contain "
+                   "command tags that resolve to actions you can take now.")
+            if drop_notes:
+                msg += " " + " ".join(drop_notes)
+            return (msg, game_state, all_actions, filtered_actions, 0, False)
 
         # Continuous agents render proposals INLINE in the chat timeline (a single
         # agent_message_with_choices frame) rather than as a Task Center task. This
@@ -1662,7 +2028,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                     f"{executed}/{total} action(s) SUCCEEDED. Engine results:\n{detail}\n"
                     "Report ONLY the SUCCESS lines as done. Do NOT claim any FAILED "
                     "action happened — treat failures as not executed and adapt.")
-        body += "\n\nUpdated actions:\n" + self._render_action_list(filtered_actions)
+        body += "\n\nUpdated actions:\n" + self._render_options_compact(filtered_actions, game_state)
         return body, game_state, all_actions, filtered_actions, executed, superseded
 
     def _supersede_pending_choice(self, reason: str) -> None:
