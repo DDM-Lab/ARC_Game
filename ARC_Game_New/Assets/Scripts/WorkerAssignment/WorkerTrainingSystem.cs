@@ -198,6 +198,8 @@ public class WorkerTrainingSystem : MonoBehaviour
         }
 
         SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Training {workersToTrain} workers");
+        if (DailyReportData.Instance != null)
+            DailyReportData.Instance.RecordWorkerTrainingCostCumulative(totalCost);
         StartWorkerTraining(workersToTrain);
     }
     

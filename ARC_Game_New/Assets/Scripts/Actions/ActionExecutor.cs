@@ -144,6 +144,10 @@ public class ActionExecutor : MonoBehaviour
                 }
                 SatisfactionAndBudget.Instance.RemoveBudget(action.cost, $"Hired {p.quantity} untrained workers");
 
+                if (DailyReportData.Instance != null)
+                    DailyReportData.Instance.RecordWorkerRequestCostCumulative(action.cost);
+
+
                 if (logActions)
                 {
                     Debug.Log($"✅ Hired {p.quantity} untrained workers (cost: ${action.cost})");
@@ -156,6 +160,8 @@ public class ActionExecutor : MonoBehaviour
                     workerSystem.CreateTrainedWorker();
                 }
                 SatisfactionAndBudget.Instance.RemoveBudget(action.cost, $"Hired {p.quantity} trained workers");
+                if (DailyReportData.Instance != null)
+                    DailyReportData.Instance.RecordWorkerRequestCostCumulative(action.cost);
 
                 if (logActions)
                 {
@@ -182,6 +188,8 @@ public class ActionExecutor : MonoBehaviour
                 }
 
                 SatisfactionAndBudget.Instance.RemoveBudget(action.cost, $"Trained {p.quantity} workers");
+                if (DailyReportData.Instance != null)
+                    DailyReportData.Instance.RecordWorkerTrainingCostCumulative(action.cost);
 
                 if (logActions)
                 {

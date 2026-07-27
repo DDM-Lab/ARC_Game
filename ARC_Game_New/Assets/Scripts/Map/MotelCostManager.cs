@@ -67,7 +67,9 @@ public class MotelCostManager : MonoBehaviour
         SatisfactionAndBudget.Instance.RemoveBudget(
             (int)totalCost,
             $"Motel housing: {residents} residents × ${costPerPersonPerDay:F0}/day");
-
+            
+        if (DailyReportData.Instance != null)
+            DailyReportData.Instance.RecordLodgingSpendCumulative(totalCost);
         // Toast notification
         //ToastManager.ShowToast(
         //    $"Motel cost: {residents} residents × ${costPerPersonPerDay:F0} = ${totalCost:F0} deducted",
