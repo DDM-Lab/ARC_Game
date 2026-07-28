@@ -16,7 +16,10 @@ using UnityEngine;
 /// </summary>
 public class TypingIndicatorUI : MonoBehaviour
 {
-    private const string Dots = "●●●";
+    // Bullet (U+2022), NOT ● (U+25CF): the Rakkas bubble font has no ● glyph, so
+    // ● rendered as an empty box → the "generating" bubble looked blank. • is in
+    // the font (and the LiberationSans fallback), so the dots actually show.
+    private const string Dots = "•••";
 
     private TextMeshProUGUI text;
     private float cycleSeconds = 0.35f;
