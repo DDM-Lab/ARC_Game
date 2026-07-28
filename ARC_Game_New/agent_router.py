@@ -43,7 +43,7 @@ from agent_filters import filter_observation, filter_actions
 from agent_ordering import get_agent_order
 from episode_logger import EpisodeLogger
 from llm_query import query_llm, load_global_prompt
-from continuous_agent import build_tools, run_tool_step
+from continuous_agent import build_tools, run_tool_step, DEFAULT_TOOLS
 from cmd_parser import parse_commands, ParserEnv  # SHARED parser + env shim (benchmark + router + gym)
 from obs_encoder import (
     render_state_text, _num, task_officer, task_group, stable_task_token,
@@ -962,8 +962,14 @@ Respond with ONLY the package index number (0, 1, or 2).
         filtered_actions: List[dict],
         game_state: dict,
         all_actions: List[dict],
+        triggered_by_director: bool = False,
     ) -> Tuple[dict, List[dict]]:
         """Serialize turns FOR THIS OFFICER, then drive one turn.
+
+        `triggered_by_director` distinguishes the two activation paths: True when a
+        director_message directly addressed this officer (it may act), False for an
+        unprompted begin_round tick. In "reactive" opening_mode this is the switch
+        that gates whether the officer gets action tools at all this turn.
 
         Uses a per-agent lock (not a session-global one): two turns for the SAME
         officer never overlap (transcript integrity), but different officers run
@@ -976,7 +982,8 @@ Respond with ONLY the package index number (0, 1, or 2).
         """
         async with self._agent_lock(agent.subagent_name):
             return await self._run_continuous_inner(
-                agent, filtered_state, filtered_actions, game_state, all_actions
+                agent, filtered_state, filtered_actions, game_state, all_actions,
+                triggered_by_director,
             )
 
     async def _run_continuous_concurrent(self, agent: AgentConfig) -> None:
@@ -1005,6 +1012,8 @@ Respond with ONLY the package index number (0, 1, or 2).
         # peer's later build. Instead _publish_state() in the Unity commit path
         # keeps _latest_* at the freshest GLOBAL state after every mutation, so it
         # is always monotone-fresh for the director_turn and mid-round re-entry.
+        # triggered_by_director defaults False: a begin_round tick is UNPROMPTED, so
+        # under "reactive" opening_mode this officer briefs only (no action tools).
         await self._run_continuous(
             agent, filtered_state, filtered_actions, gs, all_actions
         )
@@ -1036,8 +1045,11 @@ Respond with ONLY the package index number (0, 1, or 2).
         filtered_actions = filter_actions(all_actions, agent.subaction_space)
         # _latest_* is kept fresh by _publish_state() in the commit path; no
         # end-of-turn local publish here (see _run_continuous_concurrent).
+        # triggered_by_director=True: the director addressed this officer, so under
+        # "reactive" opening_mode it is now allowed to act (full palette this turn).
         await self._run_continuous(
-            agent, filtered_state, filtered_actions, gs, all_actions
+            agent, filtered_state, filtered_actions, gs, all_actions,
+            triggered_by_director=True,
         )
 
     # Keep this many most-recent activation turns (each: one user re-grounding +
@@ -1069,6 +1081,11 @@ Respond with ONLY the package index number (0, 1, or 2).
             return messages
         return [system] + body[starts[-keep_turns]:]
 
+    # Tools that COMMIT to the world (spend, build, hire, transfer) or seize the
+    # director's attention with a proposal. Stripped from the palette on an
+    # unprompted "reactive" turn so an officer physically cannot act unbidden.
+    _ACTING_TOOLS = frozenset({"execute_commands", "propose_choices"})
+
     async def _run_continuous_inner(
         self,
         agent: AgentConfig,
@@ -1076,9 +1093,21 @@ Respond with ONLY the package index number (0, 1, or 2).
         filtered_actions: List[dict],
         game_state: dict,
         all_actions: List[dict],
+        triggered_by_director: bool = False,
     ) -> Tuple[dict, List[dict]]:
         """Drive one turn of the continuous (tool-using) agent."""
-        tools = build_tools(agent.tools)
+        # Reactive autonomy ("activate when spoken to"): on an UNPROMPTED turn a
+        # reactive officer may brief the director but must not act — so we hand it a
+        # palette with the acting tools removed. It is then structurally impossible
+        # to commit anything unbidden; no reliance on prompt adherence. Any other
+        # opening_mode (emergent/brief_first) keeps the full configured palette.
+        opening_mode = getattr(agent, "opening_mode", "emergent")
+        brief_only = (opening_mode == "reactive") and not triggered_by_director
+        if brief_only:
+            base = list(agent.tools) if agent.tools else list(DEFAULT_TOOLS)
+            tools = build_tools([t for t in base if t not in self._ACTING_TOOLS])
+        else:
+            tools = build_tools(agent.tools)
         agent_cfg = vars(agent)  # run_tool_step reads provider/model/endpoint/key/budget
         max_steps = agent.max_steps or 8
 
@@ -1101,7 +1130,8 @@ Respond with ONLY the package index number (0, 1, or 2).
         self._director_injected_count[name] = len(director_entries)
         director_has_spoken = len(director_entries) > 0
         messages.append(self._continuous_turn_message(
-            agent, filtered_state, filtered_actions, director_has_spoken))
+            agent, filtered_state, filtered_actions, director_has_spoken,
+            brief_only=brief_only, triggered_by_director=triggered_by_director))
 
         # Bound the ever-growing per-officer transcript: keep the system message and
         # the last N activation turns (the current one always included), shedding old
@@ -1114,6 +1144,15 @@ Respond with ONLY the package index number (0, 1, or 2).
         sat_before = _get_satisfaction(game_state)
         budget_before = _get_budget(game_state)
         executed_total = 0
+        # Per-turn telemetry accumulators (previously hardcoded empty/0 — the F5
+        # gap). tokens_total sums every step's provider usage; turn_attempts records
+        # each tool call the officer made; turn_results collects the per-action
+        # execution outcomes the dispatch reports; last_text is the officer's final
+        # natural-language content (the llm_raw_response for this turn record).
+        tokens_total = 0
+        turn_attempts: List[dict] = []
+        turn_results: List[dict] = []
+        last_text = None
 
         print(f"[router]   ▶ Continuous agent {agent.subagent_name}: "
               f"{len(filtered_actions)} actions, up to {max_steps} steps, "
@@ -1126,6 +1165,10 @@ Respond with ONLY the package index number (0, 1, or 2).
             if resp.get("error"):
                 print(f"[router]   ⚠️  Continuous step {step} error: {resp['error']}")
                 break
+
+            tokens_total += int((resp.get("usage") or {}).get("total_tokens") or 0)
+            if resp.get("content"):
+                last_text = resp["content"]
 
             tool_calls = resp.get("tool_calls") or []
 
@@ -1152,15 +1195,23 @@ Respond with ONLY the package index number (0, 1, or 2).
 
             stop = False
             for tc in tool_calls:
+                turn_attempts.append({"tool": tc["name"], "arguments": tc.get("arguments")})
                 result_str, game_state, all_actions, filtered_actions, meta = \
                     await self._dispatch_continuous_tool(
-                        agent, tc, game_state, all_actions, filtered_actions
+                        agent, tc, game_state, all_actions, filtered_actions,
+                        brief_only=brief_only,
                     )
                 # Every tool_call id MUST get a matching tool result before the
                 # next assistant turn (OpenAI/Anthropic protocol requirement).
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
                 executed_total += meta.get("executed", 0)
+                turn_results.extend(meta.get("results") or [])
                 if meta.get("finish"):
+                    stop = True
+                # Brief-only turns are capped at ONE director-facing message: after
+                # the officer briefs, end the turn even if it didn't call finish, so
+                # it can't tack on a redundant "awaiting guidance" follow-up.
+                if brief_only and tc["name"] == "talk_to_director":
                     stop = True
             if stop:
                 print(f"[router]   ⏹ Continuous agent called finish at step {step}.")
@@ -1183,9 +1234,10 @@ Respond with ONLY the package index number (0, 1, or 2).
             print(f"[router]   ⏸ Continuous agent {agent.subagent_name}: "
                   "no action taken this turn (noted).")
 
-        self._log_turn(agent, filtered_state, filtered_actions, [], None,
-                       [], sat_before, game_state, budget_before,
-                       f"[continuous] {executed_total} action(s) executed", 0)
+        raw = last_text or f"[continuous] {executed_total} action(s) executed"
+        self._log_turn(agent, filtered_state, filtered_actions, turn_attempts, None,
+                       turn_results, sat_before, game_state, budget_before,
+                       raw, tokens_total)
         print(f"[router]   ✓ Continuous agent {agent.subagent_name}: "
               f"{executed_total} action(s) executed this turn.")
         return game_state, all_actions
@@ -1211,21 +1263,68 @@ Respond with ONLY the package index number (0, 1, or 2).
         filtered_state: dict,
         filtered_actions: List[dict],
         director_has_spoken: bool,
+        brief_only: bool = False,
+        triggered_by_director: bool = False,
     ) -> dict:
         """The per-activation user turn: re-grounds the agent on the LIVE state,
         action list, and planning-phase ledger. Appended fresh each activation on
         top of the persistent transcript, because the world advances between
         activations even though the trajectory before it stays visible."""
         # Opening posture (the human's autonomy dial, kept OUT of the agent prompt).
-        # In "brief_first" the director wants to be oriented before the agent acts —
-        # but only until they've given direction; after that the agent is emergent.
-        # "emergent" (default) injects nothing: pure tool-user from step 1.
+        #   reactive + unprompted (brief_only): brief the director, cannot act (the
+        #     acting tools aren't even in the palette this turn).
+        #   reactive + spoken-to: act, but do EXACTLY what was asked — no scaling,
+        #     no extra sites/targets (fixes the "transfer 20" → 60 fan-out).
+        #   brief_first (until first direction): open with one briefing, don't act.
+        #   emergent (default): inject nothing — pure tool-user from step 1.
+        opening_mode = getattr(agent, "opening_mode", "emergent")
+        capabilities = self._officer_capabilities_phrase(agent)
+        title = agent.subagent_name
         closing = "Decide what to do."
-        if getattr(agent, "opening_mode", "emergent") == "brief_first" and not director_has_spoken:
+        if brief_only:
+            closing = (
+                "You have NOT been directly addressed this turn, and you act only "
+                "when the director speaks to you. You have NO action tools right now, "
+                "so do not attempt to build, hire, transfer, or propose. Send AT MOST "
+                f"ONE short talk_to_director message that (1) opens by naming your "
+                f"office (you are the {title}), states your responsibility "
+                "in one line and what you can do for the director "
+                f"(you can {capabilities}), and (2) in at most 2 more sentences gives "
+                "the single biggest need in your domain, the budget remaining, and one "
+                "recommendation — then call finish. Ground any factual claim (building "
+                "counts, worker counts, shortfalls) in the situation above, the "
+                "'already committed' ledger, or a read tool (read_state, "
+                "get_facilities, get_workforce) — count anything you committed this "
+                "phase as pending, and never state a count from memory. If nothing "
+                "material has changed since your last brief, "
+                "just restate your remit in one line and call finish."
+            )
+        elif opening_mode == "reactive" and triggered_by_director:
+            closing = (
+                f"Identify yourself by your office (you are the {title}) when you "
+                "reply to the director. "
+                "The director has addressed you. Do EXACTLY what they asked — nothing "
+                "more. Do not scale the quantity up or down, and do not add sites, "
+                "targets, or extra actions they did not name. If the director asks a "
+                "factual question (how many buildings exist, worker counts, what is "
+                "built where), answer from the situation above, the 'already "
+                "committed' ledger, AND a read tool (read_state, get_facilities, "
+                "get_workforce, get_tasks) — reconcile all three: a worker you hired "
+                "or a facility you queued THIS phase counts even if the frozen "
+                "situation still shows it absent, so report it as queued/pending "
+                "rather than saying it doesn't exist. Do NOT invent counts from "
+                "memory. If the instruction is "
+                "ambiguous or would exceed budget, ask ONE brief clarifying question "
+                "via talk_to_director instead of guessing. When done, send ONE short "
+                "talk_to_director message confirming what you did (or answering their "
+                "question), then call finish."
+            )
+        elif opening_mode == "brief_first" and not director_has_spoken:
             closing = (
                 "The director has not given you any direction yet. Do NOT commit any "
                 "builds, hires, or transfers. Send EXACTLY ONE short talk_to_director "
-                "message — at most 3 sentences: the single biggest need, the budget "
+                f"message that opens by naming your office (you are the {title}), "
+                "then in at most 3 sentences: the single biggest need, the budget "
                 "remaining, and one recommendation — then immediately call finish. Do "
                 "NOT send a second message or a status follow-up; wait for the director."
             )
@@ -1279,15 +1378,111 @@ Respond with ONLY the package index number (0, 1, or 2).
             return ""
         items = "\n".join(f"  - {c}" for c in self._committed_this_phase)
         return (
-            "Already committed this planning phase (queued — the situation above "
-            "does NOT reflect these yet; do NOT repeat them):\n"
-            f"{items}\n\n"
+            "YOU HAVE ALREADY COMMITTED these actions this planning phase — they are "
+            "locked in and real, and take effect when the phase resolves (next "
+            "round):\n"
+            f"{items}\n"
+            "The frozen situation above was captured BEFORE these commits, so its "
+            "counts (worker totals, budget) and facility list do NOT include them "
+            "yet. When you reason or report to the director, RECONCILE the two: "
+            "treat everything listed here as existing/pending. Never tell the "
+            "director something doesn't exist if you just committed it — say it is "
+            "queued and when it lands (workers you hired are available to assign, "
+            "and newly-built facilities finish and become staffable, once this phase "
+            "resolves next round). Do NOT re-commit anything listed here.\n\n"
         )
 
     @staticmethod
     def _action_ledger_key(action: dict) -> str:
         """Canonical ledger string for an action (used to record AND to match)."""
         return f"[{action.get('action_type', '?')}] {action.get('description', '?')}"
+
+    @staticmethod
+    def _humanize_committed_action(action: dict) -> str:
+        """Plain-English past-tense confirmation of a just-committed action.
+
+        Feeds the director-facing "Action: ..." chat bubble — no emojis, no
+        command-tag syntax, no indices. Derives its wording from the action's
+        structured sub-dict + cost so the bubble reads like a log line a person
+        wrote ("Built Shelter at Riverside for $2,000"). Falls back to the
+        action's own description if a type is unrecognized.
+        """
+        def money(v):
+            try:
+                v = int(round(float(v)))
+            except (TypeError, ValueError):
+                return None
+            return f"${v:,}" if v > 0 else None
+
+        atype = action.get("action_type")
+        cost = money(action.get("cost"))
+        if atype == "construction":
+            c = action.get("construction") or {}
+            btype = c.get("building_type") or "facility"
+            site = c.get("site_name") or "an available site"
+            s = f"Built {btype} at {site}"
+            return s + (f" for {cost}" if cost else "")
+        if atype == "worker":
+            w = action.get("worker") or {}
+            q = w.get("quantity") or 0
+            wt = w.get("worker_action_type") or ""
+            if wt == "train_untrained":
+                s = f"Training {q} untrained worker{'s' if q != 1 else ''}"
+            elif wt == "hire_trained":
+                s = f"Hired {q} trained worker{'s' if q != 1 else ''}"
+            else:  # hire_untrained (and any unknown hire variant)
+                s = f"Hired {q} untrained worker{'s' if q != 1 else ''}"
+            return s + (f" for {cost}" if cost else "")
+        if atype == "resource_transfer":
+            t = action.get("transfer") or action.get("resource_transfer") or {}
+            q = t.get("quantity") or 0
+            res = t.get("resource_type") or "supplies"
+            res_label = {"FoodPacks": "food packs", "Population": "people"}.get(res, res)
+            src = t.get("source_facility") or "source"
+            dst = t.get("destination_facility") or "destination"
+            s = f"Transferred {q} {res_label} from {src} to {dst}"
+            return s + (f" for {cost}" if cost else "")
+        if atype == "worker_assignment":
+            a = action.get("assignment") or action.get("worker_assignment") or {}
+            q = a.get("quantity") or 0
+            bname = a.get("building_name") or "a facility"
+            return f"Assigned {q} worker{'s' if q != 1 else ''} to {bname}"
+        if atype == "deconstruction":
+            d = action.get("deconstruction") or {}
+            bname = d.get("building_name") or "a facility"
+            return f"Deconstructed {bname}"
+        # Unknown type: fall back to the enumerator's own description.
+        return str(action.get("description") or "Committed an action")
+
+    @staticmethod
+    def _officer_capabilities_phrase(agent: AgentConfig) -> str:
+        """Human-readable list of the action kinds this officer's config admits.
+
+        Derived from subaction_space so it stays truthful to what the officer can
+        actually commit (no hallucinated capabilities). Feeds the brief so the
+        officer can tell the director what it can do.
+        """
+        verbs = {
+            "construction": "construct facilities",
+            "deconstruction": "deconstruct facilities",
+            "worker": "hire and train workers",
+            "worker_assignment": "assign workers to facilities",
+            "resource_transfer": "move supplies between sites and bring in external supply",
+            "task_choice": "answer the tasks in your domain",
+        }
+        seen, phrases = set(), []
+        for entry in agent.subaction_space:
+            cat = entry.get("category")
+            if cat in ("all", None) or cat in seen:
+                continue
+            seen.add(cat)
+            if cat in verbs:
+                phrases.append(verbs[cat])
+        if not phrases:
+            return "act within your assigned remit"
+        if len(phrases) == 1:
+            return phrases[0]
+        return ", ".join(phrases[:-1]) + ", and " + phrases[-1]
 
     def _record_committed(self, action: dict) -> None:
         """Append a succeeded action to the planning-phase ledger (deduped)."""
@@ -1665,16 +1860,28 @@ Respond with ONLY the package index number (0, 1, or 2).
         game_state: dict,
         all_actions: List[dict],
         filtered_actions: List[dict],
+        brief_only: bool = False,
     ) -> Tuple[str, dict, List[dict], List[dict], dict]:
         """Execute one tool call against the real game backends.
 
         Returns (result_text, game_state, all_actions, filtered_actions, meta).
-        `meta` = {"executed": int, "finish": bool}. No gating: the agent's chosen
+        `meta` = {"executed": int, "finish": bool}. No gating EXCEPT the reactive
+        brief-only guard: on an unprompted reactive turn the acting tools are not in
+        the palette, but a text/ReAct-mode model could still emit one — so we refuse
+        it here too rather than trust the palette alone. Otherwise the agent's chosen
         tool is carried out and the honest result is returned to it.
         """
         name = tool_call.get("name")
         args = tool_call.get("arguments") or {}
         meta = {"executed": 0, "finish": False}
+
+        if brief_only and name in self._ACTING_TOOLS:
+            return (
+                "REFUSED: you have not been directly addressed this turn, so you "
+                "cannot take actions or send proposals. Brief the director via "
+                "talk_to_director (or call finish); they will tell you what to do.",
+                game_state, all_actions, filtered_actions, meta,
+            )
 
         if name == "read_state":
             return render_state_text(self._filter_state(game_state, agent)), \
@@ -1745,6 +1952,9 @@ Respond with ONLY the package index number (0, 1, or 2).
             )
             executed = 0
             lines = []
+            # Per-action outcome records for the turn telemetry (mirrors the
+            # _log_action ground-truth events, aggregated into the turn record).
+            results: List[dict] = []
             for a in blocked:
                 self._log_action(
                     self._actor_for(agent), "game_action", "execute_commands",
@@ -1752,6 +1962,10 @@ Respond with ONLY the package index number (0, 1, or 2).
                      "commands": commands, "note": args.get("note"),
                      **self._outcome_fields("invalid")},
                 )
+                results.append({"action_id": a.get("action_id"),
+                                "action_type": a.get("action_type"),
+                                "description": a.get("description"),
+                                "success": False, "error": "blocked_already_committed"})
                 print(f"[router]   ⛔ Blocked re-execution (already committed this "
                       f"phase): {self._action_ledger_key(a)}")
                 lines.append(f"  ⛔ {a.get('description', '(action)')} — already committed "
@@ -1759,6 +1973,10 @@ Respond with ONLY the package index number (0, 1, or 2).
             for action, r in zip(actions_to_run, exec_results):
                 success = bool(r.get("success"))
                 err = r.get("error_message") or ""
+                results.append({"action_id": action.get("action_id"),
+                                "action_type": action.get("action_type"),
+                                "description": action.get("description"),
+                                "success": success, "error": err})
                 # Deltas aren't per-action-attributable inside a batched Unity
                 # commit, so log engine-truth outcome only (ok/rejected). The
                 # single-action execute_game_action path carries the deltas.
@@ -1772,9 +1990,16 @@ Respond with ONLY the package index number (0, 1, or 2).
                 if success:
                     executed += 1
                     self._record_committed(action)
-                    # Per-action visibility, same channel/marker as execute_game_action.
+                    # Director-facing commit bubble: one plain-English past-tense
+                    # line per committed action ("Action: Built Shelter at
+                    # Riverside for $2,000") — no emojis, no command-tag syntax.
+                    # This is a distinct, log-style confirmation channel; the
+                    # officer still speaks to the director in its own words via
+                    # talk_to_director. Also ground-truth logged via _log_action
+                    # above and surfaced to the MODEL in `lines` below.
                     await self._send_agent_response(
-                        agent, f"🔨 {action.get('action_type', 'action')}: {desc}", "agent_response")
+                        agent, "Action: " + self._humanize_committed_action(action),
+                        "agent_response")
                     lines.append(f"  ✅ {desc}")
                 else:
                     lines.append(f"  ❌ {desc}" + (f" — {err}" if err else ""))
@@ -1829,10 +2054,24 @@ Respond with ONLY the package index number (0, 1, or 2).
                          "ok" if ok else "rejected", before,
                          self._state_metrics(game_state), is_choice=True, tid=tid)},
                 )
+                results.append({"kind": "task_choice", "taskId": tid, "choiceId": cid,
+                                "success": ok, "error": err})
                 if ok:
                     answered += 1
+                    # Director-facing commit bubble for an answered task:
+                    # 'Action: Chose "Send the airlift" for task "Food shortfall
+                    # in Riverside"'. Resolve the human-readable choice text +
+                    # task title from the task dict; fall back to ids if absent.
+                    title = task.get("taskTitle") or task.get("title") or f"task {tid}"
+                    choice_text = next(
+                        (c.get("choiceText") or c.get("text") or "")
+                        for c in (task.get("choices") or [])
+                        if c.get("choiceId") == cid
+                    ) if any(c.get("choiceId") == cid for c in (task.get("choices") or [])) else ""
+                    choice_text = (choice_text or f"choice {cid}").strip()
                     await self._send_agent_response(
-                        agent, f"🗳️ answered task {tid} → choice {cid}", "agent_response")
+                        agent, f'Action: Chose "{choice_text}" for task "{title}"',
+                        "agent_response")
                     choice_lines.append(f"  ✅ answered task {tid} with choice {cid}")
                 else:
                     choice_lines.append(
@@ -1865,6 +2104,8 @@ Respond with ONLY the package index number (0, 1, or 2).
                          "detail": e, "commands": commands, "note": args.get("note"),
                          **self._outcome_fields("invalid")},
                     )
+                    results.append({"success": False, "error": "unresolved_command",
+                                    "detail": e})
                 parts.append("Unresolved commands (NOT executed — fix and retry, or pick a "
                              "different move):\n  " + "\n  ".join(parsed["errors"]))
             if (not actions_to_run and not blocked
@@ -1872,12 +2113,15 @@ Respond with ONLY the package index number (0, 1, or 2).
                 parts.append("No command tags recognized. Use e.g. <build>Kitchen,1</build>.")
             body = "\n".join(parts)
             body += "\n\nUpdated actions:\n" + self._render_options_compact(filtered_actions, game_state)
+            meta["results"] = results
             return body, game_state, all_actions, filtered_actions, meta
 
         if name == "propose_choices":
             result_text, game_state, all_actions, filtered_actions, executed, superseded = \
                 await self._continuous_propose(agent, args, game_state, all_actions, filtered_actions)
             meta["executed"] = executed
+            meta["results"] = [{"kind": "propose_choices", "executed": executed,
+                                "superseded": bool(superseded)}]
             # A superseded proposal (director advanced the round or sent a new
             # instruction) ends this turn: the follow-up turn — the new round's
             # subagent or the director-message task — handles what comes next.

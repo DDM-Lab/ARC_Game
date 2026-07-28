@@ -61,12 +61,18 @@ class AgentConfig:
     tools: Optional[list[str]] = None      # tool-name allowlist; None = full palette
     max_steps: int = 8                     # max tool-call steps per turn (loop guard)
     tool_mode: str = "auto"                # "auto" | "native" | "text" (ReAct fallback)
-    # Opening posture: how the agent engages before the director has given any
-    # direction. "emergent" = no imposed style (pure tool-user); "brief_first" =
-    # open with a situation briefing + ask, instead of acting unprompted. This is
-    # the human's autonomy dial (à la Claude Code permission modes), moved OUT of
-    # the agent's prompt so the agent itself stays un-handheld.
-    opening_mode: str = "emergent"         # "emergent" | "brief_first"
+    # Opening posture / autonomy dial (à la Claude Code permission modes), kept OUT
+    # of the agent's prompt so the agent itself stays un-handheld:
+    #   "emergent"    — no imposed style; pure tool-user, may act from step 1.
+    #   "brief_first" — open with a situation briefing + ask instead of acting,
+    #                   but only until the director first speaks; emergent after.
+    #   "reactive"    — act ONLY on a turn the director directly triggered. On an
+    #                   unprompted (begin_round) turn the officer may brief the
+    #                   director but has NO action tools, so it cannot commit
+    #                   anything; on a director-message turn it gets the full
+    #                   palette and does exactly what was asked. This is the
+    #                   "activate when spoken to" posture.
+    opening_mode: str = "emergent"         # "emergent" | "brief_first" | "reactive"
     # Planning-phase ledger enforcement. The paused-phase observation is frozen, so
     # the agent can't see its own queued actions and may repeat them. "annotate" =
     # mark already-committed actions inline (advisory; the model may still pick

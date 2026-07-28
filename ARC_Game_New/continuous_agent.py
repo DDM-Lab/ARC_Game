@@ -412,6 +412,14 @@ def _max_tokens(agent_cfg: dict) -> int:
     return int(agent_cfg.get("turn_token_budget") or 1024)
 
 
+def _usage_dict(input_tokens=0, output_tokens=0) -> Dict[str, int]:
+    """Normalized token-usage record returned by every step (zeros when the
+    provider doesn't report usage, e.g. the text/Ollama path). The router sums
+    `total_tokens` across a turn's steps for per-turn cost accounting."""
+    it, ot = int(input_tokens or 0), int(output_tokens or 0)
+    return {"input_tokens": it, "output_tokens": ot, "total_tokens": it + ot}
+
+
 def _openai_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
     name = agent_cfg.get("subagent_name", "Unknown")
     model = agent_cfg.get("llm_model", "gpt-4o-mini")
@@ -461,11 +469,14 @@ def _openai_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
             "name": tc.function.name,
             "arguments": _parse_args(tc.function.arguments),
         })
+    u = getattr(resp, "usage", None)
     return {
         "content": (msg.content or None),
         "tool_calls": tool_calls,
         "raw": msg.content or "",
         "error": None,
+        "usage": _usage_dict(getattr(u, "prompt_tokens", 0),
+                             getattr(u, "completion_tokens", 0)) if u else _usage_dict(),
     }
 
 
@@ -529,7 +540,10 @@ def _anthropic_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
                 "arguments": block.input if isinstance(block.input, dict) else {},
             })
     content = "".join(text_parts).strip() or None
-    return {"content": content, "tool_calls": tool_calls, "raw": content or "", "error": None}
+    u = getattr(resp, "usage", None)
+    return {"content": content, "tool_calls": tool_calls, "raw": content or "", "error": None,
+            "usage": _usage_dict(getattr(u, "input_tokens", 0),
+                                 getattr(u, "output_tokens", 0)) if u else _usage_dict()}
 
 
 def _text_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
