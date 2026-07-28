@@ -422,6 +422,7 @@ public class TaskSystem : MonoBehaviour
 
     void Start()
     {
+        
         StartCoroutine(InitializeWithCentralConfig());
         // Subscribe to global clock for round-based countdown
         if (GlobalClock.Instance != null)
@@ -450,6 +451,7 @@ public class TaskSystem : MonoBehaviour
         if (showDebugInfo)
             Debug.Log("Task System initialized");
     }
+    
 
     IEnumerator InitializeWithCentralConfig()
     {
@@ -2489,6 +2491,8 @@ public class TaskSystem : MonoBehaviour
         return info;
     }
 
+    
+
     private SatisfactionAndBudgetState GetSatisfactionAndBudgetState()
     {
         SatisfactionAndBudgetState state = new SatisfactionAndBudgetState();
@@ -2501,8 +2505,8 @@ public class TaskSystem : MonoBehaviour
         else
         {
             // Default values if system not available
-            state.satisfaction = 0;
-            state.budget = 0;
+            state.satisfaction = 5000;
+            state.budget = 8000;
         }
 
         return state;

@@ -1262,41 +1262,42 @@ public class TaskDetailUI : MonoBehaviour
             return -1;
         }
 
-        switch (choice.deliveryCargoType)
+switch (choice.deliveryCargoType)
         {
             case ResourceType.FoodPacks:
-                ExecuteFoodDelivery(choice, immediate);
-                return -1;
+                return ExecuteFoodDelivery(choice, immediate) ? -1 : 0;
 
             case ResourceType.Population:
                 return ExecuteClientRelocation(choice, immediate);
 
             default:
                 // Fallback for any other cargo type: single source→destination delivery
-                ExecuteFallbackDelivery(choice, immediate);
-                return -1;
+                return ExecuteFallbackDelivery(choice, immediate) ? -1 : 0;
         }
     }
 
 
     // FOOD DELIVERY via FoodDeliveryHandler
-    void ExecuteFoodDelivery(AgentChoice choice, bool immediate)
+// FOOD DELIVERY via FoodDeliveryHandler. Returns whether it actually succeeded.
+    bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
     {
         if (FoodDeliveryHandler.Instance == null)
         {
             Debug.LogError("[TaskDetailUI] FoodDeliveryHandler not found in scene");
-            return;
+            return false;
         }
 
         if (immediate)
         {
             FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice.deliveryQuantity);
+            return true;
         }
         else
         {
             bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice.deliveryQuantity);
             if (!success)
                 ShowAgentErrorMessage("Could not queue food delivery — check kitchen stock and vehicle availability.");
+            return success;
         }
     }
 
@@ -1344,7 +1345,8 @@ public class TaskDetailUI : MonoBehaviour
     }
 
     // FALLBACK for other cargo types
-    void ExecuteFallbackDelivery(AgentChoice choice, bool immediate)
+// FALLBACK for other cargo types. Returns whether it actually succeeded.
+    bool ExecuteFallbackDelivery(AgentChoice choice, bool immediate)
     {
         MonoBehaviour triggeringFacility = TaskSystem.Instance.FindTriggeringFacility(currentTask);
         MonoBehaviour source      = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
@@ -1353,21 +1355,28 @@ public class TaskDetailUI : MonoBehaviour
         if (source == null || destination == null)
         {
             Debug.LogError($"[TaskDetailUI] Fallback delivery: could not resolve source/destination for {choice.deliveryCargoType}");
-            return;
+            ShowAgentErrorMessage($"Could not queue delivery — no available {choice.deliveryCargoType} route.");
+            return false;
         }
 
         if (immediate)
         {
             ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, choice.deliveryQuantity);
+            return true;
         }
         else
         {
             DeliverySystem ds = DeliverySystem.Instance ?? FindObjectOfType<DeliverySystem>();
-            if (ds == null) return;
+            if (ds == null) return false;
             List<DeliveryTask> deliveries = ds.CreateDeliveryTask(source, destination, choice.deliveryCargoType, choice.deliveryQuantity, 3);
             TaskSystem.Instance.LinkDeliveriesToTask(currentTask, deliveries);
             if (deliveries.Count > 0)
+            {
                 TaskSystem.Instance.SetTaskInProgress(currentTask);
+                return true;
+            }
+            ShowAgentErrorMessage($"Could not queue delivery — no vehicle/route available for {choice.deliveryCargoType}.");
+            return false;
         }
     }
 
