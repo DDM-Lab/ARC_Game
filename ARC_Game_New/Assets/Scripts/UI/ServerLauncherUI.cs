@@ -82,18 +82,11 @@ public class ServerLauncherUI : MonoBehaviour
 #if UNITY_WEBGL && !UNITY_EDITOR
         // By default Unity captures ALL keyboard input at the document level and
         // preventDefault()s it, so a DOM <input> (our key-entry overlay) never
-        // shows typed/pasted characters. Turning this off makes Unity grab the
-        // keyboard only while the game canvas is focused — the overlay works, and
-        // gameplay/keyboard resume the moment the user clicks back on the canvas.
-        //
-        // WebGLInput lives in UnityEngine.WebGLModule, which Unity does NOT add to
-        // the player Assembly-CSharp reference set in this project (every other
-        // UnityEngine.*Module is referenced, but not WebGLModule) — a direct
-        // reference gives CS0103 at player-compile time. Set the property
-        // reflectively so there is no compile-time dependency on that assembly; the
-        // module still ships in the WebGL runtime, so it resolves at run time.
-        var webglInput = System.Type.GetType("UnityEngine.WebGLInput, UnityEngine.WebGLModule");
-        webglInput?.GetProperty("captureAllKeyboardInput")?.SetValue(null, false);
+        // shows typed/pasted characters. Turn it OFF while the launcher is up so the
+        // overlay works — but StartGame() turns it back ON before gameplay. With it
+        // left off, WebGL TMP_InputFields silently lose Backspace (the browser eats
+        // the keystroke), which breaks editing in the in-game agent chat.
+        SetWebGLKeyboardCapture(false);
         ClipboardInit();   // enable Cmd/Ctrl+V paste of the API key in the browser
 #endif
 
@@ -667,6 +660,18 @@ public class ServerLauncherUI : MonoBehaviour
 
     // ── Start Game ─────────────────────────────────────────────────
 
+    // Toggle Unity's document-level keyboard capture. WebGLInput lives in
+    // UnityEngine.WebGLModule, which this project does NOT add to the Assembly-CSharp
+    // reference set (a direct reference gives CS0103 at player-compile time), so set
+    // the property reflectively — no compile-time dependency, resolves at run time.
+    // No-ops off WebGL (the module type resolves to null). MUST be restored to true
+    // before gameplay or WebGL TMP_InputFields lose Backspace (see Start()).
+    static void SetWebGLKeyboardCapture(bool capture)
+    {
+        var webglInput = System.Type.GetType("UnityEngine.WebGLInput, UnityEngine.WebGLModule");
+        webglInput?.GetProperty("captureAllKeyboardInput")?.SetValue(null, capture);
+    }
+
     IEnumerator StartGame()
     {
         if (connecting) yield break;
@@ -689,6 +694,11 @@ public class ServerLauncherUI : MonoBehaviour
         pendingUrl = Sanitize(urlField.text);
         pendingKey = Sanitize(keyField.text);
         pendingConfig = chosen.name;
+
+        // The launcher (and its DOM paste overlay) is done — restore Unity's
+        // keyboard capture so in-game TMP_InputFields (the agent chat) get Backspace
+        // and other keys back. Left off, WebGL swallows Backspace to the browser.
+        SetWebGLKeyboardCapture(true);
 
         var wsm = WebSocketManager.Instance;
         if (wsm != null)
