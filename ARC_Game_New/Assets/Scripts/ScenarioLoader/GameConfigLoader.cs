@@ -109,7 +109,12 @@ public class GameConfigLoader : MonoBehaviour
             yield break;
         }
     
-        string urlWithCacheBuster = googleSheetsCsvUrl + "&t=" + System.DateTime.Now.Ticks;
+        // Use "?" when the URL has no query yet (e.g. a same-origin mirror like
+        // https://.../sheet.csv), otherwise "&" to extend the existing query
+        // (e.g. the Google Sheets pub URL). Appending "&t=" to a query-less URL
+        // makes it a literal path segment and 404s on static hosts.
+        string cacheBustSep = googleSheetsCsvUrl.Contains("?") ? "&" : "?";
+        string urlWithCacheBuster = googleSheetsCsvUrl + cacheBustSep + "t=" + System.DateTime.Now.Ticks;
         
         if (showDebugInfo)
             Debug.Log("GameConfigLoader: Fetching config from Google Sheets...");
