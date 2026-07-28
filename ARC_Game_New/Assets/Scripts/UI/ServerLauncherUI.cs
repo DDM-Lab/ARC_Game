@@ -156,8 +156,8 @@ public class ServerLauncherUI : MonoBehaviour
 
     void SavePrefs(string configName)
     {
-        PlayerPrefs.SetString(PREFS_URL, urlField.text.Trim());
-        PlayerPrefs.SetString(PREFS_KEY, keyField.text.Trim());
+        PlayerPrefs.SetString(PREFS_URL, Sanitize(urlField.text));
+        PlayerPrefs.SetString(PREFS_KEY, Sanitize(keyField.text));
         PlayerPrefs.SetString(PREFS_CFG, configName);
         PlayerPrefs.Save();
     }
@@ -194,8 +194,22 @@ public class ServerLauncherUI : MonoBehaviour
     void ApplyPasted(string text)
     {
         if (keyField == null) return;
-        keyField.text = text.Trim();
+        keyField.text = Sanitize(text);
         SetStatus("Pasted from clipboard.", new Color(0.55f, 0.85f, 0.6f));
+    }
+
+    // Strip whitespace AND control characters (e.g. a stray  backspace that
+    // rides in on a paste). Header values legally can't contain control chars, so
+    // UnityWebRequest.SetRequestHeader throws on them — which, thrown inside the
+    // fetch coroutine, aborts it silently and leaves the UI stuck on "Fetching
+    // configs…". Sanitizing here (and before every header/connect use) prevents both.
+    static string Sanitize(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (char c in s)
+            if (!char.IsControl(c)) sb.Append(c);
+        return sb.ToString().Trim();
     }
 
     // ── UI Construction ────────────────────────────────────────────
@@ -589,7 +603,7 @@ public class ServerLauncherUI : MonoBehaviour
         }
 
         var req = UnityWebRequest.Get(baseUrl + "/configs");
-        req.SetRequestHeader("Authorization", "Bearer " + keyField.text.Trim());
+        req.SetRequestHeader("Authorization", "Bearer " + Sanitize(keyField.text));
         req.timeout = 10;
         yield return req.SendWebRequest();
 
@@ -672,8 +686,8 @@ public class ServerLauncherUI : MonoBehaviour
 
         // Stash the chosen settings so we can apply them to the
         // WebSocketManager whether it exists now or appears in a later scene.
-        pendingUrl = urlField.text.Trim();
-        pendingKey = keyField.text.Trim();
+        pendingUrl = Sanitize(urlField.text);
+        pendingKey = Sanitize(keyField.text);
         pendingConfig = chosen.name;
 
         var wsm = WebSocketManager.Instance;

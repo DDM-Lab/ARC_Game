@@ -7,8 +7,9 @@ using UnityEngine.Networking;
 public class GameConfigLoader : MonoBehaviour
 {
     [Header("Google Sheets Config")]
-    [Tooltip("Publish your Google Sheet as CSV and paste the URL here")]
-    public string googleSheetsCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTGcKtnKuRq1dS-ZMMYKmepAEsfeaYhKlt8IMSkZ1xe-5_JApbSfTokI_VHFS8v0g3XIHWHWEPSdSzS/pub?gid=0&single=true&output=csv";
+    [Tooltip("CSV URL. A root-relative path like \"/sheet.csv\" is fetched same-origin " +
+             "(no CORS) — served on Talos by an Apache Alias, and locally by the dev proxy.")]
+    public string googleSheetsCsvUrl = "/sheet.csv";
 
     [Header("Map Config Server")]
     [Tooltip("GET endpoint served by map_config_server.py  (leave blank to skip)")]
@@ -109,12 +110,31 @@ public class GameConfigLoader : MonoBehaviour
             yield break;
         }
     
+        // A root-relative URL ("/sheet.csv") is fetched same-origin — no CORS,
+        // and no hardcoded host. In WebGL, resolve it against the page origin so
+        // UnityWebRequest gets a fully-qualified URL (avoids any relative-URL
+        // quirk); it works identically on Talos (Apache Alias) and the dev proxy.
+        string resolvedUrl = googleSheetsCsvUrl;
+        if (resolvedUrl.StartsWith("/") && !string.IsNullOrEmpty(Application.absoluteURL))
+        {
+            try
+            {
+                var pageUri = new System.Uri(Application.absoluteURL);
+                resolvedUrl = pageUri.GetLeftPart(System.UriPartial.Authority) + resolvedUrl;
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"GameConfigLoader: could not resolve relative CSV URL against " +
+                                 $"'{Application.absoluteURL}' — {ex.Message}. Using as-is.");
+            }
+        }
+
         // Use "?" when the URL has no query yet (e.g. a same-origin mirror like
-        // https://.../sheet.csv), otherwise "&" to extend the existing query
-        // (e.g. the Google Sheets pub URL). Appending "&t=" to a query-less URL
-        // makes it a literal path segment and 404s on static hosts.
-        string cacheBustSep = googleSheetsCsvUrl.Contains("?") ? "&" : "?";
-        string urlWithCacheBuster = googleSheetsCsvUrl + cacheBustSep + "t=" + System.DateTime.Now.Ticks;
+        // /sheet.csv), otherwise "&" to extend the existing query (e.g. the Google
+        // Sheets pub URL). Appending "&t=" to a query-less URL makes it a literal
+        // path segment and 404s on static hosts.
+        string cacheBustSep = resolvedUrl.Contains("?") ? "&" : "?";
+        string urlWithCacheBuster = resolvedUrl + cacheBustSep + "t=" + System.DateTime.Now.Ticks;
         
         if (showDebugInfo)
             Debug.Log("GameConfigLoader: Fetching config from Google Sheets...");
