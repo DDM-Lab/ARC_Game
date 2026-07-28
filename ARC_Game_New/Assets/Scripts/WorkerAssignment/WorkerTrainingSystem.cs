@@ -201,7 +201,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         StartWorkerTraining(workersToTrain);
     }
     
-    void StartWorkerTraining(int workerCount)
+    public void StartWorkerTraining(int workerCount)
     {
         List<Worker> untrainedWorkers = workerSystem.GetWorkersByType(WorkerType.Untrained)
             .FindAll(w => w.GetCurrentStatus() == "Free");
@@ -236,7 +236,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         FindObjectOfType<GlobalWorkerManagementUI>()?.RefreshCurrentTab();
 
         ToastManager.ShowToast($"Started training {workerCount} workers. Estimated Completion Date: Day {completionDay}", ToastType.Success, true);
-        GameLogPanel.Instance.LogWorkerAction($"Started training {workerCount} workers (completion Day {completionDay})");
+        GameLogPanel.Instance?.LogWorkerAction($"Started training {workerCount} workers (completion Day {completionDay})");
 
         if (showDebugInfo)
             Debug.Log($"Training started on Day {currentDay} for {workerCount} workers, completion day: {completionDay}");
@@ -283,7 +283,7 @@ public class WorkerTrainingSystem : MonoBehaviour
                 "Completed training " + successfullyTrained + " workers");
 
             ToastManager.ShowToast("Training complete! " + successfullyTrained + " workers are now trained and available. " + "Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion", ToastType.Info, true);
-            GameLogPanel.Instance.LogMetricsChange("Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion");
+            GameLogPanel.Instance?.LogMetricsChange("Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion");
         }
         else
         {

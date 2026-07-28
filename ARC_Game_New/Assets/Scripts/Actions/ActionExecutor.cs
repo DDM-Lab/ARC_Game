@@ -162,70 +162,93 @@ public class ActionExecutor : MonoBehaviour
         switch (p.worker_action_type)
         {
             case "hire_untrained":
-                for (int i = 0; i < p.quantity; i++)
-                {
-                    workerSystem.CreateUntrainedWorker();
-                }
+                // Route through the SAME delayed request pathway the human player uses:
+                // workers arrive as NotArrived, land in the "Pending Actions" queue, and
+                // become assignable only after untrainedArrivalDays (see WorkerRequestSystem).
                 SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Hired {p.quantity} untrained workers");
 
                 if (DailyReportData.Instance != null)
                     DailyReportData.Instance.RecordWorkerRequestCostCumulative(action.cost);
 
+                if (WorkerRequestSystem.Instance != null)
+                {
+                    // Emits its own "Requested … arrival Day X" toast + Pending Actions entry.
+                    WorkerRequestSystem.Instance.StartWorkerRequest(p.quantity, WorkerType.Untrained);
+                }
+                else
+                {
+                    // Headless fallback (no WorkerRequestSystem in scene): create immediately.
+                    for (int i = 0; i < p.quantity; i++)
+                        workerSystem.CreateUntrainedWorker();
+                    ToastManager.ShowToast($"Hired {p.quantity} untrained worker(s) for ${action.cost}", ToastType.Info);
+                }
 
                 if (logActions)
                 {
-                    Debug.Log($"✅ Hired {p.quantity} untrained workers (cost: ${action.cost})");
+                    Debug.Log($"✅ Requested {p.quantity} untrained workers (cost: ${action.cost})");
                 }
                 break;
 
             case "hire_trained":
-                for (int i = 0; i < p.quantity; i++)
-                {
-                    workerSystem.CreateTrainedWorker();
-                }
-
                 SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Hired {p.quantity} trained workers");
 
-                // SatisfactionAndBudget.Instance.RemoveBudget(action.cost, $"Hired {p.quantity} trained workers");
                 if (DailyReportData.Instance != null)
                     DailyReportData.Instance.RecordWorkerRequestCostCumulative(action.cost);
 
+                if (WorkerRequestSystem.Instance != null)
+                {
+                    WorkerRequestSystem.Instance.StartWorkerRequest(p.quantity, WorkerType.Trained);
+                }
+                else
+                {
+                    for (int i = 0; i < p.quantity; i++)
+                        workerSystem.CreateTrainedWorker();
+                    ToastManager.ShowToast($"Hired {p.quantity} trained worker(s) for ${action.cost}", ToastType.Info);
+                }
 
                 if (logActions)
                 {
-                    Debug.Log($"✅ Hired {p.quantity} trained workers (cost: ${action.cost})");
+                    Debug.Log($"✅ Requested {p.quantity} trained workers (cost: ${action.cost})");
                 }
                 break;
 
             case "train_untrained":
-                // For immediate LLM execution: convert untrained to trained directly
-                // Get untrained workers
-                var allWorkers = workerSystem.GetAllWorkers();
-                var untrainedWorkers = allWorkers.Where(w => w.Type == WorkerType.Untrained && !w.IsWorking).Take(p.quantity).ToList();
+                // Match the human training pathway's selection: only FREE untrained workers
+                // are trainable (not NotArrived / already Training / working).
+                var freeUntrained = workerSystem.GetWorkersByType(WorkerType.Untrained)
+                    .FindAll(w => w.GetCurrentStatus() == "Free");
 
-                if (untrainedWorkers.Count < p.quantity)
+                if (freeUntrained.Count < p.quantity)
                 {
-                    return Failure(action.action_id, $"Insufficient untrained workers (need {p.quantity}, have {untrainedWorkers.Count})");
+                    return Failure(action.action_id, $"Insufficient untrained workers (need {p.quantity}, have {freeUntrained.Count})");
                 }
-
-                // Remove untrained workers and create trained ones
-                foreach (var worker in untrainedWorkers)
-                {
-                    workerSystem.RemoveWorker(worker);
-                    workerSystem.CreateTrainedWorker();
-                }
-
 
                 SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Trained {p.quantity} workers");
 
-                // SatisfactionAndBudget.Instance.RemoveBudget(action.cost, $"Trained {p.quantity} workers");
                 if (DailyReportData.Instance != null)
                     DailyReportData.Instance.RecordWorkerTrainingCostCumulative(action.cost);
 
+                // Route through the SAME delayed training pathway the human uses: selected
+                // workers flip to Training, land in the "Pending Actions" queue, and convert
+                // to trained (plus the satisfaction bonus) after trainingDurationDays.
+                if (WorkerTrainingSystem.Instance != null)
+                {
+                    WorkerTrainingSystem.Instance.StartWorkerTraining(p.quantity);
+                }
+                else
+                {
+                    // Headless fallback: convert immediately.
+                    for (int i = 0; i < p.quantity; i++)
+                    {
+                        workerSystem.RemoveWorker(freeUntrained[i]);
+                        workerSystem.CreateTrainedWorker();
+                    }
+                    ToastManager.ShowToast($"Training {p.quantity} untrained worker(s) for ${action.cost}", ToastType.Info);
+                }
 
                 if (logActions)
                 {
-                    Debug.Log($"✅ Trained {p.quantity} workers (cost: ${action.cost})");
+                    Debug.Log($"✅ Started training {p.quantity} workers (cost: ${action.cost})");
                 }
                 break;
 
@@ -285,6 +308,9 @@ public class ActionExecutor : MonoBehaviour
             }
         }
 
+        string resourceLabel = p.resource_type == "FoodPacks" ? "food packs" : "people";
+        ToastManager.ShowToast($"Transferred {p.quantity} {resourceLabel} from {p.source_facility} to {p.destination_facility}", ToastType.Info);
+
         if (logActions)
         {
             Debug.Log($"✅ Created transfer: {p.quantity} {p.resource_type} from {p.source_facility} to {p.destination_facility}");
@@ -309,9 +335,10 @@ public class ActionExecutor : MonoBehaviour
         // Get building ID (use originalSiteId, not Unity's InstanceID)
         int buildingId = building.GetOriginalSiteId();
 
-        // Use the WorkerSystem's assignment method
-        // This method assigns workers automatically (trained first, then untrained)
-        bool success = workerSystem.TryAssignWorkersToBuilding(buildingId, p.quantity);
+        // Full parity with the human "set staffing" flow: release the building's current
+        // workers, then assign EXACTLY p.quantity workers (count, not workforce points).
+        // Trained-first selection; feasibility is checked before any release.
+        bool success = workerSystem.TryReassignWorkerCountToBuilding(buildingId, p.quantity);
 
         if (!success)
         {
@@ -321,6 +348,8 @@ public class ActionExecutor : MonoBehaviour
         // Update building status after worker assignment
         // This triggers the building to check its worker count and transition to InUse if fully staffed
         building.UpdateWorkerStatus();
+
+        ToastManager.ShowToast($"Assigned {p.quantity} worker(s) to {p.building_name}", ToastType.Info);
 
         if (logActions)
         {
@@ -346,6 +375,8 @@ public class ActionExecutor : MonoBehaviour
         try
         {
             building.StartDeconstruction();
+
+            ToastManager.ShowToast($"Deconstructing {p.building_name}", ToastType.Info);
 
             if (logActions)
             {

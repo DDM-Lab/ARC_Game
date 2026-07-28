@@ -227,7 +227,7 @@ public class WorkerRequestSystem : MonoBehaviour
             StartWorkerRequest(trainedToRequest, WorkerType.Trained);
     }
 
-    void StartWorkerRequest(int workerCount, WorkerType workerType)
+    public void StartWorkerRequest(int workerCount, WorkerType workerType)
     {
         bool isUntrained = (workerType == WorkerType.Untrained);
         int arrivalDays = isUntrained ? untrainedArrivalDays : trainedArrivalDays;
@@ -259,7 +259,7 @@ public class WorkerRequestSystem : MonoBehaviour
 
         string label = isUntrained ? "untrained" : "trained";
         ToastManager.ShowToast($"Requested {workerCount} {label} workers. Estimated Arrival Date: Day {arrivalDay}", ToastType.Success, true);
-        GameLogPanel.Instance.LogWorkerAction($"Requested {workerCount} {label} workers (arrival Day {arrivalDay})");
+        GameLogPanel.Instance?.LogWorkerAction($"Requested {workerCount} {label} workers (arrival Day {arrivalDay})");
 
         if (showDebugInfo)
             Debug.Log($"Worker request started on Day {currentDay} for {workerCount} {label} workers, arrival day: {arrivalDay}");
@@ -304,7 +304,7 @@ public class WorkerRequestSystem : MonoBehaviour
         Debug.Log($"Worker request completed: {workersArrived} {label} workers arrived");
 
         ToastManager.ShowToast($"{workersArrived} {label} workers have arrived and are ready to work!", ToastType.Success, true);
-        GameLogPanel.Instance.LogWorkerAction($"Worker request complete: {workersArrived} {label} workers arrived");
+        GameLogPanel.Instance?.LogWorkerAction($"Worker request complete: {workersArrived} {label} workers arrived");
     }
 
     void OnDestroy()

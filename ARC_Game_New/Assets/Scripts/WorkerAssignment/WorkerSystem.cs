@@ -210,6 +210,42 @@ public class WorkerSystem : MonoBehaviour
         return true;
     }
 
+    // Replace-semantics assignment by WORKER COUNT (used by the agent action path so it
+    // matches the human "set staffing" flow): release the building's current workers, then
+    // assign exactly `workerCount` from the free pool (trained first, for max workforce).
+    // Feasibility is checked BEFORE releasing, so a request we can't fulfill leaves the
+    // building's existing staff untouched instead of stranding it empty.
+    public bool TryReassignWorkerCountToBuilding(int buildingId, int workerCount)
+    {
+        if (workerCount < 0) return false;
+
+        List<Worker> currentWorkers = GetWorkersByBuildingId(buildingId);
+        List<Worker> availableWorkers = GetAvailableWorkers();
+
+        // After releasing this building's workers they rejoin the free pool, so the
+        // reachable pool is (currently free) + (currently on this building).
+        if (availableWorkers.Count + currentWorkers.Count < workerCount)
+        {
+            Debug.LogWarning($"Not enough workers to staff building {buildingId} with {workerCount}. Reachable: {availableWorkers.Count + currentWorkers.Count}");
+            return false;
+        }
+
+        ReleaseWorkersFromBuilding(buildingId);
+
+        List<Worker> pool = GetAvailableWorkers();
+        List<Worker> ordered = pool.Where(w => w.Type == WorkerType.Trained)
+            .Concat(pool.Where(w => w.Type == WorkerType.Untrained))
+            .ToList();
+
+        for (int i = 0; i < workerCount && i < ordered.Count; i++)
+        {
+            ordered[i].TryAssignToBuilding(buildingId);
+        }
+
+        Debug.Log($"Reassigned {Mathf.Min(workerCount, ordered.Count)} workers to building {buildingId}");
+        return true;
+    }
+
     public void ReleaseWorkersFromBuilding(int buildingId)
     {
         List<Worker> buildingWorkers = GetWorkersByBuildingId(buildingId);
