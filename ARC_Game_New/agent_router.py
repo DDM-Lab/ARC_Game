@@ -1428,6 +1428,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "question), then call finish."
             )
         elif opening_mode == "brief_first" and not director_has_spoken:
+            # FIRST message (opening brief): introduce the office by name.
             closing = (
                 "The director has not given you any direction yet. Do NOT commit any "
                 "builds, hires, or transfers. Send EXACTLY ONE short talk_to_director "
@@ -1435,6 +1436,19 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "then in at most 3 sentences: the single biggest need, the budget "
                 "remaining, and one recommendation — then immediately call finish. Do "
                 "NOT send a second message or a status follow-up; wait for the director."
+            )
+        elif opening_mode == "brief_first" and director_has_spoken:
+            # AFTER the opening brief: drop the formal self-introduction and talk
+            # to the director conversationally, like a colleague.
+            closing = (
+                "You have already introduced yourself in your opening brief, so do "
+                "NOT restate your office, title, or role again and do NOT prefix your "
+                f"message with your name (\"{title} here —\") — the director already "
+                "knows who you are. Just reply conversationally and naturally, like a "
+                "colleague talking with them: answer their question or do what they "
+                "asked directly, in plain language. Keep your assistant posture — "
+                "propose consequential actions and act only on a clear instruction — "
+                "but drop the formal self-introduction."
             )
         state_text = render_state_text(filtered_state)
         action_text = self._render_options_compact(filtered_actions, filtered_state)

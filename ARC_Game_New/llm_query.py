@@ -33,6 +33,16 @@ _GLOBAL_PROMPT_CACHE = None
 _GLOBAL_PROMPT_CONFIG_PATH = Path(__file__).parent / "config" / "global_prompt_config.json"
 
 
+def _accepts_temperature(model: str) -> bool:
+    """Sonnet 5 / next-gen models reject the `temperature` param
+    (400: "`temperature` is deprecated for this model."). 4.x still accepts it."""
+    m = (model or "").lower()
+    for tok in ("sonnet-5", "opus-5", "haiku-5", "fable-5", "mythos-5"):
+        if tok in m:
+            return False
+    return True
+
+
 def load_global_prompt(config_path: Optional[str] = None) -> str:
     """
     Load the global system prompt from config file.
@@ -343,11 +353,12 @@ def _query_openai(
 
         messages = _build_prompt(game_state, actions, agent_cfg, history)
 
+        _kw = {"temperature": 0.3} if _accepts_temperature(model) else {}
         response = client.chat.completions.create(
             model=model,
             messages=messages,
-            temperature=0.3,
             max_tokens=agent_cfg.get("turn_token_budget") or 64,
+            **_kw,
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -395,7 +406,7 @@ def _query_anthropic(
             model=model,
             system=system_prompt,
             messages=conversation,
-            temperature=0.3,
+            temperature=0.3 if _accepts_temperature(model) else anthropic.NOT_GIVEN,
             max_tokens=agent_cfg.get("turn_token_budget") or 256,
         )
         return response.content[0].text.strip()
