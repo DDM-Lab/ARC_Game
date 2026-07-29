@@ -9,8 +9,12 @@
       "max_actions_per_package": 4,
       "talkinghead_endpoint": "DisasterOfficer",
       "subaction_space": [
-        { "category": "construction" },
-        { "category": "deconstruction" }
+        {
+          "category": "construction"
+        },
+        {
+          "category": "deconstruction"
+        }
       ],
       "subobservation_space": [
         "sessionInfo",
@@ -33,13 +37,17 @@
       "max_actions_per_package": 3,
       "talkinghead_endpoint": "WorkforceService",
       "subaction_space": [
-        { "category": "worker" },
-        { "category": "worker_assignment" }
+        {
+          "category": "worker"
+        },
+        {
+          "category": "worker_assignment"
+        }
       ],
       "subobservation_space": [
         "sessionInfo",
         "satisfactionAndBudget",
-        "workers",
+        "workforceState",
         "mapState"
       ],
       "llm_provider": "ollama",
@@ -56,8 +64,14 @@
       "num_choices": null,
       "max_actions_per_package": null,
       "talkinghead_endpoint": null,
-      "subaction_space": [{ "category": "all" }],
-      "subobservation_space": ["all"],
+      "subaction_space": [
+        {
+          "category": "all"
+        }
+      ],
+      "subobservation_space": [
+        "all"
+      ],
       "llm_model": null,
       "llm_endpoint": null,
       "llm_port": null,

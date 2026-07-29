@@ -8,11 +8,24 @@
       "actor_type": "continuous",
       "talkinghead_endpoint": "DisasterOfficer",
       "subaction_space": [
-        { "category": "construction" },
-        { "category": "deconstruction" },
-        { "category": "task_choice", "group": "disaster" }
+        {
+          "category": "construction"
+        },
+        {
+          "category": "deconstruction"
+        },
+        {
+          "category": "task_choice",
+          "group": "disaster"
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "buildings", "constructionState", "mapState", "tasks:disaster"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "mapState",
+        "constructionState",
+        "tasks:disaster"
+      ],
       "llm_provider": "openai",
       "llm_model": "us.anthropic.claude-sonnet-4-6",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -31,11 +44,24 @@
       "actor_type": "continuous",
       "talkinghead_endpoint": "WorkforceService",
       "subaction_space": [
-        { "category": "worker" },
-        { "category": "worker_assignment" },
-        { "category": "task_choice", "group": "workforce" }
+        {
+          "category": "worker"
+        },
+        {
+          "category": "worker_assignment"
+        },
+        {
+          "category": "task_choice",
+          "group": "workforce"
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "workers", "buildings", "tasks:workforce"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "workforceState",
+        "mapState",
+        "tasks:workforce"
+      ],
       "llm_provider": "openai",
       "llm_model": "us.anthropic.claude-sonnet-4-6",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -54,11 +80,24 @@
       "actor_type": "continuous",
       "talkinghead_endpoint": "LodgingMassCare",
       "subaction_space": [
-        { "category": "construction" },
-        { "category": "worker_assignment" },
-        { "category": "task_choice", "group": "lodging" }
+        {
+          "category": "construction"
+        },
+        {
+          "category": "worker_assignment"
+        },
+        {
+          "category": "task_choice",
+          "group": "lodging"
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "buildings", "constructionState", "mapState", "tasks:lodging"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "mapState",
+        "constructionState",
+        "tasks:lodging"
+      ],
       "llm_provider": "openai",
       "llm_model": "us.anthropic.claude-sonnet-4-6",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -77,11 +116,24 @@
       "actor_type": "continuous",
       "talkinghead_endpoint": "FoodMassCare",
       "subaction_space": [
-        { "category": "resource_transfer" },
-        { "category": "worker_assignment" },
-        { "category": "task_choice", "group": "food" }
+        {
+          "category": "resource_transfer"
+        },
+        {
+          "category": "worker_assignment"
+        },
+        {
+          "category": "task_choice",
+          "group": "food"
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "logistics", "buildings", "mapState", "tasks:food"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "logistics",
+        "mapState",
+        "tasks:food"
+      ],
       "llm_provider": "openai",
       "llm_model": "us.anthropic.claude-sonnet-4-6",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -100,10 +152,21 @@
       "actor_type": "continuous",
       "talkinghead_endpoint": "ExternalRelationship",
       "subaction_space": [
-        { "category": "resource_transfer" },
-        { "category": "task_choice", "group": "budget" }
+        {
+          "category": "resource_transfer"
+        },
+        {
+          "category": "task_choice",
+          "group": "budget"
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "logistics", "mapState", "tasks:budget"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "logistics",
+        "mapState",
+        "tasks:budget"
+      ],
       "llm_provider": "openai",
       "llm_model": "us.anthropic.claude-sonnet-4-6",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -123,8 +186,14 @@
       "num_choices": null,
       "max_actions_per_package": null,
       "talkinghead_endpoint": null,
-      "subaction_space": [{ "category": "all" }],
-      "subobservation_space": ["all"],
+      "subaction_space": [
+        {
+          "category": "all"
+        }
+      ],
+      "subobservation_space": [
+        "all"
+      ],
       "llm_model": null,
       "llm_provider": null,
       "turn_token_budget": null,

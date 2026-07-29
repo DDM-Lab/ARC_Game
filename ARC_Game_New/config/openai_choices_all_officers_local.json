@@ -9,10 +9,20 @@
       "max_actions_per_package": 3,
       "talkinghead_endpoint": "DisasterOfficer",
       "subaction_space": [
-        { "category": "construction" },
-        { "category": "deconstruction" }
+        {
+          "category": "construction"
+        },
+        {
+          "category": "deconstruction"
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "buildings", "constructionState", "mapState", "tasks"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "mapState",
+        "constructionState",
+        "tasks"
+      ],
       "llm_provider": "openai",
       "llm_model": "claude-haiku-4-5-20251001-v1:0",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -30,10 +40,20 @@
       "max_actions_per_package": 3,
       "talkinghead_endpoint": "WorkforceService",
       "subaction_space": [
-        { "category": "worker" },
-        { "category": "worker_assignment" }
+        {
+          "category": "worker"
+        },
+        {
+          "category": "worker_assignment"
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "workers", "buildings", "tasks"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "workforceState",
+        "mapState",
+        "tasks"
+      ],
       "llm_provider": "openai",
       "llm_model": "claude-haiku-4-5-20251001-v1:0",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -51,10 +71,20 @@
       "max_actions_per_package": 3,
       "talkinghead_endpoint": "LodgingMassCare",
       "subaction_space": [
-        { "category": "construction" },
-        { "category": "worker_assignment" }
+        {
+          "category": "construction"
+        },
+        {
+          "category": "worker_assignment"
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "buildings", "constructionState", "mapState", "tasks"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "mapState",
+        "constructionState",
+        "tasks"
+      ],
       "llm_provider": "openai",
       "llm_model": "claude-haiku-4-5-20251001-v1:0",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -72,10 +102,20 @@
       "max_actions_per_package": 3,
       "talkinghead_endpoint": "FoodMassCare",
       "subaction_space": [
-        { "category": "resource_transfer" },
-        { "category": "worker_assignment" }
+        {
+          "category": "resource_transfer"
+        },
+        {
+          "category": "worker_assignment"
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "logistics", "buildings", "mapState", "tasks"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "logistics",
+        "mapState",
+        "tasks"
+      ],
       "llm_provider": "openai",
       "llm_model": "claude-haiku-4-5-20251001-v1:0",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -93,9 +133,17 @@
       "max_actions_per_package": 3,
       "talkinghead_endpoint": "ExternalRelationship",
       "subaction_space": [
-        { "category": "resource_transfer" }
+        {
+          "category": "resource_transfer"
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "logistics", "mapState", "tasks"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "logistics",
+        "mapState",
+        "tasks"
+      ],
       "llm_provider": "openai",
       "llm_model": "claude-haiku-4-5-20251001-v1:0",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -112,8 +160,14 @@
       "num_choices": null,
       "max_actions_per_package": null,
       "talkinghead_endpoint": null,
-      "subaction_space": [{ "category": "all" }],
-      "subobservation_space": ["all"],
+      "subaction_space": [
+        {
+          "category": "all"
+        }
+      ],
+      "subobservation_space": [
+        "all"
+      ],
       "llm_model": null,
       "llm_provider": null,
       "turn_token_budget": null,

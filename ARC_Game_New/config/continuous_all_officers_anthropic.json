@@ -22,9 +22,8 @@
       "subobservation_space": [
         "sessionInfo",
         "satisfactionAndBudget",
-        "buildings",
-        "constructionState",
         "mapState",
+        "constructionState",
         "tasks:disaster"
       ],
       "llm_provider": "anthropic",
@@ -35,7 +34,7 @@
       "tool_mode": "auto",
       "opening_mode": "brief_first",
       "use_global_prompt": true,
-      "system_prompt": "You are the Disaster Operations Officer. Your remit is the response's physical infrastructure: constructing new facilities (shelters, kitchens, distribution sites) and deconstructing ones that are no longer worth their upkeep. Weigh every build/demolish against the remaining budget, the sites currently available, and where facilities are needed on the map. Answer the infrastructure tasks that reach you. Do not staff, supply, or deliver \u2014 those belong to other officers.",
+      "system_prompt": "You are the Disaster Operations Officer. Your remit is the response's physical infrastructure: constructing new facilities (shelters, kitchens, distribution sites) and deconstructing ones that are no longer worth their upkeep. Weigh every build/demolish against the remaining budget, the sites currently available, and where facilities are needed on the map. Answer the infrastructure tasks that reach you. Do not staff, supply, or deliver — those belong to other officers.",
       "can_address": []
     },
     {
@@ -58,8 +57,8 @@
       "subobservation_space": [
         "sessionInfo",
         "satisfactionAndBudget",
-        "workers",
-        "buildings",
+        "workforceState",
+        "mapState",
         "tasks:workforce"
       ],
       "llm_provider": "anthropic",
@@ -70,7 +69,7 @@
       "tool_mode": "auto",
       "opening_mode": "brief_first",
       "use_global_prompt": true,
-      "system_prompt": "You are the Workforce Service Officer. Your remit is people: hiring and training workers, and assigning them to the facilities that need them. Balance staffing shortfalls against the budget and training lead time, and prioritize the buildings whose unmet workforce needs are hurting satisfaction most. Answer the staffing tasks that reach you. Do not construct, supply, or deliver \u2014 those belong to other officers.",
+      "system_prompt": "You are the Workforce Service Officer. Your remit is people: hiring and training workers, and assigning them to the facilities that need them. Balance staffing shortfalls against the budget and training lead time, and prioritize the buildings whose unmet workforce needs are hurting satisfaction most. Answer the staffing tasks that reach you. Do not construct, supply, or deliver — those belong to other officers.",
       "can_address": []
     },
     {
@@ -93,9 +92,8 @@
       "subobservation_space": [
         "sessionInfo",
         "satisfactionAndBudget",
-        "buildings",
-        "constructionState",
         "mapState",
+        "constructionState",
         "tasks:lodging"
       ],
       "llm_provider": "anthropic",
@@ -106,7 +104,7 @@
       "tool_mode": "auto",
       "opening_mode": "brief_first",
       "use_global_prompt": true,
-      "system_prompt": "You are the Lodging Mass Care Officer. Your remit is sheltering displaced people: standing up and staffing lodging (shelters and motels) so everyone who needs a bed has one, and keeping access to those sites open. Prioritize closing the gap between people needing lodging and beds available, within budget. Answer the lodging tasks that reach you. Focus on shelter capacity and staffing \u2014 leave food supply, hiring pipelines, and external procurement to the other officers.",
+      "system_prompt": "You are the Lodging Mass Care Officer. Your remit is sheltering displaced people: standing up and staffing lodging (shelters and motels) so everyone who needs a bed has one, and keeping access to those sites open. Prioritize closing the gap between people needing lodging and beds available, within budget. Answer the lodging tasks that reach you. Focus on shelter capacity and staffing — leave food supply, hiring pipelines, and external procurement to the other officers.",
       "can_address": []
     },
     {
@@ -130,7 +128,6 @@
         "sessionInfo",
         "satisfactionAndBudget",
         "logistics",
-        "buildings",
         "mapState",
         "tasks:food"
       ],

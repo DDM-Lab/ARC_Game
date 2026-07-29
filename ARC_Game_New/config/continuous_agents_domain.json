@@ -8,9 +8,16 @@
       "actor_type": "continuous",
       "talkinghead_endpoint": "WorkforceService",
       "subaction_space": [
-        { "category": "worker" }
+        {
+          "category": "worker"
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "workers", "buildings"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "workforceState",
+        "mapState"
+      ],
       "llm_provider": "openai",
       "llm_model": "claude-haiku-4-5-20251001-v1:0",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -29,11 +36,33 @@
       "actor_type": "continuous",
       "talkinghead_endpoint": "LodgingMassCare",
       "subaction_space": [
-        { "category": "construction", "building_types": ["Shelter"] },
-        { "category": "worker_assignment", "building_types": ["Shelter"] },
-        { "category": "deconstruction", "building_types": ["Shelter"] }
+        {
+          "category": "construction",
+          "building_types": [
+            "Shelter"
+          ]
+        },
+        {
+          "category": "worker_assignment",
+          "building_types": [
+            "Shelter"
+          ]
+        },
+        {
+          "category": "deconstruction",
+          "building_types": [
+            "Shelter"
+          ]
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "workers", "buildings", "tasks", "constructionState", "mapState"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "workforceState",
+        "mapState",
+        "tasks",
+        "constructionState"
+      ],
       "llm_provider": "openai",
       "llm_model": "claude-haiku-4-5-20251001-v1:0",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -52,11 +81,33 @@
       "actor_type": "continuous",
       "talkinghead_endpoint": "FoodMassCare",
       "subaction_space": [
-        { "category": "construction", "building_types": ["Kitchen"] },
-        { "category": "worker_assignment", "building_types": ["Kitchen"] },
-        { "category": "deconstruction", "building_types": ["Kitchen"] }
+        {
+          "category": "construction",
+          "building_types": [
+            "Kitchen"
+          ]
+        },
+        {
+          "category": "worker_assignment",
+          "building_types": [
+            "Kitchen"
+          ]
+        },
+        {
+          "category": "deconstruction",
+          "building_types": [
+            "Kitchen"
+          ]
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "workers", "buildings", "tasks", "constructionState", "mapState"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "workforceState",
+        "mapState",
+        "tasks",
+        "constructionState"
+      ],
       "llm_provider": "openai",
       "llm_model": "claude-haiku-4-5-20251001-v1:0",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -75,12 +126,36 @@
       "actor_type": "continuous",
       "talkinghead_endpoint": "ExternalRelationship",
       "subaction_space": [
-        { "category": "resource_transfer" },
-        { "category": "construction", "building_types": ["CaseworkSite"] },
-        { "category": "worker_assignment", "building_types": ["CaseworkSite"] },
-        { "category": "deconstruction", "building_types": ["CaseworkSite"] }
+        {
+          "category": "resource_transfer"
+        },
+        {
+          "category": "construction",
+          "building_types": [
+            "CaseworkSite"
+          ]
+        },
+        {
+          "category": "worker_assignment",
+          "building_types": [
+            "CaseworkSite"
+          ]
+        },
+        {
+          "category": "deconstruction",
+          "building_types": [
+            "CaseworkSite"
+          ]
+        }
       ],
-      "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "workers", "buildings", "tasks", "logistics", "mapState"],
+      "subobservation_space": [
+        "sessionInfo",
+        "satisfactionAndBudget",
+        "workforceState",
+        "mapState",
+        "tasks",
+        "logistics"
+      ],
       "llm_provider": "openai",
       "llm_model": "claude-haiku-4-5-20251001-v1:0",
       "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
@@ -100,8 +175,14 @@
       "num_choices": null,
       "max_actions_per_package": null,
       "talkinghead_endpoint": null,
-      "subaction_space": [{ "category": "all" }],
-      "subobservation_space": ["all"],
+      "subaction_space": [
+        {
+          "category": "all"
+        }
+      ],
+      "subobservation_space": [
+        "all"
+      ],
       "llm_model": null,
       "llm_provider": null,
       "turn_token_budget": null,
