@@ -426,6 +426,27 @@ public class WebSocketManager : MonoBehaviour
                 return;
             }
 
+            // On-demand state pull: the router asks for the authoritative current
+            // game_state at the start of each officer turn (and for the getter tools),
+            // so officers see changes the router didn't cause (human actions, sim ticks,
+            // deliveries, the daily budget allocation). Reply with a correlated
+            // "game_state_response" the router awaits.
+            if (actionMsg != null && actionMsg.type == "get_game_state")
+            {
+                if (TaskSystem.Instance != null)
+                {
+                    var stateResp = new GymResetResponse
+                    {
+                        type = "game_state_response",
+                        game_state = TaskSystem.Instance.GetCurrentGameState(),
+                        satisfaction = SatisfactionAndBudget.Instance != null
+                            ? (int)SatisfactionAndBudget.Instance.GetCurrentSatisfaction() : 0
+                    };
+                    SendRawMessage(JsonUtility.ToJson(stateResp, prettyPrint: false));
+                }
+                return;
+            }
+
             // Check if this is a task-choice answer (a router officer selecting a
             // choice on one of its jurisdiction's tasks). Mirrors the gym-TCP
             // HandleSelectTaskChoice path: resolve to TaskDetailUI.SelectTaskChoiceHeadless

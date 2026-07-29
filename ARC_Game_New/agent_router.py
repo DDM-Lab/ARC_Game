@@ -184,6 +184,10 @@ class Session:
         self._websocket: WebSocket = websocket
         self._pending_choice: Optional[asyncio.Future] = None
         self._pending_action: Optional[asyncio.Future] = None
+        # Correlated response slot for an on-demand get_game_state pull (see
+        # _fetch_fresh_state). Unity only pushes state on begin_round + execute
+        # results, so we pull to see changes the router didn't cause.
+        self._pending_state: Optional[asyncio.Future] = None
         # Whether this transport can execute a task-choice answer (select_task_choice).
         # Live WebSocket clients handle it (WebSocketManager.select_task_choice ->
         # TaskDetailUI.SelectTaskChoiceHeadless), so enable it whenever a real
@@ -384,6 +388,11 @@ class Session:
                 await self._handle_action_result(msg)
                 return
             print(f"[router] Message missing 'type' field: {raw[:200]}")
+            return
+        if msg_type == "game_state_response":
+            # Correlated reply to a get_game_state pull (see _fetch_fresh_state).
+            if self._pending_state is not None and not self._pending_state.done():
+                self._pending_state.set_result(msg)
             return
         print(f"[router] Received message type: {msg_type}")
 
@@ -1114,6 +1123,32 @@ Respond with ONLY the package index number (0, 1, or 2).
             self._latest_game_state = game_state
             self._latest_all_actions = _enumerate_actions(game_state)
 
+    async def _fetch_fresh_state(self) -> dict:
+        """Pull Unity's authoritative CURRENT game_state on demand.
+
+        Unity only pushes state on begin_round and execute results, so anything
+        the router didn't cause — the human's direct actions, simulation ticks,
+        deliveries completing, the daily budget allocation — is invisible until we
+        ask. Call this at the start of each officer turn so the observation (and
+        the getter tools, which read _latest_game_state) reflect reality. Holds the
+        Unity commit lock for single-in-flight discipline. Falls back to the last
+        known state on timeout so a turn never hard-fails on a missed pull.
+        """
+        async with self._unity_commit_lock:
+            loop = asyncio.get_event_loop()
+            self._pending_state = loop.create_future()
+            await self._send({"type": "get_game_state", "timestamp": _now()})
+            try:
+                msg = await asyncio.wait_for(self._pending_state, timeout=10.0)
+            except asyncio.TimeoutError:
+                msg = None
+            finally:
+                self._pending_state = None
+        if msg and msg.get("game_state"):
+            self._publish_state(msg["game_state"])
+            return msg["game_state"]
+        return self._latest_game_state
+
     async def _run_continuous_for_message(self, agent: AgentConfig) -> None:
         """Drive a continuous turn triggered by a mid-round director_message.
 
@@ -1123,7 +1158,10 @@ Respond with ONLY the package index number (0, 1, or 2).
         its turns (e.g. one that built facilities via propose_choices) has already
         updated _latest_game_state — so the agent sees the result of that turn.
         """
-        gs = self._latest_game_state
+        # Pull Unity's authoritative CURRENT state so this turn reflects everything
+        # that changed since the round began — the human's own actions, sim ticks,
+        # deliveries, the daily budget — not just router-caused mutations.
+        gs = await self._fetch_fresh_state()
         if not gs:
             return
         filtered_state = self._filter_state(gs, agent)
@@ -2006,7 +2044,11 @@ Respond with ONLY the package index number (0, 1, or 2).
             )
 
         if name == "read_state":
-            return render_state_text(self._filter_state(game_state, agent)), \
+            # Read the freshest state the router holds (kept current by every execute
+            # commit + the per-turn get_game_state pull), so a look-up reflects reality
+            # — including the officer's own just-executed actions — not a stale snapshot.
+            fresh = self._latest_game_state or game_state
+            return render_state_text(self._filter_state(fresh, agent)), \
                 game_state, all_actions, filtered_actions, meta
 
         # Granular getters — one slice of the same filtered observation each, so an
@@ -2014,7 +2056,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         # get_logistics needs the officer's enumerated actions (the affordance block
         # is derived from them); the others are pure state slices.
         if name in ("get_facilities", "get_workforce", "get_tasks", "get_logistics"):
-            fs = self._filter_state(game_state, agent)
+            fs = self._filter_state(self._latest_game_state or game_state, agent)
             if name == "get_logistics":
                 text = render_logistics_text(fs, filtered_actions)
             else:
