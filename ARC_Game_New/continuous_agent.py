@@ -412,6 +412,17 @@ def _max_tokens(agent_cfg: dict) -> int:
     return int(agent_cfg.get("turn_token_budget") or 1024)
 
 
+# Sonnet 5 and other next-gen models reject the `temperature` param
+# (400: "`temperature` is deprecated for this model."). Older 4.x models still
+# accept it. Only send temperature to models that support it.
+def _accepts_temperature(model: str) -> bool:
+    m = (model or "").lower()
+    for tok in ("sonnet-5", "opus-5", "haiku-5", "fable-5", "mythos-5"):
+        if tok in m:
+            return False
+    return True
+
+
 def _usage_dict(input_tokens=0, output_tokens=0) -> Dict[str, int]:
     """Normalized token-usage record returned by every step (zeros when the
     provider doesn't report usage, e.g. the text/Ollama path). The router sums
@@ -441,13 +452,14 @@ def _openai_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
     budget = _max_tokens(agent_cfg)
     choice = None
     for attempt in range(2):
+        _kw = {"temperature": 0.3} if _accepts_temperature(model) else {}
         resp = client.chat.completions.create(
             model=model,
             messages=messages,
             tools=tools,
             tool_choice="auto",
-            temperature=0.3,
             max_tokens=budget,
+            **_kw,
         )
         choice = resp.choices[0]
         if choice.finish_reason != "length":
@@ -515,7 +527,7 @@ def _anthropic_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
             system=system_prompt or anthropic.NOT_GIVEN,
             messages=conversation,
             tools=anth_tools,
-            temperature=0.3,
+            temperature=0.3 if _accepts_temperature(model) else anthropic.NOT_GIVEN,
             max_tokens=budget,
         )
         if resp.stop_reason != "max_tokens":
@@ -705,11 +717,12 @@ def _plain_completion(prompt: str, agent_cfg: dict, provider: str) -> str:
         api_key = os.environ.get(agent_cfg.get("api_key_env", "OPENAI_API_KEY"))
         base_url = agent_cfg.get("llm_endpoint")
         client = openai.OpenAI(api_key=api_key, base_url=base_url) if base_url else openai.OpenAI(api_key=api_key)
+        _kw = {"temperature": 0.3} if _accepts_temperature(model) else {}
         resp = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
             max_tokens=max_tokens,
+            **_kw,
         )
         return resp.choices[0].message.content or ""
     except Exception as e:  # noqa: BLE001
