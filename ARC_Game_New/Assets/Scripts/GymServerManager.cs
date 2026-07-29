@@ -534,7 +534,7 @@ public class GymServerManager : MonoBehaviour
                     else
                     {
                         string failReason;
-                        bool ok = ui.SelectTaskChoiceHeadless(request.taskId, request.choiceId, out failReason);
+                        bool ok = ui.SelectTaskChoiceHeadless(request.taskId, request.choiceId, request.stableId, out failReason);
                         result = JsonUtility.ToJson(new GymResponse
                         {
                             type = "action_result",
@@ -1215,6 +1215,7 @@ public class GymRequest
     public string action;        // JSON string of GameAction (for execute_action)
     public int taskId = -1;      // for select_task_choice
     public int choiceId = -1;    // for select_task_choice
+    public string stableId;      // for select_task_choice: stable cross-regeneration task id (optional fallback)
     // ── configure_render fields (camera frame capture; default off) ──
     public string renderMode;        // "off" | "step" | "game_time"
     public int renderWidth = 0;      // 0 => keep component default

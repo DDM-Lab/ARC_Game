@@ -114,6 +114,10 @@ namespace GameActions
         public string type = "select_task_choice";
         public int taskId;
         public int choiceId;
+        // Stable cross-regeneration task id (optional). Recurring tasks get a fresh transient
+        // int taskId each round; the router echoes stableTaskId so Unity can fall back to it
+        // when the int lookup misses. Absent in older router messages.
+        public string stableId;
         public string timestamp;
     }
 }

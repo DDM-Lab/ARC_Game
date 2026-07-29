@@ -463,7 +463,7 @@ public class WebSocketManager : MonoBehaviour
                     {
                         string failReason;
                         bool ok = taskDetailUI.SelectTaskChoiceHeadless(
-                            choiceMsg.taskId, choiceMsg.choiceId, out failReason);
+                            choiceMsg.taskId, choiceMsg.choiceId, choiceMsg.stableId, out failReason);
                         choiceResult.success = ok;
                         choiceResult.error_message = ok ? null : failReason;
                         Debug.Log($"🗳️ select_task_choice task {choiceMsg.taskId} " +

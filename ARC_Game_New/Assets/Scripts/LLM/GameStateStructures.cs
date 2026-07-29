@@ -10,6 +10,7 @@ using System.Collections.Generic;
 public class TaskContext
 {
     public int taskId;
+    public string stableTaskId;
     public string taskTitle;
     public string taskDescription;
     public string taskType;

@@ -504,6 +504,26 @@ def _anthropic_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
         for t in tools
     ]
 
+    # Prompt caching (first-party Anthropic client, GA — no beta header):
+    # cache tools + system together by marking the last system block ephemeral.
+    # Render order is tools -> system -> messages, so this breakpoint caches the
+    # frozen tool list and the (stable) system prompt as one prefix.
+    system_param = (
+        [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}]
+        if system_prompt else anthropic.NOT_GIVEN
+    )
+    # Second breakpoint on the growing transcript: mark the last content block of
+    # the last message ephemeral so each of the up-to-8 steps reads the prior turns
+    # from cache. Wrap a plain-string content as a single text block first.
+    if conversation:
+        last = conversation[-1]
+        content = last.get("content")
+        if isinstance(content, str):
+            last["content"] = [{"type": "text", "text": content,
+                                "cache_control": {"type": "ephemeral"}}]
+        elif isinstance(content, list) and content and isinstance(content[-1], dict):
+            content[-1]["cache_control"] = {"type": "ephemeral"}
+
     # Self-heal truncation (mirrors the OpenAI path): a call cut off at
     # stop_reason == "max_tokens" loses its tool-input tail. Retry ONCE with a
     # doubled, capped budget before accepting the partial result.
@@ -512,7 +532,7 @@ def _anthropic_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
     for attempt in range(2):
         resp = client.messages.create(
             model=model,
-            system=system_prompt or anthropic.NOT_GIVEN,
+            system=system_param,
             messages=conversation,
             tools=anth_tools,
             temperature=0.3,
@@ -541,9 +561,13 @@ def _anthropic_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
             })
     content = "".join(text_parts).strip() or None
     u = getattr(resp, "usage", None)
+    usage = (_usage_dict(getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0))
+             if u else _usage_dict())
+    # Cache-hit visibility: nonzero across repeated steps confirms the two
+    # breakpoints above are serving prior turns from cache.
+    usage["cache_read_input_tokens"] = int(getattr(u, "cache_read_input_tokens", 0) or 0) if u else 0
     return {"content": content, "tool_calls": tool_calls, "raw": content or "", "error": None,
-            "usage": _usage_dict(getattr(u, "input_tokens", 0),
-                                 getattr(u, "output_tokens", 0)) if u else _usage_dict()}
+            "usage": usage}
 
 
 def _text_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:

@@ -26,6 +26,7 @@ import json
 import argparse
 import hashlib
 import os
+import re
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -96,6 +97,26 @@ def _enumerate_actions(game_state: dict) -> list[dict]:
     # answer them through the same index-based menu (execute_game_action) and the
     # same subaction_space gate as every other action — no bespoke task path.
     return actions + _enumerate_task_choices(game_state)
+
+
+# Belt-and-suspenders for the "stop name-badging" behavior: officers are told (in
+# the prompt) to introduce themselves once and then just talk, but they tend to
+# re-prefix every reply with "<Role> Officer:" / "<Role> Officer here —". The role
+# is already shown by the on-screen avatar, so strip a leading self-label badge from
+# each conversational reply. Conservative: only fires when the message OPENS with a
+# short label ending in "officer" (optionally "... here") followed by a separator,
+# so ordinary prose is never touched.
+_SELF_LABEL_RE = re.compile(
+    r"^\s*\*{0,2}\s*[A-Za-z0-9 &/.'-]{0,40}?officer(?:\s+here)?\s*\*{0,2}\s*[:—–-]\s+",
+    re.IGNORECASE,
+)
+
+
+def _strip_self_label(text: str) -> str:
+    """Remove a single leading '<Role> Officer:'-style self-label badge, if present."""
+    if not text:
+        return text
+    return _SELF_LABEL_RE.sub("", text, count=1)
 
 
 def _enumerate_task_choices(game_state: dict) -> list[dict]:
@@ -555,7 +576,7 @@ class Session:
         budget_before = _get_budget(game_state)
 
         # Execute actions with runtime validation
-        results = await self._execute_validated_actions(
+        results, game_state = await self._execute_validated_actions(
             agent.subagent_name, indices, filtered_actions, game_state
         )
 
@@ -725,25 +746,77 @@ Respond with ONLY the package index number (0, 1, or 2).
 
         Mirrors _execute_actions_via_unity's single-in-flight discipline (hold the
         commit lock across arm-future → send → await so concurrent officers can't
-        clobber the single-slot _pending_action). The frame shape matches the gym
-        env's select_task_choice (`taskId`/`choiceId`, camelCase). Returns
-        (result_msg, game_state) with game_state refreshed from the result.
+        clobber the single-slot _pending_action). The frame carries `taskId`/`choiceId`
+        (camelCase) PLUS `stableId` — Unity matches a task by its stable id when the
+        transient int has gone stale (a peer's commit re-issued task ids). We also
+        re-resolve the transient int against the FRESHEST state at send time and, on a
+        hard 'not found', re-resolve once more and retry before failing terminally.
+        Returns (result_msg, game_state) with game_state refreshed from the result.
         """
-        async with self._unity_commit_lock:
-            loop = asyncio.get_event_loop()
-            self._pending_action = loop.create_future()
-            await self._send({
-                "type": "select_task_choice",
-                "taskId": int(task_id),
-                "choiceId": int(choice_id),
-                "timestamp": _now(),
-            })
-            try:
-                result_msg = await asyncio.wait_for(self._pending_action, timeout=30.0)
-            except asyncio.TimeoutError:
-                result_msg = None
-            finally:
-                self._pending_action = None
+        def _find_by_tid(state, tid):
+            for t in (state.get("allActiveTasks") or []):
+                if t.get("taskId") == tid:
+                    return t
+            return None
+
+        def _tid_for_stable(state, stable):
+            if not stable:
+                return None
+            for t in (state.get("allActiveTasks") or []):
+                if t.get("stableTaskId") == stable:
+                    return t.get("taskId")
+            return None
+
+        # Stable id comes from the task row the caller resolved `task_id` against.
+        src_task = _find_by_tid(game_state, task_id)
+        stable_id = (src_task or {}).get("stableTaskId") or ""
+
+        # Re-resolve the transient int against the freshest state we have.
+        fresh = self._latest_game_state or game_state
+        resolved_tid = _tid_for_stable(fresh, stable_id)
+        if resolved_tid is None:
+            resolved_tid = task_id
+
+        async def _send_once(tid):
+            async with self._unity_commit_lock:
+                loop = asyncio.get_event_loop()
+                self._pending_action = loop.create_future()
+                await self._send({
+                    "type": "select_task_choice",
+                    "taskId": int(tid),
+                    "choiceId": int(choice_id),
+                    "stableId": stable_id,  # empty string ⇒ Unity uses no fallback
+                    "timestamp": _now(),
+                })
+                try:
+                    return await asyncio.wait_for(self._pending_action, timeout=30.0)
+                except asyncio.TimeoutError:
+                    return None
+                finally:
+                    self._pending_action = None
+
+        def _is_not_found(m):
+            return (m is not None and not m.get("success")
+                    and "not found" in (m.get("error_message") or "").lower())
+
+        result_msg = await _send_once(resolved_tid)
+
+        # Retry guard for a hard 'not found': re-resolve ONCE against the freshest
+        # state and retry. If it still fails, return a terminal, non-retryable result
+        # (coordinates with the per-turn retry cap so this isn't re-attempted).
+        if _is_not_found(result_msg):
+            latest = self._latest_game_state or fresh
+            retry_tid = _tid_for_stable(latest, stable_id)
+            if retry_tid is None:
+                retry_tid = resolved_tid
+            result_msg = await _send_once(retry_tid)
+            if _is_not_found(result_msg):
+                game_state = result_msg.get("game_state") or game_state
+                self._publish_state(game_state)
+                return ({"success": False, "terminal": True,
+                         "error_message": result_msg.get("error_message", "task not found")},
+                        game_state)
+
         if result_msg is not None and "game_state" in result_msg:
             game_state = result_msg["game_state"]
         self._publish_state(game_state)
@@ -796,7 +869,15 @@ Respond with ONLY the package index number (0, 1, or 2).
             print("[router]   ✅ Received director choice!")
             selected_idx = choice_msg.get("package_index", 0)
             exec_results = choice_msg.get("execution_results", [])
-            game_state = choice_msg.get("game_state", game_state)
+            # The client's choice_made frame normally carries the post-execution
+            # game_state. If it omits it, don't silently fall back to the frozen
+            # pre-choice snapshot — prefer the freshest state the router has seen
+            # (best-effort; no forced Unity round-trip).
+            cm_state = choice_msg.get("game_state")
+            if cm_state:
+                game_state = cm_state
+            elif self._latest_game_state:
+                game_state = self._latest_game_state
             return selected_idx, exec_results, game_state, False
         except asyncio.TimeoutError:
             print("[router]   ⚠️  Timeout (5min) waiting for choice_made.")
@@ -928,9 +1009,14 @@ Respond with ONLY the package index number (0, 1, or 2).
         "whether it is yours, before acting/answering near your role's edge or naming a "
         "colleague. Use it so you name the RIGHT officer instead of guessing.\n"
         "- finish: end your turn when nothing further is worth doing.\n"
-        "Prefer acting over narrating. Do not ask permission for things clearly in "
-        "your remit; do not act unilaterally on things that are clearly the director's "
-        "to decide. Ground every number you cite in the state you were given.\n"
+        "Advise and propose by default; act only on a clear, specific instruction. "
+        "A request to recommend, diagnose, explain, or ask 'why doesn't X work' is "
+        "NOT authorization to execute — answer it, and (where useful) offer the "
+        "action as a proposal rather than committing it. Reserve execute_commands "
+        "for when the director has clearly told you to do the specific thing, or it "
+        "is unambiguously routine within your remit and they expect it done. When in "
+        "doubt, propose or ask rather than act. Ground every number you cite in the "
+        "state you were given.\n"
         "CRITICAL: never claim to have built, hired, staffed, moved, or changed "
         "anything unless you actually called execute_commands (or the director "
         "selected a package you proposed) THIS turn and saw a success result. If an "
@@ -1144,6 +1230,11 @@ Respond with ONLY the package index number (0, 1, or 2).
         sat_before = _get_satisfaction(game_state)
         budget_before = _get_budget(game_state)
         executed_total = 0
+        # Per-turn retry cap: signatures of tool calls that hard-failed this turn.
+        # An identical call is not re-dispatched — it gets a synthetic result telling
+        # the officer to surface it or pick a different action (prevents a stuck
+        # officer from re-attempting the same failing action every step).
+        failed_sigs = set()
         # Per-turn telemetry accumulators (previously hardcoded empty/0 — the F5
         # gap). tokens_total sums every step's provider usage; turn_attempts records
         # each tool call the officer made; turn_results collects the per-action
@@ -1195,6 +1286,17 @@ Respond with ONLY the package index number (0, 1, or 2).
 
             stop = False
             for tc in tool_calls:
+                sig = (tc["name"], json.dumps(tc.get("arguments") or {}, sort_keys=True))
+                if sig in failed_sigs:
+                    # Identical call already hard-failed this turn — do NOT re-dispatch.
+                    # Still satisfy the protocol: every tool_call id needs a result.
+                    messages.append({
+                        "role": "tool", "tool_call_id": tc["id"],
+                        "content": ("This exact tool call already hard-failed this turn and "
+                                    "was not re-run. Surface the failure to the director or "
+                                    "pick a different action."),
+                    })
+                    continue
                 turn_attempts.append({"tool": tc["name"], "arguments": tc.get("arguments")})
                 result_str, game_state, all_actions, filtered_actions, meta = \
                     await self._dispatch_continuous_tool(
@@ -1206,6 +1308,12 @@ Respond with ONLY the package index number (0, 1, or 2).
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
                 executed_total += meta.get("executed", 0)
                 turn_results.extend(meta.get("results") or [])
+                # Record a hard failure: nothing executed AND at least one result row
+                # reports failure. Read-only tools (read_state/get_*/list_actions)
+                # carry no failing rows, so they never enter failed_sigs.
+                if meta.get("executed", 0) == 0 and any(
+                        not r.get("success", True) for r in (meta.get("results") or [])):
+                    failed_sigs.add(sig)
                 if meta.get("finish"):
                     stop = True
                 # Brief-only turns are capped at ONE director-facing message: after
@@ -2117,11 +2225,13 @@ Respond with ONLY the package index number (0, 1, or 2).
             return body, game_state, all_actions, filtered_actions, meta
 
         if name == "propose_choices":
-            result_text, game_state, all_actions, filtered_actions, executed, superseded = \
+            result_text, game_state, all_actions, filtered_actions, executed, superseded, result_rows = \
                 await self._continuous_propose(agent, args, game_state, all_actions, filtered_actions)
             meta["executed"] = executed
-            meta["results"] = [{"kind": "propose_choices", "executed": executed,
-                                "superseded": bool(superseded)}]
+            # Surface the REAL per-action rows (execute_commands shape) so the logger
+            # tallies genuine attempts/successes; an empty list (nothing selected /
+            # superseded) correctly contributes zero attempted actions.
+            meta["results"] = result_rows
             # A superseded proposal (director advanced the round or sent a new
             # instruction) ends this turn: the follow-up turn — the new round's
             # subagent or the director-message task — handles what comes next.
@@ -2155,7 +2265,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         game_state: dict,
         all_actions: List[dict],
         filtered_actions: List[dict],
-    ) -> Tuple[str, dict, List[dict], List[dict], int, bool]:
+    ) -> Tuple[str, dict, List[dict], List[dict], int, bool, List[dict]]:
         """Handle a propose_choices tool call: send cards, await the director's pick.
 
         Reuses the existing choices machinery (_send_choices_proposal + the
@@ -2201,7 +2311,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                    "command tags that resolve to actions you can take now.")
             if drop_notes:
                 msg += " " + " ".join(drop_notes)
-            return (msg, game_state, all_actions, filtered_actions, 0, False)
+            return (msg, game_state, all_actions, filtered_actions, 0, False, [])
 
         # Continuous agents render proposals INLINE in the chat timeline (a single
         # agent_message_with_choices frame) rather than as a Task Center task. This
@@ -2227,6 +2337,20 @@ Respond with ONLY the package index number (0, 1, or 2).
         filtered_actions = filter_actions(all_actions, agent.subaction_space)
 
         executed = sum(1 for r in exec_results if (r or {}).get("success"))
+        # Real per-action execution rows in the SAME shape execute_commands emits
+        # (action_id/action_type/description/success/error) so the turn logger
+        # counts these as genuine action attempts — not a single opaque
+        # propose_choices summary that reads as 1 attempted / 0 successful.
+        result_rows: List[dict] = []
+        for r in exec_results:
+            r = r or {}
+            result_rows.append({
+                "action_id": r.get("action_id"),
+                "action_type": r.get("action_type"),
+                "description": r.get("description"),
+                "success": bool(r.get("success")),
+                "error": r.get("error") or r.get("error_message") or "",
+            })
         if superseded:
             body = ("The director withdrew the proposal without selecting a package "
                     "(they advanced the round or sent a new instruction). No action "
@@ -2273,7 +2397,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                     "Report ONLY the SUCCESS lines as done. Do NOT claim any FAILED "
                     "action happened — treat failures as not executed and adapt.")
         body += "\n\nUpdated actions:\n" + self._render_options_compact(filtered_actions, game_state)
-        return body, game_state, all_actions, filtered_actions, executed, superseded
+        return body, game_state, all_actions, filtered_actions, executed, superseded, result_rows
 
     def _supersede_pending_choice(self, reason: str) -> None:
         """Release a continuous turn parked at propose_choices awaiting the human.
@@ -2487,6 +2611,10 @@ Respond with ONLY the package index number (0, 1, or 2).
 
     async def _send_agent_response(self, agent: AgentConfig, response_text: str, msg_type: str):
         """Persist + log + push an agent's conversational reply to the Director."""
+        # Drop a leading "<Role> Officer:" self-label badge (the avatar already shows
+        # who's speaking); the prompt asks officers to introduce themselves once, not
+        # on every message. See _strip_self_label.
+        response_text = _strip_self_label(response_text)
         response_message = self.message_queue.send_message(
             from_agent=agent.subagent_name,
             to_agent="Director",
@@ -3015,7 +3143,10 @@ Respond with ONLY the package index number (0, 1, or 2).
               f"{len(results['skipped'])} skipped, "
               f"{len(results['errors'])} errors")
 
-        return results
+        # Also return the final refreshed state (post last successful commit) so the
+        # caller can log deltas/rewardMetrics against real post-execution state
+        # instead of the frozen pre-turn snapshot.
+        return results, current_state
 
     def _count_free_workers(self, game_state: dict) -> int:
         """Count number of free (unassigned) workers."""
@@ -3845,6 +3976,9 @@ Respond with ONLY the package index number (0, 1, or 2).
             llm_raw_response=raw,
             conv_history_length=len(agent.conversation_history),
             tokens_used=tokens,
+            # Pass the post-execution state so the logger can route reward through
+            # the shared gym scorer (game_state_after["rewardMetrics"]).
+            game_state_after=game_state_after,
         )
 
 

@@ -401,22 +401,28 @@ public class ActionExecutor : MonoBehaviour
 
     MonoBehaviour FindBuildingByName(string buildingName)
     {
-        // Try exact match first
+        // Observations now expose the human-facing display name (GetDisplayName /
+        // GetBuildingName), so match that FIRST, then fall back to the raw GameObject
+        // name for back-compat with any caller still using it.
         Building[] buildings = FindObjectsOfType<Building>();
-        Building building = buildings.FirstOrDefault(b => b.name == buildingName);
+        Building building = buildings.FirstOrDefault(b => b.GetDisplayName() == buildingName);
+        if (building != null) return building;
+        building = buildings.FirstOrDefault(b => b.name == buildingName);
         if (building != null) return building;
 
         // Try partial match
-        building = buildings.FirstOrDefault(b => b.name.Contains(buildingName));
+        building = buildings.FirstOrDefault(b => b.GetDisplayName().Contains(buildingName) || b.name.Contains(buildingName));
         if (building != null) return building;
 
-        // Check prebuilt buildings
+        // Check prebuilt buildings (display name first, then GameObject name)
         PrebuiltBuilding[] prebuilt = FindObjectsOfType<PrebuiltBuilding>();
-        PrebuiltBuilding prebuiltBuilding = prebuilt.FirstOrDefault(p => p.name == buildingName);
+        PrebuiltBuilding prebuiltBuilding = prebuilt.FirstOrDefault(p => p.GetBuildingName() == buildingName);
+        if (prebuiltBuilding != null) return prebuiltBuilding;
+        prebuiltBuilding = prebuilt.FirstOrDefault(p => p.name == buildingName);
         if (prebuiltBuilding != null) return prebuiltBuilding;
 
         // Try partial match for prebuilt
-        prebuiltBuilding = prebuilt.FirstOrDefault(p => p.name.Contains(buildingName));
+        prebuiltBuilding = prebuilt.FirstOrDefault(p => (p.GetBuildingName() ?? "").Contains(buildingName) || p.name.Contains(buildingName));
         return prebuiltBuilding;
     }
 
