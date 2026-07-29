@@ -1022,18 +1022,17 @@ public class TaskDetailUI : MonoBehaviour
             return;
         }
 
-        // Validate selected choice if it involves any type of delivery
-        if (selectedChoice != null && (selectedChoice.triggersDelivery || selectedChoice.immediateDelivery || selectedChoice.enableMultipleDeliveries))
+        if (selectedChoice != null && (selectedChoice.triggersDelivery || selectedChoice.immediateDelivery))
         {
             string errorMessage;
             if (!ValidateChoiceDelivery(selectedChoice, out errorMessage))
             {
-                ShowAgentErrorMessage($"Cannot complete this action: {errorMessage}");
-                return;
+                ShowAgentErrorMessage($"Action Aborted: {errorMessage}");
+                return; 
             }
             else
             {
-                ToastManager.ShowToast($"Delivery for task '{currentTask.taskTitle}' is added to queue.", ToastType.Info, true);
+                ToastManager.ShowToast($"Delivery for '{currentTask.taskTitle}' queued.", ToastType.Info, true);
             }
         }
 
@@ -1072,112 +1071,91 @@ public class TaskDetailUI : MonoBehaviour
     // Returns true if the task action was completed; false if it was rejected before
     // taking effect (e.g. the chosen option's immediate cost exceeds the budget under
     // the no-debt policy). On rejection nothing is applied and the task stays open.
-    private bool CompleteTaskAction()
+// Inside TaskDetailUI.cs
+
+private bool CompleteTaskAction()
+{
+    if (currentTask != null && currentTask.taskId == -1 && currentTask.multiAgentProposal != null)
     {
-        // Check if this is a multi-agent choice proposal (taskId == -1)
-        if (currentTask != null && currentTask.taskId == -1 && currentTask.multiAgentProposal != null)
-        {
-            HandleMultiAgentChoiceSelection();
-            return true;
-        }
+        HandleMultiAgentChoiceSelection();
+        return true;
+    }
 
-        // No-debt gate (default): reject a costly choice before applying ANY of its impacts
-        // or deliveries if the budget can't cover the immediate cost. Honors allowNegativeBudget
-        // (RL), which permits overspend. Passive charges are unaffected — this only gates the
-        // discretionary, agent/player-initiated choice commit. Common chokepoint for both the
-        // GUI (OnConfirmButtonClicked) and the gym (SelectTaskChoiceHeadless).
-        if (selectedChoice != null && SatisfactionAndBudget.Instance != null)
+    if (selectedChoice != null)
+        currentTask.selectedChoiceId = selectedChoice.choiceId;
+
+    if (selectedChoice != null)
+    {
+        // Handle Budget Delays
+        if (selectedChoice.budgetDelayRounds > 0)
         {
-            int choiceCost = GetChoiceImmediateCost(selectedChoice);
-            if (choiceCost > 0 && !SatisfactionAndBudget.Instance.WouldAllowSpend(choiceCost))
+            var budgetImpact = selectedChoice.choiceImpacts.FirstOrDefault(i => i.impactType == ImpactType.Budget);
+            if (budgetImpact != null && budgetImpact.value != 0)
             {
-                GameLogPanel.Instance?.LogError(
-                    $"Cannot afford choice '{selectedChoice.choiceText}' (${choiceCost:N0}) for task '{currentTask.taskTitle}' — budget ${SatisfactionAndBudget.Instance.GetCurrentBudget():N0}");
-                ShowAgentErrorMessage(
-                    $"Insufficient budget: this option costs ${choiceCost:N0} but only ${SatisfactionAndBudget.Instance.GetCurrentBudget():N0} is available.");
-                return false;
+                DelayedBudgetManager.Instance?.AddDelayedBudget(currentTask.taskTitle, budgetImpact.value, selectedChoice.budgetDelayRounds);
             }
         }
 
-        if (selectedChoice != null)
-            currentTask.selectedChoiceId = selectedChoice.choiceId;
-
-        // Apply choice impacts first
-        if (selectedChoice != null)
+        if (selectedChoice.immediateDelivery)
         {
-            // queue budget row
-            if (selectedChoice.budgetDelayRounds > 0)
-            {
-                var budgetImpact = selectedChoice.choiceImpacts
-                    .FirstOrDefault(i => i.impactType == ImpactType.Budget);
-
-                if (budgetImpact != null && budgetImpact.value != 0)
-                {
-                    Debug.Log("budget here");
-                    DelayedBudgetManager.Instance?.AddDelayedBudget(
-                        currentTask.taskTitle,
-                        budgetImpact.value,
-                        selectedChoice.budgetDelayRounds
-                    );
-                }
-            }
-            // Log numerical input for the task
-            if (currentTask.numericalInputs != null && currentTask.numericalInputs.Count > 0)
-            {
-                var inputValues = currentConversationItems
-                    .Select(item => item.GetComponent<NumericalInputUI>())
-                    .Where(ui => ui != null)
-                    .Select(ui => $"[{ui.GetInputType()}]={ui.GetCurrentValue()}");
-                
-                GameLogPanel.Instance?.LogUIInteraction(
-                    $"Numerical inputs submitted for '{currentTask.taskTitle}': {string.Join(";", inputValues)}");
-            }
-            // Log choice selection for the task
-            GameLogPanel.Instance?.LogUIInteraction($"Choice selected: '{selectedChoice.choiceText}' for task '{currentTask.taskTitle}'");
-
-            if (selectedChoice.immediateDelivery)
-            {
-                int moved = ExecuteGeneratorDelivery(selectedChoice, immediate: true);
-                // B1 + main-bugfixes conditional impacts: moved == 0 means the immediate
-                // relocation physically moved no one (no reachable shelter/motel) — do NOT
-                // apply impacts or credit fulfillment. moved == -1 (food/other — not a gated
-                // relocation) or moved > 0 → apply impacts and complete the task.
-                if (moved != 0)
-                {
-                    ApplyChoiceImpacts(selectedChoice);
-                    TaskSystem.Instance.CompleteTask(currentTask);
-                }
-            }
-            else if (selectedChoice.triggersDelivery)
-            {
-                // Deferred delivery: our int-return path yields -1 once the delivery is queued
-                // (an error toast is shown on failure). Apply impacts on the queued path;
-                // completion is gated later, when the delivery actually arrives.
-                int queued = ExecuteGeneratorDelivery(selectedChoice, immediate: false);
-                if (queued != 0)
-                    ApplyChoiceImpacts(selectedChoice);
-            }
-            else
+            int moved = ExecuteGeneratorDelivery(selectedChoice, immediate: true);
+            if (moved != 0) // -1 for food, or > 0 for people
             {
                 ApplyChoiceImpacts(selectedChoice);
                 TaskSystem.Instance.CompleteTask(currentTask);
             }
+            else return false; 
+        }
+        else if (selectedChoice.triggersDelivery)
+        {
+            // QUEUE THE DELIVERY
+            int result = ExecuteGeneratorDelivery(selectedChoice, immediate: false);
+            if (result != 0) // -1 means successfully queued
+            {
+                ApplyChoiceImpacts(selectedChoice);
+                // CRITICAL: Set to InProgress so the task is tracked!
+                TaskSystem.Instance.SetTaskInProgress(currentTask); 
+            }
+            else return false; // Blocked (likely no source found)
         }
         else
         {
+            // Standard choice (Budget/Advisory)
+            ApplyChoiceImpacts(selectedChoice);
             TaskSystem.Instance.CompleteTask(currentTask);
         }
+    }
+    else
+    {
+        TaskSystem.Instance.CompleteTask(currentTask);
+    }
 
-        CloseTaskDetail();
+    CloseTaskDetail();
+    return true;
+}
 
-        TaskCenterNotification notification = FindObjectOfType<TaskCenterNotification>();
-        if (notification != null) notification.RefreshNotification();
+// Ensure Food Delivery properly returns success
+bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
+{
+    if (FoodDeliveryHandler.Instance == null) return false;
 
-        CategoryTaskManager categoryManager = FindObjectOfType<CategoryTaskManager>();
-        if (categoryManager != null) categoryManager.RefreshTaskList();
-
+    if (immediate)
+    {
+        FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice.deliveryQuantity);
         return true;
     }
+    else
+    {
+        // This queues the actual delivery tasks in the DeliverySystem
+        bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice.deliveryQuantity);
+        if (!success)
+        {
+            ShowAgentErrorMessage("Could not queue food delivery. Kitchen may be unavailable or vehicles damaged.");
+            return false;
+        }
+        return true;
+    }
+}
 
     // Immediate (non-deferred) cost of committing this choice: the sum of negative Budget
     // impacts. Positive Budget impacts are incoming funds (scheduled, possibly delayed) and
@@ -1279,27 +1257,57 @@ switch (choice.deliveryCargoType)
 
     // FOOD DELIVERY via FoodDeliveryHandler
 // FOOD DELIVERY via FoodDeliveryHandler. Returns whether it actually succeeded.
-    bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
-    {
-        if (FoodDeliveryHandler.Instance == null)
-        {
-            Debug.LogError("[TaskDetailUI] FoodDeliveryHandler not found in scene");
-            return false;
-        }
+    // bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
+    // {
+    //     if (FoodDeliveryHandler.Instance == null)
+    //     {
+    //         Debug.LogError("[TaskDetailUI] FoodDeliveryHandler not found in scene");
+    //         return false;
+    //     }
 
-        if (immediate)
-        {
-            FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice.deliveryQuantity);
-            return true;
-        }
-        else
-        {
-            bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice.deliveryQuantity);
-            if (!success)
-                ShowAgentErrorMessage("Could not queue food delivery — check kitchen stock and vehicle availability.");
-            return success;
-        }
-    }
+    //     if (immediate)
+    //     {
+    //         FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice.deliveryQuantity);
+    //         return true;
+    //     }
+    //     else
+    //     {
+    //         bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice.deliveryQuantity);
+    //         if (!success)
+    //             ShowAgentErrorMessage("Could not queue food delivery — check kitchen stock and vehicle availability.");
+    //         return success;
+    //     }
+    // }
+    // Inside TaskDetailUI.cs
+// bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
+// {
+//     if (FoodDeliveryHandler.Instance == null)
+//     {
+//         Debug.LogError("[TaskDetailUI] FoodDeliveryHandler not found. Falling back to standard delivery.");
+//         ExecuteFallbackDelivery(choice, immediate); // Use the reliable fallback
+//         return true;
+//     }
+
+//     if (immediate)
+//     {
+//         FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice.deliveryQuantity);
+//         return true;
+//     }
+//     else
+//     {
+//         // CRITICAL: We need to make sure the deliveries created by the handler 
+//         // are actually linked to currentTask. 
+//         bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice.deliveryQuantity);
+        
+//         if (!success)
+//         {
+//             ShowAgentErrorMessage("Could not queue food delivery. Check kitchen stock and vehicles.");
+//             return false;
+//         }
+
+//         return true;
+//     }
+// }
 
     // CLIENT RELOCATION via ClientRelocationHandler.
     // Returns people moved (immediate), or -1 for the deferred / not-gated path (completion gated later).
@@ -1338,9 +1346,17 @@ switch (choice.deliveryCargoType)
         {
             bool success = ClientRelocationHandler.Instance.Execute(
                 currentTask, choice.deliveryQuantity, toShelter, toMotel);
-            if (!success)
-                ShowAgentErrorMessage("Could not queue client relocation — check shelter/motel capacity.");
-            return -1;
+            // if (!success)
+            //     ShowAgentErrorMessage("Could not queue client relocation — check shelter/motel capacity.");
+            // return -1;
+            if (!success) {
+            ShowAgentErrorMessage("...");
+            return 0; // Return 0 to indicate failure
+        }
+        
+        // ADD THIS LINE:
+        TaskSystem.Instance.SetTaskInProgress(currentTask);
+        return -1; // Return -1 to indicate "success/not gated"
         }
     }
 
@@ -3115,18 +3131,18 @@ switch (choice.deliveryCargoType)
             bool hasDelivery = choice.triggersDelivery || choice.immediateDelivery;
             if (!hasDelivery) continue;
 
-            // Validation state (colors/message)
             string errorMessage = "";
-            bool isValid = !choice.triggersDelivery || ValidateChoiceDelivery(choice, out errorMessage);
+            bool isValid = ValidateChoiceDelivery(currentTask, choice, out errorMessage);
+            
             choiceUI.SetValidationState(isValid, errorMessage);
-            bool isImmediateFoodOrder = choice.immediateDelivery && choice.deliveryCargoType == ResourceType.FoodPacks;
 
-            // Preview button — hide when choice is invalid or route can't be resolved
+            bool isImmediateFoodOrder = choice.immediateDelivery && choice.deliveryCargoType == ResourceType.FoodPacks;
             bool canPreview = isValid
                 && !isImmediateFoodOrder
                 && TaskSystem.Instance != null
                 && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
                 && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
+            
             choiceUI.SetPreviewVisible(canPreview);
         }
     }

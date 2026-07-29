@@ -42,6 +42,7 @@ public class ServerLauncherUI : MonoBehaviour
     int selectedConfigIndex = -1;
     Button connectButton;
     Button startButton;
+    Button offlineButton; 
     TMP_Text statusText;
     TMP_Text connectButtonLabel;
     TMP_Text startButtonLabel;
@@ -50,6 +51,7 @@ public class ServerLauncherUI : MonoBehaviour
     List<ConfigInfo> fetchedConfigs = new List<ConfigInfo>();
     bool fetching = false;
     bool connecting = false;
+    bool isOfflineMode = false; 
 
     // When Start Game is pressed in a scene that has no WebSocketManager yet
     // (e.g. the title screen of a build), we stash the chosen settings and
@@ -304,6 +306,61 @@ public class ServerLauncherUI : MonoBehaviour
                                   out startButtonLabel, height: 50,
                                   bg: new Color(0.20f, 0.70f, 0.40f));
         startButton.onClick.AddListener(() => StartCoroutine(StartGame()));
+
+        cardRT.sizeDelta = new Vector2(640, 560); // Change 560 to 620
+        // ── Offline Button ───────────────────────────────────────────
+        offlineButton = MakeButton(card.transform, "Play Offline (Local Only)",
+                                out _, height: 40, 
+                                bg: new Color(0.35f, 0.35f, 0.40f));
+        offlineButton.onClick.AddListener(() => StartCoroutine(StartGame(true)));
+        startButton.onClick.RemoveAllListeners();
+        startButton.onClick.AddListener(() => StartCoroutine(StartGame(false)));
+    }
+
+    IEnumerator StartGame(bool offline)
+    {
+        if (connecting) yield break;
+        
+        if (!offline && (selectedConfigIndex < 0 || selectedConfigIndex >= fetchedConfigs.Count))
+        {
+            SetStatus("Pick a config first.", new Color(0.95f, 0.55f, 0.35f));
+            yield break;
+        }
+
+        connecting = true;
+        isOfflineMode = offline; 
+        SetStartEnabled(false);
+        if (offlineButton != null) offlineButton.interactable = false;
+
+        if (!offline)
+        {
+            var chosen = fetchedConfigs[selectedConfigIndex];
+            SavePrefs(chosen.name);
+            pendingUrl = Sanitize(urlField.text);
+            pendingKey = Sanitize(keyField.text);
+            pendingConfig = chosen.name;
+        }
+        else
+        {
+            pendingUrl = "";
+            pendingKey = "";
+            pendingConfig = "offline_mode";
+        }
+
+        SetWebGLKeyboardCapture(true);
+
+        var wsm = WebSocketManager.Instance;
+        if (wsm != null)
+        {
+            ApplyAndConnect(wsm);
+            if (root != null) root.SetActive(false);
+        }
+        else
+        {
+            pendingConnect = true;
+            if (root != null) root.SetActive(false);
+        }
+        yield return null;
     }
 
     // ── UI primitive builders ───────────────────────────────────────
@@ -666,10 +723,35 @@ public class ServerLauncherUI : MonoBehaviour
     // the property reflectively — no compile-time dependency, resolves at run time.
     // No-ops off WebGL (the module type resolves to null). MUST be restored to true
     // before gameplay or WebGL TMP_InputFields lose Backspace (see Start()).
+    // static void SetWebGLKeyboardCapture(bool capture)
+    // {
+    //     var webglInput = System.Type.GetType("UnityEngine.WebGLInput, UnityEngine.WebGLModule");
+    //     webglInput?.GetProperty("captureAllKeyboardInput")?.SetValue(null, capture);
+    // }
     static void SetWebGLKeyboardCapture(bool capture)
     {
-        var webglInput = System.Type.GetType("UnityEngine.WebGLInput, UnityEngine.WebGLModule");
-        webglInput?.GetProperty("captureAllKeyboardInput")?.SetValue(null, capture);
+        // Only attempt this on WebGL; it's unnecessary and causes errors on other platforms
+        if (Application.platform != RuntimePlatform.WebGLPlayer) return;
+
+        try
+        {
+            var webglInput = System.Type.GetType("UnityEngine.WebGLInput, UnityEngine.WebGLModule");
+            var property = webglInput?.GetProperty("captureAllKeyboardInput");
+            
+            if (property != null)
+            {
+                property.SetValue(null, capture);
+            }
+            else
+            {
+                Debug.Log("[Launcher] captureAllKeyboardInput property not found on this Unity version.");
+            }
+        }
+        catch (System.Exception e)
+        {
+            // Silently fail so the game can still start
+            Debug.LogWarning("[Launcher] Could not set WebGL Keyboard Capture: " + e.Message);
+        }
     }
 
     IEnumerator StartGame()
@@ -688,31 +770,20 @@ public class ServerLauncherUI : MonoBehaviour
 
         var chosen = fetchedConfigs[selectedConfigIndex];
         SavePrefs(chosen.name);
-
-        // Stash the chosen settings so we can apply them to the
-        // WebSocketManager whether it exists now or appears in a later scene.
         pendingUrl = Sanitize(urlField.text);
         pendingKey = Sanitize(keyField.text);
         pendingConfig = chosen.name;
 
-        // The launcher (and its DOM paste overlay) is done — restore Unity's
-        // keyboard capture so in-game TMP_InputFields (the agent chat) get Backspace
-        // and other keys back. Left off, WebGL swallows Backspace to the browser.
         SetWebGLKeyboardCapture(true);
 
         var wsm = WebSocketManager.Instance;
         if (wsm != null)
         {
-            // The manager is in this scene (e.g. playing MainScene in the
-            // Editor) — connect right away.
             ApplyAndConnect(wsm);
             if (root != null) root.SetActive(false);
         }
         else
         {
-            // No manager yet (e.g. the title screen of a build). This launcher
-            // object survives scene loads (DontDestroyOnLoad); Update() will
-            // connect once the scene that owns the WebSocketManager loads.
             pendingConnect = true;
             SetStatus("Settings saved — the game will connect when it loads.",
                       new Color(0.55f, 0.85f, 0.6f));
@@ -725,8 +796,17 @@ public class ServerLauncherUI : MonoBehaviour
         wsm.serverUrl = pendingUrl;
         wsm.apiKey = pendingKey;
         wsm.configName = pendingConfig;
-        wsm.enableWebSocket = true;
-        wsm.ConnectToServer();
+        
+        wsm.enableWebSocket = !isOfflineMode;
+
+        if (wsm.enableWebSocket)
+        {
+            wsm.ConnectToServer();
+        }
+        else
+        {
+            Debug.Log("[Launcher] Skipping connection: Playing in Offline Mode.");
+        }
     }
 
     // ── Helpers ────────────────────────────────────────────────────
