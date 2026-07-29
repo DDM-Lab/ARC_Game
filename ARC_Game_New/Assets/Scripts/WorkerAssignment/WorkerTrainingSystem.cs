@@ -185,9 +185,13 @@ public class WorkerTrainingSystem : MonoBehaviour
             return;
         
         int totalCost = workersToTrain * trainingCostPerWorker;
-        if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
+        // if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
+        // {
+        //     GameLogPanel.Instance.LogError($"Cannot afford worker training: ${totalCost}");
+        //     return;
+        // }
+        if (SatisfactionAndBudget.Instance == null)
         {
-            GameLogPanel.Instance.LogError($"Cannot afford worker training: ${totalCost}");
             return;
         }
 

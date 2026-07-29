@@ -2188,10 +2188,19 @@ switch (choice.deliveryCargoType)
 
         // If the task panel is not visible (e.g. called via AgentConversationUI), fall back to a toast
         // (main-bugfixes UX). Runs after the headless guard above.
-        if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
+        // if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
+        // {
+        //     ToastManager.ShowToast(errorText, ToastType.Warning, true);
+        //     if (showDebugInfo) Debug.Log($"ShowAgentErrorMessage (panel inactive, toast fallback): {errorText}");
+        //     return;
+        // }
+
+        if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy 
+        || Application.isBatchMode || agentMessagePrefab == null || conversationContent == null)
         {
-            ToastManager.ShowToast(errorText, ToastType.Warning, true);
-            if (showDebugInfo) Debug.Log($"ShowAgentErrorMessage (panel inactive, toast fallback): {errorText}");
+            if (!Application.isBatchMode)
+                ToastManager.ShowToast(errorText, ToastType.Warning, true);
+            GameLogPanel.Instance?.LogTaskEvent($"[TaskDetail] {errorText}");
             return;
         }
 
