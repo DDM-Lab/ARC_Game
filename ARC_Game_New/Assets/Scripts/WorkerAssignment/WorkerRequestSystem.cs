@@ -207,12 +207,15 @@ public class WorkerRequestSystem : MonoBehaviour
         int totalCost = (untrainedToRequest * untrainedWorkerCost) + (trainedToRequest * trainedWorkerCost);
 
         // Check budget (honors the no-debt policy; allows overspend when allowNegativeBudget is on)
-        if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
+        // if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
+        // {
+        //     GameLogPanel.Instance.LogError($"Cannot afford worker request: ${totalCost}");
+        //     return;
+        // }
+        if (SatisfactionAndBudget.Instance == null)
         {
-            GameLogPanel.Instance.LogError($"Cannot afford worker request: ${totalCost}");
             return;
         }
-
 
         SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $"Requesting {untrainedToRequest} untrained and {trainedToRequest} trained workers");
 

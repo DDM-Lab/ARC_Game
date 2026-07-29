@@ -49,7 +49,7 @@ MonoBehaviour:
   targetFacilityType: 3
   autoSelectFacility: 1
   specificFacility: {fileID: 0}
-  roundsRemaining: 4
+  roundsRemaining: 3
   realTimeRemaining: 300
   hasRealTimeLimit: 0
   impacts:

@@ -28,36 +28,56 @@ public class FoodDeliveryHandler : MonoBehaviour
     /// <summary>
     /// Call from TaskDetailUI before showing a food-delivery choice as valid.
     /// </summary>
-public bool CanExecute(GameTask parentTask, int requestedQuantity, out string errorMessage)
-{
-    errorMessage = "";
-    MonoBehaviour destination = TaskSystem.Instance.FindTriggeringFacility(parentTask);
-    if (destination == null) { errorMessage = $"Cannot find destination facility '{parentTask.affectedFacility}'"; return false; }
-
-    DeliverySystem ds = DeliverySystem.Instance;
-    if (ds == null) { errorMessage = "DeliverySystem not found"; return false; }
-
-    int alreadyInbound = ds.GetReservedIncomingQuantity(destination, ResourceType.FoodPacks);
-    int effectiveNeed = Mathf.Max(0, requestedQuantity - alreadyInbound);
-    if (effectiveNeed <= 0) { errorMessage = $"{alreadyInbound} meals already inbound — need is covered"; return false; }
-
-    var kitchens = GetKitchensSorted(ds); // already sorted by effective stock
-    if (kitchens.Count == 0) { errorMessage = "No meals available across any kitchen"; return false; }
-
-    // NEW: at least one kitchen must have a flood-free route to the destination
-    bool anyReachable = kitchens.Any(k => ds.CanCreateDeliveryWithEstimate(k.building, destination, out _));
-    if (!anyReachable)
+    public bool CanExecute(GameTask parentTask, int requestedQuantity, out string errorMessage)
     {
-        errorMessage = "All routes from kitchens to the destination are blocked by flooding";
-        return false;
+        errorMessage = "";
+        MonoBehaviour destination = TaskSystem.Instance.FindTriggeringFacility(parentTask);
+        if (destination == null) { errorMessage = "Destination not found"; return false; }
+
+        DeliverySystem ds = DeliverySystem.Instance;
+        if (ds == null) { errorMessage = "Delivery System missing"; return false; }
+
+        int alreadyInbound = ds.GetReservedIncomingQuantity(destination, ResourceType.FoodPacks);
+        int effectiveNeed = Mathf.Max(0, requestedQuantity - alreadyInbound);
+        if (effectiveNeed <= 0) {
+            errorMessage = $"{alreadyInbound} meals already inbound.";
+            return false;
+        }
+
+        int totalReachableFood = 0;
+        var kitchens = FindObjectsOfType<Building>()
+            .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational());
+
+        bool atLeastOneKitchenReachable = false;
+
+        foreach (var k in kitchens) {
+            if (ds.CanCreateDeliveryWithEstimate(k, destination, out var estimate)) {
+                atLeastOneKitchenReachable = true;
+                int stock = k.GetComponent<BuildingResourceStorage>()?.GetResourceAmount(ResourceType.FoodPacks) ?? 0;
+                int reserved = ds.GetReservedOutgoingQuantity(k, ResourceType.FoodPacks);
+                totalReachableFood += Mathf.Max(0, stock - reserved);
+            }
+        }
+
+        if (!atLeastOneKitchenReachable) {
+            errorMessage = "All routes from kitchens are blocked by flooding.";
+            return false;
+        }
+
+        if (totalReachableFood <= 0) {
+            errorMessage = "No unreserved meals available in reachable kitchens.";
+            return false;
+        }
+        bool hasVehicle = FindObjectsOfType<Vehicle>()
+            .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.FoodPacks) && v.GetCurrentStatus() != VehicleStatus.Damaged);
+        
+        if (!hasVehicle) {
+            errorMessage = "No undamaged delivery vehicles available.";
+            return false;
+        }
+
+        return true;
     }
-
-    bool hasVehicle = FindObjectsOfType<Vehicle>()
-        .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.FoodPacks) && v.GetCurrentStatus() != VehicleStatus.Damaged);
-    if (!hasVehicle) { errorMessage = "No undamaged vehicle available for food delivery"; return false; }
-
-    return true;
-}
 
     // ─────────────────────────────────────────────────────────────────
     // PUBLIC: QUEUED (vehicle) DELIVERY
