@@ -128,7 +128,7 @@ MonoBehaviour:
     prioritizeNearestSource: 1
     prioritizeNearestDestination: 0
   - choiceId: 2
-    choiceText: Rapid Response Vehicle deliver 100 meals (immediate)
+    choiceText: Rapid Response Vehicle deliver 100 meals from external (immediate)
     agentReasoning: 
     choiceImpacts:
     - impactType: 1
