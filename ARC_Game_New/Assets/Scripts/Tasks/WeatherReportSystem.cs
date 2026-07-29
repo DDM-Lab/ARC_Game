@@ -193,7 +193,7 @@ public class WeatherReportSystem : MonoBehaviour
 
         if (rain > 0.6f || (floodSystem != null && floodSystem.GetFloodTileCount() > 20))
         {
-            outlook += "• Expect rescue and evacuation requests — keep vehicles ready.\n";
+            outlook += "• Expect rescue and evacuation requests\n";
             outlook += "• Shelters may fill up quickly. Open additional capacity if you can.\n";
         }
         else if (rain > 0.3f || flooding)
