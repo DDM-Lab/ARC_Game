@@ -866,8 +866,8 @@ public class AgentConversationUI : MonoBehaviour
 
         // Keep the "type anything" card visible on tab-switch replay of an
         // active proposal, matching the initial live render.
-        if (isActive && task.agentChoices.Count > 0)
-            AddFreeTextChoiceCard(currentSelectedAgent);
+        // if (isActive && task.agentChoices.Count > 0)
+        //     AddFreeTextChoiceCard(currentSelectedAgent);
 
         foreach (AgentNumericalInput input in task.numericalInputs)
         {
@@ -1420,8 +1420,8 @@ public class AgentConversationUI : MonoBehaviour
 
         // A "type anything" card lets the director free-text the agent (repropose /
         // clarify / chat) right in the choices list — only for the live proposal.
-        if (interactive)
-            AddFreeTextChoiceCard(officer);
+        // if (interactive)
+        //     AddFreeTextChoiceCard(officer);
     }
 
     void UpdateTaskChoices(TaskOfficer officer, string reasoning, ActionPackage[] packages, GameAction[] availableActions)

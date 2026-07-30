@@ -527,8 +527,8 @@ public class TaskDetailUI : MonoBehaviour
 
         // A 4th "type anything" card lets the director free-text the agent (repropose /
         // clarify / chat) right in the choices list, when the proposal is still live.
-        if (live)
-            AddFreeTextChoiceCard();
+        // if (live)
+        //     AddFreeTextChoiceCard();
 
         ScrollToBottom();
     }
