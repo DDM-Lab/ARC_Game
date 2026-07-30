@@ -111,6 +111,9 @@ public class TaskImpact
 public class GameTask
 {
     public int taskId;
+    // Stable cross-regeneration id from TaskData.taskId; the transient int taskId is
+    // reassigned each round for recurring tasks (e.g. "Daily Budget Allocation").
+    public string stableTaskId;
     public string taskTitle;
     public TaskType taskType;
     public TaskStatus status;
@@ -1494,6 +1497,7 @@ public class TaskSystem : MonoBehaviour
         GameTask newTask = new GameTask(nextTaskId++, taskData.taskTitle, taskData.taskType, taskData.targetFacilityType.ToString());
 
         // Copy basic info
+        newTask.stableTaskId = taskData.taskId;
         newTask.description = taskData.description;
         newTask.taskImage = taskData.taskImage;
         newTask.taskOfficer = taskData.taskOfficer;
@@ -2569,6 +2573,7 @@ public class TaskSystem : MonoBehaviour
         return new TaskContext
         {
             taskId = task.taskId,
+            stableTaskId = task.stableTaskId,
             taskTitle = task.taskTitle,
             taskDescription = task.description,
             taskType = task.taskType.ToString(),
@@ -2593,7 +2598,11 @@ public class TaskSystem : MonoBehaviour
         foreach (Building building in buildings)
         {
             FacilityState facilityState = new FacilityState();
-            facilityState.facilityName = building.name;
+            // Use the SAME human-facing display name the player sees in the UI
+            // (FacilityInfoPanel uses GetDisplayName()), so officers and the human
+            // refer to facilities by one shared name. FindBuildingByName still
+            // resolves either the display name or the raw GameObject name.
+            facilityState.facilityName = building.GetDisplayName();
             facilityState.facilityType = "Building";
             facilityState.buildingType = building.GetBuildingType().ToString();
             facilityState.isOperational = building.IsOperational();
@@ -2632,7 +2641,10 @@ public class TaskSystem : MonoBehaviour
         foreach (PrebuiltBuilding prebuilt in prebuilts)
         {
             FacilityState facilityState = new FacilityState();
-            facilityState.facilityName = prebuilt.name;
+            // Match the human-facing name (communities/motels/etc. are named via
+            // SetBuildingName); fall back to the GameObject name if unset.
+            facilityState.facilityName = !string.IsNullOrEmpty(prebuilt.GetBuildingName())
+                ? prebuilt.GetBuildingName() : prebuilt.name;
             facilityState.facilityType = "Prebuilt";
             facilityState.buildingType = prebuilt.GetPrebuiltType().ToString();
             facilityState.isOperational = true;
@@ -2867,7 +2879,10 @@ public class TaskSystem : MonoBehaviour
     {
         List<TaskContext> taskContexts = new List<TaskContext>();
 
-        foreach (GameTask task in activeTasks)
+        // Only surface tasks the human UI would show as open (Active). Resolved tasks left in
+        // activeTasks with status InProgress (SetTaskInProgress does NOT remove them) must drop
+        // out of the officer observation, mirroring CategoryTaskManager's Active-only filter.
+        foreach (GameTask task in activeTasks.Where(t => t.status == TaskStatus.Active))
         {
             taskContexts.Add(GetTaskContextFromTask(task));
         }

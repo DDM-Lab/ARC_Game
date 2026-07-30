@@ -20,12 +20,7 @@
         }
       ],
       "subobservation_space": [
-        "sessionInfo",
-        "satisfactionAndBudget",
-        "buildings",
-        "constructionState",
-        "mapState",
-        "tasks:disaster"
+        "all"
       ],
       "llm_provider": "anthropic",
       "llm_model": "claude-sonnet-5",
@@ -56,11 +51,7 @@
         }
       ],
       "subobservation_space": [
-        "sessionInfo",
-        "satisfactionAndBudget",
-        "workers",
-        "buildings",
-        "tasks:workforce"
+        "all"
       ],
       "llm_provider": "anthropic",
       "llm_model": "claude-sonnet-5",
@@ -91,12 +82,7 @@
         }
       ],
       "subobservation_space": [
-        "sessionInfo",
-        "satisfactionAndBudget",
-        "buildings",
-        "constructionState",
-        "mapState",
-        "tasks:lodging"
+        "all"
       ],
       "llm_provider": "anthropic",
       "llm_model": "claude-sonnet-5",
@@ -127,12 +113,7 @@
         }
       ],
       "subobservation_space": [
-        "sessionInfo",
-        "satisfactionAndBudget",
-        "logistics",
-        "buildings",
-        "mapState",
-        "tasks:food"
+        "all"
       ],
       "llm_provider": "anthropic",
       "llm_model": "claude-sonnet-5",
@@ -160,11 +141,7 @@
         }
       ],
       "subobservation_space": [
-        "sessionInfo",
-        "satisfactionAndBudget",
-        "logistics",
-        "mapState",
-        "tasks:budget"
+        "all"
       ],
       "llm_provider": "anthropic",
       "llm_model": "claude-sonnet-5",

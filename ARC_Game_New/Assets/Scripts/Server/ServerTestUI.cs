@@ -12,7 +12,7 @@ public class ServerTestUI : MonoBehaviour
     public TMP_Text resultText;
 
     [Header("Server Settings")]
-    [SerializeField] private string host = "janus.hss.cmu.edu";
+    [SerializeField] private string host = "cora_game_llm.dev.ddmlab.com";
     [SerializeField] private int port = 8998;
 
     private WebSocket websocket;

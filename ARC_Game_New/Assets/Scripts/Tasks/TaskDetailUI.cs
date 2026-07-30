@@ -1183,7 +1183,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
     /// </summary>
     public bool SelectTaskChoiceHeadless(int taskId, int choiceId)
     {
-        return SelectTaskChoiceHeadless(taskId, choiceId, out _);
+        return SelectTaskChoiceHeadless(taskId, choiceId, null, out _);
     }
 
     /// <summary>
@@ -1192,6 +1192,17 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
     /// </summary>
     public bool SelectTaskChoiceHeadless(int taskId, int choiceId, out string failReason)
     {
+        return SelectTaskChoiceHeadless(taskId, choiceId, null, out failReason);
+    }
+
+    /// <summary>
+    /// Overload that also accepts the stable cross-regeneration task id. Recurring tasks
+    /// (e.g. "Daily Budget Allocation") get a fresh transient int taskId each round, so an
+    /// officer answering against a frozen observation may send a stale int. If the int lookup
+    /// misses and a stableId is supplied, we retry against GameTask.stableTaskId.
+    /// </summary>
+    public bool SelectTaskChoiceHeadless(int taskId, int choiceId, string stableId, out string failReason)
+    {
         failReason = null;
         if (TaskSystem.Instance == null || TaskSystem.Instance.activeTasks == null)
         {
@@ -1199,9 +1210,14 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
             return false;
         }
         GameTask task = TaskSystem.Instance.activeTasks.FirstOrDefault(t => t.taskId == taskId);
+        if (task == null && !string.IsNullOrEmpty(stableId))
+        {
+            task = TaskSystem.Instance.activeTasks.FirstOrDefault(t => t.stableTaskId == stableId);
+        }
         if (task == null)
         {
-            failReason = $"Task {taskId} not found among active tasks";
+            failReason = $"Task {taskId} (stableId '{stableId}') not found among active tasks " +
+                         $"[ids: {string.Join(",", TaskSystem.Instance.activeTasks.Select(t => t.taskId))}]";
             return false;
         }
         AgentChoice choice = task.agentChoices != null
@@ -1350,7 +1366,7 @@ switch (choice.deliveryCargoType)
             //     ShowAgentErrorMessage("Could not queue client relocation — check shelter/motel capacity.");
             // return -1;
             if (!success) {
-            ShowAgentErrorMessage("...");
+            ShowAgentErrorMessage("No shelter or motel space available to receive the population — the relocation could not be scheduled.");
             return 0; // Return 0 to indicate failure
         }
         

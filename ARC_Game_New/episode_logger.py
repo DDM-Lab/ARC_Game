@@ -6,6 +6,14 @@ import json
 import uuid
 from datetime import datetime, timezone
 
+# Route reward through the SHARED gym scorer so offline RL and the live router
+# agree on the objective. Guard the import: if the gym module (or its deps) is
+# unavailable, fall back to the legacy ad-hoc formula so tests still run.
+try:
+    from arc_game_gym_env_tcp import compute_score_components
+except ImportError:
+    compute_score_components = None
+
 
 class EpisodeLogger:
     def __init__(self, log_path: str = "episode_log.jsonl"):
@@ -36,19 +44,37 @@ class EpisodeLogger:
         llm_raw_response: str,
         conv_history_length: int,
         tokens_used: int,
+        game_state_after: dict = None,
     ) -> None:
         """Append one agent turn record to the JSONL log."""
         # Calculate metrics
         satisfaction_delta = satisfaction_after - satisfaction_before
         budget_delta = budget_after - budget_before
 
-        # Calculate reward (weighted combination of satisfaction and budget change)
-        # Satisfaction is more important (0.7 weight), budget stability is secondary (0.3 weight)
-        reward = (satisfaction_delta * 0.7) + (budget_delta * 0.0003)  # Budget scaled to similar range
+        # Reward: route through the shared gym scorer for parity with the RL env.
+        # `compute_score_components(rewardMetrics)` returns the composite `score`
+        # (satisfaction - cost_efficiency). We record the components alongside the
+        # scalar. Fall back to the legacy ad-hoc formula only when rewardMetrics is
+        # absent or the gym module could not be imported (so tests without a real
+        # game_state still work).
+        reward_components = None
+        reward_metrics = (game_state_after or {}).get("rewardMetrics")
+        if compute_score_components is not None and reward_metrics:
+            reward_components = compute_score_components(reward_metrics)
+            reward = reward_components.get("score", 0.0)
+        else:
+            # Legacy fallback: satisfaction-weighted, budget stability secondary.
+            reward = (satisfaction_delta * 0.7) + (budget_delta * 0.0003)
 
-        # Calculate action success metrics
-        total_actions_attempted = len(execution_results)
-        successful_actions = sum(1 for r in execution_results if r.get("success", False))
+        # Calculate action success metrics. Exclude non-execution summary rows
+        # (e.g. a propose_choices summary that carries no `success` key) so
+        # proposals are never counted as attempted/failed actions.
+        exec_action_rows = [
+            r for r in execution_results
+            if isinstance(r, dict) and "success" in r and r.get("kind") != "propose_choices"
+        ]
+        total_actions_attempted = len(exec_action_rows)
+        successful_actions = sum(1 for r in exec_action_rows if r.get("success", False))
         failed_actions = total_actions_attempted - successful_actions
         action_success_rate = successful_actions / total_actions_attempted if total_actions_attempted > 0 else 0.0
 
@@ -76,6 +102,7 @@ class EpisodeLogger:
             "budget_after": budget_after,
             "budget_delta": budget_delta,
             "reward": reward,
+            "reward_components": reward_components,
             "total_actions_attempted": total_actions_attempted,
             "successful_actions": successful_actions,
             "failed_actions": failed_actions,

@@ -8,8 +8,12 @@
       "actor_type": "auto",
       "talkinghead_endpoint": "DisasterOfficer",
       "subaction_space": [
-        { "category": "construction" },
-        { "category": "deconstruction" }
+        {
+          "category": "construction"
+        },
+        {
+          "category": "deconstruction"
+        }
       ],
       "subobservation_space": [
         "sessionInfo",
@@ -32,13 +36,17 @@
       "actor_type": "auto",
       "talkinghead_endpoint": "WorkforceService",
       "subaction_space": [
-        { "category": "worker" },
-        { "category": "worker_assignment" }
+        {
+          "category": "worker"
+        },
+        {
+          "category": "worker_assignment"
+        }
       ],
       "subobservation_space": [
         "sessionInfo",
         "satisfactionAndBudget",
-        "workers",
+        "workforceState",
         "mapState"
       ],
       "llm_provider": "anthropic",
@@ -58,9 +66,13 @@
       "max_actions_per_package": 3,
       "talkinghead_endpoint": "FoodMassCare",
       "subaction_space": [
-        { "category": "all" }
+        {
+          "category": "all"
+        }
       ],
-      "subobservation_space": ["all"],
+      "subobservation_space": [
+        "all"
+      ],
       "llm_provider": "anthropic",
       "llm_model": "claude-sonnet-4-6",
       "api_key_env": "ANTHROPIC_API_KEY",
@@ -76,8 +88,14 @@
       "num_choices": null,
       "max_actions_per_package": null,
       "talkinghead_endpoint": null,
-      "subaction_space": [{"category": "all"}],
-      "subobservation_space": ["all"],
+      "subaction_space": [
+        {
+          "category": "all"
+        }
+      ],
+      "subobservation_space": [
+        "all"
+      ],
       "llm_model": null,
       "llm_provider": null,
       "turn_token_budget": null,
