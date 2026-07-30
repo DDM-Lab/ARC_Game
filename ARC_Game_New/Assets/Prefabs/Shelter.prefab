@@ -272,6 +272,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   buildingType: 1
   originalSiteId: 0
+  buildingName: 
   currentStatus: 0
   capacity: 10
   operationalEfficiency: 1
@@ -286,7 +287,7 @@ MonoBehaviour:
   deconstructionColor: {r: 1, g: 0.29803923, b: 0.29803923, a: 1}
   workerSystem: {fileID: 0}
   mapWorkforceIndicator: {fileID: 1497958618288529501}
-  deconstructionTime: 3
+  deconstructionRoundsTotal: 3
   enableManualTasks: 1
 --- !u!114 &1693157771992400789
 MonoBehaviour:

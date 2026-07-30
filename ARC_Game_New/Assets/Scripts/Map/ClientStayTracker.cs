@@ -65,7 +65,7 @@ public class OverstayRecord
     public OverstayRecord(ClientGroup group, int currentRound, int threshold)
     {
         clientGroupName = group.groupName;
-        facilityName = group.currentFacility?.name ?? "Unknown Facility";
+        facilityName = ClientStayTracker.SafeFacilityName(group.currentFacility);
         roundsOverstayed = group.GetRoundsInFacility(currentRound) - threshold; 
         clientCount = group.clientsWithCaseworkNeed;
         recordedTime = Time.time;
@@ -261,17 +261,33 @@ public class ClientStayTracker : MonoBehaviour
             // Casework Clients
             if (group.clientsWithCaseworkNeed > 0 && !group.caseworkRequestGenerated && enableCaseworkTaskGeneration)
             {
-                int Y = Mathf.Max(1, roundsInFacility); // rounds stayed 
 
-                // X% = X_0 * (G ^ (Y - 1))
-                float currentProbability = baseCaseworkProbability*Mathf.Pow(probabilityGrowthFactor, Y-1);
-                currentProbability = Mathf.Clamp(currentProbability, 0f, 100f);
-                if (UnityEngine.Random.value < (currentProbability/100f))
+                Building facilityBuilding = group.currentFacility != null ? group.currentFacility.GetComponent<Building>() : null;
+                bool facilityDeconstructing = facilityBuilding != null && facilityBuilding.IsDeconstructing();
+
+                if (!facilityDeconstructing)
                 {
-                    GenerateCaseworkTask(group);
-                    group.caseworkRequestGenerated = true;
-                    OnCaseworkRequested?.Invoke(group);
+                    int Y = Mathf.Max(1, roundsInFacility);
+                    float currentProbability = baseCaseworkProbability * Mathf.Pow(probabilityGrowthFactor, Y - 1);
+                    currentProbability = Mathf.Clamp(currentProbability, 0f, 100f);
+                    if (UnityEngine.Random.value < (currentProbability / 100f))
+                    {
+                        GenerateCaseworkTask(group);
+                        group.caseworkRequestGenerated = true;
+                        OnCaseworkRequested?.Invoke(group);
+                    }
                 }
+                // int Y = Mathf.Max(1, roundsInFacility); // rounds stayed 
+
+                // // X% = X_0 * (G ^ (Y - 1))
+                // float currentProbability = baseCaseworkProbability*Mathf.Pow(probabilityGrowthFactor, Y-1);
+                // currentProbability = Mathf.Clamp(currentProbability, 0f, 100f);
+                // if (UnityEngine.Random.value < (currentProbability/100f))
+                // {
+                //     GenerateCaseworkTask(group);
+                //     group.caseworkRequestGenerated = true;
+                //     OnCaseworkRequested?.Invoke(group);
+                // }
             }
 
             // Casework Clients Overstaying
@@ -320,9 +336,9 @@ public class ClientStayTracker : MonoBehaviour
             clientGroups.Remove(group);
             
             if (showDebugInfo)
-                Debug.Log($"Removed client group {group.groupName} from {group.currentFacility?.name}");
+                Debug.Log($"Removed client group {group.groupName} from {SafeFacilityName(group.currentFacility)}");
 
-            GameLogPanel.Instance.LogBuildingStatus($"Removed client group {group.groupName} from {group.currentFacility?.name}");
+            GameLogPanel.Instance.LogBuildingStatus($"Removed client group {group.groupName} from {SafeFacilityName(group.currentFacility)}");
 
             return true;
         }
@@ -427,7 +443,7 @@ public class ClientStayTracker : MonoBehaviour
         // Casework demand for the reward: these people now need processing home.
         RewardMetricsTracker.Instance?.RecordCaseworkRequested(group.clientCount);
         string facilityDisplayName = GetFacilityDisplayName(group.currentFacility);
-        string facilityName = group.currentFacility?.name ?? "Unknown Facility";
+        string facilityName = SafeFacilityName(group.currentFacility);
         int roundsInFacility = group.GetRoundsInFacility(currentRound);
         string description = string.Format(caseworkTaskDescription, facilityDisplayName, roundsInFacility);
 
@@ -564,6 +580,34 @@ public class ClientStayTracker : MonoBehaviour
         {
             RegisterClientArrival(shelters[0], 3, "Test Family");
             Debug.Log($"Added test clients to {shelters[0].name}");
+        }
+    }
+
+    public static string SafeFacilityName(MonoBehaviour facility)
+    {
+        return facility == null ? "Unknown Facility" : facility.name;
+    }
+
+    /// <summary>
+    /// Called when a facility (Building/PrebuiltBuilding) is about to be destroyed.
+    /// Removes or relocates any client groups still tracked against it, so nothing
+    /// is left holding a dangling reference after Destroy().
+    /// </summary>
+    public void HandleFacilityDestroyed(MonoBehaviour facility)
+    {
+        if (facility == null) return;
+
+        List<ClientGroup> affected = clientGroups.Where(g => g.currentFacility == facility).ToList();
+        if (affected.Count == 0) return;
+
+        foreach (var group in affected)
+        {
+            if (showDebugInfo)
+                Debug.LogWarning($"[ClientStayTracker] Facility '{facility.name}' destroyed with {group.clientCount} clients still in group '{group.groupName}' — removing group.");
+
+            GameLogPanel.Instance?.LogError($"Facility '{facility.name}' was deconstructed while housing {group.clientCount} clients (group {group.groupName}) — clients removed from tracking.");
+
+            clientGroups.Remove(group);
         }
     }
 }

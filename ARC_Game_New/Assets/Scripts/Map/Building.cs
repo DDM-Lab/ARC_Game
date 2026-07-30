@@ -56,10 +56,15 @@ public class Building : MonoBehaviour
     [Header("UI Components")]
     public SpriteWorkforceIndicator mapWorkforceIndicator;
 
+    // [Header("Deconstruction Settings")]
+    // public float deconstructionTime = 3f;
+    // private float deconstructionProgress = 0f;
+    // private Coroutine deconstructionCoroutine;
+
     [Header("Deconstruction Settings")]
-    public float deconstructionTime = 3f;
+    public int deconstructionRoundsTotal = 3; // rounds needed to deconstruct (like constructionRounds)
+    private int deconstructionRoundsElapsed = 0;
     private float deconstructionProgress = 0f;
-    private Coroutine deconstructionCoroutine;
 
     private float constructionProgress = 0f;
     private int constructionRoundsTotal;
@@ -191,37 +196,71 @@ public class Building : MonoBehaviour
     }
 
     // Start Deconstruction
+    // public void StartDeconstruction()
+    // {
+    //     if (currentStatus == BuildingStatus.Deconstructing || currentStatus == BuildingStatus.UnderConstruction)
+    //     {
+    //         return; 
+    //     }
+    //     // if (currentStatus != BuildingStatus.InUse)
+    //     // {
+    //     //     Debug.LogWarning($"Cannot deconstruct {buildingType}: building is not in use (current status: {currentStatus})");
+    //     //     return;
+    //     // }
+
+    //     // Release all workers immediately
+    //     ReleaseAllWorkers();
+
+    //     DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
+
+    //     // Change status to deconstructing
+    //     currentStatus = BuildingStatus.Deconstructing;
+    //     deconstructionProgress = 0f;
+
+    //     // Show progress bar
+    //     if (constructionProgressBar != null)
+    //         constructionProgressBar.SetActive(true);
+
+    //     // Hide workforce indicator
+    //     if (mapWorkforceIndicator != null)
+    //         mapWorkforceIndicator.gameObject.SetActive(false);
+
+    //     // Start deconstruction coroutine
+    //     if (deconstructionCoroutine != null)
+    //     {
+    //         StopCoroutine(deconstructionCoroutine);
+    //     }
+    //     deconstructionCoroutine = StartCoroutine(DeconstructionCoroutine());
+
+    //     UpdateBuildingVisual();
+
+    //     Debug.Log($"{buildingType} at site {originalSiteId} deconstruction started");
+    //     GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deconstruction started");
+    //     ToastManager.ShowToast($"{buildingType} is now closing — workers released.", ToastType.Info, true);
+    // }
     public void StartDeconstruction()
     {
-        if (currentStatus != BuildingStatus.InUse)
+        if (currentStatus == BuildingStatus.Deconstructing || currentStatus == BuildingStatus.UnderConstruction)
         {
-            Debug.LogWarning($"Cannot deconstruct {buildingType}: building is not in use (current status: {currentStatus})");
             return;
         }
 
-        // Release all workers immediately
         ReleaseAllWorkers();
-
         DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
 
-        // Change status to deconstructing
         currentStatus = BuildingStatus.Deconstructing;
+        deconstructionRoundsElapsed = 0;
         deconstructionProgress = 0f;
 
-        // Show progress bar
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(true);
 
-        // Hide workforce indicator
         if (mapWorkforceIndicator != null)
             mapWorkforceIndicator.gameObject.SetActive(false);
 
-        // Start deconstruction coroutine
-        if (deconstructionCoroutine != null)
-        {
-            StopCoroutine(deconstructionCoroutine);
-        }
-        deconstructionCoroutine = StartCoroutine(DeconstructionCoroutine());
+        GlobalClock.OnRoundEnd += OnDeconstructionRoundEnd;
+
+        UpdateDeconstructionProgress(0f);
 
         UpdateBuildingVisual();
 
@@ -229,27 +268,88 @@ public class Building : MonoBehaviour
         GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deconstruction started");
         ToastManager.ShowToast($"{buildingType} is now closing — workers released.", ToastType.Info, true);
     }
+    // public void StartDeconstruction()
+    // {
+    //     if (currentStatus == BuildingStatus.Deconstructing || currentStatus == BuildingStatus.UnderConstruction)
+    //     {
+    //         return;
+    //     }
+
+    //     ReleaseAllWorkers();
+
+    //     DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
+
+    //     currentStatus = BuildingStatus.Deconstructing;
+    //     deconstructionRoundsElapsed = 0;
+    //     deconstructionProgress = 0f;
+
+    //     // Show progress bar
+    //     if (constructionProgressBar != null)
+    //         constructionProgressBar.SetActive(true);
+
+    //     // Hide workforce indicator
+    //     if (mapWorkforceIndicator != null)
+    //         mapWorkforceIndicator.gameObject.SetActive(false);
+
+    //     // Drive deconstruction off the round clock, same as construction
+    //     GlobalClock.OnRoundEnd += OnDeconstructionRoundEnd;
+
+    //     UpdateBuildingVisual();
+
+    //     Debug.Log($"{buildingType} at site {originalSiteId} deconstruction started");
+    //     GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deconstruction started");
+    //     ToastManager.ShowToast($"{buildingType} is now closing — workers released.", ToastType.Info, true);
+    // }
+
+    // void OnDeconstructionRoundEnd()
+    // {
+    //     deconstructionRoundsElapsed++;
+    //     deconstructionProgress = (float)deconstructionRoundsElapsed / deconstructionRoundsTotal;
+    //     UpdateDeconstructionProgress(deconstructionProgress);
+    //     UpdateBuildingVisual();
+
+    //     if (deconstructionRoundsElapsed >= deconstructionRoundsTotal)
+    //     {
+    //         GlobalClock.OnRoundEnd -= OnDeconstructionRoundEnd;
+    //         CompleteDeconstruction();
+    //     }
+    // }
+    void OnDeconstructionRoundEnd()
+    {
+        deconstructionRoundsElapsed++;
+        Debug.Log($"[Deconstruct] {buildingType} site {originalSiteId}: round {deconstructionRoundsElapsed}/{deconstructionRoundsTotal}, Day={GlobalClock.Instance.GetCurrentDay()}, Segment={GlobalClock.Instance.GetCurrentTimeSegment()}");
+        deconstructionProgress = (float)deconstructionRoundsElapsed / deconstructionRoundsTotal;
+        UpdateDeconstructionProgress(deconstructionProgress);
+        UpdateBuildingVisual();
+
+        if (deconstructionRoundsElapsed >= deconstructionRoundsTotal)
+        {
+            Debug.Log($"[Deconstruct] {buildingType} site {originalSiteId}: COMPLETE");
+            GlobalClock.OnRoundEnd -= OnDeconstructionRoundEnd;
+            CompleteDeconstruction();
+        }
+    }
 
     // Deconstruction Coroutine
-    IEnumerator DeconstructionCoroutine()
-    {
-        float elapsedTime = 0f;
+    // IEnumerator DeconstructionCoroutine()
+    // {
+    //     float elapsedTime = 0f;
 
-        while (elapsedTime < deconstructionTime)
-        {
-            elapsedTime += Time.deltaTime;
-            deconstructionProgress = elapsedTime / deconstructionTime;
+    //     while (elapsedTime < deconstructionTime)
+    //     {
+    //         elapsedTime += Time.deltaTime;
+    //         deconstructionProgress = elapsedTime / deconstructionTime;
 
-            // Update progress bar
-            UpdateDeconstructionProgress(deconstructionProgress);
-            UpdateBuildingVisual();
+    //         // Update progress bar
+    //         UpdateDeconstructionProgress(deconstructionProgress);
+    //         UpdateBuildingVisual();
 
-            yield return null;
-        }
+    //         yield return null;
+    //     }
 
-        // Deconstruction completed
-        CompleteDeconstruction();
-    }
+    //     // Deconstruction completed
+    //     CompleteDeconstruction();
+    // }
 
     // Update Deconstruction Progress
     void UpdateDeconstructionProgress(float progress)
@@ -293,12 +393,13 @@ public class Building : MonoBehaviour
 
         // Find the BuildingSystem to handle deconstruction properly
         BuildingSystem buildingSystem = FindObjectOfType<BuildingSystem>();
+        bool successfullyHandled = false;
         if (buildingSystem != null)
         {
             // Use BuildingSystem's existing deconstruction method
             // which knows how to find and restore the original AbandonedSite
             buildingSystem.DeconstructBuilding(this);
-
+            successfullyHandled = buildingSystem.DeconstructBuilding(this);
             Debug.Log("Deconstruction handled by BuildingSystem");
             return; // BuildingSystem will handle destroying this building
         }
@@ -321,6 +422,17 @@ public class Building : MonoBehaviour
             }
 
             Destroy(gameObject); // Destroy the entire building GameObject
+        }
+
+        if (!successfullyHandled)
+        {
+            Debug.LogWarning($"BuildingSystem could not restore site {originalSiteId}. Forcing destruction.");
+            
+            // Notify UI Overlay before disappearing
+            if (BuildingUIOverlay.Instance != null)
+                BuildingUIOverlay.Instance.OnBuildingDestroyed(this);
+
+            Destroy(gameObject);
         }
     }
 
@@ -468,7 +580,8 @@ public class Building : MonoBehaviour
     public bool IsDeconstructing() => currentStatus == BuildingStatus.Deconstructing; // NEW
     public float GetConstructionProgress() => constructionProgress;
     public int   GetRoundsRemaining()      => Mathf.Max(0, constructionRoundsTotal - constructionRoundsElapsed);
-    public float GetDeconstructionProgress() => deconstructionProgress; // NEW
+    // public float GetDeconstructionProgress() => deconstructionProgress; // NEW
+    public float GetDeconstructionProgress() => deconstructionProgress;
     public int GetCapacity() => capacity;
     public float GetEfficiency() => operationalEfficiency;
     public int GetRequiredWorkforce() => requiredWorkforce;
@@ -494,13 +607,25 @@ public class Building : MonoBehaviour
         return GetAssignedWorkforce() >= requiredWorkforce;
     }
 
+    // void OnDestroy()
+    // {
+    //     GlobalClock.OnRoundEnd -= OnConstructionRoundEnd;
+
+    //     if (WorkerSystem.Instance != null)
+    //         WorkerSystem.Instance.OnWorkerStatsChanged -= UpdateWorkforceIndicator;
+    //     DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
+    //     ClientStayTracker.Instance?.HandleFacilityDestroyed(this); 
+    // }
+
     void OnDestroy()
     {
         GlobalClock.OnRoundEnd -= OnConstructionRoundEnd;
+        GlobalClock.OnRoundEnd -= OnDeconstructionRoundEnd;
 
         if (WorkerSystem.Instance != null)
             WorkerSystem.Instance.OnWorkerStatsChanged -= UpdateWorkforceIndicator;
         DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
+        ClientStayTracker.Instance?.HandleFacilityDestroyed(this); 
     }
 
 
