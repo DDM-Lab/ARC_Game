@@ -1017,11 +1017,22 @@ public class AgentConversationUI : MonoBehaviour
         // Continuous-agent inline proposals have no backing GameTask — if one is
         // selected, the panel Confirm executes it directly.
         if (TryInlineConfirm())
+        {
+            Debug.Log("inline tried!");
             return;
+        }
 
-        if (currentSelectedTask == null) return;
+        if (currentSelectedTask == null)
+        {
+            Debug.Log("null task!");
+            return;
+        }
         TaskDetailUI tui = FindObjectOfType<TaskDetailUI>();
-        if (tui == null) return;
+        if (tui == null)
+        {
+            Debug.Log("tui null!");
+            return;
+        }
 
         if (!tui.TryConfirmTask(currentSelectedTask, localSelectedChoice, out string errorMessage))
         {

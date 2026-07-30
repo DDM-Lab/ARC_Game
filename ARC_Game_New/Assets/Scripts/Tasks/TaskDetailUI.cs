@@ -1075,6 +1075,7 @@ public class TaskDetailUI : MonoBehaviour
 
 private bool CompleteTaskAction()
 {
+    Debug.Log("Complete task action called!");
     if (currentTask != null && currentTask.taskId == -1 && currentTask.multiAgentProposal != null)
     {
         HandleMultiAgentChoiceSelection();
@@ -1109,14 +1110,22 @@ private bool CompleteTaskAction()
         else if (selectedChoice.triggersDelivery)
         {
             // QUEUE THE DELIVERY
+            Debug.Log("Delivery queue attempting");
             int result = ExecuteGeneratorDelivery(selectedChoice, immediate: false);
             if (result != 0) // -1 means successfully queued
             {
+                Debug.Log("impact application trying");
                 ApplyChoiceImpacts(selectedChoice);
+                Debug.Log("impact applied");
                 // CRITICAL: Set to InProgress so the task is tracked!
                 TaskSystem.Instance.SetTaskInProgress(currentTask); 
             }
-            else return false; // Blocked (likely no source found)
+            else
+                {
+                    Debug.Log("Delivery Blocked");
+                    
+                    return false; // Blocked (likely no source found)
+                }
         }
         else
         {
@@ -1137,6 +1146,7 @@ private bool CompleteTaskAction()
 // Ensure Food Delivery properly returns success
 bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
 {
+    Debug.Log("ExecuteFoodDelivery called");
     if (FoodDeliveryHandler.Instance == null) return false;
 
     if (immediate)
@@ -1245,6 +1255,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
     // NOT mark the task fulfilled, B1). Returns -1 for food/other/deferred ("not gated, proceed").
     int ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)
     {
+        Debug.Log($"ExecuteGeneratorDelivery: choice={choice.choiceText}, immediate={immediate}");
         // Multi-destination deliveries (e.g. "Send to casework site" — SingleSourceMultiDest,
         // destinationBuilding=CaseworkSite) use a dedicated path that honors destinationBuilding,
         // so casework processing actually routes to the CaseworkSite and triggers return-home
@@ -1252,6 +1263,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
         // motel) and casework was never processed.
         if (choice.enableMultipleDeliveries)
         {
+            Debug.Log("ExecuteGeneratorDelivery: multiple deliveries enabled, routing to ExecuteMultipleDeliveries");
             ExecuteMultipleDeliveries(choice);
             return -1;
         }
@@ -1259,6 +1271,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
 switch (choice.deliveryCargoType)
         {
             case ResourceType.FoodPacks:
+                Debug.Log("executegeneratordelivery foodpacks");;
                 return ExecuteFoodDelivery(choice, immediate) ? -1 : 0;
 
             case ResourceType.Population:
@@ -2438,14 +2451,17 @@ switch (choice.deliveryCargoType)
         switch (choice.multiDeliveryType)
         {
             case AgentChoice.MultiDeliveryType.SingleSourceMultiDest:
+                Debug.Log("calling singlesourcemultidest");
                 ExecuteSingleSourceMultiDest(choice, triggeringFacility);
                 break;
 
             case AgentChoice.MultiDeliveryType.MultiSourceSingleDest:
+                Debug.Log("calling multisourcesingledest");
                 ExecuteMultiSourceSingleDest(choice, triggeringFacility);
                 break;
 
             case AgentChoice.MultiDeliveryType.MultiSourceMultiDest:
+                Debug.Log("calling multisourcemultidest");
                 ExecuteMultiSourceMultiDest(choice, triggeringFacility);
                 break;
 
@@ -2508,6 +2524,7 @@ switch (choice.deliveryCargoType)
     /// </summary>
     void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFacility)
     {
+        Debug.Log("=== EXECUTING MULTI SOURCE SINGLE DEST ===");
         MonoBehaviour destination = DetermineChoiceDeliveryDestination(choice, triggeringFacility);
         if (destination == null) return;
 
@@ -2535,8 +2552,13 @@ switch (choice.deliveryCargoType)
             else
             {
                 List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
+                if (deliveries.Count <= 0)
+                {
+                    Debug.Log("No delivery subtasks");
+                }
                 // Link all created deliveries → parent task
                 TaskSystem.Instance.LinkDeliveriesToTask(currentTask, deliveries);
+                Debug.Log("linked deliveries to parent task");
             }
 
             if (showDebugInfo)
