@@ -315,15 +315,15 @@ public class DailyReportUI : MonoBehaviour
     {
         yield return StartCoroutine(AnimateSectionElement(foodDeliveryTotal, currentMetrics.satFoodScore, "Food Satisfaction"));
         yield return StartCoroutine(AnimateSectionElement(foodDeliveryStatus,
-            $"{currentMetrics.cumFoodPacksConsumedByClients}/{currentMetrics.cumFoodPacksNeededByClients} food packs consumed by clients (cumulative)."));
+            $"{currentMetrics.cumFoodPacksConsumedByClients}/{currentMetrics.cumFoodPacksNeededByClients} net food packs consumed by clients."));
 
         yield return StartCoroutine(AnimateSectionElement(lodgingTotal, currentMetrics.satLodgingScore, "Lodging Satisfaction"));
         yield return StartCoroutine(AnimateSectionElement(lodgingStatus,
             $"{currentMetrics.cumLodgingNightsConsumed}/{currentMetrics.cumLodgingNightsNeeded} lodging-nights consumed by clients (cumulative)."));
 
-        yield return StartCoroutine(AnimateSectionElement(workerTotal, currentMetrics.satWorkerScore, "Worker Use Satisfaction"));
+        yield return StartCoroutine(AnimateSectionElement(workerTotal, currentMetrics.satWorkerScore, "Worker Satisfaction"));
         yield return StartCoroutine(AnimateSectionElement(workerStatus,
-            $"Idle: {currentMetrics.cumIdleWorkerRounds} | Working: {currentMetrics.cumWorkingWorkerRounds} | Training: {currentMetrics.cumTrainingWorkerRounds}"));
+            $"Net Idle Rounds: {currentMetrics.cumIdleWorkerRounds} | Net Working Rounds: {currentMetrics.cumWorkingWorkerRounds} | Net Training Rounds: {currentMetrics.cumTrainingWorkerRounds}"));
 
         yield return StartCoroutine(AnimateSectionElement(wasteTotal, currentMetrics.satWasteScore, "Food Waste Penalty"));
         yield return StartCoroutine(AnimateSectionElement(wasteStatus,
@@ -331,24 +331,24 @@ public class DailyReportUI : MonoBehaviour
 
         yield return StartCoroutine(AnimateSectionElement(caseworkTotal, currentMetrics.satCaseworkScore, "Casework Satisfaction"));
         yield return StartCoroutine(AnimateSectionElement(caseworkStatus,
-            $"{currentMetrics.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework, out of {currentMetrics.cumClientsRequestedCasework} clients who requested it."));
+            $"{currentMetrics.cumClientRoundsAwaitingCasework} net rounds clients awaited casework, out of {currentMetrics.cumClientsRequestedCasework} clients who requested it."));
     }
 
     IEnumerator DisplayEfficiencySections()
     {
         yield return StartCoroutine(AnimateSectionElement(foodUtilizationTotal, currentMetrics.costFoodScore, "Food Cost Efficiency"));
         yield return StartCoroutine(AnimateSectionElement(foodUsageSummary,
-            $"${currentMetrics.cumFoodSpend:F0} spent, {currentMetrics.cumFoodPacksConsumedByClients} packs consumed (cumulative)."));
+            $"${currentMetrics.cumFoodSpend:F0} spent, {currentMetrics.cumFoodPacksConsumedByClients} net meals consumed."));
        
 
         yield return StartCoroutine(AnimateSectionElement(shelterUtilizationTotal, currentMetrics.costLodgingScore, "Lodging Cost Efficiency"));
         yield return StartCoroutine(AnimateSectionElement(shelterUsageSummary,
-            $"${currentMetrics.cumLodgingSpend:F0} spent, {currentMetrics.cumLodgingNightsConsumed} nights used (cumulative)."));
+            $"${currentMetrics.cumLodgingSpend:F0} spent, {currentMetrics.cumLodgingNightsConsumed} net nights used."));
 
 
         yield return StartCoroutine(AnimateSectionElement(workerUtilizationTotal, currentMetrics.costWorkerScore, "Worker Cost Efficiency"));
         yield return StartCoroutine(AnimateSectionElement(workerUsageSummary,
-            $"${(currentMetrics.cumWorkerRequestCost + currentMetrics.cumWorkerTrainingCost):F0} spent over {currentMetrics.cumWorkingWorkerRounds} working-rounds."));
+            $"${(currentMetrics.cumWorkerRequestCost + currentMetrics.cumWorkerTrainingCost):F0} spent over {currentMetrics.cumWorkingWorkerRounds} networking rounds."));
     }
     IEnumerator AnimateSectionElement(SectionElement element, float numberValue, string labelValue)
     {
