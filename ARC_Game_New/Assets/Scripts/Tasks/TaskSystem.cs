@@ -1572,6 +1572,7 @@ public class TaskSystem : MonoBehaviour
             newChoice.triggersDelivery = choice.triggersDelivery;
             newChoice.immediateDelivery = choice.immediateDelivery; // New
             newChoice.enableMultipleDeliveries = choice.enableMultipleDeliveries; // New
+            newChoice.multiDeliveryType = choice.multiDeliveryType; // ADDED
             newChoice.deliveryCargoType = choice.deliveryCargoType;
             newChoice.quantityType = choice.quantityType; // NEW: Copy quantity type
             newChoice.deliveryPercentage = choice.deliveryPercentage; // NEW: Copy percentage

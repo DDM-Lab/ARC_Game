@@ -762,7 +762,7 @@ MonoBehaviour:
   deconstructionColor: {r: 1, g: 0.3, b: 0.3, a: 1}
   workerSystem: {fileID: 0}
   mapWorkforceIndicator: {fileID: 4820328232251583978}
-  deconstructionTime: 3
+  deconstructionRoundsTotal: 3
   enableManualTasks: 1
 --- !u!114 &2408109077865379310
 MonoBehaviour:
