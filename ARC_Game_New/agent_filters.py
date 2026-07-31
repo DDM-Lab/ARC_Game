@@ -5,15 +5,28 @@ Applies subobservation_space and subaction_space constraints from agent config.
 import copy
 
 
+# The config obs vocabulary uses friendly aliases that don't match the raw
+# game_state keys; translate them so the requested slice is actually copied. Without
+# this, "workers"/"buildings" matched no key and were silently dropped (officers were
+# blind to workforce/facilities). Raw keys (workforceState/mapState/...) pass through
+# unchanged, so either name works.
+_OBS_KEY_ALIASES = {"workers": "workforceState", "buildings": "mapState"}
+
+
 def filter_observation(game_state: dict, obs_keys: list) -> dict:
     """
     Return a filtered copy of game_state containing only the specified top-level keys.
     If obs_keys contains "all", returns a shallow-copied full state.
-    Keys not present in game_state are silently skipped.
+    Alias keys are translated to their raw game_state key; keys not present are skipped.
     """
     if "all" in obs_keys:
         return {k: copy.copy(v) for k, v in game_state.items()}
-    return {k: copy.copy(game_state[k]) for k in obs_keys if k in game_state}
+    out = {}
+    for k in obs_keys:
+        raw = _OBS_KEY_ALIASES.get(k, k)
+        if raw in game_state:
+            out[raw] = copy.copy(game_state[raw])
+    return out
 
 
 def _building_token_of(action: dict) -> str:

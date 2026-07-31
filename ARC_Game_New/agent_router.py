@@ -1268,6 +1268,12 @@ Respond with ONLY the package index number (0, 1, or 2).
         sat_before = _get_satisfaction(game_state)
         budget_before = _get_budget(game_state)
         executed_total = 0
+        # Whether the officer sent the director a message this turn. Answering a
+        # question via talk_to_director is real work even though it executes no game
+        # action, so a talk-only turn must NOT get the "no action taken" note below —
+        # that note seeds a status-report register the model then echoes ("Answered X;
+        # no action taken") instead of giving the actual answer.
+        talked = False
         # Per-turn retry cap: signatures of tool calls that hard-failed this turn.
         # An identical call is not re-dispatched — it gets a synthetic result telling
         # the officer to surface it or pick a different action (prevents a stuck
@@ -1336,6 +1342,8 @@ Respond with ONLY the package index number (0, 1, or 2).
                     })
                     continue
                 turn_attempts.append({"tool": tc["name"], "arguments": tc.get("arguments")})
+                if tc["name"] == "talk_to_director":
+                    talked = True
                 result_str, game_state, all_actions, filtered_actions, meta = \
                     await self._dispatch_continuous_tool(
                         agent, tc, game_state, all_actions, filtered_actions,
@@ -1370,7 +1378,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         # the next activation's transcript looks like the officer simply skipped a
         # beat. Record a grounding note (model-facing only, not sent to the director)
         # so the officer sees it took no action and can decide deliberately next time.
-        if executed_total == 0:
+        if executed_total == 0 and not talked:
             messages.append({
                 "role": "user",
                 "content": ("[note] This turn ended with no game action taken. If that "
@@ -1486,7 +1494,13 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "colleague talking with them: answer their question or do what they "
                 "asked directly, in plain language. Keep your assistant posture — "
                 "propose consequential actions and act only on a clear instruction — "
-                "but drop the formal self-introduction."
+                "but drop the formal self-introduction. If they ask a factual or "
+                "quantitative question, LEAD your reply with the concrete figure or a "
+                "direct yes/no from the state or a read tool (e.g. \"You have 12 free "
+                "spaces — 30 capacity, 18 filled.\"), then stop. Do NOT reply with a "
+                "description of what you answered or did (\"Answered the capacity "
+                "question; no action taken\") — a summary of the speech act is not an "
+                "answer."
             )
         state_text = render_state_text(filtered_state)
         action_text = self._render_options_compact(filtered_actions, filtered_state)

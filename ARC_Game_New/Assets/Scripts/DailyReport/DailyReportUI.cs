@@ -587,8 +587,13 @@ public class DailyReportUI : MonoBehaviour
 
         int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
 
-        SatisfactionAndBudget.Instance?.AddSatisfaction(currentMetrics.satisfactionChangeCalculated, $"Day {currentDay} report");
-        SatisfactionAndBudget.Instance?.AddEfficiency(newEfficiency - currentEfficiency, $"Day {currentDay} efficiency");
+        // The authoritative satisfaction/efficiency fields are on a 0-100 scale (the human
+        // slider + the officer game_state read them). newSatisfaction/newEfficiency above are
+        // the report's DISPLAY-scale score (0..1 * 10000). Pushing (display - current) as a
+        // delta blew currentSatisfaction to ~6001. Set the authoritative field to the live
+        // score on its native 0-100 scale instead (SetSatisfaction clamps to [0,100]).
+        SatisfactionAndBudget.Instance?.SetSatisfaction(CalculateLiveSatisfactionScore() * 100f);
+        SatisfactionAndBudget.Instance?.SetEfficiency(CalculateLiveCostEfficiencyScore() * 100f);
 
 
         currentMetrics.foodSatisfaction = CalculateFoodSatisfactionTotal();

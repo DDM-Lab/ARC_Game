@@ -256,7 +256,9 @@ public class SatisfactionAndBudget : MonoBehaviour
     public void AddSatisfaction(float amount, string description = "")
     {
         float previousValue = currentSatisfaction;
-        currentSatisfaction += amount;
+        // Clamp to [0,100] so no caller can drive satisfaction out of range (defense
+        // against display-scale deltas leaking in — see DailyReportUI daily report).
+        currentSatisfaction = Mathf.Clamp(currentSatisfaction + amount, minSatisfaction, maxSatisfaction);
 
         // Use default description if none provided
         if (string.IsNullOrEmpty(description))
@@ -423,6 +425,23 @@ public class SatisfactionAndBudget : MonoBehaviour
     }
 
     public float GetCurrentEfficiency() => currentEfficiency;
+
+    /// <summary>
+    /// Set efficiency to an absolute 0-100 value (clamped). Mirrors SetSatisfaction —
+    /// used by the daily report to write the live cost-efficiency score on its native
+    /// scale instead of pushing a display-scale delta through AddEfficiency.
+    /// </summary>
+    public void SetEfficiency(float value)
+    {
+        float previousValue = currentEfficiency;
+        currentEfficiency = Mathf.Clamp(value, 0f, 100f);
+        UpdateEfficiencyValueText();
+        if (feedbackEffects == null && efficiencySlider != null)
+            efficiencySlider.value = currentEfficiency;
+        if (showDebugInfo)
+            Debug.Log($"Efficiency: {previousValue:F1} → {currentEfficiency:F1} (set)");
+        GameLogPanel.Instance?.LogMetricsChange($"Efficiency: {previousValue:F1} → {currentEfficiency:F1} (set)");
+    }
 
     // ===== BUDGET METHODS =====
 

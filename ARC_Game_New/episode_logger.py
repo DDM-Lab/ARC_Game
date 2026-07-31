@@ -6,11 +6,13 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-# Route reward through the SHARED gym scorer so offline RL and the live router
-# agree on the objective. Guard the import: if the gym module (or its deps) is
-# unavailable, fall back to the legacy ad-hoc formula so tests still run.
+# Route reward through the SHARED scorer so offline RL and the live router agree on
+# the objective. Import from reward_scoring (dependency-free) — NOT arc_game_gym_env_tcp,
+# whose top-level gymnasium/numpy imports fail in the router env, which silently nulled
+# the scorer and forced the legacy fallback (reward=0, reward_components=None) on every
+# record. Keep the guard purely defensive.
 try:
-    from arc_game_gym_env_tcp import compute_score_components
+    from reward_scoring import compute_score_components
 except ImportError:
     compute_score_components = None
 

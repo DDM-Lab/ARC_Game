@@ -18,7 +18,11 @@ VALID_CATEGORIES = {"construction", "deconstruction", "worker",
 VALID_TASK_GROUPS = {"budget", "workforce", "food", "lodging", "disaster"}
 VALID_OBS_KEYS = {"sessionInfo", "satisfactionAndBudget", "workers",
                   "buildings", "tasks", "constructionState",
-                  "mapState", "logistics", "all"}
+                  "mapState", "logistics", "all",
+                  # Raw game_state keys are also accepted (aliases map workers->
+                  # workforceState, buildings->mapState; these let a config name the
+                  # raw key directly). See agent_filters._OBS_KEY_ALIASES.
+                  "workforceState"}
 VALID_ORDER_RULES = {"sequential", "random", "priority"}
 VALID_TALKINGHEADS = {
     "DisasterOfficer", "WorkforceService", "LodgingMassCare",
