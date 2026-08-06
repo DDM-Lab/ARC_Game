@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
@@ -45,6 +45,10 @@ from agent_ordering import get_agent_order
 from episode_logger import EpisodeLogger
 from llm_query import query_llm, load_global_prompt
 from continuous_agent import build_tools, run_tool_step, DEFAULT_TOOLS
+from bundle import load_bundle, BundleError
+import cora_ext
+import plugin_store
+import key_store
 from cmd_parser import parse_commands, ParserEnv  # SHARED parser + env shim (benchmark + router + gym)
 from obs_encoder import (
     render_state_text, _num, task_officer, task_group, stable_task_token,
@@ -214,6 +218,12 @@ class Session:
         # scramble each other's results. Short-held: the slow LLM tool-loop thinking
         # runs OUTSIDE this lock, so officers still overlap where it matters.
         self._unity_commit_lock: asyncio.Lock = asyncio.Lock()
+        # --- Plugin (cora_ext) per-session state: three store scopes + a lock for shared
+        # writes. In-memory for now; ctx.persist becomes SQLite-backed in a later slice. ---
+        self._plugin_session_store: dict = {}
+        self._plugin_agent_stores: dict = {}          # subagent_name -> dict
+        self._plugin_persist = plugin_store.default_store()   # durable, process-wide, cross-game
+        self._plugin_session_lock: asyncio.Lock = asyncio.Lock()
         # Serializes the human's ATTENTION for propose_choices. Only one proposal
         # can sit on the single-slot _pending_choice + one modal UI at a time. Held
         # for the whole time a proposal is pending on screen (up to 5min) — but does
@@ -370,6 +380,10 @@ class Session:
                 })
             except Exception:
                 pass
+            try:
+                await self._fire_hooks("on_session_end", {"rounds_played": self.round_num})
+            except Exception:
+                pass
             print(f"[router][{self.api_key_label}] session {self.session_id[:8]} closed.")
 
     # ── Message Dispatch ─────────────────────────────────────────
@@ -437,6 +451,8 @@ class Session:
         # the same officer, this round's turn behind its per-agent lock — would wait
         # out the full 5min proposal timeout, appearing frozen).
         self._supersede_pending_choice("new round started")
+        await self._fire_hooks("on_round_start",
+                               {"round": self.round_num, "day": self.day, "segment": self.segment})
 
         # The round advanced: the world simulates and the fresh game_state now
         # reflects everything queued last phase. The committed-this-phase ledger is
@@ -1227,11 +1243,22 @@ Respond with ONLY the package index number (0, 1, or 2).
         # opening_mode (emergent/brief_first) keeps the full configured palette.
         opening_mode = getattr(agent, "opening_mode", "emergent")
         brief_only = (opening_mode == "reactive") and not triggered_by_director
+        # build_tools only knows built-ins; keep plugin names out of its allowlist (they're
+        # added below by _plugin_tool_schemas_for) so it doesn't log "unknown tool".
         if brief_only:
             base = list(agent.tools) if agent.tools else list(DEFAULT_TOOLS)
-            tools = build_tools([t for t in base if t not in self._ACTING_TOOLS])
+            tools = build_tools([t for t in base
+                                 if t not in self._ACTING_TOOLS and cora_ext.get_tool(t) is None])
         else:
-            tools = build_tools(agent.tools)
+            _builtins = ([t for t in agent.tools if cora_ext.get_tool(t) is None]
+                         if agent.tools else None)
+            tools = build_tools(_builtins)
+        # Append registered plugin (cora_ext) tool schemas this agent may use. Inert when no
+        # plugins are loaded; respects the reactive acting-strip and the per-agent allowlist,
+        # de-duped against built-ins by name.
+        _plug = _plugin_tool_schemas_for(agent, brief_only, tools)
+        if _plug:
+            tools = tools + _plug
         agent_cfg = vars(agent)  # run_tool_step reads provider/model/endpoint/key/budget
         max_steps = agent.max_steps or 8
 
@@ -1454,24 +1481,18 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "just restate your remit in one line and call finish."
             )
         elif opening_mode == "reactive" and triggered_by_director:
+            # Per-turn specifics only — the global prompt already owns tone,
+            # answer-directly (rule 7), and act-only-on-instruction; don't restate them.
             closing = (
-                f"Identify yourself by your office (you are the {title}) when you "
-                "reply to the director. "
-                "The director has addressed you. Do EXACTLY what they asked — nothing "
-                "more. Do not scale the quantity up or down, and do not add sites, "
-                "targets, or extra actions they did not name. If the director asks a "
-                "factual question (how many buildings exist, worker counts, what is "
-                "built where), answer from the situation above, the 'already "
-                "committed' ledger, AND a read tool (read_state, get_facilities, "
-                "get_workforce, get_tasks) — reconcile all three: a worker you hired "
-                "or a facility you queued THIS phase counts even if the frozen "
-                "situation still shows it absent, so report it as queued/pending "
-                "rather than saying it doesn't exist. Do NOT invent counts from "
-                "memory. If the instruction is "
-                "ambiguous or would exceed budget, ask ONE brief clarifying question "
-                "via talk_to_director instead of guessing. When done, send ONE short "
-                "talk_to_director message confirming what you did (or answering their "
-                "question), then call finish."
+                "The director addressed you — reply to THEM, and do EXACTLY what they "
+                "asked: don't change the quantity or add sites, targets, or actions they "
+                "didn't name. When you cite a count, reconcile the situation above with "
+                "the 'already committed' ledger — anything you queued THIS phase counts "
+                "as pending even if the situation still shows it absent. If the ask is "
+                "ambiguous or unaffordable, ask ONE short question instead of guessing. "
+                "If they asked a question, lead with the answer itself (the number or a "
+                "yes/no), not a recap of what you did. Send ONE talk_to_director "
+                "message, then finish."
             )
         elif opening_mode == "brief_first" and not director_has_spoken:
             # FIRST message (opening brief): introduce the office by name.
@@ -1494,13 +1515,9 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "colleague talking with them: answer their question or do what they "
                 "asked directly, in plain language. Keep your assistant posture — "
                 "propose consequential actions and act only on a clear instruction — "
-                "but drop the formal self-introduction. If they ask a factual or "
-                "quantitative question, LEAD your reply with the concrete figure or a "
-                "direct yes/no from the state or a read tool (e.g. \"You have 12 free "
-                "spaces — 30 capacity, 18 filled.\"), then stop. Do NOT reply with a "
-                "description of what you answered or did (\"Answered the capacity "
-                "question; no action taken\") — a summary of the speech act is not an "
-                "answer."
+                "but drop the formal self-introduction. If they ask a question, lead "
+                "with the answer itself (the number or a yes/no), not a recap of what "
+                "you did."
             )
         state_text = render_state_text(filtered_state)
         action_text = self._render_options_compact(filtered_actions, filtered_state)
@@ -2027,6 +2044,16 @@ Respond with ONLY the package index number (0, 1, or 2).
         hint = "no officer owns it — it may be the director's call, or not in play here."
         return self._owner_lines(agent, what, owners, roster, hint)
 
+    async def _fire_hooks(self, event: str, event_obj: dict,
+                          agent: Optional[AgentConfig] = None) -> None:
+        """Fire cora_ext hooks for a game event. Inert (no ctx built) when nothing is registered.
+        `agent` is None for session-level events (round start, human choice); the hook ctx then
+        uses the shared session store and unfiltered state."""
+        if not cora_ext.get_hooks(event):
+            return
+        ctx = _SessionToolContext(self, agent, self._latest_game_state or {}, [], [])
+        await cora_ext.run_hooks(event, ctx, event_obj)
+
     async def _dispatch_continuous_tool(
         self,
         agent: AgentConfig,
@@ -2035,6 +2062,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         all_actions: List[dict],
         filtered_actions: List[dict],
         brief_only: bool = False,
+        _skip_registry: bool = False,
     ) -> Tuple[str, dict, List[dict], List[dict], dict]:
         """Execute one tool call against the real game backends.
 
@@ -2056,6 +2084,24 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "talk_to_director (or call finish); they will tell you what to do.",
                 game_state, all_actions, filtered_actions, meta,
             )
+
+        # Plugin tools (cora_ext registry) take precedence — a contributor tool, or one that
+        # overrides a built-in by name, dispatches here. Inert when no plugins are loaded.
+        # Acting plugin tools obey the same reactive brief-only gate as built-in acting tools.
+        _plugin_spec = None if _skip_registry else cora_ext.get_tool(name)
+        if _plugin_spec is not None:
+            if brief_only and _plugin_spec.acting:
+                return (
+                    "REFUSED: you have not been directly addressed this turn, so you cannot "
+                    "take actions. Brief the director via talk_to_director (or call finish).",
+                    game_state, all_actions, filtered_actions, meta,
+                )
+            _ctx = _SessionToolContext(self, agent, game_state, all_actions, filtered_actions)
+            _res = await cora_ext.run_tool(_plugin_spec, _ctx, args)
+            meta["executed"] = _res.executed
+            meta["finish"] = _res.finish
+            return (_res.text, self._latest_game_state or game_state,
+                    _ctx.all_actions, _ctx.filtered_actions, meta)
 
         if name == "read_state":
             # Read the freshest state the router holds (kept current by every execute
@@ -2168,6 +2214,10 @@ Respond with ONLY the package index number (0, 1, or 2).
                 if success:
                     executed += 1
                     self._record_committed(action)
+                    await self._fire_hooks(
+                        "on_action_executed",
+                        {"actor": agent.subagent_name, "source": "officer",
+                         "is_human": False, "action": action}, agent=agent)
                     # Director-facing commit bubble: one plain-English past-tense
                     # line per committed action ("Action: Built Shelter at
                     # Riverside for $2,000") — no emojis, no command-tag syntax.
@@ -2234,6 +2284,17 @@ Respond with ONLY the package index number (0, 1, or 2).
                 )
                 results.append({"kind": "task_choice", "taskId": tid, "choiceId": cid,
                                 "success": ok, "error": err})
+                if ok:
+                    # Fire the choice-resolved hook (e.g. a Bayesian preference elicitor). Inert
+                    # when no hooks are registered. NOTE: this is an OFFICER answering a task
+                    # choice; the director's package-selection is a separate future hook point.
+                    await self._fire_hooks(
+                        "on_choice_resolved",
+                        {"kind": "task_choice", "actor": agent.subagent_name,
+                         "source": "officer", "is_human": False,
+                         "taskId": tid, "choiceId": cid, "choice": cid,
+                         "group": task_group(task), "officer": agent.subagent_name},
+                        agent=agent)
                 if ok:
                     answered += 1
                     # Director-facing commit bubble for an answered task:
@@ -2503,6 +2564,19 @@ Respond with ONLY the package index number (0, 1, or 2).
             click_seq=msg.get("click_seq"),
             client_ts=msg.get("timestamp"),
         )
+        # Fire hooks for the HUMAN director's choice + each action it executed. Differentiable
+        # from officer/AI events via actor / source="director" / is_human=True. Session-level ctx
+        # (agent=None): a human action isn't tied to one officer.
+        _results = msg.get("execution_results", []) or []
+        await self._fire_hooks("on_choice_resolved", {
+            "kind": "package_choice", "actor": HUMAN_DIRECTOR_ACTOR, "source": "director",
+            "is_human": True, "choice": msg.get("package_index"),
+            "package_index": msg.get("package_index"),
+            "from_officer": msg.get("agent_name"), "execution_results": _results}, agent=None)
+        for _res in _results:
+            await self._fire_hooks("on_action_executed", {
+                "actor": HUMAN_DIRECTOR_ACTOR, "source": "director", "is_human": True,
+                "action": _res}, agent=None)
         if self._pending_choice and not self._pending_choice.done():
             print(f"[router]    ✅ Setting result on pending Future")
             self._pending_choice.set_result(msg)
@@ -4078,6 +4152,13 @@ class AgentService:
         self.keys = keys                      # api_key -> {label, ...}
         self.config_dir = config_dir
         self.log_dir = log_dir
+        # Contributor bundle uploads land here, namespaced per key-label. A SUBdir of
+        # config_dir, so the top-level ``*.json`` catalog glob never picks them up as
+        # maintained configs; list_configs/resolve_config include them explicitly.
+        self.uploads_dir = config_dir / "_uploads"
+        self.uploads_dir.mkdir(parents=True, exist_ok=True)
+        # Hashed, mintable cohort/participant keys (additive to the static `keys` map above).
+        self.key_store = key_store.default_store()
         self.sessions: Dict[str, Session] = {}  # session_id -> Session
         self.started_at = datetime.now(timezone.utc)
 
@@ -4088,23 +4169,54 @@ class AgentService:
             counts[s.api_key_label] = counts.get(s.api_key_label, 0) + 1
         return counts
 
+    def resolve_key(self, presented: Optional[str]) -> Optional[dict]:
+        """Normalize a presented key to {label, configs(set|None), caps(frozenset), role, source}.
+        Checks the static keys.json map first (trusted maintainer/lab keys), then the hashed
+        mintable store. Returns None if unknown/revoked/expired."""
+        if not presented:
+            return None
+        meta = self.keys.get(presented)
+        if meta is not None:
+            cfgs = meta.get("configs")
+            return {"label": meta.get("label"),
+                    "configs": set(cfgs) if cfgs else None,
+                    "caps": frozenset(meta.get("caps") or []),
+                    "role": meta.get("role", "static"), "source": "static"}
+        info = self.key_store.verify(presented)
+        if info is not None:
+            info = dict(info)
+            info["configs"] = set(info["configs"]) if info["configs"] else None
+            return info
+        return None
+
+    def key_known(self, presented: Optional[str]) -> bool:
+        return self.resolve_key(presented) is not None
+
+    def caps_for(self, presented: Optional[str]) -> frozenset:
+        info = self.resolve_key(presented)
+        return info["caps"] if info else frozenset()
+
     def label_for(self, api_key: str) -> Optional[str]:
-        meta = self.keys.get(api_key)
-        return meta.get("label") if meta else None
+        info = self.resolve_key(api_key)
+        return info["label"] if info else None
 
     def allowed_configs_for(self, api_key: str) -> Optional[set]:
-        """Configs this key may use. Returns None when unrestricted (no
-        ``configs`` list on the key → all configs allowed)."""
-        meta = self.keys.get(api_key) or {}
-        cfgs = meta.get("configs")
-        if not cfgs:
-            return None
-        return set(cfgs)
+        """Configs this key may use. None = unrestricted (all configs)."""
+        info = self.resolve_key(api_key)
+        return info["configs"] if info else None
 
-    def list_configs(self) -> List[dict]:
-        """Return public-facing config descriptors derived from filesystem."""
+    def list_configs(self, include_uploads_for: Optional[str] = None) -> List[dict]:
+        """Return public-facing config descriptors derived from filesystem.
+
+        Maintained configs (top-level config_dir) are shown to everyone. Uploaded configs
+        are private to their owner: pass ``include_uploads_for=<key label>`` to also list
+        that label's own uploads (files named ``<safe_label>__*.json``)."""
         out: List[dict] = []
-        for path in sorted(self.config_dir.glob("*.json")):
+        paths = sorted(self.config_dir.glob("*.json"))
+        if include_uploads_for:
+            safe = re.sub(r"[^A-Za-z0-9_-]+", "_", include_uploads_for)
+            paths = paths + sorted(self.uploads_dir.glob(f"{safe}__*.json"))
+        for path in paths:
             if path.name.startswith("keys"):
                 continue  # skip the keys file even if it lives in config_dir
             try:
@@ -4126,19 +4238,46 @@ class AgentService:
             except Exception:
                 pass
             out.append({"name": path.stem, "title": title,
-                        "path": path.name, "agents": agents})
+                        "path": path.name, "agents": agents,
+                        "uploaded": path.parent == self.uploads_dir})
         return out
 
     def resolve_config(self, name: str) -> Optional[Path]:
-        """Map a config name (without .json) to its path under config_dir."""
+        """Map a config name (without .json) to its path under config_dir or uploads_dir."""
         candidate = self.config_dir / f"{name}.json"
         if candidate.exists():
             return candidate
+        # Uploaded configs (namespaced <label>__<slug>).
+        up = self.uploads_dir / f"{name}.json"
+        if up.exists() and up.parent.resolve() == self.uploads_dir.resolve():
+            return up
         # Allow callers to pass an explicit relative or absolute path too.
         as_path = Path(name)
         if as_path.is_absolute() and as_path.exists():
             return as_path
         return None
+
+    def store_upload(self, key_label: str, bundle_name: str, cfg: dict) -> str:
+        """Persist a validated uploaded config under the uploader's namespace and return its
+        public config name (``<safe_label>__<slug>``). Path-containment checked."""
+        safe_label = re.sub(r"[^A-Za-z0-9_-]+", "_", key_label or "anon")
+        slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", bundle_name.split("/")[-1]) or "bundle"
+        public = f"{safe_label}__{slug}"
+        path = (self.uploads_dir / f"{public}.json").resolve()
+        if path.parent != self.uploads_dir.resolve():
+            raise ValueError("upload path escaped uploads_dir")
+        path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
+        return public
+
+    def grant_config(self, api_key: str, name: str) -> None:
+        """Add ``name`` to a key's config allowlist if it is restricted (unrestricted keys
+        already see everything). Keeps an uploader able to select what they just uploaded."""
+        meta = self.keys.get(api_key)
+        if meta is None:
+            return
+        cfgs = meta.get("configs")
+        if cfgs and name not in cfgs:
+            cfgs.append(name)
 
     def user_dir(self, key_label: str) -> Path:
         """Per-user log directory: logs are grouped by API-key label so each
@@ -4207,7 +4346,8 @@ def _load_keys(path: Optional[Path]) -> Dict[str, dict]:
     # Dev fallback for local testing.
     dev_key = "dev-local-key"
     print(f"[router] No --keys-file or ARC_API_KEYS env; accepting dev key '{dev_key}'")
-    return {dev_key: {"label": "dev"}}
+    # Local dev key is an admin: it can mint cohort keys and upload plugin code.
+    return {dev_key: {"label": "dev", "caps": ["mint", "upload_code"]}}
 
 
 def _bearer_to_key(auth: Optional[str]) -> Optional[str]:
@@ -4218,6 +4358,114 @@ def _bearer_to_key(auth: Optional[str]) -> Optional[str]:
     if len(parts) == 2 and parts[0].lower() == "bearer":
         return parts[1].strip()
     return None
+
+
+def _tool_schema_name(s: dict) -> Optional[str]:
+    return (s.get("function") or {}).get("name") or s.get("name")
+
+
+def _plugin_tool_schemas_for(agent: AgentConfig, brief_only: bool,
+                             existing: List[dict]) -> List[dict]:
+    """Registered plugin tool schemas this agent may use: filtered by the per-agent allowlist
+    (if any), the reactive acting-strip, and de-duped against built-ins already offered."""
+    allow = set(agent.tools) if getattr(agent, "tools", None) else None
+    have = {_tool_schema_name(t) for t in existing}
+    out: List[dict] = []
+    for name, spec in cora_ext.all_tools().items():
+        if allow is not None and name not in allow:
+            continue
+        if brief_only and spec.acting:
+            continue
+        if name in have:
+            continue
+        out.append(spec.schema)
+    return out
+
+
+class _SessionToolContext(cora_ext.ToolContext):
+    """Live ToolContext backed by a Session — the concrete `ctx` handed to plugin tools/hooks.
+
+    Reads route to the session's filtered latest snapshot; the three store scopes and the
+    session lock live on the Session. Acting (`emit_commands`/`propose_choices`) is wired in a
+    follow-up slice (the built-in execute path is extracted into a reusable helper there).
+    """
+    def __init__(self, session: "Session", agent: AgentConfig,
+                 game_state: dict, all_actions: List[dict], filtered_actions: List[dict]):
+        self._s = session
+        self.agent = agent
+        self._game_state = game_state
+        self.all_actions = all_actions
+        self.filtered_actions = filtered_actions
+        self.participant_id = getattr(session, "player_id", None)
+        self.session_id = getattr(session, "session_id", None)
+        self.round = getattr(session, "round_num", 0)
+        # agent is None for session-level hook contexts (a choice/round event isn't tied to one
+        # officer); agent_store then shares a "__session__" bucket.
+        _akey = agent.subagent_name if agent is not None else "__session__"
+        self.agent_store = session._plugin_agent_stores.setdefault(_akey, {})
+        self.session_store = session._plugin_session_store
+        self.persist = session._plugin_persist
+        self.session_lock = session._plugin_session_lock
+
+    @property
+    def state(self) -> dict:
+        return self._s._latest_game_state or self._game_state
+
+    def _fs(self) -> dict:
+        if self.agent is None:
+            return self.state
+        return self._s._filter_state(self.state, self.agent)
+
+    def get_facilities(self) -> str: return render_facilities_text(self._fs())
+    def get_workforce(self) -> str: return render_workforce_text(self._fs())
+    def get_tasks(self) -> str: return render_tasks_text(self._fs())
+    def get_logistics(self) -> str: return render_logistics_text(self._fs(), self.filtered_actions)
+    def enumerate_actions(self) -> list: return list(self.filtered_actions)
+
+    def enumerate_choice_packages(self) -> list:
+        return [a for a in self.filtered_actions if a.get("action_type") == "task_choice"]
+
+    async def refresh_state(self) -> dict:
+        return await self._s._fetch_fresh_state()
+
+    async def emit_commands(self, tags: str) -> cora_ext.ToolResult:
+        """Execute command tags through the SAME built-in path as the execute_commands tool
+        (parse → validate → Unity), reusing all its ledger/scope logic. `_skip_registry` avoids
+        re-entering the plugin registry (no recursion if a plugin overrides execute_commands)."""
+        if self.agent is None:
+            raise RuntimeError("emit_commands requires an officer context (not a session hook)")
+        tc = {"name": "execute_commands", "arguments": {"commands": tags}}
+        text, gs, all_a, filt, meta = await self._s._dispatch_continuous_tool(
+            self.agent, tc, self._game_state, self.all_actions, self.filtered_actions,
+            _skip_registry=True)
+        self._game_state, self.all_actions, self.filtered_actions = gs, all_a, filt
+        return cora_ext.ToolResult(text=text, executed=meta.get("executed", 0),
+                                   finish=meta.get("finish", False))
+
+    async def propose_choices(self, packages: list) -> cora_ext.ToolResult:
+        """Send the director a choice set via the SAME path as the propose_choices tool."""
+        if self.agent is None:
+            raise RuntimeError("propose_choices requires an officer context")
+        text, gs, all_a, filt, executed, superseded, _rows = await self._s._continuous_propose(
+            self.agent, {"packages": packages}, self._game_state, self.all_actions,
+            self.filtered_actions)
+        self._game_state, self.all_actions, self.filtered_actions = gs, all_a, filt
+        return cora_ext.ToolResult(text=text, executed=executed, finish=bool(superseded))
+
+    def log(self, event_type: str, payload: Optional[dict] = None) -> None:
+        if self.agent is None:
+            actor = from_name = "system"
+        else:
+            actor = (self._s._actor_for(self.agent)
+                     if hasattr(self._s, "_actor_for") else self.agent.subagent_name)
+            from_name = self.agent.subagent_name
+        self._s.logger.log_event({
+            "event_type": event_type,
+            "round": getattr(self._s, "round_num", 0),
+            "actor": actor,
+            "from": from_name,
+            **(payload or {}),
+        })
 
 
 @app.get("/health")
@@ -4240,13 +4488,201 @@ async def list_configs(authorization: Optional[str] = Header(default=None)):
     if service is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
     key = _bearer_to_key(authorization)
-    if key is None or key not in service.keys:
+    if key is None or not service.key_known(key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    configs = service.list_configs()
+    configs = service.list_configs(include_uploads_for=service.label_for(key))
     allowed = service.allowed_configs_for(key)
     if allowed is not None:
         configs = [c for c in configs if c["name"] in allowed]
     return {"configs": configs}
+
+
+# Cap uploaded bundle size (a config bundle is small JSON; this blocks JSON-bomb DoS).
+_MAX_BUNDLE_BYTES = 256 * 1024
+
+
+@app.post("/bundles")
+async def upload_bundle(request: Request,
+                        authorization: Optional[str] = Header(default=None),
+                        base: Optional[str] = None):
+    """Upload a contributor config bundle. Auth via ``Authorization: Bearer <key>``.
+
+    Security posture (see docs/contributor-platform-design.md): namespace is derived from the
+    TOKEN's label (never the body); body size is capped; the bundle is validated by cora_schema
+    (``extra='forbid'`` + provider-enum, so no endpoint/secret can be smuggled in); it is stored
+    in the uploader's private namespace and granted only to the uploading key. No code executes.
+
+    For a *delta* bundle, pass ``?base=<config name>`` naming a config to layer onto.
+    """
+    if service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    key = _bearer_to_key(authorization)
+    if key is None or not service.key_known(key):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    raw = await request.body()
+    if len(raw) > _MAX_BUNDLE_BYTES:
+        raise HTTPException(status_code=413, detail="bundle too large")
+    try:
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="body is not valid JSON")
+
+    base_config = None
+    if base is not None:
+        bp = service.resolve_config(base)
+        if bp is None:
+            raise HTTPException(status_code=400, detail=f"unknown base config '{base}'")
+        base_config = str(bp)
+
+    try:
+        cfg = load_bundle(payload, base_config=base_config)
+    except BundleError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    try:
+        manifest_name = payload["manifest"]["name"]
+    except (KeyError, TypeError):
+        raise HTTPException(status_code=422, detail="bundle missing manifest.name")
+
+    label = service.label_for(key) or "anon"
+    name = service.store_upload(label, manifest_name, cfg)
+    service.grant_config(key, name)
+    return {"status": "ok", "name": name,
+            "message": f"stored as config '{name}'; select it in the hello frame to play"}
+
+
+def _require_cap(authorization: Optional[str], cap: str) -> dict:
+    if service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    info = service.resolve_key(_bearer_to_key(authorization))
+    if info is None:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    if cap not in info["caps"]:
+        raise HTTPException(status_code=403, detail=f"requires the '{cap}' capability")
+    return info
+
+
+@app.post("/admin/keys")
+async def mint_keys(request: Request, authorization: Optional[str] = Header(default=None)):
+    """Mint scoped cohort/participant keys (requires the 'mint' capability). Raw keys are returned
+    ONCE — only the prefix + SHA-256 hash persist."""
+    admin = _require_cap(authorization, "mint")
+    body = await request.json()
+    count = int(body.get("count") or 1)
+    if not (1 <= count <= 500):
+        raise HTTPException(status_code=400, detail="count must be 1..500")
+    role = body.get("role") or "cohort"
+    if role not in ("cohort", "admin"):
+        raise HTTPException(status_code=400, detail="role must be 'cohort' or 'admin'")
+    tokens = [service.key_store.mint(
+        role=role, cohort=body.get("cohort"), configs=body.get("configs"),
+        caps=body.get("caps") or [], quota=body.get("quota"),
+        expires_days=body.get("expires_days"),
+        created_by=admin.get("label") or "admin") for _ in range(count)]
+    return {"cohort": body.get("cohort"), "count": len(tokens), "keys": tokens,
+            "note": "store these now — they are not retrievable later"}
+
+
+@app.get("/admin/keys")
+async def list_keys_admin(cohort: Optional[str] = None,
+                          authorization: Optional[str] = Header(default=None)):
+    """List keys + usage for auditing (requires 'mint'). Never returns secrets, only prefixes."""
+    _require_cap(authorization, "mint")
+    return {"keys": service.key_store.list_keys(cohort),
+            "usage": service.key_store.usage_summary(cohort)}
+
+
+@app.post("/admin/keys/revoke")
+async def revoke_key_admin(request: Request, authorization: Optional[str] = Header(default=None)):
+    """Immediately revoke a key by prefix (requires 'mint')."""
+    _require_cap(authorization, "mint")
+    body = await request.json()
+    prefix = str(body.get("prefix") or "")
+    if not service.key_store.revoke(prefix):
+        raise HTTPException(status_code=404, detail="unknown or already-revoked prefix")
+    return {"status": "revoked", "prefix": prefix}
+
+
+@app.post("/admin/plugins/reload")
+async def reload_plugins(authorization: Optional[str] = Header(default=None)):
+    """Hot-reload plugins/ WITHOUT a router restart: clear the plugin registry and re-import every
+    module under plugins/ (edits + new files picked up; deleted files dropped). Requires the
+    'upload_code' capability. Prefer to run between games — a tool/hook call arriving during the
+    brief reload window degrades to a tool error (exception isolation), never a crash. A plugin
+    with a syntax/import error is skipped and reported, not fatal."""
+    _require_cap(authorization, "upload_code")
+    cora_ext.clear_registry()
+    loaded = cora_ext.load_plugins(["plugins"])
+    return {"reloaded_modules": loaded,
+            "load_errors": cora_ext.load_errors(),          # files that failed to import
+            "tools": list(cora_ext.all_tools()),
+            "hooks": {e: len(cora_ext.get_hooks(e)) for e in cora_ext.HOOK_EVENTS
+                      if cora_ext.get_hooks(e)}}
+
+
+@app.get("/admin/plugins/errors")
+async def plugin_errors(limit: int = 50, authorization: Optional[str] = Header(default=None)):
+    """Recent plugin diagnostics (requires 'upload_code'): load-time import failures + a ring
+    buffer of the most recent tool/hook runtime exceptions, each with a full traceback."""
+    _require_cap(authorization, "upload_code")
+    return {"load_errors": cora_ext.load_errors(),
+            "runtime_errors": cora_ext.recent_errors(limit)}
+
+
+@app.get("/my/sessions")
+async def my_sessions(authorization: Optional[str] = Header(default=None)):
+    """List the caller's OWN sessions (from their per-label session index). The label — and thus
+    the namespace — is derived from the token, never from a parameter, so one key can only ever
+    see its own cohort's data."""
+    if service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    key = _bearer_to_key(authorization)
+    if key is None or not service.key_known(key):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    label = service.label_for(key) or "anon"
+    index = service.user_dir(label) / "_sessions_index.jsonl"
+    sessions = []
+    if index.exists():
+        for line in index.read_text().splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    sessions.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+    return {"label": label, "count": len(sessions), "sessions": sessions}
+
+
+@app.get("/my/sessions/{session_id}")
+async def my_session_log(session_id: str, authorization: Optional[str] = Header(default=None)):
+    """Download one of the caller's own session logs (NDJSON event stream). Scoped to the caller's
+    label directory with a path-containment check."""
+    if service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    key = _bearer_to_key(authorization)
+    if key is None or not service.key_known(key):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    label = service.label_for(key) or "anon"
+    udir = service.user_dir(label).resolve()
+    index = udir / "_sessions_index.jsonl"
+    log_name = None
+    if index.exists():
+        for line in index.read_text().splitlines():
+            try:
+                e = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if e.get("session_id") == session_id:
+                log_name = e.get("log_file")
+                break
+    if not log_name:
+        raise HTTPException(status_code=404, detail="session not found for your key")
+    path = (udir / log_name).resolve()
+    if path.parent != udir or not path.exists():
+        raise HTTPException(status_code=404, detail="log file not found")
+    return Response(content=path.read_text(), media_type="application/x-ndjson",
+                    headers={"Content-Disposition": f'attachment; filename="{log_name}"'})
 
 
 async def _handshake(websocket: WebSocket) -> Optional[Session]:
@@ -4291,7 +4727,7 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
     player_id = None
     if isinstance(raw_pid, str):
         player_id = re.sub(r"[^A-Za-z0-9_-]", "", raw_pid)[:64] or None
-    if not api_key or api_key not in service.keys:
+    if not api_key or not service.key_known(api_key):
         await websocket.send_text(json.dumps({"type": "hello_error", "error": "invalid_api_key"}))
         await websocket.close(code=1008, reason="invalid api key")
         return None
@@ -4438,6 +4874,14 @@ def main():
     print(f"[router] Starting service on port {args.port}")
     print(f"[router] Config catalog: {service.config_dir} "
           f"({len(service.list_configs())} configs visible)")
+    _store = plugin_store.default_store()
+    key_store.default_store()
+    print(f"[router] Plugin persist store: {plugin_store._DEFAULT_PATH} | "
+          f"key store: {key_store._DEFAULT_PATH}")
+    _loaded_plugins = cora_ext.load_plugins(["plugins"])
+    if _loaded_plugins:
+        print(f"[router] Loaded {len(_loaded_plugins)} plugin module(s): {_loaded_plugins} "
+              f"| tools={list(cora_ext.all_tools())}")
     print(f"[router] Authorized keys: {[m.get('label') for m in keys.values()]}")
     print(f"[router] Session logs: {service.log_dir}")
     print(f"[router] Clients connect to ws://localhost:{args.port}/ws "

@@ -22,9 +22,8 @@
         "constructionState",
         "mapState"
       ],
-      "llm_provider": "openai",
+      "provider": "openai",
       "llm_model": "gpt-4-turbo-preview",
-      "api_key_env": "OPENAI_API_KEY",
       "turn_token_budget": 512,
       "system_prompt": "You are a construction expert advising on infrastructure priorities in a disaster relief operation.",
       "can_address": []
@@ -50,9 +49,8 @@
         "workforceState",
         "mapState"
       ],
-      "llm_provider": "anthropic",
+      "provider": "anthropic",
       "llm_model": "claude-3-sonnet-20240229",
-      "api_key_env": "ANTHROPIC_API_KEY",
       "turn_token_budget": 256,
       "system_prompt": "You are a logistics coordinator managing workers in a disaster relief operation.",
       "can_address": []
@@ -72,7 +70,7 @@
       "subobservation_space": [
         "all"
       ],
-      "llm_provider": "ollama",
+      "provider": "ollama-local",
       "llm_model": "qwen2.5:0.5b",
       "turn_token_budget": 512,
       "system_prompt": "You are a strategic advisor coordinating all aspects of disaster relief operations.",

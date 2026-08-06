@@ -16,10 +16,8 @@
         "constructionState",
         "mapState"
       ],
-      "llm_provider": "openai",
+      "provider": "cmu-gateway",
       "llm_model": "claude-haiku-4-5-20251001-v1:0",
-      "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
-      "api_key_env": "OPENAI_API_KEY",
       "turn_token_budget": 2048,
       "use_global_prompt": true,
       "system_prompt": "You are a construction expert managing infrastructure. Select action indices to build and maintain facilities. Prioritize critical infrastructure gaps and long-term sustainability.",

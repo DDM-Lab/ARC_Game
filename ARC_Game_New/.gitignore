@@ -143,3 +143,12 @@ config/keys.json.bak*
 keys.json.bak*
 logs/sessions/
 router.log
+
+# Contributor bundle uploads (runtime state, per-user namespaced)
+config/_uploads/
+
+# Uploaded (staging) plugins, per-label
+plugins/*/
+
+# Plugin persist store (durable runtime state)
+data/

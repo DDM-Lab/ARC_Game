@@ -22,7 +22,7 @@
         "constructionState",
         "mapState"
       ],
-      "llm_provider": "ollama",
+      "provider": "ollama-local",
       "llm_model": "qwen2.5:3b",
       "turn_token_budget": 512,
       "use_global_prompt": true,
@@ -50,7 +50,7 @@
         "workforceState",
         "mapState"
       ],
-      "llm_provider": "ollama",
+      "provider": "ollama-local",
       "llm_model": "qwen2.5:1.5b",
       "turn_token_budget": 256,
       "use_global_prompt": true,

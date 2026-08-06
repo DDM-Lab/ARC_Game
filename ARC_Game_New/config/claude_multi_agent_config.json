@@ -21,9 +21,8 @@
         "constructionState",
         "mapState"
       ],
-      "llm_provider": "anthropic",
+      "provider": "anthropic",
       "llm_model": "claude-sonnet-4-6",
-      "api_key_env": "ANTHROPIC_API_KEY",
       "turn_token_budget": 2048,
       "use_global_prompt": true,
       "system_prompt": "You are a construction expert managing infrastructure. Select action indices to build and maintain facilities. Prioritize critical infrastructure gaps and long-term sustainability.",
@@ -49,9 +48,8 @@
         "workforceState",
         "mapState"
       ],
-      "llm_provider": "anthropic",
+      "provider": "anthropic",
       "llm_model": "claude-sonnet-4-6",
-      "api_key_env": "ANTHROPIC_API_KEY",
       "turn_token_budget": 2048,
       "use_global_prompt": true,
       "system_prompt": "You are a logistics coordinator managing workers and assignments. Select action indices to hire, train, and assign workers efficiently. Balance workforce capacity with operational needs.",
@@ -73,9 +71,8 @@
       "subobservation_space": [
         "all"
       ],
-      "llm_provider": "anthropic",
+      "provider": "anthropic",
       "llm_model": "claude-sonnet-4-6",
-      "api_key_env": "ANTHROPIC_API_KEY",
       "turn_token_budget": 2048,
       "use_global_prompt": true,
       "system_prompt": "You are a resource allocation strategist. Propose strategic packages of actions for the director to choose from. Consider budget constraints and satisfaction priorities.",

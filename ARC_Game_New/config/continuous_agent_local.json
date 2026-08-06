@@ -10,10 +10,8 @@
         { "category": "all" }
       ],
       "subobservation_space": ["all"],
-      "llm_provider": "openai",
+      "provider": "cmu-gateway",
       "llm_model": "claude-haiku-4-5-20251001-v1:0",
-      "llm_endpoint": "https://ai-gateway.andrew.cmu.edu/v1",
-      "api_key_env": "OPENAI_API_KEY",
       "turn_token_budget": 8192,
       "max_steps": 12,
       "tool_mode": "auto",

@@ -21,9 +21,8 @@
         "mapState",
         "logistics"
       ],
-      "llm_provider": "anthropic",
+      "provider": "anthropic",
       "llm_model": "claude-sonnet-4-6",
-      "api_key_env": "ANTHROPIC_API_KEY",
       "turn_token_budget": 1024,
       "use_global_prompt": true,
       "system_prompt": "You are a strategic operations coach. Analyze the situation deeply, identify key problems and opportunities, and provide a multi-turn action plan with clear rationale.",
@@ -50,9 +49,8 @@
         "constructionState",
         "mapState"
       ],
-      "llm_provider": "anthropic",
+      "provider": "anthropic",
       "llm_model": "claude-sonnet-4-6",
-      "api_key_env": "ANTHROPIC_API_KEY",
       "turn_token_budget": 512,
       "use_global_prompt": true,
       "system_prompt": "You are a construction expert advising on infrastructure priorities.",
@@ -79,9 +77,8 @@
         "workforceState",
         "mapState"
       ],
-      "llm_provider": "anthropic",
+      "provider": "anthropic",
       "llm_model": "claude-sonnet-4-6",
-      "api_key_env": "ANTHROPIC_API_KEY",
       "turn_token_budget": 256,
       "use_global_prompt": true,
       "system_prompt": "You are a logistics coordinator managing workers and assignments.",

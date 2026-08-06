@@ -7,6 +7,12 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional
 
+from provider_registry import (
+    resolve as _resolve_provider,
+    is_valid as _provider_ok,
+    valid_names as _provider_names,
+)
+
 
 VALID_ROLES = {"subagent", "director"}
 VALID_ACTOR_TYPES = {"auto", "choices", "manual", "llm", "coach", "continuous"}
@@ -51,6 +57,12 @@ class AgentConfig:
     system_prompt: Optional[str]
     use_global_prompt: bool = True         # Prepend global prompt before system_prompt
     can_address: list[str] = field(default_factory=list)
+    # Provider enum (provider_registry). Preferred over the raw llm_provider/llm_endpoint/
+    # api_key_env trio: it names a server-side provider that resolves to those fields in
+    # __post_init__, so an uploaded config can never carry an endpoint or a secret env var.
+    # Mutually exclusive with the raw fields. (Kept in the defaults section for dataclass
+    # field-ordering; it belongs conceptually with the llm_* fields above.)
+    provider: Optional[str] = None
     # --- Choices-agent reliability + explainability (opt-in; safe defaults) ---
     choices_max_retries: int = 1           # extra LLM re-queries if a parse underdelivers
     choices_min_packages: int = 1          # floor below which we retry / fall back
@@ -88,6 +100,21 @@ class AgentConfig:
     conversation_history: list[dict] = field(default_factory=list, init=False)
 
     def __post_init__(self):
+        # Resolve the provider enum FIRST so the derived llm_provider/llm_endpoint/api_key_env are
+        # in place for every downstream client-construction site (which read them via vars(agent)).
+        if self.provider is not None:
+            if not _provider_ok(self.provider):
+                raise ValueError(
+                    f"Invalid provider '{self.provider}' for agent '{self.subagent_name}'. "
+                    f"Must be one of {_provider_names()}.")
+            if self.llm_provider or self.llm_endpoint or self.api_key_env:
+                raise ValueError(
+                    f"Agent '{self.subagent_name}': set `provider` OR raw "
+                    f"llm_provider/llm_endpoint/api_key_env, not both.")
+            spec = _resolve_provider(self.provider)
+            self.llm_provider = spec.backend
+            self.llm_endpoint = spec.base_url
+            self.api_key_env = spec.key_env
         if self.role not in VALID_ROLES:
             raise ValueError(f"Invalid role '{self.role}' for agent '{self.subagent_name}'. "
                              f"Must be one of {VALID_ROLES}")
@@ -192,6 +219,7 @@ def load_config(path: str) -> RouterConfig:
             llm_endpoint=entry.get("llm_endpoint"),
             llm_port=entry.get("llm_port"),
             api_key_env=entry.get("api_key_env"),
+            provider=entry.get("provider"),
             turn_token_budget=entry.get("turn_token_budget"),
             system_prompt=entry.get("system_prompt"),
             use_global_prompt=entry.get("use_global_prompt", True),
