@@ -60,13 +60,16 @@ public class AgentConversationUI : MonoBehaviour
     [Header("Player Input")]
     public TMP_InputField playerInputField;
     public Button sendButton;
-    
+
     [Header("UI Colors")]
     public Color activeAgentColor = Color.green;
     public Color inactiveAgentColor = Color.white;
     public Color inactiveTaskColor = Color.gray;
+    public Color inactiveTaskTextColor = new Color(0.25f, 0.25f, 0.25f);
+    public Color inProgressTaskColor = new Color(0.95f, 0.85f, 0.2f);       
+    public Color inProgressTaskTextColor = new Color(0.35f, 0.28f, 0f);     
     public Color selectedTaskColor = new Color(0.3f, 0.6f, 1f);
-    
+
     [Header("New Message Popup")]
     public GameObject newMessagePopup;
     public TextMeshProUGUI newMessageCountText;
@@ -362,7 +365,26 @@ public class AgentConversationUI : MonoBehaviour
         agentTasks.AddRange(TaskSystem.Instance.GetTasksByStatus(TaskStatus.Expired).Where(t => t.taskOfficer == agent));
         return agentTasks.OrderByDescending(t => t.timeCreated).ToList();
     }
-    
+
+    void GetStatusColors(TaskStatus status, out Color bgColor, out Color textColor)
+    {
+        switch (status)
+        {
+            case TaskStatus.InProgress:
+                bgColor = inProgressTaskColor;
+                textColor = inProgressTaskTextColor;
+                break;
+            case TaskStatus.Active:
+                bgColor = inactiveAgentColor; 
+                textColor = Color.black;
+                break;
+            default: 
+                bgColor = inactiveTaskColor;
+                textColor = inactiveTaskTextColor;
+                break;
+        }
+    }
+
     void CreateHistoricalTaskButton(GameTask task)
     {
         if (historicalTaskButtonPrefab == null || historicalTasksContent == null) return;
@@ -379,11 +401,14 @@ public class AgentConversationUI : MonoBehaviour
 
         if (buttonText != null) buttonText.text = label;
 
+
         if (task.status != TaskStatus.Active)
         {
             Image buttonImage = buttonObj.GetComponent<Image>();
-            if (buttonImage != null) buttonImage.color = inactiveTaskColor;
-            if (buttonText != null)  buttonText.color  = inactiveTaskColor;
+            Color bg, txt;
+            GetStatusColors(task.status, out bg, out txt);
+            if (buttonImage != null) buttonImage.color = bg;
+            if (buttonText != null) buttonText.color = txt;
         }
 
         if (taskButton != null) taskButton.onClick.AddListener(() => SelectHistoricalTask(task));
@@ -419,8 +444,10 @@ public class AgentConversationUI : MonoBehaviour
             }
             else if (task.status != TaskStatus.Active)
             {
-                if (buttonImage != null) buttonImage.color = inactiveTaskColor;
-                if (buttonText != null)  buttonText.color  = inactiveTaskColor;
+                Color bg, txt;
+                GetStatusColors(task.status, out bg, out txt);
+                if (buttonImage != null) buttonImage.color = bg;
+                if (buttonText != null) buttonText.color = txt;
             }
             else
             {
