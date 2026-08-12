@@ -204,15 +204,18 @@ public class TaskDetailUI : MonoBehaviour
         StopAllCoroutines();
         isTyping = false;
         currentTypingMessage = null;
-        StartCoroutine(PeekAtFacility(facilityObjectName));
+        StartCoroutine(PeekAtFacility(facilityObjectName, currentTask));
     }
 
-    IEnumerator PeekAtFacility(string facilityObjectName)
+    IEnumerator PeekAtFacility(string facilityObjectName, GameTask taskToRestore)
     {
         taskDetailPanel.SetActive(false);
         FacilityHighlightSystem.Instance?.HighlightFacility(facilityObjectName);
         float wait = FacilityHighlightSystem.Instance?.TotalDuration ?? 2f;
         yield return new WaitForSecondsRealtime(wait);
+
+        if (currentTask != taskToRestore) yield break;
+
         taskDetailPanel.SetActive(true);
     }
 
@@ -222,7 +225,7 @@ public class TaskDetailUI : MonoBehaviour
 
         MonoBehaviour triggeringFacility = ResolveTriggeringFacility();
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
-        MonoBehaviour dest   = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+        MonoBehaviour dest = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
 
         if (source == null || dest == null)
         {
@@ -233,15 +236,19 @@ public class TaskDetailUI : MonoBehaviour
         StopAllCoroutines();
         isTyping = false;
         currentTypingMessage = null;
-        StartCoroutine(PeekForRoute(source, dest));
+        StartCoroutine(PeekForRoute(source, dest, currentTask));
     }
 
-    IEnumerator PeekForRoute(MonoBehaviour source, MonoBehaviour dest)
+    IEnumerator PeekForRoute(MonoBehaviour source, MonoBehaviour dest, GameTask taskToRestore)
     {
         taskDetailPanel.SetActive(false);
         FacilityHighlightSystem.Instance?.HighlightRoute(source, dest);
         float wait = FacilityHighlightSystem.Instance?.TotalDuration ?? 2f;
         yield return new WaitForSecondsRealtime(wait);
+
+        // Something else already opened/closed the panel for a different task while we were peeking — leave it alone.
+        if (currentTask != taskToRestore) yield break;
+
         taskDetailPanel.SetActive(true);
     }
 

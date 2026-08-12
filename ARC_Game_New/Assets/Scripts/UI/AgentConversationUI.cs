@@ -601,7 +601,11 @@ public class AgentConversationUI : MonoBehaviour
             yield return StartCoroutine(AnimateExpand(true));
         }
         if (taskToRestore != null)
+        {
+            currentSelectedTask = taskToRestore;
+            UpdateSelectedTaskHighlight();
             DisplayTaskConversation(taskToRestore);
+        }
     }
 
     void DisplayInteractiveNumericalInput(AgentNumericalInput input)
@@ -719,6 +723,7 @@ public class AgentConversationUI : MonoBehaviour
         });
     }
 
+
     private IEnumerator RestoreUIAfterFacilityPeek(bool wasExpanded, GameTask taskToRestore)
     {
         if (wasExpanded)
@@ -728,6 +733,8 @@ public class AgentConversationUI : MonoBehaviour
         }
         if (taskToRestore != null)
         {
+            currentSelectedTask = taskToRestore;
+            UpdateSelectedTaskHighlight();
             DisplayTaskConversation(taskToRestore);
         }
     }
