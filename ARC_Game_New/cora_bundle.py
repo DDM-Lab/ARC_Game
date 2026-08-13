@@ -26,9 +26,39 @@ import json
 import sys
 from pathlib import Path
 
+import urllib.parse
+
 from bundle import BundleError, config_warnings, load_bundle
 from cora_schema import CORA_API_VERSION, Bundle
 from provider_registry import valid_names
+
+
+def _tls_safe(url: str) -> tuple[str, dict]:
+    """Work around an RFC-invalid hostname without weakening TLS.
+
+    The deployment is served at cora_game_llm.dev.ddmlab.com. Underscores are not legal in
+    hostnames (RFC 1123), so although the certificate covers *.dev.ddmlab.com, Python's
+    OpenSSL-backed verification refuses to match the underscored label and every Python client
+    fails with CERTIFICATE_VERIFY_FAILED. curl and browsers are lenient here; urllib, requests
+    and httpx are not.
+
+    The front door routes on the HTTP Host header rather than TLS SNI (verified against the
+    live host), so we can connect to the HYPHENATED form — same IP, same certificate, which
+    genuinely covers that name — and send the real underscored Host so the correct vhost is
+    still selected. Certificate verification stays fully ON; nothing is disabled. Returns the
+    rewritten URL plus any extra headers needed.
+
+    This is a client-side accommodation, not the cure: the real fix is a ServerAlias for the
+    hyphenated name on the front-door Apache, after which this rewrite becomes a no-op.
+    """
+    parts = urllib.parse.urlsplit(url)
+    host = parts.hostname or ""
+    if "_" not in host:
+        return url, {}
+    safe_host = host.replace("_", "-")
+    netloc = safe_host + (f":{parts.port}" if parts.port else "")
+    return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path,
+                                    parts.query, parts.fragment)), {"Host": parts.netloc}
 
 
 def _full_template(name: str, author: str) -> dict:
@@ -168,9 +198,10 @@ def cmd_push(args: argparse.Namespace) -> int:
         import json as _json
         base_name = Path(args.base).stem
         url += "?base=" + urllib.request.quote(base_name)
+    url, _extra = _tls_safe(url)
     req = urllib.request.Request(url, data=body, method="POST",
                                  headers={"Authorization": f"Bearer {args.key}",
-                                          "Content-Type": "application/json"})
+                                          "Content-Type": "application/json", **_extra})
     try:
         with urllib.request.urlopen(req) as resp:
             body = resp.read().decode()

@@ -33,6 +33,7 @@ import urllib.request
 from pathlib import Path
 
 from bundle import BundleError, config_warnings, load_bundle
+from cora_bundle import _tls_safe
 
 DEFAULT_URL = os.environ.get("CORA_URL", "http://localhost:9876")
 DEFAULT_KEY = os.environ.get("CORA_KEY", "dev-local-key")
@@ -58,10 +59,11 @@ def api(path: str, url: str, key: str, method: str = "GET", body: bytes | None =
         raw: bool = False):
     """One request. Returns (status, parsed_or_bytes). Never raises for HTTP errors — the
     caller decides how to present them, since 401/403 are expected, diagnosable states."""
+    target, extra = _tls_safe(url.rstrip("/") + path)
     req = urllib.request.Request(
-        url.rstrip("/") + path, data=body, method=method,
+        target, data=body, method=method,
         headers={"Authorization": f"Bearer {key}",
-                 "Content-Type": "application/json"})
+                 "Content-Type": "application/json", **extra})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             data = r.read()
