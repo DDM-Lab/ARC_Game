@@ -45,6 +45,41 @@ public class GymServerManager : MonoBehaviour
     // the main thread, polled on the client thread → volatile.
     private volatile bool resetComplete = false;
 
+    /// <summary>
+    /// Create the gym server from code when -gym-server is on the command line.
+    ///
+    /// This component is NOT placed in any scene — verified: its GUID appears in no asset, and
+    /// no other script instantiates it. Without this bootstrap the class is dead code in the
+    /// build: `-gym-server` is accepted, nothing binds the port, and the Python side fails with
+    /// "Connection refused" after its timeout while the player quietly runs the ordinary
+    /// WebSocket-client path instead.
+    ///
+    /// Bootstrapping from code rather than from the scene is deliberate. MainScene.unity is
+    /// LFS-tracked, so merges take one side of the file whole — a scene-placed object can be
+    /// silently dropped by an unrelated merge, which is exactly how components have gone
+    /// missing here before. Infra that a headless run depends on therefore lives in code,
+    /// where a merge conflict is visible and reviewable.
+    ///
+    /// BeforeSceneLoad so the listener is up before MainScene's Start() work begins, and gated
+    /// on the flag so a normal player build is completely unaffected.
+    /// </summary>
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void BootstrapFromCommandLine()
+    {
+        if (Instance != null) return;
+
+        bool wanted = false;
+        foreach (string a in Environment.GetCommandLineArgs())
+        {
+            if (a == "-gym-server" || a == "--gym-server") { wanted = true; break; }
+        }
+        if (!wanted) return;
+
+        var go = new GameObject("GymServerManager");
+        go.AddComponent<GymServerManager>();   // Awake() claims Instance + DontDestroyOnLoad
+        Debug.Log("[GymServer] Bootstrapped from command line (-gym-server).");
+    }
+
     void Awake()
     {
         if (Instance == null)
