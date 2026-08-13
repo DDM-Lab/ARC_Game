@@ -325,21 +325,50 @@ TOOL_SCHEMAS: Dict[str, dict] = {
 # Default palette when a config sets no `tools` allowlist: everything.
 DEFAULT_TOOLS: List[str] = list(TOOL_SCHEMAS.keys())
 
+# ── Phase B: typed action tools (canonical schema) become the officer's action surface ──
+# The model now acts via individual TYPED tools (build/hire/train/staff/deconstruct/task),
+# generated from the shared `cora_tools` schema so the live officer and the RL policy serve/
+# train on an IDENTICAL tool surface. `execute_commands` stays defined (its dispatch handler +
+# explicit-allowlist use) but drops OUT of the default palette — typed calls are translated back
+# to command tags and routed through that same execute path in
+# agent_router._dispatch_continuous_tool (ledger/block gate + execute_resolved unchanged).
+import cora_tools as _cora_tools  # noqa: E402
+for _t in _cora_tools.openai_tools(manual_transfers=True):  # include transfer in the officer palette
+    TOOL_SCHEMAS[_t["function"]["name"]] = _t
+DEFAULT_TOOLS = [n for n in TOOL_SCHEMAS if n != "execute_commands"]
 
-def build_tools(allowlist: Optional[List[str]] = None) -> List[dict]:
+
+def build_tools(allowlist: Optional[List[str]] = None,
+                descriptions: Optional[dict] = None) -> List[dict]:
     """Return the OpenAI-format tool schemas for the given allowlist.
 
     `allowlist=None` (the default) exposes the full palette — the no-gating
     default. A config MAY restrict the palette, but that is an explicit,
     documented narrowing, never the router second-guessing the model per turn.
+
+    `descriptions` (bundle `tool_descriptions`) rewords a built-in's description — the last
+    model-visible string that was not config-overridable, since a tool's description travels
+    in the API `tools` argument rather than the prompt. PARAMETERS are deliberately NOT
+    overridable: they feed cora_tools.tag_for directly, so a renamed param or a widened enum
+    emits tags cmd_parser cannot resolve — silently broken actions across all three wings.
+    Descriptions are inert to that machinery, so they are safe to expose.
+
+    Overrides are applied to a COPY. TOOL_SCHEMAS is module-level and shared by every session
+    on the server; mutating it would leak one collaborator's wording into everyone else's runs
+    (the same cross-tenant bug the per-config prompt overrides exist to prevent).
     """
     names = allowlist if allowlist else DEFAULT_TOOLS
+    descriptions = descriptions or {}
     tools = []
     for name in names:
         schema = TOOL_SCHEMAS.get(name)
         if schema is None:
             print(f"[continuous_agent] unknown tool in allowlist: {name!r} (skipped)")
             continue
+        override = descriptions.get(name)
+        if override and str(override).strip():
+            schema = {**schema, "function": {**schema["function"],
+                                             "description": str(override).strip()}}
         tools.append(schema)
     return tools
 
@@ -358,6 +387,46 @@ def _resolve_mode(agent_cfg: dict, tool_mode: str) -> str:
     # native tool calls. Ollama's tool support is uneven across models, so fall
     # back to the text/ReAct adapter there for robustness.
     return "text" if provider == "ollama" else "native"
+
+
+def _dump_prompt(agent_cfg: dict, messages: list, system=None,
+                 tools: Optional[List[dict]] = None) -> None:
+    """Debug aid: when ARC_LOG_PROMPTS=1, append the EXACT prompt sent to the LLM
+    (system + full message list, incl. the turn's observation/OPTIONS) to
+    logs/prompt_debug/<agent>.txt — so we can see precisely what each officer is
+    prompted with and diff one officer against another. No-op unless the env var is set.
+
+    `tools` is dumped too: a tool's name+description reach the model through the API `tools`
+    argument, NOT the prompt string, so a config's `tool_descriptions` override is invisible in
+    a system/messages-only dump. Without this there is no way to confirm from a live run that a
+    reworded description actually reached the model."""
+    import os
+    if os.environ.get("ARC_LOG_PROMPTS", "").strip().lower() not in ("1", "true", "yes"):
+        return
+    try:
+        import time as _t, json as _j
+        from pathlib import Path as _P
+        d = _P("logs/prompt_debug"); d.mkdir(parents=True, exist_ok=True)
+        name = str(agent_cfg.get("subagent_name") or agent_cfg.get("name") or "agent").replace(" ", "_").replace("/", "_")
+        with open(d / f"{name}.txt", "a") as f:
+            f.write(f"\n{'='*72}\n=== {name} @ {_t.strftime('%Y-%m-%d %H:%M:%S')} "
+                    f"provider={agent_cfg.get('llm_provider','?')} "
+                    f"model={agent_cfg.get('llm_model') or agent_cfg.get('model','?')}\n{'='*72}\n")
+            if system is not None:
+                f.write(f"----- SYSTEM ({len(str(system))} chars) -----\n{system}\n")
+            if tools:
+                f.write(f"----- TOOLS ({len(tools)}) -----\n")
+                for t in tools:
+                    fn = t.get("function", t)
+                    f.write(f"  {fn.get('name','?')}: {fn.get('description','')}\n")
+            for m in messages:
+                role = m.get("role", "?")
+                content = m.get("content", "")
+                if isinstance(content, (list, dict)):
+                    content = _j.dumps(content, indent=2)[:12000]
+                f.write(f"----- {role.upper()} -----\n{content}\n")
+    except Exception as e:
+        print(f"[prompt-dump] failed: {e}")
 
 
 def run_tool_step(
@@ -451,6 +520,7 @@ def _openai_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
     # with a doubled budget (capped) so the call can finish instead of degrading.
     budget = _max_tokens(agent_cfg)
     choice = None
+    _dump_prompt(agent_cfg, messages, tools=tools)   # ARC_LOG_PROMPTS=1 → logs/prompt_debug/<agent>.txt
     for attempt in range(2):
         _kw = {"temperature": 0.3} if _accepts_temperature(model) else {}
         resp = client.chat.completions.create(
@@ -541,6 +611,7 @@ def _anthropic_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
     # doubled, capped budget before accepting the partial result.
     budget = _max_tokens(agent_cfg)
     resp = None
+    _dump_prompt(agent_cfg, conversation, system=system_param, tools=tools)   # ARC_LOG_PROMPTS=1 → logs/prompt_debug/<agent>.txt
     for attempt in range(2):
         resp = client.messages.create(
             model=model,

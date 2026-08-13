@@ -107,7 +107,10 @@ def _kill_process_group(pgid: int, timeout: float = 5.0) -> None:
     while time.time() < deadline:
         try:
             os.killpg(pgid, 0)  # check liveness without signalling
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
+            # ProcessLookupError = the group is gone. PermissionError = it is no longer ours
+            # to probe (leader reaped / reparented after SIGTERM) — treat as done rather than
+            # letting the liveness check crash env.close() (which masked the real episode error).
             return
         time.sleep(0.1)
     try:
@@ -331,7 +334,11 @@ class ARCGameGymEnv(gym.Env):
             # must be the render-capable Player build). Default path keeps -nographics
             # for max speed and unchanged behavior.
             cmd = [str(unity_path), "-batchmode"]
-            if self.frame_capture == "off":
+            # ARC_KEEP_GRAPHICS=1 forces a graphics-capable launch even in text mode, so the
+            # render-capable Player build can serve as the gym when no Dedicated Server build is
+            # available (a Player build does NOT bind the gym server under -nographics).
+            _keep_gfx = os.environ.get("ARC_KEEP_GRAPHICS", "").strip().lower() in ("1", "true", "yes")
+            if self.frame_capture == "off" and not _keep_gfx:
                 cmd.append("-nographics")
             cmd += [
                 "-gym-server",  # Enable gym server mode
@@ -551,6 +558,14 @@ class ARCGameGymEnv(gym.Env):
         actions_to_run = [shim.valid_actions[i] for i in resolved]
         parse_errors = list(parsed.get("errors", []))
         task_choices = parsed.get("choices", [])
+        # Back-compat: an integer-index CSV (the benchmark/eval action format, e.g. "5,12,3") is
+        # NOT command-tag grammar, so parse_commands yields nothing. Resolve it against the menu
+        # directly so eval callers execute actions. Command-tag callers (RL policy) are unaffected.
+        if not actions_to_run and not task_choices:
+            _parts = [p.strip() for p in str(action).split(",") if p.strip()]
+            if _parts and all(p.lstrip("-").isdigit() for p in _parts):
+                actions_to_run = [self.valid_actions[int(p)] for p in _parts
+                                  if 0 <= int(p) < len(self.valid_actions)]
         for e in parse_errors:
             print(f"⚠️  Unresolved command: {e}")
 

@@ -213,8 +213,60 @@ class Bundle(BaseModel):
     manifest: BundleManifest
     config: Optional[CoraConfig] = None
     delta: Optional[CoraConfigDelta] = None
-    global_prompt: Optional[dict] = None        # optional override; shape validated elsewhere
+    # Per-bundle override of the shared prompt. Three accepted shapes:
+    #   "…"                                   -> BEHAVIOR only (game manual inherited)
+    #   {"behavior": "…", "manual": "…"}       -> override either half independently
+    #   {"global_system_prompt": "…"}          -> legacy whole-blob replace (config-file shape)
+    # The split matters: the shared prompt is really TWO things glued together — the
+    # behavior/communication rules and the game manual (mechanics, costs, strategy). A single
+    # replace field meant a contributor tweaking personality silently DELETED the game rules,
+    # leaving officers that don't know what a building costs. A bare string now means
+    # "behavior only" because that is what people actually intend when they write a prompt.
+    global_prompt: Optional[dict] = None
+    # Full override of the tool-use policy (how to call the typed action tools, the
+    # anti-hallucination rule, stay-in-lane). Replacing this is powerful and sharp: it is the
+    # MECHANICAL contract, so a bad rewrite yields officers that mis-call tools or claim
+    # actions they never took, and makes runs non-comparable with other arms. Exposed
+    # deliberately for informed collaborators; the upload endpoint warns if an override drops
+    # the contract's key clauses.
+    tool_policy: Optional[str] = None
+    # Per-config override of the AUTHORED strings in the per-turn message. Keys:
+    #   preamble | actions_header  — the framing labels around the generated state/OPTIONS
+    #   default | brief_only | addressed | first_brief | after_brief — the closing
+    #     instruction for each turn situation (which one applies is decided by the harness
+    #     from opening_mode / who spoke; only the TEXT is yours).
+    # `{title}` and `{capabilities}` are substituted. Omitted keys keep the defaults.
+    # This is the last authored prompt surface: the generated state render and the tool
+    # schemas stay harness-owned so live/RL/benchmark runs remain comparable.
+    turn_instructions: Optional[dict] = None
+    # Per-config rewording of BUILT-IN tool descriptions: {"build": "...", "task": "..."}.
+    # A tool's description reaches the model through the API `tools` argument, not the prompt,
+    # so it was the last model-visible string no prompt override could touch. Parameters and
+    # enums stay harness-owned — they feed cora_tools.tag_for, so changing them emits tags
+    # cmd_parser cannot resolve. An unknown tool name is a WARNING at upload (the override is
+    # inert), matching how an unknown name in the `tools` allowlist is handled.
+    tool_descriptions: Optional[dict] = None
     tools: list = Field(default_factory=list)
+
+    @field_validator("tool_descriptions")
+    @classmethod
+    def _check_tool_descriptions(cls, v):
+        if v is None:
+            return v
+        for k, text in v.items():
+            if not isinstance(k, str) or not k.strip():
+                raise ValueError(f"tool_descriptions keys must be tool names, got {k!r}")
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError(
+                    f"tool_descriptions[{k!r}] must be a non-empty string (got {type(text).__name__})")
+        return v
+
+    @field_validator("global_prompt", mode="before")
+    @classmethod
+    def _coerce_global_prompt(cls, v):
+        if isinstance(v, str):
+            return {"behavior": v}
+        return v
 
     @model_validator(mode="after")
     def _config_xor_delta(self):

@@ -1,0 +1,50 @@
+{
+  "manifest": {
+    "name": "testkit/01-baseline",
+    "author": "cpulling",
+    "version": "1.0.0",
+    "cora_api_version": "1.0",
+    "description": "Control: plain officer, no overrides"
+  },
+  "config": {
+    "agent_order_rule": "sequential",
+    "agents": [
+      {
+        "subagent_name": "Player",
+        "role": "director",
+        "actor_type": "manual"
+      },
+      {
+        "subagent_name": "Food Mass Care Officer",
+        "role": "subagent",
+        "actor_type": "continuous",
+        "provider": "anthropic-ddmlab",
+        "llm_model": "claude-sonnet-5",
+        "talkinghead_endpoint": "FoodMassCare",
+        "subaction_space": [
+          {
+            "category": "task_choice",
+            "group": "food"
+          },
+          {
+            "category": "construction",
+            "building_types": [
+              "kitchen"
+            ]
+          },
+          {
+            "category": "resource_transfer"
+          }
+        ],
+        "subobservation_space": [
+          "sessionInfo",
+          "satisfactionAndBudget",
+          "tasks:food",
+          "logistics"
+        ],
+        "system_prompt": "You are the Food Mass Care Officer. Be brief and concrete.",
+        "opening_mode": "emergent"
+      }
+    ]
+  }
+}

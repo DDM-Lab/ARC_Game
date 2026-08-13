@@ -1,0 +1,39 @@
+{
+  "manifest": {
+    "name": "mylab/terse",
+    "author": "me",
+    "version": "0.1.0",
+    "cora_api_version": "1.0",
+    "description": "TODO: one-line description"
+  },
+  "config": {
+    "agent_order_rule": "sequential",
+    "agents": [
+      {
+        "subagent_name": "Director",
+        "role": "director",
+        "actor_type": "manual"
+      },
+      {
+        "subagent_name": "Food Officer",
+        "role": "subagent",
+        "actor_type": "continuous",
+        "provider": "cmu-gateway",
+        "llm_model": "gpt-4o-mini",
+        "subaction_space": [
+          {
+            "category": "task_choice",
+            "group": "food"
+          }
+        ],
+        "subobservation_space": [
+          "sessionInfo",
+          "satisfactionAndBudget",
+          "tasks:food"
+        ],
+        "system_prompt": "You are the Food Officer. TODO: write the persona.",
+        "opening_mode": "reactive"
+      }
+    ]
+  }
+}

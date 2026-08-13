@@ -12,9 +12,10 @@ from datetime import datetime, timezone
 # the scorer and forced the legacy fallback (reward=0, reward_components=None) on every
 # record. Keep the guard purely defensive.
 try:
-    from reward_scoring import compute_score_components
+    from reward_scoring import compute_score_components, REWARD_WEIGHTS
 except ImportError:
     compute_score_components = None
+    REWARD_WEIGHTS = None
 
 
 class EpisodeLogger:
@@ -47,8 +48,15 @@ class EpisodeLogger:
         conv_history_length: int,
         tokens_used: int,
         game_state_after: dict = None,
+        session_id: str = "",
     ) -> None:
-        """Append one agent turn record to the JSONL log."""
+        """Append one agent turn record to the JSONL log.
+
+        `session_id` (and the `event_type` stamped on the record) exist so a turn record stays
+        attributable once logs are MERGED — e.g. the bulk /my/sessions/export corpus used for
+        fine-tuning. Turn records previously carried only episode_id, so a merged stream had no
+        way to tie them back to a session or to distinguish them from conversation events.
+        Both fields are additive and default-safe for existing callers."""
         # Calculate metrics
         satisfaction_delta = satisfaction_after - satisfaction_before
         budget_delta = budget_after - budget_before
@@ -84,7 +92,34 @@ class EpisodeLogger:
         action_ids = [r.get("action_id", "unknown") for r in execution_results]
         error_messages = [r.get("error_message", "") for r in execution_results if not r.get("success", False)]
 
+        # Per-turn COST attribution.
+        #
+        # `budget_delta` is structurally ~always 0 for a continuous officer and cannot be used
+        # to attribute spend: the officer acts inside a FROZEN paused phase, where actions are
+        # queued rather than resolved, so `budget_after` reads the same snapshot as
+        # `budget_before`. (Verified live: an officer that built a $1,000 kitchen was shown a
+        # budget of 5000 seventeen times in a row; the money only leaves at round resolution,
+        # by which point it is attributed to whichever turn straddles it — or to no turn at
+        # all.) That left per-turn spend unrecoverable from the corpus entirely.
+        #
+        # `queued_cost` fixes the attribution at the point of commitment instead: the summed
+        # cost of the actions this turn actually got the engine to accept. It is the honest
+        # per-turn price of the officer's decisions and is available immediately, without
+        # waiting for resolution. `attempted_cost` includes the ones that failed or were
+        # blocked, so a policy that keeps reaching for things it cannot afford is visible
+        # rather than silently free.
+        def _cost(r):
+            try:
+                return float(r.get("cost") or 0)
+            except (TypeError, ValueError):
+                return 0.0
+        queued_cost = sum(_cost(r) for r in exec_action_rows if r.get("success", False))
+        attempted_cost = sum(_cost(r) for r in exec_action_rows)
+
         record = {
+            # Typed + session-scoped so this record is self-describing in a merged corpus.
+            "event_type": "agent_turn",
+            "session_id": session_id,
             "episode_id": episode_id,
             "round": round_num,
             "day": day,
@@ -102,7 +137,12 @@ class EpisodeLogger:
             "satisfaction_delta": satisfaction_delta,
             "budget_before": budget_before,
             "budget_after": budget_after,
+            # NOTE: ~always 0 for continuous officers (frozen paused phase — see queued_cost
+            # above). Use queued_cost for per-turn spend; budget_delta is only meaningful for
+            # actors that act across a resolution boundary.
             "budget_delta": budget_delta,
+            "queued_cost": queued_cost,
+            "attempted_cost": attempted_cost,
             "reward": reward,
             "reward_components": reward_components,
             "total_actions_attempted": total_actions_attempted,
@@ -120,8 +160,14 @@ class EpisodeLogger:
             f.write(json.dumps(record) + "\n")
 
     def log_event(self, event_data: dict) -> None:
-        """Append a general event record to the JSONL log (e.g., conversation messages)."""
-        event_data["timestamp"] = datetime.now(timezone.utc).isoformat()
+        """Append a general event record to the JSONL log (e.g., conversation messages).
+
+        `timestamp` is the server-receive time and is authoritative for ordering. We
+        `setdefault` (not overwrite) so a caller that has already stamped a server
+        timestamp keeps it; client-side stamps must be passed under a distinct key
+        (`client_ts`) so they are never conflated with server time (see Session._emit).
+        """
+        event_data.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
         with open(self.log_path, "a") as f:
             f.write(json.dumps(event_data) + "\n")
 

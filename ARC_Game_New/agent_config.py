@@ -177,6 +177,24 @@ class AgentConfig:
 class RouterConfig:
     agent_order_rule: str
     agents: list[AgentConfig]
+    # Per-config prompt overrides (from an uploaded bundle). None → inherit the server-wide
+    # defaults. These are what let two collaborators run DIFFERENT prompt conditions on one
+    # server instead of sharing one process-wide prompt.
+    #   global_prompt_behavior : communication/persona rules half
+    #   global_prompt_manual   : game-rules half (mechanics, costs, strategy)
+    #   global_prompt          : legacy whole-blob replace (both halves at once)
+    #   tool_policy            : full replace of the tool-use contract
+    global_prompt: Optional[str] = None
+    global_prompt_behavior: Optional[str] = None
+    global_prompt_manual: Optional[str] = None
+    tool_policy: Optional[str] = None
+    # Authored strings of the per-turn message (see cora_schema.Bundle.turn_instructions).
+    turn_instructions: Optional[dict] = None
+    #   tool_descriptions      : reword built-in tool descriptions, {tool_name: text}. These
+    #                            ride the API `tools` argument rather than the prompt, so this
+    #                            is the one model-visible surface no prompt override reaches.
+    #                            Parameters/enums stay harness-owned (they feed cora_tools).
+    tool_descriptions: Optional[dict] = None
 
     def __post_init__(self):
         if self.agent_order_rule not in VALID_ORDER_RULES:
@@ -185,6 +203,27 @@ class RouterConfig:
         directors = [a for a in self.agents if a.role == "director"]
         if len(directors) != 1:
             raise ValueError(f"Config must have exactly one director, found {len(directors)}.")
+        # The GUI has exactly five FIXED talking-head slots (Unity's TaskOfficer enum), and
+        # the client buckets every inbound message by talkinghead_endpoint. Two TAB-RENDERING
+        # officers on one endpoint therefore collapse into a single tab: only one name
+        # survives in the hello_ack roster and their messages interleave under it, with no
+        # error anywhere. Per-agent validation above only checks each endpoint is a VALID
+        # name — it cannot see the collision — so reject it here, loudly, at config load.
+        # Scope: only actors that actually emit agent_message/choices frames to a tab.
+        # "coach" is excluded — it emits a `coach_report` frame instead, so it never
+        # occupies a tab and can legitimately share an endpoint (see coach_agent_example).
+        seen: dict[str, str] = {}
+        for a in self.agents:
+            ep = a.talkinghead_endpoint
+            if not ep or a.actor_type == "coach":
+                continue          # no slot: the director, headless agents, coach reports
+            if ep in seen:
+                raise ValueError(
+                    f"Duplicate talkinghead_endpoint '{ep}': used by both "
+                    f"'{seen[ep]}' and '{a.subagent_name}'. Each officer needs its own "
+                    f"slot — the GUI has one tab per endpoint, so they would collide."
+                )
+            seen[ep] = a.subagent_name
 
     def get_subagents(self) -> list[AgentConfig]:
         return [a for a in self.agents if a.role == "subagent"]
@@ -200,7 +239,19 @@ def load_config(path: str) -> RouterConfig:
             data = json.load(f)
     except FileNotFoundError:
         raise FileNotFoundError(f"agents_config.json not found at: {path}")
+    return config_from_dict(data)
 
+
+def config_from_dict(data: dict) -> RouterConfig:
+    """Build + validate a RouterConfig from an already-parsed config dict.
+
+    Split out of load_config so the UPLOAD path can enforce the same RUNTIME invariants
+    without writing a file first. The Pydantic gate (cora_schema.CoraConfig) and these
+    invariants check different things: a config can pass the schema and still be unusable —
+    e.g. two officers sharing one talkinghead slot passes CoraConfig but raises here, which
+    meant such a bundle uploaded with HTTP 200 and then broke the session of whoever selected
+    it. Running both at upload turns that into an honest rejection at the point of upload.
+    """
     agents = []
     for entry in data["agents"]:
         agents.append(AgentConfig(
@@ -237,7 +288,29 @@ def load_config(path: str) -> RouterConfig:
             ledger_mode=entry.get("ledger_mode", "block"),
         ))
 
+    # Optional per-config global prompt, carried in by an uploaded bundle (bundle.py's
+    # _attach_global_prompt). Accepts the global_prompt_config.json dict shape or a bare
+    # string; `enabled: false` means "use the server default", same as the file's flag.
+    # Prompt overrides. A bare string = BEHAVIOR only (the game manual is inherited) —
+    # replacing the whole blob by accident is how a personality tweak silently deletes the
+    # game rules. `global_system_prompt` remains a whole-blob replace for the config-file
+    # shape, which is what config/global_prompt_config.json itself uses.
+    gp = data.get("global_prompt")
+    gp_text = gp_behavior = gp_manual = None
+    if isinstance(gp, str):
+        gp_behavior = gp or None
+    elif isinstance(gp, dict) and gp.get("enabled", True):
+        gp_text = gp.get("global_system_prompt") or None
+        gp_behavior = gp.get("behavior") or None
+        gp_manual = gp.get("manual") or None
+
     return RouterConfig(
         agent_order_rule=data["agent_order_rule"],
         agents=agents,
+        global_prompt=gp_text,
+        global_prompt_behavior=gp_behavior,
+        global_prompt_manual=gp_manual,
+        tool_policy=(data.get("tool_policy") or None),
+        turn_instructions=(data.get("turn_instructions") or None),
+        tool_descriptions=(data.get("tool_descriptions") or None),
     )

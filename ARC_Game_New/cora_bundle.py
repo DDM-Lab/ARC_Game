@@ -26,7 +26,7 @@ import json
 import sys
 from pathlib import Path
 
-from bundle import BundleError, load_bundle
+from bundle import BundleError, config_warnings, load_bundle
 from cora_schema import CORA_API_VERSION, Bundle
 from provider_registry import valid_names
 
@@ -38,18 +38,35 @@ def _full_template(name: str, author: str) -> dict:
             "cora_api_version": CORA_API_VERSION,
             "description": "TODO: one-line description",
         },
+        # Defaults chosen so the UNEDITED scaffold actually plays. The previous skeleton was
+        # schema-valid but produced an officer that was invisible (no talkinghead_endpoint =>
+        # no UI slot), inert (task_choice-only => "no in-scope actions — skipping" at round 0,
+        # before any task exists), and silent (reactive => says nothing until spoken to). A
+        # first-timer saw "OK" from validate and a dead officer in game.
         "config": {
             "agent_order_rule": "sequential",
             "agents": [
                 {"subagent_name": "Director", "role": "director", "actor_type": "manual"},
                 {
                     "subagent_name": "Food Officer", "role": "subagent", "actor_type": "continuous",
-                    "provider": "cmu-gateway",           # one of: %s
-                    "llm_model": "gpt-4o-mini",
-                    "subaction_space": [{"category": "task_choice", "group": "food"}],
-                    "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "tasks:food"],
+                    "provider": "anthropic-ddmlab",      # one of: %s
+                    "llm_model": "claude-sonnet-5",
+                    # Which of the 5 fixed GUI slots this officer speaks into. Without it the
+                    # officer runs but its messages can never render.
+                    "talkinghead_endpoint": "FoodMassCare",
+                    # Keep at least one always-available category (construction) alongside
+                    # task_choice, or the officer is skipped in any round with no food task.
+                    "subaction_space": [
+                        {"category": "task_choice", "group": "food"},
+                        {"category": "construction", "building_types": ["kitchen"]},
+                        {"category": "resource_transfer"},
+                    ],
+                    "subobservation_space": ["sessionInfo", "satisfactionAndBudget",
+                                             "tasks:food", "logistics"],
                     "system_prompt": "You are the Food Officer. TODO: write the persona.",
-                    "opening_mode": "reactive",
+                    # emergent = briefs the director from round 1, so you can see it working.
+                    # Switch to "reactive" once you want it to speak only when addressed.
+                    "opening_mode": "emergent",
                 },
             ],
         },
@@ -67,7 +84,7 @@ def _delta_template(name: str, author: str) -> dict:
             "agents": [
                 {"subagent_name": "Food Officer",
                  "system_prompt": "TERSE food officer. TODO.",
-                 "provider": "anthropic"},
+                 "provider": "anthropic-ddmlab"},
             ],
         },
     }
@@ -75,8 +92,9 @@ def _delta_template(name: str, author: str) -> dict:
 
 def cmd_new(args: argparse.Namespace) -> int:
     tmpl = (_delta_template if args.delta else _full_template)(args.name, args.author)
-    if not args.delta:  # inject provider hint into the template comment string
-        tmpl["config"]["agents"][1]["provider"] = "cmu-gateway"
+    if args.provider:
+        key = "delta" if args.delta else "config"
+        tmpl[key]["agents"][-1]["provider"] = args.provider
     owner, slug = args.name.split("/", 1)
     out = Path(args.out) if args.out else Path("bundles") / owner / f"{slug}.json"
     if out.exists() and not args.force:
@@ -104,6 +122,15 @@ def cmd_validate(args: argparse.Namespace) -> int:
     n = len(cfg["agents"])
     llm = [a["subagent_name"] for a in cfg["agents"] if a.get("provider")]
     print(f"OK  {args.bundle}  ->  {n} agents ({len(llm)} LLM-driven)")
+    # Schema-valid is not the same as playable. The same authoring checks the upload endpoint
+    # runs go here too, so a contributor sees "your officer has no UI slot / can never act"
+    # BEFORE uploading rather than after a confusing playtest. Warnings never fail the command.
+    warns = config_warnings(cfg)
+    for w in warns:
+        print(f"  ⚠️  {w}", file=sys.stderr)
+    if warns:
+        print(f"  ({len(warns)} warning(s) — valid, but check these before you upload)",
+              file=sys.stderr)
     return 0
 
 
@@ -146,7 +173,21 @@ def cmd_push(args: argparse.Namespace) -> int:
                                           "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req) as resp:
-            print(resp.read().decode())
+            body = resp.read().decode()
+            # Surface server-side authoring warnings prominently. They are the difference
+            # between "uploaded fine" and "uploaded fine but your officer will look inert" —
+            # the failure mode is otherwise invisible until you play the config.
+            # (Use the module-level `json`: the `_json` alias is imported only inside the
+            #  delta branch above, so referencing it here NameErrors on a normal push.)
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                print(body)
+            else:
+                warns = data.pop("warnings", None) or []
+                print(json.dumps(data))
+                for w in warns:
+                    print(f"  ⚠️  {w}", file=sys.stderr)
         return 0
     except urllib.error.HTTPError as e:
         print(f"HTTP {e.code}: {e.read().decode()}", file=sys.stderr)
@@ -165,6 +206,8 @@ def build_parser() -> argparse.ArgumentParser:
     pn.add_argument("--author", default="", help="author name")
     pn.add_argument("--delta", action="store_true", help="scaffold an override bundle (needs a base)")
     pn.add_argument("--out", help="output path (default bundles/<owner>/<slug>.json)")
+    pn.add_argument("--provider", choices=valid_names(),
+                    help="LLM provider for the scaffolded officer (default: anthropic-ddmlab)")
     pn.add_argument("--force", action="store_true", help="overwrite an existing file")
     pn.set_defaults(func=cmd_new)
 

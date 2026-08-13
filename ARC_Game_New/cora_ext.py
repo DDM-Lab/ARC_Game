@@ -110,7 +110,17 @@ def tool_schemas(names: Optional[list[str]] = None) -> list[dict]:
 # --------------------------------------------------------------------------------------------
 # Hook registry
 # --------------------------------------------------------------------------------------------
-HOOK_EVENTS = ("on_round_start", "on_choice_resolved", "on_action_executed", "on_session_end")
+# Game-event hooks (fire-and-forget) plus two LOOP-SHAPING hooks whose RETURN VALUE matters:
+#   on_turn_start(ctx, ev) -> str | [{role,content}] | None
+#       Inject extra context before the officer's first model step (scratchpad, retrieved
+#       notes, a self-critique preamble, an experimental instruction).
+#   on_step_end(ctx, ev)   -> "stop" | True  to end the turn early, anything else continues.
+# Together these cover the common "custom agentic loop" experiments (ReAct-style scratchpads,
+# self-critique, custom stopping) without handing a contributor the loop itself — the harness
+# keeps tool-protocol pairing, action execution, the delivery guarantee, and turn logging, so
+# every loop variant still yields identical action semantics and comparable log records.
+HOOK_EVENTS = ("on_round_start", "on_choice_resolved", "on_action_executed", "on_session_end",
+               "on_turn_start", "on_step_end")
 _HOOKS: dict[str, list[Callable]] = {e: [] for e in HOOK_EVENTS}
 
 
@@ -301,6 +311,29 @@ async def run_hooks(event: str, ctx: ToolContext, event_obj: Any) -> None:
             print(f"[cora_ext] hook {hook_name} for {event} failed: "
                   f"{type(e).__name__}: {e} — full traceback:")
             traceback.print_exc()
+
+
+async def run_hooks_collect(event: str, ctx: ToolContext, event_obj: Any) -> list:
+    """Like run_hooks, but RETURNS each handler's value (failures contribute nothing).
+
+    Used by the loop-shaping hooks (on_turn_start / on_step_end) where the return value is the
+    whole point. Isolation is identical: one handler raising never stops the others or the game.
+    """
+    out: list = []
+    for fn in get_hooks(event):
+        try:
+            res = fn(ctx, event_obj)
+            if inspect.isawaitable(res):
+                res = await res
+            if res is not None:
+                out.append(res)
+        except Exception as e:
+            hook_name = getattr(fn, "__name__", "?")
+            record_error("hook", f"{hook_name}@{event}", e)
+            print(f"[cora_ext] hook {hook_name} for {event} failed: "
+                  f"{type(e).__name__}: {e} — full traceback:")
+            traceback.print_exc()
+    return out
 
 
 # --------------------------------------------------------------------------------------------

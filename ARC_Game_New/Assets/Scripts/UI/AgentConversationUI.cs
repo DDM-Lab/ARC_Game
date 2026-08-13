@@ -1724,17 +1724,31 @@ public class AgentConversationUI : MonoBehaviour
             playerInputField.text = "";
             StartCoroutine(ScrollToBottomCoroutine());
 
-            // Send message to Python backend via WebSocket
+            // Send message to Python backend via WebSocket. Only show the "thinking"
+            // bubble if the frame ACTUALLY went out — a disconnected/reconnecting client
+            // otherwise renders the message, clears the input, and spins a spinner for
+            // ~90s for something that was never sent (messaging-flow audit #2).
             string agentName = GetCurrentAgentName(currentSelectedAgent);
-            if (WebSocketManager.Instance != null && !string.IsNullOrEmpty(agentName))
+            bool sent = WebSocketManager.Instance != null
+                        && !string.IsNullOrEmpty(agentName)
+                        && WebSocketManager.Instance.SendDirectorMessage(agentName, message);
+            if (sent)
             {
-                WebSocketManager.Instance.SendDirectorMessage(agentName, message);
                 // Show the waiting bubble until this officer responds.
                 SetOfficerGenerating(currentSelectedAgent, true);
             }
+            else
+            {
+                Debug.LogWarning($"[AgentConversationUI] director_message NOT delivered "
+                    + $"(instance={WebSocketManager.Instance != null}, agent='{agentName}') — "
+                    + "not connected; message was not sent.");
+                AddAgentMessage(currentSelectedAgent,
+                    "⚠️ Not connected — that message wasn't delivered. Try again once the "
+                    + "connection is back.", "system_error");
+            }
 
             if (showDebugInfo)
-                Debug.Log($"Player sent message to {currentSelectedAgent} ({agentName}): {message}");
+                Debug.Log($"Player sent message to {currentSelectedAgent} ({agentName}): {message} (sent={sent})");
         }
     }
 
@@ -1922,15 +1936,27 @@ public class AgentConversationUI : MonoBehaviour
         if (field != null) field.text = "";
         StartCoroutine(ScrollToBottomCoroutine());
 
+        // Same delivery gate as OnSendPlayerMessage: only spin the waiting bubble if the
+        // frame actually went out, and tell the director plainly when it didn't.
         string agentName = GetCurrentAgentName(officer);
-        if (WebSocketManager.Instance != null && !string.IsNullOrEmpty(agentName))
+        bool sent = WebSocketManager.Instance != null
+                    && !string.IsNullOrEmpty(agentName)
+                    && WebSocketManager.Instance.SendDirectorMessage(agentName, message);
+        if (sent)
         {
-            WebSocketManager.Instance.SendDirectorMessage(agentName, message);
             SetOfficerGenerating(officer, true);
+        }
+        else
+        {
+            Debug.LogWarning($"[AgentConversationUI] free-text director_message NOT delivered "
+                + $"(instance={WebSocketManager.Instance != null}, agent='{agentName}').");
+            AddAgentMessage(officer,
+                "⚠️ Not connected — that message wasn't delivered. Try again once the "
+                + "connection is back.", "system_error");
         }
 
         if (showDebugInfo)
-            Debug.Log($"Free-text card → {officer} ({agentName}): {message}");
+            Debug.Log($"Free-text card → {officer} ({agentName}): {message} (sent={sent})");
     }
 
     // Copies the visible look of a real choice card onto the free-text card: its beige
@@ -2007,7 +2033,17 @@ public class AgentConversationUI : MonoBehaviour
 
     string GetCurrentAgentName(TaskOfficer officer)
     {
-        // Look up agent name from config by matching talkinghead_endpoint
+        // Prefer the roster the router sent in hello_ack (the ACTUAL loaded config).
+        // The WebGL client has no local agents_config.json, so this is what lets a
+        // "Logistics Officer" (endpoint=WorkforceService) show as "Logistics Officer"
+        // instead of the enum slot name "WorkforceService".
+        if (WebSocketManager.OfficerRoster != null &&
+            WebSocketManager.OfficerRoster.TryGetValue(officer.ToString(), out string rosterName) &&
+            !string.IsNullOrEmpty(rosterName))
+        {
+            return rosterName;
+        }
+        // Fallback: local AgentConfigLoader (editor / standalone with a config file on disk).
         AgentConfigLoader configLoader = FindObjectOfType<AgentConfigLoader>();
         if (configLoader != null && configLoader.IsLoaded)
         {
@@ -2020,6 +2056,52 @@ public class AgentConversationUI : MonoBehaviour
             }
         }
         return officer.ToString(); // Fallback to enum name
+    }
+
+    /// <summary>Relabel the (fixed 5) sidebar officer tabs with the config's real officer
+    /// names from the router roster, and hide slots no officer uses. Called on hello_ack.
+    /// A slot whose button is icon-only keeps its icon (the label set is a no-op if absent).</summary>
+    public void ApplyOfficerRoster()
+    {
+        ApplyOfficerTab(disasterOfficerButton,      TaskOfficer.DisasterOfficer);
+        ApplyOfficerTab(foodMassCareButton,         TaskOfficer.FoodMassCare);
+        ApplyOfficerTab(lodgingMassCareButton,      TaskOfficer.LodgingMassCare);
+        ApplyOfficerTab(workforceServiceButton,     TaskOfficer.WorkforceService);
+        ApplyOfficerTab(externalRelationshipButton, TaskOfficer.ExternalRelationship);
+
+        // Diagnose a roster entry that matches no slot: its officer would be invisible
+        // (no tab) and its messages unroutable. The router validates endpoints at config
+        // load, so this should never fire — log loudly if it ever does.
+        var roster = WebSocketManager.OfficerRoster;
+        if (roster != null)
+        {
+            foreach (var kv in roster)
+            {
+                if (!WebSocketManager.TryResolveOfficer(kv.Key, out _))
+                    Debug.LogError($"[AgentConversationUI] Officer '{kv.Value}' has unknown "
+                        + $"talkinghead_endpoint '{kv.Key}' — no tab, messages will not render.");
+            }
+        }
+    }
+
+    void ApplyOfficerTab(Button btn, TaskOfficer officer)
+    {
+        if (btn == null) return;
+        var roster = WebSocketManager.OfficerRoster;
+        if (roster == null || roster.Count == 0) return;   // no roster yet — leave scene defaults
+        bool present = roster.TryGetValue(officer.ToString(), out string officerName);
+        // Deliberately do NOT hide an unstaffed slot. Task routing is HARD-CODED in the
+        // engine by task title (obs_encoder.task_officer mirrors Unity), so a config with
+        // fewer officers does not produce fewer tasks — a budget or workforce task still
+        // spawns and still lands in that domain. The director has to answer those
+        // personally, so removing the tab would hide a domain that is still very much part
+        // of their job. Keep every slot visible; only RENAME the ones a config staffs.
+        btn.gameObject.SetActive(true);
+        if (present && !string.IsNullOrEmpty(officerName))
+        {
+            var label = btn.GetComponentInChildren<TMPro.TextMeshProUGUI>(true);
+            if (label != null) label.text = officerName;
+        }
     }
     
     void OnPlayerInputSubmit(string message)

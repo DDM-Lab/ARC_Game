@@ -1,0 +1,9 @@
+{
+  "manifest": {
+    "name": "testkit/R14",
+    "author": "cpulling",
+    "version": "1.0.0",
+    "cora_api_version": "1.0",
+    "description": "neither config nor delta"
+  }
+}

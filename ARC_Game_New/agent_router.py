@@ -39,12 +39,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
 import uvicorn
 
+import agent_config
 from agent_config import AgentConfig, RouterConfig, load_config
 from agent_filters import filter_observation, filter_actions
 from agent_ordering import get_agent_order
 from episode_logger import EpisodeLogger
 from llm_query import query_llm, load_global_prompt
-from continuous_agent import build_tools, run_tool_step, DEFAULT_TOOLS
+from continuous_agent import build_tools, run_tool_step, DEFAULT_TOOLS, TOOL_SCHEMAS
+import cora_tools
+# The typed action tools (build/hire/train/staff/deconstruct/task/transfer) the officer emits.
+# Each is translated to its command tag and routed through the execute_commands path.
+_CORA_ACTION_TOOLS = {t["name"] for t in cora_tools._TOOLS}
+import bundle as bundle_mod
 from bundle import load_bundle, BundleError
 import cora_ext
 import plugin_store
@@ -159,6 +165,23 @@ HUMAN_DIRECTOR_ACTOR = {
     "actor_type": "manual",
 }
 
+# System actor for engine-/server-originated events with no human or agent behind them.
+SYSTEM_ACTOR = {
+    "kind": "system",
+    "name": "system",
+    "role": "system",
+    "actor_type": "system",
+}
+
+# Sentinel so Session._emit can tell "agent not passed" from the valid value agent=None
+# (which _actor_for maps to the human Director).
+_UNSET = object()
+
+
+def _wrap_actor(name: str) -> dict:
+    """Normalize a bare string actor (e.g. "system") into the canonical actor dict block."""
+    return {"kind": name, "name": name, "role": name, "actor_type": name}
+
 
 class Session:
     """One isolated game session for a single connected Unity client.
@@ -238,6 +261,10 @@ class Session:
         # turn's opening context and clear it when the round advances (world catches
         # up). Grounding only — never gates the agent's choices.
         self._committed_this_phase: List[str] = []
+        # Running $ total of what has been committed this planning phase. The frozen
+        # observation cannot show it (actions are queued, not resolved), so without this
+        # the officer reasons about spend against a budget that never moves.
+        self._committed_spend_this_phase: float = 0.0
         # Persistent per-agent tool-loop transcript for continuous agents. Unlike
         # every other actor type (which rebuilds its prompt from the MessageQueue
         # each turn), a continuous agent carries ONE growing OpenAI-shape
@@ -281,6 +308,42 @@ class Session:
             "actor_type": agent.actor_type,
         }
 
+    def _emit(self, event_type: str, fields: Optional[dict] = None, *,
+              actor=None, agent=_UNSET, client_ts=None) -> None:
+        """Sole chokepoint for structured event logging — the ONLY caller of logger.log_event.
+
+        Centralizes three things every event needs to be consistent:
+          * actor — always the canonical dict block. Pass `agent=<AgentConfig|None>` to
+            derive it via `_actor_for`, or `actor=<dict|str>` directly (strings are
+            wrapped). `agent=None` maps to the human Director.
+          * core session ids (session_id/episode_id/round/day/segment).
+          * time — `client_ts` (client-side stamp) is kept DISTINCT from the server
+            `timestamp` that log_event stamps; they are never conflated.
+        Event-specific fields pass through via `fields`. Untrusted payloads (e.g. the
+        plugin ctx.log) must be passed as fields={"payload": ...} so they nest instead
+        of splatting arbitrary keys into the record.
+        """
+        if actor is None and agent is not _UNSET:
+            actor = self._actor_for(agent)
+        elif isinstance(actor, str):
+            actor = _wrap_actor(actor)
+        record = {
+            "event_type": event_type,
+            "schema_version": 1,
+            "session_id": self.session_id,
+            "episode_id": self.episode_id,
+            "round": self.round_num,
+            "day": self.day,
+            "segment": self.segment,
+        }
+        if actor is not None:
+            record["actor"] = actor
+        if client_ts is not None:
+            record["client_ts"] = client_ts
+        if fields:
+            record.update(fields)
+        self.logger.log_event(record)
+
     def _log_action(self, actor: dict, category: str, name: str,
                     payload: dict, click_seq=None, client_ts=None) -> None:
         """Append one unified, actor-tagged `action` event to the session JSONL.
@@ -289,21 +352,12 @@ class Session:
         ordering. `client_ts` is the Unity-side UTC stamp from the originating
         frame, for precise human-action timing (e.g. time-to-complete-task).
         """
-        self.logger.log_event({
-            "event_type": "action",
-            "schema_version": 1,
-            "session_id": self.session_id,
-            "episode_id": self.episode_id,
-            "round": self.round_num,
-            "day": self.day,
-            "segment": self.segment,
-            "actor": actor,
+        self._emit("action", {
             "category": category,
             "name": name,
             "payload": payload,
             "click_seq": click_seq,
-            "client_ts": client_ts,
-        })
+        }, actor=actor, client_ts=client_ts)
 
     # ── Action-outcome instrumentation ───────────────────────────
     # These enrich every logged continuous-agent action with an engine-truth
@@ -372,9 +426,7 @@ class Session:
             print(f"[router][{self.api_key_label}] WebSocket error: {e}")
         finally:
             try:
-                self.logger.log_event({
-                    "event_type": "session_end",
-                    "session_id": self.session_id,
+                self._emit("session_end", {
                     "label": self.api_key_label,
                     "rounds_played": self.round_num,
                 })
@@ -461,6 +513,7 @@ class Session:
             print(f"[router]   🧾 Clearing planning-phase ledger "
                   f"({len(self._committed_this_phase)} committed action(s)).")
             self._committed_this_phase = []
+            self._committed_spend_this_phase = 0.0
 
         # Validate game state has required fields
         self._validate_game_state(game_state)
@@ -697,57 +750,104 @@ Respond with ONLY the package index number (0, 1, or 2).
         print(f"[router]   ⚠️  Could not parse valid index from director response: {raw_response[:100]}")
         return 0  # Default to first package
 
+    async def _execute_one_action_via_unity(
+        self,
+        action: dict,
+        game_state: dict,
+    ) -> Tuple[dict, dict]:
+        """Send ONE game action to Unity and await its engine-truth result.
+
+        Single-in-flight discipline: hold the commit lock across arm-future → send →
+        await so concurrent officers can't clobber the single-slot _pending_action.
+        Returns (result, game_state) with game_state refreshed from the result. This is
+        the per-action primitive shared by _execute_actions_via_unity and execute_resolved.
+        """
+        async with self._unity_commit_lock:
+            loop = asyncio.get_event_loop()
+            self._pending_action = loop.create_future()
+
+            # Send execute_action to Unity
+            await self._send({
+                "type": "execute_action",
+                "action": action,
+                "timestamp": _now(),
+            })
+
+            try:
+                result_msg = await asyncio.wait_for(self._pending_action, timeout=30.0)
+            except asyncio.TimeoutError:
+                result_msg = None
+            finally:
+                self._pending_action = None
+
+        if result_msg is not None:
+            result = {
+                "action_id": action.get("action_id", "unknown"),
+                "success": result_msg.get("success", False),
+                "error_message": result_msg.get("error_message", ""),
+            }
+            # Update game state from result
+            if "game_state" in result_msg:
+                game_state = result_msg["game_state"]
+        else:
+            print(f"[router]   ⚠️  Timeout executing action {action.get('action_id', 'unknown')}")
+            result = {
+                "action_id": action.get("action_id", "unknown"),
+                "success": False,
+                "error_message": "Timeout waiting for Unity execution",
+            }
+        return result, game_state
+
     async def _execute_actions_via_unity(
         self,
         actions: List[dict],
         game_state: dict
     ) -> Tuple[List[dict], dict]:
-        """Execute actions via Unity and wait for results."""
+        """Execute a list of game actions in order (thin loop over the per-action primitive).
+
+        Per-action (not whole-batch) commit-lock discipline so a long package doesn't block
+        other officers longer than necessary. Publishes the freshest global state at the end.
+        """
         exec_results = []
-
         for action in actions:
-            # Same single-in-flight discipline as _execute_action: hold the commit
-            # lock across arm-future → send → await so concurrent officers can't
-            # clobber the single-slot _pending_action. Per-action (not whole-batch)
-            # so a long package doesn't block other officers longer than necessary.
-            async with self._unity_commit_lock:
-                loop = asyncio.get_event_loop()
-                self._pending_action = loop.create_future()
-
-                # Send execute_action to Unity
-                await self._send({
-                    "type": "execute_action",
-                    "action": action,
-                    "timestamp": _now(),
-                })
-
-                try:
-                    result_msg = await asyncio.wait_for(self._pending_action, timeout=30.0)
-                except asyncio.TimeoutError:
-                    result_msg = None
-                finally:
-                    self._pending_action = None
-
-            if result_msg is not None:
-                exec_results.append({
-                    "action_id": action.get("action_id", "unknown"),
-                    "success": result_msg.get("success", False),
-                    "error_message": result_msg.get("error_message", "")
-                })
-                # Update game state from result
-                if "game_state" in result_msg:
-                    game_state = result_msg["game_state"]
-            else:
-                print(f"[router]   ⚠️  Timeout executing action {action.get('action_id', 'unknown')}")
-                exec_results.append({
-                    "action_id": action.get("action_id", "unknown"),
-                    "success": False,
-                    "error_message": "Timeout waiting for Unity execution"
-                })
-
+            r, game_state = await self._execute_one_action_via_unity(action, game_state)
+            exec_results.append(r)
         # Publish freshest global state (same authority as _execute_action).
         self._publish_state(game_state)
         return exec_results, game_state
+
+    async def execute_resolved(
+        self,
+        items: List[dict],
+        *,
+        game_state: dict,
+        scope_agent: Optional["AgentConfig"] = None,
+    ) -> Tuple[List[dict], dict]:
+        """The one executor every wing shares — run a resolved, ORDERED stream as-chosen.
+
+        Each item is either {"kind": "action", "action": {...}} or
+        {"kind": "choice", "taskId": int, "choiceId": int}. Items execute in the order
+        given; Unity is the sole judge (NO local pre-validation/skip; failures recorded as
+        engine truth, never remapped); execution CONTINUES past failures; game_state is
+        refreshed between items so later items see earlier effects (e.g. hire-then-staff).
+
+        Front-ends (tool_calls / cmd-tags / idx) resolve to this ordered stream via the
+        shared resolver (cmd_parser's _PRIO reorder + sim_wf); this method does NOT reorder.
+        `scope_agent` is advisory (actor tag / caller logging); scope filtering is applied
+        by the caller BEFORE building the item stream.
+        """
+        results: List[dict] = []
+        for item in items:
+            if item.get("kind") == "choice":
+                r, game_state = await self._execute_choice_via_unity(
+                    int(item["taskId"]), int(item["choiceId"]), game_state)
+            else:
+                r, game_state = await self._execute_one_action_via_unity(
+                    item["action"], game_state)
+            results.append(r)
+        # Publish freshest global state (same authority as _execute_action).
+        self._publish_state(game_state)
+        return results, game_state
 
     def _may_answer_task(self, agent: "AgentConfig", task: dict) -> bool:
         """True if `agent`'s subaction_space admits this task's coarse group.
@@ -1014,19 +1114,19 @@ Respond with ONLY the package index number (0, 1, or 2).
         "You are operating as a continuous agent with a full palette of tools. "
         "Each step you may take ONE or more tool calls, or stop. Pick tools by "
         "reading the situation — nothing forces a particular style on you:\n"
-        "- execute_commands: act directly and immediately. Write what you want as "
-        "command tags (e.g. <build>Kitchen,3</build>, <hire>untrained,4</hire>, "
-        "<task>FOOD_C01,1</task>) — one tag per action, composed from the OPTIONS list "
-        "you were shown. You describe WHAT you want, never a menu index; the tags are "
-        "resolved against the live state and committed on your own judgment. Use it when "
-        "you are confident and the action is within your remit.\n"
+        "- Action tools — build / hire / train / staff / deconstruct / task / transfer: act directly "
+        "and immediately. Call the typed tool for what you want (e.g. build(type='kitchen', "
+        "site_id=3), hire(kind='untrained', count=4), task(task_id='FOOD_C01', choice_id=1)), "
+        "using values from the OPTIONS list you were shown. You describe WHAT you want, never "
+        "a menu index; each call is resolved against the live state and committed on your own "
+        "judgment. You may make several action calls in one step. Use them when you are "
+        "confident and the action is within your remit.\n"
         "- propose_choices: hand the decision to the human director as selectable "
         "packages. Use it when the call is genuinely theirs, the stakes or ambiguity "
         "are high, or you want their steer. The director's review time is scarce — "
         "propose only when it adds real value, and keep packages genuinely distinct.\n"
-        "- talk_to_director: explain, ask a clarifying question, or flag something. "
-        "Keep explanations grounded in the real state numbers; they build calibrated "
-        "trust, not blind acceptance. Ask only when the answer would change what you do.\n"
+        "- talk_to_director: explain, recommend, ask, or flag something — grounded in the "
+        "real state numbers.\n"
         "- read_state / list_actions: refresh your view of the state and the OPTIONS "
         "you can act on. get_facilities / get_workforce / get_tasks / get_logistics pull "
         "one focused slice when you don't need the whole picture.\n"
@@ -1034,24 +1134,17 @@ Respond with ONLY the package index number (0, 1, or 2).
         "whether it is yours, before acting/answering near your role's edge or naming a "
         "colleague. Use it so you name the RIGHT officer instead of guessing.\n"
         "- finish: end your turn when nothing further is worth doing.\n"
-        "Advise and propose by default; act only on a clear, specific instruction. "
-        "A request to recommend, diagnose, explain, or ask 'why doesn't X work' is "
-        "NOT authorization to execute — answer it, and (where useful) offer the "
-        "action as a proposal rather than committing it. Reserve execute_commands "
-        "for when the director has clearly told you to do the specific thing, or it "
-        "is unambiguously routine within your remit and they expect it done. When in "
-        "doubt, propose or ask rather than act. Ground every number you cite in the "
-        "state you were given.\n"
-        "CRITICAL: never claim to have built, hired, staffed, moved, or changed "
-        "anything unless you actually called execute_commands (or the director "
-        "selected a package you proposed) THIS turn and saw a success result. If an "
-        "action you want is not in your available action list, say so plainly and "
-        "explain what is blocking it — do not pretend it happened.\n"
-        "STAY IN YOUR LANE: you may only act on, and answer tasks within, your own "
-        "remit. If something the situation needs — an action or a task — is not yours, "
-        "do NOT do it or claim it — call responsibility_lookup to find the officer who "
-        "owns it, then tell the director it belongs to that officer by their correct "
-        "name. Never invent a colleague's name or role from memory; look it up."
+        "Ground every number you cite in the state you were given. Never claim to have "
+        "built, hired, staffed, moved, or changed anything unless you actually called an "
+        "action tool this turn (or the director selected a package you proposed) and saw a "
+        "success result; if an action you want is not in your available list, say so plainly "
+        "and explain what is blocking it.\n"
+        "Stay in your lane for ACTIONS only: build/hire/staff/transfer/etc. must be within your "
+        "own remit — if an action the situation needs is not yours, call responsibility_lookup and "
+        "tell the director which officer owns it, by name. But ANSWERS are never limited by lane: "
+        "always answer a question the director asks — from the shared state, or by naming the owning "
+        "officer AND still giving a useful starting number. Never refuse to answer or say 'no action "
+        "available'."
     )
 
     def _agent_lock(self, name: str) -> asyncio.Lock:
@@ -1177,20 +1270,36 @@ Respond with ONLY the package index number (0, 1, or 2).
         # Pull Unity's authoritative CURRENT state so this turn reflects everything
         # that changed since the round began — the human's own actions, sim ticks,
         # deliveries, the daily budget — not just router-caused mutations.
-        gs = await self._fetch_fresh_state()
-        if not gs:
-            return
-        filtered_state = self._filter_state(gs, agent)
-        all_actions = self._latest_all_actions or _enumerate_actions(gs)
-        filtered_actions = filter_actions(all_actions, agent.subaction_space)
-        # _latest_* is kept fresh by _publish_state() in the commit path; no
-        # end-of-turn local publish here (see _run_continuous_concurrent).
-        # triggered_by_director=True: the director addressed this officer, so under
-        # "reactive" opening_mode it is now allowed to act (full palette this turn).
-        await self._run_continuous(
-            agent, filtered_state, filtered_actions, gs, all_actions,
-            triggered_by_director=True,
-        )
+        try:
+            gs = await self._fetch_fresh_state()
+            if not gs:
+                return
+            filtered_state = self._filter_state(gs, agent)
+            all_actions = self._latest_all_actions or _enumerate_actions(gs)
+            filtered_actions = filter_actions(all_actions, agent.subaction_space)
+            # _latest_* is kept fresh by _publish_state() in the commit path; no
+            # end-of-turn local publish here (see _run_continuous_concurrent).
+            # triggered_by_director=True: the director addressed this officer, so under
+            # "reactive" opening_mode it is now allowed to act (full palette this turn).
+            await self._run_continuous(
+                agent, filtered_state, filtered_actions, gs, all_actions,
+                triggered_by_director=True,
+            )
+        except Exception as e:
+            # A director explicitly addressed this officer; an uncaught error must not
+            # leave them with a silently-hanging "thinking" bubble and no reply
+            # (messaging-flow audit #3). Surface a visible, correctly-routed reply — which
+            # also clears the client's generating spinner — and log the traceback here
+            # (we swallow rather than re-raise so _on_round_task_done doesn't double-log).
+            import traceback
+            print(f"[router]   ⚠️  director-turn error for {agent.subagent_name}: {e}")
+            traceback.print_exc()
+            try:
+                await self._send_agent_response(
+                    agent, "I hit an internal error handling that request and couldn't "
+                    "complete it — mind trying again?", "agent_response")
+            except Exception:
+                pass
 
     # Keep this many most-recent activation turns (each: one user re-grounding +
     # its assistant/tool steps) when compacting a continuous transcript. The system
@@ -1224,7 +1333,9 @@ Respond with ONLY the package index number (0, 1, or 2).
     # Tools that COMMIT to the world (spend, build, hire, transfer) or seize the
     # director's attention with a proposal. Stripped from the palette on an
     # unprompted "reactive" turn so an officer physically cannot act unbidden.
-    _ACTING_TOOLS = frozenset({"execute_commands", "propose_choices"})
+    # The typed action tools count as "acting" (build/hire/…) alongside execute_commands and
+    # propose_choices, so the reactive-autonomy guard strips ALL of them on an unprompted turn.
+    _ACTING_TOOLS = frozenset({"execute_commands", "propose_choices"} | _CORA_ACTION_TOOLS)
 
     async def _run_continuous_inner(
         self,
@@ -1245,14 +1356,17 @@ Respond with ONLY the package index number (0, 1, or 2).
         brief_only = (opening_mode == "reactive") and not triggered_by_director
         # build_tools only knows built-ins; keep plugin names out of its allowlist (they're
         # added below by _plugin_tool_schemas_for) so it doesn't log "unknown tool".
+        # Per-config rewording of built-in tool descriptions (bundle `tool_descriptions`).
+        _tdesc = getattr(self.config, "tool_descriptions", None)
         if brief_only:
             base = list(agent.tools) if agent.tools else list(DEFAULT_TOOLS)
             tools = build_tools([t for t in base
-                                 if t not in self._ACTING_TOOLS and cora_ext.get_tool(t) is None])
+                                 if t not in self._ACTING_TOOLS and cora_ext.get_tool(t) is None],
+                                descriptions=_tdesc)
         else:
             _builtins = ([t for t in agent.tools if cora_ext.get_tool(t) is None]
                          if agent.tools else None)
-            tools = build_tools(_builtins)
+            tools = build_tools(_builtins, descriptions=_tdesc)
         # Append registered plugin (cora_ext) tool schemas this agent may use. Inert when no
         # plugins are loaded; respects the reactive acting-strip and the per-agent allowlist,
         # de-duped against built-ins by name.
@@ -1283,6 +1397,22 @@ Respond with ONLY the package index number (0, 1, or 2).
         messages.append(self._continuous_turn_message(
             agent, filtered_state, filtered_actions, director_has_spoken,
             brief_only=brief_only, triggered_by_director=triggered_by_director))
+
+        # LOOP-SHAPING HOOK: let a plugin add context before the officer's first step —
+        # a ReAct scratchpad, retrieved notes, a self-critique preamble, an experimental
+        # instruction. Returned user/system messages are appended after the grounding
+        # message; assistant/tool roles are refused (they would break tool-call pairing).
+        _extra = self._hook_context_messages(await self._fire_hooks_collect(
+            "on_turn_start",
+            {"agent": agent.subagent_name, "round": self.round_num,
+             "max_steps": max_steps, "brief_only": brief_only,
+             "triggered_by_director": triggered_by_director,
+             "actions_available": len(filtered_actions)},
+            agent=agent))
+        if _extra:
+            messages.extend(_extra)
+            print(f"[router]   ＋ on_turn_start injected {len(_extra)} message(s) "
+                  f"for {agent.subagent_name}.")
 
         # Bound the ever-growing per-officer transcript: keep the system message and
         # the last N activation turns (the current one always included), shedding old
@@ -1315,6 +1445,13 @@ Respond with ONLY the package index number (0, 1, or 2).
         turn_attempts: List[dict] = []
         turn_results: List[dict] = []
         last_text = None
+        # `spoke`: whether a director-FACING agent_message was actually SENT this turn (set
+        # on a real _send_agent_response, not merely on a talk_to_director tool NAME — an
+        # empty message or a note-less finish sends nothing). `errored`: a provider/tool
+        # error broke the loop. Together they drive the post-loop fallback that guarantees a
+        # director-TRIGGERED turn always yields exactly one visible reply (no silent hang).
+        spoke = False
+        errored = False
 
         print(f"[router]   ▶ Continuous agent {agent.subagent_name}: "
               f"{len(filtered_actions)} actions, up to {max_steps} steps, "
@@ -1326,6 +1463,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             )
             if resp.get("error"):
                 print(f"[router]   ⚠️  Continuous step {step} error: {resp['error']}")
+                errored = True
                 break
 
             tokens_total += int((resp.get("usage") or {}).get("total_tokens") or 0)
@@ -1352,6 +1490,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 # No tool → the agent is done; surface any closing text.
                 if resp.get("content"):
                     await self._send_agent_response(agent, resp["content"], "agent_response")
+                    spoke = True
                 print(f"[router]   ⏹ Continuous agent finished at step {step} (no tool call).")
                 break
 
@@ -1380,6 +1519,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 # next assistant turn (OpenAI/Anthropic protocol requirement).
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
                 executed_total += meta.get("executed", 0)
+                spoke = spoke or bool(meta.get("spoke"))
                 turn_results.extend(meta.get("results") or [])
                 # Record a hard failure: nothing executed AND at least one result row
                 # reports failure. Read-only tools (read_state/get_*/list_actions)
@@ -1394,6 +1534,23 @@ Respond with ONLY the package index number (0, 1, or 2).
                 # it can't tack on a redundant "awaiting guidance" follow-up.
                 if brief_only and tc["name"] == "talk_to_director":
                     stop = True
+            # LOOP-SHAPING HOOK: a plugin may end the turn early (custom stopping rule —
+            # e.g. "stop once any action executed", a confidence gate, a step budget of its
+            # own). Return "stop" or True to halt; anything else continues. Never fires the
+            # ctx build when no hook is registered, so the built-in loop is unaffected.
+            if not stop:
+                _verdicts = await self._fire_hooks_collect(
+                    "on_step_end",
+                    {"agent": agent.subagent_name, "step": step, "max_steps": max_steps,
+                     "content": resp.get("content"),
+                     "tool_names": [tc["name"] for tc in tool_calls],
+                     "executed_total": executed_total, "spoke": spoke},
+                    agent=agent)
+                if any(v is True or (isinstance(v, str) and v.strip().lower() == "stop")
+                       for v in _verdicts):
+                    print(f"[router]   ⏹ on_step_end hook stopped the turn at step {step}.")
+                    stop = True
+
             if stop:
                 print(f"[router]   ⏹ Continuous agent called finish at step {step}.")
                 break
@@ -1415,6 +1572,24 @@ Respond with ONLY the package index number (0, 1, or 2).
             print(f"[router]   ⏸ Continuous agent {agent.subagent_name}: "
                   "no action taken this turn (noted).")
 
+        # Guarantee a director-TRIGGERED turn always produces exactly ONE visible reply.
+        # Without this, a provider error, an all-read-only turn hitting max_steps, an empty
+        # talk_to_director, or a note-less finish ends the turn with nothing sent — the
+        # director's "thinking" bubble hangs with no answer and no surfaced error
+        # (messaging-flow audit, HIGH #1). Guard on triggered_by_director so unprompted
+        # begin_round ticks may still legitimately stay silent.
+        if triggered_by_director and not spoke:
+            if errored:
+                fallback = "I hit an internal error handling that — mind trying again?"
+            else:
+                fallback = (last_text or "").strip() or "Acknowledged — nothing to add on that just now."
+            try:
+                await self._send_agent_response(agent, fallback, "agent_response")
+                print(f"[router]   ↩ Continuous agent {agent.subagent_name}: sent fallback "
+                      f"director reply ({'error' if errored else 'silent turn'}).")
+            except Exception as _e:
+                print(f"[router]   ⚠️  fallback director reply failed: {_e}")
+
         raw = last_text or f"[continuous] {executed_total} action(s) executed"
         self._log_turn(agent, filtered_state, filtered_actions, turn_attempts, None,
                        turn_results, sat_before, game_state, budget_before,
@@ -1427,7 +1602,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         """The system message (role + global prompt + tool policy). Built ONCE per
         game — it seeds the persistent transcript and never changes mid-game."""
         use_global = agent.use_global_prompt
-        global_prompt = load_global_prompt() if use_global else ""
+        global_prompt = self._resolve_global_prompt() if use_global else ""
         agent_prompt = agent.system_prompt or (
             "You are an officer in a disaster-relief operation."
         )
@@ -1435,8 +1610,42 @@ Respond with ONLY the package index number (0, 1, or 2).
             system = f"{global_prompt}\n\n---\n\nAGENT ROLE: {agent_prompt}"
         else:
             system = agent_prompt
-        system = f"{system}\n\n---\n\n{self._CONTINUOUS_TOOL_POLICY}"
+        # The tool policy is the MECHANICAL contract (how the typed action tools are called,
+        # the anti-hallucination rule, stay-in-lane). A config may replace it outright —
+        # informed collaborators can prompt-engineer the whole surface — but the upload
+        # endpoint warns when an override drops the contract's key clauses, since a bad
+        # rewrite yields officers that mis-call tools or claim actions they never took.
+        policy = getattr(self.config, "tool_policy", None) or self._CONTINUOUS_TOOL_POLICY
+        system = f"{system}\n\n---\n\n{policy}"
         return {"role": "system", "content": system}
+
+    # The shared prompt is two concerns glued together: behavior/communication rules and the
+    # game manual. They are split on this separator so a config can override either half and
+    # inherit the other — the whole point being that tweaking personality must not silently
+    # delete the game rules (costs, workforce minimums, strategy priorities).
+    _PROMPT_SPLIT = "=" * 60
+
+    def _resolve_global_prompt(self) -> str:
+        """Compose this session's shared prompt: per-config halves where supplied, server
+        defaults otherwise. A legacy whole-blob override short-circuits both halves."""
+        cfg = self.config
+        whole = getattr(cfg, "global_prompt", None)
+        if whole:
+            return whole                      # explicit whole-blob replace
+        behavior = getattr(cfg, "global_prompt_behavior", None)
+        manual = getattr(cfg, "global_prompt_manual", None)
+        if not behavior and not manual:
+            return load_global_prompt()       # nothing overridden — server default verbatim
+
+        default = load_global_prompt() or ""
+        parts = default.split(self._PROMPT_SPLIT, 1)
+        def_behavior = parts[0]
+        def_manual = parts[1] if len(parts) > 1 else ""
+        behavior = behavior if behavior else def_behavior
+        manual = manual if manual else def_manual
+        if not manual.strip():
+            return behavior
+        return f"{behavior}\n\n{self._PROMPT_SPLIT}\n{manual}"
 
     def _continuous_turn_message(
         self,
@@ -1519,17 +1728,49 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "with the answer itself (the number or a yes/no), not a recap of what "
                 "you did."
             )
+        # Per-config override of the AUTHORED half of the turn message. Which variant applies
+        # is decided by the harness (it follows from opening_mode / who spoke), but the TEXT
+        # of each is a prompt-engineering lever — it is what drives terseness, hesitancy and
+        # self-introduction, so an experiment that cannot touch it is missing a real knob.
+        # `{title}` and `{capabilities}` are substituted. Omitted key -> harness default.
+        which = ("brief_only" if brief_only
+                 else "addressed" if (opening_mode == "reactive" and triggered_by_director)
+                 else "first_brief" if (opening_mode == "brief_first" and not director_has_spoken)
+                 else "after_brief" if opening_mode == "brief_first"
+                 else "default")
+        closing = self._turn_instruction(which, closing, title=title, capabilities=capabilities)
+
         state_text = render_state_text(filtered_state)
         action_text = self._render_options_compact(filtered_actions, filtered_state)
+        preamble = self._turn_instruction("preamble", "It is your turn. Current situation:",
+                                          title=title, capabilities=capabilities)
+        actions_header = self._turn_instruction("actions_header", "Actions available to you now:",
+                                                title=title, capabilities=capabilities)
         return {
             "role": "user",
             "content": (
-                f"It is your turn. Current situation:\n{state_text}\n\n"
+                f"{preamble}\n{state_text}\n\n"
                 f"{self._committed_ledger_text()}"
-                f"Actions available to you now:\n{action_text}\n\n"
+                f"{actions_header}\n{action_text}\n\n"
                 f"{closing}"
             ),
         }
+
+    def _turn_instruction(self, key: str, default: str, **fmt) -> str:
+        """Resolve one authored turn-message string: the config's `turn_instructions[key]`
+        if present, else the harness default. Placeholder substitution is best-effort — a
+        contributor's stray brace must not crash a live turn, so a bad format string falls
+        back to the raw text rather than raising."""
+        table = getattr(self.config, "turn_instructions", None) or {}
+        text = table.get(key)
+        if not isinstance(text, str) or not text.strip():
+            return default
+        try:
+            return text.format(**fmt)
+        except (KeyError, IndexError, ValueError):
+            print(f"[router]   ⚠️  turn_instructions['{key}'] has an unusable placeholder — "
+                  "using it verbatim.")
+            return text
 
     def _build_continuous_messages(
         self,
@@ -1568,11 +1809,22 @@ Respond with ONLY the package index number (0, 1, or 2).
         if not self._committed_this_phase:
             return ""
         items = "\n".join(f"  - {c}" for c in self._committed_this_phase)
+        # State the committed spend as a NUMBER. The prose below already warns that the
+        # frozen budget excludes these commits, but without the figure the officer has to
+        # infer it — and a wrong inference means overcommitting against money it no longer
+        # has. (Observed live: an officer built a $1,000 kitchen, was still shown $5,000,
+        # and reported "~$4,000" as arithmetic rather than fact.)
+        spend = ""
+        if self._committed_spend_this_phase:
+            spend = (f"Committed spend this phase: ${self._committed_spend_this_phase:,.0f} "
+                     f"— subtract it from the budget shown above before deciding what you "
+                     f"can still afford.\n")
         return (
             "YOU HAVE ALREADY COMMITTED these actions this planning phase — they are "
             "locked in and real, and take effect when the phase resolves (next "
             "round):\n"
             f"{items}\n"
+            f"{spend}"
             "The frozen situation above was captured BEFORE these commits, so its "
             "counts (worker totals, budget) and facility list do NOT include them "
             "yet. When you reason or report to the director, RECONCILE the two: "
@@ -1676,10 +1928,15 @@ Respond with ONLY the package index number (0, 1, or 2).
         return ", ".join(phrases[:-1]) + ", and " + phrases[-1]
 
     def _record_committed(self, action: dict) -> None:
-        """Append a succeeded action to the planning-phase ledger (deduped)."""
+        """Append a succeeded action to the planning-phase ledger (deduped), and add its
+        cost to the phase's committed spend so the officer can reconcile a frozen budget."""
         line = self._action_ledger_key(action)
         if line not in self._committed_this_phase:
             self._committed_this_phase.append(line)
+            try:
+                self._committed_spend_this_phase += float(action.get("cost") or 0)
+            except (TypeError, ValueError):
+                pass
 
     def _render_action_list(self, filtered_actions: List[dict]) -> str:
         """Render the filtered actions as an indexed list (index == execute index).
@@ -1884,9 +2141,10 @@ Respond with ONLY the package index number (0, 1, or 2).
                     continue
             else:
                 continue
-            if idx not in seen:
-                seen.add(idx)
-                indices.append(idx)
+            # Keep duplicate indices: a repeated index encodes quantity (see cmd_parser
+            # ._bundle_indices), matching execute_commands and the RL gym. Deduping here
+            # under-hired/under-built via proposals (e.g. <hire>untrained,10</hire> -> 5).
+            indices.append(idx)
         for ch in parsed["choices"]:
             reasons.append(f"task {ch.get('taskId')} choice {ch.get('choiceId')} — "
                            "answer tasks with execute_commands, not a proposal package")
@@ -2054,6 +2312,43 @@ Respond with ONLY the package index number (0, 1, or 2).
         ctx = _SessionToolContext(self, agent, self._latest_game_state or {}, [], [])
         await cora_ext.run_hooks(event, ctx, event_obj)
 
+    async def _fire_hooks_collect(self, event: str, event_obj: dict,
+                                  agent: Optional[AgentConfig] = None) -> list:
+        """Fire loop-shaping hooks and RETURN their values. Inert (and free) when none are
+        registered, so the built-in loop pays nothing for the extension point."""
+        if not cora_ext.get_hooks(event):
+            return []
+        ctx = _SessionToolContext(self, agent, self._latest_game_state or {},
+                                  self._latest_all_actions or [], [])
+        return await cora_ext.run_hooks_collect(event, ctx, event_obj)
+
+    @staticmethod
+    def _hook_context_messages(results: list) -> List[dict]:
+        """Normalize on_turn_start returns into safe extra messages.
+
+        A handler may return a plain string, or a list of {role, content}. Roles are RESTRICTED
+        to user/system: injecting an `assistant` or `tool` message would break the strict
+        tool_call_id pairing the providers require and corrupt the turn, so those are dropped
+        with a warning rather than silently accepted."""
+        out: List[dict] = []
+        for res in results:
+            items = [res] if isinstance(res, (str, dict)) else (res if isinstance(res, list) else [])
+            for item in items:
+                if isinstance(item, str):
+                    if item.strip():
+                        out.append({"role": "user", "content": item})
+                elif isinstance(item, dict):
+                    role = item.get("role", "user")
+                    content = item.get("content")
+                    if role not in ("user", "system"):
+                        print(f"[router]   ⚠️  on_turn_start: dropped a {role!r} message "
+                              "(only user/system may be injected — assistant/tool would "
+                              "break tool-call pairing).")
+                        continue
+                    if isinstance(content, str) and content.strip():
+                        out.append({"role": role, "content": content})
+        return out
+
     async def _dispatch_continuous_tool(
         self,
         agent: AgentConfig,
@@ -2074,6 +2369,22 @@ Respond with ONLY the package index number (0, 1, or 2).
         tool is carried out and the honest result is returned to it.
         """
         name = tool_call.get("name")
+        # Phase B: typed action tools are the officer's action surface. Translate each to its
+        # command tag and route through the SAME execute_commands path (ledger/block gate +
+        # execute_resolved) — so the officer and the RL policy share the identical tool schema
+        # AND execution semantics. A malformed typed call yields an empty tag (honest no-op).
+        if name in _CORA_ACTION_TOOLS:
+            _tag, _tmeta = cora_tools.translate_tool_calls(
+                [(name, tool_call.get("arguments") or {})])
+            # A call the translator refused (delimiter in an argument, unreadable args) would
+            # otherwise arrive as an empty tag and come back as the opaque "empty commands"
+            # error. Hand the model the actual reason so it can reissue — same honest-result
+            # contract as the rest of this dispatcher.
+            if not _tag and _tmeta.get("errors"):
+                return ("ERROR: " + "; ".join(_tmeta["errors"]),
+                        game_state, all_actions, filtered_actions, meta)
+            tool_call = dict(tool_call, name="execute_commands", arguments={"commands": _tag})
+            name = "execute_commands"
         args = tool_call.get("arguments") or {}
         meta = {"executed": 0, "finish": False}
 
@@ -2171,7 +2482,9 @@ Respond with ONLY the package index number (0, 1, or 2).
             # policy signal returned to the agent, NOT auto-remapped or hidden. Mirrors the
             # continuous-propose stance; no site-conflict resolution here by design.
             exec_results, game_state = (
-                await self._execute_actions_via_unity(actions_to_run, game_state)
+                await self.execute_resolved(
+                    [{"kind": "action", "action": a} for a in actions_to_run],
+                    game_state=game_state, scope_agent=agent)
                 if actions_to_run else ([], game_state)
             )
             executed = 0
@@ -2189,6 +2502,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 results.append({"action_id": a.get("action_id"),
                                 "action_type": a.get("action_type"),
                                 "description": a.get("description"),
+                                "cost": a.get("cost") or 0,
                                 "success": False, "error": "blocked_already_committed"})
                 print(f"[router]   ⛔ Blocked re-execution (already committed this "
                       f"phase): {self._action_ledger_key(a)}")
@@ -2200,6 +2514,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 results.append({"action_id": action.get("action_id"),
                                 "action_type": action.get("action_type"),
                                 "description": action.get("description"),
+                                "cost": action.get("cost") or 0,
                                 "success": success, "error": err})
                 # Deltas aren't per-action-attributable inside a batched Unity
                 # commit, so log engine-truth outcome only (ok/rejected). The
@@ -2370,6 +2685,9 @@ Respond with ONLY the package index number (0, 1, or 2).
             # re-block the lock.
             if superseded:
                 meta["finish"] = True
+            else:
+                # A live proposal surfaced choice cards to the director — director-facing.
+                meta["spoke"] = True
             return result_text, game_state, all_actions, filtered_actions, meta
 
         if name == "talk_to_director":
@@ -2377,6 +2695,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             if not message:
                 return "ERROR: empty message.", game_state, all_actions, filtered_actions, meta
             await self._send_agent_response(agent, message, "agent_response")
+            meta["spoke"] = True
             return "Message delivered to the director.", \
                 game_state, all_actions, filtered_actions, meta
 
@@ -2384,6 +2703,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             note = str(args.get("note") or "").strip()
             if note:
                 await self._send_agent_response(agent, note, "agent_response")
+                meta["spoke"] = True
             meta["finish"] = True
             return "Turn ended.", game_state, all_actions, filtered_actions, meta
 
@@ -2681,18 +3001,14 @@ Respond with ONLY the package index number (0, 1, or 2).
         )
 
         # Log director message
-        self.logger.log_event({
-            "event_type": "conversation_message",
-            "round": self.round_num,
-            "actor": HUMAN_DIRECTOR_ACTOR,
+        self._emit("conversation_message", {
             "from": "Director",
             "to": convo_key,
             "content": content,
             "message_type": "director_message",
             "message_id": message["id"],
             "click_seq": msg.get("click_seq"),
-            "timestamp": message["timestamp"]
-        })
+        }, actor=HUMAN_DIRECTOR_ACTOR, client_ts=message["timestamp"])
 
         conversation = self.message_queue.get_conversation(convo_key, "Director")
 
@@ -2766,17 +3082,13 @@ Respond with ONLY the package index number (0, 1, or 2).
             msg_type=msg_type,
             round_num=self.round_num,
         )
-        self.logger.log_event({
-            "event_type": "conversation_message",
-            "round": self.round_num,
-            "actor": self._actor_for(agent),
+        self._emit("conversation_message", {
             "from": agent.subagent_name,
             "to": "Director",
             "content": response_text,
             "message_type": msg_type,
             "message_id": response_message["id"],
-            "timestamp": response_message["timestamp"],
-        })
+        }, agent=agent, client_ts=response_message["timestamp"])
         await self._send({
             "type": "agent_message",
             "agent_name": agent.subagent_name,
@@ -2802,28 +3114,12 @@ Respond with ONLY the package index number (0, 1, or 2).
             return ""
         filtered_state, _filtered_actions, _gs, _all = ctx
 
-        # Keep only the subtrees that actually inform shelter-vs-kitchen-style
-        # trade-offs. Skip session/budget — the agent already cited those when
-        # generating its prior REASONING and they're in the chat history.
-        relevant_keys = (
-            "constructionState",
-            "mapState",
-            "workers",
-            "workforceState",
-            "logistics",
-            "tasks",
-        )
-        slice_ = {
-            k: filtered_state[k]
-            for k in relevant_keys
-            if k in filtered_state and filtered_state[k] is not None
-        }
-        if not slice_:
-            return ""
-
-        try:
-            payload = json.dumps(slice_, default=str)
-        except Exception:
+        # Render through the CANONICAL encoder (same as read_state / the officer's own obs) rather
+        # than hand-dumping raw subtrees — this fixes an encoding divergence AND a silent task drop
+        # (the old code keyed on "workers"/"tasks", but the filtered state stores them under
+        # "workforceState"/"allActiveTasks", so tasks were omitted from the grounding snapshot).
+        payload = render_state_text(filtered_state)
+        if not payload:
             return ""
 
         # Soft cap to avoid burning the whole context on the snapshot.
@@ -2970,17 +3266,13 @@ Respond with ONLY the package index number (0, 1, or 2).
             )
 
             # Log feedback
-            self.logger.log_event({
-                "event_type": "conversation_message",
-                "round": self.round_num,
-                "actor": HUMAN_DIRECTOR_ACTOR,
+            self._emit("conversation_message", {
                 "from": "Director",
                 "to": agent_name,
                 "content": feedback,
                 "message_type": "feedback",
                 "message_id": message["id"],
-                "timestamp": message["timestamp"]
-            })
+            }, actor=HUMAN_DIRECTOR_ACTOR, client_ts=message["timestamp"])
 
         # Find the agent
         agent = self._get_agent_by_name(agent_name)
@@ -3417,17 +3709,13 @@ Respond with ONLY the package index number (0, 1, or 2).
         )
 
         # Log conversation message
-        self.logger.log_event({
-            "event_type": "conversation_message",
-            "round": self.round_num,
-            "actor": self._actor_for(agent),
+        self._emit("conversation_message", {
             "from": agent.subagent_name,
             "to": "Director",
             "content": summary,
             "message_type": "action_summary",
             "message_id": message["id"],
-            "timestamp": message["timestamp"]
-        })
+        }, agent=agent, client_ts=message["timestamp"])
 
         # Send to Unity for display
         await self._send({
@@ -3560,13 +3848,10 @@ Respond with ONLY the package index number (0, 1, or 2).
         )
         print(f"[router]   Reproposed {len(packages)} packages to director.")
 
-        self.logger.log_event({
-            "event_type": "choices_reproposed",
-            "round": self.round_num,
+        self._emit("choices_reproposed", {
             "agent_name": agent.subagent_name,
             "num_packages": len(packages),
-            "timestamp": _now(),
-        })
+        }, agent=agent)
 
         await self._send_choices_proposal(agent, packages, filtered_actions, reasoning)
 
@@ -4123,6 +4408,8 @@ Respond with ONLY the package index number (0, 1, or 2).
             # Pass the post-execution state so the logger can route reward through
             # the shared gym scorer (game_state_after["rewardMetrics"]).
             game_state_after=game_state_after,
+            # Keeps the turn record attributable in a MERGED corpus (bulk export → SFT).
+            session_id=self.session_id,
         )
 
 
@@ -4142,7 +4429,29 @@ def _get_budget(state: dict) -> float:
 
 # ── Multi-tenant Service ─────────────────────────────────────────
 
-app = FastAPI()
+# Interactive API docs enumerate EVERY route and its schema — a free map of the attack
+# surface (including which capabilities exist). Off unless explicitly opted in for local
+# dev: safe-by-default, since production is the case you can forget to harden.
+try:
+    from reward_scoring import REWARD_WEIGHTS as _REWARD_WEIGHTS_STAMP
+except ImportError:
+    _REWARD_WEIGHTS_STAMP = None
+
+_DEV_DOCS = os.environ.get("CORA_DEV_DOCS", "").strip().lower() in ("1", "true", "yes")
+_DOCS_KW = {} if _DEV_DOCS else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+# CONTROL PLANE / DATA PLANE SPLIT.
+# `app` (data plane) is the public surface: gameplay WS, config catalog, bundle upload,
+# a caller's own session data. It binds 0.0.0.0 and sits behind the Apache proxy.
+# `admin_app` (control plane) carries the privileged surface — minting keys and ACTIVATING
+# uploaded code — and binds 127.0.0.1 only, so it is not reachable from the internet at all.
+# This is enforced at the socket, not by proxy rules: a missing/incorrect Apache rule can
+# no longer expose admin (fail-closed instead of fail-open), and admin routes never appear
+# in the public app's schema. Reach it with an SSH tunnel:
+#     ssh -L 9877:127.0.0.1:9877 <host>   then hit http://localhost:9877/admin/...
+# Paths are unchanged (/admin/...) so existing scripts only need a different base URL.
+app = FastAPI(**_DOCS_KW)
+admin_app = FastAPI(**_DOCS_KW)
 
 
 class AgentService:
@@ -4205,17 +4514,34 @@ class AgentService:
         info = self.resolve_key(api_key)
         return info["configs"] if info else None
 
-    def list_configs(self, include_uploads_for: Optional[str] = None) -> List[dict]:
+    def list_configs(self, include_uploads_for: Optional[str] = None,
+                     include_names: Optional[List[str]] = None) -> List[dict]:
         """Return public-facing config descriptors derived from filesystem.
 
         Maintained configs (top-level config_dir) are shown to everyone. Uploaded configs
         are private to their owner: pass ``include_uploads_for=<key label>`` to also list
-        that label's own uploads (files named ``<safe_label>__*.json``)."""
+        that label's own uploads (files named ``<safe_label>__*.json``).
+
+        ``include_names`` additionally lists uploads GRANTED to a key that live in someone
+        ELSE's namespace — the study case: a collaborator uploads ``lab__cfg`` and mints
+        participant keys scoped to it. Those participants have a different label, so the
+        glob above never finds the file, and without this they could hello into a config the
+        launcher never listed — access and discovery would disagree."""
         out: List[dict] = []
         paths = sorted(self.config_dir.glob("*.json"))
         if include_uploads_for:
             safe = re.sub(r"[^A-Za-z0-9_-]+", "_", include_uploads_for)
             paths = paths + sorted(self.uploads_dir.glob(f"{safe}__*.json"))
+        if include_names:
+            seen = set(paths)
+            for name in include_names:
+                # Sanitize: a granted name is only ever a bare stem in uploads_dir.
+                stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(name))
+                p = (self.uploads_dir / f"{stem}.json").resolve()
+                if p.parent != self.uploads_dir.resolve() or not p.exists() or p in seen:
+                    continue
+                paths.append(p)
+                seen.add(p)
         for path in paths:
             if path.name.startswith("keys"):
                 continue  # skip the keys file even if it lives in config_dir
@@ -4453,19 +4779,17 @@ class _SessionToolContext(cora_ext.ToolContext):
         return cora_ext.ToolResult(text=text, executed=executed, finish=bool(superseded))
 
     def log(self, event_type: str, payload: Optional[dict] = None) -> None:
+        """Emit a plugin event through the session chokepoint (Session._emit).
+
+        The plugin-supplied payload is NESTED under `payload` (never splatted), so a
+        plugin cannot collide with or overwrite record fields (actor/event_type/ids).
+        """
         if self.agent is None:
-            actor = from_name = "system"
+            self._s._emit(event_type, {"from": "system", "payload": payload or {}},
+                          actor=SYSTEM_ACTOR)
         else:
-            actor = (self._s._actor_for(self.agent)
-                     if hasattr(self._s, "_actor_for") else self.agent.subagent_name)
-            from_name = self.agent.subagent_name
-        self._s.logger.log_event({
-            "event_type": event_type,
-            "round": getattr(self._s, "round_num", 0),
-            "actor": actor,
-            "from": from_name,
-            **(payload or {}),
-        })
+            self._s._emit(event_type, {"from": self.agent.subagent_name, "payload": payload or {}},
+                          agent=self.agent)
 
 
 @app.get("/health")
@@ -4483,6 +4807,36 @@ async def health():
     }
 
 
+@app.get("/whoami")
+async def whoami(authorization: Optional[str] = Header(default=None)):
+    """What this key is and what it may do — the self-diagnosis endpoint.
+
+    Without it a collaborator whose key is wrong, expired, or missing a capability only finds
+    out as a 401/403 partway through some other call, and cannot tell "bad key" from "valid key,
+    wrong capability". `cora.py doctor` reads this to answer both in one shot. Returns no secret:
+    the key itself is never echoed, only its label, capabilities and config scope.
+    """
+    if service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    info = service.resolve_key(_bearer_to_key(authorization))
+    if info is None:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    scoped = info.get("configs")
+    return {
+        "label": info.get("label"),
+        "role": info.get("role"),
+        "source": info.get("source"),          # static (keys.json) vs minted (hashed store)
+        "capabilities": sorted(info.get("caps") or []),
+        "config_scope": sorted(scoped) if scoped else "all",
+        # Mirrors the ACTUAL gates: POST /bundles accepts any valid key (key_known), while
+        # POST /plugins and the admin mint route are capability-gated. Reported rather than
+        # inferred so `doctor` never tells a collaborator they can do something they can't.
+        "can_upload_configs": True,
+        "can_upload_code": "upload_code" in (info.get("caps") or ()),
+        "can_mint_keys": "mint" in (info.get("caps") or ()),
+    }
+
+
 @app.get("/configs")
 async def list_configs(authorization: Optional[str] = Header(default=None)):
     if service is None:
@@ -4490,8 +4844,11 @@ async def list_configs(authorization: Optional[str] = Header(default=None)):
     key = _bearer_to_key(authorization)
     if key is None or not service.key_known(key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    configs = service.list_configs(include_uploads_for=service.label_for(key))
     allowed = service.allowed_configs_for(key)
+    # Pass `allowed` through so a config GRANTED to this key is listed even when it was
+    # uploaded under another label (collaborator uploads → participant keys scoped to it).
+    configs = service.list_configs(include_uploads_for=service.label_for(key),
+                                   include_names=allowed)
     if allowed is not None:
         configs = [c for c in configs if c["name"] in allowed]
     return {"configs": configs}
@@ -4540,6 +4897,17 @@ async def upload_bundle(request: Request,
     except BundleError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    # The Pydantic gate and the RUNTIME invariants check different things, and a config can
+    # pass the first while being unusable under the second — two officers sharing a
+    # talkinghead slot is the canonical case: CoraConfig accepts it, RouterConfig raises. That
+    # combination meant such a bundle uploaded 200 and then broke the session of whoever
+    # selected it. Enforce both here so an unusable config is refused at upload, not at play.
+    try:
+        agent_config.config_from_dict(cfg)
+    except Exception as e:
+        raise HTTPException(status_code=422,
+                            detail=f"config is schema-valid but not runnable: {e}")
+
     try:
         manifest_name = payload["manifest"]["name"]
     except (KeyError, TypeError):
@@ -4548,8 +4916,19 @@ async def upload_bundle(request: Request,
     label = service.label_for(key) or "anon"
     name = service.store_upload(label, manifest_name, cfg)
     service.grant_config(key, name)
-    return {"status": "ok", "name": name,
+    warnings = _bundle_warnings(cfg)
+    if warnings:
+        print(f"[router] upload '{name}' stored with {len(warnings)} warning(s): {warnings}")
+    return {"status": "ok", "name": name, "warnings": warnings,
             "message": f"stored as config '{name}'; select it in the hello frame to play"}
+
+
+def _bundle_warnings(cfg: dict) -> List[str]:
+    """Authoring warnings for an uploaded bundle — delegates to the shared implementation in
+    bundle.py so the CLI (`cora-bundle validate`) and this endpoint report the SAME problems.
+    Previously this logic lived only here, so validating locally gave a clean "OK" for a config
+    that could not work in the UI."""
+    return bundle_mod.config_warnings(cfg)
 
 
 def _require_cap(authorization: Optional[str], cap: str) -> dict:
@@ -4563,7 +4942,7 @@ def _require_cap(authorization: Optional[str], cap: str) -> dict:
     return info
 
 
-@app.post("/admin/keys")
+@admin_app.post("/admin/keys")
 async def mint_keys(request: Request, authorization: Optional[str] = Header(default=None)):
     """Mint scoped cohort/participant keys (requires the 'mint' capability). Raw keys are returned
     ONCE — only the prefix + SHA-256 hash persist."""
@@ -4584,7 +4963,7 @@ async def mint_keys(request: Request, authorization: Optional[str] = Header(defa
             "note": "store these now — they are not retrievable later"}
 
 
-@app.get("/admin/keys")
+@admin_app.get("/admin/keys")
 async def list_keys_admin(cohort: Optional[str] = None,
                           authorization: Optional[str] = Header(default=None)):
     """List keys + usage for auditing (requires 'mint'). Never returns secrets, only prefixes."""
@@ -4593,7 +4972,7 @@ async def list_keys_admin(cohort: Optional[str] = None,
             "usage": service.key_store.usage_summary(cohort)}
 
 
-@app.post("/admin/keys/revoke")
+@admin_app.post("/admin/keys/revoke")
 async def revoke_key_admin(request: Request, authorization: Optional[str] = Header(default=None)):
     """Immediately revoke a key by prefix (requires 'mint')."""
     _require_cap(authorization, "mint")
@@ -4604,16 +4983,123 @@ async def revoke_key_admin(request: Request, authorization: Optional[str] = Head
     return {"status": "revoked", "prefix": prefix}
 
 
-@app.post("/admin/plugins/reload")
+_MAX_PLUGIN_BYTES = 128 * 1024
+# Staged uploads land here and are NOT imported until an admin activates them via
+# /admin/plugins/reload. Kept beside plugins/ (not inside it) so a stage can never be
+# picked up by the startup load.
+_PLUGINS_STAGED_DIR = Path(__file__).parent / "plugins_staged"
+# Constructs worth a human's eyes before activation. This is NOT a sandbox and does not
+# make untrusted code safe — once activated, a plugin runs in-process with full router
+# privileges. The real controls are the upload_code capability + the manual activation
+# gate; this scan just tells the reviewer where to look.
+_PLUGIN_AUDIT_IMPORTS = {"subprocess", "socket", "shutil", "ctypes", "pickle", "marshal",
+                         "importlib", "pty", "multiprocessing", "urllib", "requests", "httpx"}
+_PLUGIN_AUDIT_CALLS = {"eval", "exec", "compile", "__import__", "open"}
+
+
+@app.post("/plugins")
+async def upload_plugin(request: Request,
+                        name: Optional[str] = None,
+                        authorization: Optional[str] = Header(default=None)):
+    """Stage a contributor plugin (a cora_ext tool/hook module) for review. Body is the raw
+    UTF-8 Python source; name it with ``?name=<slug>``. Requires the 'upload_code' capability.
+
+    SECURITY POSTURE (deliberate, staged-manual): the module is validated and written to
+    plugins_staged/<label>__<slug>.py but is **NOT imported and NOT activated**. Uploaded
+    Python executes with full router privileges once loaded, so activation is a separate,
+    explicit admin action (POST /admin/plugins/reload). The AST findings returned here are
+    advisory input to that human review — not a sandbox.
+    """
+    import ast
+    info = _require_cap(authorization, "upload_code")
+    raw = await request.body()
+    if not raw:
+        raise HTTPException(status_code=400, detail="empty body: POST the plugin source as the body")
+    if len(raw) > _MAX_PLUGIN_BYTES:
+        raise HTTPException(status_code=413, detail=f"plugin too large (max {_MAX_PLUGIN_BYTES} bytes)")
+    try:
+        source = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="plugin must be UTF-8 text")
+
+    # Namespace by the TOKEN's label (never the body/query), same rule as bundle uploads.
+    label = info.get("label") or "anon"
+    safe_label = re.sub(r"[^A-Za-z0-9_-]+", "_", label) or "anon"
+    slug = re.sub(r"[^A-Za-z0-9_]+", "_", (name or "plugin").strip()).strip("_") or "plugin"
+    stem = f"{safe_label}__{slug}"
+
+    # 1) Must parse. A syntax error is a hard reject — it could never import anyway.
+    try:
+        tree = ast.parse(source, filename=f"{stem}.py")
+    except SyntaxError as e:
+        raise HTTPException(status_code=422, detail=f"syntax error line {e.lineno}: {e.msg}")
+
+    # 2) Advisory scan: risky constructs + whether it registers anything at all.
+    findings: list = []
+    registers = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                root = a.name.split(".")[0]
+                if root in _PLUGIN_AUDIT_IMPORTS:
+                    findings.append(f"line {node.lineno}: imports '{a.name}'")
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".")[0]
+            if root in _PLUGIN_AUDIT_IMPORTS:
+                findings.append(f"line {node.lineno}: from '{node.module}' import ...")
+        elif isinstance(node, ast.Call):
+            fn = node.func
+            fname = getattr(fn, "id", None) or getattr(fn, "attr", None)
+            if fname in _PLUGIN_AUDIT_CALLS:
+                findings.append(f"line {node.lineno}: calls {fname}()")
+            if fname in ("register_tool", "register_hook", "register_loop"):
+                registers = True
+    if not registers:
+        findings.append("no register_tool/register_hook call found — this may not be a CORA plugin")
+
+    _PLUGINS_STAGED_DIR.mkdir(parents=True, exist_ok=True)
+    path = (_PLUGINS_STAGED_DIR / f"{stem}.py").resolve()
+    if path.parent != _PLUGINS_STAGED_DIR.resolve():
+        raise HTTPException(status_code=400, detail="staged path escaped plugins_staged/")
+    path.write_text(source)
+    print(f"[router] plugin STAGED (not active): {path.name} by '{label}' "
+          f"({len(raw)} bytes, {len(findings)} review note(s))")
+    return {
+        "status": "staged",
+        "name": path.name,
+        "bytes": len(raw),
+        "active": False,
+        "review_notes": findings,
+        "message": ("Staged for review — NOT active. An admin must activate it with "
+                    "POST /admin/plugins/reload (this imports and runs the module)."),
+    }
+
+
+@app.get("/plugins")
+async def list_plugins(authorization: Optional[str] = Header(default=None)):
+    """List staged (inactive) and active plugin modules. Requires 'upload_code'."""
+    _require_cap(authorization, "upload_code")
+    staged = sorted(p.name for p in _PLUGINS_STAGED_DIR.glob("*.py")) \
+        if _PLUGINS_STAGED_DIR.exists() else []
+    return {"staged_inactive": staged,
+            "active_tools": list(cora_ext.all_tools()),
+            "active_hooks": {e: len(cora_ext.get_hooks(e)) for e in cora_ext.HOOK_EVENTS
+                             if cora_ext.get_hooks(e)},
+            "load_errors": cora_ext.load_errors()}
+
+
+@admin_app.post("/admin/plugins/reload")
 async def reload_plugins(authorization: Optional[str] = Header(default=None)):
-    """Hot-reload plugins/ WITHOUT a router restart: clear the plugin registry and re-import every
-    module under plugins/ (edits + new files picked up; deleted files dropped). Requires the
-    'upload_code' capability. Prefer to run between games — a tool/hook call arriving during the
-    brief reload window degrades to a tool error (exception isolation), never a crash. A plugin
-    with a syntax/import error is skipped and reported, not fatal."""
+    """Hot-reload plugins WITHOUT a router restart: clear the plugin registry and re-import every
+    module under plugins/ AND plugins_staged/ (edits + new files picked up; deleted files dropped).
+    Requires the 'upload_code' capability. This is the ACTIVATION step for anything uploaded via
+    POST /plugins — it imports and executes that code, so review the staged file first. Prefer to
+    run between games — a tool/hook call arriving during the brief reload window degrades to a tool
+    error (exception isolation), never a crash. A plugin with a syntax/import error is skipped and
+    reported, not fatal."""
     _require_cap(authorization, "upload_code")
     cora_ext.clear_registry()
-    loaded = cora_ext.load_plugins(["plugins"])
+    loaded = cora_ext.load_plugins(["plugins", str(_PLUGINS_STAGED_DIR)])
     return {"reloaded_modules": loaded,
             "load_errors": cora_ext.load_errors(),          # files that failed to import
             "tools": list(cora_ext.all_tools()),
@@ -4621,7 +5107,7 @@ async def reload_plugins(authorization: Optional[str] = Header(default=None)):
                       if cora_ext.get_hooks(e)}}
 
 
-@app.get("/admin/plugins/errors")
+@admin_app.get("/admin/plugins/errors")
 async def plugin_errors(limit: int = 50, authorization: Optional[str] = Header(default=None)):
     """Recent plugin diagnostics (requires 'upload_code'): load-time import failures + a ring
     buffer of the most recent tool/hook runtime exceptions, each with a full traceback."""
@@ -4652,6 +5138,87 @@ async def my_sessions(authorization: Optional[str] = Header(default=None)):
                 except json.JSONDecodeError:
                     pass
     return {"label": label, "count": len(sessions), "sessions": sessions}
+
+
+@app.get("/my/sessions/export")
+async def my_sessions_export(format: str = "ndjson", config: Optional[str] = None,
+                             limit: int = 0,
+                             authorization: Optional[str] = Header(default=None)):
+    """Bulk-download ALL of the caller's own session logs in one request — the corpus step for
+    fine-tuning. Scoped to the token's label exactly like /my/sessions, so a key can only ever
+    export its own cohort's data.
+
+    NOTE: this route MUST stay declared above /my/sessions/{session_id}; otherwise FastAPI
+    matches "export" as a session_id and this endpoint becomes unreachable.
+
+    format=ndjson (default): every event of every session concatenated, newline-delimited. Each
+      line already carries session_id/episode_id, so the stream stays attributable after merging.
+    format=tar: a .tar.gz of the individual session .jsonl files (one member per session).
+    config=<name>: only sessions played on that config. limit=N: most recent N sessions.
+    """
+    if service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    key = _bearer_to_key(authorization)
+    if key is None or not service.key_known(key):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    if format not in ("ndjson", "tar"):
+        raise HTTPException(status_code=400, detail="format must be 'ndjson' or 'tar'")
+
+    label = service.label_for(key) or "anon"
+    udir = service.user_dir(label).resolve()
+    index = udir / "_sessions_index.jsonl"
+    entries: list = []
+    if index.exists():
+        for line in index.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if config and e.get("config") != config:
+                continue
+            entries.append(e)
+    if limit and limit > 0:
+        entries = entries[-limit:]
+
+    # Resolve to real, containment-checked files (skip index rows whose log is gone).
+    files: list = []
+    for e in entries:
+        name = e.get("log_file")
+        if not name:
+            continue
+        p = (udir / name).resolve()
+        if p.parent == udir and p.exists():
+            files.append(p)
+
+    stamp = _now().replace(":", "").replace("-", "")[:15]
+    if format == "tar":
+        import io, tarfile
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            for p in files:
+                tf.add(str(p), arcname=f"{label}/{p.name}")
+        data = buf.getvalue()
+        fn = f"cora_sessions_{label}_{stamp}.tar.gz"
+        print(f"[router] export: {len(files)} session(s) for '{label}' as tar ({len(data)} bytes)")
+        return Response(content=data, media_type="application/gzip",
+                        headers={"Content-Disposition": f'attachment; filename="{fn}"',
+                                 "X-CORA-Sessions": str(len(files))})
+
+    chunks = []
+    for p in files:
+        text = p.read_text()
+        if text and not text.endswith("\n"):
+            text += "\n"
+        chunks.append(text)
+    body = "".join(chunks)
+    fn = f"cora_sessions_{label}_{stamp}.jsonl"
+    print(f"[router] export: {len(files)} session(s) for '{label}' as ndjson ({len(body)} bytes)")
+    return Response(content=body, media_type="application/x-ndjson",
+                    headers={"Content-Disposition": f'attachment; filename="{fn}"',
+                             "X-CORA-Sessions": str(len(files))})
 
 
 @app.get("/my/sessions/{session_id}")
@@ -4727,6 +5294,14 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
     player_id = None
     if isinstance(raw_pid, str):
         player_id = re.sub(r"[^A-Za-z0-9_-]", "", raw_pid)[:64] or None
+    # Map provenance the client reports (see the session_start emit below). UNTRUSTED like
+    # player_id: bounded and only ever stored as a log VALUE, never used as a path or to
+    # fetch anything. "" when an older client doesn't send it.
+    def _clip(v, n=300):
+        return v[:n] if isinstance(v, str) else ""
+    map_url = _clip(msg.get("map_url"))
+    map_hash = _clip(msg.get("map_hash"), 32)
+    map_status = _clip(msg.get("map_status"), 24)
     if not api_key or not service.key_known(api_key):
         await websocket.send_text(json.dumps({"type": "hello_error", "error": "invalid_api_key"}))
         await websocket.close(code=1008, reason="invalid api key")
@@ -4785,14 +5360,26 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
     key_fp = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12]
     service.record_session(key_label, key_fp, session_id, config_name, log_path,
                            player_id=player_id)
-    session.logger.log_event({
-        "event_type": "session_start",
-        "session_id": session_id,
+    session._emit("session_start", {
         "label": key_label,
         "key_fingerprint": key_fp,
         "player_id": player_id,
         "config": config_name,
         "agents": [a.subagent_name for a in cfg.agents],
+        # Map PROVENANCE, reported by the client. Maps are deliberately served outside the
+        # router (a partner can expose a map derived from private data), so this is the only
+        # record of which map a session actually ran on. Stamping it here keeps a merged
+        # corpus self-describing — two map conditions stay separable at training time, and a
+        # silent fallback to the default layout (map_status != "loaded") is visible after the
+        # fact. The router RECORDS these; it never serves or validates map content.
+        "map": {"url": map_url, "hash": map_hash, "status": map_status},
+        # The weights that turn Unity's rewardMetrics into `score`. Every wing (live, RL,
+        # benchmark) shares reward_scoring.compute_score_components, so scores ARE directly
+        # comparable — but only under the SAME weights. Without this stamp, retuning a weight
+        # silently makes old and new runs incomparable: the numbers still merge and parse,
+        # they just quietly mean something different. Raw rewardMetrics are preserved per
+        # turn regardless, so a corpus can always be re-scored under new weights.
+        "reward_weights": _REWARD_WEIGHTS_STAMP,
     })
 
     await websocket.send_text(json.dumps({
@@ -4800,6 +5387,13 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
         "session_id": session_id,
         "config": config_name,
         "agents": [a.subagent_name for a in cfg.agents],
+        # Roster the client uses to label the (fixed 5) sidebar talking-head slots by
+        # the config's real officer names, keyed by talkinghead_endpoint. Without this
+        # the WebGL client has no local config and falls back to the enum slot names,
+        # so e.g. a "Logistics Officer" (endpoint=WorkforceService) renders under the
+        # "Workforce Service" tab and looks like it never landed.
+        "officers": [{"name": a.subagent_name, "endpoint": a.talkinghead_endpoint}
+                     for a in cfg.agents if a.talkinghead_endpoint],
         "label": key_label,
         "player_id": player_id,
     }))
@@ -4845,6 +5439,14 @@ def main():
                         help="Directory for per-session episode log files")
     parser.add_argument("--port", type=int, default=9876,
                         help="Port to listen on for Unity connections")
+    parser.add_argument("--admin-port", type=int, default=9877,
+                        help="Port for the ADMIN (control-plane) app: key minting, plugin "
+                             "activation, diagnostics. Bound to loopback by default — reach "
+                             "it with: ssh -L 9877:127.0.0.1:9877 <host>")
+    parser.add_argument("--admin-host", default="127.0.0.1",
+                        help="Bind address for the admin app. Keep 127.0.0.1 in production; "
+                             "binding it to 0.0.0.0 puts key minting and code activation on "
+                             "the network and is almost never what you want.")
     parser.add_argument("--cors-origins", default="*",
                         help="Comma-separated origins allowed for browser (WebGL) "
                              "clients, or '*' for any. Only needed when the WebGL "
@@ -4901,7 +5503,21 @@ def main():
     )
     print(f"[router] CORS allow_origins = {origins}")
 
-    uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="info")
+    # Serve BOTH planes: the public app on all interfaces (behind the proxy) and the admin
+    # app on loopback only. Binding admin to 127.0.0.1 is the actual control — it cannot be
+    # reached from off-box regardless of what the reverse proxy is configured to forward.
+    async def _serve_both():
+        public = uvicorn.Server(uvicorn.Config(
+            app, host="0.0.0.0", port=args.port, log_level="info"))
+        admin = uvicorn.Server(uvicorn.Config(
+            admin_app, host=args.admin_host, port=args.admin_port, log_level="warning"))
+        print(f"[router] data plane  : http://0.0.0.0:{args.port} (public, proxied)")
+        print(f"[router] control plane: http://{args.admin_host}:{args.admin_port} "
+              f"(admin — loopback only; reach via: ssh -L {args.admin_port}:127.0.0.1:{args.admin_port} <host>)")
+        print(f"[router] API docs: {'ENABLED (CORA_DEV_DOCS)' if _DEV_DOCS else 'disabled'}")
+        await asyncio.gather(public.serve(), admin.serve())
+
+    asyncio.run(_serve_both())
 
 
 if __name__ == "__main__":

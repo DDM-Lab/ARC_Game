@@ -1,0 +1,18 @@
+{
+  "manifest": {
+    "name": "testkit/12-delta",
+    "author": "cpulling",
+    "version": "1.0.0",
+    "cora_api_version": "1.0",
+    "description": "delta over continuous_all_officers_ddmlab"
+  },
+  "delta": {
+    "agents": [
+      {
+        "subagent_name": "Food Mass Care Officer",
+        "system_prompt": "TERSE. Six words maximum, always.",
+        "llm_model": "claude-sonnet-5"
+      }
+    ]
+  }
+}

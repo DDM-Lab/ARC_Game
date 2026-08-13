@@ -355,6 +355,66 @@ def ask_cmd(client, model, state, env, image_b64=None, image_mode="none", reason
     return dec, content, rtrace, rtok, ok
 
 
+def ask_tools(client, model, state, env, image_b64=None, image_mode="none", reasoning_effort="low",
+              system_variant="minimal", temperature=None, obs_encoding="json", history=None,
+              prev_state=None, prompt_pack=None):
+    """Tool-use analogue of ask_cmd(): state-only obs + the TYPED tool schema (cora_tools). The
+    model emits NATIVE tool_calls; cora_tools.translate_tool_calls -> command tags ->
+    smoke.parse_commands, returning the SAME 5-tuple so the episode loop is format-agnostic. This
+    is the benchmark wing of the Phase B unification — the identical tool schema the live officer
+    offers and the RL policy trains on."""
+    import re
+    import cora_tools
+    import cora_prompts
+    _mt = getattr(env, "manual_transfers", True)
+    sys_prompt = (prompt_packs.render(prompt_pack, manual_transfers=_mt, has_image=False)
+                  if prompt_pack else cora_prompts.tool_system_prompt(manual_transfers=_mt, variant=system_variant))
+    if obs_encoding == "delta":
+        rendered = smoke.render_state_delta(state, prev_state)
+    elif obs_encoding == "compact":
+        rendered = smoke.render_state_compact(state)
+    else:
+        rendered = json.dumps(state)
+    user_text = "State:\n" + rendered + "\n\nAct by calling the tools."
+    msgs = [{"role": "system", "content": _system_content(sys_prompt, image_b64, image_mode)}]
+    if history:
+        msgs.extend(history)
+    msgs.append(_user_msg(user_text, image_b64))
+    tools = cora_tools.openai_tools(manual_transfers=_mt)
+    kw = dict(model=model, messages=msgs, tools=tools, max_tokens=2000)
+    if temperature is not None:
+        kw["temperature"] = temperature
+    try:
+        r = client.chat.completions.create(**kw)
+    except Exception as e:
+        emsg = str(e).lower()
+        if "temperature" in emsg:
+            kw.pop("temperature", None)
+        if "max_tokens" in emsg or "max_completion_tokens" in emsg:
+            kw.pop("max_tokens", None); kw["max_completion_tokens"] = 2000
+        r = client.chat.completions.create(**kw)
+    m = r.choices[0].message
+    content = m.content or ""
+    raw_tcs = getattr(m, "tool_calls", None) or []
+    tcs = [(tc.function.name, tc.function.arguments) for tc in raw_tcs]
+    tags, tmeta = cora_tools.translate_tool_calls(tcs)
+    if history is not None:
+        history.append(_user_msg(user_text, None))
+        history.append({"role": "assistant", "content": content or tags})
+    pc = smoke.parse_commands(tags, env)
+    reason = ""
+    mr = re.search(r"REASONING:\s*(.+)", content or "")
+    if mr:
+        reason = mr.group(1).splitlines()[0].strip()
+    dec = {"choices": pc["choices"], "actions": pc["actions"], "reasoning": reason,
+           "note": " ".join(pc["parsed"])[:120], "errors": pc["errors"], "tool_meta": tmeta}
+    # parsed_ok: at least one action/choice resolved, OR the model emitted well-formed tool calls
+    # (received > 0 with no unknown-name / bad-args) — a clean no-op turn, not a parse failure.
+    ok = bool(pc["actions"] or pc["choices"]) or (
+        tmeta["received"] > 0 and tmeta["bad_args"] == 0 and tmeta["unknown_name"] == 0)
+    return dec, content, None, None, ok
+
+
 # ── Non-learning baseline policies (operate on the full env, not the prompt) ──
 from arc_game_gym_env_tcp import REWARD_WEIGHTS
 
@@ -1007,18 +1067,23 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
     # Command-tag format only applies to the LLM policy; the non-learning baselines emit action
     # indices directly and always use the enumerated (idx) observation.
     cmd_fmt = (action_format == "cmd" and policy == "llm")
+    tools_fmt = (action_format == "tools" and policy == "llm")
+    state_only = cmd_fmt or tools_fmt   # both use state-only obs + a non-idx action surface
     if prompt_pack:
         _base = prompt_packs.render(prompt_pack, manual_transfers=manual_transfers, has_image=False)
+    elif tools_fmt:
+        import cora_prompts as _cp
+        _base = _cp.tool_system_prompt(manual_transfers=manual_transfers, variant=system_variant)
     else:
         _base = (smoke.cmd_system_prompt(manual_transfers, system_variant) if cmd_fmt
                  else smoke.idx_system_prompt(system_variant))
     _sys_text = _system_content(_base, "x" if use_image else None, image_mode)
     rec = {"model": model, "episode": ep_idx, "rounds": [], "error": None, "show_impacts": show_impacts,
-           "action_format": "cmd" if cmd_fmt else "idx",
-           "obs_encoding": (obs_encoding if cmd_fmt else "json"),
+           "action_format": action_format if state_only else "idx",
+           "obs_encoding": (obs_encoding if state_only else "json"),
            # K = number of turns the policy sees INCLUDING the current one. K=1 is the legacy
            # stateless path; K>1 carries an append-only window of prior (state, action) turns.
-           "history": (history if cmd_fmt else 1),
+           "history": (history if state_only else 1),
            "image_mode": image_mode if use_image else "none",
            "transfers": "manual" if manual_transfers else "task_only",
            # prompt identity is logged per episode so every record is attributable to an exact
@@ -1040,7 +1105,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
         # Append-only context buffer for history-carrying play (K>1): holds prior (state, action)
         # message pairs that ask_cmd prepends to each call. None => legacy stateless K=1 path.
         # max_pairs caps it to the K-1 most-recent prior turns (ask_cmd adds the current turn).
-        cmd_history = [] if (cmd_fmt and history and history > 1) else None
+        cmd_history = [] if (state_only and history and history > 1) else None
         max_pairs = 2 * (history - 1) if (history and history > 1) else 0
         # Previous round's structured state, fed to render_state_delta when obs_encoding=delta.
         # Only meaningful in history mode (the prior turn is in the visible window); None => the
@@ -1052,7 +1117,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
             # it rather than from the observation (which omits the menu in cmd format).
             acts_enum = env.get_valid_actions()
             n_valid = len(acts_enum)
-            if cmd_fmt:
+            if state_only:
                 state = smoke.summarize_commands(env, show_impacts=show_impacts, rounds_left=rounds - rnd)
             else:
                 state = smoke.summarize(env, show_impacts=show_impacts, rounds_left=rounds - rnd)
@@ -1074,13 +1139,22 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                     rec["images_attached" if img_b64 else "images_missing"] = \
                         rec.get("images_attached" if img_b64 else "images_missing", 0) + 1
                 try:
-                    dec, raw, rtrace, rtok, parsed_ok = (
-                        ask_cmd(client, model, state, env, img_b64, image_mode, reasoning_effort,
-                                system_variant, eff_temp, obs_encoding, cmd_history,
-                                prev_state if cmd_history is not None else None,
-                                prompt_pack=prompt_pack) if cmd_fmt
-                        else ask(client, model, state, img_b64, image_mode, reasoning_effort,
-                                 system_variant, eff_temp, prompt_pack=prompt_pack))
+                    if tools_fmt:
+                        dec, raw, rtrace, rtok, parsed_ok = ask_tools(
+                            client, model, state, env, img_b64, image_mode, reasoning_effort,
+                            system_variant, eff_temp, obs_encoding, cmd_history,
+                            prev_state if cmd_history is not None else None,
+                            prompt_pack=prompt_pack)
+                    elif cmd_fmt:
+                        dec, raw, rtrace, rtok, parsed_ok = ask_cmd(
+                            client, model, state, env, img_b64, image_mode, reasoning_effort,
+                            system_variant, eff_temp, obs_encoding, cmd_history,
+                            prev_state if cmd_history is not None else None,
+                            prompt_pack=prompt_pack)
+                    else:
+                        dec, raw, rtrace, rtok, parsed_ok = ask(
+                            client, model, state, img_b64, image_mode, reasoning_effort,
+                            system_variant, eff_temp, prompt_pack=prompt_pack)
                     # Slide the window: ask_cmd just appended this turn's pair; keep only the last
                     # K-1 prior turns so the cached prefix stays bounded (K=32 keeps the whole episode).
                     if cmd_history is not None and len(cmd_history) > max_pairs:
@@ -1089,7 +1163,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                     if not parsed_ok:
                         # one unparseable response -> no-op this round, keep playing
                         rec["parse_failures"] = rec.get("parse_failures", 0) + 1
-                    if cmd_fmt and dec.get("errors"):
+                    if state_only and dec.get("errors"):
                         rec["cmd_errors"] = rec.get("cmd_errors", 0) + len(dec["errors"])
                 except Exception as e:
                     # hard API/network error: end the episode
@@ -1143,7 +1217,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                 # cmd-format diagnostics: the parser's per-command rejection strings this round
                 # (empty for idx). Lets us categorize WHY cmd commands fail (bad format / unknown
                 # building / unaffordable / no available site / nonexistent choice).
-                "cmdErrors": list(dec.get("errors", [])) if cmd_fmt else [],
+                "cmdErrors": list(dec.get("errors", [])) if state_only else [],
 
                 "note": (dec.get("note") or "")[:80],
                 "reasoning": (dec.get("reasoning") or "")[:1500],   # model's own rationale (JSON field)
@@ -1177,6 +1251,11 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
             "everBuilt": built, "everHired": hired,
             "terminated": rec.get("terminated", False),
             "roundsPlayed": len(rec["rounds"]),
+            # Scores are comparable across wings (live/RL/benchmark all share
+            # reward_scoring.compute_score_components) but only under the SAME weights.
+            # Stamp them so a later retune can't silently make old and new runs
+            # incomparable — and so a corpus can be re-scored under new weights.
+            "rewardWeights": dict(REWARD_WEIGHTS),
         }
     except Exception as e:
         rec["error"] = f"{e}\n{traceback.format_exc()}"
@@ -1338,7 +1417,7 @@ def main():
                     help="entity/project (default cpulling/CORA_RL)")
     ap.add_argument("--policy", choices=["llm", "greedy", "rules-based", "rules-based-v2", "random", "noop"], default="llm",
                     help="llm = benchmark the --models; greedy/rules-based/random/noop = non-learning baseline (no API)")
-    ap.add_argument("--action_format", choices=["idx", "cmd"], default="idx",
+    ap.add_argument("--action_format", choices=["idx", "cmd", "tools"], default="idx",
                     help="LLM action interface: idx = enumerated action menu + JSON index list (default); "
                          "cmd = state-only obs + command tags (<build>/<hire>/<staff>/<task>/...). "
                          "Switches both the system prompt and the response parser. Ignored for non-llm policies.")
