@@ -4640,6 +4640,27 @@ class AgentService:
 service: Optional[AgentService] = None
 
 
+# JSON has no comment syntax, so `_comment` / `_note` keys are the near-universal convention
+# for annotating a config file. In a KEY map that convention is dangerous: every top-level
+# entry is a credential, so a comment silently becomes a working API key whose label is the
+# comment text. Found live on the Talos deployment 2026-08-13 — `Authorization: Bearer _comment`
+# returned 200 with config_scope "all" and upload rights, and `_comment` is guessable by anyone
+# who has seen a JSON config. Underscore-prefixed entries are therefore ignored, never
+# credentials. Also drops non-string/empty keys, which cannot be presented as a bearer token
+# anyway but would otherwise sit in the map looking valid.
+def _keys_from_mapping(data: dict) -> dict:
+    """Normalize a raw key map, dropping annotation entries (see comment above)."""
+    out = {}
+    for k, v in (data or {}).items():
+        if not isinstance(k, str) or not k.strip():
+            continue
+        if k.startswith("_"):
+            print(f"[router] keys file: ignoring annotation entry {k!r} (not a credential)")
+            continue
+        out[k] = v if isinstance(v, dict) else {"label": str(v)}
+    return out
+
+
 def _load_keys(path: Optional[Path]) -> Dict[str, dict]:
     """Load API keys from a JSON file, env var, or fall back to a dev key.
 
@@ -4653,15 +4674,16 @@ def _load_keys(path: Optional[Path]) -> Dict[str, dict]:
     if path is not None:
         with open(path, "r") as f:
             data = json.load(f)
-        return {k: (v if isinstance(v, dict) else {"label": str(v)}) for k, v in data.items()}
+        return _keys_from_mapping(data)
 
     env = os.environ.get("ARC_API_KEYS")
     if env:
         try:
             data = json.loads(env)
             if isinstance(data, dict):
-                return {k: (v if isinstance(v, dict) else {"label": str(v)})
-                        for k, v in data.items()}
+                # Same sanitizer as the file path — an annotation entry in ARC_API_KEYS
+                # would otherwise become a credential exactly as it did in keys.json.
+                return _keys_from_mapping(data)
         except json.JSONDecodeError:
             pass
         out: Dict[str, dict] = {}

@@ -138,6 +138,33 @@ def test_ledger_shows_spend() -> None:
           "Committed spend" not in agent_router.Session._committed_ledger_text(s2))
 
 
+# ── keys-file sanitizer (security regression guard) ─────────────────────────
+def test_annotation_entries_are_not_credentials() -> None:
+    """A `_comment` entry in a key map must never become a working API key.
+
+    Found live on Talos 2026-08-13: `Authorization: Bearer _comment` returned 200 with
+    config_scope "all" and upload rights, because the loader normalized every non-dict value
+    to {"label": str(v)} — including the annotation entry people add because JSON has no
+    comments. `_comment` is guessable by anyone who has seen a JSON config.
+    """
+    print("\n[5] keys file: annotation entries are not credentials")
+    import agent_router
+    keys = agent_router._keys_from_mapping({
+        "_comment": "Generated for the deploy. Public demo restricted to one config.",
+        "_note": {"label": "also not a key"},
+        "ck_real": {"label": "alice"},
+        "ck_flat": "bob",
+        "": {"label": "empty"},
+    })
+    check("_comment is NOT a key", "_comment" not in keys, f"got {sorted(keys)}")
+    check("_note is NOT a key", "_note" not in keys, f"got {sorted(keys)}")
+    check("empty key dropped", "" not in keys, f"got {sorted(keys)}")
+    check("real dict key kept", keys.get("ck_real", {}).get("label") == "alice")
+    check("flat string key still normalizes", keys.get("ck_flat", {}).get("label") == "bob")
+    check("exactly the two real keys survive", sorted(keys) == ["ck_flat", "ck_real"],
+          f"got {sorted(keys)}")
+
+
 def main() -> int:
     print("=" * 72)
     print("per-turn cost attribution")
@@ -146,6 +173,7 @@ def main() -> int:
     test_missing_and_bad_costs()
     test_proposals_not_counted()
     test_ledger_shows_spend()
+    test_annotation_entries_are_not_credentials()
     print("\n" + "=" * 72)
     if FAILS:
         print(f"FAILED ({len(FAILS)}): " + "; ".join(FAILS))
