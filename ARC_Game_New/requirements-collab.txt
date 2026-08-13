@@ -1,0 +1,14 @@
+# Collaborator dependencies — everything you need to author, validate and upload a CORA
+# experiment, and to pull your data back.
+#
+# This is deliberately NOT requirements.txt. That file installs the full router stack
+# (fastapi, uvicorn, ollama, openai, anthropic) because it is for running a SERVER. As a
+# collaborator you talk to a server someone else runs, so you need exactly one package:
+# pydantic, which validates your bundle locally against the same schema the server uses.
+#
+#   python3 -m venv .venv
+#   ./.venv/bin/python -m pip install -r requirements-collab.txt
+#   ./.venv/bin/python cora.py doctor
+#
+# Install requirements.txt instead only if you intend to run a router yourself.
+pydantic>=2

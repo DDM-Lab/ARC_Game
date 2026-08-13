@@ -3,10 +3,38 @@
 How to bring your own officers to CORA: prepare a config (and optional tools), upload it, run it
 with participants, and get your data back. Legend: **✅ works today**, **🔜 planned**.
 
-Set once:
+## Setup (5 minutes, one time)
+
+You need Python 3.9+ and your API key. You do **not** need Unity, a game build, or any LLM
+API key of your own — the server holds those.
+
 ```bash
-export CORA_URL=https://cora_game_llm.dev.ddmlab.com     # or http://localhost:9876 for local
-export CORA_KEY=<your-api-key>
+git clone --branch feature/contributor-platform \
+    git@github.com:DDM-Lab/ARC_Game.git
+cd ARC_Game/ARC_Game_New
+
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements-collab.txt   # one package: pydantic
+
+export CORA_URL=https://cora_game_llm.dev.ddmlab.com
+export CORA_KEY=<the key you were given>
+
+./.venv/bin/python cora.py doctor      # ← confirms everything above worked
+```
+
+`doctor` printing `✓ key valid` means you are done setting up.
+
+> **Install `requirements-collab.txt`, not `requirements.txt`.** The latter installs the full
+> router stack (fastapi, uvicorn, openai, anthropic) and is for people running a *server*. You
+> talk to a server someone else runs.
+
+> **The clone is ~220 MB** because the repo carries the Unity project. You can ignore all of
+> it; everything you need is the Python at the top of `ARC_Game_New/`. Add
+> `GIT_LFS_SKIP_SMUDGE=1` before `git clone` to skip the large binary assets.
+
+Put your work on your own branch so it never collides with anyone else's:
+```bash
+git checkout -b yourlab/experiment-name
 ```
 
 ## Quickstart — one script
