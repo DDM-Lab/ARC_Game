@@ -24,20 +24,16 @@ FAILS: list[str] = []
 
 
 
-SCRATCH = "/private/tmp/claude-501/-Users-cpulling-Work-CORA/b762a1aa-9f0c-4053-9897-bfd6aeeb9623/scratchpad"
-
-
 def emit(results, budget_before=5000, budget_after=5000):
     """Run one real log_turn against a temp file and return the parsed record.
 
     Uses the real writer rather than a stub so the test exercises the same code path
     production does — including the record dict actually being JSON-serializable.
     """
-    import json, os, episode_logger
-    os.makedirs(SCRATCH, exist_ok=True)
-    path = os.path.join(SCRATCH, "cost_turn.jsonl")
-    if os.path.exists(path):
-        os.remove(path)
+    # tempfile, not a fixed path: this test also runs on the deploy box as a pre-flight
+    # check, where a developer's local scratch directory does not exist.
+    import json, os, tempfile, episode_logger
+    path = os.path.join(tempfile.mkdtemp(prefix="cora-cost-"), "cost_turn.jsonl")
     lg = episode_logger.EpisodeLogger.__new__(episode_logger.EpisodeLogger)
     lg.log_path = path
     episode_logger.EpisodeLogger.log_turn(
