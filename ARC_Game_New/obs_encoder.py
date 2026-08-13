@@ -231,17 +231,36 @@ def _fac_dyn(f):
             f.get("food", 0), f.get("pop", 0), f.get("cap", 0))
 
 
+def _num0(d, key):
+    """Read a numeric field, treating a PRESENT-but-null value as 0.
+
+    `dict.get(key, 0)` only substitutes when the key is ABSENT. These keys are always present
+    — build_observation sets them from `wf.get("freeTrainedWorkers")` etc., which yields None
+    whenever Unity omits the field — so the default never fired and officers were told
+    `workers: freeTrained None freeUntrained None`. Observed live 2026-08-13 in a game where
+    the engine simultaneously reported 5 free trained workers: the data existed, the render
+    lost it, and the officer had to reason about a workforce of "None".
+    """
+    v = d.get(key)
+    return 0 if v is None else v
+
+
 def _render_scalars(obs):
     g = obs.get
     L = [f"day {g('day')} | budget {g('budget')} | satisfaction {g('satisfaction')} | "
          f"roundsLeft {g('roundsLeft')}"
          + (f" | motelDailyCost {obs['motelDailyCost']}" if obs.get("motelDailyCost") else "")]
     w = obs.get("workers", {})
-    L.append(f"workers: freeTrained {w.get('freeTrained',0)} freeUntrained {w.get('freeUntrained',0)} "
-             f"working {w.get('working',0)} inTraining {w.get('inTraining',0)}")
-    L.append(f"logistics: vehiclesFree {obs.get('logistics',{}).get('vehiclesFree',0)}")
-    L.append("spend: " + " ".join(f"{k} {v}" for k, v in obs.get("spend", {}).items()))
-    L.append("costs: " + " ".join(f"{k} {v}" for k, v in obs.get("costs", {}).items()))
+    L.append(f"workers: freeTrained {_num0(w,'freeTrained')} freeUntrained {_num0(w,'freeUntrained')} "
+             f"working {_num0(w,'working')} inTraining {_num0(w,'inTraining')}")
+    L.append(f"logistics: vehiclesFree {_num0(obs.get('logistics',{}),'vehiclesFree')}")
+    # Emit spend/costs only when non-empty. A bare "spend:" with nothing after it was printed
+    # every turn — it reads as a section the model failed to receive rather than one that is
+    # simply empty, and it costs tokens to say nothing.
+    for label in ("spend", "costs"):
+        body = " ".join(f"{k} {v}" for k, v in (obs.get(label) or {}).items())
+        if body:
+            L.append(f"{label}: {body}")
     return L
 
 

@@ -2046,9 +2046,38 @@ Respond with ONLY the package index number (0, 1, or 2).
                  "(exact grammar is in the execute_commands tool schema):"]
         if sites:
             lines.append("  BUILD  <build>TYPE,SITE</build>:")
-            for sid in sorted(sites, key=lambda s: (s is None, s)):
-                nm, types = sites[sid]
-                lines.append(f"    site {sid} ({nm}): {', '.join(sorted(types))}")
+            # Collapse consecutive sites that offer the SAME building types into one range.
+            # A kitchen-scoped officer was shown fifteen lines that differed only by an id —
+            # "site 0 (AbandonedSite (1)): Kitchen" repeated down the page — which was the
+            # bulk of its per-turn message and buried the parts that actually varied. The
+            # site ids are unchanged and still individually addressable; only the rendering
+            # is folded, so nothing the parser accepts is affected.
+            ordered = sorted(sites, key=lambda s: (s is None, s))
+            run: list = []
+
+            def _flush(run_ids):
+                if not run_ids:
+                    return
+                types = ", ".join(sorted(sites[run_ids[0]][1]))
+                if len(run_ids) == 1:
+                    sid = run_ids[0]
+                    lines.append(f"    site {sid} ({sites[sid][0]}): {types}")
+                else:
+                    names = {sites[s][0].rstrip("0123456789() ") for s in run_ids}
+                    kind = names.pop() if len(names) == 1 else "site"
+                    lines.append(f"    sites {run_ids[0]}-{run_ids[-1]} "
+                                 f"({len(run_ids)}x {kind}): {types}")
+
+            for sid in ordered:
+                same = run and sorted(sites[sid][1]) == sorted(sites[run[-1]][1])
+                contiguous = same and isinstance(sid, int) and isinstance(run[-1], int) \
+                    and sid == run[-1] + 1
+                if contiguous:
+                    run.append(sid)
+                else:
+                    _flush(run)
+                    run = [sid]
+            _flush(run)
         hires = []
         if hire["untrained"]:
             hires.append(f"untrained up to {hire['untrained']}")
