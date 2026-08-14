@@ -564,6 +564,65 @@ _POT_SHELTER_COVERAGE = 1e9  # θ: route lodging to free shelter only when space
                              # (travel/expiry) and cost lodging fulfillment vs the reliable
                              # immediate option, so free-shelter routing is disabled by
                              # default. Lower (e.g. 1.0) to re-enable the cost-vs-fulfillment trade.
+# ── shared: move people into shelters we already paid for ────────────────────
+# Both rules-based policies BUILD and STAFF shelters and then never fill them: measured
+# across 10 episodes each, shelter population was 0/3500 (rules-based) and 0/5000
+# (rules-based-v2) while 2,532 and 6,000 people respectively sat in the Motel. The Motel
+# bills $200/person/DAY; a staffed shelter is $0/day once built. So the policies were
+# paying construction AND the full motel bill, which is why both end deeply negative.
+#
+# The gap was simply that neither emitted `resource_transfer` actions at all — the
+# affordance works (the random baseline used it 1,340 times, and opus 137), it was just
+# never in their action set. This helper closes that: drain the Motel first (it is the
+# only source that costs money per day), then Communities, into any InUse shelter with
+# free beds.
+def _fill_shelters_from_costly_sources(env, actions, max_transfers=4):
+    """Append transfer-action indices that move people into free shelter capacity.
+
+    Ordering matters: the Motel is drained BEFORE Communities because Motel occupancy is
+    the recurring cost. Moving a Community resident into a shelter helps satisfaction but
+    saves nothing; moving a Motel resident saves $200/day, every day, for the rest of the
+    game.
+    """
+    gs = env.game_state or {}
+    va = env.valid_actions or []
+    facs = (gs.get("mapState", {}) or {}).get("facilities", []) or []
+
+    free = {}
+    for f in facs:
+        if f.get("buildingType") == "Shelter" and f.get("buildingStatus") == "InUse":
+            spare = (f.get("populationCapacity") or 0) - (f.get("currentPopulation") or 0)
+            if spare > 0:
+                free[f.get("facilityName")] = spare
+    if not free:
+        return
+
+    def _src_rank(name):
+        # Motel first (it is the one bleeding money), then anything else.
+        return 0 if "motel" in str(name).lower() else 1
+
+    cands = []
+    for i, a in enumerate(va):
+        if a.get("action_type") != "resource_transfer":
+            continue
+        tr = a.get("transfer") or {}
+        if tr.get("resource_type") == "FoodPacks":
+            continue                      # people only; food routing is a separate concern
+        dst, src = tr.get("destination_facility"), tr.get("source_facility")
+        if dst not in free:
+            continue
+        cands.append((_src_rank(src), -(tr.get("quantity") or 0), i, dst, tr.get("quantity") or 0))
+
+    cands.sort()                          # motel sources first, largest quantity first
+    used = 0
+    for _rank, _negq, idx, dst, qty in cands:
+        if used >= max_transfers or free.get(dst, 0) <= 0:
+            continue
+        actions.append(idx)
+        free[dst] -= qty
+        used += 1
+
+
 def potential_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
     gs = env.game_state or {}
     va = env.valid_actions or []
@@ -659,6 +718,7 @@ def potential_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
                         and (a.get("cost") or 0) <= budget - _POT_BUDGET_RESERVE):
                     actions.append(i)
                     break
+        _fill_shelters_from_costly_sources(env, actions)
         return {"choices": choices, "actions": actions, "note": "potential-ds",
                 "reasoning": f"demandsupply: P={P} shelterCap={shelter_cap} shelFree={shel_free} kitchens={n_kitchens}"}
 
@@ -730,6 +790,7 @@ def potential_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
                 actions.append(i)
                 break
 
+    _fill_shelters_from_costly_sources(env, actions)
     return {"choices": choices, "actions": actions, "note": "rules-based",
             "reasoning": f"rules-based: P={P} shelterCap={shelter_cap} kitchens={n_kitchens} casework={n_casework} roundsLeft={rounds_left}"}
 
@@ -968,10 +1029,42 @@ def improved_rules_based_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS)
             workers_hired += q
             hire_actions += 1
 
+    _fill_shelters_from_costly_sources(env, actions)
     return {"choices": choices, "actions": actions, "note": "rules-based-v2",
             "reasoning": (f"v2: P={P} shelterCap={shelter_cap} wantBuilds={len(want)} "
                           f"built={len(used)} hireGap={hire_gap0} hired={workers_hired}/{hire_actions}act "
                           f"unstaffed={unstaffed} opBuf={int(op_buffer)} rl={rounds_left}")}
+
+
+def combined_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
+    """Both hand-written strategies at once.
+
+    The two rules-based policies improve OPPOSITE halves of a turn and neither touches the
+    other's half, so they compose without conflict:
+
+      * potential_decision      — keeps greedy's choices, ADDS building (shelters/kitchens
+                                  toward a demand target). Improves the ACTION side.
+      * improved_rules_based_.. — keeps greedy's worker assignments, REPLACES the choices with
+                                  long-term-value ones that price in the motel's recurring
+                                  $200/person/day. Improves the CHOICE side.
+
+    So: take the choices from the long-term-value policy and the actions from the building
+    policy. Action lists are indices into the same env.valid_actions, so the merge is a
+    de-duplicated union that preserves each policy's ordering.
+
+    Both sub-policies already append shelter-filling transfers, so the union inherits those
+    too; dedup keeps a transfer from being issued twice.
+    """
+    lt = improved_rules_based_decision(env, rnd, rounds_total, w)
+    pot = potential_decision(env, rnd, rounds_total, w)
+
+    seen, actions = set(), []
+    for i in list(pot.get("actions") or []) + list(lt.get("actions") or []):
+        if i not in seen:
+            seen.add(i); actions.append(i)
+
+    return {"choices": lt.get("choices") or [], "actions": actions, "note": "combined",
+            "reasoning": "lt-value choices + potential building + shelter transfers"}
 
 
 def random_decision(env, rng_seed=0):
@@ -1127,10 +1220,12 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                 dec = {"choices": [], "actions": []}            # no-op
             elif policy == "greedy":
                 dec = greedy_decision(env); raw = json.dumps(dec)
-            elif policy == "rules-based":
+            elif policy in ("build-potential", "rules-based"):
                 dec = potential_decision(env, rnd, rounds); raw = json.dumps(dec)
-            elif policy == "rules-based-v2":
+            elif policy in ("choice-lookahead", "rules-based-v2"):
                 dec = improved_rules_based_decision(env, rnd, rounds); raw = json.dumps(dec)
+            elif policy == "combined":
+                dec = combined_decision(env, rnd, rounds); raw = json.dumps(dec)
             elif policy == "random":
                 dec = random_decision(env); raw = json.dumps(dec)
             else:                                               # llm
@@ -1415,8 +1510,15 @@ def main():
     ap.add_argument("--wandb", action="store_true", help="log results to Weights & Biases")
     ap.add_argument("--wandb-project", default="cpulling/CORA_RL",
                     help="entity/project (default cpulling/CORA_RL)")
-    ap.add_argument("--policy", choices=["llm", "greedy", "rules-based", "rules-based-v2", "random", "noop"], default="llm",
-                    help="llm = benchmark the --models; greedy/rules-based/random/noop = non-learning baseline (no API)")
+    ap.add_argument("--policy", choices=["llm", "greedy", "build-potential", "choice-lookahead",
+                                        "combined", "random", "noop",
+                                        "rules-based", "rules-based-v2"], default="llm",
+                    help="llm = benchmark the --models. Non-learning baselines (no API): greedy; "
+                         "build-potential (adds infrastructure building); choice-lookahead (picks "
+                         "task choices by long-term value); combined (both); random; noop. "
+                         "rules-based / rules-based-v2 are deprecated aliases for build-potential "
+                         "/ choice-lookahead — the old names implied a version ordering that does "
+                         "not exist: they are different algorithms improving opposite halves.")
     ap.add_argument("--action_format", choices=["idx", "cmd", "tools"], default="idx",
                     help="LLM action interface: idx = enumerated action menu + JSON index list (default); "
                          "cmd = state-only obs + command tags (<build>/<hire>/<staff>/<task>/...). "

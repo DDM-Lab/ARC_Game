@@ -70,7 +70,7 @@ ENTITIES & RULES (mechanics; the strategy is up to you):
   Resolving it ("send to casework site") frees their lodging and is scored — but it ONLY works
   if you have already BUILT and STAFFED a CaseworkSite. Build one early if you expect this.
 - Buildings have `status`: UnderConstruction -> NeedWorker -> InUse (InUse only when
-  `workers >= needWorkers`). Construction takes ~1 day before a building is usable.
+  `workers >= needWorkers`). Construction takes ~1 day (~4 ROUNDS); staff() works only once status is NeedWorker.
   Kitchens hold/produce food (foodPacks); Shelters/Motel hold population (capacity).
 - Workers: trained (2 workforce, $500) or untrained (1 workforce, $100): free, working, in-
   training, or not-yet-arrived. Hire/train/assign them. Free (unassigned) workers do no work and
@@ -111,7 +111,7 @@ ENTITIES & RULES (mechanics only — no strategy is given):
 - CASEWORK / return-home: a "Casework Request" can be resolved only if a CaseworkSite has already
   been built and staffed.
 - Buildings have `status`: UnderConstruction -> NeedWorker -> InUse (InUse only when
-  `workers >= needWorkers`). Construction takes ~1 day. Kitchens hold/produce food (foodPacks);
+  `workers >= needWorkers`). Construction takes ~1 day (~4 ROUNDS); staff() works only once status is NeedWorker. Kitchens hold/produce food (foodPacks);
   Shelters/Motel hold population (capacity).
 - Workers: trained (2 workforce, $500) or untrained (1 workforce, $100): free, working, in-
   training, or not-yet-arrived. You may hire, train (untrained->trained), and assign workers to
@@ -156,7 +156,7 @@ ENTITIES & RULES (mechanics; the strategy is up to you):
 - CASEWORK / return-home: long-housed clients raise an Advisory "Casework Request". Resolving it frees
   their lodging and is scored — but ONLY if you have already BUILT and STAFFED a CaseworkSite.
 - Buildings have `status`: UnderConstruction -> NeedWorker -> InUse (InUse only when workers >=
-  needWorkers). Construction takes ~1 day. Kitchens produce/hold food; Shelters/Motel hold population.
+  needWorkers). Construction takes ~1 day (~4 ROUNDS); staff() works only once status is NeedWorker. Kitchens produce/hold food; Shelters/Motel hold population.
 - `status: Passive` marks pre-built fixtures (the Communities and the Motel). They are always there,
   cannot be built or deconstructed, and need no staffing — they exist only to hold population/food.
 - Workers: untrained (1 workforce, $100) or trained (2 workforce, $300). Free workers do no work
@@ -234,7 +234,7 @@ ENTITIES & RULES (mechanics only — no strategy is given):
 - CASEWORK / return-home: a "Casework Request" can be resolved only if a CaseworkSite has already been
   built and staffed.
 - Buildings have `status`: UnderConstruction -> NeedWorker -> InUse (InUse only when workers >=
-  needWorkers). Construction takes ~1 day. Kitchens produce/hold food; Shelters/Motel hold population.
+  needWorkers). Construction takes ~1 day (~4 ROUNDS); staff() works only once status is NeedWorker. Kitchens produce/hold food; Shelters/Motel hold population.
 - Workers: untrained (1 workforce, $100) or trained (2 workforce, $300). Workers must be assigned to a
   building to do work.
 
@@ -282,7 +282,7 @@ REASONING: <your rationale for this round's decision>
 #       The plain-minimal wording warned about it but models still paired <build>X with <staff>X;
 #       this states the silent-drop outcome explicitly and tells them to wait for `needStaff`.
 _V2_PASSIVE_NOTE = (
-    "  needWorkers). Construction takes ~1 day. Kitchens produce/hold food; Shelters/Motel hold population.\n"
+    "  needWorkers). Construction takes ~1 day (~4 ROUNDS); staff() works only once status is NeedWorker. Kitchens produce/hold food; Shelters/Motel hold population.\n"
     "- `status: Passive` marks pre-built fixtures (the Communities and the Motel). They are always there,\n"
     "  cannot be built or deconstructed, and need no staffing — they exist only to hold population/food.\n"
 )
@@ -294,7 +294,7 @@ _V2_BUILD_STAFF = (
 CMD_MINIMAL_V2_SYSTEM_PROMPT = (
     CMD_MINIMAL_SYSTEM_PROMPT
     .replace(
-        "  needWorkers). Construction takes ~1 day. Kitchens produce/hold food; Shelters/Motel hold population.\n",
+        "  needWorkers). Construction takes ~1 day (~4 ROUNDS); staff() works only once status is NeedWorker. Kitchens produce/hold food; Shelters/Motel hold population.\n",
         _V2_PASSIVE_NOTE, 1)
     .replace(
         "BUT a building\n"
@@ -318,7 +318,8 @@ to act. Each call is one action, resolved against the live state:
   build(type, site_id)        type = kitchen | shelter | casework; site_id from state.sites.
   hire(kind, count)           kind = untrained | trained.
   train(count)                promote untrained workers to trained.
-  staff(site, count)          assign free workforce to a built facility that still needs workers.
+  staff(site, count)          assign free workforce to a facility whose status is NeedWorker
+                              (not one still UnderConstruction — that call fails).
   deconstruct(site)           tear down a building, freeing its site.
   task(task_id, choice_id)    answer an active task by one of its offered choices.
   transfer(resource, source, dest, qty)  move food/people between facilities via a free vehicle.
@@ -326,8 +327,11 @@ You may make several action calls in one step; they apply in order against the l
 `hire` this turn is available to a `staff` call later the same turn. The `available` block in the
 state tells you exactly what is executable this turn. A spend larger than your budget is ALLOWED —
 the budget may go negative (it is penalized in your score, not blocked). Calls that are genuinely
-invalid (unknown building, nonexistent choice, or staffing a building you built THIS turn before it
-is ready) are reported back to you as failures — a failure is honest signal, never something to hide.
+invalid (unknown building, nonexistent choice, or staffing a building that is still
+UnderConstruction) are reported back to you as failures — a failure is honest signal, never
+something to hide. On staff(): a newly built facility stays UnderConstruction for a FULL DAY
+(~4 rounds), NOT one round — staff() succeeds only once its status is NeedWorker, so check
+status before calling it rather than retrying a build you just placed.
 
 RESPOND with one short line of reasoning, then your tool calls."""
 
