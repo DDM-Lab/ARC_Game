@@ -260,14 +260,35 @@ def parse_commands(text, env):
             errors.append(f"staff: no free workers for '{raw_label}' "
                           f"(hire workers this turn, or none are available)")
             continue
-        synth = {"action_id": f"assign_{match}_{want}", "action_type": "worker_assignment",
-                 "description": f"Assign workforce {want} to {match}", "cost": 0,
-                 "assignment": {"building_name": match, "worker_type": "untrained", "quantity": want}}
+        # UNITS -> WORKER COUNT. `want` is workforce UNITS (need[] and sim_wf both are), but
+        # ActionExecutor.ExecuteAssignment passes assignment.quantity straight to
+        # TryReassignWorkerCountToBuilding, which is documented "EXACTLY p.quantity workers
+        # (count, not workforce points)" and selects TRAINED FIRST. Passing units as a count
+        # therefore over-staffed by up to 2x whenever trained workers were free -- the source
+        # of the `Workers: 8/4` rows in the transcripts -- and could fail outright when the
+        # unit figure exceeded the number of workers that actually exist.
+        #
+        # Convert under the executor's own trained-first ordering: each trained worker
+        # contributes 2 units, each untrained 1.
+        n_tr = (_wf.get("freeTrainedWorkers", 0) or 0)
+        use_tr = min(n_tr, -(-want // 2))            # ceil(want/2) trained, capped by supply
+        rem = max(0, want - use_tr * 2)              # units still uncovered
+        qty = use_tr + rem                           # + one untrained per remaining unit
+        if qty <= 0:
+            errors.append(f"staff: no free workers for '{raw_label}' "
+                          f"(hire workers this turn, or none are available)")
+            continue
+        # worker_type is deliberately omitted: ExecuteAssignment never reads it (it picks
+        # trained-first from the free pool itself), so carrying a value here only invited the
+        # misreading that the caller controls worker type.
+        synth = {"action_id": f"assign_{match}_{qty}", "action_type": "worker_assignment",
+                 "description": f"Assign {qty} worker(s) (~{want} workforce) to {match}", "cost": 0,
+                 "assignment": {"building_name": match, "quantity": qty}}
         env.valid_actions.append(synth)
         emit("staff", len(env.valid_actions) - 1)
         sim_wf -= want
         need[match] -= want
-        parsed.append(f"staff {match} wf{want}")
+        parsed.append(f"staff {match} wf{want}(x{qty})")
 
     actions = [i for _, i in sorted(act_items, key=lambda kv: kv[0])]
     return {"actions": actions, "choices": choices, "parsed": parsed, "errors": errors}
