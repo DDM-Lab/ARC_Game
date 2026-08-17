@@ -61,7 +61,8 @@ ENTITIES & RULES (mechanics; the strategy is up to you):
   by then it expires. Demand/Emergency tasks are community needs (food, or population
   relocation/lodging); Advisory tasks include "Casework Request" (see CASEWORK).
 - LODGING — two ways to house relocated population, with very different economics:
-    * Shelters: one-time build (~$1000) + workers to staff. Once InUse they cost $0/day.
+    * Shelters: one-time build (cost in `state.costs.build`) + workers to staff. Once InUse
+      they cost $0/day.
     * Motel (prebuilt, large capacity): $0 to build, BUT charges ~$200 per resident per day,
       every day they remain — a recurring drain that is NOT shown on the choice and compounds
       over all remaining rounds. The observation reports current `motelDailyCost`.
@@ -106,8 +107,8 @@ ENTITIES & RULES (mechanics only — no strategy is given):
   by then it expires. Demand/Emergency tasks are community needs (food, or population
   relocation/lodging); Advisory tasks include "Casework Request".
 - LODGING: relocated population can be housed in Shelters or in the prebuilt Motel. A Shelter must
-  be built (~$1000) and staffed before it is InUse. The Motel needs no construction; it charges a
-  per-resident daily cost reported as `motelDailyCost`.
+  be built (cost in `state.costs.build`) and staffed before it is InUse. The Motel needs no
+  construction; it charges a per-resident daily cost reported as `motelDailyCost`.
 - CASEWORK / return-home: a "Casework Request" can be resolved only if a CaseworkSite has already
   been built and staffed.
 - Buildings have `status`: UnderConstruction -> NeedWorker -> InUse (InUse only when
@@ -150,7 +151,8 @@ ENTITIES & RULES (mechanics; the strategy is up to you):
   expires. Demand/Emergency tasks are community needs (food, or population relocation/lodging);
   Advisory tasks include "Casework Request".
 - LODGING — two ways to house relocated population, very different economics:
-    * Shelters: one-time build (~$1000) + ~4 workers to staff. Once InUse they cost $0/day.
+    * Shelters: one-time build (cost in `state.costs.build`) + ~4 workers to staff. Once InUse
+      they cost $0/day.
     * Motel (prebuilt, large): $0 to build, BUT ~$200 per resident per DAY, every remaining day — a
       recurring drain NOT shown on the choice. The state reports `motelDailyCost`.
 - CASEWORK / return-home: long-housed clients raise an Advisory "Casework Request". Resolving it frees
@@ -165,7 +167,8 @@ ENTITIES & RULES (mechanics; the strategy is up to you):
 HOW TO ACT — emit COMMAND TAGS. You see the game STATE only (no action list); choose any number of
 commands from this fixed grammar:
   <build>TYPE,SITE_ID</build>     TYPE = kitchen | shelter | casework. Build at an available site
-                                  (SITE_ID from state.sites). Costs ~$1000; then needs staffing.
+                                  (SITE_ID from state.sites). Costs `state.costs.build`; then
+                                  needs staffing.
   <hire>KIND,N</hire>             KIND = untrained | trained. Hire N workers into the free pool.
   <train>N</train>                Train N free untrained workers into trained ($500 each).
   <staff>BUILDING,N</staff>       Assign N free workers to BUILDING (a name from state.facilities).
@@ -229,8 +232,8 @@ ENTITIES & RULES (mechanics only — no strategy is given):
   expires. Demand/Emergency tasks are community needs (food, or population relocation/lodging);
   Advisory tasks include "Casework Request".
 - LODGING: relocated population can be housed in Shelters or the prebuilt Motel. A Shelter must be
-  built (~$1000) and staffed before InUse. The Motel needs no construction; it charges a per-resident
-  daily cost reported as `motelDailyCost`.
+  built (cost in `state.costs.build`) and staffed before InUse. The Motel needs no construction; it
+  charges a per-resident daily cost reported as `motelDailyCost`.
 - CASEWORK / return-home: a "Casework Request" can be resolved only if a CaseworkSite has already been
   built and staffed.
 - Buildings have `status`: UnderConstruction -> NeedWorker -> InUse (InUse only when workers >=
@@ -241,7 +244,8 @@ ENTITIES & RULES (mechanics only — no strategy is given):
 HOW TO ACT — emit COMMAND TAGS. You see the game STATE only (no action list); choose any number of
 commands from this fixed grammar:
   <build>TYPE,SITE_ID</build>     TYPE = kitchen | shelter | casework. Build at an available site
-                                  (SITE_ID from state.sites). Costs ~$1000; then needs staffing.
+                                  (SITE_ID from state.sites). Costs `state.costs.build`; then
+                                  needs staffing.
   <hire>KIND,N</hire>             KIND = untrained | trained. Hire N workers into the free pool.
   <train>N</train>                Train N free untrained workers into trained ($500 each).
   <staff>BUILDING,N</staff>       Assign N free workers to BUILDING (a name from state.facilities).

@@ -338,7 +338,10 @@ public class ConstructionState
     public List<AbandonedSiteState> availableSites;
     public List<string> buildingsUnderConstruction;
     public List<string> buildingsNeedingWorkers;
-    public int buildingConstructionCost; // $1000
+    // Live value from BuildingSystem (serialized in MainScene, currently 2000) — NOT the 1000
+    // default declared in BuildingSystem.cs. Do not restate this number in prompts or docs;
+    // it is sent to the model each round as state.costs.build.
+    public int buildingConstructionCost;
     public float constructionTimeDays;
     public float deconstructionTimeDays;
 }
