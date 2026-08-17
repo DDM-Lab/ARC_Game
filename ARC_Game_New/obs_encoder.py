@@ -78,7 +78,12 @@ def build_observation(game_state, actions=None, *, new=True, v2=True,
                      "status": f.get("buildingStatus"), "workers": f.get("assignedWorkforce"),
                      "needWorkers": f.get("requiredWorkforce"),
                      "food": (f.get("resources") or {}).get("foodPacks"),
-                     "pop": f.get("currentPopulation"), "cap": f.get("populationCapacity")})
+                     "pop": f.get("currentPopulation"), "cap": f.get("populationCapacity"),
+                     # The site this building occupies. `sites` lists only FREE sites, so without
+                     # this a policy cannot tell which site any standing building is on — it can
+                     # only infer occupancy from an id's absence. Passive fixtures (Communities,
+                     # Motel) were never built on a site and report none.
+                     "site": f.get("originalSiteId")})
     tasks = []
     for t in gs.get("allActiveTasks", []):
         ch = []
@@ -217,11 +222,13 @@ def build_observation_commands(game_state, actions, *, new=True, v2=True,
 
 
 def _fac_row(f, *, v2):
-    """One schema-once facilities row: 'name type status workers/need food pop/cap'."""
+    """One schema-once facilities row: 'name type status workers/need food pop/cap site'."""
     st = f.get("status") or ("Passive" if v2 else "-")
+    site = f.get("site")
     return (f"{f.get('name')} {f.get('type')} {st} "
             f"{f.get('workers',0)}/{f.get('needWorkers',0)} {f.get('food',0)} "
-            f"{f.get('pop',0)}/{f.get('cap',0)}")
+            f"{f.get('pop',0)}/{f.get('cap',0)} "
+            f"{'-' if site is None or site < 0 else site}")
 
 
 def _fac_dyn(f):
@@ -268,7 +275,7 @@ def _render_facilities(obs, *, v2):
     facs = obs.get("facilities", [])
     if not facs:
         return []
-    L = ["facilities [name type status workers/need food pop/cap]:"]
+    L = ["facilities [name type status workers/need food pop/cap site]:"]
     L += ["  " + _fac_row(f, v2=v2) for f in facs]
     return L
 
@@ -409,7 +416,12 @@ def task_group(t: dict) -> str:
 def _render_tasks(obs):
     tasks = obs.get("tasks", [])
     if not tasks:
-        return []
+        # Say "(none)" rather than omitting the section. Every other empty affordance already
+        # announces itself ("needStaff: (none)", "staffNow: (none)"); a silently ABSENT tasks
+        # block reads as missing information rather than as an empty one, and small models burn
+        # real budget on it ("there's no active tasks? Or maybe the tasks are part of the next
+        # step?" — qwen3:4b, observed in 5 consecutive rounds).
+        return ["tasks: (none)"]
     L = ["tasks [id type \"title\" affects (roundsLeft)]:"]
     for t in tasks:
         tid = (t.get('token') or stable_task_token(t)) if _STABLE_TASK_TOKENS else t.get('taskId')
@@ -503,7 +515,7 @@ def render_state_delta(obs, prev_obs, *, v2=True):
             rows.append("  ~ " + _fac_row(f, v2=v2))                 # dynamic fields changed
     rows += [f"  - {n}" for n in prev_by if n not in cur_names]     # removed/deconstructed
     fac_block = ["facilities Δ (vs last turn; unchanged omitted; +new ~changed -removed) "
-                 "[name type status workers/need food pop/cap]:"]
+                 "[name type status workers/need food pop/cap site]:"]
     fac_block += rows if rows else ["  (no change)"]
     return "\n".join(_render_scalars(obs) + fac_block + _render_tasks(obs)
                      + _render_sites(obs) + _render_available(obs, v2=v2))
