@@ -104,6 +104,27 @@ def _set_local_max_tokens(n):
     LOCAL_MAX_TOKENS = n
 
 
+# Chat-template kwargs forwarded on the LOCAL path, e.g. {"enable_thinking": False}.
+# MEASURED on qwen3:4b (real tools prompt, 6k-char observation), completion tokens vs
+# visible content:
+#     reasoning_effort=none               3065 tok   11321 chars of content
+#     native /api/chat think=false        4488 tok   16259 chars
+#     enable_thinking=false                4861 tok      94 chars   <-- this
+#     "do NOT deliberate" in the prompt   4228 tok   16249 chars   (ignored)
+# NOTE WHAT THIS DOES AND DOES NOT DO: it does NOT reduce generation. The model emits
+# ~3-5k tokens regardless; enable_thinking=false only makes the server strip them out of
+# `content` instead of handing them back. That is still worth having -- it removes any
+# chance of the harness parsing deliberation as commands, and makes transcripts readable
+# -- but it buys correctness, not speed. Nothing in Ollama's surface makes this model
+# think less; that is the model.
+LOCAL_CHAT_TEMPLATE_KWARGS = None
+
+
+def _set_local_chat_template_kwargs(d):
+    global LOCAL_CHAT_TEMPLATE_KWARGS
+    LOCAL_CHAT_TEMPLATE_KWARGS = d
+
+
 def _is_anthropic(model):
     m = model.lower()
     return "anthropic" in m or "claude" in m
@@ -150,9 +171,13 @@ def chat(client, model, messages, max_tokens=2000, reasoning_effort="low", tempe
             # models unless reasoning_effort is set. Forward it ("none" disables thinking) and give
             # the visible answer the same token headroom as the gateway thinking branch so any
             # retained chain-of-thought can't starve the action tag.
-            kw["reasoning_effort"] = LOCAL_REASONING_EFFORT
+            if not LOCAL_CHAT_TEMPLATE_KWARGS:      # see the conflict note in ask_tools
+                kw["reasoning_effort"] = LOCAL_REASONING_EFFORT
             kw["max_tokens"] = (LOCAL_MAX_TOKENS if LOCAL_MAX_TOKENS is not None
                                 else max(max_tokens, _EFFORT_BUDGET.get(LOCAL_REASONING_EFFORT, max_tokens)))
+            if LOCAL_CHAT_TEMPLATE_KWARGS:
+                kw["extra_body"] = {**kw.get("extra_body", {}),
+                                    "chat_template_kwargs": LOCAL_CHAT_TEMPLATE_KWARGS}
         try:
             r = client.chat.completions.create(**kw)
         except Exception as e:
@@ -386,10 +411,20 @@ def ask_tools(client, model, state, env, image_b64=None, image_mode="none", reas
     # thinking unless reasoning_effort is sent, and several of them emit a long prose preamble
     # BEFORE the tool call — a hard 2000 cap truncates them before any tool_call is produced.
     # Both knobs are None on the gateway path, leaving that behavior untouched.
-    if LOCAL_REASONING_EFFORT is not None:
+    # MEASURED CONFLICT: sending reasoning_effort ALONGSIDE enable_thinking=false defeats it
+    # -- Ollama then leaks the whole chain-of-thought back into `content` (median 16.6k chars
+    # over 3 samples, vs 0 with the template kwarg alone). Same token count either way, so
+    # this is purely about which channel it lands in. enable_thinking wins when both are set.
+    if LOCAL_REASONING_EFFORT is not None and not LOCAL_CHAT_TEMPLATE_KWARGS:
         kw["reasoning_effort"] = LOCAL_REASONING_EFFORT
     if LOCAL_MAX_TOKENS is not None:
         kw["max_tokens"] = LOCAL_MAX_TOKENS
+    if LOCAL_CHAT_TEMPLATE_KWARGS:
+        # MUST go through extra_body: the OpenAI SDK rejects unknown top-level params, and
+        # passing it directly got silently swallowed by the retry handler -- the run looked
+        # fine and thinking stayed ON (16k chars of content instead of ~0).
+        kw["extra_body"] = {**kw.get("extra_body", {}),
+                            "chat_template_kwargs": LOCAL_CHAT_TEMPLATE_KWARGS}
     if temperature is not None:
         kw["temperature"] = temperature
     try:
@@ -403,6 +438,8 @@ def ask_tools(client, model, state, env, image_b64=None, image_mode="none", reas
             kw["max_completion_tokens"] = LOCAL_MAX_TOKENS or 2000
         if ("reasoning" in emsg or "think" in emsg) and "reasoning_effort" in kw:
             kw.pop("reasoning_effort", None)   # non-thinking model rejects the knob
+        if "chat_template" in emsg or "template" in emsg:
+            kw.pop("extra_body", None)
         r = client.chat.completions.create(**kw)
     m = r.choices[0].message
     content = m.content or ""
@@ -1560,6 +1597,12 @@ def main():
                     help="Explicit total-generation budget (reasoning + answer) for LOCAL models; "
                          "overrides the --reasoning_effort floor, including below it (e.g. 3000 with "
                          "effort=low). No effect on the CMU-gateway path.")
+    ap.add_argument("--no-thinking", action="store_true",
+                    help="LOCAL path only: send chat_template_kwargs={'enable_thinking': false}. "
+                         "On Qwen3/Qwen3.5 templates this moves the chain-of-thought out of the "
+                         "visible content (measured on qwen3:4b: 16k chars -> ~0). It does NOT "
+                         "make the model generate fewer tokens -- ~3-5k either way. Ignored by "
+                         "templates that do not declare the variable, and dropped on rejection.")
     ap.add_argument("--reasoning_effort", choices=["none", "low", "medium", "high"], default="low",
                     help="hidden-thinking budget for reasoning models (gpt-5*, gemini 2.5/3.x, and "
                          "local Ollama reasoning models via --base-url: qwen3, qwen3.5, gpt-oss). "
@@ -1637,10 +1680,13 @@ def main():
             # the CMU gateway, where Claude rejects the knob and gpt-5*/gemini handle it in-branch.
             _set_local_reasoning_effort(args.reasoning_effort)
             _set_local_max_tokens(args.max_tokens)
+            if args.no_thinking:
+                _set_local_chat_template_kwargs({"enable_thinking": False})
             print(f"    endpoint:      {base_url} (local/override)")
             print(f"    local thinking: reasoning_effort={args.reasoning_effort}"
                   f"{' (thinking OFF)' if args.reasoning_effort == 'none' else ''}"
-                  f"{f', max_tokens={args.max_tokens}' if args.max_tokens else ''}")
+                  f"{f', max_tokens={args.max_tokens}' if args.max_tokens else ''}"
+                  f"{', enable_thinking=false' if args.no_thinking else ''}")
     outdir = Path(args.out); outdir.mkdir(parents=True, exist_ok=True)
     jsonl = outdir / "episodes.jsonl"
 
