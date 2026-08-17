@@ -382,6 +382,14 @@ def ask_tools(client, model, state, env, image_b64=None, image_mode="none", reas
     msgs.append(_user_msg(user_text, image_b64))
     tools = cora_tools.openai_tools(manual_transfers=_mt)
     kw = dict(model=model, messages=msgs, tools=tools, max_tokens=2000)
+    # LOCAL path (Ollama) parity with chat(): a reasoning-capable local model auto-enables
+    # thinking unless reasoning_effort is sent, and several of them emit a long prose preamble
+    # BEFORE the tool call — a hard 2000 cap truncates them before any tool_call is produced.
+    # Both knobs are None on the gateway path, leaving that behavior untouched.
+    if LOCAL_REASONING_EFFORT is not None:
+        kw["reasoning_effort"] = LOCAL_REASONING_EFFORT
+    if LOCAL_MAX_TOKENS is not None:
+        kw["max_tokens"] = LOCAL_MAX_TOKENS
     if temperature is not None:
         kw["temperature"] = temperature
     try:
@@ -391,7 +399,10 @@ def ask_tools(client, model, state, env, image_b64=None, image_mode="none", reas
         if "temperature" in emsg:
             kw.pop("temperature", None)
         if "max_tokens" in emsg or "max_completion_tokens" in emsg:
-            kw.pop("max_tokens", None); kw["max_completion_tokens"] = 2000
+            kw.pop("max_tokens", None)
+            kw["max_completion_tokens"] = LOCAL_MAX_TOKENS or 2000
+        if ("reasoning" in emsg or "think" in emsg) and "reasoning_effort" in kw:
+            kw.pop("reasoning_effort", None)   # non-thinking model rejects the knob
         r = client.chat.completions.create(**kw)
     m = r.choices[0].message
     content = m.content or ""
@@ -1186,6 +1197,11 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
            "prompt_pack": (prompt_pack.get("name") if prompt_pack else None),
            "prompt_sha": hashlib.sha1(_sys_text.encode("utf-8")).hexdigest()[:12],
            "reasoning_effort": reasoning_effort,
+           # Total-generation cap actually in force on the LOCAL path (None = gateway path, or
+           # the _EFFORT_BUDGET floor applied). Worth stamping: a reasoning-capable local model
+           # that CoTs in the CONTENT channel (qwen3:4b does) gets truncated mid-prose by a low
+           # cap and emits no action tag at all, so the cap silently decides the result.
+           "max_tokens": LOCAL_MAX_TOKENS,
            "temperature": temperature,           # requested experimental level
            "temperature_sent": eff_temp,         # actually sent (Anthropic clamped to <=1.0)
            "system_prompt": _sys_text}
