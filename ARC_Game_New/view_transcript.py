@@ -109,6 +109,39 @@ def tags(eps, rnd):
                 print(f"  {pct:5.1f}%  {m.group(0)[:36]:<38} ...{lead[-46:]!r}")
 
 
+def show_prompt(eps):
+    """Print the stored system prompt as readable text.
+
+    episodes.jsonl holds it as a single JSON string, so reading it raw means scrolling one
+    enormous line of literal \\n -- unusable for reviewing what a model was actually told.
+    This renders the newlines, numbers the lines, and marks the blank-line section breaks so
+    the prompt's structure (rules / HOW TO ACT / grammar) is visible at a glance.
+    """
+    e = eps[0]
+    txt = e.get("system_prompt") or ""
+    if not txt:
+        print("no system_prompt stored on this episode")
+        return
+    import hashlib
+    print("=" * 78)
+    print(f"model         : {e.get('model')}")
+    print(f"variant       : {e.get('system_variant')}   pack: {e.get('prompt_pack')}")
+    print(f"prompt_sha    : {e.get('prompt_sha')}  (recomputed: "
+          f"{hashlib.sha1(txt.encode()).hexdigest()[:12]})")
+    print(f"action_format : {e.get('action_format')}   obs_encoding: {e.get('obs_encoding')}")
+    print(f"length        : {len(txt)} chars, {len(txt.splitlines())} lines")
+    print("=" * 78)
+    sec = 1
+    prev_blank = True
+    for i, line in enumerate(txt.splitlines(), 1):
+        if line.strip() and prev_blank:
+            print(f"\n  ── section {sec} " + "─" * 52)
+            sec += 1
+        prev_blank = not line.strip()
+        print(f"  {i:>3} | {line}")
+    print("=" * 78)
+
+
 def errors(eps):
     for i, e in enumerate(eps):
         for r in e.get("rounds", []):
@@ -129,13 +162,18 @@ def main():
     ap.add_argument("--tags", action="store_true", help="show each tag's position in the response")
     ap.add_argument("--errors", action="store_true", help="only rounds with rejected commands")
     ap.add_argument("--obs", action="store_true", help="also print the observation sent")
+    ap.add_argument("--prompt", action="store_true",
+                    help="print the stored system prompt as TEXT, with newlines rendered and "
+                         "sections numbered, instead of the one-line JSON blob")
     a = ap.parse_args()
 
     eps = pick(load(a.path), a.episode)
     if not eps:
         sys.exit("no episodes found (wrong path, or --episode out of range)")
 
-    if a.tags:
+    if a.prompt:
+        show_prompt(eps)
+    elif a.tags:
         tags(eps, a.round)
     elif a.errors:
         errors(eps)
