@@ -327,20 +327,50 @@ to act. Each call is one action, resolved against the live state:
   deconstruct(site)           tear down a building, freeing its site.
   task(task_id, choice_id)    answer an active task by one of its offered choices.
   transfer(resource, source, dest, qty)  move food/people between facilities via a free vehicle.
-You may make several action calls in one step; they apply in order against the live state, so a
-`hire` this turn is available to a `staff` call later the same turn. The `available` block in the
-state tells you exactly what is executable this turn. A spend larger than your budget is ALLOWED —
-the budget may go negative (it is penalized in your score, not blocked). Calls that are genuinely
-invalid (unknown building, nonexistent choice, or staffing a building that is still
+You may make several action calls in one step.
+
+EXECUTION ORDER: your calls resolve in a FIXED order each turn — deconstruct, build, hire, train,
+staff, transfer — NOT the order you wrote them in. Hiring and staffing in the same turn therefore
+always works (hire resolves first either way), but staffing a building you built THIS turn never
+does: it is still UnderConstruction. Wait until it appears in `available.needStaff`.
+
+STAFF ONLY buildings listed in `available.needStaff`, passing the EXACT name shown there. A
+building not in `needStaff` is either already fully staffed or not yet built, and staffing it is
+rejected. `staff` counts are in WORKFORCE UNITS (untrained = 1, trained = 2).
+
+Prefer the stable task tokens (BUDGET_DAILY, FOOD_C01, ...) shown in each task's id when calling
+`task`; a raw integer taskId also works but is less stable across turns.
+
+The `available` block tells you exactly what is executable this turn. A spend larger than your
+budget is ALLOWED — the budget may go negative (it is penalized in your score, not blocked). Calls
+that are genuinely invalid (unknown building, nonexistent choice, or staffing a building still
 UnderConstruction) are reported back to you as failures — a failure is honest signal, never
-something to hide. On staff(): a newly built facility stays UnderConstruction for a FULL DAY
-(~4 rounds), NOT one round — staff() succeeds only once its status is NeedWorker, so check
-status before calling it rather than retrying a build you just placed.
+something to hide.
+
+Taking NO action is a valid turn: if nothing improves the situation, call no tools rather than
+acting for its own sake.
 
 RESPOND with one short line of reasoning, then your tool calls."""
 
 
-def tool_system_prompt(manual_transfers=False, variant="minimal"):
+# ── WIRE FORMAT ──────────────────────────────────────────────────────────────────────────────
+# veRL renders the schemas into the chat template as a <tools> block and expects hermes-style
+# `<tool_call>{...}</tool_call>` emissions; the OpenAI-compatible path uses native tool_calls.
+# That wire format is the ONLY legitimate difference between the two arms — every rule above is
+# shared — so it swaps the opening paragraph rather than forking the prompt.
+#
+# This exists because the RL wing previously kept its OWN copy of the whole HOW-TO-ACT section and
+# spliced it in by string-matching _TOOL_ANCHOR against the cmd prompt. That duplicate drifted
+# (its execution-order text was RIGHT and this file's was WRONG), and the splice would have raised
+# ValueError and killed every RL job the moment anyone edited the anchor line.
+_TOOL_HERMES_HEADER = """HOW TO ACT — call the provided FUNCTIONS. Each turn you may emit any number
+of `<tool_call>{"name": "...", "arguments": {...}}</tool_call>` blocks; their argument schemas are
+listed above. Each call is one action, resolved against the live state:"""
+
+_TOOL_TYPED_HEADER_END = "resolved against the live state:"
+
+
+def tool_system_prompt(manual_transfers=False, variant="minimal", wire_format="typed"):
     """Tool-mode system prompt: the cmd prompt's mechanics preamble + the typed-tool directive.
 
     Shared by the live officer, the RL policy, and the benchmark tool mode so all three present
@@ -348,12 +378,21 @@ def tool_system_prompt(manual_transfers=False, variant="minimal"):
     (typed tool calls) differs from the cmd arm. `variant` selects the mechanics preamble
     (minimal/minimal_v2/original); manual_transfers is accepted for signature parity (transfer is
     a tool, gated by the schema, so the cmd transfer-doc is not appended)."""
+    if wire_format not in ("typed", "hermes"):
+        raise ValueError(f"wire_format must be 'typed' or 'hermes', got {wire_format!r}")
     base = cmd_system_prompt(manual_transfers=False, variant=variant)
     if _TOOL_ANCHOR in base:
         preamble = base.split(_TOOL_ANCHOR, 1)[0]
     else:
         preamble = base
-    return preamble.rstrip() + "\n\n" + _TOOL_HOW_TO_ACT
+    how = _TOOL_HOW_TO_ACT
+    if wire_format == "hermes":
+        # Swap ONLY the opening paragraph; every rule after the signature list is shared.
+        head, sep, rest = how.partition(_TOOL_TYPED_HEADER_END)
+        if not sep:                       # header text changed — fail loudly, never silently
+            raise RuntimeError("tool prompt header anchor missing; hermes variant cannot be built")
+        how = _TOOL_HERMES_HEADER + rest
+    return preamble.rstrip() + "\n\n" + how
 
 
 def cmd_system_prompt(manual_transfers=True, variant="original"):

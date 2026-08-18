@@ -24,6 +24,7 @@ from cmd_parser import (  # noqa: F401
 from cora_prompts import (  # noqa: F401
     OLD_SYSTEM_PROMPT, NEW_SYSTEM_PROMPT, SYSTEM_PROMPT, MINIMAL_SYSTEM_PROMPT, idx_system_prompt,
     CMD_SYSTEM_PROMPT, CMD_TRANSFER_DOC, CMD_MINIMAL_SYSTEM_PROMPT, CMD_MINIMAL_V2_SYSTEM_PROMPT,
+    tool_system_prompt,
     cmd_system_prompt,
 )
 # SHARED observation adapters (env -> obs_encoder + A/B toggles; source of truth: obs_adapters).
