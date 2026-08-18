@@ -163,10 +163,24 @@ def build_observation_commands(game_state, actions, *, new=True, v2=True,
                             show_impacts=show_impacts, rounds_left=rounds_left)
     obs.pop("actions", None)
     cs = (game_state or {}).get("constructionState", {})
+    wf = (game_state or {}).get("workforceState", {}) or {}
     obs["sites"] = [{"id": s.get("siteId"), "name": s.get("siteName")}
                     for s in cs.get("availableSites", []) if s.get("isAvailable")]
-    obs["costs"] = {"build": cs.get("buildingConstructionCost", 1000),
-                    "hireUntrained": 100, "hireTrained": 300, "train": 500}
+    # Every cost is read LIVE from the game state. These were hard-coded as
+    # hireUntrained=100 / hireTrained=300 / train=500 while the running scene charged
+    # 200 / 1000 / 300 -- so a trained worker cost 3.3x what the policy was told, in all
+    # three wings, and cost-efficiency is part of the score. Unity has always sent these
+    # (WorkforceState.untrainedWorkerCost / trainedWorkerCost / trainingCostPerWorker);
+    # only `build` was ever wired up.
+    #
+    # No numeric fallbacks: a stale literal here is invisible, whereas a missing key is
+    # loud. `_num0` maps present-but-null to 0, and an ABSENT key omits the entry entirely
+    # rather than inventing a price.
+    _costs = {"build": cs.get("buildingConstructionCost"),
+              "hireUntrained": wf.get("untrainedWorkerCost"),
+              "hireTrained": wf.get("trainedWorkerCost"),
+              "train": wf.get("trainingCostPerWorker")}
+    obs["costs"] = {k: v for k, v in _costs.items() if v is not None}
     # AFFORDANCE BLOCK — what is actually executable THIS round, derived from the same
     # valid-action set the parser/menu use (so it can never contradict them). This is the
     # compact replacement for the dropped idx menu: it tells the model which commands will
