@@ -178,15 +178,38 @@ public class BuildingSystem : MonoBehaviour
                 BuildingType.CaseworkSite => caseworkSiteConstructionCost,
                 _ => 0,
             };
+            // if (SatisfactionAndBudget.Instance != null && constructionCost > 0)
+            // {
+            //     SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
+            //     if (DailyReportData.Instance != null)
+            //         {
+            //             if (buildingType == BuildingType.Kitchen)
+            //                 DailyReportData.Instance.RecordFoodSpendCumulative(constructionCost);
+            //             else if (buildingType == BuildingType.Shelter)
+            //                 DailyReportData.Instance.RecordLodgingSpendCumulative(constructionCost);
+            //         }
+            //     ToastManager.ShowToast($"Opening cost of {constructionCost} deducted for {buildingType}", ToastType.Info, true);
+            //     GameLogPanel.Instance.LogPlayerAction($"Construction cost of {constructionCost} deducted for building {buildingType} at AbandonedSite_{site.GetId()}");
+            // }
             if (SatisfactionAndBudget.Instance != null && constructionCost > 0)
             {
                 SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
                 if (DailyReportData.Instance != null)
                     {
                         if (buildingType == BuildingType.Kitchen)
+                        {
                             DailyReportData.Instance.RecordFoodSpendCumulative(constructionCost);
+                            DailyReportData.Instance.RecordKitchenOpenCostToday(constructionCost);
+                        }
                         else if (buildingType == BuildingType.Shelter)
+                        {
                             DailyReportData.Instance.RecordLodgingSpendCumulative(constructionCost);
+                            DailyReportData.Instance.RecordShelterOpenCostToday(constructionCost);
+                        }
+                        else if (buildingType == BuildingType.CaseworkSite)
+                        {
+                            DailyReportData.Instance.RecordCaseworkOpenCostToday(constructionCost);
+                        }
                     }
                 ToastManager.ShowToast($"Opening cost of {constructionCost} deducted for {buildingType}", ToastType.Info, true);
                 GameLogPanel.Instance.LogPlayerAction($"Construction cost of {constructionCost} deducted for building {buildingType} at AbandonedSite_{site.GetId()}");

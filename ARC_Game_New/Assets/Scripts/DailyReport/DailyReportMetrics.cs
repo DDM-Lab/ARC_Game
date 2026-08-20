@@ -133,6 +133,16 @@ public class DailyReportMetrics
     /// Replaces old "totalInfluencedResidents" which was never populated correctly.
     /// </summary>
     public int incompleteExpiredTasks;
+    [Header("Today's Expenses (Receipt)")]
+    public float todayKitchenOpenCost;
+    public float todayShelterOpenCost;
+    public float todayCaseworkOpenCost;
+    public float todayFastFoodCost;
+    public float todayTransportCost;
+    public float todayLodgingCost;
+    public float todayWorkerRequestCost;
+    public float todayWorkerTrainingCost;
+    public float todayOtherExpenses;
 
     [Header("Task Type Breakdown - Cases Resolved (Emergency+Demand only)")]
     /// <summary>
@@ -194,6 +204,7 @@ public class DailyReportMetrics
     public float liveSatisfactionScore;
     public float liveCostEfficiencyScore;
     public float satFoodScore, satLodgingScore, satWorkerScore, satWasteScore, satCaseworkScore;
+    public float workerIdleSatScore, workerTrainingSatScore, workerWorkingSatScore;
     public float costFoodScore, costLodgingScore, costWorkerScore;
     public float costEfficiencyChangeCalculated;
 

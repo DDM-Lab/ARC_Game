@@ -39,6 +39,7 @@ public class DailyReportUI : MonoBehaviour
     public SectionElement workerTotal;
     public SectionElement workerStatus;
     public SectionElement workerTrainingBonusElement;
+    public SectionElement workerWorkingElement;
     public SectionElement idleWorker;
     // workerIdleRate removed - no longer used for satisfaction
 
@@ -122,6 +123,40 @@ public class DailyReportUI : MonoBehaviour
     public TextMeshProUGUI casesResolvedRatioText;       // Was: caseworkTaskRatioText
     public TextMeshProUGUI emergencyTaskRatioText;
 
+    [Header("Receipt - Today's Expenses")]
+    public SectionElement receiptKitchen;
+    public SectionElement receiptShelter;
+    public SectionElement receiptCasework;
+    public SectionElement receiptFastFood;
+    public SectionElement receiptTransport;
+    public SectionElement receiptLodging;
+    public SectionElement receiptWorkerRequest;
+    public SectionElement receiptWorkerTraining;
+    public SectionElement receiptWorkerReleased;
+    public SectionElement receiptOther;
+    public SectionElement receiptTotal;
+
+    [Header("Current Budget (Live)")]
+    public TextMeshProUGUI currentBudgetDisplayText;
+
+    [Header("Live Status - Food")]
+    public SectionElement liveFoodInTransit;
+    public SectionElement liveKitchenProduction;
+    public SectionElement liveFoodWaste;
+
+    [Header("Live Status - Lodging")]
+    public SectionElement liveNeedLodging;
+
+    [Header("Live Status - Workers")]
+    public SectionElement liveWorkersWorking;
+    public SectionElement liveWorkersWaiting;
+    public SectionElement liveWorkersTraining;
+    public SectionElement liveWorkersReleasedToday;
+
+    [Header("Live Status - Casework")]
+    public SectionElement liveNeedCasework;
+    public SectionElement liveInTransitToCasework;
+
     private DailyReportMetrics currentMetrics;
 
     // Default values
@@ -173,10 +208,41 @@ public class DailyReportUI : MonoBehaviour
         InitializeSectionElement(workerUtilizationTotal);
         InitializeSectionElement(workerUsageSummary);
         InitializeSectionElement(workerEfficiencyScore);
+        InitializeSectionElement(workerTotal);
+        // worker satisfaction subscores
+        InitializeSectionElement(workerStatus);
+        InitializeSectionElement(idleWorker);
+        InitializeSectionElement(workerWorkingElement);
+        InitializeSectionElement(workerTrainingBonusElement);
 
         InitializeSectionElement(budgetEfficiencyTotal);
         InitializeSectionElement(budgetUsageSummary);
         InitializeSectionElement(budgetEfficiencyScore);
+        
+        //receipt
+        InitializeSectionElement(receiptKitchen);
+        InitializeSectionElement(receiptShelter);
+        InitializeSectionElement(receiptCasework);
+        InitializeSectionElement(receiptFastFood);
+        InitializeSectionElement(receiptTransport);
+        InitializeSectionElement(receiptLodging);
+        InitializeSectionElement(receiptWorkerRequest);
+        InitializeSectionElement(receiptWorkerTraining);
+        InitializeSectionElement(receiptWorkerReleased);
+        InitializeSectionElement(receiptOther);
+        InitializeSectionElement(receiptTotal);
+
+        // curr bottom stats
+        InitializeSectionElement(liveFoodInTransit);
+        InitializeSectionElement(liveKitchenProduction);
+        InitializeSectionElement(liveFoodWaste);
+        InitializeSectionElement(liveNeedLodging);
+        InitializeSectionElement(liveWorkersWorking);
+        InitializeSectionElement(liveWorkersWaiting);
+        InitializeSectionElement(liveWorkersTraining);
+        InitializeSectionElement(liveWorkersReleasedToday);
+        InitializeSectionElement(liveNeedCasework);
+        InitializeSectionElement(liveInTransitToCasework);
     }
 
     void InitializeSectionElement(SectionElement element)
@@ -302,6 +368,12 @@ public class DailyReportUI : MonoBehaviour
         // Step 2: Display efficiency panel sections one by one
         yield return StartCoroutine(DisplayEfficiencySections());
 
+        // receipt
+        yield return StartCoroutine(DisplayReceiptSection());
+
+        // bottom curr status
+        yield return StartCoroutine(DisplayLiveStatusSection());
+
         // Step 3: Show final satisfaction changes
         yield return StartCoroutine(AnimateFinalSatisfactionChanges());
 
@@ -324,6 +396,10 @@ public class DailyReportUI : MonoBehaviour
         yield return StartCoroutine(AnimateSectionElement(workerTotal, currentMetrics.satWorkerScore, "Worker Use Satisfaction"));
         yield return StartCoroutine(AnimateSectionElement(workerStatus,
             $"Idle: {currentMetrics.cumIdleWorkerRounds} | Working: {currentMetrics.cumWorkingWorkerRounds} | Training: {currentMetrics.cumTrainingWorkerRounds}"));
+        // worker subscores
+        yield return StartCoroutine(AnimateSectionElement(idleWorker, currentMetrics.workerIdleSatScore, "Idle"));
+        yield return StartCoroutine(AnimateSectionElement(workerWorkingElement, currentMetrics.workerWorkingSatScore, "Working"));
+        yield return StartCoroutine(AnimateSectionElement(workerTrainingBonusElement, currentMetrics.workerTrainingSatScore, "Training"));
 
         yield return StartCoroutine(AnimateSectionElement(wasteTotal, currentMetrics.satWasteScore, "Food Waste Penalty"));
         yield return StartCoroutine(AnimateSectionElement(wasteStatus,
@@ -350,6 +426,124 @@ public class DailyReportUI : MonoBehaviour
         yield return StartCoroutine(AnimateSectionElement(workerUsageSummary,
             $"${(currentMetrics.cumWorkerRequestCost + currentMetrics.cumWorkerTrainingCost):F0} spent over {currentMetrics.cumWorkingWorkerRounds} working-rounds."));
     }
+
+    //receipt
+    IEnumerator DisplayReceiptSection()
+    {
+        yield return StartCoroutine(AnimateReceiptElement(receiptKitchen, currentMetrics.todayKitchenOpenCost, "Opened Kitchen"));
+        yield return StartCoroutine(AnimateReceiptElement(receiptShelter, currentMetrics.todayShelterOpenCost, "Opened Shelter"));
+        yield return StartCoroutine(AnimateReceiptElement(receiptCasework, currentMetrics.todayCaseworkOpenCost, "Opened Casework"));
+        yield return StartCoroutine(AnimateReceiptElement(receiptFastFood, currentMetrics.todayFastFoodCost, "Fast Food Delivery"));
+        yield return StartCoroutine(AnimateReceiptElement(receiptTransport, currentMetrics.todayTransportCost, "Transport of People"));
+        yield return StartCoroutine(AnimateReceiptElement(receiptLodging, currentMetrics.todayLodgingCost, "Motel / Lodging"));
+        yield return StartCoroutine(AnimateReceiptElement(receiptWorkerRequest, currentMetrics.todayWorkerRequestCost, "Requested Workers"));
+        yield return StartCoroutine(AnimateReceiptElement(receiptWorkerTraining, currentMetrics.todayWorkerTrainingCost, "Worker Training"));
+        yield return StartCoroutine(AnimateReceiptElement(receiptWorkerReleased, 0f, "Released Workers"));
+        yield return StartCoroutine(AnimateReceiptElement(receiptOther, currentMetrics.todayOtherExpenses, "Other"));
+        yield return StartCoroutine(AnimateReceiptElement(receiptTotal, currentMetrics.budgetSpent, "Total"));
+    }
+
+    IEnumerator AnimateReceiptElement(SectionElement element, float value, string labelValue)
+    {
+        if (element == null || element.layoutObject == null) yield break;
+
+        if (element.numberText != null)
+        {
+            yield return StartCoroutine(AnimateCostNumberText(element.numberText, 0f, value));
+        }
+
+        if (element.labelText != null)
+        {
+            element.labelText.text = labelValue;
+        }
+
+        yield return StartCoroutine(FadeInElement(element));
+    }
+
+    /// <summary>
+    /// Counts up a dollar value with no +/- sign, always in the neutral text color.
+    /// Used for the "Today's Expenses" receipt, where every line is a cost, not a delta.
+    /// </summary>
+    IEnumerator AnimateCostNumberText(TextMeshProUGUI numberText, float fromValue, float toValue)
+    {
+        float elapsed = 0f;
+        while (elapsed < numberCountDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float progress = elapsed / numberCountDuration;
+            float currentValue = Mathf.Lerp(fromValue, toValue, progress);
+            numberText.text = $"${currentValue:F0}";
+            yield return null;
+        }
+        numberText.text = $"${toValue:F0}";
+    }
+    //end receipt
+
+    //new bottom curr status
+    IEnumerator DisplayLiveStatusSection()
+    {
+        UpdateCurrentBudgetText();
+
+        var d = DailyReportData.Instance;
+        if (d == null) yield break;
+
+        yield return StartCoroutine(AnimateLiveElement(liveFoodInTransit, d.GetCurrentFoodPacksInTransit(), "Food packs in transit"));
+        yield return StartCoroutine(AnimateLiveElement(liveKitchenProduction, currentMetrics.foodProduced, "Kitchen production"));
+        yield return StartCoroutine(AnimateLiveElement(liveFoodWaste, currentMetrics.foodWasted, "Food waste"));
+
+        yield return StartCoroutine(AnimateLiveElement(liveNeedLodging, d.GetCurrentPopulationNeedingLodging(), "Need lodging"));
+
+        yield return StartCoroutine(AnimateLiveElement(liveWorkersWorking, d.GetCurrentWorkingWorkers(), "Working"));
+        yield return StartCoroutine(AnimateLiveElement(liveWorkersWaiting, d.GetCurrentWaitingWorkers(), "Waiting"));
+        yield return StartCoroutine(AnimateLiveElement(liveWorkersTraining, d.GetCurrentTrainingWorkers(), "Training"));
+        yield return StartCoroutine(AnimateLiveElement(liveWorkersReleasedToday, d.GetTodayWorkersReleased(), "Released today"));
+
+        yield return StartCoroutine(AnimateLiveElement(liveNeedCasework, d.GetCurrentClientsNeedingCasework(), "Need casework"));
+        yield return StartCoroutine(AnimateLiveElement(liveInTransitToCasework, d.GetCurrentPeopleInTransitToCasework(), "In transit to casework"));
+    }
+
+    IEnumerator AnimateLiveElement(SectionElement element, int value, string labelValue)
+    {
+        if (element == null || element.layoutObject == null) yield break;
+
+        if (element.numberText != null)
+        {
+            yield return StartCoroutine(AnimateLiveNumberText(element.numberText, 0f, value));
+        }
+
+        if (element.labelText != null)
+        {
+            element.labelText.text = labelValue;
+        }
+
+        yield return StartCoroutine(FadeInElement(element));
+    }
+
+    /// <summary>
+    /// Counts up a plain integer with no +/- sign and no dollar sign.
+    /// Used for the live status panel (worker counts, food pack counts, etc).
+    /// </summary>
+    IEnumerator AnimateLiveNumberText(TextMeshProUGUI numberText, float fromValue, float toValue)
+    {
+        float elapsed = 0f;
+        while (elapsed < numberCountDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float progress = elapsed / numberCountDuration;
+            float currentValue = Mathf.Lerp(fromValue, toValue, progress);
+            numberText.text = $"{currentValue:F0}";
+            yield return null;
+        }
+        numberText.text = $"{toValue:F0}";
+    }
+
+    void UpdateCurrentBudgetText()
+    {
+        if (currentBudgetDisplayText == null) return;
+        int budget = SatisfactionAndBudget.Instance != null ? SatisfactionAndBudget.Instance.GetCurrentBudget() : 0;
+        currentBudgetDisplayText.text = $"${budget:N0}";
+    }
+    // end bottom curr status
     IEnumerator AnimateSectionElement(SectionElement element, float numberValue, string labelValue)
     {
         if (element == null || element.layoutObject == null) yield break;
@@ -414,14 +608,16 @@ public class DailyReportUI : MonoBehaviour
 
             // Format with + or - sign and one decimal place
             string sign = currentValue >= 0 ? "+" : "";
-            numberText.text = $"{sign}{currentValue:F1}";
+            // numberText.text = $"{sign}{currentValue:F1}";
+            numberText.text = $"{sign}{currentValue:F0}";
             numberText.color = currentValue >= 0 ? positiveChangeColor : negativeChangeColor;
 
             yield return null;
         }
 
         string finalSign = toValue >= 0 ? "+" : "";
-        numberText.text = $"{finalSign}{toValue:F1}";
+        // numberText.text = $"{finalSign}{toValue:F1}";
+        numberText.text = $"{finalSign}{toValue:F0}";
         numberText.color = toValue >= 0 ? positiveChangeColor : negativeChangeColor;
     }
 
@@ -429,8 +625,9 @@ public class DailyReportUI : MonoBehaviour
     {
         if (satisfactionAnimationSection == null) yield break;
 
-        if (satisfactionValueText != null) satisfactionValueText.text = $"{currentSatisfaction:F1}";
-        if (satisfactionBar != null) satisfactionBar.value = currentSatisfaction / 10000f;
+        // if (satisfactionValueText != null) satisfactionValueText.text = $"{currentSatisfaction:F1}";
+         if (satisfactionValueText != null) satisfactionValueText.text = $"{currentSatisfaction:F0}/1000";
+        if (satisfactionBar != null) satisfactionBar.value = currentSatisfaction / 1000f;
 
         float satisfactionChange = currentMetrics.satisfactionChangeCalculated;
         float newSatisfaction = currentMetrics.finalSatisfactionValue;
@@ -447,7 +644,8 @@ public class DailyReportUI : MonoBehaviour
 
         if (satisfactionChangeText != null)
         {
-            string changeText = satisfactionChange >= 0 ? $"+{satisfactionChange:F1}" : $"{satisfactionChange:F1}";
+            // string changeText = satisfactionChange >= 0 ? $"+{satisfactionChange:F1}" : $"{satisfactionChange:F1}";
+            string changeText = satisfactionChange >= 0 ? $"+{satisfactionChange:F0}" : $"{satisfactionChange:F0}";
             satisfactionChangeText.text = changeText;
             satisfactionChangeText.color = satisfactionChange >= 0 ? positiveChangeColor : negativeChangeColor;
         }
@@ -462,8 +660,9 @@ public class DailyReportUI : MonoBehaviour
     {
         if (efficiencyAnimationSection == null) yield break;
 
-        if (efficiencyValueText != null) efficiencyValueText.text = $"{currentEfficiency:F1}";
-        if (efficiencyBar != null) efficiencyBar.value = currentEfficiency / 10000f;
+        // if (efficiencyValueText != null) efficiencyValueText.text = $"{currentEfficiency:F1}";
+        if (efficiencyValueText != null) efficiencyValueText.text = $"{currentEfficiency:F0}/1000";
+        if (efficiencyBar != null) efficiencyBar.value = currentEfficiency / 1000f;
 
         float efficiencyChange = currentMetrics.costEfficiencyChangeCalculated;
         float newEfficiency = currentMetrics.finalEfficiencyValue;
@@ -480,7 +679,8 @@ public class DailyReportUI : MonoBehaviour
 
         if (efficiencyChangeText != null)
         {
-            string changeText = efficiencyChange >= 0 ? $"+{efficiencyChange:F1}" : $"{efficiencyChange:F1}";
+            // string changeText = efficiencyChange >= 0 ? $"+{efficiencyChange:F1}" : $"{efficiencyChange:F1}";
+            string changeText = efficiencyChange >= 0 ? $"+{efficiencyChange:F0}" : $"{efficiencyChange:F0}";
             efficiencyChangeText.text = changeText;
             efficiencyChangeText.color = efficiencyChange >= 0 ? positiveChangeColor : negativeChangeColor;
         }
@@ -493,7 +693,7 @@ public class DailyReportUI : MonoBehaviour
 
     IEnumerator AnimateFinalValue(TextMeshProUGUI valueText, Slider valueBar, float fromValue, float toValue)
     {
-        valueBar.value = fromValue / 10000f;
+        valueBar.value = fromValue / 1000f;
 
         float elapsed = 0f;
         while (elapsed < barAnimationDuration)
@@ -502,14 +702,16 @@ public class DailyReportUI : MonoBehaviour
             float progress = elapsed / barAnimationDuration;
             float currentValue = Mathf.Lerp(fromValue, toValue, progress);
 
-            valueText.text = $"{currentValue:F1}";
-            valueBar.value = currentValue / 10000f;
+            // valueText.text = $"{currentValue:F1}";
+            valueText.text = $"{currentValue:F0}/1000";
+            valueBar.value = currentValue / 1000f;
 
             yield return null;
         }
 
-        valueText.text = $"{toValue:F1}";
-        valueBar.value = toValue / 10000f;
+        // valueText.text = $"{toValue:F1}";
+        valueText.text = $"{toValue:F0}/1000";
+        valueBar.value = toValue / 1000f;
     }
 
     // =========================================================================
@@ -539,22 +741,27 @@ public class DailyReportUI : MonoBehaviour
         currentMetrics.workerEfficiencyScore = CalculateWorkerUtilizationScore();
         currentMetrics.budgetEfficiencyScore = CalculateBudgetEfficiencyScore();
 
-        float newSatisfaction = CalculateLiveSatisfactionScore() * 10000f; 
-        float newEfficiency = CalculateLiveCostEfficiencyScore() * 10000f;
+        float newSatisfaction = CalculateLiveSatisfactionScore() * 1000f; 
+        float newEfficiency = CalculateLiveCostEfficiencyScore() * 1000f;
         float sFood = S_Food(), sLodging = S_Lodging(), sWorker = S_WorkerUse(), sWaste = S_Waste(), sCasework = S_Casework();
 
         const float wSat = 0.2f;
-        currentMetrics.satFoodScore     = sFood     * wSat * 10000f;
-        currentMetrics.satLodgingScore  = sLodging  * wSat * 10000f;
-        currentMetrics.satWorkerScore   = sWorker   * wSat * 10000f;
-        currentMetrics.satWasteScore    = sWaste    * wSat * 10000f;
-        currentMetrics.satCaseworkScore = sCasework * wSat * 10000f;
+        currentMetrics.satFoodScore     = sFood     * wSat * 1000f;
+        currentMetrics.satLodgingScore  = sLodging  * wSat * 1000f;
+        currentMetrics.satWorkerScore   = sWorker   * wSat * 1000f;
+        // worker subscores
+        var (idleScore, workingScore, trainingScore) = GetWorkerSatisfactionComponents();
+        currentMetrics.workerIdleSatScore = idleScore;
+        currentMetrics.workerWorkingSatScore = workingScore;
+        currentMetrics.workerTrainingSatScore = trainingScore;
+        currentMetrics.satWasteScore    = sWaste    * wSat * 1000f;
+        currentMetrics.satCaseworkScore = sCasework * wSat * 1000f;
 
         float cFood = C_Food(), cLodging = C_Lodging(), cWorker = C_Worker();
         const float wCost = 1f / 3f;
-        currentMetrics.costFoodScore    = cFood    * wCost * 10000f;
-        currentMetrics.costLodgingScore = cLodging * wCost * 10000f;
-        currentMetrics.costWorkerScore  = cWorker  * wCost * 10000f;
+        currentMetrics.costFoodScore    = cFood    * wCost * 1000f;
+        currentMetrics.costLodgingScore = cLodging * wCost * 1000f;
+        currentMetrics.costWorkerScore  = cWorker  * wCost * 1000f;
 
         currentMetrics.costEfficiencyChangeCalculated = newEfficiency - currentEfficiency;
 
@@ -582,8 +789,8 @@ public class DailyReportUI : MonoBehaviour
         currentMetrics.cumWorkerRequestCost = d.GetCumulativeWorkerRequestCost();
         currentMetrics.cumWorkerTrainingCost = d.GetCumulativeWorkerTrainingCost();
 
-        currentMetrics.liveSatisfactionScore = newSatisfaction / 10000f; 
-        currentMetrics.liveCostEfficiencyScore = newEfficiency / 10000f;
+        currentMetrics.liveSatisfactionScore = newSatisfaction / 1000f; 
+        currentMetrics.liveCostEfficiencyScore = newEfficiency / 1000f;
 
         int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
 
@@ -687,6 +894,10 @@ public class DailyReportUI : MonoBehaviour
         SetSectionSentence(lodgingStatus, $"{metrics.cumLodgingNightsConsumed}/{metrics.cumLodgingNightsNeeded} lodging-nights consumed by clients (cumulative).");
 
         SetSectionValueFormatted(workerTotal, metrics.satWorkerScore);
+        // worker subscores
+        SetSectionValueFormatted(idleWorker, metrics.workerIdleSatScore);
+        SetSectionValueFormatted(workerWorkingElement, metrics.workerWorkingSatScore);
+        SetSectionValueFormatted(workerTrainingBonusElement, metrics.workerTrainingSatScore);
 
         SetSectionValueFormatted(wasteTotal, metrics.satWasteScore);
         // SetSectionSentence(wasteStatus, $"{metrics.cumFoodPacksWasted} food pack(s) wasted (cumulative).");
@@ -713,6 +924,40 @@ public class DailyReportUI : MonoBehaviour
         SetSectionValueFormatted(budgetEfficiencyTotal, totalCostEff);
         if (budgetUsageSummary?.layoutObject != null) budgetUsageSummary.layoutObject.SetActive(false);
         if (budgetEfficiencyScore?.layoutObject != null) budgetEfficiencyScore.layoutObject.SetActive(false);
+
+        //receipt
+        SetSectionCostFormatted(receiptKitchen, metrics.todayKitchenOpenCost);
+        SetSectionCostFormatted(receiptShelter, metrics.todayShelterOpenCost);
+        SetSectionCostFormatted(receiptCasework, metrics.todayCaseworkOpenCost);
+        SetSectionCostFormatted(receiptFastFood, metrics.todayFastFoodCost);
+        SetSectionCostFormatted(receiptTransport, metrics.todayTransportCost);
+        SetSectionCostFormatted(receiptLodging, metrics.todayLodgingCost);
+        SetSectionCostFormatted(receiptWorkerRequest, metrics.todayWorkerRequestCost);
+        SetSectionCostFormatted(receiptWorkerTraining, metrics.todayWorkerTrainingCost);
+        SetSectionCostFormatted(receiptWorkerReleased, 0f);
+        SetSectionCostFormatted(receiptOther, metrics.todayOtherExpenses);
+        SetSectionCostFormatted(receiptTotal, metrics.budgetSpent);
+
+        // curr status
+        var d = DailyReportData.Instance;
+        if (d != null)
+        {
+            SetSectionLiveFormatted(liveFoodInTransit, d.GetCurrentFoodPacksInTransit());
+            SetSectionLiveFormatted(liveKitchenProduction, metrics.foodProduced);
+            SetSectionLiveFormatted(liveFoodWaste, metrics.foodWasted);
+
+            SetSectionLiveFormatted(liveNeedLodging, d.GetCurrentPopulationNeedingLodging());
+
+            SetSectionLiveFormatted(liveWorkersWorking, d.GetCurrentWorkingWorkers());
+            SetSectionLiveFormatted(liveWorkersWaiting, d.GetCurrentWaitingWorkers());
+            SetSectionLiveFormatted(liveWorkersTraining, d.GetCurrentTrainingWorkers());
+            SetSectionLiveFormatted(liveWorkersReleasedToday, d.GetTodayWorkersReleased());
+
+            SetSectionLiveFormatted(liveNeedCasework, d.GetCurrentClientsNeedingCasework());
+            SetSectionLiveFormatted(liveInTransitToCasework, d.GetCurrentPeopleInTransitToCasework());
+        }
+
+        UpdateCurrentBudgetText();
     }
 
     /// <summary>
@@ -722,34 +967,41 @@ public class DailyReportUI : MonoBehaviour
     {
         // Satisfaction
         if (satisfactionValueText != null)
-            satisfactionValueText.text = $"{metrics.finalSatisfactionValue:F1}";
+            // satisfactionValueText.text = $"{metrics.finalSatisfactionValue:F1}";
+            satisfactionValueText.text = $"{metrics.finalSatisfactionValue:F0}/1000";
         
         if (satisfactionChangeText != null)
         {
             float change = metrics.satisfactionChangeCalculated;
-            satisfactionChangeText.text = change >= 0 ? $"+{change:F1}" : $"{change:F1}";
+            // satisfactionChangeText.text = change >= 0 ? $"+{change:F1}" : $"{change:F1}";
+            satisfactionChangeText.text = change >= 0 ? $"+{change:F0}" : $"{change:F0}";
             satisfactionChangeText.color = change >= 0 ? positiveChangeColor : negativeChangeColor;
         }
         
         if (satisfactionBar != null)
         {
-            satisfactionBar.value = metrics.finalSatisfactionValue / 10000f;
+            satisfactionBar.value = metrics.finalSatisfactionValue / 1000f;
         }
         
         // Efficiency
         if (efficiencyValueText != null)
-            efficiencyValueText.text = $"{metrics.finalEfficiencyValue:F1}";
+        {
+            // efficiencyValueText.text = $"{metrics.finalEfficiencyValue:F1}";
+            efficiencyValueText.text = $"{metrics.finalEfficiencyValue:F0}";
+        }
+            
         
         if (efficiencyBar != null)
         {
-            efficiencyBar.value = metrics.finalEfficiencyValue / 10000f;
+            efficiencyBar.value = metrics.finalEfficiencyValue / 1000f;
         }
         
         // Efficiency change (sum of efficiency components)
         if (efficiencyChangeText != null)
         {
             float effChange = metrics.costEfficiencyChangeCalculated; 
-            efficiencyChangeText.text = effChange >= 0 ? $"+{effChange:F1}" : $"{effChange:F1}";
+            // efficiencyChangeText.text = effChange >= 0 ? $"+{effChange:F1}" : $"{effChange:F1}";
+            efficiencyChangeText.text = effChange >= 0 ? $"+{effChange:F0}" : $"{effChange:F0}";
             efficiencyChangeText.color = effChange >= 0 ? positiveChangeColor : negativeChangeColor;
         }
     }
@@ -763,7 +1015,8 @@ public class DailyReportUI : MonoBehaviour
         if (element == null || element.numberText == null) return;
         
         string sign = value >= 0 ? "+" : "";
-        element.numberText.text = $"{sign}{value:F1}";
+        // element.numberText.text = $"{sign}{value:F1}";
+        element.numberText.text = $"{sign}{value:F0}";
         
         // Set color based on positive/negative
         element.numberText.color = value >= 0 ? positiveChangeColor : negativeChangeColor;
@@ -774,6 +1027,43 @@ public class DailyReportUI : MonoBehaviour
         if (element.layoutObject != null)
             element.layoutObject.SetActive(true);
     }
+
+    //receipt
+
+    /// <summary>
+    /// Set a dollar-cost value (no +/- sign, no positive/negative color) on a section element
+    /// and make it visible. Used for the "Today's Expenses" receipt.
+    /// </summary>
+    void SetSectionCostFormatted(SectionElement element, float value)
+    {
+        if (element == null || element.numberText == null) return;
+
+        element.numberText.text = $"${value:F0}";
+
+        if (element.canvasGroup != null)
+            element.canvasGroup.alpha = 1f;
+        if (element.layoutObject != null)
+            element.layoutObject.SetActive(true);
+    }
+    //end receipt
+
+    // new curr status
+    /// <summary>
+    /// Set a plain integer value (no sign, no $, no color coding) on a section element
+    /// and make it visible. Used for the live status panel.
+    /// </summary>
+    void SetSectionLiveFormatted(SectionElement element, int value)
+    {
+        if (element == null || element.numberText == null) return;
+
+        element.numberText.text = $"{value}";
+
+        if (element.canvasGroup != null)
+            element.canvasGroup.alpha = 1f;
+        if (element.layoutObject != null)
+            element.layoutObject.SetActive(true);
+    }
+    // end curr status
 
     /// <summary>
     /// Set sentence text on a section element and make it visible.
@@ -826,6 +1116,9 @@ public class DailyReportUI : MonoBehaviour
 
         ShowSectionElement(wasteTotal);
         ShowSectionElement(wasteStatus);
+        ShowSectionElement(idleWorker);
+        ShowSectionElement(workerWorkingElement);
+        ShowSectionElement(workerTrainingBonusElement);
 
         ShowSectionElement(caseworkTotal);
         ShowSectionElement(caseworkStatus);
@@ -845,6 +1138,31 @@ public class DailyReportUI : MonoBehaviour
         ShowSectionElement(budgetEfficiencyTotal);
         ShowSectionElement(budgetUsageSummary);
         ShowSectionElement(budgetEfficiencyScore);
+        
+        //receipt
+        ShowSectionElement(receiptKitchen);
+        ShowSectionElement(receiptShelter);
+        ShowSectionElement(receiptCasework);
+        ShowSectionElement(receiptFastFood);
+        ShowSectionElement(receiptTransport);
+        ShowSectionElement(receiptLodging);
+        ShowSectionElement(receiptWorkerRequest);
+        ShowSectionElement(receiptWorkerTraining);
+        ShowSectionElement(receiptWorkerReleased);
+        ShowSectionElement(receiptOther);
+        ShowSectionElement(receiptTotal);
+
+        // curr status
+        ShowSectionElement(liveFoodInTransit);
+        ShowSectionElement(liveKitchenProduction);
+        ShowSectionElement(liveFoodWaste);
+        ShowSectionElement(liveNeedLodging);
+        ShowSectionElement(liveWorkersWorking);
+        ShowSectionElement(liveWorkersWaiting);
+        ShowSectionElement(liveWorkersTraining);
+        ShowSectionElement(liveWorkersReleasedToday);
+        ShowSectionElement(liveNeedCasework);
+        ShowSectionElement(liveInTransitToCasework);
     }
 
     void ShowSectionElement(SectionElement element)
@@ -935,6 +1253,28 @@ public class DailyReportUI : MonoBehaviour
 
         const float wIdle = 1f / 3f, wWorking = 1f / 3f, wTraining = 1f / 3f;
         return (1f - idleRatio) * wIdle + (workingRatio * wWorking) + (trainingRatio * wTraining);
+    }
+
+    // Get worker satisfaction components (idle, working, training) for display in UI
+    (float idle, float working, float training) GetWorkerSatisfactionComponents()
+    {
+        var d = DailyReportData.Instance;
+        int roundsElapsed = d.GetCumulativeRoundsElapsed();
+        if (roundsElapsed <= 0) return (0f, 0f, 0f);
+
+        float denom = assumedTotalWorkerPoolSize * roundsElapsed;
+        float idleRatio = d.GetCumulativeIdleWorkerRounds() / denom;
+        float workingRatio = d.GetCumulativeWorkingWorkerRounds() / denom;
+        float trainingRatio = d.GetCumulativeTrainingWorkerRounds() / denom;
+
+        const float wIdle = 1f / 3f, wWorking = 1f / 3f, wTraining = 1f / 3f;
+        const float wSat = 0.2f;
+
+        float idleScore     = (1f - idleRatio) * wIdle     * wSat * 1000f;
+        float workingScore  = workingRatio     * wWorking  * wSat * 1000f;
+        float trainingScore = trainingRatio    * wTraining * wSat * 1000f;
+
+        return (idleScore, workingScore, trainingScore);
     }
 
     float S_Waste()
@@ -1217,6 +1557,9 @@ public class DailyReportUI : MonoBehaviour
 
         ResetSectionElement(workerTotal);
         ResetSectionElement(workerStatus);
+        ResetSectionElement(idleWorker);
+        ResetSectionElement(workerWorkingElement);
+        ResetSectionElement(workerTrainingBonusElement);
 
         ResetSectionElement(wasteTotal);
         ResetSectionElement(wasteStatus);
@@ -1240,10 +1583,37 @@ public class DailyReportUI : MonoBehaviour
         ResetSectionElement(budgetUsageSummary);
         ResetSectionElement(budgetEfficiencyScore);
 
+        //receipt
+        ResetSectionElement(receiptKitchen);
+        ResetSectionElement(receiptShelter);
+        ResetSectionElement(receiptCasework);
+        ResetSectionElement(receiptFastFood);
+        ResetSectionElement(receiptTransport);
+        ResetSectionElement(receiptLodging);
+        ResetSectionElement(receiptWorkerRequest);
+        ResetSectionElement(receiptWorkerTraining);
+        ResetSectionElement(receiptWorkerReleased);
+        ResetSectionElement(receiptOther);
+        ResetSectionElement(receiptTotal);
+
+        // new curr status
+        ResetSectionElement(liveFoodInTransit);
+        ResetSectionElement(liveKitchenProduction);
+        ResetSectionElement(liveFoodWaste);
+        ResetSectionElement(liveNeedLodging);
+        ResetSectionElement(liveWorkersWorking);
+        ResetSectionElement(liveWorkersWaiting);
+        ResetSectionElement(liveWorkersTraining);
+        ResetSectionElement(liveWorkersReleasedToday);
+        ResetSectionElement(liveNeedCasework);
+        ResetSectionElement(liveInTransitToCasework);
+
         if (satisfactionAnimationSection != null)
             satisfactionAnimationSection.alpha = 0f;
         if (efficiencyAnimationSection != null)
             efficiencyAnimationSection.alpha = 0f;
+
+        
     }
 
     void ResetSectionElement(SectionElement element)

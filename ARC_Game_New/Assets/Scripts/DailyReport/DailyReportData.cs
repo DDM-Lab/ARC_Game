@@ -36,6 +36,18 @@ public class DailyReportData : MonoBehaviour
     private int todayBuildingsConstructed = 0;
     private float todayTaskCosts = 0f;
     private float todayBudgetReceived = 0f;
+
+    // receipt vars
+    private float todayKitchenOpenCost = 0f;
+    private float todayShelterOpenCost = 0f;
+    private float todayCaseworkOpenCost = 0f;
+    private float todayFastFoodCost = 0f;
+    private float todayTransportCost = 0f;
+    private float todayLodgingCost = 0f;
+    private float todayWorkerRequestCost = 0f;
+    private float todayWorkerTrainingCost = 0f;
+
+    private int todayWorkersReleased = 0;
     
     // Track what we've already processed
     private HashSet<int> processedTaskIds = new HashSet<int>();
@@ -296,6 +308,18 @@ public class DailyReportData : MonoBehaviour
         todayBuildingsConstructed = 0;
         todayTaskCosts = 0f;
         todayBudgetReceived = 0f;
+
+        //receipt
+        todayKitchenOpenCost = 0f;
+        todayShelterOpenCost = 0f;
+        todayCaseworkOpenCost = 0f;
+        todayFastFoodCost = 0f;
+        todayTransportCost = 0f;
+        todayLodgingCost = 0f;
+        todayWorkerRequestCost = 0f;
+        todayWorkerTrainingCost = 0f;
+
+        todayWorkersReleased = 0;
     }
 
     //NEW
@@ -407,7 +431,93 @@ public class DailyReportData : MonoBehaviour
     public int GetCumulativeLodgingNightsConsumed() => cumulativeLodgingNightsConsumed;
     public int GetCumulativeLodgingNightsNeeded() => cumulativeLodgingNightsNeeded;   
     public int GetCumulativeRoundsElapsed() => cumulativeRoundsElapsed;
+
+    // receipt 
+    public void RecordKitchenOpenCostToday(float amt) => todayKitchenOpenCost += amt;
+    public void RecordShelterOpenCostToday(float amt) => todayShelterOpenCost += amt;
+    public void RecordCaseworkOpenCostToday(float amt) => todayCaseworkOpenCost += amt;
+    public void RecordFastFoodSpendToday(float amt) => todayFastFoodCost += amt;
+    public void RecordTransportCostToday(float amt) => todayTransportCost += amt;
+    public void RecordLodgingCostToday(float amt) => todayLodgingCost += amt;
+    public void RecordWorkerRequestCostToday(float amt) => todayWorkerRequestCost += amt;
+    public void RecordWorkerTrainingCostToday(float amt) => todayWorkerTrainingCost += amt;
+
+    public float GetTodayKitchenOpenCost() => todayKitchenOpenCost;
+    public float GetTodayShelterOpenCost() => todayShelterOpenCost;
+    public float GetTodayCaseworkOpenCost() => todayCaseworkOpenCost;
+    public float GetTodayFastFoodCost() => todayFastFoodCost;
+    public float GetTodayTransportCost() => todayTransportCost;
+    public float GetTodayLodgingCost() => todayLodgingCost;
+    public float GetTodayWorkerRequestCost() => todayWorkerRequestCost;
+    public float GetTodayWorkerTrainingCost() => todayWorkerTrainingCost;
     //END NEW
+
+    // new 
+    public void RecordWorkersReleasedToday(int count) => todayWorkersReleased += count;
+    public int GetTodayWorkersReleased() => todayWorkersReleased;
+
+    public int GetCurrentWorkingWorkers()
+    {
+        if (workerSystem == null) workerSystem = FindObjectOfType<WorkerSystem>();
+        if (workerSystem == null) return 0;
+        var stats = workerSystem.GetWorkerStatistics();
+        return stats.trainedWorking + stats.untrainedWorking;
+    }
+
+    public int GetCurrentWaitingWorkers()
+    {
+        if (workerSystem == null) workerSystem = FindObjectOfType<WorkerSystem>();
+        if (workerSystem == null) return 0;
+        var stats = workerSystem.GetWorkerStatistics();
+        return stats.trainedNotArrived + stats.untrainedNotArrived;
+    }
+
+    public int GetCurrentTrainingWorkers()
+    {
+        if (workerSystem == null) workerSystem = FindObjectOfType<WorkerSystem>();
+        if (workerSystem == null) return 0;
+        var stats = workerSystem.GetWorkerStatistics();
+        return stats.untrainedTraining;
+    }
+
+    public int GetCurrentPopulationNeedingLodging()
+    {
+        int total = 0;
+        PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>()
+            .Where(pb => pb.GetPrebuiltType() == PrebuiltBuildingType.Community).ToArray();
+        foreach (var c in communities)
+            total += c.GetCurrentPopulation();
+        return total;
+    }
+
+    public int GetCurrentClientsNeedingCasework()
+    {
+        if (ClientStayTracker.Instance == null) return 0;
+        return ClientStayTracker.Instance.clientGroups.Sum(g => g.clientsWithCaseworkNeed);
+    }
+
+    public int GetCurrentFoodPacksInTransit()
+    {
+        if (DeliverySystem.Instance == null) return 0;
+        return DeliverySystem.Instance.GetActiveTasks()
+            .Where(t => t.cargoType == ResourceType.FoodPacks)
+            .Sum(t => t.quantity);
+    }
+
+    public int GetCurrentPeopleInTransitToCasework()
+    {
+        if (DeliverySystem.Instance == null) return 0;
+        return DeliverySystem.Instance.GetActiveTasks()
+            .Where(t => t.cargoType == ResourceType.Population)
+            .Where(t =>
+            {
+                Building b = t.destinationBuilding as Building;
+                return b != null && b.GetBuildingType() == BuildingType.CaseworkSite;
+            })
+            .Sum(t => t.quantity);
+    }
+
+    // end new
 
     // =========================================================================
     // GENERATE DAILY REPORT
@@ -527,6 +637,21 @@ public class DailyReportData : MonoBehaviour
         }
         
         metrics.buildingsConstructed = todayBuildingsConstructed;
+        //receipt
+        metrics.todayKitchenOpenCost = todayKitchenOpenCost;
+        metrics.todayShelterOpenCost = todayShelterOpenCost;
+        metrics.todayCaseworkOpenCost = todayCaseworkOpenCost;
+        metrics.todayFastFoodCost = todayFastFoodCost;
+        metrics.todayTransportCost = todayTransportCost;
+        metrics.todayLodgingCost = todayLodgingCost;
+        metrics.todayWorkerRequestCost = todayWorkerRequestCost;
+        metrics.todayWorkerTrainingCost = todayWorkerTrainingCost;
+
+        float trackedExpenseSum = metrics.todayKitchenOpenCost + metrics.todayShelterOpenCost
+                                + metrics.todayCaseworkOpenCost + metrics.todayFastFoodCost
+                                + metrics.todayTransportCost + metrics.todayLodgingCost
+                                + metrics.todayWorkerRequestCost + metrics.todayWorkerTrainingCost;
+        metrics.todayOtherExpenses = Mathf.Max(0f, metrics.budgetSpent - trackedExpenseSum);
         
         // =====================================================================
         // BOTTOM PANEL - "What We Did Today"
