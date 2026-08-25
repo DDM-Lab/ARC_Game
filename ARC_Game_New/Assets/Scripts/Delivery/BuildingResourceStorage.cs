@@ -36,6 +36,8 @@ public class BuildingResourceStorage : MonoBehaviour
     public event Action OnStorageUpdated;
 
     private int roundsSinceLastConsumption = 0;
+
+    private int todayFoodPacksConsumed = 0;
     
     void Start()
     {
@@ -181,6 +183,7 @@ public class BuildingResourceStorage : MonoBehaviour
                 int foodConsumed = RemoveResource(ResourceType.FoodPacks, foodNeeded);
                 if (DailyReportData.Instance != null)
                     DailyReportData.Instance.RecordFoodConsumptionCumulative(foodConsumed, foodNeeded);
+                todayFoodPacksConsumed += foodConsumed;
 
                 if (showDebugInfo)
                 {
@@ -230,10 +233,20 @@ public class BuildingResourceStorage : MonoBehaviour
         return totalPeople;
     }
 
+    public int GetFoodNeed()
+    {
+        int required = GetTotalPeopleCount() * foodPerPersonPerNRounds;
+        int inStorage = GetResourceAmount(ResourceType.FoodPacks);
+        return Mathf.Max(0, required - inStorage);
+    }
+
     void HandleDailyReset()
     {
         if (enableFoodWaste)
         {
+
+            todayFoodPacksConsumed = 0;
+
             // Remove all unused food at end of day
             int wastedFood = GetResourceAmount(ResourceType.FoodPacks);
             if (wastedFood > 0)
@@ -347,6 +360,8 @@ public class BuildingResourceStorage : MonoBehaviour
     {
         return currentResources.ContainsKey(type) ? currentResources[type] : 0;
     }
+
+    public int GetTodayFoodPacksConsumed() => todayFoodPacksConsumed;
     
     /// <summary>
     /// Get resource capacity

@@ -16,6 +16,9 @@ public class FacilityInfoPanel : MonoBehaviour
     public TextMeshProUGUI populationText;
     public TextMeshProUGUI foodPacksText;
     public TextMeshProUGUI capacityText;
+    public TextMeshProUGUI foodPackNeedText;       // NEW
+    public TextMeshProUGUI foodPackConsumedText;   // NEW
+    
 
     [Header("Workers")]
     public TextMeshProUGUI workersHeaderText;
@@ -48,6 +51,8 @@ public class FacilityInfoPanel : MonoBehaviour
     [Header("Deliveries")]
     public TextMeshProUGUI expectedDeliveriesText;
     public TextMeshProUGUI outgoingDeliveriesText;
+
+    
 
     private List<GameObject> currentTaskItems = new List<GameObject>();
 
@@ -158,6 +163,8 @@ public class FacilityInfoPanel : MonoBehaviour
             else { HideField(populationText); }
 
             HideField(foodPacksText);
+            HideField(foodPackNeedText);       // NEW
+            HideField(foodPackConsumedText);   // NEW
             ShowField(capacityText);
             SetTextSafe(capacityText, "Clients in casework will leave by themselves once their cases are resolved.");
             SetTextColor(capacityText, normalColor);
@@ -207,6 +214,8 @@ public class FacilityInfoPanel : MonoBehaviour
         {
             HideField(foodPacksText);
         }
+
+        UpdateFoodConsumptionInfo(storage);
 
         HideField(capacityText);
 
@@ -260,6 +269,8 @@ public class FacilityInfoPanel : MonoBehaviour
             HideField(foodPacksText);
         }
 
+        UpdateFoodConsumptionInfo(prebuiltStorage);
+
         if (motelCostText != null)
         {
             if (type == PrebuiltBuildingType.Motel)
@@ -297,6 +308,27 @@ public class FacilityInfoPanel : MonoBehaviour
         ShowField(workersHeaderText);
         SetTextSafe(workersHeaderText, $"Workers: {assigned}/{required}");
         SetTextColor(workersHeaderText, assigned >= required ? goodColor : assigned > 0 ? warningColor : errorColor);
+    }
+
+    void UpdateFoodConsumptionInfo(BuildingResourceStorage storage)
+    {
+        if (storage == null || !storage.enablePopulationBasedConsumption)
+        {
+            HideField(foodPackNeedText);
+            HideField(foodPackConsumedText);
+            return;
+        }
+
+        int need = storage.GetFoodNeed();
+        int consumedToday = storage.GetTodayFoodPacksConsumed();
+
+        ShowField(foodPackNeedText);
+        SetTextSafe(foodPackNeedText, $"Food Pack Need: {need}");
+        SetTextColor(foodPackNeedText, need > 0 ? warningColor : goodColor);
+
+        ShowField(foodPackConsumedText);
+        SetTextSafe(foodPackConsumedText, $"Food Packs Consumed Today: {consumedToday}");
+        SetTextColor(foodPackConsumedText, normalColor);
     }
 
     void UpdateFloodStatus(GameObject facilityObj)

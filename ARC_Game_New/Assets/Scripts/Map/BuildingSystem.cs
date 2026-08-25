@@ -221,6 +221,11 @@ public class BuildingSystem : MonoBehaviour
                 BuildingUIOverlay.Instance.OnBuildingCreated(buildingComponent);
             }
 
+            if (BuildingStatusTableUI.Instance != null)
+            {
+                BuildingStatusTableUI.Instance.OnBuildingCreated(buildingComponent);
+            }
+
             // Convert abandoned site (disable it)
             site.ConvertToBuilding();
 
@@ -415,6 +420,11 @@ public class BuildingSystem : MonoBehaviour
         if (BuildingUIOverlay.Instance != null && building != null)
         {
             BuildingUIOverlay.Instance.OnBuildingDestroyed(building);
+        }
+
+        if (BuildingStatusTableUI.Instance != null && building != null)
+        {
+            BuildingStatusTableUI.Instance.OnBuildingDestroyed(building);
         }
         
         // Destroy the building
