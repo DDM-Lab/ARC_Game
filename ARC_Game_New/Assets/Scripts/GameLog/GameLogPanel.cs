@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Networking;
 using TMPro;
 using System.Linq;
 using System;
@@ -125,6 +126,20 @@ public class GameLogPanel : MonoBehaviour
     public static GameLogPanel Instance { get; private set; }
     public static bool IsDisplayingText { get; private set; } = false;
 
+    // Standalone on/off switch for the log pipeline (collection + sending), read
+    // directly from config.json's "dataCollectionEnabled" field. Deliberately
+    // independent of WebSocketManager/config loading, since that's toggled on/off
+    // for the LLM connection and shouldn't control whether we collect game logs.
+    // Defaults to true (collect) until the config finishes loading, and stays true
+    // if config.json is missing the field or fails to load.
+    public static bool DataCollectionEnabled { get; private set; } = true;
+
+    [System.Serializable]
+    private class DataCollectionConfig
+    {
+        public bool dataCollectionEnabled = true;
+    }
+
     private void Awake()
     {
         if (Instance == null)
@@ -142,6 +157,7 @@ public class GameLogPanel : MonoBehaviour
         InitializeUI();
         SetupDropdowns();
         RefreshDisplay();
+        StartCoroutine(LoadDataCollectionSetting());
         LogPlayerAction("Game started");
     }
 
@@ -182,6 +198,29 @@ public class GameLogPanel : MonoBehaviour
         }
     }
 
+    IEnumerator LoadDataCollectionSetting()
+    {
+        string configPath = Application.streamingAssetsPath + "/config.json";
+        using (UnityWebRequest req = UnityWebRequest.Get(configPath))
+        {
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                var config = JsonUtility.FromJson<DataCollectionConfig>(req.downloadHandler.text);
+                if (config != null)
+                {
+                    DataCollectionEnabled = config.dataCollectionEnabled;
+                    Debug.Log($"[GameLogPanel] Data collection {(DataCollectionEnabled ? "enabled" : "disabled")} (from config.json)");
+                }
+            }
+            else
+            {
+                Debug.Log("[GameLogPanel] config.json not found - data collection stays enabled by default.");
+            }
+        }
+    }
+
     #region Public Logging Methods
 
     public void LogBuildingStatus(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Buildings);
@@ -200,6 +239,9 @@ public class GameLogPanel : MonoBehaviour
 
     void AddLogMessage(string content, LogMessageType type, LogCategory category)
     {
+        if (!DataCollectionEnabled)
+            return;
+
         if (type == LogMessageType.Debug && !enableDebugMessages)
             return;
 

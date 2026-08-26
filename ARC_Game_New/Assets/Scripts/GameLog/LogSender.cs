@@ -32,6 +32,12 @@ public class LogSender : MonoBehaviour
 
     public void SendAllLogs()
     {
+        if (!GameLogPanel.DataCollectionEnabled)
+        {
+            Debug.Log("[LogSender] Data collection disabled (config.json) - skipping send.");
+            return;
+        }
+
         if (GameLogPanel.Instance == null)
         {
             Debug.LogError("[LogSender] GameLogPanel not found.");
@@ -50,6 +56,12 @@ public class LogSender : MonoBehaviour
 
     public void SendCurrentRoundLogs()
     {
+        if (!GameLogPanel.DataCollectionEnabled)
+        {
+            Debug.Log("[LogSender] Data collection disabled (config.json) - skipping send.");
+            return;
+        }
+
         if (GameLogPanel.Instance == null)
         {
             Debug.LogError("[LogSender] GameLogPanel not found.");
