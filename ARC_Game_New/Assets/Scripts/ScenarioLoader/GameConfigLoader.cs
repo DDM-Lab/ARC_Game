@@ -97,43 +97,48 @@ public class GameConfigLoader : MonoBehaviour
         StartCoroutine(LoadMapConfigFromServer());
     }
     
-    /// <summary>
-    /// Load config from Google Sheets CSV
-    /// </summary>
     IEnumerator LoadConfigFromSheet()
     {
-        if (string.IsNullOrEmpty(googleSheetsCsvUrl))
+        string csvData = "";
+        string path = System.IO.Path.Combine(Application.streamingAssetsPath, "game_param_config.csv");
+
+    #if UNITY_EDITOR
+        if (System.IO.File.Exists(path))
         {
-            Debug.LogWarning("GameConfigLoader: No Google Sheets URL provided. Using default values.");
-            configLoaded = true;
-            yield break;
+            csvData = System.IO.File.ReadAllText(path);
+            Debug.Log("[GameConfigLoader] Successfully read CSV from StreamingAssets using File IO.");
         }
-    
-        string urlWithCacheBuster = googleSheetsCsvUrl + "&t=" + System.DateTime.Now.Ticks;
-        
-        if (showDebugInfo)
-            Debug.Log("GameConfigLoader: Fetching config from Google Sheets...");
-        
-        using (UnityWebRequest request = UnityWebRequest.Get(urlWithCacheBuster))
+        else
         {
-            // Set timeout
-            request.timeout = 5;
-            
+            Debug.LogError($"[GameConfigLoader] ERROR: CSV file does NOT exist at path: {path}");
+        }
+        yield return null; 
+
+    #else
+        using (UnityWebRequest request = UnityWebRequest.Get(path))
+        {
             yield return request.SendWebRequest();
-            
+
             if (request.result == UnityWebRequest.Result.Success)
             {
-                string csvData = request.downloadHandler.text;
-                ParseCSV(csvData);
-                
-                if (showDebugInfo)
-                    Debug.Log("GameConfigLoader: Config loaded successfully!");
+                csvData = request.downloadHandler.text;
+                Debug.Log("[GameConfigLoader] Successfully loaded CSV via WebRequest.");
             }
             else
             {
-                Debug.LogWarning($"GameConfigLoader: Failed to load config - {request.error}. Using default values.");
-                configLoaded = true;
+                Debug.LogError($"[GameConfigLoader] WebRequest failed: {request.error} | Path: {path}");
             }
+        }
+    #endif
+
+        if (!string.IsNullOrEmpty(csvData))
+        {
+            ParseCSV(csvData);
+        }
+        else
+        {
+            Debug.LogWarning("[GameConfigLoader] CSV string was empty! Keeping default values.");
+            configLoaded = true;
         }
     }
     
