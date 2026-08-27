@@ -2185,9 +2185,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 401646291}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 138.705, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 217.41, y: 40}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &26554345
@@ -5643,9 +5643,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 620464081}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 288.98502, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 63.15, y: 40}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &95829139
@@ -5827,7 +5827,7 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 242418106}
   m_HandleRect: {fileID: 242418105}
   m_Direction: 2
-  m_Value: 1
+  m_Value: 0
   m_Size: 1
   m_NumberOfSteps: 0
   m_OnValueChanged:
@@ -7155,9 +7155,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 620464081}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 10, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 20, y: 20}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &124826831
@@ -14739,9 +14739,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 620464081}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 138.705, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 217.41, y: 40}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &242785776
@@ -15772,9 +15772,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 548001255}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 288.98502, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 63.15, y: 40}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &270361964
@@ -22558,9 +22558,9 @@ RectTransform:
   - {fileID: 1541718701}
   m_Father: {fileID: 1719040650}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 176, y: -48}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 322, y: 30}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &401646292
@@ -23175,6 +23175,8 @@ MonoBehaviour:
   populationText: {fileID: 1383681294}
   foodPacksText: {fileID: 2116073945}
   capacityText: {fileID: 967406416}
+  foodPackNeedText: {fileID: 0}
+  foodPackConsumedText: {fileID: 0}
   workersHeaderText: {fileID: 596619884}
   trainedWorkersText: {fileID: 2023226161}
   untrainedWorkersText: {fileID: 922061118}
@@ -33010,9 +33012,9 @@ RectTransform:
   - {fileID: 270361963}
   m_Father: {fileID: 1719040650}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 176, y: -81}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 322, y: 30}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &548001256
@@ -38508,9 +38510,9 @@ RectTransform:
   - {fileID: 95829138}
   m_Father: {fileID: 1719040650}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 176, y: -114}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 322, y: 30}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &620464082
@@ -48171,9 +48173,9 @@ RectTransform:
   - {fileID: 580083163}
   m_Father: {fileID: 1031002985}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 302, y: -27.14}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 40, y: 45.72}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &790924335
@@ -50560,9 +50562,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   googleSheetsCsvUrl: https://docs.google.com/spreadsheets/d/e/2PACX-1vTGcKtnKuRq1dS-ZMMYKmepAEsfeaYhKlt8IMSkZ1xe-5_JApbSfTokI_VHFS8v0g3XIHWHWEPSdSzS/pub?gid=0&single=true&output=csv
-  mapConfigServerUrl: http://janus.hss.cmu.edu/cgi-bin/new_map_config.cgi
+  mapConfigServerUrl: https://cora_game.dev.ddmlab.com/cgi-bin/new_map_config.cgi
   mapConfigTimeout: 5
-  disableLoader: 1
+  disableLoader: 0
   showDebugInfo: 1
   loadedInitialBudget: 0
   loadedInitialSatisfaction: 0
@@ -62029,9 +62031,9 @@ RectTransform:
   - {fileID: 790924334}
   m_Father: {fileID: 1719040650}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 176, y: -157}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 322, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1031002986
@@ -67379,9 +67381,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 1797185836}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 138.705, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 217.41, y: 40}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1119753103
@@ -73277,6 +73279,9 @@ MonoBehaviour:
   activeAgentColor: {r: 0.5018867, g: 0.5018867, b: 0.5018867, a: 1}
   inactiveAgentColor: {r: 1, g: 1, b: 1, a: 1}
   inactiveTaskColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  inactiveTaskTextColor: {r: 0.25, g: 0.25, b: 0.25, a: 1}
+  inProgressTaskColor: {r: 0.95, g: 0.85, b: 0.2, a: 1}
+  inProgressTaskTextColor: {r: 0.35, g: 0.28, b: 0, a: 1}
   selectedTaskColor: {r: 0.3, g: 0.6, b: 1, a: 1}
   newMessagePopup: {fileID: 0}
   newMessageCountText: {fileID: 0}
@@ -82154,9 +82159,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 1031002985}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 173.295, y: -30}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 217.41, y: 40}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1359679831
@@ -91215,9 +91220,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 548001255}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 10, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 20, y: 20}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1486101541
@@ -92502,9 +92507,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 548001255}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 138.705, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 217.41, y: 40}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1522535788
@@ -93290,9 +93295,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 401646291}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 288.98502, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 63.15, y: 40}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1541718702
@@ -107679,9 +107684,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 1797185836}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 288.98502, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 63.15, y: 40}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1794962212
@@ -107890,9 +107895,9 @@ RectTransform:
   - {fileID: 1794962211}
   m_Father: {fileID: 1719040650}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 176, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 322, y: 30}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1797185837
@@ -122586,9 +122591,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 401646291}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 10, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 20, y: 20}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &2031640308
@@ -123143,9 +123148,9 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 1797185836}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 10, y: -15}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 20, y: 20}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &2037005032
@@ -123760,7 +123765,37 @@ MonoBehaviour:
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+  workerWorkingElement:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
   idleWorker:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  wasteTotal:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  wasteStatus:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  caseworkTotal:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  caseworkStatus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
@@ -123820,6 +123855,8 @@ MonoBehaviour:
     labelText: {fileID: 1472426479}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 16275443}
+  assumedTotalWorkerPoolSize: 200
+  maxBudget: 999999
   budgetEfficiencyTotal:
     layoutObject: {fileID: 1013805108}
     numberText: {fileID: 1941186781}
@@ -123864,6 +123901,133 @@ MonoBehaviour:
   lodgingTaskRatioText: {fileID: 1865484573}
   casesResolvedRatioText: {fileID: 0}
   emergencyTaskRatioText: {fileID: 1035165480}
+  receiptKitchen:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  receiptShelter:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  receiptCasework:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  receiptFastFood:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  receiptTransport:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  receiptLodging:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  receiptWorkerRequest:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  receiptWorkerTraining:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  receiptWorkerReleased:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  receiptOther:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  receiptTotal:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  currentBudgetDisplayText: {fileID: 0}
+  liveFoodInTransit:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  liveKitchenProduction:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  liveFoodWaste:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  liveNeedLodging:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  liveWorkersWorking:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  liveWorkersWaiting:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  liveWorkersTraining:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  liveWorkersReleasedToday:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  liveNeedCasework:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+  liveInTransitToCasework:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
 --- !u!114 &2045216005
 MonoBehaviour:
   m_ObjectHideFlags: 0

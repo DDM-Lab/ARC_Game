@@ -1,5 +1,6 @@
 {
-  "wsUrl": "ws://janus.hss.cmu.edu/agent-ws",
-  "mapConfigUrl": "http://janus.hss.cmu.edu/cgi-bin/map_config.cgi",
-  "logServerUrl": "http://janus.hss.cmu.edu/cgi-bin/save_game_logs.py"
+  "wsUrl": "wss://cora_game.dev.ddmlab.com/agent-ws",
+  "mapConfigUrl": "https://cora_game.dev.ddmlab.com/cgi-bin/new_map_config.cgi",
+  "logServerUrl": "https://cora_game.dev.ddmlab.com/cgi-bin/save_game_logs.py",
+  "dataCollectionEnabled": true
 }
