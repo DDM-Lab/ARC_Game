@@ -78,16 +78,6 @@ public class TutorialManager : MonoBehaviour
             {
                 currentNextButton.onClick.RemoveAllListeners();
                 currentNextButton.onClick.AddListener(NextPage);
-                
-                // Change text on last page if needed
-                bool isLastPage = (currentPageIndex >= tutorialPages.Count - 1);
-                Text buttonText = currentNextButton.GetComponentInChildren<Text>();
-                TextMeshProUGUI buttonTMP = currentNextButton.GetComponentInChildren<TextMeshProUGUI>();
-                
-                if (buttonText != null)
-                    buttonText.text = isLastPage ? "Start Game" : "Next";
-                else if (buttonTMP != null)
-                    buttonTMP.text = isLastPage ? "Start Game" : "Next";
             }
         }
         

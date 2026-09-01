@@ -21,7 +21,10 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Shanzhi\\\\Documents\\\\GitHub\\\\ARC_Game\\\\ARC_Game_New\\\\Assets\\\\Scripts\" -Recurse -Filter \"*.cs\")",
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(Sort-Object)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(curl -sD - -X OPTIONS https://cora_game.dev.ddmlab.com/cgi-bin/new_map_config.cgi -o /dev/null)",
+      "Bash(curl -s -o /dev/null -w \"http_code=%{http_code} num_redirects=%{num_redirects} url_effective=%{url_effective}\\\\n\" -L https://cora_game.dev.ddmlab.com/cgi-bin/new_map_config.cgi)",
+      "Bash(curl -sD - -H \"Origin: https://cora_game.dev.ddmlab.com\" https://cora_game.dev.ddmlab.com/cgi-bin/new_map_config.cgi -o /dev/null)"
     ]
   }
 }
