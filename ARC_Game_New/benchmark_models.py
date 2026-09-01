@@ -1163,7 +1163,8 @@ def _decision_image(image_mode, env, grid, tmp_png):
 def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=None, log_dir=None,
                 show_impacts=True, policy="llm", action_format="idx", image_mode="none",
                 reasoning_effort="low", manual_transfers=True, system_variant="original",
-                temperature=None, obs_encoding="json", history=1, prompt_pack=None):
+                temperature=None, obs_encoding="json", history=1, prompt_pack=None,
+                base_seed=None):
     """Fresh Unity process -> play `rounds` -> structured per-episode record.
 
     image_mode {none, synthetic, real}: what decision-time image (if any) is shown to
@@ -1194,6 +1195,11 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                       unity_port=port, auto_start_unity=True,
                       max_episode_steps=rounds + 5, unity_log_path=ulog,
                       manual_transfers=manual_transfers)
+    # base_seed + ep_idx: reproducible across runs, distinct within a run. Every
+    # prompt variant benchmarked with the same base_seed sees the SAME scenarios,
+    # which is what makes variant comparisons paired.
+    if base_seed is not None:
+        env_kwargs["seed"] = int(base_seed) + int(ep_idx)
     if real_img:
         # Configure live capture so capture_frame works at decision time. PerStep also
         # auto-captures on advance (we ignore those); base64 off there to save TCP bytes.
@@ -1219,7 +1225,12 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
         _base = (smoke.cmd_system_prompt(manual_transfers, system_variant) if cmd_fmt
                  else smoke.idx_system_prompt(system_variant))
     _sys_text = _system_content(_base, "x" if use_image else None, image_mode)
-    rec = {"model": model, "episode": ep_idx, "rounds": [], "error": None, "show_impacts": show_impacts,
+    rec = {
+        # Recorded so the analysis can pair episode i of one variant against episode i
+        # of another; None when the run was unseeded.
+        "seed": (int(base_seed) + int(ep_idx)) if base_seed is not None else None,
+        "model": model, "episode": ep_idx, "rounds": [], "error": None,
+        "show_impacts": show_impacts,
            "action_format": action_format if state_only else "idx",
            "obs_encoding": (obs_encoding if state_only else "json"),
            # K = number of turns the policy sees INCLUDING the current one. K=1 is the legacy
@@ -1563,6 +1574,10 @@ def main():
     ap.add_argument("--wandb", action="store_true", help="log results to Weights & Biases")
     ap.add_argument("--wandb-project", default="cpulling/CORA_RL",
                     help="entity/project (default cpulling/CORA_RL)")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="base RNG seed; episode i uses base+i. Omit for unseeded "
+                         "(previous behaviour). Two runs with the same --seed play "
+                         "identical scenarios, which makes A/B comparisons paired.")
     ap.add_argument("--policy", choices=["llm", "greedy", "build-potential", "choice-lookahead",
                                         "combined", "random", "noop",
                                         "rules-based", "rules-based-v2"], default="llm",
@@ -1724,7 +1739,7 @@ def main():
                            args.action_format, args.image_mode, args.reasoning_effort,
                            args.transfers == "manual", args.system_prompt,
                            args.temperature, args.obs_encoding, args.history,
-                           args._loaded_pack)] = (model, ep)
+                           args._loaded_pack, args.seed)] = (model, ep)
         for fut in as_completed(futs):
             model, ep = futs[fut]
             rec = fut.result()

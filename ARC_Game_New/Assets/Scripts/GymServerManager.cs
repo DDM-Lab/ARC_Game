@@ -63,6 +63,46 @@ public class GymServerManager : MonoBehaviour
     /// BeforeSceneLoad so the listener is up before MainScene's Start() work begins, and gated
     /// on the flag so a normal player build is completely unaffected.
     /// </summary>
+    // ── Deterministic episodes ────────────────────────────────────────────────────────
+    // Every stochastic system in the game (FloodSystem, WeatherSystem, TaskTrigger,
+    // ClientStayTracker, DeliverySystem, ResourceFlowManager, TaskSystem) draws from the
+    // GLOBAL UnityEngine.Random stream, so seeding that one stream covers all of them --
+    // no per-system plumbing needed. Verified by grep: there are no System.Random or
+    // per-system Unity.Random instances anywhere under Assets/Scripts.
+    //
+    // TIMING IS THE WHOLE TRICK. Much of the scenario (flood layout, initial task roll)
+    // is decided during the Awake/Start chain of MainScene, so InitState must run BEFORE
+    // the scene loads, not after. Hence: boot seeding happens in BeforeSceneLoad, and
+    // reset seeding happens immediately before LoadSceneAsync.
+    public static int ActiveSeed { get; private set; } = -1;
+
+    /// <summary>Seed the global RNG. seed &lt; 0 means "leave it alone" (non-deterministic).</summary>
+    public static void ApplySeed(int seed, string why)
+    {
+        if (seed < 0)
+        {
+            ActiveSeed = -1;
+            Debug.Log($"[GymServer] seed: none ({why}) — episodes are NOT reproducible.");
+            return;
+        }
+        UnityEngine.Random.InitState(seed);
+        ActiveSeed = seed;
+        Debug.Log($"[GymServer] seed={seed} applied ({why}).");
+    }
+
+    /// <summary>-seed N on the command line, else ARC_SEED in the environment, else -1.</summary>
+    private static int SeedFromEnvironment()
+    {
+        string[] args = Environment.GetCommandLineArgs();
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if ((args[i] == "-seed" || args[i] == "--seed") && int.TryParse(args[i + 1], out int s))
+                return s;
+        }
+        string env = Environment.GetEnvironmentVariable("ARC_SEED");
+        return (!string.IsNullOrEmpty(env) && int.TryParse(env, out int e)) ? e : -1;
+    }
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void BootstrapFromCommandLine()
     {
@@ -74,6 +114,9 @@ public class GymServerManager : MonoBehaviour
             if (a == "-gym-server" || a == "--gym-server") { wanted = true; break; }
         }
         if (!wanted) return;
+
+        // Before the scene loads, so MainScene's Awake/Start randomness is covered.
+        ApplySeed(SeedFromEnvironment(), "boot");
 
         var go = new GameObject("GymServerManager");
         go.AddComponent<GymServerManager>();   // Awake() claims Instance + DontDestroyOnLoad
@@ -404,7 +447,7 @@ public class GymServerManager : MonoBehaviour
                     return HandleCaptureFrame();
 
                 case "reset_game":
-                    return HandleResetGame();
+                    return HandleResetGame(request);
 
                 default:
                     return ErrorJson($"Unknown request type: {request.type}");
@@ -1079,9 +1122,10 @@ public class GymServerManager : MonoBehaviour
     // (RewardMetricsTracker/GymCameraCapture/ServerLauncherUI/GuiInteractionRecorder) is
     // NOT recreated by a scene reload, so it is preserved; RewardMetricsTracker is
     // additionally zeroed, else its cumulative accumulators leak across episodes.
-    string HandleResetGame()
+    string HandleResetGame(GymRequest request)
     {
         resetComplete = false;
+        int seed = request != null ? request.seed : -1;
 
         lock (actionQueueLock)
         {
@@ -1089,7 +1133,7 @@ public class GymServerManager : MonoBehaviour
             {
                 try
                 {
-                    StartCoroutine(ResetRoutine());
+                    StartCoroutine(ResetRoutine(seed));
                 }
                 catch (Exception e)
                 {
@@ -1111,7 +1155,8 @@ public class GymServerManager : MonoBehaviour
         if (!resetComplete)
             return ErrorJson("reset_game timed out waiting for scene reload");
 
-        return "{\"type\":\"reset_done\"}";
+        // Echo the seed so the client can record exactly what it got.
+        return "{\"type\":\"reset_done\",\"seed\":" + ActiveSeed + "}";
     }
 
     // GameObjects that must survive a reset: this manager (coroutine + TCP socket),
@@ -1138,7 +1183,7 @@ public class GymServerManager : MonoBehaviour
         if (obj != null) keep.Add(obj.gameObject);
     }
 
-    IEnumerator ResetRoutine()
+    IEnumerator ResetRoutine(int seed)
     {
         Scene active = SceneManager.GetActiveScene();
         int buildIndex = active.buildIndex;
@@ -1178,6 +1223,11 @@ public class GymServerManager : MonoBehaviour
         // singletons see Instance == null (Unity reports destroyed objects as null in
         // the == overload) and claim the slot instead of self-destructing.
         yield return null;
+
+        // Seed HERE, not after the load: the flood layout and the opening task roll are
+        // decided inside the reloaded scene's Awake/Start chain, so seeding afterwards
+        // would leave exactly the parts that define the scenario unseeded.
+        if (seed >= 0) ApplySeed(seed, "reset_game");
 
         // Rebuild MainScene from scratch → fresh Day-1 game-state singletons.
         AsyncOperation op = SceneManager.LoadSceneAsync(buildIndex, LoadSceneMode.Single);
@@ -1251,6 +1301,7 @@ public class GymRequest
     public int taskId = -1;      // for select_task_choice
     public int choiceId = -1;    // for select_task_choice
     public string stableId;      // for select_task_choice: stable cross-regeneration task id (optional fallback)
+    public int seed = -1;        // for reset_game: RNG seed for the next episode (-1 = leave unseeded)
     // ── configure_render fields (camera frame capture; default off) ──
     public string renderMode;        // "off" | "step" | "game_time"
     public int renderWidth = 0;      // 0 => keep component default

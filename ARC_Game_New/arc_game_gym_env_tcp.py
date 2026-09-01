@@ -173,6 +173,7 @@ class ARCGameGymEnv(gym.Env):
         frame_resolution: Tuple[int, int] = (640, 360),
         frame_include_base64: bool = False,
         manual_transfers: bool = True,
+        seed: Optional[int] = None,
     ):
         """
         Initialize the ARC Game Gym Environment
@@ -245,6 +246,11 @@ class ARCGameGymEnv(gym.Env):
         # Number of reset() calls so far. The first reset runs against a freshly
         # launched Unity already at Day 1 (no server reset needed); every later reset
         # must trigger an in-process scene reload via the reset_game RPC.
+        # Seed for reproducible scenarios. Applied at LAUNCH via -seed (so the first
+        # episode's Awake/Start randomness is covered) and again per reset_game. None
+        # leaves the game unseeded, which is the previous behaviour.
+        self.seed_value = seed
+
         self._reset_count = 0
 
         # Define spaces. The policy WRITES command tags (the shared grammar:
@@ -345,6 +351,11 @@ class ARCGameGymEnv(gym.Env):
                 "-gym-port", str(self.unity_port),
                 "-logFile", log_arg,
             ]
+            # Must be a launch argument, not a post-connect RPC: the flood layout and the
+            # opening task roll are decided during MainScene's Awake/Start, before the gym
+            # server can accept a single request.
+            if self.seed_value is not None:
+                cmd += ["-seed", str(int(self.seed_value))]
             self.unity_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
@@ -484,12 +495,23 @@ class ARCGameGymEnv(gym.Env):
         # game-state singletons and reload the scene, otherwise a recycled process
         # (restart_unity_each_episode=False) stays frozen past finalDay. The benchmark
         # spawns a fresh process per episode, so its single reset never takes this path.
+        if seed is not None:
+            self.seed_value = seed
         if self._reset_count > 0:
-            reset_resp = self._send_request({"type": "reset_game"})
+            req = {"type": "reset_game"}
+            if self.seed_value is not None:
+                # Vary per episode so a run is a reproducible SEQUENCE of distinct
+                # scenarios, not the same scenario 32 times.
+                req["seed"] = int(self.seed_value) + self._reset_count
+            reset_resp = self._send_request(req)
             if reset_resp.get("type") != "reset_done":
                 raise RuntimeError(
                     f"Expected reset_done from reset_game, got: {reset_resp.get('type')}"
                 )
+            self.active_seed = reset_resp.get("seed", -1)
+        else:
+            self.active_seed = (int(self.seed_value)
+                                if self.seed_value is not None else -1)
         self._reset_count += 1
 
         # Request game state from Unity
