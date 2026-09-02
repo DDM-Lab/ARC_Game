@@ -404,9 +404,9 @@ public class AlertUIController : MonoBehaviour
         {
             case TaskOfficer.DisasterOfficer: return "Regional Disaster Officer";
             case TaskOfficer.WorkforceService: return "Workforce";
-            case TaskOfficer.LodgingMassCare: return "Logistics ";
-            case TaskOfficer.ExternalRelationship: return "External Relationship";
-            case TaskOfficer.FoodMassCare: return "Mass Care";
+            case TaskOfficer.LodgingMassCare: return "Lodging ";
+            case TaskOfficer.ExternalRelationship: return "External Relations";
+            case TaskOfficer.FoodMassCare: return "Food Services";
             default: return "Officer";
         }
     }
