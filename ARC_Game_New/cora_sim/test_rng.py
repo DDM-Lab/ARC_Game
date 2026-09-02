@@ -13,7 +13,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from cora_sim.rng import UnityRandom, threshold_for, M32
+from cora_sim.rng import f32add, f32mul, UnityRandom, threshold_for, M32
 
 
 def load_corpus(path=None):
@@ -95,10 +95,60 @@ def test_seeding_is_not_silently_wrong():
     return False
 
 
+def test_value_mapping_is_pinned_to_unity():
+    """The raw -> Random.value mapping, against Unity ground truth.
+
+    Two rain-spawn rounds in the flood fixture draw once per river tile at a known chance
+    and Unity logs how many succeeded. That is a 108-bit measurement of the mapping, and
+    the plausible alternatives disagree with it:
+
+        mapping                     round 4 (p=0.82)   round 8 (p=0.90)
+        (raw & 0x7FFFFF)/(2^23-1)         84 = truth         96 = truth
+        raw / 2^32                        83                 91
+        (raw >> 9) / 2^23                 83                 91
+
+    The 0.90 row is what makes it conclusive: a 5-tile gap is not float rounding. This
+    test asserts BOTH that the shipped mapping reproduces the truth and that the rivals
+    do not, so a "harmless simplification" back to raw/2^32 fails here instead of showing
+    up later as an unexplained divergence in some other mechanic."""
+    fixture = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "corpus", "flood_rounds.json")
+    rounds = json.load(open(fixture))["rounds"]
+    rows = [(r, r["unity"]["spawned"]) for r in rounds if "spawned" in r.get("unity", {})]
+    if not rows:
+        print("  value mapping           : NO GROUND-TRUTH ROWS in flood_rounds.json")
+        return False
+
+    rivals = {"raw/2^32": lambda w: w / 4294967296.0,
+              "(raw>>9)/2^23": lambda w: (w >> 9) / 8388608.0}
+    ok = True
+    for rd, truth in rows:
+        st = rd["rng"]
+        chance = f32add(0.7, f32mul(rd["rain"], 0.2))   # floodSpawnChance + rain*bonus
+        thr = threshold_for(chance)
+        r = UnityRandom(state=(st["s0"], st["s1"], st["s2"], st["s3"]))
+        got = sum(r.value_lt(thr) for _ in range(108))
+        if got != truth:
+            print(f"  value mapping           : chance={chance:.3f} unity={truth} port={got}")
+            ok = False
+        for name, fn in rivals.items():
+            r = UnityRandom(state=(st["s0"], st["s1"], st["s2"], st["s3"]))
+            rival = sum(1 for _ in range(108) if fn(r.next_uint()) < chance)
+            if rival == truth:
+                print(f"  value mapping           : rival {name} ALSO matches "
+                      f"(chance={chance:.3f}) - this test no longer discriminates")
+                ok = False
+    if ok:
+        print(f"  value mapping           : {len(rows)} Unity spawn rows reproduced exactly; "
+              f"{len(rivals)} rival mappings rejected")
+    return ok
+
+
 if __name__ == "__main__":
     log = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("RNGMARK_LOG", "")
     print("cora_sim.rng equivalence vs Unity")
     results = [test_batch_equals_sequential(), test_threshold_matches_value(),
+               test_value_mapping_is_pinned_to_unity(),
                test_seeding_is_not_silently_wrong()]
     results.insert(0, test_transitions(log if log and os.path.exists(log) else None))
     print("\nRESULT:", "ALL PASS" if all(results) else "FAILURES PRESENT")

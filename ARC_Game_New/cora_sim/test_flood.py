@@ -1,77 +1,147 @@
-"""Flood port equivalence vs the live Unity build.
+"""Flood-port equivalence against Unity, at three levels of strictness.
 
-Takes a native snapshot from Unity (which carries flood tiles, weather, AND the RNG state
-- all pinned this session), advances ONE round in Unity, and advances the same round in
-the port from the identical starting point. Compares the resulting flood tile SET and the
-number of draws consumed.
+WHY THREE LEVELS. A port can match the final tile count while taking a different path to
+it, and it can match the draw COUNT while drawing at the wrong sites. Only the mark
+sequence pins the RNG stream position, and only the stream position keeps every mechanic
+that draws AFTER flood in sync. So:
 
-Draw count matters as much as the tile set: flood sets the stream position for every
-system after it, so a port that lands the right tiles via the wrong number of draws would
-desync everything downstream while looking correct here.
+  level 1  mark sequence        every draw site, in order         -- pins the RNG stream
+  level 2  per-phase counts     spawned / candidates / expansions / removed
+  level 3  resulting tile set   compared against the NEXT round's captured input
+
+Level 3 is the one that would catch a port that draws correctly but writes the wrong tile,
+and it is free: consecutive rounds come from one episode, so round k's output must be
+round k+1's input, byte for byte.
+
+FIXTURE: corpus/flood_rounds.json, captured from the headless build with
+ARC_SNAPSHOT_DEBUG=1. Each round carries the RNG state, the exact inputs UpdateFlood saw
+(weather, lastWeather, rain, ordered tiles), its [RNGMARK] draw sequence, and the counts
+Unity printed itself. Regenerate it whenever FloodSystem.cs or the scene's FloodParameters
+change -- like the RNG corpus, it is ground truth, not a snapshot of the port's opinion.
 """
-from __future__ import annotations
+import json
+import os
+import sys
 
-import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cora_search import SearchableEnv
-from cora_sim.floodmap import FloodMap, pack
-from cora_sim.flood import FloodState, update_flood, RAIN_INTENSITY
-from cora_sim.rng import UnityRandom
+from cora_sim.flood import FloodState, update_flood          # noqa: E402
+from cora_sim.floodmap import FloodMap, pack                 # noqa: E402
+from cora_sim.rng import UnityRandom                         # noqa: E402
 
-EXE = ("Build/Headless/macOS/ARC_Headless.app/Contents/MacOS/"
-       "Collaborative Operations And Resource Management with Agentic AI")
-
-
-def snap_of(env):
-    return json.loads(env._send_request({"type": "save_state"})["state"])
+_FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "corpus", "flood_rounds.json")
 
 
-def flood_from_snap(s):
-    f = s["flood"]
-    return {pack(x, y) for x, y in zip(f["tileX"], f["tileY"])}, f["lastWeatherType"]
+def load_rounds():
+    return json.load(open(_FIXTURE))["rounds"]
 
 
-def rng_from_snap(s):
-    st = json.loads(s["rng"]["unityRandomStateJson"])
-    return (st["s0"] & 0xFFFFFFFF, st["s1"] & 0xFFFFFFFF,
-            st["s2"] & 0xFFFFFFFF, st["s3"] & 0xFFFFFFFF)
+def replay(rd, fmap, marks=None, stats=None):
+    st = rd["rng"]
+    rng = UnityRandom(state=(st["s0"], st["s1"], st["s2"], st["s3"]))
+    fs = FloodState({pack(x, y) for x, y in rd["tiles"]}, rd["lastWeather"])
+    update_flood(fs, fmap, rng, rd["weather"], rd["rain"], marks, stats)
+    return fs
 
 
-def main(seed=555, warmup=6, rounds=6, port=9918):
+def range_int_is_discriminated(fmap, rounds):
+    """Assert the fixture still PINS Random.Range(int, int), and does not merely tolerate
+    the shipped implementation.
+
+    A passing equivalence test proves nothing about a code path the fixture cannot see.
+    Flood makes 26 Range calls (expansion picks, plus source/direction/distance for random
+    expansion), so it should discriminate -- and it does: swapping in either scaled variant
+    puts 5 of the 9 comparable rounds on the wrong tiles. If a future fixture stops
+    discriminating, this reports that instead of quietly leaving Range unvalidated."""
+    import cora_sim.rng as rng_mod
+
+    def scaled_by_value(self, lo, hi):
+        n = hi - lo
+        if n <= 0:
+            return lo
+        return min(lo + int(((self.next_uint() & 0x7FFFFF) / 8388607.0) * n), hi - 1)
+
+    def scaled_by_raw(self, lo, hi):
+        n = hi - lo
+        if n <= 0:
+            return lo
+        return lo + min(int(self.next_uint() * n / 4294967296.0), n - 1)
+
+    original = rng_mod.UnityRandom.range_int
+    out = []
+    try:
+        for name, impl in (("value-scaled", scaled_by_value), ("raw-scaled", scaled_by_raw)):
+            rng_mod.UnityRandom.range_int = impl
+            wrong = 0
+            for k, rd in enumerate(rounds[:-1]):
+                fs = replay(rd, fmap)
+                if fs.tiles != {pack(x, y) for x, y in rounds[k + 1]["tiles"]}:
+                    wrong += 1
+            out.append((name, wrong))
+    finally:
+        rng_mod.UnityRandom.range_int = original
+
+    dead = [n for n, w in out if w == 0]
+    if dead:
+        print(f"  Range(int,int)          : NOT DISCRIMINATED - {dead} also passes")
+        return False
+    print("  Range(int,int)          : pinned as lo + raw % n ("
+          + ", ".join(f"{n} breaks {w} rounds" for n, w in out) + ")")
+    return True
+
+
+def main():
+    rounds = load_rounds()
     fmap = FloodMap.load()
-    env = SearchableEnv(unity_exe_path=EXE, unity_port=port, seed=seed,
-                        auto_start_unity=True, connection_timeout=90)
-    env.reset()
-    for _ in range(warmup):
-        env.advance_round()
+    failures = []
 
-    print(f"flood equivalence  seed={seed}  warmup={warmup}  rounds={rounds}\n")
-    print(f"{'round':<6} {'unity tiles':>12} {'port tiles':>11} {'set match':>10} {'weather':<12}")
-    ok = True
-    for i in range(rounds):
-        s0 = snap_of(env)
-        tiles0, last_weather = flood_from_snap(s0)
-        rng_state = rng_from_snap(s0)
-        weather_now = s0["weather"]["current"]
+    for k, rd in enumerate(rounds):
+        marks, stats = [], {}
+        fs = replay(rd, fmap, marks, stats)
+        tag = f"round {k} ({rd['weather']}, in={len(rd['tiles'])})"
 
-        env.advance_round()
-        s1 = snap_of(env)
-        tiles1, _ = flood_from_snap(s1)
+        # level 1 -- the draw sequence itself
+        if marks != rd["marks"]:
+            n = min(len(marks), len(rd["marks"]))
+            i = next((j for j in range(n) if marks[j] != rd["marks"][j]), n)
+            failures.append(f"{tag}: mark sequence diverges at index {i} "
+                            f"(unity={rd['marks'][i:i+1]} port={marks[i:i+1]}); "
+                            f"lengths unity={len(rd['marks'])} port={len(marks)}")
+            continue
 
-        fs = FloodState(tiles0, last_weather)
-        r = UnityRandom(state=rng_state)
-        update_flood(fs, fmap, r, weather_now, RAIN_INTENSITY.get(weather_now, 0.0))
+        # level 2 -- the counts Unity printed for each phase
+        for key, want in rd["unity"].items():
+            got = stats.get(key, 0)
+            if got != want:
+                failures.append(f"{tag}: {key} unity={want} port={got}")
 
-        match = fs.tiles == tiles1
-        ok &= match
-        print(f"{i:<6} {len(tiles1):>12} {len(fs.tiles):>11} {str(match):>10} {weather_now:<12}")
-        if not match:
-            print(f"       only unity: {len(tiles1 - fs.tiles)}   only port: {len(fs.tiles - tiles1)}")
-    env.close()
-    print("\nRESULT:", "PASS" if ok else "FAIL")
-    return 0 if ok else 1
+        # level 3 -- the state itself, against the next round's captured input
+        if k + 1 < len(rounds):
+            nxt = {pack(x, y) for x, y in rounds[k + 1]["tiles"]}
+            if fs.tiles != nxt:
+                only_p = sorted(fs.tiles - nxt)[:4]
+                only_u = sorted(nxt - fs.tiles)[:4]
+                failures.append(f"{tag}: resulting tile set != next round's input "
+                                f"(port-only {len(fs.tiles - nxt)} e.g. {only_p}, "
+                                f"unity-only {len(nxt - fs.tiles)} e.g. {only_u})")
+
+        print(f"  {tag}: {len(marks)} draws, "
+              f"{rd['unity'].get('after', len(fs.tiles))} tiles -- OK")
+
+    if not failures and not range_int_is_discriminated(fmap, rounds):
+        failures.append("Random.Range(int,int) is not pinned by this fixture")
+
+    total_draws = sum(len(r["marks"]) for r in rounds)
+    if failures:
+        print(f"\nFAIL ({len(failures)}):")
+        for f in failures:
+            print("  " + f)
+        return 1
+    print(f"\nPASS: {len(rounds)}/{len(rounds)} rounds, {total_draws} draws, "
+          f"mark sequence + phase counts + tile sets all identical to Unity")
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(seed=int(sys.argv[1]) if len(sys.argv) > 1 else 555))
+    raise SystemExit(main())

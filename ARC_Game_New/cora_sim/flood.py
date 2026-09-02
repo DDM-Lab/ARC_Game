@@ -22,6 +22,7 @@ THREE THINGS THAT ARE EASY TO GET WRONG, ALL VERIFIED AGAINST THE C#:
 from __future__ import annotations
 
 from .floodmap import FloodMap, pack, unpack
+from .rng import f32, f32add, f32mul, threshold_for, threshold_le_for
 
 # CONSTANTS COME FROM THE RUNNING GAME, NEVER FROM THE C# SOURCE.
 #
@@ -66,6 +67,11 @@ def load_constants(path=None):
 
 C = load_constants()
 
+# `if (value > randomExpansionChance) return;` -- the expansion branch runs on the
+# COMPLEMENT, i.e. value <= chance. That is a DIFFERENT boundary from the strict-`<`
+# sites, so it gets its own bisected threshold rather than a +1 fudge.
+_RANDOM_EXPANSION_LE_THR = threshold_le_for(C["random_expansion_chance"])
+
 # WeatherSystem.GetRainIntensity()
 RAIN_INTENSITY = {"Sunny": 0.0, "SmallRain": 0.3, "MediumRain": 0.6,
                   "HeavyRain": 0.8, "Storm": 1.0}
@@ -101,9 +107,13 @@ class FloodState:
         return s
 
 
-def _can_spread_to(p, fs: FloodState, fmap: FloodMap, rng, mult: float, marks):
+def _can_spread_to(p, fs: FloodState, fmap: FloodMap, rng, thr, marks):
     """Mirror of CanFloodSpreadTo. Returns bool. DRAWS AT MOST ONE random, and draws
-    NOTHING on the already-flooded and out-of-bounds paths."""
+    NOTHING on the already-flooded and out-of-bounds paths.
+
+    `thr` is the (blocked, land, normal) integer threshold triple for this round, built
+    once by spread_thresholds() -- see rng.threshold_for for why the comparison is done
+    on integers rather than on a reconstructed float."""
     if p in fs.tiles:
         return False
     if p not in fmap.in_bounds:
@@ -111,15 +121,28 @@ def _can_spread_to(p, fs: FloodState, fmap: FloodMap, rng, mult: float, marks):
     if p in fmap.blocking:
         if marks is not None:
             marks.append("draw:Flood.8")
-        return rng.value() < (C["base_spread"] * mult * C["block_mult"])
+        return rng.value_lt(thr[0])
     # groundTile != null && groundTile != riverRuleTile  ->  land
     if p in fmap.ground and p not in fmap.river:
         if marks is not None:
             marks.append("draw:Flood.9")
-        return rng.value() < (C["base_spread"] * mult * C["land_mult"])
+        return rng.value_lt(thr[1])
     if marks is not None:
         marks.append("draw:Flood.10")
-    return rng.value() < (C["base_spread"] * mult)
+    return rng.value_lt(thr[2])
+
+
+def spread_thresholds(mult: float):
+    """The three CanFloodSpreadTo chances for one round, as integer thresholds.
+
+    Each product is evaluated LEFT TO RIGHT IN FLOAT32, exactly as C# evaluates
+    `baseSpreadChance * weatherData.spreadChanceMultiplier * floodParameters.xMultiplier`.
+    Doing the arithmetic in float64 shifts the chance by ~1e-8, which is under the 1.2e-7
+    spacing of adjacent Random.value outputs and so flips a comparison only occasionally
+    -- the worst kind of mismatch to find later."""
+    return (threshold_for(f32mul(C["base_spread"], mult, C["block_mult"])),
+            threshold_for(f32mul(C["base_spread"], mult, C["land_mult"])),
+            threshold_for(f32mul(C["base_spread"], mult)))
 
 
 def _is_edge(p, fs: FloodState):
@@ -131,9 +154,15 @@ def _is_edge(p, fs: FloodState):
 
 
 def update_flood(fs: FloodState, fmap: FloodMap, rng, weather: str,
-                 rain_intensity: float, marks=None) -> None:
+                 rain_intensity: float, marks=None, stats=None) -> None:
     """One round of flood evolution. Mirrors UpdateFlood's branch structure exactly --
-    including which branches are SKIPPED, since a skipped branch draws nothing."""
+    including which branches are SKIPPED, since a skipped branch draws nothing.
+
+    `marks` collects the draw-site sequence and `stats` the per-phase counts; both are
+    off by default and exist so the equivalence test can compare against the numbers
+    Unity prints in its own Debug.Log, not just against the final tile set. Matching
+    totals with mismatched phases is a real failure mode -- an over-count in expansion
+    can hide under an over-count in shrinkage."""
     expansion_rate, spread_mult, shrink_chance = C["weather"].get(
         weather, C["weather"].get("Sunny", (0.0, 0.5, 0.3)))
 
@@ -145,23 +174,35 @@ def update_flood(fs: FloodState, fmap: FloodMap, rng, weather: str,
     # ── spawn from rain (Flood.1: one draw per RIVER tile, unconditional) ────────────
     if rain_intensity >= C["min_rain"]:
         if before == 0 or (weather_changed and rain_intensity > 0):
-            spawn_chance = C["spawn_chance"] + rain_intensity * C["rain_spawn_bonus"]
+            spawn_thr = threshold_for(f32add(C["spawn_chance"],
+                                             f32mul(rain_intensity, C["rain_spawn_bonus"])))
+            spawned = 0
             for p in sorted(fmap.river):
                 if marks is not None:
                     marks.append("draw:Flood.1")
-                if rng.value() < spawn_chance:
+                if rng.value_lt(spawn_thr):
                     fs.tiles.add(p)
+                    spawned += 1
+            if stats is not None:
+                # Unity's counter counts SUCCESSFUL DRAWS, not new tiles: AddFloodTile is a
+                # no-op on an already-flooded river tile but `spawned++` still runs. Round 8
+                # of the fixture has 96 successes and only 91 new tiles, so counting net
+                # tiles here reports a mismatch against a port that is actually correct.
+                stats["spawned"] = spawned
 
     # ── expansion ───────────────────────────────────────────────────────────────────
     if expansion_rate > 0 and len(fs.tiles) > 0:
+        thr = spread_thresholds(spread_mult)
         candidates = []
         for p in sorted(fs.tiles):
             x, y = unpack(p)
             for dx, dy in _DIRS:
                 n = pack(x + dx, y + dy)
-                if _can_spread_to(n, fs, fmap, rng, spread_mult, marks):
+                if _can_spread_to(n, fs, fmap, rng, thr, marks):
                     candidates.append(n)       # WITH multiplicity; dedup is after
         candidates = sorted(set(candidates))
+        if stats is not None:
+            stats["cands"] = len(candidates)
 
         tiles_to_expand = _round_to_int(expansion_rate)
         for _ in range(tiles_to_expand):
@@ -172,11 +213,13 @@ def update_flood(fs: FloodState, fmap: FloodMap, rng, weather: str,
             idx = rng.range_int(0, len(candidates))
             fs.tiles.add(candidates[idx])
             candidates.pop(idx)
+            if stats is not None:
+                stats["expansions"] = stats.get("expansions", 0) + 1
 
         # ── random expansion (Flood.3-6) ────────────────────────────────────────────
         if marks is not None:
             marks.append("draw:Flood.3")
-        if rng.value() <= C["random_expansion_chance"] and fs.tiles:
+        if rng.value_lt(_RANDOM_EXPANSION_LE_THR) and fs.tiles:
             arr = sorted(fs.tiles)
             if marks is not None:
                 marks.append("draw:Flood.4")
@@ -189,23 +232,28 @@ def update_flood(fs: FloodState, fmap: FloodMap, rng, weather: str,
             dist = rng.range_int(1, C["max_random_distance"] + 1)
             sx, sy = unpack(src)
             target = pack(sx + dx * dist, sy + dy * dist)
-            if _can_spread_to(target, fs, fmap, rng, spread_mult, marks):
+            if _can_spread_to(target, fs, fmap, rng, thr, marks):
                 fs.tiles.add(target)
 
     # ── shrinkage (Flood.7: one draw per flood tile) ────────────────────────────────
     do_shrink = rain_intensity < C["min_rain"] or shrink_chance > 0
     if do_shrink:
-        chance = shrink_chance + C["base_shrink"]
+        chance = f32add(shrink_chance, C["base_shrink"])
         if rain_intensity < C["min_rain"]:
-            chance += 0.8
+            chance = f32add(chance, 0.8)
+        flat_thr = threshold_for(chance)
+        edge_thr = threshold_for(f32add(chance, C["edge_shrink_bonus"]))
         to_remove = []
         for p in sorted(fs.tiles):
-            c = chance + (C["edge_shrink_bonus"] if _is_edge(p, fs) else 0.0)
             if marks is not None:
                 marks.append("draw:Flood.7")
-            if rng.value() < c:
+            if rng.value_lt(edge_thr if _is_edge(p, fs) else flat_thr):
                 to_remove.append(p)
         for p in to_remove:
             fs.tiles.discard(p)
+        if stats is not None:
+            stats["removed"] = len(to_remove)
 
     fs.change_this_round = len(fs.tiles) - before
+    if stats is not None:
+        stats["after"] = len(fs.tiles)
