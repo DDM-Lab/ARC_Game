@@ -260,7 +260,12 @@ public class DeliverySystem : MonoBehaviour
 
             if (roadManager != null)
             {
+                // Sorted: GetAllRoadPositions() returns a HashSet, so ToList() inherits a
+                // layout-dependent order that the Random.Range below indexes into.
                 List<Vector3Int> roadList = roadManager.GetAllRoadPositions().ToList();
+                roadList.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x)
+                                      : a.y != b.y ? a.y.CompareTo(b.y)
+                                      : a.z.CompareTo(b.z));
                 if (roadList.Count > 0)
                 {
                     for (int i = 0; i < numberToAdd; i++)

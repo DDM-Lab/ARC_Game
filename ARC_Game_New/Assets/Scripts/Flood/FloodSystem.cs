@@ -580,10 +580,12 @@ public class FloodSystem : MonoBehaviour
         // Pick a random flood tile as expansion source
         if (currentFloodTiles.Count == 0) return;
 
-        Vector3Int[] floodArray = new Vector3Int[currentFloodTiles.Count];
-        currentFloodTiles.CopyTo(floodArray);
+        // Sorted, not a raw HashSet copy: CopyTo preserves the set's internal layout order,
+        // which depends on add/remove history rather than contents, and the draw below
+        // indexes straight into it. Same defect as the expansion-candidate list.
+        var floodArray = FloodTilesInOrder();
         SnapshotDebug.Mark("draw:Flood.4");
-        Vector3Int sourcePos = floodArray[UnityEngine.Random.Range(0, floodArray.Length)];
+        Vector3Int sourcePos = floodArray[UnityEngine.Random.Range(0, floodArray.Count)];
 
         // Try to expand in a random direction up to max distance
         Vector3Int[] directions = { Vector3Int.up, Vector3Int.down, Vector3Int.left, Vector3Int.right };
