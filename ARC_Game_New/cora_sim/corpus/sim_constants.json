@@ -385,5 +385,54 @@
    },
    "probabilities": []
   }
+ ],
+ "construction": {
+  "rounds": 4,
+  "shelterCost": 2000,
+  "kitchenCost": 2000,
+  "caseworkSiteCost": 2000
+ },
+ "motel": {
+  "costPerPersonPerDay": 200
+ },
+ "workers": {
+  "untrainedCost": 200,
+  "untrainedArrivalDays": 1,
+  "trainedCost": 1000,
+  "trainedArrivalDays": 1,
+  "trainingCostPerWorker": 300,
+  "trainingDurationDays": 1
+ },
+ "satisfaction": {
+  "max": 100,
+  "min": 0,
+  "small": 5,
+  "medium": 15,
+  "large": 30,
+  "budgetSmall": 500,
+  "budgetMedium": 2000,
+  "budgetLarge": 5000
+ },
+ "buildingWorkforce": [
+  {
+   "name": "Community01",
+   "type": "Community",
+   "prebuilt": true
+  },
+  {
+   "name": "Motel",
+   "type": "Motel",
+   "prebuilt": true
+  },
+  {
+   "name": "Community03",
+   "type": "Community",
+   "prebuilt": true
+  },
+  {
+   "name": "Community02",
+   "type": "Community",
+   "prebuilt": true
+  }
  ]
 }

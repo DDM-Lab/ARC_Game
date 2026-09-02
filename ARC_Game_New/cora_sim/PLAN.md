@@ -237,12 +237,23 @@ The categorised spend sites are exactly: worker hire/train (ActionExecutor, usin
 (MotelCostManager). Uncategorised `RemoveBudget` calls -- task penalties -- move the budget
 without moving a spend counter.
 
-That last detail settles a contradiction already visible in the exports:
-`workforceState.untrainedWorkerCost` is 200 while the hire action says $100 each, and
-`constructionState.buildingConstructionCost` is 2000 while build actions cost 1000. Two cost
-sources exist and only one is deducted. ActionExecutor uses `action.cost`, so the ACTION's
-cost is the truth and the state fields are advisory. Same lesson as FloodParameters, wearing
-different clothes -- take the number from the path that actually executes.
+That last detail settles a contradiction visible in the exports, and MEASURING it turned
+up a live bug rather than just a documentation wrinkle. Executing each action against the
+running game and reading the budget delta:
+
+| action | advertised `cost` | actually deducted |
+|---|---|---|
+| `build_Shelter_0` | 1000 | **2000** |
+| `hire_untrained_1` | 100 | 100 |
+| `train_workers_1` | 500 | 500 |
+
+Workers deduct what they advertise, because ActionExecutor passes `action.cost`.
+Construction does NOT: BuildingSystem ignores the action's cost and deducts its own
+per-type scene value, which is 2000. **Every LLM, every scripted policy and the RL gym are
+told a build costs 1000 and are charged 2000.** Anything reasoning about budget is
+systematically wrong by a factor of two on the single largest discretionary purchase, and
+the cost-efficiency score component inherits the error. This is a game bug, not a
+surrogate detail; flagged for the maintainer rather than patched here.
 
 ### Ground truth for the economy is not free
 
@@ -280,13 +291,24 @@ The surrogate still owns the fast path: 200 us/round against Unity's ~700 ms, a 
 about 3500. That is the difference between a planner that searches tens of nodes per
 decision and one that searches tens of thousands.
 
-### The economy draws nothing — measured, not assumed
+### The economy draws nothing — RETRACTED AND PENDING RE-MEASUREMENT
 
-The first census ran on idle episodes, so it could only claim the stochastic surface of a
-round for a game where nobody acts. Re-running it on a scripted ACTION-BEARING episode
-(construction, four workers hired, training, community-to-motel transfers) gives the
-stronger result: **every draw is still explained by flood, Weather.select and
-TaskTrigger.probability, with zero unexplained draws in any round.**
+**This section previously claimed the result held on an action-bearing episode. It did
+not, and the error was mine.** `execute_action` expects the FULL action dict as its
+payload; the capture sent `{"actionIndex": i}`, which the socket accepts and silently
+ignores. So the "action-bearing" episode took no actions at all: the workers I read as
+newly hired were the ten the game starts with, and the two construction messages were not
+mine. The census result therefore only ever covered IDLE episodes, exactly like the first
+one, and the extra confidence was an illusion produced by a broken journal.
+
+Worth stating plainly because it is the general hazard of this whole exercise: an
+instrument that silently does nothing looks identical to a mechanic that draws nothing.
+The tell was available and I passed over it -- every fulfilment counter sat at zero, and a
+budget that never moved when actions "executed".
+
+Re-measurement with a working payload is running. Until it lands, the honest claim is:
+flood, Weather.select and TaskTrigger.probability account for every draw in idle episodes,
+across 140 rounds and six captures.
 
 Construction, hiring, training, staffing and transfers consume no randomness at all. That
 reshapes the remaining work: the economy port needs ARITHMETIC fidelity, not RNG fidelity.

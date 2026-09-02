@@ -983,6 +983,90 @@ public class GymServerManager : MonoBehaviour
                         }
                         sb.Append(']');
                     }
+
+                    // ECONOMY CONSTANTS. Every one of these is a serialized field, so the
+                    // SCENE value is what runs and the .cs initialiser is not evidence of
+                    // it -- the same trap FloodParameters set (five of its fields differ).
+                    // Two of them are already known to disagree with what the game_state
+                    // export advertises: game_state says untrainedWorkerCost 200 and
+                    // buildingConstructionCost 2000, while the hire action costs 100 and
+                    // builds cost 1000 per type. ActionExecutor deducts action.cost and
+                    // BuildingSystem deducts the PER-TYPE field, so those are the truth
+                    // and the aggregate state fields are advisory.
+                    var bs = FindObjectOfType<BuildingSystem>();
+                    if (bs != null)
+                    {
+                        sb.Append(",\"construction\":{")
+                          .Append("\"rounds\":").Append(bs.constructionRounds)
+                          .Append(",\"shelterCost\":").Append(bs.shelterConstructionCost)
+                          .Append(",\"kitchenCost\":").Append(bs.kitchenConstructionCost)
+                          .Append(",\"caseworkSiteCost\":").Append(bs.caseworkSiteConstructionCost)
+                          .Append('}');
+                    }
+                    var mc = FindObjectOfType<MotelCostManager>();
+                    if (mc != null)
+                        sb.Append(",\"motel\":{\"costPerPersonPerDay\":")
+                          .Append(mc.costPerPersonPerDay.ToString("R", ci)).Append('}');
+                    var wr = FindObjectOfType<WorkerRequestSystem>();
+                    var wt = FindObjectOfType<WorkerTrainingSystem>();
+                    if (wr != null || wt != null)
+                    {
+                        sb.Append(",\"workers\":{");
+                        bool first = true;
+                        if (wr != null)
+                        {
+                            sb.Append("\"untrainedCost\":").Append(wr.untrainedWorkerCost)
+                              .Append(",\"untrainedArrivalDays\":").Append(wr.untrainedArrivalDays)
+                              .Append(",\"trainedCost\":").Append(wr.trainedWorkerCost)
+                              .Append(",\"trainedArrivalDays\":").Append(wr.trainedArrivalDays);
+                            first = false;
+                        }
+                        if (wt != null)
+                        {
+                            if (!first) sb.Append(',');
+                            sb.Append("\"trainingCostPerWorker\":").Append(wt.trainingCostPerWorker)
+                              .Append(",\"trainingDurationDays\":").Append(wt.trainingDurationDays);
+                        }
+                        sb.Append('}');
+                    }
+                    var sab = SatisfactionAndBudget.Instance;
+                    if (sab != null)
+                    {
+                        sb.Append(",\"satisfaction\":{")
+                          .Append("\"max\":").Append(sab.maxSatisfaction.ToString("R", ci))
+                          .Append(",\"min\":").Append(sab.minSatisfaction.ToString("R", ci))
+                          .Append(",\"small\":").Append(sab.satisfactionSmallAmount.ToString("R", ci))
+                          .Append(",\"medium\":").Append(sab.satisfactionMediumAmount.ToString("R", ci))
+                          .Append(",\"large\":").Append(sab.satisfactionLargeAmount.ToString("R", ci))
+                          .Append(",\"budgetSmall\":").Append(sab.budgetSmallAmount)
+                          .Append(",\"budgetMedium\":").Append(sab.budgetMediumAmount)
+                          .Append(",\"budgetLarge\":").Append(sab.budgetLargeAmount)
+                          .Append('}');
+                    }
+                    // Per-building workforce requirement: what makes a building operational,
+                    // and therefore what gates every score term that depends on capacity.
+                    var blds = FindObjectsOfType<Building>();
+                    var pres = FindObjectsOfType<PrebuiltBuilding>();
+                    sb.Append(",\"buildingWorkforce\":[");
+                    {
+                        bool first = true;
+                        foreach (var b in blds)
+                        {
+                            if (!first) sb.Append(',');
+                            first = false;
+                            sb.Append("{\"name\":\"").Append(b.name).Append("\",\"type\":\"")
+                              .Append(b.GetBuildingType()).Append("\",\"required\":")
+                              .Append(b.requiredWorkforce).Append('}');
+                        }
+                        foreach (var b in pres)
+                        {
+                            if (!first) sb.Append(',');
+                            first = false;
+                            sb.Append("{\"name\":\"").Append(b.name).Append("\",\"type\":\"")
+                              .Append(b.GetBuildingType()).Append("\",\"prebuilt\":true}");
+                        }
+                    }
+                    sb.Append(']');
                     sb.Append('}');
                     result = sb.ToString();
                 }

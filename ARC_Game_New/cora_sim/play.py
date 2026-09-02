@@ -98,17 +98,77 @@ class UnityActions:
                 actions.append(("choice", (task.get("taskId"), choice.get("choiceId"))))
         menu = world.env.get_valid_actions() or []
         budget = (state.get("satisfactionAndBudget") or {}).get("budget", 0)
-        affordable = [i for i, a in enumerate(menu) if (a.get("cost") or 0) <= budget]
-        if len(affordable) > self.max_menu:
-            affordable = self.rng.sample(affordable, self.max_menu)
-        actions += [("menu", i) for i in affordable]
+
+        # Carry the whole action DICT, never an index into this round's menu. Unity
+        # re-enumerates every round, so an index captured now means something different
+        # two rounds into a rollout -- the planner would evaluate one action and commit a
+        # different one. execute_action wants the dict anyway.
+        #
+        # The advertised `cost` under-reports construction: a build advertises 1000 and
+        # deducts 2000 (measured). Affordability is therefore checked against the DEDUCTED
+        # cost, or the planner will queue builds it cannot pay for.
+        affordable = [a for a in menu if self.true_cost(a) <= budget]
+        by_family = {}
+        for a in affordable:
+            by_family.setdefault(self.family(a), []).append(a)
+
+        # Stratify, don't uniformly sample. The menu is ~69 entries of which ~45 are the
+        # same three building types on 15 interchangeable sites, so a uniform draw spends
+        # the budget distinguishing near-duplicates and regularly drops transfers entirely
+        # -- and transfers are the highest-value actions, since draining the motel saves
+        # $200/person/day for the rest of the game.
+        per_family = max(1, self.max_menu // max(1, len(by_family)))
+        for family, group in sorted(by_family.items()):
+            actions += [("menu", a) for a in self._span(family, group, per_family)]
         return actions
+
+    @staticmethod
+    def family(action):
+        """Semantic category: type plus, for builds, the building kind. Sites collapse."""
+        kind = action.get("action_type")
+        if kind == "construction":
+            return f"build:{(action.get('construction') or {}).get('building_type', '?')}"
+        if kind == "worker":
+            return f"worker:{(action.get('worker') or {}).get('worker_action_type', '?')}"
+        return str(kind)
+
+    @staticmethod
+    def true_cost(action):
+        """What the budget is ACTUALLY charged.
+
+        Measured against the live build: hire and train deduct exactly their advertised
+        cost, but construction deducts BuildingSystem's per-type scene value (2000) rather
+        than the 1000 the action advertises. The advertised field is what every LLM and
+        every scripted policy in this repo sees, so this correction lives here rather than
+        being silently assumed."""
+        cost = action.get("cost") or 0
+        if action.get("action_type") == "construction":
+            return cost * 2
+        return cost
+
+    def _span(self, family, group, k):
+        """Pick k options that actually differ.
+
+        Within a family the only axis is an integer quantity (hire 1..5, transfer 5/10/20)
+        or an interchangeable site. Endpoints plus a middle value cover the trade-off; the
+        search cannot meaningfully tell hire_3 from hire_4."""
+        if len(group) <= k:
+            return group
+        group = sorted(group, key=self.true_cost)
+        if k == 1:
+            return [group[0]]
+        idx = sorted({round(i * (len(group) - 1) / (k - 1)) for i in range(k)})
+        return [group[i] for i in idx]
 
     def apply(self, world, action):
         kind, payload = action
         try:
             if kind == "menu":
-                world.env.execute(json.dumps({"actionIndex": payload}))
+                # The FULL action dict is the payload execute_action expects. Sending
+                # {"actionIndex": i} is accepted by the socket and silently does nothing --
+                # which is how a whole capture run produced all-zero counters while looking
+                # like it was playing.
+                world.env.execute(json.dumps(payload))
             elif kind == "choice":
                 world.env.choose(payload[0], payload[1])
         except Exception:
