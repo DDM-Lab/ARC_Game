@@ -197,9 +197,45 @@ Rungs cleared, with the evidence each one rests on:
 | flood | done | 72/72 rounds, 8573 draws, three levels (marks, phase counts, tile sets) |
 | weather | done | 15/15 selections across three episodes |
 | full-round draw census | done | every inter-round interval explained; no uninstrumented drawer |
-| triggers / tasks | **next** | blocked on the facility model, see below |
-| budget / construction / workforce / deliveries | not started | |
-| RHEA / MCTS | not started | deliberately last; searching a stream that desyncs mid-round launders the divergence into noise |
+| triggers (draw placement) | done | 204 draws across 68 passes on Unity's exact stream positions |
+| round loop / schedule | done | **closed loop: 92/92 rounds chained from one seed, no re-synchronisation** |
+| RHEA machinery | done | finds a known optimum; shift buffer beats cold start; planning is side-effect free |
+| tasks (which tasks fire) | **next** | needs the AND/OR reduction over every trigger category |
+| budget / construction / workforce / deliveries | not started | this is what gives RHEA something to decide |
+| MCTS | not started | |
+
+### The closed-loop result
+
+Per-mechanic tests replay each mechanic from its own captured entry state, which means
+Unity silently re-synchronises the port at every round boundary. `test_sim` removes that
+crutch: the port is seeded ONCE, from the first round of an episode, and runs to the end on
+its own. Weather, flood tile sets and RNG stream position stay identical to Unity for all
+92 rounds of four episodes. Divergence compounds instead of being erased, so this is the
+test that can actually fail on a wrong phase order or a missed day rollover.
+
+It found one immediately, in the test rather than the port: comparing at the END of a round
+instead of at Unity's `flood:enter` instant is an off-by-one that passes on every day where
+the flood set is empty. `step_round` now exposes an `on_flood_enter` hook so the comparison
+happens at the one moment the capture and the port describe the same state.
+
+The schedule itself was read off the instrumented trace, not inferred: a task-generation
+pass runs on the advance into segment 2, and TWICE at a day rollover (Unity fires
+OnRoundChanged for segment 0 and then segment 1 around the weather draw). That is the
+3/0/0/6 draw pattern per day, and a plausible "one pass per round" loop drifts three draws
+every day.
+
+### RHEA status, stated precisely
+
+The search machinery is built and tested: it finds a known optimum on a toy problem, its
+shift buffer measurably beats a cold start under a tight budget, and planning leaves the
+live world byte-identical (search randomness comes from a separate generator, never the
+simulated stream). Throughput is ~200 us/round inside the search, against the plan's 1 ms
+failure threshold.
+
+What it does NOT yet do is play CORA. No action changes the world, because budget,
+construction, workforce and deliveries are not ported, so `NoOpActions` is a stub and the
+number RHEA reports is a rate, not a score. The economy port is what turns this from a
+working search into a working player, and it is the next block of work.
 
 ### What the census bought
 

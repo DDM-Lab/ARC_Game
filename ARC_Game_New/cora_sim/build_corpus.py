@@ -16,7 +16,7 @@ import json
 import re
 import sys
 
-_CTX = re.compile(r"\[RNGCTX\] \S+ flood:enter (\{.*?\}) (\{.*\})\s*$")
+_CTX = re.compile(r"\[RNGCTX\] d(\d+)r(\d+) flood:enter (\{.*?\}) (\{.*\})\s*$")
 _MARK = re.compile(r"\[RNGMARK\] \S+ (\S+)(?: (\{.*\}))?")
 _COUNTS = ((re.compile(r"Spawned flood at (\d+)/"), "spawned"),
            (re.compile(r"Expansion candidates: \d+ -> (\d+)"), "cands"),
@@ -33,8 +33,11 @@ def parse_log(path, source):
     for k, a in enumerate(enters):
         b = enters[k + 1] if k + 1 < len(enters) else len(lines)
         m = _CTX.search(lines[a])
-        st, ctx = json.loads(m.group(1)), json.loads(m.group(2))
+        st, ctx = json.loads(m.group(3)), json.loads(m.group(4))
         rd = {"source": source,
+              # day/segment come from the mark tag, and the chaining test needs them: the
+              # generation schedule depends on the segment, not on the round index.
+              "day": int(m.group(1)), "segment": int(m.group(2)),
               "rng": {w: st[w] & _M32 for w in ("s0", "s1", "s2", "s3")},
               "weather": ctx["weather"], "lastWeather": ctx["lastWeather"],
               "rain": ctx["rain"], "tiles": ctx["tiles"],
@@ -73,7 +76,7 @@ def parse_weather(path, source):
         if m and pending is not None:
             out.append({"source": source,
                         "rng": {w: pending[w] & _M32 for w in ("s0", "s1", "s2", "s3")},
-                        "selected": json.loads(m.group(2))["weather"]})
+                        "selected": json.loads(m.group(4))["weather"]})
             pending = None
     return out
 

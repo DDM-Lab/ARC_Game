@@ -75,6 +75,13 @@ class UnityRandom:
     def get_state(self):
         return (self.s0, self.s1, self.s2, self.s3)
 
+    def clone(self) -> "UnityRandom":
+        """Branch the stream. Search needs this at every node, so it avoids __init__."""
+        r = UnityRandom.__new__(UnityRandom)
+        r.s0, r.s1, r.s2, r.s3 = self.s0, self.s1, self.s2, self.s3
+        r.draws = self.draws
+        return r
+
     def next_uint(self) -> int:
         """One draw. Hot path: words in locals, one store back."""
         x, y, z, w = self.s0, self.s1, self.s2, self.s3
