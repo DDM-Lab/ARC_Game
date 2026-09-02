@@ -36,6 +36,14 @@ public class TaskChoiceBrief
     // Expected delivery quantity (people for relocation, food units, etc.).
     // Only meaningful when destinationCategory is non-null.
     public int deliveryQuantity;
+    // Does this choice deliver in the SAME round, or queue a delivery that lands later?
+    // The distinction decides whether a task is fulfilled at all: a deferred delivery can
+    // arrive after its task has already resolved, at which point it is credited by the
+    // late-delivery path with different capping rules. Non-LLM policies and the cora_sim
+    // surrogate previously had to infer this from choiceText ("(immediate)", "Rapid
+    // Response"), which is right for food and wrong for lodging.
+    public bool immediateDelivery;
+    public bool triggersDelivery;
 }
 
 [System.Serializable]

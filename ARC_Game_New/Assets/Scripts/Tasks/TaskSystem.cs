@@ -2643,6 +2643,8 @@ public class TaskSystem : MonoBehaviour
                     else
                         brief.destinationCategory = c.destinationBuilding.ToString();
                     brief.deliveryQuantity = c.deliveryQuantity;
+                    brief.immediateDelivery = c.immediateDelivery;
+                    brief.triggersDelivery = c.triggersDelivery;
                 }
                 choices.Add(brief);
             }
