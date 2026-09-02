@@ -568,6 +568,60 @@ public class Building : MonoBehaviour
     }
 
     // Getters
+    /// <summary>
+    /// Snapshot support. constructionRoundsElapsed / deconstructionRoundsElapsed are
+    /// PRIVATE and appear nowhere in the observation payload, so a restore that only
+    /// replays the visible fields leaves a building that looks right but finishes
+    /// construction on the wrong round. They are the reason a "state looks correct after
+    /// load" check is not sufficient evidence of a correct restore.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public int originalSiteId;
+        public string buildingType;
+        public string buildingName;
+        public string status;
+        public int constructionRoundsTotal, constructionRoundsElapsed;
+        public int deconstructionRoundsTotal, deconstructionRoundsElapsed;
+        public float constructionProgress, deconstructionProgress;
+        public int capacity, requiredWorkforce;
+        public float operationalEfficiency;
+    }
+
+    public Snapshot CaptureState() => new Snapshot
+    {
+        originalSiteId = originalSiteId,
+        buildingType = buildingType.ToString(),
+        buildingName = buildingName,
+        status = currentStatus.ToString(),
+        constructionRoundsTotal = constructionRoundsTotal,
+        constructionRoundsElapsed = constructionRoundsElapsed,
+        deconstructionRoundsTotal = deconstructionRoundsTotal,
+        deconstructionRoundsElapsed = deconstructionRoundsElapsed,
+        constructionProgress = constructionProgress,
+        deconstructionProgress = deconstructionProgress,
+        capacity = capacity,
+        requiredWorkforce = requiredWorkforce,
+        operationalEfficiency = operationalEfficiency,
+    };
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        buildingName = s.buildingName;
+        if (System.Enum.TryParse(s.status, out BuildingStatus st)) currentStatus = st;
+        constructionRoundsTotal = s.constructionRoundsTotal;
+        constructionRoundsElapsed = s.constructionRoundsElapsed;
+        deconstructionRoundsTotal = s.deconstructionRoundsTotal;
+        deconstructionRoundsElapsed = s.deconstructionRoundsElapsed;
+        constructionProgress = s.constructionProgress;
+        deconstructionProgress = s.deconstructionProgress;
+        capacity = s.capacity;
+        requiredWorkforce = s.requiredWorkforce;
+        operationalEfficiency = s.operationalEfficiency;
+    }
+
     public BuildingType GetBuildingType() => buildingType;
     public int GetOriginalSiteId() => originalSiteId;
     public string GetDisplayName() => !string.IsNullOrEmpty(buildingName) ? buildingName : $"{buildingType} {originalSiteId}";

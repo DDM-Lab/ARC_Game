@@ -20,8 +20,8 @@ public class SatisfactionAndBudget : MonoBehaviour
     public int maxBudget = 999999;
     public int minBudget = -999999;
 
-    [Tooltip("When false (default), discretionary spending — construction, hiring, training, and costly task choices — is rejected before it executes if the budget can't cover it: agents cannot go into debt. Passive charges (motel upkeep, task-failure penalties) still apply and may drive the budget negative. When true, discretionary spending is allowed to go negative (for RL). Overridable at runtime via the ARC_ALLOW_NEGATIVE_BUDGET env var (1/true/yes).")]
-    public bool allowNegativeBudget = false;
+    [Tooltip("When true (default, game-wide rule), discretionary spending — construction, hiring, training, and costly task choices — is ALLOWED to drive the budget negative: overspending is not blocked, it is penalized in the reward (cost-efficiency score component). When false, discretionary spending is rejected before it executes if the budget can't cover it (the old no-debt policy). Passive charges (motel upkeep, task-failure penalties) always apply either way. Overridable at runtime via the ARC_ALLOW_NEGATIVE_BUDGET env var (0/false/no to restore no-debt).")]
+    public bool allowNegativeBudget = true;
 
     // True once the initial budget/satisfaction from config (or the fallback) has been
     // applied to the live fields. Until then, currentBudget/currentSatisfaction still hold
@@ -514,6 +514,27 @@ public class SatisfactionAndBudget : MonoBehaviour
     public int CumulativeLodgingSpend => cumLodgingSpend;
     public int CumulativeWorkerSpend => cumWorkerSpend;
     public int CumulativeCaseworkSpend => cumCaseworkSpend;
+
+    /// <summary>Snapshot support: the cumulative spend accumulators are private and are
+    /// the denominator of every cost-efficiency term, so a restore must put them back.</summary>
+    [System.Serializable]
+    public class SpendSnapshot
+    {
+        public int food, lodging, worker, casework;
+    }
+
+    public SpendSnapshot CaptureSpend() => new SpendSnapshot
+    {
+        food = cumFoodSpend, lodging = cumLodgingSpend,
+        worker = cumWorkerSpend, casework = cumCaseworkSpend,
+    };
+
+    public void RestoreSpend(SpendSnapshot s)
+    {
+        if (s == null) return;
+        cumFoodSpend = s.food; cumLodgingSpend = s.lodging;
+        cumWorkerSpend = s.worker; cumCaseworkSpend = s.casework;
+    }
 
     /// <summary>
     /// Spend attributed to a service category so Python can compute cost

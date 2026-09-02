@@ -56,6 +56,40 @@ public class RewardMetricsTracker : MonoBehaviour
         roundsCompleted = 0;
     }
 
+    /// <summary>
+    /// Snapshot support. These accumulators are private and cumulative, and a gym
+    /// reset zeroes them, so a state restore MUST write them back explicitly and AFTER
+    /// ResetForNewEpisode() has run -- otherwise every load silently resets cumulative
+    /// spend and needs-met, and all post-load scoring is wrong while looking plausible.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public int foodResolved, foodFulfilled, lodgingResolved, lodgingFulfilled;
+        public int caseworkRequested, caseworkProcessed;
+        public long cumWorking, cumTraining, cumIdle;
+        public int roundsCompleted;
+    }
+
+    public Snapshot CaptureState() => new Snapshot
+    {
+        foodResolved = foodResolved, foodFulfilled = foodFulfilled,
+        lodgingResolved = lodgingResolved, lodgingFulfilled = lodgingFulfilled,
+        caseworkRequested = caseworkRequested, caseworkProcessed = caseworkProcessed,
+        cumWorking = cumWorking, cumTraining = cumTraining, cumIdle = cumIdle,
+        roundsCompleted = roundsCompleted,
+    };
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        foodResolved = s.foodResolved; foodFulfilled = s.foodFulfilled;
+        lodgingResolved = s.lodgingResolved; lodgingFulfilled = s.lodgingFulfilled;
+        caseworkRequested = s.caseworkRequested; caseworkProcessed = s.caseworkProcessed;
+        cumWorking = s.cumWorking; cumTraining = s.cumTraining; cumIdle = s.cumIdle;
+        roundsCompleted = s.roundsCompleted;
+    }
+
     /// <summary>Called by GlobalClock at the end of each simulated round.</summary>
     public void OnRoundEnded()
     {
@@ -118,6 +152,17 @@ public class RewardMetricsTracker : MonoBehaviour
             foodFulfilled = Mathf.Min(foodResolved, foodFulfilled + delivered);
         else if (task.taskTag == TaskTag.Lodging)
             lodgingFulfilled = Mathf.Min(lodgingResolved, lodgingFulfilled + delivered);
+    }
+
+    /// <summary>Retroactively credit ONE fulfilled Food task whose delivery arrived after the task
+    /// already closed unfulfilled (Fix 2a). Food is on the legacy per-task metric (demandQuantity==0,
+    /// so foodResolved counts TASKS, not packs) — hence +1 task here, NOT AddLateDelivery's pack count,
+    /// which would corrupt the rate. Capped so fulfilled never exceeds resolved; caller must fire this
+    /// once per task (gated on AreAllLinkedDeliveriesComplete).</summary>
+    public void AddLateFoodTask(GameTask task)
+    {
+        if (task == null || task.taskTag != TaskTag.Food) return;
+        foodFulfilled = Mathf.Min(foodResolved, foodFulfilled + 1);
     }
 
     public RewardMetrics BuildPayload()

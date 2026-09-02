@@ -449,6 +449,12 @@ public class GymServerManager : MonoBehaviour
                 case "reset_game":
                     return HandleResetGame(request);
 
+                case "save_state":
+                    return HandleSaveState();
+
+                case "load_state":
+                    return HandleLoadState(request);
+
                 default:
                     return ErrorJson($"Unknown request type: {request.type}");
             }
@@ -1122,6 +1128,76 @@ public class GymServerManager : MonoBehaviour
     // (RewardMetricsTracker/GymCameraCapture/ServerLauncherUI/GuiInteractionRecorder) is
     // NOT recreated by a scene reload, so it is preserved; RewardMetricsTracker is
     // additionally zeroed, else its cumulative accumulators leak across episodes.
+    // ── save_state / load_state ──────────────────────────────────────────────────────
+    // Unlike the Python replay mechanism (cora_search.py), which reconstructs a position by
+    // re-sending recorded actions, these describe the position DIRECTLY. That makes them
+    // wing-agnostic: a state reached through the GUI, which produces no gym-RPC journal,
+    // still round-trips. Capture and restore both run on the main thread via the action
+    // queue -- JsonUtility off the main thread is a native-crash class here.
+    volatile string snapshotJson;
+    volatile bool snapshotReady;
+    volatile string snapshotError;
+
+    string HandleSaveState()
+    {
+        snapshotReady = false; snapshotJson = null; snapshotError = null;
+        lock (actionQueueLock)
+        {
+            mainThreadActions.Enqueue(() =>
+            {
+                try { snapshotJson = GameSnapshotManager.ToJson(GameSnapshotManager.Capture()); }
+                catch (Exception e) { snapshotError = e.ToString(); }
+                finally { snapshotReady = true; }
+            });
+        }
+        int ticks = 0;
+        while (!snapshotReady && ticks < 1000) { Thread.Sleep(10); ticks++; }
+        if (!snapshotReady) return ErrorJson("save_state timed out");
+        if (snapshotError != null) return ErrorJson("save_state failed: " + snapshotError);
+
+        var resp = new GymResponse { type = "state_saved", state = snapshotJson, success = true };
+        return JsonUtility.ToJson(resp);
+    }
+
+    string HandleLoadState(GymRequest request)
+    {
+        if (request == null || string.IsNullOrEmpty(request.state))
+            return ErrorJson("load_state requires a 'state' field containing snapshot JSON");
+
+        GameSnapshot snap;
+        try { snap = GameSnapshotManager.FromJson(request.state); }
+        catch (Exception e) { return ErrorJson("load_state: unparsable snapshot: " + e.Message); }
+        if (snap == null) return ErrorJson("load_state: snapshot parsed to null");
+
+        // Rebuild the scene first, then write the snapshot over the fresh singletons.
+        // Restoring onto a mid-game scene would leave stale objects the snapshot never
+        // mentions, so the reset is not an optimisation to skip.
+        resetComplete = false; snapshotError = null;
+        lock (actionQueueLock)
+        {
+            mainThreadActions.Enqueue(() =>
+            {
+                try { StartCoroutine(LoadStateRoutine(snap)); }
+                catch (Exception e) { snapshotError = e.ToString(); resetComplete = true; }
+            });
+        }
+        int ticks = 0;
+        while (!resetComplete && ticks < 3000) { Thread.Sleep(10); ticks++; }
+        if (!resetComplete) return ErrorJson("load_state timed out waiting for scene rebuild");
+        if (snapshotError != null) return ErrorJson("load_state failed: " + snapshotError);
+        return "{\"type\":\"state_loaded\"}";
+    }
+
+    IEnumerator LoadStateRoutine(GameSnapshot snap)
+    {
+        // -1 => let ResetRoutine leave the RNG alone; the snapshot's own stream is written
+        // back at the end of Restore, which is the value that actually matters here.
+        yield return StartCoroutine(ResetRoutine(-1));
+        try { GameSnapshotManager.Restore(snap); }
+        catch (Exception e) { snapshotError = e.ToString(); }
+        resetComplete = true;
+    }
+
     string HandleResetGame(GymRequest request)
     {
         resetComplete = false;
@@ -1302,6 +1378,7 @@ public class GymRequest
     public int choiceId = -1;    // for select_task_choice
     public string stableId;      // for select_task_choice: stable cross-regeneration task id (optional fallback)
     public int seed = -1;        // for reset_game: RNG seed for the next episode (-1 = leave unseeded)
+    public string state;         // for load_state: a GameSnapshot as JSON
     // ── configure_render fields (camera frame capture; default off) ──
     public string renderMode;        // "off" | "step" | "game_time"
     public int renderWidth = 0;      // 0 => keep component default
@@ -1320,4 +1397,5 @@ public class GymResponse
     // ── Frame capture results (populated only when render capture is enabled) ──
     public string frame_path;    // absolute path to the PNG written this step (or null)
     public string frame_base64;  // base64 PNG if requested (or null)
+    public string state;         // for save_state: a GameSnapshot as JSON
 }
