@@ -6,10 +6,14 @@ EMPIRICALLY PINNED, NOT ASSUMED. The state transition was fitted against 2663 co
 2663/2663. UnityEngine.Random.State is {s0,s1,s2,s3}, and a draw advances it as
 (s0,s1,s2,s3) -> (s1,s2,s3,new), i.e. a shift register.
 
-PERFORMANCE. Draw volume is ~300-500/round (one per river tile, one per neighbour
-OCCURRENCE during flood expansion, one per flood tile when shrinking, clientCount+1 per
-client check-in). At a naive ~0.4us/draw that is a quarter of the whole per-round budget,
-so this module is written for speed:
+PERFORMANCE. Draw volume is ~300-500/round: one per river tile, one per neighbour
+OCCURRENCE during flood expansion, one per flood tile when shrinking, plus a handful of
+trigger and weather draws. (An earlier note here claimed clientCount+1 draws per client
+check-in. A full-round census -- chaining each round's exit RNG state to the next round's
+entry state -- accounts for every draw in the capture with flood, TaskTrigger.probability
+and Weather.select alone, so that claim is unsupported; the capture may simply not have
+exercised check-ins, so re-run the census on an episode that does.) At a naive ~0.4us/draw
+this is a quarter of the whole per-round budget, so this module is written for speed:
   - next_uint() keeps the four words in locals and does no attribute access beyond the
     single store back
   - next_batch(k) generates k raws in one loop with the words in locals, for phases where
@@ -121,7 +125,14 @@ class UnityRandom:
         return lo + (self.next_uint() % n)
 
     def range_float(self, lo: float, hi: float) -> float:
-        """Random.Range(float, float) -- upper bound inclusive in Unity."""
+        """Random.Range(float, float) -- upper bound inclusive in Unity.
+
+        NOT YET PINNED. `lo + (hi-lo) * value` is the assumed formula and the arithmetic
+        here is float64, unlike every other chance in the port. It is currently exercised
+        only through the lo=0, hi=1 case (ProbabilityTrigger), where it reduces to value()
+        exactly and so proves nothing about the general form. The first caller with a real
+        range is Weather.select -- pin it against Unity there before trusting it, the same
+        way value() and range_int() were pinned."""
         return lo + (hi - lo) * ((self.next_uint() & _MANT) / _DENOM)
 
 

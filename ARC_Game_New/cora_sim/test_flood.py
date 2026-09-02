@@ -45,6 +45,55 @@ def replay(rd, fmap, marks=None, stats=None):
     return fs
 
 
+def draw_census(fmap, rounds):
+    """Every draw in a round is accounted for -- not just flood's.
+
+    THE GAP THIS CLOSES. The per-round test replays each round from its own captured entry
+    state, so it is blind to anything that draws BETWEEN one flood exit and the next flood
+    entry. A port can pass it round after round while an uninstrumented system quietly
+    consumes randoms, and the failure only appears once rounds are chained instead of
+    replayed -- which is exactly when the surrogate becomes useful and exactly when the
+    cause is hardest to find.
+
+    The check needs no new instrumentation. Advance the port's stream from round k's exit
+    state by the number of non-flood draws recorded between the marks; if that lands on
+    round k+1's captured ENTRY state, the interval is fully explained. Landing anywhere
+    else means an undiscovered draw site, and the shortfall is its draw count.
+
+    Result on the current fixture: every interval is explained by flood plus
+    TaskTrigger.probability plus Weather.select. There is no third mystery drawer -- and
+    that is a measurement, so re-run it on episodes that exercise clients and deliveries
+    before assuming it holds there too."""
+    ok = True
+    for k, rd in enumerate(rounds[:-1]):
+        nxt = rounds[k + 1]["rng"]
+        target = (nxt["s0"], nxt["s1"], nxt["s2"], nxt["s3"])
+        st = rd["rng"]
+        rng = UnityRandom(state=(st["s0"], st["s1"], st["s2"], st["s3"]))
+        fs = FloodState({pack(x, y) for x, y in rd["tiles"]}, rd["lastWeather"])
+        update_flood(fs, fmap, rng, rd["weather"], rd["rain"])
+        inter = rd.get("interRoundDraws", [])
+        for _ in inter:
+            rng.next_uint()
+        if rng.get_state() != target:
+            # Report the size of the hole, not just its existence.
+            probe = UnityRandom(state=rng.get_state())
+            extra = None
+            for d in range(1, 5001):
+                probe.next_uint()
+                if probe.get_state() == target:
+                    extra = d
+                    break
+            print(f"  draw census             : round {k} unexplained "
+                  f"({'+' + str(extra) + ' draws' if extra else 'state not reachable within 5000'})")
+            ok = False
+    if ok:
+        sites = sorted({d for r in rounds for d in r.get("interRoundDraws", [])})
+        print(f"  draw census             : all {len(rounds)-1} inter-round intervals "
+              f"explained by flood + {', '.join(s.split(':')[1] for s in sites)}")
+    return ok
+
+
 def range_int_is_discriminated(fmap, rounds):
     """Assert the fixture still PINS Random.Range(int, int), and does not merely tolerate
     the shipped implementation.
@@ -129,8 +178,11 @@ def main():
         print(f"  {tag}: {len(marks)} draws, "
               f"{rd['unity'].get('after', len(fs.tiles))} tiles -- OK")
 
-    if not failures and not range_int_is_discriminated(fmap, rounds):
-        failures.append("Random.Range(int,int) is not pinned by this fixture")
+    if not failures:
+        if not range_int_is_discriminated(fmap, rounds):
+            failures.append("Random.Range(int,int) is not pinned by this fixture")
+        if not draw_census(fmap, rounds):
+            failures.append("uninstrumented draw sites exist between rounds")
 
     total_draws = sum(len(r["marks"]) for r in rounds)
     if failures:

@@ -864,6 +864,9 @@ public class GymServerManager : MonoBehaviour
     /// from Unity and desynced the RNG stream. Every constant below must come from the
     /// live objects, never from a transcription.
     /// </summary>
+    /// <summary>Count of a trigger list, null-safe. Used only by the sim_constants export.</summary>
+    static int Cnt<T>(System.Collections.Generic.List<T> list) { return list == null ? 0 : list.Count; }
+
     string HandleSimConstants()
     {
         string result = null; bool done = false;
@@ -907,6 +910,69 @@ public class GymServerManager : MonoBehaviour
                             }
                         }
                         sb.Append("]}");
+                    }
+
+                    // WEATHER. weatherTypes[i].weatherType is forced to (WeatherType)i in
+                    // Awake, so the ARRAY ORDER is the enum order -- but the probabilities
+                    // are scene-serialized and are NOT what the .cs initialiser says. The
+                    // cumulative selection walks this array in order, so exporting order
+                    // and probability together is what makes the port's draw reproducible.
+                    var ws = FindObjectOfType<WeatherSystem>();
+                    if (ws != null && ws.weatherTypes != null)
+                    {
+                        sb.Append(",\"weather\":[");
+                        for (int i = 0; i < ws.weatherTypes.Length; i++)
+                        {
+                            var w = ws.weatherTypes[i];
+                            if (i > 0) sb.Append(',');
+                            sb.Append("{\"index\":").Append(i)
+                              .Append(",\"weather\":\"").Append(w != null ? w.weatherType.ToString() : "null")
+                              .Append("\",\"probability\":")
+                              .Append(w != null ? w.probability.ToString("R", ci) : "0").Append('}');
+                        }
+                        sb.Append(']');
+                    }
+
+                    // TRIGGER INVENTORY. AreTriggersActivated evaluates EVERY trigger of
+                    // EVERY task with no short-circuit -- results go into a list and the
+                    // AND/OR reduction happens after -- so the number of ProbabilityTrigger
+                    // draws per check is fixed by this inventory, not by which tasks fire.
+                    // The port cannot place the RNG stream without it.
+                    var tsys = FindObjectOfType<TaskSystem>();
+                    if (tsys != null && tsys.taskDatabase != null && tsys.taskDatabase.allTasks != null)
+                    {
+                        sb.Append(",\"taskTriggers\":[");
+                        var tasks = tsys.taskDatabase.allTasks;
+                        for (int i = 0; i < tasks.Count; i++)
+                        {
+                            var td = tasks[i];
+                            if (i > 0) sb.Append(',');
+                            if (td == null) { sb.Append("null"); continue; }
+                            sb.Append("{\"taskId\":\"").Append(td.taskId).Append("\"")
+                              .Append(",\"requireAllTriggers\":").Append(td.requireAllTriggers ? "true" : "false")
+                              .Append(",\"counts\":{")
+                              .Append("\"round\":").Append(Cnt(td.roundTriggers))
+                              .Append(",\"day\":").Append(Cnt(td.dayTriggers))
+                              .Append(",\"resource\":").Append(Cnt(td.resourceTriggers))
+                              .Append(",\"probability\":").Append(Cnt(td.probabilityTriggers))
+                              .Append(",\"floodTile\":").Append(Cnt(td.floodTileTriggers))
+                              .Append(",\"floodedFacility\":").Append(Cnt(td.floodedFacilityTriggers))
+                              .Append(",\"budget\":").Append(Cnt(td.budgetTriggers))
+                              .Append(",\"satisfaction\":").Append(Cnt(td.satisfactionTriggers))
+                              .Append(",\"workforce\":").Append(Cnt(td.workforceTriggers))
+                              .Append(",\"facilityStatus\":").Append(Cnt(td.facilityStatusTriggers))
+                              .Append(",\"weather\":").Append(Cnt(td.weatherTriggers))
+                              .Append("},\"probabilities\":[");
+                            if (td.probabilityTriggers != null)
+                                for (int j = 0; j < td.probabilityTriggers.Count; j++)
+                                {
+                                    if (j > 0) sb.Append(',');
+                                    sb.Append(td.probabilityTriggers[j] != null
+                                              ? td.probabilityTriggers[j].probability.ToString("R", ci) : "0");
+                                }
+                            sb.Append("]}");
+                        }
+                        sb.Append(']');
                     }
                     sb.Append('}');
                     result = sb.ToString();
