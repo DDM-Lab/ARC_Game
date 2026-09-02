@@ -29,6 +29,21 @@ from __future__ import annotations
 FULFILMENT_COUNTERS = ("foodResolved", "foodFulfilled", "lodgingResolved",
                        "lodgingFulfilled", "caseworkRequested", "caseworkProcessed")
 
+# DEFERRED DELIVERY LATENCY, BY TAG -- measured, not assumed, and the two genuinely differ.
+# Sweeping a single shared latency against captured counters makes one tag exact and the
+# other wrong, every time:
+#
+#   latency 1   lodgingFulfilled 600/600 exact, foodFulfilled 21 against 7 and 5
+#   latency 2+  foodFulfilled 7/7 and 5/5 exact, lodgingFulfilled 500/600 and 300/600
+#
+# There is no single value that fits both, which is the evidence that they are separate
+# mechanics rather than one mechanic with a tuning constant. A relocation moves people by
+# vehicle to a destination that already exists; a food request has to be filled from a
+# kitchen's stock, and frequently is not filled before the task expires -- which is exactly
+# why Unity's foodFulfilled sits so far below foodResolved.
+DEFERRED_LATENCY = {"Lodging": 1, "Food": 2}
+DEFAULT_LATENCY = 2
+
 
 class Task:
     """One live task instance."""
@@ -106,7 +121,7 @@ class TaskBoard:
         self.active[task.task_id] = task
         return task
 
-    def choose(self, task_id, quantity=0, immediate=True, latency=1, destination=""):
+    def choose(self, task_id, quantity=0, immediate=True, latency=None, destination=""):
         """Answer a task's choice.
 
         `immediate` options deliver in the same round; deferred ones enter the delivery
@@ -124,6 +139,8 @@ class TaskBoard:
         if immediate:
             task.delivered += quantity
         else:
+            if latency is None:
+                latency = DEFERRED_LATENCY.get(task.tag, DEFAULT_LATENCY)
             self.deliveries.append([latency, task_id, quantity])
 
     def resolve(self, task: Task, fulfilled: bool, counters: dict) -> None:

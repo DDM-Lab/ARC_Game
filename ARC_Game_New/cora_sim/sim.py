@@ -35,8 +35,11 @@ Segment 3 is skipped deliberately in TaskSystem.OnRoundChanged; it is not an off
 """
 from __future__ import annotations
 
+from .clients import ClientTracker
+from .economy import Economy, step_round as economy_step
 from .flood import FloodState, update_flood
 from .floodmap import FloodMap
+from .tasks import TaskBoard
 from .triggers import roll_pass
 from .weather import RAIN_INTENSITY, generate_weather
 
@@ -63,7 +66,8 @@ class World:
     sorted nor creation order (see PLAN.md). Guessing it here would be inventing physics."""
 
     __slots__ = ("rng", "flood", "fmap", "weather", "day", "segment",
-                 "facilities_for", "generated")
+                 "facilities_for", "generated", "clients", "economy", "tasks",
+                 "round_index")
 
     def __init__(self, rng, weather, day=1, segment=1, flood=None, fmap=None,
                  facilities_for=None):
@@ -75,6 +79,10 @@ class World:
         self.segment = segment
         self.facilities_for = facilities_for or (lambda task: ())
         self.generated = []            # last round's trigger rolls, for tasks.py to consume
+        self.clients = ClientTracker()
+        self.economy = Economy()
+        self.tasks = TaskBoard()
+        self.round_index = 0
 
     def clone(self) -> "World":
         w = World.__new__(World)
@@ -86,10 +94,14 @@ class World:
         w.segment = self.segment
         w.facilities_for = self.facilities_for
         w.generated = []
+        w.clients = self.clients.clone()
+        w.economy = self.economy.clone()
+        w.tasks = self.tasks.clone()
+        w.round_index = self.round_index
         return w
 
 
-def step_round(w: World, marks=None, on_flood_enter=None) -> None:
+def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     """Advance one round: segment bookkeeping, then generation, then flood.
 
     Generation runs BEFORE flood, so a task generated this round sees last round's flood.
@@ -100,9 +112,28 @@ def step_round(w: World, marks=None, on_flood_enter=None) -> None:
     equivalence test compares there rather than at the end of the round, because that is
     the only point where the captured state and the port's state describe the same moment.
     Comparing at the round end instead is an off-by-one that silently passes on days when
-    the flood set is empty."""
+    the flood set is empty.
+
+    THE FULL DRAW ORDER WITHIN A ROUND, read off the instrumented trace rather than
+    inferred:
+
+        arrivals      caseworkNeed x N PEOPLE, then one stayDuration, per delivered group
+        casework gen  caseworkGen, once per group that has not yet requested casework
+        generation    TaskTrigger.probability, on the segments that run a pass
+        flood         the ten flood sites
+
+    `arrivals` is passed in rather than derived, because a delivery landing is caused by a
+    choice made in an earlier round and the round loop does not own that decision. The
+    per-person granularity is load-bearing: a 300-person relocation advances the stream 301
+    places, so getting it wrong makes every later draw in the round read someone else's
+    randoms."""
+    for count, facility in arrivals:
+        w.clients.register_arrival(w.rng, count, w.round_index, facility, marks)
+    w.clients.update(w.rng, w.round_index, w.economy.counters, marks)
+
     rolls = []
-    if w.segment >= ROUNDS_PER_DAY:
+    day_changed = w.segment >= ROUNDS_PER_DAY
+    if day_changed:
         w.day += 1
         w.segment = 1
         w.weather = generate_weather(w.rng, marks=marks)
@@ -118,3 +149,10 @@ def step_round(w: World, marks=None, on_flood_enter=None) -> None:
         on_flood_enter(w)
     update_flood(w.flood, w.fmap, w.rng, w.weather,
                  RAIN_INTENSITY[w.weather], marks)
+
+    # Deterministic bookkeeping runs after the stochastic phases: deliveries land, tasks
+    # age and expire, and the economy accumulates. None of this draws, so its position
+    # relative to flood cannot desynchronise the stream -- only the counters.
+    w.tasks.tick(w.economy.counters)
+    economy_step(w.economy, day_changed, w.day)
+    w.round_index += 1

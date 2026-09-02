@@ -60,7 +60,7 @@ def main(pattern=None):
                            if c.get("choiceId") == act.get("choiceId")), None)
                 if ch:
                     board.choose(act["taskId"], ch.get("deliveryQuantity") or 0,
-                                 immediate=is_immediate(ch), latency=2,
+                                 immediate=is_immediate(ch),
                                  destination=ch.get("destinationCategory") or "")
             board_deliveries_landed = board.tick_deliveries_only(counters)
             # Unity's own lifecycle drives WHEN; the port supplies WHAT.
