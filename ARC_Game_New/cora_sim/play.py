@@ -83,11 +83,12 @@ class UnityActions:
     spends the search budget distinguishing options that barely differ. Task choices are
     never capped -- they are where the score comes from."""
 
-    def __init__(self, env, max_menu=8, rng=None):
+    def __init__(self, env, max_menu=8, rng=None, shaping=0.0):
         import random
         self.env = env
         self.max_menu = max_menu
         self.rng = rng or random.Random(0)
+        self.shaping = shaping
 
     def legal(self, world):
         actions = [NOOP]
@@ -117,7 +118,46 @@ class UnityActions:
             pass
 
     def value(self, world):
-        return score_of(world.metrics())
+        """The game's own score, optionally plus a dense shaping term.
+
+        WHY SHAPING IS NEEDED HERE. Measured on this build: the composite score is exactly
+        0.0000 for the first fourteen rounds of a 16-round episode under both idle and
+        random play, then steps to its final value. Nothing a planner does in rounds 0-13
+        changes the number it is being scored on, so a search with a horizon shorter than
+        the resolution latency optimises a CONSTANT -- every candidate ties, selection is
+        arbitrary, and the plan it commits is noise. That is exactly what the first run
+        did: it picked menu action 0 twice in a row.
+
+        The sparsity is structural, not a bug. sat_worker_use accumulates every round and
+        is the one dense term, but it is unreachable until buildings exist to staff, and
+        construction takes four days. Food and lodging only move when tasks resolve.
+
+        `shaping` adds leading indicators of the counters -- people housed, workers
+        actually working, food positioned -- scaled small so it breaks ties without
+        outranking real score. It is OFF by default: the reported score must stay the
+        game's own, and a planner tuned on a proxy should never be presented as one that
+        beat the real objective."""
+        score = score_of(world.metrics())
+        if not self.shaping:
+            return score
+        return score + self.shaping * self._potential(world)
+
+    def _potential(self, world):
+        """Leading indicators, in the units the counters will eventually credit.
+
+        Deliberately built only from quantities that FEED rewardMetrics: people housed
+        become lodgingFulfilled, working workers become cumWorkingWorkers, food packs on
+        site become foodFulfilled. Nothing here rewards activity for its own sake."""
+        state = world.env._game_state_dict()
+        wf = state.get("workforceState") or {}
+        working = (wf.get("workingTrainedWorkers", 0) or 0) + (wf.get("workingUntrainedWorkers", 0) or 0)
+        housed = food = 0
+        for f in ((state.get("mapState") or {}).get("facilities") or []):
+            res = f.get("resources") or {}
+            if f.get("buildingType") in ("Motel", "Shelter"):
+                housed += res.get("population", 0) or 0
+            food += res.get("foodPacks", 0) or 0
+        return 0.001 * housed + 0.01 * working + 0.001 * food
 
 
 def step_unity(world):
@@ -125,7 +165,7 @@ def step_unity(world):
 
 
 def play_episode(env, rounds=12, horizon=3, population=6, generations=2, seed=0,
-                 max_menu=8, verbose=True):
+                 max_menu=8, shaping=0.0, verbose=True):
     """Play `rounds` rounds with RHEA, returning the score trace.
 
     Deliberately small search settings: every node is a real Unity round, so the budget
@@ -134,7 +174,7 @@ def play_episode(env, rounds=12, horizon=3, population=6, generations=2, seed=0,
     import random
     from cora_sim.search import RHEA
 
-    model = UnityActions(env, max_menu=max_menu, rng=random.Random(seed))
+    model = UnityActions(env, max_menu=max_menu, rng=random.Random(seed), shaping=shaping)
     search = RHEA(step_unity, model, horizon=horizon, population=population,
                   generations=generations, elites=2, mutation_rate=0.3,
                   rng=random.Random(seed))
