@@ -200,9 +200,27 @@ Rungs cleared, with the evidence each one rests on:
 | triggers (draw placement) | done | 297 draws across 99 passes on Unity's exact stream positions |
 | round loop / schedule | done | **closed loop: 134/134 rounds over six episodes, one seed each, no re-synchronisation** |
 | RHEA machinery | done | finds a known optimum; shift buffer beats cold start; planning is side-effect free |
-| RHEA playing CORA | done, against Unity | plays for the game's own score via the native snapshot; ~31 s/decision |
-| economy in the surrogate | **next** | this is what makes RHEA fast rather than what makes it work |
+| RHEA playing CORA | done, against Unity | plays for the game's own score; +0.65/+0.74/+0.33 vs idle 0.00, random -0.02 |
+| economy (budget, workforce, construction, motel) | done | all 9 owned counters exact, 3 traces x 32 rounds |
+| client stay (3 draw sites) | done | thresholds validated on 1512 captured draws |
+| tasks, deliveries, fulfilment | 3 of 4 counters exact | foodResolved pending task-generation timing |
+| task GENERATION from triggers | **last gap** | the port consumes tasks; it does not yet create them |
 | MCTS | not started | |
+
+### Mechanic coverage, as measured
+
+| mechanic | state |
+|---|---|
+| RNG (value, Range int/float) | exact, rivals rejected in-test |
+| flood | exact, 172 rounds |
+| weather | exact, 36 selections, all five types |
+| probability triggers | exact draw placement, 297 draws |
+| client stay / casework demand | thresholds exact |
+| budget, spend categories, construction, workforce, motel | exact |
+| task resolution arithmetic | lodging exact; food fulfilled exact |
+| delivery latency | measured per tag (Lodging 1, Food 2) |
+| task generation timing | NOT PORTED -- the last gap |
+| delivery vehicle routing (2 draw sites) | instrumented, never fired in captures |
 
 ### The closed-loop result
 
