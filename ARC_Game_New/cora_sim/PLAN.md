@@ -477,6 +477,42 @@ that already has one live. The port's community populations are also static, so 
 population-threshold trigger that should stop firing as people relocate keeps firing
 forever.
 
+### Progress, and the decomposition that localises what is left
+
+Three suppression rules ported since (Alert once per game, one live global per title, one
+Lodging task per facility) plus the Emergency cap and spacing, which turned out to be
+load-bearing: without it Community_Flood_Damge fired six times and SQUATTED the
+one-per-facility lodging slot, blocking relocation demand entirely.
+
+| | score | lodgingResolved | caseworkRequested |
+|---|---|---|---|
+| Unity | +1.40 | 901 | 898 |
+| surrogate, before | -0.18 | 3 | 0 |
+| surrogate, now | +2.15 | 102 | **1000 (vs 898)** |
+
+Casework is now within ~11%; lodging demand is still wrong.
+
+**The decomposition that matters:** Unity's "Task triggered for X" log lines are TRIGGER
+PASSES, not task creations -- the gates run afterwards. Separating them turns one confusing
+number into two measurable ones:
+
+| task | Unity trigger passes | port trigger passes |
+|---|---|---|
+| Community_FoodRequest | 35 | 9 |
+| Community_TransportRequest | 17 | 4 |
+| Community_Flood_Damge | 12 | 9 |
+
+So the gates are roughly right and the TRIGGER EVALUATION under-fires by ~4x on the two
+demand tasks. That is not a gating bug and not an RNG bug.
+
+**The cause is the item this audit already lists as absent: per-facility resources are
+static.** Food packs never change and population only moves on relocation, so the resource
+conditions those tasks depend on evaluate against a frozen world. Unity's food consumption
+and delivery-into-facility flows are what make the trigger fire and stop firing.
+
+**So the next piece is facility resource dynamics**, not more trigger tuning -- tuning
+against a frozen world would fit the constants to the wrong model.
+
 **Consequence for search: do not run RHEA on the surrogate yet.** A planner optimising a
 model that generates 2.7x the real demand will learn to over-invest in lodging, and the
 plan will not transfer. RHEA against Unity remains valid, because that is the real game.

@@ -959,6 +959,10 @@ public class GymServerManager : MonoBehaviour
                               // wrong score component, which nets out in the budget and
                               // corrupts cost-efficiency.
                               .Append(",\"taskTag\":\"").Append(td.taskTag).Append("\"")
+                              // taskType drives three suppression rules the port needs:
+                              // Alert fires once per GAME, Emergency is capped and spaced,
+                              // and neither is inferable from the trigger set.
+                              .Append(",\"taskType\":\"").Append(td.taskType).Append("\"")
                               .Append(",\"roundsRemaining\":").Append(td.roundsRemaining)
                               // targetFacilityType + isGlobalTask are what decide HOW MANY
                               // facilities a task rolls against, and therefore how many

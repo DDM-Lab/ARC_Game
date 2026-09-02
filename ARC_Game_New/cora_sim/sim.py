@@ -60,6 +60,11 @@ ROUNDS_PER_DAY = 4
 # numbering does not line up: the mark tag counts 1..4 while OnRoundChanged reports 1,2,3
 # then 0. Encoding the observable schedule is honest; encoding a guessed numbering is not.
 _GENERATION_SEGMENTS = (2,)
+# GameDataManager.InitialEmergencyTaskFrequency -- the one economy constant not exported.
+# 4 is the .cs default and reproduces the observed spacing (two Emergency tasks in 24
+# rounds). Export it if the scene is ever retuned.
+_NUM_EMERGENCY_TASKS = 4
+_FINAL_DAY = 8
 _ROLLOVER_PASSES = 2
 
 
@@ -73,7 +78,8 @@ class World:
     __slots__ = ("rng", "flood", "fmap", "weather", "day", "segment",
                  "facilities_for", "generated", "clients", "economy", "tasks",
                  "round_index", "_trigger_memory", "use_generation",
-                 "pending_arrivals", "generated_specs")
+                 "pending_arrivals", "generated_specs", "_alerts_shown",
+                 "_emergency_count", "_last_emergency_round")
 
     def __init__(self, rng, weather, day=1, segment=1, flood=None, fmap=None,
                  facilities_for=None):
@@ -100,6 +106,13 @@ class World:
         self._trigger_memory = {}       # stateful triggers (FloodExpanded, BudgetDropped)
         self.pending_arrivals = []      # deliveries that landed LAST round, drawn this one
         self.generated_specs = {}       # live task id -> (definition id, facility, spec)
+        self._alerts_shown = set()      # Alert tasks fire once per GAME
+        self._emergency_count = 0
+        self._last_emergency_round = -99
+
+    @staticmethod
+    def _live_ids(w):
+        return set(w.tasks.active)
 
     def _own_facilities(self, task_def):
         return suitable_facilities(task_def, self.economy.facilities())
@@ -132,8 +145,61 @@ class World:
         w._trigger_memory = dict(self._trigger_memory)
         w.pending_arrivals = list(self.pending_arrivals)
         w.generated_specs = dict(self.generated_specs)
+        w._alerts_shown = set(self._alerts_shown)
+        w._emergency_count = self._emergency_count
+        w._last_emergency_round = self._last_emergency_round
         w.use_generation = self.use_generation
         return w
+
+
+def _admits(w: World, spec, facility) -> bool:
+    """TaskSystem's duplicate suppression, which is the difference between a plausible
+    task stream and 2.7x too much demand.
+
+    Without these gates the port fires a task every pass its triggers permit, and since
+    triggers stay satisfied for many rounds it re-fires the same request endlessly:
+    measured at lodgingResolved 2451 against Unity's 901 on the same policy.
+
+      ALERT      once per GAME (shownAlertIds), not once per round.
+      GLOBAL     one live instance per title.
+      LODGING    at most ONE per facility at a time -- verified against a capture, where
+                 the maximum concurrent lodging tasks on any facility was exactly 1.
+
+      EMERGENCY  capped at `numEmergencyTasks` per game AND spaced by
+                 max(2, totalRounds / numEmergencyTasks) rounds.
+
+    The Emergency gate turned out to be load-bearing rather than a detail. Without it
+    Community_Flood_Damge (Emergency, tagged Lodging) fired six times and SQUATTED the
+    one-per-facility lodging slot, which blocked Community_TransportRequest entirely --
+    the port generated no relocation demand at all while Unity generated 901. Unity's own
+    capture shows exactly two Emergency tasks in 24 rounds, consistent with the cap.
+
+    `numEmergencyTasks` comes from GameDataManager and is the ONE constant here not
+    exported; 4 is the .cs default and matches the observed spacing. Flagged rather than
+    silently assumed."""
+    kind = spec.get("taskType")
+    if kind == "Emergency":
+        if w._emergency_count >= _NUM_EMERGENCY_TASKS:
+            return False
+        interval = max(2, (_FINAL_DAY * ROUNDS_PER_DAY) // max(1, _NUM_EMERGENCY_TASKS))
+        if w.round_index < w._last_emergency_round + interval:
+            return False
+        w._emergency_count += 1
+        w._last_emergency_round = w.round_index
+        return True
+    if kind == "Alert":
+        if spec["taskId"] in w._alerts_shown:
+            return False
+        w._alerts_shown.add(spec["taskId"])
+        return True
+    if spec.get("isGlobalTask"):
+        return not any(s[0] == spec["taskId"] for s in w.generated_specs.values()
+                       if s[0] in w._live_ids(w))
+    if spec.get("taskTag") == "Lodging":
+        for live_id, (def_id, fac, sp) in w.generated_specs.items():
+            if live_id in w.tasks.active and fac == facility and sp.get("taskTag") == "Lodging":
+                return False
+    return True
 
 
 def _pass(w: World, marks):
@@ -200,7 +266,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     if w.use_generation:
         for task_id, facility in rolls:
             spec = _TASK_SPEC.get(task_id)
-            if spec is None:
+            if spec is None or not _admits(w, spec, facility):
                 continue
             state = {"choices": spec.get("choices") or []}
             tag = spec.get("taskTag") or "None"
@@ -250,10 +316,20 @@ def answer(w: World, task_id, choice_id) -> bool:
                    if c.get("choiceId") == choice_id), None)
     if choice is None:
         return False
+    qty = choice.get("deliveryQuantity", 0) or 0
     w.economy.apply_choice(task.tag, choice.get("impacts"),
                            choice.get("budgetDelayRounds", 0) or 0,
                            choice.get("destinationCategory") or "",
-                           choice.get("deliveryQuantity", 0) or 0)
+                           qty)
+    # RELOCATION MOVES PEOPLE OUT OF THE SOURCE. Without this the community stays at 400
+    # forever, its population-threshold trigger never stops firing, and the port generates
+    # relocation demand indefinitely -- the second half of the 2.7x over-generation.
+    if qty > 0 and (choice.get("destinationCategory") or "") in ("Motel", "Shelter"):
+        for b in w.economy.buildings:
+            if b.get("name") == _facility or (_facility and b.get("name") == str(_facility)):
+                res = b.setdefault("resources", {})
+                res["population"] = max(0, (res.get("population") or 0) - qty)
+                break
     w.tasks.answer(task_id, choice.get("deliveryQuantity") or 0,
                    immediate=bool(choice.get("immediateDelivery")),
                    destination=choice.get("destinationCategory") or "",
