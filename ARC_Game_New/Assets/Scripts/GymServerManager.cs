@@ -1042,6 +1042,43 @@ public class GymServerManager : MonoBehaviour
                             { if (j>0) sb.Append(','); sb.Append("{\"severity\":\"")
                                 .Append(td.weatherTriggers[j].conditionType).Append("\"}"); }
                             sb.Append("]}")
+                              .Append(",\"choices\":[");
+                            // TASK CHOICES. Without these the surrogate can GENERATE a
+                            // task but cannot ANSWER it, so it cannot run a game forward
+                            // unaided -- every equivalence test so far has fed it Unity's
+                            // own task lifecycle. destinationCategory is computed exactly
+                            // as BuildTaskContext does it for live tasks, CaseworkSite
+                            // first because a casework choice's text can contain the
+                            // origin facility's name and confuse substring matching.
+                            for (int j = 0; td.agentChoices != null && j < td.agentChoices.Count; j++)
+                            {
+                                if (j > 0) sb.Append(',');
+                                var c = td.agentChoices[j];
+                                sb.Append("{\"choiceId\":").Append(c.choiceId)
+                                  .Append(",\"triggersDelivery\":").Append(c.triggersDelivery ? "true" : "false")
+                                  .Append(",\"immediateDelivery\":").Append(c.immediateDelivery ? "true" : "false")
+                                  .Append(",\"deliveryQuantity\":").Append(c.deliveryQuantity)
+                                  .Append(",\"budgetDelayRounds\":").Append(c.budgetDelayRounds)
+                                  .Append(",\"destinationCategory\":\"");
+                                if (c.triggersDelivery || c.immediateDelivery)
+                                {
+                                    if (c.destinationBuilding == BuildingType.CaseworkSite)
+                                        sb.Append("CaseworkSite");
+                                    else if (c.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                                             && c.destinationPrebuilt == PrebuiltBuildingType.Motel)
+                                        sb.Append("Motel");
+                                    else sb.Append(c.destinationBuilding);
+                                }
+                                sb.Append("\",\"impacts\":[");
+                                for (int k = 0; c.choiceImpacts != null && k < c.choiceImpacts.Count; k++)
+                                {
+                                    if (k > 0) sb.Append(',');
+                                    sb.Append("{\"type\":\"").Append(c.choiceImpacts[k].impactType)
+                                      .Append("\",\"value\":").Append(c.choiceImpacts[k].value).Append('}');
+                                }
+                                sb.Append("]}");
+                            }
+                            sb.Append("]")
                               .Append(",\"probabilities\":[");
                             if (td.probabilityTriggers != null)
                                 for (int j = 0; j < td.probabilityTriggers.Count; j++)

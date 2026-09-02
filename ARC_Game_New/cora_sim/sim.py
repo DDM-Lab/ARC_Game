@@ -39,8 +39,12 @@ from .clients import ClientTracker
 from .economy import Economy, step_round as economy_step
 from .flood import FloodState, update_flood
 from .floodmap import FloodMap
-from .tasks import TaskBoard
+from .tasks import Task, TaskBoard, demand_of
 from .generation import TriggerContext, generation_pass, suitable_facilities
+from .triggers import INVENTORY as _INVENTORY
+
+# Task definitions by id, so a generated task carries its own choices.
+_TASK_SPEC = {t["taskId"]: t for t in _INVENTORY}
 from .triggers import roll_pass
 from .weather import RAIN_INTENSITY, generate_weather
 
@@ -69,7 +73,7 @@ class World:
     __slots__ = ("rng", "flood", "fmap", "weather", "day", "segment",
                  "facilities_for", "generated", "clients", "economy", "tasks",
                  "round_index", "_trigger_memory", "use_generation",
-                 "pending_arrivals")
+                 "pending_arrivals", "generated_specs")
 
     def __init__(self, rng, weather, day=1, segment=1, flood=None, fmap=None,
                  facilities_for=None):
@@ -95,6 +99,7 @@ class World:
         self.round_index = 0
         self._trigger_memory = {}       # stateful triggers (FloodExpanded, BudgetDropped)
         self.pending_arrivals = []      # deliveries that landed LAST round, drawn this one
+        self.generated_specs = {}       # live task id -> (definition id, facility, spec)
 
     def _own_facilities(self, task_def):
         return suitable_facilities(task_def, self.economy.facilities())
@@ -126,6 +131,7 @@ class World:
         w.round_index = self.round_index
         w._trigger_memory = dict(self._trigger_memory)
         w.pending_arrivals = list(self.pending_arrivals)
+        w.generated_specs = dict(self.generated_specs)
         w.use_generation = self.use_generation
         return w
 
@@ -187,6 +193,23 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         if w.segment in _GENERATION_SEGMENTS:
             rolls += _pass(w, marks)
     w.generated = rolls
+    # THE JOIN THAT MAKES THE SURROGATE SELF-DRIVING. generation_pass decides WHICH tasks
+    # fire; without this the port produced a list of ids and created nothing, so it could
+    # generate a task and never answer one -- which is why every equivalence test so far
+    # has had to feed it Unity's own task lifecycle.
+    if w.use_generation:
+        for task_id, facility in rolls:
+            spec = _TASK_SPEC.get(task_id)
+            if spec is None:
+                continue
+            state = {"choices": spec.get("choices") or []}
+            tag = spec.get("taskTag") or "None"
+            t = Task(w.tasks.next_id, tag, demand_of(state, tag),
+                     spec.get("roundsRemaining") or 1)
+            t.destination = ""
+            w.tasks.next_id += 1
+            w.tasks.add(t)
+            w.generated_specs[t.task_id] = (task_id, facility, spec)
 
     if on_flood_enter is not None:
         on_flood_enter(w)
@@ -210,3 +233,41 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
             w.economy.motel_pop = max(0, w.economy.motel_pop - quantity)
     economy_step(w.economy, day_changed, w.day)
     w.round_index += 1
+
+
+def answer(w: World, task_id, choice_id) -> bool:
+    """Answer a generated task by choice id, using the exported choice definition.
+
+    This is the surrogate's equivalent of env.choose(): it applies the choice's budget and
+    satisfaction impacts, queues its delivery with the right latency, and takes the task
+    off the board. Without it a self-driven episode can only ever let tasks expire."""
+    entry = w.generated_specs.get(task_id)
+    task = w.tasks.active.get(task_id)
+    if entry is None or task is None:
+        return False
+    _def_id, _facility, spec = entry
+    choice = next((c for c in (spec.get("choices") or [])
+                   if c.get("choiceId") == choice_id), None)
+    if choice is None:
+        return False
+    w.economy.apply_choice(task.tag, choice.get("impacts"),
+                           choice.get("budgetDelayRounds", 0) or 0,
+                           choice.get("destinationCategory") or "",
+                           choice.get("deliveryQuantity", 0) or 0)
+    w.tasks.answer(task_id, choice.get("deliveryQuantity") or 0,
+                   immediate=bool(choice.get("immediateDelivery")),
+                   destination=choice.get("destinationCategory") or "",
+                   counters=w.economy.counters)
+    return True
+
+
+def open_choices(w: World):
+    """Every (task_id, choice_id) the planner may answer this round."""
+    out = []
+    for task_id in w.tasks.active:
+        entry = w.generated_specs.get(task_id)
+        if not entry:
+            continue
+        for c in (entry[2].get("choices") or []):
+            out.append((task_id, c.get("choiceId")))
+    return out

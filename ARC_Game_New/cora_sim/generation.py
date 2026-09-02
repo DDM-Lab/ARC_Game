@@ -97,6 +97,15 @@ def _weather_ok(t, ctx):
     return False
 
 
+# ResourceType is a C# ENUM ("Population", "FoodPacks") while the facility resource dict
+# uses the export's camelCase keys ("population", "foodPacks"). Looking the enum name up
+# directly returns 0 for everything, so EVERY resource trigger silently evaluates False --
+# and since these tasks require ALL triggers, the entire Community/Shelter task family
+# never fires. Measured: a self-driven episode produced lodgingResolved 3 where Unity had
+# 901, and this mapping was the whole difference.
+_RESOURCE_KEY = {"Population": "population", "FoodPacks": "foodPacks"}
+
+
 def _resource_ok(t, ctx):
     """True if ANY operational facility of the type satisfies the condition.
 
@@ -106,8 +115,9 @@ def _resource_ok(t, ctx):
         if f.get("type") != t["facilityType"] or not f.get("operational"):
             continue
         res = f.get("resources") or {}
-        amount = res.get(t["resourceType"], 0)
-        cap = res.get(t["resourceType"] + "Capacity", 0)
+        key = _RESOURCE_KEY.get(t["resourceType"], t["resourceType"])
+        amount = res.get(key, 0)
+        cap = res.get(key + "Capacity", 0)
         cond = t["condition"]
         if cond == "Empty" and amount == 0:
             return True

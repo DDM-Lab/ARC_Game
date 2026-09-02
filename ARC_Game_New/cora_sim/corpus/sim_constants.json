@@ -118,6 +118,50 @@
      }
     ]
    },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 2,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": 50000
+      }
+     ]
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 4,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": 100000
+      }
+     ]
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Satisfaction",
+       "value": 5
+      }
+     ]
+    }
+   ],
    "probabilities": []
   },
   {
@@ -166,6 +210,22 @@
     "facilityStatus": [],
     "weather": []
    },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": 5000
+      }
+     ]
+    }
+   ],
    "probabilities": []
   },
   {
@@ -215,6 +275,62 @@
     "facilityStatus": [],
     "weather": []
    },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": 5000
+      },
+      {
+       "type": "Satisfaction",
+       "value": -5
+      }
+     ]
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 2,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": 15000
+      },
+      {
+       "type": "Satisfaction",
+       "value": -10
+      }
+     ]
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 3,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": 30000
+      },
+      {
+       "type": "Satisfaction",
+       "value": -15
+      }
+     ]
+    }
+   ],
    "probabilities": []
   },
   {
@@ -265,6 +381,54 @@
     "facilityStatus": [],
     "weather": []
    },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": [
+      {
+       "type": "Satisfaction",
+       "value": 5
+      }
+     ]
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": [
+      {
+       "type": "Satisfaction",
+       "value": 15
+      }
+     ]
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": true,
+     "immediateDelivery": true,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": [
+      {
+       "type": "Satisfaction",
+       "value": 5
+      },
+      {
+       "type": "Budget",
+       "value": -5000
+      }
+     ]
+    }
+   ],
    "probabilities": []
   },
   {
@@ -321,6 +485,40 @@
     "facilityStatus": [],
     "weather": []
    },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 100,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": []
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 200,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": []
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": true,
+     "immediateDelivery": true,
+     "deliveryQuantity": 100,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": -1000
+      }
+     ]
+    }
+   ],
    "probabilities": []
   },
   {
@@ -371,6 +569,54 @@
     "facilityStatus": [],
     "weather": []
    },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 100,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": []
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 100,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": []
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": true,
+     "immediateDelivery": true,
+     "deliveryQuantity": 100,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": -3000
+      }
+     ]
+    },
+    {
+     "choiceId": 3,
+     "triggersDelivery": true,
+     "immediateDelivery": true,
+     "deliveryQuantity": 100,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": -3000
+      }
+     ]
+    }
+   ],
    "probabilities": [
     0.5
    ]
@@ -422,6 +668,7 @@
     "facilityStatus": [],
     "weather": []
    },
+   "choices": [],
    "probabilities": []
   },
   {
@@ -470,6 +717,7 @@
     "facilityStatus": [],
     "weather": []
    },
+   "choices": [],
    "probabilities": []
   },
   {
@@ -518,6 +766,7 @@
     "facilityStatus": [],
     "weather": []
    },
+   "choices": [],
    "probabilities": []
   },
   {
@@ -568,6 +817,54 @@
     "facilityStatus": [],
     "weather": []
    },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": [
+      {
+       "type": "Satisfaction",
+       "value": 10
+      }
+     ]
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": [
+      {
+       "type": "Satisfaction",
+       "value": 10
+      }
+     ]
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": true,
+     "immediateDelivery": true,
+     "deliveryQuantity": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": -5000
+      },
+      {
+       "type": "Satisfaction",
+       "value": 10
+      }
+     ]
+    }
+   ],
    "probabilities": []
   },
   {
@@ -624,6 +921,40 @@
     "facilityStatus": [],
     "weather": []
    },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 100,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": []
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 200,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": []
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": true,
+     "immediateDelivery": true,
+     "deliveryQuantity": 100,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": -1000
+      }
+     ]
+    }
+   ],
    "probabilities": [
     0.2
    ]
@@ -680,6 +1011,7 @@
     "facilityStatus": [],
     "weather": []
    },
+   "choices": [],
    "probabilities": []
   },
   {
@@ -736,6 +1068,7 @@
     ],
     "weather": []
    },
+   "choices": [],
    "probabilities": []
   },
   {
@@ -790,6 +1123,7 @@
     "facilityStatus": [],
     "weather": []
    },
+   "choices": [],
    "probabilities": []
   }
  ],

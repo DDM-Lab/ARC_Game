@@ -447,7 +447,39 @@ task (which lives in `awaiting`) was silently dropped, and it returned `expired`
 building an unused `landed`. Two copies of the same logic drifted, and the symptom was the
 pipeline appearing to do nothing at all.
 
-### The honest summary
+### FORWARD fidelity is NOT established — measured, and the number is bad
+
+Every equivalence test in this file is a REPLAY: the port is fed Unity's own task lifecycle,
+occupancy and resolution events, and checked on arithmetic. Those pass exactly. Running the
+port FORWARD on its own is a different claim and it does not yet hold.
+
+Same policy (build a kitchen, hire, staff on NeedWorker, answer the first choice of every
+task), 24 rounds, Unity versus the self-driven surrogate:
+
+| | score | lodgingResolved | lodgingFulfilled | caseworkRequested | cumWorkingWorkers |
+|---|---|---|---|---|---|
+| Unity | +1.40 | 901 | 600 | 898 | 80 |
+| surrogate, first attempt | -0.18 | 3 | 0 | 0 | 80 |
+| surrogate, after the fix below | +2.19 | 2451 | 2400 | 4700 | 80 |
+
+Note which counter is exact in every run: `cumWorkingWorkers`, the economy half that WAS
+validated by replay. Everything driven by task generation is wrong, first by 300x low and
+then by 2.7x high.
+
+**The first bug was a case mismatch.** ResourceType is a C# enum ("Population") while the
+facility resource dict uses the export's camelCase keys ("population"). The lookup returned
+0 for everything, so every resource trigger evaluated False, and since these tasks require
+ALL triggers the entire Community/Shelter family never fired. One line; 300x.
+
+**The remaining error is over-generation**, and it is not yet fixed. The port fires a task
+every pass that its triggers permit, while Unity does not re-generate a task for a facility
+that already has one live. The port's community populations are also static, so a
+population-threshold trigger that should stop firing as people relocate keeps firing
+forever.
+
+**Consequence for search: do not run RHEA on the surrogate yet.** A planner optimising a
+model that generates 2.7x the real demand will learn to over-invest in lodging, and the
+plan will not transfer. RHEA against Unity remains valid, because that is the real game.
 The **stochastic surface is complete** — the census closes at 0 unexplained draws on a
 played episode, so the port can hold the RNG stream through a whole game. The **scoring
 surface is complete for what the captures exercised**. What is thin is the part no capture
