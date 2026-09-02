@@ -42,6 +42,25 @@ SPEND_CATEGORY = {"Kitchen": "food", "Shelter": "lodging", "CaseworkSite": "case
 # the half of the score that is hardest to notice being wrong.
 TAG_CATEGORY = {"Food": "food", "Lodging": "lodging"}
 
+# BUILDING STATUS LIFECYCLE (Building.cs). A building is NOT usable the moment it is paid
+# for, and this is the trap the surrogate previously fell into by tracking only a countdown:
+#
+#   UnderConstruction  -> for `constructionRounds` rounds. Cannot be staffed at all;
+#                         UpdateWorkerStatus only acts on NeedWorker/InUse.
+#   NeedWorker         -> construction finished, still not operational.
+#   InUse              -> assigned workforce >= requiredWorkforce (4). IsOperational() is
+#                         EXACTLY this state, and it is what resource triggers, task
+#                         suitability and deliveries all check.
+#
+# So a building bought on round 1 cannot be staffed until round 5 and cannot serve anyone
+# until it is staffed. Prebuilt buildings (communities, the motel) skip the whole lifecycle.
+# Workforce is counted in UNITS, not heads: a trained worker is worth 2, an untrained 1.
+STATUS_UNDER_CONSTRUCTION = "UnderConstruction"
+STATUS_NEED_WORKER = "NeedWorker"
+STATUS_IN_USE = "InUse"
+REQUIRED_WORKFORCE = 4
+WORKFORCE_VALUE = {"trained": 2, "untrained": 1}
+
 COUNTERS = ("foodResolved", "foodFulfilled", "lodgingResolved", "lodgingFulfilled",
             "caseworkRequested", "caseworkProcessed", "cumWorkingWorkers",
             "cumTrainingWorkers", "cumIdleWorkers", "roundsCompleted", "daysCompleted",
@@ -92,7 +111,7 @@ class Economy:
         self.in_training = []        # [days_remaining] per worker being trained
         self.arriving = []           # [(days_remaining, "trained"|"untrained")]
         self.under_construction = [] # [(rounds_remaining, building_type)]
-        self.buildings = []          # [{"type":..., "operational":bool, "assigned":int}]
+        self.buildings = []          # [{"type","status","assigned","trained","untrained"}]
         self.motel_pop = 0
         self.pending_transfers = []  # population moves that land at the END of the round
         self.pending_budget = []     # [rounds_remaining, amount] approved-but-not-arrived funding
@@ -226,7 +245,9 @@ class Economy:
         finished = [e for e in self.under_construction if e[0] <= 0]
         self.under_construction = [e for e in self.under_construction if e[0] > 0]
         for _rounds, btype in finished:
-            self.buildings.append({"type": btype, "operational": False, "assigned": 0})
+            # Construction completing puts a building in NeedWorker, NOT in service.
+            self.buildings.append({"type": btype, "status": STATUS_NEED_WORKER,
+                                   "assigned": 0, "trained": 0, "untrained": 0})
 
     def on_day_end(self, day: int) -> None:
         """Day rollover: motel billing, worker arrivals, training completion.
@@ -249,6 +270,46 @@ class Economy:
         self.in_training = [d for d in self.in_training if d > 0]
         self.counters["daysCompleted"] = day
         self.counters["totalWorkers"] = self.total_workers()
+
+    def can_staff(self, index: int) -> bool:
+        """Is this building in a state where workers can be assigned?
+
+        UnderConstruction cannot be staffed -- Building.UpdateWorkerStatus only runs on
+        NeedWorker and InUse. Trying anyway is a silent no-op in Unity, which is exactly
+        the kind of action a planner should never waste a turn slot on."""
+        if not (0 <= index < len(self.buildings)):
+            return False
+        return self.buildings[index]["status"] in (STATUS_NEED_WORKER, STATUS_IN_USE)
+
+    def staff(self, index: int, trained: int = 0, untrained: int = 0) -> bool:
+        """Assign workers, then re-evaluate the status.
+
+        The building flips to InUse the moment assigned workforce UNITS reach
+        requiredWorkforce -- two trained workers do it, four untrained also do it."""
+        if not self.can_staff(index):
+            return False
+        trained = min(trained, self.free_trained)
+        untrained = min(untrained, self.free_untrained)
+        if trained + untrained <= 0:
+            return False
+        b = self.buildings[index]
+        self.free_trained -= trained
+        self.free_untrained -= untrained
+        self.working_trained += trained
+        self.working_untrained += untrained
+        b["trained"] += trained
+        b["untrained"] += untrained
+        b["assigned"] = (b["trained"] * WORKFORCE_VALUE["trained"]
+                         + b["untrained"] * WORKFORCE_VALUE["untrained"])
+        if b["assigned"] >= REQUIRED_WORKFORCE:
+            b["status"] = STATUS_IN_USE
+        return True
+
+    def operational(self, building_type=None):
+        """IsOperational() == InUse. Anything else is invisible to triggers and deliveries."""
+        return [b for b in self.buildings
+                if b["status"] == STATUS_IN_USE
+                and (building_type is None or b["type"] == building_type)]
 
     # ── derived ─────────────────────────────────────────────────────────────────────
     def total_workers(self) -> int:
@@ -333,6 +394,11 @@ def apply_action(econ: Economy, action: dict) -> bool:
         if wat.startswith("train"):
             return econ.train(qty, cost)
         return False
+    if kind == "worker" and (action.get("worker") or {}).get("worker_action_type", "").startswith(
+            ("staff", "assign")):
+        w = action.get("worker") or {}
+        return econ.staff(int(w.get("building_index", -1)),
+                          int(w.get("trained") or 0), int(w.get("untrained") or 0))
     if kind == "resource_transfer":
         tr = action.get("transfer") or {}
         if tr.get("resource_type") == "FoodPacks":

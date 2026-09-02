@@ -13,8 +13,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cora_sim import (test_clients, test_economy, test_flood,           # noqa: E402
-                      test_generation, test_play, test_rng, test_search,
-                      test_sim, test_tasks, test_triggers, test_weather)
+                      test_generation, test_play, test_pruning, test_rng,
+                      test_search, test_sim, test_tasks, test_triggers,
+                      test_weather)
 
 # Order matters for reading the output: per-mechanic suites first, then the closed-loop
 # chain that depends on all of them, then the search that runs on top.
@@ -24,7 +25,8 @@ SUITES = (("rng", test_rng), ("flood", test_flood),
           ("play (CORA wiring)", test_play), ("economy", test_economy),
           ("clients", test_clients),
           ("tasks", test_tasks),
-          ("generation", test_generation))
+          ("generation", test_generation),
+          ("pruning", test_pruning))
 
 
 def main():
