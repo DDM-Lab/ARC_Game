@@ -181,3 +181,62 @@ so only genuinely fractional quantities need care:
   - regenerate the golden corpus after ANY SCENE OR BUILD CHANGE, not just C# mechanics
     changes: multicast subscription order is a property of the scene, and MainScene is an
     LFS file where merges have silently changed component state before.
+
+---
+
+## Status (as built)
+
+Rungs cleared, with the evidence each one rests on:
+
+| rung | state | evidence |
+|---|---|---|
+| RNG transition | done | 2663/2663 (before, after) state pairs from the live build |
+| `Random.value` mapping | done | `(raw & 0x7FFFFF) / (2^23-1)`, fitted to two spawn rows Unity logged; rivals rejected in-test |
+| `Random.Range(int,int)` | done | `lo + raw % n`; scaled variants break 37-39 rounds of the fixture |
+| `Random.Range(float,float)` | done | reversed lerp `min*t + (1-t)*max`; 15/15 vs 5/15 for the forward form |
+| flood | done | 72/72 rounds, 8573 draws, three levels (marks, phase counts, tile sets) |
+| weather | done | 15/15 selections across three episodes |
+| full-round draw census | done | every inter-round interval explained; no uninstrumented drawer |
+| triggers / tasks | **next** | blocked on the facility model, see below |
+| budget / construction / workforce / deliveries | not started | |
+| RHEA / MCTS | not started | deliberately last; searching a stream that desyncs mid-round launders the divergence into noise |
+
+### What the census bought
+
+Chaining each round's exit RNG state to the next round's entry state accounts for every
+draw with flood, `TaskTrigger.probability` and `Weather.select` alone. The stochastic
+surface of a round is three sites, not the eighteen this plan assumed. Two are now ported.
+It is a measurement on episodes with no construction and no deliveries, so re-run it on an
+episode that exercises those before treating it as general.
+
+### Corrections to this plan, from building against it
+
+1. **"Transcribe the constants from the C# source" was wrong** and would have corrupted
+   every mechanic downstream. `FloodParameters` is serialized on a MonoBehaviour, so the
+   scene overrides every field initialiser: `blockingRadius` 1 -> 5,
+   `randomExpansionChance` 0.15 -> 0.4, `maxRandomExpansionDistance` 2 -> 5,
+   `terrainBlockMultiplier` 0.1 -> 1, every `shrinkageChance` -> 0.3. Constants now come
+   from the `sim_constants` RPC and no number is read out of a `.cs` file.
+
+2. **The plan's validation ladder was too weak at the top.** Matching totals hide
+   mismatched phases, and a correct draw sequence can still write the wrong tile. Every
+   mechanic is now checked at three levels: mark sequence, per-phase counts Unity prints
+   itself, and resulting state against the next round's captured input.
+
+3. **Rival rejection belongs in the tests.** `raw/2^32` for `value()` and the forward lerp
+   for `Range(float,float)` are the natural simplifications, both wrong, both
+   plausible-looking. The tests assert the rivals FAIL, so neither can be reintroduced as
+   a cleanup.
+
+### Open hazard: facility iteration order
+
+`FindAllSuitableFacilities` returns `FindObjectsOfType<Building>()` order, which Unity does
+not specify. Observed: `Community01, Community03, Community02` — not creation order, not
+name order. Each facility rolls its own `ProbabilityTrigger`, so this order decides WHICH
+community gets a task, not just how many draws happen.
+
+This is the same class as the five HashSet-ordering bugs fixed in `FloodSystem`, but it has
+not been shown to actually diverge (snapshot equivalence passes 9/9), and sorting it would
+change which community receives tasks in a shipped, already-benchmarked game. So the port
+will reproduce Unity's order from an export rather than assume one, and whether to sort it
+in C# is a call for the maintainer, not a silent fix.
