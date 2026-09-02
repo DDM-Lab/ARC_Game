@@ -403,6 +403,25 @@ public class FloodSystem : MonoBehaviour
         WeatherType currentWeather = WeatherSystem.Instance.GetCurrentWeather();
         WeatherFloodData weatherData = GetWeatherFloodData(currentWeather);
         float rainIntensity = WeatherSystem.Instance.GetRainIntensity();
+
+        // Self-describing entry mark: the port test needs the EXACT weather, rain and tile
+        // set this update sees, not what a between-rounds snapshot happens to hold.
+        if (true)
+        {
+            var _ord = FloodTilesInOrder();
+            var _sb = new System.Text.StringBuilder();
+            _sb.Append("{\"lastWeather\":\"").Append(lastWeatherType).Append("\",")
+               .Append("\"weather\":\"").Append(currentWeather).Append("\",\"rain\":")
+               .Append(rainIntensity.ToString(System.Globalization.CultureInfo.InvariantCulture))
+               .Append(",\"tiles\":[");
+            for (int _i = 0; _i < _ord.Count; _i++)
+            {
+                if (_i > 0) _sb.Append(',');
+                _sb.Append('[').Append(_ord[_i].x).Append(',').Append(_ord[_i].y).Append(']');
+            }
+            _sb.Append("]}");
+            SnapshotDebug.MarkContext("flood:enter", _sb.ToString());
+        }
         Debug.Log($"Current weather: {currentWeather}, Rain intensity: {rainIntensity}");
         
         bool wasRaining = WeatherSystem.Instance.IsRaining();

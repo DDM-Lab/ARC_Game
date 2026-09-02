@@ -1,0 +1,48 @@
+{
+ "type": "sim_constants",
+ "flood": {
+  "baseSpreadChance": 0.7,
+  "randomExpansionChance": 0.4,
+  "maxRandomExpansionDistance": 5,
+  "landSpreadMultiplier": 1,
+  "terrainBlockMultiplier": 1,
+  "blockingRadius": 5,
+  "minimumRainForSpawning": 0.3,
+  "edgeShrinkageBonus": 0.2,
+  "floodSpawnChance": 0.7,
+  "rainIntensitySpawnBonus": 0.2,
+  "baseShrinkageChance": 0.1,
+  "weatherFloodRates": [
+   {
+    "weather": "Sunny",
+    "expansionRate": 0,
+    "spreadChanceMultiplier": 0.5,
+    "shrinkageChance": 0.3
+   },
+   {
+    "weather": "SmallRain",
+    "expansionRate": 0.5,
+    "spreadChanceMultiplier": 0.8,
+    "shrinkageChance": 0.3
+   },
+   {
+    "weather": "MediumRain",
+    "expansionRate": 1.5,
+    "spreadChanceMultiplier": 1,
+    "shrinkageChance": 0.3
+   },
+   {
+    "weather": "HeavyRain",
+    "expansionRate": 3,
+    "spreadChanceMultiplier": 1.2,
+    "shrinkageChance": 0.3
+   },
+   {
+    "weather": "Storm",
+    "expansionRate": 5,
+    "spreadChanceMultiplier": 1.5,
+    "shrinkageChance": 0.3
+   }
+  ]
+ }
+}

@@ -454,6 +454,9 @@ public class GymServerManager : MonoBehaviour
                 case "map_grid":
                     return HandleMapGrid();
 
+                case "sim_constants":
+                    return HandleSimConstants();
+
                 case "capture_frame":
                     return HandleCaptureFrame();
 
@@ -826,6 +829,96 @@ public class GymServerManager : MonoBehaviour
         return result ?? ErrorJson("Timeout building map grid");
     }
 
+    /// <summary>One tilemap as an explicit list of occupied cells. `match` non-null means
+    /// "only cells whose tile IS this asset" (used to isolate river within groundTilemap).</summary>
+    static void AppendLayer(StringBuilder sb, string name, UnityEngine.Tilemaps.Tilemap map,
+                            int xMin, int yMin, int xMax, int yMax,
+                            UnityEngine.Tilemaps.TileBase match)
+    {
+        sb.Append('"').Append(name).Append("\":[");
+        bool first = true;
+        if (map != null)
+        {
+            for (int y = yMin; y < yMax; y++)
+                for (int x = xMin; x < xMax; x++)
+                {
+                    var c = new Vector3Int(x, y, 0);
+                    var t = map.GetTile(c);
+                    if (t == null) continue;
+                    if (match != null && t != match) continue;
+                    if (!first) sb.Append(',');
+                    sb.Append('[').Append(x).Append(',').Append(y).Append(']');
+                    first = false;
+                }
+        }
+        sb.Append(']');
+    }
+
+    /// <summary>
+    /// Export the constants the simulation ACTUALLY runs with.
+    ///
+    /// Reading them from the .cs source is WRONG for this project: FloodParameters is a
+    /// serialized class on a MonoBehaviour, so the scene asset overrides the C# field
+    /// initialiser. Measured example -- the source says `blockingRadius = 1`, the running
+    /// game uses 5, and a port built on the source value classified terrain differently
+    /// from Unity and desynced the RNG stream. Every constant below must come from the
+    /// live objects, never from a transcription.
+    /// </summary>
+    string HandleSimConstants()
+    {
+        string result = null; bool done = false;
+        lock (actionQueueLock)
+        {
+            mainThreadActions.Enqueue(() =>
+            {
+                try
+                {
+                    var ci = System.Globalization.CultureInfo.InvariantCulture;
+                    var sb = new StringBuilder();
+                    sb.Append("{\"type\":\"sim_constants\"");
+                    var fs = FindObjectOfType<FloodSystem>();
+                    if (fs != null && fs.floodParameters != null)
+                    {
+                        var f = fs.floodParameters;
+                        sb.Append(",\"flood\":{");
+                        sb.Append("\"baseSpreadChance\":").Append(f.baseSpreadChance.ToString(ci));
+                        sb.Append(",\"randomExpansionChance\":").Append(f.randomExpansionChance.ToString(ci));
+                        sb.Append(",\"maxRandomExpansionDistance\":").Append(f.maxRandomExpansionDistance);
+                        sb.Append(",\"landSpreadMultiplier\":").Append(f.landSpreadMultiplier.ToString(ci));
+                        sb.Append(",\"terrainBlockMultiplier\":").Append(f.terrainBlockMultiplier.ToString(ci));
+                        sb.Append(",\"blockingRadius\":").Append(f.blockingRadius);
+                        sb.Append(",\"minimumRainForSpawning\":").Append(f.minimumRainForSpawning.ToString(ci));
+                        sb.Append(",\"edgeShrinkageBonus\":").Append(f.edgeShrinkageBonus.ToString(ci));
+                        sb.Append(",\"floodSpawnChance\":").Append(f.floodSpawnChance.ToString(ci));
+                        sb.Append(",\"rainIntensitySpawnBonus\":").Append(f.rainIntensitySpawnBonus.ToString(ci));
+                        sb.Append(",\"baseShrinkageChance\":").Append(f.baseShrinkageChance.ToString(ci));
+                        sb.Append(",\"weatherFloodRates\":[");
+                        if (f.weatherFloodRates != null)
+                        {
+                            for (int i = 0; i < f.weatherFloodRates.Length; i++)
+                            {
+                                var d = f.weatherFloodRates[i];
+                                if (i > 0) sb.Append(',');
+                                sb.Append("{\"weather\":\"").Append(d.weatherType).Append("\"")
+                                  .Append(",\"expansionRate\":").Append(d.expansionRate.ToString(ci))
+                                  .Append(",\"spreadChanceMultiplier\":").Append(d.spreadChanceMultiplier.ToString(ci))
+                                  .Append(",\"shrinkageChance\":").Append(d.shrinkageChance.ToString(ci))
+                                  .Append('}');
+                            }
+                        }
+                        sb.Append("]}");
+                    }
+                    sb.Append('}');
+                    result = sb.ToString();
+                }
+                catch (Exception e) { result = ErrorJson(e.Message); }
+                finally { done = true; }
+            });
+        }
+        int t = 0; while (!done && t < 1000) { Thread.Sleep(10); t++; }
+        return result ?? ErrorJson("sim_constants timed out");
+    }
+
     string BuildMapGridJson()
     {
         var ci = System.Globalization.CultureInfo.InvariantCulture;
@@ -866,6 +959,19 @@ public class GymServerManager : MonoBehaviour
 
         // rows top -> bottom (row 0 = y=yMax-1) so it maps directly onto an
         // origin='upper' imshow with extent = worldRect.
+        // LAYERED EXPORT. `rows` collapses every tilemap into one character by priority
+        // (f > R > b > r > g), which HIDES a blocking tile that also carries road or flood,
+        // and hides river under road. The flood port classifies terrain per layer, so a
+        // collapsed grid made it take a different draw branch than Unity and desync the
+        // RNG stream. These layers are the ground truth; `rows` stays for visualisation.
+        sb.Append(",\"layers\":{");
+        AppendLayer(sb, "ground",   ground, xMin, yMin, xMax, yMax, null);
+        sb.Append(',');
+        AppendLayer(sb, "river",    ground, xMin, yMin, xMax, yMax, river);
+        sb.Append(',');
+        AppendLayer(sb, "blocking", block,  xMin, yMin, xMax, yMax, null);
+        sb.Append('}');
+
         sb.Append(",\"rows\":[");
         for (int y = yMax - 1; y >= yMin; y--)
         {

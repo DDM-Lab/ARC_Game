@@ -16,6 +16,22 @@ public static class SnapshotDebug
     static readonly bool Enabled =
         System.Environment.GetEnvironmentVariable("ARC_SNAPSHOT_DEBUG") == "1";
 
+    /// <summary>
+    /// Richer mark for mechanic ports: emits the RNG state PLUS the inputs the mechanic
+    /// reads. A port test built on a separate snapshot has to guess which weather and
+    /// which tile set the mechanic actually saw at that instant, and gets it wrong when
+    /// anything mutates between the snapshot and the mechanic. Emitting the inputs beside
+    /// the state makes the test self-contained.
+    /// </summary>
+    public static void MarkContext(string label, string contextJson)
+    {
+        if (!Enabled) return;
+        var st = UnityEngine.Random.state;
+        int day = GlobalClock.Instance != null ? GlobalClock.Instance.currentDay : -1;
+        int seg = GlobalClock.Instance != null ? GlobalClock.Instance.currentTimeSegment : -1;
+        Debug.Log($"[RNGCTX] d{day}r{seg} {label} {JsonUtility.ToJson(st)} {contextJson}");
+    }
+
     public static void Mark(string label)
     {
         if (!Enabled) return;
