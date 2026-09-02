@@ -95,6 +95,29 @@
     "facilityStatus": 0,
     "weather": 1
    },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "DayRange",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 7
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": [
+     {
+      "severity": "Severe"
+     }
+    ]
+   },
    "probabilities": []
   },
   {
@@ -118,6 +141,30 @@
     "workforce": 0,
     "facilityStatus": 0,
     "weather": 0
+   },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 0,
+      "exactMatch": true
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
    },
    "probabilities": []
   },
@@ -143,6 +190,31 @@
     "facilityStatus": 0,
     "weather": 0
    },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "budget": [
+     {
+      "conditionType": "CurrentAmount",
+      "comparison": "LessThan",
+      "targetValue": 1
+     }
+    ],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
    "probabilities": []
   },
   {
@@ -166,6 +238,32 @@
     "workforce": 0,
     "facilityStatus": 0,
     "weather": 0
+   },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [
+     {
+      "facilityType": "Community",
+      "resourceType": "Population",
+      "threshold": 100,
+      "condition": "MoreThan"
+     }
+    ],
+    "floodTile": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
    },
    "probabilities": []
   },
@@ -191,6 +289,38 @@
     "facilityStatus": 0,
     "weather": 0
    },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [
+     {
+      "facilityType": "Community",
+      "resourceType": "FoodPacks",
+      "threshold": 0,
+      "condition": "Empty"
+     },
+     {
+      "facilityType": "Community",
+      "resourceType": "Population",
+      "threshold": 100,
+      "condition": "MoreThan"
+     }
+    ],
+    "floodTile": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
    "probabilities": []
   },
   {
@@ -214,6 +344,32 @@
     "workforce": 0,
     "facilityStatus": 0,
     "weather": 0
+   },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [
+     {
+      "facilityType": "Community",
+      "resourceType": "Population",
+      "threshold": 200,
+      "condition": "MoreThan"
+     }
+    ],
+    "floodTile": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
    },
    "probabilities": [
     0.5
@@ -241,6 +397,31 @@
     "facilityStatus": 0,
     "weather": 0
    },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "DayRange",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 6
+     }
+    ],
+    "resource": [],
+    "floodTile": [
+     {
+      "conditionType": "CurrentFloodTiles",
+      "comparison": "MoreThan",
+      "targetValue": 10
+     }
+    ],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
    "probabilities": []
   },
   {
@@ -264,6 +445,30 @@
     "workforce": 0,
     "facilityStatus": 0,
     "weather": 0
+   },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 0,
+      "exactMatch": true
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "SpecificDay",
+      "targetDay": 8,
+      "intervalDays": 0,
+      "startDay": 0,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
    },
    "probabilities": []
   },
@@ -289,6 +494,30 @@
     "facilityStatus": 0,
     "weather": 0
    },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 0,
+      "exactMatch": true
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "SpecificDay",
+      "targetDay": 7,
+      "intervalDays": 0,
+      "startDay": 0,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
    "probabilities": []
   },
   {
@@ -313,6 +542,32 @@
     "facilityStatus": 0,
     "weather": 0
    },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [
+     {
+      "facilityType": "Shelter",
+      "resourceType": "Population",
+      "threshold": 0,
+      "condition": "MoreThan"
+     }
+    ],
+    "floodTile": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
    "probabilities": []
   },
   {
@@ -336,6 +591,38 @@
     "workforce": 0,
     "facilityStatus": 0,
     "weather": 0
+   },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [
+     {
+      "facilityType": "Shelter",
+      "resourceType": "FoodPacks",
+      "threshold": 0,
+      "condition": "Empty"
+     },
+     {
+      "facilityType": "Shelter",
+      "resourceType": "Population",
+      "threshold": 0,
+      "condition": "MoreThan"
+     }
+    ],
+    "floodTile": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
    },
    "probabilities": [
     0.2
@@ -363,6 +650,36 @@
     "facilityStatus": 0,
     "weather": 0
    },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 1,
+      "exactMatch": false
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [
+     {
+      "conditionType": "TrainedUntrainedRatio",
+      "comparison": "LessThan",
+      "targetValue": 1
+     }
+    ],
+    "facilityStatus": [],
+    "weather": []
+   },
    "probabilities": []
   },
   {
@@ -387,6 +704,38 @@
     "facilityStatus": 1,
     "weather": 0
    },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [
+     {
+      "conditionType": "CurrentAvailableWorkforce",
+      "comparison": "LessThan",
+      "targetValue": 4
+     }
+    ],
+    "facilityStatus": [
+     {
+      "facilityType": "Kitchen",
+      "requiredStatus": "NeedWorker",
+      "minimumCount": 1,
+      "specificOnly": false
+     }
+    ],
+    "weather": []
+   },
    "probabilities": []
   },
   {
@@ -410,6 +759,36 @@
     "workforce": 1,
     "facilityStatus": 0,
     "weather": 0
+   },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 1,
+      "exactMatch": false
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [
+     {
+      "conditionType": "IdleUntrainedWorkerPercentage",
+      "comparison": "MoreThan",
+      "targetValue": 20
+     }
+    ],
+    "facilityStatus": [],
+    "weather": []
    },
    "probabilities": []
   }

@@ -979,7 +979,70 @@ public class GymServerManager : MonoBehaviour
                               .Append(",\"workforce\":").Append(Cnt(td.workforceTriggers))
                               .Append(",\"facilityStatus\":").Append(Cnt(td.facilityStatusTriggers))
                               .Append(",\"weather\":").Append(Cnt(td.weatherTriggers))
-                              .Append("},\"probabilities\":[");
+                              .Append("},\"triggers\":{");
+                            // FULL TRIGGER PARAMETERS. Without these the port can count a
+                            // task's draws but cannot decide whether it FIRES, which is the
+                            // difference between consuming tasks and generating them.
+                            // AreTriggersActivated evaluates every category and reduces with
+                            // AND/OR afterwards, so all of them matter even when one already
+                            // failed.
+                            sb.Append("\"round\":[");
+                            for (int j = 0; td.roundTriggers != null && j < td.roundTriggers.Count; j++)
+                            { if (j>0) sb.Append(','); var x = td.roundTriggers[j];
+                              sb.Append("{\"targetRound\":").Append(x.targetRound)
+                                .Append(",\"exactMatch\":").Append(x.exactMatch?"true":"false").Append('}'); }
+                            sb.Append("],\"day\":[");
+                            for (int j = 0; td.dayTriggers != null && j < td.dayTriggers.Count; j++)
+                            { if (j>0) sb.Append(','); var x = td.dayTriggers[j];
+                              sb.Append("{\"conditionType\":\"").Append(x.conditionType)
+                                .Append("\",\"targetDay\":").Append(x.targetDay)
+                                .Append(",\"intervalDays\":").Append(x.intervalDays)
+                                .Append(",\"startDay\":").Append(x.startDay)
+                                .Append(",\"endDay\":").Append(x.endDay).Append('}'); }
+                            sb.Append("],\"resource\":[");
+                            for (int j = 0; td.resourceTriggers != null && j < td.resourceTriggers.Count; j++)
+                            { if (j>0) sb.Append(','); var x = td.resourceTriggers[j];
+                              sb.Append("{\"facilityType\":\"").Append(x.facilityType)
+                                .Append("\",\"resourceType\":\"").Append(x.resourceType)
+                                .Append("\",\"threshold\":").Append(x.resourceThreshold)
+                                .Append(",\"condition\":\"").Append(x.condition).Append("\"}"); }
+                            sb.Append("],\"floodTile\":[");
+                            for (int j = 0; td.floodTileTriggers != null && j < td.floodTileTriggers.Count; j++)
+                            { if (j>0) sb.Append(','); var x = td.floodTileTriggers[j];
+                              sb.Append("{\"conditionType\":\"").Append(x.conditionType)
+                                .Append("\",\"comparison\":\"").Append(x.comparison)
+                                .Append("\",\"targetValue\":").Append(x.targetValue).Append('}'); }
+                            sb.Append("],\"budget\":[");
+                            for (int j = 0; td.budgetTriggers != null && j < td.budgetTriggers.Count; j++)
+                            { if (j>0) sb.Append(','); var x = td.budgetTriggers[j];
+                              sb.Append("{\"conditionType\":\"").Append(x.conditionType)
+                                .Append("\",\"comparison\":\"").Append(x.comparison)
+                                .Append("\",\"targetValue\":").Append(x.targetValue.ToString("R", ci)).Append('}'); }
+                            sb.Append("],\"satisfaction\":[");
+                            for (int j = 0; td.satisfactionTriggers != null && j < td.satisfactionTriggers.Count; j++)
+                            { if (j>0) sb.Append(','); var x = td.satisfactionTriggers[j];
+                              sb.Append("{\"conditionType\":\"").Append(x.conditionType)
+                                .Append("\",\"comparison\":\"").Append(x.comparison)
+                                .Append("\",\"targetValue\":").Append(x.targetValue.ToString("R", ci)).Append('}'); }
+                            sb.Append("],\"workforce\":[");
+                            for (int j = 0; td.workforceTriggers != null && j < td.workforceTriggers.Count; j++)
+                            { if (j>0) sb.Append(','); var x = td.workforceTriggers[j];
+                              sb.Append("{\"conditionType\":\"").Append(x.conditionType)
+                                .Append("\",\"comparison\":\"").Append(x.comparison)
+                                .Append("\",\"targetValue\":").Append(x.targetValue.ToString("R", ci)).Append('}'); }
+                            sb.Append("],\"facilityStatus\":[");
+                            for (int j = 0; td.facilityStatusTriggers != null && j < td.facilityStatusTriggers.Count; j++)
+                            { if (j>0) sb.Append(','); var x = td.facilityStatusTriggers[j];
+                              sb.Append("{\"facilityType\":\"").Append(x.facilityType)
+                                .Append("\",\"requiredStatus\":\"").Append(x.requiredStatus)
+                                .Append("\",\"minimumCount\":").Append(x.minimumCount)
+                                .Append(",\"specificOnly\":").Append(x.specificFacilityOnly?"true":"false").Append('}'); }
+                            sb.Append("],\"weather\":[");
+                            for (int j = 0; td.weatherTriggers != null && j < td.weatherTriggers.Count; j++)
+                            { if (j>0) sb.Append(','); sb.Append("{\"severity\":\"")
+                                .Append(td.weatherTriggers[j].conditionType).Append("\"}"); }
+                            sb.Append("]}")
+                              .Append(",\"probabilities\":[");
                             if (td.probabilityTriggers != null)
                                 for (int j = 0; j < td.probabilityTriggers.Count; j++)
                                 {

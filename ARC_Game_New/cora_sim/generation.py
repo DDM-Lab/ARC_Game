@@ -1,0 +1,235 @@
+"""Task generation: evaluating every trigger category to decide which tasks fire.
+
+This is the last mechanic. Until now the port CONSUMED tasks -- the equivalence tests fed
+it Unity's own task lifecycle and checked only the arithmetic. This module creates them.
+
+WHAT MAKES IT SUBTLE, AND IT IS NOT THE CONDITIONS THEMSELVES:
+
+1. NO SHORT-CIRCUIT. AreTriggersActivated evaluates EVERY trigger of EVERY task into a list
+   and reduces with AND/OR afterwards. A task whose day trigger already failed still rolls
+   its ProbabilityTrigger, so the draw count is fixed by the inventory rather than by which
+   tasks fire. Short-circuiting here would be a correct-looking optimisation that silently
+   shortens the RNG stream.
+
+2. NON-GLOBAL TASKS EVALUATE ONCE PER SUITABLE FACILITY, in Unity's FindObjectsOfType order
+   -- which is neither sorted nor creation order (observed: Community01, Community03,
+   Community02). Each facility rolls its own probability, so the order decides WHICH
+   community gets a task, not just how many draws happen.
+
+3. SEVERAL TRIGGERS ARE STATEFUL. FloodExpanded / BudgetDecreased / SatisfactionDropped
+   compare against a `previous*` field that the check itself UPDATES. Evaluating one twice
+   gives two different answers, so a port that re-evaluates for convenience corrupts the
+   next round's comparison. They are stepped exactly once per check here.
+
+Conditions are transcribed from TaskTrigger.cs; parameters come from the sim_constants
+export, never from the source file.
+"""
+from __future__ import annotations
+
+from .triggers import INVENTORY, roll_pass
+
+
+def _compare(kind: str, value, target) -> bool:
+    """ComparisonType, as used by the flood/budget/satisfaction/workforce triggers."""
+    if kind == "ExactMatch":
+        return value == target
+    if kind == "LessThan":
+        return value < target
+    if kind == "MoreThan" or kind == "GreaterThan":
+        return value > target
+    if kind == "AtLeast":
+        return value >= target
+    if kind == "AtMost":
+        return value <= target
+    return False
+
+
+class TriggerContext:
+    """Everything the trigger conditions read, gathered once per check.
+
+    Passing a snapshot rather than the live World keeps the conditions pure and makes them
+    unit-testable without standing up a whole simulation."""
+
+    __slots__ = ("day", "segment", "weather", "flood_tiles", "budget", "satisfaction",
+                 "free_workforce", "idle_ratio", "facilities", "prev")
+
+    def __init__(self, day=1, segment=1, weather="Sunny", flood_tiles=0, budget=0,
+                 satisfaction=50.0, free_workforce=0, idle_ratio=0.0, facilities=None,
+                 prev=None):
+        self.day = day
+        self.segment = segment
+        self.weather = weather
+        self.flood_tiles = flood_tiles
+        self.budget = budget
+        self.satisfaction = satisfaction
+        self.free_workforce = free_workforce
+        self.idle_ratio = idle_ratio
+        self.facilities = facilities or []      # [{"type","operational","resources":{...}}]
+        self.prev = prev if prev is not None else {}   # stateful trigger memory
+
+
+def _round_ok(t, ctx):
+    return (ctx.segment == t["targetRound"] if t.get("exactMatch")
+            else ctx.segment >= t["targetRound"])
+
+
+def _day_ok(t, ctx):
+    kind = t["conditionType"]
+    if kind == "SpecificDay":
+        return ctx.day == t["targetDay"]
+    if kind == "DayInterval":
+        return t["intervalDays"] > 0 and ctx.day % t["intervalDays"] == 0
+    if kind == "DayRange":
+        return t["startDay"] <= ctx.day <= t["endDay"]
+    if kind == "StartsFrom":
+        return ctx.day >= t["startDay"]
+    return False
+
+
+def _weather_ok(t, ctx):
+    sev = t["severity"]
+    if sev == "Light":
+        return ctx.weather == "Sunny"
+    if sev == "Moderate":
+        return ctx.weather in ("MediumRain", "SmallRain")
+    if sev == "Severe":
+        return ctx.weather in ("HeavyRain", "Storm")
+    return False
+
+
+def _resource_ok(t, ctx):
+    """True if ANY operational facility of the type satisfies the condition.
+
+    Note `IsOperational()` in the C#: an unstaffed building is invisible to this trigger,
+    so building without staffing does not silence the requests it was meant to silence."""
+    for f in ctx.facilities:
+        if f.get("type") != t["facilityType"] or not f.get("operational"):
+            continue
+        res = f.get("resources") or {}
+        amount = res.get(t["resourceType"], 0)
+        cap = res.get(t["resourceType"] + "Capacity", 0)
+        cond = t["condition"]
+        if cond == "Empty" and amount == 0:
+            return True
+        if cond == "Full" and cap and amount >= cap:
+            return True
+        if cond == "LessThan" and amount < t["threshold"]:
+            return True
+        if cond == "MoreThan" and amount > t["threshold"]:
+            return True
+    return False
+
+
+def _stateful(kind, current, target, comparison, key, ctx):
+    """FloodExpanded / BudgetDecreased and friends: compare against remembered value, then
+    UPDATE it. The update is the part that makes re-evaluation unsafe."""
+    previous = ctx.prev.get(key, 0)
+    ctx.prev[key] = current
+    if kind.endswith("Expanded") or kind.endswith("Increased"):
+        delta = current - previous
+    elif kind.endswith("Shrank") or kind.endswith("Decreased") or kind.endswith("Dropped"):
+        delta = previous - current
+    else:
+        delta = abs(current - previous)
+    return delta > 0 and _compare(comparison, delta, target)
+
+
+def _flood_ok(t, ctx):
+    if t["conditionType"] == "CurrentFloodTiles":
+        return _compare(t["comparison"], ctx.flood_tiles, t["targetValue"])
+    return _stateful(t["conditionType"], ctx.flood_tiles, t["targetValue"],
+                     t["comparison"], "flood", ctx)
+
+
+def _budget_ok(t, ctx):
+    if t["conditionType"] == "CurrentAmount":
+        return _compare(t["comparison"], ctx.budget, t["targetValue"])
+    return _stateful(t["conditionType"], ctx.budget, t["targetValue"],
+                     t["comparison"], "budget", ctx)
+
+
+def _satisfaction_ok(t, ctx):
+    if t["conditionType"] == "CurrentLevel":
+        return _compare(t["comparison"], ctx.satisfaction, t["targetValue"])
+    return _stateful(t["conditionType"], ctx.satisfaction, t["targetValue"],
+                     t["comparison"], "satisfaction", ctx)
+
+
+def _workforce_ok(t, ctx):
+    value = (ctx.idle_ratio if "Idle" in t["conditionType"] or "Ratio" in t["conditionType"]
+             else ctx.free_workforce)
+    return _compare(t["comparison"], value, t["targetValue"])
+
+
+def _facility_status_ok(t, ctx):
+    n = sum(1 for f in ctx.facilities
+            if f.get("type") == t["facilityType"] and f.get("status") == t["requiredStatus"])
+    return n >= t["minimumCount"]
+
+
+_EVALUATORS = (("round", _round_ok), ("day", _day_ok), ("resource", _resource_ok),
+               ("floodTile", _flood_ok), ("budget", _budget_ok),
+               ("satisfaction", _satisfaction_ok), ("workforce", _workforce_ok),
+               ("facilityStatus", _facility_status_ok), ("weather", _weather_ok))
+
+
+def evaluate_task(task_def: dict, ctx: TriggerContext, rng, marks=None) -> bool:
+    """One task's triggers for ONE facility context. Draws for every ProbabilityTrigger.
+
+    Deliberately mirrors the C# structure: collect every result, THEN reduce. The
+    probability rolls happen in the trigger-category order the C# uses, which is what keeps
+    the draw positions right."""
+    from .triggers import threshold as _prob_threshold
+    results = []
+    triggers = task_def.get("triggers") or {}
+    for key, fn in _EVALUATORS:
+        for t in triggers.get(key) or []:
+            results.append(bool(fn(t, ctx)))
+    for p in task_def.get("probabilities") or []:
+        if marks is not None:
+            marks.append("draw:TaskTrigger.probability")
+        results.append(rng.range01_lt(_prob_threshold(p)))
+    if not results:
+        return False                       # "No triggers = never activate"
+    return all(results) if task_def.get("requireAllTriggers") else any(results)
+
+
+def suitable_facilities(task_def: dict, facilities) -> list:
+    """FindAllSuitableFacilities: which facilities a non-global task evaluates against.
+
+    THE OPERATIONAL GATE IS THE POINT. A constructed Building counts only if
+    IsOperational() -- i.e. it is staffed -- while PrebuiltBuildings are always suitable.
+    Measured: an episode that built shelters but never staffed them logged "Found 0
+    suitable facilities for Food Request From Shelter" for its whole length, and Unity drew
+    exactly 3 probability rolls per pass throughout. Dropping the gate makes the port draw
+    4 on those rounds and desynchronise the stream from the moment a shelter is built.
+
+    So building without staffing is doubly useless: it does not serve anyone AND it does
+    not silence the requests it was meant to answer."""
+    if task_def.get("isGlobalTask"):
+        return []
+    want = task_def.get("targetFacilityType")
+    out = []
+    for f in facilities:
+        if f.get("type") != want:
+            continue
+        if f.get("prebuilt") or f.get("operational"):
+            out.append(f.get("name"))
+    return out
+
+
+def generation_pass(rng, ctx: TriggerContext, facilities_for, inventory=None, marks=None):
+    """CheckTriggeredTasksPerFacility. Returns [(taskId, facility)] that fired.
+
+    Global tasks evaluate once with no facility; the rest evaluate once per suitable
+    facility, in the caller's order -- Unity's, not one this module invents."""
+    fired = []
+    for task_def in (INVENTORY if inventory is None else inventory):
+        if task_def.get("isGlobalTask"):
+            if evaluate_task(task_def, ctx, rng, marks):
+                fired.append((task_def["taskId"], None))
+            continue
+        for facility in facilities_for(task_def):
+            if evaluate_task(task_def, ctx, rng, marks):
+                fired.append((task_def["taskId"], facility))
+    return fired

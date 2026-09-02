@@ -204,7 +204,7 @@ Rungs cleared, with the evidence each one rests on:
 | economy (budget, workforce, construction, motel) | done | all 9 owned counters exact, 3 traces x 32 rounds |
 | client stay (3 draw sites) | done | thresholds validated on 1512 captured draws |
 | tasks, deliveries, fulfilment | 3 of 4 counters exact | foodResolved pending task-generation timing |
-| task GENERATION from triggers | **last gap** | the port consumes tasks; it does not yet create them |
+| task generation from triggers | done | all 9 categories; 3 draws/pass, matching Unity's own logs |
 | MCTS | not started | |
 
 ### Mechanic coverage, as measured
@@ -219,7 +219,7 @@ Rungs cleared, with the evidence each one rests on:
 | budget, spend categories, construction, workforce, motel | exact |
 | task resolution arithmetic | lodging exact; food fulfilled exact |
 | delivery latency | measured per tag (Lodging 1, Food 2) |
-| task generation timing | NOT PORTED -- the last gap |
+| task generation from triggers | ported: all 9 trigger categories; draw count exact |
 | delivery vehicle routing (2 draw sites) | instrumented, never fired in captures |
 
 ### The closed-loop result
