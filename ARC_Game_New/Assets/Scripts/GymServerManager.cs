@@ -1055,6 +1055,24 @@ public class GymServerManager : MonoBehaviour
                     // and therefore what gates every score term that depends on capacity.
                     var blds = FindObjectsOfType<Building>();
                     var pres = FindObjectsOfType<PrebuiltBuilding>();
+                    // CLIENT STAY. Three live draw sites hide here, and the first census
+                    // missed all of them because it only ever ran on idle episodes: one
+                    // Random.value PER CLIENT for casework need, one Range for stay
+                    // duration, and one Random.value per group per round for casework
+                    // generation. On a real playthrough that is ~1500 draws an episode,
+                    // more than every other non-flood site combined.
+                    var cst = FindObjectOfType<ClientStayTracker>();
+                    if (cst != null)
+                    {
+                        sb.Append(",\"clientStay\":{")
+                          .Append("\"caseworkNeedProbability\":").Append(cst.caseworkNeedProbability.ToString("R", ci))
+                          .Append(",\"baseCaseworkProbability\":").Append(cst.baseCaseworkProbability.ToString("R", ci))
+                          .Append(",\"probabilityGrowthFactor\":").Append(cst.probabilityGrowthFactor.ToString("R", ci))
+                          .Append(",\"minStayRounds\":").Append(cst.minStayRounds)
+                          .Append(",\"maxStayRounds\":").Append(cst.maxStayRounds)
+                          .Append(",\"overstayThreshold\":").Append(cst.overstayThreshold)
+                          .Append('}');
+                    }
                     sb.Append(",\"buildingWorkforce\":[");
                     {
                         bool first = true;

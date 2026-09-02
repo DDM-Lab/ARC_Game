@@ -122,15 +122,35 @@ def parse_triggers(path, source):
     return rows
 
 
+_CLIENT = re.compile(r"\[RNGMARK\] \S+ draw:Client\.(\w+) (\{.*\})")
+
+
+def parse_clients(path, source):
+    """Pre-draw RNG state for every client-stay draw.
+
+    These are the sites the first census missed entirely, because it only ran on idle
+    episodes. caseworkNeed fires once per PERSON, so a single relocation of 300 people
+    consumes 301 draws -- more than every non-flood site in the game combined."""
+    rows = []
+    for line in open(path, errors="ignore"):
+        m = _CLIENT.search(line)
+        if m:
+            st = json.loads(m.group(2))
+            rows.append({"source": source, "site": m.group(1),
+                         "rng": {w: st[w] & _M32 for w in ("s0", "s1", "s2", "s3")}})
+    return rows
+
+
 def main(argv):
     if len(argv) < 3:
         print(__doc__)
         return 2
     out_path, logs = argv[1], argv[2:]
-    rounds, weather, triggers = [], [], []
+    rounds, weather, triggers, clients = [], [], [], []
     for path in logs:
         tag = path.split("/")[-1]
         r, w, t = parse_log(path, tag), parse_weather(path, tag), parse_triggers(path, tag)
+        clients += parse_clients(path, tag)
         print(f"  {tag}: {len(r)} flood rounds, {len(w)} weather draws, "
               f"{len(t)} task-generation passes")
         rounds += r
@@ -138,10 +158,12 @@ def main(argv):
         triggers += t
     payload = {"source": "headless ARC build, ARC_SNAPSHOT_DEBUG=1",
                "logs": [p.split("/")[-1] for p in logs],
-               "rounds": rounds, "weather": weather, "triggers": triggers}
+               "rounds": rounds, "weather": weather, "triggers": triggers,
+               "clients": clients}
     json.dump(payload, open(out_path, "w"))
     seen = sorted({r["weather"] for r in rounds})
-    print(f"wrote {out_path}: {len(rounds)} rounds, {len(weather)} weather draws, "
+    print(f"wrote {out_path}: {len(clients)} client draws, ", end="")
+    print(f"{len(rounds)} rounds, {len(weather)} weather draws, "
           f"weathers exercised: {', '.join(seen)}")
     return 0
 

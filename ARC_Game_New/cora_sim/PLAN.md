@@ -291,7 +291,32 @@ The surrogate still owns the fast path: 200 us/round against Unity's ~700 ms, a 
 about 3500. That is the difference between a planner that searches tens of nodes per
 decision and one that searches tens of thousands.
 
-### The economy draws nothing — RETRACTED AND PENDING RE-MEASUREMENT
+### The economy DOES draw — the retraction, and what the re-measurement found
+
+**The claim "the economy draws nothing" is false.** It was measured on IDLE episodes, and a
+played episode contains ~1500 draws it cannot explain, across two thirds of all rounds. All
+of them come from `ClientStayTracker`, which was never instrumented:
+
+| site | when | volume in one played capture |
+|---|---|---|
+| `Client.caseworkNeed` | once per PERSON in every delivered group | 1270 |
+| `Client.caseworkGen` | once per unresolved group per round | 224 |
+| `Client.stayDuration` | once per delivered group | 18 |
+
+`caseworkNeed` alone outnumbers every non-flood site in the game combined (1270 against 69
+trigger draws), because relocations move people in hundreds and it fires per person.
+
+After instrumenting those three sites plus the two in DeliverySystem and one in TaskSystem,
+the census on a played 32-round episode closes completely: **0 rounds unexplained, 0 draws
+unaccounted for.** The full stochastic surface of CORA is now known and enumerated: flood
+(10 sites), weather (1), probability triggers (1), client stay (3), delivery routing (2),
+and one task coin-flip.
+
+The census was not the thing that was wrong -- the census is what FOUND this, the moment it
+was pointed at an episode where somebody acts. What was wrong was treating a measurement
+over idle states as a claim about the game being played.
+
+### (superseded) the original retraction
 
 **This section previously claimed the result held on an action-bearing episode. It did
 not, and the error was mine.** `execute_action` expects the FULL action dict as its

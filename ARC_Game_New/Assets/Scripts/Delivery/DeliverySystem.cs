@@ -270,6 +270,7 @@ public class DeliverySystem : MonoBehaviour
                 {
                     for (int i = 0; i < numberToAdd; i++)
                     {
+                        SnapshotDebug.Mark("draw:Delivery.roadTile");
                         Vector3Int randomTile = roadList[UnityEngine.Random.Range(0, roadList.Count)];
                         Vector3 spawnPos = roadManager.CellToWorld(randomTile);
 
@@ -278,6 +279,7 @@ public class DeliverySystem : MonoBehaviour
 
                         if (neighbors.Count > 0)
                         {
+                            SnapshotDebug.Mark("draw:Delivery.neighbor");
                             Vector3Int targetNeighbor = neighbors[UnityEngine.Random.Range(0, neighbors.Count)];
                             Vector3Int dir = targetNeighbor - randomTile;
                             float angle = 0;

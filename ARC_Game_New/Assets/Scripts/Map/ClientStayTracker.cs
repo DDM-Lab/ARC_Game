@@ -36,6 +36,7 @@ public class ClientGroup
         clientsWithCaseworkNeed = 0;
         for (int i = 0; i < count; i++)
         {
+            SnapshotDebug.Mark("draw:Client.caseworkNeed");
             if (UnityEngine.Random.value < (caseworkNeedProbabilityN / 100f))
             {
                 clientsWithCaseworkNeed++;
@@ -43,6 +44,7 @@ public class ClientGroup
         }
         clientsWithoutCaseworkNeed = clientCount - clientsWithCaseworkNeed;
 
+        SnapshotDebug.Mark("draw:Client.stayDuration");
         int stayDurationRounds = UnityEngine.Random.Range(minStayRounds, maxStayRounds + 1);
         assignedDepartureRound = arrivalRound + stayDurationRounds;
     }
@@ -359,6 +361,7 @@ public class ClientStayTracker : MonoBehaviour
                     int Y = Mathf.Max(1, roundsInFacility);
                     float currentProbability = baseCaseworkProbability * Mathf.Pow(probabilityGrowthFactor, Y - 1);
                     currentProbability = Mathf.Clamp(currentProbability, 0f, 100f);
+                    SnapshotDebug.Mark("draw:Client.caseworkGen");
                     if (UnityEngine.Random.value < (currentProbability / 100f))
                     {
                         GenerateCaseworkTask(group);

@@ -441,6 +441,14 @@
   "budgetMedium": 2000,
   "budgetLarge": 5000
  },
+ "clientStay": {
+  "caseworkNeedProbability": 23.4,
+  "baseCaseworkProbability": 10,
+  "probabilityGrowthFactor": 1.5,
+  "minStayRounds": 4,
+  "maxStayRounds": 8,
+  "overstayThreshold": 8
+ },
  "buildingWorkforce": [
   {
    "name": "Community01",
