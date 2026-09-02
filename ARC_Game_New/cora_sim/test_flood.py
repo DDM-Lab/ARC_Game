@@ -64,8 +64,11 @@ def draw_census(fmap, rounds):
     TaskTrigger.probability plus Weather.select. There is no third mystery drawer -- and
     that is a measurement, so re-run it on episodes that exercise clients and deliveries
     before assuming it holds there too."""
-    ok = True
+    ok, checked = True, 0
     for k, rd in enumerate(rounds[:-1]):
+        if rounds[k + 1].get("source") != rd.get("source"):
+            continue                      # episode boundary: streams are unrelated
+        checked += 1
         nxt = rounds[k + 1]["rng"]
         target = (nxt["s0"], nxt["s1"], nxt["s2"], nxt["s3"])
         st = rd["rng"]
@@ -89,7 +92,7 @@ def draw_census(fmap, rounds):
             ok = False
     if ok:
         sites = sorted({d for r in rounds for d in r.get("interRoundDraws", [])})
-        print(f"  draw census             : all {len(rounds)-1} inter-round intervals "
+        print(f"  draw census             : all {checked} inter-round intervals "
               f"explained by flood + {', '.join(s.split(':')[1] for s in sites)}")
     return ok
 
@@ -124,6 +127,8 @@ def range_int_is_discriminated(fmap, rounds):
             rng_mod.UnityRandom.range_int = impl
             wrong = 0
             for k, rd in enumerate(rounds[:-1]):
+                if rounds[k + 1].get("source") != rd.get("source"):
+                    continue
                 fs = replay(rd, fmap)
                 if fs.tiles != {pack(x, y) for x, y in rounds[k + 1]["tiles"]}:
                     wrong += 1
@@ -165,8 +170,10 @@ def main():
             if got != want:
                 failures.append(f"{tag}: {key} unity={want} port={got}")
 
-        # level 3 -- the state itself, against the next round's captured input
-        if k + 1 < len(rounds):
+        # level 3 -- the state itself, against the next round's captured input.
+        # Only within one capture: the fixture concatenates several episodes, and the
+        # round after the last one belongs to a different game.
+        if k + 1 < len(rounds) and rounds[k + 1].get("source") == rd.get("source"):
             nxt = {pack(x, y) for x, y in rounds[k + 1]["tiles"]}
             if fs.tiles != nxt:
                 only_p = sorted(fs.tiles - nxt)[:4]

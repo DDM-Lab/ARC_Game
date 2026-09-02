@@ -125,15 +125,28 @@ class UnityRandom:
         return lo + (self.next_uint() % n)
 
     def range_float(self, lo: float, hi: float) -> float:
-        """Random.Range(float, float) -- upper bound inclusive in Unity.
+        """Random.Range(float, float) -- and it is REVERSED, which is not a typo.
 
-        NOT YET PINNED. `lo + (hi-lo) * value` is the assumed formula and the arithmetic
-        here is float64, unlike every other chance in the port. It is currently exercised
-        only through the lo=0, hi=1 case (ProbabilityTrigger), where it reduces to value()
-        exactly and so proves nothing about the general form. The first caller with a real
-        range is Weather.select -- pin it against Unity there before trusting it, the same
-        way value() and range_int() were pinned."""
-        return lo + (hi - lo) * ((self.next_uint() & _MANT) / _DENOM)
+        Unity's native RangedRandom is `min * t + (1 - t) * max`, a lerp with t running
+        BACKWARDS: t = 0 yields max and t = 1 yields min. The obvious `min + (max-min)*t`
+        gives the mirror-image number from the same draw. Pinned against 15 Weather.select
+        observations across three seeds: the reversed form is 15/15, the forward form 5/15
+        (it only agrees near the middle of the range, which is exactly where a small
+        fixture looks fine).
+
+        The consequence reaches past weather. `Random.Range(0f, 1f) < p` -- how every
+        ProbabilityTrigger in the game rolls -- is `(1 - value) < p`, NOT `value < p`. Same
+        marginal probability, different outcome on the same draw, so a port that assumes
+        the forward form stays plausible while diverging. Use range01_lt() for that test."""
+        t = f32((self.next_uint() & _MANT) / _DENOM)
+        return f32(f32(lo * t) + f32(f32(1.0 - t) * hi))
+
+    def range01_lt(self, threshold_raw: int) -> bool:
+        """`Random.Range(0f, 1f) < chance`, as an integer compare.
+
+        Reversed, so the predicate is `mantissa >= T` rather than `<`. Hoist T with
+        range01_threshold_lt()."""
+        return (self.next_uint() & _MANT) >= threshold_raw
 
 
 def f32(x: float) -> float:
@@ -203,4 +216,24 @@ def threshold_le_for(chance: float) -> int:
             lo = mid + 1
         else:
             hi = mid
+    return lo
+
+
+def range01_threshold_lt(chance: float) -> int:
+    """Integer threshold T such that `(raw & _MANT) >= T` == `Random.Range(0f,1f) < chance`.
+
+    Random.Range(0f, 1f) evaluates to f32(1 - value), which DECREASES as the mantissa
+    grows -- hence the reversed comparison and a separate bisection from threshold_for."""
+    c = f32(chance)
+    if c <= 0.0:
+        return _MANT + 1                      # nothing is < 0
+    if c > 1.0:
+        return 0                              # everything is < a chance above 1
+    lo, hi = 0, _MANT + 1                     # invariant: range01(lo-1) >= c > range01(hi)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if f32(1.0 - f32(mid / _DENOM)) < c:
+            hi = mid
+        else:
+            lo = mid + 1
     return lo

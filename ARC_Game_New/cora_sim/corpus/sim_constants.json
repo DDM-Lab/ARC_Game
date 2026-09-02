@@ -44,5 +44,290 @@
     "shrinkageChance": 0.3
    }
   ]
- }
+ },
+ "weather": [
+  {
+   "index": 0,
+   "weather": "Sunny",
+   "probability": 0.2
+  },
+  {
+   "index": 1,
+   "weather": "SmallRain",
+   "probability": 0.2
+  },
+  {
+   "index": 2,
+   "weather": "MediumRain",
+   "probability": 0.2
+  },
+  {
+   "index": 3,
+   "weather": "HeavyRain",
+   "probability": 0.2
+  },
+  {
+   "index": 4,
+   "weather": "Storm",
+   "probability": 0.2
+  }
+ ],
+ "taskTriggers": [
+  {
+   "taskId": "Budget_Advisory",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 1
+   },
+   "probabilities": []
+  },
+  {
+   "taskId": "Budget_Allocation",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "probabilities": []
+  },
+  {
+   "taskId": "Budget_Emergency",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 1,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "probabilities": []
+  },
+  {
+   "taskId": "Community_Flood_Damge",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 1,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 1,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "probabilities": []
+  },
+  {
+   "taskId": "Community_FoodRequest",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 2,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "probabilities": []
+  },
+  {
+   "taskId": "Community_TransportRequest",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 1,
+    "probability": 1,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "probabilities": [
+    0.5
+   ]
+  },
+  {
+   "taskId": "Flood_Alert",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 1,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "probabilities": []
+  },
+  {
+   "taskId": "Offboarding_alert_day6",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "probabilities": []
+  },
+  {
+   "taskId": "Offboarding_alert_day7",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "probabilities": []
+  },
+  {
+   "taskId": "Shelter_Flood_Damage",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 1,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 1,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "probabilities": []
+  },
+  {
+   "taskId": "Shelter_FoodRequest",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 2,
+    "probability": 1,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "probabilities": [
+    0.2
+   ]
+  },
+  {
+   "taskId": "Worker_BadRatio",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 1,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "probabilities": []
+  },
+  {
+   "taskId": "Worker_NoAvaliable",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 1,
+    "facilityStatus": 1,
+    "weather": 0
+   },
+   "probabilities": []
+  },
+  {
+   "taskId": "Worker_TooMany_Idle",
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 1,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "probabilities": []
+  }
+ ]
 }
