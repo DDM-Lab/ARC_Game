@@ -36,6 +36,63 @@ public class FloodSystem : MonoBehaviour
     private Queue<Vector3Int> floodExpansionQueue = new Queue<Vector3Int>();
     private WeatherType lastWeatherType = WeatherType.Sunny;
 
+    /// <summary>
+    /// Snapshot support. The flood tile set is the largest piece of hidden simulation
+    /// state: it drives isFlooding, blocked roads and damaged vehicles, and its expansion
+    /// consumes random draws EVERY round. Leaving it uncaptured makes a restored game
+    /// drift a couple of rounds later even when everything visible looks correct -- which
+    /// is exactly what the trajectory-equivalence harness reported.
+    ///
+    /// riverTiles and blockedPositions are derived from the tilemaps at startup and are
+    /// stable across a scene rebuild, so only the mutable flood set and the per-round
+    /// counters are carried.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public List<int> tileX = new List<int>();
+        public List<int> tileY = new List<int>();
+        public List<int> tileZ = new List<int>();
+        public int previousFloodCount;
+        public int floodChangeThisRound;
+        public string lastWeatherType;
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot
+        {
+            previousFloodCount = previousFloodCount,
+            floodChangeThisRound = floodChangeThisRound,
+            lastWeatherType = lastWeatherType.ToString(),
+        };
+        foreach (var t in currentFloodTiles) { s.tileX.Add(t.x); s.tileY.Add(t.y); s.tileZ.Add(t.z); }
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+
+        // Clear the tilemap for tiles we are dropping, then paint the restored set, so the
+        // visual map and the authoritative set cannot disagree.
+        if (floodTilemap != null)
+            foreach (var t in currentFloodTiles) floodTilemap.SetTile(t, null);
+        currentFloodTiles.Clear();
+
+        int n = Mathf.Min(s.tileX.Count, Mathf.Min(s.tileY.Count, s.tileZ.Count));
+        for (int i = 0; i < n; i++)
+        {
+            var pos = new Vector3Int(s.tileX[i], s.tileY[i], s.tileZ[i]);
+            currentFloodTiles.Add(pos);
+            if (floodTilemap != null && floodRuleTile != null) floodTilemap.SetTile(pos, floodRuleTile);
+        }
+
+        previousFloodCount = s.previousFloodCount;
+        floodChangeThisRound = s.floodChangeThisRound;
+        if (System.Enum.TryParse(s.lastWeatherType, out WeatherType w)) lastWeatherType = w;
+    }
+
     // Events
     public event Action<Vector3Int> OnFloodTileAdded;
     public event Action<Vector3Int> OnFloodTileRemoved;

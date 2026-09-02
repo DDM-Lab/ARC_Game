@@ -106,6 +106,86 @@ public class DeliverySystem : MonoBehaviour
     private List<DeliveryTask> activeTasks = new List<DeliveryTask>();
     private List<DeliveryTask> completedTasks = new List<DeliveryTask>();
 
+    /// <summary>
+    /// Snapshot support. In-flight deliveries decide whether a NEW demand gets generated:
+    /// a relocation already under way suppresses another one. Leaving them uncaptured let a
+    /// restored game invent an extra "Population Relocation From Community" two rounds
+    /// after load, while populations, tasks and every visible field matched exactly.
+    ///
+    /// DeliveryTask holds MonoBehaviour references to its source and destination, which
+    /// cannot be serialised, so they are stored BY GAMEOBJECT NAME and re-resolved on
+    /// restore. A delivery whose endpoints no longer exist is dropped rather than restored
+    /// with a dangling reference.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        [System.Serializable]
+        public class TaskState
+        {
+            public int taskId;
+            public string sourceName, destinationName;
+            public string cargoType;
+            public int quantity, priority;
+            public bool isUrgent;
+            public float timeCreated, estimatedTimeSeconds;
+        }
+        public List<TaskState> active = new List<TaskState>();
+        public List<TaskState> completed = new List<TaskState>();
+    }
+
+    static Snapshot.TaskState Freeze(DeliveryTask t) => new Snapshot.TaskState
+    {
+        taskId = t.taskId,
+        sourceName = t.sourceBuilding != null ? t.sourceBuilding.gameObject.name : null,
+        destinationName = t.destinationBuilding != null ? t.destinationBuilding.gameObject.name : null,
+        cargoType = t.cargoType.ToString(),
+        quantity = t.quantity, priority = t.priority, isUrgent = t.isUrgent,
+        timeCreated = t.timeCreated, estimatedTimeSeconds = t.estimatedTimeSeconds,
+    };
+
+    static DeliveryTask Thaw(Snapshot.TaskState ts)
+    {
+        if (ts == null) return null;
+        MonoBehaviour src = FindEndpoint(ts.sourceName);
+        MonoBehaviour dst = FindEndpoint(ts.destinationName);
+        if (src == null || dst == null) return null;   // endpoints gone: drop, do not dangle
+        if (!System.Enum.TryParse(ts.cargoType, out ResourceType cargo)) return null;
+        var t = new DeliveryTask(src, dst, cargo, ts.quantity, ts.taskId)
+        {
+            priority = ts.priority, isUrgent = ts.isUrgent,
+            timeCreated = ts.timeCreated, estimatedTimeSeconds = ts.estimatedTimeSeconds,
+        };
+        return t;
+    }
+
+    static MonoBehaviour FindEndpoint(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        var go = GameObject.Find(name);
+        if (go == null) return null;
+        MonoBehaviour mb = go.GetComponent<Building>();
+        if (mb == null) mb = go.GetComponent<PrebuiltBuilding>();
+        return mb;
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot();
+        foreach (var t in activeTasks) if (t != null) s.active.Add(Freeze(t));
+        foreach (var t in completedTasks) if (t != null) s.completed.Add(Freeze(t));
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        activeTasks.Clear();
+        completedTasks.Clear();
+        foreach (var ts in s.active) { var t = Thaw(ts); if (t != null) activeTasks.Add(t); }
+        foreach (var ts in s.completed) { var t = Thaw(ts); if (t != null) completedTasks.Add(t); }
+    }
+
     private int nextTaskId = 1;
     private float lastTaskAssignment = 0f;
 

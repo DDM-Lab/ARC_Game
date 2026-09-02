@@ -40,12 +40,27 @@ public class GameSnapshot
     // gap in this file rather than a silent difference at restore time.
     public List<Building.Snapshot> buildings = new List<Building.Snapshot>();
 
+    // Communities and the Motel are PrebuiltBuilding, NOT Building, so
+    // FindObjectsOfType<Building>() misses them entirely. They hold the population that
+    // decides whether a relocation Demand is generated, which is why omitting them let a
+    // restored game invent an extra "Population Relocation From Community" task.
+    public List<PrebuiltState> prebuilt = new List<PrebuiltState>();
+
+    [Serializable]
+    public class PrebuiltState
+    {
+        public string buildingName;
+        public BuildingResourceStorage.Snapshot storage;
+    }
+
     // Cumulative accumulators. These are the ones most likely to be forgotten and the
     // most damaging to miss: they are the numerator/denominator of every score component,
     // they are private to their owning classes, and a gym reset zeroes them.
     public WorkerSystem.Snapshot workforce;
     public TaskSystem.Snapshot tasks;
     public WeatherSystem.Snapshot weather;
+    public FloodSystem.Snapshot flood;
+    public DeliverySystem.Snapshot deliveries;
     public RewardMetricsTracker.Snapshot rewardMetrics;
     public SatisfactionAndBudget.SpendSnapshot spend;
 
@@ -122,6 +137,15 @@ public static class GameSnapshotManager
         {
             if (b != null) s.buildings.Add(b.CaptureState());
         }
+        foreach (var pb in UnityEngine.Object.FindObjectsOfType<PrebuiltBuilding>())
+        {
+            if (pb == null) continue;
+            s.prebuilt.Add(new GameSnapshot.PrebuiltState
+            {
+                buildingName = pb.GetBuildingName(),
+                storage = pb.GetResourceStorage() != null ? pb.GetResourceStorage().CaptureState() : null,
+            });
+        }
 
         var ws = UnityEngine.Object.FindObjectOfType<WorkerSystem>();
         if (ws != null) s.workforce = ws.CaptureState();
@@ -130,6 +154,10 @@ public static class GameSnapshotManager
         if (ts != null) s.tasks = ts.CaptureState();
         var weather = WeatherSystem.Instance;
         if (weather != null) s.weather = weather.CaptureState();
+        var flood = UnityEngine.Object.FindObjectOfType<FloodSystem>();
+        if (flood != null) s.flood = flood.CaptureState();
+        var deliv = UnityEngine.Object.FindObjectOfType<DeliverySystem>();
+        if (deliv != null) s.deliveries = deliv.CaptureState();
 
         var rmt = RewardMetricsTracker.Instance;
         if (rmt != null) s.rewardMetrics = rmt.CaptureState();
@@ -167,6 +195,22 @@ public static class GameSnapshotManager
         // recreation cannot double-bill. Reversing this order silently corrupts the budget.
         RestoreBuildings(s.buildings);
 
+        // Prebuilt fixtures survive a scene rebuild, so only their contents need writing
+        // back -- matched by name, which is stable across reloads.
+        if (s.prebuilt != null && s.prebuilt.Count > 0)
+        {
+            var byName = new Dictionary<string, PrebuiltBuilding>();
+            foreach (var pb in UnityEngine.Object.FindObjectsOfType<PrebuiltBuilding>())
+                if (pb != null) byName[pb.GetBuildingName()] = pb;
+            foreach (var ps in s.prebuilt)
+            {
+                if (ps == null || ps.storage == null) continue;
+                if (byName.TryGetValue(ps.buildingName, out PrebuiltBuilding target)
+                    && target.GetResourceStorage() != null)
+                    target.GetResourceStorage().RestoreState(ps.storage);
+            }
+        }
+
         // After buildings: workers carry assignedBuildingId, so the buildings they point
         // at must already exist or the roster restores into dangling references.
         var ws = UnityEngine.Object.FindObjectOfType<WorkerSystem>();
@@ -177,6 +221,12 @@ public static class GameSnapshotManager
         if (ts != null && s.tasks != null) ts.RestoreState(s.tasks);
         var weather = WeatherSystem.Instance;
         if (weather != null && s.weather != null) weather.RestoreState(s.weather);
+        var flood = UnityEngine.Object.FindObjectOfType<FloodSystem>();
+        if (flood != null && s.flood != null) flood.RestoreState(s.flood);
+        // Last: delivery endpoints are resolved by GameObject name, so every building the
+        // deliveries reference must already have been recreated.
+        var deliv = UnityEngine.Object.FindObjectOfType<DeliverySystem>();
+        if (deliv != null && s.deliveries != null) deliv.RestoreState(s.deliveries);
 
         var econ = SatisfactionAndBudget.Instance;
         if (econ != null)

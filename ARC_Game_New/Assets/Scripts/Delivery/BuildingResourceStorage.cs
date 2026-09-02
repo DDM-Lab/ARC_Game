@@ -36,6 +36,41 @@ public class BuildingResourceStorage : MonoBehaviour
     public event Action OnStorageUpdated;
 
     private int roundsSinceLastConsumption = 0;
+
+    /// <summary>
+    /// Snapshot support. currentResources holds population and food packs -- the numbers
+    /// that decide whether a relocation or food Demand task gets generated. Leaving them
+    /// uncaptured let a restored game generate an EXTRA "Population Relocation From
+    /// Community" demand two rounds after load, while every other field matched.
+    /// roundsSinceLastConsumption is the food-consumption phase and is equally invisible.
+    /// maxCapacities is rebuilt from the prefab on scene load, so only the live amounts
+    /// and the phase counter are carried.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public List<string> resourceTypes = new List<string>();
+        public List<int> resourceAmounts = new List<int>();
+        public int roundsSinceLastConsumption;
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot { roundsSinceLastConsumption = roundsSinceLastConsumption };
+        foreach (var kv in currentResources) { s.resourceTypes.Add(kv.Key.ToString()); s.resourceAmounts.Add(kv.Value); }
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        currentResources.Clear();
+        int n = Mathf.Min(s.resourceTypes.Count, s.resourceAmounts.Count);
+        for (int i = 0; i < n; i++)
+            if (System.Enum.TryParse(s.resourceTypes[i], out ResourceType rt))
+                currentResources[rt] = s.resourceAmounts[i];
+        roundsSinceLastConsumption = s.roundsSinceLastConsumption;
+    }
     
     void Start()
     {

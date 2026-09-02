@@ -406,11 +406,26 @@ public class TaskSystem : MonoBehaviour
         public int nextTaskId;
         public List<int> deliveryIds = new List<int>();
         public List<int> deliveryTaskIds = new List<int>();
+
+        // GENERATION-GATING STATE. Not part of any task object, and reset by a scene
+        // rebuild, so without it a restored game re-fires Alerts that had already been
+        // shown and re-frontloads Emergencies. This is what made a restored game grow an
+        // extra "Workforce Optimization Alert" two rounds after load while every visible
+        // field matched.
+        public List<string> shownAlertIds = new List<string>();
+        public int currEmergencyTaskCount;
+        public int lastEmergencyTaskRound;
     }
 
     public Snapshot CaptureState()
     {
-        var s = new Snapshot { nextTaskId = nextTaskId };
+        var s = new Snapshot
+        {
+            nextTaskId = nextTaskId,
+            currEmergencyTaskCount = currEmergencyTaskCount,
+            lastEmergencyTaskRound = lastEmergencyTaskRound,
+        };
+        s.shownAlertIds.AddRange(shownAlertIds);
         s.activeTasks.AddRange(activeTasks);
         s.completedTasks.AddRange(completedTasks);
         foreach (var kv in deliveryToTaskMap) { s.deliveryIds.Add(kv.Key); s.deliveryTaskIds.Add(kv.Value); }
@@ -423,6 +438,10 @@ public class TaskSystem : MonoBehaviour
         activeTasks.Clear(); activeTasks.AddRange(s.activeTasks);
         completedTasks.Clear(); completedTasks.AddRange(s.completedTasks);
         nextTaskId = s.nextTaskId;
+        currEmergencyTaskCount = s.currEmergencyTaskCount;
+        lastEmergencyTaskRound = s.lastEmergencyTaskRound;
+        shownAlertIds.Clear();
+        foreach (var id in s.shownAlertIds) shownAlertIds.Add(id);
         deliveryToTaskMap.Clear();
         for (int i = 0; i < s.deliveryIds.Count && i < s.deliveryTaskIds.Count; i++)
             deliveryToTaskMap[s.deliveryIds[i]] = s.deliveryTaskIds[i];

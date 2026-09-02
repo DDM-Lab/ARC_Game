@@ -587,6 +587,7 @@ public class Building : MonoBehaviour
         public float constructionProgress, deconstructionProgress;
         public int capacity, requiredWorkforce;
         public float operationalEfficiency;
+        public BuildingResourceStorage.Snapshot storage;
     }
 
     public Snapshot CaptureState() => new Snapshot
@@ -604,6 +605,7 @@ public class Building : MonoBehaviour
         capacity = capacity,
         requiredWorkforce = requiredWorkforce,
         operationalEfficiency = operationalEfficiency,
+        storage = GetComponent<BuildingResourceStorage>()?.CaptureState(),
     };
 
     public void RestoreState(Snapshot s)
@@ -620,6 +622,7 @@ public class Building : MonoBehaviour
         capacity = s.capacity;
         requiredWorkforce = s.requiredWorkforce;
         operationalEfficiency = s.operationalEfficiency;
+        if (s.storage != null) GetComponent<BuildingResourceStorage>()?.RestoreState(s.storage);
     }
 
     public BuildingType GetBuildingType() => buildingType;

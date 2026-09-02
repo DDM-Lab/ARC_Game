@@ -122,8 +122,22 @@ def main():
         print(f"  first divergence at round {idx} of {a.rounds_after}")
         print(f"  differing sections: {sorted(diffs)}")
         for key in sorted(diffs):
-            o, s = t_oracle[idx].get(key), t_snapshot[idx].get(key)
-            print(f"\n  [{key}]\n    oracle   : {str(o)[:220]}\n    snapshot : {str(s)[:220]}")
+            o, sn = t_oracle[idx].get(key), t_snapshot[idx].get(key)
+            # For list-valued sections show the SET DIFFERENCE, not a truncated prefix --
+            # the interesting part is nearly always past the first few identical entries.
+            if isinstance(o, list) and isinstance(sn, list):
+                so, ss = set(map(tuple, o)), set(map(tuple, sn))
+                print(f"\n  [{key}]  oracle={len(o)} entries, snapshot={len(sn)} entries")
+                for x in sorted(so - ss): print(f"    only in ORACLE  : {x}")
+                for x in sorted(ss - so): print(f"    only in SNAPSHOT: {x}")
+                if so == ss:
+                    print("    same set, different multiplicity/order:")
+                    from collections import Counter
+                    co, cs = Counter(map(tuple, o)), Counter(map(tuple, sn))
+                    for k in sorted(set(co) | set(cs)):
+                        if co[k] != cs[k]: print(f"      {k}: oracle x{co[k]}  snapshot x{cs[k]}")
+            else:
+                print(f"\n  [{key}]\n    oracle   : {str(o)[:300]}\n    snapshot : {str(sn)[:300]}")
         rc = 1
     env.close()
     return rc
