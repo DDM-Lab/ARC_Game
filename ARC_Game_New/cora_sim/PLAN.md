@@ -200,8 +200,8 @@ Rungs cleared, with the evidence each one rests on:
 | triggers (draw placement) | done | 297 draws across 99 passes on Unity's exact stream positions |
 | round loop / schedule | done | **closed loop: 134/134 rounds over six episodes, one seed each, no re-synchronisation** |
 | RHEA machinery | done | finds a known optimum; shift buffer beats cold start; planning is side-effect free |
-| tasks (which tasks fire) | **next** | needs the AND/OR reduction over every trigger category |
-| budget / construction / workforce / deliveries | not started | this is what gives RHEA something to decide |
+| RHEA playing CORA | done, against Unity | plays for the game's own score via the native snapshot; ~31 s/decision |
+| economy in the surrogate | **next** | this is what makes RHEA fast rather than what makes it work |
 | MCTS | not started | |
 
 ### The closed-loop result
@@ -224,6 +224,39 @@ OnRoundChanged for segment 0 and then segment 1 around the weather draw). That i
 3/0/0/6 draw pattern per day, and a plausible "one pass per round" loop drifts three draws
 every day.
 
+### The economy port has a single spec file
+
+Every one of the 16 rewardMetrics counters funnels through
+`Assets/Scripts/Logging/RewardMetricsTracker.cs`, and the four spend counters come from
+`SatisfactionAndBudget.RemoveBudget(amount, SpendCategory, ...)`. Grepping the counter names
+turns "port the economy" into a finite checklist: the increment sites plus their guards ARE
+the spec, and nothing else touches the score.
+
+The categorised spend sites are exactly: worker hire/train (ActionExecutor, using
+`action.cost`), construction (BuildingSystem, category by building type), and motel billing
+(MotelCostManager). Uncategorised `RemoveBudget` calls -- task penalties -- move the budget
+without moving a spend counter.
+
+That last detail settles a contradiction already visible in the exports:
+`workforceState.untrainedWorkerCost` is 200 while the hire action says $100 each, and
+`constructionState.buildingConstructionCost` is 2000 while build actions cost 1000. Two cost
+sources exist and only one is deducted. ActionExecutor uses `action.cost`, so the ACTION's
+cost is the truth and the state fields are advisory. Same lesson as FloodParameters, wearing
+different clothes -- take the number from the path that actually executes.
+
+### Ground truth for the economy is not free
+
+The first scripted captures built, hired, trained and transferred for twenty rounds and
+produced `cumWorkingWorkers = 0` and every fulfilment counter at zero. Food, lodging and
+casework fulfilment all flow through TASK CHOICES, so a policy that never answers one
+cannot move the score, and a fixture built from it cannot discriminate a wrong port from a
+right one.
+
+Confirmed independently: an idle policy scores exactly 0.0 over 16 rounds, and that is
+CORRECT -- unfulfilled tasks raise `resolved` without raising `fulfilled`, idle workers
+carry weight 0, and no spend means no cost term. Zero is the honest floor, which makes it a
+clean baseline but a useless fixture.
+
 ### RHEA status, stated precisely
 
 The search machinery is built and tested: it finds a known optimum on a toy problem, its
@@ -232,10 +265,20 @@ live world byte-identical (search randomness comes from a separate generator, ne
 simulated stream). Throughput is ~200 us/round inside the search, against the plan's 1 ms
 failure threshold.
 
-What it does NOT yet do is play CORA. No action changes the world, because budget,
-construction, workforce and deliveries are not ported, so `NoOpActions` is a stub and the
-number RHEA reports is a rate, not a score. The economy port is what turns this from a
-working search into a working player, and it is the next block of work.
+It now PLAYS CORA -- against Unity rather than the surrogate. `cora_sim/play.py` branches
+the real game through the native save_state/load_state RPCs, so search plans for the game's
+own score using the same `reward_scoring.py` the benchmark and the RL gym use. The action
+space is Unity's own enumeration plus task choices plus no-op.
+
+This inverts the original ordering, on purpose. The surrogate was going to be a
+PREREQUISITE for search; making the snapshot the branch mechanism turns it into an
+OPTIMISATION instead. Every node is a real Unity round (~31 s per decision at small search
+settings), which is exactly the cost the surrogate removes -- and it drops in behind the
+same ActionModel interface, so the search harness is already validated when it arrives.
+
+The surrogate still owns the fast path: 200 us/round against Unity's ~700 ms, a factor of
+about 3500. That is the difference between a planner that searches tens of nodes per
+decision and one that searches tens of thousands.
 
 ### The economy draws nothing — measured, not assumed
 
