@@ -635,6 +635,31 @@ public class ServerLauncherUI : MonoBehaviour
 
     // ── Fetch /configs ─────────────────────────────────────────────
 
+    // Load StreamingAssets/config.json and, if it specifies a wsUrl, adopt it as the server URL.
+    // config.json is the deployment's source of truth (the prod URL on Talos, a localhost URL for
+    // local dev); the page-origin DefaultServerUrl() is only a fallback when config.json is absent
+    // or omits wsUrl. This makes a localhost router on a DIFFERENT port than the page work with no
+    // manual edit and no same-origin trick.
+    IEnumerator ApplyConfigJsonUrl()
+    {
+        string path = Application.streamingAssetsPath + "/config.json";
+        using (UnityWebRequest req = UnityWebRequest.Get(path))
+        {
+            req.timeout = 5;
+            yield return req.SendWebRequest();
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                AppConfig cfg = null;
+                try { cfg = JsonUtility.FromJson<AppConfig>(req.downloadHandler.text); } catch { }
+                if (cfg != null && !string.IsNullOrEmpty(cfg.wsUrl))
+                {
+                    urlField.text = cfg.wsUrl;
+                    Debug.Log($"[Launcher] Server URL from config.json: {cfg.wsUrl}");
+                }
+            }
+        }
+    }
+
     IEnumerator FetchConfigs()
     {
         if (fetching) yield break;
@@ -642,6 +667,11 @@ public class ServerLauncherUI : MonoBehaviour
         SetConnectEnabled(false);
         SetStartEnabled(false);
         SetStatus("Fetching configs…", new Color(0.75f, 0.78f, 0.82f));
+
+        // Prefer config.json's wsUrl (deployment source of truth) over the page-origin default.
+#if UNITY_WEBGL && !UNITY_EDITOR
+        yield return StartCoroutine(ApplyConfigJsonUrl());
+#endif
 
         string baseUrl = WsToHttp(urlField.text.Trim());
         if (string.IsNullOrEmpty(baseUrl))

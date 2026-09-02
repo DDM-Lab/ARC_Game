@@ -43,6 +43,23 @@ public class WeatherSystem : MonoBehaviour
     // Current weather state
     private WeatherType currentWeather = WeatherType.Sunny;
     private WeatherType startWeather = WeatherType.Sunny;
+
+    /// <summary>Snapshot support. Weather drives flooding, which drives blocked roads and
+    /// damaged vehicles, so an uncaptured weather state makes a restored game diverge on
+    /// the very first round -- this was one of the two root causes the trajectory
+    /// equivalence harness identified.</summary>
+    [System.Serializable]
+    public class Snapshot { public string current; public string start; }
+
+    public Snapshot CaptureState() => new Snapshot
+    { current = currentWeather.ToString(), start = startWeather.ToString() };
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        if (System.Enum.TryParse(s.current, out WeatherType c)) currentWeather = c;
+        if (System.Enum.TryParse(s.start, out WeatherType st)) startWeather = st;
+    }
     
     // Events
     public event Action<WeatherType> OnWeatherChanged;

@@ -1477,7 +1477,7 @@ switch (choice.deliveryCargoType)
                 if (SatisfactionAndBudget.Instance != null)
                 {
                     int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
-                    if (value > availableBudget)
+                    if (!SatisfactionAndBudget.Instance.WouldAllowSpend(value))
                     {
                         return $"Insufficient budget. You requested ${value:N0} but only have ${availableBudget:N0} available.";
                     }
@@ -1643,7 +1643,7 @@ switch (choice.deliveryCargoType)
         if (totalBudgetRequested > 0 && SatisfactionAndBudget.Instance != null)
         {
             int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
-            if (totalBudgetRequested > availableBudget)
+            if (!SatisfactionAndBudget.Instance.WouldAllowSpend(totalBudgetRequested))
             {
                 return $"Total budget requested (${totalBudgetRequested:N0}) exceeds available funds (${availableBudget:N0}).";
             }
@@ -1670,7 +1670,7 @@ switch (choice.deliveryCargoType)
             if (SatisfactionAndBudget.Instance != null)
             {
                 int availableBudget = SatisfactionAndBudget.Instance.GetCurrentBudget();
-                if (trainingCost > availableBudget)
+                if (!SatisfactionAndBudget.Instance.WouldAllowSpend(trainingCost))
                 {
                     return $"Training {workersToTrain} workers costs ${trainingCost:N0}, but you only have ${availableBudget:N0} available.";
                 }
@@ -2448,6 +2448,16 @@ switch (choice.deliveryCargoType)
     {
         MonoBehaviour triggeringFacility = FindTriggeringFacility(currentTask);
 
+        // Track linked-delivery count so we can mark the parent task InProgress iff this
+        // selection actually queued at least one delivery. The single-delivery paths
+        // (ExecuteClientRelocation, food-single) each call SetTaskInProgress; the multi-
+        // delivery sub-handlers below only LinkDeliveriesToTask and historically omitted
+        // it. Without InProgress, OnDeliveryTaskCompleted's status gate (TaskSystem.cs)
+        // drops every completed delivery, so multi-delivery tasks (e.g. food kitchen→
+        // communities) were never credited as fulfilled. Set it here, once, centrally.
+        int linkedBefore = (currentTask != null && currentTask.linkedDeliveryTaskIds != null)
+            ? currentTask.linkedDeliveryTaskIds.Count : 0;
+
         switch (choice.multiDeliveryType)
         {
             case AgentChoice.MultiDeliveryType.SingleSourceMultiDest:
@@ -2470,6 +2480,11 @@ switch (choice.deliveryCargoType)
                 ExecuteChoiceDelivery(choice);
                 break;
         }
+
+        int linkedAfter = (currentTask != null && currentTask.linkedDeliveryTaskIds != null)
+            ? currentTask.linkedDeliveryTaskIds.Count : 0;
+        if (currentTask != null && linkedAfter > linkedBefore)
+            TaskSystem.Instance.SetTaskInProgress(currentTask);
     }
 
     /// <summary>

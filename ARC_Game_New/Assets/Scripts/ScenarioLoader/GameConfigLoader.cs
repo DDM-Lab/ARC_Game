@@ -363,9 +363,38 @@ public class GameConfigLoader : MonoBehaviour
 
     // ── Map Config from server (new) ──────────────────────────────────────────
 
+    // ── Map provenance (read by WebSocketManager for the hello frame) ─────────
+    // Maps are served OUTSIDE the router (see mapConfigServerUrl) so the router stays an
+    // LLM/session concern and a partner can expose a map derived from proprietary data.
+    // The cost of that separation is that a session log otherwise has NO record of which
+    // map was actually in play — and a failed fetch silently falls back to the default
+    // scene layout, quietly changing the experimental condition. These fields make the map
+    // identity reportable, so the corpus is self-describing when transcripts are merged.
+    public static string MapUrl { get; private set; } = "";
+    public static string MapHash { get; private set; } = "";
+    /// <summary>"loaded" (server map applied) | "default" (no URL configured — intentional)
+    /// | "unreachable" (URL set, fetch failed) | "invalid" (fetched but unusable).</summary>
+    public static string MapStatus { get; private set; } = "default";
+    /// <summary>Set when strictMap is on in config.json AND the map could not be applied.
+    /// A study deployment should refuse to run rather than silently use another map.</summary>
+    public static bool MapFatal { get; private set; } = false;
+
+    static string ShortHash(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        using (var md5 = System.Security.Cryptography.MD5.Create())
+        {
+            byte[] h = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(s));
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < 6; i++) sb.Append(h[i].ToString("x2"));
+            return sb.ToString();
+        }
+    }
+
     IEnumerator LoadMapConfigFromServer()
     {
         // Override mapConfigServerUrl from config.json if present
+        bool strictMap = false;
         string configPath = Application.streamingAssetsPath + "/config.json";
         using (UnityWebRequest cfgReq = UnityWebRequest.Get(configPath))
         {
@@ -376,13 +405,16 @@ public class GameConfigLoader : MonoBehaviour
                 var cfg = JsonUtility.FromJson<AppConfig>(cfgReq.downloadHandler.text);
                 if (!string.IsNullOrEmpty(cfg?.mapConfigUrl))
                     mapConfigServerUrl = cfg.mapConfigUrl;
+                strictMap = cfg != null && cfg.strictMap;
             }
         }
+        MapUrl = mapConfigServerUrl ?? "";
 
         if (string.IsNullOrEmpty(mapConfigServerUrl))
         {
             if (showDebugInfo)
                 Debug.Log("GameConfigLoader: No map config URL set — using default scene layout.");
+            MapStatus = "default";
             mapConfigLoaded = true;
             yield break;
         }
@@ -410,23 +442,38 @@ public class GameConfigLoader : MonoBehaviour
                     {
                         loadedMapConfig = parsed;
                         mapConfigSuccess = true;
-                        if (showDebugInfo)
-                            Debug.Log($"GameConfigLoader: Map config loaded (schema v{parsed.schemaVersion}, " +
-                                      $"{parsed.objects?.Count ?? 0} objects).");
+                        MapStatus = "loaded";
+                        MapHash = ShortHash(json);
+                        Debug.Log($"GameConfigLoader: Map config loaded (schema v{parsed.schemaVersion}, "
+                                  + $"{parsed.objects?.Count ?? 0} objects, hash {MapHash}) from {mapConfigServerUrl}");
                     }
                     else
                     {
+                        MapStatus = "invalid";
                         Debug.LogWarning("GameConfigLoader: Map config JSON was empty or invalid. Using default layout.");
                     }
                 }
                 catch (System.Exception ex)
                 {
+                    MapStatus = "invalid";
                     Debug.LogWarning($"GameConfigLoader: Failed to parse map config JSON — {ex.Message}. Using default layout.");
                 }
             }
             else
             {
+                MapStatus = "unreachable";
                 Debug.LogWarning($"GameConfigLoader: Could not reach map config server ({request.error}). Using default scene layout.");
+            }
+
+            // Study mode: a map that was CONFIGURED but could not be applied means this run
+            // would silently execute a different condition than intended. Refuse instead.
+            if (strictMap && MapStatus != "loaded")
+            {
+                MapFatal = true;
+                Debug.LogError($"[GameConfigLoader] STRICT MAP: configured map '{mapConfigServerUrl}' "
+                    + $"could not be applied (status={MapStatus}). This run would use the DEFAULT layout "
+                    + "instead of the intended map — refusing to start. Fix the map endpoint, or unset "
+                    + "strictMap in config.json.");
             }
 
             mapConfigLoaded = true;

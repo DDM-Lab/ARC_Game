@@ -11,6 +11,10 @@ public class AppConfig
     public string wsUrl;
     public string mapConfigUrl;
     public string logServerUrl;
+    /// <summary>Study mode: if a mapConfigUrl is set but the map cannot be applied, refuse to
+    /// run instead of silently falling back to the default scene layout (which would quietly
+    /// change the experimental condition). Off by default for casual/dev play.</summary>
+    public bool strictMap;
 }
 
 public class WebSocketManager : MonoBehaviour
@@ -160,6 +164,17 @@ public class WebSocketManager : MonoBehaviour
     {
         if (!enableWebSocket) return;
 
+        // Study mode (config.json strictMap): the configured map could not be applied, so this
+        // run would silently use the DEFAULT layout — a different experimental condition than
+        // intended. Refuse to connect rather than quietly collect mislabeled data.
+        if (GameConfigLoader.MapFatal)
+        {
+            connectionStatus = "Map error — refusing to start (strictMap)";
+            Debug.LogError("[WS] Not connecting: strictMap is set and the configured map could "
+                + $"not be applied (status={GameConfigLoader.MapStatus}, url={GameConfigLoader.MapUrl}).");
+            return;
+        }
+
         try
         {
             connectionStatus = "Connecting...";
@@ -179,12 +194,21 @@ public class WebSocketManager : MonoBehaviour
                 // Multi-tenant hello handshake. Router will reply with
                 // hello_ack (success) or hello_error (rejection) before any
                 // gameplay traffic flows.
+                // Map provenance rides along so the SESSION LOG records which map was actually
+                // in play. Maps are served outside the router by design, so without this a
+                // merged corpus (bulk export -> SFT) has no way to tell two map conditions
+                // apart — and a silent fallback to the default layout looks identical to a
+                // deliberate run. The router only RECORDS these; it never serves maps.
                 string hello = "{\"type\":\"hello\""
                                + ",\"api_key\":\"" + EscapeJson(apiKey) + "\""
                                + ",\"player_id\":\"" + EscapeJson(GetOrCreatePlayerId()) + "\""
-                               + ",\"config\":\"" + EscapeJson(configName) + "\"}";
+                               + ",\"config\":\"" + EscapeJson(configName) + "\""
+                               + ",\"map_url\":\"" + EscapeJson(GameConfigLoader.MapUrl ?? "") + "\""
+                               + ",\"map_hash\":\"" + EscapeJson(GameConfigLoader.MapHash ?? "") + "\""
+                               + ",\"map_status\":\"" + EscapeJson(GameConfigLoader.MapStatus ?? "") + "\"}";
                 SendRawMessage(hello);
-                Debug.Log($"[WS] hello sent (config={configName})");
+                Debug.Log($"[WS] hello sent (config={configName}, map={GameConfigLoader.MapStatus}"
+                          + $"{(string.IsNullOrEmpty(GameConfigLoader.MapHash) ? "" : " " + GameConfigLoader.MapHash)})");
             };
 
             // Event handler: Message received
@@ -567,6 +591,17 @@ public class WebSocketManager : MonoBehaviour
     /// (and only now) send game_start so the router clears any leftover
     /// in-memory state from a previous session.
     /// </summary>
+    [System.Serializable] public class OfficerRosterEntry { public string name; public string endpoint; }
+    [System.Serializable] private class HelloAckRoster { public OfficerRosterEntry[] officers; }
+
+    /// <summary>Officer roster from the router's hello_ack: talkinghead_endpoint -> display name,
+    /// for the ACTUAL loaded config. The WebGL client has no local agents_config.json, so this is
+    /// the only source that lets the sidebar label its (fixed 5) slots by the config's real officer
+    /// names instead of the enum slot names. Populated on each hello_ack.</summary>
+    public static System.Collections.Generic.Dictionary<string, string> OfficerRoster =
+        new System.Collections.Generic.Dictionary<string, string>(
+            System.StringComparer.OrdinalIgnoreCase);   // tolerate endpoint case drift
+
     private void HandleHelloAck(string data)
     {
         // Extract session_id without pulling in a JSON dependency — the
@@ -580,6 +615,22 @@ public class WebSocketManager : MonoBehaviour
             if (firstQuote > 0 && secondQuote > firstQuote)
                 sessionId = data.Substring(firstQuote + 1, secondQuote - firstQuote - 1);
         }
+
+        // Officer roster → so the sidebar can show the config's real officer names.
+        try
+        {
+            HelloAckRoster roster = JsonUtility.FromJson<HelloAckRoster>(data);
+            OfficerRoster.Clear();
+            if (roster != null && roster.officers != null)
+                foreach (var o in roster.officers)
+                    if (!string.IsNullOrEmpty(o.endpoint) && !string.IsNullOrEmpty(o.name))
+                        OfficerRoster[o.endpoint] = o.name;
+            Debug.Log($"[WS] officer roster received: {OfficerRoster.Count} officers");
+            var convUI = FindObjectOfType<AgentConversationUI>();
+            if (convUI != null) convUI.ApplyOfficerRoster();
+        }
+        catch (System.Exception ex) { Debug.LogWarning($"[WS] officer roster parse failed: {ex.Message}"); }
+
         connectionStatus = "Connected";
         Debug.Log($"[WS] hello_ack received (session={sessionId})");
 
@@ -774,7 +825,7 @@ public class WebSocketManager : MonoBehaviour
             // current reasoning + choices into the per-officer chat history so
             // prior proposals stay visible across reproposals.
             if (AgentConversationUI.Instance != null
-                && System.Enum.TryParse(proposal.talkinghead, out TaskOfficer archiveOfficer))
+                && TryResolveOfficer(proposal.talkinghead, out TaskOfficer archiveOfficer))
             {
                 AgentConversationUI.Instance.ArchiveExistingProposal(archiveOfficer);
             }
@@ -797,7 +848,7 @@ public class WebSocketManager : MonoBehaviour
             // newly proposed/reproposed choices appear immediately. Without this,
             // the task data updates but the panel only refreshes on next tab switch.
             if (AgentConversationUI.Instance != null
-                && System.Enum.TryParse(proposal.talkinghead, out TaskOfficer officerEnum))
+                && TryResolveOfficer(proposal.talkinghead, out TaskOfficer officerEnum))
             {
                 // Proposal arrived: this officer is done generating.
                 AgentConversationUI.Instance.SetOfficerGenerating(officerEnum, false);
@@ -809,7 +860,7 @@ public class WebSocketManager : MonoBehaviour
             // re-render it in place so reproposed options appear immediately instead of
             // only after close/reopen.
             if (taskDetailUI != null
-                && System.Enum.TryParse(proposal.talkinghead, out TaskOfficer detailOfficer))
+                && TryResolveOfficer(proposal.talkinghead, out TaskOfficer detailOfficer))
             {
                 taskDetailUI.RefreshProposalIfShowing(detailOfficer);
             }
@@ -843,6 +894,19 @@ public class WebSocketManager : MonoBehaviour
         }
     }
 
+    /// <summary>Resolve a talkinghead_endpoint string to a TaskOfficer slot, tolerantly:
+    /// trimmed and CASE-INSENSITIVE, and validated with IsDefined so a numeric string can't
+    /// slip through TryParse as a bogus enum value. Config endpoints are hand-authored (and
+    /// will be contributor-uploaded), so exact-case matching silently dropped every frame for
+    /// an officer whose spelling drifted (messaging-flow audit, config-robustness gap).</summary>
+    public static bool TryResolveOfficer(string endpoint, out TaskOfficer officer)
+    {
+        officer = TaskOfficer.DisasterOfficer;
+        if (string.IsNullOrWhiteSpace(endpoint)) return false;
+        return System.Enum.TryParse(endpoint.Trim(), true, out officer)
+               && System.Enum.IsDefined(typeof(TaskOfficer), officer);
+    }
+
     void HandleAgentMessage(string data)
     {
         try
@@ -852,7 +916,7 @@ public class WebSocketManager : MonoBehaviour
 
             // Parse talkinghead_endpoint to TaskOfficer enum
             TaskOfficer officer;
-            if (System.Enum.TryParse(msg.talkinghead_endpoint, out officer))
+            if (TryResolveOfficer(msg.talkinghead_endpoint, out officer))
             {
                 // Forward to conversation UI
                 if (AgentConversationUI.Instance != null)
@@ -869,12 +933,23 @@ public class WebSocketManager : MonoBehaviour
             }
             else
             {
-                Debug.LogError($"[WS] Invalid talkinghead_endpoint: {msg.talkinghead_endpoint}");
+                // Unroutable frame (config endpoint typo). Don't strand a spinner: the
+                // director is waiting on SOME officer, so clear all waiting bubbles.
+                Debug.LogError($"[WS] Invalid talkinghead_endpoint: '{msg.talkinghead_endpoint}' "
+                               + $"(from agent '{msg.agent_name}') — message not rendered. "
+                               + "Valid: DisasterOfficer, FoodMassCare, LodgingMassCare, "
+                               + "WorkforceService, ExternalRelationship.");
+                if (AgentConversationUI.Instance != null)
+                    AgentConversationUI.Instance.ClearAllGenerating();
             }
         }
         catch (Exception ex)
         {
+            // Malformed frame: msg is unusable, so clear all spinners rather than
+            // leaving one spinning until the 90s watchdog.
             Debug.LogError($"[WS] Failed to handle agent_message: {ex.Message}");
+            if (AgentConversationUI.Instance != null)
+                AgentConversationUI.Instance.ClearAllGenerating();
         }
     }
 
@@ -885,9 +960,9 @@ public class WebSocketManager : MonoBehaviour
             var msg = JsonUtility.FromJson<AgentMessageWithChoices>(data);
             Debug.Log($"[WS] agent_message_with_choices received from {msg.agent_name}: {msg.content}");
 
-            // Parse talkinghead_endpoint to TaskOfficer enum
+            // Parse talkinghead_endpoint to TaskOfficer enum (tolerant: see TryResolveOfficer)
             TaskOfficer officer;
-            if (System.Enum.TryParse(msg.talkinghead_endpoint, out officer))
+            if (TryResolveOfficer(msg.talkinghead_endpoint, out officer))
             {
                 // Forward to conversation UI with embedded choices
                 if (AgentConversationUI.Instance != null)
@@ -909,12 +984,17 @@ public class WebSocketManager : MonoBehaviour
             }
             else
             {
-                Debug.LogError($"[WS] Invalid talkinghead_endpoint: {msg.talkinghead_endpoint}");
+                Debug.LogError($"[WS] Invalid talkinghead_endpoint: '{msg.talkinghead_endpoint}' "
+                               + $"(from agent '{msg.agent_name}') — choices not rendered.");
+                if (AgentConversationUI.Instance != null)
+                    AgentConversationUI.Instance.ClearAllGenerating();
             }
         }
         catch (Exception ex)
         {
             Debug.LogError($"[WS] Failed to handle agent_message_with_choices: {ex.Message}");
+            if (AgentConversationUI.Instance != null)
+                AgentConversationUI.Instance.ClearAllGenerating();
         }
     }
 
@@ -998,12 +1078,18 @@ public class WebSocketManager : MonoBehaviour
     /// Send director message to an agent.
     /// Called when player sends a conversational message to an agent.
     /// </summary>
-    public void SendDirectorMessage(string toAgent, string content)
+    /// <summary>Send a director message to an agent. Returns TRUE only if the frame was
+    /// actually handed to an open socket. The caller MUST gate the officer's "thinking"
+    /// bubble on this: a void send let a disconnected/reconnecting client render the
+    /// message, clear the input, and spin a spinner for ~90s while nothing was ever sent
+    /// (messaging-flow audit #2). Guards on the full triad via IsConnected() — the bare
+    /// `isConnected` bool lags the real socket state during the close/reconnect window.</summary>
+    public bool SendDirectorMessage(string toAgent, string content)
     {
-        if (!isConnected)
+        if (!IsConnected())
         {
             Debug.LogWarning("[WS] Cannot send director_message - not connected!");
-            return;
+            return false;
         }
 
         var msg = new DirectorMessage
@@ -1016,6 +1102,7 @@ public class WebSocketManager : MonoBehaviour
 
         SendRawMessage(JsonUtility.ToJson(msg));
         Debug.Log($"[WS] director_message sent to {toAgent}: {content}");
+        return true;
     }
 
     // ── Action / interaction logging (per-actor unified log) ─────────

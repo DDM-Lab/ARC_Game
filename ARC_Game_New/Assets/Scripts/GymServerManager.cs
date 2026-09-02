@@ -314,7 +314,9 @@ public class GymServerManager : MonoBehaviour
     void HandleClient(TcpClient client)
     {
         NetworkStream stream = client.GetStream();
-        byte[] buffer = new byte[65536]; // 64KB buffer
+        byte[] buffer = new byte[65536]; // 64KB read buffer
+        // Carry-over for messages split across reads (see framing note below).
+        var recvBuffer = new System.Text.StringBuilder();
 
         try
         {
@@ -327,20 +329,29 @@ public class GymServerManager : MonoBehaviour
                     {
                         string chunk = Encoding.UTF8.GetString(buffer, 0, bytesRead);
 
-                        // Newline framing. The protocol is newline-delimited JSON, but TCP
-                        // does not preserve message boundaries: one stream.Read can return
-                        // several coalesced messages ("{...}\n{...}"). Parsing the raw chunk
-                        // as a single JSON object then throws "JSON parse error: Invalid
-                        // value" (seen at startup when the wrapper sends its handshake + first
-                        // command back-to-back). Split on newlines and dispatch each message.
-                        // If the chunk carries no newline at all, fall back to the original
-                        // whole-chunk behavior — strictly no worse than before, and never
-                        // buffers/blocks waiting for a delimiter a client might not send.
-                        string[] messages = chunk.IndexOf('\n') >= 0
-                            ? chunk.Split('\n')
-                            : new[] { chunk };
+                        // Newline framing over a stream that preserves neither message
+                        // boundaries nor message sizes. TCP can coalesce several messages
+                        // into one read ("{...}\n{...}") AND split one message across
+                        // several reads. The first case was already handled by splitting on
+                        // newlines; the second was NOT, and silently truncated any request
+                        // larger than a single read -- which is why load_state, the first
+                        // large payload the protocol carries, failed with "Missing a closing
+                        // quotation mark in string".
+                        //
+                        // So: append to a carry-over buffer, dispatch only COMPLETE
+                        // newline-terminated messages, and keep any trailing partial for the
+                        // next read. A message with no newline is no longer dispatched
+                        // eagerly -- it is held until its delimiter arrives.
+                        recvBuffer.Append(chunk);
+                        string pending = recvBuffer.ToString();
+                        int lastNewline = pending.LastIndexOf('\n');
+                        if (lastNewline < 0) continue;          // nothing complete yet
 
-                        foreach (string raw in messages)
+                        string complete = pending.Substring(0, lastNewline);
+                        recvBuffer.Clear();
+                        recvBuffer.Append(pending.Substring(lastNewline + 1));
+
+                        foreach (string raw in complete.Split('\n'))
                         {
                             string message = raw.Trim();
                             if (message.Length == 0) continue; // skip blank/keepalive lines

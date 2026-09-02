@@ -388,6 +388,46 @@ public class TaskSystem : MonoBehaviour
     // Task ID counter
     private int nextTaskId = 1;
 
+    /// <summary>
+    /// Snapshot support. GameTask is [System.Serializable] with public fields and its one
+    /// unserialisable member (multiAgentProposal) is already [NonSerialized], so the task
+    /// lists round-trip through JsonUtility via a wrapper.
+    ///
+    /// CAVEAT: GameTask.taskImage is a Sprite, i.e. a UnityEngine.Object reference. It does
+    /// not survive serialisation across a scene reload and comes back null. That is
+    /// cosmetic (UI art only, never read by the gym or the scoring), but it is a real gap
+    /// rather than something the tests happen to miss.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public List<GameTask> activeTasks = new List<GameTask>();
+        public List<GameTask> completedTasks = new List<GameTask>();
+        public int nextTaskId;
+        public List<int> deliveryIds = new List<int>();
+        public List<int> deliveryTaskIds = new List<int>();
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot { nextTaskId = nextTaskId };
+        s.activeTasks.AddRange(activeTasks);
+        s.completedTasks.AddRange(completedTasks);
+        foreach (var kv in deliveryToTaskMap) { s.deliveryIds.Add(kv.Key); s.deliveryTaskIds.Add(kv.Value); }
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        activeTasks.Clear(); activeTasks.AddRange(s.activeTasks);
+        completedTasks.Clear(); completedTasks.AddRange(s.completedTasks);
+        nextTaskId = s.nextTaskId;
+        deliveryToTaskMap.Clear();
+        for (int i = 0; i < s.deliveryIds.Count && i < s.deliveryTaskIds.Count; i++)
+            deliveryToTaskMap[s.deliveryIds[i]] = s.deliveryTaskIds[i];
+    }
+
     public int numEmergencyTasks = 4;
     public int currEmergencyTaskCount = 0;
     public int lastEmergencyTaskRound = 0;
@@ -666,6 +706,22 @@ public class TaskSystem : MonoBehaviour
         {
             GameLogPanel.Instance?.LogTaskEvent(
                 $"Late delivery {deliveryTask.taskId} arrived for closed task '{parentTask.taskTitle}'");
+
+            // Fix 2a: a food delivery that lands after its task closed UNFULFILLED still fed people —
+            // credit it retroactively. Population (lodging) already gets this via deliveredQuantity +
+            // AddLateDelivery above; food had no late-credit path, so a delivery completing after the
+            // task's short window expired was silently lost. Gate on: FoodPacks cargo, all linked
+            // deliveries now done (fires once, on the last one), and the task closed unfulfilled
+            // (Incomplete/Expired) — NOT Completed, so this can never double-credit a task that Fix 1
+            // already completed on time (which sets status Completed).
+            if (deliveryTask.cargoType == ResourceType.FoodPacks
+                && (parentTask.status == TaskStatus.Incomplete || parentTask.status == TaskStatus.Expired)
+                && AreAllLinkedDeliveriesComplete(parentTask))
+            {
+                RewardMetricsTracker.Instance?.AddLateFoodTask(parentTask);
+                if (showDebugInfo)
+                    Debug.Log($"[TaskSystem] Late food delivery credited for closed task '{parentTask.taskTitle}'");
+            }
         }
     }
 

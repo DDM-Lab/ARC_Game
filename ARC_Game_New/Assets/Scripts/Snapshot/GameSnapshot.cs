@@ -44,6 +44,8 @@ public class GameSnapshot
     // most damaging to miss: they are the numerator/denominator of every score component,
     // they are private to their owning classes, and a gym reset zeroes them.
     public WorkerSystem.Snapshot workforce;
+    public TaskSystem.Snapshot tasks;
+    public WeatherSystem.Snapshot weather;
     public RewardMetricsTracker.Snapshot rewardMetrics;
     public SatisfactionAndBudget.SpendSnapshot spend;
 
@@ -124,6 +126,11 @@ public static class GameSnapshotManager
         var ws = UnityEngine.Object.FindObjectOfType<WorkerSystem>();
         if (ws != null) s.workforce = ws.CaptureState();
 
+        var ts = TaskSystem.Instance;
+        if (ts != null) s.tasks = ts.CaptureState();
+        var weather = WeatherSystem.Instance;
+        if (weather != null) s.weather = weather.CaptureState();
+
         var rmt = RewardMetricsTracker.Instance;
         if (rmt != null) s.rewardMetrics = rmt.CaptureState();
         if (econ != null) s.spend = econ.CaptureSpend();
@@ -164,6 +171,12 @@ public static class GameSnapshotManager
         // at must already exist or the roster restores into dangling references.
         var ws = UnityEngine.Object.FindObjectOfType<WorkerSystem>();
         if (ws != null && s.workforce != null) ws.RestoreState(s.workforce);
+
+        // Tasks reference facilities by name, so buildings must already be back.
+        var ts = TaskSystem.Instance;
+        if (ts != null && s.tasks != null) ts.RestoreState(s.tasks);
+        var weather = WeatherSystem.Instance;
+        if (weather != null && s.weather != null) weather.RestoreState(s.weather);
 
         var econ = SatisfactionAndBudget.Instance;
         if (econ != null)
