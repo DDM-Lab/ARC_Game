@@ -175,6 +175,7 @@ public class WeatherSystem : MonoBehaviour
         }
         
         // Generate random value
+        SnapshotDebug.Mark("draw:Weather.select");
         float randomValue = UnityEngine.Random.Range(0f, totalProbability);
         
         // Select weather based on probability

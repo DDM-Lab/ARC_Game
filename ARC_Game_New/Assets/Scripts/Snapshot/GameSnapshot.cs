@@ -61,6 +61,7 @@ public class GameSnapshot
     public WeatherSystem.Snapshot weather;
     public FloodSystem.Snapshot flood;
     public DeliverySystem.Snapshot deliveries;
+    public ClientStayTracker.Snapshot clients;
     public RewardMetricsTracker.Snapshot rewardMetrics;
     public SatisfactionAndBudget.SpendSnapshot spend;
 
@@ -158,6 +159,8 @@ public static class GameSnapshotManager
         if (flood != null) s.flood = flood.CaptureState();
         var deliv = UnityEngine.Object.FindObjectOfType<DeliverySystem>();
         if (deliv != null) s.deliveries = deliv.CaptureState();
+        var clients = UnityEngine.Object.FindObjectOfType<ClientStayTracker>();
+        if (clients != null) s.clients = clients.CaptureState();
 
         var rmt = RewardMetricsTracker.Instance;
         if (rmt != null) s.rewardMetrics = rmt.CaptureState();
@@ -227,6 +230,8 @@ public static class GameSnapshotManager
         // deliveries reference must already have been recreated.
         var deliv = UnityEngine.Object.FindObjectOfType<DeliverySystem>();
         if (deliv != null && s.deliveries != null) deliv.RestoreState(s.deliveries);
+        var clients = UnityEngine.Object.FindObjectOfType<ClientStayTracker>();
+        if (clients != null && s.clients != null) clients.RestoreState(s.clients);
 
         var econ = SatisfactionAndBudget.Instance;
         if (econ != null)

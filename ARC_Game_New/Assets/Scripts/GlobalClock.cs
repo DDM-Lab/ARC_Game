@@ -629,12 +629,16 @@ public class GlobalClock : MonoBehaviour
         }
 
         // Accumulate per-round reward metrics (worker allocation, rounds).
+        SnapshotDebug.Mark("endSim:enter");
         RewardMetricsTracker.Instance?.OnRoundEnded();
+        SnapshotDebug.Mark("endSim:afterMetrics");
 
         // Advance to next time segment
         AdvanceTimeSegment();
+        SnapshotDebug.Mark("endSim:afterAdvanceSegment");
 
         OnRoundEnd?.Invoke();
+        SnapshotDebug.Mark("endSim:afterOnRoundEnd");
         
         // Enable player interactions
         EnablePlayerInteractions();
@@ -719,6 +723,7 @@ public class GlobalClock : MonoBehaviour
         // Previously, this reset happened when OnDayChanged fired
         // (before the report was shown), causing zeroed data.
         // =====================================================
+        SnapshotDebug.Mark("day:enterProceedToNextDay");
         if (DailyReportData.Instance != null)
         {
             DailyReportData.Instance.PrepareForNewDay();
@@ -751,8 +756,11 @@ public class GlobalClock : MonoBehaviour
         // listens to this event for resetting — it uses
         // PrepareForNewDay() instead (called above).
         // =====================================================
+        SnapshotDebug.Mark("day:beforeOnDayChanged");
         OnDayChanged?.Invoke(currentDay);
+        SnapshotDebug.Mark("day:afterOnDayChanged");
         OnTimeSegmentChanged?.Invoke(currentTimeSegment);
+        SnapshotDebug.Mark("day:afterOnTimeSegmentChanged");
 
         // Update display
         UpdateTimeDisplay();

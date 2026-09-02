@@ -2416,6 +2416,7 @@ public class TaskSystem : MonoBehaviour
             foreach (PrebuiltBuilding community in communities)
             {
                 // Simulate 50% probability for each community independently
+                SnapshotDebug.Mark("draw:TaskSystem.coinflip");
                 bool triggered = UnityEngine.Random.Range(0f, 1f) < 0.5f;
                 
                 if (triggered)

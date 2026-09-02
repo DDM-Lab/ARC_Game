@@ -166,6 +166,7 @@ public class ProbabilityTrigger : TaskTrigger
     
     public override bool CheckCondition()
     {
+        SnapshotDebug.Mark("draw:TaskTrigger.probability");
         return Random.Range(0f, 1f) < probability;
     }
     

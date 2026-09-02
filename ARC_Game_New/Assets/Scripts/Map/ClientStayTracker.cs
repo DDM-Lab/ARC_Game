@@ -118,6 +118,95 @@ public class ClientStayTracker : MonoBehaviour
     public event Action<ClientGroup> OnCaseworklessClientsDeparted;
 
     private int nextGroupId = 1;
+
+    /// <summary>
+    /// Snapshot support. Each ClientGroup carries a per-group departure round and a
+    /// casework-need count, BOTH ROLLED FROM Random AT CONSTRUCTION -- so these are
+    /// simulation state that cannot be recomputed, only carried. They decide when clients
+    /// leave a facility and whether a casework request is raised, which in turn drives
+    /// relocation and casework Demands.
+    ///
+    /// currentFacility is a MonoBehaviour reference and cannot serialise, so it is stored
+    /// by GameObject name and re-resolved on restore; a group whose facility is gone is
+    /// dropped rather than restored dangling.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        [System.Serializable]
+        public class GroupState
+        {
+            public int groupId;
+            public string groupName;
+            public int clientCount, clientsWithCaseworkNeed, clientsWithoutCaseworkNeed;
+            public string facilityName;
+            public int arrivalRound, assignedDepartureRound, overstayRounds;
+            public float arrivalTime;
+            public bool caseworkRequestGenerated, isOverstaying, hasDeparted;
+        }
+        public List<GroupState> groups = new List<GroupState>();
+        public int nextGroupId;
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot { nextGroupId = nextGroupId };
+        foreach (var g in clientGroups)
+        {
+            if (g == null) continue;
+            s.groups.Add(new Snapshot.GroupState
+            {
+                groupId = g.groupId, groupName = g.groupName,
+                clientCount = g.clientCount,
+                clientsWithCaseworkNeed = g.clientsWithCaseworkNeed,
+                clientsWithoutCaseworkNeed = g.clientsWithoutCaseworkNeed,
+                facilityName = g.currentFacility != null ? g.currentFacility.gameObject.name : null,
+                arrivalRound = g.arrivalRound, arrivalTime = g.arrivalTime,
+                assignedDepartureRound = g.assignedDepartureRound,
+                overstayRounds = g.overstayRounds,
+                caseworkRequestGenerated = g.caseworkRequestGenerated,
+                isOverstaying = g.isOverstaying, hasDeparted = g.hasDeparted,
+            });
+        }
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        clientGroups.Clear();
+        foreach (var gs in s.groups)
+        {
+            if (gs == null) continue;
+            MonoBehaviour fac = null;
+            if (!string.IsNullOrEmpty(gs.facilityName))
+            {
+                var go = GameObject.Find(gs.facilityName);
+                if (go != null)
+                {
+                    fac = go.GetComponent<Building>();
+                    if (fac == null) fac = go.GetComponent<PrebuiltBuilding>();
+                }
+            }
+            if (fac == null) continue;      // facility gone: drop rather than dangle
+
+            // Construct with 0 probability / 0 stay so the constructor consumes NO random
+            // draws -- it would otherwise advance the stream we are about to restore -- then
+            // overwrite every rolled field with the captured values.
+            var g = new ClientGroup(gs.groupId, gs.groupName, 0, fac, gs.arrivalRound, 0f, 0, 0);
+            g.clientCount = gs.clientCount;
+            g.clientsWithCaseworkNeed = gs.clientsWithCaseworkNeed;
+            g.clientsWithoutCaseworkNeed = gs.clientsWithoutCaseworkNeed;
+            g.arrivalTime = gs.arrivalTime;
+            g.assignedDepartureRound = gs.assignedDepartureRound;
+            g.overstayRounds = gs.overstayRounds;
+            g.caseworkRequestGenerated = gs.caseworkRequestGenerated;
+            g.isOverstaying = gs.isOverstaying;
+            g.hasDeparted = gs.hasDeparted;
+            clientGroups.Add(g);
+        }
+        nextGroupId = s.nextGroupId;
+    }
     private int currentRound = 0;
 
     void Awake()
