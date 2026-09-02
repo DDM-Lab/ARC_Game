@@ -68,7 +68,8 @@ class World:
 
     __slots__ = ("rng", "flood", "fmap", "weather", "day", "segment",
                  "facilities_for", "generated", "clients", "economy", "tasks",
-                 "round_index", "_trigger_memory", "use_generation")
+                 "round_index", "_trigger_memory", "use_generation",
+                 "pending_arrivals")
 
     def __init__(self, rng, weather, day=1, segment=1, flood=None, fmap=None,
                  facilities_for=None):
@@ -93,6 +94,7 @@ class World:
         self.tasks = TaskBoard()
         self.round_index = 0
         self._trigger_memory = {}       # stateful triggers (FloodExpanded, BudgetDropped)
+        self.pending_arrivals = []      # deliveries that landed LAST round, drawn this one
 
     def _own_facilities(self, task_def):
         return suitable_facilities(task_def, self.economy.facilities())
@@ -123,6 +125,7 @@ class World:
         w.tasks = self.tasks.clone()
         w.round_index = self.round_index
         w._trigger_memory = dict(self._trigger_memory)
+        w.pending_arrivals = list(self.pending_arrivals)
         w.use_generation = self.use_generation
         return w
 
@@ -155,11 +158,16 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         generation    TaskTrigger.probability, on the segments that run a pass
         flood         the ten flood sites
 
-    `arrivals` is passed in rather than derived, because a delivery landing is caused by a
-    choice made in an earlier round and the round loop does not own that decision. The
-    per-person granularity is load-bearing: a 300-person relocation advances the stream 301
-    places, so getting it wrong makes every later draw in the round read someone else's
+    `arrivals` may be passed in explicitly (a test injecting a scenario), but the default is
+    that the surrogate DERIVES them: a delivery that landed at the end of last round becomes
+    a client arrival at the start of this one. Deliveries land after flood and arrivals draw
+    before it, so the one-round offset is the mechanic, not a convenience.
+
+    The per-person granularity is load-bearing: a 300-person relocation advances the stream
+    301 places, so getting it wrong makes every later draw in the round read someone else's
     randoms."""
+    arrivals = list(arrivals) + w.pending_arrivals
+    w.pending_arrivals = []
     for count, facility in arrivals:
         w.clients.register_arrival(w.rng, count, w.round_index, facility, marks)
     w.clients.update(w.rng, w.round_index, w.economy.counters, marks)
@@ -186,6 +194,17 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # Deterministic bookkeeping runs after the stochastic phases: deliveries land, tasks
     # age and expire, and the economy accumulates. None of this draws, so its position
     # relative to flood cannot desynchronise the stream -- only the counters.
-    w.tasks.tick(w.economy.counters)
+    # Deliveries that land now produce client arrivals NEXT round, and only into lodging
+    # buildings -- a delivery to a casework site sends people home instead, which is the
+    # caseworkProcessed path rather than a new tracked group.
+    for _task_id, quantity, destination in w.tasks.tick(w.economy.counters):
+        dest = str(destination or "")
+        if dest in ("Motel", "Shelter"):
+            w.pending_arrivals.append((quantity, dest))
+            if dest == "Motel":
+                w.economy.motel_pop += quantity
+        elif dest == "CaseworkSite":
+            w.clients.process_home(quantity, w.economy.counters)
+            w.economy.motel_pop = max(0, w.economy.motel_pop - quantity)
     economy_step(w.economy, day_changed, w.day)
     w.round_index += 1

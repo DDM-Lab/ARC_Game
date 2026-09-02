@@ -439,6 +439,14 @@ resolution arithmetic · delivery latency (per tag) · trigger draw counts.
 | `Disabled` buildings re-entering service | terminal in the port |
 | the GUI/router layer | out of scope by design |
 
+### Self-contained as of the delivery/arrival join
+A delivery landing now becomes a client arrival on the next round without anything being
+injected from outside, so the surrogate runs a played episode unaided. Closing that join
+exposed a duplicated `tick`: one copy looked up only `active`, so a delivery for an ANSWERED
+task (which lives in `awaiting`) was silently dropped, and it returned `expired` while
+building an unused `landed`. Two copies of the same logic drifted, and the symptom was the
+pipeline appearing to do nothing at all.
+
 ### The honest summary
 The **stochastic surface is complete** — the census closes at 0 unexplained draws on a
 played episode, so the port can hold the RNG stream through a whole game. The **scoring

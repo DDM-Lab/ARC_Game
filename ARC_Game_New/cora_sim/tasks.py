@@ -255,7 +255,7 @@ class TaskBoard:
             else:
                 task.delivered += quantity
                 if quantity > 0:
-                    landed.append(task_id)
+                    landed.append((task_id, quantity, task.destination))
                 # The delivery becoming due is what resolves an ANSWERED task -- fulfilled
                 # if anything actually arrived, unfulfilled if the order could not be
                 # sourced.
@@ -264,36 +264,29 @@ class TaskBoard:
         return landed
 
     def tick(self, counters: dict) -> list:
-        """One round: land deliveries, then age tasks and expire the exhausted ones.
+        """One round: land due deliveries, then age tasks and expire the exhausted ones.
 
-        Deliveries land FIRST so a delivery arriving on the same round the task expires is
-        credited as fulfilment rather than lost -- which is what the late-delivery path
-        exists to handle when the ordering goes the other way."""
-        landed = []
-        for entry in self.deliveries:
-            entry[0] -= 1
-        arriving = [d for d in self.deliveries if d[0] <= 0]
-        self.deliveries = [d for d in self.deliveries if d[0] > 0]
-        for _rounds, task_id, quantity in arriving:
-            task = self.active.get(task_id)
-            if task is None:
-                continue
-            if task.resolved:
-                self.late_delivery(task, quantity, counters)
-            else:
-                task.delivered += quantity
-                landed.append(task_id)
+        Returns the landings as (task_id, quantity, destination) so the caller can turn
+        them into client arrivals. Delegates the landing half to tick_deliveries_only
+        rather than repeating it -- an earlier version had two copies of that logic and
+        they drifted: this one looked up only `active`, so a delivery for an ANSWERED task
+        (which lives in `awaiting`) was silently dropped, and it returned `expired` while
+        building an unused `landed`. Deliveries never reached the round loop, so the
+        surrogate could not generate its own client arrivals and looked as though the
+        pipeline simply did nothing.
 
-        expired = []
+        Deliveries land BEFORE ageing so one arriving on the round its task expires counts
+        as fulfilment rather than being lost to the late-delivery path."""
+        landed = self.tick_deliveries_only(counters)
+
         for task in list(self.active.values()):
             task.rounds_remaining -= 1
             if task.rounds_remaining <= 0:
                 # An expired task resolves UNFULFILLED, but a lodging task still credits
                 # whatever actually got delivered -- resolved counts demand either way.
                 self.resolve(task, fulfilled=False, counters=counters)
-                expired.append(task.task_id)
                 del self.active[task.task_id]
-        return expired
+        return landed
 
     def complete(self, task_id, counters: dict) -> None:
         """TaskSystem.CompleteTask -- resolution with fulfilled=True."""
