@@ -68,6 +68,34 @@ def main():
     kinds = [a[0] for a in actions]
     ok = True
 
+    if kinds.count("end_turn") != 1:
+        print("  END_TURN in action set        : MISSING - a turn could never be closed")
+        ok = False
+    else:
+        print("  END_TURN in action set        : present (a turn is a BASKET, not one action)")
+
+    # A basket must accumulate, and must execute in Unity's canonical order.
+    class _W:
+        def __init__(self, env):
+            self.env, self.basket, self.turn_ended = env, [], False
+
+        def budget_committed(self):
+            return sum(a.get("cost") or 0 for a in self.basket)
+    bw = _W(env)
+    model.apply(bw, ("menu", {"action_type": "resource_transfer", "action_id": "t", "cost": 0}))
+    model.apply(bw, ("menu", {"action_type": "construction", "action_id": "b", "cost": 1,
+                              "construction": {"building_type": "Shelter", "site_id": 1}}))
+    if len(bw.basket) != 2:
+        print(f"  basket accumulates            : {len(bw.basket)} of 2  <-- ACTIONS LOST")
+        ok = False
+    else:
+        model.flush(bw)
+        order = [json_id for json_id in (a for a in env.executed)]
+        first_is_build = order and '"b"' in order[0] or "'b'" in str(order[0])
+        print(f"  basket executes in canonical order: build before transfer "
+              f"({'yes' if first_is_build else 'NO'})")
+        ok &= bool(first_is_build)
+
     n_choice, n_menu = kinds.count("choice"), kinds.count("menu")
     if n_choice != 6:                       # 3 tasks x 2 choices, never capped
         print(f"  task choices in action space : {n_choice}/6  <-- MISSING")

@@ -276,6 +276,38 @@ def advertised_cost_error(action: dict) -> int:
     return C["build_cost"].get(btype, 0) - (action.get("cost") or 0)
 
 
+# CANONICAL EXECUTION ORDER within a turn (cmd_parser._PRIO). A turn is a BASKET of
+# actions, and Unity executes them in this order regardless of the order they were chosen,
+# so "hire, then staff the workers you just hired" works in one turn. A port that applies a
+# basket in selection order gets a different game: the staff action would find no free
+# workers, silently do nothing, and leave the building unstaffed -- which then makes it
+# invisible to the triggers and deliveries that depend on IsOperational().
+EXECUTION_ORDER = {"deconstruct": 0, "construction": 1, "worker": 2, "resource_transfer": 5}
+
+
+def basket_order(action: dict) -> int:
+    kind = action.get("action_type")
+    if kind == "worker":
+        wat = (action.get("worker") or {}).get("worker_action_type") or ""
+        if wat.startswith("hire"):
+            return 2
+        if wat.startswith("train"):
+            return 3
+        return 4                            # staff/assign
+    return EXECUTION_ORDER.get(kind, 6)
+
+
+def apply_basket(econ: Economy, actions) -> int:
+    """Apply a whole turn's worth of actions, in Unity's execution order.
+
+    Returns how many were accepted. Sorting is stable within a priority, so the relative
+    order of two builds is preserved while the categories are reordered."""
+    accepted = 0
+    for action in sorted(actions, key=basket_order):
+        accepted += bool(apply_action(econ, action))
+    return accepted
+
+
 def apply_action(econ: Economy, action: dict) -> bool:
     """Dispatch one menu action against the economy.
 

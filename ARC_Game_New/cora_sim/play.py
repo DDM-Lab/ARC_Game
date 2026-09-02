@@ -39,6 +39,7 @@ def score_of(metrics):
     return compute_score_components(metrics or {})["score"]
 
 NOOP = ("noop", None)
+END_TURN = ("end_turn", None)
 
 
 class UnityWorld:
@@ -48,12 +49,14 @@ class UnityWorld:
     and RHEA evaluates rollouts strictly one at a time, so restoring on clone puts the game
     at the branch point exactly when the next rollout is about to run."""
 
-    __slots__ = ("env", "snapshot", "rounds_left")
+    __slots__ = ("env", "snapshot", "rounds_left", "basket", "turn_ended")
 
     def __init__(self, env, snapshot=None, rounds_left=0):
         self.env = env
         self.snapshot = snapshot if snapshot is not None else self._capture()
         self.rounds_left = rounds_left
+        self.basket = []                 # actions chosen this turn, not yet executed
+        self.turn_ended = False
 
     def _capture(self):
         resp = self.env._send_request({"type": "save_state"})
@@ -70,6 +73,12 @@ class UnityWorld:
     def clone(self):
         self.restore()
         return UnityWorld(self.env, self.snapshot, self.rounds_left)
+
+    def budget_committed(self):
+        """What the basket has already spent, so affordability accounts for the whole turn
+        rather than pricing each action as though it were the only one."""
+        from cora_sim.economy import advertised_cost_error
+        return sum((a.get("cost") or 0) + advertised_cost_error(a) for a in self.basket)
 
     def metrics(self):
         return self.env._game_state_dict().get("rewardMetrics") or {}
@@ -91,7 +100,24 @@ class UnityActions:
         self.shaping = shaping
 
     def legal(self, world):
-        actions = [NOOP]
+        """The basket, plus END_TURN.
+
+        A TURN IS A SET OF ACTIONS, NOT ONE ACTION. Measured across 5,482 real benchmark
+        turns: agents take 0 actions on 62% of turns and up to 33 on others, with a median
+        of 3-5 when they act at all. So the per-turn decision is a SUBSET of a ~69-element
+        basket -- 2^69 possibilities -- which is why fixed-arity search behaves oddly here.
+
+        The fix is to decompose the turn SEQUENTIALLY: the planner picks one action at a
+        time and closes the turn with an explicit END_TURN. That turns a combinatorial
+        choice into a sequence both RHEA and MCTS handle natively, at the cost of making
+        the horizon count ACTIONS rather than rounds. It is the standard treatment for
+        combinatorial action spaces, and it is also how a person actually plays: click
+        several things, then hit next round.
+
+        Consequence worth stating: with END_TURN in the set, a plan of length L no longer
+        spans L rounds. A horizon that must reach the reward has to be measured in turns
+        and multiplied by the expected basket size."""
+        actions = [NOOP, END_TURN]
         state = world.env._game_state_dict()
         for task in (state.get("allActiveTasks") or []):
             for choice in (task.get("choices") or []):
@@ -107,6 +133,7 @@ class UnityActions:
         # The advertised `cost` under-reports construction: a build advertises 1000 and
         # deducts 2000 (measured). Affordability is therefore checked against the DEDUCTED
         # cost, or the planner will queue builds it cannot pay for.
+        budget -= world.budget_committed() if hasattr(world, "budget_committed") else 0
         affordable = [a for a in menu if self.true_cost(a) <= budget]
         by_family = {}
         for a in affordable:
@@ -161,6 +188,35 @@ class UnityActions:
         return [group[i] for i in idx]
 
     def apply(self, world, action):
+        """Accumulate into the current turn; END_TURN is what advances the round.
+
+        Actions are held rather than executed immediately so the basket can be sorted into
+        Unity's canonical order (deconstruct, build, hire, train, staff, transfer) when the
+        turn closes -- the order that makes "hire then staff" work within one turn."""
+        kind, payload = action
+        if kind == "end_turn":
+            world.turn_ended = True
+            return
+        if kind == "menu":
+            # getattr rather than attribute access: a caller that does not model baskets
+            # (a test stub, or a policy that executes immediately) still works, and gets
+            # the old one-action-at-a-time behaviour rather than an AttributeError.
+            basket = getattr(world, "basket", None)
+            if basket is None:
+                self._apply_now(world, action)
+            else:
+                basket.append(payload)
+            return
+        self._apply_now(world, action)
+
+    def flush(self, world):
+        """Execute the accumulated basket in canonical order, then clear it."""
+        from cora_sim.economy import basket_order
+        for menu_action in sorted(world.basket, key=basket_order):
+            self._apply_now(world, ("menu", menu_action))
+        world.basket = []
+
+    def _apply_now(self, world, action):
         kind, payload = action
         try:
             if kind == "menu":
@@ -221,6 +277,14 @@ class UnityActions:
 
 
 def step_unity(world):
+    """Advance the round ONLY when the turn has been closed.
+
+    RHEA's rollout calls step after every action; with a basket-shaped turn most of those
+    actions are still filling the same turn, so stepping unconditionally would advance a
+    round per action and make a 6-action plan span 6 rounds instead of one or two."""
+    if not getattr(world, "turn_ended", False):
+        return
+    world.turn_ended = False
     world.env.advance_round()
 
 
@@ -243,10 +307,20 @@ def play_episode(env, rounds=12, horizon=3, population=6, generations=2, seed=0,
         here = UnityWorld(env)
         plan, _ = search.plan(here, seed_plan=plan)
         here.restore()                       # undo the search's exploration
-        model.apply(here, plan[0])           # commit only the first action
+        # Commit the whole basket the plan opens with -- every action up to and including
+        # the first END_TURN. Committing only plan[0] would throw away the rest of a turn
+        # the search evaluated as a unit, which is a different (and worse) policy than the
+        # one that was scored.
+        committed = []
+        for action in plan:
+            if action[0] == "end_turn":
+                break
+            model.apply(here, action)
+            committed.append(action)
+        model.flush(here)
         env.advance_round()
         score = score_of(env._game_state_dict().get("rewardMetrics"))
-        trace.append({"round": r, "action": str(plan[0]), "score": score})
+        trace.append({"round": r, "basket": len(committed), "score": score})
         if verbose:
-            print(f"    round {r:>2}  {str(plan[0]):<28} score={score:+.4f}")
+            print(f"    round {r:>2}  basket of {len(committed):>2}  score={score:+.4f}")
     return trace
