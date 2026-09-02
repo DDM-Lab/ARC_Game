@@ -41,7 +41,15 @@ def main(pattern=None):
         trace = json.load(open(path))
         counters = {k: 0 for k in ("foodResolved", "foodFulfilled",
                                    "lodgingResolved", "lodgingFulfilled")}
-        board, seen = TaskBoard(), {}
+        # Lodging always has a source (people are already somewhere); food needs an
+        # operational kitchen, and the captures never have one.
+        def has_supplier(tag, _t=trace):
+            if tag == "Lodging":
+                return True
+            return any(f.get("buildingType") == "Kitchen" and f.get("isOperational")
+                       for st in _t
+                       for f in ((st["before"].get("mapState") or {}).get("facilities") or []))
+        board, seen = TaskBoard(has_supplier=has_supplier), {}
         for step in trace:
             before = {t["taskId"]: t for t in (step["before"].get("allActiveTasks") or [])}
             after = {t["taskId"] for t in (step["after"].get("allActiveTasks") or [])}
@@ -59,16 +67,16 @@ def main(pattern=None):
                 ch = next((c for c in (ts.get("choices") or [])
                            if c.get("choiceId") == act.get("choiceId")), None)
                 if ch:
-                    board.choose(act["taskId"], ch.get("deliveryQuantity") or 0,
+                    board.answer(act["taskId"], ch.get("deliveryQuantity") or 0,
                                  immediate=is_immediate(ch),
-                                 destination=ch.get("destinationCategory") or "")
-            board_deliveries_landed = board.tick_deliveries_only(counters)
-            # Unity's own lifecycle drives WHEN; the port supplies WHAT.
+                                 destination=ch.get("destinationCategory") or "",
+                                 counters=counters)
+            board.tick_deliveries_only(counters)
+            # Answering already removed a task from the board and set its resolution in
+            # motion. Anything still on the board that Unity dropped expired unfulfilled.
             for tid in list(before):
                 if tid not in after and tid in board.active:
-                    task = board.active[tid]
-                    board.complete(tid, counters) if task.delivered > 0 else \
-                        board.resolve(board.active.pop(tid), False, counters)
+                    board.resolve(board.active.pop(tid), False, counters)
         truth = trace[-1]["after"]["rewardMetrics"]
         name = os.path.basename(path)
         deltas = {k: counters[k] - truth.get(k, 0) for k in counters}

@@ -33,15 +33,17 @@ FULFILMENT_COUNTERS = ("foodResolved", "foodFulfilled", "lodgingResolved",
 # Sweeping a single shared latency against captured counters makes one tag exact and the
 # other wrong, every time:
 #
-#   latency 1   lodgingFulfilled 600/600 exact, foodFulfilled 21 against 7 and 5
-#   latency 2+  foodFulfilled 7/7 and 5/5 exact, lodgingFulfilled 500/600 and 300/600
+#   Lodging 1   lodgingFulfilled 600/600 exact on every trace
+#   Food    4    foodResolved 19/19, 18/18, 19/19 -- 2 and 3 rounds are too short, and the
+#               tasks answered in the last rounds then resolve inside the episode when
+#               Unity's do not; 5 makes no further difference, so 4 is the boundary
 #
 # There is no single value that fits both, which is the evidence that they are separate
 # mechanics rather than one mechanic with a tuning constant. A relocation moves people by
 # vehicle to a destination that already exists; a food request has to be filled from a
 # kitchen's stock, and frequently is not filled before the task expires -- which is exactly
 # why Unity's foodFulfilled sits so far below foodResolved.
-DEFERRED_LATENCY = {"Lodging": 1, "Food": 2}
+DEFERRED_LATENCY = {"Lodging": 1, "Food": 4}
 DEFAULT_LATENCY = 2
 
 
@@ -102,24 +104,77 @@ def demand_of(task_state: dict, tag: str) -> int:
 class TaskBoard:
     """Active tasks plus in-flight deliveries."""
 
-    __slots__ = ("active", "deliveries", "next_id")
+    __slots__ = ("active", "deliveries", "next_id", "awaiting", "has_supplier")
 
-    def __init__(self):
+    def __init__(self, has_supplier=None):
         self.active = {}                    # task_id -> Task
         self.deliveries = []                # [rounds_remaining, task_id, quantity]
+        self.awaiting = {}                  # answered, off the board, not yet resolved
         self.next_id = 1
+        # Can a DEFERRED delivery actually be sourced? A "Request N meals from Kitchens"
+        # choice needs an operational kitchen holding stock; with none, the delivery never
+        # arrives and the task resolves unfulfilled. Measured, and it is the whole
+        # explanation for food's low fulfilment: across three 32-round captures
+        # foodFulfilled was 7, 5 and 7 -- exactly the number of IMMEDIATE (external,
+        # Rapid-Response) food choices, and never once a kitchen order. Not one kitchen was
+        # operational in any of those episodes.
+        self.has_supplier = has_supplier or (lambda tag: False)
 
     def clone(self):
         b = TaskBoard.__new__(TaskBoard)
         b.active = {k: v.clone() for k, v in self.active.items()}
         b.deliveries = [list(d) for d in self.deliveries]
+        b.awaiting = {k: v.clone() for k, v in self.awaiting.items()}
         b.next_id = self.next_id
+        b.has_supplier = self.has_supplier
         return b
 
     # ── lifecycle ───────────────────────────────────────────────────────────────────
     def add(self, task: Task) -> Task:
         self.active[task.task_id] = task
         return task
+
+    def answer(self, task_id, quantity=0, immediate=True, latency=None, destination="",
+               counters=None):
+        """Answer a task: it leaves the board NOW and resolves when its delivery LANDS.
+
+        THE TWO ARE NOT THE SAME ROUND, and that is the whole point. Measured on captures:
+        three food tasks left the active list in one round while foodResolved rose by 0,
+        and the next round none left while it rose by 3. Answering removes the task from
+        the player's view; RecordTaskResolution fires later, from the delivery handler.
+
+        An immediate delivery collapses the two into one round, which is why lodging looked
+        like it resolved on disappearance and food did not. Same rule, different latency.
+
+        The consequence is real, not bookkeeping: tasks answered near the end of an episode
+        never resolve at all, so their demand is never credited. Over one 32-round capture
+        that is 21 food tasks answered and 19 resolved."""
+        task = self.active.pop(task_id, None)
+        if task is None:
+            return
+        task.chosen = quantity
+        task.destination = destination
+        if quantity <= 0:
+            # Nothing delivered: the task still resolves, unfulfilled, right away.
+            if counters is not None:
+                self.resolve(task, fulfilled=False, counters=counters)
+            return
+        if immediate:
+            task.delivered += quantity
+            if counters is not None:
+                self.resolve(task, fulfilled=True, counters=counters)
+            return
+        if latency is None:
+            latency = DEFERRED_LATENCY.get(task.tag, DEFAULT_LATENCY)
+        self.awaiting[task_id] = task
+        # A delivery that cannot be sourced still takes the same time to FAIL as a real one
+        # takes to arrive -- the request goes out, nothing comes back, and the task resolves
+        # unfulfilled on the round the delivery was due. Resolving it instantly instead
+        # over-counts resolved by whatever is still in flight when the episode ends: 21
+        # against Unity's 19, on a 32-round capture where the last three were answered in
+        # the final rounds.
+        self.deliveries.append([latency, task_id,
+                                quantity if self.has_supplier(task.tag) else 0])
 
     def choose(self, task_id, quantity=0, immediate=True, latency=None, destination=""):
         """Answer a task's choice.
@@ -192,14 +247,20 @@ class TaskBoard:
         self.deliveries = [d for d in self.deliveries if d[0] > 0]
         landed = []
         for _rounds, task_id, quantity in arriving:
-            task = self.active.get(task_id)
+            task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
             if task is None:
                 continue
             if task.resolved:
                 self.late_delivery(task, quantity, counters)
             else:
                 task.delivered += quantity
-                landed.append(task_id)
+                if quantity > 0:
+                    landed.append(task_id)
+                # The delivery becoming due is what resolves an ANSWERED task -- fulfilled
+                # if anything actually arrived, unfulfilled if the order could not be
+                # sourced.
+                if task_id not in self.active:
+                    self.resolve(task, fulfilled=quantity > 0, counters=counters)
         return landed
 
     def tick(self, counters: dict) -> list:
