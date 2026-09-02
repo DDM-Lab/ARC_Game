@@ -43,6 +43,7 @@ public class GameSnapshot
     // Cumulative accumulators. These are the ones most likely to be forgotten and the
     // most damaging to miss: they are the numerator/denominator of every score component,
     // they are private to their owning classes, and a gym reset zeroes them.
+    public WorkerSystem.Snapshot workforce;
     public RewardMetricsTracker.Snapshot rewardMetrics;
     public SatisfactionAndBudget.SpendSnapshot spend;
 
@@ -120,6 +121,9 @@ public static class GameSnapshotManager
             if (b != null) s.buildings.Add(b.CaptureState());
         }
 
+        var ws = UnityEngine.Object.FindObjectOfType<WorkerSystem>();
+        if (ws != null) s.workforce = ws.CaptureState();
+
         var rmt = RewardMetricsTracker.Instance;
         if (rmt != null) s.rewardMetrics = rmt.CaptureState();
         if (econ != null) s.spend = econ.CaptureSpend();
@@ -155,6 +159,11 @@ public static class GameSnapshotManager
         // economy restore below then overwrites those charges with the saved figures, so
         // recreation cannot double-bill. Reversing this order silently corrupts the budget.
         RestoreBuildings(s.buildings);
+
+        // After buildings: workers carry assignedBuildingId, so the buildings they point
+        // at must already exist or the roster restores into dangling references.
+        var ws = UnityEngine.Object.FindObjectOfType<WorkerSystem>();
+        if (ws != null && s.workforce != null) ws.RestoreState(s.workforce);
 
         var econ = SatisfactionAndBudget.Instance;
         if (econ != null)

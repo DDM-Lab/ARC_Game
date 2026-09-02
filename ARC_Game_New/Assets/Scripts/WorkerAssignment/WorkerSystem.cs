@@ -266,6 +266,46 @@ public class WorkerSystem : MonoBehaviour
     public List<Worker> GetWorkersByBuildingId(int buildingId) { return allWorkers.Where(w => w.AssignedBuildingId == buildingId).ToList(); }
     
     // Statistics methods
+    /// <summary>Snapshot support: the roster plus the id counter and the per-day hire
+    /// tallies. Rebuilding the roster wholesale (rather than diffing) keeps ids stable,
+    /// which matters because buildings reference workers by assignedBuildingId.</summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public List<Worker.Snapshot> workers = new List<Worker.Snapshot>();
+        public int nextWorkerId;
+        public int newWorkersHiredToday;
+        public List<int> hiredDays = new List<int>();
+        public List<int> hiredCounts = new List<int>();
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot { nextWorkerId = nextWorkerId, newWorkersHiredToday = newWorkersHiredToday };
+        foreach (var w in allWorkers) if (w != null) s.workers.Add(w.CaptureState());
+        foreach (var kv in newWorkersHiredEachDay) { s.hiredDays.Add(kv.Key); s.hiredCounts.Add(kv.Value); }
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        allWorkers.Clear();
+        foreach (var ws in s.workers)
+        {
+            if (ws == null) continue;
+            var type = ws.workerType == "Trained" ? WorkerType.Trained : WorkerType.Untrained;
+            var w = new Worker(ws.workerId, type);
+            w.RestoreState(ws);
+            allWorkers.Add(w);
+        }
+        nextWorkerId = s.nextWorkerId;
+        newWorkersHiredToday = s.newWorkersHiredToday;
+        newWorkersHiredEachDay.Clear();
+        for (int i = 0; i < s.hiredDays.Count && i < s.hiredCounts.Count; i++)
+            newWorkersHiredEachDay[s.hiredDays[i]] = s.hiredCounts[i];
+    }
+
     public WorkerStatistics GetWorkerStatistics()
     {
         WorkerStatistics stats = new WorkerStatistics();
