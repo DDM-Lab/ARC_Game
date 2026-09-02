@@ -78,7 +78,7 @@ class Economy:
     __slots__ = ("budget", "satisfaction", "counters",
                  "free_trained", "free_untrained", "working_trained", "working_untrained",
                  "in_training", "arriving", "under_construction", "buildings", "motel_pop",
-                 "pending_transfers", "pending_budget")
+                 "pending_transfers", "pending_budget", "used_sites")
 
     def __init__(self, budget=5000, satisfaction=50.0, free_trained=5, free_untrained=5):
         self.budget = int(budget)
@@ -96,6 +96,7 @@ class Economy:
         self.motel_pop = 0
         self.pending_transfers = []  # population moves that land at the END of the round
         self.pending_budget = []     # [rounds_remaining, amount] approved-but-not-arrived funding
+        self.used_sites = set()      # site ids already built on -- a rebuild there is a no-op
         self.counters["totalWorkers"] = self.total_workers()
 
     def apply_choice(self, task_tag: str, impacts, budget_delay_rounds: int = 0,
@@ -143,6 +144,7 @@ class Economy:
         e.motel_pop = self.motel_pop
         e.pending_transfers = list(self.pending_transfers)
         e.pending_budget = [list(x) for x in self.pending_budget]
+        e.used_sites = set(self.used_sites)
         return e
 
     # ── budget ──────────────────────────────────────────────────────────────────────
@@ -160,11 +162,31 @@ class Economy:
             self.counters[key] += int(amount)   # the budget without moving a counter
 
     # ── actions ─────────────────────────────────────────────────────────────────────
-    def build(self, building_type: str) -> bool:
-        """Start construction. Charges BuildingSystem's per-type cost, NOT action.cost."""
+    def build(self, building_type: str, site_id=None) -> bool:
+        """Start construction. Charges BuildingSystem's per-type cost, NOT action.cost.
+
+        TWO WAYS A BUILD SILENTLY DOES NOTHING, both measured on captures rather than
+        inferred, and both of which a naive port charges for anyway:
+
+        1. THE SITE IS ALREADY BUILT ON. The menu keeps offering a build at a consumed
+           site, and Unity accepts the request and does nothing -- one trace issued
+           build_Kitchen_4 at round 15 on a site consumed at round 3, and the budget did
+           not move. Charging it put the port 2000 ahead of Unity for the rest of the
+           episode.
+        BuildingSystem also has a no-debt gate (WouldAllowSpend) that rejects a build the
+        budget cannot cover -- but it "honors allowNegativeBudget (RL) which permits
+        overspend", and the gym runs with that on. Enforcing it here refused builds Unity
+        happily charged for, on traces whose budget went to -74,596 and kept building. So
+        the gate is deliberately NOT modelled, and this comment exists so the next person
+        who reads BuildingSystem.cs and notices the omission finds the reason.
+        """
         cost = C["build_cost"].get(building_type)
         if cost is None:
             return False
+        if site_id is not None and site_id in self.used_sites:
+            return False
+        if site_id is not None:
+            self.used_sites.add(site_id)
         self.spend(cost, SPEND_CATEGORY.get(building_type, "other"))
         self.under_construction.append([C["construction_rounds"], building_type])
         return True
@@ -263,8 +285,11 @@ def apply_action(econ: Economy, action: dict) -> bool:
     capture run looked like it was playing while doing nothing.)"""
     kind = action.get("action_type")
     if kind == "construction":
-        btype = (action.get("construction") or {}).get("building_type")
-        return econ.build(btype)
+        c = action.get("construction") or {}
+        site = c.get("site_id")
+        if site is None:
+            site = _trailing_int(action.get("action_id"), default=None)
+        return econ.build(c.get("building_type"), site)
     if kind == "worker":
         w = action.get("worker") or {}
         wat = w.get("worker_action_type") or ""
@@ -312,7 +337,8 @@ def action_from_id(action_id: str, cost: int = 0) -> dict:
     parts = aid.split("_")
     if aid.startswith("build_") and len(parts) >= 3:
         return {"action_type": "construction", "action_id": aid, "cost": cost,
-                "construction": {"building_type": parts[1]}}
+                "construction": {"building_type": parts[1],
+                                 "site_id": _trailing_int(aid, default=None)}}
     if aid.startswith("hire_") and len(parts) >= 3:
         return {"action_type": "worker", "action_id": aid, "cost": cost,
                 "worker": {"worker_action_type": f"hire_{parts[1]}",
@@ -357,7 +383,8 @@ def step_round(econ: Economy, day_changed: bool = False, new_day: int = 0) -> No
 
 
 def _trailing_int(action_id, default=1):
-    """hire_untrained_3 -> 3. The quantity axis Unity pre-discretises into menu entries."""
+    """hire_untrained_3 -> 3. The quantity axis Unity pre-discretises into menu entries,
+    and for builds the same suffix is the SITE id."""
     if not action_id:
         return default
     tail = str(action_id).rsplit("_", 1)[-1]
