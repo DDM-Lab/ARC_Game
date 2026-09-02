@@ -194,11 +194,11 @@ Rungs cleared, with the evidence each one rests on:
 | `Random.value` mapping | done | `(raw & 0x7FFFFF) / (2^23-1)`, fitted to two spawn rows Unity logged; rivals rejected in-test |
 | `Random.Range(int,int)` | done | `lo + raw % n`; scaled variants break 37-39 rounds of the fixture |
 | `Random.Range(float,float)` | done | reversed lerp `min*t + (1-t)*max`; 15/15 vs 5/15 for the forward form |
-| flood | done | 72/72 rounds, 8573 draws, three levels (marks, phase counts, tile sets) |
-| weather | done | 15/15 selections across three episodes |
+| flood | done | 140 rounds, three levels (marks, phase counts, tile sets) |
+| weather | done | 29/29 selections across six episodes, all five weather types |
 | full-round draw census | done | every inter-round interval explained; no uninstrumented drawer |
-| triggers (draw placement) | done | 204 draws across 68 passes on Unity's exact stream positions |
-| round loop / schedule | done | **closed loop: 92/92 rounds chained from one seed, no re-synchronisation** |
+| triggers (draw placement) | done | 297 draws across 99 passes on Unity's exact stream positions |
+| round loop / schedule | done | **closed loop: 134/134 rounds over six episodes, one seed each, no re-synchronisation** |
 | RHEA machinery | done | finds a known optimum; shift buffer beats cold start; planning is side-effect free |
 | tasks (which tasks fire) | **next** | needs the AND/OR reduction over every trigger category |
 | budget / construction / workforce / deliveries | not started | this is what gives RHEA something to decide |
@@ -237,7 +237,29 @@ construction, workforce and deliveries are not ported, so `NoOpActions` is a stu
 number RHEA reports is a rate, not a score. The economy port is what turns this from a
 working search into a working player, and it is the next block of work.
 
-### What the census bought
+### The economy draws nothing — measured, not assumed
+
+The first census ran on idle episodes, so it could only claim the stochastic surface of a
+round for a game where nobody acts. Re-running it on a scripted ACTION-BEARING episode
+(construction, four workers hired, training, community-to-motel transfers) gives the
+stronger result: **every draw is still explained by flood, Weather.select and
+TaskTrigger.probability, with zero unexplained draws in any round.**
+
+Construction, hiring, training, staffing and transfers consume no randomness at all. That
+reshapes the remaining work: the economy port needs ARITHMETIC fidelity, not RNG fidelity.
+There is no stream to keep in step, no draw-site ordering to discover, and no risk that a
+mis-ported cost calculation silently shifts every later mechanic. It also means all of
+RHEA's variance comes from the three ported sites, so common random numbers cover it
+completely.
+
+Caveat kept honest: this episode exercised construction, workforce and motel transfers.
+Goods deliveries arriving over multiple rounds are not confirmed covered, so re-run the
+census on an episode that completes one before treating the result as total.
+
+That episode is now in the fixture, so the closed-loop chain includes a game where the
+player acts: 134/134 rounds across six episodes.
+
+### What the first census bought
 
 Chaining each round's exit RNG state to the next round's entry state accounts for every
 draw with flood, `TaskTrigger.probability` and `Weather.select` alone. The stochastic
