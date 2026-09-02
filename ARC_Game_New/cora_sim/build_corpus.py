@@ -78,21 +78,64 @@ def parse_weather(path, source):
     return out
 
 
+_PASS = "Checking for triggered tasks per facility"
+_SUITABLE = re.compile(r"Found (\d+) suitable facilities for ([^:]+): (.*)$")
+_FIRED = re.compile(r"Task triggered for (\w+): (\w+)")
+_PROB = re.compile(r"\[RNGMARK\] \S+ draw:TaskTrigger\.probability (\{.*\})")
+
+
+def parse_triggers(path, source):
+    """One row per task-generation pass.
+
+    Records the pre-draw RNG state of every ProbabilityTrigger roll in the pass, the
+    facility ORDER Unity used (from its own "Found N suitable facilities" line -- the port
+    must reproduce FindObjectsOfType order, which is not sorted and not creation order),
+    and which task-facility pairs fired.
+
+    A firing is a ONE-DIRECTIONAL fact: these tasks use requireAllTriggers, so a fired task
+    proves its probability roll passed, while a non-firing proves nothing (another trigger
+    may have vetoed it). That is still enough to pin the reversed Range(0f,1f), because the
+    forward form predicts the opposite on every one of them."""
+    lines = open(path, errors="ignore").read().split("\n")
+    starts = [i for i, L in enumerate(lines) if _PASS in L]
+    rows = []
+    for a, b in zip(starts, starts[1:] + [len(lines)]):
+        states, order, fired = [], {}, []
+        for L in lines[a:b]:
+            m = _PROB.search(L)
+            if m:
+                st = json.loads(m.group(1))
+                states.append({w: st[w] & _M32 for w in ("s0", "s1", "s2", "s3")})
+                continue
+            m = _SUITABLE.search(L)
+            if m:
+                order[m.group(2).strip()] = [f.strip() for f in m.group(3).split(",") if f.strip()]
+                continue
+            m = _FIRED.search(L)
+            if m:
+                fired.append([m.group(1), m.group(2)])
+        rows.append({"source": source, "draws": states,
+                     "facilityOrder": order, "fired": fired})
+    return rows
+
+
 def main(argv):
     if len(argv) < 3:
         print(__doc__)
         return 2
     out_path, logs = argv[1], argv[2:]
-    rounds, weather = [], []
+    rounds, weather, triggers = [], [], []
     for path in logs:
         tag = path.split("/")[-1]
-        r, w = parse_log(path, tag), parse_weather(path, tag)
-        print(f"  {tag}: {len(r)} flood rounds, {len(w)} weather draws")
+        r, w, t = parse_log(path, tag), parse_weather(path, tag), parse_triggers(path, tag)
+        print(f"  {tag}: {len(r)} flood rounds, {len(w)} weather draws, "
+              f"{len(t)} task-generation passes")
         rounds += r
         weather += w
+        triggers += t
     payload = {"source": "headless ARC build, ARC_SNAPSHOT_DEBUG=1",
                "logs": [p.split("/")[-1] for p in logs],
-               "rounds": rounds, "weather": weather}
+               "rounds": rounds, "weather": weather, "triggers": triggers}
     json.dump(payload, open(out_path, "w"))
     seen = sorted({r["weather"] for r in rounds})
     print(f"wrote {out_path}: {len(rounds)} rounds, {len(weather)} weather draws, "

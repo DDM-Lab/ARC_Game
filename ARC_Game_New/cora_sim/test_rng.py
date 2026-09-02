@@ -122,6 +122,12 @@ def test_value_mapping_is_pinned_to_unity():
     rivals = {"raw/2^32": lambda w: w / 4294967296.0,
               "(raw>>9)/2^23": lambda w: (w >> 9) / 8388608.0}
     ok = True
+    # A rival is rejected if it disagrees on ANY row, not on every row: each row is ~108
+    # Bernoulli draws, so a rival that is wrong by ~1e-7 agrees on most of them and gives
+    # itself away only where a draw lands near the threshold. Requiring disagreement
+    # everywhere would fail on a correct-but-wider fixture, which is exactly what happened
+    # when the fixture grew from one episode to five.
+    rival_hits = {name: 0 for name in rivals}
     for rd, truth in rows:
         st = rd["rng"]
         chance = f32add(0.7, f32mul(rd["rain"], 0.2))   # floodSpawnChance + rain*bonus
@@ -133,18 +139,21 @@ def test_value_mapping_is_pinned_to_unity():
             ok = False
         for name, fn in rivals.items():
             r = UnityRandom(state=(st["s0"], st["s1"], st["s2"], st["s3"]))
-            rival = sum(1 for _ in range(108) if fn(r.next_uint()) < chance)
-            if rival == truth:
-                print(f"  value mapping           : rival {name} ALSO matches "
-                      f"(chance={chance:.3f}) - this test no longer discriminates")
-                ok = False
+            if sum(1 for _ in range(108) if fn(r.next_uint()) < chance) == truth:
+                rival_hits[name] += 1
+    survivors = [n for n, h in rival_hits.items() if h == len(rows)]
+    if survivors:
+        print(f"  value mapping           : rivals {survivors} agree on ALL {len(rows)} rows "
+              f"- this fixture no longer discriminates")
+        ok = False
     if ok:
         print(f"  value mapping           : {len(rows)} Unity spawn rows reproduced exactly; "
-              f"{len(rivals)} rival mappings rejected")
+              + ", ".join(f"{n} rejected on {len(rows)-h}/{len(rows)}"
+                          for n, h in rival_hits.items()))
     return ok
 
 
-if __name__ == "__main__":
+def main():
     log = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("RNGMARK_LOG", "")
     print("cora_sim.rng equivalence vs Unity")
     results = [test_batch_equals_sequential(), test_threshold_matches_value(),
@@ -152,4 +161,8 @@ if __name__ == "__main__":
                test_seeding_is_not_silently_wrong()]
     results.insert(0, test_transitions(log if log and os.path.exists(log) else None))
     print("\nRESULT:", "ALL PASS" if all(results) else "FAILURES PRESENT")
-    sys.exit(0 if all(results) else 1)
+    return 0 if all(results) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

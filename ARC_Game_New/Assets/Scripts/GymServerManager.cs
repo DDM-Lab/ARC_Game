@@ -949,6 +949,15 @@ public class GymServerManager : MonoBehaviour
                             if (i > 0) sb.Append(',');
                             if (td == null) { sb.Append("null"); continue; }
                             sb.Append("{\"taskId\":\"").Append(td.taskId).Append("\"")
+                              // taskTitle is what Unity's own debug output keys on, so the
+                              // fixture cannot be matched back to this inventory without it.
+                              .Append(",\"taskTitle\":\"").Append(td.taskTitle).Append("\"")
+                              // targetFacilityType + isGlobalTask are what decide HOW MANY
+                              // facilities a task rolls against, and therefore how many
+                              // draws the pass consumes.
+                              .Append(",\"targetFacilityType\":\"").Append(td.targetFacilityType).Append("\"")
+                              .Append(",\"isGlobalTask\":").Append(td.isGlobalTask ? "true" : "false")
+                              .Append(",\"autoSelectFacility\":").Append(td.autoSelectFacility ? "true" : "false")
                               .Append(",\"requireAllTriggers\":").Append(td.requireAllTriggers ? "true" : "false")
                               .Append(",\"counts\":{")
                               .Append("\"round\":").Append(Cnt(td.roundTriggers))

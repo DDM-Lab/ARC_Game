@@ -75,6 +75,10 @@
  "taskTriggers": [
   {
    "taskId": "Budget_Advisory",
+   "taskTitle": "Storm Funding Advisory",
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 0,
@@ -93,6 +97,10 @@
   },
   {
    "taskId": "Budget_Allocation",
+   "taskTitle": "Daily Budget Allocation",
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 1,
@@ -111,6 +119,10 @@
   },
   {
    "taskId": "Budget_Emergency",
+   "taskTitle": "Emergency Budget Crisis",
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 0,
@@ -129,6 +141,10 @@
   },
   {
    "taskId": "Community_Flood_Damge",
+   "taskTitle": "Community Emergency Evacuation",
+   "targetFacilityType": "Community",
+   "isGlobalTask": false,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 0,
@@ -147,6 +163,10 @@
   },
   {
    "taskId": "Community_FoodRequest",
+   "taskTitle": "Food Request From Community",
+   "targetFacilityType": "Community",
+   "isGlobalTask": false,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 0,
@@ -165,6 +185,10 @@
   },
   {
    "taskId": "Community_TransportRequest",
+   "taskTitle": "Population Relocation From Community",
+   "targetFacilityType": "Community",
+   "isGlobalTask": false,
+   "autoSelectFacility": false,
    "requireAllTriggers": true,
    "counts": {
     "round": 0,
@@ -185,6 +209,10 @@
   },
   {
    "taskId": "Flood_Alert",
+   "taskTitle": "Flood Alert - Rising Water",
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 0,
@@ -203,6 +231,10 @@
   },
   {
    "taskId": "Offboarding_alert_day6",
+   "taskTitle": "Alert - Game Will End on Day 8",
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 1,
@@ -221,6 +253,10 @@
   },
   {
    "taskId": "Offboarding_alert_day7",
+   "taskTitle": "Alert - Game Will End on Day 8",
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 1,
@@ -239,6 +275,10 @@
   },
   {
    "taskId": "Shelter_Flood_Damage",
+   "taskTitle": "Shelter Flood Damage",
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": false,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 0,
@@ -257,6 +297,10 @@
   },
   {
    "taskId": "Shelter_FoodRequest",
+   "taskTitle": "Food Request From Shelter",
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": false,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 0,
@@ -277,6 +321,10 @@
   },
   {
    "taskId": "Worker_BadRatio",
+   "taskTitle": "Training Recommendation Alert",
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 1,
@@ -295,6 +343,10 @@
   },
   {
    "taskId": "Worker_NoAvaliable",
+   "taskTitle": "Worker Shortage Advice",
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 0,
@@ -313,6 +365,10 @@
   },
   {
    "taskId": "Worker_TooMany_Idle",
+   "taskTitle": "Workforce Optimization Alert",
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
    "requireAllTriggers": true,
    "counts": {
     "round": 1,
