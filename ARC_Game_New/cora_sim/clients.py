@@ -110,7 +110,7 @@ class ClientTracker:
         self.groups.append(ClientGroup(count, with_need, current_round,
                                        current_round + stay, facility))
 
-    def update(self, rng, current_round, counters, marks=None):
+    def update(self, rng, current_round, counters, marks=None) -> list:
         """Per-round evaluation: natural departures, then casework generation.
 
         The casework probability GROWS with the stay: base * growth^(Y-1) where Y is rounds
@@ -122,11 +122,18 @@ class ClientTracker:
         as needing casework. That asymmetry is in RewardMetricsTracker and it matters: the
         denominator of the casework satisfaction term is bigger than the population that
         triggered it."""
+        departures = []
         for group in list(self.groups):
             rounds_in = current_round - group.arrival_round
             if (not group.departed and group.without_need > 0
                     and current_round >= group.departure_round):
                 group.departed = True
+                # People who never needed casework LEAVE, and leaving reduces the
+                # facility's population -- which is what the motel bills on. Marking the
+                # group departed without releasing the occupancy over-charges lodging for
+                # the rest of the episode: measured at 160,000 against Unity's 100,000,
+                # exactly 300 residents x $200 that had already gone home.
+                departures.append((group.without_need, group.facility))
             if group.with_need > 0 and not group.casework_generated:
                 y = max(1, rounds_in)
                 pct = f32mul(C["base_casework_pct"], C["growth"] ** (y - 1))
@@ -136,6 +143,7 @@ class ClientTracker:
                 if rng.value_lt(threshold_for(f32(pct / 100.0))):
                     group.casework_generated = True
                     counters["caseworkRequested"] += group.count
+        return departures
 
     def process_home(self, quantity, counters):
         """A delivery to a casework site sends people home. Credits caseworkProcessed."""

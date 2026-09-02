@@ -365,15 +365,31 @@ class Economy:
                 return i
         return -1
 
-    def staff(self, index: int, trained: int = 0, untrained: int = 0) -> bool:
-        """Assign workers, then re-evaluate the status.
+    def staff(self, index: int, count: int = 0, trained: int = None,
+              untrained: int = None) -> bool:
+        """Assign `count` WORKERS -- a head count, not workforce points.
 
-        The building flips to InUse the moment assigned workforce UNITS reach
-        requiredWorkforce -- two trained workers do it, four untrained also do it."""
+        MEASURED, and it is the opposite of what the cmd_parser comment says. Unity's
+        ExecuteAssignment calls TryReassignWorkerCountToBuilding(id, quantity) and the C#
+        comment is explicit: "assign EXACTLY p.quantity workers (count, not workforce
+        points)". A capture that requested 4 workers for a kitchen needing 4 workforce
+        ended with assignedWorkforce = 8 and free trained 5 -> 1, so the system took FOUR
+        TRAINED workers and delivered double the requested capacity.
+
+        Two consequences a planner cares about: asking for `requiredWorkforce` workers
+        OVER-STAFFS by 2x while trained workers last, and it burns the trained pool first
+        -- the same workers that are worth 2 each everywhere else.
+
+        Explicit trained/untrained are still accepted for tests that want to pin a mix."""
         if not self.can_staff(index):
             return False
-        trained = min(trained, self.free_trained)
-        untrained = min(untrained, self.free_untrained)
+        if trained is None and untrained is None:
+            # Greedy, trained first -- what TryReassignWorkerCountToBuilding does.
+            trained = min(count, self.free_trained)
+            untrained = min(count - trained, self.free_untrained)
+        else:
+            trained = min(trained or 0, self.free_trained)
+            untrained = min(untrained or 0, self.free_untrained)
         if trained + untrained <= 0:
             return False
         b = self.buildings[index]
@@ -478,11 +494,15 @@ def apply_action(econ: Economy, action: dict) -> bool:
         if wat.startswith("train"):
             return econ.train(qty, cost)
         return False
+    if kind == "worker_assignment":
+        a = action.get("assignment") or {}
+        idx = econ.index_of(a.get("building_name"))
+        return econ.staff(idx, count=int(a.get("quantity") or 0))
     if kind == "worker" and (action.get("worker") or {}).get("worker_action_type", "").startswith(
             ("staff", "assign")):
         w = action.get("worker") or {}
         return econ.staff(int(w.get("building_index", -1)),
-                          int(w.get("trained") or 0), int(w.get("untrained") or 0))
+                          count=int(w.get("quantity") or w.get("count") or 0))
     if kind == "resource_transfer":
         tr = action.get("transfer") or {}
         if tr.get("resource_type") == "FoodPacks":

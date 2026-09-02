@@ -64,6 +64,13 @@ def main(pattern=None):
                                           choice.get("budgetDelayRounds", 0) or 0,
                                           choice.get("destinationCategory") or "",
                                           choice.get("deliveryQuantity", 0) or 0)
+                if act.get("kind") == "staff" and not act.get("error") and act.get("ok"):
+                    # worker_assignment: a HEAD COUNT against the first staffable building.
+                    # Skipping these left cumWorkingWorkers at 0 while Unity counted 4.
+                    a = (act.get("payload") or {}).get("assignment") or {}
+                    idx = next((i for i, b in enumerate(econ.buildings)
+                                if econ.can_staff(i)), -1)
+                    econ.staff(idx, count=int(a.get("quantity") or 0))
                 if act.get("kind") == "menu" and not act.get("error"):
                     # Journals record the stable action_id, not the live menu entry, so
                     # rebuild the structured action from it.
@@ -72,6 +79,14 @@ def main(pattern=None):
             before_day = step["before"]["sessionInfo"]["currentDay"]
             after_day = step["after"]["sessionInfo"]["currentDay"]
             step_round(econ, after_day != before_day, after_day)
+            # Motel occupancy is READ from the capture rather than predicted here. This
+            # suite tests spend ARITHMETIC; whether the port predicts occupancy correctly
+            # depends on client arrivals and departures, which need the RNG stream and are
+            # covered by test_clients. Mixing the two would make an occupancy error look
+            # like a billing error and vice versa.
+            for f in ((step["after"].get("mapState") or {}).get("facilities") or []):
+                if f.get("buildingType") == "Motel":
+                    econ.motel_pop = f.get("currentPopulation", 0) or 0
             truth = step["after"].get("rewardMetrics") or {}
             got = econ.metrics()
             for k in OWNED:

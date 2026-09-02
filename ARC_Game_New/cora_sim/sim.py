@@ -170,7 +170,9 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     w.pending_arrivals = []
     for count, facility in arrivals:
         w.clients.register_arrival(w.rng, count, w.round_index, facility, marks)
-    w.clients.update(w.rng, w.round_index, w.economy.counters, marks)
+    for count, facility in w.clients.update(w.rng, w.round_index, w.economy.counters, marks):
+        if "motel" in str(facility).lower():
+            w.economy.motel_pop = max(0, w.economy.motel_pop - count)
 
     rolls = []
     day_changed = w.segment >= ROUNDS_PER_DAY
