@@ -55,6 +55,12 @@ TAG_CATEGORY = {"Food": "food", "Lodging": "lodging"}
 # So a building bought on round 1 cannot be staffed until round 5 and cannot serve anyone
 # until it is staffed. Prebuilt buildings (communities, the motel) skip the whole lifecycle.
 # Workforce is counted in UNITS, not heads: a trained worker is worth 2, an untrained 1.
+# Prebuilt buildings never enter the lifecycle: they have no status in the export, are
+# always suitable for tasks, and cannot be staffed or deconstructed. Constructed ones walk
+# the whole thing.
+STATUS_PREBUILT = "Prebuilt"
+STATUS_DECONSTRUCTING = "Deconstructing"
+STATUS_DISABLED = "Disabled"
 STATUS_UNDER_CONSTRUCTION = "UnderConstruction"
 STATUS_NEED_WORKER = "NeedWorker"
 STATUS_IN_USE = "InUse"
@@ -85,6 +91,7 @@ def load_economy_constants(path=None):
         "trained_arrival_days": int(w["trainedArrivalDays"]),
         "training_cost": int(w["trainingCostPerWorker"]),
         "training_days": int(w["trainingDurationDays"]),
+        "deconstruction_rounds": int(c.get("deconstructionRounds", 3)),
     }
 
 
@@ -99,7 +106,34 @@ class Economy:
                  "in_training", "arriving", "under_construction", "buildings", "motel_pop",
                  "pending_transfers", "pending_budget", "used_sites")
 
-    def __init__(self, budget=5000, satisfaction=50.0, free_trained=5, free_untrained=5):
+    @staticmethod
+    def default_prebuilts():
+        """The four buildings every episode starts with, from the sim_constants export.
+
+        They carry the population and food storage the ResourceTrigger reads, which is why
+        the port needs per-facility resources at all rather than a single global pool: a
+        food request fires because ONE community is empty, not because the map is."""
+        return [
+            {"name": "Community Charleston", "type": "Community", "status": STATUS_PREBUILT,
+             "assigned": 0, "trained": 0, "untrained": 0,
+             "resources": {"foodPacks": 0, "foodPacksCapacity": 400,
+                           "population": 400, "populationCapacity": 400}},
+            {"name": "Community Trinity", "type": "Community", "status": STATUS_PREBUILT,
+             "assigned": 0, "trained": 0, "untrained": 0,
+             "resources": {"foodPacks": 0, "foodPacksCapacity": 400,
+                           "population": 400, "populationCapacity": 400}},
+            {"name": "Community Amherst", "type": "Community", "status": STATUS_PREBUILT,
+             "assigned": 0, "trained": 0, "untrained": 0,
+             "resources": {"foodPacks": 0, "foodPacksCapacity": 400,
+                           "population": 400, "populationCapacity": 400}},
+            {"name": "Motel", "type": "Motel", "status": STATUS_PREBUILT,
+             "assigned": 0, "trained": 0, "untrained": 0,
+             "resources": {"foodPacks": 0, "foodPacksCapacity": 0,
+                           "population": 0, "populationCapacity": 3000}},
+        ]
+
+    def __init__(self, budget=5000, satisfaction=50.0, free_trained=5, free_untrained=5,
+                 prebuilts=True):
         self.budget = int(budget)
         self.satisfaction = float(satisfaction)
         self.counters = dict.fromkeys(COUNTERS, 0)
@@ -111,7 +145,7 @@ class Economy:
         self.in_training = []        # [days_remaining] per worker being trained
         self.arriving = []           # [(days_remaining, "trained"|"untrained")]
         self.under_construction = [] # [(rounds_remaining, building_type)]
-        self.buildings = []          # [{"type","status","assigned","trained","untrained"}]
+        self.buildings = Economy.default_prebuilts() if prebuilts else []
         self.motel_pop = 0
         self.pending_transfers = []  # population moves that land at the END of the round
         self.pending_budget = []     # [rounds_remaining, amount] approved-but-not-arrived funding
@@ -246,8 +280,23 @@ class Economy:
         self.under_construction = [e for e in self.under_construction if e[0] > 0]
         for _rounds, btype in finished:
             # Construction completing puts a building in NeedWorker, NOT in service.
-            self.buildings.append({"type": btype, "status": STATUS_NEED_WORKER,
-                                   "assigned": 0, "trained": 0, "untrained": 0})
+            self.buildings.append({"name": f"{btype}_{len(self.buildings)}", "type": btype,
+                                   "status": STATUS_NEED_WORKER, "assigned": 0,
+                                   "trained": 0, "untrained": 0,
+                                   "resources": {"foodPacks": 0, "foodPacksCapacity": 400,
+                                                 "population": 0,
+                                                 "populationCapacity": 400}})
+        # Deconstruction runs on the same round clock as construction.
+        for b in self.buildings:
+            if b.get("deconstruct_rounds"):
+                b["deconstruct_rounds"] -= 1
+                if b["deconstruct_rounds"] <= 0:
+                    b["status"] = STATUS_DISABLED
+                    self.free_trained += b["trained"]
+                    self.free_untrained += b["untrained"]
+                    self.working_trained -= b["trained"]
+                    self.working_untrained -= b["untrained"]
+                    b["trained"] = b["untrained"] = b["assigned"] = 0
 
     def on_day_end(self, day: int) -> None:
         """Day rollover: motel billing, worker arrivals, training completion.
@@ -271,6 +320,35 @@ class Economy:
         self.counters["daysCompleted"] = day
         self.counters["totalWorkers"] = self.total_workers()
 
+    def deconstruct(self, index: int) -> bool:
+        """Begin tearing a building down. Takes `deconstructionTimeDays` and frees its
+        workers only when it COMPLETES -- until then the workers stay committed and the
+        building is neither operational nor available."""
+        if not (0 <= index < len(self.buildings)):
+            return False
+        b = self.buildings[index]
+        if b["status"] in (STATUS_PREBUILT, STATUS_DECONSTRUCTING, STATUS_DISABLED):
+            return False
+        b["status"] = STATUS_DECONSTRUCTING
+        b["deconstruct_rounds"] = C.get("deconstruction_rounds", 3)
+        return True
+
+    def facilities(self):
+        """Everything the trigger conditions and task suitability read.
+
+        Prebuilts count as operational; constructed buildings only when InUse. This is the
+        connection that was missing: the port had a `buildings` list and a trigger
+        evaluator, and nothing joined them, so a shelter the port built could never become
+        a suitable facility or satisfy a resource trigger."""
+        out = []
+        for b in self.buildings:
+            prebuilt = b["status"] == STATUS_PREBUILT
+            out.append({"name": b.get("name"), "type": b["type"],
+                        "prebuilt": prebuilt, "status": b["status"],
+                        "operational": prebuilt or b["status"] == STATUS_IN_USE,
+                        "resources": b.get("resources") or {}})
+        return out
+
     def can_staff(self, index: int) -> bool:
         """Is this building in a state where workers can be assigned?
 
@@ -280,6 +358,12 @@ class Economy:
         if not (0 <= index < len(self.buildings)):
             return False
         return self.buildings[index]["status"] in (STATUS_NEED_WORKER, STATUS_IN_USE)
+
+    def index_of(self, name):
+        for i, b in enumerate(self.buildings):
+            if b.get("name") == name:
+                return i
+        return -1
 
     def staff(self, index: int, trained: int = 0, untrained: int = 0) -> bool:
         """Assign workers, then re-evaluate the status.

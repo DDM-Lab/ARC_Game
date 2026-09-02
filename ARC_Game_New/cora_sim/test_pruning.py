@@ -25,16 +25,21 @@ def main():
     ok = True
 
     # 1. A building under construction cannot be staffed; once it finishes, it can.
+    #    Index matters: an Economy starts with four PREBUILT facilities, which are always
+    #    operational and can never be staffed, so the new shelter lands after them.
     e = Economy(budget=50000)
     e.build("Shelter", 1)
-    kept, _ = prune([_staff(0)], econ=e, budget=e.budget)
+    idx = len(e.buildings)                 # where the shelter will appear once it finishes
+    kept, _ = prune([_staff(idx)], econ=e, budget=e.budget)
     during = len(kept)
     for _ in range(4):
         e.on_round_end()
-    kept_after, _ = prune([_staff(0)], econ=e, budget=e.budget)
-    good = during == 0 and len(kept_after) == 1
+    kept_after, _ = prune([_staff(idx)], econ=e, budget=e.budget)
+    prebuilt, _ = prune([_staff(0)], econ=e, budget=e.budget)
+    good = during == 0 and len(kept_after) == 1 and len(prebuilt) == 0
     print(f"  staffing under construction   : dropped while building ({during==0}), "
-          f"kept once NeedWorker ({len(kept_after)==1})"
+          f"kept once NeedWorker ({len(kept_after)==1}), "
+          f"prebuilts never staffable ({len(prebuilt)==0})"
           f"{'' if good else '  <-- WRONG'}")
     ok &= good
 

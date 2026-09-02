@@ -406,3 +406,45 @@ not been shown to actually diverge (snapshot equivalence passes 9/9), and sortin
 change which community receives tasks in a shipped, already-benchmarked game. So the port
 will reproduce Unity's order from an export rather than assume one, and whether to sort it
 in C# is a call for the maintainer, not a silent fix.
+
+---
+
+## What is NOT fully operational in the surrogate
+
+Kept deliberately blunt. Everything below is either unmodelled, modelled without ground
+truth, or modelled but unvalidated — and the distinction matters more than the list.
+
+### Modelled and validated against Unity
+flood · weather · probability triggers · client stay · budget and all four spend categories ·
+construction cost and timing · workforce hire/train/arrival · motel billing · task
+resolution arithmetic · delivery latency (per tag) · trigger draw counts.
+
+### Modelled but NOT validated against Unity
+| mechanic | why not |
+|---|---|
+| building status lifecycle (UnderConstruction → NeedWorker → InUse) | no capture ever had a constructed building reach InUse — nothing was staffed, so the transition is transcribed from `Building.cs` and exercised only by unit tests |
+| staffing and workforce units (trained=2, untrained=1) | same: no capture staffs anything |
+| deconstruction (3 rounds → Disabled, workers freed on completion) | no capture deconstructs |
+| task generation outcomes (which tasks fire) | draw COUNT is exact; the fired SET needs inputs `game_state` does not export (the segment a pass runs at, flood tile count, the workforce ratio) |
+| per-facility resources | seeded from the prebuilt values; food/population flow between facilities is not simulated |
+
+### Not modelled at all
+| mechanic | consequence |
+|---|---|
+| delivery vehicle routing (2 instrumented draw sites) | never fired in any capture, so the stream is unaffected in practice — but a scenario that moves goods by road would desynchronise |
+| vehicle fleet, damage, road blocking | flood blocks roads in Unity; the port models flood tiles but not their effect on transport |
+| food packs moving between kitchens and facilities | the reason kitchen orders never fulfil is modelled as "no operational kitchen", which is TRUE in every capture but is a proxy for stock accounting |
+| task penalties (`ApplyTaskPenalties`) | uncategorised budget removal on incomplete tasks |
+| satisfaction dynamics beyond choice impacts | decay, per-round drift, efficiency coupling |
+| `Disabled` buildings re-entering service | terminal in the port |
+| the GUI/router layer | out of scope by design |
+
+### The honest summary
+The **stochastic surface is complete** — the census closes at 0 unexplained draws on a
+played episode, so the port can hold the RNG stream through a whole game. The **scoring
+surface is complete for what the captures exercised**. What is thin is the part no capture
+ever exercised: a staffed, operational, producing building. That is not a coincidence —
+staffing is hard in this game, which is why the baselines score as poorly as they do — but
+it does mean the most strategically interesting region of the state space is the least
+validated. Capturing an episode that builds AND staffs a kitchen would close most of the
+second table at once.

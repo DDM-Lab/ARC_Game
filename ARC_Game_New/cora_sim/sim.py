@@ -40,6 +40,7 @@ from .economy import Economy, step_round as economy_step
 from .flood import FloodState, update_flood
 from .floodmap import FloodMap
 from .tasks import TaskBoard
+from .generation import TriggerContext, generation_pass, suitable_facilities
 from .triggers import roll_pass
 from .weather import RAIN_INTENSITY, generate_weather
 
@@ -67,7 +68,7 @@ class World:
 
     __slots__ = ("rng", "flood", "fmap", "weather", "day", "segment",
                  "facilities_for", "generated", "clients", "economy", "tasks",
-                 "round_index")
+                 "round_index", "_trigger_memory", "use_generation")
 
     def __init__(self, rng, weather, day=1, segment=1, flood=None, fmap=None,
                  facilities_for=None):
@@ -77,12 +78,35 @@ class World:
         self.weather = weather
         self.day = day
         self.segment = segment
-        self.facilities_for = facilities_for or (lambda task: ())
+        # Default to the port's OWN facilities. Previously this defaulted to an empty
+        # stub, so a shelter the surrogate built could never become a suitable facility,
+        # never satisfy a resource trigger and never change the generation draw count --
+        # the building lifecycle existed but nothing consumed it.
+        self.facilities_for = facilities_for or self._own_facilities
         self.generated = []            # last round's trigger rolls, for tasks.py to consume
+        # roll_pass only DRAWS; generation_pass draws AND decides which tasks fire. The
+        # closed-loop equivalence tests pin the stream with roll_pass, so generation stays
+        # opt-in until it has ground truth of its own.
+        self.use_generation = False
         self.clients = ClientTracker()
         self.economy = Economy()
         self.tasks = TaskBoard()
         self.round_index = 0
+        self._trigger_memory = {}       # stateful triggers (FloodExpanded, BudgetDropped)
+
+    def _own_facilities(self, task_def):
+        return suitable_facilities(task_def, self.economy.facilities())
+
+    def trigger_context(self) -> TriggerContext:
+        """Everything the trigger conditions read, from the port's own state."""
+        free = self.economy.free_trained + self.economy.free_untrained
+        total = max(1, self.economy.total_workers())
+        return TriggerContext(
+            day=self.day, segment=self.segment, weather=self.weather,
+            flood_tiles=len(self.flood.tiles), budget=self.economy.budget,
+            satisfaction=self.economy.satisfaction, free_workforce=free,
+            idle_ratio=100.0 * free / total, facilities=self.economy.facilities(),
+            prev=self._trigger_memory)
 
     def clone(self) -> "World":
         w = World.__new__(World)
@@ -98,7 +122,16 @@ class World:
         w.economy = self.economy.clone()
         w.tasks = self.tasks.clone()
         w.round_index = self.round_index
+        w._trigger_memory = dict(self._trigger_memory)
+        w.use_generation = self.use_generation
         return w
+
+
+def _pass(w: World, marks):
+    """One task-generation pass. Same draws either way; only the outcome differs."""
+    if w.use_generation:
+        return generation_pass(w.rng, w.trigger_context(), w.facilities_for, marks=marks)
+    return roll_pass(w.rng, w.facilities_for, marks=marks)
 
 
 def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
@@ -138,11 +171,11 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         w.segment = 1
         w.weather = generate_weather(w.rng, marks=marks)
         for _ in range(_ROLLOVER_PASSES):
-            rolls += roll_pass(w.rng, w.facilities_for, marks=marks)
+            rolls += _pass(w, marks)
     else:
         w.segment += 1
         if w.segment in _GENERATION_SEGMENTS:
-            rolls += roll_pass(w.rng, w.facilities_for, marks=marks)
+            rolls += _pass(w, marks)
     w.generated = rolls
 
     if on_flood_enter is not None:
