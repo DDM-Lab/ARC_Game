@@ -952,6 +952,14 @@ public class GymServerManager : MonoBehaviour
                               // taskTitle is what Unity's own debug output keys on, so the
                               // fixture cannot be matched back to this inventory without it.
                               .Append(",\"taskTitle\":\"").Append(td.taskTitle).Append("\"")
+                              // taskTag decides which SPEND CATEGORY a choice's cost lands
+                              // in: TaskDetailUI attributes a negative Budget impact to
+                              // Food or Lodging by the task's tag, and to Other otherwise.
+                              // Without it the port can charge the right amount to the
+                              // wrong score component, which nets out in the budget and
+                              // corrupts cost-efficiency.
+                              .Append(",\"taskTag\":\"").Append(td.taskTag).Append("\"")
+                              .Append(",\"roundsRemaining\":").Append(td.roundsRemaining)
                               // targetFacilityType + isGlobalTask are what decide HOW MANY
                               // facilities a task rolls against, and therefore how many
                               // draws the pass consumes.
