@@ -369,7 +369,44 @@ class Fleet:
             self.pos[v] = src
             queue.pop(0)
             if load is not None and load(payload, qty) <= 0:
-                free_at[v] = at_source            # idle at the source, ready for more work
+                # THE ZOMBIE-COROUTINE RACE, which is a bug in the GAME that the surrogate
+                # has to reproduce because the goal is to match the headless server, not an
+                # idealised CORA. Reported to the maintainer; see the commit message.
+                #
+                # LoadCargo aborts and nulls currentTask, leaving the vehicle Idle. In the
+                # SAME frame AssignPendingTasks hands it the next order and sets currentTask
+                # again -- and Vehicle.AssignDeliveryTask does NOT StopAllCoroutines. The
+                # aborted ExecuteDeliveryTask resumes, its `if (currentTask == null) yield
+                # break` guard now passes because currentTask was repopulated, and it falls
+                # through to step 3: drive straight to the NEW task's destination, skipping
+                # the source pickup entirely. Two coroutines then share currentPath and
+                # currentPathIndex, so the vehicle advances two cells per frame.
+                #
+                # It arrives carrying nothing, but CompleteDelivery still fires and
+                # TaskSystem credits `parentTask.deliveredQuantity += deliveryTask.quantity`
+                # -- the NOMINAL amount. So the task is resolved AND fulfilled at full
+                # quantity while zero people move. Observed in all eight instrumented
+                # captures, exactly once each, always on the first round with a full queue.
+                if queue:
+                    nseq, npayload, nsrc, ndst, nqty = queue.pop(0)
+                    step = path_length(self.pos[v], nsrc, flooded, self.spec)
+                    if step is not None and step > 0:
+                        pass                       # one cell along, position is approximated
+                    zombie = path_length(self.pos[v], ndst, flooded, self.spec)
+                    if zombie is not None:
+                        # Two coroutines advancing the same index: ceil(L/2)+1 frames.
+                        frames = -(-zombie // 2) + 1
+                        done = at_source + frames * self.spec.fixed_delta
+                        self.pos[v] = ndst
+                        if done <= budget:
+                            landed.append(npayload + ("zombie",))
+                            free_at[v] = done
+                        else:
+                            self.busy_seconds[v] = done - budget
+                            self.carrying[v] = npayload + ("zombie",)
+                            free_at[v] = budget
+                        continue
+                free_at[v] = at_source            # clean abort: idle at the source
                 continue
             leg2 = path_length(src, dst, flooded, self.spec)
             done = at_source + leg_seconds(leg2, self.spec)

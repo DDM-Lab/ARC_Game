@@ -477,12 +477,17 @@ class TaskBoard:
             return qty if task is None else self.retry_if_unsourced(task, qty)
 
         arrived, self.pending = self.fleet.run_round(self.pending, self.flooded, _load)
-        for task_id, quantity, destination in arrived:
+        for _entry in arrived:
+            task_id, quantity, destination = _entry[0], _entry[1], _entry[2]
+            zombie = len(_entry) > 3 and _entry[3] == "zombie"
             task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
             if task is None:
                 continue
+            # deliveredQuantity is credited from the delivery's NOMINAL quantity, so a
+            # zombie counts as fulfilled -- but it physically moved nobody, so it must not
+            # produce arrivals, casework or motel occupancy.
             task.delivered += quantity
-            if quantity > 0:
+            if quantity > 0 and not zombie:
                 landed_now.append((task_id, quantity, destination))
             if task_id not in self.active and not task.resolved:
                 self.resolve(task, fulfilled=task.delivered > 0, counters=counters)

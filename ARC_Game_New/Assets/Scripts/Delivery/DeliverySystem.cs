@@ -598,7 +598,9 @@ public class DeliverySystem : MonoBehaviour
                         + "\",\"qty\":" + task.quantity
                         + ",\"src\":\"" + (task.sourceBuilding != null ? task.sourceBuilding.name : "")
                         + "\",\"dst\":\"" + (task.destinationBuilding != null ? task.destinationBuilding.name : "")
-                        + "\",\"veh\":\"" + suitableVehicle.GetVehicleName() + "\"}");
+                        + "\",\"veh\":\"" + suitableVehicle.GetVehicleName()
+                        + "\",\"at\":\"" + suitableVehicle.transform.position.ToString("F1")
+                        + "\",\"srcpos\":\"" + task.GetSourceRoadConnection().ToString("F1") + "\"}");
                     availableVehicleList.Remove(suitableVehicle);
 
                     OnTaskAssigned?.Invoke(task, suitableVehicle);
