@@ -199,7 +199,16 @@ def leg_seconds(steps, spec=None):
     # overhead that made every port trip slightly cheaper than Unity's. On the long
     # Community03 -> Motel route it turns 9.9s into 11.4s against a 10s round, which is the
     # difference between the port landing that relocation and Unity spilling it.
-    return (steps + 1) * per_step
+    # ARRIVAL is what decides the turn, so the leg is measured to its UNLOAD mark, not to
+    # the next leg mark. Across 203 deliveries in the 32-round captures the modal gap from a
+    # leg mark to its unload is EXACTLY nodes-1 frames (144 of 203; the remainder are legs
+    # that waited on a dispatch pass). nodes-1 is the segment count, i.e. `steps`. The old
+    # `steps + 1` came from measuring leg-mark to NEXT-leg-mark, which includes the
+    # completion boundary frame and so overcharges every leg by one. Two legs per delivery
+    # meant 0.6s of phantom travel, enough to push an arrival into the following turn.
+    # A vehicle already parked on its source has steps == 0 and now correctly pays nothing:
+    # its 1-node path never enters MoveToPosition's movement loop.
+    return steps * per_step
 
 
 class Fleet:
