@@ -527,12 +527,26 @@ CancelTaskDeliveries does NOT cancel because the call is commented out
 (705-711). 100 + 100 = the 200 Unity reports. The port expires the task AND strips the order
 out of `pending`, so nothing can arrive late and fulfilled stops at 100.
 
-That fix was implemented once already this session -- leaving the task in `awaiting` with
-resolved=True and not filtering `pending` -- and measured INERT, which now looks like it was
-necessary but not sufficient: the order survives, but the port's fleet still has to actually
-deliver it for late_delivery to fire. Re-apply it and check with `diag_resolutions` whether a
-`LATE id=... qty=100` line appears at all. If it does not, the question moves to why that
-delivery never lands, which is a fleet question rather than a task-lifecycle one.
+APPLIED, AND THE DISCRIMINATING CHECK ANSWERED. The order now outlives its task -- the expiry
+no longer pops `awaiting` nor strips `pending`. `diag_resolutions` on 5501 still prints NO
+`LATE` line at all:
+
+    r5   resolve id=6 demand=100 delivered=100 fulfilled=True
+         resolve id=7 demand=100 delivered=0   fulfilled=False
+    r6   <-- lodgingFulfilled unity=200 port=100
+
+So the port's fleet NEVER DELIVERS id=7's order, even when the order is allowed to survive.
+This is now a FLEET question, not a task-lifecycle one, and the task-lifecycle side is done:
+keeping the order alive is necessary and is correct against the C#, it is simply not
+sufficient on its own. 11 suites pass.
+
+THE REMAINING QUESTION, stated precisely: Unity dispatches Community02->Motel at s6d2r1f321 and
+unloads it at s7d2r2f353. The port queues the same order and never lands it. Instrument
+`Fleet.run_round` for that order -- is it ever dispatched, does `path_length` return None
+(flood-blocked), does it get dropped, or does it sit in `queue` behind others? `run_round`
+already returns `dropped`, so start by printing that. Note the port and Unity agree on
+lodgingRESOLVED here, so whatever happens does not change the resolution count -- only whether
+anything arrives afterwards.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on

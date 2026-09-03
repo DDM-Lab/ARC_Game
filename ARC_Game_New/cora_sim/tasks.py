@@ -669,9 +669,16 @@ class TaskBoard:
             # them, so the expiry is not a round behind.
             task.rounds_remaining -= 1
             if task.rounds_remaining <= 0 and not task.resolved:
+                # THE ORDER OUTLIVES THE TASK. CancelTaskDeliveries is commented out
+                # (TaskSystem.cs:569-571), so an order already queued keeps driving after its
+                # parent expires; when it lands, OnDeliveryTaskCompleted finds the parent among
+                # completedTasks and credits FULFILLED ONLY via AddLateDelivery (705-711),
+                # never re-crediting resolved. Unity's 100 + 100 is one expiry plus one late
+                # arrival. Dropping the task from `awaiting` AND stripping its order out of
+                # `pending` made that arrival impossible, capping fulfilled at 100.
+                # `_occupies_slot` ignores resolved tasks, so leaving it in `awaiting` holds no
+                # facility slot open.
                 self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
-                self.awaiting.pop(task_id, None)
-                self.pending = [x for x in self.pending if x[1][0] != task_id]
 
     def complete(self, task_id, counters: dict) -> None:
         """TaskSystem.CompleteTask -- resolution with fulfilled=True."""
