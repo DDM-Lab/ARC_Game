@@ -281,9 +281,60 @@ Two concrete suspects in `roads.py`, both unverified against the C#:
     tasks-outer versus vehicles-outer, and whether a chosen vehicle leaves the candidate set
     before the next task is assigned in the same frame.
 
-Fable is reading both out of DeliverySystem.cs / Vehicle.cs. Do not guess at the formula
-before that lands -- an assignment change is exactly the kind of edit that moves counters
-without moving the draw stream, and the mark diff will not flag it if the swap is symmetric.
+SETTLED FROM SOURCE. CalculateVehicleSuitability, DeliverySystem.cs:657-673:
+
+    score  = 100f / (1f + Vector3.Distance(vehicle.transform.position,
+                                           task.GetSourcePosition()))
+           + ((float)task.quantity / vehicle.GetMaxCapacity()) * 50f
+           + vehicle.moveSpeed * 10f
+
+The distance is EUCLIDEAN, not path length, and the port's constants are all correct. The
+port is wrong in ONE place, and it is the ENDPOINT:
+
+    GetSourcePosition()        -> sourceBuilding.transform.position   (DeliverySystem.cs:42-45)
+    GetSourceRoadConnection()  -> roadManager.CellToWorld(nearestRoad) (DeliverySystem.cs:53-58)
+
+Unity scores against the BUILDING TRANSFORM. The port scores against the ROAD CONNECTION
+CELL -- and so does our own `srcpos` instrumentation, which is why the discrepancy stayed
+invisible: `building_cell["Community01"] == [1,5]` matches the mark's `srcpos (1.5,5.5)`
+exactly, so the map data we have IS the road cell, not the transform. The two differ by the
+building-to-road offset, which is precisely the scale that decides Vehicle1 vs Vehicle2 when
+both are a few units out.
+
+All three vehicles spawn from one prefab with no per-vehicle overrides, so the capacity and
+speed terms are identical across the fleet and cancel. Selection reduces to NEAREST EUCLIDEAN
+TO THE BUILDING TRANSFORM, ties to the lower list index (Vehicle1, Vehicle2, Vehicle3).
+
+THE DISPATCH LOOP, AssignPendingTasks (DeliverySystem.cs:568-621), which the port also does
+not match:
+
+  - TASKS outer, sorted priority DESC then timeCreated ASC; LINQ OrderBy is stable, so
+    same-frame equal-priority tasks keep FIFO enqueue order.
+  - Per task, FindSuitableVehicle scans ALL idle candidates in list order and keeps strictly
+    greater score, so ties go to the earlier vehicle.
+  - The winner is removed from the candidate list immediately (:611), before the next task.
+  - Eligibility is `currentStatus == Idle` and nothing else. Cargo contents are never
+    consulted; damaged and mid-route vehicles are excluded by status alone.
+  - One pass per taskAssignmentInterval (1s game time) from Update, and the pass DRAINS
+    greedily until tasks or vehicles run out. No per-pass cap; maxQueuedTasks gates enqueue
+    only. That is why two dispatches share a frame.
+
+The port's `run_round` narrows candidates to the earliest-free vehicles
+(`free_at <= soonest + 1e-9`) before scoring. Unity scores over every idle vehicle. Fix both
+together, since either alone can flip an assignment.
+
+THE BLOCKER, and it needs a Unity change: building TRANSFORM positions are not in
+`maps/default.json` and are not in any existing mark -- `road:connection` emits cells only.
+Add a mark that dumps each building's `transform.position` (alongside the existing ROADDUMP),
+rebuild headless, re-capture, extend MapSpec with `building_pos`, then score `_closest`
+against that. Do NOT approximate it from the road cell: the offset IS the signal here.
+
+Two facts worth keeping: LoadCargo and UnloadCargo contain no delay at all, and a vehicle
+already on its source road cell produces a 1-node path whose movement loop never runs, so it
+spends zero internal yields. Whether each `yield return StartCoroutine(...)` still costs a
+frame is engine behaviour the source cannot settle -- but `delivery:leg` is emitted
+synchronously at the top of every MoveToPosition, so the frame gap between a vehicle's
+source-leg and destination-leg marks measures it directly from captures already on disk.
 
 PARKED CONFLICT: Fable reads TriggerNonCaseworkDeparture as mutating tracker state only --
 OnCaseworklessClientsDeparted has zero subscribers, no facility population is released. The
