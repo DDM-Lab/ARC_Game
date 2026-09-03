@@ -527,26 +527,32 @@ CancelTaskDeliveries does NOT cancel because the call is commented out
 (705-711). 100 + 100 = the 200 Unity reports. The port expires the task AND strips the order
 out of `pending`, so nothing can arrive late and fulfilled stops at 100.
 
-APPLIED, AND THE DISCRIMINATING CHECK ANSWERED. The order now outlives its task -- the expiry
-no longer pops `awaiting` nor strips `pending`. `diag_resolutions` on 5501 still prints NO
-`LATE` line at all:
+THE DISCRIMINATING CHECK IS ANSWERED, AND THE FIX IS PARKED AS A PAIR. Letting the order
+outlive its task (no `awaiting` pop, no `pending` strip) was applied and measured.
+`diag_resolutions` on 5501 still prints NO `LATE` line:
 
     r5   resolve id=6 demand=100 delivered=100 fulfilled=True
          resolve id=7 demand=100 delivered=0   fulfilled=False
     r6   <-- lodgingFulfilled unity=200 port=100
 
-So the port's fleet NEVER DELIVERS id=7's order, even when the order is allowed to survive.
-This is now a FLEET question, not a task-lifecycle one, and the task-lifecycle side is done:
-keeping the order alive is necessary and is correct against the C#, it is simply not
-sufficient on its own. 11 suites pass.
+So the port's fleet NEVER DELIVERS that order even when the order survives. The
+task-lifecycle half is understood and correct against the C#; it is not sufficient alone.
 
-THE REMAINING QUESTION, stated precisely: Unity dispatches Community02->Motel at s6d2r1f321 and
-unloads it at s7d2r2f353. The port queues the same order and never lands it. Instrument
-`Fleet.run_round` for that order -- is it ever dispatched, does `path_length` return None
-(flood-blocked), does it get dropped, or does it sit in `queue` behind others? `run_round`
-already returns `dropped`, so start by printing that. Note the port and Unity agree on
-lodgingRESOLVED here, so whatever happens does not change the resolution count -- only whether
-anything arrives afterwards.
+REVERTED, and not because it is wrong. Kept in isolation it makes the state WORSE: traces on a
+single diverging counter drop 10 -> 8, with 5801 and 5802 each picking up a caseworkRequested
+divergence (300 vs 100, and 523 vs 465) against 5901 losing one. Surviving orders that never
+arrive still perturb the client pipeline. By the magnitude metric -- the right one for a
+transition function -- that is a regression, so it goes back until its other half exists.
+
+APPLY THESE TWO TOGETHER, never separately:
+  (a) the order outlives its task (the diff is in this file's history, one deletion of the
+      `awaiting.pop` + `pending` filter), and
+  (b) whatever makes the fleet actually deliver it.
+
+FOR (b), the question is now fully isolated: Unity dispatches Community02->Motel at s6d2r1f321
+and unloads at s7d2r2f353; the port queues the same order and never lands it. `run_round`
+already returns `dropped` -- print it first. That separates never-dispatched from
+flood-blocked (`path_length` returning None) from stuck-behind-others in the queue.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
