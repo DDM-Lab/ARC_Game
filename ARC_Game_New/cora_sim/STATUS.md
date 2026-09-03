@@ -375,14 +375,27 @@ gap is exactly nodes-1 frames. The old `steps + 1` came from timing leg-mark to 
 which includes the completion boundary frame. It also makes a vehicle parked on its source pay
 nothing, matching the 1-node path that never enters the movement loop.
 
-WHERE TO LOOK NEXT: RecordTaskResolution and the lodging credit path, with the delivery
-mechanics treated as CORRECT. `resolvedAdd = demand` (nominal, not delivered) is already
-modelled; the question is which SECOND relocation Unity resolves at round 5 that the port
-never resolves at all. Since the draw streams agree, both sides have identical client groups
-and identical task generation -- so the missing resolution is a task the port answers but does
-not COUNT, or one Unity counts through a path the port has no equivalent for (the emergency
-lodging eviction and the silent HandleDeliveryFailure removal are both documented as
-resolution paths that skip RecordTaskResolution, and both are in the game-bug list above).
+THE MISSING CREDIT, IDENTIFIED EXACTLY. Seed 5901, step 6, Unity resolves TWO lodging tasks:
+
+    f321  id=6  demand=100 delivered=100  fulfilled=true   status=Completed
+    f328  id=7  demand=100 delivered=0    fulfilled=false  status=Incomplete
+
+`resolvedAdd = demand` regardless of outcome, so lodgingResolved is 100 + 100 = 200. The port
+credits only id=6 and reports 100. That ONE uncredited resolution is the whole remaining
+divergence on nine of eleven seeds.
+
+The port's `resolve()` is NOT the bug -- it already adds `demand` whether or not the task was
+fulfilled. The bug is that it is never CALLED for id=7. So the port is missing a resolution
+PATH, not miscomputing a credit.
+
+"Incomplete" and "Expired" are distinct status values in the same capture (id=14 is Expired),
+so id=7 is not a plain board expiry. The port models delivery-completion and one unsourced
+-retry expiry; Unity evidently has at least a third path that resolves an ANSWERED relocation
+which never delivered. Fable is enumerating every RecordTaskResolution call site with the
+status each passes. Do not guess the path -- two documented game bugs (HandleDeliveryFailure
+and the emergency-lodging eviction) were both recorded as resolving WITHOUT calling
+RecordTaskResolution, and id=7 having a resolution mark means at least one of those notes may
+be wrong.
 
 Two facts worth keeping: LoadCargo and UnloadCargo contain no delay at all, and a vehicle
 already on its source road cell produces a 1-node path whose movement loop never runs, so it
