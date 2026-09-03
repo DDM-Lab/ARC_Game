@@ -600,19 +600,40 @@ is byte-identical to the late-delivery change alone: 8 traces on a single counte
 `retry_if_unsourced` is NOT what aborts those relocations, and the double-deduction story is
 unsupported. Reverted; 11 suites pass.
 
-WHAT IS STILL TRUE, because it was measured rather than reasoned: `run_round` reports
-in=5 landed=2 left=0 dropped=0, so three orders ARE consumed without landing and without
-being dropped. The only path in `run_round` that does that is the `load(...) <= 0` branch --
-but `_load` now provably returns `qty` for Lodging, so either those three vanish somewhere
-else in `run_round`, or the two aborted orders are the FOOD ones and the relocation is lost
-for a different reason entirely.
+TAGGED EACH ORDER WITH THE BRANCH THAT CONSUMED IT (5501, round 5, temporary prints in
+run_round, reverted after):
 
-NEXT, and this time instrument INSIDE run_round rather than inferring from its return values:
-print each order as it is consumed, with which branch consumed it -- the route-check `continue`,
-the `load <= 0` abort, the flood `leg1 is None` drop, or a normal landing. The five orders at
-5501 round 5 are listed above in this file; tag each one. Do not propose another cause until
-that print exists -- this is the third hypothesis about these orders and the first two were
-both wrong.
+    [load]   (3,100,'__food__Community Charleston') avail=100
+    [LANDED] (3,100,'__food__Community Charleston')
+    [load]   (4,100,'__food__Community Trinity')    avail=100
+    [load]   (5,100,'__food__Community Amherst')    avail=0
+    [load]   (7,100,'Motel')                        avail=100
+
+This overturns the previous two stories completely:
+
+  - ORDER 7 LOADS FINE. avail=100. It is NOT source-starved, NOT load-aborted, NOT
+    flood-blocked and NOT dropped. It simply does not LAND inside round 5 -- it is carried
+    in-flight into the next round via `carrying`/`busy_seconds`.
+  - ORDER 6 never reaches a `[load]` print because it landed through the ABORT-REASSIGN
+    branch: order 5 finds avail=0, and the freed vehicle immediately takes queue[0] and flies
+    it to its destination, appending to `landed` there. That is the second landing.
+  - Only ONE food order actually lands; order 4 is also carried over.
+
+So the real question is what happens to an order that is IN FLIGHT when its task expires. The
+carried payload lives in `self.carrying[v]`, NOT in `pending`, so the expiry's `pending` filter
+never touched it -- which is why removing that filter was inert. On the next round the carrying
+block appends it to `landed`, and `tick_deliveries_only` then does
+
+    task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
+    if task is None: continue
+
+so if the expiry popped the task out of `awaiting`, THE LANDING IS SILENTLY DISCARDED. That is
+the mechanism to verify next -- print at that `continue` and see whether order 7's landing is
+being thrown away in round 6.
+
+NOTE the earlier late-delivery attempt removed the `awaiting.pop` and should therefore have
+routed this to `late_delivery`, yet no LATE line appeared. Either the pop happens somewhere
+else too, or the landing never arrives at all. Print at the `continue` first; do not theorise.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
