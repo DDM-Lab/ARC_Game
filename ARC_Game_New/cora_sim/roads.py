@@ -400,6 +400,26 @@ class Fleet:
                 #
                 # So the vehicle simply goes idle at the source, available for the next
                 # order like any other free vehicle.
+                # THE RACE IS A SPEEDUP, measured on four instances (5501, 5503, 5802,
+                # 5901): legs emitted in one frame, unload ceil(leg2 / 2) frames later,
+                # actual == nominal every time. The source leg is never paid for because
+                # both coroutines advance the same currentPathIndex along the new task's
+                # destination path.
+                if queue:
+                    nseq, npayload, nsrc, ndst, nqty = queue[0]
+                    leg2 = path_length(nsrc, ndst, flooded, self.spec)
+                    if leg2 is not None:
+                        queue.pop(0)
+                        done = at_source + (-(-leg2 // 2)) * self.spec.fixed_delta
+                        self.pos[v] = ndst
+                        if done <= budget:
+                            landed.append(npayload)
+                            free_at[v] = done
+                        else:
+                            self.busy_seconds[v] = done - budget
+                            self.carrying[v] = npayload
+                            free_at[v] = budget
+                        continue
                 # The race IS a speedup in Unity -- cargo-at-leg-start proves the
                 # reassigned trip is real and finishes in ceil(leg2 / 2) frames, paying
                 # nothing for the source leg because both coroutines advance the same
