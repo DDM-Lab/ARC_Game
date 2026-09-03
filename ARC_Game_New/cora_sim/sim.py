@@ -394,8 +394,7 @@ def answer(w: World, task_id, choice_id) -> bool:
         immediate = bool(choice.get("immediateDelivery"))
         # An infeasible choice is still ANSWERABLE; it just delivers nothing, and the task
         # resolves unfulfilled when the delivery comes due.
-        if not _deliverable(w, choice, task.tag):
-            demanded = 0
+        demanded = _deliverable(w, choice, task.tag, demanded)
         w.tasks.answer(task_id, demanded, immediate=immediate,
                        destination="__food__" + str(_facility),
                        counters=w.economy.counters)
@@ -497,14 +496,34 @@ def _offered(w: World, choice, tag) -> bool:
     return _has_destination_space(w, choice)
 
 
-def _deliverable(w: World, choice, tag) -> int:
-    """Can an OFFERED choice actually deliver? Zero means it resolves unfulfilled."""
-    if tag == "Food":
-        if choice.get("immediateDelivery"):
-            return 1                                  # external source
-        return 1 if any((k.get("resources") or {}).get("foodPacks", 0) > 0
-                        for k in w.economy.operational("Kitchen")) else 0
-    return 1
+def _deliverable(w: World, choice, tag, quantity=0) -> int:
+    """Can an OFFERED choice actually deliver -- and if so, CONSUME the source.
+
+    DeliverySystem.CreateDeliveryTask(kitchen, destination, FoodPacks, sendAmount) moves
+    food OUT of the kitchen, so a kitchen holding 200 can serve two 100-pack orders per day
+    and no more. Checking stock without spending it let one kitchen satisfy unlimited
+    orders: the port fulfilled 11-15 food tasks against Unity's 6-9, and every community
+    got fed from a single restock.
+
+    Returns the amount actually sourced, so an order that finds a partially stocked kitchen
+    delivers what is there rather than all-or-nothing."""
+    if tag != "Food":
+        return quantity
+    if choice.get("immediateDelivery"):
+        return quantity                               # external source, unlimited
+    remaining = quantity
+    sourced = 0
+    for k in w.economy.operational("Kitchen"):
+        if remaining <= 0:
+            break
+        res = k.get("resources") or {}
+        have = res.get("foodPacks", 0) or 0
+        take = min(have, remaining)
+        if take > 0:
+            res["foodPacks"] = have - take
+            sourced += take
+            remaining -= take
+    return sourced
 
 
 def open_choices(w: World):
