@@ -245,13 +245,64 @@ def test_a_second_map_is_usable_without_touching_code():
     raw = json.load(open(os.path.join(os.path.dirname(roads.__file__), "maps", "default.json")))
     small = copy.deepcopy(raw)
     small["name"] = "test-trimmed"
-    small["move_speed"] = 4.0                     # half speed -> twice the seconds
+    # Slow enough that a unit step takes longer than one frame: 1/2 = 0.5s against a 0.3s
+    # frame. Below that threshold speed does NOT change travel time -- the frame quantum
+    # dominates, which is why the shipped map's moveSpeed of 8 gives exactly one frame per
+    # step. Halving 8 to 4 still yields 0.25s per step, under the quantum, and correctly
+    # changes nothing; testing with 4 asserted a falsehood.
+    small["move_speed"] = 2.0
     other = MapSpec(small)
     steps = 16
     assert roads.leg_seconds(steps, other) > roads.leg_seconds(steps), (
-        "a map with a slower vehicle must take longer")
+        "below the frame quantum a slower vehicle must take longer")
+    faster = copy.deepcopy(raw); faster["move_speed"] = 40.0
+    assert roads.leg_seconds(steps, MapSpec(faster)) == roads.leg_seconds(steps), (
+        "above the quantum, extra speed cannot help -- one step still costs one frame")
     f = roads.Fleet(other)
     assert f.spec is other and f.pos, "the fleet places vehicles using its own spec"
+
+
+def test_leg_timing_is_one_frame_per_step():
+    """Measured against the frame marks, which contradicted the obvious arithmetic.
+
+        leg len  5 ->  6 frames        leg len 11 -> 12 frames
+        leg len 19 -> 20 frames
+
+    journeyLength/moveSpeed would give 3, 5 and 8. MoveToPosition walks the path segment by
+    segment; each segment is one unit, so its journeyTime is 1/8 = 0.125s, and the inner
+    loop adds a whole captureDeltaTime of 0.3 per iteration -- more than the segment needs.
+    One frame per unit step, whatever moveSpeed says.
+    """
+    from cora_sim import roads
+    for steps, frames in ((5, 6), (11, 12), (19, 20), (17, 18), (25, 26)):
+        got = round(roads.leg_seconds(steps) / roads.GYM_FIXED_DELTA)
+        assert got == frames, f"len {steps}: {got} frames, Unity measured {frames}"
+
+
+def test_round_completes_two_then_three():
+    """The whole fleet model in one assertion, taken straight from Unity's marks.
+
+        d2r1: queued 5, completed 2
+        d2r2: queued 1, completed 3
+
+    Five orders against three vehicles: three go out, two finish inside the round's 10
+    seconds, one is still driving. Next round it lands and the two that waited are picked
+    up. Reproducing this was the point of the event-driven rewrite -- no per-order latency
+    constant can produce 2-then-3.
+    """
+    from cora_sim.roads import Fleet, BUILDING_CELL
+    f = Fleet()
+    K = BUILDING_CELL["Kitchen_0"]
+    C1, C2, C3 = (BUILDING_CELL["Community01"], BUILDING_CELL["Community02"],
+                  BUILDING_CELL["Community03"])
+    M = BUILDING_CELL["Motel"]
+    pending = [(0, "f0", K, C1, 100), (1, "f1", K, C3, 100), (2, "f2", K, C2, 100),
+               (3, "p3", C1, M, 100), (4, "p4", C3, M, 100)]
+    first, rest = f.run_round(pending)
+    assert len(first) == 2, f"Unity completes 2 in the first round, port {len(first)}"
+    second, rest = f.run_round(rest)
+    assert len(second) == 3, f"Unity completes 3 in the second, port {len(second)}"
+    assert not rest, "and nothing is left over"
 
 
 def main():
@@ -263,7 +314,9 @@ def main():
                test_repair_task_returns_the_vehicle,
                test_busy_fleet_queues_instead_of_guessing,
                test_map_spec_is_behaviour_neutral,
-               test_a_second_map_is_usable_without_touching_code):
+               test_a_second_map_is_usable_without_touching_code,
+               test_leg_timing_is_one_frame_per_step,
+               test_round_completes_two_then_three):
         try:
             fn()
             print(f"  {fn.__name__}: OK")

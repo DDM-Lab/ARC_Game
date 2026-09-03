@@ -143,22 +143,31 @@ def path_length(start, goal, flooded=frozenset(), spec=None):
 
 
 def leg_seconds(steps, spec=None):
-    """How long a leg takes, in GAME SECONDS. The surrogate has no frames and needs none.
+    """How long a leg takes, in GAME SECONDS -- and it is ONE FRAME PER UNIT STEP.
 
-    Vehicle.MoveToPosition spends journeyLength/moveSpeed seconds on a leg. Every A* edge
-    measures exactly 1.0, so that is steps/moveSpeed.
+    I had this as journeyLength / moveSpeed, which is what MoveToPosition's arithmetic
+    says in isolation. The frame marks say otherwise:
 
-    The one thing carried over from Unity's frame loop is QUANTISATION, and it is real
-    behaviour rather than an artefact of how this was measured: the coroutine advances only
-    once per frame, adding a fixed Time.captureDeltaTime of 0.3s each time, and it keeps
-    going while elapsed < journeyTime. So a leg actually consumes ceil(journeyTime / 0.3)
-    ticks of 0.3s. That is a rounding rule on seconds, not a loop -- the surrogate still
-    steps whole rounds.
+        leg len  5  ->  6 frames        leg len 11 -> 12 frames
+        leg len 19 -> 20 frames
+
+    The coroutine walks the path SEGMENT BY SEGMENT, and each segment is one unit long, so
+    its journeyTime is 1/moveSpeed = 0.125s. The inner loop is
+    `while (elapsedTime < journeyTime) { elapsedTime += Time.deltaTime; yield return null; }`
+    and under captureDeltaTime the increment is 0.3 -- BIGGER than the segment's journeyTime.
+    So the loop executes exactly once per segment and the vehicle covers one unit per frame,
+    no matter what moveSpeed says. moveSpeed only decides whether a segment needs one frame
+    or several; at 8 units/s against a 0.3s frame it is always one.
+
+    That is a factor of 2.4 against the old model, and it is the difference between "all
+    five orders land this round" and Unity's "two land, three land next round".
+
+    The +1 is measured too: a leg of L steps consumes L+1 frames, the extra one being the
+    final snap to the endpoint after the segment loop ends.
     """
-    from math import ceil
     m = spec or DEFAULT_MAP
-    exact = steps / m.move_speed
-    return ceil(exact / m.fixed_delta) * m.fixed_delta
+    per_step = max(m.fixed_delta, 1.0 / m.move_speed)
+    return (steps + 1) * per_step
 
 
 class Fleet:
@@ -296,6 +305,82 @@ class Fleet:
                 landed.append(self.carrying[i])
                 self.carrying[i] = None
         return landed
+
+
+    def run_round(self, pending, flooded=frozenset()):
+        """ProcessPendingTasks over one simulated round. Returns (landed, still_pending).
+
+        This is the shape Unity's marks show, and no per-order latency can express it:
+
+            d2r1: queued 5, completed 2       three vehicles go out, two finish in time
+            d2r2: queued 1, completed 3       the third lands, two more are picked up
+
+        Orders wait in pendingTasks; a vehicle takes the top one, drives source then
+        destination, and is available again the moment it arrives -- possibly to take
+        another order in the SAME round. Whatever is still driving when the round's seconds
+        run out carries into the next round.
+
+        `pending` is a list of [seq, payload, src_cell, dst_cell, qty], sorted by the
+        caller (priority desc, then creation order, as DeliverySystem does).
+        """
+        budget = self.spec.round_seconds
+        # Where each vehicle becomes free, measured from the start of THIS round. A vehicle
+        # still driving from last round starts busy.
+        free_at = [min(b, budget) if b > 0 else 0.0 for b in self.busy_seconds]
+        landed = []
+
+        # Vehicles already carrying finish their in-flight trip first.
+        for i, b in enumerate(self.busy_seconds):
+            if self.carrying[i] is not None and b <= budget:
+                landed.append(self.carrying[i])
+                self.carrying[i] = None
+            self.busy_seconds[i] = max(0.0, b - budget)
+
+        queue = list(pending)
+        while queue:
+            # The vehicle that can start soonest, then closest to the source among those.
+            ready = [i for i in range(len(self.pos))
+                     if not self.damaged[i] and free_at[i] < budget
+                     and self.carrying[i] is None]
+            if not ready:
+                break
+            seq, payload, src, dst, qty = queue[0]
+            if path_length(src, dst, flooded, self.spec) is None:
+                queue.pop(0)                      # never created; no vehicle involved
+                continue
+            soonest = min(free_at[i] for i in ready)
+            candidates = [i for i in ready if free_at[i] <= soonest + 1e-9]
+            v = self._closest(candidates, src, qty)
+            leg1 = path_length(self.pos[v], src, flooded, self.spec)
+            if leg1 is None:
+                self.damaged[v] = True            # dispatched, cannot reach the source
+                continue
+            leg2 = path_length(src, dst, flooded, self.spec)
+            trip = leg_seconds(leg1, self.spec) + leg_seconds(leg2, self.spec)
+            done = free_at[v] + trip
+            self.pos[v] = dst
+            queue.pop(0)
+            if done <= budget:
+                landed.append(payload)
+                free_at[v] = done
+            else:
+                self.busy_seconds[v] = done - budget
+                self.carrying[v] = payload
+                free_at[v] = budget               # out for the rest of this round
+        return landed, queue
+
+    def _closest(self, candidates, src_cell, quantity=0, capacity=100.0):
+        """CalculateVehicleSuitability among a set of already-free vehicles."""
+        best, best_score = candidates[0], -1.0
+        sx, sy = cell_to_world(src_cell, self.spec)
+        for i in candidates:
+            vx, vy = cell_to_world(self.pos[i], self.spec)
+            d = ((vx - sx) ** 2 + (vy - sy) ** 2) ** 0.5
+            score = (100.0 / (1.0 + d) + (quantity / capacity) * 50.0
+                     + self.spec.move_speed * 10.0)
+            if score > best_score:
+                best, best_score = i, score
+        return best
 
     def repair(self, vehicle):
         """Vehicle.RepairVehicle, reached by answering the repair task flood spawns."""
