@@ -403,6 +403,20 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         # fire at all -- Training Recommendation Alert and Workforce Optimization Alert
         # never appeared, which is two of the three tasks missing from the port's round-5
         # board. So pass 1 evaluates as segment 0 and pass 2 as segment 1.
+        # Worker arrivals complete AT the day change, and the rollover's task generation
+        # reads the post-arrival counts: Unity's totalWorkers is 10 through turn 3 and 35
+        # at turn 4, and Training Recommendation Alert needs trained/untrained < 1, which
+        # only holds once the hires land (5/30 = 0.17, against 5/5 = 1.0 before). The port
+        # generated first and settled the economy afterwards, so it evaluated that trigger
+        # against a ratio of exactly 1.0 and the task never fired.
+        #
+        # on_day_end is hoisted here rather than reordered inside economy.step_round, whose
+        # phase order is pinned against captures: day-end must precede the round
+        # accumulators (or arrivals lose two idle-worker units) and must precede this
+        # round's transfers landing (or the motel is over-billed by a day). Generation runs
+        # before both, so calling it here keeps both invariants and economy_step is told the
+        # day is already handled.
+        w.economy.on_day_end(w.day)
         for i in range(_ROLLOVER_PASSES):
             w.segment = i
             rolls += _pass(w, marks)
@@ -487,7 +501,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
             w.clients.process_home(quantity, w.economy.counters)
             w.economy.move_population("Motel", -quantity)
             w.economy.motel_pop = w.economy.motel_population
-    economy_step(w.economy, day_changed, w.day)
+    economy_step(w.economy, False, w.day)   # day-end already run above
     w.round_index += 1
 
 
