@@ -619,21 +619,31 @@ This overturns the previous two stories completely:
     it to its destination, appending to `landed` there. That is the second landing.
   - Only ONE food order actually lands; order 4 is also carried over.
 
-So the real question is what happens to an order that is IN FLIGHT when its task expires. The
-carried payload lives in `self.carrying[v]`, NOT in `pending`, so the expiry's `pending` filter
-never touched it -- which is why removing that filter was inert. On the next round the carrying
-block appends it to `landed`, and `tick_deliveries_only` then does
+AN ORDER IS SILENTLY LOST BY THE FLEET. Printing the carried-in landings and the discarded
+ones (temporary, reverted):
 
-    task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
-    if task is None: continue
+    r5   [carried-in landings] [(3,100,'__food__...'), (6,100,'Motel')]
+    r6   [carried-in landings] [(4,100,'__food__...')]
 
-so if the expiry popped the task out of `awaiting`, THE LANDING IS SILENTLY DISCARDED. That is
-the mechanism to verify next -- print at that `continue` and see whether order 7's landing is
-being thrown away in round 6.
+Order 7 -- the Community02 relocation that LOADED with avail=100 in round 5 -- is in NEITHER
+list. It is not landed, not carried into round 6, and not discarded at the `task is None`
+continue (that print never fires). It simply ceases to exist.
 
-NOTE the earlier late-delivery attempt removed the `awaiting.pop` and should therefore have
-routed this to `late_delivery`, yet no LATE line appeared. Either the pop happens somewhere
-else too, or the landing never arrives at all. Print at the `continue` first; do not theorise.
+That is a FLEET BUG, not a task-lifecycle one, and it explains every dead end above: the
+late-delivery change was inert because the payload never arrives to be credited late; the
+Lodging exemption was inert because the order was never load-aborted in the first place.
+
+WHERE TO LOOK, in `Fleet.run_round`: `self.carrying[v]` is a single slot per vehicle. Three
+places assign it -- the normal `done > budget` carry, the abort-reassign branch's carry, and
+the in-flight completion block that clears it. If a vehicle takes a SECOND order in the same
+round after already being given a carry, the first payload is overwritten and lost with no
+trace. Round 5 has five orders and three vehicles, with one abort-reassign, so a vehicle
+plausibly gets two. Assert on it: at the end of `run_round`, every order in `pending` must be
+accounted for as landed, still queued, dropped, or carried -- and today it is not.
+
+THAT ASSERT IS THE NEXT COMMIT. Add it, watch it fire on 5501 round 5, then fix the overwrite.
+It also belongs in the suite permanently: a surrogate that silently loses deliveries will
+mislead any search built on it.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
