@@ -369,10 +369,24 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     day_changed = w.segment >= ROUNDS_PER_DAY
     if day_changed:
         w.day += 1
-        w.segment = 1
+        # Unity's marks run d1r0..d1r4, d2r0, d2r1 -- there IS a segment 0 on every day,
+        # and tasks gated on `round: targetRound 0` fire there. Daily Budget Allocation is
+        # one, and it grants +5000 budget a day: Unity has it on the board at round 5 and
+        # the port did not, because the port jumped segment 4 -> 1 and never visited 0
+        # again after day 1.
+        #
+        # But segment 0 is NOT a fifth player round. Its frame span is 5-7 against 34 for a
+        # real round, so it is the rollover instant, which the port already models as
+        # _ROLLOVER_PASSES. Making it a separate segment added a round per day and broke
+        # the draw census at d2r2 -- and that census, chaining the RNG state from round to
+        # round, is the strongest equivalence signal available. So the rollover EVALUATES
+        # as segment 0 for trigger purposes and then settles on 1, which fires the round-0
+        # tasks without inventing a round.
+        w.segment = 0
         w.weather = generate_weather(w.rng, marks=marks)
         for _ in range(_ROLLOVER_PASSES):
             rolls += _pass(w, marks)
+        w.segment = 1
     else:
         w.segment += 1
         if w.segment in _GENERATION_SEGMENTS:
