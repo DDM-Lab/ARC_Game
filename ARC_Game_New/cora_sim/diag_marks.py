@@ -56,18 +56,23 @@ def unity_marks(log_path):
     return per
 
 
-def port_marks(trace_path, log_path):
-    """Replay the trace exactly as test_replay_forward does, collecting marks per step."""
+def replay_steps(trace_path, log_path, marks_out=None):
+    """Drive the port exactly as test_replay_forward does, yielding (step, world) per round.
+
+    THE ONE PLACE THE REPLAY LOOP LIVES. Two diagnostics in this project were written by
+    hand-copying this loop and BOTH silently omitted the `staff` action branch, which changes
+    the trajectory and produced numbers contradicting the harness -- once reported as a
+    finding before it was caught. Import this; never re-type the loop.
+    """
     trace = json.load(open(trace_path))
     st = seed_state(log_path)
     if st is None:
-        return None
+        return
     w = S.World(rng=UnityRandom(state=st), weather="Sunny", fmap=FloodMap.load())
     w.use_generation = True
     w.economy = from_game_state(trace[0]["before"])
     w.economy.buildings = type(w.economy).default_prebuilts()
     w.tasks.has_supplier = lambda tag: True
-    per = {}
     for step in trace:
         for act in step["taken"]:
             if act.get("error") or act.get("ok") is False:
@@ -88,9 +93,17 @@ def port_marks(trace_path, log_path):
             S.answer(w, tid, cid)
         marks = []
         S.step_round(w, marks=marks)
-        # step = trace round + 1, the mapping the replay harness already relies on.
-        per[step["round"] + 1] = marks
-    return per
+        if marks_out is not None:
+            marks_out[step["round"] + 1] = marks
+        yield step, w
+
+
+def port_marks(trace_path, log_path):
+    """Replay the trace, collecting marks per step."""
+    per = {}
+    for _step, _w in replay_steps(trace_path, log_path, marks_out=per):
+        pass
+    return per or None
 
 
 def summarise(seq):

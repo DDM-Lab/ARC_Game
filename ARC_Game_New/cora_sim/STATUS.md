@@ -489,19 +489,32 @@ about the source:
    one for a transition function, and it briefly had me keeping a change that made the state
    much wronger. With the skip restored, six of eleven traces are off by exactly ONE unit.
 
-THE NEXT THREAD is the shallowest divergence left, and no change today touched it:
+THE NEXT THREAD, NOW DIAGNOSED. `diag_resolutions.py` (new, built on the shared
+`replay_steps`) prints what the port actually credits. On 5501:
 
-    staff_5501  round 6  lodgingFulfilled unity=200 port=100
-    staff_5503  round 6  lodgingFulfilled unity=300 port=200
+    r5   resolve id=6  demand=100 delivered=100 fulfilled=True
+         resolve id=7  demand=100 delivered=0   fulfilled=False
+    r6   <-- lodgingFulfilled unity=200 port=100
 
-fulfilledAdd is min(delivered, demand), so Unity is crediting the fulfilment of TWO lodging
-tasks where the port credits one, while lodgingRESOLVED agrees on those traces. A resolved-but
--not-fulfilled asymmetry points at `delivered` rather than at the resolution path: note
-parentTask.deliveredQuantity += deliveryTask.quantity is NOMINAL, and the double-spawn means
-two call sites touch a population delivery. Check whether Unity credits deliveredQuantity from
-both, and whether `late_delivery` (AddLateDelivery, fulfilled-only) is reachable from the port
-'s expiry path -- Fable confirmed a delivery completing after its task expired credits
-FULFILLED ONLY and never re-credits resolved, which is exactly this signature.
+lodgingRESOLVED agrees because resolvedAdd is the demand either way. lodgingFULFILLED does
+not, because the port's id=7 EXPIRES WITH delivered=0 while Unity's DELIVERS. Unity's marks:
+
+    s6d2r1f321  dispatch Population Community02->Motel veh=Vehicle3
+    s7d2r2f353  unload   Population 100/100
+
+Unity dispatches at step 6 and unloads at step 7, so that task MUST survive a step boundary,
+and it does -- completing fulfilled. The port expires it first, so its delivery never lands.
+
+TRIED AND INERT: giving `awaiting` the same fresh skip `active` has. It never fires, because
+`fresh` is already cleared by the first advance after creation, long before the task is
+answered. Reverted.
+
+So the question is why the port's relocation does not deliver inside its remaining rounds when
+Unity's does. Either the task has fewer rounds left than Unity's at the moment it is answered
+-- the per-rollover-pass creation fix may have over-corrected for tasks that are later answered
+-- or the port's delivery takes an extra round to land. `diag_resolutions` plus a print of
+`rounds_remaining` at ANSWER time, compared against Unity's task:created rounds field,
+separates those two in one run.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
