@@ -620,6 +620,21 @@ class TaskBoard:
         as fulfilment rather than being lost to the late-delivery path."""
         landed = self.tick_deliveries_only(counters)
 
+        # AGEING IS NOT DONE HERE ANY MORE. It fires once per SEGMENT ADVANCE, driven from
+        # step_round, because a rollover advances twice inside one gym step.
+        return landed
+
+    def age_and_expire(self, counters: dict) -> None:
+        """One SEGMENT ADVANCE worth of ageing, plus the expiries it triggers.
+
+        Split out of tick() because it must fire once per ADVANCE, not once per gym
+        step. roundsRemaining is decremented in OnTimeSegmentAdvanced
+        (TaskSystem.cs:616), and a day rollover advances TWICE inside one step
+        (segment 0 then segment 1). A relocation carries rounds = 2, so on the
+        rollover step Unity ages it 2 -> 0 and expires it THERE; ageing once per step
+        left it at 1 and credited its resolution a round late -- lodgingResolved 100
+        against 200 at round 5, converging again by round 7.
+        """
         for task in list(self.active.values()):
             if task.fresh:
                 # A task generated during THIS round is not aged by it. Unity decrements in
@@ -657,7 +672,6 @@ class TaskBoard:
                 self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
                 self.awaiting.pop(task_id, None)
                 self.pending = [x for x in self.pending if x[1][0] != task_id]
-        return landed
 
     def complete(self, task_id, counters: dict) -> None:
         """TaskSystem.CompleteTask -- resolution with fulfilled=True."""

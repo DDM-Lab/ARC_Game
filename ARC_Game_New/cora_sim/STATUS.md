@@ -430,12 +430,23 @@ settles `w.segment` back to 1 when it finishes, and the tick now runs at the HEA
 so a head-tick guard describes the PREVIOUS step's advances, not the ones this step is about
 to perform. Ageing cannot be driven from the head tick at all.
 
-THE FIX IS TO AGE AT THE ADVANCE POINTS. `sim.py` already knows exactly where they are -- the
-rollover loop sets `w.segment = i` for each pass, and the normal branch does `w.segment += 1`.
-That is precisely where the client tracker was hooked for the same reason, and the same shape
-applies: call the ageing/expiry sweep once per advance, after the segment is set. Expect the
-round-5 lodging credit to land, and check whether foodResolved on 5701/5802/6101 moves with
-it, since those diverge one round later on the same counter family.
+AGEING NOW FIRES PER SEGMENT ADVANCE, AND IT IS STILL INERT. `age_and_expire()` is split out
+of `tick()` and called from step_round at each advance -- twice in the rollover loop, once in
+the normal branch -- which is where OnTimeSegmentAdvanced (TaskSystem.cs:616) puts it. 11
+suites pass, counters unchanged, ratchet unchanged. Kept because it is source-correct and
+harmless; NOT a fix, and the sixth consecutive inert edit.
+
+THE ARITHMETIC THAT SAYS IT SHOULD HAVE WORKED, so the next person can find the flaw in it:
+id=7 is created at s5d2r0f237 with rounds=2 and resolves at s6d2r2f328. Advances between:
+s5r1, then s6r2. With the fresh-skip consuming the creation advance that is 2 -> 1 -> 0, so it
+should expire exactly at step 6, which is trace round 5, which is where Unity credits it. The
+port still leaves it at 1. Therefore the ageing CADENCE is now right and something else is
+wrong -- most likely WHICH COLLECTION the task is in. It was ANSWERED, so it sits in
+`awaiting`, and the awaiting loop deliberately has NO fresh skip while the active loop does.
+Check whether the task moved to `awaiting` before or after its first advance, and whether the
+missing fresh-skip there double-counts or under-counts its first ageing. Instrument
+rounds_remaining per advance for that one task id rather than reasoning about it -- six
+inert edits in a row is the cost of reasoning about it.
 
 Two facts worth keeping: LoadCargo and UnloadCargo contain no delay at all, and a vehicle
 already on its source road cell produces a 1-node path whose movement loop never runs, so it

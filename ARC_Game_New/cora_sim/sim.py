@@ -577,11 +577,15 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         w.tasks.next_id += 1
         for i in range(_ROLLOVER_PASSES):
             w.segment = i
+            # OnTimeSegmentAdvanced fires per ADVANCE, and the rollover advances twice, so a
+            # rounds=2 task created before it ages 2 -> 0 and expires inside this step.
+            w.tasks.age_and_expire(w.economy.counters)
             _tracker(w, marks)
             rolls += [r + (i,) for r in _pass(w, marks)]
         w.segment = 1
     else:
         w.segment += 1
+        w.tasks.age_and_expire(w.economy.counters)
         _tracker(w, marks)
         if w.segment in _GENERATION_SEGMENTS:
             rolls += [r + (w.segment,) for r in _pass(w, marks)]
