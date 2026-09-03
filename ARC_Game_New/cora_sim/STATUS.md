@@ -704,10 +704,25 @@ over-credits fulfilled somewhere. The over-count is the thing to chase: `late_de
 once by the fall-through path's own `task.delivered += quantity` feeding a later resolve) or a
 task is being late-credited that Unity never delivers at all.
 
-READ THE FALL-THROUGH PATH FOR A DOUBLE CREDIT FIRST. `late_delivery` adds to
-`lodgingFulfilled`, and then the normal path does `task.delivered += quantity`; if anything
-downstream re-derives fulfilment from `task.delivered`, the same people are counted twice. That
-is a five-minute read and it is the last identified obstacle on this thread.
+READ DONE, ONE BRANCH ELIMINATED. The fall-through path is
+
+    self.late_delivery(task, quantity, counters)   # credits fulfilled, capped at resolved
+    ...
+    task.delivered += quantity
+    ...
+    self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+
+and `resolve()` opens with `if task.resolved or task.tag not in ("Food","Lodging"): return`,
+so it CANNOT double-credit an already-resolved task. The over-count is not a resolve
+double-credit.
+
+WHAT REMAINS AS THE SUSPECT, for the next session: a task receiving TWO fleet landings, or a
+late credit going to a task Unity resolves normally as Completed (in which case the port
+credits at resolve AND again on arrival). Both are visible with one print -- log every
+`late_delivery` call with task id and quantity on 5503, the trace where lodgingFulfilled
+over-counts 400 against 300, and compare the set of late-credited ids against Unity's
+`task:resolved` marks for that trace. If an id appears there with status Completed, the port is
+late-crediting something Unity never treated as late.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
