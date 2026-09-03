@@ -392,6 +392,10 @@ def answer(w: World, task_id, choice_id) -> bool:
         # which is how Unity's food requests for that community stop.
         task.source = ""                      # food does not move people out of anywhere
         immediate = bool(choice.get("immediateDelivery"))
+        # An infeasible choice is still ANSWERABLE; it just delivers nothing, and the task
+        # resolves unfulfilled when the delivery comes due.
+        if not _deliverable(w, choice, task.tag):
+            demanded = 0
         w.tasks.answer(task_id, demanded, immediate=immediate,
                        destination="__food__" + str(_facility),
                        counters=w.economy.counters)
@@ -440,74 +444,86 @@ def answer(w: World, task_id, choice_id) -> bool:
     return True
 
 
-def _feasible(w: World, choice, tag="") -> bool:
-    """ClientRelocationHandler.CheckFeasibility, in the only part that bites here.
+def _has_destination_space(w: World, choice) -> bool:
+    """TaskSystem.BuildTaskContext's population-relocation gate, transcribed:
 
-    A delivery choice needs a destination with SPACE, and the destination set comes from
-    the choice itself (includeShelters / includeMotels), so a Shelter-bound relocation with
-    no operational shelter is INFEASIBLE rather than redirected. Unity disables such
-    choices and tells the player why, so they never appear in the live task's choice list.
+        bool toShelter = c.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                      || c.destinationPrebuilt != PrebuiltBuildingType.Motel;
+        bool toMotel   = c.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                      && c.destinationPrebuilt == PrebuiltBuildingType.Motel;
+        if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+        if (!HasDestinationSpace(task, toShelter, toMotel)) continue;
 
-    This is why the port and Unity diverged on a policy as simple as "answer the first
-    choice": Unity's first choice is the first FEASIBLE one, which with no shelter built is
-    the motel option. The port was offering the shelter option, delivering it anyway via a
-    fallback, and draining every community to zero by round 8 while Unity ended near 200."""
-    dest = choice.get("destinationCategory") or ""
-    if not dest or not (choice.get("triggersDelivery") or choice.get("immediateDelivery")):
-        return True
-
-    # FOOD IS ROUTED DIFFERENTLY FROM WHAT ITS destinationCategory SAYS. The header of
-    # FoodDeliveryHandler is explicit: "Creates vehicle delivery tasks from one or more
-    # kitchens to the requesting facility." So a food choice's destination is the COMMUNITY
-    # that asked, and its SOURCE is a kitchen -- the exported destinationBuilding ("Shelter")
-    # is the enum's default and is misleading here.
-    #
-    # Which makes the feasibility rule: an immediate (Rapid Response, external) food choice
-    # always works, and a kitchen order needs an operational kitchen. That is exactly
-    # Unity's foodFulfilled = 9 of 15 resolved, with every fulfilment coming from the
-    # external option and never from a kitchen, in an episode where no kitchen was staffed.
-    if tag == "Food":
-        if choice.get("immediateDelivery"):
-            return True                       # external source, no kitchen involved
-        # A kitchen order needs a kitchen WITH STOCK, not merely an operational one:
-        # FoodDeliveryHandler sources from kitchens, and a kitchen holding zero food packs
-        # has nothing to send. Nothing in this game produces food into a kitchen, so in
-        # practice kitchen orders never fulfil -- which is precisely why Unity's
-        # foodFulfilled is 9 of 15 resolved and why every fulfilment came from the
-        # expensive external option.
-        return any((k.get("resources") or {}).get("foodPacks", 0) > 0
-                   for k in w.economy.operational("Kitchen"))
-    if dest == "Motel":
+    Verified against a capture: the transport task offered choiceIds (1, 3) -- the two
+    Motel options -- and never (0, 2), because no shelter existed to receive them. So an
+    agent that answers "the first choice" is answering a MOTEL relocation, not a shelter
+    one. That single fact accounts for Unity housing 600 people and generating 898 casework
+    requests where the port, offering the shelter option, delivered nobody."""
+    to_motel = (choice.get("destinationCategory") or "") == "Motel"
+    if to_motel:
         m = w.economy.facility("Motel")
         res = (m or {}).get("resources") or {}
         cap = res.get("populationCapacity")
         return m is not None and (cap is None or (res.get("population") or 0) < cap)
-    if dest == "Shelter":
-        for b in w.economy.buildings:
-            if b["type"] != "Shelter" or b["status"] != "InUse":
-                continue
-            res = b.get("resources") or {}
-            cap = res.get("populationCapacity")
-            if cap is None or (res.get("population") or 0) < cap:
-                return True
-        return False
+    for b in w.economy.buildings:                    # shelter-bound
+        if b["type"] != "Shelter" or b["status"] != "InUse":
+            continue
+        res = b.get("resources") or {}
+        cap = res.get("populationCapacity")
+        if cap is None or (res.get("population") or 0) < cap:
+            return True
+    return False
+
+
+def _offered(w: World, choice, tag) -> bool:
+    """Is this choice present in the payload at all?
+
+    Only POPULATION relocation is gated, and casework is explicitly exempt -- the C#
+    comment is emphatic that "send to casework site" is return-home processing, not a
+    shelter relocation, "so it must NOT be gated on shelter space". FOOD choices are never
+    gated, which is why a capture offered all three food options (0, 1, 2) including
+    kitchen orders that then failed for lack of stock: 9 of 15 fulfilled.
+
+    So there are two distinct mechanisms and conflating them was the error in both
+    directions -- gating food hid its failure mode, and not gating relocation offered
+    choices Unity withholds."""
+    dest = choice.get("destinationCategory") or ""
+    if not dest or not (choice.get("triggersDelivery") or choice.get("immediateDelivery")):
+        return True
     if dest == "CaseworkSite":
-        return bool(w.economy.operational("CaseworkSite"))
-    if dest == "Kitchen":
-        return bool(w.economy.operational("Kitchen"))
-    return True
+        return True
+    if tag == "Food":
+        return True
+    return _has_destination_space(w, choice)
+
+
+def _deliverable(w: World, choice, tag) -> int:
+    """Can an OFFERED choice actually deliver? Zero means it resolves unfulfilled."""
+    if tag == "Food":
+        if choice.get("immediateDelivery"):
+            return 1                                  # external source
+        return 1 if any((k.get("resources") or {}).get("foodPacks", 0) > 0
+                        for k in w.economy.operational("Kitchen")) else 0
+    return 1
 
 
 def open_choices(w: World):
-    """Every (task_id, choice_id) the planner may answer this round, FEASIBLE ones only --
-    matching the live task's choice list, which Unity filters the same way."""
+    """Every (task_id, choice_id) the planner may answer this round.
+
+    NOT feasibility-filtered. CheckFeasibility greys choices out in the GUI, but the gym
+    payload that BuildTaskContext produces carries every choice: measured on a capture,
+    all 15 food tasks offered choiceIds (0, 1, 2) with no filtering, and the policy picked
+    the kitchen order every time. An agent can therefore choose something that cannot be
+    carried out -- and that is not a no-op, it is a task that resolves UNFULFILLED, which
+    is where Unity's 9-of-15 food fulfilment comes from. Filtering here hid that failure
+    mode and made every answered task succeed."""
     out = []
     for task_id in w.tasks.active:
         entry = w.generated_specs.get(task_id)
         if not entry:
             continue
+        task = w.tasks.active.get(task_id)
         for c in (entry[2].get("choices") or []):
-            task = w.tasks.active.get(task_id)
-            if _feasible(w, c, task.tag if task else ""):
+            if _offered(w, c, task.tag if task else ""):
                 out.append((task_id, c.get("choiceId")))
     return out
