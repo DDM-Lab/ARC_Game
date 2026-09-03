@@ -549,10 +549,32 @@ APPLY THESE TWO TOGETHER, never separately:
       `awaiting.pop` + `pending` filter), and
   (b) whatever makes the fleet actually deliver it.
 
-FOR (b), the question is now fully isolated: Unity dispatches Community02->Motel at s6d2r1f321
-and unloads at s7d2r2f353; the port queues the same order and never lands it. `run_round`
-already returns `dropped` -- print it first. That separates never-dispatched from
-flood-blocked (`path_length` returning None) from stuck-behind-others in the queue.
+FOR (b), MEASURED. Spying on `Fleet.run_round` for 5501 at round 5:
+
+    fleet: in=5 landed=2 left=0 dropped=0 damaged=[False, False, False]
+       pending (3,100,'__food__Community Charleston') src=(-8,-3) dst=(1,5)
+       pending (4,100,'__food__Community Trinity')    src=(-8,-3) dst=(9,3)
+       pending (5,100,'__food__Community Amherst')    src=(-8,-3) dst=(-10,-3)
+       pending (6,100,'Motel')  src=(1,5)    dst=(-5,4)
+       pending (7,100,'Motel')  src=(-10,-3) dst=(-5,4)
+
+`left=0 dropped=0` with only 2 landed is the whole answer. The order is NOT stuck in the
+queue, NOT flood-blocked, and NOT dropped. Three of the five were CONSUMED BY THE LOAD-ABORT
+PATH -- `if load is not None and load(payload, qty) <= 0`, which pops the order, idles the
+vehicle at the source and lands nothing. lodgingFulfilled is 100 after this round, so id=6
+landed and id=7 aborted.
+
+So the port refuses to load 100 people out of Community02 (src (-10,-3)) while Unity moves
+them. That is a SOURCE-STOCK question, not a routing or dispatch one. The load callback for a
+Population order checks the source community's population; the likely causes, in order of
+suspicion, are that the port has already deducted that population elsewhere (the relocation
+path calls `move_population(source, -quantity)` at answer time AND the fleet then re-checks
+stock), or that the community's population is simply lower in the port at that instant.
+
+NEXT: print the source community's population immediately before that load call and compare it
+against the same community in Unity's game state for round 5 (`step["before"]` in the trace
+carries it). One number decides it. And note this pairs with (a) above -- once the order
+actually loads and lands, the surviving-order change becomes correct rather than a regression.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
