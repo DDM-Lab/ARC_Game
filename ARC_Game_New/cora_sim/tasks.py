@@ -382,6 +382,19 @@ class TaskBoard:
         src = self.cell_for(getattr(task, "source", "") or "") if self.cell_for else None
         dst = self.cell_for(destination_facility or "") if self.cell_for else None
         if src is not None and dst is not None and quantity > 0:
+            # ROUTE CHECKED AT CREATION, not at dispatch. CreateDeliveryTask calls
+            # GetDeliveryTimeEstimate and returns an empty list -- "Cannot create delivery
+            # task - no route available" -- before anything is queued. So an unroutable
+            # order never competes for a vehicle at all.
+            #
+            # Measured on 5601: Unity answers three food requests and creates ONE delivery,
+            # because from the kitchen at (-8,-3) the flood cut at (-5,0) leaves only
+            # Community02 reachable. The port queued all three and discarded two later,
+            # inside the round -- the same endpoint, but two extra orders competing for
+            # three vehicles in between, which is what cascaded into round 6.
+            if path_length(src, dst, self.flooded) is None:
+                self.awaiting[task_id] = task
+                return
             self.awaiting[task_id] = task
             self.pending.append([self.pending_seq, (task_id, quantity, destination),
                                  src, dst, quantity])
