@@ -236,10 +236,24 @@ previous round's post-spread set. That is believed correct (Unity's vehicles dri
 flood update) but round 5 is the rollover step, where the port evaluates segment 0 then
 settles to 1, and the interaction has not been checked.
 
-NEXT: finish the 32-round capture of the other ten seeds (running), re-run diag_marks across
-all of them to confirm draw-exactness generalises, then chase the single lodgingResolved
-round-5 lag. Do NOT re-lower the ratchet floor; either fix the counter or make the case to
-the maintainer for rebasing the ratchet on the 32-round set.
+ALL ELEVEN SEEDS are now captured at 32 rounds. 5901 is draw-exact end to end; the other ten
+diverge, and they all diverge THE SAME WAY -- by exactly 204 draws, in either direction:
+
+    staff_5501  step 10  unity 385  port 181     port 204 short
+    staff_5502  step 14  unity  52  port 256     port 204 long
+    staff_5504  step 19  diverges at draw 202, not draw 0
+
+204 = 2 x (100 caseworkNeed + 1 stayDuration) + 2, i.e. exactly one double-spawned population
+arrival. The port is not missing a mechanism -- it has the right draws in the wrong STEP,
+sometimes one early, sometimes one late. That is delivery ARRIVAL TIMING, and it is almost
+certainly the same single defect as the surviving `lodgingResolved 200 vs 100` counter: a
+relocation Unity lands in round N and the port lands in N+1.
+
+So the whole remaining gap is one mechanism, not a list. FLEET SIZE IS NOT IT: Unity's
+delivery:config reports "ervCount":3 in all eleven captures and names Vehicle1/2/3, and the
+port's Fleet constructs 3 slots. Both run three vehicles. Look instead at travel duration and
+at the flood set the reordered tick reads (previous round's post-spread), which is what
+decides which step a vehicle finishes in.
 
 PARKED CONFLICT: Fable reads TriggerNonCaseworkDeparture as mutating tracker state only --
 OnCaseworklessClientsDeparted has zero subscribers, no facility population is released. The
