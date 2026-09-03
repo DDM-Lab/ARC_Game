@@ -76,7 +76,7 @@ but no captured episode shows it corrupting a counter.
 - `travel_rounds`, `TaskBoard.queue`, `TaskBoard.busy` are dead since the event-driven fleet
   landed. Documented-dead; not deleted mid-hunt.
 
-## If continuing: the next EDIT (the measurement is done)
+## The generation-ordering hypothesis: REFUTED (both forms)
 
 `gen:pass` settles where Unity generates. Seed 5901, round 5:
 
@@ -85,18 +85,34 @@ but no captured episode shows it corrupting a counter.
     f319  GENERATION PASS (activeTasks=7)      after the deliveries, same round
     f327  queue   Popu Community01->Motel      the re-request
 
-Unity runs ONE generation pass per round, positioned AFTER that round's deliveries
-resolve and free their facility slots -- so a community can request again in the same
-round its previous relocation landed. The port generates BEFORE its delivery tick, so the
-slot is still held and the re-request never happens. That is the missing sixth delivery.
+That frame ordering is real and reproducible. The INFERENCE drawn from it -- that the port
+should therefore generate after its delivery tick -- is wrong. Both forms were built and
+measured, and both take the exact-trace count 2 -> 0:
 
-Moving the whole creation block after the tick was tried and took the two exact traces to
-zero: it also relocated the tasks built from the two ROLLOVER passes, whose timing the
-round-0 budget allocation, the first-pass fresh-skip and the two-tick expiry all depend on.
+  form 1  move the whole creation block (rollover + segment)      2 -> 0
+  form 2  move ONLY the segment pass, rollover left in place      2 -> 0   <- the "scoped edit"
 
-The scoped edit: move ONLY the segment generation pass after the delivery tick; leave the
-rollover passes where they are. Guard it with the exact-trace ratchet in
-`test_replay_forward` -- floor 2 -- and read that, not a counter sum.
+Form 2 was the one this file previously recommended. It is refuted. The draws stayed at
+their original point in both forms (only task CONSTRUCTION moved), so this is not an RNG
+re-ordering artifact.
+
+What the failure says, read by direction rather than by count: with generation moved late,
+the port resolves MORE than Unity, not fewer --
+
+    staff_5802  lodgingResolved  unity=300  port=400     (was exact)
+    staff_5504  foodResolved     unity=3    port=4       (new)
+
+So the freed slot admits extra tasks that Unity does not generate. Unity's pass runs on a
+later FRAME but does not behave as though the facility slot were free. The 5901 re-request
+at f327 is therefore probably not gated on a facility slot at all -- it is a community
+re-requesting, which plausibly keys off the community's own population/occupancy rather
+than the destination's slot. Those are two different admission gates and this session
+conflated them.
+
+The next hypothesis to test is consequently about WHICH gate, not about WHERE the pass sits:
+instrument what Unity's generator actually reads when it admits the f327 re-request
+(community occupancy vs facility slot occupancy) before moving any port code again. Leave
+sim.py's ordering alone until that mark exists.
 
 ## Method notes that cost time
 
