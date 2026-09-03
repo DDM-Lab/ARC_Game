@@ -51,11 +51,16 @@ class TriggerContext:
     unit-testable without standing up a whole simulation."""
 
     __slots__ = ("day", "segment", "weather", "flood_tiles", "budget", "satisfaction",
-                 "free_workforce", "idle_ratio", "facilities", "prev")
+                 "free_workforce", "idle_ratio", "facilities", "prev",
+                 "trained", "untrained", "idle_trained", "idle_untrained")
 
     def __init__(self, day=1, segment=1, weather="Sunny", flood_tiles=0, budget=0,
                  satisfaction=50.0, free_workforce=0, idle_ratio=0.0, facilities=None,
-                 prev=None):
+                 prev=None, trained=0, untrained=0, idle_trained=0, idle_untrained=0):
+        self.trained = trained            # GetTrainedWorkersCount
+        self.untrained = untrained        # GetUntrainedWorkersCount
+        self.idle_trained = idle_trained      # GetAvailableTrainedWorkers
+        self.idle_untrained = idle_untrained  # GetAvailableUntrainedWorkers
         self.day = day
         self.segment = segment
         self.weather = weather
@@ -183,8 +188,31 @@ def _satisfaction_ok(t, ctx):
 
 
 def _workforce_ok(t, ctx):
-    value = (ctx.idle_ratio if "Idle" in t["conditionType"] or "Ratio" in t["conditionType"]
-             else ctx.free_workforce)
+    """WorkforceTrigger, one branch per WorkerSystem getter.
+
+    The port used to funnel every condition whose name contained "Idle" or "Ratio" into a
+    single idle_ratio, which conflates quantities on different SCALES:
+    TrainedUntrainedRatio is trained/untrained, about 1, and is compared against a target of
+    1; IdleUntrainedWorkerPercentage is a percentage compared against 20. One value cannot
+    serve both, and the collapse is why Training Recommendation Alert and Workforce
+    Optimization Alert never fired -- two of the three tasks missing from the port's
+    round-5 board.
+
+        CurrentAvailableWorkforce        GetTotalAvailableWorkforce()
+        TrainedUntrainedRatio            untrained > 0 ? trained / untrained : 0
+        IdleWorkerPercentage             total    > 0 ? idle / total * 100 : 0
+        IdleUntrainedWorkerPercentage    untrained> 0 ? idleUntrained / untrained * 100 : 0
+    """
+    kind = t["conditionType"]
+    if kind == "TrainedUntrainedRatio":
+        value = (ctx.trained / ctx.untrained) if ctx.untrained > 0 else 0.0
+    elif kind == "IdleWorkerPercentage":
+        total = ctx.trained + ctx.untrained
+        value = ((ctx.idle_trained + ctx.idle_untrained) / total * 100.0) if total > 0 else 0.0
+    elif kind == "IdleUntrainedWorkerPercentage":
+        value = (ctx.idle_untrained / ctx.untrained * 100.0) if ctx.untrained > 0 else 0.0
+    else:                                   # CurrentAvailableWorkforce
+        value = ctx.free_workforce
     return _compare(t["comparison"], value, t["targetValue"])
 
 

@@ -230,6 +230,10 @@ class World:
             flood_tiles=len(self.flood.tiles), budget=self.economy.budget,
             satisfaction=self.economy.satisfaction, free_workforce=free,
             idle_ratio=100.0 * free / total, facilities=self.economy.facilities(),
+            trained=self.economy.free_trained + self.economy.working_trained,
+            untrained=self.economy.free_untrained + self.economy.working_untrained,
+            idle_trained=self.economy.free_trained,
+            idle_untrained=self.economy.free_untrained,
             prev=self._trigger_memory)
 
     def clone(self) -> "World":
@@ -392,7 +396,15 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         # tasks without inventing a round.
         w.segment = 0
         w.weather = generate_weather(w.rng, marks=marks)
-        for _ in range(_ROLLOVER_PASSES):
+        # The two rollover passes are not the same instant. Unity's day change fires the
+        # round-0 tasks (Daily Budget Allocation: `targetRound 0, exactMatch`) and then the
+        # first round's tasks (the advisories: `targetRound 1, exactMatch False`, i.e.
+        # round >= 1). Running BOTH passes at segment 0 meant the second class could never
+        # fire at all -- Training Recommendation Alert and Workforce Optimization Alert
+        # never appeared, which is two of the three tasks missing from the port's round-5
+        # board. So pass 1 evaluates as segment 0 and pass 2 as segment 1.
+        for i in range(_ROLLOVER_PASSES):
+            w.segment = i
             rolls += _pass(w, marks)
         w.segment = 1
     else:
