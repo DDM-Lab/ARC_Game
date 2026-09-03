@@ -528,7 +528,26 @@ class TaskBoard:
             zombie = len(_entry) > 3 and _entry[3] == "zombie"
             task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
             if task is None:
+                import os as _o
+                if _o.environ.get("FLEET_TRACE"):
+                    print(f"        [arrived DISCARDED] task={task_id} qty={quantity}")
                 continue
+            if task.resolved:
+                # A FLEET LANDING FOR AN ALREADY-RESOLVED TASK IS A LATE DELIVERY. The
+                # `arriving` (latency-queue) loop had this branch; this one, which handles
+                # actual fleet arrivals, did not -- so a delivery that landed after its task
+                # expired was found, recognised as resolved, and then silently dropped without
+                # crediting anything. That is Unity's AddLateDelivery
+                # (TaskSystem.cs:705-711): fulfilled only, capped at resolved, never
+                # re-crediting resolved.
+                # Credit the metric, then FALL THROUGH so the people still land. Unity's
+                # OnDeliveryTaskCompleted runs its normal delivery handling for an
+                # already-completed parent and only the METRIC call differs (TaskSystem.cs
+                # 683-711), so the population moves either way. `continue`-ing past this
+                # credited fulfilment while landing nobody, which cost 5501 a 20000-unit
+                # lodgingSpend error -- worse than the 100 it fixed. `resolve()` guards on
+                # `task.resolved`, so falling through cannot double-resolve.
+                self.late_delivery(task, quantity, counters)
             # deliveredQuantity is credited from the delivery's NOMINAL quantity, so a
             # zombie counts as fulfilled -- but it physically moved nobody, so it must not
             # produce arrivals, casework or motel occupancy.
@@ -669,9 +688,14 @@ class TaskBoard:
             # them, so the expiry is not a round behind.
             task.rounds_remaining -= 1
             if task.rounds_remaining <= 0 and not task.resolved:
+                # KEEP THE TASK SO A LATE LANDING CAN FIND IT. Its delivery may still be in
+                # flight -- `carrying` on a vehicle, which no `pending` filter can reach. When
+                # it lands, the `arrived` loop looks the task up and would discard the landing
+                # entirely if the task were gone, losing the fulfilment. Unity keeps the task
+                # in completedTasks and credits FULFILLED ONLY via AddLateDelivery
+                # (TaskSystem.cs:705-711); resolved is never re-credited, and `resolve()`
+                # already guards on `task.resolved`.
                 self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
-                self.awaiting.pop(task_id, None)
-                self.pending = [x for x in self.pending if x[1][0] != task_id]
 
     def complete(self, task_id, counters: dict) -> None:
         """TaskSystem.CompleteTask -- resolution with fulfilled=True."""
