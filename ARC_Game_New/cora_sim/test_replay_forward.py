@@ -93,15 +93,22 @@ def main():
 
             truth = step["after"].get("rewardMetrics") or {}
             got = w.economy.metrics()
-            for k in TRACKED:
-                if k in truth and got.get(k) != truth[k] and first_bad is None:
-                    first_bad = (step["round"], k, truth[k], got.get(k))
+            # EVERY counter that diverges at the first bad round, not just the first one in
+            # TRACKED order. Reporting one key made a fix that merely reordered the
+            # divergence look like a fix that removed it -- "food now matches" can simply
+            # mean lodging started diverging first and masked it.
+            if first_bad is None:
+                bad = [(k, truth[k], got.get(k)) for k in TRACKED
+                       if k in truth and got.get(k) != truth[k]]
+                if bad:
+                    first_bad = (step["round"], bad)
         name = os.path.basename(path)
         if first_bad:
-            r, k, want, gotv = first_bad
-            worst.setdefault(k, 0)
-            worst[k] += 1
-            print(f"  {name}: first divergence round {r} on {k} (unity={want} port={gotv})")
+            r, bad = first_bad
+            for k, want, gotv in bad:
+                worst[k] = worst.get(k, 0) + 1
+            detail = ", ".join(f"{k} unity={want} port={gotv}" for k, want, gotv in bad)
+            print(f"  {name}: first divergence round {r} on {len(bad)} counter(s): {detail}")
         else:
             print(f"  {name}: every tracked counter matches at every round")
     print("\n  NOTE: task IDENTITY cannot be replayed -- Unity's task ids come from its own "

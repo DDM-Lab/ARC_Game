@@ -119,17 +119,35 @@ def test_vehicle_choice_is_nearest_to_source():
 
 
 def test_occupancy_is_real():
-    """A dispatched vehicle is out until it lands; the fleet limit has to actually bind."""
-    from cora_sim.roads import Fleet, BUILDING_CELL
+    """Occupancy binds on TIME, not on trip count.
+
+    A vehicle is not spent for a whole round by one trip -- a two-leg Kitchen->Community run
+    is a few seconds against a 10-second round, so it can serve several orders before the
+    round ends. That is what the delivery:queue marks show Unity doing (three food orders
+    created in one round). What DOES bind is the round's seconds: keep dispatching and the
+    fleet runs out of time. This test previously asserted the opposite -- that three trips
+    exhaust three vehicles -- which encoded a one-trip-per-round model the marks refute.
+    """
+    from cora_sim.roads import Fleet, BUILDING_CELL, ROUND_SECONDS
     f = Fleet()
-    for _ in range(3):
-        v = f.best_vehicle(BUILDING_CELL["Kitchen_0"])
-        assert v is not None
-        assert f.dispatch(v, "x", BUILDING_CELL["Kitchen_0"], BUILDING_CELL["Community03"])
-    assert f.best_vehicle(BUILDING_CELL["Kitchen_0"]) is None, "all three should be out"
-    for _ in range(6):
-        f.advance(2)
-    assert f.best_vehicle(BUILDING_CELL["Kitchen_0"]) is not None, "they must come home"
+    job = (BUILDING_CELL["Kitchen_0"], BUILDING_CELL["Community03"])
+
+    v = f.best_vehicle(job[0])
+    assert v is not None and f.dispatch(v, "x", *job)
+    assert f.best_vehicle(job[0]) is not None, (
+        "one short trip must not spend the fleet for the whole round")
+
+    dispatched = 1
+    while f.best_vehicle(job[0]) is not None and dispatched < 50:
+        w = f.best_vehicle(job[0])
+        assert f.dispatch(w, "x", *job)
+        dispatched += 1
+    assert dispatched > 3, f"a 10s round should fit more than one trip per vehicle, got {dispatched}"
+    assert all(b >= ROUND_SECONDS for b in f.busy_seconds), "the fleet ran out of TIME"
+
+    for _ in range(dispatched + 2):
+        f.advance()
+    assert f.best_vehicle(job[0]) is not None, "they must come home"
 
 
 def test_repair_task_returns_the_vehicle():

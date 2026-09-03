@@ -209,8 +209,16 @@ class Fleet:
         return f
 
     def available(self):
+        """Vehicles that will be free at some point in THIS round.
+
+        A vehicle is not out of action for a whole round just because it took a trip. A
+        two-leg Kitchen->Community run is a few seconds against a 10-second round, so one
+        vehicle can serve several orders before the round ends -- which is exactly what the
+        delivery:queue marks show Unity doing: three food orders created in a round, landing
+        across that round and the next rather than one per vehicle per round.
+        """
         return [i for i in range(len(self.pos))
-                if not self.damaged[i] and self.busy_seconds[i] <= 0 and self.carrying[i] is None]
+                if not self.damaged[i] and self.busy_seconds[i] < ROUND_SECONDS]
 
     def best_vehicle(self, src_cell, quantity=0, capacity=100.0, speed=None):
         """DeliverySystem.FindSuitableVehicle / CalculateVehicleSuitability.
@@ -247,7 +255,7 @@ class Fleet:
         for i in range(len(self.pos)):
             if self.damaged[i]:
                 continue
-            wait = self.busy_seconds[i] if self.carrying[i] is not None else 0.0
+            wait = max(0.0, self.busy_seconds[i])
             if best_wait is None or wait < best_wait:
                 best, best_wait = i, wait
         return best, best_wait
@@ -274,7 +282,13 @@ class Fleet:
         if leg2 is None:
             self.damaged[vehicle] = True
             return False
-        self.busy_seconds[vehicle] = leg_seconds(leg1) + leg_seconds(leg2)
+        # Accumulate: the vehicle starts this trip when its previous one ends, so its clock
+        # is cumulative work measured from the start of the current round. Overwriting it
+        # (what this did before) meant a vehicle could only ever run ONE trip per round, and
+        # the port landed 2 food deliveries where Unity landed 1 because the fleet had three
+        # times too much capacity per round in the wrong shape.
+        self.busy_seconds[vehicle] = (max(0.0, self.busy_seconds[vehicle])
+                                      + leg_seconds(leg1) + leg_seconds(leg2))
         self.carrying[vehicle] = payload
         self.pos[vehicle] = dst_cell
         return True
@@ -288,11 +302,8 @@ class Fleet:
         """
         landed = []
         for i, b in enumerate(self.busy_seconds):
-            if self.carrying[i] is None:
-                continue
-            self.busy_seconds[i] = b - ROUND_SECONDS
-            if self.busy_seconds[i] <= 0:
-                self.busy_seconds[i] = 0.0
+            self.busy_seconds[i] = max(0.0, b - ROUND_SECONDS)
+            if self.carrying[i] is not None and self.busy_seconds[i] <= 0:
                 landed.append(self.carrying[i])
                 self.carrying[i] = None
         return landed

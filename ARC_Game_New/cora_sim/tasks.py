@@ -205,11 +205,6 @@ class TaskBoard:
             v, wait = self.fleet.soonest_free()
             if v is None:
                 return None      # every vehicle damaged; caller falls back
-        if wait:
-            # The vehicle is still out on its previous trip; it will start this one from
-            # where that one ends, which dispatch already models via self.pos.
-            self.fleet.busy_seconds[v] = 0.0
-            self.fleet.carrying[v] = None
         if not self.fleet.dispatch(v, task_id, src, dst, flooded):
             # StopVehicleDueToFlood spawns a repair task through
             # FloodTaskGenerator.CreateVehicleRepairTask: Emergency, roundsRemaining 2, two
@@ -217,7 +212,8 @@ class TaskBoard:
             # stays out of service until choice 1 is answered.
             self.open_repair_task(v)
             return False         # route cut: order dropped, vehicle damaged
-        seconds = self.fleet.busy_seconds[v] + wait
+        # The clock already includes everything queued ahead of this trip.
+        seconds = self.fleet.busy_seconds[v]
         # Occupancy is REAL: the vehicle stays out for the whole drive and is not available
         # for the next order. Zeroing it here (as the first cut of this did) made
         # best_vehicle always return vehicle 0 and silently removed the fleet limit.
