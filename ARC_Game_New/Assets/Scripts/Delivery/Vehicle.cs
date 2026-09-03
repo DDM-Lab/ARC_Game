@@ -239,10 +239,27 @@ public class Vehicle : MonoBehaviour
             currentPath = new List<Vector3> { transform.position, targetPos };
         }
 
+        // A trip is two legs (drive to source, then to destination), so duration depends on
+        // where this vehicle last parked -- not on the src->dst pair alone. Emitting the A*
+        // length per leg makes the travel model checkable arithmetic against the observed
+        // arrival rounds BEFORE any of the road graph is ported.
+        {
+            float _len = 0f;
+            for (int _i = 0; _i + 1 < currentPath.Count; _i++)
+                _len += Vector3.Distance(currentPath[_i], currentPath[_i + 1]);
+            SnapshotDebug.MarkContext("delivery:leg", "{\"veh\":\"" + vehicleName
+                + "\",\"len\":" + _len.ToString("F2")
+                + ",\"nodes\":" + currentPath.Count
+                + ",\"speed\":" + moveSpeed.ToString("F2")
+                + ",\"from\":\"" + transform.position.ToString("F1")
+                + "\",\"to\":\"" + targetPos.ToString("F1") + "\"}");
+        }
+
         if (currentPath.Count == 0)
         {
             if (showDebugInfo)
                 Debug.LogWarning($"Vehicle {vehicleName} could not find flood-free path to {targetPos} — treating as flood blockage");
+            SnapshotDebug.MarkContext("delivery:blocked", "{\"veh\":\"" + vehicleName + "\",\"why\":\"nopath\"}");
             StopVehicleDueToFlood();
             yield break;
         }
@@ -272,6 +289,7 @@ public class Vehicle : MonoBehaviour
                 // Check for flood collision during movement
                 if (CheckForFloodCollision())
                 {
+                    SnapshotDebug.MarkContext("delivery:blocked", "{\"veh\":\"" + vehicleName + "\",\"why\":\"collision\"}");
                     StopVehicleDueToFlood();
                     yield break; // Stop movement immediately
                 }

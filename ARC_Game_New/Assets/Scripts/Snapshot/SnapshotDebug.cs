@@ -29,7 +29,11 @@ public static class SnapshotDebug
         var st = UnityEngine.Random.state;
         int day = GlobalClock.Instance != null ? GlobalClock.Instance.currentDay : -1;
         int seg = GlobalClock.Instance != null ? GlobalClock.Instance.currentTimeSegment : -1;
-        Debug.Log($"[RNGCTX] d{day}r{seg} {label} {JsonUtility.ToJson(st)} {contextJson}");
+        // frameCount rides along because the port converts a vehicle's path length into ROUNDS,
+        // and that conversion needs the frames-per-round budget. I have been asserting that
+        // budget is fixed; this measures it. Placed inside the existing d{day}r{seg} token so
+        // every parser that matches (d\d+r\d+) keeps working.
+        Debug.Log($"[RNGCTX] d{day}r{seg}f{Time.frameCount} {label} {JsonUtility.ToJson(st)} {contextJson}");
     }
 
     public static void Mark(string label)
@@ -39,6 +43,6 @@ public static class SnapshotDebug
         var st = UnityEngine.Random.state;
         int day = GlobalClock.Instance != null ? GlobalClock.Instance.currentDay : -1;
         int seg = GlobalClock.Instance != null ? GlobalClock.Instance.currentTimeSegment : -1;
-        Debug.Log($"[RNGMARK] d{day}r{seg} {label} {JsonUtility.ToJson(st)}");
+        Debug.Log($"[RNGMARK] d{day}r{seg}f{Time.frameCount} {label} {JsonUtility.ToJson(st)}");
     }
 }

@@ -677,7 +677,7 @@ public class DeliverySystem : MonoBehaviour
             + "\",\"qty\":" + completedTask.quantity
             + ",\"src\":\"" + (completedTask.sourceBuilding != null ? completedTask.sourceBuilding.name : "")
             + "\",\"dst\":\"" + (completedTask.destinationBuilding != null ? completedTask.destinationBuilding.name : "")
-            + "\"}");
+            + "\",\"veh\":\"" + (vehicle != null ? vehicle.GetVehicleName() : "") + "\"}");
         Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
         if (completedTask.cargoType == ResourceType.Population && ClientStayTracker.Instance != null)
         {
