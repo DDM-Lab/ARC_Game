@@ -465,6 +465,18 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
             t = Task(w.tasks.next_id, tag, demand_of(state, tag),
                      spec.get("roundsRemaining") or 1)
             t.destination = ""
+            # A task born in the ROLLOVER is not new to the round that follows it. The
+            # rollover IS a segment advance (Unity's d2r0), so OnTimeSegmentAdvanced ticks
+            # such a task at d2r1 and again at d2r2 -- two decrements by the time round 5's
+            # advance runs. The port's fresh-skip ate one of them and put every
+            # rollover-born task a full round late, which is why an answered relocation
+            # that should have gone Incomplete at round 5 was still waiting.
+            # ...but only one born in the FIRST rollover pass. The rollover runs two passes,
+            # evaluated as segment 0 and segment 1; a task created in the segment-1 pass is
+            # new to that segment and must not be aged by it. Marking both passes not-fresh
+            # aged half the board a round early.
+            if day_changed and w.segment == 0:
+                t.fresh = False
             w.tasks.next_id += 1
             w.tasks.add(t)
             w.generated_specs[t.task_id] = (task_id, facility, spec)

@@ -113,6 +113,15 @@ public class RewardMetricsTracker : MonoBehaviour
         if (task == null) return;
         if (task.taskTag != TaskTag.Food && task.taskTag != TaskTag.Lodging) return;
 
+        // Every resolution, with the numbers that produce the counters. The port matches
+        // lodgingFulfilled but not lodgingResolved, which means Unity resolves a task the
+        // port does not -- this says which one, and whether it delivered anything.
+        SnapshotDebug.MarkContext("task:resolved", "{\"title\":\"" + task.taskTitle
+            + "\",\"tag\":\"" + task.taskTag
+            + "\",\"demand\":" + task.demandQuantity
+            + ",\"delivered\":" + task.deliveredQuantity
+            + ",\"fulfilled\":" + (fulfilled ? "true" : "false")
+            + ",\"status\":\"" + task.status + "\"}");
         int demand = task.demandQuantity;
         int delivered = Mathf.Clamp(task.deliveredQuantity, 0, Mathf.Max(demand, task.deliveredQuantity));
         int resolvedAdd = demand > 0 ? demand : 1;

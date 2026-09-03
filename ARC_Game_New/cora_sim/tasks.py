@@ -589,6 +589,28 @@ class TaskBoard:
                 # whatever actually got delivered -- resolved counts demand either way.
                 self.resolve(task, fulfilled=False, counters=counters)
                 del self.active[task.task_id]
+
+        # ANSWERED TASKS EXPIRE TOO. A task that has been answered leaves the board and
+        # waits on its delivery, but its clock keeps running: Unity records
+        #
+        #     Population Relocation  demand=100 delivered=0 fulfilled=False status=Incomplete
+        #
+        # for an answered relocation whose delivery never landed. resolvedAdd is demand
+        # either way, so that single event is the difference between Unity's
+        # lodgingResolved 200 (one delivered, one expired) and the port's 100. The port
+        # parked answered tasks in `awaiting` and aged only `active`, so they waited
+        # forever and never resolved.
+        for task_id, task in list(self.awaiting.items()):
+            # NO fresh skip here. The skip exists because a task generated during a round is
+            # not aged by that round -- but a task in `awaiting` was ANSWERED, which happens
+            # after generation, and its clock has been running since it appeared. Unity's
+            # resolution marks land in the same round's advance as the delivery that races
+            # them, so the expiry is not a round behind.
+            task.rounds_remaining -= 1
+            if task.rounds_remaining <= 0 and not task.resolved:
+                self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+                self.awaiting.pop(task_id, None)
+                self.pending = [x for x in self.pending if x[1][0] != task_id]
         return landed
 
     def complete(self, task_id, counters: dict) -> None:
