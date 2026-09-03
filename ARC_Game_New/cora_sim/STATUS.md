@@ -78,10 +78,20 @@ but no captured episode shows it corrupting a counter.
 
 ## If continuing: the next measurement
 
-The residual is in **which vehicle is allocated to which relocation**, not in travel and
-not in how many dispatches a round makes -- both sides make six in round 5, with one
-vehicle taking several. Same orders, same count, different allocation, so the durations
-differ and one relocation falls on the wrong side of the round boundary.
+The residual is a RELOCATION THE PORT NEVER GENERATES. Measured on 5901: Unity lands 2
+deliveries in round 5 and 4 in round 6; the port lands 2 and 3. Unity's extra one is a
+SECOND Community01 -> Motel relocation, queued at r5 f330 after the first delivered --
+the community still trips its threshold, so the trigger re-fires.
+
+Scheduling, allocation and travel are all measured to match: same six assignments in
+round 5, same round-5 landings, one cell per simulated frame, routes exact 77/77.
+
+The question is within-round ORDERING between resolution and generation. Unity's first
+Community01 task resolves on delivery in round 5, freeing its facility slot in time for
+the trigger to re-fire in the same round. If the port resolves a step later, or evaluates
+triggers before resolution rather than after, the re-request never happens. Both events
+are instrumented: `task:resolved` carries the gym step, generation is visible in
+`diag_parity`.
 `AssignPendingTasks` runs on a 1s `taskAssignmentInterval` (dumped, unmodified) and picks
 by priority then `timeCreated`; both handlers use priority 3. Ledger the selection per
 interval tick on both sides with `diag_orders`, and attribute the mis-assigned relocation
