@@ -80,7 +80,7 @@ class World:
                  "facilities_for", "generated", "clients", "economy", "tasks",
                  "round_index", "_trigger_memory", "use_generation",
                  "pending_arrivals", "generated_specs", "_alerts_shown",
-                 "_emergency_count", "_last_emergency_round")
+                 "_emergency_count", "_last_emergency_round", "_sourced_now")
 
     def __init__(self, rng, weather, day=1, segment=0, flood=None, fmap=None,
                  facilities_for=None):
@@ -112,6 +112,10 @@ class World:
         # nearest road tile the same way, and the two agree on all five prebuilts -- and
         # unlike a name map this keeps working for facilities the player builds mid-episode.
         self.tasks = TaskBoard(cell_for=self._facility_cell)
+        # A food delivery that reaches an empty kitchen does not fail -- LoadCargo aborts
+        # and the trip runs again once the kitchen restocks at the day reset.
+        self.tasks.retry_if_unsourced = self._can_source
+        self._sourced_now = {}      # task -> packs already pulled this round
         self.round_index = 0
         self._trigger_memory = {}       # stateful triggers (FloodExpanded, BudgetDropped)
         self.pending_arrivals = []      # deliveries that landed LAST round, drawn this one
@@ -119,6 +123,32 @@ class World:
         self._alerts_shown = set()      # Alert tasks fire once per GAME
         self._emergency_count = 0
         self._last_emergency_round = -99
+
+    def _can_source(self, task, quantity):
+        """Packs the kitchens could hand a vehicle right now, for LoadCargo's abort test.
+
+        Only food is sourced from a building; a population relocation loads people from the
+        community that asked, and that is checked when the choice is made.
+        """
+        if getattr(task, "tag", "") != "Food":
+            return quantity
+        if str(task.destination or "").startswith("__food__") is False:
+            return quantity
+        chosen = getattr(task, "chosen_id", None)
+        spec = (self.generated_specs.get(task.task_id) or (None, None, {}))[2]
+        choice = next((c for c in (spec.get("choices") or [])
+                       if c.get("choiceId") == chosen), None)
+        if (choice or {}).get("immediateDelivery"):
+            return quantity          # external supply, no kitchen involved
+        # PULL, do not peek. LoadCargo calls RemoveResource, so the packs leave the kitchen
+        # at LOAD time -- which is why three simultaneous 100-pack orders against a
+        # 200-pack kitchen do not all succeed. Peeking returned 200 to all three and let
+        # them all through; the second and third have to see what the first left behind.
+        # What is pulled here is stashed for the landing loop, which must not pull again.
+        got = _source_food(self, quantity)
+        if got:
+            self._sourced_now[task.task_id] = got
+        return got
 
     def _facility_cell(self, name):
         """Facility name -> its road-network cell, resolved geometrically.
@@ -201,6 +231,7 @@ class World:
         w.pending_arrivals = list(self.pending_arrivals)
         w.generated_specs = dict(self.generated_specs)
         w._alerts_shown = set(self._alerts_shown)
+        w._sourced_now = dict(self._sourced_now)
         w._emergency_count = self._emergency_count
         w._last_emergency_round = self._last_emergency_round
         w.use_generation = self.use_generation
@@ -369,7 +400,10 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
             spec = (w.generated_specs.get(_task_id) or (None, None, {}))[2]
             choice = next((c for c in (spec.get("choices") or [])
                            if c.get("choiceId") == (task.chosen_id if task else None)), None)
-            sourced = quantity if (choice or {}).get("immediateDelivery") else _source_food(w, quantity)
+            # Already pulled by the LoadCargo check; pulling again would double-charge the
+            # kitchen and let a 200-pack kitchen fill four orders.
+            sourced = (quantity if (choice or {}).get("immediateDelivery")
+                       else w._sourced_now.pop(_task_id, 0))
             if sourced:
                 w.economy.add_food(dest[len("__food__"):], sourced)
             if task is not None:
@@ -483,11 +517,17 @@ def answer(w: World, task_id, choice_id) -> bool:
                          if b["type"] == "Kitchen" and b["status"] == "InUse"), None)
         _lat = w.tasks.travel_rounds(_kitchen, str(_facility), w.flooded_road_cells(),
                                      demanded, task_id, w.segment) if _kitchen else None
-        w.tasks.answer(task_id, 0 if _lat is False else demanded, immediate=immediate,
-                       latency=None if _lat in (None, False) else _lat,
+        # `_lat in (None, False)` was WRONG twice over: the flag was inverted, and
+        # `0 in (None, False)` is True because 0 == False in Python -- so a delivery
+        # measured as landing THIS round was thrown away and replaced by the fitted 4.
+        # Identity tests only.
+        _cut = _lat is False
+        _measured = _lat is not None and _lat is not False
+        w.tasks.answer(task_id, 0 if _cut else demanded, immediate=immediate,
+                       latency=_lat if _measured else None,
                        destination="__food__" + str(_facility),
                        counters=w.economy.counters,
-                       latency_measured=_lat in (None, False))
+                       latency_measured=_measured)
         if immediate:
             _land_now("food", demanded, str(_facility))
         w.economy.apply_choice(task.tag, choice.get("impacts"),
@@ -523,10 +563,12 @@ def answer(w: World, task_id, choice_id) -> bool:
          if b["type"] == "Shelter" and b["status"] == "InUse"), "Motel"))
     _lat = w.tasks.travel_rounds(str(_facility), _target, w.flooded_road_cells(),
                                  qty, task_id, w.segment)
-    w.tasks.answer(task_id, 0 if _lat is False else qty, immediate=immediate,
-                   latency=None if _lat in (None, False) else _lat,
+    _cut = _lat is False
+    _measured = _lat is not None and _lat is not False
+    w.tasks.answer(task_id, 0 if _cut else qty, immediate=immediate,
+                   latency=_lat if _measured else None,
                    destination=dest_cat, counters=w.economy.counters,
-                   latency_measured=_lat in (None, False))
+                   latency_measured=_measured)
     if immediate and qty > 0 and dest_cat in ("Motel", "Shelter"):
         target = "Motel" if dest_cat == "Motel" else next(
             (b["name"] for b in w.economy.buildings

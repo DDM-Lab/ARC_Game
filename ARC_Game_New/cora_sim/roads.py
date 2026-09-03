@@ -139,27 +139,54 @@ def path_length(start, goal, flooded=frozenset()):
     return None
 
 
-def leg_frames(steps):
-    """Frames a leg of `steps` unit edges occupies.
+# THE ROUND'S LENGTH, read out of GlobalClock rather than measured.
+#
+# GymAdvanceRound sets Time.captureDeltaTime = GYM_FIXED_DELTA and StartSimulation runs
+# SimulationCoroutine(simulationDuration / (int)currentTimeSpeed). So a round is exactly
+# that many GAME SECONDS of simulation, and every frame advances 0.3 of one. Dumped from
+# the running game to be sure (round:length): seconds 10, simulationDuration 10, timeSpeed
+# 1, fixedDelta 0.3 -- 33.33 simulated frames.
+#
+# This is why the frame spans I measured earlier ran 34-50 while the simulation is a fixed
+# 34: the extra frames are the PLANNING phase, where the client is choosing and the game is
+# not advancing. Timing deliveries against those spans was measuring the wrong thing, and
+# it is what made the round-boundary cases unfittable.
+GYM_FIXED_DELTA = 0.3
+SIMULATION_DURATION = 10.0
+TIME_SPEED = 1
+ROUND_SECONDS = SIMULATION_DURATION / TIME_SPEED
 
-    Vehicle.MoveToPosition accumulates Time.deltaTime once per frame until it covers
-    journeyLength/moveSpeed, so at targetFrameRate 10 and moveSpeed 8 a leg costs 1.25
-    frames per unit step.
+
+def leg_seconds(steps):
+    """Vehicle.MoveToPosition's journeyTime, exactly: journeyLength / moveSpeed.
+
+    Each unit step is one world unit (every A* edge measured exactly 1.0), so the leg takes
+    steps/moveSpeed game-seconds. The coroutine accumulates Time.deltaTime until it covers
+    that, and under captureDeltaTime the increment is a fixed 0.3 -- so the frames actually
+    burned are ceil(journeyTime / 0.3), which is what the game does and what this returns
+    when asked in frames.
     """
-    return int(steps * (TARGET_FPS / MOVE_SPEED) + 0.5)
+    return steps / MOVE_SPEED
 
 
-# Frames a round occupies, measured between consecutive round-start marks over two captured
-# episodes. advance_round holds for about four seconds at targetFrameRate 10, so the nominal
-# budget is 40; the first segment of a day is shorter and the day-rollover segment is only a
-# handful of frames. The spread within a segment (39-50) is real frame-timing jitter, not
-# noise in the measurement, and is the one place this model is approximate.
-FRAMES_PER_ROUND = {0: 6, 1: 34}
-FRAMES_PER_ROUND_DEFAULT = 40
+def leg_frames(steps):
+    """The same leg in simulated frames, since movement only progresses per frame."""
+    from math import ceil
+    return ceil(leg_seconds(steps) / GYM_FIXED_DELTA)
 
 
-def frames_in_segment(segment):
-    return FRAMES_PER_ROUND.get(segment, FRAMES_PER_ROUND_DEFAULT)
+def frames_in_segment(segment=None):
+    """Simulated frames in one round -- the same for every segment.
+
+    Segment made no difference here: the per-segment table this replaces was fitted to
+    frame spans that included planning-phase frames. The simulation itself is a fixed
+    simulationDuration/timeSpeed seconds regardless of which segment is running.
+    """
+    from math import floor
+    return int(floor(ROUND_SECONDS / GYM_FIXED_DELTA))
+
+
+FRAMES_PER_ROUND_DEFAULT = 33
 
 
 class Fleet:

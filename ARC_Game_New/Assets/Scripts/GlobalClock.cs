@@ -351,6 +351,15 @@ public class GlobalClock : MonoBehaviour
                 Debug.Log($"[gym] Simulation started — waits {gymWaitTime}s at {currentTimeSpeed}x speed");
             GameLogPanel.Instance?.LogMetricsChange($"Simulation started — Player waits {gymWaitTime}s at {currentTimeSpeed}x speed");
 
+            // The round's length in GAME SECONDS, dumped rather than trusted: everything a
+            // delivery does is timed against this, and simulationDuration is a serialized
+            // field whose .cs initialiser has been overridden by the scene seven times in
+            // this port already (moveSpeed 5->8 most recently). GYM_FIXED_DELTA is a const
+            // and cannot be, so frames = gymWaitTime / GYM_FIXED_DELTA exactly.
+            SnapshotDebug.MarkContext("round:length", "{\"seconds\":" + gymWaitTime
+                + ",\"simulationDuration\":" + simulationDuration
+                + ",\"timeSpeed\":" + (int)currentTimeSpeed
+                + ",\"fixedDelta\":" + GYM_FIXED_DELTA + "}");
             StartCoroutine(SimulationCoroutine(gymWaitTime));
             return;
         }

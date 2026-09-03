@@ -632,6 +632,14 @@ public class GymServerManager : MonoBehaviour
                     else
                     {
                         string failReason;
+                        // Stamp the frame the choice lands on. A delivery ordered part-way
+                        // through a round only has the REMAINDER of that round's frames to
+                        // travel in, and that remainder is the last quantity in the travel
+                        // model still being approximated -- it decides whether a short trip
+                        // lands inside the round it was ordered in. Paired with
+                        // round:advance below, the difference IS the remainder.
+                        SnapshotDebug.MarkContext("choice:at", "{\"task\":" + request.taskId
+                            + ",\"choice\":" + request.choiceId + "}");
                         bool ok = ui.SelectTaskChoiceHeadless(request.taskId, request.choiceId, request.stableId, out failReason);
                         result = JsonUtility.ToJson(new GymResponse
                         {
@@ -1488,7 +1496,15 @@ public class GymServerManager : MonoBehaviour
 
         lock (actionQueueLock)
         {
-            mainThreadActions.Enqueue(() => GlobalClock.Instance.GymAdvanceRound());
+            mainThreadActions.Enqueue(() =>
+            {
+                // Paired with choice:at. The frames between a choice and this advance are
+                // the only ones a delivery ordered by that choice can travel in before the
+                // round ends, which is what decides the boundary cases the port still gets
+                // wrong.
+                SnapshotDebug.MarkContext("round:advance", "{}");
+                GlobalClock.Instance.GymAdvanceRound();
+            });
         }
 
         // Wait for the round to actually start, then finish. With captureDeltaTime

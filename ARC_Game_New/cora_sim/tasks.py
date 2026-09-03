@@ -127,7 +127,8 @@ class TaskBoard:
     """Active tasks plus in-flight deliveries."""
 
     __slots__ = ("active", "deliveries", "next_id", "awaiting", "has_supplier",
-                 "_sources", "queue", "busy", "fleet", "cell_for", "repair_for")
+                 "_sources", "queue", "busy", "fleet", "cell_for", "repair_for",
+                 "retry_if_unsourced")
 
     def __init__(self, has_supplier=None, cell_for=None):
         self.active = {}                    # task_id -> Task
@@ -158,6 +159,9 @@ class TaskBoard:
         # constant -- which is exactly what the port did before this: 87 of 168 fallbacks
         # happened with all three vehicles damaged.
         self.repair_for = {}
+        # Injected: how much of `quantity` the source can actually supply right now.
+        # None disables the check, which is what the pure-task suites want.
+        self.retry_if_unsourced = None
 
     def clone(self):
         b = TaskBoard.__new__(TaskBoard)
@@ -172,6 +176,7 @@ class TaskBoard:
         b.fleet = self.fleet.clone()
         b.cell_for = self.cell_for
         b.repair_for = dict(self.repair_for)
+        b.retry_if_unsourced = self.retry_if_unsourced
         return b
 
 
@@ -323,7 +328,7 @@ class TaskBoard:
         # divergence (unity 1, port 0) that has stood since this suite was written.
         # Fleet occupancy and queue wait are now modelled inside travel_rounds itself.
         remaining = quantity if self.has_supplier(task.tag) else 0
-        if quantity > 0 and latency_measured:
+        if quantity > 0 and not latency_measured:
             trips = max(1, -(-quantity // VEHICLE_CAPACITY))
             per = quantity // trips
             for i in range(trips):
@@ -434,6 +439,36 @@ class TaskBoard:
             task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
             if task is None:
                 continue
+            # LoadCargo ABORTS when the source building holds none of the cargo: it nulls
+            # currentTask, sets the vehicle Idle and returns, so RunDelivery never reaches
+            # the destination and OnVehicleDeliveryCompleted never fires. No completion
+            # means no RecordTaskResolution -- the task is NOT resolved-unfulfilled, it
+            # simply has not happened yet, and it goes again once the source restocks.
+            #
+            # This is the whole round-5 divergence. Unity's kitchen holds 200 and each
+            # order is 100, so exactly ONE of three orders loads: foodResolved 1 at round 5
+            # and 3 at round 6, with the kitchen dropping 200 -> 100 and restocking at the
+            # day reset. The port resolved all three at once because it treated an
+            # unsourceable delivery as a failed one. The comment above answer()'s
+            # cannot-be-sourced branch says the opposite; it was written from inference
+            # before LoadCargo was read, and it is wrong.
+            if self.retry_if_unsourced is not None and quantity > 0:
+                available = self.retry_if_unsourced(task, quantity)
+                if available <= 0:
+                    # It goes again next round -- but the TASK still ages, and when its
+                    # rounds run out it resolves UNFULFILLED like any other expiry. That
+                    # bound is what makes the counts come out: three 100-pack orders
+                    # against a 200-pack kitchen give two fulfilled deliveries and one
+                    # expiry, which is Unity's foodResolved 3 / foodFulfilled 2. Retrying
+                    # without the bound left the third order in flight forever and the port
+                    # under-resolved by up to 5 over an episode.
+                    task.rounds_remaining -= 1
+                    if task.rounds_remaining > 0:
+                        self.awaiting[task_id] = task
+                        self.deliveries.append([1, task_id, quantity])
+                        continue
+                    self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+                    continue
             if task.resolved:
                 self.late_delivery(task, quantity, counters)
             else:
