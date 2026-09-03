@@ -638,8 +638,22 @@ public class GymServerManager : MonoBehaviour
                         // model still being approximated -- it decides whether a short trip
                         // lands inside the round it was ordered in. Paired with
                         // round:advance below, the difference IS the remainder.
+                        // roundsRemaining AT THE ANSWER. The surrogate expires a relocation
+                        // with delivered=0 where the game delivers it, and the two candidate
+                        // causes need opposite fixes: either the task still holds its full
+                        // rounds here, or it holds one and survives because expiry cannot fire
+                        // on an InProgress task with a live delivery. Only this number
+                        // separates them.
+                        int _rr = -1;
+                        if (TaskSystem.Instance != null)
+                        {
+                            var _t = TaskSystem.Instance.activeTasks
+                                .Find(x => x.taskId == request.taskId);
+                            if (_t != null) _rr = _t.roundsRemaining;
+                        }
                         SnapshotDebug.MarkContext("choice:at", "{\"task\":" + request.taskId
-                            + ",\"choice\":" + request.choiceId + "}");
+                            + ",\"choice\":" + request.choiceId
+                            + ",\"roundsRemaining\":" + _rr + "}");
                         bool ok = ui.SelectTaskChoiceHeadless(request.taskId, request.choiceId, request.stableId, out failReason);
                         result = JsonUtility.ToJson(new GymResponse
                         {
