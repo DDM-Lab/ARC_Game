@@ -689,12 +689,25 @@ motel population. So a late delivery now credits fulfilment while landing NOBODY
 A 20000-unit spend error is a far worse state than the 100 it fixed, and by the
 magnitude-first rule this cannot go in as it stands.
 
-THE REMAINING WORK IS SMALL AND WELL-POSED: make the late-delivery branch credit
-`late_delivery` AND still perform the arrival/population half, instead of `continue`-ing past
-it. The question to settle first is whether Unity's AddLateDelivery path also moves the people
--- OnDeliveryTaskCompleted runs its normal delivery handling and only the METRIC differs for an
-already-completed parent, which suggests the population DOES move and only `resolve` is skipped.
-Check TaskSystem.cs:683-711 for what happens to the delivery besides the metric call.
+THE FALL-THROUGH VARIANT (`experiments/tasks_late_delivery_fallthrough.py`) credits
+`late_delivery` and then lets the people land instead of `continue`-ing. It FIXES the
+20000-unit lodgingSpend error the `continue` version introduced, moves 5501 from round 6 to
+round 9, and takes 5901 down to a single diverging counter. But traces diverging on exactly ONE
+counter fall from 10 to 7 -- 5503, 5801 and 5802 each pick up an extra, with lodgingFulfilled
+now OVER-counting (300 vs 400, 500 vs 600). Net regression by breadth, so not committed.
+
+BOTH VARIANTS ARE PARKED AND BOTH ARE INSTRUCTIVE. The mechanism is right -- a fleet landing for
+an already-resolved task must credit fulfilled-only -- and the two failures bracket it:
+`continue` credits the metric without landing anyone; falling through lands them but
+over-credits fulfilled somewhere. The over-count is the thing to chase: `late_delivery` caps at
+`lodgingResolved`, so an over-count means either the same landing is credited twice (once late,
+once by the fall-through path's own `task.delivered += quantity` feeding a later resolve) or a
+task is being late-credited that Unity never delivers at all.
+
+READ THE FALL-THROUGH PATH FOR A DOUBLE CREDIT FIRST. `late_delivery` adds to
+`lodgingFulfilled`, and then the normal path does `task.delivered += quantity`; if anything
+downstream re-derives fulfilment from `task.delivered`, the same people are counted twice. That
+is a five-minute read and it is the last identified obstacle on this thread.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
