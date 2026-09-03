@@ -453,24 +453,42 @@ them. The port collects `rolls` from BOTH rollover passes and only calls `_creat
 the loop has finished, so a task born in pass 0 never experiences pass 1's advance and arrives
 a full advance young.
 
-FIXED. `_create_tasks` is now called PER ROLLOVER PASS inside the loop, so a task born in
-pass 0 is on the board for pass 1's advance. The round-5 divergence is gone on all eleven
-traces and the residual collapsed by two orders of magnitude:
+## CURRENT STANDING (end of session), and the next thread
 
-    before   round 5   lodgingResolved unity=200  port=100
-    after    round 6   lodgingResolved unity=201  port=200
+Two ageing bugs were found and fixed, both by INSTRUMENTING an advance rather than reasoning
+about the source:
 
-11 suites pass. Every trace now diverges at round 6, and always by ONE unit -- 201/200,
-401/400, 301/300 -- or on lodgingFulfilled by 100 (5501, 5503). The +1 shape is the signature
-of `resolvedAdd = demand > 0 ? demand : 1`, the demand==0 fallback: a Lodging task with
-demandQuantity 0 credits exactly 1, and something with zero demand is resolving in Unity that
-the port either does not resolve or credits as 0. The Flood Alert task (id=14, tag Lodging,
-demand=0) is the obvious candidate -- it is tagged Lodging and it EXPIRES, and expiry calls
-RecordTaskResolution.
+1. `_create_tasks` now runs PER ROLLOVER PASS inside the loop, so a task born in pass 0 is on
+   the board for pass 1's advance. Killed the round-5 `lodgingResolved 200 vs 100` on all
+   eleven traces -- the largest single divergence in the set.
+2. The `fresh` skip is removed. It existed because creation used to precede the advance; now
+   that creation follows it, skipping again left a task a full advance young. That was the
+   +1 residue (Flood_Alert, rounds=1, tag Lodging, demand 0, crediting resolvedAdd 1 late).
 
-NEXT, and it is small: check whether the port resolves zero-demand Lodging tasks at all, and
-that it credits 1 rather than 0 for them. The separate lodgingFulfilled 200-vs-100 on 5501 and
-5503 is a different residue and should be read after the +1 is settled.
+Result is MIXED and must be read as such: by exact-count-then-depth it is better (5502 round
+6 -> 9, 5504 and 5601 6 -> 7, none regressed, 11 suites green), but magnitudes at the new
+divergence points grew from 1 to 100. Depth improving while magnitude worsens is the shape
+that has misled this session more than once. Treat fix 2 as PROVISIONAL and re-examine it
+first if the next reading looks wrong.
+
+THE NEXT THREAD is the shallowest divergence left, and no change today touched it:
+
+    staff_5501  round 6  lodgingFulfilled unity=200 port=100
+    staff_5503  round 6  lodgingFulfilled unity=300 port=200
+
+fulfilledAdd is min(delivered, demand), so Unity is crediting the fulfilment of TWO lodging
+tasks where the port credits one, while lodgingRESOLVED agrees on those traces. A resolved-but
+-not-fulfilled asymmetry points at `delivered` rather than at the resolution path: note
+parentTask.deliveredQuantity += deliveryTask.quantity is NOMINAL, and the double-spawn means
+two call sites touch a population delivery. Check whether Unity credits deliveredQuantity from
+both, and whether `late_delivery` (AddLateDelivery, fulfilled-only) is reachable from the port
+'s expiry path -- Fable confirmed a delivery completing after its task expired credits
+FULFILLED ONLY and never re-credits resolved, which is exactly this signature.
+
+METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
+from the C# instead of instrumenting. Both real fixes came within minutes of spying on
+`age_and_expire`. When an edit comes back inert, instrument the mechanism before writing
+another one -- and check the capture can even exercise it.
 
 Two facts worth keeping: LoadCargo and UnloadCargo contain no delay at all, and a vehicle
 already on its source road cell produces a 1-node path whose movement loop never runs, so it
