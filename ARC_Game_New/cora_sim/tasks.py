@@ -282,6 +282,28 @@ class TaskBoard:
         return False
 
 
+    def outbound_from_kitchens(self):
+        """Food already promised to orders that have not loaded yet.
+
+        GetKitchensSorted ranks kitchens by effectiveStock = actual stock MINUS what is
+        already outbound, and FoodDeliveryHandler sends min(remaining, effectiveStock) from
+        each. With nothing left it creates NO delivery at all. So a 200-pack kitchen backs
+        two 100-pack orders and the third becomes nothing -- which is why Unity issues one
+        food order where the port issued three.
+
+        I implemented this rule once before and reported it as correct-but-inert. It was
+        inert because I wired it to the MOTEL'S POPULATION CAPACITY instead of to inbound
+        food. Same rule, wrong quantity.
+        """
+        total = 0
+        for _seq, payload, _src, _dst, qty in self.pending:
+            if str(payload[2] or "").startswith("__food__"):
+                total += qty
+        for load in self.fleet.carrying:
+            if load is not None and str(load[2] or "").startswith("__food__"):
+                total += load[1]
+        return total
+
     def inbound_to(self, destination):
         """DeliverySystem.GetReservedIncomingQuantity: population already en route.
 

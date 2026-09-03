@@ -638,6 +638,12 @@ def answer(w: World, task_id, choice_id) -> bool:
         # landed two.
         _kitchen = next((b["name"] for b in w.economy.buildings
                          if b["type"] == "Kitchen" and b["status"] == "InUse"), None)
+        # NOT gated on effectiveStock here. FoodDeliveryHandler has TWO exits when it
+        # cannot send, and they resolve the task differently: the destination-inbound branch
+        # calls CompleteTask (resolved AND fulfilled), while the no-kitchen-stock branch
+        # returns false and completes nothing. Gating both the same way made four traces
+        # read foodResolved 0 against Unity's 1. Which branch each request takes has to be
+        # measured before this is re-attempted -- see diag_orders.
         _lat = None
         # `_lat in (None, False)` was WRONG twice over: the flag was inverted, and
         # `0 in (None, False)` is True because 0 == False in Python -- so a delivery
