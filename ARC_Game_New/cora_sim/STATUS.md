@@ -101,48 +101,80 @@ right the whole time, which is exactly why BOTH relocation experiments took the 
 count 2 -> 0: form 1 moved the rollover passes too, form 2 moved only the segment pass, and
 both were moving code that was already in the correct place. sim.py is unchanged.
 
-## Client spawn on population arrival: MODELLED, but fired differently than Unity
+## The instrument that matters now: diag_marks (draw-for-draw)
 
-Correction to a claim made an hour earlier in this session: the port does NOT lack client
-spawn. `clients.py` models the whole subsystem -- caseworkNeed once per PERSON, one
-stayDuration per group, caseworkGen per undecided group per round, the shrink-on-departure
-in TriggerNonCaseworkDeparture, and the whole-group crediting of caseworkRequested. The
-gap is in HOW IT IS FIRED, not whether it exists. What follows replaces that claim.
+`cora_sim/diag_marks.py` compares the ORDERED DRAW-MARK SEQUENCE, port vs Unity capture,
+per gym step. Build it into any future client work; do not judge client changes by counters.
 
-Measured on seed 5901:
+WHY. staff_6001 was "exact at every round" while the port consumed 101 draws where Unity
+consumed 202. Counter agreement on a client-bearing trace is stream-position luck, not
+evidence. The mark diff gives a divergence with a POSITION instead of a counter that has
+already been laundered through several mechanics. It is also the missing 135th census
+fixture: the one interval the census never covered is the client-draw round.
 
-    draw:Client.caseworkNeed    800  in 8 bursts of EXACTLY 100
-    draw:Client.stayDuration      8  exactly 1 per burst
-    draw:Client.caseworkGen      10  in 2 bursts (2 at s6d2r2f319, 8 at s7d2r3f362)
+It excludes the seeding step (test_replay_forward seeds mid-step from the first
+flood:enter, so that step's pre-seed draws are not reproducible by construction).
 
-There are exactly 4 Population unloads in the episode, each nominal=100 actual=100. The 8
-burst frames are EXACTLY the union of the 4 Population `delivery:unload` frames and the 4
-Population `delivery:complete` frames -- verified by set diff, not eyeballed. So Unity runs
-the spawn path TWICE per population delivery, once at each, drawing 202 where the port
-draws 101.
+## What the mark diff established
 
-Two candidate divergences, neither yet settled, and they are independent:
+Unity, seed 5901 step 6, in order:
 
-  1. COUNT. Unity bursts twice per delivery; `register_arrival` is called once. Note the
-     port's lodging spend counters are exact on every trace, so the port's single spawn
-     already yields the RIGHT resident population -- which argues Unity's second burst
-     draws without creating a second group (a re-init, or a discarded path) rather than
-     doubling the population. If it creates nothing, it is still a stream-position
-     difference of 101 draws per delivery and must be reproduced.
-  2. TIMING. The port deliberately defers: "a delivery that landed at the end of last round
-     becomes a client arrival at the start of this one" (sim.py, step_round docstring).
-     Unity spawns at the delivery instant, inside the round. On 5901 Unity credits
-     caseworkRequested at s6d2r2f319 while the port, offset by a round, has not yet
-     registered the arrival -- which is a plausible cause of `caseworkRequested port=0`
-     in five of eleven traces.
+    caseworkNeed x100, stayDuration, caseworkNeed x100, stayDuration,
+    caseworkGen x2, TaskTrigger.probability x3, Flood.8 x122, Flood.2 x3, ... Flood.7 x52
 
-The draw census does not currently discriminate: its 135th fixture is exactly the
-client-draw round it does not cover. Fixing the census gap and this divergence are the same
-task, and the census reaching 135/135 is the test that the draw ORDER is right.
+Baseline port, same step: that identical tail from TaskTrigger onward, with the ENTIRE
+leading client block absent. Two facts follow, and both are now measured rather than argued:
 
-Both candidates are being read out of the C# now. Do not edit clients.py or sim.py until
-that read lands -- the count question in particular has two opposite fixes depending on
-whether Unity's second burst creates a group.
+1. THE DOUBLE-SPAWN IS REAL AND CORRECT. Two groups of exactly 100, each with its own
+   stayDuration. Fable located both call sites: Vehicle.UnloadCargo -> HandlePopulationDelivery
+   (count = ACTUAL delivered, gated > 0) and DeliverySystem.OnVehicleDeliveryCompleted
+   (count = NOMINAL quantity, UNGATED). The centralized hook's comment lists the scattered
+   branches it replaced and omits DeliverySystem, whose legacy branch was never deleted.
+   GAME BUG #5, and ClientRelocationHandler does the same thing on the immediate path.
+   Only the TRACKER duplicates -- population storage is deposited once -- which is exactly
+   why lodging spend was already exact while client draws were half.
+2. THE PORT DEFERS THE CLIENT DRAWS ONE STEP AND SHOULD NOT. Unity's vehicles finish in the
+   simulation phase (f307-f315) which PRECEDES the segment advance that runs the tracker
+   update and generation (f319).
+
+## The coupled change: measured, better on draws, NOT committed
+
+Preserved in `cora_sim/experiments/` rather than left as prose:
+
+    sim_double_spawn.py             double-spawn only
+    sim_double_spawn_tick_first.py  double-spawn + delivery tick moved to the head of the step
+
+With the tick at the head, the first mark divergence moves from step 6 to step 8 on eight of
+eleven traces -- steps 6 and 7 including both full client blocks become draw-for-draw exact --
+and `caseworkRequested` disappears from every counter divergence. But the exact-trace ratchet
+goes 2 -> 0 and lodgingResolved picks up a uniform one-step lag (unity=200 port=100 at round 5).
+
+Ticking at the head means an order ANSWERED this step can no longer be delivered this step.
+Unity has that latency too (the f327 choice lands at f349, next step), so the suspect is not
+the reorder itself but the REPLAY HARNESS's answer position: it applies answers before
+step_round, whereas Unity's choice at f327 falls AFTER the f319 generation, mid-step. That is
+a harness ordering question, not a sim.py one, and it is where to look next.
+
+Per the ratchet rule the tree is back at baseline: 2 exact, all mechanic suites passing.
+Two legs of the coupled set were identified and NOT yet applied, either of which may be what
+recovers the floor:
+
+  - arrival_round STAMP. Port stamps N+1, Unity stamps N. Y = currentRound - arrivalRound
+    drives caseworkGen's threshold 10 * 1.5^(Y-1), so from the second draw on the port's
+    threshold lags Unity's by a full growth step.
+  - UPDATE CADENCE. ClientStayTracker.OnRoundChanged has NO segment filter (unlike
+    TaskSystem, which skips segment 3) and also fires on the rollover Invoke(0) -- four
+    invokes per day. The port's rollover step consumes two segment advances but runs
+    clients.update once.
+
+Apply those two WITH the tick reorder as one set and read the mark diff and the ratchet
+together. If the full set still misses the floor, revert the set, not one leg.
+
+PARKED CONFLICT: Fable reads TriggerNonCaseworkDeparture as mutating tracker state only --
+OnCaseworklessClientsDeparted has zero subscribers, no facility population is released. The
+port releases it, with a measured justification (lodging 160,000 vs Unity 100,000). Do not
+resolve this from either side alone; re-check lodging spend after the client set lands,
+since the group accounting it compensates for will have changed.
 
 ## Method notes that cost time
 
