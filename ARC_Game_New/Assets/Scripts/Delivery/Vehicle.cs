@@ -346,7 +346,10 @@ public class Vehicle : MonoBehaviour
                 // faster than one frame per step", the two readings my measurements cannot
                 // currently tell apart.
                 SnapshotDebug.MarkContext("leg:tick", "{\"veh\":\"" + vehicleName
-                    + "\",\"idx\":" + currentPathIndex + ",\"n\":" + currentPath.Count + "}");
+                    + "\",\"idx\":" + currentPathIndex + ",\"n\":" + currentPath.Count
+                    + ",\"status\":\"" + currentStatus
+                    + "\",\"damaged\":" + (isDamaged ? "true" : "false")
+                    + ",\"cargo\":" + CarriedNowForDump() + "}");
                 yield return null;
             }
 
