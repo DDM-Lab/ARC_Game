@@ -106,12 +106,29 @@ def _weather_ok(t, ctx):
 _RESOURCE_KEY = {"Population": "population", "FoodPacks": "foodPacks"}
 
 
-def _resource_ok(t, ctx):
-    """True if ANY operational facility of the type satisfies the condition.
+def _resource_ok(t, ctx, facility=None):
+    """Resource condition, evaluated against ONE facility when we have one.
 
-    Note `IsOperational()` in the C#: an unstaffed building is invisible to this trigger,
-    so building without staffing does not silence the requests it was meant to silence."""
-    for f in ctx.facilities:
+    THIS IS TWO DIFFERENT FUNCTIONS IN THE C# AND THEY DISAGREE:
+
+      AreTriggersActivated            -> ResourceTrigger.CheckCondition(), which scans ALL
+                                         operational facilities and returns true if ANY
+                                         satisfies. Used for GLOBAL tasks.
+      AreTriggersActivatedForFacility -> CheckResourceTriggerForFacility(trigger, facility),
+                                         which checks THAT facility and nothing else. Used
+                                         for every facility-scoped task.
+
+    Collapsing them into the "any" form makes a facility-scoped trigger all-or-nothing
+    across a whole pass: either every community fires or none does. Unity's own log shows
+    1-3 communities firing per pass as they individually gain food or drain population,
+    totalling 35 food requests in 24 rounds where the any-form produced 15.
+
+    `IsOperational()` still gates it: an unstaffed building is invisible here, so building
+    without staffing does not silence the requests it was meant to silence."""
+    candidates = ctx.facilities
+    if facility is not None:
+        candidates = [f for f in ctx.facilities if f.get("name") == facility]
+    for f in candidates:
         if f.get("type") != t["facilityType"] or not f.get("operational"):
             continue
         res = f.get("resources") or {}
@@ -183,7 +200,8 @@ _EVALUATORS = (("round", _round_ok), ("day", _day_ok), ("resource", _resource_ok
                ("facilityStatus", _facility_status_ok), ("weather", _weather_ok))
 
 
-def evaluate_task(task_def: dict, ctx: TriggerContext, rng, marks=None) -> bool:
+def evaluate_task(task_def: dict, ctx: TriggerContext, rng, marks=None,
+                  facility=None) -> bool:
     """One task's triggers for ONE facility context. Draws for every ProbabilityTrigger.
 
     Deliberately mirrors the C# structure: collect every result, THEN reduce. The
@@ -194,7 +212,9 @@ def evaluate_task(task_def: dict, ctx: TriggerContext, rng, marks=None) -> bool:
     triggers = task_def.get("triggers") or {}
     for key, fn in _EVALUATORS:
         for t in triggers.get(key) or []:
-            results.append(bool(fn(t, ctx)))
+            # Only the resource condition is facility-scoped; round, day, weather, budget,
+            # satisfaction and workforce are global in both C# paths.
+            results.append(bool(fn(t, ctx, facility) if key == "resource" else fn(t, ctx)))
     for p in task_def.get("probabilities") or []:
         if marks is not None:
             marks.append("draw:TaskTrigger.probability")
@@ -240,6 +260,6 @@ def generation_pass(rng, ctx: TriggerContext, facilities_for, inventory=None, ma
                 fired.append((task_def["taskId"], None))
             continue
         for facility in facilities_for(task_def):
-            if evaluate_task(task_def, ctx, rng, marks):
+            if evaluate_task(task_def, ctx, rng, marks, facility=facility):
                 fired.append((task_def["taskId"], facility))
     return fired

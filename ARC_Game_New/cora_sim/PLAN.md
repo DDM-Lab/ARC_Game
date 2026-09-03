@@ -544,6 +544,46 @@ Still off: lodgingResolved is ~half Unity's, caseworkRequested about double, and
 foodFulfilled credits every delivery where Unity credits 9 of 15. The trigger-pass counts
 (FoodRequest 15 vs 35, Transport 7 vs 17) say generation cadence is still the driver.
 
+### The cadence diff, and the mechanic it exposed
+
+Unity's per-pass generation timeline, read off its own log with each pass anchored to the
+day/round tag of the nearest mark:
+
+    pass  tag    triggers
+    0-1   d1r*   {}                                    day StartsFrom 2
+    2     d2r0   Food 3, Transport 2
+    4     d2r2   Food 2
+    5     d3r0   Food 1, Transport 2
+    ...   ...    Food 1-3, Transport 1-2, every pass to the end
+
+Three passes per day, which the port already matched. What it did NOT match is that Unity
+fires **1-3 facilities per pass**, varying, while the port fired all-three-or-none.
+
+**Reading the C# found why, and it is two functions that disagree:**
+
+    AreTriggersActivated             -> ResourceTrigger.CheckCondition(), scans ALL
+                                        operational facilities, true if ANY satisfies.
+                                        Used for GLOBAL tasks.
+    AreTriggersActivatedForFacility  -> CheckResourceTriggerForFacility(trigger, facility),
+                                        checks THAT facility only. Used for every
+                                        facility-scoped task.
+
+The port had collapsed both into the "any" form, which makes a facility-scoped trigger
+all-or-nothing across a whole pass. Fixed: resource conditions are now evaluated against
+the candidate facility, and only resource conditions -- round, day, weather, budget,
+satisfaction and workforce are global in both C# paths.
+
+### What still differs, precisely
+
+The port drains all three communities to ZERO by round 8 and then nothing can fire; Unity
+ends around 200 each and keeps firing all game. The cause is delivery success rate:
+Unity's lodgingFulfilled is 600 against lodgingResolved 901, so roughly a third of demanded
+relocations never land, while the port delivers 100% of what it answers.
+
+So the next mechanism is **partial/failed relocation delivery** -- not trigger tuning. The
+trigger side now matches the C# exactly; what does not match is how many of the people a
+choice promises actually arrive.
+
 **Consequence for search: do not run RHEA on the surrogate yet.** A planner optimising a
 model that generates 2.7x the real demand will learn to over-invest in lodging, and the
 plan will not transfer. RHEA against Unity remains valid, because that is the real game.
