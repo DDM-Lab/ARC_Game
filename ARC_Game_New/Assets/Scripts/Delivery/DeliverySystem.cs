@@ -421,6 +421,15 @@ public class DeliverySystem : MonoBehaviour
             // Store time estimate in the task for reference
             newTask.estimatedTimeSeconds = estimate.estimatedTimeSeconds;
 
+            // Paired with delivery:dispatch and delivery:complete. Three marks turn the fleet
+            // from a thing I have to infer into a thing I can read off: queued -> assigned to a
+            // vehicle -> arrived. The round-gap between dispatch and complete IS the travel time,
+            // which is journeyLength/moveSpeed along the flood-aware A* path, and is the last
+            // quantity the port has no way to derive from constants.
+            SnapshotDebug.MarkContext("delivery:queue", "{\"cargo\":\"" + newTask.cargoType
+                + "\",\"qty\":" + newTask.quantity
+                + ",\"src\":\"" + (newTask.sourceBuilding != null ? newTask.sourceBuilding.name : "")
+                + "\",\"dst\":\"" + (newTask.destinationBuilding != null ? newTask.destinationBuilding.name : "") + "\"}");
             pendingTasks.Enqueue(newTask);
             createdTasks.Add(newTask);
             OnTaskCreated?.Invoke(newTask);
@@ -585,6 +594,11 @@ public class DeliverySystem : MonoBehaviour
                 {
                     pendingTasks = new Queue<DeliveryTask>(pendingTasks.Where(t => t != task));
                     activeTasks.Add(task);
+                    SnapshotDebug.MarkContext("delivery:dispatch", "{\"cargo\":\"" + task.cargoType
+                        + "\",\"qty\":" + task.quantity
+                        + ",\"src\":\"" + (task.sourceBuilding != null ? task.sourceBuilding.name : "")
+                        + "\",\"dst\":\"" + (task.destinationBuilding != null ? task.destinationBuilding.name : "")
+                        + "\",\"veh\":\"" + suitableVehicle.GetVehicleName() + "\"}");
                     availableVehicleList.Remove(suitableVehicle);
 
                     OnTaskAssigned?.Invoke(task, suitableVehicle);
