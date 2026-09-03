@@ -225,6 +225,29 @@ public class Vehicle : MonoBehaviour
     /// <summary>
     /// Move vehicle to target position using pathfinding
     /// </summary>
+    /// <summary>
+    /// The flooded ROAD cells the pathfinder is about to see. Only road cells matter to A*,
+    /// so this stays small. Emitted with every leg so the port's pathfinder can be checked
+    /// against the SAME obstacle set the game used -- otherwise a length mismatch cannot be
+    /// attributed to the pathfinder rather than to the port's flood prediction, which is two
+    /// unknowns in one equation.
+    /// </summary>
+    string FloodedRoadCellsForDump()
+    {
+        var rm = FindObjectOfType<RoadTilemapManager>();
+        if (rm == null || FloodSystem.Instance == null) return "[]";
+        var sb = new System.Text.StringBuilder("[");
+        bool first = true;
+        foreach (Vector3Int c in rm.GetAllRoadPositions())
+        {
+            if (!FloodSystem.Instance.IsFloodedAt(c)) continue;
+            if (!first) sb.Append(",");
+            sb.Append("[").Append(c.x).Append(",").Append(c.y).Append("]");
+            first = false;
+        }
+        return sb.Append("]").ToString();
+    }
+
     IEnumerator MoveToPosition(Vector3 targetPos)
     {
         // Existing pathfinding code...
@@ -252,7 +275,8 @@ public class Vehicle : MonoBehaviour
                 + ",\"nodes\":" + currentPath.Count
                 + ",\"speed\":" + moveSpeed.ToString("F2")
                 + ",\"from\":\"" + transform.position.ToString("F1")
-                + "\",\"to\":\"" + targetPos.ToString("F1") + "\"}");
+                + "\",\"to\":\"" + targetPos.ToString("F1")
+                + "\",\"flood\":" + FloodedRoadCellsForDump() + "}");
         }
 
         if (currentPath.Count == 0)

@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cora_sim import (test_clients, test_economy, test_flood,           # noqa: E402
                       test_generation, test_lifecycle, test_play, test_pruning,
-                      test_replay_forward, test_rng, test_search, test_sim,
+                      test_replay_forward, test_rng, test_roads, test_search, test_sim,
                       test_tasks, test_triggers, test_weather)
 
 # Order matters for reading the output: per-mechanic suites first, then the closed-loop
@@ -27,6 +27,7 @@ SUITES = (("rng", test_rng), ("flood", test_flood),
           ("tasks", test_tasks),
           ("generation", test_generation),
           ("pruning", test_pruning),
+          ("roads + travel", test_roads),
           ("building lifecycle", test_lifecycle),
           ("exact replay", test_replay_forward))
 

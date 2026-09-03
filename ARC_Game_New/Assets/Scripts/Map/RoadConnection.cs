@@ -93,8 +93,19 @@ public class RoadConnection : MonoBehaviour
             return transform.position;
         }
         
+        // Dumped once per building so the port can resolve facility -> grid cell without
+        // replicating collider geometry. A building placed mid-episode gets its cell the
+        // first time a vehicle is routed to it, which is exactly when the port needs it.
+        if (!_dumpedConnection)
+        {
+            _dumpedConnection = true;
+            SnapshotDebug.MarkContext("road:connection", "{\"building\":\"" + gameObject.name
+                + "\",\"cell\":[" + nearestRoadPosition.x + "," + nearestRoadPosition.y + "]}");
+        }
         return roadManager.CellToWorld(nearestRoadPosition);
     }
+
+    private bool _dumpedConnection = false;
     
     /// <summary>
     /// Check if building can be used for operations (requires road connection)
