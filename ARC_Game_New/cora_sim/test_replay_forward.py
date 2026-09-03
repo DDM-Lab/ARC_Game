@@ -31,6 +31,10 @@ import cora_sim.sim as S                                                # noqa: 
 TRACKED = ("foodResolved", "foodFulfilled", "lodgingResolved", "lodgingFulfilled",
            "caseworkRequested", "workerSpend", "foodSpend", "lodgingSpend",
            "cumWorkingWorkers", "roundsCompleted")
+# Floor for the exact-trace ratchet: raise this whenever a trace becomes exact, never
+# lower it to make a change pass.
+_MIN_EXACT_TRACES = 2
+
 _DEFAULT = ("/private/tmp/claude-501/-Users-cpulling-Work-CORA/"
             "b762a1aa-9f0c-4053-9897-bfd6aeeb9623/scratchpad/staff_*.json")
 
@@ -57,6 +61,7 @@ def main():
     fmap = FloodMap.load()
     print("cora_sim EXACT replay (Unity seed + Unity actions)")
     worst = {}
+    worst_traces = set()
     for path in paths:
         trace = json.load(open(path))
         log = path.replace(".json", ".log")
@@ -107,10 +112,23 @@ def main():
             r, bad = first_bad
             for k, want, gotv in bad:
                 worst[k] = worst.get(k, 0) + 1
+            worst_traces.add(name)
             detail = ", ".join(f"{k} unity={want} port={gotv}" for k, want, gotv in bad)
             print(f"  {name}: first divergence round {r} on {len(bad)} counter(s): {detail}")
         else:
             print(f"  {name}: every tracked counter matches at every round")
+    # RATCHET. Two traces match Unity at every round, and I lost an hour tonight to a
+    # summary metric that penalised depth: a change that took two traces to exact scored
+    # WORSE and was reverted. This refuses that silently ever again -- any future change
+    # that trades away an exact trace fails here rather than looking like an improvement.
+    exact = len(paths) - len(worst_traces)
+    if exact < _MIN_EXACT_TRACES:
+        print(f"\n  RATCHET FAILED: {exact} traces exact at every round, "
+              f"floor is {_MIN_EXACT_TRACES}. A change has traded away an exact trace.")
+        rc = 1
+    else:
+        print(f"\n  ratchet: {exact} traces exact at every round (floor {_MIN_EXACT_TRACES})")
+
     print("\n  NOTE: task IDENTITY cannot be replayed -- Unity's task ids come from its own "
           "generator, so the port answers the tasks IT generates. A divergence here is "
           "therefore generation timing, not counter arithmetic, which the replay suites "
