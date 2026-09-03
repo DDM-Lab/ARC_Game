@@ -14,48 +14,34 @@ The cell set and the building connection points are DUMPED FROM THE RUNNING GAME
 values have overridden .cs field initialisers six separate times in this port, so
 reading them from the live object is the only trustworthy source.
 """
+from .map_spec import MapSpec
+
+# The shipped scene, and the module-level names every caller already uses. These are ALIASES
+# onto MapSpec.default(), not a second copy: the data lives in cora_sim/maps/default.json so
+# a different map is a different file rather than a different module. Functions below take an
+# optional `spec` and fall back to this one, which keeps the whole existing call surface
+# working while the map becomes a parameter.
+DEFAULT_MAP = MapSpec.default()
+
+ANCHOR = DEFAULT_MAP.anchor
+MOVE_SPEED = DEFAULT_MAP.move_speed
+GYM_FIXED_DELTA = DEFAULT_MAP.fixed_delta
+SIMULATION_DURATION = DEFAULT_MAP.simulation_duration
+TIME_SPEED = DEFAULT_MAP.time_speed
+ROUND_SECONDS = DEFAULT_MAP.round_seconds
+ROAD_CELLS = DEFAULT_MAP.road_cells
+BUILDING_CELL = DEFAULT_MAP.building_cell
+FACILITY_CELL = DEFAULT_MAP.facility_cell
+SITE_CELL = DEFAULT_MAP.site_cell
+
 from heapq import heappush, heappop
 
-# Tilemap.tileAnchor is (0.5, 0.5), so a cell's world centre is cell + 0.5.
-ANCHOR = 0.5
 
-# Vehicle.moveSpeed, read off the running game via the delivery:leg mark.
-#
-# moveSpeed is 8, NOT the `public float moveSpeed = 5f` written in Vehicle.cs -- the scene
-# serializes 8 and the field initialiser never runs. That is the SEVENTH time in this port a
-# scene value has overridden a .cs initialiser (blockingRadius 1->5, caseworkNeedProbability
-# 40->23.4, workersConsumeFoodToo true->false, ...), which is why this is read off the running
-# game via the delivery:leg mark rather than from the source line. Every leg mark carries the
-# live speed so a future scene change shows up as a test failure instead of silent drift.
-MOVE_SPEED = 8.0
 TARGET_FPS = 10.0
 
-ROAD_CELLS = frozenset((
-    (-14,-9), (-14,-3), (-14,6), (-13,-9), (-13,-3), (-13,6), (-12,-9), (-12,-3),
-    (-12,6), (-11,-9), (-11,-3), (-11,6), (-10,-9), (-10,-3), (-10,6), (-9,-9),
-    (-9,-3), (-9,5), (-9,6), (-8,-9), (-8,-8), (-8,-7), (-8,-6), (-8,-3),
-    (-8,5), (-7,-6), (-7,-3), (-7,4), (-7,5), (-6,-6), (-6,-3), (-6,4),
-    (-5,-7), (-5,-6), (-5,-5), (-5,-4), (-5,-3), (-5,-2), (-5,-1), (-5,0),
-    (-5,1), (-5,2), (-5,3), (-5,4), (-4,-9), (-4,-8), (-4,-7), (-4,-4),
-    (-4,4), (-3,-4), (-3,4), (-3,5), (-2,-4), (-2,5), (-2,6), (-2,7),
-    (-2,8), (-2,9), (-1,-4), (-1,5), (0,-4), (0,5), (1,-4), (1,5),
-    (2,-4), (2,5), (3,-4), (3,5), (4,-7), (4,-6), (4,-5), (4,-4),
-    (4,-3), (4,-2), (4,-1), (4,0), (4,1), (4,2), (4,3), (4,4),
-    (4,5), (5,-7), (5,3), (6,-9), (6,-8), (6,-7), (6,3), (7,-7),
-    (7,3), (8,-7), (8,3), (9,-7), (9,3), (10,-7), (10,3), (11,-7),
-    (11,-6), (11,3), (11,4), (11,5), (11,6), (12,-6), (12,3), (12,6),
-    (13,-6), (13,6),
-))
 
 # RoadConnection.nearestRoadPosition per building -- the actual A* endpoints. Vehicles
 # drive to these, NOT to the building's own position.
-BUILDING_CELL = {
-    'Community01': (1, 5),
-    'Community02': (-10, -3),
-    'Community03': (9, 3),
-    'Kitchen_0': (-8, -3),
-    'Motel': (-5, 4),
-}
 
 
 def world_to_cell(wx, wy):
@@ -64,11 +50,12 @@ def world_to_cell(wx, wy):
     return (int(floor(wx)), int(floor(wy)))
 
 
-def cell_to_world(cell):
-    return (cell[0] + ANCHOR, cell[1] + ANCHOR)
+def cell_to_world(cell, spec=None):
+    a = (spec or DEFAULT_MAP).anchor
+    return (cell[0] + a, cell[1] + a)
 
 
-def nearest_road(cell):
+def nearest_road(cell, spec=None):
     """RoadTilemapManager.FindNearestRoadPosition.
 
     Expanding square out to radius 10, keeping the EUCLIDEAN-nearest road cell and
@@ -76,7 +63,8 @@ def nearest_road(cell):
     the first strictly-smaller distance. Returns the input cell when nothing is found,
     which is what the original does too.
     """
-    if cell in ROAD_CELLS:
+    cells = (spec or DEFAULT_MAP).road_cells
+    if cell in cells:
         return cell
     best, best_d2 = cell, None
     for radius in range(0, 11):
@@ -85,7 +73,7 @@ def nearest_road(cell):
                 if radius > 0 and abs(x) < radius and abs(y) < radius:
                     continue
                 c = (cell[0] + x, cell[1] + y)
-                if c not in ROAD_CELLS:
+                if c not in cells:
                     continue
                 d2 = x * x + y * y
                 if best_d2 is None or d2 < best_d2:
@@ -103,7 +91,7 @@ def nearest_road(cell):
 _DIRS = ((0, 1), (0, -1), (-1, 0), (1, 0))   # GetNeighbors: up, down, left, right
 
 
-def path_length(start, goal, flooded=frozenset()):
+def path_length(start, goal, flooded=frozenset(), spec=None):
     """Steps along PathfindingSystem's flood-aware A*, or None when no route exists.
 
     Only the LENGTH matters: Vehicle.MoveToPosition spends journeyLength/moveSpeed
@@ -112,7 +100,8 @@ def path_length(start, goal, flooded=frozenset()):
     Length is tie-break independent, which is why this does not have to reproduce the
     C#'s OrderBy(FCost).ThenBy(HCost) node ordering exactly.
     """
-    if start not in ROAD_CELLS or goal not in ROAD_CELLS:
+    cells = (spec or DEFAULT_MAP).road_cells
+    if start not in cells or goal not in cells:
         return None
     if start in flooded or goal in flooded:
         return None
@@ -130,7 +119,7 @@ def path_length(start, goal, flooded=frozenset()):
             continue
         for dx, dy in _DIRS:
             nb = (cur[0] + dx, cur[1] + dy)
-            if nb not in ROAD_CELLS or nb in flooded:
+            if nb not in cells or nb in flooded:
                 continue
             ng = g + 1
             if ng < best.get(nb, 1 << 30):
@@ -151,13 +140,9 @@ def path_length(start, goal, flooded=frozenset()):
 # 34: the extra frames are the PLANNING phase, where the client is choosing and the game is
 # not advancing. Timing deliveries against those spans was measuring the wrong thing, and
 # it is what made the round-boundary cases unfittable.
-GYM_FIXED_DELTA = 0.3
-SIMULATION_DURATION = 10.0
-TIME_SPEED = 1
-ROUND_SECONDS = SIMULATION_DURATION / TIME_SPEED
 
 
-def leg_seconds(steps):
+def leg_seconds(steps, spec=None):
     """How long a leg takes, in GAME SECONDS. The surrogate has no frames and needs none.
 
     Vehicle.MoveToPosition spends journeyLength/moveSpeed seconds on a leg. Every A* edge
@@ -171,8 +156,9 @@ def leg_seconds(steps):
     steps whole rounds.
     """
     from math import ceil
-    exact = steps / MOVE_SPEED
-    return ceil(exact / GYM_FIXED_DELTA) * GYM_FIXED_DELTA
+    m = spec or DEFAULT_MAP
+    exact = steps / m.move_speed
+    return ceil(exact / m.fixed_delta) * m.fixed_delta
 
 
 class Fleet:
@@ -184,13 +170,14 @@ class Fleet:
     Kitchen->Community route was measured at 0 rounds one day and 5 the next.
     """
 
-    __slots__ = ("pos", "busy_seconds", "carrying", "damaged")
+    __slots__ = ("pos", "busy_seconds", "carrying", "damaged", "spec")
 
-    # Where the three vehicles start, read off the first leg each one drove.
-    DEPOTS = ((-4, -4), (2, -4), (3, 5))
+    # Kept for callers that reference Fleet.DEPOTS; the live values come from the spec.
+    DEPOTS = DEFAULT_MAP.depots
 
-    def __init__(self):
-        self.pos = [nearest_road(c) for c in self.DEPOTS]
+    def __init__(self, spec=None):
+        self.spec = spec or DEFAULT_MAP
+        self.pos = [nearest_road(c, self.spec) for c in self.spec.depots]
         self.busy_seconds = [0.0, 0.0, 0.0]
         self.carrying = [None, None, None]
         # Flood does not merely delay a vehicle, it DISABLES it: StopVehicleDueToFlood sets
@@ -202,6 +189,7 @@ class Fleet:
 
     def clone(self):
         f = Fleet.__new__(Fleet)
+        f.spec = self.spec
         f.pos = list(self.pos)
         f.busy_seconds = list(self.busy_seconds)
         f.carrying = list(self.carrying)
@@ -218,7 +206,7 @@ class Fleet:
         across that round and the next rather than one per vehicle per round.
         """
         return [i for i in range(len(self.pos))
-                if not self.damaged[i] and self.busy_seconds[i] < ROUND_SECONDS]
+                if not self.damaged[i] and self.busy_seconds[i] < self.spec.round_seconds]
 
     def best_vehicle(self, src_cell, quantity=0, capacity=100.0, speed=None):
         """DeliverySystem.FindSuitableVehicle / CalculateVehicleSuitability.
@@ -232,11 +220,11 @@ class Fleet:
         straight-line proximity and only then drives the road network.
         """
         if speed is None:
-            speed = MOVE_SPEED
+            speed = self.spec.move_speed
         best, best_score = None, -1.0
-        sx, sy = cell_to_world(src_cell)
+        sx, sy = cell_to_world(src_cell, self.spec)
         for i in self.available():
-            vx, vy = cell_to_world(self.pos[i])
+            vx, vy = cell_to_world(self.pos[i], self.spec)
             d = ((vx - sx) ** 2 + (vy - sy) ** 2) ** 0.5
             score = 100.0 / (1.0 + d) + (quantity / capacity) * 50.0 + speed * 10.0
             if score > best_score:
@@ -271,14 +259,14 @@ class Fleet:
         RemoveActiveDeliveryTask and nulls currentTask, so the order is dropped outright --
         and the vehicle is left damaged at wherever it had reached, out of the fleet.
         """
-        leg1 = path_length(self.pos[vehicle], src_cell, flooded)
+        leg1 = path_length(self.pos[vehicle], src_cell, flooded, self.spec)
         if leg1 is None:
             self.damaged[vehicle] = True
             return False
         # The vehicle really is at the source once leg 1 is done, which is where an ABORTED
         # trip leaves it (LoadCargo bails when the source is empty, before leg 2 exists).
         self.pos[vehicle] = src_cell
-        leg2 = path_length(src_cell, dst_cell, flooded)
+        leg2 = path_length(src_cell, dst_cell, flooded, self.spec)
         if leg2 is None:
             self.damaged[vehicle] = True
             return False
@@ -288,7 +276,8 @@ class Fleet:
         # the port landed 2 food deliveries where Unity landed 1 because the fleet had three
         # times too much capacity per round in the wrong shape.
         self.busy_seconds[vehicle] = (max(0.0, self.busy_seconds[vehicle])
-                                      + leg_seconds(leg1) + leg_seconds(leg2))
+                                      + leg_seconds(leg1, self.spec)
+                                      + leg_seconds(leg2, self.spec))
         self.carrying[vehicle] = payload
         self.pos[vehicle] = dst_cell
         return True
@@ -302,7 +291,7 @@ class Fleet:
         """
         landed = []
         for i, b in enumerate(self.busy_seconds):
-            self.busy_seconds[i] = max(0.0, b - ROUND_SECONDS)
+            self.busy_seconds[i] = max(0.0, b - self.spec.round_seconds)
             if self.carrying[i] is not None and self.busy_seconds[i] <= 0:
                 landed.append(self.carrying[i])
                 self.carrying[i] = None
@@ -323,13 +312,6 @@ class Fleet:
 # does not model, so travel_rounds returns None for it and the caller falls back to
 # DEFERRED_LATENCY. That fallback is a fitted constant and should be treated as one; closing
 # it needs the site coordinates dumped from Unity the same way the road graph was.
-FACILITY_CELL = {
-    'Community Amherst': (-10, -3),
-    'Community Charleston': (1, 5),
-    'Community Trinity': (9, 3),
-    'Kitchen Alpha': (-8, -3),
-    'Motel': (-5, 4),
-}
 
 
 # Buildable-site id -> road cell, from the gym's own pathfind_matrix (no new instrumentation
@@ -337,20 +319,3 @@ FACILITY_CELL = {
 # the PLAYER builds had no location, so its deliveries fell back to the fitted
 # DEFERRED_LATENCY -- which was 176 of 247 travel computations on the replay corpus, i.e.
 # most of them. Prebuilts are in FACILITY_CELL above.
-SITE_CELL = {
-    0: (-8, -3),
-    1: (4, 5),
-    2: (9, 3),
-    3: (-5, -2),
-    4: (-6, 4),
-    5: (2, 5),
-    6: (3, -4),
-    7: (-2, -4),
-    8: (-2, -4),
-    9: (-6, -3),
-    10: (6, -7),
-    11: (-5, -5),
-    12: (1, 5),
-    13: (4, -3),
-    14: (-1, 5),
-}

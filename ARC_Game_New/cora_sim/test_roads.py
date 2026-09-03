@@ -211,6 +211,49 @@ def test_busy_fleet_queues_instead_of_guessing():
     assert queued >= max(first), "a queued trip cannot land sooner than an unqueued one"
 
 
+def test_map_spec_is_behaviour_neutral():
+    """The MapSpec refactor must not have changed the shipped map by one cell.
+
+    roads.py's module constants are now aliases onto MapSpec.default(), loaded from
+    cora_sim/maps/default.json. This pins the contents against the numbers that were
+    measured from the running game, so a refactor or a bad re-dump fails here rather than
+    silently shifting every route.
+    """
+    from cora_sim import roads
+    from cora_sim.map_spec import MapSpec
+    m = MapSpec.default()
+    assert len(m.road_cells) == 106, len(m.road_cells)
+    assert len(m.building_cell) == 5 and len(m.site_cell) == 15
+    assert m.move_speed == 8.0, "scene-serialized moveSpeed"
+    assert m.round_seconds == 10.0 and m.fixed_delta == 0.3
+    assert m.depots == ((-4, -4), (2, -4), (3, 5))
+    # Kitchen_0's dumped RoadConnection cell, and the site it stands on, must agree.
+    assert m.building_cell["Kitchen_0"] == (-8, -3) == m.site_cell[0]
+    # The aliases really are the same objects, not a drifting copy.
+    assert roads.ROAD_CELLS is m.road_cells and roads.MOVE_SPEED == m.move_speed
+
+
+def test_a_second_map_is_usable_without_touching_code():
+    """The point of the refactor: routing follows the spec it is handed.
+
+    Search over many maps means the pathfinder cannot read module globals. A trimmed spec
+    routes differently from the default, and nothing in roads.py needs editing to say so.
+    """
+    import copy, json, os
+    from cora_sim.map_spec import MapSpec
+    from cora_sim import roads
+    raw = json.load(open(os.path.join(os.path.dirname(roads.__file__), "maps", "default.json")))
+    small = copy.deepcopy(raw)
+    small["name"] = "test-trimmed"
+    small["move_speed"] = 4.0                     # half speed -> twice the seconds
+    other = MapSpec(small)
+    steps = 16
+    assert roads.leg_seconds(steps, other) > roads.leg_seconds(steps), (
+        "a map with a slower vehicle must take longer")
+    f = roads.Fleet(other)
+    assert f.spec is other and f.pos, "the fleet places vehicles using its own spec"
+
+
 def main():
     print("cora_sim road graph + travel time vs Unity")
     fails = 0
@@ -218,7 +261,9 @@ def main():
                test_flood_damages_the_vehicle_and_drops_the_order,
                test_vehicle_choice_is_nearest_to_source, test_occupancy_is_real,
                test_repair_task_returns_the_vehicle,
-               test_busy_fleet_queues_instead_of_guessing):
+               test_busy_fleet_queues_instead_of_guessing,
+               test_map_spec_is_behaviour_neutral,
+               test_a_second_map_is_usable_without_touching_code):
         try:
             fn()
             print(f"  {fn.__name__}: OK")
