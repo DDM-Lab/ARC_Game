@@ -656,10 +656,15 @@ class TaskBoard:
         Unity created none. Ageing and expiry are therefore two calls with generation in
         between.
         """
+        # NO FRESH SKIP. Creation now runs AFTER age() within an advance, so a task created
+        # this advance already misses it and the next advance is its first decrement -- which
+        # is Unity's cadence: the Flood Alert (rounds=1, created step 6) expires at step 7,
+        # and a rollover relocation (rounds=2, created in pass 0) is decremented by pass 1 and
+        # expires the following step. Skipping once more made every task one advance too
+        # young, which is the +1 at round 6 -- the zero-demand alert's resolvedAdd of 1 --
+        # on six of eleven traces.
         for task in list(self.active.values()):
-            if task.fresh:
-                task.fresh = False
-                continue
+            task.fresh = False
             task.rounds_remaining -= 1
         for task in list(self.awaiting.values()):
             task.rounds_remaining -= 1
