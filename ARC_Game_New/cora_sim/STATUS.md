@@ -76,26 +76,27 @@ but no captured episode shows it corrupting a counter.
 - `travel_rounds`, `TaskBoard.queue`, `TaskBoard.busy` are dead since the event-driven fleet
   landed. Documented-dead; not deleted mid-hunt.
 
-## If continuing: the next measurement
+## If continuing: the next EDIT (the measurement is done)
 
-The residual is a RELOCATION THE PORT NEVER GENERATES. Measured on 5901: Unity lands 2
-deliveries in round 5 and 4 in round 6; the port lands 2 and 3. Unity's extra one is a
-SECOND Community01 -> Motel relocation, queued at r5 f330 after the first delivered --
-the community still trips its threshold, so the trigger re-fires.
+`gen:pass` settles where Unity generates. Seed 5901, round 5:
 
-Scheduling, allocation and travel are all measured to match: same six assignments in
-round 5, same round-5 landings, one cell per simulated frame, routes exact 77/77.
+    f310  unload  Food Kitchen_0->Community01
+    f312  unload  Popu Community01->Motel      first relocation resolves
+    f319  GENERATION PASS (activeTasks=7)      after the deliveries, same round
+    f327  queue   Popu Community01->Motel      the re-request
 
-The question is within-round ORDERING between resolution and generation. Unity's first
-Community01 task resolves on delivery in round 5, freeing its facility slot in time for
-the trigger to re-fire in the same round. If the port resolves a step later, or evaluates
-triggers before resolution rather than after, the re-request never happens. Both events
-are instrumented: `task:resolved` carries the gym step, generation is visible in
-`diag_parity`.
-`AssignPendingTasks` runs on a 1s `taskAssignmentInterval` (dumped, unmodified) and picks
-by priority then `timeCreated`; both handlers use priority 3. Ledger the selection per
-interval tick on both sides with `diag_orders`, and attribute the mis-assigned relocation
-to a row. Estimate: most of a session, on tonight's rate for this subsystem.
+Unity runs ONE generation pass per round, positioned AFTER that round's deliveries
+resolve and free their facility slots -- so a community can request again in the same
+round its previous relocation landed. The port generates BEFORE its delivery tick, so the
+slot is still held and the re-request never happens. That is the missing sixth delivery.
+
+Moving the whole creation block after the tick was tried and took the two exact traces to
+zero: it also relocated the tasks built from the two ROLLOVER passes, whose timing the
+round-0 budget allocation, the first-pass fresh-skip and the two-tick expiry all depend on.
+
+The scoped edit: move ONLY the segment generation pass after the delivery tick; leave the
+rollover passes where they are. Guard it with the exact-trace ratchet in
+`test_replay_forward` -- floor 2 -- and read that, not a counter sum.
 
 ## Method notes that cost time
 
