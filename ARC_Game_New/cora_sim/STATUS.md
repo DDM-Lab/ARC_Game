@@ -453,6 +453,25 @@ them. The port collects `rolls` from BOTH rollover passes and only calls `_creat
 the loop has finished, so a task born in pass 0 never experiences pass 1's advance and arrives
 a full advance young.
 
+## CORRECTION: THE COMMITTED TREE IS NOT DRAW-EXACT ON ANY TRACE
+
+A claim repeated several times in this session's reports is WRONG and is corrected here.
+"staff_5901 is draw-for-draw exact across all 32 rounds" was true of the EXPERIMENTAL build
+`experiments/sim_drawexact_32r.py` (double-spawn + tick reorder + segment-4 skip + casework
+re-arm). It is NOT true of the committed tree, which since then reverted the tick reorder and
+added per-rollover-pass creation. Measured on the committed tree just now:
+
+    staff_5901  step 7 diverges at draw 404 (unity 724 draws, port 520)
+    all eleven traces diverge on the draw stream
+
+The counter results are unaffected -- 10 of 11 traces off on a single counter at round 6, six
+by exactly one unit, 11 mechanic suites green. Only the draw-exactness claim was wrong, and it
+was wrong because it was carried forward from a build that had been reverted rather than
+re-measured against the tree it was being asserted about.
+
+RE-MEASURE BEFORE REPEATING ANY HEADLINE NUMBER. This is the second time this session a stale
+result was carried into a report (the first was test_all after the leg_seconds edit).
+
 ## CURRENT STANDING (end of session), and the next thread
 
 Two ageing bugs were found and fixed, both by INSTRUMENTING an advance rather than reasoning
