@@ -406,21 +406,32 @@ right), the emergency-lodging eviction (925), IgnoreTask (1440), alert-complete 
 flood-failed task leaves activeTasks and can never be counted afterwards, so it is
 permanently uncounted -- that stands as a game bug.
 
-THE PORT ALREADY HAS THIS PATH, so the bug is its TIMING, not its absence. `tick()` ages
-`awaiting` and resolves at zero, and the loop's own comment describes this exact 200-vs-100
-case. It still under-counts at round 5, so the expiry is firing a round late or the task is
-not in `awaiting` when it should be. Instrument WHEN the port resolves id=7's counterpart
-before touching the loop again -- the mechanism is present and a blind edit will just move
-the error.
+THE PORT ALREADY HAS THIS PATH, and the defect is measured: IT AGES ONE ADVANCE TOO FEW.
+Per-round instrumentation on 5901 (staff actions included, matching the replay harness):
 
-TWO CORRECTIONS TO APPLY REGARDLESS, both cheap and both source-confirmed:
-  - In-flight deliveries are NOT cancelled on expiry (CancelTaskDeliveries is commented out
-    at TaskSystem.cs:569-571). A later completion credits FULFILLED ONLY, via AddLateDelivery
-    (705-711); resolved is never re-credited. The port has `late_delivery` -- verify it is
-    reached from the expiry path and not only from the completion path.
-  - roundsRemaining decrements in OnTimeSegmentAdvanced (TaskSystem.cs:616), on the SEGMENT
-    advance, and resolution fires on the next Update. The port ages inside `tick()`. Those are
-    different points in the round and that is the likeliest source of the one-round offset.
+    rnd   unity   port   awaiting Lodging (id, rounds_left)
+      5     200    100   [(8, 1), (9, 1)]      <- diverges
+      6     401    400
+      7     401    401                          <- converges again
+
+The port is exactly one ageing step behind, and it self-corrects by round 7. Relocations are
+created with rounds = 2, and STEP 5 IS THE ROLLOVER, which performs TWO segment advances
+(segment 0 then segment 1). Unity decrements roundsRemaining in OnTimeSegmentAdvanced
+(TaskSystem.cs:616), so on that step the task ages 2 -> 0 and expires THERE. The port ages
+once per gym step, leaves it at 1, and credits the resolution a round late.
+
+ATTEMPTED AND REVERTED: passing `advances = 2 if w.segment >= ROUNDS_PER_DAY else 1` into
+`tick()`. Inert, for a reason worth recording so it is not retried: the rollover branch
+settles `w.segment` back to 1 when it finishes, and the tick now runs at the HEAD of the step,
+so a head-tick guard describes the PREVIOUS step's advances, not the ones this step is about
+to perform. Ageing cannot be driven from the head tick at all.
+
+THE FIX IS TO AGE AT THE ADVANCE POINTS. `sim.py` already knows exactly where they are -- the
+rollover loop sets `w.segment = i` for each pass, and the normal branch does `w.segment += 1`.
+That is precisely where the client tracker was hooked for the same reason, and the same shape
+applies: call the ageing/expiry sweep once per advance, after the segment is set. Expect the
+round-5 lodging credit to land, and check whether foodResolved on 5701/5802/6101 moves with
+it, since those diverge one round later on the same counter family.
 
 Two facts worth keeping: LoadCargo and UnloadCargo contain no delay at all, and a vehicle
 already on its source road cell produces a 1-node path whose movement loop never runs, so it
