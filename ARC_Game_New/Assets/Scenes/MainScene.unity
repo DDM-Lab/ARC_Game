@@ -78396,7 +78396,7 @@ MonoBehaviour:
   metricsPanel: {fileID: 1580386609}
   panelTitleText: {fileID: 1509938017}
   exitButton: {fileID: 172819907}
-  satisfactionTabButton: {fileID: 1631783890}
+  satisfactionTabButton: {fileID: 0}
   budgetTabButton: {fileID: 1903708748}
   metricsScrollView: {fileID: 1580386610}
   metricsContent: {fileID: 1680806388}
@@ -93860,7 +93860,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 0}
+  m_AnchoredPosition: {x: -80, y: 0}
   m_SizeDelta: {x: 362, y: 350}
   m_Pivot: {x: 0.5, y: 1}
 --- !u!114 &1580386610
