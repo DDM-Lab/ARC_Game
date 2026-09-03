@@ -289,7 +289,9 @@ public class Vehicle : MonoBehaviour
                 + ",\"speed\":" + moveSpeed.ToString("F2")
                 + ",\"from\":\"" + transform.position.ToString("F1")
                 + "\",\"to\":\"" + targetPos.ToString("F1")
-                + "\",\"cargo\":" + CarriedNowForDump()
+                + "\",\"idx\":" + currentPathIndex
+                + ",\"pathlen\":" + currentPath.Count
+                + ",\"cargo\":" + CarriedNowForDump()
                 + ",\"task\":\"" + (currentTask != null
                         ? currentTask.cargoType + ":" + currentTask.quantity + ":"
                           + (currentTask.sourceBuilding != null ? currentTask.sourceBuilding.name : "?")
@@ -338,6 +340,13 @@ public class Vehicle : MonoBehaviour
                 }
 
                 pathProgress = (currentPathIndex + fractionOfJourney) / (currentPath.Count - 1);
+                // currentPathIndex is shared by every coroutine alive on this vehicle. If a
+                // second one is advancing it, this sample jumps by more than one per frame
+                // -- which distinguishes "this trip was raced" from "trips are simply
+                // faster than one frame per step", the two readings my measurements cannot
+                // currently tell apart.
+                SnapshotDebug.MarkContext("leg:tick", "{\"veh\":\"" + vehicleName
+                    + "\",\"idx\":" + currentPathIndex + ",\"n\":" + currentPath.Count + "}");
                 yield return null;
             }
 
