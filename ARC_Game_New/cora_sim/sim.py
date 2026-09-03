@@ -272,6 +272,27 @@ class World:
         return w
 
 
+def _occupies_slot(w, live_id):
+    """Is this task still holding its facility's slot, as Unity's activeTasks would be?
+
+    Unity keeps an ANSWERED task in activeTasks with status InProgress until its deliveries
+    finish, so the per-facility and global duplicate checks still see it and no replacement
+    is generated. The port moves answered tasks to `awaiting`, and the gates only looked at
+    `active` -- so the slot freed the instant a task was answered and the same trigger fired
+    again in the same round's generation pass. That is where the port's extra round-6 food
+    tasks come from: three at round 5, answered before step_round runs, and three more
+    generated during it.
+
+    Silently-dropped tasks are already popped out of awaiting by the delivery-failure path,
+    so they correctly stop occupying anything -- which matches HandleDeliveryFailure taking
+    the task out of activeTasks.
+    """
+    if live_id in w.tasks.active:
+        return True
+    t = w.tasks.awaiting.get(live_id)
+    return t is not None and not t.resolved
+
+
 def _admits(w: World, spec, facility) -> bool:
     """TaskSystem's duplicate suppression, which is the difference between a plausible
     task stream and 2.7x too much demand.
@@ -335,7 +356,7 @@ def _admits(w: World, spec, facility) -> bool:
         # against the definition.
         return not any(def_id == spec["taskId"]
                        for live_id, (def_id, _fac, _sp) in w.generated_specs.items()
-                       if live_id in w.tasks.active)
+                       if _occupies_slot(w, live_id))
     # GENERAL per-facility duplicate check, which applies to EVERY task type:
     #     activeTasks.Any(t => t.taskTitle == taskData.taskTitle
     #                       && t.affectedFacility == facilityName)
@@ -343,13 +364,13 @@ def _admits(w: World, spec, facility) -> bool:
     # be re-created every pass while one was already live -- 45 food tasks resolved against
     # Unity's 15.
     for live_id, (def_id, fac, sp) in w.generated_specs.items():
-        if live_id in w.tasks.active and fac == facility and def_id == spec["taskId"]:
+        if _occupies_slot(w, live_id) and fac == facility and def_id == spec["taskId"]:
             return False
     # THEN the Lodging-specific rule, which is stricter: at most one lodging task per
     # facility even across DIFFERENT lodging titles.
     if spec.get("taskTag") == "Lodging":
         for live_id, (def_id, fac, sp) in w.generated_specs.items():
-            if live_id in w.tasks.active and fac == facility and sp.get("taskTag") == "Lodging":
+            if _occupies_slot(w, live_id) and fac == facility and sp.get("taskTag") == "Lodging":
                 return False
     return True
 
