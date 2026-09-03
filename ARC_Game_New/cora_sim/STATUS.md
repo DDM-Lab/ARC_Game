@@ -78,7 +78,10 @@ but no captured episode shows it corrupting a counter.
 
 ## If continuing: the next measurement
 
-The residual is in **which pending order a freed vehicle takes**, not in travel.
+The residual is in **which vehicle is allocated to which relocation**, not in travel and
+not in how many dispatches a round makes -- both sides make six in round 5, with one
+vehicle taking several. Same orders, same count, different allocation, so the durations
+differ and one relocation falls on the wrong side of the round boundary.
 `AssignPendingTasks` runs on a 1s `taskAssignmentInterval` (dumped, unmodified) and picks
 by priority then `timeCreated`; both handlers use priority 3. Ledger the selection per
 interval tick on both sides with `diag_orders`, and attribute the mis-assigned relocation
