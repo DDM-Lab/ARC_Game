@@ -1176,6 +1176,13 @@
   "maxStayRounds": 8,
   "overstayThreshold": 8
  },
+ "consumption": {
+  "enabled": true,
+  "foodPerPersonPerNRounds": 1,
+  "roundInterval": 4,
+  "workersConsumeFoodToo": false,
+  "startingFoodPacks": 0
+ },
  "buildingWorkforce": [
   {
    "name": "Community01",

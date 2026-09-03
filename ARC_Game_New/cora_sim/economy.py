@@ -92,6 +92,7 @@ def load_economy_constants(path=None):
         "training_cost": int(w["trainingCostPerWorker"]),
         "training_days": int(w["trainingDurationDays"]),
         "deconstruction_rounds": int(c.get("deconstructionRounds", 3)),
+        "consumption": d.get("consumption") or {},
     }
 
 
@@ -263,6 +264,36 @@ class Economy:
         return True
 
     # ── per-round and per-day bookkeeping ───────────────────────────────────────────
+    def consume_food(self, rounds_elapsed) -> None:
+        """BuildingResourceStorage.HandlePopulationConsumptionCycle.
+
+            roundsSinceLastConsumption++;
+            if (roundsSinceLastConsumption >= consumptionRoundInterval) {
+                int totalPeopleToFeed = GetTotalPeopleCount();
+                int foodNeeded = totalPeopleToFeed * foodPerPersonPerNRounds;
+                RemoveResource(ResourceType.FoodPacks, foodNeeded);
+            }
+
+        This is what makes a food request come BACK. A community stocked once and never
+        eating never asks again -- the port resolved 3 food tasks against Unity's 15. Every
+        facility runs its own counter, so they empty on the same cadence but from their own
+        populations."""
+        cfg = C.get("consumption") or {}
+        if not cfg.get("enabled", True):
+            return
+        interval = int(cfg.get("roundInterval", 4) or 4)
+        if interval <= 0 or rounds_elapsed % interval:
+            return
+        per_person = int(cfg.get("foodPerPersonPerNRounds", 1) or 1)
+        for b in self.buildings:
+            res = b.get("resources") or {}
+            people = res.get("population") or 0
+            if cfg.get("workersConsumeFoodToo", True):
+                people += (b.get("trained") or 0) + (b.get("untrained") or 0)
+            need = people * per_person
+            if need > 0:
+                res["foodPacks"] = max(0, (res.get("foodPacks") or 0) - need)
+
     def on_round_end(self) -> None:
         """RewardMetricsTracker.OnRoundEnded.
 
@@ -270,6 +301,7 @@ class Economy:
         regardless of whether any task resolves, which is why worker utilisation is the
         only signal a short-horizon planner can see before round ~14."""
         self.counters["roundsCompleted"] += 1
+        self.consume_food(self.counters["roundsCompleted"])
         self.counters["cumWorkingWorkers"] += self.working_trained + self.working_untrained
         self.counters["cumTrainingWorkers"] += len(self.in_training)
         self.counters["cumIdleWorkers"] += self.free_trained + self.free_untrained

@@ -1177,6 +1177,20 @@ public class GymServerManager : MonoBehaviour
                           .Append(",\"overstayThreshold\":").Append(cst.overstayThreshold)
                           .Append('}');
                     }
+                    // FOOD CONSUMPTION. Communities eat, which is what makes a food
+                    // request come BACK. Without it a community stocked once never asks
+                    // again: the port resolved 3 food tasks against Unity's 15.
+                    var brs = FindObjectOfType<BuildingResourceStorage>();
+                    if (brs != null)
+                    {
+                        sb.Append(",\"consumption\":{")
+                          .Append("\"enabled\":").Append(brs.enablePopulationBasedConsumption ? "true" : "false")
+                          .Append(",\"foodPerPersonPerNRounds\":").Append(brs.foodPerPersonPerNRounds)
+                          .Append(",\"roundInterval\":").Append(brs.consumptionRoundInterval)
+                          .Append(",\"workersConsumeFoodToo\":").Append(brs.workersConsumeFoodToo ? "true" : "false")
+                          .Append(",\"startingFoodPacks\":").Append(brs.startingFoodPacks)
+                          .Append('}');
+                    }
                     sb.Append(",\"buildingWorkforce\":[");
                     {
                         bool first = true;

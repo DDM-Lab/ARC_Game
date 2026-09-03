@@ -195,6 +195,17 @@ def _admits(w: World, spec, facility) -> bool:
     if spec.get("isGlobalTask"):
         return not any(s[0] == spec["taskId"] for s in w.generated_specs.values()
                        if s[0] in w._live_ids(w))
+    # GENERAL per-facility duplicate check, which applies to EVERY task type:
+    #     activeTasks.Any(t => t.taskTitle == taskData.taskTitle
+    #                       && t.affectedFacility == facilityName)
+    # The port only had the Lodging-specific rule, so a food request for a community could
+    # be re-created every pass while one was already live -- 45 food tasks resolved against
+    # Unity's 15.
+    for live_id, (def_id, fac, sp) in w.generated_specs.items():
+        if live_id in w.tasks.active and fac == facility and def_id == spec["taskId"]:
+            return False
+    # THEN the Lodging-specific rule, which is stricter: at most one lodging task per
+    # facility even across DIFFERENT lodging titles.
     if spec.get("taskTag") == "Lodging":
         for live_id, (def_id, fac, sp) in w.generated_specs.items():
             if live_id in w.tasks.active and fac == facility and sp.get("taskTag") == "Lodging":
@@ -298,23 +309,23 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # passes against 35).
     for _task_id, quantity, destination in w.tasks.tick(w.economy.counters):
         dest = str(destination or "")
+        if dest.startswith("__food__"):
+            w.economy.add_food(dest[len("__food__"):], quantity)
+            continue
         source = getattr(w.tasks, "_sources", {}).pop(_task_id, "")
         if source:
             w.economy.move_population(source, -quantity)
         if dest in ("Motel", "Shelter"):
             # People land in an actual facility, so its population -- and therefore the
             # triggers that read it and the bill that charges it -- move together.
-            # A relocation aimed at a Shelter with no OPERATIONAL shelter to receive it
-            # still houses people -- it falls back to the motel, which is why an episode
-            # that never builds a shelter still accumulates motel occupancy and casework
-            # demand. Dropping the delivery instead sent caseworkRequested to 0 against
-            # Unity's 898 while lodging still looked fulfilled.
+            # No fallback. GetDestinationsSorted is called with includeShelters /
+            # includeMotels taken from the CHOICE, so a Shelter-destination relocation
+            # never spills into the motel -- it simply has nowhere to go. The port used to
+            # fall back and that quietly moved people Unity would have left in place.
             target = "Motel" if dest == "Motel" else next(
                 (b["name"] for b in w.economy.buildings
-                 if b["type"] == "Shelter" and b["status"] == "InUse"), "Motel")
-            moved = w.economy.move_population(target, quantity)
-            if target == "Motel":
-                dest = "Motel"
+                 if b["type"] == "Shelter" and b["status"] == "InUse"), None)
+            moved = w.economy.move_population(target, quantity) if target else 0
             if moved:
                 w.pending_arrivals.append((moved, dest))
             if dest == "Motel":
@@ -344,11 +355,67 @@ def answer(w: World, task_id, choice_id) -> bool:
                    if c.get("choiceId") == choice_id), None)
     if choice is None:
         return False
-    qty = choice.get("deliveryQuantity", 0) or 0
+    # DEMANDED vs SENDABLE. ClientRelocationHandler:
+    #     int available = GetPopulation(source);
+    #     int toSend    = requestedQuantity > 0 ? Mathf.Min(requestedQuantity, available)
+    #                                           : available;
+    #     ...
+    #     int sendAmount = Mathf.Min(remaining, effectiveSpace);
+    #
+    # The task's DEMAND is what the choice promised and is what lodgingResolved counts; the
+    # people who actually move are capped by the source's remaining population and by space
+    # at the destination, and that is what lodgingFulfilled counts. Unity's own totals are
+    # 901 resolved against 600 fulfilled -- a third of demanded relocations never land.
+    # Delivering the promised number instead both inflates fulfilment AND empties the
+    # communities, which then silences every population-threshold trigger: the port drained
+    # all three to zero by round 8 while Unity ended near 200 each.
+    demanded = choice.get("deliveryQuantity", 0) or 0
+    qty = demanded
+    dest_cat = choice.get("destinationCategory") or ""
+    def _land_now(kind, amount, where):
+        """Apply an IMMEDIATE delivery's side effect.
+
+        tasks.answer() credits an immediate delivery and resolves the task in the same
+        call, so it never passes through tick()'s landing hook -- which is where the world
+        actually changes. Without this, an immediate food delivery scored as fulfilled
+        while the community's foodPacks stayed at 0, so its `Empty` condition never stopped
+        holding and it requested food forever: 30 food tasks resolved against Unity's 15."""
+        if amount <= 0:
+            return
+        if kind == "food":
+            w.economy.add_food(where, amount)
+        elif kind == "people":
+            w.economy.move_population(where, amount)
+
+    if task.tag == "Food" and demanded > 0:
+        # Food lands at the requester, so its `FoodPacks Empty` condition stops holding --
+        # which is how Unity's food requests for that community stop.
+        task.source = ""                      # food does not move people out of anywhere
+        immediate = bool(choice.get("immediateDelivery"))
+        w.tasks.answer(task_id, demanded, immediate=immediate,
+                       destination="__food__" + str(_facility),
+                       counters=w.economy.counters)
+        if immediate:
+            _land_now("food", demanded, str(_facility))
+        w.economy.apply_choice(task.tag, choice.get("impacts"),
+                               choice.get("budgetDelayRounds", 0) or 0, "", 0)
+        return True
+    if demanded > 0 and dest_cat in ("Motel", "Shelter"):
+        src = w.economy.facility(str(_facility))
+        available = ((src.get("resources") or {}).get("population") or 0) if src else 0
+        qty = min(demanded, available)
+        target = "Motel" if dest_cat == "Motel" else next(
+            (b["name"] for b in w.economy.buildings
+             if b["type"] == "Shelter" and b["status"] == "InUse"), "Motel")
+        dst = w.economy.facility(target)
+        if dst is not None:
+            res = dst.get("resources") or {}
+            cap = res.get("populationCapacity")
+            if cap is not None:
+                qty = min(qty, max(0, cap - (res.get("population") or 0)))
     w.economy.apply_choice(task.tag, choice.get("impacts"),
                            choice.get("budgetDelayRounds", 0) or 0,
-                           choice.get("destinationCategory") or "",
-                           qty)
+                           dest_cat, qty)
     # RELOCATION MOVES PEOPLE OUT OF THE SOURCE. Without this the community stays at 400
     # forever, its population-threshold trigger never stops firing, and the port generates
     # relocation demand indefinitely -- the second half of the 2.7x over-generation.
@@ -357,20 +424,90 @@ def answer(w: World, task_id, choice_id) -> bool:
     # under the MoreThan-200 threshold and silences the relocation trigger long before
     # Unity's does: the port fell to 4 trigger passes against Unity's 17.
     task.source = str(_facility)
-    w.tasks.answer(task_id, choice.get("deliveryQuantity") or 0,
-                   immediate=bool(choice.get("immediateDelivery")),
-                   destination=choice.get("destinationCategory") or "",
-                   counters=w.economy.counters)
+    immediate = bool(choice.get("immediateDelivery"))
+    w.tasks.answer(task_id, qty, immediate=immediate,
+                   destination=dest_cat, counters=w.economy.counters)
+    if immediate and qty > 0 and dest_cat in ("Motel", "Shelter"):
+        target = "Motel" if dest_cat == "Motel" else next(
+            (b["name"] for b in w.economy.buildings
+             if b["type"] == "Shelter" and b["status"] == "InUse"), None)
+        if target:
+            w.economy.move_population(str(_facility), -qty)
+            moved = w.economy.move_population(target, qty)
+            if moved:
+                w.pending_arrivals.append((moved, dest_cat))
+            w.economy.motel_pop = w.economy.motel_population
+    return True
+
+
+def _feasible(w: World, choice, tag="") -> bool:
+    """ClientRelocationHandler.CheckFeasibility, in the only part that bites here.
+
+    A delivery choice needs a destination with SPACE, and the destination set comes from
+    the choice itself (includeShelters / includeMotels), so a Shelter-bound relocation with
+    no operational shelter is INFEASIBLE rather than redirected. Unity disables such
+    choices and tells the player why, so they never appear in the live task's choice list.
+
+    This is why the port and Unity diverged on a policy as simple as "answer the first
+    choice": Unity's first choice is the first FEASIBLE one, which with no shelter built is
+    the motel option. The port was offering the shelter option, delivering it anyway via a
+    fallback, and draining every community to zero by round 8 while Unity ended near 200."""
+    dest = choice.get("destinationCategory") or ""
+    if not dest or not (choice.get("triggersDelivery") or choice.get("immediateDelivery")):
+        return True
+
+    # FOOD IS ROUTED DIFFERENTLY FROM WHAT ITS destinationCategory SAYS. The header of
+    # FoodDeliveryHandler is explicit: "Creates vehicle delivery tasks from one or more
+    # kitchens to the requesting facility." So a food choice's destination is the COMMUNITY
+    # that asked, and its SOURCE is a kitchen -- the exported destinationBuilding ("Shelter")
+    # is the enum's default and is misleading here.
+    #
+    # Which makes the feasibility rule: an immediate (Rapid Response, external) food choice
+    # always works, and a kitchen order needs an operational kitchen. That is exactly
+    # Unity's foodFulfilled = 9 of 15 resolved, with every fulfilment coming from the
+    # external option and never from a kitchen, in an episode where no kitchen was staffed.
+    if tag == "Food":
+        if choice.get("immediateDelivery"):
+            return True                       # external source, no kitchen involved
+        # A kitchen order needs a kitchen WITH STOCK, not merely an operational one:
+        # FoodDeliveryHandler sources from kitchens, and a kitchen holding zero food packs
+        # has nothing to send. Nothing in this game produces food into a kitchen, so in
+        # practice kitchen orders never fulfil -- which is precisely why Unity's
+        # foodFulfilled is 9 of 15 resolved and why every fulfilment came from the
+        # expensive external option.
+        return any((k.get("resources") or {}).get("foodPacks", 0) > 0
+                   for k in w.economy.operational("Kitchen"))
+    if dest == "Motel":
+        m = w.economy.facility("Motel")
+        res = (m or {}).get("resources") or {}
+        cap = res.get("populationCapacity")
+        return m is not None and (cap is None or (res.get("population") or 0) < cap)
+    if dest == "Shelter":
+        for b in w.economy.buildings:
+            if b["type"] != "Shelter" or b["status"] != "InUse":
+                continue
+            res = b.get("resources") or {}
+            cap = res.get("populationCapacity")
+            if cap is None or (res.get("population") or 0) < cap:
+                return True
+        return False
+    if dest == "CaseworkSite":
+        return bool(w.economy.operational("CaseworkSite"))
+    if dest == "Kitchen":
+        return bool(w.economy.operational("Kitchen"))
     return True
 
 
 def open_choices(w: World):
-    """Every (task_id, choice_id) the planner may answer this round."""
+    """Every (task_id, choice_id) the planner may answer this round, FEASIBLE ones only --
+    matching the live task's choice list, which Unity filters the same way."""
     out = []
     for task_id in w.tasks.active:
         entry = w.generated_specs.get(task_id)
         if not entry:
             continue
         for c in (entry[2].get("choices") or []):
-            out.append((task_id, c.get("choiceId")))
+            task = w.tasks.active.get(task_id)
+            if _feasible(w, c, task.tag if task else ""):
+                out.append((task_id, c.get("choiceId")))
     return out
