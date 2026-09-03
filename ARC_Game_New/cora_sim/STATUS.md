@@ -619,31 +619,35 @@ This overturns the previous two stories completely:
     it to its destination, appending to `landed` there. That is the second landing.
   - Only ONE food order actually lands; order 4 is also carried over.
 
-AN ORDER IS SILENTLY LOST BY THE FLEET. Printing the carried-in landings and the discarded
-ones (temporary, reverted):
+THE ACCOUNTING ASSERT, AND A CORRECTION. I added an assert at the end of `run_round` that
+every order in must come out landed, queued, dropped or carried. It fires on 5501 round 5:
 
-    r5   [carried-in landings] [(3,100,'__food__...'), (6,100,'Motel')]
-    r6   [carried-in landings] [(4,100,'__food__...')]
+    fleet lost 1 order(s): [(5, 100, '__food__Community Amherst')]
+    in=5 landed=2 queued=0 dropped=0
+    carrying=[None, (4,100,'__food__Community Trinity'), (7,100,'Motel')]
 
-Order 7 -- the Community02 relocation that LOADED with avail=100 in round 5 -- is in NEITHER
-list. It is not landed, not carried into round 6, and not discarded at the `task is None`
-continue (that print never fires). It simply ceases to exist.
+CORRECTION TO THE ENTRY THIS REPLACES: order 7 is NOT lost. It is CARRYING on vehicle 3 at the
+end of round 5, exactly as it should be. I concluded it had vanished from the fact that round
+6's carried-in landings listed only order 4 -- but a carried order only lands once its
+`busy_seconds` falls inside the round budget, so a long trip legitimately spans more than one.
+Reading fleet state directly, rather than inferring from what landed, is what settled it.
 
-That is a FLEET BUG, not a task-lifecycle one, and it explains every dead end above: the
-late-delivery change was inert because the payload never arrives to be credited late; the
-Lodging exemption was inert because the order was never load-aborted in the first place.
+The order actually unaccounted for is #5, the FOOD order that aborted with avail=0. On abort
+the branch pops it from the queue and hands the freed vehicle the next order, so it leaves the
+fleet entirely. That is very likely CORRECT -- the task-side `retry_if_unsourced` path re-queues
+an unsourceable order on a later round, which is the kitchen-restock mechanic -- meaning the
+ASSERT IS TOO STRICT AS WRITTEN, not that the port has a second bug. Reverted for now.
 
-WHERE TO LOOK, in `Fleet.run_round`: `self.carrying[v]` is a single slot per vehicle. Three
-places assign it -- the normal `done > budget` carry, the abort-reassign branch's carry, and
-the in-flight completion block that clears it. If a vehicle takes a SECOND order in the same
-round after already being given a carry, the first payload is overwritten and lost with no
-trace. Round 5 has five orders and three vehicles, with one abort-reassign, so a vehicle
-plausibly gets two. Assert on it: at the end of `run_round`, every order in `pending` must be
-accounted for as landed, still queued, dropped, or carried -- and today it is not.
+KEEP THE ASSERT, BUT WITH AN `aborted` OUTCOME: return the aborted orders from `run_round`
+alongside landed/queue/dropped, count them in the accounting, and let the caller confirm they
+are re-queued. That turns a silent pop into a checked hand-off and would still catch a genuine
+carrying-slot overwrite. It is worth having permanently -- nothing else in the suite can see a
+lost delivery.
 
-THAT ASSERT IS THE NEXT COMMIT. Add it, watch it fire on 5501 round 5, then fix the overwrite.
-It also belongs in the suite permanently: a surrogate that silently loses deliveries will
-mislead any search built on it.
+WHAT THIS LEAVES FOR lodgingFulfilled: order 7 IS in flight at the end of round 5 and its task
+expires at that same round. So the original question stands, sharpened -- when does that carried
+payload land, and is its task still findable when it does? Print `busy_seconds` and `carrying`
+at the top of each round for vehicle 3 across rounds 5-8.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
