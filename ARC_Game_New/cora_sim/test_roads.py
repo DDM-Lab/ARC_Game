@@ -151,29 +151,47 @@ def test_occupancy_is_real():
 
 
 def test_repair_task_returns_the_vehicle():
-    """Flood damage spawns a repair task, and answering it with choice 1 restores service.
+    """Two distinct outcomes that used to be conflated, plus the repair loop.
 
-    FloodTaskGenerator.CreateVehicleRepairTask makes an Emergency task with two choices --
-    repair now for $1200, or delay at -5 satisfaction -- and ApplyChoiceImpacts repairs only
-    on choiceId 1. This looked GUI-only (it lives in TaskDetailUI) but the headless gym
-    routes through SelectTaskChoiceHeadless -> CompleteTaskAction -> ApplyChoiceImpacts, so
-    the headless server really does repair. Without this loop a vehicle damaged once was out
-    for the rest of the episode and the fleet drained to nothing.
+    An order whose SOURCE-TO-DESTINATION route is cut is never created: CreateDeliveryTask
+    bails on the route estimate before a vehicle is involved, so the fleet is untouched.
+    This test previously asserted the opposite, and that mistake let three unroutable food
+    orders disable an entire fleet in one round and send every following delivery to the
+    fitted constant.
+
+    Damage happens on the other path -- a vehicle already dispatched that cannot reach its
+    source. MoveToPosition fails, StopVehicleDueToFlood marks it Damaged and spawns a
+    repair task, and only choice 1 on that task returns it to service.
     """
     from cora_sim.tasks import TaskBoard
     from cora_sim import roads
+    from cora_sim.roads import BUILDING_CELL, ROAD_CELLS
+
     b = TaskBoard(cell_for=roads.FACILITY_CELL.get)
     assert b.travel_rounds("Kitchen Alpha", "Community Charleston",
-                           flooded=roads.ROAD_CELLS) is False
-    assert any(b.fleet.damaged), "a cut route must damage the vehicle"
-    assert b.repair_for, "damage must spawn a repair task"
+                           flooded=ROAD_CELLS) is False
+    assert not any(b.fleet.damaged), "an order that is never created damages nothing"
+    assert not b.repair_for, "and spawns no repair task"
+
+    # Strand every vehicle in one corner by flooding only the cells around it, so the
+    # source->destination route stays open (the pre-check passes) and the failure happens
+    # on leg 1, which is the case Unity damages on.
+    stuck = BUILDING_CELL["Community03"]
+    b.fleet.pos = [stuck] * 3
+    cut = frozenset(c for c in ROAD_CELLS
+                    if abs(c[0] - stuck[0]) + abs(c[1] - stuck[1]) == 1)
+    assert b.travel_rounds("Kitchen Alpha", "Community Charleston", flooded=cut) is False
+    assert any(b.fleet.damaged), "a dispatched vehicle that cannot reach its source is damaged"
+    assert b.repair_for, "damage spawns a repair task"
+
     tid = next(iter(b.repair_for))
     assert b.answer_repair(tid, 2) is False, "delaying leaves the vehicle out"
     assert any(b.fleet.damaged)
-    b.open_repair_task(0)
+    hurt = b.fleet.damaged.index(True)
+    b.open_repair_task(hurt)
     tid = next(iter(b.repair_for))
     assert b.answer_repair(tid, 1) is True, "choice 1 repairs"
-    assert not any(b.fleet.damaged)
+    assert not b.fleet.damaged[hurt]
 
 
 def test_busy_fleet_queues_instead_of_guessing():

@@ -50,7 +50,7 @@ FULFILMENT_COUNTERS = ("foodResolved", "foodFulfilled", "lodgingResolved",
 # kitchen's stock, and frequently is not filled before the task expires -- which is exactly
 # why Unity's foodFulfilled sits so far below foodResolved.
 from . import roads
-from .roads import Fleet
+from .roads import Fleet, path_length
 
 DEFERRED_LATENCY = {"Lodging": 1, "Food": 4}
 
@@ -194,9 +194,20 @@ class TaskBoard:
         dst = self.cell_for(dest_name)
         if src is None or dst is None:
             return None
-        # FindSuitableVehicle scores on straight-line closeness to the SOURCE, so which
-        # vehicle takes the job decides how long leg 1 is. Picking the first free one
-        # instead pinned every trip to vehicle 0 and left the other two parked forever.
+        # ROUTE FIRST, VEHICLE SECOND. CreateDeliveryTask calls GetDeliveryTimeEstimate and
+        # bails with "Cannot create delivery task - no route available" BEFORE any vehicle is
+        # involved, so an unroutable order simply never becomes a delivery -- nothing is
+        # dispatched and nothing is damaged. The port was assigning a vehicle first and
+        # damaging it on the failed path, which is StopVehicleDueToFlood's behaviour for a
+        # vehicle already EN ROUTE, not for an order that was never created.
+        #
+        # It wrecked the whole fleet. On staff_5701 round 5 the port issued three food
+        # orders from the kitchen, two of them across a corridor the flood had cut at
+        # (-5, 0); each "blocked" one damaged a vehicle, so all three were out and the two
+        # relocations that follow fell back to the fitted constant. Unity created one food
+        # delivery, refused the other two silently, and kept its fleet.
+        if path_length(src, dst, flooded) is None:
+            return False
         v = self.fleet.best_vehicle(src, quantity)
         wait = 0
         if v is None:
