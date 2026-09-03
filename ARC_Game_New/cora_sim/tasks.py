@@ -128,7 +128,7 @@ class TaskBoard:
 
     __slots__ = ("active", "deliveries", "next_id", "awaiting", "has_supplier",
                  "_sources", "queue", "busy", "fleet", "cell_for", "repair_for",
-                 "retry_if_unsourced")
+                 "retry_if_unsourced", "pending", "pending_seq", "flooded")
 
     def __init__(self, has_supplier=None, cell_for=None):
         self.active = {}                    # task_id -> Task
@@ -162,6 +162,12 @@ class TaskBoard:
         # Injected: how much of `quantity` the source can actually supply right now.
         # None disables the check, which is what the pure-task suites want.
         self.retry_if_unsourced = None
+        # Orders waiting for a vehicle, exactly DeliverySystem.pendingTasks. Entries are
+        # [seq, (task_id, quantity, destination), src_cell, dst_cell, quantity], sorted by
+        # creation order -- both handlers use priority 3, so priority never breaks a tie.
+        self.pending = []
+        self.pending_seq = 0
+        self.flooded = frozenset()
 
     def clone(self):
         b = TaskBoard.__new__(TaskBoard)
@@ -177,6 +183,9 @@ class TaskBoard:
         b.cell_for = self.cell_for
         b.repair_for = dict(self.repair_for)
         b.retry_if_unsourced = self.retry_if_unsourced
+        b.pending = [list(x) for x in self.pending]
+        b.pending_seq = self.pending_seq
+        b.flooded = self.flooded
         return b
 
 
@@ -278,7 +287,7 @@ class TaskBoard:
         return task
 
     def answer(self, task_id, quantity=0, immediate=True, latency=None, destination="",
-               counters=None, latency_measured=False):
+               counters=None, latency_measured=False, destination_facility=None):
         """Answer a task: it leaves the board NOW and resolves when its delivery LANDS.
 
         THE TWO ARE NOT THE SAME ROUND, and that is the whole point. Measured on captures:
@@ -319,6 +328,19 @@ class TaskBoard:
             task.delivered += quantity
             self.awaiting[task_id] = task
             self.deliveries.append([1, task_id, 0, True])   # 0: already delivered, resolve only
+            return
+        # THE ORDER GOES INTO THE QUEUE, NOT ONTO A CLOCK. DeliverySystem creates the task
+        # into pendingTasks and ProcessPendingTasks assigns it during the simulated round,
+        # so a delivery has no latency of its own -- it has a place in a line and a drive.
+        # Costing it at answer time is what made the port land five orders in the round
+        # Unity landed two.
+        src = self.cell_for(getattr(task, "source", "") or "") if self.cell_for else None
+        dst = self.cell_for(destination_facility or "") if self.cell_for else None
+        if src is not None and dst is not None and quantity > 0:
+            self.awaiting[task_id] = task
+            self.pending.append([self.pending_seq, (task_id, quantity, destination),
+                                 src, dst, quantity])
+            self.pending_seq += 1
             return
         if latency is None:
             latency = DEFERRED_LATENCY.get(task.tag, DEFAULT_LATENCY)
@@ -421,9 +443,26 @@ class TaskBoard:
         not double-counted."""
         # Dispatch queued trips to any free vehicle before ageing, so a trip that waited a
         # round starts the moment one lands.
-        # Vehicles come home. Without this they stay out forever, best_vehicle runs out of
-        # candidates and every later delivery silently falls back to the fitted constant.
-        self.fleet.advance(2)
+        # ProcessPendingTasks for one round: orders leave the queue as vehicles free up,
+        # and whatever finishes inside the round's seconds lands now.
+        landed_now = []
+        def _load(payload, qty):
+            """LoadCargo at the moment the vehicle reaches the source."""
+            if self.retry_if_unsourced is None:
+                return qty
+            task = self.active.get(payload[0]) or self.awaiting.get(payload[0])
+            return qty if task is None else self.retry_if_unsourced(task, qty)
+
+        arrived, self.pending = self.fleet.run_round(self.pending, self.flooded, _load)
+        for task_id, quantity, destination in arrived:
+            task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
+            if task is None:
+                continue
+            task.delivered += quantity
+            if quantity > 0:
+                landed_now.append((task_id, quantity, destination))
+            if task_id not in self.active and not task.resolved:
+                self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
         while self.queue and self.busy < VEHICLE_COUNT:
             task_id, qty, lat = self.queue.pop(0)
             self.deliveries.append([lat, task_id, qty, True])
@@ -441,7 +480,7 @@ class TaskBoard:
         arriving = [d for d in self.deliveries if d[0] <= 0]
         self.deliveries = [d for d in self.deliveries if d[0] > 0]
         self.busy = max(0, self.busy - len(arriving))     # vehicles return
-        landed = []
+        landed = list(landed_now)
         for _rounds, task_id, quantity, *_ in arriving:
             task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
             if task is None:

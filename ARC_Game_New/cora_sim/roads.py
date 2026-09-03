@@ -307,7 +307,7 @@ class Fleet:
         return landed
 
 
-    def run_round(self, pending, flooded=frozenset()):
+    def run_round(self, pending, flooded=frozenset(), load=None):
         """ProcessPendingTasks over one simulated round. Returns (landed, still_pending).
 
         This is the shape Unity's marks show, and no per-order latency can express it:
@@ -355,11 +355,25 @@ class Fleet:
             if leg1 is None:
                 self.damaged[v] = True            # dispatched, cannot reach the source
                 continue
-            leg2 = path_length(src, dst, flooded, self.spec)
-            trip = leg_seconds(leg1, self.spec) + leg_seconds(leg2, self.spec)
-            done = free_at[v] + trip
-            self.pos[v] = dst
+            # LOAD AT THE SOURCE, AT THIS SIM-TIME. LoadCargo calls RemoveResource when the
+            # vehicle ARRIVES, so orders draw down the kitchen in arrival order, and one
+            # that finds it empty ABORTS: currentTask is nulled, the vehicle goes Idle
+            # where it stands, and it is free for the next pending order immediately.
+            #
+            # Unity's marks show exactly this. Three food orders go out at f293; the
+            # kitchen holds 200, so the first two load and the third -- Vehicle3, 19 steps
+            # away -- arrives at f313 to nothing, aborts, and is reassigned to a population
+            # order in the SAME frame. Without modelling it the port delivered three food
+            # orders and no relocations where Unity delivered one of each.
+            at_source = free_at[v] + leg_seconds(leg1, self.spec)
+            self.pos[v] = src
             queue.pop(0)
+            if load is not None and load(payload, qty) <= 0:
+                free_at[v] = at_source            # idle at the source, ready for more work
+                continue
+            leg2 = path_length(src, dst, flooded, self.spec)
+            done = at_source + leg_seconds(leg2, self.spec)
+            self.pos[v] = dst
             if done <= budget:
                 landed.append(payload)
                 free_at[v] = done

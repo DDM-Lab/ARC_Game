@@ -387,6 +387,8 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         w.economy.move_population(name, -count)
         w.economy.motel_pop = w.economy.motel_population
 
+    # The fleet routes against THIS round's flood.
+    w.tasks.flooded = w.flooded_road_cells()
     rolls = []
     day_changed = w.segment >= ROUNDS_PER_DAY
     if day_changed:
@@ -600,14 +602,13 @@ def answer(w: World, task_id, choice_id) -> bool:
         # at arrival. Sourcing at answer time made the order fail against an empty kitchen
         # and left the port a round behind (unity resolved 1 at round 5, port 0).
         task.chosen_id = choice_id
-        # How long the food takes is how long the drive takes. DEFERRED_LATENCY's 4 was
-        # fitted, and behaved like a fitted constant: every value that matched one metric
-        # broke another. travel_rounds returns False when the flood has cut the route, which
-        # is not a slow delivery but one that never arrives.
+        # No latency is computed here any more. The order is placed; the FLEET decides when
+        # it arrives, during the round, exactly as ProcessPendingTasks does. Costing the
+        # trip at answer time is what made the port land five orders in a round where Unity
+        # landed two.
         _kitchen = next((b["name"] for b in w.economy.buildings
                          if b["type"] == "Kitchen" and b["status"] == "InUse"), None)
-        _lat = w.tasks.travel_rounds(_kitchen, str(_facility), w.flooded_road_cells(),
-                                     demanded, task_id, w.segment) if _kitchen else None
+        _lat = None
         # `_lat in (None, False)` was WRONG twice over: the flag was inverted, and
         # `0 in (None, False)` is True because 0 == False in Python -- so a delivery
         # measured as landing THIS round was thrown away and replaced by the fitted 4.
@@ -624,11 +625,13 @@ def answer(w: World, task_id, choice_id) -> bool:
         #
         # Creation is not the limiter. Completion is: three vehicles are shared with the
         # population relocations answered in the same round, and each trip is two legs.
+        task.source = _kitchen or ""
         w.tasks.answer(task_id, 0 if _cut else demanded, immediate=immediate,
                        latency=_lat if _measured else None,
                        destination="__food__" + str(_facility),
                        counters=w.economy.counters,
-                       latency_measured=_measured)
+                       latency_measured=_measured,
+                       destination_facility=str(_facility))
         if immediate:
             _land_now("food", demanded, str(_facility))
         w.economy.apply_choice(task.tag, choice.get("impacts"),
@@ -662,14 +665,14 @@ def answer(w: World, task_id, choice_id) -> bool:
     _target = ("Motel" if dest_cat == "Motel" else next(
         (b["name"] for b in w.economy.buildings
          if b["type"] == "Shelter" and b["status"] == "InUse"), "Motel"))
-    _lat = w.tasks.travel_rounds(str(_facility), _target, w.flooded_road_cells(),
-                                 qty, task_id, w.segment)
+    _lat = None                      # the fleet decides; see the food path above
     _cut = _lat is False
     _measured = _lat is not None and _lat is not False
     w.tasks.answer(task_id, 0 if _cut else qty, immediate=immediate,
                    latency=_lat if _measured else None,
                    destination=dest_cat, counters=w.economy.counters,
-                   latency_measured=_measured)
+                   latency_measured=_measured,
+                   destination_facility=_target)
     if immediate and qty > 0 and dest_cat in ("Motel", "Shelter"):
         target = "Motel" if dest_cat == "Motel" else next(
             (b["name"] for b in w.economy.buildings
