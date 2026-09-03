@@ -1253,6 +1253,13 @@ public class TaskSystem : MonoBehaviour
                 break;
         }
 
+        // Paired with task:resolved. The port resolves one lodging task where Unity resolves
+        // two, and both agree on what was delivered -- so the difference is WHEN Unity gives
+        // up on a task, which is creation round plus roundsRemaining. This makes the
+        // lifetime readable instead of inferred.
+        SnapshotDebug.MarkContext("task:created", "{\"title\":\"" + newTask.taskTitle
+            + "\",\"rounds\":" + newTask.roundsRemaining
+            + ",\"type\":\"" + type + "\"}");
         activeTasks.Add(newTask);
         OnTaskCreated?.Invoke(newTask);
 
@@ -1538,6 +1545,8 @@ public class TaskSystem : MonoBehaviour
         newTask.description = $"Action recommendations from {agentName}";
         newTask.isGlobalTask = true;
 
+        SnapshotDebug.MarkContext("task:created", "{\"title\":\"" + newTask.taskTitle
+            + "\",\"rounds\":" + newTask.roundsRemaining + "}");
         activeTasks.Add(newTask);
         return newTask;
     }
@@ -1694,6 +1703,8 @@ public class TaskSystem : MonoBehaviour
             newTask.demandQuantity = demand;
         }
 
+        SnapshotDebug.MarkContext("task:created", "{\"title\":\"" + newTask.taskTitle
+            + "\",\"rounds\":" + newTask.roundsRemaining + "}");
         activeTasks.Add(newTask);
         OnTaskCreated?.Invoke(newTask);
 
