@@ -661,6 +661,20 @@ def answer(w: World, task_id, choice_id) -> bool:
         #
         # Creation is not the limiter. Completion is: three vehicles are shared with the
         # population relocations answered in the same round, and each trip is two legs.
+        # A DELIVERING CHOICE THAT CANNOT QUEUE ITS DELIVERY IS REJECTED OUTRIGHT.
+        # CompleteTaskAction returns false when ExecuteGeneratorDelivery queues nothing:
+        # no impacts applied, no SetTaskInProgress, and SelectTaskChoiceHeadless reports the
+        # action as failed. The task simply stays on the board, unanswered.
+        #
+        # That is why Unity turns three answered food requests into ONE delivery. Two of
+        # them cannot route from the kitchen -- the flood cuts (-5, 0) -- so those two
+        # answers FAIL and their tasks remain active. The port accepted all three.
+        if not immediate and _kitchen:
+            _src = w._facility_cell(_kitchen)
+            _dst = w._facility_cell(str(_facility))
+            if (_src is None or _dst is None
+                    or roads.path_length(_src, _dst, w.flooded_road_cells()) is None):
+                return False
         task.source = _kitchen or ""
         w.tasks.answer(task_id, 0 if _cut else demanded, immediate=immediate,
                        latency=_lat if _measured else None,
@@ -702,6 +716,14 @@ def answer(w: World, task_id, choice_id) -> bool:
         (b["name"] for b in w.economy.buildings
          if b["type"] == "Shelter" and b["status"] == "InUse"), "Motel"))
     _lat = None                      # the fleet decides; see the food path above
+    # Same rejection for relocations: a delivering choice whose route is cut queues
+    # nothing, so CompleteTaskAction returns false and the task stays on the board.
+    if not immediate and qty > 0:
+        _src = w._facility_cell(str(_facility))
+        _dst = w._facility_cell(_target)
+        if (_src is None or _dst is None
+                or roads.path_length(_src, _dst, w.flooded_road_cells()) is None):
+            return False
     _cut = _lat is False
     _measured = _lat is not None and _lat is not False
     w.tasks.answer(task_id, 0 if _cut else qty, immediate=immediate,
