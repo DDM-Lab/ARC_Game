@@ -116,7 +116,7 @@ public class RewardMetricsTracker : MonoBehaviour
         // Every resolution, with the numbers that produce the counters. The port matches
         // lodgingFulfilled but not lodgingResolved, which means Unity resolves a task the
         // port does not -- this says which one, and whether it delivered anything.
-        SnapshotDebug.MarkContext("task:resolved", "{\"title\":\"" + task.taskTitle
+        SnapshotDebug.MarkContext("task:resolved", "{\"id\":" + task.taskId + ",\"title\":\"" + task.taskTitle
             + "\",\"tag\":\"" + task.taskTag
             + "\",\"demand\":" + task.demandQuantity
             + ",\"delivered\":" + task.deliveredQuantity
