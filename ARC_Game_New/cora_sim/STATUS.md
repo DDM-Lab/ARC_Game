@@ -375,27 +375,52 @@ gap is exactly nodes-1 frames. The old `steps + 1` came from timing leg-mark to 
 which includes the completion boundary frame. It also makes a vehicle parked on its source pay
 nothing, matching the 1-node path that never enters the movement loop.
 
-THE MISSING CREDIT, IDENTIFIED EXACTLY. Seed 5901, step 6, Unity resolves TWO lodging tasks:
+THE MISSING CREDIT. Seed 5901 step 6, Unity resolves TWO lodging tasks:
 
-    f321  id=6  demand=100 delivered=100  fulfilled=true   status=Completed
-    f328  id=7  demand=100 delivered=0    fulfilled=false  status=Incomplete
+    f321  id=6  demand=100 delivered=100  status=Completed
+    f328  id=7  demand=100 delivered=0    status=Incomplete
 
-`resolvedAdd = demand` regardless of outcome, so lodgingResolved is 100 + 100 = 200. The port
-credits only id=6 and reports 100. That ONE uncredited resolution is the whole remaining
-divergence on nine of eleven seeds.
+resolvedAdd is the demand either way, so lodgingResolved is 200; the port reports 100.
 
-The port's `resolve()` is NOT the bug -- it already adds `demand` whether or not the task was
-fulfilled. The bug is that it is never CALLED for id=7. So the port is missing a resolution
-PATH, not miscomputing a credit.
+MY PREMISE WAS WRONG AND FABLE CORRECTED IT. I claimed "Incomplete" and "Expired" are
+different mechanisms. They are the same mechanism reporting different STATUS STRINGS by task
+type (TaskSystem.cs:1377-1378):
 
-"Incomplete" and "Expired" are distinct status values in the same capture (id=14 is Expired),
-so id=7 is not a plain board expiry. The port models delivery-completion and one unsourced
--retry expiry; Unity evidently has at least a third path that resolves an ANSWERED relocation
-which never delivered. Fable is enumerating every RecordTaskResolution call site with the
-status each passes. Do not guess the path -- two documented game bugs (HandleDeliveryFailure
-and the emergency-lodging eviction) were both recorded as resolving WITHOUT calling
-RecordTaskResolution, and id=7 having a resolution mark means at least one of those notes may
-be wrong.
+    task.status = taskType == Emergency || taskType == Demand ? Incomplete : Expired;
+
+"Population Relocation From Community" is taskType Demand
+(Community_TransportRequest.asset:16-17), so its plain board expiry reads "Incomplete".
+"Expired" is only ever Advisory/Alert/Other -- which is why id=14, an Alert, shows it. id=7 IS
+an ordinary expiry. Any port logic keyed on the string "Expired" misses every Food and
+Lodging expiry there is.
+
+EVERY RecordTaskResolution CALL SITE (complete, grepped over all of Assets/Scripts):
+
+    CompleteTask         TaskSystem.cs:1290   Completed                  fulfilled=true
+    ExpireTask           TaskSystem.cs:1389   Incomplete or Expired      fulfilled=false
+    SetTaskIncomplete    TaskSystem.cs:1473   Incomplete                 fulfilled=false
+
+All three share one formula in the callee (RewardMetricsTracker.cs:126-129). Paths that
+remove a task and record NOTHING: HandleDeliveryFailure (759 -- confirmed, my note was
+right), the emergency-lodging eviction (925), IgnoreTask (1440), alert-complete (2003). A
+flood-failed task leaves activeTasks and can never be counted afterwards, so it is
+permanently uncounted -- that stands as a game bug.
+
+THE PORT ALREADY HAS THIS PATH, so the bug is its TIMING, not its absence. `tick()` ages
+`awaiting` and resolves at zero, and the loop's own comment describes this exact 200-vs-100
+case. It still under-counts at round 5, so the expiry is firing a round late or the task is
+not in `awaiting` when it should be. Instrument WHEN the port resolves id=7's counterpart
+before touching the loop again -- the mechanism is present and a blind edit will just move
+the error.
+
+TWO CORRECTIONS TO APPLY REGARDLESS, both cheap and both source-confirmed:
+  - In-flight deliveries are NOT cancelled on expiry (CancelTaskDeliveries is commented out
+    at TaskSystem.cs:569-571). A later completion credits FULFILLED ONLY, via AddLateDelivery
+    (705-711); resolved is never re-credited. The port has `late_delivery` -- verify it is
+    reached from the expiry path and not only from the completion path.
+  - roundsRemaining decrements in OnTimeSegmentAdvanced (TaskSystem.cs:616), on the SEGMENT
+    advance, and resolution fires on the next Update. The port ages inside `tick()`. Those are
+    different points in the round and that is the likeliest source of the one-round offset.
 
 Two facts worth keeping: LoadCargo and UnloadCargo contain no delay at all, and a vehicle
 already on its source road cell produces a 1-node path whose movement loop never runs, so it
