@@ -820,6 +820,13 @@ public class TaskSystem : MonoBehaviour
 
         Debug.Log("Checking for triggered tasks per facility...");
 
+        // WHEN generation runs, relative to the round's deliveries. The port creates tasks
+        // before its delivery tick; Unity re-requests a relocation inside the round its
+        // predecessor delivered. Moving the port's creation after the tick took two exact
+        // traces to zero, so the ordering is not the simple one -- this makes Unity's
+        // actual position observable instead of inferred.
+        SnapshotDebug.MarkContext("gen:pass", "{\"active\":" + activeTasks.Count + "}");
+
         // Get tasks with their specific facilities
         List<(TaskData taskData, MonoBehaviour facility)> triggeredTasksWithFacilities =
             taskDatabase.CheckTriggeredTasksPerFacility();
