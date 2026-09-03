@@ -23,6 +23,15 @@ public static class SnapshotDebug
     /// anything mutates between the snapshot and the mechanic. Emitting the inputs beside
     /// the state makes the test self-contained.
     /// </summary>
+
+    /// <summary>
+    /// Which gym step (advance_time call) is currently executing. Unity's clock advances
+    /// BEFORE a round simulates, so a d2r2-tagged event may belong to either step 5 or step
+    /// 6 -- and every remaining replay discrepancy turns on that attribution. Stamping the
+    /// step makes it arithmetic instead of inference.
+    /// </summary>
+    public static int GymStep = 0;
+
     public static void MarkContext(string label, string contextJson)
     {
         if (!Enabled) return;
@@ -33,7 +42,7 @@ public static class SnapshotDebug
         // and that conversion needs the frames-per-round budget. I have been asserting that
         // budget is fixed; this measures it. Placed inside the existing d{day}r{seg} token so
         // every parser that matches (d\d+r\d+) keeps working.
-        Debug.Log($"[RNGCTX] d{day}r{seg}f{Time.frameCount} {label} {JsonUtility.ToJson(st)} {contextJson}");
+        Debug.Log($"[RNGCTX] s{GymStep}d{day}r{seg}f{Time.frameCount} {label} {JsonUtility.ToJson(st)} {contextJson}");
     }
 
     public static void Mark(string label)
@@ -43,6 +52,6 @@ public static class SnapshotDebug
         var st = UnityEngine.Random.state;
         int day = GlobalClock.Instance != null ? GlobalClock.Instance.currentDay : -1;
         int seg = GlobalClock.Instance != null ? GlobalClock.Instance.currentTimeSegment : -1;
-        Debug.Log($"[RNGMARK] d{day}r{seg}f{Time.frameCount} {label} {JsonUtility.ToJson(st)}");
+        Debug.Log($"[RNGMARK] s{GymStep}d{day}r{seg}f{Time.frameCount} {label} {JsonUtility.ToJson(st)}");
     }
 }

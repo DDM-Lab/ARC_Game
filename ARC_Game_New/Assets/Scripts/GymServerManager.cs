@@ -1502,6 +1502,7 @@ public class GymServerManager : MonoBehaviour
                 // the only ones a delivery ordered by that choice can travel in before the
                 // round ends, which is what decides the boundary cases the port still gets
                 // wrong.
+                SnapshotDebug.GymStep++;      // this advance_time call is a new gym step
                 SnapshotDebug.MarkContext("round:advance", "{}");
                 GlobalClock.Instance.GymAdvanceRound();
             });
