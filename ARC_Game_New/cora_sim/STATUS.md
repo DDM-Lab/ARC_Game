@@ -666,12 +666,35 @@ queue) instead of the `arrived` loop that handles FLEET landings. Two similarly 
 the same function; the print was watching the wrong one. That single mistake is why the
 late-delivery fix looked inert twice.
 
-THE FIX IS THEREFORE THE PARKED ONE, APPLIED CORRECTLY: on expiry, keep the task in `awaiting`
-with resolved=True instead of popping it, so the later landing finds it, sees `task.resolved`,
-and routes to `late_delivery` -- fulfilled-only, never re-crediting resolved, which is
-AddLateDelivery's exact contract. When that was tried before, verify with a print in the
-`arrived` loop (NOT `arriving`) that the landing now reaches `late_delivery`; if it still does
-not, check whether anything else pops `awaiting` between the expiry and the landing.
+THE FIX, BUILT AND MEASURED (kept in `experiments/tasks_late_delivery_arrived.py`):
+
+  1. On expiry, KEEP the task in `awaiting` with resolved=True rather than popping it, so a
+     later landing can find it. Verified with a print in the ARRIVED loop:
+     `[arrived] task=7 qty=100 resolved=True` -- it now finds the task.
+  2. Add the late-delivery branch to the ARRIVED loop. It only existed in the `arriving`
+     (latency-queue) loop, so a genuine fleet landing for a resolved task was found,
+     recognised as resolved, and dropped without crediting anything.
+
+IT FIXES THE TARGET: lodgingFulfilled 200-against-100 is GONE on 5501 and 5503, whose first
+divergence moves from round 6 to rounds 8 and 7.
+
+IT IS NOT COMMITTED, because the branch ends in `continue` and that skips the arrival
+bookkeeping the normal path does -- `landed.append(...)`, which drives client arrivals and the
+motel population. So a late delivery now credits fulfilment while landing NOBODY:
+
+    staff_5501  round 8  caseworkRequested 100 vs port 200, lodgingSpend 40000 vs port 20000
+    staff_5503  round 7  lodgingResolved 300 vs port 400
+    staff_5802  round 10 lodgingFulfilled 500 vs port 600
+
+A 20000-unit spend error is a far worse state than the 100 it fixed, and by the
+magnitude-first rule this cannot go in as it stands.
+
+THE REMAINING WORK IS SMALL AND WELL-POSED: make the late-delivery branch credit
+`late_delivery` AND still perform the arrival/population half, instead of `continue`-ing past
+it. The question to settle first is whether Unity's AddLateDelivery path also moves the people
+-- OnDeliveryTaskCompleted runs its normal delivery handling and only the METRIC differs for an
+already-completed parent, which suggests the population DOES move and only `resolve` is skipped.
+Check TaskSystem.cs:683-711 for what happens to the delivery besides the metric call.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
