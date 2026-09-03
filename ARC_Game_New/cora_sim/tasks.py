@@ -637,15 +637,13 @@ class TaskBoard:
         """
         for task in list(self.active.values()):
             if task.fresh:
-                # THE FRESH SKIP IS NOW REDUNDANT and costs a whole advance. It existed
-                # because creation used to happen BEFORE the segment advance, so a task born
-                # this step would otherwise be aged by the very advance that created it. Now
-                # that _create_tasks runs per pass AFTER age_and_expire, a new task has
-                # already missed its creating advance, and skipping again makes it a full
-                # advance too young: Flood_Alert carries rounds=1, is created in r5 and must
-                # expire at r6's advance, but survived to r7 and credited its resolvedAdd of
-                # 1 a round late.
+                # A task generated during THIS round is not aged by it. Unity decrements in
+                # OnTimeSegmentAdvanced, which fires on the NEXT segment advance, so a task
+                # with roundsRemaining = 1 survives the round it was born in. Ageing it
+                # immediately expired every such task on creation and put foodResolved a
+                # full round ahead of Unity on all four captures.
                 task.fresh = False
+                continue
             task.rounds_remaining -= 1
             if task.rounds_remaining <= 0:
                 # An expired task resolves UNFULFILLED, but a lodging task still credits

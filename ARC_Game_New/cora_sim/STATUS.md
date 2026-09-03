@@ -461,15 +461,14 @@ about the source:
 1. `_create_tasks` now runs PER ROLLOVER PASS inside the loop, so a task born in pass 0 is on
    the board for pass 1's advance. Killed the round-5 `lodgingResolved 200 vs 100` on all
    eleven traces -- the largest single divergence in the set.
-2. The `fresh` skip is removed. It existed because creation used to precede the advance; now
-   that creation follows it, skipping again left a task a full advance young. That was the
-   +1 residue (Flood_Alert, rounds=1, tag Lodging, demand 0, crediting resolvedAdd 1 late).
-
-Result is MIXED and must be read as such: by exact-count-then-depth it is better (5502 round
-6 -> 9, 5504 and 5601 6 -> 7, none regressed, 11 suites green), but magnitudes at the new
-divergence points grew from 1 to 100. Depth improving while magnitude worsens is the shape
-that has misled this session more than once. Treat fix 2 as PROVISIONAL and re-examine it
-first if the next reading looks wrong.
+2. The `fresh` skip removal was TRIED AND REVERTED, and the reason is a metric correction
+   worth keeping. Removing it deepened first divergence (5502 round 6 -> 9) but blew up
+   MAGNITUDE: 5502 picked up a 5000-unit lodgingSpend error and three traces went from being
+   off by 1 to off by 100. This surrogate is a TRANSITION FUNCTION for search, so the thing
+   that matters is state-error MAGNITUDE, not how many turns pass before the first error.
+   Ranking by first-divergence depth is the right tiebreak for a REPLAY test and the wrong
+   one for a transition function, and it briefly had me keeping a change that made the state
+   much wronger. With the skip restored, six of eleven traces are off by exactly ONE unit.
 
 THE NEXT THREAD is the shallowest divergence left, and no change today touched it:
 
