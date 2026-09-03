@@ -347,7 +347,18 @@ class Fleet:
                 break
             seq, payload, src, dst, qty = queue[0]
             if path_length(src, dst, flooded, self.spec) is None:
-                queue.pop(0)                      # never created; no vehicle involved
+                # CREATED, THEN CUT. The order passed its route estimate in the planning
+                # phase and is only unroutable now because the flood spread at the start of
+                # this round -- which is Unity's Community03 order exactly: estimate passed
+                # at f291, blocked at f295. A vehicle IS dispatched and then stopped, so
+                # this is StopVehicleDueToFlood, not the never-created case: the vehicle is
+                # damaged and the parent task is silently removed. Dropping it free of
+                # charge, as this did, spent none of the fleet Unity spends.
+                v = self.best_vehicle(src, qty)
+                if v is not None:
+                    self.damaged[v] = True
+                    dropped.append(payload)
+                queue.pop(0)
                 continue
             soonest = min(free_at[i] for i in ready)
             candidates = [i for i in ready if free_at[i] <= soonest + 1e-9]

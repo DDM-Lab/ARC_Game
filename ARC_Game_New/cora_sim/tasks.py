@@ -512,6 +512,12 @@ class TaskBoard:
             return qty if task is None else self.retry_if_unsourced(task, qty)
 
         arrived, self.pending, dropped = self.fleet.run_round(self.pending, self.flooded, _load)
+        # A vehicle stopped by flood spawns its repair task, which is why Unity answers
+        # "Vehicle Repair Required" at round 6 and the port did not. Without it the port's
+        # fleet never recovers on Unity's schedule.
+        for _v, _dam in enumerate(self.fleet.damaged):
+            if _dam and _v not in self.repair_for.values():
+                self.open_repair_task(_v)
         for _tid, _q, _d in dropped:
             # Removed with no resolution recorded, exactly as HandleDeliveryFailure does:
             # off the board, out of the metrics, as if it had never been answered.
