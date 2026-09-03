@@ -654,6 +654,16 @@ public class DeliverySystem : MonoBehaviour
     /// </summary>
     void OnVehicleDeliveryCompleted(Vehicle vehicle, DeliveryTask completedTask)
     {
+        // Delivery completions are the last unmeasured event in the round. Every other
+        // mechanic was pinned by marking the thing itself rather than inferring it from a
+        // counter, and inference has run out here: no single latency reproduces "three
+        // orders outstanding, exactly one resolves", because the fleet queue is what
+        // decides. This mark makes that queue observable.
+        SnapshotDebug.MarkContext("delivery:complete", "{\"cargo\":\"" + completedTask.cargoType
+            + "\",\"qty\":" + completedTask.quantity
+            + ",\"src\":\"" + (completedTask.sourceBuilding != null ? completedTask.sourceBuilding.name : "")
+            + "\",\"dst\":\"" + (completedTask.destinationBuilding != null ? completedTask.destinationBuilding.name : "")
+            + "\"}");
         Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
         if (completedTask.cargoType == ResourceType.Population && ClientStayTracker.Instance != null)
         {

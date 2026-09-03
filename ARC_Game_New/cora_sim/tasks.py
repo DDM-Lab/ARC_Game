@@ -50,6 +50,16 @@ FULFILMENT_COUNTERS = ("foodResolved", "foodFulfilled", "lodgingResolved",
 # kitchen's stock, and frequently is not filled before the task expires -- which is exactly
 # why Unity's foodFulfilled sits so far below foodResolved.
 DEFERRED_LATENCY = {"Lodging": 1, "Food": 4}
+
+# THE DELIVERY FLEET. DeliverySystem ships `ervCount` vehicles (3), CreateDeliveryTask
+# splits an order into trips of at most GetMaxVehicleCapacityForCargo (100), and trips wait
+# in pendingTasks until a vehicle is free. That queue is why Unity resolves exactly ONE
+# food delivery on the round three orders are outstanding against a kitchen holding enough
+# for two -- the fleet serialises them. Without it no single latency can fit: short enough
+# to match the first resolution lets all three land together, long enough to spread them
+# delays the first.
+VEHICLE_COUNT = 3
+VEHICLE_CAPACITY = 100
 DEFAULT_LATENCY = 2
 
 
@@ -114,7 +124,7 @@ class TaskBoard:
     """Active tasks plus in-flight deliveries."""
 
     __slots__ = ("active", "deliveries", "next_id", "awaiting", "has_supplier",
-                 "_sources")
+                 "_sources", "queue", "busy")
 
     def __init__(self, has_supplier=None):
         self.active = {}                    # task_id -> Task
@@ -130,6 +140,8 @@ class TaskBoard:
         # operational in any of those episodes.
         self.has_supplier = has_supplier or (lambda tag: False)
         self._sources = {}          # answered task -> facility its people leave from
+        self.queue = []             # trips waiting for a vehicle: [task_id, quantity]
+        self.busy = 0               # vehicles currently out
 
     def clone(self):
         b = TaskBoard.__new__(TaskBoard)
@@ -139,6 +151,8 @@ class TaskBoard:
         b.next_id = self.next_id
         b.has_supplier = self.has_supplier
         b._sources = dict(self._sources)
+        b.queue = [list(q) for q in self.queue]
+        b.busy = self.busy
         return b
 
     # ── lifecycle ───────────────────────────────────────────────────────────────────
@@ -192,6 +206,16 @@ class TaskBoard:
         if latency is None:
             latency = DEFERRED_LATENCY.get(task.tag, DEFAULT_LATENCY)
         self.awaiting[task_id] = task
+        # Split into vehicle-sized trips and queue them; dispatch happens in tick() as
+        # vehicles free up, exactly as pendingTasks drains in DeliverySystem.
+        remaining = quantity if self.has_supplier(task.tag) else 0
+        if quantity > 0:
+            trips = max(1, -(-quantity // VEHICLE_CAPACITY))
+            per = quantity // trips
+            for i in range(trips):
+                q = per if i < trips - 1 else quantity - per * (trips - 1)
+                self.queue.append([task_id, q if remaining else 0, latency])
+            return
         # A delivery that cannot be sourced still takes the same time to FAIL as a real one
         # takes to arrive -- the request goes out, nothing comes back, and the task resolves
         # unfulfilled on the round the delivery was due. Resolving it instantly instead
@@ -269,6 +293,13 @@ class TaskBoard:
         Used where task expiry is driven externally (the equivalence test replays Unity's
         own resolution events) so that delivery latency is still modelled while timing is
         not double-counted."""
+        # Dispatch queued trips to any free vehicle before ageing, so a trip that waited a
+        # round starts the moment one lands.
+        while self.queue and self.busy < VEHICLE_COUNT:
+            task_id, qty, lat = self.queue.pop(0)
+            self.deliveries.append([lat, task_id, qty, True])
+            self.busy += 1
+
         # A delivery queued during THIS round is not aged by it, exactly as a task created
         # this round is not. step_round ticks the queue in the same round the choice was
         # made, so without this a latency of 1 is consumed instantly and the task resolves
@@ -280,6 +311,7 @@ class TaskBoard:
             entry[0] -= 1
         arriving = [d for d in self.deliveries if d[0] <= 0]
         self.deliveries = [d for d in self.deliveries if d[0] > 0]
+        self.busy = max(0, self.busy - len(arriving))     # vehicles return
         landed = []
         for _rounds, task_id, quantity, *_ in arriving:
             task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
