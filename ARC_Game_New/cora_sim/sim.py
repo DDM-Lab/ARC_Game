@@ -306,6 +306,19 @@ def _admits(w: World, spec, facility) -> bool:
             return False
         w._emergency_count += 1
         w._last_emergency_round = w.round_index
+        # Evict only once this emergency is actually being created. Doing it before the cap
+        # and spacing gates threw away a lodging task for an emergency that was then
+        # rejected, which is a strictly worse error than not evicting at all.
+        if spec.get("taskTag") == "Lodging" and facility:
+            for live_id, (def_id, fac, sp) in list(w.generated_specs.items()):
+                if (live_id in w.tasks.active and fac == facility
+                        and sp.get("taskTag") == "Lodging"
+                        and sp.get("taskType") != "Emergency"):
+                    # Removed from activeTasks with no RecordTaskResolution: never resolved,
+                    # never counted, silently gone.
+                    w.tasks.active.pop(live_id, None)
+                    w.tasks.awaiting.pop(live_id, None)
+                    w.tasks.pending = [x for x in w.tasks.pending if x[1][0] != live_id]
         return True
     if kind == "Alert":
         if spec["taskId"] in w._alerts_shown:
