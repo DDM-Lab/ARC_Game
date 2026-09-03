@@ -68,7 +68,7 @@ def test_fleet_carries_position():
     job = (BUILDING_CELL["Kitchen_0"], BUILDING_CELL["Community01"])
     parked_near.dispatch(0, "x", *job)
     parked_far.dispatch(0, "x", *job)
-    assert parked_far.busy_frames[0] > parked_near.busy_frames[0], (
+    assert parked_far.busy_seconds[0] > parked_near.busy_seconds[0], (
         "identical order, different parking, must cost different time")
 
 
@@ -80,7 +80,7 @@ def test_fleet_drops_cut_routes():
     g = Fleet()
     assert not g.dispatch(0, "x", BUILDING_CELL["Kitchen_0"], BUILDING_CELL["Community01"],
                           flooded=ROAD_CELLS), "everything flooded must cut the route"
-    assert g.carrying[0] is None and g.busy_frames[0] == 0
+    assert g.carrying[0] is None and g.busy_seconds[0] == 0
 
 
 def test_flood_damages_the_vehicle_and_drops_the_order():

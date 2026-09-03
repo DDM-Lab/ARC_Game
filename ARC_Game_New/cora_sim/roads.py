@@ -19,7 +19,7 @@ from heapq import heappush, heappop
 # Tilemap.tileAnchor is (0.5, 0.5), so a cell's world centre is cell + 0.5.
 ANCHOR = 0.5
 
-# Vehicle.moveSpeed, and Application.targetFrameRate set in GymServerManager.
+# Vehicle.moveSpeed, read off the running game via the delivery:leg mark.
 #
 # moveSpeed is 8, NOT the `public float moveSpeed = 5f` written in Vehicle.cs -- the scene
 # serializes 8 and the field initialiser never runs. That is the SEVENTH time in this port a
@@ -158,35 +158,21 @@ ROUND_SECONDS = SIMULATION_DURATION / TIME_SPEED
 
 
 def leg_seconds(steps):
-    """Vehicle.MoveToPosition's journeyTime, exactly: journeyLength / moveSpeed.
+    """How long a leg takes, in GAME SECONDS. The surrogate has no frames and needs none.
 
-    Each unit step is one world unit (every A* edge measured exactly 1.0), so the leg takes
-    steps/moveSpeed game-seconds. The coroutine accumulates Time.deltaTime until it covers
-    that, and under captureDeltaTime the increment is a fixed 0.3 -- so the frames actually
-    burned are ceil(journeyTime / 0.3), which is what the game does and what this returns
-    when asked in frames.
+    Vehicle.MoveToPosition spends journeyLength/moveSpeed seconds on a leg. Every A* edge
+    measures exactly 1.0, so that is steps/moveSpeed.
+
+    The one thing carried over from Unity's frame loop is QUANTISATION, and it is real
+    behaviour rather than an artefact of how this was measured: the coroutine advances only
+    once per frame, adding a fixed Time.captureDeltaTime of 0.3s each time, and it keeps
+    going while elapsed < journeyTime. So a leg actually consumes ceil(journeyTime / 0.3)
+    ticks of 0.3s. That is a rounding rule on seconds, not a loop -- the surrogate still
+    steps whole rounds.
     """
-    return steps / MOVE_SPEED
-
-
-def leg_frames(steps):
-    """The same leg in simulated frames, since movement only progresses per frame."""
     from math import ceil
-    return ceil(leg_seconds(steps) / GYM_FIXED_DELTA)
-
-
-def frames_in_segment(segment=None):
-    """Simulated frames in one round -- the same for every segment.
-
-    Segment made no difference here: the per-segment table this replaces was fitted to
-    frame spans that included planning-phase frames. The simulation itself is a fixed
-    simulationDuration/timeSpeed seconds regardless of which segment is running.
-    """
-    from math import floor
-    return int(floor(ROUND_SECONDS / GYM_FIXED_DELTA))
-
-
-FRAMES_PER_ROUND_DEFAULT = 33
+    exact = steps / MOVE_SPEED
+    return ceil(exact / GYM_FIXED_DELTA) * GYM_FIXED_DELTA
 
 
 class Fleet:
@@ -198,14 +184,14 @@ class Fleet:
     Kitchen->Community route was measured at 0 rounds one day and 5 the next.
     """
 
-    __slots__ = ("pos", "busy_frames", "carrying", "damaged")
+    __slots__ = ("pos", "busy_seconds", "carrying", "damaged")
 
     # Where the three vehicles start, read off the first leg each one drove.
     DEPOTS = ((-4, -4), (2, -4), (3, 5))
 
     def __init__(self):
         self.pos = [nearest_road(c) for c in self.DEPOTS]
-        self.busy_frames = [0, 0, 0]
+        self.busy_seconds = [0.0, 0.0, 0.0]
         self.carrying = [None, None, None]
         # Flood does not merely delay a vehicle, it DISABLES it: StopVehicleDueToFlood sets
         # isDamaged and the status to Damaged, and IsAvailable() is `status == Idle`, so the
@@ -217,14 +203,14 @@ class Fleet:
     def clone(self):
         f = Fleet.__new__(Fleet)
         f.pos = list(self.pos)
-        f.busy_frames = list(self.busy_frames)
+        f.busy_seconds = list(self.busy_seconds)
         f.carrying = list(self.carrying)
         f.damaged = list(self.damaged)
         return f
 
     def available(self):
         return [i for i in range(len(self.pos))
-                if not self.damaged[i] and self.busy_frames[i] <= 0 and self.carrying[i] is None]
+                if not self.damaged[i] and self.busy_seconds[i] <= 0 and self.carrying[i] is None]
 
     def best_vehicle(self, src_cell, quantity=0, capacity=100.0, speed=None):
         """DeliverySystem.FindSuitableVehicle / CalculateVehicleSuitability.
@@ -250,7 +236,7 @@ class Fleet:
         return best
 
     def soonest_free(self):
-        """The undamaged vehicle that frees earliest, and how many frames until it does.
+        """The undamaged vehicle that frees earliest, and how many SECONDS until it does.
 
         DeliverySystem does not drop an order when every vehicle is out -- it leaves it in
         pendingTasks and assigns it the moment one lands. So a trip placed against a busy
@@ -261,7 +247,7 @@ class Fleet:
         for i in range(len(self.pos)):
             if self.damaged[i]:
                 continue
-            wait = self.busy_frames[i] if self.carrying[i] is not None else 0
+            wait = self.busy_seconds[i] if self.carrying[i] is not None else 0.0
             if best_wait is None or wait < best_wait:
                 best, best_wait = i, wait
         return best, best_wait
@@ -288,21 +274,25 @@ class Fleet:
         if leg2 is None:
             self.damaged[vehicle] = True
             return False
-        self.busy_frames[vehicle] = leg_frames(leg1) + leg_frames(leg2)
+        self.busy_seconds[vehicle] = leg_seconds(leg1) + leg_seconds(leg2)
         self.carrying[vehicle] = payload
         self.pos[vehicle] = dst_cell
         return True
 
-    def advance(self, segment):
-        """Burn one round's frames; return the payloads that arrived."""
-        budget = frames_in_segment(segment)
+    def advance(self, segment=None):
+        """Burn one round's SECONDS; return the payloads that arrived.
+
+        Every round simulates the same simulationDuration/timeSpeed seconds, so there is no
+        per-segment budget -- the table that used to be here was fitted to frame spans that
+        wrongly included the planning phase.
+        """
         landed = []
-        for i, b in enumerate(self.busy_frames):
+        for i, b in enumerate(self.busy_seconds):
             if self.carrying[i] is None:
                 continue
-            self.busy_frames[i] = b - budget
-            if self.busy_frames[i] <= 0:
-                self.busy_frames[i] = 0
+            self.busy_seconds[i] = b - ROUND_SECONDS
+            if self.busy_seconds[i] <= 0:
+                self.busy_seconds[i] = 0.0
                 landed.append(self.carrying[i])
                 self.carrying[i] = None
         return landed

@@ -208,7 +208,7 @@ class TaskBoard:
         if wait:
             # The vehicle is still out on its previous trip; it will start this one from
             # where that one ends, which dispatch already models via self.pos.
-            self.fleet.busy_frames[v] = 0
+            self.fleet.busy_seconds[v] = 0.0
             self.fleet.carrying[v] = None
         if not self.fleet.dispatch(v, task_id, src, dst, flooded):
             # StopVehicleDueToFlood spawns a repair task through
@@ -217,17 +217,17 @@ class TaskBoard:
             # stays out of service until choice 1 is answered.
             self.open_repair_task(v)
             return False         # route cut: order dropped, vehicle damaged
-        frames = self.fleet.busy_frames[v] + wait
+        seconds = self.fleet.busy_seconds[v] + wait
         # Occupancy is REAL: the vehicle stays out for the whole drive and is not available
         # for the next order. Zeroing it here (as the first cut of this did) made
         # best_vehicle always return vehicle 0 and silently removed the fleet limit.
         # Round UP: a trip needing any part of a round has not landed by the end of it.
-        # Use THIS segment's frame budget, not a flat 40. The budget was measured between
-        # round-start marks and is not constant: segment 1 runs 34 frames, the day-rollover
-        # segment only 5-7, the rest 39-50. Whether a trip lands inside the round it was
-        # ordered in turns on that number, so a flat divisor decides boundary cases wrong.
-        budget = roads.frames_in_segment(segment if segment is not None else 2)
-        return frames // budget
+        # Rounds are SECONDS over seconds. A round simulates ROUND_SECONDS of game time, so
+        # a trip needing less than that lands inside the round it was ordered in, and one
+        # needing twice that takes two more rounds. No frame budget and no per-segment
+        # table: every round simulates the same duration.
+        from math import floor
+        return int(floor(seconds / roads.ROUND_SECONDS))
 
 
     REPAIR_COST = 1200          # AgentChoice(1, "Repair immediately ($1200)")

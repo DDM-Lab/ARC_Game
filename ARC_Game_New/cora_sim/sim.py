@@ -80,7 +80,8 @@ class World:
                  "facilities_for", "generated", "clients", "economy", "tasks",
                  "round_index", "_trigger_memory", "use_generation",
                  "pending_arrivals", "generated_specs", "_alerts_shown",
-                 "_emergency_count", "_last_emergency_round", "_sourced_now")
+                 "_emergency_count", "_last_emergency_round", "_sourced_now",
+                 "_food_reserved")
 
     def __init__(self, rng, weather, day=1, segment=0, flood=None, fmap=None,
                  facilities_for=None):
@@ -116,6 +117,7 @@ class World:
         # and the trip runs again once the kitchen restocks at the day reset.
         self.tasks.retry_if_unsourced = self._can_source
         self._sourced_now = {}      # task -> packs already pulled this round
+        self._food_reserved = 0     # packs promised to orders not yet loaded
         self.round_index = 0
         self._trigger_memory = {}       # stateful triggers (FloodExpanded, BudgetDropped)
         self.pending_arrivals = []      # deliveries that landed LAST round, drawn this one
@@ -140,15 +142,32 @@ class World:
                        if c.get("choiceId") == chosen), None)
         if (choice or {}).get("immediateDelivery"):
             return quantity          # external supply, no kitchen involved
-        # PULL, do not peek. LoadCargo calls RemoveResource, so the packs leave the kitchen
-        # at LOAD time -- which is why three simultaneous 100-pack orders against a
-        # 200-pack kitchen do not all succeed. Peeking returned 200 to all three and let
-        # them all through; the second and third have to see what the first left behind.
-        # What is pulled here is stashed for the landing loop, which must not pull again.
         got = _source_food(self, quantity)
+        self._food_reserved = max(0, self._food_reserved - quantity)
         if got:
             self._sourced_now[task.task_id] = got
         return got
+
+    def reserve_food(self, quantity):
+        """FoodDeliveryHandler's effectiveStock rule, applied when the ORDER IS PLACED.
+
+        GetKitchensSorted ranks kitchens by (actual stock - already outbound) and the
+        handler sends min(remaining, effectiveStock) from each; with no kitchen left
+        holding anything it creates NO delivery at all and returns false. So the cap is
+        applied at order-creation time against food already promised to other orders, not
+        when a vehicle happens to load.
+
+        That is the round-5 mechanism. Three 100-pack orders answered together against a
+        200-pack kitchen: the first two reserve 100 each, the third finds effectiveStock 0
+        and never becomes a delivery. Reserving at ARRIVAL instead let all three through
+        and then rationed them, which resolves the wrong ones at the wrong times.
+        """
+        free = sum((b.get("resources") or {}).get("foodPacks") or 0
+                   for b in self.economy.buildings
+                   if b["type"] == "Kitchen" and b["status"] == "InUse") - self._food_reserved
+        take = max(0, min(quantity, free))
+        self._food_reserved += take
+        return take
 
     def _facility_cell(self, name):
         """Facility name -> its road-network cell, resolved geometrically.
@@ -232,6 +251,7 @@ class World:
         w.generated_specs = dict(self.generated_specs)
         w._alerts_shown = set(self._alerts_shown)
         w._sourced_now = dict(self._sourced_now)
+        w._food_reserved = self._food_reserved
         w._emergency_count = self._emergency_count
         w._last_emergency_round = self._last_emergency_round
         w.use_generation = self.use_generation
@@ -523,6 +543,16 @@ def answer(w: World, task_id, choice_id) -> bool:
         # Identity tests only.
         _cut = _lat is False
         _measured = _lat is not None and _lat is not False
+        # NO reservation at order time. FoodDeliveryHandler's effectiveStock rule reads as
+        # though a 200-pack kitchen can only spawn two 100-pack orders, and I implemented
+        # that -- then the delivery:queue marks refuted it: Unity creates THREE food orders
+        # in a single round, to three different communities, against that same kitchen.
+        #
+        #   d2r1: created 3 [Community01, Community03, Community02]   completed 1
+        #   d3r1: created 3 [Community02, Community01, Community03]   completed 1
+        #
+        # Creation is not the limiter. Completion is: three vehicles are shared with the
+        # population relocations answered in the same round, and each trip is two legs.
         w.tasks.answer(task_id, 0 if _cut else demanded, immediate=immediate,
                        latency=_lat if _measured else None,
                        destination="__food__" + str(_facility),
