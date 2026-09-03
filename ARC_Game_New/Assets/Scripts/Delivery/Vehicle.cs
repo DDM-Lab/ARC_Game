@@ -248,6 +248,19 @@ public class Vehicle : MonoBehaviour
         return sb.Append("]").ToString();
     }
 
+    /// <summary>
+    /// How much this vehicle is CARRYING as a leg begins. Two marks disagree about the
+    /// reassigned vehicle: it reaches the Motel without a source pickup, yet unloads a full
+    /// load. This distinguishes "drove empty" from "was already loaded" without inferring
+    /// anything -- which is what building a story from the C# got wrong once already.
+    /// </summary>
+    int CarriedNowForDump()
+    {
+        int total = 0;
+        foreach (var kv in currentCargo) total += kv.Value;
+        return total;
+    }
+
     IEnumerator MoveToPosition(Vector3 targetPos)
     {
         // Existing pathfinding code...
@@ -276,6 +289,12 @@ public class Vehicle : MonoBehaviour
                 + ",\"speed\":" + moveSpeed.ToString("F2")
                 + ",\"from\":\"" + transform.position.ToString("F1")
                 + "\",\"to\":\"" + targetPos.ToString("F1")
+                + "\",\"cargo\":" + CarriedNowForDump()
+                + ",\"task\":\"" + (currentTask != null
+                        ? currentTask.cargoType + ":" + currentTask.quantity + ":"
+                          + (currentTask.sourceBuilding != null ? currentTask.sourceBuilding.name : "?")
+                          + ">" + (currentTask.destinationBuilding != null ? currentTask.destinationBuilding.name : "?")
+                        : "none")
                 + "\",\"flood\":" + FloodedRoadCellsForDump() + "}");
         }
 
