@@ -67,6 +67,8 @@ _GENERATION_SEGMENTS = (2,)
 _NUM_EMERGENCY_TASKS = 4
 _FINAL_DAY = 8
 _ROLLOVER_PASSES = 2
+# TaskSystem.CreateTask's per-type defaults: Emergency 1, Demand 2, Advisory 3, Alert 2.
+_ALERT_ROUNDS = 2
 
 
 class World:
@@ -417,6 +419,19 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         # before both, so calling it here keeps both invariants and economy_step is told the
         # day is already handled.
         w.economy.on_day_end(w.day)
+        # WeatherReportSystem.OnTimeSegmentChanged fires GenerateDailyReport when the new
+        # round is 0, creating "Day N Start of Day Report" straight through
+        # TaskSystem.CreateTask -- not through the trigger inventory, which is why no amount
+        # of trigger work could produce it. TaskType.Alert, so roundsRemaining is 2, and it
+        # carries no choices, so it cannot move a counter. It DOES consume a task id, and
+        # task identity is what the exact-replay suite cannot otherwise align. It draws no
+        # randoms, so the census is untouched.
+        w.tasks.add(Task(w.tasks.next_id, "None", 0, _ALERT_ROUNDS))
+        w.generated_specs[w.tasks.next_id] = (
+            "Daily_Report", None, {"taskId": "Daily_Report",
+                                   "taskTitle": f"Day {w.day} Start of Day Report",
+                                   "taskType": "Alert", "taskTag": "None", "choices": []})
+        w.tasks.next_id += 1
         for i in range(_ROLLOVER_PASSES):
             w.segment = i
             rolls += _pass(w, marks)
