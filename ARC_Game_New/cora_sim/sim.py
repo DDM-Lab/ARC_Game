@@ -299,8 +299,16 @@ def _admits(w: World, spec, facility) -> bool:
         w._alerts_shown.add(spec["taskId"])
         return True
     if spec.get("isGlobalTask"):
-        return not any(s[0] == spec["taskId"] for s in w.generated_specs.values()
-                       if s[0] in w._live_ids(w))
+        # `s[0] in w._live_ids(w)` compared a DEFINITION id (a string, "Budget_Allocation")
+        # against a set of live TASK ids (ints), so it was always False and the global gate
+        # never blocked anything. It went unnoticed because nothing global fired twice in a
+        # round until the rollover began evaluating at segment 0 -- then Daily Budget
+        # Allocation appeared TWICE on the round-5 board, granting +10000 where Unity
+        # grants +5000. Compare the live id against the live set, and the definition id
+        # against the definition.
+        return not any(def_id == spec["taskId"]
+                       for live_id, (def_id, _fac, _sp) in w.generated_specs.items()
+                       if live_id in w.tasks.active)
     # GENERAL per-facility duplicate check, which applies to EVERY task type:
     #     activeTasks.Any(t => t.taskTitle == taskData.taskTitle
     #                       && t.affectedFacility == facilityName)
