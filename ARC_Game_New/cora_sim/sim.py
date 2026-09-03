@@ -421,8 +421,6 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         w.economy.move_population(name, -count)
         w.economy.motel_pop = w.economy.motel_population
 
-    # The fleet routes against THIS round's flood.
-    w.tasks.flooded = w.flooded_road_cells()
     rolls = []
     day_changed = w.segment >= ROUNDS_PER_DAY
     if day_changed:
@@ -522,6 +520,15 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
 
     if on_flood_enter is not None:
         on_flood_enter(w)
+    # THE FLEET ROUTES AGAINST THE POST-SPREAD FLOOD, and the snapshot is taken after the
+    # update for that reason. Unity's phases are: answers happen in the planning phase
+    # against the flood as it stands, THEN the round simulates -- the flood ticks at the
+    # start of it -- and only then do vehicles drive. Its own marks show the split: the
+    # Community03 order passed its route estimate at f291 and was blocked at f295, four
+    # frames later, by water that had arrived in between.
+    #
+    # The port had this backwards: it snapshotted before generation and before the update,
+    # so dispatch routed against water that was already stale by the time vehicles moved.
     update_flood(w.flood, w.fmap, w.rng, w.weather,
                  RAIN_INTENSITY[w.weather], marks)
 
@@ -537,6 +544,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # why Unity fires 35 food requests in 24 rounds and why foodFulfilled sits far below
     # foodResolved. Stocking the requester instead silenced it after one delivery (6
     # passes against 35).
+    w.tasks.flooded = w.flooded_road_cells()      # post-spread, for this round's driving
     for _task_id, quantity, destination in w.tasks.tick(w.economy.counters):
         dest = str(destination or "")
         if dest.startswith("__food__"):
