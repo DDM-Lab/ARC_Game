@@ -644,10 +644,34 @@ are re-queued. That turns a silent pop into a checked hand-off and would still c
 carrying-slot overwrite. It is worth having permanently -- nothing else in the suite can see a
 lost delivery.
 
-WHAT THIS LEAVES FOR lodgingFulfilled: order 7 IS in flight at the end of round 5 and its task
-expires at that same round. So the original question stands, sharpened -- when does that carried
-payload land, and is its task still findable when it does? Print `busy_seconds` and `carrying`
-at the top of each round for vehicle 3 across rounds 5-8.
+THE COMPLETE CHAIN, from direct fleet/task state (5501):
+
+    r5  carrying=[(2,(7,100,'Motel'))]  busy=[0.0,1.4,5.8]  active=[8,9] awaiting=[2,4,5]
+    r6  carrying=[]                     busy=[0,0,0]        lodgFul still 100
+
+Task 7 EXPIRES in r5 and is popped, so by the end of that round it is in neither `active` nor
+`awaiting`. Its delivery is in flight on vehicle 2 with 5.8s of travel left. In r6 the carrying
+block lands it -- carrying goes empty, busy goes to zero -- and `tick_deliveries_only` looks the
+task up with
+
+    task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
+    if task is None: continue
+
+which finds nothing and DISCARDS THE LANDING. No delivered credit, no late credit, no trace.
+That is the missing 100 in lodgingFulfilled, and it is exactly what Unity's AddLateDelivery
+path exists to handle.
+
+WHY MY EARLIER "DISCARDED" PRINT NEVER FIRED: I put it in the `arriving` loop (the latency
+queue) instead of the `arrived` loop that handles FLEET landings. Two similarly named locals in
+the same function; the print was watching the wrong one. That single mistake is why the
+late-delivery fix looked inert twice.
+
+THE FIX IS THEREFORE THE PARKED ONE, APPLIED CORRECTLY: on expiry, keep the task in `awaiting`
+with resolved=True instead of popping it, so the later landing finds it, sees `task.resolved`,
+and routes to `late_delivery` -- fulfilled-only, never re-crediting resolved, which is
+AddLateDelivery's exact contract. When that was tried before, verify with a print in the
+`arrived` loop (NOT `arriving`) that the landing now reaches `late_delivery`; if it still does
+not, check whether anything else pops `awaiting` between the expiry and the landing.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
