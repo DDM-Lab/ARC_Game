@@ -400,8 +400,13 @@ def _tracker(w, marks):
     if w.segment >= ROUNDS_PER_DAY:
         return
     for count, facility in w.clients.update(w.rng, _unity_round(w), w.economy.counters, marks):
-        name = "Motel" if "motel" in str(facility).lower() else str(facility)
-        w.economy.move_population(name, -count)
+        # DEPARTURES DO NOT FREE THE FACILITY. TriggerNonCaseworkDeparture mutates tracker
+        # state only; OnCaseworklessClientsDeparted has no subscribers, and Motel Population
+        # storage only ever drops via a vehicle LoadCargo. Unity's lodgingSpend therefore steps
+        # by a CONSTANT every day (5901: +120,000 per rollover for the whole episode), while the
+        # port's dwindled to nothing as its residents 'went home'. That gap was 46.7M of the
+        # 46.9M total state error and invisible to every first-divergence report.
+        pass
         w.economy.motel_pop = w.economy.motel_population
 
 
