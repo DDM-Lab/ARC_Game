@@ -226,3 +226,22 @@ class Fleet:
                 landed.append(self.carrying[i])
                 self.carrying[i] = None
         return landed
+
+
+# The same connection cells, keyed by the DISPLAY name the port's own economy uses
+# ("Community Charleston"), because BUILDING_CELL above is keyed by GameObject name
+# ("Community01") and the port never sees those. Derived by resolving each facility's
+# reported position through nearest_road, which reproduced the dumped RoadConnection cell
+# for all five prebuilts exactly.
+#
+# PREBUILTS ONLY. A facility the player constructs sits on a site whose position the port
+# does not model, so travel_rounds returns None for it and the caller falls back to
+# DEFERRED_LATENCY. That fallback is a fitted constant and should be treated as one; closing
+# it needs the site coordinates dumped from Unity the same way the road graph was.
+FACILITY_CELL = {
+    'Community Amherst': (-10, -3),
+    'Community Charleston': (1, 5),
+    'Community Trinity': (9, 3),
+    'Kitchen Alpha': (-8, -3),
+    'Motel': (-5, 4),
+}

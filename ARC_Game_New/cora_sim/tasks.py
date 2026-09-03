@@ -49,6 +49,9 @@ FULFILMENT_COUNTERS = ("foodResolved", "foodFulfilled", "lodgingResolved",
 # vehicle to a destination that already exists; a food request has to be filled from a
 # kitchen's stock, and frequently is not filled before the task expires -- which is exactly
 # why Unity's foodFulfilled sits so far below foodResolved.
+from . import roads
+from .roads import Fleet
+
 DEFERRED_LATENCY = {"Lodging": 1, "Food": 4}
 
 # THE DELIVERY FLEET. DeliverySystem ships `ervCount` vehicles (3), CreateDeliveryTask
@@ -124,9 +127,9 @@ class TaskBoard:
     """Active tasks plus in-flight deliveries."""
 
     __slots__ = ("active", "deliveries", "next_id", "awaiting", "has_supplier",
-                 "_sources", "queue", "busy")
+                 "_sources", "queue", "busy", "fleet", "cell_for")
 
-    def __init__(self, has_supplier=None):
+    def __init__(self, has_supplier=None, cell_for=None):
         self.active = {}                    # task_id -> Task
         self.deliveries = []                # [rounds_remaining, task_id, quantity]
         self.awaiting = {}                  # answered, off the board, not yet resolved
@@ -142,6 +145,13 @@ class TaskBoard:
         self._sources = {}          # answered task -> facility its people leave from
         self.queue = []             # trips waiting for a vehicle: [task_id, quantity]
         self.busy = 0               # vehicles currently out
+        # THE REAL TRAVEL MODEL. DEFERRED_LATENCY below is a fitted constant and behaves
+        # like one -- every value that matched one metric broke another, because a delivery
+        # takes as long as the drive takes. Given a cell_for resolver the fleet replaces the
+        # constant with the measured drive: two legs of flood-aware A* on the road grid,
+        # from wherever the assigned vehicle last parked.
+        self.fleet = Fleet()
+        self.cell_for = cell_for
 
     def clone(self):
         b = TaskBoard.__new__(TaskBoard)
@@ -153,7 +163,34 @@ class TaskBoard:
         b._sources = dict(self._sources)
         b.queue = [list(q) for q in self.queue]
         b.busy = self.busy
+        b.fleet = self.fleet.clone()
+        b.cell_for = self.cell_for
         return b
+
+
+    def travel_rounds(self, source_name, dest_name, flooded=frozenset()):
+        """Rounds for a delivery from `source_name` to `dest_name`, or None.
+
+        None means "no opinion" -- the caller falls back to DEFERRED_LATENCY -- EXCEPT when
+        the flood has cut the route, which returns False, because a cut route is not a slow
+        delivery but one that never arrives at all (Unity bails to StopVehicleDueToFlood).
+        """
+        if self.cell_for is None:
+            return None
+        src = self.cell_for(source_name)
+        dst = self.cell_for(dest_name)
+        if src is None or dst is None:
+            return None
+        v = self.fleet.free_vehicle()
+        if v is None:
+            return None          # every vehicle out; the queue below handles it
+        if not self.fleet.dispatch(v, None, src, dst, flooded):
+            return False         # route cut
+        frames = self.fleet.busy_frames[v]
+        self.fleet.carrying[v] = None        # occupancy is tracked by `busy` here
+        self.fleet.busy_frames[v] = 0
+        # Round UP: a trip needing any part of a round has not landed by the end of it.
+        return max(1, -(-frames // roads.FRAMES_PER_ROUND_DEFAULT))
 
     # ── lifecycle ───────────────────────────────────────────────────────────────────
     def add(self, task: Task) -> Task:

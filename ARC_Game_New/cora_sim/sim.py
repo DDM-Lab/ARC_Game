@@ -39,6 +39,7 @@ from .clients import ClientTracker
 from .economy import Economy, step_round as economy_step
 from .flood import FloodState, update_flood
 from .floodmap import FloodMap
+from . import roads
 from .tasks import Task, TaskBoard, demand_of
 from .generation import TriggerContext, generation_pass, suitable_facilities
 from .triggers import INVENTORY as _INVENTORY
@@ -106,7 +107,11 @@ class World:
         self.use_generation = False
         self.clients = ClientTracker()
         self.economy = Economy()
-        self.tasks = TaskBoard()
+        # Facilities resolve to road cells geometrically, from the position the game
+        # already reports, rather than through a name table. RoadConnection picks the
+        # nearest road tile the same way, and the two agree on all five prebuilts -- and
+        # unlike a name map this keeps working for facilities the player builds mid-episode.
+        self.tasks = TaskBoard(cell_for=self._facility_cell)
         self.round_index = 0
         self._trigger_memory = {}       # stateful triggers (FloodExpanded, BudgetDropped)
         self.pending_arrivals = []      # deliveries that landed LAST round, drawn this one
@@ -114,6 +119,43 @@ class World:
         self._alerts_shown = set()      # Alert tasks fire once per GAME
         self._emergency_count = 0
         self._last_emergency_round = -99
+
+    def _facility_cell(self, name):
+        """Facility name -> its road-network cell, resolved geometrically.
+
+        RoadConnection picks a building's nearest road tile from its position; doing the
+        same here agrees with the dumped connection cell on all five prebuilts, and unlike a
+        name table it keeps working for facilities the player builds mid-episode.
+        """
+        if not name:
+            return None
+        cell = roads.FACILITY_CELL.get(str(name))
+        if cell is not None:
+            return cell
+        f = self.economy.facility(str(name))
+        if not f:
+            return None
+        # The port's own economy records carry no position -- only Unity observations do --
+        # so this branch serves callers driven by live observations (play.py) and any
+        # facility not in the prebuilt table.
+        pos = f.get("position") or {}
+        x, y = pos.get("x"), pos.get("y")
+        if x is None or y is None:
+            return None
+        return roads.nearest_road(roads.world_to_cell(x, y))
+
+    def flooded_road_cells(self):
+        """Flooded cells that A* actually cares about.
+
+        Only the 106 road cells can block a route, so this checks those rather than walking
+        the whole flood set -- the pathfinder is called once per delivery leg and this keeps
+        it cheap enough not to cost the surrogate its speed.
+        """
+        from .floodmap import pack
+        tiles = self.flood.tiles
+        if not tiles:
+            return frozenset()
+        return frozenset(c for c in roads.ROAD_CELLS if pack(c[0], c[1]) in tiles)
 
     @staticmethod
     def _live_ids(w):
@@ -413,7 +455,16 @@ def answer(w: World, task_id, choice_id) -> bool:
         # at arrival. Sourcing at answer time made the order fail against an empty kitchen
         # and left the port a round behind (unity resolved 1 at round 5, port 0).
         task.chosen_id = choice_id
-        w.tasks.answer(task_id, demanded, immediate=immediate,
+        # How long the food takes is how long the drive takes. DEFERRED_LATENCY's 4 was
+        # fitted, and behaved like a fitted constant: every value that matched one metric
+        # broke another. travel_rounds returns False when the flood has cut the route, which
+        # is not a slow delivery but one that never arrives.
+        _kitchen = next((b["name"] for b in w.economy.buildings
+                         if b["type"] == "Kitchen" and b["status"] == "InUse"), None)
+        _lat = w.tasks.travel_rounds(_kitchen, str(_facility),
+                                     w.flooded_road_cells()) if _kitchen else None
+        w.tasks.answer(task_id, 0 if _lat is False else demanded, immediate=immediate,
+                       latency=None if _lat in (None, False) else _lat,
                        destination="__food__" + str(_facility),
                        counters=w.economy.counters)
         if immediate:
@@ -446,7 +497,12 @@ def answer(w: World, task_id, choice_id) -> bool:
     # Unity's does: the port fell to 4 trigger passes against Unity's 17.
     task.source = str(_facility)
     immediate = bool(choice.get("immediateDelivery"))
-    w.tasks.answer(task_id, qty, immediate=immediate,
+    _target = ("Motel" if dest_cat == "Motel" else next(
+        (b["name"] for b in w.economy.buildings
+         if b["type"] == "Shelter" and b["status"] == "InUse"), "Motel"))
+    _lat = w.tasks.travel_rounds(str(_facility), _target, w.flooded_road_cells())
+    w.tasks.answer(task_id, 0 if _lat is False else qty, immediate=immediate,
+                   latency=None if _lat in (None, False) else _lat,
                    destination=dest_cat, counters=w.economy.counters)
     if immediate and qty > 0 and dest_cat in ("Motel", "Shelter"):
         target = "Motel" if dest_cat == "Motel" else next(
