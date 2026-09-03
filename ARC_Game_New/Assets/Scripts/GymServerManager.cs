@@ -1198,16 +1198,32 @@ public class GymServerManager : MonoBehaviour
                         {
                             if (!first) sb.Append(',');
                             first = false;
+                            var st0 = b.GetComponent<BuildingResourceStorage>();
                             sb.Append("{\"name\":\"").Append(b.name).Append("\",\"type\":\"")
                               .Append(b.GetBuildingType()).Append("\",\"required\":")
-                              .Append(b.requiredWorkforce).Append('}');
+                              .Append(b.requiredWorkforce)
+                              // PER-BUILDING storage settings. A Kitchen's startingFoodPacks
+                              // is what refills it every day; a Community's is what does not.
+                              // The single FindObjectOfType sample used earlier reported one
+                              // building's values as if they were global.
+                              .Append(",\"startingFoodPacks\":")
+                              .Append(st0 != null ? st0.startingFoodPacks : 0)
+                              .Append(",\"enableFoodWaste\":")
+                              .Append(st0 != null && st0.enableFoodWaste ? "true" : "false")
+                              .Append('}');
                         }
                         foreach (var b in pres)
                         {
                             if (!first) sb.Append(',');
                             first = false;
+                            var st1 = b.GetResourceStorage();
                             sb.Append("{\"name\":\"").Append(b.name).Append("\",\"type\":\"")
-                              .Append(b.GetBuildingType()).Append("\",\"prebuilt\":true}");
+                              .Append(b.GetBuildingType()).Append("\",\"prebuilt\":true")
+                              .Append(",\"startingFoodPacks\":")
+                              .Append(st1 != null ? st1.startingFoodPacks : 0)
+                              .Append(",\"enableFoodWaste\":")
+                              .Append(st1 != null && st1.enableFoodWaste ? "true" : "false")
+                              .Append('}');
                         }
                     }
                     sb.Append(']');

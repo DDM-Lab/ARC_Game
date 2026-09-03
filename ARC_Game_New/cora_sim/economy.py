@@ -93,6 +93,14 @@ def load_economy_constants(path=None):
         "training_days": int(w["trainingDurationDays"]),
         "deconstruction_rounds": int(c.get("deconstructionRounds", 3)),
         "consumption": d.get("consumption") or {},
+        # Per-building storage settings, keyed by TYPE. Measured from the running game:
+        # communities start with 0 and do NOT waste (their food drains by consumption),
+        # the motel wastes, and a Kitchen refills to 200 every day -- observed directly,
+        # since a Kitchen only exists once built and so is absent from the reset-time
+        # export. That 200 is what makes kitchen food orders fulfillable at all.
+        "storage_by_type": {b.get("type"): {"startingFoodPacks": b.get("startingFoodPacks", 0),
+                                            "enableFoodWaste": bool(b.get("enableFoodWaste"))}
+                            for b in (d.get("buildingWorkforce") or [])},
     }
 
 
@@ -264,6 +272,33 @@ class Economy:
         return True
 
     # ── per-round and per-day bookkeeping ───────────────────────────────────────────
+    KITCHEN_DAILY_FOOD = 200        # measured; see storage_by_type note in load_economy_constants
+
+    def daily_food_reset(self) -> None:
+        """BuildingResourceStorage.HandleDailyReset, at each day change:
+
+            if (enableFoodWaste) { RemoveResource(FoodPacks, all); }
+            if (startingFoodPacks > 0) { AddResource(FoodPacks, startingFoodPacks); }
+
+        A Kitchen that is OPERATIONAL is restocked to its starting allocation every day,
+        which is the only thing in the game that puts food in a kitchen -- and therefore
+        the only reason a "Request meals from Kitchens" choice can ever be fulfilled.
+        Measured on a capture: the kitchen holds 0 through construction, jumps to 200 the
+        day it reaches InUse, and returns to 200 after shipping 100."""
+        by_type = C.get("storage_by_type") or {}
+        for b in self.buildings:
+            res = b.setdefault("resources", {})
+            cfg = by_type.get(b["type"], {})
+            if cfg.get("enableFoodWaste"):
+                res["foodPacks"] = 0
+            start = cfg.get("startingFoodPacks", 0)
+            if b["type"] == "Kitchen" and b["status"] == STATUS_IN_USE:
+                start = max(start, Economy.KITCHEN_DAILY_FOOD)
+            if start:
+                cap = res.get("foodPacksCapacity")
+                room = start if cap is None else max(0, cap - (res.get("foodPacks") or 0))
+                res["foodPacks"] = (res.get("foodPacks") or 0) + min(start, room)
+
     def consume_food(self, rounds_elapsed) -> None:
         """BuildingResourceStorage.HandlePopulationConsumptionCycle.
 
@@ -318,6 +353,8 @@ class Economy:
                                    "resources": {"foodPacks": 0, "foodPacksCapacity": 400,
                                                  "population": 0,
                                                  "populationCapacity": 400}})
+            # A kitchen that finishes construction is stocked at the next day reset, not
+            # immediately -- it is still NeedWorker here.
         # Deconstruction runs on the same round clock as construction.
         for b in self.buildings:
             if b.get("deconstruct_rounds"):
@@ -336,6 +373,7 @@ class Economy:
         Motel billing is where 89-97% of spend goes in practice, at $200 per resident per
         day, charged on the day change for the day that just ended. It is also the reason
         an unused shelter is actively expensive: the residents keep billing."""
+        self.daily_food_reset()
         residents = self.motel_population or self.motel_pop
         if residents > 0:
             self.spend(int(residents * C["motel_per_person_per_day"]), "lodging")

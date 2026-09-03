@@ -1187,22 +1187,30 @@
   {
    "name": "Community01",
    "type": "Community",
-   "prebuilt": true
+   "prebuilt": true,
+   "startingFoodPacks": 0,
+   "enableFoodWaste": false
   },
   {
    "name": "Motel",
    "type": "Motel",
-   "prebuilt": true
+   "prebuilt": true,
+   "startingFoodPacks": 0,
+   "enableFoodWaste": true
   },
   {
    "name": "Community03",
    "type": "Community",
-   "prebuilt": true
+   "prebuilt": true,
+   "startingFoodPacks": 0,
+   "enableFoodWaste": false
   },
   {
    "name": "Community02",
    "type": "Community",
-   "prebuilt": true
+   "prebuilt": true,
+   "startingFoodPacks": 0,
+   "enableFoodWaste": false
   }
  ]
 }
