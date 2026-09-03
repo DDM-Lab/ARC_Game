@@ -190,33 +190,41 @@ That is leg 2, and it is a bigger change than it looks:
   - Structurally, clients.update must therefore move to AFTER the segment advance and run
     once per advance, whereas the port currently runs it once, before the advance.
 
-LEG 2 HAS NOW ALSO BEEN TRIED and is ALSO INERT. `experiments/sim_leg2_tracker_cadence.py`
-adds Unity's `currentRound = segment + (day-1)*4` for both the arrival stamp and the tracker
-evaluation, and runs the tracker once per SEGMENT ADVANCE (twice on a rollover, after the
-advance, before that advance's generation pass). The mark diff is byte-identical to the
-reorder alone and to the reorder+stamp. Ratchet stays 0.
+## THE CAPTURE IS TOO SHORT TO DISCRIMINATE. Read this before editing clients.py again.
 
-THAT IS THE INFORMATIVE RESULT, and it kills the hypothesis it was built to confirm. Three
-independent changes to Y and to the tracker cadence produce the SAME diff, so the step-8
-residue is NOT threshold-driven. (In hindsight one of the three was inert by construction:
-shifting the stamp and the evaluation by the same formula leaves rounds_in unchanged.)
+Four changes were applied on top of the tick reorder and measured. ALL FOUR produce a
+BYTE-IDENTICAL mark diff and leave the ratchet at 0:
 
-WHAT THE RESIDUE MUST BE INSTEAD. The port draws caseworkGen at step 8 for 3-6 groups;
-Unity draws none. Not fewer -- none. Since the draw counts match through step 7, Unity is
-not evaluating those groups at all by step 8, which means Unity's live group SET is smaller
-than the port's. The best candidate is the sixth game bug Fable found, which has the right
-shape and is already documented: casework-site deliveries DOUBLE-PROCESS.
-`HandlePopulationDelivery` calls `RemoveClientsByQuantity` at unload
-(ClientStayTracker.cs:515) and `DeliverySystem.OnVehicleDeliveryCompleted` calls it AGAIN at
-complete (DeliverySystem.cs:701). Removing twice drains groups to empty, and an empty group
-has `clientsWithCaseworkNeed == 0` and stops drawing forever. The port removes once, so its
-groups survive and keep drawing -- which is exactly the observed asymmetry, in the right
-direction, from a mechanism already confirmed in the source.
+    experiments/sim_double_spawn_tick_first_stamp.py   arrival stamp (leg 1)
+    experiments/sim_leg2_tracker_cadence.py            Unity currentRound + per-advance
+                                                       tracker cadence (leg 2)
+    (inline)                                           double removal on casework delivery
 
-Test that next, on top of the reorder: double the removal in `process_home` the same way the
-arrival was doubled. It is the same bug class as the double-spawn, on the same two call
-sites, and it is cheap. Note it interacts with the PARKED conflict below, since both concern
-who removes population from a group.
+Identical output from four different edits is not four refutations. It is the instrument
+telling you it cannot see them, and the reason is measured, not guessed:
+
+  - ZERO casework-site deliveries occur in ANY of the eleven traces (grepped across every
+    delivery:queue and delivery:unload mark). The double-removal edit can never execute.
+  - The only day rollover is step 5, and the first client group is created in step 6. Leg
+    2's extra per-advance tracker invoke therefore has no groups to draw for.
+  - Shifting the arrival stamp and the tracker evaluation by the same formula leaves
+    rounds_in unchanged, so leg 1 is inert by construction.
+
+So the earlier claim that leg 2 "refutes the threshold hypothesis" was itself wrong: leg 2
+never exercised the threshold. Both the hypothesis and its refutation are unsupported on
+this data.
+
+The traces are EIGHT steps of a THIRTY-TWO round game, and the client subsystem barely
+starts inside them: clients first exist at step 6, so only steps 6-8 carry any client draws
+at all, and step 8 is the last. Every remaining question -- what drains Unity's groups, how Y
+grows over a real stay, whether the tracker really fires unfiltered on segment 3, what a
+rollover does to live groups, whether departures release facility population (the parked
+conflict below) -- lives beyond step 8.
+
+THE NEXT STEP IS A LONGER CAPTURE, NOT ANOTHER EDIT. Re-capture the same seeds for the full
+32 rounds with ARC_SNAPSHOT_DEBUG=1, then re-run diag_marks. Until then the reorder cannot
+be evaluated: it is confirmed correct on draws through step 7 and unexplained on counters,
+and nothing in an 8-step window can separate those.
 
 PARKED CONFLICT: Fable reads TriggerNonCaseworkDeparture as mutating tracker state only --
 OnCaseworklessClientsDeparted has zero subscribers, no facility population is released. The
