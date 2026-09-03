@@ -244,7 +244,8 @@ class World:
             untrained=self.economy.free_untrained + self.economy.working_untrained,
             idle_trained=self.economy.free_trained,
             idle_untrained=self.economy.free_untrained,
-            prev=self._trigger_memory)
+            prev=self._trigger_memory,
+            flooded=self.flood.tiles, positions=_facility_positions())
 
     def clone(self) -> "World":
         w = World.__new__(World)
@@ -459,6 +460,34 @@ def _create_tasks(w, rolls, day_changed):
         w.tasks.next_id += 1
         w.tasks.add(t)
         w.generated_specs[t.task_id] = (task_id, facility, spec)
+
+
+_POSITIONS = {}
+
+
+def _facility_positions(spec=None):
+    """facility name -> transform position, for the per-facility flood trigger.
+
+    The map dump keys transforms by BUILDING name (Community01) and trigger facilities by
+    display name (Community Charleston); the two share a road cell, which is the join. A
+    facility without a dumped transform (one built mid-episode) falls back to the centre of
+    its cell, which is at most ~1.6 units off and only matters at the edge of the square.
+    """
+    from .roads import DEFAULT_MAP, cell_to_world
+    m = spec or DEFAULT_MAP
+    key = id(m)
+    if key in _POSITIONS:
+        return _POSITIONS[key]
+    by_cell = {tuple(c): n for n, c in m.building_cell.items()}
+    out = {}
+    for name, cell in m.facility_cell.items():
+        bname = by_cell.get(tuple(cell))
+        pos = m.building_pos.get(bname) if bname else None
+        out[name] = tuple(pos) if pos else cell_to_world(tuple(cell), m)
+    for bname, pos in m.building_pos.items():
+        out.setdefault(bname, tuple(pos))
+    _POSITIONS[key] = out
+    return out
 
 
 def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:

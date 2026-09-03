@@ -52,11 +52,22 @@ class TriggerContext:
 
     __slots__ = ("day", "segment", "weather", "flood_tiles", "budget", "satisfaction",
                  "free_workforce", "idle_ratio", "facilities", "prev",
-                 "trained", "untrained", "idle_trained", "idle_untrained")
+                 "trained", "untrained", "idle_trained", "idle_untrained",
+                 "flooded", "positions")
 
     def __init__(self, day=1, segment=1, weather="Sunny", flood_tiles=0, budget=0,
                  satisfaction=50.0, free_workforce=0, idle_ratio=0.0, facilities=None,
-                 prev=None, trained=0, untrained=0, idle_trained=0, idle_untrained=0):
+                 prev=None, trained=0, untrained=0, idle_trained=0, idle_untrained=0,
+                 flooded=frozenset(), positions=None):
+        # THE FLOOD TILE SET AND FACILITY TRANSFORMS, for FloodedFacilityTrigger. That
+        # trigger is per-facility: it counts flood tiles in a (2r+1)^2 square around
+        # facility.transform.position and compares the count to a threshold. Without these
+        # two the port could not evaluate it at all, and a requireAllTriggers task whose one
+        # unevaluable condition is silently skipped fires on the rest -- which is how the
+        # port raised "Community Emergency Evacuation" on five traces where Unity, with no
+        # flooded community anywhere, raised none.
+        self.flooded = flooded
+        self.positions = positions or {}
         self.trained = trained            # GetTrainedWorkersCount
         self.untrained = untrained        # GetUntrainedWorkersCount
         self.idle_trained = idle_trained      # GetAvailableTrainedWorkers
@@ -222,8 +233,66 @@ def _facility_status_ok(t, ctx):
     return n >= t["minimumCount"]
 
 
+_FF_KIND = {0: "AnyFacility", 1: "AnyBuilding", 2: "AnyPrebuilt",
+            3: "SpecificBuildingType", 4: "SpecificPrebuiltType"}
+_FF_CMP = {0: "ExactMatch", 1: "AtLeast", 2: "MoreThan", 3: "LessThan", 4: "AtMost"}
+_PREBUILT = {0: "Community", 1: "Motel"}
+_BUILDING = {0: "Kitchen", 1: "Shelter", 2: "CaseworkSite", 3: "Community", 4: "Motel"}
+
+
+def _flooded_facility_ok(t, ctx, facility=None):
+    """FloodedFacilityTrigger for ONE facility (CheckFloodedFacilityTriggerForFacility).
+
+    Mirrors TaskDatabases.cs:329-: the facility must match the trigger's type filter, then
+    the flood tiles in the square of `detectionRadius` around its TRANSFORM are counted --
+    Tilemap.WorldToCell floors each offset position, so the square is the integer cells
+    around floor(transform) -- and compared with the trigger's OWN ComparisonType, whose
+    order (ExactMatch, AtLeast, MoreThan, LessThan, AtMost) differs from the generic
+    TaskTrigger enum. Enum values arrive as ints from the .asset dump and as names from the
+    live exporter; both are accepted. The .asset for Community Emergency Evacuation reads
+    facilityType 4 / prebuilt 0 / comparison 1 / threshold 1 / radius 2: any Community with
+    at least one flood tile within two cells.
+    """
+    from math import floor
+    if facility is None:
+        return False          # global CheckCondition path is not used for these tasks
+    if not isinstance(facility, dict):
+        # generation_pass passes the facility NAME; resolve it the way the resource
+        # condition does, against the snapshot in ctx.facilities.
+        facility = next((f for f in ctx.facilities if f.get("name") == facility), None)
+        if facility is None:
+            return False
+    ftype = facility.get("type")
+    kind = _FF_KIND.get(t.get("facilityType"), t.get("facilityType"))
+    prebuilt = ftype in ("Community", "Motel")
+    if kind == "AnyBuilding" and prebuilt:
+        return False
+    if kind == "AnyPrebuilt" and not prebuilt:
+        return False
+    if kind == "SpecificBuildingType":
+        want = _BUILDING.get(t.get("specificBuildingType"), t.get("specificBuildingType"))
+        if prebuilt or ftype != want:
+            return False
+    if kind == "SpecificPrebuiltType":
+        want = _PREBUILT.get(t.get("specificPrebuiltType"), t.get("specificPrebuiltType"))
+        if not prebuilt or ftype != want:
+            return False
+    pos = ctx.positions.get(facility.get("name"))
+    if pos is None:
+        return False
+    r = int(t.get("detectionRadius", 2))
+    cx, cy = floor(pos[0]), floor(pos[1])
+    n = sum(1 for dx in range(-r, r + 1) for dy in range(-r, r + 1)
+            if (cx + dx, cy + dy) in ctx.flooded)
+    thr = int(t.get("floodTileThreshold", 1))
+    cmp = _FF_CMP.get(t.get("comparison"), t.get("comparison"))
+    return {"ExactMatch": n == thr, "AtLeast": n >= thr, "MoreThan": n > thr,
+            "LessThan": n < thr, "AtMost": n <= thr}[cmp]
+
+
 _EVALUATORS = (("round", _round_ok), ("day", _day_ok), ("resource", _resource_ok),
-               ("floodTile", _flood_ok), ("budget", _budget_ok),
+               ("floodTile", _flood_ok), ("floodedFacility", _flooded_facility_ok),
+               ("budget", _budget_ok),
                ("satisfaction", _satisfaction_ok), ("workforce", _workforce_ok),
                ("facilityStatus", _facility_status_ok), ("weather", _weather_ok))
 
@@ -242,7 +311,8 @@ def evaluate_task(task_def: dict, ctx: TriggerContext, rng, marks=None,
         for t in triggers.get(key) or []:
             # Only the resource condition is facility-scoped; round, day, weather, budget,
             # satisfaction and workforce are global in both C# paths.
-            results.append(bool(fn(t, ctx, facility) if key == "resource" else fn(t, ctx)))
+            results.append(bool(fn(t, ctx, facility)
+                                if key in ("resource", "floodedFacility") else fn(t, ctx)))
     for p in task_def.get("probabilities") or []:
         if marks is not None:
             marks.append("draw:TaskTrigger.probability")

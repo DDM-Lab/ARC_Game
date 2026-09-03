@@ -1038,6 +1038,18 @@ public class GymServerManager : MonoBehaviour
                               sb.Append("{\"conditionType\":\"").Append(x.conditionType)
                                 .Append("\",\"comparison\":\"").Append(x.comparison)
                                 .Append("\",\"targetValue\":").Append(x.targetValue).Append('}'); }
+                            // floodedFacility was COUNTED (Cnt above) but never serialised, so the
+                            // surrogate could not evaluate it and fired the flood-damage emergencies
+                            // on day+population alone. Enum names, like the other lists.
+                            sb.Append("],\"floodedFacility\":[");
+                            for (int j = 0; td.floodedFacilityTriggers != null && j < td.floodedFacilityTriggers.Count; j++)
+                            { if (j>0) sb.Append(','); var x = td.floodedFacilityTriggers[j];
+                              sb.Append("{\"facilityType\":\"").Append(x.facilityType)
+                                .Append("\",\"comparison\":\"").Append(x.comparison)
+                                .Append("\",\"floodTileThreshold\":").Append(x.floodTileThreshold)
+                                .Append(",\"specificBuildingType\":\"").Append(x.specificBuildingType)
+                                .Append("\",\"specificPrebuiltType\":\"").Append(x.specificPrebuiltType)
+                                .Append("\",\"detectionRadius\":").Append(x.detectionRadius).Append('}'); }
                             sb.Append("],\"budget\":[");
                             for (int j = 0; td.budgetTriggers != null && j < td.budgetTriggers.Count; j++)
                             { if (j>0) sb.Append(','); var x = td.budgetTriggers[j];

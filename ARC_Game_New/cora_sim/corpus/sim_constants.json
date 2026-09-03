@@ -383,7 +383,17 @@
     "satisfaction": [],
     "workforce": [],
     "facilityStatus": [],
-    "weather": []
+    "weather": [],
+    "floodedFacility": [
+     {
+      "facilityType": 4,
+      "comparison": 1,
+      "floodTileThreshold": 1,
+      "specificBuildingType": 0,
+      "specificPrebuiltType": 0,
+      "detectionRadius": 2
+     }
+    ]
    },
    "choices": [
     {
@@ -825,7 +835,17 @@
     "satisfaction": [],
     "workforce": [],
     "facilityStatus": [],
-    "weather": []
+    "weather": [],
+    "floodedFacility": [
+     {
+      "facilityType": 3,
+      "comparison": 4,
+      "floodTileThreshold": 4,
+      "specificBuildingType": 1,
+      "specificPrebuiltType": 0,
+      "detectionRadius": 5
+     }
+    ]
    },
    "choices": [
     {
