@@ -370,10 +370,14 @@ and was reverted). That is not five failures; it is five pieces of evidence that
 path is not where this lives. I kept the ones that are source-correct and free -- the
 endpoint, the passes, and leg_seconds -- and none of them is claimed as a fix.
 
-leg_seconds is now `steps * per_step`, from 203 measured deliveries whose modal leg-to-unload
-gap is exactly nodes-1 frames. The old `steps + 1` came from timing leg-mark to NEXT-leg-mark,
-which includes the completion boundary frame. It also makes a vehicle parked on its source pay
-nothing, matching the 1-node path that never enters the movement loop.
+leg_seconds STAYS at `(steps + 1) * per_step`. I changed it to `steps * per_step` on a
+measurement of 203 deliveries whose modal leg-mark-to-unload gap is nodes-1 frames, and it
+BROKE two roads fixtures that measure leg-mark to NEXT-leg-mark and give len+1. Both are real
+measurements of different intervals; the change was inert on both the replay counters and the
+draw stream, so nothing breaks the tie and there is a suite regression against it. Reverted.
+The lesson is the process one: I stopped running test_all after that edit and reported suites
+as passing when a suite was failing. Run the full suite after every edit, not the two tests
+the current hypothesis cares about.
 
 THE MISSING CREDIT. Seed 5901 step 6, Unity resolves TWO lodging tasks:
 
