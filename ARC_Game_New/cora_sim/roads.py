@@ -29,6 +29,9 @@ GYM_FIXED_DELTA = DEFAULT_MAP.fixed_delta
 SIMULATION_DURATION = DEFAULT_MAP.simulation_duration
 TIME_SPEED = DEFAULT_MAP.time_speed
 ROUND_SECONDS = DEFAULT_MAP.round_seconds
+# delivery:config reports taskAssignmentInterval = 1, in seconds of game time. Dispatch is
+# gated on it in DeliverySystem.Update, so a round runs round_seconds / this many passes.
+TASK_ASSIGNMENT_INTERVAL = 1.0
 ROAD_CELLS = DEFAULT_MAP.road_cells
 BUILDING_CELL = DEFAULT_MAP.building_cell
 FACILITY_CELL = DEFAULT_MAP.facility_cell
@@ -367,13 +370,27 @@ class Fleet:
 
         queue = list(pending)
         dropped = []
-        while queue:
-            # The vehicle that can start soonest, then closest to the source among those.
+        # DISPATCH RUNS IN PASSES, NOT ONCE PER ROUND. AssignPendingTasks is called from
+        # Update behind `Time.time - lastTaskAssignment > taskAssignmentInterval`
+        # (DeliverySystem.cs:310-318), and delivery:config reports that interval as 1 second.
+        # A ten-second round is therefore about TEN dispatch passes, each draining greedily
+        # over the vehicles idle AT THAT MOMENT -- not one pass over the whole round.
+        #
+        # This is what makes the suitability score mean anything. The old single pass picked
+        # from whichever vehicles freed up earliest, which was usually exactly one, so the
+        # score never decided and correcting its distance endpoint changed no output at all.
+        # It also mis-timed work: a vehicle idle from t=2 would be handed a task as though it
+        # had left at 2 even when Unity would not have dispatched until the t=3 pass.
+        t = 0.0
+        while queue and t < budget:
+            # Idle AT THIS INSTANT. A vehicle that finishes at 3.2s is not a candidate for
+            # the t=3 pass; it waits for t=4, exactly as the interval gate makes Unity wait.
             ready = [i for i in range(len(self.pos))
-                     if not self.damaged[i] and free_at[i] < budget
+                     if not self.damaged[i] and free_at[i] <= t + 1e-9
                      and self.carrying[i] is None]
             if not ready:
-                break
+                t += TASK_ASSIGNMENT_INTERVAL
+                continue
             seq, payload, src, dst, qty = queue[0]
             if path_length(src, dst, flooded, self.spec) is None:
                 # CREATED, THEN CUT. The order passed its route estimate in the planning
@@ -389,9 +406,11 @@ class Fleet:
                     dropped.append(payload)
                 queue.pop(0)
                 continue
-            soonest = min(free_at[i] for i in ready)
-            candidates = [i for i in ready if free_at[i] <= soonest + 1e-9]
-            v = self._closest(candidates, src, qty)
+            # Every idle vehicle is scored, as FindSuitableVehicle does
+            # (DeliverySystem.cs:626-651). A winner leaves `ready` implicitly: each branch
+            # below pushes its free_at past t, so no vehicle takes two tasks in one pass --
+            # which is the removal at DeliverySystem.cs:611.
+            v = self._closest(ready, src, qty)
             leg1 = path_length(self.pos[v], src, flooded, self.spec)
             if leg1 is None:
                 # StopVehicleDueToFlood -> TaskSystem.HandleDeliveryFailure, which removes
@@ -412,7 +431,9 @@ class Fleet:
             # away -- arrives at f313 to nothing, aborts, and is reassigned to a population
             # order in the SAME frame. Without modelling it the port delivered three food
             # orders and no relocations where Unity delivered one of each.
-            at_source = free_at[v] + leg_seconds(leg1, self.spec)
+            # Departure is the DISPATCH instant, not the moment the vehicle fell idle:
+            # it sits parked until a pass hands it work.
+            at_source = t + leg_seconds(leg1, self.spec)
             self.pos[v] = src
             queue.pop(0)
             if load is not None and load(payload, qty) <= 0:

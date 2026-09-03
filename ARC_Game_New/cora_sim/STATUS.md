@@ -350,13 +350,31 @@ is that the port has no clock inside the round: picking the nearest vehicle when
 only frees up late in the round delays the delivery, whereas Unity would have given the task
 to whoever was idle AT THE DISPATCH INSTANT.
 
-THE REAL FIX, and it is a restructure of `run_round`: Unity dispatches once per
-`taskAssignmentInterval` (1 second of game time) from Update, and each pass drains greedily
-over the vehicles idle AT THAT MOMENT. A ten-second round is therefore ~10 dispatch passes,
-not one. Model the round as a sequence of passes at t = 0, 1, 2, ... seconds; at each pass
-take the vehicles with free_at <= t, order tasks priority DESC then creation ASC, and assign
-greedily by suitability, removing each winner from the candidate set. That subsumes both the
-endpoint and the candidate-set questions and is the last known gap.
+THE DISPATCH-PASS RESTRUCTURE IS DONE, AND IT IS INERT ON THESE TRACES. `run_round` now
+runs a pass every TASK_ASSIGNMENT_INTERVAL (1 game second, from delivery:config), each pass
+taking the vehicles idle AT THAT INSTANT, scoring ALL of them, and letting each take at most
+one task -- which is DeliverySystem.cs:310-318 plus 626-651 plus the removal at 611.
+Departure is the dispatch instant rather than the moment the vehicle fell idle.
+
+Output is byte-identical to the endpoint fix alone; 11 suites still pass; cost is ~1%
+(5.31 -> 5.36 ms/episode, ~56k episodes per 5 min). Kept because it is source-correct and
+free, NOT because it fixed anything. Note what it means: pass-gating and the widened
+candidate set cancel each other exactly on these traces -- widening alone regressed four
+traces, gating alone would have delayed some dispatches, and together they land back on the
+original behaviour.
+
+SO THE DEFECT IS NOT ASSIGNMENT. Three separate assignment corrections -- endpoint, candidate
+breadth, pass timing -- leave the divergence identical. What survives is TRAVEL DURATION.
+
+The next measurement, and it needs no rebuild. `leg_seconds` charges `(steps + 1) * 0.3`,
+one frame more than the one-frame-per-segment rule the leg marks established. That +1 is
+standing in for coroutine-boundary overhead that has never been measured. Fable pinned how to
+measure it: `delivery:leg` is emitted SYNCHRONOUSLY at the top of every MoveToPosition, so for
+any single delivery the frame gap between its source-leg mark and its destination-leg mark IS
+the overhead of the intervening yields, and LoadCargo/UnloadCargo contain no delay at all. A
+vehicle already parked on its source produces a 1-node path whose movement loop never runs, so
+it should pay ZERO travel for that leg -- the port charges it 0.3 s. Extract those gaps from
+`cap32b/` and set `leg_seconds` from the measurement instead of the guess.
 
 Two facts worth keeping: LoadCargo and UnloadCargo contain no delay at all, and a vehicle
 already on its source road cell produces a 1-node path whose movement loop never runs, so it
