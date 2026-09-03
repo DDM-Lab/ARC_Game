@@ -76,43 +76,58 @@ but no captured episode shows it corrupting a counter.
 - `travel_rounds`, `TaskBoard.queue`, `TaskBoard.busy` are dead since the event-driven fleet
   landed. Documented-dead; not deleted mid-hunt.
 
-## The generation-ordering hypothesis: REFUTED (both forms)
+## Generation ordering: SETTLED AND ALREADY CORRECT (a misread, now fixed)
 
-`gen:pass` settles where Unity generates. Seed 5901, round 5:
+I previously wrote that Unity generates AFTER a round's deliveries, citing seed 5901:
 
-    f310  unload  Food Kitchen_0->Community01
-    f312  unload  Popu Community01->Motel      first relocation resolves
-    f319  GENERATION PASS (activeTasks=7)      after the deliveries, same round
-    f327  queue   Popu Community01->Motel      the re-request
+    f310 unload Food ... / f312 unload Popu ... / f319 GENERATION PASS / f327 re-request
 
-That frame ordering is real and reproducible. The INFERENCE drawn from it -- that the port
-should therefore generate after its delivery tick -- is wrong. Both forms were built and
-measured, and both take the exact-trace count 2 -> 0:
+That reading was wrong. The frame counter is monotonic ACROSS segments and every mark
+carries its segment tag. With the tags restored:
 
-  form 1  move the whole creation block (rollover + segment)      2 -> 0
-  form 2  move ONLY the segment pass, rollover left in place      2 -> 0   <- the "scoped edit"
+    s6d2r1f312  delivery:unload   Population Community01->Motel
+    s6d2r1f313  delivery:complete + task:resolved id=6
+    s6d2r2f319  gen:pass {"active":7} + task:created id=12,13,14   <- segment r2, not r1
+    s6d2r2f327  choice:at {"task":13,"choice":1} -> delivery:queue
 
-Form 2 was the one this file previously recommended. It is refuted. The draws stayed at
-their original point in both forms (only task CONSTRUCTION moved), so this is not an RNG
-re-ordering artifact.
+f319 is the START of the NEXT segment; f327 is just the replayed player choice on the
+freshly created task 13. There is no same-round re-request and no freed-slot effect.
+Every gen:pass in the episode sits at a segment start, BEFORE that segment's deliveries:
 
-What the failure says, read by direction rather than by count: with generation moved late,
-the port resolves MORE than Unity, not fewer --
+    s1d1r1f110   s2d1r2f150   s5d2r0f237   s5d2r1f271   s6d2r2f319
 
-    staff_5802  lodgingResolved  unity=300  port=400     (was exact)
-    staff_5504  foodResolved     unity=3    port=4       (new)
+The port already generates at segment start before its delivery tick. Its ordering was
+right the whole time, which is exactly why BOTH relocation experiments took the exact-trace
+count 2 -> 0: form 1 moved the rollover passes too, form 2 moved only the segment pass, and
+both were moving code that was already in the correct place. sim.py is unchanged.
 
-So the freed slot admits extra tasks that Unity does not generate. Unity's pass runs on a
-later FRAME but does not behave as though the facility slot were free. The 5901 re-request
-at f327 is therefore probably not gated on a facility slot at all -- it is a community
-re-requesting, which plausibly keys off the community's own population/occupancy rather
-than the destination's slot. Those are two different admission gates and this session
-conflated them.
+## The real missing mechanism: CLIENT SPAWN ON POPULATION ARRIVAL
 
-The next hypothesis to test is consequently about WHICH gate, not about WHERE the pass sits:
-instrument what Unity's generator actually reads when it admits the f327 re-request
-(community occupancy vs facility slot occupancy) before moving any port code again. Leave
-sim.py's ordering alone until that mark exists.
+Population deliveries spawn clients. The port models none of this. Measured on seed 5901:
+
+    draw:Client.caseworkNeed    800  in 8 bursts of EXACTLY 100
+    draw:Client.stayDuration      8  exactly 1 per burst
+    draw:Client.caseworkGen      10  in 2 bursts (2 at s6d2r2f319, 8 at s7d2r3f362)
+
+There are exactly 4 Population unloads in the episode, each nominal=100 actual=100. The 8
+burst frames are EXACTLY the union of the 4 Population `delivery:unload` frames and the 4
+Population `delivery:complete` frames -- verified by set diff, exact match, not eyeballed.
+So the spawn path runs TWICE per population delivery, once at unload and once at complete.
+Whether that second run is an unintended double-spawn is being read out of the C# now; it
+is a candidate fifth game bug, not yet confirmed.
+
+This unifies two open items that were being tracked separately:
+
+  - `caseworkRequested unity=100/300 port=0` in five of eleven traces. That is ABSENCE, not
+    timing skew -- the port never creates casework because it never spawns clients.
+  - the 135th draw-census fixture, previously described as "client-stay draws not in the
+    round loop". Those are these stayDuration draws. Same mechanism.
+
+Next: implement client spawn-on-arrival once the C# read settles the per-client draw order,
+the stayDuration scope (group-level or per-client -- the marks say group), the caseworkGen
+emission condition, and what per-client state persists across rounds. Guard with the
+exact-trace ratchet (floor 2) and re-run the draw census, which should reach 135/135 if the
+draw ORDER is right.
 
 ## Method notes that cost time
 
