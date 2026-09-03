@@ -623,22 +623,26 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
             w.segment = i
             # OnTimeSegmentAdvanced fires per ADVANCE, and the rollover advances twice, so a
             # rounds=2 task created before it ages 2 -> 0 and expires inside this step.
-            w.tasks.age_and_expire(w.economy.counters)
+            w.tasks.age()
             _tracker(w, marks)
             _r = [r + (i,) for r in _pass(w, marks)]
             rolls += _r
             if w.use_generation:
                 _create_tasks(w, _r, day_changed)
+            # CheckExpiredTasks runs on the Update AFTER the advance: the dying task held its
+            # slot through the generation pass above.
+            w.tasks.expire(w.economy.counters)
         w.segment = 1
     else:
         w.segment += 1
-        w.tasks.age_and_expire(w.economy.counters)
+        w.tasks.age()
         _tracker(w, marks)
         if w.segment in _GENERATION_SEGMENTS:
             _r = [r + (w.segment,) for r in _pass(w, marks)]
             rolls += _r
             if w.use_generation:
                 _create_tasks(w, _r, day_changed)
+        w.tasks.expire(w.economy.counters)
     w.generated = rolls
     # THE JOIN THAT MAKES THE SURROGATE SELF-DRIVING. generation_pass decides WHICH tasks
     # fire; without this the port produced a list of ids and created nothing, so it could

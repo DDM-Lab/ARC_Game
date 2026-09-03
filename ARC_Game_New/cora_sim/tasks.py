@@ -643,59 +643,44 @@ class TaskBoard:
         # step_round, because a rollover advances twice inside one gym step.
         return landed
 
-    def age_and_expire(self, counters: dict) -> None:
-        """One SEGMENT ADVANCE worth of ageing, plus the expiries it triggers.
+    def age(self) -> None:
+        """One SEGMENT ADVANCE worth of ageing -- the decrement ONLY, no resolution.
 
-        Split out of tick() because it must fire once per ADVANCE, not once per gym
-        step. roundsRemaining is decremented in OnTimeSegmentAdvanced
-        (TaskSystem.cs:616), and a day rollover advances TWICE inside one step
-        (segment 0 then segment 1). A relocation carries rounds = 2, so on the
-        rollover step Unity ages it 2 -> 0 and expires it THERE; ageing once per step
-        left it at 1 and credited its resolution a round late -- lodgingResolved 100
-        against 200 at round 5, converging again by round 7.
+        OnTimeSegmentAdvanced decrements roundsRemaining (TaskSystem.cs:616) on the advance.
+        The task that just hit zero is STILL in activeTasks while OnRoundChanged runs the
+        generation pass on that same frame; CheckExpiredTasks only resolves it on the next
+        Update (:559-581). So a community whose relocation dies this advance still holds
+        its slot during generation and is NOT re-offered a relocation until the following
+        advance. The port resolved first and regenerated: on 5901 it created a second
+        Community Trinity relocation at step 6 the moment Trinity's first one expired, where
+        Unity created none. Ageing and expiry are therefore two calls with generation in
+        between.
         """
         for task in list(self.active.values()):
             if task.fresh:
-                # A task generated during THIS round is not aged by it. Unity decrements in
-                # OnTimeSegmentAdvanced, which fires on the NEXT segment advance, so a task
-                # with roundsRemaining = 1 survives the round it was born in. Ageing it
-                # immediately expired every such task on creation and put foodResolved a
-                # full round ahead of Unity on all four captures.
                 task.fresh = False
                 continue
             task.rounds_remaining -= 1
+        for task in list(self.awaiting.values()):
+            task.rounds_remaining -= 1
+
+    def expire(self, counters: dict) -> None:
+        """CheckExpiredTasks: resolve everything at or below zero, AFTER generation ran."""
+        for task in list(self.active.values()):
             if task.rounds_remaining <= 0:
                 # An expired task resolves UNFULFILLED, but a lodging task still credits
                 # whatever actually got delivered -- resolved counts demand either way.
                 self.resolve(task, fulfilled=False, counters=counters)
                 del self.active[task.task_id]
-
-        # ANSWERED TASKS EXPIRE TOO. A task that has been answered leaves the board and
-        # waits on its delivery, but its clock keeps running: Unity records
-        #
-        #     Population Relocation  demand=100 delivered=0 fulfilled=False status=Incomplete
-        #
-        # for an answered relocation whose delivery never landed. resolvedAdd is demand
-        # either way, so that single event is the difference between Unity's
-        # lodgingResolved 200 (one delivered, one expired) and the port's 100. The port
-        # parked answered tasks in `awaiting` and aged only `active`, so they waited
-        # forever and never resolved.
         for task_id, task in list(self.awaiting.items()):
-            # NO fresh skip here. The skip exists because a task generated during a round is
-            # not aged by that round -- but a task in `awaiting` was ANSWERED, which happens
-            # after generation, and its clock has been running since it appeared. Unity's
-            # resolution marks land in the same round's advance as the delivery that races
-            # them, so the expiry is not a round behind.
-            task.rounds_remaining -= 1
             if task.rounds_remaining <= 0 and not task.resolved:
-                # KEEP THE TASK SO A LATE LANDING CAN FIND IT. Its delivery may still be in
-                # flight -- `carrying` on a vehicle, which no `pending` filter can reach. When
-                # it lands, the `arrived` loop looks the task up and would discard the landing
-                # entirely if the task were gone, losing the fulfilment. Unity keeps the task
-                # in completedTasks and credits FULFILLED ONLY via AddLateDelivery
-                # (TaskSystem.cs:705-711); resolved is never re-credited, and `resolve()`
-                # already guards on `task.resolved`.
+                # KEEP THE TASK SO A LATE LANDING CAN FIND IT (see the fleet-arrival loop).
                 self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+
+    def age_and_expire(self, counters: dict) -> None:
+        """Both halves back to back -- only for callers that have no generation between."""
+        self.age()
+        self.expire(counters)
 
     def complete(self, task_id, counters: dict) -> None:
         """TaskSystem.CompleteTask -- resolution with fulfilled=True."""
