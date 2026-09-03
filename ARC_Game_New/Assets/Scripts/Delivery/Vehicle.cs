@@ -583,6 +583,17 @@ public class Vehicle : MonoBehaviour
                     currentTask.sourceBuilding, currentTask.destinationBuilding, actualDelivered, currentTask.taskId);
             }
 
+            // actualDelivered is computed and then discarded, but it is the ONLY thing that
+            // distinguishes a real completion from a zombie one: a zombie arrives carrying
+            // nothing, delivers 0, and is still credited the nominal quantity. Emitting it
+            // labels the zombie from the game's own mouth, which is the observable needed to
+            // decide WHICH order the freed vehicle took.
+            SnapshotDebug.MarkContext("delivery:unload", "{\"veh\":\"" + vehicleName
+                + "\",\"cargo\":\"" + currentTask.cargoType
+                + "\",\"nominal\":" + currentTask.quantity
+                + ",\"actual\":" + actualDelivered
+                + ",\"src\":\"" + (currentTask.sourceBuilding != null ? currentTask.sourceBuilding.name : "")
+                + "\",\"dst\":\"" + (currentTask.destinationBuilding != null ? currentTask.destinationBuilding.name : "") + "\"}");
             if (showDebugInfo)
                 Debug.Log($"Vehicle {vehicleName} delivered {actualDelivered} {currentTask.cargoType}");
         }

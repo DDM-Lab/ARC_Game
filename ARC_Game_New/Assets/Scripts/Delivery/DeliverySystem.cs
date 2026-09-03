@@ -214,6 +214,13 @@ public class DeliverySystem : MonoBehaviour
             Debug.Log($"DeliverySystem: Finalized {vehicle.GetVehicleName()}");
         }
 
+        // Scene-serialized candidate #8: taskAssignmentInterval's .cs initialiser is 1f and
+        // has never been verified against the scene. It governs how often AssignPendingTasks
+        // runs, which is exactly the reassignment timing that decides which order a freed
+        // vehicle picks up.
+        SnapshotDebug.MarkContext("delivery:config", "{\"taskAssignmentInterval\":"
+            + taskAssignmentInterval + ",\"ervCount\":" + ervCount
+            + ",\"maxQueuedTasks\":" + maxQueuedTasks + "}");
         Debug.Log($"Delivery System initialized with {availableVehicles.Count} vehicles.");
         GameLogPanel.Instance.LogVehicleEvent($"Initialized with {availableVehicles.Count} vehicles (Config Target: {ervCount})");
     }
