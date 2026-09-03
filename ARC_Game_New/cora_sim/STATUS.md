@@ -436,17 +436,30 @@ the normal branch -- which is where OnTimeSegmentAdvanced (TaskSystem.cs:616) pu
 suites pass, counters unchanged, ratchet unchanged. Kept because it is source-correct and
 harmless; NOT a fix, and the sixth consecutive inert edit.
 
-THE ARITHMETIC THAT SAYS IT SHOULD HAVE WORKED, so the next person can find the flaw in it:
-id=7 is created at s5d2r0f237 with rounds=2 and resolves at s6d2r2f328. Advances between:
-s5r1, then s6r2. With the fresh-skip consuming the creation advance that is 2 -> 1 -> 0, so it
-should expire exactly at step 6, which is trace round 5, which is where Unity credits it. The
-port still leaves it at 1. Therefore the ageing CADENCE is now right and something else is
-wrong -- most likely WHICH COLLECTION the task is in. It was ANSWERED, so it sits in
-`awaiting`, and the awaiting loop deliberately has NO fresh skip while the active loop does.
-Check whether the task moved to `awaiting` before or after its first advance, and whether the
-missing fresh-skip there double-counts or under-counts its first ageing. Instrument
-rounds_remaining per advance for that one task id rather than reasoning about it -- six
-inert edits in a row is the cost of reasoning about it.
+THE CAUSE, INSTRUMENTED RATHER THAN REASONED. Spying on age_and_expire per advance, 5901:
+
+    round 5:  advance  before=[(8, 2, fresh=False), (9, 2, fresh=True)]  after=[(8,1), (9,1)]
+    round 6:  advance  before=[(13, 1, True)]                            after=[(13, 1)]
+    round 7:  advance  before=[(13, 1, False)]                           after=[]
+
+Tasks 8 and 9 reach round 5's advance ALREADY AT 2, so nothing aged them in round 4 -- and
+round 4 IS the rollover. No advance line prints for rounds 0-4 at all, meaning they did not
+exist in `active` or `awaiting` during either rollover advance.
+
+That is the bug, and it is a CREATION-ORDER bug, not an ageing one. Unity creates them in the
+rollover's FIRST pass (task:created at s5d2r0f237, rounds=2), so the rollover's SECOND advance
+(s5r1) ages them 2 -> 1, and s6r2 takes them to 0 -- expiring exactly where Unity credits
+them. The port collects `rolls` from BOTH rollover passes and only calls `_create_tasks` after
+the loop has finished, so a task born in pass 0 never experiences pass 1's advance and arrives
+a full advance young.
+
+THE FIX: create tasks per-pass INSIDE the rollover loop, so a pass-0 task is on the board for
+pass 1's advance. Note this is adjacent to the very first hypothesis of the session, which
+moved creation and was reverted for taking exact traces 2 -> 0 -- but that moved creation
+relative to the DELIVERY TICK, which was wrong. This moves it relative to the ROLLOVER
+ADVANCES, which the per-advance instrumentation above now justifies directly. Keep the two
+straight; guard with the full suite plus the replay, and re-read the advance spy above to
+confirm tasks 8 and 9 arrive at round 5 holding 1 rather than 2.
 
 Two facts worth keeping: LoadCargo and UnloadCargo contain no delay at all, and a vehicle
 already on its source road cell produces a 1-node path whose movement loop never runs, so it
