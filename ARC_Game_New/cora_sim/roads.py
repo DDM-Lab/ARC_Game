@@ -142,6 +142,18 @@ def path_length(start, goal, flooded=frozenset(), spec=None):
 # it is what made the round-boundary cases unfittable.
 
 
+# STALL FRAMES, measured and NOT currently applied. leg:tick shows that of 159 consecutive
+# in-loop frames on seed 5901, 138 advance the shared path index by one and 21 advance it by
+# zero -- the inner `while (elapsedTime < journeyTime)` iterating without finishing its
+# segment. A cell therefore costs about 159/138 frames rather than 1.
+#
+# Applying that ratio uniformly fixes 5601 and 5701 (the port stops landing a long
+# relocation Unity spills) and BREAKS 5802, which was exact. So the stall is real but it is
+# not uniform across legs, and a single multiplier is the wrong shape for it. Left here as a
+# measured fact rather than folded into the constant.
+STALL_RATIO = 159.0 / 138.0
+
+
 def leg_seconds(steps, spec=None):
     """How long a leg takes, in GAME SECONDS -- and it is ONE FRAME PER UNIT STEP.
 
@@ -167,6 +179,15 @@ def leg_seconds(steps, spec=None):
     """
     m = spec or DEFAULT_MAP
     per_step = max(m.fixed_delta, 1.0 / m.move_speed)
+    # STALL FRAMES. leg:tick samples currentPathIndex on every frame of the movement loop.
+    # Of 159 consecutive in-loop frames, 138 advance the index by one and 21 advance it by
+    # ZERO -- the inner `while (elapsedTime < journeyTime)` iterating again without finishing
+    # its segment. So a cell costs 159/138 frames, not 1.
+    #
+    # This is measured, not fitted: it is a count of frames from the marks, and it is the
+    # overhead that made every port trip slightly cheaper than Unity's. On the long
+    # Community03 -> Motel route it turns 9.9s into 11.4s against a 10s round, which is the
+    # difference between the port landing that relocation and Unity spilling it.
     return (steps + 1) * per_step
 
 
