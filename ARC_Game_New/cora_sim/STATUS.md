@@ -255,6 +255,36 @@ port's Fleet constructs 3 slots. Both run three vehicles. Look instead at travel
 at the flood set the reordered tick reads (previous round's post-spread), which is what
 decides which step a vehicle finishes in.
 
+
+## THE SINGLE REMAINING DEFECT, localised to vehicle assignment
+
+Seed 5501, the step where the port is 204 draws short:
+
+    s10d3r1f463 dispatch Population Community01->Motel veh=Vehicle1 at=(1.5,5.5) srcpos=(1.5,5.5)
+    s10d3r1f463 dispatch Population Community02->Motel veh=Vehicle2 at=(9.5,3.5) srcpos=(-9.5,-2.5)
+    s10d3r1f472 unload   Population Community01->Motel veh=Vehicle1
+
+BOTH dispatch in the SAME FRAME. Vehicle1 is already standing on its source (at == srcpos),
+so it unloads nine frames later in the SAME step; Vehicle2 must drive to its source first and
+lands later. WHICH VEHICLE GETS WHICH TASK therefore decides which step the arrival falls in,
+and that is the ±1 step the port gets wrong. Not travel speed, not the flood snapshot, and
+not fleet size -- both sides run three vehicles.
+
+Two concrete suspects in `roads.py`, both unverified against the C#:
+
+  - `_closest` scores with EUCLIDEAN distance, `100/(1+d) + (qty/cap)*50 + speed*10`, over
+    world coordinates. If Unity's CalculateVehicleSuitability measures PATH length along the
+    road network the two disagree exactly where the network detours -- and this map is a
+    near-tree, 67 of 106 cells being single-cell cut vertices, so detours are the norm.
+  - `run_round` has TWO selectors on different branches, `best_vehicle` (line 378) and
+    `_closest` (line 386). Unity assigns several tasks in one frame, so the ORDER matters:
+    tasks-outer versus vehicles-outer, and whether a chosen vehicle leaves the candidate set
+    before the next task is assigned in the same frame.
+
+Fable is reading both out of DeliverySystem.cs / Vehicle.cs. Do not guess at the formula
+before that lands -- an assignment change is exactly the kind of edit that moves counters
+without moving the draw stream, and the mark diff will not flag it if the swap is symmetric.
+
 PARKED CONFLICT: Fable reads TriggerNonCaseworkDeparture as mutating tracker state only --
 OnCaseworklessClientsDeparted has zero subscribers, no facility population is released. The
 port releases it, with a measured justification (lodging 160,000 vs Unity 100,000). Do not
