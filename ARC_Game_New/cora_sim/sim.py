@@ -482,11 +482,12 @@ def answer(w: World, task_id, choice_id) -> bool:
         _kitchen = next((b["name"] for b in w.economy.buildings
                          if b["type"] == "Kitchen" and b["status"] == "InUse"), None)
         _lat = w.tasks.travel_rounds(_kitchen, str(_facility), w.flooded_road_cells(),
-                                     demanded, task_id) if _kitchen else None
+                                     demanded, task_id, w.segment) if _kitchen else None
         w.tasks.answer(task_id, 0 if _lat is False else demanded, immediate=immediate,
                        latency=None if _lat in (None, False) else _lat,
                        destination="__food__" + str(_facility),
-                       counters=w.economy.counters)
+                       counters=w.economy.counters,
+                       latency_measured=_lat in (None, False))
         if immediate:
             _land_now("food", demanded, str(_facility))
         w.economy.apply_choice(task.tag, choice.get("impacts"),
@@ -521,10 +522,11 @@ def answer(w: World, task_id, choice_id) -> bool:
         (b["name"] for b in w.economy.buildings
          if b["type"] == "Shelter" and b["status"] == "InUse"), "Motel"))
     _lat = w.tasks.travel_rounds(str(_facility), _target, w.flooded_road_cells(),
-                                 qty, task_id)
+                                 qty, task_id, w.segment)
     w.tasks.answer(task_id, 0 if _lat is False else qty, immediate=immediate,
                    latency=None if _lat in (None, False) else _lat,
-                   destination=dest_cat, counters=w.economy.counters)
+                   destination=dest_cat, counters=w.economy.counters,
+                   latency_measured=_lat in (None, False))
     if immediate and qty > 0 and dest_cat in ("Motel", "Shelter"):
         target = "Motel" if dest_cat == "Motel" else next(
             (b["name"] for b in w.economy.buildings

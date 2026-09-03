@@ -176,7 +176,7 @@ class TaskBoard:
 
 
     def travel_rounds(self, source_name, dest_name, flooded=frozenset(),
-                      quantity=0, task_id=None):
+                      quantity=0, task_id=None, segment=None):
         """Rounds for a delivery from `source_name` to `dest_name`, or None.
 
         None means "no opinion" -- the caller falls back to DEFERRED_LATENCY -- EXCEPT when
@@ -217,7 +217,12 @@ class TaskBoard:
         # for the next order. Zeroing it here (as the first cut of this did) made
         # best_vehicle always return vehicle 0 and silently removed the fleet limit.
         # Round UP: a trip needing any part of a round has not landed by the end of it.
-        return max(1, -(-frames // roads.FRAMES_PER_ROUND_DEFAULT))
+        # Use THIS segment's frame budget, not a flat 40. The budget was measured between
+        # round-start marks and is not constant: segment 1 runs 34 frames, the day-rollover
+        # segment only 5-7, the rest 39-50. Whether a trip lands inside the round it was
+        # ordered in turns on that number, so a flat divisor decides boundary cases wrong.
+        budget = roads.frames_in_segment(segment if segment is not None else 2)
+        return frames // budget
 
 
     REPAIR_COST = 1200          # AgentChoice(1, "Repair immediately ($1200)")
@@ -261,7 +266,7 @@ class TaskBoard:
         return task
 
     def answer(self, task_id, quantity=0, immediate=True, latency=None, destination="",
-               counters=None):
+               counters=None, latency_measured=False):
         """Answer a task: it leaves the board NOW and resolves when its delivery LANDS.
 
         THE TWO ARE NOT THE SAME ROUND, and that is the whole point. Measured on captures:
@@ -308,8 +313,17 @@ class TaskBoard:
         self.awaiting[task_id] = task
         # Split into vehicle-sized trips and queue them; dispatch happens in tick() as
         # vehicles free up, exactly as pendingTasks drains in DeliverySystem.
+        #
+        # ONLY when the caller had no measured travel time. This queue was built BEFORE the
+        # road graph was ported, as a stand-in for the serialisation the fleet imposes, and
+        # its entries carry the fresh flag -- so a trip routed through it waits a round for
+        # dispatch ON TOP of its latency. Once travel_rounds supplies a real drive that
+        # double-counts: three food orders answered at round 5 with measured latencies of
+        # 1, 2 and 1 all landed a round late, which is precisely the round-5 foodResolved
+        # divergence (unity 1, port 0) that has stood since this suite was written.
+        # Fleet occupancy and queue wait are now modelled inside travel_rounds itself.
         remaining = quantity if self.has_supplier(task.tag) else 0
-        if quantity > 0:
+        if quantity > 0 and latency_measured:
             trips = max(1, -(-quantity // VEHICLE_CAPACITY))
             per = quantity // trips
             for i in range(trips):
