@@ -281,6 +281,29 @@ class TaskBoard:
             return True
         return False
 
+
+    def inbound_to(self, destination):
+        """DeliverySystem.GetReservedIncomingQuantity: population already en route.
+
+        A destination's usable space is rawSpace MINUS what is already on its way --
+        GetDestinationsSorted computes effectiveSpace that way for both shelters and the
+        motel. Two relocations aimed at the same motel therefore do not both see the full
+        capacity: the second sees it reduced by the first one's inbound, and when that
+        leaves nothing the order is never created and the task resolves UNFULFILLED.
+
+        That is how Unity gets lodgingResolved 200 against lodgingFulfilled 100 in a round
+        where only one relocation is actually delivered.
+        """
+        dest = str(destination or "")
+        total = 0
+        for _seq, payload, _src, _dst, qty in self.pending:
+            if str(payload[2] or "") == dest:
+                total += qty
+        for load in self.fleet.carrying:
+            if load is not None and str(load[2] or "") == dest:
+                total += load[1]
+        return total
+
     # ── lifecycle ───────────────────────────────────────────────────────────────────
     def add(self, task: Task) -> Task:
         self.active[task.task_id] = task

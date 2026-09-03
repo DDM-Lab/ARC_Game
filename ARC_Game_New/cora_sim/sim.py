@@ -701,18 +701,29 @@ def _has_destination_space(w: World, choice) -> bool:
     agent that answers "the first choice" is answering a MOTEL relocation, not a shelter
     one. That single fact accounts for Unity housing 600 people and generating 898 casework
     requests where the port, offering the shelter option, delivered nobody."""
+    # Space is RAW SPACE MINUS INBOUND, as GetDestinationsSorted computes it. Ignoring
+    # what is already on its way let two relocations both target a motel that only has room
+    # for one, so the port delivered both where Unity creates one order and resolves the
+    # other unfulfilled.
     to_motel = (choice.get("destinationCategory") or "") == "Motel"
     if to_motel:
         m = w.economy.facility("Motel")
         res = (m or {}).get("resources") or {}
         cap = res.get("populationCapacity")
-        return m is not None and (cap is None or (res.get("population") or 0) < cap)
+        if m is None:
+            return False
+        if cap is None:
+            return True
+        free = cap - (res.get("population") or 0) - w.tasks.inbound_to("Motel")
+        return free > 0
     for b in w.economy.buildings:                    # shelter-bound
         if b["type"] != "Shelter" or b["status"] != "InUse":
             continue
         res = b.get("resources") or {}
         cap = res.get("populationCapacity")
-        if cap is None or (res.get("population") or 0) < cap:
+        if cap is None:
+            return True
+        if cap - (res.get("population") or 0) - w.tasks.inbound_to(b["name"]) > 0:
             return True
     return False
 
