@@ -444,19 +444,19 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         w.tasks.next_id += 1
         for i in range(_ROLLOVER_PASSES):
             w.segment = i
-            rolls += _pass(w, marks)
+            rolls += [r + (i,) for r in _pass(w, marks)]
         w.segment = 1
     else:
         w.segment += 1
         if w.segment in _GENERATION_SEGMENTS:
-            rolls += _pass(w, marks)
+            rolls += [r + (w.segment,) for r in _pass(w, marks)]
     w.generated = rolls
     # THE JOIN THAT MAKES THE SURROGATE SELF-DRIVING. generation_pass decides WHICH tasks
     # fire; without this the port produced a list of ids and created nothing, so it could
     # generate a task and never answer one -- which is why every equivalence test so far
     # has had to feed it Unity's own task lifecycle.
     if w.use_generation:
-        for task_id, facility in rolls:
+        for task_id, facility, born_in in rolls:
             spec = _TASK_SPEC.get(task_id)
             if spec is None or not _admits(w, spec, facility):
                 continue
@@ -475,7 +475,12 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
             # evaluated as segment 0 and segment 1; a task created in the segment-1 pass is
             # new to that segment and must not be aged by it. Marking both passes not-fresh
             # aged half the board a round early.
-            if day_changed and w.segment == 0:
+            # The pass this roll actually fired in, not w.segment -- which has already been
+            # reset to 1 by the time these tasks are built. That reset is why the earlier
+            # version of this rule was a silent no-op: relocations fire in the FIRST
+            # rollover pass (they carry no round trigger at all), and Unity's marks show
+            # them created at d2r0 and expiring at d2r2, two ticks later.
+            if day_changed and born_in == 0:
                 t.fresh = False
             w.tasks.next_id += 1
             w.tasks.add(t)
