@@ -593,16 +593,26 @@ which is also why an order that arrives to an empty kitchen aborts and retries -
 the food path was built around). The port applies BOTH the Unity behaviour and an extra
 answer-time deduction.
 
-TWO CANDIDATE FIXES, and they are NOT equivalent -- decide with the traces:
-  (a) stop pre-deducting at answer time and let `_load` do the removal, which matches Unity
-      most literally; or
-  (b) keep the pre-deduction and exempt Population tasks from `retry_if_unsourced`, which is
-      the smaller diff but leaves the port's population moving a round earlier than Unity's.
-Prefer (a) unless it disturbs the motel/lodging spend, which reads population at round end.
+REFUTED. Fix (b) -- exempting Lodging tasks from `retry_if_unsourced` inside `_load` -- was
+applied TOGETHER with the late-delivery survival, as the pairing note demanded, and the result
+is byte-identical to the late-delivery change alone: 8 traces on a single counter, 5801 and
+5802 each carrying an extra caseworkRequested divergence. The exemption changed NOTHING, so
+`retry_if_unsourced` is NOT what aborts those relocations, and the double-deduction story is
+unsupported. Reverted; 11 suites pass.
 
-Apply (a) TOGETHER with the parked late-delivery change (the order outliving its task): the
-two were measured separately and each looked wrong alone -- surviving orders that never load
-perturbed caseworkRequested, and loading without survival still expires the task first.
+WHAT IS STILL TRUE, because it was measured rather than reasoned: `run_round` reports
+in=5 landed=2 left=0 dropped=0, so three orders ARE consumed without landing and without
+being dropped. The only path in `run_round` that does that is the `load(...) <= 0` branch --
+but `_load` now provably returns `qty` for Lodging, so either those three vanish somewhere
+else in `run_round`, or the two aborted orders are the FOOD ones and the relocation is lost
+for a different reason entirely.
+
+NEXT, and this time instrument INSIDE run_round rather than inferring from its return values:
+print each order as it is consumed, with which branch consumed it -- the route-check `continue`,
+the `load <= 0` abort, the flood `leg1 is None` drop, or a normal landing. The five orders at
+5501 round 5 are listed above in this file; tag each one. Do not propose another cause until
+that print exists -- this is the third hypothesis about these orders and the first two were
+both wrong.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
