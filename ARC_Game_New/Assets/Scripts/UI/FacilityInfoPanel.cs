@@ -323,11 +323,11 @@ public class FacilityInfoPanel : MonoBehaviour
         int consumedToday = storage.GetTodayFoodPacksConsumed();
 
         ShowField(foodPackNeedText);
-        SetTextSafe(foodPackNeedText, $"Food Pack Need: {need}");
+        SetTextSafe(foodPackNeedText, $"Meals Need: {need}");
         SetTextColor(foodPackNeedText, need > 0 ? warningColor : goodColor);
 
         ShowField(foodPackConsumedText);
-        SetTextSafe(foodPackConsumedText, $"Food Packs Consumed Today: {consumedToday}");
+        SetTextSafe(foodPackConsumedText, $"Meals Consumed Today: {consumedToday}");
         SetTextColor(foodPackConsumedText, normalColor);
     }
 

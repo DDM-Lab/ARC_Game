@@ -25161,22 +25161,17 @@ MonoBehaviour:
     streamName: 1
     agent: 4
     messages:
-    - "A severe storm system has caused rapid water level rises across the region.
-      If rainfall continues, we can expect further disruptions within the next few
-      days. Each day, you\u2019ll need to open facilities based on urgent needs,
-      manage limited resources, keep clients safe and fed, and request aid when supplies
-      run low. Emergencies can happen at any time\u2014stay alert."
-    - "Your daily report tracks client's satisfaction and resource efficiency. Strong
-      performance strengthens your team. Can you lead through chaos? Let\u2019s begin."
+    - A severe storm has caused rapid water level rises across the region. Continued
+      rainfall could bring further disruptions in the coming days.
+    - Open facilities based on need, manage resources, protect clients, and request
+      aid before supplies run out. Emergencies can strike anytime.
   constructionGuideStream:
     streamName: 2
-    agent: 1
+    agent: 2
     messages:
-    - "The disaster is approaching. Your priority today is to set up facilities.
-      Choose good locations and open shelters and kitchens. Don\u2019t overbuild\u2014you
-      can close and rebuild at any time. "
-    - "I recommend starting with two kitchens and two shelters to provide space and
-      a steady food supply\u2014but it\u2019s up to you."
+    - The disaster is approaching. Today's priority is setting up facilities. Choose
+      good locations and open shelters and kitchens. Don't overbuild, since you can
+      close and rebuild at any time.
   feedbackStream:
     streamName: 3
     agent: 1
@@ -25186,22 +25181,21 @@ MonoBehaviour:
     streamName: 4
     agent: 1
     messages:
-    - "You can click \u201CAssign\u201D to allocate workers to shelters and kitchens
-      so the facilities can operate. Open the Worker Center for details. Trained
-      workers perform better, so consider investing in training early."
-  noBuildingsMessage: "Not opening any facilities at the start\u2026 an interesting
-    choice. Most people prepare early for what's coming next, but this approach might
-    lead to a different outcome. We'll see how it goes."
-  noKitchenMessage: "Hmm\u2026 you might want to consider building some kitchens.
-    Kitchens produce food, and food is essential for keeping clients satisfied and
-    stable."
-  tooManyBuildingsMessage: "You may have opened too many facilities, but that depends
-    on your strategy. If you regret a decision, you can click the \u201CX\u201D icon
-    on a facility to close it and free up resources."
-  tooFewBuildingsMessage: "You may need additional facilities. Feel free to build
-    more at any time\u2014just remember that opening a facility takes time."
-  goodStartMessage: "Interesting choice. Let\u2019s see how this strategy plays out
-    as the situation develops."
+    - Don't forget to assign workers so your facilities can run. Check the Workers
+      panel for details, and consider training them early for better performance.
+  noBuildingsMessage: Looks like you didn't open any facilities at the start. An
+    interesting choice. Most people prepare early, but we'll see how this approach
+    plays out.
+  noKitchenMessage: Looks like you didn't open any kitchen. Kitchens produce food
+    to keep clients satisfied and stable. Without one, you may need to rely on costly
+    fast food delivery to meet demand.
+  tooManyBuildingsMessage: Looks like you've opened a lot of facilities. Remember,
+    if you want to close a facility, click the "X" button on a facility to close
+    it and free up resources.
+  tooFewBuildingsMessage: Looks like you're being conservative with facilities. Feel
+    free to build more anytime, but remember that opening a facility takes time.
+  goodStartMessage: Nice work so far. A strong opening setup sets you up well for
+    what's ahead.
   abandonedSiteHighlightPrefab: {fileID: 2877978515287072022, guid: 43a67bd4facae1f41bad5d3546b1a08c, type: 3}
   highlightDuration: 3
   buildingSystem: {fileID: 550057043}
