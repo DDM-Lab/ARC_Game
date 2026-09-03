@@ -222,6 +222,23 @@ class Fleet:
                 best, best_score = i, score
         return best
 
+    def soonest_free(self):
+        """The undamaged vehicle that frees earliest, and how many frames until it does.
+
+        DeliverySystem does not drop an order when every vehicle is out -- it leaves it in
+        pendingTasks and assigns it the moment one lands. So a trip placed against a busy
+        fleet costs its wait PLUS its drive, which is still a measured quantity; falling
+        back to a fitted constant here threw that away on 51 of the replay's deliveries.
+        """
+        best, best_wait = None, None
+        for i in range(len(self.pos)):
+            if self.damaged[i]:
+                continue
+            wait = self.busy_frames[i] if self.carrying[i] is not None else 0
+            if best_wait is None or wait < best_wait:
+                best, best_wait = i, wait
+        return best, best_wait
+
     def free_vehicle(self):
         av = self.available()
         return av[0] if av else None
@@ -284,4 +301,28 @@ FACILITY_CELL = {
     'Community Trinity': (9, 3),
     'Kitchen Alpha': (-8, -3),
     'Motel': (-5, 4),
+}
+
+
+# Buildable-site id -> road cell, from the gym's own pathfind_matrix (no new instrumentation
+# was needed; it already reports every AbandonedSite's position). Without this, a facility
+# the PLAYER builds had no location, so its deliveries fell back to the fitted
+# DEFERRED_LATENCY -- which was 176 of 247 travel computations on the replay corpus, i.e.
+# most of them. Prebuilts are in FACILITY_CELL above.
+SITE_CELL = {
+    0: (-8, -3),
+    1: (4, 5),
+    2: (9, 3),
+    3: (-5, -2),
+    4: (-6, 4),
+    5: (2, 5),
+    6: (3, -4),
+    7: (-2, -4),
+    8: (-2, -4),
+    9: (-6, -3),
+    10: (6, -7),
+    11: (-5, -5),
+    12: (1, 5),
+    13: (4, -3),
+    14: (-1, 5),
 }

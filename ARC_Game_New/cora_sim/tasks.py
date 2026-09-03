@@ -127,7 +127,7 @@ class TaskBoard:
     """Active tasks plus in-flight deliveries."""
 
     __slots__ = ("active", "deliveries", "next_id", "awaiting", "has_supplier",
-                 "_sources", "queue", "busy", "fleet", "cell_for")
+                 "_sources", "queue", "busy", "fleet", "cell_for", "repair_for")
 
     def __init__(self, has_supplier=None, cell_for=None):
         self.active = {}                    # task_id -> Task
@@ -152,6 +152,12 @@ class TaskBoard:
         # from wherever the assigned vehicle last parked.
         self.fleet = Fleet()
         self.cell_for = cell_for
+        # task_id -> vehicle index, for the repair task a flood-damaged vehicle spawns.
+        # Without it a vehicle damaged once is out for the rest of the episode, the fleet
+        # drains to nothing, and every later delivery silently reverts to the fitted
+        # constant -- which is exactly what the port did before this: 87 of 168 fallbacks
+        # happened with all three vehicles damaged.
+        self.repair_for = {}
 
     def clone(self):
         b = TaskBoard.__new__(TaskBoard)
@@ -165,6 +171,7 @@ class TaskBoard:
         b.busy = self.busy
         b.fleet = self.fleet.clone()
         b.cell_for = self.cell_for
+        b.repair_for = dict(self.repair_for)
         return b
 
 
@@ -186,16 +193,67 @@ class TaskBoard:
         # vehicle takes the job decides how long leg 1 is. Picking the first free one
         # instead pinned every trip to vehicle 0 and left the other two parked forever.
         v = self.fleet.best_vehicle(src, quantity)
+        wait = 0
         if v is None:
-            return None          # every vehicle out or damaged; caller falls back
+            # Nothing free RIGHT NOW is not the same as no opinion. pendingTasks holds the
+            # trip until a vehicle lands, so the cost is that wait plus the drive.
+            v, wait = self.fleet.soonest_free()
+            if v is None:
+                return None      # every vehicle damaged; caller falls back
+        if wait:
+            # The vehicle is still out on its previous trip; it will start this one from
+            # where that one ends, which dispatch already models via self.pos.
+            self.fleet.busy_frames[v] = 0
+            self.fleet.carrying[v] = None
         if not self.fleet.dispatch(v, task_id, src, dst, flooded):
+            # StopVehicleDueToFlood spawns a repair task through
+            # FloodTaskGenerator.CreateVehicleRepairTask: Emergency, roundsRemaining 2, two
+            # choices -- repair now for $1200, or delay for -5 satisfaction. The vehicle
+            # stays out of service until choice 1 is answered.
+            self.open_repair_task(v)
             return False         # route cut: order dropped, vehicle damaged
-        frames = self.fleet.busy_frames[v]
+        frames = self.fleet.busy_frames[v] + wait
         # Occupancy is REAL: the vehicle stays out for the whole drive and is not available
         # for the next order. Zeroing it here (as the first cut of this did) made
         # best_vehicle always return vehicle 0 and silently removed the fleet limit.
         # Round UP: a trip needing any part of a round has not landed by the end of it.
         return max(1, -(-frames // roads.FRAMES_PER_ROUND_DEFAULT))
+
+
+    REPAIR_COST = 1200          # AgentChoice(1, "Repair immediately ($1200)")
+    REPAIR_DELAY_SATISFACTION = -5   # AgentChoice(2, "Delay repair ...")
+    REPAIR_ROUNDS = 2           # repairTask.roundsRemaining
+
+    def open_repair_task(self, vehicle):
+        """CreateVehicleRepairTask, including its de-duplication.
+
+        The C# refuses to create a second repair task for a vehicle that already has one,
+        matching on the vehicle name in the description; the port matches on the index.
+        """
+        if vehicle in self.repair_for.values():
+            return None
+        task = Task(self.next_id, "Repair", 0, self.REPAIR_ROUNDS)
+        self.next_id += 1
+        self.add(task)
+        self.repair_for[task.task_id] = vehicle
+        return task
+
+    def answer_repair(self, task_id, choice_id, counters=None):
+        """ApplyChoiceImpacts' repair branch, which the HEADLESS path also reaches.
+
+        Repair lives in TaskDetailUI, which reads like a GUI-only path, but
+        SelectTaskChoiceHeadless routes the gym through the same CompleteTaskAction ->
+        ApplyChoiceImpacts, so the headless server really does repair. Only choiceId 1
+        repairs; choice 2 leaves the vehicle damaged and costs satisfaction.
+        """
+        vehicle = self.repair_for.pop(task_id, None)
+        if vehicle is None:
+            return False
+        self.active.pop(task_id, None)
+        if choice_id == 1:
+            self.fleet.repair(vehicle)
+            return True
+        return False
 
     # ── lifecycle ───────────────────────────────────────────────────────────────────
     def add(self, task: Task) -> Task:

@@ -135,6 +135,14 @@ class World:
         f = self.economy.facility(str(name))
         if not f:
             return None
+        # A player-built facility sits on the site it was built on, and SITE_CELL knows
+        # where every site is. Before this, every built facility was locationless and its
+        # deliveries fell back to the fitted constant -- 176 of 247 travel computations.
+        sid = f.get("site_id")
+        if sid is not None:
+            cell = roads.SITE_CELL.get(sid)
+            if cell is not None:
+                return cell
         # The port's own economy records carry no position -- only Unity observations do --
         # so this branch serves callers driven by live observations (play.py) and any
         # facility not in the prebuilt table.
@@ -401,6 +409,18 @@ def answer(w: World, task_id, choice_id) -> bool:
     This is the surrogate's equivalent of env.choose(): it applies the choice's budget and
     satisfaction impacts, queues its delivery with the right latency, and takes the task
     off the board. Without it a self-driven episode can only ever let tasks expire."""
+    # A vehicle-repair task has no generated spec -- it is spawned by the flood damaging a
+    # vehicle, not by a trigger -- so it is dispatched before the spec lookup below, which
+    # would otherwise reject it and leave the fleet permanently short.
+    if task_id in w.tasks.repair_for:
+        repaired = w.tasks.answer_repair(task_id, choice_id, w.economy.counters)
+        if repaired:
+            w.economy.spend(w.tasks.REPAIR_COST, "other")
+        else:
+            w.economy.satisfaction = max(
+                0, w.economy.satisfaction + w.tasks.REPAIR_DELAY_SATISFACTION)
+        return True
+
     entry = w.generated_specs.get(task_id)
     task = w.tasks.active.get(task_id)
     if entry is None or task is None:
@@ -632,6 +652,15 @@ def open_choices(w: World):
     mode and made every answered task succeed."""
     out = []
     for task_id in w.tasks.active:
+        # A vehicle-repair task is spawned by flood damage rather than by a trigger, so it
+        # has no generated spec and the loop below would skip it. It still appears on the
+        # board and still takes a choice: 1 repairs for $1200, 2 delays at -5 satisfaction.
+        # Omitting it left 14 repair tasks created and 0 ever answered, so every damaged
+        # vehicle stayed damaged and the fleet drained to nothing.
+        if task_id in w.tasks.repair_for:
+            out.append((task_id, 1))
+            out.append((task_id, 2))
+            continue
         entry = w.generated_specs.get(task_id)
         if not entry:
             continue

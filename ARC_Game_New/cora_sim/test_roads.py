@@ -132,12 +132,57 @@ def test_occupancy_is_real():
     assert f.best_vehicle(BUILDING_CELL["Kitchen_0"]) is not None, "they must come home"
 
 
+def test_repair_task_returns_the_vehicle():
+    """Flood damage spawns a repair task, and answering it with choice 1 restores service.
+
+    FloodTaskGenerator.CreateVehicleRepairTask makes an Emergency task with two choices --
+    repair now for $1200, or delay at -5 satisfaction -- and ApplyChoiceImpacts repairs only
+    on choiceId 1. This looked GUI-only (it lives in TaskDetailUI) but the headless gym
+    routes through SelectTaskChoiceHeadless -> CompleteTaskAction -> ApplyChoiceImpacts, so
+    the headless server really does repair. Without this loop a vehicle damaged once was out
+    for the rest of the episode and the fleet drained to nothing.
+    """
+    from cora_sim.tasks import TaskBoard
+    from cora_sim import roads
+    b = TaskBoard(cell_for=roads.FACILITY_CELL.get)
+    assert b.travel_rounds("Kitchen Alpha", "Community Charleston",
+                           flooded=roads.ROAD_CELLS) is False
+    assert any(b.fleet.damaged), "a cut route must damage the vehicle"
+    assert b.repair_for, "damage must spawn a repair task"
+    tid = next(iter(b.repair_for))
+    assert b.answer_repair(tid, 2) is False, "delaying leaves the vehicle out"
+    assert any(b.fleet.damaged)
+    b.open_repair_task(0)
+    tid = next(iter(b.repair_for))
+    assert b.answer_repair(tid, 1) is True, "choice 1 repairs"
+    assert not any(b.fleet.damaged)
+
+
+def test_busy_fleet_queues_instead_of_guessing():
+    """With every vehicle out, a trip WAITS -- it does not fall back to a constant.
+
+    DeliverySystem leaves the trip in pendingTasks and assigns it the moment a vehicle
+    lands, so the cost is that wait plus the drive, which is still measured. Treating a busy
+    fleet as "no opinion" reverted 51 of the replay's deliveries to the fitted constant.
+    """
+    from cora_sim.tasks import TaskBoard
+    from cora_sim import roads
+    b = TaskBoard(cell_for=roads.FACILITY_CELL.get)
+    first = [b.travel_rounds("Kitchen Alpha", "Community Trinity") for _ in range(3)]
+    assert all(isinstance(x, int) for x in first), first
+    queued = b.travel_rounds("Kitchen Alpha", "Community Trinity")
+    assert isinstance(queued, int), "a busy fleet must still produce a measured time"
+    assert queued >= max(first), "a queued trip cannot land sooner than an unqueued one"
+
+
 def main():
     print("cora_sim road graph + travel time vs Unity")
     fails = 0
     for fn in (test_roads, test_fleet_carries_position, test_fleet_drops_cut_routes,
                test_flood_damages_the_vehicle_and_drops_the_order,
-               test_vehicle_choice_is_nearest_to_source, test_occupancy_is_real):
+               test_vehicle_choice_is_nearest_to_source, test_occupancy_is_real,
+               test_repair_task_returns_the_vehicle,
+               test_busy_fleet_queues_instead_of_guessing):
         try:
             fn()
             print(f"  {fn.__name__}: OK")

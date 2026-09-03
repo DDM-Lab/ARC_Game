@@ -201,7 +201,7 @@ class Economy:
         e.working_trained, e.working_untrained = self.working_trained, self.working_untrained
         e.in_training = list(self.in_training)
         e.arriving = list(self.arriving)
-        e.under_construction = list(self.under_construction)
+        e.under_construction = [list(x) for x in self.under_construction]
         e.buildings = [dict(b) for b in self.buildings]
         e.motel_pop = self.motel_pop
         e.pending_transfers = list(self.pending_transfers)
@@ -250,7 +250,9 @@ class Economy:
         if site_id is not None:
             self.used_sites.add(site_id)
         self.spend(cost, SPEND_CATEGORY.get(building_type, "other"))
-        self.under_construction.append([C["construction_rounds"], building_type])
+        # site_id rides along so the finished building knows WHERE it is: delivery time
+        # is the drive to it, and without a location it falls back to a fitted constant.
+        self.under_construction.append([C["construction_rounds"], building_type, site_id])
         return True
 
     def hire(self, kind: str, quantity: int, advertised_cost: int) -> bool:
@@ -345,14 +347,15 @@ class Economy:
             entry[0] -= 1
         finished = [e for e in self.under_construction if e[0] <= 0]
         self.under_construction = [e for e in self.under_construction if e[0] > 0]
-        for _rounds, btype in finished:
+        for _rounds, btype, *_site in finished:
             # Construction completing puts a building in NeedWorker, NOT in service.
             self.buildings.append({"name": f"{btype}_{len(self.buildings)}", "type": btype,
                                    "status": STATUS_NEED_WORKER, "assigned": 0,
                                    "trained": 0, "untrained": 0,
                                    "resources": {"foodPacks": 0, "foodPacksCapacity": 400,
                                                  "population": 0,
-                                                 "populationCapacity": 400}})
+                                                 "populationCapacity": 400},
+                                   "site_id": (_site[0] if _site else None)})
             # A kitchen that finishes construction is stocked at the next day reset, not
             # immediately -- it is still NeedWorker here.
         # Deconstruction runs on the same round clock as construction.
