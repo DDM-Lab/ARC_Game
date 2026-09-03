@@ -509,12 +509,34 @@ TRIED AND INERT: giving `awaiting` the same fresh skip `active` has. It never fi
 `fresh` is already cleared by the first advance after creation, long before the task is
 answered. Reverted.
 
-So the question is why the port's relocation does not deliver inside its remaining rounds when
-Unity's does. Either the task has fewer rounds left than Unity's at the moment it is answered
--- the per-rollover-pass creation fix may have over-corrected for tasks that are later answered
--- or the port's delivery takes an extra round to land. `diag_resolutions` plus a print of
-`rounds_remaining` at ANSWER time, compared against Unity's task:created rounds field,
-separates those two in one run.
+SETTLED: THE TASK IS ONE ADVANCE TOO OLD WHEN IT IS ANSWERED. Spying on S.answer for 5501:
+
+    ANSWER id=6 rounds_remaining=1 fresh=False
+    ANSWER id=7 rounds_remaining=1 fresh=False
+
+Unity creates these with `"rounds":2` (task:created marks, every relocation in the capture).
+The port holds 1 at answer time, so the very next advance takes it to 0 and expires it with
+delivered=0 -- while its delivery is not due until the following round. Unity's survives,
+dispatches at s6d2r1f321 and unloads at s7d2r2f353, completing fulfilled. That is exactly the
+lodgingFulfilled 100-against-200 gap, and lodgingResolved hides it because resolvedAdd is the
+demand either way.
+
+So the port ages these tasks ONE ADVANCE TOO MANY BEFORE THE ANSWER. That is the
+per-rollover-pass creation change over-correcting: it correctly stopped tasks being an advance
+too YOUNG (which was the round-5 lodgingResolved 100-against-200), and pushed the ones that
+are later answered an advance too OLD.
+
+THE SHAPE OF THE FIX: a task created in rollover pass 0 must be aged by pass 1's advance --
+that part is right and fixed the larger bug -- but it must NOT also be aged by the advance of
+the step in which it is answered before its delivery has had a chance to land. Compare against
+Unity's own ordering: OnTimeSegmentAdvanced decrements, then CheckExpiredTasks resolves on the
+next Update, and the delivery completes during the simulation phase BEFORE that advance. The
+port ticks deliveries at the head of the step, so a delivery due this round completes before
+the ageing -- but this delivery is not due until next round, and Unity's is not either. The
+question to answer first is therefore whether Unity's task genuinely still holds 2 at answer
+time, or whether it holds 1 and survives because expiry cannot fire on an InProgress task with
+a live delivery. Instrument Unity's roundsRemaining at the choice frame before changing the
+port again; the marks do not currently carry it.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
