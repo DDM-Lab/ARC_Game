@@ -417,6 +417,45 @@ def _unity_round(w):
     return w.segment + (w.day - 1) * ROUNDS_PER_DAY
 
 
+def _create_tasks(w, rolls, day_changed):
+    """Build task objects from rolls that have already drawn.
+
+    Called PER ROLLOVER PASS so a task born in pass 0 is on the board for pass 1's
+    segment advance, which is what ages it. Unity creates at s5d2r0 and its own second
+    rollover advance takes rounds 2 -> 1; the port used to create after BOTH passes, so
+    the task arrived an advance young and expired -- and credited -- a round late.
+    """
+    for task_id, facility, born_in in rolls:
+        spec = _TASK_SPEC.get(task_id)
+        if spec is None or not _admits(w, spec, facility):
+            continue
+        state = {"choices": spec.get("choices") or []}
+        tag = spec.get("taskTag") or "None"
+        t = Task(w.tasks.next_id, tag, demand_of(state, tag),
+                 spec.get("roundsRemaining") or 1)
+        t.destination = ""
+        # A task born in the ROLLOVER is not new to the round that follows it. The
+        # rollover IS a segment advance (Unity's d2r0), so OnTimeSegmentAdvanced ticks
+        # such a task at d2r1 and again at d2r2 -- two decrements by the time round 5's
+        # advance runs. The port's fresh-skip ate one of them and put every
+        # rollover-born task a full round late, which is why an answered relocation
+        # that should have gone Incomplete at round 5 was still waiting.
+        # ...but only one born in the FIRST rollover pass. The rollover runs two passes,
+        # evaluated as segment 0 and segment 1; a task created in the segment-1 pass is
+        # new to that segment and must not be aged by it. Marking both passes not-fresh
+        # aged half the board a round early.
+        # The pass this roll actually fired in, not w.segment -- which has already been
+        # reset to 1 by the time these tasks are built. That reset is why the earlier
+        # version of this rule was a silent no-op: relocations fire in the FIRST
+        # rollover pass (they carry no round trigger at all), and Unity's marks show
+        # them created at d2r0 and expiring at d2r2, two ticks later.
+        if day_changed and born_in == 0:
+            t.fresh = False
+        w.tasks.next_id += 1
+        w.tasks.add(t)
+        w.generated_specs[t.task_id] = (task_id, facility, spec)
+
+
 def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     """Advance one round: segment bookkeeping, then generation, then flood.
 
@@ -581,49 +620,25 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
             # rounds=2 task created before it ages 2 -> 0 and expires inside this step.
             w.tasks.age_and_expire(w.economy.counters)
             _tracker(w, marks)
-            rolls += [r + (i,) for r in _pass(w, marks)]
+            _r = [r + (i,) for r in _pass(w, marks)]
+            rolls += _r
+            if w.use_generation:
+                _create_tasks(w, _r, day_changed)
         w.segment = 1
     else:
         w.segment += 1
         w.tasks.age_and_expire(w.economy.counters)
         _tracker(w, marks)
         if w.segment in _GENERATION_SEGMENTS:
-            rolls += [r + (w.segment,) for r in _pass(w, marks)]
+            _r = [r + (w.segment,) for r in _pass(w, marks)]
+            rolls += _r
+            if w.use_generation:
+                _create_tasks(w, _r, day_changed)
     w.generated = rolls
     # THE JOIN THAT MAKES THE SURROGATE SELF-DRIVING. generation_pass decides WHICH tasks
     # fire; without this the port produced a list of ids and created nothing, so it could
     # generate a task and never answer one -- which is why every equivalence test so far
     # has had to feed it Unity's own task lifecycle.
-    if w.use_generation:
-        for task_id, facility, born_in in rolls:
-            spec = _TASK_SPEC.get(task_id)
-            if spec is None or not _admits(w, spec, facility):
-                continue
-            state = {"choices": spec.get("choices") or []}
-            tag = spec.get("taskTag") or "None"
-            t = Task(w.tasks.next_id, tag, demand_of(state, tag),
-                     spec.get("roundsRemaining") or 1)
-            t.destination = ""
-            # A task born in the ROLLOVER is not new to the round that follows it. The
-            # rollover IS a segment advance (Unity's d2r0), so OnTimeSegmentAdvanced ticks
-            # such a task at d2r1 and again at d2r2 -- two decrements by the time round 5's
-            # advance runs. The port's fresh-skip ate one of them and put every
-            # rollover-born task a full round late, which is why an answered relocation
-            # that should have gone Incomplete at round 5 was still waiting.
-            # ...but only one born in the FIRST rollover pass. The rollover runs two passes,
-            # evaluated as segment 0 and segment 1; a task created in the segment-1 pass is
-            # new to that segment and must not be aged by it. Marking both passes not-fresh
-            # aged half the board a round early.
-            # The pass this roll actually fired in, not w.segment -- which has already been
-            # reset to 1 by the time these tasks are built. That reset is why the earlier
-            # version of this rule was a silent no-op: relocations fire in the FIRST
-            # rollover pass (they carry no round trigger at all), and Unity's marks show
-            # them created at d2r0 and expiring at d2r2, two ticks later.
-            if day_changed and born_in == 0:
-                t.fresh = False
-            w.tasks.next_id += 1
-            w.tasks.add(t)
-            w.generated_specs[t.task_id] = (task_id, facility, spec)
 
     if on_flood_enter is not None:
         on_flood_enter(w)

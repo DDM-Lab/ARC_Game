@@ -453,13 +453,24 @@ them. The port collects `rolls` from BOTH rollover passes and only calls `_creat
 the loop has finished, so a task born in pass 0 never experiences pass 1's advance and arrives
 a full advance young.
 
-THE FIX: create tasks per-pass INSIDE the rollover loop, so a pass-0 task is on the board for
-pass 1's advance. Note this is adjacent to the very first hypothesis of the session, which
-moved creation and was reverted for taking exact traces 2 -> 0 -- but that moved creation
-relative to the DELIVERY TICK, which was wrong. This moves it relative to the ROLLOVER
-ADVANCES, which the per-advance instrumentation above now justifies directly. Keep the two
-straight; guard with the full suite plus the replay, and re-read the advance spy above to
-confirm tasks 8 and 9 arrive at round 5 holding 1 rather than 2.
+FIXED. `_create_tasks` is now called PER ROLLOVER PASS inside the loop, so a task born in
+pass 0 is on the board for pass 1's advance. The round-5 divergence is gone on all eleven
+traces and the residual collapsed by two orders of magnitude:
+
+    before   round 5   lodgingResolved unity=200  port=100
+    after    round 6   lodgingResolved unity=201  port=200
+
+11 suites pass. Every trace now diverges at round 6, and always by ONE unit -- 201/200,
+401/400, 301/300 -- or on lodgingFulfilled by 100 (5501, 5503). The +1 shape is the signature
+of `resolvedAdd = demand > 0 ? demand : 1`, the demand==0 fallback: a Lodging task with
+demandQuantity 0 credits exactly 1, and something with zero demand is resolving in Unity that
+the port either does not resolve or credits as 0. The Flood Alert task (id=14, tag Lodging,
+demand=0) is the obvious candidate -- it is tagged Lodging and it EXPIRES, and expiry calls
+RecordTaskResolution.
+
+NEXT, and it is small: check whether the port resolves zero-demand Lodging tasks at all, and
+that it credits 1 rather than 0 for them. The separate lodgingFulfilled 200-vs-100 on 5501 and
+5503 is a different residue and should be read after the +1 is settled.
 
 Two facts worth keeping: LoadCargo and UnloadCargo contain no delay at all, and a vehicle
 already on its source road cell produces a 1-node path whose movement loop never runs, so it
