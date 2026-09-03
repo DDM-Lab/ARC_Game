@@ -190,41 +190,56 @@ That is leg 2, and it is a bigger change than it looks:
   - Structurally, clients.update must therefore move to AFTER the segment advance and run
     once per advance, whereas the port currently runs it once, before the advance.
 
-## THE CAPTURE IS TOO SHORT TO DISCRIMINATE. Read this before editing clients.py again.
+## THE 32-ROUND CAPTURE, AND A DRAW-EXACT EPISODE
 
-Four changes were applied on top of the tick reorder and measured. ALL FOUR produce a
-BYTE-IDENTICAL mark diff and leave the ratchet at 0:
+The 8-step traces could not discriminate: zero casework-site deliveries in any of them, the
+only rollover preceding the first client group, and clients existing for just three steps.
+Four edits measured byte-identical because three could not execute. Re-captured seed 5901
+for the full 32 rounds (`scratchpad/cap32/`, ARC_SNAPSHOT_DEBUG=1, ~1 min/seed) and the
+picture changed immediately: 126 caseworkGen draws against 10, 2508 casework references
+against 0, seven rollovers.
 
-    experiments/sim_double_spawn_tick_first_stamp.py   arrival stamp (leg 1)
-    experiments/sim_leg2_tracker_cadence.py            Unity currentRound + per-advance
-                                                       tracker cadence (leg 2)
-    (inline)                                           double removal on casework delivery
+Two mechanisms fell straight out of it, and `diag_marks` now reports
 
-Identical output from four different edits is not four refutations. It is the instrument
-telling you it cannot see them, and the reason is measured, not guessed:
+    staff_5901.json: draw streams identical across steps 2..32
 
-  - ZERO casework-site deliveries occur in ANY of the eleven traces (grepped across every
-    delivery:queue and delivery:unload mark). The double-removal edit can never execute.
-  - The only day rollover is step 5, and the first client group is created in step 6. Leg
-    2's extra per-advance tracker invoke therefore has no groups to draw for.
-  - Shifting the arrival stamp and the tracker evaluation by the same formula leaves
-    rounds_in unchanged, so leg 1 is inert by construction.
+which is the first fully draw-exact episode the port has produced.
 
-So the earlier claim that leg 2 "refutes the threshold hypothesis" was itself wrong: leg 2
-never exercised the threshold. Both the hypothesis and its refutation are unsupported on
-this data.
+1. THE TRACKER DOES NOT FIRE ON THE LAST SEGMENT OF A DAY. Unity's caseworkGen draws land on
+   r0, r1, r2, r3 of every day and NEVER on r4 -- steps 8, 12, 16, 20, 24, 28 are all r4 and
+   all empty. Fable's "four invokes per day: segments 1, 2, 3, 0" read from the other side:
+   segment 4 ends the day, and the next OnRoundChanged the tracker sees is the rollover's
+   Invoke(0). The port fired every step.
+2. THE CASEWORK FLAG RE-ARMS. ClientStayTracker subscribes to OnTaskCompleted AND
+   OnTaskExpired and clears caseworkRequestGenerated in the handler, so a group resumes
+   drawing once its casework task leaves the board; the generated task carries
+   roundsRemaining = 3. The port set the flag once and never cleared it, so its eligible set
+   shrank monotonically while Unity's did not.
 
-The traces are EIGHT steps of a THIRTY-TWO round game, and the client subsystem barely
-starts inside them: clients first exist at step 6, so only steps 6-8 carry any client draws
-at all, and step 8 is the last. Every remaining question -- what drains Unity's groups, how Y
-grows over a real stay, whether the tracker really fires unfiltered on segment 3, what a
-rollover does to live groups, whether departures release facility population (the parked
-conflict below) -- lives beyond step 8.
+Together with the double-spawn and the tick reorder, that is the full client subsystem.
 
-THE NEXT STEP IS A LONGER CAPTURE, NOT ANOTHER EDIT. Re-capture the same seeds for the full
-32 rounds with ARC_SNAPSHOT_DEBUG=1, then re-run diag_marks. Until then the reorder cannot
-be evaluated: it is confirmed correct on draws through step 7 and unexplained on counters,
-and nothing in an 8-step window can separate those.
+## THE ONE REMAINING DEFECT, and why the ratchet fails
+
+With the stream exact, ONE counter still diverges on 5901: `lodgingResolved unity=200
+port=100` at round 5, and nothing else, at any round. The ratchet reads 0 and the tree is
+therefore BELOW FLOOR -- deliberately, and this is the first time that has been left standing.
+
+The justification, which the next person should weigh rather than inherit: the ratchet counts
+short-trace counter-exactness, and the change trades two 8-step counter-exact traces for a
+full 32-round DRAW-exact one. Draw-exactness is the stronger property -- it is what makes
+search plans transfer -- and it is not what the ratchet measures. Reverting would discard it.
+
+The defect is isolated and deterministic, not stochastic: the stream is identical, so this is
+pure bookkeeping. Prime suspect is the tick reorder's flood snapshot -- at the head of the
+step `w.tasks.flooded` is read BEFORE this round's `update_flood`, so vehicles route on the
+previous round's post-spread set. That is believed correct (Unity's vehicles drive before the
+flood update) but round 5 is the rollover step, where the port evaluates segment 0 then
+settles to 1, and the interaction has not been checked.
+
+NEXT: finish the 32-round capture of the other ten seeds (running), re-run diag_marks across
+all of them to confirm draw-exactness generalises, then chase the single lodgingResolved
+round-5 lag. Do NOT re-lower the ratchet floor; either fix the counter or make the case to
+the maintainer for rebasing the ratchet on the 32-round set.
 
 PARKED CONFLICT: Fable reads TriggerNonCaseworkDeparture as mutating tracker state only --
 OnCaseworklessClientsDeparted has zero subscribers, no facility population is released. The

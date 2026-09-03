@@ -25,6 +25,9 @@ import os as _os
 
 from .rng import f32, f32mul, threshold_for
 
+# GameTask roundsRemaining for the generated BackToHome task (TaskSystem.CreateTask).
+_CASEWORK_ROUNDS = 3
+
 _CONST_PATH = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
                             "corpus", "sim_constants.json")
 
@@ -53,7 +56,7 @@ class ClientGroup:
     """One delivered group of people, tracked from arrival to departure."""
 
     __slots__ = ("count", "with_need", "arrival_round", "departure_round",
-                 "departed", "casework_generated", "facility")
+                 "departed", "casework_generated", "casework_round", "facility")
 
     def __init__(self, count, with_need, arrival_round, departure_round, facility=""):
         self.count = count
@@ -62,6 +65,7 @@ class ClientGroup:
         self.departure_round = departure_round
         self.departed = False
         self.casework_generated = False
+        self.casework_round = -1
         self.facility = facility
 
     def clone(self):
@@ -69,6 +73,7 @@ class ClientGroup:
         g.count, g.with_need = self.count, self.with_need
         g.arrival_round, g.departure_round = self.arrival_round, self.departure_round
         g.departed, g.casework_generated = self.departed, self.casework_generated
+        g.casework_round = self.casework_round
         g.facility = self.facility
         return g
 
@@ -144,6 +149,17 @@ class ClientTracker:
                 # the rest of the episode: measured at 160,000 against Unity's 100,000,
                 # exactly 300 residents x $200 that had already gone home.
                 departures.append((leaving, group.facility))
+            # THE FLAG RE-ARMS. ClientStayTracker subscribes to BOTH OnTaskCompleted and
+            # OnTaskExpired and sets caseworkRequestGenerated = false in the handler, so a
+            # group resumes drawing once its casework task leaves the board. The generated
+            # task carries roundsRemaining = 3, so an unanswered one re-arms the group three
+            # rounds later. Never re-arming made the port's eligible set shrink monotonically
+            # while Unity's did not -- the port ran out of groups to draw for, which the mark
+            # diff sees as Unity still drawing caseworkGen where the port has moved on to flood.
+            if (group.casework_generated and group.casework_round >= 0
+                    and current_round - group.casework_round >= _CASEWORK_ROUNDS):
+                group.casework_generated = False
+                group.casework_round = -1
             if group.with_need > 0 and not group.casework_generated:
                 y = max(1, rounds_in)
                 pct = f32mul(C["base_casework_pct"], C["growth"] ** (y - 1))
@@ -152,6 +168,7 @@ class ClientTracker:
                     marks.append("draw:Client.caseworkGen")
                 if rng.value_lt(threshold_for(f32(pct / 100.0))):
                     group.casework_generated = True
+                    group.casework_round = current_round
                     counters["caseworkRequested"] += group.count
         return departures
 
