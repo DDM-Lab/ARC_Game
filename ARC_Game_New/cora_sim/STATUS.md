@@ -101,9 +101,15 @@ right the whole time, which is exactly why BOTH relocation experiments took the 
 count 2 -> 0: form 1 moved the rollover passes too, form 2 moved only the segment pass, and
 both were moving code that was already in the correct place. sim.py is unchanged.
 
-## The real missing mechanism: CLIENT SPAWN ON POPULATION ARRIVAL
+## Client spawn on population arrival: MODELLED, but fired differently than Unity
 
-Population deliveries spawn clients. The port models none of this. Measured on seed 5901:
+Correction to a claim made an hour earlier in this session: the port does NOT lack client
+spawn. `clients.py` models the whole subsystem -- caseworkNeed once per PERSON, one
+stayDuration per group, caseworkGen per undecided group per round, the shrink-on-departure
+in TriggerNonCaseworkDeparture, and the whole-group crediting of caseworkRequested. The
+gap is in HOW IT IS FIRED, not whether it exists. What follows replaces that claim.
+
+Measured on seed 5901:
 
     draw:Client.caseworkNeed    800  in 8 bursts of EXACTLY 100
     draw:Client.stayDuration      8  exactly 1 per burst
@@ -111,23 +117,32 @@ Population deliveries spawn clients. The port models none of this. Measured on s
 
 There are exactly 4 Population unloads in the episode, each nominal=100 actual=100. The 8
 burst frames are EXACTLY the union of the 4 Population `delivery:unload` frames and the 4
-Population `delivery:complete` frames -- verified by set diff, exact match, not eyeballed.
-So the spawn path runs TWICE per population delivery, once at unload and once at complete.
-Whether that second run is an unintended double-spawn is being read out of the C# now; it
-is a candidate fifth game bug, not yet confirmed.
+Population `delivery:complete` frames -- verified by set diff, not eyeballed. So Unity runs
+the spawn path TWICE per population delivery, once at each, drawing 202 where the port
+draws 101.
 
-This unifies two open items that were being tracked separately:
+Two candidate divergences, neither yet settled, and they are independent:
 
-  - `caseworkRequested unity=100/300 port=0` in five of eleven traces. That is ABSENCE, not
-    timing skew -- the port never creates casework because it never spawns clients.
-  - the 135th draw-census fixture, previously described as "client-stay draws not in the
-    round loop". Those are these stayDuration draws. Same mechanism.
+  1. COUNT. Unity bursts twice per delivery; `register_arrival` is called once. Note the
+     port's lodging spend counters are exact on every trace, so the port's single spawn
+     already yields the RIGHT resident population -- which argues Unity's second burst
+     draws without creating a second group (a re-init, or a discarded path) rather than
+     doubling the population. If it creates nothing, it is still a stream-position
+     difference of 101 draws per delivery and must be reproduced.
+  2. TIMING. The port deliberately defers: "a delivery that landed at the end of last round
+     becomes a client arrival at the start of this one" (sim.py, step_round docstring).
+     Unity spawns at the delivery instant, inside the round. On 5901 Unity credits
+     caseworkRequested at s6d2r2f319 while the port, offset by a round, has not yet
+     registered the arrival -- which is a plausible cause of `caseworkRequested port=0`
+     in five of eleven traces.
 
-Next: implement client spawn-on-arrival once the C# read settles the per-client draw order,
-the stayDuration scope (group-level or per-client -- the marks say group), the caseworkGen
-emission condition, and what per-client state persists across rounds. Guard with the
-exact-trace ratchet (floor 2) and re-run the draw census, which should reach 135/135 if the
-draw ORDER is right.
+The draw census does not currently discriminate: its 135th fixture is exactly the
+client-draw round it does not cover. Fixing the census gap and this divergence are the same
+task, and the census reaching 135/135 is the test that the draw ORDER is right.
+
+Both candidates are being read out of the C# now. Do not edit clients.py or sim.py until
+that read lands -- the count question in particular has two opposite fixes depending on
+whether Unity's second burst creates a group.
 
 ## Method notes that cost time
 
