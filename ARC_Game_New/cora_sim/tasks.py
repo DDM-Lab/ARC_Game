@@ -168,7 +168,8 @@ class TaskBoard:
         return b
 
 
-    def travel_rounds(self, source_name, dest_name, flooded=frozenset()):
+    def travel_rounds(self, source_name, dest_name, flooded=frozenset(),
+                      quantity=0, task_id=None):
         """Rounds for a delivery from `source_name` to `dest_name`, or None.
 
         None means "no opinion" -- the caller falls back to DEFERRED_LATENCY -- EXCEPT when
@@ -181,14 +182,18 @@ class TaskBoard:
         dst = self.cell_for(dest_name)
         if src is None or dst is None:
             return None
-        v = self.fleet.free_vehicle()
+        # FindSuitableVehicle scores on straight-line closeness to the SOURCE, so which
+        # vehicle takes the job decides how long leg 1 is. Picking the first free one
+        # instead pinned every trip to vehicle 0 and left the other two parked forever.
+        v = self.fleet.best_vehicle(src, quantity)
         if v is None:
-            return None          # every vehicle out; the queue below handles it
-        if not self.fleet.dispatch(v, None, src, dst, flooded):
-            return False         # route cut
+            return None          # every vehicle out or damaged; caller falls back
+        if not self.fleet.dispatch(v, task_id, src, dst, flooded):
+            return False         # route cut: order dropped, vehicle damaged
         frames = self.fleet.busy_frames[v]
-        self.fleet.carrying[v] = None        # occupancy is tracked by `busy` here
-        self.fleet.busy_frames[v] = 0
+        # Occupancy is REAL: the vehicle stays out for the whole drive and is not available
+        # for the next order. Zeroing it here (as the first cut of this did) made
+        # best_vehicle always return vehicle 0 and silently removed the fleet limit.
         # Round UP: a trip needing any part of a round has not landed by the end of it.
         return max(1, -(-frames // roads.FRAMES_PER_ROUND_DEFAULT))
 
@@ -332,6 +337,9 @@ class TaskBoard:
         not double-counted."""
         # Dispatch queued trips to any free vehicle before ageing, so a trip that waited a
         # round starts the moment one lands.
+        # Vehicles come home. Without this they stay out forever, best_vehicle runs out of
+        # candidates and every later delivery silently falls back to the fitted constant.
+        self.fleet.advance(2)
         while self.queue and self.busy < VEHICLE_COUNT:
             task_id, qty, lat = self.queue.pop(0)
             self.deliveries.append([lat, task_id, qty, True])

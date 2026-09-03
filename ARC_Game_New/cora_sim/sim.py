@@ -461,8 +461,8 @@ def answer(w: World, task_id, choice_id) -> bool:
         # is not a slow delivery but one that never arrives.
         _kitchen = next((b["name"] for b in w.economy.buildings
                          if b["type"] == "Kitchen" and b["status"] == "InUse"), None)
-        _lat = w.tasks.travel_rounds(_kitchen, str(_facility),
-                                     w.flooded_road_cells()) if _kitchen else None
+        _lat = w.tasks.travel_rounds(_kitchen, str(_facility), w.flooded_road_cells(),
+                                     demanded, task_id) if _kitchen else None
         w.tasks.answer(task_id, 0 if _lat is False else demanded, immediate=immediate,
                        latency=None if _lat in (None, False) else _lat,
                        destination="__food__" + str(_facility),
@@ -500,7 +500,8 @@ def answer(w: World, task_id, choice_id) -> bool:
     _target = ("Motel" if dest_cat == "Motel" else next(
         (b["name"] for b in w.economy.buildings
          if b["type"] == "Shelter" and b["status"] == "InUse"), "Motel"))
-    _lat = w.tasks.travel_rounds(str(_facility), _target, w.flooded_road_cells())
+    _lat = w.tasks.travel_rounds(str(_facility), _target, w.flooded_road_cells(),
+                                 qty, task_id)
     w.tasks.answer(task_id, 0 if _lat is False else qty, immediate=immediate,
                    latency=None if _lat in (None, False) else _lat,
                    destination=dest_cat, counters=w.economy.counters)

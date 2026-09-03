@@ -163,16 +163,15 @@ def frames_in_segment(segment):
 
 
 class Fleet:
-    """DeliverySystem's vehicles, carrying position between trips.
+    """DeliverySystem's vehicles, carrying position, occupancy and damage between trips.
 
     A trip is TWO legs -- Vehicle.RunDelivery drives to the source road connection, loads,
     then drives to the destination -- so a delivery's cost depends on where the assigned
     vehicle last parked, not on the source/destination pair alone. That is why the same
-    Kitchen->Community route was observed taking 0 rounds one day and 5 the next, and why no
-    per-route latency constant could ever fit the arrival table.
+    Kitchen->Community route was measured at 0 rounds one day and 5 the next.
     """
 
-    __slots__ = ("pos", "busy_frames", "carrying")
+    __slots__ = ("pos", "busy_frames", "carrying", "damaged")
 
     # Where the three vehicles start, read off the first leg each one drove.
     DEPOTS = ((-4, -4), (2, -4), (3, 5))
@@ -181,36 +180,73 @@ class Fleet:
         self.pos = [nearest_road(c) for c in self.DEPOTS]
         self.busy_frames = [0, 0, 0]
         self.carrying = [None, None, None]
+        # Flood does not merely delay a vehicle, it DISABLES it: StopVehicleDueToFlood sets
+        # isDamaged and the status to Damaged, and IsAvailable() is `status == Idle`, so the
+        # vehicle leaves the fleet until RepairVehicle() runs -- which only happens if the
+        # player answers the repair task StopVehicleDueToFlood spawns. A flood that cuts one
+        # route therefore costs a third of the delivery capacity indefinitely.
+        self.damaged = [False, False, False]
 
     def clone(self):
         f = Fleet.__new__(Fleet)
         f.pos = list(self.pos)
         f.busy_frames = list(self.busy_frames)
         f.carrying = list(self.carrying)
+        f.damaged = list(self.damaged)
         return f
 
+    def available(self):
+        return [i for i in range(len(self.pos))
+                if not self.damaged[i] and self.busy_frames[i] <= 0 and self.carrying[i] is None]
+
+    def best_vehicle(self, src_cell, quantity=0, capacity=100.0, speed=None):
+        """DeliverySystem.FindSuitableVehicle / CalculateVehicleSuitability.
+
+        Score is 100/(1+distanceToSource) + (quantity/capacity)*50 + moveSpeed*10, and the
+        highest wins. With three identical vehicles the capacity and speed terms are equal
+        across candidates, so the pick is simply the free vehicle CLOSEST to the source --
+        but the full formula is kept because it is what decides if the vehicles ever differ.
+
+        Distance is Vector3.Distance on world positions, NOT the A* length: the C# scores on
+        straight-line proximity and only then drives the road network.
+        """
+        if speed is None:
+            speed = MOVE_SPEED
+        best, best_score = None, -1.0
+        sx, sy = cell_to_world(src_cell)
+        for i in self.available():
+            vx, vy = cell_to_world(self.pos[i])
+            d = ((vx - sx) ** 2 + (vy - sy) ** 2) ** 0.5
+            score = 100.0 / (1.0 + d) + (quantity / capacity) * 50.0 + speed * 10.0
+            if score > best_score:
+                best, best_score = i, score
+        return best
+
     def free_vehicle(self):
-        for i, b in enumerate(self.busy_frames):
-            if b <= 0 and self.carrying[i] is None:
-                return i
-        return None
+        av = self.available()
+        return av[0] if av else None
 
     def dispatch(self, vehicle, payload, src_cell, dst_cell, flooded=frozenset()):
-        """Cost the two legs. Returns False when the flood has cut the route.
+        """Cost the two legs. Returns False when the flood has cut either one.
 
-        A cut route is not a delay: MoveToPosition bails to StopVehicleDueToFlood, so the
-        order simply never lands. One such leg appeared in the captures and the port has to
-        drop it rather than let it arrive late.
+        A cut route is NOT a slow delivery and NOT a retry. StopVehicleDueToFlood calls
+        RemoveActiveDeliveryTask and nulls currentTask, so the order is dropped outright --
+        and the vehicle is left damaged at wherever it had reached, out of the fleet.
         """
         leg1 = path_length(self.pos[vehicle], src_cell, flooded)
         if leg1 is None:
+            self.damaged[vehicle] = True
             return False
+        # The vehicle really is at the source once leg 1 is done, which is where an ABORTED
+        # trip leaves it (LoadCargo bails when the source is empty, before leg 2 exists).
+        self.pos[vehicle] = src_cell
         leg2 = path_length(src_cell, dst_cell, flooded)
         if leg2 is None:
+            self.damaged[vehicle] = True
             return False
         self.busy_frames[vehicle] = leg_frames(leg1) + leg_frames(leg2)
         self.carrying[vehicle] = payload
-        self.pos[vehicle] = dst_cell      # the vehicle ends the trip at the destination
+        self.pos[vehicle] = dst_cell
         return True
 
     def advance(self, segment):
@@ -226,6 +262,10 @@ class Fleet:
                 landed.append(self.carrying[i])
                 self.carrying[i] = None
         return landed
+
+    def repair(self, vehicle):
+        """Vehicle.RepairVehicle, reached by answering the repair task flood spawns."""
+        self.damaged[vehicle] = False
 
 
 # The same connection cells, keyed by the DISPLAY name the port's own economy uses

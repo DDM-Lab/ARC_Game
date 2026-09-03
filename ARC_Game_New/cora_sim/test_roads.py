@@ -83,10 +83,61 @@ def test_fleet_drops_cut_routes():
     assert g.carrying[0] is None and g.busy_frames[0] == 0
 
 
+def test_flood_damages_the_vehicle_and_drops_the_order():
+    """A cut route is not a delay and not a retry.
+
+    StopVehicleDueToFlood calls RemoveActiveDeliveryTask and nulls currentTask, so the order
+    is dropped; it also sets isDamaged and the status to Damaged, and IsAvailable() is
+    `status == Idle`, so the vehicle leaves the fleet until the repair task is answered.
+    Flood therefore costs a third of the delivery capacity indefinitely, which no amount of
+    latency tuning can express.
+    """
+    from cora_sim.roads import Fleet, BUILDING_CELL, ROAD_CELLS
+    f = Fleet()
+    v = f.best_vehicle(BUILDING_CELL["Kitchen_0"])
+    assert not f.dispatch(v, "x", BUILDING_CELL["Kitchen_0"], BUILDING_CELL["Community01"],
+                          flooded=ROAD_CELLS)
+    assert f.damaged[v], "a flood-stopped vehicle is damaged, not merely idle"
+    assert v not in f.available(), "a damaged vehicle must leave the fleet"
+    assert f.carrying[v] is None, "the order is dropped, not held for retry"
+    f.repair(v)
+    assert v in f.available(), "RepairVehicle returns it to service"
+
+
+def test_vehicle_choice_is_nearest_to_source():
+    """FindSuitableVehicle scores 100/(1+distanceToSource), so the closest free vehicle wins.
+
+    Picking the first free vehicle instead pins every trip to vehicle 0, and since leg 1 runs
+    from wherever that vehicle parked, the whole travel model drifts on any round with more
+    than one delivery.
+    """
+    from cora_sim.roads import Fleet, BUILDING_CELL
+    f = Fleet()
+    near_kitchen = f.best_vehicle(BUILDING_CELL["Kitchen_0"])
+    near_c3 = f.best_vehicle(BUILDING_CELL["Community03"])
+    assert near_kitchen != near_c3, "different sources must pick different vehicles"
+
+
+def test_occupancy_is_real():
+    """A dispatched vehicle is out until it lands; the fleet limit has to actually bind."""
+    from cora_sim.roads import Fleet, BUILDING_CELL
+    f = Fleet()
+    for _ in range(3):
+        v = f.best_vehicle(BUILDING_CELL["Kitchen_0"])
+        assert v is not None
+        assert f.dispatch(v, "x", BUILDING_CELL["Kitchen_0"], BUILDING_CELL["Community03"])
+    assert f.best_vehicle(BUILDING_CELL["Kitchen_0"]) is None, "all three should be out"
+    for _ in range(6):
+        f.advance(2)
+    assert f.best_vehicle(BUILDING_CELL["Kitchen_0"]) is not None, "they must come home"
+
+
 def main():
     print("cora_sim road graph + travel time vs Unity")
     fails = 0
-    for fn in (test_roads, test_fleet_carries_position, test_fleet_drops_cut_routes):
+    for fn in (test_roads, test_fleet_carries_position, test_fleet_drops_cut_routes,
+               test_flood_damages_the_vehicle_and_drops_the_order,
+               test_vehicle_choice_is_nearest_to_source, test_occupancy_is_real):
         try:
             fn()
             print(f"  {fn.__name__}: OK")
