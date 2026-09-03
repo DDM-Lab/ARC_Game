@@ -337,6 +337,7 @@ class Fleet:
             self.busy_seconds[i] = max(0.0, b - budget)
 
         queue = list(pending)
+        dropped = []
         while queue:
             # The vehicle that can start soonest, then closest to the source among those.
             ready = [i for i in range(len(self.pos))
@@ -353,7 +354,13 @@ class Fleet:
             v = self._closest(candidates, src, qty)
             leg1 = path_length(self.pos[v], src, flooded, self.spec)
             if leg1 is None:
+                # StopVehicleDueToFlood -> TaskSystem.HandleDeliveryFailure, which removes
+                # the parent task from activeTasks, marks it Incomplete, applies a
+                # satisfaction penalty -- and NEVER calls RecordTaskResolution. The task
+                # vanishes from the metrics entirely. `dropped` carries it back so the board
+                # can forget it without counting it.
                 self.damaged[v] = True            # dispatched, cannot reach the source
+                dropped.append(payload)
                 continue
             # LOAD AT THE SOURCE, AT THIS SIM-TIME. LoadCargo calls RemoveResource when the
             # vehicle ARRIVES, so orders draw down the kitchen in arrival order, and one
@@ -418,7 +425,7 @@ class Fleet:
                 self.busy_seconds[v] = done - budget
                 self.carrying[v] = payload
                 free_at[v] = budget               # out for the rest of this round
-        return landed, queue
+        return landed, queue, dropped
 
     def _closest(self, candidates, src_cell, quantity=0, capacity=100.0):
         """CalculateVehicleSuitability among a set of already-free vehicles."""

@@ -298,9 +298,9 @@ def test_round_completes_two_then_three():
     M = BUILDING_CELL["Motel"]
     pending = [(0, "f0", K, C1, 100), (1, "f1", K, C3, 100), (2, "f2", K, C2, 100),
                (3, "p3", C1, M, 100), (4, "p4", C3, M, 100)]
-    first, rest = f.run_round(pending)
+    first, rest, _ = f.run_round(pending)
     assert len(first) == 2, f"Unity completes 2 in the first round, port {len(first)}"
-    second, rest = f.run_round(rest)
+    second, rest, _ = f.run_round(rest)
     assert len(second) == 3, f"Unity completes 3 in the second, port {len(second)}"
     assert not rest, "and nothing is left over"
 

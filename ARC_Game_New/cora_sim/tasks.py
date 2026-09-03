@@ -476,7 +476,12 @@ class TaskBoard:
             task = self.active.get(payload[0]) or self.awaiting.get(payload[0])
             return qty if task is None else self.retry_if_unsourced(task, qty)
 
-        arrived, self.pending = self.fleet.run_round(self.pending, self.flooded, _load)
+        arrived, self.pending, dropped = self.fleet.run_round(self.pending, self.flooded, _load)
+        for _tid, _q, _d in dropped:
+            # Removed with no resolution recorded, exactly as HandleDeliveryFailure does:
+            # off the board, out of the metrics, as if it had never been answered.
+            self.awaiting.pop(_tid, None)
+            self.active.pop(_tid, None)
         for _entry in arrived:
             task_id, quantity, destination = _entry[0], _entry[1], _entry[2]
             zombie = len(_entry) > 3 and _entry[3] == "zombie"
