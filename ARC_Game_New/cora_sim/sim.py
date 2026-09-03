@@ -126,7 +126,15 @@ class World:
         self.generated_specs = {}       # live task id -> (definition id, facility, spec)
         self._alerts_shown = set()      # Alert tasks fire once per GAME
         self._emergency_count = 0
-        self._last_emergency_round = -99
+        # TaskSystem initialises lastEmergencyTaskRound to 0, NOT to "long ago". The gate
+        # is `currentRound < lastEmergencyTaskRound + dynamicInterval`, so with an interval
+        # of totalRounds/numEmergencyTasks = 32/4 = 8 the FIRST emergency cannot fire
+        # before round 8. Seeding this at -99 let the port fire one immediately, and
+        # because Community Emergency Evacuation is Lodging-tagged and sits ahead of
+        # Population Relocation in the inventory, it took the one-lodging-task-per-facility
+        # slot -- which is why the port had an Evacuation at round 5 where Unity had a
+        # second Relocation.
+        self._last_emergency_round = 0
 
     def _can_source(self, task, quantity):
         """Packs the kitchens could hand a vehicle right now, for LoadCargo's abort test.
