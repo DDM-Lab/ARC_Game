@@ -139,6 +139,7 @@ public class ClientRelocationHandler : MonoBehaviour
 
                 if (showDebugInfo)
                     Debug.Log($"[ClientRelocationTaskGenerator] Queued {sendAmount} clients from {source.name} → {dest.name}");
+                GameLogPanel.Instance?.LogTaskEvent($"Client relocation queued for task '{parentTask.taskTitle}': {sendAmount} clients {source.name} -> {dest.name}");
             }
         }
 
@@ -221,6 +222,7 @@ public class ClientRelocationHandler : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log($"[ClientRelocationHandler] Immediate {delivered} clients {source.name} → {dest.name}");
+            GameLogPanel.Instance?.LogTaskEvent($"Client relocation (immediate) for task '{parentTask.taskTitle}': {delivered} clients {source.name} -> {dest.name}");
         }
 
         return anyMoved;

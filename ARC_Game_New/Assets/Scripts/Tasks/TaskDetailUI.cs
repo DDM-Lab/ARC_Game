@@ -57,6 +57,7 @@ public class TaskDetailUI : MonoBehaviour
     public bool showDebugInfo = true;
 
     private GameTask currentTask;
+    public GameTask CurrentTask => currentTask;
     private List<GameObject> currentImpactItems = new List<GameObject>();
     private List<GameObject> currentConversationItems = new List<GameObject>();
     private AgentChoice selectedChoice;
@@ -169,7 +170,7 @@ public class TaskDetailUI : MonoBehaviour
         }
     }
 
-    string SerializeTaskContent(GameTask task)
+    public static string SerializeTaskContent(GameTask task)
     {
         var sb = new System.Text.StringBuilder();
         sb.Append($"TASK_DETAIL | id={task.taskId} | title={task.taskTitle} | type={task.taskType} | tag={task.taskTag} | facility={task.affectedFacility} | status={task.status}");
@@ -201,6 +202,9 @@ public class TaskDetailUI : MonoBehaviour
 
     void OnFacilityLinkClicked(string facilityObjectName)
     {
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Facility link clicked in agent message, now highlighting the referred facility on the map. | task={currentTask?.taskTitle ?? "none"} | facility={facilityObjectName}");
+
         StopAllCoroutines();
         isTyping = false;
         currentTypingMessage = null;
@@ -221,11 +225,20 @@ public class TaskDetailUI : MonoBehaviour
 
     public void PreviewChoiceRoute(AgentChoice choice)
     {
-        if (choice == null || currentTask == null || TaskSystem.Instance == null) return;
+        if (choice == null || currentTask == null || TaskSystem.Instance == null)
+        {
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Preview route clicked | task={currentTask?.taskTitle ?? "none"} | choice={choice?.choiceText ?? "none"} | source=unresolved | destination=unresolved");
+            return;
+        }
 
         MonoBehaviour triggeringFacility = ResolveTriggeringFacility();
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
         MonoBehaviour dest = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Preview route clicked | task={currentTask.taskTitle} | choice={choice.choiceText} | " +
+            $"source={source?.name ?? "unresolved"} | destination={dest?.name ?? "unresolved"}");
 
         if (source == null || dest == null)
         {

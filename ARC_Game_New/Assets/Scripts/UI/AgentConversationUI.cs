@@ -354,6 +354,10 @@ public class AgentConversationUI : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log($"Refreshed historical tasks for {currentSelectedAgent}: {currentAgentTasks.Count} tasks");
+
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Agent task list refreshed | agent={currentSelectedAgent} | count={currentAgentTasks.Count} | " +
+            $"tasks={string.Join(";", currentAgentTasks.Select(t => $"[{t.taskId}]{t.taskTitle}:{t.status}"))}");
     }
     
     List<GameTask> GetTasksForAgent(TaskOfficer agent)
@@ -490,6 +494,10 @@ public class AgentConversationUI : MonoBehaviour
         ClearConversation();
         localSelectedChoice = null;
 
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Agent conversation showing task | agent={currentSelectedAgent} | task=[{task.taskType}] {task.taskTitle} | status={task.status}");
+        GameLogPanel.Instance?.LogTaskEvent(TaskDetailUI.SerializeTaskContent(task));
+
         bool isActive = task.status == TaskStatus.Active;
 
         DisplaySystemMessage($"=== {task.taskTitle} ===");
@@ -572,7 +580,12 @@ public class AgentConversationUI : MonoBehaviour
     void PreviewChoiceRoute(AgentChoice choice)
     {
         Debug.Log("RET RET HERE");
-        if (choice == null || currentSelectedTask == null || TaskSystem.Instance == null) return;
+        if (choice == null || currentSelectedTask == null || TaskSystem.Instance == null)
+        {
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Preview route clicked | agent={currentSelectedAgent} | task={currentSelectedTask?.taskTitle ?? "none"} | choice={choice?.choiceText ?? "none"} | source=unresolved | destination=unresolved");
+            return;
+        }
 
         MonoBehaviour triggeringFacility = null;
         if (!string.IsNullOrEmpty(currentSelectedTask.affectedFacility))
@@ -584,6 +597,10 @@ public class AgentConversationUI : MonoBehaviour
 
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
         MonoBehaviour dest   = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Preview route clicked | agent={currentSelectedAgent} | task={currentSelectedTask.taskTitle} | choice={choice.choiceText} | " +
+            $"source={source?.name ?? "unresolved"} | destination={dest?.name ?? "unresolved"}");
 
         if (source == null || dest == null)
         {
@@ -657,12 +674,17 @@ public class AgentConversationUI : MonoBehaviour
 
     void OnConfirmButtonClicked()
     {
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Confirm button clicked | agent={currentSelectedAgent} | task={currentSelectedTask?.taskTitle ?? "none"} | choice={localSelectedChoice?.choiceText ?? "none"}");
+
         if (currentSelectedTask == null) return;
         TaskDetailUI tui = FindObjectOfType<TaskDetailUI>();
         if (tui == null) return;
 
         if (!tui.TryConfirmTask(currentSelectedTask, localSelectedChoice, out string errorMessage))
         {
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Task confirmation failed | task={currentSelectedTask.taskTitle} | error={errorMessage}");
             bool wasAtBottom = IsAtScrollBottom();
             DisplaySystemMessage($"Error: {errorMessage}");
             if (wasAtBottom)
@@ -727,6 +749,8 @@ public class AgentConversationUI : MonoBehaviour
 
     void OnFacilityLinkClicked(string facilityObjectName)
     {
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Facility link clicked in conversation | agent={currentSelectedAgent} | task={currentSelectedTask?.taskTitle ?? "none"} | facility={facilityObjectName}");
         StartCoroutine(PeekAtFacility(facilityObjectName, currentSelectedTask));
     }
 
@@ -825,6 +849,7 @@ public class AgentConversationUI : MonoBehaviour
 
     public void OnNewMessagePopupClicked()
     {
+        GameLogPanel.Instance?.LogUIInteraction($"New message popup clicked | agent={currentSelectedAgent}");
         HideNewMessagePopup();
         ScrollToBottom();
     }

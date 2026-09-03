@@ -150,10 +150,14 @@ public class NumericalInputUI : MonoBehaviour
         numericalInput.currentValue = Mathf.Max(numericalInput.minValue,
             numericalInput.currentValue - numericalInput.stepSize);
         UpdateDisplay();
-        
-        // Prevent scroll reset
+
+        // Prevent scroll reset — must capture position before LogValueChanged(), whose
+        // GameLogPanel call forces a synchronous Canvas.ForceUpdateCanvases() that would
+        // otherwise snap the scroll to top before we get a chance to record it.
         if (parentUI != null)
             parentUI.PreventScrollReset();
+
+        LogValueChanged();
     }
 
     void IncreaseValue()
@@ -161,12 +165,13 @@ public class NumericalInputUI : MonoBehaviour
         numericalInput.currentValue = Mathf.Min(numericalInput.maxValue,
             numericalInput.currentValue + numericalInput.stepSize);
         UpdateDisplay();
-        
-        // Prevent scroll reset
+
         if (parentUI != null)
             parentUI.PreventScrollReset();
+
+        LogValueChanged();
     }
-    
+
     void OnInputFieldChanged(string value)
     {
         if (int.TryParse(value, out int newValue))
@@ -174,10 +179,23 @@ public class NumericalInputUI : MonoBehaviour
             // Round to nearest step size
             int steps = Mathf.RoundToInt((float)(newValue - numericalInput.minValue) / numericalInput.stepSize);
             newValue = numericalInput.minValue + (steps * numericalInput.stepSize);
-            
+
             numericalInput.currentValue = Mathf.Clamp(newValue, numericalInput.minValue, numericalInput.maxValue);
         }
         UpdateDisplay();
+
+        if (parentUI != null)
+            parentUI.PreventScrollReset();
+
+        LogValueChanged();
+    }
+
+    void LogValueChanged()
+    {
+        string taskTitle = parentUI?.CurrentTask?.taskTitle;
+        GameLogPanel.Instance?.LogPlayerAction(
+            $"Numerical input '{GetLabelForType(numericalInput.inputType)}' set to {numericalInput.currentValue}" +
+            (taskTitle != null ? $" for task '{taskTitle}'" : ""));
     }
 
     void UpdateDisplay()

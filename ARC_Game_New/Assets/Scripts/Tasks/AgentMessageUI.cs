@@ -109,6 +109,7 @@ public class AgentMessageUI : MonoBehaviour
         AudioManager.Instance.PlaySkipSFX();
         isSkipped = true;
         ShowFullMessage();
+        GameLogPanel.Instance?.LogUIInteraction("Agent dialogue typing skipped");
     }
     
     private void UpdateHeightForText(string text)

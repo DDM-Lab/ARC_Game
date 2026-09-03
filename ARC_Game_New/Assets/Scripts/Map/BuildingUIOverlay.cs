@@ -368,8 +368,10 @@ public class BuildingUIOverlay : MonoBehaviour
             }
             StartCoroutine(ShowToastText(toastText.gameObject));
         }
-        
+
         Debug.Log($"Building {building.name} construction completed - UI updated");
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Building overlay UI changed | facility={building.GetDisplayName()} | display=\"Need Worker\" | WorkerButton shown");
     }
     
     private IEnumerator ShowToastText(GameObject toastTextObj)
@@ -449,6 +451,8 @@ public class BuildingUIOverlay : MonoBehaviour
         }
 
         Debug.Log($"Building {building.name} workers assigned - UI updated");
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Building overlay UI changed | facility={building.GetDisplayName()} | WorkerButton text=\"Manage\" | DeconstructButton shown");
     }
     
     private void OnDeconstructionStarted(Building building)
@@ -492,12 +496,17 @@ public class BuildingUIOverlay : MonoBehaviour
         {
             deconstructButton.gameObject.SetActive(false);
         }
-        
+
         Debug.Log($"Building {building.name} deconstruction started - UI updated");
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Building overlay UI changed | facility={building.GetDisplayName()} | display=\"Closing...\" | WorkerButton/DeconstructButton hidden");
     }
     
     private void OnAssignWorkerClicked(Building building)
     {
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"WorkerButton clicked | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()} | status={building.GetCurrentStatus()}");
+
         // Open worker assignment UI
         WorkerSystem workerSystem = FindObjectOfType<WorkerSystem>();
         if (workerSystem != null)
@@ -510,28 +519,34 @@ public class BuildingUIOverlay : MonoBehaviour
             }
         }
     }
-    
+
     private void OnDeconstructClicked(Building building)
     {
         Debug.Log($"Deconstruct button clicked for building {building.name}");
-        
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"DeconstructButton clicked | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()} | status={building.GetCurrentStatus()}");
+
         if (building != null && building.IsOperational())
         {
             // Show confirmation popup instead of immediately deconstructing
             if (ConfirmationPopup.Instance != null)
             {
                 string message = $"Are you sure you want to close this {building.GetBuildingType()} at site {building.GetOriginalSiteId()}?\n";
-                
+
                 ConfirmationPopup.Instance.ShowPopup(
                     message: message,
                     onConfirm: () => {
                         // This executes when user clicks Confirm
                         building.StartDeconstruction();
                         Debug.Log($"User confirmed deconstruction of {building.name}");
+                        GameLogPanel.Instance?.LogUIInteraction(
+                            $"Deconstruction confirmed | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()}");
                     },
                     onCancel: () => {
                         // This executes when user clicks Cancel (optional)
                         Debug.Log($"User cancelled deconstruction of {building.name}");
+                        GameLogPanel.Instance?.LogUIInteraction(
+                            $"Deconstruction cancelled | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()}");
                     },
                     title: "Close Facility"
                 );

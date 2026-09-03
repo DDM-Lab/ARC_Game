@@ -218,8 +218,12 @@ public class WorkerSystem : MonoBehaviour
         {
             worker.ReleaseFromBuilding();
         }
-        GameLogPanel.Instance.LogWorkerAction($"Released {buildingWorkers.Count} workers from building {buildingId}");
-        Debug.Log($"Released {buildingWorkers.Count} workers from building {buildingId}");
+
+        if (buildingWorkers.Count > 0)
+        {
+            GameLogPanel.Instance.LogWorkerAction($"Released {buildingWorkers.Count} workers from building {buildingId}");
+            Debug.Log($"Released {buildingWorkers.Count} workers from building {buildingId}");
+        }
     }
     
     // Worker retrieval methods

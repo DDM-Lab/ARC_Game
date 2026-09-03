@@ -86,6 +86,7 @@ public class AgentChoiceUI : MonoBehaviour
 
     void OnChoiceClicked()
     {
+        GameLogPanel.Instance?.LogUIInteraction($"Agent choice clicked: '{choice?.choiceText}'");
         SetSelected(true);
         parentUI?.OnChoiceSelected(choice);
     }

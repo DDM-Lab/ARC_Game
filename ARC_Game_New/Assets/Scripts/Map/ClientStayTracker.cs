@@ -236,6 +236,7 @@ public class ClientStayTracker : MonoBehaviour
             Debug.Log($"Registered {clientCount} clients at {facility.name} (Group: {groupName}, Round: {currentRound})");
 
         GameLogPanel.Instance.LogBuildingStatus($"Registered {clientCount} clients at {facility.name} (Group: {groupName}, Round: {currentRound})");
+        DailyReportData.Instance?.RecordNewArrival(clientCount);
 
         return newGroup;
     }
@@ -304,6 +305,8 @@ public class ClientStayTracker : MonoBehaviour
 
         // Notify buildings to get rid of clients
         OnCaseworklessClientsDeparted?.Invoke(group);
+
+        DailyReportData.Instance?.RecordDeparture(group.clientsWithoutCaseworkNeed);
 
         group.clientCount -= group.clientsWithoutCaseworkNeed;
         group.clientsWithoutCaseworkNeed = 0;

@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -81,6 +82,9 @@ public class DeliveryQueuePanel : MonoBehaviour
         if (panel == null) return;
         bool next = !panel.activeSelf;
         panel.SetActive(next);
+
+        GameLogPanel.Instance?.LogUIInteraction($"Delivery queue panel {(next ? "expanded" : "collapsed")}");
+
         //if (next) RefreshList();
         if (next)
         {
@@ -146,6 +150,18 @@ public class DeliveryQueuePanel : MonoBehaviour
         {
             bool isNew = (newItemToHighlight is WorkerTrainingSystem.TrainingTask tr && tr == training);
             SpawnWorkerTrainingRow(training, shouldHighlight: isNew);
+        }
+
+        if (panel != null && panel.activeSelf)
+        {
+            string activeSummary  = active.Count  > 0 ? string.Join(";", active.Select(d => $"{d.quantity}x{d.cargoType}:{d.sourceBuilding?.name}->{d.destinationBuilding?.name}"))  : "none";
+            string pendingSummary = pending.Count > 0 ? string.Join(";", pending.Select(d => $"{d.quantity}x{d.cargoType}:{d.sourceBuilding?.name}->{d.destinationBuilding?.name}")) : "none";
+            string budgetSummary  = budgets.Count > 0 ? string.Join(";", budgets.Select(b => $"{b.sourceTaskTitle}:{b.amount:+0;-0}in{b.roundsRemaining}rd")) : "none";
+
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Delivery queue displayed | active={active.Count} | pending={pending.Count} | " +
+                $"delayed_budgets={budgets.Count} | worker_requests={requests.Count} | worker_trainings={trainings.Count}" +
+                $" | active_deliveries=[{activeSummary}] | pending_deliveries=[{pendingSummary}] | budgets=[{budgetSummary}]");
         }
     }
 

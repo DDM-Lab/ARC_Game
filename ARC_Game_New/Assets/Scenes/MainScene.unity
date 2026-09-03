@@ -379,7 +379,6 @@ GameObject:
   - component: {fileID: 6019799}
   - component: {fileID: 6019798}
   - component: {fileID: 6019797}
-  - component: {fileID: 6019796}
   m_Layer: 5
   m_Name: DeliveryQueuePanel
   m_TagString: Untagged
@@ -408,51 +407,6 @@ RectTransform:
   m_AnchoredPosition: {x: -697, y: 259}
   m_SizeDelta: {x: 342, y: 225}
   m_Pivot: {x: 0, y: 1}
---- !u!114 &6019796
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6019794}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4d7247afb8025f540a0c8e680e8ae2af, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  panelRectTransform: {fileID: 329187218}
-  toggleButton: {fileID: 895244207}
-  collapsedIcon: "\u2014"
-  expandedIcon: "\u2014"
-  collapsedHeight: 0
-  expandedHeight: 175
-  useAnimation: 1
-  animationDuration: 0.3
-  animationCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  showDebugInfo: 0
 --- !u!114 &6019797
 MonoBehaviour:
   m_ObjectHideFlags: 0

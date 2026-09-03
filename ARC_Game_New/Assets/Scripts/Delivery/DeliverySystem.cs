@@ -242,7 +242,6 @@ public class DeliverySystem : MonoBehaviour
             {
                 Debug.Log($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
             }
-            GameLogPanel.Instance.LogVehicleEvent($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
         }
 
         return estimate.pathExists;

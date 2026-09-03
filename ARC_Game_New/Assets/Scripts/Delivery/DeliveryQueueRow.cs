@@ -94,6 +94,9 @@ public class DeliveryQueueRow : MonoBehaviour
 
     void OnLocateClicked()
     {
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Delivery queue: view route clicked | vehicle={associatedVehicle?.name ?? "none"} | route={routeText?.text ?? "unknown"} | cargo={cargoText?.text ?? "unknown"}");
+
         if (associatedVehicle == null) return;
 
         // Close the vehicle info panel if open — just show the route on the map.
