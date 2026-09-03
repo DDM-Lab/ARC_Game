@@ -400,6 +400,14 @@ class Fleet:
                 #
                 # So the vehicle simply goes idle at the source, available for the next
                 # order like any other free vehicle.
+                # The race IS a speedup in Unity -- cargo-at-leg-start proves the
+                # reassigned trip is real and finishes in ceil(leg2 / 2) frames, paying
+                # nothing for the source leg because both coroutines advance the same
+                # currentPathIndex along the new task's path. Modelling it here made things
+                # WORSE (15 diverging counters to 19), so the rule is right about the one
+                # instance I could measure and wrong about when it applies. Not kept on a
+                # single data point; the detection needs more captures with the cargo mark
+                # before this is attempted again.
                 free_at[v] = at_source            # clean abort: idle at the source
                 continue
             leg2 = path_length(src, dst, flooded, self.spec)
