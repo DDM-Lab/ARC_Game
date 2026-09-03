@@ -658,20 +658,37 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
             rolls += _r
             if w.use_generation:
                 _create_tasks(w, _r, day_changed)
+            # BuildingResourceStorage.OnRoundChanged is subscribed after TaskSystem's, so on
+            # the same invoke consumption runs AFTER the generation pass: at the rollover's
+            # segment 0 the pass sees pre-consumption stock, and segment 1's sees the drained
+            # communities. That split is why Unity requests food for one community at pass 0
+            # and the other two at pass 1 -- and the queue order that follows from it decides
+            # which vehicle is left for a stranded assignment three rounds later.
+            w.economy.production_tick()
+            w.economy.consumption_tick()
             # CheckExpiredTasks runs on the Update AFTER the advance: the dying task held its
             # slot through the generation pass above.
             w.tasks.expire(w.economy.counters)
         w.segment = 1
     else:
         w.segment += 1
-        w.tasks.age()
+        # SEGMENT 4 HAS NO INVOKE. GlobalClock.AdvanceTimeSegment returns early once the
+        # segment reaches roundsPerDay, before OnTimeSegmentChanged fires, so a day's invokes
+        # are 0, 1, 2, 3: nothing subscribed to the clock -- ageing, the tracker, generation,
+        # consumption -- runs on the last round of a day. The port aged and expired tasks
+        # there, one decrement per day too many.
+        if w.segment < ROUNDS_PER_DAY:
+            w.tasks.age()
         _tracker(w, marks)
         if w.segment in _GENERATION_SEGMENTS:
             _r = [r + (w.segment,) for r in _pass(w, marks)]
             rolls += _r
             if w.use_generation:
                 _create_tasks(w, _r, day_changed)
-        w.tasks.expire(w.economy.counters)
+        if w.segment < ROUNDS_PER_DAY:
+            w.economy.production_tick()
+            w.economy.consumption_tick()
+            w.tasks.expire(w.economy.counters)
     w.generated = rolls
     # THE JOIN THAT MAKES THE SURROGATE SELF-DRIVING. generation_pass decides WHICH tasks
     # fire; without this the port produced a list of ids and created nothing, so it could

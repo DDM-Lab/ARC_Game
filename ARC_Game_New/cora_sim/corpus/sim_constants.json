@@ -1231,6 +1231,20 @@
    "prebuilt": true,
    "startingFoodPacks": 0,
    "enableFoodWaste": false
+  },
+  {
+   "type": "Kitchen",
+   "startingFoodPacks": 0,
+   "enableFoodWaste": true,
+   "source": "Assets/Prefabs/Kitchen.prefab"
   }
- ]
+ ],
+ "production": {
+  "Kitchen": {
+   "resourceType": "FoodPacks",
+   "amountPerRound": 100,
+   "maxCapacity": 200,
+   "source": "Assets/Prefabs/Kitchen.prefab roundProduction"
+  }
+ }
 }

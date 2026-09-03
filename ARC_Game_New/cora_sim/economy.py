@@ -93,6 +93,7 @@ def load_economy_constants(path=None):
         "training_days": int(w["trainingDurationDays"]),
         "deconstruction_rounds": int(c.get("deconstructionRounds", 3)),
         "consumption": d.get("consumption") or {},
+        "production": d.get("production") or {},
         # Per-building storage settings, keyed by TYPE. Measured from the running game:
         # communities start with 0 and do NOT waste (their food drains by consumption),
         # the motel wastes, and a Kitchen refills to 200 every day -- observed directly,
@@ -110,7 +111,7 @@ C = load_economy_constants()
 class Economy:
     """Budget, spend counters, workforce and construction. Cloned at search branch points."""
 
-    __slots__ = ("budget", "satisfaction", "counters",
+    __slots__ = ("rounds_since_consumption", "budget", "satisfaction", "counters",
                  "free_trained", "free_untrained", "working_trained", "working_untrained",
                  "in_training", "arriving", "under_construction", "buildings", "motel_pop",
                  "pending_transfers", "pending_budget", "used_sites")
@@ -156,6 +157,7 @@ class Economy:
         self.under_construction = [] # [(rounds_remaining, building_type)]
         self.buildings = Economy.default_prebuilts() if prebuilts else []
         self.motel_pop = 0
+        self.rounds_since_consumption = 0    # BuildingResourceStorage.roundsSinceLastConsumption
         self.pending_transfers = []  # population moves that land at the END of the round
         self.pending_budget = []     # [rounds_remaining, amount] approved-but-not-arrived funding
         self.used_sites = set()      # site ids already built on -- a rebuild there is a no-op
@@ -204,6 +206,7 @@ class Economy:
         e.under_construction = [list(x) for x in self.under_construction]
         e.buildings = [dict(b) for b in self.buildings]
         e.motel_pop = self.motel_pop
+        e.rounds_since_consumption = self.rounds_since_consumption
         e.pending_transfers = list(self.pending_transfers)
         e.pending_budget = [list(x) for x in self.pending_budget]
         e.used_sites = set(self.used_sites)
@@ -294,12 +297,50 @@ class Economy:
             if cfg.get("enableFoodWaste"):
                 res["foodPacks"] = 0
             start = cfg.get("startingFoodPacks", 0)
-            if b["type"] == "Kitchen" and b["status"] == STATUS_IN_USE:
-                start = max(start, Economy.KITCHEN_DAILY_FOOD)
+            # No daily restock floor: Kitchen.prefab has startingFoodPacks 0 and
+            # enableFoodWaste 1, so the day change EMPTIES a kitchen and round production
+            # (production_tick) refills it. The 200 seen at every rollover is two invokes of
+            # +100, not a reset.
             if start:
                 cap = res.get("foodPacksCapacity")
                 room = start if cap is None else max(0, cap - (res.get("foodPacks") or 0))
                 res["foodPacks"] = (res.get("foodPacks") or 0) + min(start, room)
+
+    def production_tick(self) -> None:
+        """BuildingResourceStorage.HandleRoundProduction, once per clock invoke, BEFORE the
+        consumption cycle on that same invoke. Kitchen.prefab: roundProduction FoodPacks
+        amountPerRound 100, maxCapacity 200, enableFoodWaste 1, startingFoodPacks 0. So a
+        kitchen is wasted to nothing at the day change and refilled by the rollover's two
+        invokes (0 -> 100 -> 200), and tops back up to 200 the invoke after any 100-pack
+        load -- which is the 200/100/200 the captures show. Only operational buildings
+        produce. The port used to restock to 200 once a day and let the kitchen sit empty
+        in between, so second and third food orders found nothing to load."""
+        prod = C.get("production") or {}
+        for b in self.buildings:
+            cfg = prod.get(b.get("type"))
+            if not cfg or b.get("status") != STATUS_IN_USE:
+                continue
+            res = b.setdefault("resources", {})
+            cap = res.get("foodPacksCapacity")
+            if cap is None:
+                cap = cfg.get("maxCapacity")
+            have = res.get("foodPacks") or 0
+            room = max(0, (cap if cap is not None else 10**9) - have)
+            res["foodPacks"] = have + min(room, int(cfg.get("amountPerRound", 0)))
+
+    def consumption_tick(self) -> None:
+        """BuildingResourceStorage.OnRoundChanged -> HandlePopulationConsumptionCycle, once per
+        clock INVOKE. roundsSinceLastConsumption++ then consume at >= interval and reset. The
+        clock invokes segments 0, 1, 2, 3 (segment 4 returns early), so with interval 4 the
+        count reaches 4 on the rollover's segment-0 invoke every day from day 2 -- which is
+        exactly where every one of the eleven captures drops community food (steps 9, 13,
+        17, ...). Counting rounds instead drained them a step early."""
+        self.rounds_since_consumption += 1
+        cfg = C.get("consumption") or {}
+        interval = int(cfg.get("roundInterval", 4) or 4)
+        if self.rounds_since_consumption >= interval:
+            self.consume_food(interval)          # rounds_elapsed % interval == 0 -> consumes
+            self.rounds_since_consumption = 0
 
     def consume_food(self, rounds_elapsed) -> None:
         """BuildingResourceStorage.HandlePopulationConsumptionCycle.
@@ -338,7 +379,6 @@ class Economy:
         regardless of whether any task resolves, which is why worker utilisation is the
         only signal a short-horizon planner can see before round ~14."""
         self.counters["roundsCompleted"] += 1
-        self.consume_food(self.counters["roundsCompleted"])
         self.counters["cumWorkingWorkers"] += self.working_trained + self.working_untrained
         self.counters["cumTrainingWorkers"] += len(self.in_training)
         self.counters["cumIdleWorkers"] += self.free_trained + self.free_untrained
