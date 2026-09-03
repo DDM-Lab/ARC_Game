@@ -874,6 +874,15 @@ def answer(w: World, task_id, choice_id) -> bool:
             return False
     _cut = _lat is False
     _measured = _lat is not None and _lat is not False
+    # ONE FLOOD SET FOR BOTH ROUTE CHECKS. The check above used the CURRENT post-update tiles,
+    # which is what Unity's choice-time route check reads; TaskBoard.answer re-checks against
+    # self.flooded, which was captured at the previous head-of-step tick, BEFORE that round's
+    # flood update. When the flood receded in between (5701 round 6: 4 cells -> 2) the outer
+    # check passed and the inner one failed, so the task was parked in awaiting with no order
+    # and the answer still returned True -- a relocation Unity delivered late and the port
+    # never dispatched. The fleet reads this same set at the next tick, so refreshing it here
+    # changes nothing for driving.
+    w.tasks.flooded = w.flooded_road_cells()
     w.tasks.answer(task_id, 0 if _cut else qty, immediate=immediate,
                    latency=_lat if _measured else None,
                    destination=dest_cat, counters=w.economy.counters,
