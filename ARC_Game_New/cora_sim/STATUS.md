@@ -704,25 +704,31 @@ over-credits fulfilled somewhere. The over-count is the thing to chase: `late_de
 once by the fall-through path's own `task.delivered += quantity` feeding a later resolve) or a
 task is being late-credited that Unity never delivers at all.
 
-READ DONE, ONE BRANCH ELIMINATED. The fall-through path is
+THE LATE-DELIVERY CREDIT IS CORRECT; THE OVER-COUNT IS SOMETHING ELSE. Logging every
+`late_delivery` call on 5503 under the fall-through variant:
 
-    self.late_delivery(task, quantity, counters)   # credits fulfilled, capped at resolved
-    ...
-    task.delivered += quantity
-    ...
-    self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+    r5   lodgFul port=100 unity=100
+         LATE task=7 tag=Lodging qty=100 demand=100 delivered=0   lodgFul 100 -> 200
+    r6   lodgFul port=300 unity=300        <- MATCHES
+         LATE task=2 tag=None qty=0                                lodgFul 400 -> 400
+    r7   lodgFul port=400 unity=300        <- over by 100
 
-and `resolve()` opens with `if task.resolved or task.tag not in ("Food","Lodging"): return`,
-so it CANNOT double-credit an already-resolved task. The over-count is not a resolve
-double-credit.
+Two things follow. The r6 late credit for task 7 is EXACTLY RIGHT -- it takes the port to
+Unity's 300, which is the whole point of the mechanism, and it is the first time this thread
+has produced a matching lodgingFulfilled at the round where it used to fail. And the r7
+over-count is NOT from `late_delivery`: the only call that round is a tagless zero-quantity
+task that credits nothing.
 
-WHAT REMAINS AS THE SUSPECT, for the next session: a task receiving TWO fleet landings, or a
-late credit going to a task Unity resolves normally as Completed (in which case the port
-credits at resolve AND again on arrival). Both are visible with one print -- log every
-`late_delivery` call with task id and quantity on 5503, the trace where lodgingFulfilled
-over-counts 400 against 300, and compare the set of late-credited ids against Unity's
-`task:resolved` marks for that trace. If an id appears there with status Completed, the port is
-late-crediting something Unity never treated as late.
+So the fall-through variant's regression is a SEPARATE defect that the variant merely exposes.
+Something else credits 100 to lodgingFulfilled in r7. Candidates, in order: a second fleet
+landing for task 7 (its order may be queued twice), or a normal resolve of a different task
+whose delivered was inflated by the fall-through's `task.delivered += quantity` running on an
+already-resolved task.
+
+NEXT: log every mutation of `lodgingFulfilled` -- resolve and late_delivery both -- with the
+task id, for 5503 rounds 6 and 7. The second write in r7 names the culprit directly. Also check
+whether `task.delivered += quantity` should be skipped for an already-resolved task, since
+crediting delivered after resolution can only mislead any later read of it.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
