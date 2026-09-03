@@ -81,13 +81,18 @@ class World:
                  "pending_arrivals", "generated_specs", "_alerts_shown",
                  "_emergency_count", "_last_emergency_round")
 
-    def __init__(self, rng, weather, day=1, segment=1, flood=None, fmap=None,
+    def __init__(self, rng, weather, day=1, segment=0, flood=None, fmap=None,
                  facilities_for=None):
         self.rng = rng
         self.fmap = fmap if fmap is not None else FloodMap.load()
         self.flood = flood if flood is not None else FloodState()
         self.weather = weather
         self.day = day
+        # Segment starts at 0, not 1. step_round advances BEFORE acting, so starting at 1
+        # gave day 1 only three rounds and rolled every subsequent day over one round early
+        # -- which put every generated task, every delivery and every counter a round ahead
+        # of Unity. A single off-by-one at construction, visible only once the exact replay
+        # compared round by round.
         self.segment = segment
         # Default to the port's OWN facilities. Previously this defaulted to an empty
         # stub, so a shelter the surrogate built could never become a suitable facility,
@@ -310,7 +315,15 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     for _task_id, quantity, destination in w.tasks.tick(w.economy.counters):
         dest = str(destination or "")
         if dest.startswith("__food__"):
-            w.economy.add_food(dest[len("__food__"):], quantity)
+            task = w.tasks.awaiting.get(_task_id) or w.tasks.active.get(_task_id)
+            spec = (w.generated_specs.get(_task_id) or (None, None, {}))[2]
+            choice = next((c for c in (spec.get("choices") or [])
+                           if c.get("choiceId") == (task.chosen_id if task else None)), None)
+            sourced = quantity if (choice or {}).get("immediateDelivery") else _source_food(w, quantity)
+            if sourced:
+                w.economy.add_food(dest[len("__food__"):], sourced)
+            if task is not None:
+                task.delivered = sourced
             continue
         source = getattr(w.tasks, "_sources", {}).pop(_task_id, "")
         if source:
@@ -394,7 +407,12 @@ def answer(w: World, task_id, choice_id) -> bool:
         immediate = bool(choice.get("immediateDelivery"))
         # An infeasible choice is still ANSWERABLE; it just delivers nothing, and the task
         # resolves unfulfilled when the delivery comes due.
-        demanded = _deliverable(w, choice, task.tag, demanded)
+        # Sourcing happens when the delivery LANDS, not when the order is placed. Measured:
+        # Unity's kitchen is stocked by the day reset at the END of the round a food order
+        # is answered, and that order still fulfils the next round -- so the food is pulled
+        # at arrival. Sourcing at answer time made the order fail against an empty kitchen
+        # and left the port a round behind (unity resolved 1 at round 5, port 0).
+        task.chosen_id = choice_id
         w.tasks.answer(task_id, demanded, immediate=immediate,
                        destination="__food__" + str(_facility),
                        counters=w.economy.counters)
@@ -494,6 +512,25 @@ def _offered(w: World, choice, tag) -> bool:
     if tag == "Food":
         return True
     return _has_destination_space(w, choice)
+
+
+def _source_food(w: World, quantity) -> int:
+    """Pull food packs out of the operational kitchens, up to `quantity`.
+
+    DeliverySystem moves the food OUT of the kitchen, so a 200-pack kitchen fills two
+    100-pack orders per day and no more -- and it is pulled when the delivery executes,
+    which is why an order placed on the round the kitchen is first stocked still fulfils."""
+    remaining, sourced = quantity, 0
+    for k in w.economy.operational("Kitchen"):
+        if remaining <= 0:
+            break
+        res = k.get("resources") or {}
+        take = min(res.get("foodPacks", 0) or 0, remaining)
+        if take > 0:
+            res["foodPacks"] -= take
+            sourced += take
+            remaining -= take
+    return sourced
 
 
 def _deliverable(w: World, choice, tag, quantity=0) -> int:

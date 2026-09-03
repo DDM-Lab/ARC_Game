@@ -34,9 +34,15 @@ FULFILMENT_COUNTERS = ("foodResolved", "foodFulfilled", "lodgingResolved",
 # other wrong, every time:
 #
 #   Lodging 1   lodgingFulfilled 600/600 exact on every trace
-#   Food    4    foodResolved 19/19, 18/18, 19/19 -- 2 and 3 rounds are too short, and the
-#               tasks answered in the last rounds then resolve inside the episode when
-#               Unity's do not; 5 makes no further difference, so 4 is the boundary
+#   Food    4    from the distribution comparison, and it is KEPT even though the exact
+#               replay wants 1-2. That contradiction is diagnostic, not a tuning problem:
+#               no single latency satisfies both because the real constraint is not a
+#               delay at all. Unity resolves exactly ONE food delivery per round even with
+#               three orders outstanding and a kitchen holding enough for two -- its
+#               delivery FLEET serialises them. A latency short enough to match the first
+#               resolution then lets all three land at once, and a latency long enough to
+#               spread them out delays the first. Modelling the fleet is the fix; picking
+#               a number between them is not.
 #
 # There is no single value that fits both, which is the evidence that they are separate
 # mechanics rather than one mechanic with a tuning constant. A relocation moves people by
@@ -51,7 +57,7 @@ class Task:
     """One live task instance."""
 
     __slots__ = ("task_id", "tag", "demand", "delivered", "rounds_remaining",
-                 "resolved", "chosen", "destination", "source")
+                 "resolved", "chosen", "destination", "source", "fresh", "chosen_id")
 
     def __init__(self, task_id, tag, demand=0, rounds_remaining=1):
         self.task_id = task_id
@@ -63,6 +69,8 @@ class Task:
         self.chosen = None
         self.destination = ""
         self.source = ""            # facility the people or goods come FROM
+        self.fresh = True           # created this round; not aged until the next one
+        self.chosen_id = None       # which choice was answered, for arrival-time sourcing
 
     def clone(self):
         t = Task.__new__(Task)
@@ -162,14 +170,24 @@ class TaskBoard:
         if task.source:
             self._sources[task_id] = task.source
         if quantity <= 0:
-            # Nothing delivered: the task still resolves, unfulfilled, right away.
-            if counters is not None:
-                self.resolve(task, fulfilled=False, counters=counters)
+            # Nothing could be sourced -- but the ORDER was still placed, and it fails on
+            # the round it was due rather than the instant it was made. Resolving inline
+            # credited foodResolved in the same round the choice was answered and put the
+            # port a round ahead of Unity on every capture (unity 0, port 3 at round 4).
+            latency = DEFERRED_LATENCY.get(task.tag, DEFAULT_LATENCY)
+            self.awaiting[task_id] = task
+            self.deliveries.append([latency, task_id, 0, True])
             return
         if immediate:
+            # The delivery itself is a teleport -- the goods or people arrive at once, and
+            # the caller applies that side effect immediately. RESOLUTION still happens on
+            # the next tick, because RecordTaskResolution fires from the delivery-completion
+            # path rather than from the click. Measured: Unity's foodResolved is still 0 on
+            # the round its first food task is answered and only moves the round after, so
+            # resolving inline put the port a full round ahead on every capture.
             task.delivered += quantity
-            if counters is not None:
-                self.resolve(task, fulfilled=True, counters=counters)
+            self.awaiting[task_id] = task
+            self.deliveries.append([1, task_id, 0, True])   # 0: already delivered, resolve only
             return
         if latency is None:
             latency = DEFERRED_LATENCY.get(task.tag, DEFAULT_LATENCY)
@@ -251,12 +269,19 @@ class TaskBoard:
         Used where task expiry is driven externally (the equivalence test replays Unity's
         own resolution events) so that delivery latency is still modelled while timing is
         not double-counted."""
+        # A delivery queued during THIS round is not aged by it, exactly as a task created
+        # this round is not. step_round ticks the queue in the same round the choice was
+        # made, so without this a latency of 1 is consumed instantly and the task resolves
+        # inline -- which is what put lodgingResolved at 100 in round 4 where Unity had 0.
         for entry in self.deliveries:
+            if len(entry) > 3 and entry[3]:
+                entry[3] = False
+                continue
             entry[0] -= 1
         arriving = [d for d in self.deliveries if d[0] <= 0]
         self.deliveries = [d for d in self.deliveries if d[0] > 0]
         landed = []
-        for _rounds, task_id, quantity in arriving:
+        for _rounds, task_id, quantity, *_ in arriving:
             task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
             if task is None:
                 continue
@@ -270,7 +295,9 @@ class TaskBoard:
                 # if anything actually arrived, unfulfilled if the order could not be
                 # sourced.
                 if task_id not in self.active:
-                    self.resolve(task, fulfilled=quantity > 0, counters=counters)
+                    # An immediate delivery was already credited to task.delivered when it
+                    # was answered, so fulfilment is judged on the TASK, not this entry.
+                    self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
         return landed
 
     def tick(self, counters: dict) -> list:
@@ -290,6 +317,14 @@ class TaskBoard:
         landed = self.tick_deliveries_only(counters)
 
         for task in list(self.active.values()):
+            if task.fresh:
+                # A task generated during THIS round is not aged by it. Unity decrements in
+                # OnTimeSegmentAdvanced, which fires on the NEXT segment advance, so a task
+                # with roundsRemaining = 1 survives the round it was born in. Ageing it
+                # immediately expired every such task on creation and put foodResolved a
+                # full round ahead of Unity on all four captures.
+                task.fresh = False
+                continue
             task.rounds_remaining -= 1
             if task.rounds_remaining <= 0:
                 # An expired task resolves UNFULFILLED, but a lodging task still credits
