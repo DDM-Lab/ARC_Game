@@ -167,8 +167,41 @@ recovers the floor:
     invokes per day. The port's rollover step consumes two segment advances but runs
     clients.update once.
 
-Apply those two WITH the tick reorder as one set and read the mark diff and the ratchet
-together. If the full set still misses the floor, revert the set, not one leg.
+Leg 1 (the arrival stamp) HAS NOW BEEN TRIED, on top of the reorder, and changes nothing
+observable: the mark diff is byte-identical before and after, the ratchet stays at 0. Kept
+in `experiments/sim_double_spawn_tick_first_stamp.py`. It is probably still correct, but it
+is not what is holding the floor down, so it should not be credited as progress.
+
+WHERE THE SET NOW STANDS, exactly. With the reorder applied, the first mark divergence is
+step 8 on eight of eleven traces, and it is always the same shape: the port draws 3-6
+caseworkGen that Unity does not draw at all (5901: unity 64 draws starting Flood.8, port 67
+starting caseworkGen). Steps 6 and 7 match draw for draw, INCLUDING both 100-draw client
+blocks. Equal draw counts through step 7 with a different step-8 eligibility set means the
+step-7 caseworkGen OUTCOMES differ on identical randoms -- so the THRESHOLD is wrong, not
+the ordering. The threshold is 10 * 1.5^(Y-1) and the only free variable in it is Y.
+
+That is leg 2, and it is a bigger change than it looks:
+
+  - Unity's Y uses currentRound = segment + (day-1)*4, refreshed in OnRoundChanged. A day
+    rollover advances Unity's currentRound by TWO while the port's round_index advances by
+    ONE, so the two indices drift apart at every rollover and Y drifts with them.
+  - ClientStayTracker.OnRoundChanged has NO segment filter (TaskSystem skips segment 3) and
+    also fires on the rollover Invoke(0) -- four invokes per day against the port's one.
+  - Structurally, clients.update must therefore move to AFTER the segment advance and run
+    once per advance, whereas the port currently runs it once, before the advance.
+
+The placement constraint is now pinned from the capture, so this no longer needs guessing.
+Unity's rollover step on 5901 reads, in order:
+
+    s5d2r0f237  Weather.select x1, TaskTrigger.probability x3
+    s5d2r1f271  TaskTrigger.probability x3, then the flood block
+
+So on the rollover the weather draw precedes segment 0's generation pass, and segment 1's
+pass follows. caseworkGen does not appear anywhere in that step -- but that trace has no
+client groups yet at step 5, so it does NOT settle where caseworkGen sits relative to
+Weather.select on a rollover that does have groups. Capture a rollover step WITH live groups
+before choosing the insertion point; that is the one missing fact.
+
 
 PARKED CONFLICT: Fable reads TriggerNonCaseworkDeparture as mutating tracker state only --
 OnCaseworklessClientsDeparted has zero subscribers, no facility population is released. The
