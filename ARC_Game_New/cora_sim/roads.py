@@ -427,6 +427,12 @@ class Fleet:
                 # can forget it without counting it.
                 self.damaged[v] = True            # dispatched, cannot reach the source
                 dropped.append(payload)
+                # THE ORDER IS GONE WITH THE TASK. HandleDeliveryFailure removes the parent, so
+                # nothing retries it. Continuing WITHOUT popping re-offered the same order to
+                # the next free vehicle: on 5701 round 5 one order damaged two vehicles, was
+                # then carried by the third and landed a round later -- into a task the drop
+                # had already removed, so the landing was discarded.
+                queue.pop(0)
                 continue
             # LOAD AT THE SOURCE, AT THIS SIM-TIME. LoadCargo calls RemoveResource when the
             # vehicle ARRIVES, so orders draw down the kitchen in arrival order, and one
