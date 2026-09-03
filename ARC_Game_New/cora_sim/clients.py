@@ -74,7 +74,7 @@ class ClientGroup:
 
     @property
     def without_need(self):
-        return self.count - self.with_need
+        return max(0, self.count - self.with_need)
 
 
 class ClientTracker:
@@ -128,12 +128,22 @@ class ClientTracker:
             if (not group.departed and group.without_need > 0
                     and current_round >= group.departure_round):
                 group.departed = True
+                # TriggerNonCaseworkDeparture, verbatim:
+                #     group.clientCount -= group.clientsWithoutCaseworkNeed;
+                #     group.clientsWithoutCaseworkNeed = 0;
+                # The group SHRINKS to just its casework-needing members, and it is that
+                # reduced count that RecordCaseworkRequested later credits. Unity's casework
+                # increments are irregular (+29, +43, +81, +92, +218) precisely because some
+                # groups have already shed their leavers and some have not.
+                leaving = group.without_need
+                group.count -= leaving
+                group.with_need = group.count
                 # People who never needed casework LEAVE, and leaving reduces the
                 # facility's population -- which is what the motel bills on. Marking the
                 # group departed without releasing the occupancy over-charges lodging for
                 # the rest of the episode: measured at 160,000 against Unity's 100,000,
                 # exactly 300 residents x $200 that had already gone home.
-                departures.append((group.without_need, group.facility))
+                departures.append((leaving, group.facility))
             if group.with_need > 0 and not group.casework_generated:
                 y = max(1, rounds_in)
                 pct = f32mul(C["base_casework_pct"], C["growth"] ** (y - 1))
