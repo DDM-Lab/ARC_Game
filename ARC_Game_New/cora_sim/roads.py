@@ -50,6 +50,14 @@ def world_to_cell(wx, wy):
     return (int(floor(wx)), int(floor(wy)))
 
 
+def _building_at(cell, spec):
+    """Reverse the name -> road-cell map, so a routing cell can name its building."""
+    for name, c in spec.building_cell.items():
+        if c == cell:
+            return name
+    return None
+
+
 def cell_to_world(cell, spec=None):
     a = (spec or DEFAULT_MAP).anchor
     return (cell[0] + a, cell[1] + a)
@@ -466,7 +474,17 @@ class Fleet:
     def _closest(self, candidates, src_cell, quantity=0, capacity=100.0):
         """CalculateVehicleSuitability among a set of already-free vehicles."""
         best, best_score = candidates[0], -1.0
-        sx, sy = cell_to_world(src_cell, self.spec)
+        # SCORE AGAINST THE BUILDING TRANSFORM, NOT THE ROAD CELL. Unity scores
+        # Vector3.Distance(vehicle.transform.position, task.GetSourcePosition()), and
+        # GetSourcePosition returns sourceBuilding.transform.position
+        # (DeliverySystem.cs:42-45, 657-673). Routes are computed to the road connection
+        # cell, so the port had been scoring against the routing point -- and so did our own
+        # `srcpos` instrumentation, which is why the two agreed and hid the bug. They are
+        # ~1.6 units apart on this map, which is decisive when two vehicles are a similar
+        # distance out. Falls back to the road cell for buildings placed mid-episode, whose
+        # transform the map dump does not carry.
+        sx, sy = self.spec.building_pos.get(
+            _building_at(src_cell, self.spec), cell_to_world(src_cell, self.spec))
         for i in candidates:
             vx, vy = cell_to_world(self.pos[i], self.spec)
             d = ((vx - sx) ** 2 + (vy - sy) ** 2) ** 0.5

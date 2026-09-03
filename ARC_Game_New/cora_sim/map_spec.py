@@ -27,7 +27,7 @@ class MapSpec:
 
     __slots__ = ("name", "description", "anchor", "move_speed", "simulation_duration",
                  "time_speed", "fixed_delta", "depots", "road_cells", "building_cell",
-                 "facility_cell", "site_cell")
+                 "facility_cell", "site_cell", "building_pos")
 
     def __init__(self, d):
         self.name = d.get("name", "unnamed")
@@ -40,6 +40,14 @@ class MapSpec:
         self.depots = tuple(tuple(c) for c in d["depots"])
         self.road_cells = frozenset(tuple(c) for c in d["road_cells"])
         self.building_cell = {k: tuple(v) for k, v in d["building_cell"].items()}
+        # THE BUILDING TRANSFORM, which is NOT the road connection point.
+        # CalculateVehicleSuitability scores Vector3.Distance(vehicle.position,
+        # task.GetSourcePosition()), and GetSourcePosition returns
+        # sourceBuilding.transform.position -- while every route is computed to the road
+        # cell. On this map the two are ~1.6 units apart (Community01 sits at (1.34, 7.09)
+        # against a road cell world position of (1.5, 5.5)), which is more than enough to
+        # decide which vehicle wins a dispatch. Optional so older map files still load.
+        self.building_pos = {k: tuple(v) for k, v in (d.get("building_pos") or {}).items()}
         self.facility_cell = {k: tuple(v) for k, v in d["facility_cell"].items()}
         # Site ids are ints in the game and strings in JSON.
         self.site_cell = {int(k): tuple(v) for k, v in d["site_cell"].items()}

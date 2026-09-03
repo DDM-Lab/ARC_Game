@@ -323,11 +323,40 @@ The port's `run_round` narrows candidates to the earliest-free vehicles
 (`free_at <= soonest + 1e-9`) before scoring. Unity scores over every idle vehicle. Fix both
 together, since either alone can flip an assignment.
 
-THE BLOCKER, and it needs a Unity change: building TRANSFORM positions are not in
-`maps/default.json` and are not in any existing mark -- `road:connection` emits cells only.
-Add a mark that dumps each building's `transform.position` (alongside the existing ROADDUMP),
-rebuild headless, re-capture, extend MapSpec with `building_pos`, then score `_closest`
-against that. Do NOT approximate it from the road cell: the offset IS the signal here.
+UNBLOCKED, AND PARTLY FIXED. `RoadConnection.cs` now emits the building's
+`transform.position` alongside its road cell in the existing `road:connection` mark;
+headless rebuilt and all seeds re-captured (`scratchpad/cap32b/`). The offsets are large:
+
+    Community01  road cell (1,5) -> world (1.5, 5.5)   transform (1.34, 7.09)
+    Community02  road cell (-10,-3) -> world (-9.5,-2.5)  transform (-9.62, -0.90)
+
+`maps/default.json` carries a new `building_pos` block, MapSpec exposes `building_pos`
+(optional, so older map files still load), and `_closest` now scores against the transform
+with a fallback to the road cell. That is the source-correct endpoint and it stays.
+
+IT CHANGED NOTHING ON ITS OWN, and the reason is the actual defect. `run_round` narrowed
+candidates to the vehicles free at the SOONEST moment:
+
+    soonest = min(free_at[i] for i in ready)
+    candidates = [i for i in ready if free_at[i] <= soonest + 1e-9]
+
+That usually leaves exactly ONE candidate, so the suitability score decided nothing and the
+endpoint could not matter. Unity's FindSuitableVehicle scans every idle vehicle
+(DeliverySystem.cs:626-651).
+
+Widening `candidates` to all ready vehicles was tried and REGRESSED most traces (5501, 5503,
+5802, 6101 all moved their first divergence EARLIER, 10 -> 6). Reverted. The reason it fails
+is that the port has no clock inside the round: picking the nearest vehicle when that vehicle
+only frees up late in the round delays the delivery, whereas Unity would have given the task
+to whoever was idle AT THE DISPATCH INSTANT.
+
+THE REAL FIX, and it is a restructure of `run_round`: Unity dispatches once per
+`taskAssignmentInterval` (1 second of game time) from Update, and each pass drains greedily
+over the vehicles idle AT THAT MOMENT. A ten-second round is therefore ~10 dispatch passes,
+not one. Model the round as a sequence of passes at t = 0, 1, 2, ... seconds; at each pass
+take the vehicles with free_at <= t, order tasks priority DESC then creation ASC, and assign
+greedily by suitability, removing each winner from the candidate set. That subsumes both the
+endpoint and the candidate-set questions and is the last known gap.
 
 Two facts worth keeping: LoadCargo and UnloadCargo contain no delay at all, and a vehicle
 already on its source road cell produces a 1-node path whose movement loop never runs, so it
