@@ -1,2 +1,14 @@
 Builds/
 /ARC_Game_New/builds722
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+
+# Orphaned top-level Unity project skeleton (real project lives in ARC_Game_New/)
+/Assets/
+/Packages/
+/ProjectSettings/
