@@ -571,10 +571,38 @@ suspicion, are that the port has already deducted that population elsewhere (the
 path calls `move_population(source, -quantity)` at answer time AND the fleet then re-checks
 stock), or that the community's population is simply lower in the port at that instant.
 
-NEXT: print the source community's population immediately before that load call and compare it
-against the same community in Unity's game state for round 5 (`step["before"]` in the trace
-carries it). One number decides it. And note this pairs with (a) above -- once the order
-actually loads and lands, the surviving-order change becomes correct rather than a regression.
+THE CAUSE, FROM THE CODE PATH: A DOUBLE DEDUCTION OF THE SOURCE POPULATION.
+
+`_load` (tasks.py, inside tick_deliveries_only) routes EVERY cargo type through
+`retry_if_unsourced`, which exists for FOOD against kitchen stock:
+
+    def _load(payload, qty):
+        if self.retry_if_unsourced is None: return qty
+        task = self.active.get(payload[0]) or self.awaiting.get(payload[0])
+        return qty if task is None else self.retry_if_unsourced(task, qty)
+
+Meanwhile the relocation path in sim.py already deducts the people the moment the choice is
+ANSWERED -- the `if source: w.economy.move_population(source, -quantity)` branch. So the
+population leaves Community02 at answer time, and when the vehicle arrives the load check asks
+that same community for the same 100 people, finds none, and ABORTS. That is why
+`run_round` reports left=0 dropped=0 with three of five orders vanishing, and why no LATE
+credit can ever fire.
+
+Unity does not pre-deduct: LoadCargo calls RemoveResource ON ARRIVAL (Vehicle.cs LoadCargo,
+which is also why an order that arrives to an empty kitchen aborts and retries -- the mechanic
+the food path was built around). The port applies BOTH the Unity behaviour and an extra
+answer-time deduction.
+
+TWO CANDIDATE FIXES, and they are NOT equivalent -- decide with the traces:
+  (a) stop pre-deducting at answer time and let `_load` do the removal, which matches Unity
+      most literally; or
+  (b) keep the pre-deduction and exempt Population tasks from `retry_if_unsourced`, which is
+      the smaller diff but leaves the port's population moving a round earlier than Unity's.
+Prefer (a) unless it disturbs the motel/lodging spend, which reads population at round end.
+
+Apply (a) TOGETHER with the parked late-delivery change (the order outliving its task): the
+two were measured separately and each looked wrong alone -- surviving orders that never load
+perturbed caseworkRequested, and loading without survival still expires the task first.
 
 METHOD NOTE THAT COST THE MOST TIME TODAY: six consecutive edits were inert because I reasoned
 from the C# instead of instrumenting. Both real fixes came within minutes of spying on
