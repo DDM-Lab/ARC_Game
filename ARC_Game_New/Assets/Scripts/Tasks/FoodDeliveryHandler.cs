@@ -106,6 +106,11 @@ public class FoodDeliveryHandler : MonoBehaviour
 
         if (remaining <= 0)
         {
+            // EXIT A: destination already covered by inbound. CompleteTask -> resolved AND
+            // fulfilled, so Unity counts this exactly as a delivery even though none is made.
+            SnapshotDebug.MarkContext("food:exit", "{\"branch\":\"inbound-covered\",\"dst\":\""
+                + destination.name + "\",\"requested\":" + requestedQuantity
+                + ",\"inbound\":" + alreadyInbound + "}");
             if (showDebugInfo)
                 Debug.Log($"[FoodDeliveryTaskGenerator] Inbound deliveries already cover {alreadyInbound}/{requestedQuantity} for {destination.name}");
             TaskSystem.Instance.CompleteTask(parentTask);
@@ -116,6 +121,11 @@ public class FoodDeliveryHandler : MonoBehaviour
         var kitchens = GetKitchensSorted(ds);
         if (kitchens.Count == 0)
         {
+            // EXIT B: no kitchen has effective stock. Returns false and completes NOTHING --
+            // the task stays on the board. Collapsing this with EXIT A is what made four
+            // traces read foodResolved 0 against Unity's 1.
+            SnapshotDebug.MarkContext("food:exit", "{\"branch\":\"no-kitchen-stock\",\"dst\":\""
+                + destination.name + "\",\"requested\":" + requestedQuantity + "}");
             Debug.LogWarning($"[FoodDeliveryTaskGenerator] No kitchens with available food for '{parentTask.taskTitle}'");
             return false;
         }
@@ -131,6 +141,9 @@ public class FoodDeliveryHandler : MonoBehaviour
 
             if (deliveries.Count > 0)
             {
+                SnapshotDebug.MarkContext("food:exit", "{\"branch\":\"created\",\"dst\":\""
+                    + destination.name + "\",\"kitchen\":\"" + kitchen.name
+                    + "\",\"send\":" + sendAmount + ",\"effective\":" + effectiveStock + "}");
                 TaskSystem.Instance.LinkDeliveriesToTask(parentTask, deliveries);
                 remaining  -= sendAmount;
                 anyCreated  = true;
