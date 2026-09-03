@@ -190,18 +190,33 @@ That is leg 2, and it is a bigger change than it looks:
   - Structurally, clients.update must therefore move to AFTER the segment advance and run
     once per advance, whereas the port currently runs it once, before the advance.
 
-The placement constraint is now pinned from the capture, so this no longer needs guessing.
-Unity's rollover step on 5901 reads, in order:
+LEG 2 HAS NOW ALSO BEEN TRIED and is ALSO INERT. `experiments/sim_leg2_tracker_cadence.py`
+adds Unity's `currentRound = segment + (day-1)*4` for both the arrival stamp and the tracker
+evaluation, and runs the tracker once per SEGMENT ADVANCE (twice on a rollover, after the
+advance, before that advance's generation pass). The mark diff is byte-identical to the
+reorder alone and to the reorder+stamp. Ratchet stays 0.
 
-    s5d2r0f237  Weather.select x1, TaskTrigger.probability x3
-    s5d2r1f271  TaskTrigger.probability x3, then the flood block
+THAT IS THE INFORMATIVE RESULT, and it kills the hypothesis it was built to confirm. Three
+independent changes to Y and to the tracker cadence produce the SAME diff, so the step-8
+residue is NOT threshold-driven. (In hindsight one of the three was inert by construction:
+shifting the stamp and the evaluation by the same formula leaves rounds_in unchanged.)
 
-So on the rollover the weather draw precedes segment 0's generation pass, and segment 1's
-pass follows. caseworkGen does not appear anywhere in that step -- but that trace has no
-client groups yet at step 5, so it does NOT settle where caseworkGen sits relative to
-Weather.select on a rollover that does have groups. Capture a rollover step WITH live groups
-before choosing the insertion point; that is the one missing fact.
+WHAT THE RESIDUE MUST BE INSTEAD. The port draws caseworkGen at step 8 for 3-6 groups;
+Unity draws none. Not fewer -- none. Since the draw counts match through step 7, Unity is
+not evaluating those groups at all by step 8, which means Unity's live group SET is smaller
+than the port's. The best candidate is the sixth game bug Fable found, which has the right
+shape and is already documented: casework-site deliveries DOUBLE-PROCESS.
+`HandlePopulationDelivery` calls `RemoveClientsByQuantity` at unload
+(ClientStayTracker.cs:515) and `DeliverySystem.OnVehicleDeliveryCompleted` calls it AGAIN at
+complete (DeliverySystem.cs:701). Removing twice drains groups to empty, and an empty group
+has `clientsWithCaseworkNeed == 0` and stops drawing forever. The port removes once, so its
+groups survive and keep drawing -- which is exactly the observed asymmetry, in the right
+direction, from a mechanism already confirmed in the source.
 
+Test that next, on top of the reorder: double the removal in `process_home` the same way the
+arrival was doubled. It is the same bug class as the double-spawn, on the same two call
+sites, and it is cheap. Note it interacts with the PARKED conflict below, since both concern
+who removes population from a group.
 
 PARKED CONFLICT: Fable reads TriggerNonCaseworkDeparture as mutating tracker state only --
 OnCaseworklessClientsDeparted has zero subscribers, no facility population is released. The
