@@ -218,7 +218,7 @@ class Fleet:
     Kitchen->Community route was measured at 0 rounds one day and 5 the next.
     """
 
-    __slots__ = ("pos", "busy_seconds", "carrying", "damaged", "spec")
+    __slots__ = ("pos", "busy_seconds", "carrying", "damaged", "spec", "frame", "trip", "events")
 
     # Kept for callers that reference Fleet.DEPOTS; the live values come from the spec.
     DEPOTS = DEFAULT_MAP.depots
@@ -234,6 +234,9 @@ class Fleet:
         # player answers the repair task StopVehicleDueToFlood spawns. A flood that cuts one
         # route therefore costs a third of the delivery capacity indefinitely.
         self.damaged = [False, False, False]
+        self.frame = 0                       # cumulative SIM frames since the game began
+        self.trip = [None, None, None]       # per-vehicle in-flight state, see run_round
+        self.events = None                   # set to a list to record (frame, kind, veh, id)
 
     def clone(self):
         f = Fleet.__new__(Fleet)
@@ -242,6 +245,9 @@ class Fleet:
         f.busy_seconds = list(self.busy_seconds)
         f.carrying = list(self.carrying)
         f.damaged = list(self.damaged)
+        f.frame = self.frame
+        f.trip = [dict(t) if t else None for t in self.trip]
+        f.events = None
         return f
 
     def available(self):
@@ -347,162 +353,166 @@ class Fleet:
 
 
     def run_round(self, pending, flooded=frozenset(), load=None):
-        """ProcessPendingTasks over one simulated round. Returns (landed, still_pending).
+        """One simulated round, FRAME BY FRAME. Returns (landed, still_pending, dropped).
 
-        This is the shape Unity's marks show, and no per-order latency can express it:
+        Everything here is calibrated against the delivery marks of eleven 32-round captures
+        (352 rounds, 203 trips), and the rules are all integers:
 
-            d2r1: queued 5, completed 2       three vehicles go out, two finish in time
-            d2r2: queued 1, completed 3       the third lands, two more are picked up
+          * a round is ceil(round_seconds / fixed_delta) sim frames -- 34, in every one of
+            the 352 rounds -- and the paused planning frames between rounds move nothing, so
+            a vehicle mid-leg at frame 34 simply resumes at frame 1 of the next round;
+          * AssignPendingTasks is gated on `Time.time - last > 1s` in Update, and Time.time
+            advances 0.3s per sim frame, so passes fire every 4 frames on a schedule that is
+            continuous across rounds: at cumulative sim frames = 0 (mod 4). A round whose
+            cumulative start is = 2 dispatches at offsets 2, 6, 10, ...; one at = 0 at
+            4, 8, 12, ... -- the 77/20 split of first-dispatch offsets in the captures;
+          * the source leg starts ON the dispatch frame and takes exactly L1 frames; loading
+            is one frame (arrival -> destination-leg start = +1); the destination leg takes
+            exactly L2 frames to the unload; complete is +1 and the vehicle is idle on that
+            frame. A vehicle already standing on its source starts its destination leg at
+            +2. Unload - dispatch - L2 = 2 on 26 of 26 at-source trips.
+          * a pass scores every idle vehicle with CalculateVehicleSuitability and each takes
+            at most one order; a vehicle freed at frame f is a candidate for a pass at f.
 
-        Orders wait in pendingTasks; a vehicle takes the top one, drives source then
-        destination, and is available again the moment it arrives -- possibly to take
-        another order in the SAME round. Whatever is still driving when the round's seconds
-        run out carries into the next round.
+        The previous model ran on seconds with whole-second passes from t = 0, charged
+        (L + 1) per leg, and used a 33-frame round. It was ~1.5s fast per trip, which is why
+        the port's second kitchen load on 5501 round 9 fit inside the round and Unity's
+        landed one frame past endSim -- and why every remaining food and lodging residue had
+        the shape of one delivery landing a round early or late.
+
+        Two things the old model did that Unity does not, both dropped: a src->dst route
+        check at dispatch (Unity computes the destination path only when that leg starts,
+        after loading) and a "zombie speed-up" hand-off on a load abort (a guess; the pass
+        cadence covers it -- an aborted vehicle is idle at the source and the next pass,
+        at most four frames away, reassigns it).
 
         `pending` is a list of [seq, payload, src_cell, dst_cell, qty], sorted by the
         caller (priority desc, then creation order, as DeliverySystem does).
         """
-        budget = self.spec.round_seconds
-        # Where each vehicle becomes free, measured from the start of THIS round. A vehicle
-        # still driving from last round starts busy.
-        free_at = [min(b, budget) if b > 0 else 0.0 for b in self.busy_seconds]
-        landed = []
-
-        # Vehicles already carrying finish their in-flight trip first.
-        for i, b in enumerate(self.busy_seconds):
-            if self.carrying[i] is not None and b <= budget:
-                landed.append(self.carrying[i])
-                self.carrying[i] = None
-            self.busy_seconds[i] = max(0.0, b - budget)
-
+        from math import ceil
+        frames = int(ceil(self.spec.round_seconds / self.spec.fixed_delta))
+        pass_every = int(TASK_ASSIGNMENT_INTERVAL // self.spec.fixed_delta) + 1
         queue = list(pending)
-        dropped = []
-        # DISPATCH RUNS IN PASSES, NOT ONCE PER ROUND. AssignPendingTasks is called from
-        # Update behind `Time.time - lastTaskAssignment > taskAssignmentInterval`
-        # (DeliverySystem.cs:310-318), and delivery:config reports that interval as 1 second.
-        # A ten-second round is therefore about TEN dispatch passes, each draining greedily
-        # over the vehicles idle AT THAT MOMENT -- not one pass over the whole round.
-        #
-        # This is what makes the suitability score mean anything. The old single pass picked
-        # from whichever vehicles freed up earliest, which was usually exactly one, so the
-        # score never decided and correcting its distance endpoint changed no output at all.
-        # It also mis-timed work: a vehicle idle from t=2 would be handed a task as though it
-        # had left at 2 even when Unity would not have dispatched until the t=3 pass.
-        t = 0.0
-        while queue and t < budget:
-            # Idle AT THIS INSTANT. A vehicle that finishes at 3.2s is not a candidate for
-            # the t=3 pass; it waits for t=4, exactly as the interval gate makes Unity wait.
-            ready = [i for i in range(len(self.pos))
-                     if not self.damaged[i] and free_at[i] <= t + 1e-9
-                     and self.carrying[i] is None]
-            if not ready:
-                t += TASK_ASSIGNMENT_INTERVAL
-                continue
-            seq, payload, src, dst, qty = queue[0]
-            if path_length(src, dst, flooded, self.spec) is None:
-                # CREATED, THEN CUT. The order passed its route estimate in the planning
-                # phase and is only unroutable now because the flood spread at the start of
-                # this round -- which is Unity's Community03 order exactly: estimate passed
-                # at f291, blocked at f295. A vehicle IS dispatched and then stopped, so
-                # this is StopVehicleDueToFlood, not the never-created case: the vehicle is
-                # damaged and the parent task is silently removed. Dropping it free of
-                # charge, as this did, spent none of the fleet Unity spends.
-                v = self.best_vehicle(src, qty)
-                if v is not None:
-                    self.damaged[v] = True
-                    dropped.append(payload)
-                queue.pop(0)
-                continue
-            # Every idle vehicle is scored, as FindSuitableVehicle does
-            # (DeliverySystem.cs:626-651). A winner leaves `ready` implicitly: each branch
-            # below pushes its free_at past t, so no vehicle takes two tasks in one pass --
-            # which is the removal at DeliverySystem.cs:611.
-            v = self._closest(ready, src, qty)
-            leg1 = path_length(self.pos[v], src, flooded, self.spec)
-            if leg1 is None:
-                # StopVehicleDueToFlood -> TaskSystem.HandleDeliveryFailure, which removes
-                # the parent task from activeTasks, marks it Incomplete, applies a
-                # satisfaction penalty -- and NEVER calls RecordTaskResolution. The task
-                # vanishes from the metrics entirely. `dropped` carries it back so the board
-                # can forget it without counting it.
-                self.damaged[v] = True            # dispatched, cannot reach the source
-                dropped.append(payload)
-                # THE ORDER IS GONE WITH THE TASK. HandleDeliveryFailure removes the parent, so
-                # nothing retries it. Continuing WITHOUT popping re-offered the same order to
-                # the next free vehicle: on 5701 round 5 one order damaged two vehicles, was
-                # then carried by the third and landed a round later -- into a task the drop
-                # had already removed, so the landing was discarded.
-                queue.pop(0)
-                continue
-            # LOAD AT THE SOURCE, AT THIS SIM-TIME. LoadCargo calls RemoveResource when the
-            # vehicle ARRIVES, so orders draw down the kitchen in arrival order, and one
-            # that finds it empty ABORTS: currentTask is nulled, the vehicle goes Idle
-            # where it stands, and it is free for the next pending order immediately.
-            #
-            # Unity's marks show exactly this. Three food orders go out at f293; the
-            # kitchen holds 200, so the first two load and the third -- Vehicle3, 19 steps
-            # away -- arrives at f313 to nothing, aborts, and is reassigned to a population
-            # order in the SAME frame. Without modelling it the port delivered three food
-            # orders and no relocations where Unity delivered one of each.
-            # Departure is the DISPATCH instant, not the moment the vehicle fell idle:
-            # it sits parked until a pass hands it work.
-            at_source = t + leg_seconds(leg1, self.spec)
-            self.pos[v] = src
-            queue.pop(0)
-            if load is not None and load(payload, qty) <= 0:
-                # NO ZOMBIE COMPLETION. The race in AssignDeliveryTask is real -- it does
-                # not StopAllCoroutines -- but the consequence I inferred from it is not:
-                # I had the freed vehicle fly to the next order's destination carrying
-                # nothing and be credited the nominal quantity anyway.
-                #
-                # delivery:unload settles it from the game's own mouth. Across two full
-                # captures EVERY Unity unload has actual == nominal, including the one
-                # immediately after a LoadCargo abort. There are no phantom completions.
-                # Meanwhile the port's own ledger still showed `UNLOAD ->Motel act=0` rows
-                # on 5501 -- deliveries invented by my model and by nothing in the game.
-                #
-                # So the vehicle simply goes idle at the source, available for the next
-                # order like any other free vehicle.
-                # THE RACE IS A SPEEDUP, measured on four instances (5501, 5503, 5802,
-                # 5901): legs emitted in one frame, unload ceil(leg2 / 2) frames later,
-                # actual == nominal every time. The source leg is never paid for because
-                # both coroutines advance the same currentPathIndex along the new task's
-                # destination path.
-                if queue:
-                    nseq, npayload, nsrc, ndst, nqty = queue[0]
-                    leg2 = path_length(nsrc, ndst, flooded, self.spec)
-                    if leg2 is not None:
+        landed, dropped = [], []
+        for _o in range(frames):
+            self.frame += 1
+            # -- dispatch pass, BEFORE this frame's movement --------------------------------
+            # AssignPendingTasks runs in Update; coroutines resume after Update in the same
+            # frame. So a pass at frame f sees the vehicles as they stood at the end of
+            # f-1: one that completes during frame f is not a candidate until the next pass.
+            # The captures' complete-to-next-dispatch gaps are 1..4 frames and never 0. With
+            # the order reversed, 5802's Vehicle 1 was dispatched on the frame it completed
+            # and took the relocation Unity's Vehicle 3 -- idle two frames later and closer
+            # -- actually carried.
+            if queue and self.frame % pass_every == 0:
+                ready = [i for i in range(len(self.pos))
+                         if (self.trip[i] is None or "race_ready" in self.trip[i])
+                         and not self.damaged[i]]
+                while queue and ready:
+                    seq, payload, src, dst, qty = queue[0]
+                    v = self._closest(ready, src, qty)
+                    if self.trip[v] is not None and self.trip[v].get("race_ready") == self.frame:
+                        # THE RACE: two coroutines advance one shared currentPathIndex. The
+                        # source leg is skipped, the destination leg runs at two cells a
+                        # frame, and the nominal cargo is unloaded although nothing was ever
+                        # picked up. Measured on every instance in the captures; a Unity bug
+                        # the surrogate reproduces because the game has it.
+                        leg2 = path_length(self.pos[v], dst, flooded, self.spec)
+                        if leg2 is None:
+                            self.damaged[v] = True
+                            dropped.append(payload)
+                            self.trip[v] = None
+                            ready.remove(v)
+                            queue.pop(0)
+                            continue
+                        self.trip[v] = {"payload": payload, "src": src, "dst": dst, "qty": qty,
+                                        "phase": "to_dst", "left": max(1, -(-leg2 // 2)) + 1}
+                        self.carrying[v] = payload
+                        if self.events is not None: self.events.append((self.frame, "race", v, payload[0], leg2))
+                        ready.remove(v)
                         queue.pop(0)
-                        done = at_source + (-(-leg2 // 2)) * self.spec.fixed_delta
-                        self.pos[v] = ndst
-                        if done <= budget:
-                            landed.append(npayload)
-                            free_at[v] = done
-                        else:
-                            self.busy_seconds[v] = done - budget
-                            self.carrying[v] = npayload
-                            free_at[v] = budget
                         continue
-                # The race IS a speedup in Unity -- cargo-at-leg-start proves the
-                # reassigned trip is real and finishes in ceil(leg2 / 2) frames, paying
-                # nothing for the source leg because both coroutines advance the same
-                # currentPathIndex along the new task's path. Modelling it here made things
-                # WORSE (15 diverging counters to 19), so the rule is right about the one
-                # instance I could measure and wrong about when it applies. Not kept on a
-                # single data point; the detection needs more captures with the cargo mark
-                # before this is attempted again.
-                free_at[v] = at_source            # clean abort: idle at the source
-                continue
-            leg2 = path_length(src, dst, flooded, self.spec)
-            done = at_source + leg_seconds(leg2, self.spec)
-            self.pos[v] = dst
-            if done <= budget:
-                landed.append(payload)
-                free_at[v] = done
-            else:
-                self.busy_seconds[v] = done - budget
-                self.carrying[v] = payload
-                free_at[v] = budget               # out for the rest of this round
+                    self.trip[v] = None
+                    leg1 = path_length(self.pos[v], src, flooded, self.spec)
+                    if leg1 is None:
+                        # No flood-free path to the source: blocked on the dispatch frame.
+                        self.damaged[v] = True
+                        dropped.append(payload)
+                        ready.remove(v)
+                        queue.pop(0)
+                        continue
+                    # +1: the pass runs before this frame's movement, which then consumes one
+                    # frame of the leg; the calibrated costs (L1 to arrival, +2 for an
+                    # at-source vehicle) are measured from the dispatch frame.
+                    if leg1 == 0:
+                        # Already on the source: the 1-node MoveToPosition returns at once,
+                        # the boundary costs a frame, LoadCargo runs at +1, the destination
+                        # leg starts at +2 (26 of 26 at-source trips).
+                        trip = {"payload": payload, "src": src, "dst": dst, "qty": qty,
+                                "phase": "to_src", "left": 1 + 1}
+                    else:
+                        trip = {"payload": payload, "src": src, "dst": dst, "qty": qty,
+                                "phase": "to_src", "left": leg1 + 1}
+                    self.trip[v] = trip
+                    if self.events is not None: self.events.append((self.frame, "dispatch", v, payload[0], leg1))
+                    ready.remove(v)
+                    queue.pop(0)
+            # -- advance every vehicle in flight by one frame ---------------------------
+            for v, t in enumerate(self.trip):
+                if t is None:
+                    continue
+                if "race_ready" in t:
+                    # An aborted vehicle whose pass frame has passed is simply idle.
+                    if t["race_ready"] < self.frame:
+                        self.trip[v] = None
+                    continue
+                t["left"] -= 1
+                if t["left"] > 0:
+                    continue
+                ph = t["phase"]
+                if ph == "to_src":
+                    # ARRIVAL FRAME. MoveToPosition returns and `yield return
+                    # StartCoroutine(LoadCargo())` runs LoadCargo synchronously in this same
+                    # frame -- it has no yields -- so the load, or the abort that sets the
+                    # vehicle Idle, happens HERE. Only the next leg pays the coroutine
+                    # boundary: the destination leg starts on the following frame. That
+                    # single frame is what decides the race (see the pass).
+                    self.pos[v] = t["src"]
+                    if self.events is not None: self.events.append((self.frame, "at_src", v, t["payload"][0]))
+                    if load is not None and load(t["payload"], t["qty"]) <= 0:
+                        # Idle from this frame; the aborted ExecuteDeliveryTask only resumes
+                        # next frame. A pass on that next frame that hands this vehicle a task
+                        # first wakes the old coroutine into the race; otherwise it exits and
+                        # the next dispatch is an ordinary trip. 5802 step 6: abort +21, pass
+                        # +22, race (9 cells in 5 frames). 5901 step 10: abort +20, no pass
+                        # at +21, normal trip landing the following step.
+                        self.trip[v] = {"race_ready": self.frame + 1}
+                        if self.events is not None: self.events.append((self.frame, "abort", v, t["payload"][0]))
+                        continue
+                    t["phase"], t["left"] = "boarding", 1
+                elif ph == "boarding":
+                    leg2 = path_length(t["src"], t["dst"], flooded, self.spec)
+                    if leg2 is None:
+                        # No flood-free path for the destination leg: StopVehicleDueToFlood
+                        # -> HandleDeliveryFailure. Damaged, order gone.
+                        self.damaged[v] = True
+                        dropped.append(t["payload"])
+                        self.trip[v] = None
+                        continue
+                    t["phase"], t["left"] = "to_dst", max(1, leg2)
+                    self.carrying[v] = t["payload"]
+                    if self.events is not None: self.events.append((self.frame, "leg2", v, t["payload"][0], leg2))
+                elif ph == "to_dst":
+                    self.pos[v] = t["dst"]
+                    landed.append(t["payload"])               # UnloadCargo, this frame
+                    if self.events is not None: self.events.append((self.frame, "unload", v, t["payload"][0]))
+                    self.carrying[v] = None
+                    t["phase"], t["left"] = "complete", 1
+                elif ph == "complete":
+                    self.trip[v] = None                        # CompleteDelivery -> Idle
+        # busy_seconds is kept for callers that read it: frames still to run, in seconds.
+        for v, t in enumerate(self.trip):
+            self.busy_seconds[v] = (t["left"] * self.spec.fixed_delta) if (t and "left" in t) else 0.0
         return landed, queue, dropped
 
     def _closest(self, candidates, src_cell, quantity=0, capacity=100.0):
