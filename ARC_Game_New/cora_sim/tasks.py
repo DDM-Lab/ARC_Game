@@ -51,7 +51,7 @@ class Task:
     """One live task instance."""
 
     __slots__ = ("task_id", "tag", "demand", "delivered", "rounds_remaining",
-                 "resolved", "chosen", "destination")
+                 "resolved", "chosen", "destination", "source")
 
     def __init__(self, task_id, tag, demand=0, rounds_remaining=1):
         self.task_id = task_id
@@ -62,6 +62,7 @@ class Task:
         self.resolved = False
         self.chosen = None
         self.destination = ""
+        self.source = ""            # facility the people or goods come FROM
 
     def clone(self):
         t = Task.__new__(Task)
@@ -104,7 +105,8 @@ def demand_of(task_state: dict, tag: str) -> int:
 class TaskBoard:
     """Active tasks plus in-flight deliveries."""
 
-    __slots__ = ("active", "deliveries", "next_id", "awaiting", "has_supplier")
+    __slots__ = ("active", "deliveries", "next_id", "awaiting", "has_supplier",
+                 "_sources")
 
     def __init__(self, has_supplier=None):
         self.active = {}                    # task_id -> Task
@@ -119,6 +121,7 @@ class TaskBoard:
         # Rapid-Response) food choices, and never once a kitchen order. Not one kitchen was
         # operational in any of those episodes.
         self.has_supplier = has_supplier or (lambda tag: False)
+        self._sources = {}          # answered task -> facility its people leave from
 
     def clone(self):
         b = TaskBoard.__new__(TaskBoard)
@@ -127,6 +130,7 @@ class TaskBoard:
         b.awaiting = {k: v.clone() for k, v in self.awaiting.items()}
         b.next_id = self.next_id
         b.has_supplier = self.has_supplier
+        b._sources = dict(self._sources)
         return b
 
     # ── lifecycle ───────────────────────────────────────────────────────────────────
@@ -154,6 +158,9 @@ class TaskBoard:
             return
         task.chosen = quantity
         task.destination = destination
+        self._sources = getattr(self, "_sources", {})
+        if task.source:
+            self._sources[task_id] = task.source
         if quantity <= 0:
             # Nothing delivered: the task still resolves, unfulfilled, right away.
             if counters is not None:
@@ -189,6 +196,9 @@ class TaskBoard:
             return
         task.chosen = quantity
         task.destination = destination
+        self._sources = getattr(self, "_sources", {})
+        if task.source:
+            self._sources[task_id] = task.source
         if quantity <= 0:
             return
         if immediate:

@@ -243,8 +243,10 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     for count, facility in arrivals:
         w.clients.register_arrival(w.rng, count, w.round_index, facility, marks)
     for count, facility in w.clients.update(w.rng, w.round_index, w.economy.counters, marks):
-        if "motel" in str(facility).lower():
-            w.economy.motel_pop = max(0, w.economy.motel_pop - count)
+        # Departures release occupancy at the facility they were staying in.
+        name = "Motel" if "motel" in str(facility).lower() else str(facility)
+        w.economy.move_population(name, -count)
+        w.economy.motel_pop = w.economy.motel_population
 
     rolls = []
     day_changed = w.segment >= ROUNDS_PER_DAY
@@ -288,15 +290,41 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # Deliveries that land now produce client arrivals NEXT round, and only into lodging
     # buildings -- a delivery to a casework site sends people home instead, which is the
     # caseworkProcessed path rather than a new tracked group.
+    # Food lands at the DESTINATION named by the choice -- a Shelter -- not back at the
+    # community that asked. With no operational shelter the food goes nowhere, the
+    # community's `FoodPacks Empty` condition stays true, and it keeps requesting. That is
+    # why Unity fires 35 food requests in 24 rounds and why foodFulfilled sits far below
+    # foodResolved. Stocking the requester instead silenced it after one delivery (6
+    # passes against 35).
     for _task_id, quantity, destination in w.tasks.tick(w.economy.counters):
         dest = str(destination or "")
+        source = getattr(w.tasks, "_sources", {}).pop(_task_id, "")
+        if source:
+            w.economy.move_population(source, -quantity)
         if dest in ("Motel", "Shelter"):
-            w.pending_arrivals.append((quantity, dest))
+            # People land in an actual facility, so its population -- and therefore the
+            # triggers that read it and the bill that charges it -- move together.
+            # A relocation aimed at a Shelter with no OPERATIONAL shelter to receive it
+            # still houses people -- it falls back to the motel, which is why an episode
+            # that never builds a shelter still accumulates motel occupancy and casework
+            # demand. Dropping the delivery instead sent caseworkRequested to 0 against
+            # Unity's 898 while lodging still looked fulfilled.
+            target = "Motel" if dest == "Motel" else next(
+                (b["name"] for b in w.economy.buildings
+                 if b["type"] == "Shelter" and b["status"] == "InUse"), "Motel")
+            moved = w.economy.move_population(target, quantity)
+            if target == "Motel":
+                dest = "Motel"
+            if moved:
+                w.pending_arrivals.append((moved, dest))
             if dest == "Motel":
-                w.economy.motel_pop += quantity
+                w.economy.motel_pop = w.economy.motel_population
+        elif dest == "Kitchen":
+            pass
         elif dest == "CaseworkSite":
             w.clients.process_home(quantity, w.economy.counters)
-            w.economy.motel_pop = max(0, w.economy.motel_pop - quantity)
+            w.economy.move_population("Motel", -quantity)
+            w.economy.motel_pop = w.economy.motel_population
     economy_step(w.economy, day_changed, w.day)
     w.round_index += 1
 
@@ -324,12 +352,11 @@ def answer(w: World, task_id, choice_id) -> bool:
     # RELOCATION MOVES PEOPLE OUT OF THE SOURCE. Without this the community stays at 400
     # forever, its population-threshold trigger never stops firing, and the port generates
     # relocation demand indefinitely -- the second half of the 2.7x over-generation.
-    if qty > 0 and (choice.get("destinationCategory") or "") in ("Motel", "Shelter"):
-        for b in w.economy.buildings:
-            if b.get("name") == _facility or (_facility and b.get("name") == str(_facility)):
-                res = b.setdefault("resources", {})
-                res["population"] = max(0, (res.get("population") or 0) - qty)
-                break
+    # Population and food move when the delivery LANDS, not when the choice is made. Doing
+    # it at answer time drains the source community several rounds early, which pushes it
+    # under the MoreThan-200 threshold and silences the relocation trigger long before
+    # Unity's does: the port fell to 4 trigger passes against Unity's 17.
+    task.source = str(_facility)
     w.tasks.answer(task_id, choice.get("deliveryQuantity") or 0,
                    immediate=bool(choice.get("immediateDelivery")),
                    destination=choice.get("destinationCategory") or "",

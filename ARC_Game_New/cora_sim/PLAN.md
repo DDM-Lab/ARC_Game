@@ -513,6 +513,37 @@ and delivery-into-facility flows are what make the trigger fire and stop firing.
 **So the next piece is facility resource dynamics**, not more trigger tuning -- tuning
 against a frozen world would fit the constants to the wrong model.
 
+### After modelling facility resource dynamics
+
+Facility resources are now the single source of truth -- population and food packs live on
+the facility, the motel bill reads the facility rather than a parallel counter, and both
+move when a delivery LANDS rather than when a choice is made.
+
+| | score | lodgingResolved | lodgingFulfilled | foodResolved | caseworkRequested |
+|---|---|---|---|---|---|
+| Unity | +1.40 | 901 | 600 | 15 | 898 |
+| port, start of this work | -0.18 | 3 | 0 | - | 0 |
+| port, over-generating | +2.19 | 2451 | 2400 | - | 4700 |
+| **port, now** | **+1.50 to +1.84** | 302-602 | 300-600 | **15 (exact)** | 1900-2100 |
+
+Four errors fixed, each measured rather than reasoned:
+
+1. **Food lands at the DESTINATION, not back at the requester.** A food choice delivers to
+   a Shelter; with no operational shelter it goes nowhere, the community's `FoodPacks Empty`
+   stays true, and it keeps asking. Stocking the requester silenced it after one delivery
+   (6 trigger passes against Unity's 35).
+2. **Resources move when the delivery LANDS.** Moving them at answer time drains the source
+   community several rounds early, pushing it under the MoreThan-200 threshold and silencing
+   the relocation trigger (4 passes against 17).
+3. **A relocation aimed at a missing Shelter falls back to the motel.** Dropping it sent
+   caseworkRequested to 0 while lodging still looked fulfilled.
+4. **The motel bill reads facility population.** A parallel counter let the triggers and the
+   bill disagree about the same people.
+
+Still off: lodgingResolved is ~half Unity's, caseworkRequested about double, and
+foodFulfilled credits every delivery where Unity credits 9 of 15. The trigger-pass counts
+(FoodRequest 15 vs 35, Transport 7 vs 17) say generation cadence is still the driver.
+
 **Consequence for search: do not run RHEA on the surrogate yet.** A planner optimising a
 model that generates 2.7x the real demand will learn to over-invest in lodging, and the
 plan will not transfer. RHEA against Unity remains valid, because that is the real game.

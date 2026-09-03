@@ -304,8 +304,9 @@ class Economy:
         Motel billing is where 89-97% of spend goes in practice, at $200 per resident per
         day, charged on the day change for the day that just ended. It is also the reason
         an unused shelter is actively expensive: the residents keep billing."""
-        if self.motel_pop > 0:
-            self.spend(int(self.motel_pop * C["motel_per_person_per_day"]), "lodging")
+        residents = self.motel_population or self.motel_pop
+        if residents > 0:
+            self.spend(int(residents * C["motel_per_person_per_day"]), "lodging")
         for entry in self.arriving:
             entry[0] -= 1
         for days, kind in [e for e in self.arriving if e[0] <= 0]:
@@ -332,6 +333,53 @@ class Economy:
         b["status"] = STATUS_DECONSTRUCTING
         b["deconstruct_rounds"] = C.get("deconstruction_rounds", 3)
         return True
+
+    def facility(self, name):
+        for b in self.buildings:
+            if b.get("name") == name:
+                return b
+        return None
+
+    def move_population(self, name, delta) -> int:
+        """Add or remove people at a facility, respecting capacity. Returns the amount
+        actually moved.
+
+        FACILITY POPULATION IS THE SINGLE SOURCE OF TRUTH, including for the motel. Keeping
+        a separate motel counter alongside per-facility resources let the two drift, and
+        the resource TRIGGERS read the facility while the motel BILL read the counter -- so
+        the same population could simultaneously stop generating relocation demand and keep
+        being charged for."""
+        b = self.facility(name)
+        if b is None:
+            return 0
+        res = b.setdefault("resources", {})
+        pop = res.get("population") or 0
+        cap = res.get("populationCapacity")
+        if delta > 0 and cap is not None:
+            delta = min(delta, max(0, cap - pop))
+        else:
+            delta = -min(-delta, pop) if delta < 0 else delta
+        res["population"] = pop + delta
+        return delta
+
+    def add_food(self, name, amount) -> int:
+        """Deliver food packs. A community holding food stops satisfying the `Empty`
+        condition, which is what makes Unity's food requests STOP -- a port with static
+        storage asks forever."""
+        b = self.facility(name)
+        if b is None or amount <= 0:
+            return 0
+        res = b.setdefault("resources", {})
+        cap = res.get("foodPacksCapacity")
+        room = amount if cap is None else max(0, cap - (res.get("foodPacks") or 0))
+        moved = min(amount, room)
+        res["foodPacks"] = (res.get("foodPacks") or 0) + moved
+        return moved
+
+    @property
+    def motel_population(self):
+        b = self.facility("Motel")
+        return (b.get("resources", {}).get("population") or 0) if b else 0
 
     def facilities(self):
         """Everything the trigger conditions and task suitability read.
