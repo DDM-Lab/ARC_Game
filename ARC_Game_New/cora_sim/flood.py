@@ -148,9 +148,8 @@ def spread_thresholds(mult: float):
 
 
 def _is_edge(p, fs: FloodState):
-    x, y = unpack(p)
-    for dx, dy in _DIRS:
-        if pack(x + dx, y + dy) not in fs.tiles:
+    for d in _NEIGH_DELTAS:                     # same four neighbours, by packed delta
+        if (p + d) not in fs.tiles:
             return True
     return False
 

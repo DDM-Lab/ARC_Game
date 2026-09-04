@@ -218,11 +218,13 @@ class World:
         the whole flood set -- the pathfinder is called once per delivery leg and this keeps
         it cheap enough not to cost the surrogate its speed.
         """
-        from .floodmap import pack
         tiles = self.flood.tiles
         if not tiles:
             return frozenset()
-        return frozenset(c for c in roads.ROAD_CELLS if pack(c[0], c[1]) in tiles)
+        # One packed road table per process; the intersection runs in C instead of
+        # packing all 106 road cells on every call (three calls a step).
+        roads_p = _PACKED_ROADS
+        return frozenset(roads_p[p] for p in tiles.intersection(roads_p))
 
     @staticmethod
     def _live_ids(w):
@@ -463,6 +465,10 @@ def _create_tasks(w, rolls, day_changed):
 
 
 _POSITIONS = {}
+
+
+from .floodmap import pack as _pack_cell
+_PACKED_ROADS = {_pack_cell(c[0], c[1]): c for c in roads.ROAD_CELLS}
 
 
 def _facility_positions(spec=None):

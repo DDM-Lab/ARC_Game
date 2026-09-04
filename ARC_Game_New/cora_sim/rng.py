@@ -120,8 +120,18 @@ class UnityRandom:
 
     def value_lt(self, threshold_raw: int) -> bool:
         """`Random.value < chance`, as an integer compare. Hoist threshold_for() out of
-        the loop; this keeps float construction off the per-draw path entirely."""
-        return (self.next_uint() & _MANT) < threshold_raw
+        the loop; this keeps float construction off the per-draw path entirely.
+
+        The xorshift step is inlined: this is the per-draw path of the flood spread and
+        the per-person client rolls, and the extra frame of next_uint() was ~10% of a
+        search step."""
+        x, y, z, w = self.s0, self.s1, self.s2, self.s3
+        t = (x ^ ((x << 11) & M32)) & M32
+        t = (t ^ (t >> 8)) & M32
+        w2 = (w ^ (w >> 19) ^ t) & M32
+        self.s0, self.s1, self.s2, self.s3 = y, z, w, w2
+        self.draws += 1
+        return (w2 & _MANT) < threshold_raw
 
     def range_int(self, lo: int, hi_exclusive: int) -> int:
         """Random.Range(int, int) -- upper bound EXCLUSIVE, as in Unity.
