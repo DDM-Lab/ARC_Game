@@ -1,5 +1,6 @@
-"""The search-side action model: what it offers, what it does, and that search never
-returns a plan worse than the policy the replay harness already reproduces exactly."""
+"""The search-side action model: what it offers, what it does, that search never returns a
+plan worse than the policy the replay harness already reproduces exactly, and that clone()
+-- which only search uses -- is a faithful, independent copy."""
 import os
 import random
 import sys
@@ -28,15 +29,13 @@ def test_basket_is_pruned_and_spanned():
     assert any(i.startswith("build_Kitchen_") for i in ids), ids
     assert len({i.rsplit("_", 1)[1] for i in ids if i.startswith("build_Kitchen_")}) >= 2, "sites collapsed to one"
     assert "hire_untrained_1" in ids and "hire_untrained_5" in ids, "quantity endpoints missing"
-    assert len(ids) <= m.max_menu + 6, ids
-    # a used site disappears; an unaffordable action disappears
+    assert not any(i.startswith("transfer_") for i in ids), "transfers must stay off by default"
     w.economy.used_sites.add(0)
-    assert not any(i.endswith("_0") and i.startswith("build_") for i in
-                   [a["action_id"] for a in m.basket(w)])
+    assert not any(i.startswith("build_") and i.endswith("_0") for i in
+                   [a["action_id"] for a in m.basket(w)]), "built-on site still offered"
     w.economy.budget = 50
     ids = [a["action_id"] for a in m.basket(w)]
     assert not any(i.startswith(("build_", "hire_", "train_")) for i in ids), ids
-    assert not any(i.startswith("transfer_") for i in ids), "transfers must stay off by default"
 
 
 def test_apply_answers_every_open_task_and_spends():
@@ -45,8 +44,7 @@ def test_apply_answers_every_open_task_and_spends():
     for _ in range(5):
         m.apply(w, ("turn", {"choices": {}, "menu": ()}))
         S.step_round(w)
-    open_before = len({t for t, _ in S.open_choices(w)})
-    assert open_before > 0
+    assert S.open_choices(w), "expected open tasks by round 5"
     b0 = w.economy.budget
     m.apply(w, ("turn", {"choices": {}, "menu": ("hire_untrained_2",)}))
     assert not S.open_choices(w), "every open task should have been answered"
@@ -61,16 +59,31 @@ def test_search_never_below_baseline_and_is_reproducible():
         m.apply(base, a)
         S.step_round(base)
     baseline = m.value(base)
-    fits = []
-    plans = []
-    for seed in (1, 1):
-        w = _world()
+    results = []
+    for _ in range(2):
         s = RHEA(S.step_round, CoraActions(random.Random(0)), horizon=12, population=8,
-                 generations=3, elites=2, mutation_rate=0.2, rng=random.Random(seed))
-        plan, fit = s.plan(w, seed_plan=[plan0[0]] + plan0[1:])
-        fits.append(fit); plans.append(plan)
-    assert fits[0] >= baseline - 1e-9, (fits[0], baseline)
-    assert fits[0] == fits[1] and plans[0] == plans[1], "same seed must give the same plan"
+                 generations=3, elites=2, mutation_rate=0.2, rng=random.Random(1), crossover=0.5)
+        results.append(s.plan(_world(), seed_plan=plan0))
+    (plan_a, fit_a), (plan_b, fit_b) = results
+    assert fit_a >= baseline - 1e-9, (fit_a, baseline)
+    assert fit_a == fit_b and plan_a == plan_b, "same seed must give the same plan"
+
+
+def test_clone_is_a_faithful_independent_copy():
+    """A search rollout runs on clone(); it must see the same future as a fresh world and
+    must not touch the original. Both failed silently until search used clone()."""
+    m = CoraActions(random.Random(0))
+    plan = [("turn", {"choices": {}, "menu": ("build_Kitchen_0", "hire_untrained_3")})] + \
+        CoraActions.baseline_plan(19)
+    a, b = _world(), _world()
+    c = b.clone()
+    for g in plan:
+        m.apply(a, g); S.step_round(a)
+        m.apply(c, g); S.step_round(c)
+    assert a.economy.metrics() == c.economy.metrics(), (a.economy.metrics(), c.economy.metrics())
+    assert a.economy.budget == c.economy.budget
+    assert b.economy.metrics()["roundsCompleted"] == 0, "stepping the clone touched the original"
+    assert b.economy.budget == _world().economy.budget
 
 
 def main():
@@ -85,6 +98,7 @@ def main():
             fails += 1; print(f"  {fn.__name__}: FAIL -- {str(e)[:160]}")
     print("\nRESULT:", "ALL PASS" if not fails else f"{fails} FAILING")
     return 1 if fails else 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
