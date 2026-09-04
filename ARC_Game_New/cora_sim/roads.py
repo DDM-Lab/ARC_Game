@@ -510,6 +510,53 @@ class Fleet:
                     t["phase"], t["left"] = "complete", 1
                 elif ph == "complete":
                     self.trip[v] = None                        # CompleteDelivery -> Idle
+        # -- epilogue: the two paused frames after the round -------------------------------
+        # Time.time stops at frame 34, so nothing moves and no pass fires, but coroutines
+        # still step once per frame. MoveToPosition's loop-exit check runs on the frame AFTER
+        # the last movement, so a leg whose last movement was frame 34 arrives -- and unloads
+        # -- at +35, and its completion lands at +36; a destination leg can also START there.
+        # The captures show unloads at +35 and completes and leg marks at +36, never movement.
+        # Without this, 5601's race relocation (last movement +34) was credited a round late.
+        for _e in range(2):
+            self.frame += 1
+            for v, t in enumerate(self.trip):
+                if t is None or "race_ready" in t:
+                    if t is not None and t["race_ready"] < self.frame:
+                        self.trip[v] = None
+                    continue
+                if t["left"] != 1:
+                    continue                                   # would need movement
+                t["left"] = 0
+                ph = t["phase"]
+                if ph == "to_src":
+                    self.pos[v] = t["src"]
+                    if self.events is not None: self.events.append((self.frame, "at_src", v, t["payload"][0]))
+                    if load is not None and load(t["payload"], t["qty"]) <= 0:
+                        self.trip[v] = None                     # no pass can follow: no race
+                        if self.events is not None: self.events.append((self.frame, "abort", v, t["payload"][0]))
+                        continue
+                    t["phase"], t["left"] = "boarding", 1
+                elif ph == "boarding":
+                    leg2 = path_length(t["src"], t["dst"], flooded, self.spec)
+                    if leg2 is None:
+                        self.damaged[v] = True
+                        dropped.append(t["payload"])
+                        self.trip[v] = None
+                        continue
+                    # A leg started in a paused frame makes no movement until the next
+                    # round's frame 1, so its first movement frame is lost: one extra.
+                    t["phase"], t["left"] = "to_dst", max(1, leg2) + 1
+                    self.carrying[v] = t["payload"]
+                    if self.events is not None: self.events.append((self.frame, "leg2", v, t["payload"][0], leg2))
+                elif ph == "to_dst":
+                    self.pos[v] = t["dst"]
+                    landed.append(t["payload"])
+                    if self.events is not None: self.events.append((self.frame, "unload", v, t["payload"][0]))
+                    self.carrying[v] = None
+                    t["phase"], t["left"] = "complete", 1
+                elif ph == "complete":
+                    self.trip[v] = None
+        self.frame -= 2                                        # sim frames only, for the pass phase
         # busy_seconds is kept for callers that read it: frames still to run, in seconds.
         for v, t in enumerate(self.trip):
             self.busy_seconds[v] = (t["left"] * self.spec.fixed_delta) if (t and "left" in t) else 0.0
