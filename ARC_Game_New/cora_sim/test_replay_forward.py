@@ -33,7 +33,7 @@ TRACKED = ("foodResolved", "foodFulfilled", "lodgingResolved", "lodgingFulfilled
            "cumWorkingWorkers", "roundsCompleted")
 # Floor for the exact-trace ratchet: raise this whenever a trace becomes exact, never
 # lower it to make a change pass.
-_MIN_EXACT_TRACES = 2
+_MIN_EXACT_TRACES = 11      # every capture matches at every round; never lower this to pass
 
 _DEFAULT = ("/private/tmp/claude-501/-Users-cpulling-Work-CORA/"
             "b762a1aa-9f0c-4053-9897-bfd6aeeb9623/scratchpad/staff_*.json")

@@ -115,7 +115,14 @@ def path_cells(start, goal, flooded=frozenset(), spec=None):
     cells = (spec or DEFAULT_MAP).road_cells
     if start not in cells or goal not in cells:
         return None
-    if start in flooded or goal in flooded:
+    # A FLOODED START IS ALLOWED. FindPathAStarFloodAware only rejects flooded NEIGHBOURS
+    # (GetFloodAwareNeighbors), never the node it starts from, so a vehicle stopped in water
+    # by a collision drives out again once repaired. The port refused it: on 5802 Vehicle 1,
+    # repaired on the cell that stopped it at step 27, was dispatched at round 29 while that
+    # cell was still flooded, judged to have no path, damaged again, and its order dropped --
+    # the one food resolution the port had over Unity. A flooded goal stays unreachable,
+    # since it can only be entered as a neighbour.
+    if goal in flooded:
         return None
     if start == goal:
         return [start]
@@ -158,7 +165,14 @@ def path_length(start, goal, flooded=frozenset(), spec=None):
     cells = (spec or DEFAULT_MAP).road_cells
     if start not in cells or goal not in cells:
         return None
-    if start in flooded or goal in flooded:
+    # A FLOODED START IS ALLOWED. FindPathAStarFloodAware only rejects flooded NEIGHBOURS
+    # (GetFloodAwareNeighbors), never the node it starts from, so a vehicle stopped in water
+    # by a collision drives out again once repaired. The port refused it: on 5802 Vehicle 1,
+    # repaired on the cell that stopped it at step 27, was dispatched at round 29 while that
+    # cell was still flooded, judged to have no path, damaged again, and its order dropped --
+    # the one food resolution the port had over Unity. A flooded goal stays unreachable,
+    # since it can only be entered as a neighbour.
+    if goal in flooded:
         return None
     if start == goal:
         return 0
