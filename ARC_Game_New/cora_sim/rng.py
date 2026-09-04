@@ -28,6 +28,7 @@ draw. The exact raw->float mapping is pinned by test_rng_semantics against Unity
 """
 from __future__ import annotations
 
+import struct as _st
 from struct import pack as _pk, unpack as _up
 
 M32 = 0xFFFFFFFF
@@ -42,8 +43,11 @@ M32 = 0xFFFFFFFF
 _MANT = 0x7FFFFF                  # 2^23 - 1
 _DENOM = 8388607.0                # float(2^23 - 1)
 
-_pack_f32 = lambda x: _pk("f", x)
-_unpack_f32 = lambda b: _up("f", b)
+# Bound methods of one precompiled Struct: no lambda frame and no format parsing per call.
+# f32() is the single hottest function in a search step (~280 calls per step).
+_F32 = _st.Struct("f")
+_pack_f32 = _F32.pack
+_unpack_f32 = _F32.unpack
 
 
 class UnityRandom:
@@ -181,7 +185,20 @@ def f32add(*xs: float) -> float:
     return acc
 
 
+_THRESHOLDS = {}
+
+
 def threshold_for(chance: float) -> int:
+    """Memoised: the bisection below costs ~23 float32 conversions and the same few
+    chances recur every round. Correctness is unchanged -- the map is a pure function of
+    the float32-rounded chance."""
+    t = _THRESHOLDS.get(chance)
+    if t is None:
+        t = _THRESHOLDS[chance] = _threshold_for(chance)
+    return t
+
+
+def _threshold_for(chance: float) -> int:
     """Integer threshold T such that `(next_uint() & _MANT) < T` == `value() < chance`.
 
     Compute ONCE per distinct chance per round and reuse inside the loop.

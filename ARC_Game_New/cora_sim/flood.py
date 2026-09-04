@@ -78,6 +78,8 @@ RAIN_INTENSITY = {"Sunny": 0.0, "SmallRain": 0.3, "MediumRain": 0.6,
 
 # Unity's GetAdjacentPositions order: up, down, left, right. Order is load-bearing.
 _DIRS = ((0, 1), (0, -1), (-1, 0), (1, 0))
+from .floodmap import _SHIFT as _PSHIFT
+_NEIGH_DELTAS = tuple((dx << _PSHIFT) + dy for dx, dy in _DIRS)
 
 
 def _round_to_int(v: float) -> int:
@@ -195,9 +197,12 @@ def update_flood(fs: FloodState, fmap: FloodMap, rng, weather: str,
         thr = spread_thresholds(spread_mult)
         candidates = []
         for p in sorted(fs.tiles):
-            x, y = unpack(p)
-            for dx, dy in _DIRS:
-                n = pack(x + dx, y + dy)
+            # Neighbours by packed-integer delta: pack(x+dx, y+dy) == p + (dx << SHIFT) + dy
+            # as long as y + OFF stays inside its field, which the map bounds guarantee by
+            # a wide margin (OFF 512, SHIFT 10). Same four cells in the same order as the
+            # unpack-and-repack this replaces, at a fifth of the calls.
+            for d in _NEIGH_DELTAS:
+                n = p + d
                 if _can_spread_to(n, fs, fmap, rng, thr, marks):
                     candidates.append(n)       # WITH multiplicity; dedup is after
         candidates = sorted(set(candidates))
