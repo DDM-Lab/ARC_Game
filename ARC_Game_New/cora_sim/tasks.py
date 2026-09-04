@@ -126,7 +126,7 @@ def demand_of(task_state: dict, tag: str) -> int:
 class TaskBoard:
     """Active tasks plus in-flight deliveries."""
 
-    __slots__ = ("active", "deliveries", "next_id", "awaiting", "has_supplier",
+    __slots__ = ("_late_arrivals", "active", "deliveries", "next_id", "awaiting", "has_supplier",
                  "_sources", "queue", "busy", "fleet", "cell_for", "repair_for",
                  "retry_if_unsourced", "pending", "pending_seq", "flooded")
 
@@ -166,6 +166,7 @@ class TaskBoard:
         # [seq, (task_id, quantity, destination), src_cell, dst_cell, quantity], sorted by
         # creation order -- both handlers use priority 3, so priority never breaks a tie.
         self.pending = []
+        self._late_arrivals = []           # epilogue unloads parked until settle_late()
         self.pending_seq = 0
         self.flooded = frozenset()
 
@@ -180,6 +181,7 @@ class TaskBoard:
         b.queue = [list(q) for q in self.queue]
         b.busy = self.busy
         b.fleet = self.fleet.clone()
+        b._late_arrivals = list(getattr(self, '_late_arrivals', []))
         b.cell_for = self.cell_for
         b.repair_for = dict(self.repair_for)
         b.retry_if_unsourced = self.retry_if_unsourced
@@ -493,7 +495,15 @@ class TaskBoard:
             counters["lodgingFulfilled"] = min(counters["lodgingResolved"],
                                                counters["lodgingFulfilled"] + quantity)
 
-    def tick_deliveries_only(self, counters: dict) -> list:
+    def settle_late(self, counters: dict) -> list:
+        """Settle the epilogue unloads parked by the last tick: resolution, counters, and
+        the landings to hand to step_round -- exactly the arrival processing, run late."""
+        entries, self._late_arrivals = self._late_arrivals, []
+        if not entries:
+            return []
+        return self.tick_deliveries_only(counters, _settling=entries)
+
+    def tick_deliveries_only(self, counters: dict, _settling=False) -> list:
         """Land due deliveries without ageing tasks.
 
         Used where task expiry is driven externally (the equivalence test replays Unity's
@@ -511,7 +521,10 @@ class TaskBoard:
             task = self.active.get(payload[0]) or self.awaiting.get(payload[0])
             return qty if task is None else self.retry_if_unsourced(task, qty)
 
-        arrived, self.pending, dropped = self.fleet.run_round(self.pending, self.flooded, _load)
+        if _settling:
+            arrived, dropped = list(_settling), []
+        else:
+            arrived, self.pending, dropped = self.fleet.run_round(self.pending, self.flooded, _load)
         # A vehicle stopped by flood spawns its repair task, which is why Unity answers
         # "Vehicle Repair Required" at round 6 and the port did not. Without it the port's
         # fleet never recovers on Unity's schedule.
@@ -527,6 +540,14 @@ class TaskBoard:
             task_id, quantity, destination = _entry[0], _entry[1], _entry[2]
             zombie = len(_entry) > 3 and _entry[3] == "zombie"
             late = len(_entry) > 3 and _entry[3] == "late"
+            if late and not _settling:
+                # An epilogue unload resolves at +36, AFTER this round's invoke. Settling it
+                # here freed its facility slot before the generation pass: on 5601 the port
+                # re-generated a Trinity relocation at step 30 while Unity's task was still
+                # InProgress through the pass and completed afterwards. Parked; step_round
+                # settles it after the flood update through settle_late().
+                self._late_arrivals.append(_entry)
+                continue
             task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
             if task is None:
                 import os as _o
@@ -577,6 +598,8 @@ class TaskBoard:
         self.deliveries = [d for d in self.deliveries if d[0] > 0]
         self.busy = max(0, self.busy - len(arriving))     # vehicles return
         landed = list(landed_now)
+        if _settling:
+            return landed
         for _rounds, task_id, quantity, *_ in arriving:
             task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
             if task is None:

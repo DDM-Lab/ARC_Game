@@ -736,7 +736,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # joins the tracker behind this step's caseworkGen rolls, which is the order Unity's
     # marks show (5601 step 30, 6101 step 11). Registered now rather than at the next head so
     # the group precedes the next round's sim-phase arrivals.
-    for _e in _late:
+    for _e in _late + w.tasks.settle_late(w.economy.counters):
         _n = len(w.pending_arrivals)
         _land(w, _e[0], _e[1], _e[2])
         for count, facility in w.pending_arrivals[_n:]:
