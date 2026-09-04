@@ -71,6 +71,7 @@ class CoraActions(ActionModel):
         self.allow_transfers = allow_transfers
         self.shaping = shaping
         self._specs = None
+        self._static = None
 
     # ── the alphabet ────────────────────────────────────────────────────────────────
     def task_specs(self):
@@ -85,18 +86,20 @@ class CoraActions(ActionModel):
         """Pruned menu action dicts legal in THIS state, in Unity's basket order; spanned
         to max_menu for sampling, unspanned (span=False) for checking legality."""
         econ = world.economy
-        raw = []
         used = econ.used_sites
-        sites = sorted(world.fmap_sites() if hasattr(world, "fmap_sites") else _site_ids(world))
-        for s in sites:
-            if s in used:
-                continue
-            for bt in BUILD_TYPES:
-                raw.append(action_from_id(f"build_{bt}_{s}", ADVERTISED["build"]))
-        for q in QUANTITIES:
-            raw.append(action_from_id(f"hire_untrained_{q}", ADVERTISED["untrained"] * q))
-            raw.append(action_from_id(f"hire_trained_{q}", ADVERTISED["trained"] * q))
-            raw.append(action_from_id(f"train_workers_{q}", ADVERTISED["train"] * q))
+        if self._static is None:
+            # The build/hire/train dicts never depend on state; only which are legal does.
+            sites = sorted(world.fmap_sites() if hasattr(world, "fmap_sites") else _site_ids(world))
+            self._static = ([(s, [action_from_id(f"build_{bt}_{s}", ADVERTISED["build"]) for bt in BUILD_TYPES])
+                             for s in sites],
+                            [action_from_id(f"{kind}_{q}", ADVERTISED[key] * q) for q in QUANTITIES
+                             for kind, key in (("hire_untrained", "untrained"), ("hire_trained", "trained"),
+                                               ("train_workers", "train"))])
+        raw = []
+        for s, builds in self._static[0]:
+            if s not in used:
+                raw.extend(builds)
+        raw.extend(self._static[1])
         for i, b in enumerate(econ.buildings):
             if econ.can_staff(i) and b.get("assigned", 0) < REQUIRED_WORKFORCE \
                     and b.get("status") == STATUS_NEED_WORKER:
@@ -189,17 +192,21 @@ class CoraActions(ActionModel):
             entry = world.generated_specs.get(tid)
             want = choices.get(entry[0]) if entry else None
             S.answer(world, tid, want if want in cids else cids[0])
-        legal_now = {a["action_id"]: a for a in self.basket(world, span=False)}
         if self.auto_staff:
             # An unstaffed building is pure cost, so "build and never staff" is dominated by
             # "build and staff when ready" in every respect; taking the staffing off the
             # genome removes a valley the search would otherwise have to cross blind (build
-            # this turn, staff four rounds later, hire in between).
-            for a in legal_now.values():
-                if a.get("action_type") == "worker_assignment":
-                    apply_action(world.economy, a)
+            # this turn, staff four rounds later, hire in between). Done directly rather
+            # than through the basket: this runs every turn of every rollout.
+            econ = world.economy
+            for i, b in enumerate(econ.buildings):
+                if b.get("status") == STATUS_NEED_WORKER and econ.can_staff(i) \
+                        and b.get("assigned", 0) < REQUIRED_WORKFORCE:
+                    econ.staff(i, count=REQUIRED_WORKFORCE)
+        done = []
         if not g["menu"]:
-            return
+            return done
+        legal_now = {a["action_id"]: a for a in self.basket(world, span=False)}
         for aid in g["menu"]:
             if aid == STAFF_ALL:
                 # Staff every building that is waiting for workers, in list order. A gene
@@ -207,14 +214,15 @@ class CoraActions(ActionModel):
                 # staffing is what every winning strategy does the round a build completes.
                 for a in legal_now.values():
                     if a.get("action_type") == "worker_assignment":
-                        apply_action(world.economy, a)
+                        apply_action(world.economy, a); done.append(a["action_id"])
                 continue
             a = legal_now.get(aid)
             if a is None:
                 continue                      # not legal in this state: the game ignores it
             if _true_cost(a) > world.economy.budget:
                 continue
-            apply_action(world.economy, a)
+            apply_action(world.economy, a); done.append(aid)
+        return done
 
     def value(self, world):
         v = _score(world)
