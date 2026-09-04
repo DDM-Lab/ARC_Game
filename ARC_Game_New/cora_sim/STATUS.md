@@ -111,4 +111,10 @@ from Kitchen.prefab, FloodedFacilityTrigger parameters from the .asset files, an
   at load and the effective values are not yet dumped (no shelter emergency has fired).
 
 ## Held-out seeds
-(filled in below when the capture finishes)
+
+Three seeds captured for 32 rounds AFTER all calibration was finished, never used to fit
+anything (`scratchpad/cap32_fresh`):
+
+    7001: every tracked counter matches at every round; draw stream identical, steps 2..32
+    7002: every tracked counter matches at every round; draw stream identical, steps 2..32
+    7003: capture pending at time of writing
