@@ -272,6 +272,18 @@ class World:
         w._emergency_count = self._emergency_count
         w._last_emergency_round = self._last_emergency_round
         w.use_generation = self.use_generation
+        # REBIND CALLBACKS TO THE CLONE. TaskBoard holds bound methods of the World that
+        # created it (retry_if_unsourced -> _can_source, cell_for, has_supplier) and the
+        # World holds facilities_for; copied by reference they keep pointing at the
+        # ORIGINAL, so a clone's fleet asked the original whether a kitchen had stock and
+        # its generation pass evaluated the original's facilities -- reading the wrong
+        # world without mutating it, which is why an isolation test cannot catch it. A
+        # search rollout on a clone scored 1.39 where a fresh world scored 2.50.
+        for owner, attr in ((w.tasks, "retry_if_unsourced"), (w.tasks, "cell_for"),
+                            (w.tasks, "has_supplier"), (w, "facilities_for")):
+            fn = getattr(owner, attr, None)
+            if getattr(fn, "__self__", None) is self:
+                setattr(owner, attr, getattr(w, fn.__name__))
         return w
 
 

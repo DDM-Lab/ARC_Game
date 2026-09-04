@@ -77,14 +77,14 @@ def main():
     print("cora_sim action model")
     fails = 0
     for fn in (test_basket_is_pruned_and_spanned, test_apply_answers_every_open_task_and_spends,
-               test_search_never_below_baseline_and_is_reproducible):
+               test_search_never_below_baseline_and_is_reproducible,
+               test_clone_is_a_faithful_independent_copy):
         try:
             fn(); print(f"  {fn.__name__}: ok")
         except AssertionError as e:
-            fails += 1; print(f"  {fn.__name__}: FAIL -- {e}")
+            fails += 1; print(f"  {fn.__name__}: FAIL -- {str(e)[:160]}")
     print("\nRESULT:", "ALL PASS" if not fails else f"{fails} FAILING")
     return 1 if fails else 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

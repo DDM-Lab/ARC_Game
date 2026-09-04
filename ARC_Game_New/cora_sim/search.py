@@ -76,8 +76,9 @@ class RHEA:
     game's RNG and change the very future being evaluated."""
 
     def __init__(self, step, model, horizon=6, population=12, generations=8,
-                 elites=2, mutation_rate=0.3, scenarios=1, rng=None):
+                 elites=2, mutation_rate=0.3, scenarios=1, rng=None, crossover=0.0):
         import random
+        self.crossover = crossover
         self.step = step
         self.model = model
         self.horizon = horizon
@@ -158,6 +159,11 @@ class RHEA:
             children = []
             while len(children) < self.population - self.elites:
                 parent = survivors[self.rng.randrange(len(survivors))][1]
+                if self.crossover and len(survivors) > 1 and self.rng.random() < self.crossover:
+                    other = survivors[self.rng.randrange(len(survivors))][1]
+                    # uniform crossover: genes that pay off only in combination (a build
+                    # here, a hire there) can meet in one child
+                    parent = [a if self.rng.random() < 0.5 else b for a, b in zip(parent, other)]
                 children.append(self._mutate(parent, actions))
             scored = survivors + [(self._fitness(world, c, futures), c) for c in children]
 

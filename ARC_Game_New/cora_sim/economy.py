@@ -65,6 +65,7 @@ STATUS_UNDER_CONSTRUCTION = "UnderConstruction"
 STATUS_NEED_WORKER = "NeedWorker"
 STATUS_IN_USE = "InUse"
 REQUIRED_WORKFORCE = 4
+BUDGET_MIN, BUDGET_MAX = -999999, 999999      # SatisfactionAndBudget, MainScene
 WORKFORCE_VALUE = {"trained": 2, "untrained": 1}
 
 COUNTERS = ("foodResolved", "foodFulfilled", "lodgingResolved", "lodgingFulfilled",
@@ -204,7 +205,10 @@ class Economy:
         e.in_training = list(self.in_training)
         e.arriving = list(self.arriving)
         e.under_construction = [list(x) for x in self.under_construction]
-        e.buildings = [dict(b) for b in self.buildings]
+        # Each building's `resources` is its own dict: a shallow copy shared it between
+        # original and clone, so a search rollout on a clone moved the original's
+        # population and food. Every exactness test steps fresh worlds; only search clones.
+        e.buildings = [{**b, "resources": dict(b.get("resources") or {})} for b in self.buildings]
         e.motel_pop = self.motel_pop
         e.rounds_since_consumption = self.rounds_since_consumption
         e.pending_transfers = list(self.pending_transfers)
@@ -220,7 +224,9 @@ class Economy:
         does not refuse. A policy that overspends is making a bad decision, not an illegal
         one, and clamping here would hide the cost-efficiency penalty that is the whole
         point of the score term."""
-        self.budget -= int(amount)
+        # SatisfactionAndBudget.AddBudget clamps to [minBudget, maxBudget] = +-999,999 (scene).
+        # A negative budget is legal and the captures reach -612,192; only the bounds bind.
+        self.budget = max(BUDGET_MIN, min(BUDGET_MAX, self.budget - int(amount)))
         key = {"food": "foodSpend", "lodging": "lodgingSpend",
                "worker": "workerSpend", "casework": "caseworkSpend"}.get(category)
         if key:                      # uncategorised RemoveBudget (task penalties) moves
@@ -737,7 +743,7 @@ def step_round(econ: Economy, day_changed: bool = False, new_day: int = 0) -> No
     arrived = [e for e in econ.pending_budget if e[0] <= 0]
     econ.pending_budget = [e for e in econ.pending_budget if e[0] > 0]
     for _rounds, amount in arrived:
-        econ.budget += amount        # AddBudget: funding, never a spend counter
+        econ.budget = max(BUDGET_MIN, min(BUDGET_MAX, econ.budget + amount))   # AddBudget: funding, clamped
 
     for _src, dst, qty in econ.pending_transfers:
         if "motel" in dst.lower():

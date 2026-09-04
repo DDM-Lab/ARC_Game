@@ -60,7 +60,8 @@ def _components(world):
 
 class CoraActions(ActionModel):
     def __init__(self, rng, max_menu=16, max_per_turn=2, allow_transfers=False,
-                 shaping=0.0, idle_turn_rate=0.62):
+                 shaping=0.0, idle_turn_rate=0.62, auto_staff=True):
+        self.auto_staff = auto_staff
         # 62% of real benchmark turns take no menu action at all (5,482 turns measured in
         # play.py); random genes follow that so a fresh population is not all spenders.
         self.idle_turn_rate = idle_turn_rate
@@ -188,9 +189,17 @@ class CoraActions(ActionModel):
             entry = world.generated_specs.get(tid)
             want = choices.get(entry[0]) if entry else None
             S.answer(world, tid, want if want in cids else cids[0])
+        legal_now = {a["action_id"]: a for a in self.basket(world, span=False)}
+        if self.auto_staff:
+            # An unstaffed building is pure cost, so "build and never staff" is dominated by
+            # "build and staff when ready" in every respect; taking the staffing off the
+            # genome removes a valley the search would otherwise have to cross blind (build
+            # this turn, staff four rounds later, hire in between).
+            for a in legal_now.values():
+                if a.get("action_type") == "worker_assignment":
+                    apply_action(world.economy, a)
         if not g["menu"]:
             return
-        legal_now = {a["action_id"]: a for a in self.basket(world, span=False)}
         for aid in g["menu"]:
             if aid == STAFF_ALL:
                 # Staff every building that is waiting for workers, in list order. A gene
