@@ -490,6 +490,62 @@ def _facility_positions(spec=None):
     return out
 
 
+def _land(w, _task_id, quantity, destination):
+    """One landed delivery: population moves, counters, client arrivals queued."""
+    dest = str(destination or "")
+    if dest.startswith("__food__"):
+        task = w.tasks.awaiting.get(_task_id) or w.tasks.active.get(_task_id)
+        spec = (w.generated_specs.get(_task_id) or (None, None, {}))[2]
+        choice = next((c for c in (spec.get("choices") or [])
+                       if c.get("choiceId") == (task.chosen_id if task else None)), None)
+        # Already pulled by the LoadCargo check; pulling again would double-charge the
+        # kitchen and let a 200-pack kitchen fill four orders.
+        sourced = (quantity if (choice or {}).get("immediateDelivery")
+                   else w._sourced_now.pop(_task_id, 0))
+        if sourced:
+            w.economy.add_food(dest[len("__food__"):], sourced)
+        if task is not None:
+            task.delivered = sourced
+        return
+    source = getattr(w.tasks, "_sources", {}).pop(_task_id, "")
+    if source:
+        w.economy.move_population(source, -quantity)
+    if dest in ("Motel", "Shelter"):
+        # People land in an actual facility, so its population -- and therefore the
+        # triggers that read it and the bill that charges it -- move together.
+        # No fallback. GetDestinationsSorted is called with includeShelters /
+        # includeMotels taken from the CHOICE, so a Shelter-destination relocation
+        # never spills into the motel -- it simply has nowhere to go. The port used to
+        # fall back and that quietly moved people Unity would have left in place.
+        target = "Motel" if dest == "Motel" else next(
+            (b["name"] for b in w.economy.buildings
+             if b["type"] == "Shelter" and b["status"] == "InUse"), None)
+        moved = w.economy.move_population(target, quantity) if target else 0
+        # TWO ClientGroups PER POPULATION DELIVERY. Unity registers the arrival from two
+        # unrelated call sites and neither knows about the other:
+        #   Vehicle.UnloadCargo -> HandlePopulationDelivery   count = ACTUAL, gated > 0
+        #   DeliverySystem.OnVehicleDeliveryCompleted         count = NOMINAL, ungated
+        # The centralized hook's own comment lists the scattered branches it replaced and
+        # omits DeliverySystem, whose legacy branch was never deleted. Only the TRACKER is
+        # duplicated -- the population storage is deposited once by AddResource -- which is
+        # why the port's lodging spend was already exact while its client draws were half
+        # of Unity's. The counts differ once the motel clamps: actual is post-clamp, nominal
+        # is not, so a near-full facility draws different numbers from the two groups.
+        if target:
+            if moved:
+                w.pending_arrivals.append((moved, dest))
+            w.pending_arrivals.append((quantity, dest))
+        if dest == "Motel":
+            w.economy.motel_pop = w.economy.motel_population
+    elif dest == "Kitchen":
+        pass
+    elif dest == "CaseworkSite":
+        w.clients.process_home(quantity, w.economy.counters)
+        w.economy.move_population("Motel", -quantity)
+        w.economy.motel_pop = w.economy.motel_population
+
+
+
 def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     """Advance one round: segment bookkeeping, then generation, then flood.
 
@@ -531,59 +587,12 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # them. The flooded set read here is deliberately the PREVIOUS round's post-spread set:
     # the vehicles drove before this round's flood update, so that is the map they saw.
     w.tasks.flooded = w.flooded_road_cells()      # post-spread, for this round's driving
-    for _task_id, quantity, destination in w.tasks.tick(w.economy.counters):
-        dest = str(destination or "")
-        if dest.startswith("__food__"):
-            task = w.tasks.awaiting.get(_task_id) or w.tasks.active.get(_task_id)
-            spec = (w.generated_specs.get(_task_id) or (None, None, {}))[2]
-            choice = next((c for c in (spec.get("choices") or [])
-                           if c.get("choiceId") == (task.chosen_id if task else None)), None)
-            # Already pulled by the LoadCargo check; pulling again would double-charge the
-            # kitchen and let a 200-pack kitchen fill four orders.
-            sourced = (quantity if (choice or {}).get("immediateDelivery")
-                       else w._sourced_now.pop(_task_id, 0))
-            if sourced:
-                w.economy.add_food(dest[len("__food__"):], sourced)
-            if task is not None:
-                task.delivered = sourced
+    _late = []
+    for _e in w.tasks.tick(w.economy.counters):
+        if len(_e) > 3 and _e[3] == "late":
+            _late.append(_e)          # epilogue unload: after this round's invoke
             continue
-        source = getattr(w.tasks, "_sources", {}).pop(_task_id, "")
-        if source:
-            w.economy.move_population(source, -quantity)
-        if dest in ("Motel", "Shelter"):
-            # People land in an actual facility, so its population -- and therefore the
-            # triggers that read it and the bill that charges it -- move together.
-            # No fallback. GetDestinationsSorted is called with includeShelters /
-            # includeMotels taken from the CHOICE, so a Shelter-destination relocation
-            # never spills into the motel -- it simply has nowhere to go. The port used to
-            # fall back and that quietly moved people Unity would have left in place.
-            target = "Motel" if dest == "Motel" else next(
-                (b["name"] for b in w.economy.buildings
-                 if b["type"] == "Shelter" and b["status"] == "InUse"), None)
-            moved = w.economy.move_population(target, quantity) if target else 0
-            # TWO ClientGroups PER POPULATION DELIVERY. Unity registers the arrival from two
-            # unrelated call sites and neither knows about the other:
-            #   Vehicle.UnloadCargo -> HandlePopulationDelivery   count = ACTUAL, gated > 0
-            #   DeliverySystem.OnVehicleDeliveryCompleted         count = NOMINAL, ungated
-            # The centralized hook's own comment lists the scattered branches it replaced and
-            # omits DeliverySystem, whose legacy branch was never deleted. Only the TRACKER is
-            # duplicated -- the population storage is deposited once by AddResource -- which is
-            # why the port's lodging spend was already exact while its client draws were half
-            # of Unity's. The counts differ once the motel clamps: actual is post-clamp, nominal
-            # is not, so a near-full facility draws different numbers from the two groups.
-            if target:
-                if moved:
-                    w.pending_arrivals.append((moved, dest))
-                w.pending_arrivals.append((quantity, dest))
-            if dest == "Motel":
-                w.economy.motel_pop = w.economy.motel_population
-        elif dest == "Kitchen":
-            pass
-        elif dest == "CaseworkSite":
-            w.clients.process_home(quantity, w.economy.counters)
-            w.economy.move_population("Motel", -quantity)
-            w.economy.motel_pop = w.economy.motel_population
-
+        _land(w, _e[0], _e[1], _e[2])
     arrivals = list(arrivals) + w.pending_arrivals
     w.pending_arrivals = []
     # ARRIVAL STAMP vs UPDATE ROUND. Unity stamps arrivalRound = currentRound at the DELIVERY
@@ -721,6 +730,18 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # why Unity fires 35 food requests in 24 rounds and why foodFulfilled sits far below
     # foodResolved. Stocking the requester instead silenced it after one delivery (6
     # passes against 35).
+    # EPILOGUE LANDINGS. A delivery that unloads on the paused frame after the round
+    # lands after the invoke and the flood update, so its people move and its clients spawn
+    # HERE -- their caseworkNeed/stayDuration draws follow the flood draws, and the group
+    # joins the tracker behind this step's caseworkGen rolls, which is the order Unity's
+    # marks show (5601 step 30, 6101 step 11). Registered now rather than at the next head so
+    # the group precedes the next round's sim-phase arrivals.
+    for _e in _late:
+        _n = len(w.pending_arrivals)
+        _land(w, _e[0], _e[1], _e[2])
+        for count, facility in w.pending_arrivals[_n:]:
+            w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
+        del w.pending_arrivals[_n:]
     economy_step(w.economy, False, w.day)   # day-end already run above
     w.round_index += 1
 

@@ -526,6 +526,7 @@ class TaskBoard:
         for _entry in arrived:
             task_id, quantity, destination = _entry[0], _entry[1], _entry[2]
             zombie = len(_entry) > 3 and _entry[3] == "zombie"
+            late = len(_entry) > 3 and _entry[3] == "late"
             task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
             if task is None:
                 import os as _o
@@ -553,7 +554,9 @@ class TaskBoard:
             # produce arrivals, casework or motel occupancy.
             task.delivered += quantity
             if quantity > 0 and not zombie:
-                landed_now.append((task_id, quantity, destination))
+                # An epilogue unload keeps its tag: step_round lands it after the flood.
+                landed_now.append((task_id, quantity, destination, "late") if late
+                                  else (task_id, quantity, destination))
             if task_id not in self.active and not task.resolved:
                 self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
         while self.queue and self.busy < VEHICLE_COUNT:

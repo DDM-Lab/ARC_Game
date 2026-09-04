@@ -102,6 +102,50 @@ def nearest_road(cell, spec=None):
 _DIRS = ((0, 1), (0, -1), (-1, 0), (1, 0))   # GetNeighbors: up, down, left, right
 
 
+def path_cells(start, goal, flooded=frozenset(), spec=None):
+    """The cells of PathfindingSystem's flood-aware A* route, start first, or None.
+
+    Same search and the same (FCost, HCost) ordering as path_length, with parents kept so
+    the route itself comes back. Vehicle.CheckForFloodCollision tests the vehicle's position
+    against the flood tiles on every movement frame, so which cells a leg crosses -- not just
+    how many -- decides whether a vehicle survives a flood that spreads onto its route at a
+    round boundary. 5802 step 27: Unity's Vehicle 1 is stopped ten frames into a leg whose
+    remaining cells cross a tile that flooded at the end of the previous round.
+    """
+    cells = (spec or DEFAULT_MAP).road_cells
+    if start not in cells or goal not in cells:
+        return None
+    if start in flooded or goal in flooded:
+        return None
+    if start == goal:
+        return [start]
+    def h(c):
+        return abs(c[0] - goal[0]) + abs(c[1] - goal[1])
+    open_ = [(h(start), 0, start)]
+    best = {start: 0}
+    parent = {}
+    while open_:
+        _, g, cur = heappop(open_)
+        if cur == goal:
+            out = [cur]
+            while out[-1] != start:
+                out.append(parent[out[-1]])
+            out.reverse()
+            return out
+        if g > best.get(cur, 1 << 30):
+            continue
+        for dx, dy in _DIRS:
+            nb = (cur[0] + dx, cur[1] + dy)
+            if nb not in cells or nb in flooded:
+                continue
+            ng = g + 1
+            if ng < best.get(nb, 1 << 30):
+                best[nb] = ng
+                parent[nb] = cur
+                heappush(open_, (ng + h(nb), ng, nb))
+    return None
+
+
 def path_length(start, goal, flooded=frozenset(), spec=None):
     """Steps along PathfindingSystem's flood-aware A*, or None when no route exists.
 
@@ -452,7 +496,8 @@ class Fleet:
                                 "phase": "to_src", "left": 1 + 1}
                     else:
                         trip = {"payload": payload, "src": src, "dst": dst, "qty": qty,
-                                "phase": "to_src", "left": leg1 + 1}
+                                "phase": "to_src", "left": leg1 + 1,
+                                "path": path_cells(self.pos[v], src, flooded, self.spec)}
                     self.trip[v] = trip
                     if self.events is not None: self.events.append((self.frame, "dispatch", v, payload[0], leg1))
                     ready.remove(v)
@@ -468,6 +513,20 @@ class Fleet:
                     continue
                 t["left"] -= 1
                 if t["left"] > 0:
+                    # A MOVEMENT FRAME: the vehicle has just entered the next cell of its leg.
+                    # CheckForFloodCollision runs after every lerp step; the flood set is
+                    # constant within a round, so this fires the frame a vehicle enters the
+                    # first tile that flooded onto its route at the last round boundary.
+                    path = t.get("path")
+                    if path is not None:
+                        idx = len(path) - t["left"]
+                        if 0 < idx < len(path) and path[idx] in flooded:
+                            self.pos[v] = path[idx]
+                            self.damaged[v] = True
+                            dropped.append(t["payload"])
+                            self.carrying[v] = None
+                            self.trip[v] = None
+                            if self.events is not None: self.events.append((self.frame, "collision", v, t["payload"][0], path[idx]))
                     continue
                 ph = t["phase"]
                 if ph == "to_src":
@@ -500,6 +559,7 @@ class Fleet:
                         self.trip[v] = None
                         continue
                     t["phase"], t["left"] = "to_dst", max(1, leg2)
+                    t["path"] = path_cells(t["src"], t["dst"], flooded, self.spec)
                     self.carrying[v] = t["payload"]
                     if self.events is not None: self.events.append((self.frame, "leg2", v, t["payload"][0], leg2))
                 elif ph == "to_dst":
@@ -546,11 +606,17 @@ class Fleet:
                     # A leg started in a paused frame makes no movement until the next
                     # round's frame 1, so its first movement frame is lost: one extra.
                     t["phase"], t["left"] = "to_dst", max(1, leg2) + 1
+                    t["path"] = path_cells(t["src"], t["dst"], flooded, self.spec)
                     self.carrying[v] = t["payload"]
                     if self.events is not None: self.events.append((self.frame, "leg2", v, t["payload"][0], leg2))
                 elif ph == "to_dst":
                     self.pos[v] = t["dst"]
-                    landed.append(t["payload"])
+                    # An epilogue unload happens AFTER the round's invoke and flood update.
+                    # Tagged so the caller moves its people and spawns its clients at the end
+                    # of the step rather than at the head: Unity's client draws for such a
+                    # delivery follow the flood draws (5601 step 30, 6101 step 11), and the
+                    # group therefore sits behind that step's caseworkGen rolls.
+                    landed.append(tuple(t["payload"]) + ("late",))
                     if self.events is not None: self.events.append((self.frame, "unload", v, t["payload"][0]))
                     self.carrying[v] = None
                     t["phase"], t["left"] = "complete", 1
