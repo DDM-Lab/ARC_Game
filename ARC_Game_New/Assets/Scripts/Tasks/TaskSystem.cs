@@ -1818,7 +1818,9 @@ public class TaskSystem : MonoBehaviour
         if (storage != null)
         {
             int availableStock = storage.GetResourceAmount(cargo);
-            if (availableStock <= 0) return false; // source must have cargo
+            int reservedOutbound = DeliverySystem.Instance != null
+                ? DeliverySystem.Instance.GetReservedOutgoingQuantity(facility, cargo) : 0;
+            if (availableStock - reservedOutbound <= 0) return false; // source must have cargo not already spoken for
         }
 
         return true;
@@ -1836,8 +1838,10 @@ public class TaskSystem : MonoBehaviour
         {
             int currentAmount = storage.GetResourceAmount(cargo);
             int capacity = storage.GetResourceCapacity(cargo);
+            int reservedInbound = DeliverySystem.Instance != null
+                ? DeliverySystem.Instance.GetReservedIncomingQuantity(facility, cargo) : 0;
 
-            if (currentAmount >= capacity) return false; // source must have room for cargo
+            if (currentAmount + reservedInbound >= capacity) return false; // no room left once inbound arrives
         }
 
         return true;

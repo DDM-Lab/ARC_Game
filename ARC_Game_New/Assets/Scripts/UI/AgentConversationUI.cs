@@ -568,22 +568,51 @@ public class AgentConversationUI : MonoBehaviour
             choiceUI.SetValidationState(isValid, errorMessage);
             bool isImmediateFoodOrder = choice.immediateDelivery && choice.deliveryCargoType == ResourceType.FoodPacks;
 
-            bool canPreview = isValid
-                && !isImmediateFoodOrder
-                && TaskSystem.Instance != null
-                && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
-                && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
+            bool canPreview;
+            if (choice.deliveryCargoType == ResourceType.FoodPacks && choice.triggersDelivery && !choice.immediateDelivery)
+            {
+                canPreview = isValid && FoodDeliveryHandler.Instance != null
+                    && FoodDeliveryHandler.Instance.PlanSources(currentSelectedTask, choice).Count > 0;
+            }
+            else
+            {
+                canPreview = isValid
+                    && !isImmediateFoodOrder
+                    && TaskSystem.Instance != null
+                    && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
+                    && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
+            }
             choiceUI.SetPreviewVisible(canPreview);
         }
     }
 
+
     void PreviewChoiceRoute(AgentChoice choice)
     {
-        Debug.Log("RET RET HERE");
         if (choice == null || currentSelectedTask == null || TaskSystem.Instance == null)
         {
             GameLogPanel.Instance?.LogUIInteraction(
                 $"Preview route clicked | agent={currentSelectedAgent} | task={currentSelectedTask?.taskTitle ?? "none"} | choice={choice?.choiceText ?? "none"} | source=unresolved | destination=unresolved");
+            return;
+        }
+        if (choice.deliveryCargoType == ResourceType.FoodPacks && choice.triggersDelivery && !choice.immediateDelivery
+            && FoodDeliveryHandler.Instance != null)
+        {
+            var plan = FoodDeliveryHandler.Instance.PlanSources(currentSelectedTask, choice);
+            MonoBehaviour foodDest = TaskSystem.Instance.FindTriggeringFacility(currentSelectedTask);
+
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Preview route clicked | agent={currentSelectedAgent} | task={currentSelectedTask.taskTitle} | choice={choice.choiceText} | " +
+                $"sources={(plan.Count > 0 ? string.Join(",", plan.Select(p => p.kitchen.name)) : "unresolved")} | destination={foodDest?.name ?? "unresolved"}");
+
+            if (plan.Count == 0 || foodDest == null)
+            {
+                Debug.LogWarning("[AgentConversationUI] Could not resolve food delivery plan.");
+                return;
+            }
+
+            GameTask foodTaskToRestore = currentSelectedTask;
+            StartCoroutine(PeekForMultiRoute(plan.Select(p => p.kitchen).ToList(), foodDest, foodTaskToRestore));
             return;
         }
 
@@ -604,12 +633,10 @@ public class AgentConversationUI : MonoBehaviour
 
         if (source == null || dest == null)
         {
-            Debug.Log("RET HERERERE");
             Debug.LogWarning("[AgentConversationUI] Could not resolve route source or destination.");
             return;
         }
 
-        Debug.Log("HERERERERE");
         GameTask taskToRestore = currentSelectedTask;
         StartCoroutine(PeekForRoute(source, dest, taskToRestore));
     }
@@ -627,6 +654,35 @@ public class AgentConversationUI : MonoBehaviour
 
         // callback to FacilityHighlightSystem to notify AgentConversationUI panel when done
         FacilityHighlightSystem.Instance?.PreviewRouteAndCallback(source, dest, () =>
+        {
+            if (!gameObject.activeInHierarchy)
+            {
+                Debug.LogWarning("[AgentConversationUI] Panel inactive when restore callback fired — skipping.");
+                return;
+            }
+            StartCoroutine(RestoreUIAfterPreview(wasExpanded, taskToRestore));
+        });
+    }
+
+    IEnumerator PeekForMultiRoute(List<MonoBehaviour> sources, MonoBehaviour dest, GameTask taskToRestore)
+    {
+        bool wasExpanded = isExpanded;
+
+        if (wasExpanded)
+        {
+            isExpanded = false;
+            yield return StartCoroutine(AnimateExpand(false));
+        }
+
+        if (FacilityHighlightSystem.Instance == null)
+        {
+            yield return new WaitForSecondsRealtime(2f);
+            if (gameObject.activeInHierarchy)
+                StartCoroutine(RestoreUIAfterPreview(wasExpanded, taskToRestore));
+            yield break;
+        }
+
+        FacilityHighlightSystem.Instance.HighlightMultiSourceRoute(sources, dest, () =>
         {
             if (!gameObject.activeInHierarchy)
             {

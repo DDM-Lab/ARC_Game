@@ -85,7 +85,7 @@ public class FoodDeliveryHandler : MonoBehaviour
     /// Drains kitchens with most effective stock first; stops once quantity is fulfilled.
     /// Returns true if at least one delivery was queued.
     /// </summary>
-    public bool Execute(GameTask parentTask, int requestedQuantity)
+    public bool Execute(GameTask parentTask, AgentChoice choice)
     {
         MonoBehaviour destination = TaskSystem.Instance.FindTriggeringFacility(parentTask);
         if (destination == null)
@@ -97,20 +97,18 @@ public class FoodDeliveryHandler : MonoBehaviour
         DeliverySystem ds = DeliverySystem.Instance;
         if (ds == null) return false;
 
-        // Subtract already-inbound food so we don't over-deliver
         int alreadyInbound = ds.GetReservedIncomingQuantity(destination, ResourceType.FoodPacks);
-        int remaining       = Mathf.Max(0, requestedQuantity - alreadyInbound);
+        int remaining = Mathf.Max(0, choice.deliveryQuantity - alreadyInbound);
 
         if (remaining <= 0)
         {
             if (showDebugInfo)
-                Debug.Log($"[FoodDeliveryTaskGenerator] Inbound deliveries already cover {alreadyInbound}/{requestedQuantity} for {destination.name}");
+                Debug.Log($"[FoodDeliveryTaskGenerator] Inbound deliveries already cover {alreadyInbound}/{choice.deliveryQuantity} for {destination.name}");
             TaskSystem.Instance.CompleteTask(parentTask);
             return true;
         }
 
-        // Collect kitchens sorted by effective available stock (actual - already-outbound), highest first
-        var kitchens = GetKitchensSorted(ds);
+        var kitchens = GetKitchensSorted(ds, destination.transform.position, choice.prioritizeNearestSource);
         if (kitchens.Count == 0)
         {
             Debug.LogWarning($"[FoodDeliveryTaskGenerator] No kitchens with available food for '{parentTask.taskTitle}'");
@@ -129,8 +127,8 @@ public class FoodDeliveryHandler : MonoBehaviour
             if (deliveries.Count > 0)
             {
                 TaskSystem.Instance.LinkDeliveriesToTask(parentTask, deliveries);
-                remaining  -= sendAmount;
-                anyCreated  = true;
+                remaining -= sendAmount;
+                anyCreated = true;
 
                 if (showDebugInfo)
                     Debug.Log($"[FoodDeliveryTaskGenerator] Queued {sendAmount} food from {kitchen.name} → {destination.name}");
@@ -172,20 +170,52 @@ public class FoodDeliveryHandler : MonoBehaviour
     // PRIVATE HELPERS
     // ─────────────────────────────────────────────────────────────────
 
-    List<(MonoBehaviour building, int effectiveStock)> GetKitchensSorted(DeliverySystem ds)
+    List<(MonoBehaviour building, int effectiveStock)> GetKitchensSorted(DeliverySystem ds, Vector3? referencePosition, bool prioritizeNearest)
     {
-        return FindObjectsOfType<Building>()
+        var kitchens = FindObjectsOfType<Building>()
             .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
             .Select(b =>
             {
-                int stock       = GetStorage(b)?.GetResourceAmount(ResourceType.FoodPacks) ?? 0;
-                int outbound    = ds.GetReservedOutgoingQuantity(b, ResourceType.FoodPacks);
-                int effective   = Mathf.Max(0, stock - outbound);
+                int stock     = GetStorage(b)?.GetResourceAmount(ResourceType.FoodPacks) ?? 0;
+                int outbound  = ds.GetReservedOutgoingQuantity(b, ResourceType.FoodPacks);
+                int effective = Mathf.Max(0, stock - outbound);
                 return (building: (MonoBehaviour)b, effectiveStock: effective);
             })
-            .Where(k => k.effectiveStock > 0)
-            .OrderByDescending(k => k.effectiveStock)
-            .ToList();
+            .Where(k => k.effectiveStock > 0);
+
+        if (prioritizeNearest && referencePosition.HasValue)
+            return kitchens.OrderBy(k => Vector3.Distance(k.building.transform.position, referencePosition.Value)).ToList();
+
+        return kitchens.OrderByDescending(k => k.effectiveStock).ToList();
+    }
+
+    /// <summary>
+    /// returns kitchens Execute() picks
+    /// </summary>
+    public List<(MonoBehaviour kitchen, int amount)> PlanSources(GameTask parentTask, AgentChoice choice)
+    {
+        var plan = new List<(MonoBehaviour, int)>();
+
+        MonoBehaviour destination = TaskSystem.Instance.FindTriggeringFacility(parentTask);
+        if (destination == null) return plan;
+
+        DeliverySystem ds = DeliverySystem.Instance;
+        if (ds == null) return plan;
+
+        int alreadyInbound = ds.GetReservedIncomingQuantity(destination, ResourceType.FoodPacks);
+        int remaining = Mathf.Max(0, choice.deliveryQuantity - alreadyInbound);
+        if (remaining <= 0) return plan;
+
+        foreach (var (kitchen, effectiveStock) in GetKitchensSorted(ds, destination.transform.position, choice.prioritizeNearestSource))
+        {
+            if (remaining <= 0) break;
+            int sendAmount = Mathf.Min(remaining, effectiveStock);
+            if (sendAmount <= 0) continue;
+            plan.Add((kitchen, sendAmount));
+            remaining -= sendAmount;
+        }
+
+        return plan;
     }
 
     int GetTotalRawFood()

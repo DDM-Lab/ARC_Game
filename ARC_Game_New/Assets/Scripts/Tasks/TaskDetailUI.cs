@@ -232,15 +232,39 @@ public class TaskDetailUI : MonoBehaviour
             return;
         }
 
+        if (choice.deliveryCargoType == ResourceType.FoodPacks && choice.triggersDelivery && !choice.immediateDelivery
+            && FoodDeliveryHandler.Instance != null)
+        {
+            // var plan = FoodDeliveryHandler.Instance.PlanSources(currentTask, choice.deliveryQuantity);
+            var plan = FoodDeliveryHandler.Instance.PlanSources(currentTask, choice); 
+            MonoBehaviour dest = TaskSystem.Instance.FindTriggeringFacility(currentTask);
+
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Preview route clicked | task={currentTask.taskTitle} | choice={choice.choiceText} | " +
+                $"sources={(plan.Count > 0 ? string.Join(",", plan.Select(p => p.kitchen.name)) : "unresolved")} | destination={dest?.name ?? "unresolved"}");
+
+            if (plan.Count == 0 || dest == null)
+            {
+                Debug.LogWarning("[PreviewChoiceRoute] Could not resolve food delivery plan.");
+                return;
+            }
+
+            StopAllCoroutines();
+            isTyping = false;
+            currentTypingMessage = null;
+            StartCoroutine(PeekForMultiRoute(plan.Select(p => p.kitchen).ToList(), dest, currentTask));
+            return;
+        }
+
         MonoBehaviour triggeringFacility = ResolveTriggeringFacility();
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
-        MonoBehaviour dest = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+        MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
 
         GameLogPanel.Instance?.LogUIInteraction(
             $"Preview route clicked | task={currentTask.taskTitle} | choice={choice.choiceText} | " +
-            $"source={source?.name ?? "unresolved"} | destination={dest?.name ?? "unresolved"}");
+            $"source={source?.name ?? "unresolved"} | destination={destination?.name ?? "unresolved"}");
 
-        if (source == null || dest == null)
+        if (source == null || destination == null)
         {
             Debug.LogWarning("[PreviewChoiceRoute] Could not resolve source or destination.");
             return;
@@ -249,7 +273,7 @@ public class TaskDetailUI : MonoBehaviour
         StopAllCoroutines();
         isTyping = false;
         currentTypingMessage = null;
-        StartCoroutine(PeekForRoute(source, dest, currentTask));
+        StartCoroutine(PeekForRoute(source, destination, currentTask));
     }
 
     IEnumerator PeekForRoute(MonoBehaviour source, MonoBehaviour dest, GameTask taskToRestore)
@@ -262,6 +286,25 @@ public class TaskDetailUI : MonoBehaviour
         // Something else already opened/closed the panel for a different task while we were peeking — leave it alone.
         if (currentTask != taskToRestore) yield break;
 
+        taskDetailPanel.SetActive(true);
+    }
+
+    IEnumerator PeekForMultiRoute(List<MonoBehaviour> sources, MonoBehaviour dest, GameTask taskToRestore)
+    {
+        taskDetailPanel.SetActive(false);
+
+        if (FacilityHighlightSystem.Instance == null)
+        {
+            yield return new WaitForSecondsRealtime(2f);
+        }
+        else
+        {
+            bool done = false;
+            FacilityHighlightSystem.Instance.HighlightMultiSourceRoute(sources, dest, () => done = true);
+            while (!done) yield return null;
+        }
+
+        if (currentTask != taskToRestore) yield break;
         taskDetailPanel.SetActive(true);
     }
 
@@ -848,7 +891,7 @@ public class TaskDetailUI : MonoBehaviour
         }
         else
         {
-            bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice.deliveryQuantity);
+            bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice); 
             if (!success)
                 ShowAgentErrorMessage("Could not queue food delivery — check kitchen stock and vehicle availability.");
         }
@@ -2670,16 +2713,24 @@ public class TaskDetailUI : MonoBehaviour
             string errorMessage = "";
             bool isValid = !choice.triggersDelivery || ValidateChoiceDelivery(choice, out errorMessage);
             choiceUI.SetValidationState(isValid, errorMessage);
-            bool isImmediateFoodOrder = choice.immediateDelivery && choice.deliveryCargoType == ResourceType.FoodPacks;
 
-            // Preview button — hide when choice is invalid or route can't be resolved
-            bool canPreview = isValid
-                && !isImmediateFoodOrder
-                && TaskSystem.Instance != null
-                && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
-                && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
+            bool isImmediateFoodOrder = choice.immediateDelivery && choice.deliveryCargoType == ResourceType.FoodPacks;
+            bool canPreview;
+            if (choice.deliveryCargoType == ResourceType.FoodPacks && choice.triggersDelivery && !choice.immediateDelivery)
+            {
+                canPreview = isValid && FoodDeliveryHandler.Instance != null
+                    && FoodDeliveryHandler.Instance.PlanSources(currentTask, choice).Count > 0;
+            }
+            else
+            {
+                canPreview = isValid
+                    && !isImmediateFoodOrder
+                    && TaskSystem.Instance != null
+                    && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
+                    && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
+            }
             choiceUI.SetPreviewVisible(canPreview);
-        }
+            }
     }
 
     MonoBehaviour ResolveTriggeringFacility()
