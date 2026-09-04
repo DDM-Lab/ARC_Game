@@ -91,13 +91,20 @@ class RHEA:
 
     # ── plan representation ─────────────────────────────────────────────────────────
     def _random_plan(self, actions):
+        # A model may supply whole-turn genes (actions.CoraActions); otherwise draw from
+        # the flat list, as the toy and live models do.
+        ra = getattr(self.model, "random_action", None)
+        if ra is not None:
+            return [ra(self._plan_world, self.rng) for _ in range(self.horizon)]
         return [self.rng.choice(actions) for _ in range(self.horizon)]
 
     def _mutate(self, plan, actions):
         child = list(plan)
+        ma = getattr(self.model, "mutate_action", None)
         for i in range(len(child)):
             if self.rng.random() < self.mutation_rate:
-                child[i] = self.rng.choice(actions)
+                child[i] = (ma(self._plan_world, child[i], self.rng) if ma is not None
+                            else self.rng.choice(actions))
         return child
 
     # ── evaluation ──────────────────────────────────────────────────────────────────
@@ -138,6 +145,7 @@ class RHEA:
         actions = list(self.model.legal(world))
         if not actions:
             return [], 0.0
+        self._plan_world = world           # the state the genes are sampled against
         futures = self._futures(world)
 
         pop = [self._shift(seed_plan, actions)] if seed_plan else []
@@ -158,4 +166,6 @@ class RHEA:
 
     def _shift(self, plan, actions):
         """The rolling part: drop the action just taken, append a fresh one."""
-        return list(plan[1:]) + [self.rng.choice(actions)]
+        ra = getattr(self.model, "random_action", None)
+        return list(plan[1:]) + [ra(self._plan_world, self.rng) if ra is not None
+                                 else self.rng.choice(actions)]
