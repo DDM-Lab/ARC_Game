@@ -117,4 +117,4 @@ anything (`scratchpad/cap32_fresh`):
 
     7001: every tracked counter matches at every round; draw stream identical, steps 2..32
     7002: every tracked counter matches at every round; draw stream identical, steps 2..32
-    7003: capture pending at time of writing
+    7003: every tracked counter matches at every round; draw stream draw streams identical across steps 2..32
