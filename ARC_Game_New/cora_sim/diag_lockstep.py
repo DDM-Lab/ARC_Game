@@ -41,7 +41,7 @@ def main():
     s0 = D.seed_step(log) if os.path.exists(log) else None
     w = fresh_world(dict(captured_seeds())[args.unity_seed], FloodMap.load())
     m = CoraActions(random.Random(0))
-    first, firstd, bd, exact = {}, None, None, 0
+    first, firstd, bd, port_marks = {}, None, None, []
     for i, step in enumerate(t):
         gene = row["plan"][i] if i < len(row["plan"]) else {"choices": {}, "menu": []}
         m.apply(w, ("turn", gene)); marks = []; S.step_round(w, marks=marks)
@@ -52,15 +52,16 @@ def main():
         ub = step["after"]["satisfactionAndBudget"]["budget"]
         if ub != w.economy.budget and bd is None:
             bd = (i, ub, w.economy.budget)
-        s = i + 1
-        if um and s0 is not None and s > s0 and firstd is None:
-            u = um.get(s, [])
-            if marks != u:
-                k = next((j for j, (a, b) in enumerate(zip(marks, u)) if a != b), min(len(marks), len(u)))
-                firstd = (s, k, len(u), len(marks), u[k] if k < len(u) else "<end>", marks[k] if k < len(marks) else "<end>")
-            else:
-                exact += 1
-    print(f"draws: {exact} exact steps; first divergence {firstd}")
+        port_marks.extend((i + 1, x) for x in marks)
+    # Compare the CONCATENATED streams. Unity labels choice-time draws (immediate
+    # deliveries register their clients in the choice frame) with the step just finished,
+    # the port emits them at the head of the next step; per-step lists disagree on labels
+    # while the stream itself is identical.
+    unity = [(s, x) for s in sorted(um) if s0 is not None and s > s0 for x in um[s]]
+    k = next((j for j, (a, b) in enumerate(zip(unity, port_marks)) if a[1] != b[1]), min(len(unity), len(port_marks)))
+    if k < max(len(unity), len(port_marks)):
+        firstd = (k, unity[k] if k < len(unity) else "<end>", port_marks[k] if k < len(port_marks) else "<end>")
+    print(f"draws: unity {len(unity)} port {len(port_marks)}; first divergence (index, unity(step, mark), port(step, mark)): {firstd}")
     print(f"metrics: first divergence per key (round, unity, port): {first or 'none'}")
     print(f"budget: first difference {bd}")
     print(f"score: unity {reward_scoring.compute_score(um_)[2]:.4f}  port {reward_scoring.compute_score(sm)[2]:.4f}")

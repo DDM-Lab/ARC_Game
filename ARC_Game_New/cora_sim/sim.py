@@ -1018,11 +1018,17 @@ def answer(w: World, task_id, choice_id) -> bool:
     # never dispatched. The fleet reads this same set at the next tick, so refreshing it here
     # changes nothing for driving.
     w.tasks.flooded = w.flooded_road_cells()
+    _multi = bool(choice.get("enableMultipleDeliveries"))
+    if immediate and qty <= 0 and not _multi:
+        # ExecuteImmediate moved nobody -> CompleteTaskAction's "moved != 0" fails ->
+        # return false: no impacts, task stays listed. A multi-delivery immediate completes.
+        return False
     w.tasks.answer(task_id, 0 if _cut else qty, immediate=immediate,
                    latency=_lat if _measured else None,
                    destination=dest_cat, counters=w.economy.counters,
                    latency_measured=_measured,
-                   destination_facility=_target)
+                   destination_facility=_target,
+                   credit_delivered=immediate and not _multi)
     if immediate and qty > 0 and dest_cat in ("Motel", "Shelter"):
         target = "Motel" if dest_cat == "Motel" else next(
             (b["name"] for b in w.economy.buildings

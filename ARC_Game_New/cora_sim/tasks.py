@@ -334,7 +334,8 @@ class TaskBoard:
         return task
 
     def answer(self, task_id, quantity=0, immediate=True, latency=None, destination="",
-               counters=None, latency_measured=False, destination_facility=None):
+               counters=None, latency_measured=False, destination_facility=None,
+               credit_delivered=False):
         """Answer a task: it leaves the board NOW and resolves when its delivery LANDS.
 
         THE TWO ARE NOT THE SAME ROUND, and that is the whole point. Measured on captures:
@@ -356,11 +357,13 @@ class TaskBoard:
         self._sources = getattr(self, "_sources", {})
         if task.source:
             self._sources[task_id] = task.source
-        if quantity <= 0:
+        if quantity <= 0 and not immediate:
             # Nothing could be sourced -- but the ORDER was still placed, and it fails on
             # the round it was due rather than the instant it was made. Resolving inline
             # credited foodResolved in the same round the choice was answered and put the
             # port a round ahead of Unity on every capture (unity 0, port 3 at round 4).
+            # (An IMMEDIATE answer with nothing moved is the caller's business: a
+            # multi-delivery one completes now, a single one is rejected before we get here.)
             latency = DEFERRED_LATENCY.get(task.tag, DEFAULT_LATENCY)
             self.awaiting[task_id] = task
             self.deliveries.append([latency, task_id, 0, True])
@@ -379,7 +382,16 @@ class TaskBoard:
             # -> ApplyChoiceImpacts -> CompleteTask. Three airlifts answered in one round
             # were three "Completed" resolutions in consecutive frames on the 5901
             # validation run, credited that same step; the port had them a round late.
-            task.delivered += quantity
+            # deliveredQuantity for an immediate relocation depends on the PATH:
+            #   ExecuteImmediate (single destination, motel choice 3) credits
+            #   parentTask.deliveredQuantity += moved -- 6001 r5: delivered 100, fulfilled.
+            #   ExecuteMultipleDeliveries (shelter choice 2) moves people, credits nothing,
+            #   completes regardless -- 7002 r6: "Immediate delivery: 100 Population ... to
+            #   Shelter_9" resolved with delivered 0; the second, with no space, moved nobody
+            #   and still resolved. The caller passes credit_delivered accordingly.
+            # Food has demand 0 and takes the fulfilled flag instead (+1 each, 5901 r25).
+            if task.demand <= 0 or credit_delivered:
+                task.delivered += max(0, quantity)
             self.awaiting[task_id] = task
             if counters is not None:
                 self.resolve(task, fulfilled=quantity > 0, counters=counters)
