@@ -231,7 +231,16 @@ class World:
         return set(w.tasks.active)
 
     def _own_facilities(self, task_def):
-        return suitable_facilities(task_def, self.economy.facilities())
+        # FindObjectsOfType order: prebuilts in the scene's fixed order (calibrated:
+        # Community01, Community03, Community02), constructed buildings NEWEST FIRST --
+        # "Found 2 suitable facilities for Food Request From Shelter: Shelter_9, Shelter_5"
+        # (5901 validation). With two operational shelters the first probability roll
+        # belongs to the newer one; construction order handed it to the older and the
+        # port missed a shelter food request Unity created (round 24, day 7 rollover).
+        facs = self.economy.facilities()
+        pre = [f for f in facs if f.get("prebuilt")]
+        built = [f for f in facs if not f.get("prebuilt")]
+        return suitable_facilities(task_def, pre + built[::-1])
 
     def trigger_context(self) -> TriggerContext:
         """Everything the trigger conditions read, from the port's own state."""
@@ -606,11 +615,17 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # the vehicles drove before this round's flood update, so that is the map they saw.
     w.tasks.flooded = w.flooded_road_cells()      # post-spread, for this round's driving
     _late = []
+    _late_nominal = []                # OnVehicleDeliveryCompleted groups that fire at +35
     for _e in w.tasks.tick(w.economy.counters):
         if len(_e) > 3 and _e[3] == "late":
             _late.append(_e)          # epilogue unload: after this round's invoke
             continue
+        _n = len(w.pending_arrivals)
         _land(w, _e[0], _e[1], _e[2])
+        if len(_e) > 3 and _e[3] == "split" and len(w.pending_arrivals) > _n:
+            # Unloaded on the last movement frame: the actual group registers now, the
+            # nominal group (queued last by _land) at completion, after the flood.
+            _late_nominal.append(w.pending_arrivals.pop())
     arrivals = list(arrivals) + w.pending_arrivals
     w.pending_arrivals = []
     # ARRIVAL STAMP vs UPDATE ROUND. Unity stamps arrivalRound = currentRound at the DELIVERY
@@ -754,6 +769,8 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # joins the tracker behind this step's caseworkGen rolls, which is the order Unity's
     # marks show (5601 step 30, 6101 step 11). Registered now rather than at the next head so
     # the group precedes the next round's sim-phase arrivals.
+    for count, facility in _late_nominal:
+        w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
     for _e in _late + w.tasks.settle_late(w.economy.counters):
         _n = len(w.pending_arrivals)
         _land(w, _e[0], _e[1], _e[2])
@@ -762,6 +779,27 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         del w.pending_arrivals[_n:]
     economy_step(w.economy, False, w.day)   # day-end already run above
     w.round_index += 1
+
+
+def _park_blocked(w: World, task_id, task, choice_id) -> bool:
+    """A MULTI-DELIVERY choice whose delivery could not be created.
+
+    Two exits, by the choice's enableMultipleDeliveries flag (TaskData assets):
+      * multi (kitchen food 0/1, shelter relocation 0/2, flood-damage choices):
+        ExecuteGeneratorDelivery routes to ExecuteMultipleDeliveries and returns -1
+        UNCONDITIONALLY, so a blocked route still logs "No delivery subtasks", applies
+        the impacts and sets the task InProgress with nothing linked: it leaves the choice
+        list, keeps its slot, and expires Incomplete on its own deadline (5901 validation,
+        task 25: blocked at round 9, resolved Incomplete three rounds later).
+      * single (motel relocation 1/3): the handler returns false -> "Delivery Blocked" ->
+        no impacts, task stays listed and can be re-answered next round (5701 task 9:
+        blocked at step 5, re-answered and queued at step 6). That is the caller's
+        `return False` path, not this function.
+    """
+    task.chosen_id = choice_id
+    w.tasks.active.pop(task_id, None)
+    w.tasks.awaiting[task_id] = task
+    return True
 
 
 def answer(w: World, task_id, choice_id) -> bool:
@@ -878,7 +916,11 @@ def answer(w: World, task_id, choice_id) -> bool:
             _dst = w._facility_cell(str(_facility))
             if (_src is None or _dst is None
                     or roads.path_length(_src, _dst, w.flooded_road_cells()) is None):
-                return False
+                if not choice.get("enableMultipleDeliveries"):
+                    return False
+                w.economy.apply_choice(task.tag, choice.get("impacts"),
+                                       choice.get("budgetDelayRounds", 0) or 0, "", 0)
+                return _park_blocked(w, task_id, task, choice_id)
         task.source = _kitchen or ""
         w.tasks.answer(task_id, 0 if _cut else demanded, immediate=immediate,
                        latency=_lat if _measured else None,
@@ -916,6 +958,17 @@ def answer(w: World, task_id, choice_id) -> bool:
     # Unity's does: the port fell to 4 trigger passes against Unity's 17.
     task.source = str(_facility)
     immediate = bool(choice.get("immediateDelivery"))
+    if not (choice.get("triggersDelivery") or immediate):
+        # A choice with NO delivery completes the task at answer time: CompleteTaskAction
+        # -> CompleteTask, logged "Completed task: Storm Funding Advisory" in the same
+        # frame as the choice. Parking it for a latency round (the delivery model) kept the
+        # global one-per-title slot taken through the next pass, so the port never
+        # generated the second advisory Unity did -- and lost its +50000 (5901 validation,
+        # round 6). Counters: tag-None tasks resolve silently either way.
+        _t = w.tasks.active.pop(task_id, None)
+        if _t is not None:
+            w.tasks.resolve(_t, fulfilled=False, counters=w.economy.counters)
+        return True
     _target = ("Motel" if dest_cat == "Motel" else next(
         (b["name"] for b in w.economy.buildings
          if b["type"] == "Shelter" and b["status"] == "InUse"), "Motel"))
@@ -927,7 +980,9 @@ def answer(w: World, task_id, choice_id) -> bool:
         _dst = w._facility_cell(_target)
         if (_src is None or _dst is None
                 or roads.path_length(_src, _dst, w.flooded_road_cells()) is None):
-            return False
+            # impacts were applied above, as CompleteTaskAction does before InProgress
+            return (_park_blocked(w, task_id, task, choice_id)
+                    if choice.get("enableMultipleDeliveries") else False)
     _cut = _lat is False
     _measured = _lat is not None and _lat is not False
     # ONE FLOOD SET FOR BOTH ROUTE CHECKS. The check above used the CURRENT post-update tiles,

@@ -8,9 +8,9 @@ at the end of 32 rounds, and a feature vector for clustering. Nothing is filtere
 Pareto frontier and the strategy clusters are computed afterwards by pareto.py from the
 whole population, not from the winners.
 
-Seeds are xorshift states. By default they are the states recorded at the start of the
-captured episodes plus fresh ones derived from them, so every trajectory here is a
-trajectory the real game can be started on.
+Seeds are the xorshift states Unity recorded at the start of the captured episodes (Unity
+seeds it internally; the state is observed, not set), so every trajectory here can be
+replayed on the headless server with the same Unity seed.
 """
 from __future__ import annotations
 
@@ -29,9 +29,24 @@ from cora_sim.rng import UnityRandom              # noqa: E402
 from cora_sim.search import RHEA                  # noqa: E402
 import cora_sim.sim as S                          # noqa: E402
 
-CAPTURED_STATES = [
-    (1789241802, -836569722, -735555501, -958919132),      # seed 5901's first flood:enter
-]
+_CAPTURES = os.environ.get("STAFF_TRACES") or (
+    "/private/tmp/claude-501/-Users-cpulling-Work-CORA/b762a1aa-9f0c-4053-9897-bfd6aeeb9623/"
+    "scratchpad/cap32{b,_fresh}/staff_*.json")
+
+
+def captured_seeds():
+    """(unity_seed, xorshift state) for every captured episode: the only states the headless
+    server can actually be started on, so every trajectory here is replayable for real."""
+    import glob
+    from cora_sim.test_replay_forward import seed_state
+    out = []
+    for pat in _CAPTURES.replace("{b,_fresh}", "\0").split("\0") if "{" not in _CAPTURES else \
+            [_CAPTURES.replace("{b,_fresh}", x) for x in ("b", "_fresh")]:
+        for p in sorted(glob.glob(pat)):
+            st = seed_state(p.replace(".json", ".log"))
+            if st:
+                out.append((int(os.path.basename(p)[6:-5]), st))
+    return out
 
 
 def fresh_world(state, fmap):
@@ -78,9 +93,10 @@ def features(executed, world, comps):
 class LoggingActions(CoraActions):
     """Records every terminal rollout so the whole population is kept, not just winners."""
 
-    def __init__(self, *a, sink=None, seed_state=None, **k):
+    def __init__(self, *a, sink=None, seed_state=None, unity_seed=None, **k):
         super().__init__(*a, **k)
-        self.sink, self.seed_state, self._plan, self._executed = sink, seed_state, None, []
+        self.sink, self.seed_state, self.unity_seed = sink, seed_state, unity_seed
+        self._plan, self._executed = None, []
 
     def apply(self, world, action):
         self._executed.append(super().apply(world, action) or [])
@@ -89,7 +105,7 @@ class LoggingActions(CoraActions):
         v = super().value(world)
         if self.sink is not None and self._plan is not None:
             comps = self.components(world)
-            self.sink.write(json.dumps({"seed_state": list(self.seed_state), "score": v,
+            self.sink.write(json.dumps({"unity_seed": self.unity_seed, "seed_state": list(self.seed_state), "score": v,
                                         "plan": [g for _, g in self._plan],
                                         "executed": self._executed,
                                         "features": features(self._executed, world, comps)}) + "\n")
@@ -102,21 +118,13 @@ class LoggingRHEA(RHEA):
         return super()._rollout(world, plan)
 
 
-def derive_states(n, base=CAPTURED_STATES[0]):
-    """n xorshift states: the captured one, then the stream advanced by large strides."""
-    out = [tuple(x & 0xFFFFFFFF for x in base)]
-    r = UnityRandom(state=base)
-    for _ in range(n - 1):
-        for _ in range(100_003):
-            r.next_uint()
-        out.append((r.s0, r.s1, r.s2, r.s3))
-    return out
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
-    ap.add_argument("--seeds", type=int, default=4)
+    ap.add_argument("--seeds", type=int, default=0, help="use only the first N captured seeds (0 = all)")
+    ap.add_argument("--menu", type=int, default=24, help="basket size offered to the genome (site coverage)")
     ap.add_argument("--population", type=int, default=32)
     ap.add_argument("--generations", type=int, default=30)
     ap.add_argument("--elites", type=int, default=6)
@@ -129,15 +137,17 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     t0 = time.time(); total = 0
     with open(args.out, "a") as sink:
-        for i, state in enumerate(derive_states(args.seeds)):
-            model = LoggingActions(random.Random(args.search_seed + i), sink=sink, seed_state=state)
+        seeds = captured_seeds()[:args.seeds or None]
+        for i, (unity_seed, state) in enumerate(seeds):
+            model = LoggingActions(random.Random(args.search_seed + i), sink=sink, seed_state=state,
+                                   unity_seed=unity_seed, max_menu=args.menu)
             search = LoggingRHEA(S.step_round, model, horizon=args.rounds, population=args.population,
                                  generations=args.generations, elites=args.elites,
                                  mutation_rate=args.mutation, crossover=args.crossover,
                                  rng=random.Random(args.search_seed * 1000 + i))
             plan, fit = search.plan(fresh_world(state, fmap), seed_plan=CoraActions.baseline_plan(args.rounds))
             total += search.rollouts
-            print(f"  seed {i}: best {fit:.4f} after {search.rollouts} rollouts "
+            print(f"  seed {unity_seed}: best {fit:.4f} after {search.rollouts} rollouts "
                   f"({total / (time.time() - t0):.0f}/s cumulative)", flush=True)
     print(f"wrote {total} trajectories to {args.out} in {time.time() - t0:.0f}s")
     return 0

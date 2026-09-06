@@ -578,7 +578,14 @@ class Fleet:
                     if self.events is not None: self.events.append((self.frame, "leg2", v, t["payload"][0], leg2))
                 elif ph == "to_dst":
                     self.pos[v] = t["dst"]
-                    landed.append(t["payload"])               # UnloadCargo, this frame
+                    # An unload on the round's LAST movement frame (+34) is split across the
+                    # segment boundary: UnloadCargo -> HandlePopulationDelivery registers
+                    # the actual group now, but OnVehicleDeliveryCompleted fires on the
+                    # completion frame (+35), after the advance, generation and flood. The
+                    # "split" tag lets step_round register the nominal group late. Measured
+                    # on the 5901 validation run: Unity unload f321, complete f322 = d2r2.
+                    landed.append(tuple(t["payload"]) + ("split",) if _o == frames - 1
+                                  else t["payload"])          # UnloadCargo, this frame
                     if self.events is not None: self.events.append((self.frame, "unload", v, t["payload"][0]))
                     self.carrying[v] = None
                     t["phase"], t["left"] = "complete", 1

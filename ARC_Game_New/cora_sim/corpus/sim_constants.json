@@ -132,7 +132,8 @@
        "type": "Budget",
        "value": 50000
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     },
     {
      "choiceId": 1,
@@ -146,7 +147,8 @@
        "type": "Budget",
        "value": 100000
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     },
     {
      "choiceId": 2,
@@ -160,7 +162,8 @@
        "type": "Satisfaction",
        "value": 5
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     }
    ],
    "probabilities": []
@@ -225,7 +228,8 @@
        "type": "Budget",
        "value": 5000
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     }
    ],
    "probabilities": []
@@ -295,7 +299,8 @@
        "type": "Satisfaction",
        "value": -5
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     },
     {
      "choiceId": 1,
@@ -313,7 +318,8 @@
        "type": "Satisfaction",
        "value": -10
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     },
     {
      "choiceId": 2,
@@ -331,7 +337,8 @@
        "type": "Satisfaction",
        "value": -15
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     }
    ],
    "probabilities": []
@@ -408,7 +415,8 @@
        "type": "Satisfaction",
        "value": 5
       }
-     ]
+     ],
+     "enableMultipleDeliveries": true
     },
     {
      "choiceId": 1,
@@ -422,7 +430,8 @@
        "type": "Satisfaction",
        "value": 15
       }
-     ]
+     ],
+     "enableMultipleDeliveries": true
     },
     {
      "choiceId": 2,
@@ -440,7 +449,8 @@
        "type": "Budget",
        "value": -5000
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     }
    ],
    "probabilities": []
@@ -508,7 +518,8 @@
      "deliveryQuantity": 100,
      "budgetDelayRounds": 0,
      "destinationCategory": "Shelter",
-     "impacts": []
+     "impacts": [],
+     "enableMultipleDeliveries": true
     },
     {
      "choiceId": 1,
@@ -517,7 +528,8 @@
      "deliveryQuantity": 200,
      "budgetDelayRounds": 0,
      "destinationCategory": "Shelter",
-     "impacts": []
+     "impacts": [],
+     "enableMultipleDeliveries": true
     },
     {
      "choiceId": 2,
@@ -531,7 +543,8 @@
        "type": "Budget",
        "value": -1000
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     }
    ],
    "probabilities": []
@@ -593,7 +606,8 @@
      "deliveryQuantity": 100,
      "budgetDelayRounds": 0,
      "destinationCategory": "Shelter",
-     "impacts": []
+     "impacts": [],
+     "enableMultipleDeliveries": true
     },
     {
      "choiceId": 1,
@@ -602,7 +616,8 @@
      "deliveryQuantity": 100,
      "budgetDelayRounds": 0,
      "destinationCategory": "Motel",
-     "impacts": []
+     "impacts": [],
+     "enableMultipleDeliveries": false
     },
     {
      "choiceId": 2,
@@ -616,7 +631,8 @@
        "type": "Budget",
        "value": -3000
       }
-     ]
+     ],
+     "enableMultipleDeliveries": true
     },
     {
      "choiceId": 3,
@@ -630,7 +646,8 @@
        "type": "Budget",
        "value": -3000
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     }
    ],
    "probabilities": [
@@ -860,7 +877,8 @@
        "type": "Satisfaction",
        "value": 10
       }
-     ]
+     ],
+     "enableMultipleDeliveries": true
     },
     {
      "choiceId": 1,
@@ -874,7 +892,8 @@
        "type": "Satisfaction",
        "value": 10
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     },
     {
      "choiceId": 2,
@@ -892,7 +911,8 @@
        "type": "Satisfaction",
        "value": 10
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     }
    ],
    "probabilities": []
@@ -960,7 +980,8 @@
      "deliveryQuantity": 100,
      "budgetDelayRounds": 0,
      "destinationCategory": "Shelter",
-     "impacts": []
+     "impacts": [],
+     "enableMultipleDeliveries": true
     },
     {
      "choiceId": 1,
@@ -969,7 +990,8 @@
      "deliveryQuantity": 200,
      "budgetDelayRounds": 0,
      "destinationCategory": "Shelter",
-     "impacts": []
+     "impacts": [],
+     "enableMultipleDeliveries": true
     },
     {
      "choiceId": 2,
@@ -983,7 +1005,8 @@
        "type": "Budget",
        "value": -1000
       }
-     ]
+     ],
+     "enableMultipleDeliveries": false
     }
    ],
    "probabilities": [
@@ -1237,6 +1260,12 @@
    "startingFoodPacks": 0,
    "enableFoodWaste": true,
    "source": "Assets/Prefabs/Kitchen.prefab"
+  },
+  {
+   "type": "Shelter",
+   "startingFoodPacks": 0,
+   "enableFoodWaste": true,
+   "source": "Assets/Prefabs/Shelter.prefab"
   }
  ],
  "production": {
@@ -1246,5 +1275,23 @@
    "maxCapacity": 200,
    "source": "Assets/Prefabs/Kitchen.prefab roundProduction"
   }
- }
+ },
+ "capacities": {
+  "Shelter": {
+   "population": 100,
+   "foodPacks": 100,
+   "source": "Assets/Prefabs/Shelter.prefab BuildingResourceStorage (ResourceType 0=Population, 1=FoodPacks)"
+  },
+  "Kitchen": {
+   "population": 0,
+   "foodPacks": 200,
+   "source": "Assets/Prefabs/Kitchen.prefab"
+  },
+  "CaseworkSite": {
+   "population": 400,
+   "foodPacks": 0,
+   "source": "Assets/Prefabs/Casework.prefab"
+  }
+ },
+ "_enableMultipleDeliveries_source": "Assets/Scripts/Tasks/TaskData/*.asset (AgentChoice.enableMultipleDeliveries); not in the C# exporter yet"
 }

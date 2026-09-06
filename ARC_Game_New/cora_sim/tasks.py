@@ -372,8 +372,18 @@ class TaskBoard:
             # path rather than from the click. Measured: Unity's foodResolved is still 0 on
             # the round its first food task is answered and only moves the round after, so
             # resolving inline put the port a full round ahead on every capture.
+            #
+            # THAT MEASUREMENT WAS OF DEFERRED CHOICES (the captures' policy always took
+            # choice 0). An IMMEDIATE choice completes in the choice frame:
+            # CompleteTaskAction -> ExecuteGeneratorDelivery(immediate) moved something
+            # -> ApplyChoiceImpacts -> CompleteTask. Three airlifts answered in one round
+            # were three "Completed" resolutions in consecutive frames on the 5901
+            # validation run, credited that same step; the port had them a round late.
             task.delivered += quantity
             self.awaiting[task_id] = task
+            if counters is not None:
+                self.resolve(task, fulfilled=quantity > 0, counters=counters)
+                return
             self.deliveries.append([1, task_id, 0, True])   # 0: already delivered, resolve only
             return
         # THE ORDER GOES INTO THE QUEUE, NOT ONTO A CLOCK. DeliverySystem creates the task
@@ -398,9 +408,17 @@ class TaskBoard:
                 self.awaiting[task_id] = task
                 return
             self.awaiting[task_id] = task
-            self.pending.append([self.pending_seq, (task_id, quantity, destination),
-                                 src, dst, quantity])
-            self.pending_seq += 1
+            # CreateDeliveryTask splits an order into trips of at most VEHICLE_CAPACITY,
+            # each its own DeliveryTask on its own vehicle. A 200-pack shelter request is
+            # two trips: one landed and one was blocked on the 5901 validation run, and
+            # the parent went Incomplete unrecorded while the port, driving one 200-pack
+            # trip, had resolved it fulfilled.
+            trips = max(1, -(-quantity // VEHICLE_CAPACITY))
+            per = quantity // trips
+            for i in range(trips):
+                q = per if i < trips - 1 else quantity - per * (trips - 1)
+                self.pending.append([self.pending_seq, (task_id, q, destination), src, dst, q])
+                self.pending_seq += 1
             return
         if latency is None:
             latency = DEFERRED_LATENCY.get(task.tag, DEFAULT_LATENCY)
@@ -495,6 +513,16 @@ class TaskBoard:
             counters["lodgingFulfilled"] = min(counters["lodgingResolved"],
                                                counters["lodgingFulfilled"] + quantity)
 
+    def _trips_outstanding(self, task_id) -> bool:
+        """Sibling trips of a multi-trip order still queued, loading or driving."""
+        if any(o[1][0] == task_id for o in self.pending):
+            return True
+        f = self.fleet
+        if any(c is not None and c[0] == task_id for c in f.carrying):
+            return True
+        return any(t is not None and "payload" in t and t["payload"][0] == task_id
+                   and t.get("phase") != "complete" for t in f.trip)
+
     def settle_late(self, counters: dict) -> list:
         """Settle the epilogue unloads parked by the last tick: resolution, counters, and
         the landings to hand to step_round -- exactly the arrival processing, run late."""
@@ -548,11 +576,40 @@ class TaskBoard:
                 # settles it after the flood update through settle_late().
                 self._late_arrivals.append(_entry)
                 continue
-            task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
+            split = len(_entry) > 3 and _entry[3] == "split"
+            if split and not _settling:
+                # Unloaded on the round's last movement frame: the people land NOW (before
+                # the segment advance) but CompleteTask runs on the completion frame, after
+                # the generation pass -- so the task stays InProgress through the pass and
+                # its facility slot stays taken. Resolution is parked for settle_late().
+                task = self.active.get(task_id) or self.awaiting.get(task_id)
+                if task is None:
+                    continue
+                if task.resolved:
+                    self.late_delivery(task, quantity, counters)
+                task.delivered += quantity
+                if quantity > 0:
+                    landed_now.append((task_id, quantity, destination, "split"))
+                self._late_arrivals.append((task_id, 0, destination, "split_resolve"))
+                continue
+            if len(_entry) > 3 and _entry[3] == "split_resolve":
+                # The completion of a split landing, after the flood: free the slot and
+                # credit the counters; the people already landed before the pass.
+                task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
+                if task is not None and task_id not in self.active and not task.resolved:
+                    self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+                continue
+            task = self.active.get(task_id) or (
+                self.awaiting.get(task_id) if self._trips_outstanding(task_id)
+                else self.awaiting.pop(task_id, None))
             if task is None:
-                import os as _o
-                if _o.environ.get("FLEET_TRACE"):
-                    print(f"        [arrived DISCARDED] task={task_id} qty={quantity}")
+                # The parent is gone (HandleDeliveryFailure on a sibling trip took it off
+                # the board, Incomplete, unrecorded) but this vehicle still unloads:
+                # OnDeliveryTaskCompleted finds the parent in completedTasks, sees it is
+                # no longer InProgress, and records nothing -- the cargo is deposited by
+                # UnloadCargo regardless (Shelter Alpha: 100 packs, foodFulfilled +0).
+                if quantity > 0 and not zombie:
+                    landed_now.append((task_id, quantity, destination))
                 continue
             if task.resolved:
                 # A FLEET LANDING FOR AN ALREADY-RESOLVED TASK IS A LATE DELIVERY. The
@@ -578,7 +635,9 @@ class TaskBoard:
                 # An epilogue unload keeps its tag: step_round lands it after the flood.
                 landed_now.append((task_id, quantity, destination, "late") if late
                                   else (task_id, quantity, destination))
-            if task_id not in self.active and not task.resolved:
+            if (task_id not in self.active and not task.resolved
+                    and not self._trips_outstanding(task_id)):
+                # AreAllLinkedDeliveriesComplete: the parent completes with its LAST trip.
                 self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
         while self.queue and self.busy < VEHICLE_COUNT:
             task_id, qty, lat = self.queue.pop(0)

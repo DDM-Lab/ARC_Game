@@ -125,12 +125,10 @@ class CoraActions(ActionModel):
         for fam in sorted(fams):
             group = sorted(fams[fam], key=_true_cost)
             if len(group) > per:
-                # endpoints first, then the middle: hire_1 and hire_5 before hire_3
-                idx = []
-                for i in (0, len(group) - 1, len(group) // 2):
-                    if i not in idx:
-                        idx.append(i)
-                group = [group[i] for i in sorted(idx[:per])]
+                # evenly spaced through the family, endpoints included, so max_menu really
+                # controls coverage: hire_1 and hire_5 at per=2, sites 0/7/14 at per=3
+                idx = sorted({round(i * (len(group) - 1) / max(1, per - 1)) for i in range(per)})
+                group = [group[i] for i in idx]
             out.extend(group)
         out.sort(key=basket_order)
         return out

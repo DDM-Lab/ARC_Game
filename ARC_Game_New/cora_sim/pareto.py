@@ -1,5 +1,8 @@
 """Upper bounds, Pareto frontier, and strategy clusters from an evolve.py log.
 
+The game's score is satisfaction MINUS cost_efficiency (reward_scoring.compute_score), so
+cost_efficiency is a penalty and the default frontier minimises it.
+
     python -m cora_sim.pareto runs/evo.jsonl [--k 5] [--objectives satisfaction cost_efficiency]
 
 Upper bound: the best score found per seed (what the search proved reachable; the true
@@ -27,8 +30,10 @@ def load(path):
         return [json.loads(l) for l in f if l.strip()]
 
 
-def pareto_front(rows, objectives):
-    pts = np.array([[r["features"][o] for o in objectives] for r in rows])
+def pareto_front(rows, objectives, minimize=()):
+    """Non-dominated rows; objectives are maximised unless named in `minimize`."""
+    sign = np.array([-1.0 if o in minimize else 1.0 for o in objectives])
+    pts = np.array([[r["features"][o] for o in objectives] for r in rows]) * sign
     keep = np.ones(len(rows), bool)
     for i, p in enumerate(pts):
         if not keep[i]:
@@ -40,9 +45,11 @@ def pareto_front(rows, objectives):
 
 
 def dedupe(rows):
+    """One row per (seed, what was actually executed, choices made): genomes that differ
+    only in dead genes are the same trajectory."""
     seen, out = set(), []
     for r in rows:
-        key = json.dumps(r["plan"], sort_keys=True) + str(r["seed_state"])
+        key = (str(r["seed_state"]), json.dumps(r.get("executed")), round(r["score"], 9))
         if key not in seen:
             seen.add(key); out.append(r)
     return out
@@ -59,6 +66,14 @@ def kmeans(X, k, rng, iters=100):
     return lab, C
 
 
+def describe_executed(row):
+    ex = row.get("executed")
+    if ex is None:
+        return describe_plan(row["plan"])
+    out = [f"r{r}:{a}" for r, acts in enumerate(ex) for a in acts]
+    return " ".join(out) if out else "(idle -- answers tasks only)"
+
+
 def describe_plan(plan):
     out = []
     for r, g in enumerate(plan):
@@ -67,12 +82,39 @@ def describe_plan(plan):
     return " ".join(out) if out else "(idle -- answers tasks only)"
 
 
+def reevaluate(plans, seeds, rounds=32):
+    """Score each genome on every captured seed: a strategy's worth is its cross-seed
+    mean/min, not the score on the seed it was evolved for."""
+    import random
+    from cora_sim.actions import CoraActions
+    from cora_sim.evolve import fresh_world
+    from cora_sim.floodmap import FloodMap
+    import cora_sim.sim as S
+    fmap = FloodMap.load()
+    out = []
+    for plan in plans:
+        m = CoraActions(random.Random(0))
+        scores = []
+        for _, st in seeds:
+            w = fresh_world(st, fmap)
+            for g in plan[:rounds]:
+                m.apply(w, ("turn", g)); S.step_round(w)
+            scores.append(m.value(w))
+        out.append((float(np.mean(scores)), float(np.min(scores)), scores))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("log")
     ap.add_argument("--k", type=int, default=5)
     ap.add_argument("--objectives", nargs="+", default=["satisfaction", "cost_efficiency"])
+    ap.add_argument("--minimize", nargs="*", default=["cost_efficiency"],
+                    help="objectives where lower is better (the game's score is satisfaction - cost_efficiency)")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--reeval-n", type=int, default=30)
+    ap.add_argument("--reeval", action="store_true",
+                    help="re-score every frontier plan and cluster best on all captured seeds")
     args = ap.parse_args()
     rows = dedupe(load(args.log))
     print(f"{len(rows)} distinct trajectories, {len({tuple(r['seed_state']) for r in rows})} seeds")
@@ -85,16 +127,36 @@ def main():
         best = max(rs, key=lambda r: r["score"])
         idle = [r for r in rs if r["features"]["menu_turns"] == 0]
         base = max(idle, key=lambda r: r["score"])["score"] if idle else float("nan")
-        print(f"  seed {list(s)}: best {best['score']:.4f}  (idle-policy {base:.4f}, n={len(rs)})"
-              f"\n      {describe_plan(best['plan'])}")
+        print(f"  seed {best.get('unity_seed')}: best {best['score']:.4f}  (idle-policy {base:.4f}, n={len(rs)})"
+              f"\n      {describe_executed(best)}")
 
-    front = sorted(pareto_front(rows, args.objectives), key=lambda r: -r["features"][args.objectives[0]])
-    print(f"\nPARETO FRONTIER over {args.objectives}: {len(front)} trajectories")
-    for r in front[:25]:
+    # Per-seed frontiers: a global one only ranks seed luck (per-seed bests span 2.68-2.87).
+    print(f"\nPER-SEED PARETO FRONTIERS over {args.objectives} (minimising {args.minimize})")
+    front = []
+    for s, rs in by_seed.items():
+        pf = sorted(pareto_front(rs, args.objectives, args.minimize), key=lambda r: -r["score"])
+        front.extend(pf)
+        print(f"  seed {rs[0].get('unity_seed')}: {len(pf)} on the frontier; best "
+              + "  ".join(f"{o}={pf[0]['features'][o]:.4f}" for o in args.objectives)
+              + f"  score={pf[0]['score']:.4f}  executed={sum(map(len, pf[0].get('executed', [])))} actions")
+    front.sort(key=lambda r: -r["score"])
+    for r in front[:20]:
         f = r["features"]
-        print("  " + "  ".join(f"{o}={f[o]:.4f}" for o in args.objectives) + f"  score={r['score']:.4f}"
+        print(f"  seed {r.get('unity_seed')}  " + "  ".join(f"{o}={f[o]:.4f}" for o in args.objectives)
+              + f"  score={r['score']:.4f}"
               f"  builds K/S/C={f['builds_kitchen']}/{f['builds_shelter']}/{f['builds_casework']}"
               f" hire={f['hire_untrained']}+{f['hire_trained']}t train={f['train']}")
+
+    if args.reeval:
+        from cora_sim.evolve import captured_seeds
+        seeds = captured_seeds()
+        cand = front[:args.reeval_n]
+        print(f"\nCROSS-SEED RE-EVALUATION: top {len(cand)} frontier plans on all {len(seeds)} captured seeds")
+        ev = reevaluate([r["plan"] for r in cand], seeds)
+        ranked = sorted(zip(cand, ev), key=lambda x: -x[1][0])
+        for r, (mean, lo, _) in ranked:
+            print(f"  mean={mean:.4f}  min={lo:.4f}  own={r['score']:.4f} (seed {r.get('unity_seed')})  "
+                  + describe_executed(r)[:120])
 
     X = np.array([[r["features"][k] for k in STRATEGY_KEYS] for r in rows], float)
     mu, sd = X.mean(0), X.std(0); sd[sd == 0] = 1
@@ -109,7 +171,7 @@ def main():
               f"  sat mean {np.mean([r['features']['satisfaction'] for r in members]):.3f}"
               f"  cost_eff mean {np.mean([r['features']['cost_efficiency'] for r in members]):.3f}")
         print("      centroid: " + ", ".join(f"{k}={v:.1f}" for k, v in zip(STRATEGY_KEYS, cen)))
-        print("      best:     " + describe_plan(max(members, key=lambda r: r["score"])["plan"]))
+        print("      best:     " + describe_executed(max(members, key=lambda r: r["score"])))
     return 0
 
 

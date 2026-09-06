@@ -95,6 +95,7 @@ def load_economy_constants(path=None):
         "deconstruction_rounds": int(c.get("deconstructionRounds", 3)),
         "consumption": d.get("consumption") or {},
         "production": d.get("production") or {},
+        "capacities": d.get("capacities") or {},
         # Per-building storage settings, keyed by TYPE. Measured from the running game:
         # communities start with 0 and do NOT waste (their food drains by consumption),
         # the motel wastes, and a Kitchen refills to 200 every day -- observed directly,
@@ -274,8 +275,11 @@ class Economy:
         return True
 
     def train(self, quantity: int, advertised_cost: int) -> bool:
-        quantity = min(quantity, self.free_untrained)
-        if quantity <= 0:
+        # ActionExecutor "train_untrained": only FREE untrained workers are trainable, and
+        # fewer than requested is a Failure before any budget moves ("Insufficient
+        # untrained workers (need 5, have 1)" -- 5901 validation, round 18, where the port
+        # had trained one and charged for five).
+        if quantity <= 0 or self.free_untrained < quantity:
             return False
         self.spend(advertised_cost, "worker")
         self.free_untrained -= quantity
@@ -395,12 +399,18 @@ class Economy:
         self.under_construction = [e for e in self.under_construction if e[0] > 0]
         for _rounds, btype, *_site in finished:
             # Construction completing puts a building in NeedWorker, NOT in service.
+            # Capacities are the prefab's BuildingResourceStorage maxCapacity per resource
+            # (corpus "capacities"). A Shelter holds 100 people, not 400: with 400 the port
+            # kept offering "Send to Shelters" on a shelter Unity had already filled, and a
+            # plan that took that phantom option scored 2.79 here against 2.39 in the game.
+            cap = (C.get("capacities") or {}).get(btype, {})
             self.buildings.append({"name": f"{btype}_{len(self.buildings)}", "type": btype,
                                    "status": STATUS_NEED_WORKER, "assigned": 0,
                                    "trained": 0, "untrained": 0,
-                                   "resources": {"foodPacks": 0, "foodPacksCapacity": 400,
+                                   "resources": {"foodPacks": 0,
+                                                 "foodPacksCapacity": cap.get("foodPacks", 0),
                                                  "population": 0,
-                                                 "populationCapacity": 400},
+                                                 "populationCapacity": cap.get("population", 0)},
                                    "site_id": (_site[0] if _site else None)})
             # A kitchen that finishes construction is stocked at the next day reset, not
             # immediately -- it is still NeedWorker here.
@@ -551,7 +561,22 @@ class Economy:
         if not self.can_staff(index):
             return False
         if trained is None and untrained is None:
-            # Greedy, trained first -- what TryReassignWorkerCountToBuilding does.
+            # TryReassignWorkerCountToBuilding assigns EXACTLY `count` workers or nothing:
+            # it releases the building's current workers back to the pool, and if the
+            # reachable pool (free + released) is short of `count` it returns false with
+            # "Not enough workers to staff building". Measured on the 5901 validation run:
+            # Shelter Bravo, 2 free untrained, quantity 4 -> ok:false, nothing assigned,
+            # where the port had put the 2 on it. Greedy trained-first for the selection.
+            b = self.buildings[index]
+            reachable = (self.free_trained + self.free_untrained
+                         + b.get("trained", 0) + b.get("untrained", 0))
+            if count <= 0 or reachable < count:
+                return False
+            self.free_trained += b.get("trained", 0)
+            self.free_untrained += b.get("untrained", 0)
+            self.working_trained -= b.get("trained", 0)
+            self.working_untrained -= b.get("untrained", 0)
+            b["trained"] = b["untrained"] = 0
             trained = min(count, self.free_trained)
             untrained = min(count - trained, self.free_untrained)
         else:
