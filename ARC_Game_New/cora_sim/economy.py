@@ -96,6 +96,7 @@ def load_economy_constants(path=None):
         "consumption": d.get("consumption") or {},
         "production": d.get("production") or {},
         "capacities": d.get("capacities") or {},
+        "incompletePenalty": d.get("incompletePenalty") or {},
         # Per-building storage settings, keyed by TYPE. Measured from the running game:
         # communities start with 0 and do NOT waste (their food drains by consumption),
         # the motel wastes, and a Kitchen refills to 200 every day -- observed directly,

@@ -754,18 +754,23 @@ class TaskBoard:
         for task in list(self.awaiting.values()):
             task.rounds_remaining -= 1
 
-    def expire(self, counters: dict) -> None:
-        """CheckExpiredTasks: resolve everything at or below zero, AFTER generation ran."""
+    def expire(self, counters: dict) -> list:
+        """CheckExpiredTasks: resolve everything at or below zero, AFTER generation ran.
+        Returns the ids that expired now, for the caller's incomplete-task penalties."""
+        expired = []
         for task in list(self.active.values()):
             if task.rounds_remaining <= 0:
                 # An expired task resolves UNFULFILLED, but a lodging task still credits
                 # whatever actually got delivered -- resolved counts demand either way.
                 self.resolve(task, fulfilled=False, counters=counters)
                 del self.active[task.task_id]
+                expired.append(task.task_id)
         for task_id, task in list(self.awaiting.items()):
             if task.rounds_remaining <= 0 and not task.resolved:
                 # KEEP THE TASK SO A LATE LANDING CAN FIND IT (see the fleet-arrival loop).
                 self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+                expired.append(task_id)
+        return expired
 
     def age_and_expire(self, counters: dict) -> None:
         """Both halves back to back -- only for callers that have no generation between."""

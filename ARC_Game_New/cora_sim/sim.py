@@ -36,7 +36,7 @@ Segment 3 is skipped deliberately in TaskSystem.OnRoundChanged; it is not an off
 from __future__ import annotations
 
 from .clients import ClientTracker
-from .economy import Economy, step_round as economy_step
+from .economy import BUDGET_MAX, BUDGET_MIN, C as _ECON_C, Economy, step_round as economy_step
 from .flood import FloodState, update_flood
 from .floodmap import FloodMap
 from . import roads
@@ -46,6 +46,7 @@ from .triggers import INVENTORY as _INVENTORY
 
 # Task definitions by id, so a generated task carries its own choices.
 _TASK_SPEC = {t["taskId"]: t for t in _INVENTORY}
+_INCOMPLETE_PENALTY = {k: v for k, v in (_ECON_C.get("incompletePenalty") or {}).items() if not k.startswith("_")}
 from .triggers import roll_pass
 from .weather import RAIN_INTENSITY, generate_weather
 
@@ -573,6 +574,29 @@ def _land(w, _task_id, quantity, destination):
 
 
 
+def _incomplete_penalties(w: World, expired) -> None:
+    """ApplyTaskPenalties: an overdue Emergency/Demand task (ExpireTask -> Incomplete, or an
+    InProgress one via SetTaskIncomplete) applies the task's own impact list. The values
+    are MEASURED from the headless logs (corpus "incompletePenalty"): every incomplete
+    community food request is "Recorded budget change: 1" and satisfaction -1, 108 of 108
+    across the captures; a relocation costs satisfaction only. The TaskData assets in the
+    working tree list other impacts than the build applies, so the log is the source."""
+    table = _INCOMPLETE_PENALTY
+    if not table:
+        return
+    for tid in expired:
+        entry = w.generated_specs.get(tid)
+        if not entry or entry[2].get("taskType") not in ("Emergency", "Demand"):
+            continue
+        pen = table.get(entry[0])
+        if not pen:
+            continue
+        if pen.get("budget"):
+            w.economy.budget = max(BUDGET_MIN, min(BUDGET_MAX, w.economy.budget + int(pen["budget"])))
+        if pen.get("satisfaction"):
+            w.economy.satisfaction = max(0.0, min(100.0, w.economy.satisfaction + float(pen["satisfaction"])))
+
+
 def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     """Advance one round: segment bookkeeping, then generation, then flood.
 
@@ -710,7 +734,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
             w.economy.consumption_tick()
             # CheckExpiredTasks runs on the Update AFTER the advance: the dying task held its
             # slot through the generation pass above.
-            w.tasks.expire(w.economy.counters)
+            _incomplete_penalties(w, w.tasks.expire(w.economy.counters))
         w.segment = 1
     else:
         w.segment += 1
@@ -730,7 +754,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         if w.segment < ROUNDS_PER_DAY:
             w.economy.production_tick()
             w.economy.consumption_tick()
-            w.tasks.expire(w.economy.counters)
+            _incomplete_penalties(w, w.tasks.expire(w.economy.counters))
     w.generated = rolls
     # THE JOIN THAT MAKES THE SURROGATE SELF-DRIVING. generation_pass decides WHICH tasks
     # fire; without this the port produced a list of ids and created nothing, so it could

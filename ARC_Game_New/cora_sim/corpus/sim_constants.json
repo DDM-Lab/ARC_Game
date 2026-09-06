@@ -1293,5 +1293,16 @@
    "source": "Assets/Prefabs/Casework.prefab"
   }
  },
- "_enableMultipleDeliveries_source": "Assets/Scripts/Tasks/TaskData/*.asset (AgentChoice.enableMultipleDeliveries); not in the C# exporter yet"
+ "_enableMultipleDeliveries_source": "Assets/Scripts/Tasks/TaskData/*.asset (AgentChoice.enableMultipleDeliveries); not in the C# exporter yet",
+ "incompletePenalty": {
+  "_source": "ApplyTaskPenalties on ExpireTask/SetTaskIncomplete (Emergency/Demand tasks only). Values MEASURED from the headless logs (108/108: 'Recorded budget change: 1 - Task Incomplete Penalty from [Food Request From Community]', satisfaction -1; relocation satisfaction -1 only); the TaskData assets in the working tree list different impacts than the build applies.",
+  "Community_FoodRequest": {
+   "budget": 1,
+   "satisfaction": -1
+  },
+  "Community_TransportRequest": {
+   "budget": 0,
+   "satisfaction": -1
+  }
+ }
 }
