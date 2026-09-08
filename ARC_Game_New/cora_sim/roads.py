@@ -276,7 +276,7 @@ class Fleet:
     Kitchen->Community route was measured at 0 rounds one day and 5 the next.
     """
 
-    __slots__ = ("pos", "busy_seconds", "carrying", "damaged", "spec", "frame", "trip", "events")
+    __slots__ = ("pos", "busy_seconds", "carrying", "damaged", "spec", "frame", "trip", "events", "aborted")
 
     # Kept for callers that reference Fleet.DEPOTS; the live values come from the spec.
     DEPOTS = DEFAULT_MAP.depots
@@ -295,6 +295,7 @@ class Fleet:
         self.frame = 0                       # cumulative SIM frames since the game began
         self.trip = [None, None, None]       # per-vehicle in-flight state, see run_round
         self.events = None                   # set to a list to record (frame, kind, veh, id)
+        self.aborted = []                    # payloads abandoned by an empty-source load this round
 
     def clone(self):
         f = Fleet.__new__(Fleet)
@@ -306,6 +307,7 @@ class Fleet:
         f.frame = self.frame
         f.trip = [dict(t) if t else None for t in self.trip]
         f.events = None
+        f.aborted = list(self.aborted)
         return f
 
     def available(self):
@@ -560,6 +562,7 @@ class Fleet:
                         # +22, race (9 cells in 5 frames). 5901 step 10: abort +20, no pass
                         # at +21, normal trip landing the following step.
                         self.trip[v] = {"race_ready": self.frame + 1}
+                        self.aborted.append(t["payload"])
                         if self.events is not None: self.events.append((self.frame, "abort", v, t["payload"][0]))
                         continue
                     t["phase"], t["left"] = "boarding", 1

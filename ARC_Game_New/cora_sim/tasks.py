@@ -127,7 +127,7 @@ class TaskBoard:
     """Active tasks plus in-flight deliveries."""
 
     __slots__ = ("_late_arrivals", "active", "deliveries", "next_id", "awaiting", "has_supplier",
-                 "_sources", "queue", "busy", "fleet", "cell_for", "repair_for", "on_blocked",
+                 "_sources", "queue", "busy", "fleet", "cell_for", "repair_for", "on_blocked", "orphaned",
                  "retry_if_unsourced", "pending", "pending_seq", "flooded")
 
     def __init__(self, has_supplier=None, cell_for=None):
@@ -163,6 +163,7 @@ class TaskBoard:
         # None disables the check, which is what the pure-task suites want.
         self.retry_if_unsourced = None
         self.on_blocked = None      # World hook: a dropped delivery spawns a Road Blockage task
+        self.orphaned = set()       # task ids with a trip abandoned by an empty-source abort
         # Orders waiting for a vehicle, exactly DeliverySystem.pendingTasks. Entries are
         # [seq, (task_id, quantity, destination), src_cell, dst_cell, quantity], sorted by
         # creation order -- both handlers use priority 3, so priority never breaks a tie.
@@ -187,6 +188,7 @@ class TaskBoard:
         b.repair_for = dict(self.repair_for)
         b.retry_if_unsourced = self.retry_if_unsourced
         b.on_blocked = self.on_blocked
+        b.orphaned = set(self.orphaned)
         b.pending = [list(x) for x in self.pending]
         b.pending_seq = self.pending_seq
         b.flooded = self.flooded
@@ -547,7 +549,13 @@ class TaskBoard:
                                                counters["lodgingFulfilled"] + quantity)
 
     def _trips_outstanding(self, task_id) -> bool:
-        """Sibling trips of a multi-trip order still queued, loading or driving."""
+        """Sibling trips of a multi-trip order still queued, loading or driving -- or
+        ORPHANED: a trip whose vehicle found the source empty. LoadCargo's abort sets
+        currentTask = null and the DeliveryTask stays in activeTasks forever, so
+        AreAllLinkedDeliveriesComplete is never true and the parent can only close by
+        expiring (7002, task 72: Vehicle3's first Community03 trip)."""
+        if task_id in self.orphaned:
+            return True
         if any(o[1][0] == task_id for o in self.pending):
             return True
         f = self.fleet
@@ -586,6 +594,9 @@ class TaskBoard:
             arrived, dropped = list(_settling), []
         else:
             arrived, self.pending, dropped = self.fleet.run_round(self.pending, self.flooded, _load)
+            for _p in self.fleet.aborted:
+                self.orphaned.add(_p[0])
+            self.fleet.aborted = []
         # A vehicle stopped by flood spawns its repair task, which is why Unity answers
         # "Vehicle Repair Required" at round 6 and the port did not. Without it the port's
         # fleet never recovers on Unity's schedule.
@@ -820,7 +831,13 @@ class TaskBoard:
         for task_id, task in list(self.awaiting.items()):
             if task.rounds_remaining <= 0 and not task.resolved:
                 # KEEP THE TASK SO A LATE LANDING CAN FIND IT (see the fleet-arrival loop).
-                self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+                # SetTaskIncomplete / ExpireTask pass fulfilled: false. Only lodging still
+                # credits what landed (min(delivered, demand)); a food task that expires with
+                # one of two trips landed counts 0 -- the late-food credit, if any, comes when
+                # the OTHER trip completes (7002, task 72: one trip orphaned by an empty
+                # kitchen, so never).
+                self.resolve(task, fulfilled=(task.delivered > 0 and task.tag != "Food"),
+                             counters=counters)
                 expired.append(task_id)
         return expired
 

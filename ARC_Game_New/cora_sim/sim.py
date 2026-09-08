@@ -599,7 +599,13 @@ def _unity_round(w):
     the caseworkGen threshold 10 * 1.5^(Y-1), so the drift changes OUTCOMES on identical
     randoms -- which is exactly the step-8 residue the mark diff isolated.
     """
-    return w.segment + (w.day - 1) * ROUNDS_PER_DAY
+    # STALE ON THE LAST SEGMENT. currentRound is assigned inside OnRoundChanged, and the
+    # tracker never fires on segment 4 (no caseworkGen draw ever lands on r4), so a group
+    # registered while the clock reads d4r4 is stamped with r3's value: "Registered 63
+    # clients at Shelter_0 (Group: Relocate_47..., Round: 15)" under a d4r4 tag (5503). Stamping
+    # 16 put that group's departure a round late, so its casework roll credited 63 instead
+    # of the 15 left after the non-casework members had gone home.
+    return min(w.segment, ROUNDS_PER_DAY - 1) + (w.day - 1) * ROUNDS_PER_DAY
 
 
 def _create_tasks(w, rolls, day_changed):
