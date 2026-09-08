@@ -133,7 +133,7 @@ class World:
                  "facilities_for", "generated", "clients", "economy", "tasks",
                  "round_index", "_trigger_memory", "use_generation",
                  "pending_arrivals", "pending_removals", "_casework_live", "generated_specs", "_alerts_shown",
-                 "_emergency_count", "_last_emergency_round", "_sourced_now",
+                 "_emergency_count", "_last_emergency_round", "_sourced_now", "_pop_loaded",
                  "_food_reserved")
 
     def __init__(self, rng, weather, day=1, segment=0, flood=None, fmap=None,
@@ -171,6 +171,7 @@ class World:
         self.tasks.retry_if_unsourced = self._can_source
         self.tasks.on_blocked = self._blocked_delivery
         self._sourced_now = {}      # task -> packs already pulled this round
+        self._pop_loaded = {}       # (task, qty, dest) -> [people aboard, per trip, load order]
         self._food_reserved = 0     # packs promised to orders not yet loaded
         self.round_index = 0
         self._trigger_memory = {}       # stateful triggers (FloodExpanded, BudgetDropped)
@@ -196,14 +197,27 @@ class World:
         Only food is sourced from a building; a population relocation loads people from the
         community that asked, and that is checked when the choice is made.
         """
-        if getattr(task, "tag", "") == "BackToHome":
-            # LoadCargo: RemoveResource(Population, quantity) from the requesting facility;
-            # an empty source aborts the trip.
-            src = self.economy.facility(getattr(task, "source", "") or "")
-            have = ((src.get("resources") or {}).get("population") or 0) if src else 0
-            return min(quantity, have)
         if str(task.destination or "").startswith("__food__") is False:
-            return quantity
+            # PEOPLE LEAVE THE SOURCE AT THE LOAD, NOT THE LANDING. Vehicle.LoadCargo:
+            # actualLoaded = sourceStorage.RemoveResource(Population, quantity); <= 0 aborts
+            # (vehicle Idle, task kept); the vehicle carries actualLoaded and UnloadCargo
+            # deposits that. Debiting at the landing instead left the people in the Motel
+            # across a day change: 5501 step 16, 22 casework clients loaded at f733, the
+            # day-5 bill at f750 charged Unity 109,800 and the port 114,200 (22 x $200).
+            # The dispatch-time pre-check (no payload) only asks; the load (payload) takes.
+            source = (self.tasks._sources.get(task.task_id, "")
+                      or getattr(task, "source", "") or "")
+            src = self.economy.facility(source) if source else None
+            if src is None:
+                return quantity          # no modelled source (immediate/external supply)
+            have = (src.get("resources") or {}).get("population") or 0
+            loaded = min(quantity, have)
+            if payload is not None and loaded > 0:
+                self.economy.move_population(source, -loaded)
+                self._pop_loaded.setdefault(tuple(payload[:3]), []).append(loaded)
+                if source == "Motel":
+                    self.economy.motel_pop = self.economy.motel_population
+            return loaded
         chosen = getattr(task, "chosen_id", None)
         spec = (self.generated_specs.get(task.task_id) or (None, None, {}))[2]
         choice = next((c for c in (spec.get("choices") or [])
@@ -228,6 +242,15 @@ class World:
         if was_open:
             self.economy.satisfaction = max(0.0, min(100.0, self.economy.satisfaction
                                                      - _BLOCKAGE_FAILURE_PENALTY))
+        if loaded and not str(payload[2] or "").startswith("__food__"):
+            # StopVehicleDueToFlood -> ReturnCargoToSource: the people go back where they
+            # were loaded from (they left the source at LoadCargo, see _can_source).
+            source = (task.source if task is not None else "") or self.tasks._sources.get(payload[0], "")
+            back = _take_loaded(self, tuple(payload[:3]), 0)
+            if back and source:
+                self.economy.move_population(source, back)
+                if source == "Motel":
+                    self.economy.motel_pop = self.economy.motel_population
         _create_blockage_task(self, payload, loaded, task)
 
     def reserve_food(self, quantity):
@@ -351,6 +374,7 @@ class World:
         w.generated_specs = dict(self.generated_specs)
         w._alerts_shown = set(self._alerts_shown)
         w._sourced_now = dict(self._sourced_now)
+        w._pop_loaded = {k: list(v) for k, v in self._pop_loaded.items()}
         w._food_reserved = self._food_reserved
         w._emergency_count = self._emergency_count
         w._last_emergency_round = self._last_emergency_round
@@ -558,8 +582,8 @@ def _create_blockage_task(w, payload, loaded, parent):
         for c in choices[:2]:
             c["deliveryQuantity"] = quantity
     elif loaded:
-        # CreatePopulationLoadedChoices: clients returned to the source (the port never
-        # debited it -- people leave at the landing), one $1500 immediate transport.
+        # CreatePopulationLoadedChoices: clients returned to the source by
+        # ReturnCargoToSource (_blocked_delivery), one $1500 immediate transport.
         choices = [{"choiceId": 1, "triggersDelivery": False, "immediateDelivery": True,
                     "deliveryQuantity": quantity, "budgetDelayRounds": 0,
                     "destinationCategory": "Shelter", "enableMultipleDeliveries": False,
@@ -684,6 +708,18 @@ def _facility_positions(spec=None):
     return out
 
 
+def _take_loaded(w, key, quantity):
+    """What the vehicle for this trip actually carried (LoadCargo's actualLoaded), or the
+    nominal quantity when the trip never went through the load hook (tests, settle paths)."""
+    pool = w._pop_loaded.get(tuple(key))
+    if not pool:
+        return quantity
+    got = pool.pop(0)
+    if not pool:
+        w._pop_loaded.pop(tuple(key), None)
+    return got
+
+
 def _land(w, _task_id, quantity, destination):
     """One landed delivery: population moves, counters, client arrivals queued."""
     dest = str(destination or "")
@@ -718,7 +754,7 @@ def _land(w, _task_id, quantity, destination):
         # past this round's tracker, exactly as the nominal client group is.
         source = w.tasks._sources.get(_task_id, "")     # every trip, so no pop
         site = dest[len("__cw__"):]
-        loaded = -w.economy.move_population(source, -quantity) if source else quantity
+        loaded = _take_loaded(w, (_task_id, quantity, destination), quantity)
         actual = w.economy.move_population(site, loaded)
         if actual > 0 and source:
             w.clients.process_home(source, actual, w.economy.counters)
@@ -730,8 +766,7 @@ def _land(w, _task_id, quantity, destination):
     # Every trip debits its own load, so the source is looked up, not popped: a multi-site
     # order lands two trips and the second used to find no source.
     source = getattr(w.tasks, "_sources", {}).get(_task_id, "")
-    if source:
-        w.economy.move_population(source, -quantity)
+    loaded = _take_loaded(w, (_task_id, quantity, destination), quantity)
     if dest.startswith("Shelter:"):
         dest, _named = "Shelter", dest[len("Shelter:"):]
     else:
@@ -746,7 +781,7 @@ def _land(w, _task_id, quantity, destination):
         target = "Motel" if dest == "Motel" else (_named or next(
             (b["name"] for b in w.economy.buildings
              if b["type"] == "Shelter" and b["status"] == "InUse"), None))
-        moved = w.economy.move_population(target, quantity) if target else 0
+        moved = w.economy.move_population(target, loaded) if target else 0
         # TWO ClientGroups PER POPULATION DELIVERY. Unity registers the arrival from two
         # unrelated call sites and neither knows about the other:
         #   Vehicle.UnloadCargo -> HandlePopulationDelivery   count = ACTUAL, gated > 0
@@ -798,6 +833,31 @@ def _incomplete_penalties(w: World, expired) -> None:
             w.economy.satisfaction = max(0.0, min(100.0, w.economy.satisfaction + float(pen["satisfaction"])))
 
 
+
+def _rollover_pass(w, i, marks, rolls):
+    """One of the two OnTimeSegmentChanged invokes of a day change (segment 0, then 1).
+    The order INSIDE the pass is calibrated; do not reorder it."""
+    w.segment = i
+    # OnTimeSegmentAdvanced fires per ADVANCE, and the rollover advances twice, so a
+    # rounds=2 task created before it ages 2 -> 0 and expires inside this step.
+    w.tasks.age()
+    _tracker(w, marks)
+    _r = [r + (i,) for r in _pass(w, marks)]
+    rolls += _r
+    if w.use_generation:
+        _create_tasks(w, _r, True)
+    # BuildingResourceStorage.OnRoundChanged is subscribed after TaskSystem's, so on
+    # the same invoke consumption runs AFTER the generation pass: at the rollover's
+    # segment 0 the pass sees pre-consumption stock, and segment 1's sees the drained
+    # communities. That split is why Unity requests food for one community at pass 0
+    # and the other two at pass 1 -- and the queue order that follows from it decides
+    # which vehicle is left for a stranded assignment three rounds later.
+    w.economy.production_tick()
+    w.economy.consumption_tick()
+    # CheckExpiredTasks runs on the Update AFTER the advance: the dying task held its
+    # slot through the generation pass above.
+    _incomplete_penalties(w, w.tasks.expire(w.economy.counters))
+
 def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     """Advance one round: segment bookkeeping, then generation, then flood.
 
@@ -827,53 +887,23 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     The per-person granularity is load-bearing: a 300-person relocation advances the stream
     301 places, so getting it wrong makes every later draw in the round read someone else's
     randoms."""
-    # DELIVERIES SIMULATE AT THE HEAD OF THE STEP, BEFORE THE SEGMENT ADVANCE.
-    # The draw-for-draw mark diff settles this. Unity's step 6 on seed 5901 reads
-    #   caseworkNeed x100, stayDuration, caseworkNeed x100, stayDuration, caseworkGen x2,
-    #   TaskTrigger x3, Flood...
-    # and the port's read was that same tail with the whole client block missing, because
-    # the tick sat at the END of the step and its arrivals were deferred to the next one.
-    # Unity's vehicles finish during the simulation phase (f307-f315), which precedes the
-    # segment advance that runs the tracker update and generation (f319). Ticking here and
-    # consuming pending_arrivals immediately below puts the client draws where Unity has
-    # them. The flooded set read here is deliberately the PREVIOUS round's post-spread set:
-    # the vehicles drove before this round's flood update, so that is the map they saw.
-    w.tasks.flooded = w.flooded_road_cells()      # post-spread, for this round's driving
-    _late = []
-    _late_nominal = []                # OnVehicleDeliveryCompleted groups that fire at +35
-    _late_removals = []               # ... and its casework removals, same tick
-    for _e in w.tasks.tick(w.economy.counters):
-        if len(_e) > 3 and _e[3] == "late":
-            _late.append(_e)          # epilogue unload: after this round's invoke
-            continue
-        _n = len(w.pending_arrivals)
-        _m = len(w.pending_removals)
-        _land(w, _e[0], _e[1], _e[2])
-        if len(_e) > 3 and _e[3] == "split":
-            # Unloaded on the last movement frame: the actual group registers now, the
-            # nominal group (queued last by _land) at completion, after the flood.
-            if len(w.pending_arrivals) > _n:
-                _late_nominal.append(w.pending_arrivals.pop())
-            if len(w.pending_removals) > _m:
-                _late_removals.append(w.pending_removals.pop())
-        else:
-            # Completion is the tick after unload, BEFORE the next vehicle's unload, so a
-            # casework landing's two removals hit the tracker back to back (5503: 23, 23,
-            # 19, 19 -- not 23, 19, 23, 19). Batching them after the loop hits different
-            # groups and deducts the needy count from the wrong one.
-            _apply_removals(w)
-    _apply_removals(w)
-    arrivals = list(arrivals) + w.pending_arrivals
-    w.pending_arrivals = []
-    # ARRIVAL STAMP vs UPDATE ROUND. Unity stamps arrivalRound = currentRound at the DELIVERY
-    # instant, which is still the pre-advance segment; CheckClientStayDurations then runs after
-    # OnRoundChanged has bumped currentRound. So the first caseworkGen draw sees Y = 1, and each
-    # later round adds one. Stamping and evaluating at the same index made every later Y one
-    # short, and Y drives the threshold 10 * 1.5^(Y-1) -- identical randoms, different outcomes.
-    for count, facility in arrivals:
-        # Unity stamps arrivalRound at the DELIVERY instant, which is still pre-advance.
+    # THE DAY ROLLOVER'S FIRST PASS PRECEDES THE DRIVING. Every validation log puts
+    # `gen:pass dNr0` on the same frame as that step's `round:length`, i.e. GlobalClock
+    # advances 4 -> day+1/0 when the step begins, and the tracker, ageing, generation,
+    # production/consumption and expiry of that invoke all run BEFORE the vehicles move;
+    # the second invoke (segment 1) fires at the end of the driving, where a normal step's
+    # advance does. 5501 step 16: Unity's tracker sends 78 caseworkless clients home at
+    # f750, the casework vehicle lands at f755 and finds a group of 20 (credit 20); the
+    # port landed first and removed 22 twice (44). Pass 1 still runs after the ticks.
+    # PLANNING-PHASE ARRIVALS DRAW BEFORE THE ROLLOVER'S FIRST PASS. An immediate
+    # relocation answered in the planning phase registers its two client groups at the
+    # choice (5503 s16 f751: choice:at, caseworkNeed x63, stayDuration, x63, stayDuration),
+    # and the day change -- Weather.select, the tracker's caseworkGen, the generation pass
+    # -- follows at round:advance (f753). They are stamped with the PRE-advance round
+    # ("Round: 15" there), so they register here, before anything advances.
+    for count, facility in list(arrivals) + w.pending_arrivals:
         w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
-
+    w.pending_arrivals = []
     rolls = []
     day_changed = w.segment >= ROUNDS_PER_DAY
     if day_changed:
@@ -927,27 +957,57 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
                                    "taskTitle": f"Day {w.day} Start of Day Report",
                                    "taskType": "Alert", "taskTag": "None", "choices": []})
         w.tasks.next_id += 1
-        for i in range(_ROLLOVER_PASSES):
-            w.segment = i
-            # OnTimeSegmentAdvanced fires per ADVANCE, and the rollover advances twice, so a
-            # rounds=2 task created before it ages 2 -> 0 and expires inside this step.
-            w.tasks.age()
-            _tracker(w, marks)
-            _r = [r + (i,) for r in _pass(w, marks)]
-            rolls += _r
-            if w.use_generation:
-                _create_tasks(w, _r, day_changed)
-            # BuildingResourceStorage.OnRoundChanged is subscribed after TaskSystem's, so on
-            # the same invoke consumption runs AFTER the generation pass: at the rollover's
-            # segment 0 the pass sees pre-consumption stock, and segment 1's sees the drained
-            # communities. That split is why Unity requests food for one community at pass 0
-            # and the other two at pass 1 -- and the queue order that follows from it decides
-            # which vehicle is left for a stranded assignment three rounds later.
-            w.economy.production_tick()
-            w.economy.consumption_tick()
-            # CheckExpiredTasks runs on the Update AFTER the advance: the dying task held its
-            # slot through the generation pass above.
-            _incomplete_penalties(w, w.tasks.expire(w.economy.counters))
+        _rollover_pass(w, 0, marks, rolls)
+    # DELIVERIES SIMULATE AT THE HEAD OF THE STEP, BEFORE THE SEGMENT ADVANCE.
+    # The draw-for-draw mark diff settles this. Unity's step 6 on seed 5901 reads
+    #   caseworkNeed x100, stayDuration, caseworkNeed x100, stayDuration, caseworkGen x2,
+    #   TaskTrigger x3, Flood...
+    # and the port's read was that same tail with the whole client block missing, because
+    # the tick sat at the END of the step and its arrivals were deferred to the next one.
+    # Unity's vehicles finish during the simulation phase (f307-f315), which precedes the
+    # segment advance that runs the tracker update and generation (f319). Ticking here and
+    # consuming pending_arrivals immediately below puts the client draws where Unity has
+    # them. The flooded set read here is deliberately the PREVIOUS round's post-spread set:
+    # the vehicles drove before this round's flood update, so that is the map they saw.
+    w.tasks.flooded = w.flooded_road_cells()      # post-spread, for this round's driving
+    _late = []
+    _late_nominal = []                # OnVehicleDeliveryCompleted groups that fire at +35
+    _late_removals = []               # ... and its casework removals, same tick
+    for _e in w.tasks.tick(w.economy.counters):
+        if len(_e) > 3 and _e[3] == "late":
+            _late.append(_e)          # epilogue unload: after this round's invoke
+            continue
+        _n = len(w.pending_arrivals)
+        _m = len(w.pending_removals)
+        _land(w, _e[0], _e[1], _e[2])
+        if len(_e) > 3 and _e[3] == "split":
+            # Unloaded on the last movement frame: the actual group registers now, the
+            # nominal group (queued last by _land) at completion, after the flood.
+            if len(w.pending_arrivals) > _n:
+                _late_nominal.append(w.pending_arrivals.pop())
+            if len(w.pending_removals) > _m:
+                _late_removals.append(w.pending_removals.pop())
+        else:
+            # Completion is the tick after unload, BEFORE the next vehicle's unload, so a
+            # casework landing's two removals hit the tracker back to back (5503: 23, 23,
+            # 19, 19 -- not 23, 19, 23, 19). Batching them after the loop hits different
+            # groups and deducts the needy count from the wrong one.
+            _apply_removals(w)
+    _apply_removals(w)
+    arrivals = w.pending_arrivals          # this step's landings (the planning-phase ones went above)
+    w.pending_arrivals = []
+    # ARRIVAL STAMP vs UPDATE ROUND. Unity stamps arrivalRound = currentRound at the DELIVERY
+    # instant, which is still the pre-advance segment; CheckClientStayDurations then runs after
+    # OnRoundChanged has bumped currentRound. So the first caseworkGen draw sees Y = 1, and each
+    # later round adds one. Stamping and evaluating at the same index made every later Y one
+    # short, and Y drives the threshold 10 * 1.5^(Y-1) -- identical randoms, different outcomes.
+    for count, facility in arrivals:
+        # Unity stamps arrivalRound at the DELIVERY instant, which is still pre-advance.
+        w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
+
+    if day_changed:
+        # PASS 0 ALREADY RAN, before the vehicles drove (see the top of this function).
+        _rollover_pass(w, 1, marks, rolls)
         w.segment = 1
     else:
         w.segment += 1
