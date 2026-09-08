@@ -486,6 +486,22 @@ class TaskBoard:
             self.pending.append([self.pending_seq, (task_id, q, tag), src_cell, dst, q])
             self.pending_seq += 1
 
+    def answer_legs(self, task_id, legs):
+        """One answered task, several trips with their OWN sources (a MultiSourceSingleDest
+        choice: one order per kitchen). `legs` = [(quantity, src_cell, dst_cell, tag)]."""
+        task = self.active.pop(task_id, None)
+        if task is None:
+            return
+        task.chosen = sum(q for q, _s, _d, _t in legs)
+        task.destination = legs[0][3] if legs else ""
+        self._sources = getattr(self, "_sources", {})
+        if task.source:
+            self._sources[task_id] = task.source
+        self.awaiting[task_id] = task
+        for q, src, dst, tag in legs:
+            self.pending.append([self.pending_seq, (task_id, q, tag), src, dst, q])
+            self.pending_seq += 1
+
     def choose(self, task_id, quantity=0, immediate=True, latency=None, destination=""):
         """Answer a task's choice.
 
@@ -588,7 +604,7 @@ class TaskBoard:
             if self.retry_if_unsourced is None:
                 return qty
             task = self.active.get(payload[0]) or self.awaiting.get(payload[0])
-            return qty if task is None else self.retry_if_unsourced(task, qty)
+            return qty if task is None else self.retry_if_unsourced(task, qty, payload)
 
         if _settling:
             arrived, dropped = list(_settling), []

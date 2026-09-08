@@ -40,7 +40,7 @@ from .economy import BUDGET_MAX, BUDGET_MIN, C as _ECON_C, Economy, step_round a
 from .flood import FloodState, update_flood
 from .floodmap import FloodMap
 from . import roads
-from .tasks import Task, TaskBoard, demand_of
+from .tasks import Task, TaskBoard, demand_of, VEHICLE_CAPACITY
 from .generation import TriggerContext, generation_pass, suitable_facilities
 from .triggers import INVENTORY as _INVENTORY
 
@@ -190,7 +190,7 @@ class World:
         # second Relocation.
         self._last_emergency_round = 0
 
-    def _can_source(self, task, quantity):
+    def _can_source(self, task, quantity, payload=None):
         """Packs the kitchens could hand a vehicle right now, for LoadCargo's abort test.
 
         Only food is sourced from a building; a population relocation loads people from the
@@ -210,10 +210,15 @@ class World:
                        if c.get("choiceId") == chosen), None)
         if (choice or {}).get("immediateDelivery"):
             return quantity          # external supply, no kitchen involved
-        got = _source_food(self, quantity)
+        # The trip's own kitchen (LoadCargo removes from sourceBuilding), carried in the
+        # payload tag after the '|'; older single-kitchen tags fall back to any kitchen.
+        tag = str(payload[2] or "") if payload else str(task.destination or "")
+        kitchen = tag.split("|", 1)[1] if "|" in tag else None
+        got = _source_food(self, quantity, kitchen)
         self._food_reserved = max(0, self._food_reserved - quantity)
         if got:
-            self._sourced_now[task.task_id] = got
+            # Accumulate: two trips of one order can both load before either lands.
+            self._sourced_now[task.task_id] = self._sourced_now.get(task.task_id, 0) + got
         return got
 
     def _blocked_delivery(self, payload, loaded, task, was_open):
@@ -689,10 +694,17 @@ def _land(w, _task_id, quantity, destination):
                        if c.get("choiceId") == (task.chosen_id if task else None)), None)
         # Already pulled by the LoadCargo check; pulling again would double-charge the
         # kitchen and let a 200-pack kitchen fill four orders.
-        sourced = (quantity if (choice or {}).get("immediateDelivery")
-                   else w._sourced_now.pop(_task_id, 0))
+        if (choice or {}).get("immediateDelivery"):
+            sourced = quantity
+        else:
+            pool = w._sourced_now.get(_task_id, 0)
+            sourced = min(quantity, pool)
+            if pool - sourced > 0:
+                w._sourced_now[_task_id] = pool - sourced
+            else:
+                w._sourced_now.pop(_task_id, None)
         if sourced:
-            w.economy.add_food(dest[len("__food__"):], sourced)
+            w.economy.add_food(dest[len("__food__"):].split("|")[0], sourced)
         if task is not None:
             task.delivered = sourced
         return
@@ -1101,70 +1113,50 @@ def answer(w: World, task_id, choice_id) -> bool:
         # which is how Unity's food requests for that community stop.
         task.source = ""                      # food does not move people out of anywhere
         immediate = bool(choice.get("immediateDelivery"))
-        # An infeasible choice is still ANSWERABLE; it just delivers nothing, and the task
-        # resolves unfulfilled when the delivery comes due.
-        # Sourcing happens when the delivery LANDS, not when the order is placed. Measured:
-        # Unity's kitchen is stocked by the day reset at the END of the round a food order
-        # is answered, and that order still fulfils the next round -- so the food is pulled
-        # at arrival. Sourcing at answer time made the order fail against an empty kitchen
-        # and left the port a round behind (unity resolved 1 at round 5, port 0).
         task.chosen_id = choice_id
-        # No latency is computed here any more. The order is placed; the FLEET decides when
-        # it arrives, during the round, exactly as ProcessPendingTasks does. Costing the
-        # trip at answer time is what made the port land five orders in a round where Unity
-        # landed two.
-        _kitchen = next((b["name"] for b in w.economy.buildings
-                         if b["type"] == "Kitchen" and b["status"] == "InUse"), None)
-        # NOT gated on effectiveStock here. FoodDeliveryHandler has TWO exits when it
-        # cannot send, and they resolve the task differently: the destination-inbound branch
-        # calls CompleteTask (resolved AND fulfilled), while the no-kitchen-stock branch
-        # returns false and completes nothing. Gating both the same way made four traces
-        # read foodResolved 0 against Unity's 1. Which branch each request takes has to be
-        # measured before this is re-attempted -- see diag_orders.
-        _lat = None
-        # `_lat in (None, False)` was WRONG twice over: the flag was inverted, and
-        # `0 in (None, False)` is True because 0 == False in Python -- so a delivery
-        # measured as landing THIS round was thrown away and replaced by the fitted 4.
-        # Identity tests only.
-        _cut = _lat is False
-        _measured = _lat is not None and _lat is not False
-        # NO reservation at order time. FoodDeliveryHandler's effectiveStock rule reads as
-        # though a 200-pack kitchen can only spawn two 100-pack orders, and I implemented
-        # that -- then the delivery:queue marks refuted it: Unity creates THREE food orders
-        # in a single round, to three different communities, against that same kitchen.
-        #
-        #   d2r1: created 3 [Community01, Community03, Community02]   completed 1
-        #   d3r1: created 3 [Community02, Community01, Community03]   completed 1
-        #
-        # Creation is not the limiter. Completion is: three vehicles are shared with the
-        # population relocations answered in the same round, and each trip is two legs.
-        # A DELIVERING CHOICE THAT CANNOT QUEUE ITS DELIVERY IS REJECTED OUTRIGHT.
-        # CompleteTaskAction returns false when ExecuteGeneratorDelivery queues nothing:
-        # no impacts applied, no SetTaskInProgress, and SelectTaskChoiceHeadless reports the
-        # action as failed. The task simply stays on the board, unanswered.
-        #
-        # That is why Unity turns three answered food requests into ONE delivery. Two of
-        # them cannot route from the kitchen -- the flood cuts (-5, 0) -- so those two
-        # answers FAIL and their tasks remain active. The port accepted all three.
-        if not immediate and _kitchen:
-            _src = w._facility_cell(_kitchen)
-            _dst = w._facility_cell(str(_facility))
-            if (_src is None or _dst is None
-                    or roads.path_length(_src, _dst, w.flooded_road_cells()) is None):
-                if not choice.get("enableMultipleDeliveries"):
-                    return False
-                w.economy.apply_choice(task.tag, choice.get("impacts"),
-                                       choice.get("budgetDelayRounds", 0) or 0, "", 0)
-                return _park_blocked(w, task_id, task, choice_id)
-        task.source = _kitchen or ""
-        w.tasks.answer(task_id, 0 if _cut else demanded, immediate=immediate,
-                       latency=_lat if _measured else None,
-                       destination="__food__" + str(_facility),
-                       counters=w.economy.counters,
-                       latency_measured=_measured,
-                       destination_facility=str(_facility))
+        facility = str(_facility)
         if immediate:
-            _land_now("food", demanded, str(_facility))
+            w.tasks.answer(task_id, demanded, immediate=True, destination="__food__" + facility,
+                           counters=w.economy.counters, destination_facility=facility)
+            _land_now("food", demanded, facility)
+            w.economy.apply_choice(task.tag, choice.get("impacts"),
+                                   choice.get("budgetDelayRounds", 0) or 0, "", 0)
+            return True
+        # THE KITCHEN ORDER IS A MULTI-DELIVERY (choices 0/1: enableMultipleDeliveries), so
+        # ExecuteGeneratorDelivery routes it to ExecuteMultipleDeliveries ->
+        # ExecuteMultiSourceSingleDest, NOT to FoodDeliveryHandler.Execute. FindMultipleSources
+        # takes every operational kitchen holding food, FindObjectsOfType order (newest
+        # first), Take(3); each gets CreateDeliveryTask for the choice's FULL Fixed quantity
+        # (route-checked, capacity-chunked). Two reachable kitchens therefore ship 2x the
+        # request (6001, s22: Kitchen_5 AND Kitchen_9 -> Community03), and a kitchen whose
+        # route is flood-cut is simply skipped -- the port used to route every order from
+        # the first in-use kitchen and reject the answer when THAT route was cut (6001,
+        # step 21: two of three orders lost). No creation -> the multi rule: impacts applied,
+        # task parked InProgress until it expires.
+        kitchens = [b for b in w.economy.buildings if b["type"] == "Kitchen"][::-1]
+        kitchens = [k for k in kitchens if k["status"] == "InUse"
+                    and ((k.get("resources") or {}).get("foodPacks") or 0) > 0][:_CASEWORK_DESTS]
+        dst = w._facility_cell(facility)
+        flooded = w.flooded_road_cells()
+        legs = []
+        for k in kitchens:
+            src = w._facility_cell(k["name"])
+            if src is None or dst is None or roads.path_length(src, dst, flooded) is None:
+                continue
+            remaining = demanded
+            while remaining > 0:
+                q = min(remaining, VEHICLE_CAPACITY)
+                legs.append((q, src, dst, "__food__" + facility + "|" + k["name"]))
+                remaining -= q
+        if not legs:
+            if not choice.get("enableMultipleDeliveries"):
+                return False
+            w.economy.apply_choice(task.tag, choice.get("impacts"),
+                                   choice.get("budgetDelayRounds", 0) or 0, "", 0)
+            return _park_blocked(w, task_id, task, choice_id)
+        task.source = legs[0][3].split("|")[1]
+        w.tasks.flooded = flooded
+        w.tasks.answer_legs(task_id, legs)
         w.economy.apply_choice(task.tag, choice.get("impacts"),
                                choice.get("budgetDelayRounds", 0) or 0, "", 0)
         return True
@@ -1456,7 +1448,7 @@ def _offered(w: World, choice, tag) -> bool:
     return _has_destination_space(w, choice)
 
 
-def _source_food(w: World, quantity) -> int:
+def _source_food(w: World, quantity, kitchen=None) -> int:
     """Pull food packs out of the operational kitchens, up to `quantity`.
 
     DeliverySystem moves the food OUT of the kitchen, so a 200-pack kitchen fills two
@@ -1466,6 +1458,8 @@ def _source_food(w: World, quantity) -> int:
     for k in w.economy.operational("Kitchen"):
         if remaining <= 0:
             break
+        if kitchen is not None and k["name"] != kitchen:
+            continue
         res = k.get("resources") or {}
         take = min(res.get("foodPacks", 0) or 0, remaining)
         if take > 0:
