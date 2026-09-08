@@ -485,6 +485,17 @@ class Fleet:
                             ready.remove(v)
                             queue.pop(0)
                             continue
+                        # The cargo IS aboard: 5802 s6, Vehicle3 aborted at f307, raced at
+                        # f308 and unloaded "nominal 100, actual 100" from Community01 at
+                        # f317, with Community01 down 100. LoadCargo ran, so the source is
+                        # debited here, on the race frame (there is no source leg).
+                        if load is not None and load(payload, qty) <= 0:
+                            self.trip[v] = {"race_ready": self.frame + 1}
+                            self.aborted.append(payload)
+                            if self.events is not None: self.events.append((self.frame, "abort", v, payload[0]))
+                            ready.remove(v)
+                            queue.pop(0)
+                            continue
                         self.trip[v] = {"payload": payload, "src": src, "dst": dst, "qty": qty,
                                         "phase": "to_dst", "left": max(1, -(-leg2 // 2)) + 1}
                         self.carrying[v] = payload
