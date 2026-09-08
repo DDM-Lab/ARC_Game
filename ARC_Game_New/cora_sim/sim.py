@@ -1176,6 +1176,9 @@ def answer(w: World, task_id, choice_id) -> bool:
     if (demanded > 0 and dest_cat == "Shelter" and choice.get("enableMultipleDeliveries")
             and choice.get("triggersDelivery") and not choice.get("immediateDelivery")):
         return _answer_multi_shelter(w, task_id, task, choice, choice_id, str(_facility), demanded)
+    if (demanded > 0 and dest_cat == "Shelter" and choice.get("enableMultipleDeliveries")
+            and choice.get("immediateDelivery")):
+        return _answer_multi_shelter_immediate(w, task_id, task, choice, choice_id, str(_facility), demanded)
     if demanded > 0 and dest_cat in ("Motel", "Shelter"):
         src = w.economy.facility(str(_facility))
         available = ((src.get("resources") or {}).get("population") or 0) if src else 0
@@ -1363,6 +1366,49 @@ def _answer_multi_shelter(w: World, task_id, task, choice, choice_id, facility, 
     task.chosen_id = choice_id
     w.tasks.flooded = flooded
     w.tasks.answer_multi(task_id, src, legs)
+    return True
+
+
+def _answer_multi_shelter_immediate(w: World, task_id, task, choice, choice_id, facility, demanded) -> bool:
+    """The immediate multi-delivery "Send to Shelters" (Community_TransportRequest 2):
+    ExecuteSingleSourceMultiDest -> ExecuteImmediateDeliveryBetween per destination.
+
+    Destinations as for the vehicle variant (every operational shelter with space, newest
+    first, Take(3)), quantityPerDest = max(1, total / n). Each transfer removes what the
+    source has, deposits what the shelter takes, returns the overflow, and registers the
+    ACTUAL arrivals twice -- once unconditionally ("Delivery_Vehicle_<id>", so an empty
+    transfer still registers a 0-person group and draws its stay duration), once more for
+    a Community -> Shelter move when anyone arrived ("Multi_<id>_..."). The task completes
+    either way with nothing credited as delivered. The port used to send everyone to the
+    FIRST shelter: full on 6001 at step 21, so 100 people Unity housed in Shelter Bravo
+    stayed in Community Amherst."""
+    sites = []
+    for b in [x for x in w.economy.buildings if x["type"] == "Shelter"][::-1]:
+        if b["status"] != "InUse":
+            continue
+        res = b.get("resources") or {}
+        cap = res.get("populationCapacity")
+        if cap is not None and cap - (res.get("population") or 0) <= 0:
+            continue
+        sites.append(b["name"])
+        if len(sites) >= _CASEWORK_DESTS:
+            break
+    per = max(1, demanded // len(sites)) if sites else 0
+    for name in sites:
+        removed = -w.economy.move_population(facility, -per)
+        delivered = w.economy.move_population(name, removed)
+        if delivered < removed:
+            w.economy.move_population(facility, removed - delivered)
+        w.pending_arrivals.append((delivered, name))
+        if delivered > 0:
+            w.pending_arrivals.append((delivered, name))
+    task.source = facility
+    task.chosen_id = choice_id
+    w.economy.apply_choice(task.tag, choice.get("impacts"),
+                           choice.get("budgetDelayRounds", 0) or 0, "Shelter", 0)
+    w.tasks.answer(task_id, 0, immediate=True, destination="Shelter",
+                   counters=w.economy.counters, destination_facility=sites[0] if sites else "",
+                   credit_delivered=False)
     return True
 
 
