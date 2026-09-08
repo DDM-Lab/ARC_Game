@@ -53,7 +53,11 @@ def play(row, port, out_dir, rounds=32):
     out = os.path.abspath(os.path.join(out_dir, f"staff_{seed}.json"))
     if os.path.exists(out):
         raise SystemExit(f"refusing to overwrite {out}")
-    w = fresh_world(dict(captured_seeds())[seed], FloodMap.load())
+    if row.get("seed_state"):                 # evolve.py stores the xorshift state per row;
+        state = tuple(int(x) & 0xFFFFFFFF for x in row["seed_state"])   # the old captures are gone
+    else:
+        state = dict(captured_seeds())[seed]
+    w = fresh_world(state, FloodMap.load())
     model = CoraActions(random.Random(0))
     os.environ["ARC_SNAPSHOT_DEBUG"] = "1"      # RNGCTX marks: diag_marks needs them to find the first divergent draw
     env = SearchableEnv(unity_exe_path=EXE, unity_port=port, seed=seed, auto_start_unity=True,

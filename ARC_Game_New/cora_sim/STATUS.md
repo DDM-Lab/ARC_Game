@@ -7,24 +7,28 @@ stream is identical draw-for-draw, and every reward counter, the budget and the 
 agree at every round. These are off-policy plans that build casework sites, strand vehicles
 in floods, run two kitchens and go into debt -- mechanics the earlier LLM-played captures
 never touched. The 14 earlier calibration captures were lost with the session scratchpad;
-regenerate them (validate_plan.py writes the harness format) before the replay ratchet is
-meaningful again.
+`runs/validate` is the ratchet corpus now (`test_lockstep`, part of `test_all`, fails unless
+every seed there is exact). The other ten evolved seeds (5501 5502 5504 5601 5701 5801 5802
+6101 7001 7003) were launched on headless with `runs/validate/run_batch.sh` on 2026-09-08 --
+check `runs/validate/batch.log` and `python -m cora_sim.debug_lockstep` for their verdicts;
+NOTHING beyond the four seeds above has been checked yet.
 
     make the numbers yourself, never quote them from memory:
       python -m cora_sim.debug_lockstep                    # every validated seed + the open-bug list
       python -m cora_sim.debug_lockstep 5503               # interactive: board / fleet / groups / draws per step
       python -m cora_sim.diag_lockstep runs/evo14.jsonl 5503
-    make the numbers yourself, never quote them from memory:
+      python -m cora_sim.validate_plan runs/evo14.jsonl 5501 --port 21050   # add a seed (needs Unity, no sandbox)
+    older instruments (need STAFF_TRACES captures in the harness format):
       STAFF_TRACES=<dir>/staff_*.json python -m cora_sim.test_replay_forward   # counters, per round
       STAFF_TRACES=<dir>/staff_*.json python -m cora_sim.diag_marks            # draws, per step
       STAFF_TRACES=<dir>/staff_*.json python -m cora_sim.diag_magnitude        # sum |unity - port|
-      python -m cora_sim.test_all                                              # 12 suites + ratchet
+      python -m cora_sim.test_all                                              # all suites + both ratchets
 
 ## What it is for
 
-A Python transition function for RHEA / MCTS: `World.clone()` + `step_round()`, ~520 us per
-step from a mid-episode state (~1,900 search steps/s single-threaded); an idle 32-round
-episode is ~6 ms, a fully action-bearing one ~16 ms. Map data comes from `maps/*.json`
+A Python transition function for RHEA / MCTS: `World.clone()` + `step_round()`, ~390 us per
+clone+apply+step from a mid-episode state (measured 2026-09-08 after the casework/blockage
+ports; ~2,500 search steps/s single-threaded); an idle 32-round episode is ~7 ms, a fully action-bearing one ~16 ms. Map data comes from `maps/*.json`
 (`MapSpec`), constants from `corpus/sim_constants.json` -- both dumped from the running game.
 The per-frame fleet and the flood update dominate the profile; nothing has been optimised.
 
