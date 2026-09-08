@@ -127,7 +127,7 @@ class TaskBoard:
     """Active tasks plus in-flight deliveries."""
 
     __slots__ = ("_late_arrivals", "active", "deliveries", "next_id", "awaiting", "has_supplier",
-                 "_sources", "queue", "busy", "fleet", "cell_for", "repair_for",
+                 "_sources", "queue", "busy", "fleet", "cell_for", "repair_for", "on_blocked",
                  "retry_if_unsourced", "pending", "pending_seq", "flooded")
 
     def __init__(self, has_supplier=None, cell_for=None):
@@ -162,6 +162,7 @@ class TaskBoard:
         # Injected: how much of `quantity` the source can actually supply right now.
         # None disables the check, which is what the pure-task suites want.
         self.retry_if_unsourced = None
+        self.on_blocked = None      # World hook: a dropped delivery spawns a Road Blockage task
         # Orders waiting for a vehicle, exactly DeliverySystem.pendingTasks. Entries are
         # [seq, (task_id, quantity, destination), src_cell, dst_cell, quantity], sorted by
         # creation order -- both handlers use priority 3, so priority never breaks a tie.
@@ -185,6 +186,7 @@ class TaskBoard:
         b.cell_for = self.cell_for
         b.repair_for = dict(self.repair_for)
         b.retry_if_unsourced = self.retry_if_unsourced
+        b.on_blocked = self.on_blocked
         b.pending = [list(x) for x in self.pending]
         b.pending_seq = self.pending_seq
         b.flooded = self.flooded
@@ -319,12 +321,13 @@ class TaskBoard:
         where only one relocation is actually delivered.
         """
         dest = str(destination or "")
+        named = "Shelter:" + dest
         total = 0
         for _seq, payload, _src, _dst, qty in self.pending:
-            if str(payload[2] or "") == dest:
+            if str(payload[2] or "") in (dest, named):
                 total += qty
         for load in self.fleet.carrying:
-            if load is not None and str(load[2] or "") == dest:
+            if load is not None and str(load[2] or "") in (dest, named):
                 total += load[1]
         return total
 
@@ -586,14 +589,33 @@ class TaskBoard:
         # A vehicle stopped by flood spawns its repair task, which is why Unity answers
         # "Vehicle Repair Required" at round 6 and the port did not. Without it the port's
         # fleet never recovers on Unity's schedule.
+        for _payload, _loaded in dropped:
+            # StopVehicleDueToFlood, in its order: TriggerRoadBlockageTask (HandleDeliveryFailure
+            # on the parent, then the Road Blockage Emergency task), TriggerVehicleRepairTask,
+            # then RemoveActiveDeliveryTask -- which fires DeliverySystem.OnTaskCompleted, so
+            # TaskSystem.OnDeliveryTaskCompleted sees a delivery "completing" for a parent
+            # that HandleDeliveryFailure has just closed: wasAlreadyCompleted, deliveredQuantity
+            # += quantity, AddLateDelivery. A stranded relocation is therefore CREDITED as
+            # fulfilled (5503 validation, round 15: lodgingFulfilled 500 -> 600 with nobody
+            # housed). HandleDeliveryFailure itself records no resolution: the parent leaves
+            # the board Incomplete with its demand never counted, and costs
+            # deliveryFailureSatisfactionPenalty (10) if it was still InProgress.
+            _tid, _q = _payload[0], _payload[1]
+            task = self.active.pop(_tid, None) or self.awaiting.pop(_tid, None)
+            was_open = task is not None and not task.resolved
+            if task is not None:
+                task.resolved = True
+            if self.on_blocked is not None:
+                self.on_blocked(_payload, _loaded, task, was_open)
+            if task is not None and _q > 0:
+                task.delivered += _q
+                if task.tag == "Lodging":
+                    counters["lodgingFulfilled"] = min(counters["lodgingResolved"],
+                                                       counters["lodgingFulfilled"] + _q)
+            self._sources.pop(_tid, None)
         for _v, _dam in enumerate(self.fleet.damaged):
             if _dam and _v not in self.repair_for.values():
                 self.open_repair_task(_v)
-        for _tid, _q, _d in dropped:
-            # Removed with no resolution recorded, exactly as HandleDeliveryFailure does:
-            # off the board, out of the metrics, as if it had never been answered.
-            self.awaiting.pop(_tid, None)
-            self.active.pop(_tid, None)
         for _entry in arrived:
             task_id, quantity, destination = _entry[0], _entry[1], _entry[2]
             zombie = len(_entry) > 3 and _entry[3] == "zombie"

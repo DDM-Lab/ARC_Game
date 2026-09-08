@@ -84,11 +84,12 @@ def drive_step(w, m, step, gene):
     replayed per task type in order, exactly as validate_plan mapped them onto Unity;
     menu actions by executed id; staffing by the model's own auto-staff, as recorded."""
     queues, menu = {}, []
+    titles = {t.get("taskId"): t.get("taskTitle") for t in (step.get("before") or {}).get("allActiveTasks") or []}
     for a in step.get("taken") or []:
         if a.get("error"):
             continue
         if a.get("kind") == "choice":
-            key = a.get("stableTaskId") or ""
+            key = a.get("stableTaskId") or S.CODE_BUILT_TASKS.get(str(titles.get(a.get("taskId"))), "")
             queues.setdefault(key, []).append(a.get("choiceId"))
         elif a.get("kind") == "menu" and a.get("action_id"):
             menu.append(a["action_id"])
@@ -101,7 +102,7 @@ def drive_step(w, m, step, gene):
         else:
             entry = w.generated_specs.get(tid)
             key = entry[0] if entry else ""
-        q = queues.get(key) or queues.get("" if key == "Casework_Request" else key)
+        q = queues.get(key)
         want = q.pop(0) if q else gene["choices"].get(key)
         S.answer(w, tid, want if want in cids else cids[0])
     m.apply(w, ("turn", {"choices": {}, "menu": tuple(menu)}))

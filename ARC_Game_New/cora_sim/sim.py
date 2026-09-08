@@ -64,6 +64,38 @@ _TASK_SPEC[CASEWORK_SPEC_ID] = {
          "enableMultipleDeliveries": False, "impacts": [{"type": "Satisfaction", "value": -10}]},
     ]}
 _CASEWORK_DESTS = 3          # FindMultipleDestinations(choice, facility, 3)
+# Tasks the game builds in code (no TaskData asset, stableTaskId ""), by title, for the
+# validator and the lockstep diagnostics to map Unity's instances onto the port's specs.
+CODE_BUILT_TASKS = {"Casework Request": "Casework_Request",
+                    "Road Blockage Emergency": "Road_Blockage",
+                    "Vehicle Repair Required": "Repair"}
+
+# FloodTaskGenerator.CreateRoadBlockageTask: built in code when a vehicle is stopped by the
+# flood. Emergency, rounds 2, impacts Satisfaction -20 (applied on Incomplete expiry), and a
+# choice list that depends on the cargo and on whether it was aboard. The base entry lists
+# the union so the search gene can name any of them; the per-instance copy in
+# generated_specs holds the case's actual list. Verified on 5503 (population, loaded);
+# the food and not-yet-loaded cases are transcribed from the C# and unverified.
+ROAD_BLOCKAGE_SPEC_ID = "Road_Blockage"
+_BLOCKAGE_FAILURE_PENALTY = 10.0      # GameTask.deliveryFailureSatisfactionPenalty default
+_BLOCKAGE_ABANDON_PENALTY = 30.0      # FloodTaskGenerator.OnAnyTaskCompleted, loaded clients
+_TASK_SPEC[ROAD_BLOCKAGE_SPEC_ID] = {
+    "taskId": ROAD_BLOCKAGE_SPEC_ID, "taskTitle": "Road Blockage Emergency", "taskType": "Emergency",
+    "taskTag": "None", "roundsRemaining": 2, "isGlobalTask": False,
+    "choices": [
+        {"choiceId": 1, "triggersDelivery": True, "immediateDelivery": False, "deliveryQuantity": 0,
+         "budgetDelayRounds": 0, "destinationCategory": "", "enableMultipleDeliveries": False,
+         "impacts": [{"type": "Satisfaction", "value": 5}]},
+        {"choiceId": 2, "triggersDelivery": True, "immediateDelivery": False, "deliveryQuantity": 0,
+         "budgetDelayRounds": 0, "destinationCategory": "", "enableMultipleDeliveries": False,
+         "impacts": [{"type": "Budget", "value": -200}, {"type": "Satisfaction", "value": 8}]},
+        {"choiceId": 3, "triggersDelivery": False, "immediateDelivery": False, "deliveryQuantity": 0,
+         "budgetDelayRounds": 0, "destinationCategory": "", "enableMultipleDeliveries": False,
+         "impacts": [{"type": "Budget", "value": -1000}, {"type": "Satisfaction", "value": 15}]},
+        {"choiceId": 4, "triggersDelivery": False, "immediateDelivery": False, "deliveryQuantity": 0,
+         "budgetDelayRounds": 0, "destinationCategory": "", "enableMultipleDeliveries": False,
+         "impacts": [{"type": "Satisfaction", "value": -30}]},
+    ]}
 _INCOMPLETE_PENALTY = {k: v for k, v in (_ECON_C.get("incompletePenalty") or {}).items() if not k.startswith("_")}
 from .triggers import roll_pass
 from .weather import RAIN_INTENSITY, generate_weather
@@ -137,6 +169,7 @@ class World:
         # A food delivery that reaches an empty kitchen does not fail -- LoadCargo aborts
         # and the trip runs again once the kitchen restocks at the day reset.
         self.tasks.retry_if_unsourced = self._can_source
+        self.tasks.on_blocked = self._blocked_delivery
         self._sourced_now = {}      # task -> packs already pulled this round
         self._food_reserved = 0     # packs promised to orders not yet loaded
         self.round_index = 0
@@ -169,8 +202,6 @@ class World:
             src = self.economy.facility(getattr(task, "source", "") or "")
             have = ((src.get("resources") or {}).get("population") or 0) if src else 0
             return min(quantity, have)
-        if getattr(task, "tag", "") != "Food":
-            return quantity
         if str(task.destination or "").startswith("__food__") is False:
             return quantity
         chosen = getattr(task, "chosen_id", None)
@@ -184,6 +215,15 @@ class World:
         if got:
             self._sourced_now[task.task_id] = got
         return got
+
+    def _blocked_delivery(self, payload, loaded, task, was_open):
+        """StopVehicleDueToFlood's task side. `task` is the parent (already off the board),
+        `loaded` whether the cargo was aboard, `was_open` whether HandleDeliveryFailure found
+        it InProgress (then it charges the failure penalty)."""
+        if was_open:
+            self.economy.satisfaction = max(0.0, min(100.0, self.economy.satisfaction
+                                                     - _BLOCKAGE_FAILURE_PENALTY))
+        _create_blockage_task(self, payload, loaded, task)
 
     def reserve_food(self, quantity):
         """FoodDeliveryHandler's effectiveStock rule, applied when the ORDER IS PLACED.
@@ -318,7 +358,8 @@ class World:
         # world without mutating it, which is why an isolation test cannot catch it. A
         # search rollout on a clone scored 1.39 where a fresh world scored 2.50.
         for owner, attr in ((w.tasks, "retry_if_unsourced"), (w.tasks, "cell_for"),
-                            (w.tasks, "has_supplier"), (w, "facilities_for")):
+                            (w.tasks, "has_supplier"), (w, "facilities_for"),
+                            (w.tasks, "on_blocked")):
             fn = getattr(owner, attr, None)
             if getattr(fn, "__self__", None) is self:
                 setattr(owner, attr, getattr(w, fn.__name__))
@@ -496,6 +537,43 @@ def _create_casework_task(w, gid, facility, with_need):
     w._casework_live[t.task_id] = gid
 
 
+def _create_blockage_task(w, payload, loaded, parent):
+    """CreateRoadBlockageTask for one stopped delivery. Cargo and endpoints come from the
+    dropped payload: (task_id, quantity, destination_tag); the source is the parent's."""
+    tid, quantity, dest = payload[0], payload[1], str(payload[2] or "")
+    source = (parent.source if parent is not None else "") or ""
+    food = dest.startswith("__food__")
+    base = _TASK_SPEC[ROAD_BLOCKAGE_SPEC_ID]
+    spec = dict(base)
+    spec["_loaded"] = bool(loaded)
+    spec["_cargo"] = "food" if food else "people"
+    spec["_dest"] = dest
+    if food:
+        choices = [dict(c) for c in base["choices"]]
+        for c in choices[:2]:
+            c["deliveryQuantity"] = quantity
+    elif loaded:
+        # CreatePopulationLoadedChoices: clients returned to the source (the port never
+        # debited it -- people leave at the landing), one $1500 immediate transport.
+        choices = [{"choiceId": 1, "triggersDelivery": False, "immediateDelivery": True,
+                    "deliveryQuantity": quantity, "budgetDelayRounds": 0,
+                    "destinationCategory": "Shelter", "enableMultipleDeliveries": False,
+                    "impacts": [{"type": "Budget", "value": -1500}, {"type": "Satisfaction", "value": 10}]}]
+    else:
+        # CreatePopulationUnloadedChoices: a new vehicle, same endpoints.
+        choices = [{"choiceId": 1, "triggersDelivery": True, "immediateDelivery": False,
+                    "deliveryQuantity": quantity, "budgetDelayRounds": 0,
+                    "destinationCategory": dest if dest in ("Motel", "Shelter") else "Shelter",
+                    "enableMultipleDeliveries": False,
+                    "impacts": [{"type": "Satisfaction", "value": 5}]}]
+    spec["choices"] = choices
+    t = Task(w.tasks.next_id, "None", 0, spec["roundsRemaining"])
+    t.source = source
+    w.tasks.next_id += 1
+    w.tasks.add(t)
+    w.generated_specs[t.task_id] = (ROAD_BLOCKAGE_SPEC_ID, source, spec)
+
+
 def _sweep_casework(w):
     """OnCaseworkTaskFinished for every casework task that has left the board since the
     last sweep: completed by its deliveries, completed at answer (choice 2), expired, or
@@ -631,9 +709,15 @@ def _land(w, _task_id, quantity, destination):
         if source == "Motel":
             w.economy.motel_pop = w.economy.motel_population
         return
-    source = getattr(w.tasks, "_sources", {}).pop(_task_id, "")
+    # Every trip debits its own load, so the source is looked up, not popped: a multi-site
+    # order lands two trips and the second used to find no source.
+    source = getattr(w.tasks, "_sources", {}).get(_task_id, "")
     if source:
         w.economy.move_population(source, -quantity)
+    if dest.startswith("Shelter:"):
+        dest, _named = "Shelter", dest[len("Shelter:"):]
+    else:
+        _named = None
     if dest in ("Motel", "Shelter"):
         # People land in an actual facility, so its population -- and therefore the
         # triggers that read it and the bill that charges it -- move together.
@@ -641,9 +725,9 @@ def _land(w, _task_id, quantity, destination):
         # includeMotels taken from the CHOICE, so a Shelter-destination relocation
         # never spills into the motel -- it simply has nowhere to go. The port used to
         # fall back and that quietly moved people Unity would have left in place.
-        target = "Motel" if dest == "Motel" else next(
+        target = "Motel" if dest == "Motel" else (_named or next(
             (b["name"] for b in w.economy.buildings
-             if b["type"] == "Shelter" and b["status"] == "InUse"), None)
+             if b["type"] == "Shelter" and b["status"] == "InUse"), None))
         moved = w.economy.move_population(target, quantity) if target else 0
         # TWO ClientGroups PER POPULATION DELIVERY. Unity registers the arrival from two
         # unrelated call sites and neither knows about the other:
@@ -677,11 +761,15 @@ def _incomplete_penalties(w: World, expired) -> None:
     across the captures; a relocation costs satisfaction only. The TaskData assets in the
     working tree list other impacts than the build applies, so the log is the source."""
     table = _INCOMPLETE_PENALTY
-    if not table:
-        return
     for tid in expired:
         entry = w.generated_specs.get(tid)
         if not entry or entry[2].get("taskType") not in ("Emergency", "Demand"):
+            continue
+        if entry[0] == ROAD_BLOCKAGE_SPEC_ID:
+            # ApplyTaskPenalties on the task's own impact (-20), then FloodTaskGenerator's
+            # OnAnyTaskCompleted abandonment penalty (-30) when the clients were aboard.
+            drop = 20.0 + (_BLOCKAGE_ABANDON_PENALTY if entry[2].get("_loaded") else 0.0)
+            w.economy.satisfaction = max(0.0, min(100.0, w.economy.satisfaction - drop))
             continue
         pen = table.get(entry[0])
         if not pen:
@@ -1074,9 +1162,22 @@ def answer(w: World, task_id, choice_id) -> bool:
         w.economy.apply_choice(task.tag, choice.get("impacts"),
                                choice.get("budgetDelayRounds", 0) or 0, "", 0)
         return True
+    if _def_id == ROAD_BLOCKAGE_SPEC_ID and (choice.get("triggersDelivery")
+                                            and not choice.get("immediateDelivery")):
+        # INERT IN THE GAME. The food choices (1, 2) and the not-yet-loaded population
+        # choice (1) are ManualAssignment deliveries, but ExecuteGeneratorDelivery routes
+        # them to FoodDeliveryHandler.Execute / ClientRelocationHandler.Execute, which take
+        # the SOURCE from FindTriggeringFacility(task) -- and only the loaded-population
+        # case sets affectedFacility. The lookup fails, nothing is queued, CompleteTaskAction
+        # returns false: no impacts, the task stays until it expires Incomplete. 5901
+        # validation has four such tasks and every one expired.
+        return False
     if dest_cat == "CaseworkSite" and (choice.get("triggersDelivery")
                                        or choice.get("immediateDelivery")):
         return _answer_casework(w, task_id, task, choice, choice_id, str(_facility), demanded)
+    if (demanded > 0 and dest_cat == "Shelter" and choice.get("enableMultipleDeliveries")
+            and choice.get("triggersDelivery") and not choice.get("immediateDelivery")):
+        return _answer_multi_shelter(w, task_id, task, choice, choice_id, str(_facility), demanded)
     if demanded > 0 and dest_cat in ("Motel", "Shelter"):
         src = w.economy.facility(str(_facility))
         available = ((src.get("resources") or {}).get("population") or 0) if src else 0
@@ -1189,6 +1290,75 @@ def _answer_casework(w: World, task_id, task, choice, choice_id, facility, deman
         if src is None or dst is None or roads.path_length(src, dst, flooded) is None:
             continue
         legs.append((per, dst, "__cw__" + name))
+    if not legs:
+        return _park_blocked(w, task_id, task, choice_id)
+    task.source = facility
+    task.chosen_id = choice_id
+    w.tasks.flooded = flooded
+    w.tasks.answer_multi(task_id, src, legs)
+    return True
+
+
+def _answer_blockage_food(w: World, task_id, task, choice, choice_id, spec) -> bool:
+    """Road blockage, food cargo: 1 = same kitchen again (ManualAssignment endpoints),
+    2 = the first operational kitchen holding food. Both are single vehicle orders; the
+    cargo lands through the __food__ path with no counter credit (tag None). Unverified
+    against a capture."""
+    facility = spec.get("_dest", "")[len("__food__"):].split("|")[0]
+    if choice_id == 1:
+        kitchen = task.source
+    else:
+        kitchen = next((k["name"] for k in w.economy.operational("Kitchen")
+                        if ((k.get("resources") or {}).get("foodPacks") or 0) > 0), None)
+    src = w._facility_cell(kitchen) if kitchen else None
+    dst = w._facility_cell(facility)
+    flooded = w.flooded_road_cells()
+    if src is None or dst is None or roads.path_length(src, dst, flooded) is None:
+        return False
+    task.source = kitchen
+    task.chosen_id = choice_id
+    w.tasks.flooded = flooded
+    w.tasks.answer_multi(task_id, src, [(choice.get("deliveryQuantity") or 0, dst, "__food__" + facility)])
+    w.economy.apply_choice(task.tag, choice.get("impacts"), 0, "", 0)
+    return True
+
+
+def _answer_multi_shelter(w: World, task_id, task, choice, choice_id, facility, demanded) -> bool:
+    """A multi-delivery "Send to Shelters" (Community_TransportRequest 0, the flood-damage
+    choices): ExecuteSingleSourceMultiDest, not ClientRelocationHandler.Execute.
+
+    Destinations are the operational shelters with ANY space (CanBuildingHandleCargo,
+    no inbound subtraction), FindObjectsOfType order (newest first), Take(3); the
+    quantity is the choice's Fixed deliveryQuantity split max(1, total / n) per site --
+    NOT capped by the shelter's space or the source's population. 5503 validation, step
+    13: Shelter_0 at 77/100 and Unity queues 100; the vehicle loads 100, the shelter takes
+    23 on unload, and the parent is credited the nominal 100. The port used to cap the
+    order at the space (23), which under-credited the landing and every downstream event
+    (the stranded-cargo credit, the emergency transport's quantity)."""
+    w.economy.apply_choice(task.tag, choice.get("impacts"),
+                           choice.get("budgetDelayRounds", 0) or 0, "Shelter", demanded)
+    sites = []
+    for b in [x for x in w.economy.buildings if x["type"] == "Shelter"][::-1]:
+        if b["status"] != "InUse":
+            continue
+        res = b.get("resources") or {}
+        cap = res.get("populationCapacity")
+        if cap is not None and cap - (res.get("population") or 0) <= 0:
+            continue
+        sites.append(b["name"])
+        if len(sites) >= _CASEWORK_DESTS:
+            break
+    if not sites:
+        return _park_blocked(w, task_id, task, choice_id)
+    per = max(1, demanded // len(sites))
+    src = w._facility_cell(facility)
+    flooded = w.flooded_road_cells()
+    legs = []
+    for name in sites:
+        dst = w._facility_cell(name)
+        if src is None or dst is None or roads.path_length(src, dst, flooded) is None:
+            continue
+        legs.append((per, dst, "Shelter:" + name))
     if not legs:
         return _park_blocked(w, task_id, task, choice_id)
     task.source = facility

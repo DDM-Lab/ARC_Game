@@ -100,8 +100,8 @@ def play(row, port, out_dir, rounds=32):
             if not cids:
                 continue
             sid = t.get("stableTaskId") or ""
-            if not sid and str(t.get("taskTitle")) == "Casework Request":
-                sid = "Casework_Request"        # built in code, no TaskData id
+            if not sid:
+                sid = S.CODE_BUILT_TASKS.get(str(t.get("taskTitle")), "")   # built in code, no TaskData id
             key = "Repair" if ("Repair" in sid or "Repair" in str(t.get("taskTitle"))) else sid
             queue = by_type.get(key)
             want = queue.pop(0) if queue else (REPAIR_CHOICE if key == "Repair" else cids[0])

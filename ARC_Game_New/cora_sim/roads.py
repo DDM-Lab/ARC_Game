@@ -478,7 +478,7 @@ class Fleet:
                         leg2 = path_length(self.pos[v], dst, flooded, self.spec)
                         if leg2 is None:
                             self.damaged[v] = True
-                            dropped.append(payload)
+                            dropped.append((payload, True))      # loaded at the source
                             self.trip[v] = None
                             ready.remove(v)
                             queue.pop(0)
@@ -495,7 +495,7 @@ class Fleet:
                     if leg1 is None:
                         # No flood-free path to the source: blocked on the dispatch frame.
                         self.damaged[v] = True
-                        dropped.append(payload)
+                        dropped.append((payload, False))     # never reached the source
                         ready.remove(v)
                         queue.pop(0)
                         continue
@@ -537,7 +537,7 @@ class Fleet:
                         if 0 < idx < len(path) and path[idx] in flooded:
                             self.pos[v] = path[idx]
                             self.damaged[v] = True
-                            dropped.append(t["payload"])
+                            dropped.append((t["payload"], t["phase"] == "to_dst"))
                             self.carrying[v] = None
                             self.trip[v] = None
                             if self.events is not None: self.events.append((self.frame, "collision", v, t["payload"][0], path[idx]))
@@ -569,7 +569,7 @@ class Fleet:
                         # No flood-free path for the destination leg: StopVehicleDueToFlood
                         # -> HandleDeliveryFailure. Damaged, order gone.
                         self.damaged[v] = True
-                        dropped.append(t["payload"])
+                        dropped.append((t["payload"], True))     # loaded, no destination leg
                         self.trip[v] = None
                         continue
                     t["phase"], t["left"] = "to_dst", max(1, leg2)
@@ -622,7 +622,7 @@ class Fleet:
                     leg2 = path_length(t["src"], t["dst"], flooded, self.spec)
                     if leg2 is None:
                         self.damaged[v] = True
-                        dropped.append(t["payload"])
+                        dropped.append((t["payload"], True))     # loaded, no destination leg
                         self.trip[v] = None
                         continue
                     # A leg started in a paused frame makes no movement until the next
