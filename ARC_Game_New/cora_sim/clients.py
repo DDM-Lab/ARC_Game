@@ -56,9 +56,10 @@ class ClientGroup:
     """One delivered group of people, tracked from arrival to departure."""
 
     __slots__ = ("count", "with_need", "arrival_round", "departure_round",
-                 "departed", "casework_generated", "casework_round", "facility")
+                 "departed", "casework_generated", "casework_round", "facility", "gid")
 
-    def __init__(self, count, with_need, arrival_round, departure_round, facility=""):
+    def __init__(self, count, with_need, arrival_round, departure_round, facility="", gid=0):
+        self.gid = gid                  # ClientGroup.groupId: what a casework task points at
         self.count = count
         self.with_need = with_need
         self.arrival_round = arrival_round
@@ -75,6 +76,7 @@ class ClientGroup:
         g.departed, g.casework_generated = self.departed, self.casework_generated
         g.casework_round = self.casework_round
         g.facility = self.facility
+        g.gid = self.gid
         return g
 
     @property
@@ -85,15 +87,32 @@ class ClientGroup:
 class ClientTracker:
     """All tracked groups. Iteration order is insertion order, as in the C# List."""
 
-    __slots__ = ("groups",)
+    __slots__ = ("groups", "next_gid")
 
     def __init__(self):
         self.groups = []
+        self.next_gid = 1
 
     def clone(self):
         t = ClientTracker.__new__(ClientTracker)
         t.groups = [g.clone() for g in self.groups]
+        t.next_gid = self.next_gid
         return t
+
+    def group(self, gid):
+        for g in self.groups:
+            if g.gid == gid:
+                return g
+        return None
+
+    def rearm(self, gid):
+        """OnCaseworkTaskFinished: the group's casework task left the board (completed,
+        expired, or failed), so it may roll for casework again. A no-op when the group was
+        already removed by the delivery that completed the task."""
+        g = self.group(gid)
+        if g is not None:
+            g.casework_generated = False
+            g.casework_round = -1
 
     def register_arrival(self, rng, count, current_round, facility="", marks=None):
         """A delivery to a shelter or motel. Draws count+1 randoms, in this exact order.
@@ -113,9 +132,10 @@ class ClientTracker:
             marks.append("draw:Client.stayDuration")
         stay = rng.range_int(C["min_stay"], C["max_stay"] + 1)
         self.groups.append(ClientGroup(count, with_need, current_round,
-                                       current_round + stay, facility))
+                                       current_round + stay, facility, self.next_gid))
+        self.next_gid += 1
 
-    def update(self, rng, current_round, counters, marks=None) -> list:
+    def update(self, rng, current_round, counters, marks=None, generated=None) -> list:
         """Per-round evaluation: natural departures, then casework generation.
 
         The casework probability GROWS with the stay: base * growth^(Y-1) where Y is rounds
@@ -149,17 +169,13 @@ class ClientTracker:
                 # the rest of the episode: measured at 160,000 against Unity's 100,000,
                 # exactly 300 residents x $200 that had already gone home.
                 departures.append((leaving, group.facility))
-            # THE FLAG RE-ARMS. ClientStayTracker subscribes to BOTH OnTaskCompleted and
-            # OnTaskExpired and sets caseworkRequestGenerated = false in the handler, so a
-            # group resumes drawing once its casework task leaves the board. The generated
-            # task carries roundsRemaining = 3, so an unanswered one re-arms the group three
-            # rounds later. Never re-arming made the port's eligible set shrink monotonically
-            # while Unity's did not -- the port ran out of groups to draw for, which the mark
-            # diff sees as Unity still drawing caseworkGen where the port has moved on to flood.
-            if (group.casework_generated and group.casework_round >= 0
-                    and current_round - group.casework_round >= _CASEWORK_ROUNDS):
-                group.casework_generated = False
-                group.casework_round = -1
+            # THE FLAG RE-ARMS ON AN EVENT, NOT A TIMER. ClientStayTracker subscribes to
+            # BOTH OnTaskCompleted and OnTaskExpired and clears caseworkRequestGenerated in
+            # the handler (OnCaseworkTaskFinished), so a group resumes drawing the moment its
+            # casework task leaves the board -- by expiry (three rounds, aged at birth), by
+            # choice 2 (completes at answer), by the delivery completing, or by a vehicle
+            # failure. The port used to approximate this with a three-round timer, which
+            # coincides with expiry only; sim.py's sweep calls rearm() on the event.
             if group.with_need > 0 and not group.casework_generated:
                 y = max(1, rounds_in)
                 pct = f32mul(C["base_casework_pct"], C["growth"] ** (y - 1))
@@ -170,20 +186,44 @@ class ClientTracker:
                     group.casework_generated = True
                     group.casework_round = current_round
                     counters["caseworkRequested"] += group.count
+                    # GenerateCaseworkTask: the task asks for the NEEDY count, credits the
+                    # WHOLE group, and belongs to this group's facility.
+                    if generated is not None:
+                        generated.append((group.gid, group.facility, group.with_need))
         return departures
 
-    def process_home(self, quantity, counters):
-        """A delivery to a casework site sends people home. Credits caseworkProcessed."""
+    def process_home(self, facility, quantity, counters):
+        """RemoveClientsByQuantity(facility, quantity), transcribed.
+
+        Only the SOURCE facility's groups are touched, in insertion order: a group whose
+        whole count fits in what remains is removed outright (`<=`, so an empty group is
+        swept too); the first that does not fit is trimmed, needy members first. Credits
+        caseworkProcessed with what was actually removed -- which is less than `quantity`
+        when the tracker holds fewer people at that facility than the vehicle carried
+        (the Motel's original residents were never tracked).
+
+        Called TWICE per delivery in Unity: Vehicle.UnloadCargo -> HandlePopulationDelivery
+        with the actual amount unloaded, then DeliverySystem's completion handler with the
+        nominal amount. 5503 validation: Casework Alpha received 46 people and
+        caseworkProcessed read 92. The double count is the game's, so it is the port's."""
         remaining = quantity
+        removed = 0
+        keep = []
         for group in self.groups:
-            if remaining <= 0:
-                break
-            take = min(group.count, remaining)
-            group.count -= take
-            group.with_need = max(0, group.with_need - take)
-            remaining -= take
-        processed = quantity - remaining
-        if processed > 0:
-            counters["caseworkProcessed"] += processed
-        self.groups = [g for g in self.groups if g.count > 0]
-        return processed
+            if group.facility != facility or remaining <= 0:
+                keep.append(group)
+                continue
+            if group.count <= remaining:
+                remaining -= group.count
+                removed += group.count
+                continue                          # whole group removed
+            group.count -= remaining
+            deduct = min(group.with_need, remaining)
+            group.with_need -= deduct
+            removed += remaining
+            remaining = 0
+            keep.append(group)
+        self.groups = keep
+        if removed > 0:
+            counters["caseworkProcessed"] += removed
+        return removed

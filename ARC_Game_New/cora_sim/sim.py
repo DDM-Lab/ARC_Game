@@ -46,6 +46,24 @@ from .triggers import INVENTORY as _INVENTORY
 
 # Task definitions by id, so a generated task carries its own choices.
 _TASK_SPEC = {t["taskId"]: t for t in _INVENTORY}
+# ClientStayTracker.GenerateCaseworkTask builds this task in code, not from a TaskData
+# asset, so it is not in the exported inventory. Transcribed: Advisory, tag BackToHome,
+# rounds 3; choice 1 ships the group's needy clients to casework sites (+10), choice 2
+# tells them to wait (-10). deliveryQuantity is per instance (the group's needy count) and
+# is filled in on the copy stored in generated_specs.
+CASEWORK_SPEC_ID = "Casework_Request"
+_TASK_SPEC[CASEWORK_SPEC_ID] = {
+    "taskId": CASEWORK_SPEC_ID, "taskTitle": "Casework Request", "taskType": "Advisory",
+    "taskTag": "BackToHome", "roundsRemaining": 3, "isGlobalTask": False,
+    "choices": [
+        {"choiceId": 1, "triggersDelivery": True, "immediateDelivery": False,
+         "deliveryQuantity": 0, "budgetDelayRounds": 0, "destinationCategory": "CaseworkSite",
+         "enableMultipleDeliveries": True, "impacts": [{"type": "Satisfaction", "value": 10}]},
+        {"choiceId": 2, "triggersDelivery": False, "immediateDelivery": False,
+         "deliveryQuantity": 0, "budgetDelayRounds": 0, "destinationCategory": "",
+         "enableMultipleDeliveries": False, "impacts": [{"type": "Satisfaction", "value": -10}]},
+    ]}
+_CASEWORK_DESTS = 3          # FindMultipleDestinations(choice, facility, 3)
 _INCOMPLETE_PENALTY = {k: v for k, v in (_ECON_C.get("incompletePenalty") or {}).items() if not k.startswith("_")}
 from .triggers import roll_pass
 from .weather import RAIN_INTENSITY, generate_weather
@@ -82,7 +100,7 @@ class World:
     __slots__ = ("rng", "flood", "fmap", "weather", "day", "segment",
                  "facilities_for", "generated", "clients", "economy", "tasks",
                  "round_index", "_trigger_memory", "use_generation",
-                 "pending_arrivals", "generated_specs", "_alerts_shown",
+                 "pending_arrivals", "pending_removals", "_casework_live", "generated_specs", "_alerts_shown",
                  "_emergency_count", "_last_emergency_round", "_sourced_now",
                  "_food_reserved")
 
@@ -124,6 +142,8 @@ class World:
         self.round_index = 0
         self._trigger_memory = {}       # stateful triggers (FloodExpanded, BudgetDropped)
         self.pending_arrivals = []      # deliveries that landed LAST round, drawn this one
+        self.pending_removals = []      # (facility, n): casework removals queued by a landing
+        self._casework_live = {}        # casework task id -> client group id, until it ends
         self.generated_specs = {}       # live task id -> (definition id, facility, spec)
         self._alerts_shown = set()      # Alert tasks fire once per GAME
         self._emergency_count = 0
@@ -143,6 +163,12 @@ class World:
         Only food is sourced from a building; a population relocation loads people from the
         community that asked, and that is checked when the choice is made.
         """
+        if getattr(task, "tag", "") == "BackToHome":
+            # LoadCargo: RemoveResource(Population, quantity) from the requesting facility;
+            # an empty source aborts the trip.
+            src = self.economy.facility(getattr(task, "source", "") or "")
+            have = ((src.get("resources") or {}).get("population") or 0) if src else 0
+            return min(quantity, have)
         if getattr(task, "tag", "") != "Food":
             return quantity
         if str(task.destination or "").startswith("__food__") is False:
@@ -275,6 +301,8 @@ class World:
         w.round_index = self.round_index
         w._trigger_memory = dict(self._trigger_memory)
         w.pending_arrivals = list(self.pending_arrivals)
+        w.pending_removals = list(self.pending_removals)
+        w._casework_live = dict(self._casework_live)
         w.generated_specs = dict(self.generated_specs)
         w._alerts_shown = set(self._alerts_shown)
         w._sourced_now = dict(self._sourced_now)
@@ -422,9 +450,16 @@ def _tracker(w, marks):
     # invokes per day: segments 1, 2, 3, 0" read from the other side: segment 4 ends the day
     # and the next OnRoundChanged the tracker sees is the rollover's Invoke(0). The port fired
     # every step, which is exactly the surplus caseworkGen the mark diff kept reporting.
+    # Re-arm BEFORE this pass draws, and on EVERY pass: a casework task that expired in
+    # the rollover's first pass re-enables its group in that pass's CheckExpiredTasks, and
+    # the group rolls again in the second pass (5901 validation, day-4 rollover: group 2's
+    # task went Incomplete in d4r0 and its new request was generated in d4r1).
+    _sweep_casework(w)
     if w.segment >= ROUNDS_PER_DAY:
         return
-    for count, facility in w.clients.update(w.rng, _unity_round(w), w.economy.counters, marks):
+    generated = []
+    for count, facility in w.clients.update(w.rng, _unity_round(w), w.economy.counters, marks,
+                                            generated=generated):
         # DEPARTURES DO NOT FREE THE FACILITY. TriggerNonCaseworkDeparture mutates tracker
         # state only; OnCaseworklessClientsDeparted has no subscribers, and Motel Population
         # storage only ever drops via a vehicle LoadCargo. Unity's lodgingSpend therefore steps
@@ -433,6 +468,48 @@ def _tracker(w, marks):
         # 46.9M total state error and invisible to every first-divergence report.
         pass
         w.economy.motel_pop = w.economy.motel_population
+    for gid, facility, with_need in generated:
+        _create_casework_task(w, gid, facility, with_need)
+
+
+def _create_casework_task(w, gid, facility, with_need):
+    """GenerateCaseworkTask -> TaskSystem.CreateTask, bypassing every TaskData gate.
+
+    AGED AT BIRTH. The tracker's OnTimeSegmentChanged handler runs BEFORE TaskSystem's on
+    the same advance (it subscribed first), so the task is created with roundsRemaining 3
+    and decremented to 2 in the same frame -- 5503 validation: `task:created ... rounds 3`
+    and `rounds remaining: 2` under one segment tag, and task 10 (born d2r3) went
+    Incomplete on the day-3 rollover's second pass. The port ages before it runs the
+    tracker, so the decrement is applied here by hand."""
+    spec = dict(_TASK_SPEC[CASEWORK_SPEC_ID])
+    spec["choices"] = [dict(c) for c in spec["choices"]]
+    spec["choices"][0]["deliveryQuantity"] = with_need
+    spec["_gid"] = gid
+    t = Task(w.tasks.next_id, "BackToHome", 0, spec["roundsRemaining"])
+    t.rounds_remaining -= 1
+    t.fresh = False
+    t.source = str(facility)
+    t.destination = ""
+    w.tasks.next_id += 1
+    w.tasks.add(t)
+    w.generated_specs[t.task_id] = (CASEWORK_SPEC_ID, str(facility), spec)
+    w._casework_live[t.task_id] = gid
+
+
+def _sweep_casework(w):
+    """OnCaseworkTaskFinished for every casework task that has left the board since the
+    last sweep: completed by its deliveries, completed at answer (choice 2), expired, or
+    dropped by a vehicle failure. Runs before the tracker so the re-armed group draws on
+    this advance, which is when Unity's flag (cleared at the event) is next read."""
+    for tid, gid in list(w._casework_live.items()):
+        if tid in w.tasks.active:
+            continue
+        task = w.tasks.awaiting.get(tid)
+        if task is not None and not task.resolved:
+            continue
+        w.clients.rearm(gid)
+        del w._casework_live[tid]
+        w.tasks._sources.pop(tid, None)
 
 
 def _unity_round(w):
@@ -535,6 +612,25 @@ def _land(w, _task_id, quantity, destination):
         if task is not None:
             task.delivered = sourced
         return
+    if dest.startswith("__cw__"):
+        # One trip of a casework order landing at a specific site. LoadCargo took the
+        # people out of the requesting facility (charged here, at the port's landing);
+        # AddResource deposits them at the site up to its capacity; then the tracker
+        # removes them from the source TWICE -- UnloadCargo's HandlePopulationDelivery
+        # with the actual amount (gated > 0), and the completion handler one tick later
+        # with the nominal amount. The second is queued so a split landing can defer it
+        # past this round's tracker, exactly as the nominal client group is.
+        source = w.tasks._sources.get(_task_id, "")     # every trip, so no pop
+        site = dest[len("__cw__"):]
+        loaded = -w.economy.move_population(source, -quantity) if source else quantity
+        actual = w.economy.move_population(site, loaded)
+        if actual > 0 and source:
+            w.clients.process_home(source, actual, w.economy.counters)
+        if source:
+            w.pending_removals.append((source, quantity))
+        if source == "Motel":
+            w.economy.motel_pop = w.economy.motel_population
+        return
     source = getattr(w.tasks, "_sources", {}).pop(_task_id, "")
     if source:
         w.economy.move_population(source, -quantity)
@@ -559,18 +655,17 @@ def _land(w, _task_id, quantity, destination):
         # why the port's lodging spend was already exact while its client draws were half
         # of Unity's. The counts differ once the motel clamps: actual is post-clamp, nominal
         # is not, so a near-full facility draws different numbers from the two groups.
+        # The group is tagged with the SPECIFIC facility (Shelter_5, Motel), not the
+        # category: RemoveClientsByQuantity filters by currentFacility == source, so a
+        # casework delivery from Shelter_5 must find Shelter_5's groups and nobody else's.
         if target:
             if moved:
-                w.pending_arrivals.append((moved, dest))
-            w.pending_arrivals.append((quantity, dest))
+                w.pending_arrivals.append((moved, target))
+            w.pending_arrivals.append((quantity, target))
         if dest == "Motel":
             w.economy.motel_pop = w.economy.motel_population
     elif dest == "Kitchen":
         pass
-    elif dest == "CaseworkSite":
-        w.clients.process_home(quantity, w.economy.counters)
-        w.economy.move_population("Motel", -quantity)
-        w.economy.motel_pop = w.economy.motel_population
 
 
 
@@ -640,16 +735,28 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     w.tasks.flooded = w.flooded_road_cells()      # post-spread, for this round's driving
     _late = []
     _late_nominal = []                # OnVehicleDeliveryCompleted groups that fire at +35
+    _late_removals = []               # ... and its casework removals, same tick
     for _e in w.tasks.tick(w.economy.counters):
         if len(_e) > 3 and _e[3] == "late":
             _late.append(_e)          # epilogue unload: after this round's invoke
             continue
         _n = len(w.pending_arrivals)
+        _m = len(w.pending_removals)
         _land(w, _e[0], _e[1], _e[2])
-        if len(_e) > 3 and _e[3] == "split" and len(w.pending_arrivals) > _n:
+        if len(_e) > 3 and _e[3] == "split":
             # Unloaded on the last movement frame: the actual group registers now, the
             # nominal group (queued last by _land) at completion, after the flood.
-            _late_nominal.append(w.pending_arrivals.pop())
+            if len(w.pending_arrivals) > _n:
+                _late_nominal.append(w.pending_arrivals.pop())
+            if len(w.pending_removals) > _m:
+                _late_removals.append(w.pending_removals.pop())
+        else:
+            # Completion is the tick after unload, BEFORE the next vehicle's unload, so a
+            # casework landing's two removals hit the tracker back to back (5503: 23, 23,
+            # 19, 19 -- not 23, 19, 23, 19). Batching them after the loop hits different
+            # groups and deducts the needy count from the wrong one.
+            _apply_removals(w)
+    _apply_removals(w)
     arrivals = list(arrivals) + w.pending_arrivals
     w.pending_arrivals = []
     # ARRIVAL STAMP vs UPDATE ROUND. Unity stamps arrivalRound = currentRound at the DELIVERY
@@ -795,14 +902,24 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # the group precedes the next round's sim-phase arrivals.
     for count, facility in _late_nominal:
         w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
+    w.pending_removals.extend(_late_removals)
+    _apply_removals(w)
     for _e in _late + w.tasks.settle_late(w.economy.counters):
         _n = len(w.pending_arrivals)
         _land(w, _e[0], _e[1], _e[2])
         for count, facility in w.pending_arrivals[_n:]:
             w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
         del w.pending_arrivals[_n:]
+        _apply_removals(w)
     economy_step(w.economy, False, w.day)   # day-end already run above
     w.round_index += 1
+
+
+def _apply_removals(w):
+    """The completion-handler removals queued by casework landings (draw-free)."""
+    for facility, n in w.pending_removals:
+        w.clients.process_home(facility, n, w.economy.counters)
+    w.pending_removals = []
 
 
 def _park_blocked(w: World, task_id, task, choice_id) -> bool:
@@ -957,6 +1074,9 @@ def answer(w: World, task_id, choice_id) -> bool:
         w.economy.apply_choice(task.tag, choice.get("impacts"),
                                choice.get("budgetDelayRounds", 0) or 0, "", 0)
         return True
+    if dest_cat == "CaseworkSite" and (choice.get("triggersDelivery")
+                                       or choice.get("immediateDelivery")):
+        return _answer_casework(w, task_id, task, choice, choice_id, str(_facility), demanded)
     if demanded > 0 and dest_cat in ("Motel", "Shelter"):
         src = w.economy.facility(str(_facility))
         available = ((src.get("resources") or {}).get("population") or 0) if src else 0
@@ -1039,10 +1159,61 @@ def answer(w: World, task_id, choice_id) -> bool:
             # ClientRelocationHandler does the same double-registration, calling
             # RegisterClientArrival and HandlePopulationDelivery back to back on one transfer.
             if moved:
-                w.pending_arrivals.append((moved, dest_cat))
-            w.pending_arrivals.append((qty, dest_cat))
+                w.pending_arrivals.append((moved, target))
+            w.pending_arrivals.append((qty, target))
             w.economy.motel_pop = w.economy.motel_population
     return True
+
+
+def _answer_casework(w: World, task_id, task, choice, choice_id, facility, demanded) -> bool:
+    """ExecuteSingleSourceMultiDest for a casework request.
+
+    Destinations: operational CaseworkSites with population space, FindObjectsOfType
+    order (constructed newest first), at most three. None -> "No suitable destinations":
+    the +10 still applies and the task parks InProgress with nothing linked (5503, task
+    10). Otherwise `quantityPerDest = max(1, total / n)` and one delivery per site;
+    CreateDeliveryTask refuses a site whose route is cut, and if every site is cut the
+    task parks the same way. The quantity is the choice's Fixed deliveryQuantity -- the
+    group's needy count -- not capped by the source here; LoadCargo caps it."""
+    sites = _casework_sites(w)
+    w.economy.apply_choice(task.tag, choice.get("impacts"),
+                           choice.get("budgetDelayRounds", 0) or 0, "CaseworkSite", 0)
+    if not sites:
+        return _park_blocked(w, task_id, task, choice_id)
+    per = max(1, demanded // len(sites))
+    src = w._facility_cell(facility)
+    flooded = w.flooded_road_cells()
+    legs = []
+    for name in sites:
+        dst = w._facility_cell(name)
+        if src is None or dst is None or roads.path_length(src, dst, flooded) is None:
+            continue
+        legs.append((per, dst, "__cw__" + name))
+    if not legs:
+        return _park_blocked(w, task_id, task, choice_id)
+    task.source = facility
+    task.chosen_id = choice_id
+    w.tasks.flooded = flooded
+    w.tasks.answer_multi(task_id, src, legs)
+    return True
+
+
+def _casework_sites(w: World):
+    """FindMultipleDestinations(SpecificBuilding=CaseworkSite): operational, has space,
+    newest first, Take(3)."""
+    out = []
+    built = [b for b in w.economy.buildings if b["type"] == "CaseworkSite"]
+    for b in built[::-1]:
+        if b["status"] != "InUse":
+            continue
+        res = b.get("resources") or {}
+        cap = res.get("populationCapacity")
+        if cap is not None and (res.get("population") or 0) >= cap:
+            continue
+        out.append(b["name"])
+        if len(out) >= _CASEWORK_DESTS:
+            break
+    return out
 
 
 def _has_destination_space(w: World, choice) -> bool:

@@ -39,7 +39,13 @@ def main():
     t = json.load(open(trace))
     um = D.unity_marks(log) if os.path.exists(log) else {}
     s0 = D.seed_step(log) if os.path.exists(log) else None
-    w = fresh_world(dict(captured_seeds())[args.unity_seed], FloodMap.load())
+    # The Xorshift state Unity logged at its first flood:enter -- from the validation log
+    # itself when present, else the state the evolution row was evolved on.
+    from cora_sim.test_replay_forward import seed_state
+    st = seed_state(log) if os.path.exists(log) else None
+    if st is None:
+        st = tuple(int(x) & 0xFFFFFFFF for x in row["seed_state"])
+    w = fresh_world(st, FloodMap.load())
     m = CoraActions(random.Random(0))
     first, firstd, bd, port_marks = {}, None, None, []
     for i, step in enumerate(t):

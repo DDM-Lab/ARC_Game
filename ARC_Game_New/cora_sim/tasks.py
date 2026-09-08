@@ -463,6 +463,24 @@ class TaskBoard:
         self.deliveries.append([latency, task_id,
                                 quantity if self.has_supplier(task.tag) else 0])
 
+    def answer_multi(self, task_id, src_cell, legs):
+        """One answered task, several vehicle trips to DIFFERENT destinations (a
+        SingleSourceMultiDest choice). `legs` = [(quantity, dst_cell, destination_tag)].
+        The task waits in `awaiting` and resolves when the last trip lands, exactly as a
+        multi-trip single-destination order does."""
+        task = self.active.pop(task_id, None)
+        if task is None:
+            return
+        task.chosen = sum(q for q, _d, _t in legs)
+        task.destination = legs[0][2] if legs else ""
+        self._sources = getattr(self, "_sources", {})
+        if task.source:
+            self._sources[task_id] = task.source
+        self.awaiting[task_id] = task
+        for q, dst, tag in legs:
+            self.pending.append([self.pending_seq, (task_id, q, tag), src_cell, dst, q])
+            self.pending_seq += 1
+
     def choose(self, task_id, quantity=0, immediate=True, latency=None, destination=""):
         """Answer a task's choice.
 
