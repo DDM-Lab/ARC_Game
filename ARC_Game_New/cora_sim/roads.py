@@ -605,7 +605,22 @@ class Fleet:
                     t["phase"], t["left"] = "complete", 1
                 elif ph == "complete":
                     self.trip[v] = None                        # CompleteDelivery -> Idle
-        # -- epilogue: the two paused frames after the round -------------------------------
+        # busy_seconds is kept for callers that read it: frames still to run, in seconds.
+        for v, t in enumerate(self.trip):
+            self.busy_seconds[v] = (t["left"] * self.spec.fixed_delta) if (t and "left" in t) else 0.0
+        return landed, queue, dropped
+
+    def run_epilogue(self, flooded=frozenset()):
+        """The two paused frames after the round, run by the caller AFTER the round's
+        invoke and flood update -- that is when Unity runs them. Returns (landed, dropped).
+
+        A destination leg that starts here is routed against the UPDATED flood: 5801
+        s14, Vehicle2 reaches Kitchen_0 on +35 (f671, the endSim/flood frame) and its
+        leg mark at f672 is a 17-cell route through cells that were flooded until that
+        update; the port routed it on the pre-update set, took a 25-cell detour and was
+        stopped by the water that the update had moved into its way.
+        """
+        landed, dropped = [], []
         # Time.time stops at frame 34, so nothing moves and no pass fires, but coroutines
         # still step once per frame. MoveToPosition's loop-exit check runs on the frame AFTER
         # the last movement, so a leg whose last movement was frame 34 arrives -- and unloads
@@ -659,10 +674,9 @@ class Fleet:
                 elif ph == "complete":
                     self.trip[v] = None
         self.frame -= 2                                        # sim frames only, for the pass phase
-        # busy_seconds is kept for callers that read it: frames still to run, in seconds.
         for v, t in enumerate(self.trip):
             self.busy_seconds[v] = (t["left"] * self.spec.fixed_delta) if (t and "left" in t) else 0.0
-        return landed, queue, dropped
+        return landed, dropped
 
     def _closest(self, candidates, src_cell, quantity=0, capacity=100.0):
         """CalculateVehicleSuitability among a set of already-free vehicles."""

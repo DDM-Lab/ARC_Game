@@ -588,7 +588,12 @@ class TaskBoard:
             return []
         return self.tick_deliveries_only(counters, _settling=entries)
 
-    def tick_deliveries_only(self, counters: dict, _settling=False) -> list:
+    def tick_epilogue(self, counters: dict) -> list:
+        """The fleet's two paused frames, after this round's invoke and flood update (see
+        Fleet.run_epilogue). Their unloads are 'late' and park for settle_late()."""
+        return self.tick_deliveries_only(counters, _epilogue=True)
+
+    def tick_deliveries_only(self, counters: dict, _settling=False, _epilogue=False) -> list:
         """Land due deliveries without ageing tasks.
 
         Used where task expiry is driven externally (the equivalence test replays Unity's
@@ -608,6 +613,8 @@ class TaskBoard:
 
         if _settling:
             arrived, dropped = list(_settling), []
+        elif _epilogue:
+            arrived, dropped = self.fleet.run_epilogue(self.flooded)
         else:
             arrived, self.pending, dropped = self.fleet.run_round(self.pending, self.flooded, _load)
             for _p in self.fleet.aborted:

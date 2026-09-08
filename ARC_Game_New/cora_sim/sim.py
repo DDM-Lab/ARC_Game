@@ -1070,6 +1070,9 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
     w.pending_removals.extend(_late_removals)
     _apply_removals(w)
+    # THE PAUSED FRAMES RUN HERE, against the flood as just updated (Fleet.run_epilogue).
+    w.tasks.flooded = w.flooded_road_cells()
+    _late += w.tasks.tick_epilogue(w.economy.counters)
     for _e in _late + w.tasks.settle_late(w.economy.counters):
         _n = len(w.pending_arrivals)
         _land(w, _e[0], _e[1], _e[2])
