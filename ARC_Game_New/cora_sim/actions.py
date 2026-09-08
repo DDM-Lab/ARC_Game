@@ -60,7 +60,7 @@ def _components(world):
 
 class CoraActions(ActionModel):
     def __init__(self, rng, max_menu=16, max_per_turn=2, allow_transfers=False,
-                 shaping=0.0, idle_turn_rate=0.62, auto_staff=True):
+                 shaping=0.0, idle_turn_rate=0.62, auto_staff=True, no_debt=False):
         self.auto_staff = auto_staff
         # 62% of real benchmark turns take no menu action at all (5,482 turns measured in
         # play.py); random genes follow that so a fresh population is not all spenders.
@@ -69,6 +69,7 @@ class CoraActions(ActionModel):
         self.max_menu = max_menu
         self.max_per_turn = max_per_turn
         self.allow_transfers = allow_transfers
+        self.no_debt = no_debt
         self.shaping = shaping
         self._specs = None
         self._static = None
@@ -112,7 +113,12 @@ class CoraActions(ActionModel):
                 if b.get("type") == "Community" and (b.get("resources") or {}).get("population", 0) > 0:
                     for q in TRANSFER_QUANTITIES:
                         raw.append(action_from_id(f"transfer_population_{b['name']}_Motel_{q}", 0))
-        kept, _dropped = prune(raw, econ=econ, budget=econ.budget)
+        # allowNegativeBudget is TRUE in the shipped scene (SatisfactionAndBudget, env
+        # ARC_ALLOW_NEGATIVE_BUDGET overrides it): WouldAllowSpend never refuses, so a hire
+        # at -$9,199 goes through and the budget clamps at minBudget (6001 validation, round
+        # 31). Pruning "unaffordable" actions is therefore a search preference, not a rule
+        # of the game, and it is off unless the model is built with no_debt=True.
+        kept, _dropped = prune(raw, econ=econ, budget=econ.budget if self.no_debt else None)
         return self._span_families(kept) if span else kept
 
     def _span_families(self, actions):
@@ -217,7 +223,7 @@ class CoraActions(ActionModel):
             a = legal_now.get(aid)
             if a is None:
                 continue                      # not legal in this state: the game ignores it
-            if _true_cost(a) > world.economy.budget:
+            if self.no_debt and _true_cost(a) > world.economy.budget:
                 continue
             apply_action(world.economy, a); done.append(aid)
         return done

@@ -1,12 +1,19 @@
 # cora_sim -- status
 
-**The surrogate reproduces the Unity game's end-of-turn state exactly on every capture we
-have.** Eleven 32-round episodes (seeds 5501-6101, `scratchpad/cap32b`, ARC_SNAPSHOT_DEBUG=1):
-every tracked counter matches at every one of the 32 rounds, and the RNG draw stream is
-identical draw-for-draw across all 32 rounds of all eleven. The original eleven 8-step
-captures are 11 of 11. All 12 mechanic suites pass. Held-out seeds: see the bottom of this
-file.
+**The surrogate reproduces the Unity game's end-of-turn state exactly on every validation
+run we have (2026-09-08).** Four 32-round headless runs driven by EVOLVED plans (seeds 5503,
+5901, 6001, 7002; `runs/validate/staff_N.{json,log}`, ARC_SNAPSHOT_DEBUG=1): the RNG draw
+stream is identical draw-for-draw, and every reward counter, the budget and the final score
+agree at every round. These are off-policy plans that build casework sites, strand vehicles
+in floods, run two kitchens and go into debt -- mechanics the earlier LLM-played captures
+never touched. The 14 earlier calibration captures were lost with the session scratchpad;
+regenerate them (validate_plan.py writes the harness format) before the replay ratchet is
+meaningful again.
 
+    make the numbers yourself, never quote them from memory:
+      python -m cora_sim.debug_lockstep                    # every validated seed + the open-bug list
+      python -m cora_sim.debug_lockstep 5503               # interactive: board / fleet / groups / draws per step
+      python -m cora_sim.diag_lockstep runs/evo14.jsonl 5503
     make the numbers yourself, never quote them from memory:
       STAFF_TRACES=<dir>/staff_*.json python -m cora_sim.test_replay_forward   # counters, per round
       STAFF_TRACES=<dir>/staff_*.json python -m cora_sim.diag_marks            # draws, per step

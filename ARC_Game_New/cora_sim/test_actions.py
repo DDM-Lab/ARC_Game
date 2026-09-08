@@ -33,8 +33,12 @@ def test_basket_is_pruned_and_spanned():
     w.economy.used_sites.add(0)
     assert not any(i.startswith("build_") and i.endswith("_0") for i in
                    [a["action_id"] for a in m.basket(w)]), "built-on site still offered"
+    # The game allows debt (allowNegativeBudget is true in the scene), so a poor budget
+    # prunes nothing by default; the no_debt model keeps the old search preference.
     w.economy.budget = 50
     ids = [a["action_id"] for a in m.basket(w)]
+    assert any(i.startswith("hire_") for i in ids), "debt-allowed model must still offer hires"
+    ids = [a["action_id"] for a in CoraActions(random.Random(0), no_debt=True).basket(w)]
     assert not any(i.startswith(("build_", "hire_", "train_")) for i in ids), ids
 
 

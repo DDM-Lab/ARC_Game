@@ -34,37 +34,32 @@ from cora_sim.diag_board import board                       # noqa: E402
 from cora_sim.test_replay_forward import seed_state         # noqa: E402
 
 BUGS = [
-    ("OPEN", "6001", "step 21: two operational kitchens. Unity's kitchen-order choices (0/1) are multi-delivery "
-     "(ExecuteMultipleDeliveries -> MultiSourceSingleDest -> FindMultipleSources: kitchens with stock, "
-     "FindObjectsOfType order, per-kitchen route check). The port routes every order from the FIRST InUse "
-     "kitchen (sim.answer, food path: `_kitchen = next(...)`), so two orders whose route from that kitchen is "
-     "flood-cut are rejected while Unity fills them from the other kitchen. Port: sim.py answer(); Unity: "
-     "TaskDetailUI.ExecuteMultiSourceSingleDest / FindMultipleSources, DeliverySystem.CreateDeliveryTask."),
-    ("OPEN", "7002", "round 22: port foodResolved/foodFulfilled one higher than Unity (16/15 vs 15/14). Step 21-22 "
-     "fleet now matches Unity (the epilogue load is deferred past production), so the extra credit is a "
-     "resolution rule, not a landing: candidates are the abort/retry path after a failed kitchen load "
-     "(Unity orphans the delivery -- Vehicle.LoadCargo sets currentTask=null -- and the parent expires "
-     "Incomplete; the port re-dispatches at the next pass) and late-delivery crediting. Port: tasks.py "
-     "tick_deliveries_only / roads.run_round abort; Unity: Vehicle.LoadCargo, TaskSystem.OnDeliveryTaskCompleted."),
-    ("OPEN", "5503", "round 15: lodgingFulfilled 600 vs 500. The port's vehicle carrying the Community03->"
-     "Shelter_0 relocation (task 43) hits a flood tile at (4, 0) on step 15 (`f`: (515, 'collision', 1, 43, "
-     "(4, 0))) and the delivery is dropped; Unity's vehicle delivers it (Registered 63 clients at Shelter_0, "
-     "lodgingFulfilled +100). Either Unity's A* path for that leg avoids (4, 0) (path computed at leg start "
-     "against the flood of that moment) or Unity does not stop a vehicle for a tile that floods under it "
-     "mid-leg. Port: roads.run_round collision check + path_cells; Unity: Vehicle.cs movement/flood check "
-     "(TriggerRoadBlockageTask) and DeliverySystem.CanCreateDeliveryWithEstimate."),
+    ("EXACT", "5503 5901 6001 7002", "all four validated seeds: draw stream identical for 32 rounds, every "
+     "reward counter, the budget and the final score equal at every round (2026-09-08)."),
     ("OPEN", "all", "The 14 calibration captures (scratchpad/cap32b, cap32_fresh) were wiped from the session "
-     "scratchpad on 2026-09-08; test_replay_forward / diag_marks have no inputs until they are regenerated "
-     "(any deterministic driver works: validate_plan.py writes the same trace format). Until then the "
-     "four runs/validate logs are the only oracles; 5901 is exact on all of them and is the regression check."),
-    ("FIXED", "5503", "Casework Request mechanic ported (task creation from the tracker, aged at birth; event "
-     "re-arm on completion/expiry/choice 2, swept before EVERY tracker pass incl. both rollover passes; "
-     "facility-aware client removal; the game's double removal per landing, interleaved unload/complete; "
-     "choice 1 = up to 3 newest operational casework sites, quantity split evenly)."),
-    ("FIXED", "7002", "A vehicle reaching its source on the epilogue frame loads AFTER the round's production "
-     "(roads.run_round epilogue: to_src deferred to the next round's first frame)."),
-    ("FIXED", "5503", "Client groups are tagged with the specific facility (Shelter_4, Motel), not the category."),
-    ("FIXED", "5503", "diag_lockstep replays the trace's `taken` choices (what Unity was sent), not the gene."),
+     "scratchpad on 2026-09-08, so test_replay_forward / diag_marks have no inputs. The four runs/validate "
+     "logs are the only oracles; regenerate captures with validate_plan.py (same trace format) before "
+     "trusting any further rule change beyond these four seeds."),
+    ("UNVERIFIED", "-", "Transcribed from the C# without a capture exercising them: Road Blockage choices for food "
+     "cargo and for not-yet-loaded population (treated as inert, as the C# source lookup fails); casework "
+     "choice 2 (wait, -10); casework deliveries split across 2-3 sites; kitchen orders from 2+ reachable "
+     "kitchens both shipping the full quantity (6001 s22 shows the queue lines, the landings were not "
+     "compared); a vehicle that reaches its source on the epilogue frame and finds it empty."),
+    ("KNOWN GAP", "-", "The port debits a relocation's source when the trip LANDS; Unity debits at LOAD. Counters "
+     "agree, but mid-flight populations differ (5503 step 13: Motel 235 vs 215), which a population "
+     "threshold trigger evaluated in that window could see."),
+    ("FIXED", "5503", "Casework Request mechanic (task from the tracker, aged at birth; event re-arm swept before "
+     "every tracker pass; facility-aware double removal, interleaved unload/complete; up to 3 newest sites)."),
+    ("FIXED", "5503", "Flood blockage chain: stopped delivery credits its nominal quantity as fulfilled (late "
+     "delivery to a closed parent), Road Blockage Emergency task (-20 on expiry, -30 more if clients were "
+     "aboard), $1500 immediate transport to shelters with space."),
+    ("FIXED", "5503", "Multi-delivery 'Send to Shelters' ships the full quantity split across up to 3 shelters "
+     "with space, uncapped by space or source; immediate variant moves min(per, source, space) per shelter."),
+    ("FIXED", "7002", "Epilogue-frame loads happen after production; an empty-source abort orphans the trip so "
+     "the parent can only expire; food expiry credits nothing; tracker round is stale on segment 4."),
+    ("FIXED", "6001", "Kitchen orders are multi-source: one full order per reachable stocked kitchen (newest "
+     "first, up to 3), each trip loading from its own kitchen; shelter-food incomplete penalty; the action "
+     "model allows debt like the game (allowNegativeBudget)."),
 ]
 
 
