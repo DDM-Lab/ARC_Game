@@ -50,7 +50,8 @@ def main():
     first, firstd, bd, port_marks = {}, None, None, []
     for i, step in enumerate(t):
         gene = row["plan"][i] if i < len(row["plan"]) else {"choices": {}, "menu": []}
-        m.apply(w, ("turn", gene)); marks = []; S.step_round(w, marks=marks)
+        drive_step(w, m, step, gene)
+        marks = []; S.step_round(w, marks=marks)
         um_, sm = step["after"]["rewardMetrics"], w.economy.metrics()
         for k in _KEYS:
             if um_.get(k) != sm.get(k) and k not in first:
@@ -72,6 +73,38 @@ def main():
     print(f"budget: first difference {bd}")
     print(f"score: unity {reward_scoring.compute_score(um_)[2]:.4f}  port {reward_scoring.compute_score(sm)[2]:.4f}")
     return 0
+
+
+def drive_step(w, m, step, gene):
+    """Apply one trace step's actions to the port, before step_round.
+
+    Drives the port with what Unity was ACTUALLY sent that step (the trace's `taken`),
+    not the gene: the surrogate that produced the trace may have offered a task the
+    current one does not, or vice versa, and the fallback choice differs. Choices are
+    replayed per task type in order, exactly as validate_plan mapped them onto Unity;
+    menu actions by executed id; staffing by the model's own auto-staff, as recorded."""
+    queues, menu = {}, []
+    for a in step.get("taken") or []:
+        if a.get("error"):
+            continue
+        if a.get("kind") == "choice":
+            key = a.get("stableTaskId") or ""
+            queues.setdefault(key, []).append(a.get("choiceId"))
+        elif a.get("kind") == "menu" and a.get("action_id"):
+            menu.append(a["action_id"])
+    offered = {}
+    for tid, cid in S.open_choices(w):
+        offered.setdefault(tid, []).append(cid)
+    for tid, cids in offered.items():
+        if tid in w.tasks.repair_for:
+            key = "Repair"
+        else:
+            entry = w.generated_specs.get(tid)
+            key = entry[0] if entry else ""
+        q = queues.get(key) or queues.get("" if key == "Casework_Request" else key)
+        want = q.pop(0) if q else gene["choices"].get(key)
+        S.answer(w, tid, want if want in cids else cids[0])
+    m.apply(w, ("turn", {"choices": {}, "menu": tuple(menu)}))
 
 
 if __name__ == "__main__":

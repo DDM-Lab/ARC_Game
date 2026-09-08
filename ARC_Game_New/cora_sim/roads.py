@@ -607,17 +607,18 @@ class Fleet:
                     continue
                 if t["left"] != 1:
                     continue                                   # would need movement
-                t["left"] = 0
                 ph = t["phase"]
                 if ph == "to_src":
-                    self.pos[v] = t["src"]
-                    if self.events is not None: self.events.append((self.frame, "at_src", v, t["payload"][0]))
-                    if load is not None and load(t["payload"], t["qty"]) <= 0:
-                        self.trip[v] = None                     # no pass can follow: no race
-                        if self.events is not None: self.events.append((self.frame, "abort", v, t["payload"][0]))
-                        continue
-                    t["phase"], t["left"] = "boarding", 1
-                elif ph == "boarding":
+                    # A vehicle reaching its source on the epilogue frame LOADS AFTER THE
+                    # ADVANCE: 7002 validation, Vehicle3 re-dispatched on the round's last
+                    # pass to a kitchen it was standing on, "loading cargo" logged after
+                    # "Kitchen_14 produced 100 FoodPacks this round", and its destination
+                    # leg unloading at resume + nodes. Leaving `left` at 1 makes the next
+                    # round's first frame -- which runs after this round's production -- do
+                    # the at_src/load, which lands the unload on that same frame.
+                    continue
+                t["left"] = 0
+                if ph == "boarding":
                     leg2 = path_length(t["src"], t["dst"], flooded, self.spec)
                     if leg2 is None:
                         self.damaged[v] = True

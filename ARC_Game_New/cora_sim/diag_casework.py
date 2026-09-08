@@ -9,13 +9,14 @@ import cora_sim.sim as S                                    # noqa: E402
 from cora_sim.actions import CoraActions                    # noqa: E402
 from cora_sim.evolve import fresh_world                     # noqa: E402
 from cora_sim.floodmap import FloodMap                      # noqa: E402
-from cora_sim.diag_lockstep import best_row                 # noqa: E402
+from cora_sim.diag_lockstep import best_row, drive_step                 # noqa: E402
 from cora_sim.test_replay_forward import seed_state         # noqa: E402
 
 _STEP = re.compile(r"\] s(\d+)d\d+r\d+f\d+ round:advance")
 _LINES = ("generated casework task", "re-enabled for group", "Casework Request",
           "Removed entire group", "Partially removed", "Registered ", "without casework departed",
-          "delivery:unload", "delivery:complete")
+          "delivery:unload", "delivery:complete", "delivery:queue", "delivery:dispatch",
+          "delivery:leg")
 
 
 def unity_events(log):
@@ -26,7 +27,9 @@ def unity_events(log):
         if m:
             step = int(m.group(1)); continue
         if any(k in line for k in _LINES) and "TextMeshPro" not in line:
-            out.setdefault(step, []).append(line.strip()[:110])
+            if "delivery:" in line:
+                line = re.sub(r'\{"s0".*?\} ', "", line)          # drop the RNG state
+            out.setdefault(step, []).append(line.strip()[:150])
     return out
 
 
@@ -35,6 +38,7 @@ def main():
     ap.add_argument("log"); ap.add_argument("unity_seed", type=int)
     ap.add_argument("--from", dest="lo", type=int, default=0)
     ap.add_argument("--to", dest="hi", type=int, default=32)
+    ap.add_argument("--fleet", action="store_true", help="also print vehicle events both sides")
     a = ap.parse_args()
     trace = f"runs/validate/staff_{a.unity_seed}.json"; ulog = trace.replace(".json", ".log")
     row = best_row(a.log, a.unity_seed)
@@ -81,7 +85,15 @@ def main():
     for i, step in enumerate(t):
         gene = row["plan"][i] if i < len(row["plan"]) else {"choices": {}, "menu": []}
         port.clear()
-        m.apply(w, ("turn", gene)); S.step_round(w)
+        drive_step(w, m, step, gene)
+        if a.fleet:
+            w.tasks.fleet.events = []
+            port.append("port pending: " + str([(p[0], p[1]) for p in w.tasks.pending]))
+        S.step_round(w)
+        if a.fleet:
+            for ev in w.tasks.fleet.events:
+                port.append("port fleet: " + str(ev))
+            w.tasks.fleet.events = None
         if not (a.lo <= i <= a.hi):
             for line in ue.get(i, []):
                 apply_unity(line)
