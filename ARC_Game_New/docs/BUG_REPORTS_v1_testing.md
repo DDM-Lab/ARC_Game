@@ -37,6 +37,49 @@ questionable behaviours for the design discussion. Part D = claims that did not 
 
 ---
 
+## Fix status (branch `v1_fixes`, 2026-09-09)
+
+All fixes live on `v1_fixes` (from `v1_testing`, not merged, not pushed) in six commits, each of
+which compiled as a headless build: `d5441454` deliveries, `21d05150` tasks + clients, `16d1a106`
+choice execution, `d17eb70f` workers + clock + config + report, `fee6733d` action menu prices.
+Verification: seed 5503's recorded actions replayed through the fixed build ran all 32 rounds with
+**zero exceptions** (the old build threw two NullReferenceExceptions on the same input), every day
+now delivers segment events 1-4, and the same shelters that logged `consumed 0/N` every day now log
+`consumed 100/400`, `100/300`, `100/200`. The surrogate has NOT been changed and now diverges from
+the fixed game by design (first at round 5); re-deriving it is the next job.
+
+| entry | status |
+|---|---|
+| A1 | FIXED `d17eb70f` — the last round's tick fires in `AdvanceTimeSegment` before the report; rollover no longer raises a segment event. Timing decision taken as in "Intended". |
+| A2, A3 | FIXED `d5441454` — nominal-quantity registration block removed. |
+| A4 | FIXED `d5441454` — failure records the demand; external stop is a cancel, not a completion. |
+| A5 | FIXED `21d05150` — superseded task closed properly (`SupersedeTask`), demand carried by the emergency task. |
+| A6 | FIXED `d17eb70f` + `fee6733d` — `ActionExecutor` prices builds and workers from the game's fields; the Python action menu reads the live prices. Price = the scene values (build 2000; workers 200 / 1000 / 300 — see note below). |
+| A7 | FIXED `21d05150`. |
+| A8 | FIXED `d5441454` — coroutine handle stopped on reassignment; abort unwound on the outer run. |
+| A9 | FIXED `d17eb70f` — both defects (SetDefaults + loader lookup in Awake). Headless now reads the loader's fallbacks instead of `default*`. |
+| A10 | FIXED `21d05150` — departures leave the building's storage. |
+| A11 | FIXED `21d05150` — blockage tasks name their facility; fast-food choice delivers. |
+| A12 | FIXED `d17eb70f` (layout + mesh pass on creation) — **unverified in the editor**. |
+| B1-B4 | FIXED `d5441454`. |
+| B5 | NOT FIXED — PLAUSIBLE only; needs a runtime check first. |
+| B6-B10 | FIXED `21d05150`. |
+| B11-B15 | FIXED `16d1a106`. Part C.3 resolved as "refuse" (inbound-covered request is rejected on every path). |
+| B16 | FIXED `16d1a106` as validation: headless confirms are validated against the task's input data; they are NOT refused for input tasks (deciding that would block officer flows). |
+| B17-B24 | FIXED `d17eb70f`. B22: an agent's "assign N workers" must hit the building's exact workforce like the human panel and honours the lock. |
+| B25 | FIXED `21d05150`. |
+| B26 | NOT FIXED — design: community population/consumption and the `initialCommunityResidentCount` row need a ruling (400 vs 30 evacuees changes the game). |
+| B27, B28 | FIXED `d17eb70f`. |
+| B29-B34 | FIXED `d17eb70f`. B31 made deterministic (advisory takes the smaller half); the count-vs-interval semantics is still Part C. |
+| B35 | PARTLY — culture-invariant parsing and the header-row skip are fixed; the dead rows (`rainExpansionRate`, `rainFloodProbability`, food capacities, resident count) still need a ruling on what they should drive. |
+| C.2, C.4, C.5, C.6, C.7, C.8, C.9 | unchanged, pending the design discussion. |
+
+**Price note (found while fixing A6/B21).** The scene charges humans 200 per untrained hire,
+1000 per trained hire and 300 per training (`MainScene.unity:66151-66173`), while the agent client
+claimed and was charged 100 / 300 / 500. Agents now pay what humans pay. Every RL/benchmark result
+produced before `v1_fixes` was played at the cheaper prices.
+
+
 ## Part A — previously known bugs, re-derived on `868c192e`
 
 ### A1. Delivered food is wasted at the day rollover *before* the day's consumption tick — nobody eats it
