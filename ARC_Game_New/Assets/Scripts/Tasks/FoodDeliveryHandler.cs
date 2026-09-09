@@ -108,7 +108,7 @@ public class FoodDeliveryHandler : MonoBehaviour
             // EXIT A: destination already covered by inbound. CompleteTask -> resolved AND
             // fulfilled, so Unity counts this exactly as a delivery even though none is made.
             SnapshotDebug.MarkContext("food:exit", "{\"branch\":\"inbound-covered\",\"dst\":\""
-                + destination.name + "\",\"requested\":" + requestedQuantity
+                + destination.name + "\",\"requested\":" + choice.deliveryQuantity
                 + ",\"inbound\":" + alreadyInbound + "}");
             if (showDebugInfo)
                 Debug.Log($"[FoodDeliveryTaskGenerator] Inbound deliveries already cover {alreadyInbound}/{choice.deliveryQuantity} for {destination.name}");
@@ -123,7 +123,7 @@ public class FoodDeliveryHandler : MonoBehaviour
             // the task stays on the board. Collapsing this with EXIT A is what made four
             // traces read foodResolved 0 against Unity's 1.
             SnapshotDebug.MarkContext("food:exit", "{\"branch\":\"no-kitchen-stock\",\"dst\":\""
-                + destination.name + "\",\"requested\":" + requestedQuantity + "}");
+                + destination.name + "\",\"requested\":" + choice.deliveryQuantity + "}");
             Debug.LogWarning($"[FoodDeliveryTaskGenerator] No kitchens with available food for '{parentTask.taskTitle}'");
             return false;
         }
