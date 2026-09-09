@@ -2,5 +2,5 @@
   "wsUrl": "wss://cora_game_llm.dev.ddmlab.com/ws",
   "mapConfigUrl": "",
   "logServerUrl": "",
-  "dataCollectionEnabled": false
+  "dataCollectionEnabled": true
 }
