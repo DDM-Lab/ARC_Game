@@ -112,10 +112,21 @@ ROUNDS_PER_DAY = 4
 # numbering does not line up: the mark tag counts 1..4 while OnRoundChanged reports 1,2,3
 # then 0. Encoding the observable schedule is honest; encoding a guessed numbering is not.
 _GENERATION_SEGMENTS = (2,)
-# GameDataManager.InitialEmergencyTaskFrequency -- the one economy constant not exported.
-# 4 is the .cs default and reproduces the observed spacing (two Emergency tasks in 24
-# rounds). Export it if the scene is ever retuned.
-_NUM_EMERGENCY_TASKS = 4
+# GameDataManager.InitialEmergencyTaskFrequency, as the HEADLESS game actually runs it: ZERO.
+# The sheet fetch fails offline ("GameConfigLoader: Failed to load config ... Using default
+# values"), GameDataManager.SetDefaults() runs -- and SetDefaults assigns
+# defaultEmergencyTaskFrequency (4) to InitialExternalRelationFrequency and never sets
+# InitialEmergencyTaskFrequency at all (GameDataManager.cs, the last line of SetDefaults).
+# TaskSystem.numEmergencyTasks is therefore 0, currEmergencyTaskCount (0) >= 0 from the
+# first pass, and every database Emergency task -- Emergency Budget Crisis, Shelter Flood
+# Damage, Community Emergency Evacuation -- is "[Limit] Skipping ...: Max emergencies
+# reached" in EVERY capture (38 skips, 0 creations on 5901). Only the code-built Road
+# Blockage Emergency exists. The port's cap of 4 (the .cs default) never showed because the
+# probability draws happened not to fire one on the calibrated trajectories; 5901 on the
+# merged build (a debt-driven plan) created Emergency Budget Crisis at step 17 and paid
+# itself $30,000 the game never granted. A Unity bug for the hunt list; the deployed WebGL
+# client, which does fetch the sheet, runs with 2.
+_NUM_EMERGENCY_TASKS = 0
 _FINAL_DAY = 8
 _ROLLOVER_PASSES = 2
 # TaskSystem.CreateTask's per-type defaults: Emergency 1, Demand 2, Advisory 3, Alert 2.
