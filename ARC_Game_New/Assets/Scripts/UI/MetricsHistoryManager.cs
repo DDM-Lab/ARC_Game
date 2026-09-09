@@ -1,7 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-using System.Collections;
 using System.Collections.Generic;
 using System;
 
@@ -30,6 +29,14 @@ public class DailyMetricsHistory
     public int day;
     public List<MetricChangeEntry> satisfactionChanges = new List<MetricChangeEntry>();
     public List<MetricChangeEntry> budgetChanges = new List<MetricChangeEntry>();
+    public List<MetricChangeEntry> resourceEfficiencyChanges = new List<MetricChangeEntry>();
+}
+
+public enum MetricsTab
+{
+    Satisfaction,
+    Budget,
+    ResourceEfficiency
 }
 
 public class MetricsHistoryManager : MonoBehaviour
@@ -38,23 +45,27 @@ public class MetricsHistoryManager : MonoBehaviour
     public RectTransform metricsPanel;
     public TextMeshProUGUI panelTitleText;
     public Button exitButton;
-    
+
+    [Header("Modal Mask")]
+    [Tooltip("Full-screen raycast-blocking image shown behind the panel while it's open, so other UI can't be clicked until Exit is pressed.")]
+    public GameObject maskPanel;
+
     [Header("Tab Buttons")]
     public Button satisfactionTabButton;
     public Button budgetTabButton;
-    
+    public Button resourceEfficiencyTabButton;
+
     [Header("Scroll View (Shared)")]
     public ScrollRect metricsScrollView;
     public Transform metricsContent;
-    
+
     [Header("Prefabs")]
     public GameObject metricEntryPrefab;
-    
-    [Header("Animation Settings")]
-    public float expandedHeight = 400f;
-    public float collapsedHeight = 0f;
-    public float animationDuration = 0.3f;
-    
+
+    [Header("Empty State")]
+    [Tooltip("Shown when there are no budget entries for today; hidden as soon as there's at least one.")]
+    public GameObject noEntriesText;
+
     [Header("Colors")]
     public Color positiveColor = Color.green;
     public Color negativeColor = Color.red;
@@ -70,8 +81,7 @@ public class MetricsHistoryManager : MonoBehaviour
     
     // UI state
     private bool isPanelExpanded = false;
-    private bool isAnimating = false;
-    private bool isShowingSatisfaction = true; // Track which tab is active
+    private MetricsTab currentTab = MetricsTab.Satisfaction; // Track which tab is active
     
     // Current game state
     private int currentRound = 1;
@@ -100,10 +110,13 @@ public class MetricsHistoryManager : MonoBehaviour
         SetupUI();
         InitializeHistory();
         SubscribeToEvents();
-        
-        // Set initial collapsed state
+
+        // Start closed - panel and mask both hidden
         if (metricsPanel != null)
-            metricsPanel.sizeDelta = new Vector2(metricsPanel.sizeDelta.x, collapsedHeight);
+            metricsPanel.gameObject.SetActive(false);
+
+        if (maskPanel != null)
+            maskPanel.SetActive(false);
     }
     
     void SetupUI()
@@ -113,7 +126,10 @@ public class MetricsHistoryManager : MonoBehaviour
             
         if (budgetTabButton != null)
             budgetTabButton.onClick.AddListener(ShowBudgetTab);
-            
+
+        if (resourceEfficiencyTabButton != null)
+            resourceEfficiencyTabButton.onClick.AddListener(ShowResourceEfficiencyTab);
+
         if (exitButton != null)
             exitButton.onClick.AddListener(ClosePanel);
             
@@ -156,42 +172,32 @@ public class MetricsHistoryManager : MonoBehaviour
 
     public void ShowSatisfactionTab()
     {
-        isShowingSatisfaction = true;
-        
-        // Update title
-        if (panelTitleText != null)
-            panelTitleText.text = "Satisfaction History";
-        
-        // Update tab colors
-        UpdateTabColors();
-
-        GameLogPanel.Instance?.LogUIInteraction($"Metrics panel: switched to Satisfaction tab | day={currentDay}");
-        
-        // Open panel if not already open
-        if (!isPanelExpanded)
-        {
-            OpenPanel();
-        }
-        else
-        {
-            // Just refresh content
-            RefreshCurrentTab();
-        }
+        SwitchToTab(MetricsTab.Satisfaction, "Satisfaction History");
     }
-    
+
     public void ShowBudgetTab()
     {
-        isShowingSatisfaction = false;
-        
+        SwitchToTab(MetricsTab.Budget, "Budget History");
+    }
+
+    public void ShowResourceEfficiencyTab()
+    {
+        SwitchToTab(MetricsTab.ResourceEfficiency, "Resource Efficiency History");
+    }
+
+    void SwitchToTab(MetricsTab tab, string title)
+    {
+        currentTab = tab;
+
         // Update title
         if (panelTitleText != null)
-            panelTitleText.text = "Budget History";
-        
+            panelTitleText.text = title;
+
         // Update tab colors
         UpdateTabColors();
 
-        GameLogPanel.Instance?.LogUIInteraction($"Metrics panel: switched to Budget tab | day={currentDay}");
-        
+        GameLogPanel.Instance?.LogUIInteraction($"Metrics panel: switched to {tab} tab | day={currentDay}");
+
         // Open panel if not already open
         if (!isPanelExpanded)
         {
@@ -203,78 +209,77 @@ public class MetricsHistoryManager : MonoBehaviour
             RefreshCurrentTab();
         }
     }
-    
+
     void UpdateTabColors()
     {
         if (satisfactionTabButton != null)
         {
             Image buttonImage = satisfactionTabButton.GetComponent<Image>();
             if (buttonImage != null)
-                buttonImage.color = isShowingSatisfaction ? activeTabColor : inactiveTabColor;
+                buttonImage.color = currentTab == MetricsTab.Satisfaction ? activeTabColor : inactiveTabColor;
         }
-        
+
         if (budgetTabButton != null)
         {
             Image buttonImage = budgetTabButton.GetComponent<Image>();
             if (buttonImage != null)
-                buttonImage.color = !isShowingSatisfaction ? activeTabColor : inactiveTabColor;
+                buttonImage.color = currentTab == MetricsTab.Budget ? activeTabColor : inactiveTabColor;
+        }
+
+        if (resourceEfficiencyTabButton != null)
+        {
+            Image buttonImage = resourceEfficiencyTabButton.GetComponent<Image>();
+            if (buttonImage != null)
+                buttonImage.color = currentTab == MetricsTab.ResourceEfficiency ? activeTabColor : inactiveTabColor;
         }
     }
     
     void OpenPanel()
     {
-        if (isAnimating) return;
         isPanelExpanded = true;
+
+        if (metricsPanel != null)
+            metricsPanel.gameObject.SetActive(true);
+
+        if (maskPanel != null)
+            maskPanel.SetActive(true);
+
         RefreshCurrentTab();
-        StartCoroutine(AnimatePanel(true));
+
+        if (showDebugInfo)
+            Debug.Log("Metrics panel opened (modal)");
     }
-    
+
     void ClosePanel()
     {
         isPanelExpanded = false;
-        
-        // Immediate close without animation
+
         if (metricsPanel != null)
-            metricsPanel.sizeDelta = new Vector2(metricsPanel.sizeDelta.x, collapsedHeight);
-        
+            metricsPanel.gameObject.SetActive(false);
+
+        if (maskPanel != null)
+            maskPanel.SetActive(false);
+
         ClearMetricItems();
         GameLogPanel.Instance?.LogUIInteraction("Metrics panel closed");
         if (showDebugInfo)
-            Debug.Log("Metrics panel closed immediately");
-    }
-    
-    IEnumerator AnimatePanel(bool expand)
-    {
-        if (metricsPanel == null) yield break;
-        
-        isAnimating = true;
-        
-        float startHeight = metricsPanel.sizeDelta.y;
-        float targetHeight = expand ? expandedHeight : collapsedHeight;
-        float elapsed = 0f;
-        
-        while (elapsed < animationDuration)
-        {
-            elapsed += Time.unscaledDeltaTime;
-            float t = Mathf.Clamp01(elapsed / animationDuration);
-            float easedT = Mathf.SmoothStep(0f, 1f, t);
-            
-            float currentHeight = Mathf.Lerp(startHeight, targetHeight, easedT);
-            metricsPanel.sizeDelta = new Vector2(metricsPanel.sizeDelta.x, currentHeight);
-            
-            yield return null;
-        }
-        
-        metricsPanel.sizeDelta = new Vector2(metricsPanel.sizeDelta.x, targetHeight);
-        isAnimating = false;
+            Debug.Log("Metrics panel closed");
     }
     
     void RefreshCurrentTab()
     {
-        if (isShowingSatisfaction)
-            RefreshSatisfactionHistory();
-        else
-            RefreshBudgetHistory();
+        switch (currentTab)
+        {
+            case MetricsTab.Satisfaction:
+                RefreshSatisfactionHistory();
+                break;
+            case MetricsTab.Budget:
+                RefreshBudgetHistory();
+                break;
+            case MetricsTab.ResourceEfficiency:
+                RefreshResourceEfficiencyHistory();
+                break;
+        }
     }
     
     void OnSatisfactionChanged(float newValue)
@@ -301,20 +306,35 @@ public class MetricsHistoryManager : MonoBehaviour
     public void RecordBudgetChange(float amount, string description)
     {
         if (currentDayHistory == null) return;
-        
+
         MetricChangeEntry entry = new MetricChangeEntry(amount, description, currentRound, currentDay);
         currentDayHistory.budgetChanges.Add(entry);
-        
+
         if (showDebugInfo)
             Debug.Log($"Recorded budget change: {amount:F0} - {description}");
+    }
+
+    public void RecordResourceEfficiencyChange(float amount, string description)
+    {
+        if (currentDayHistory == null) return;
+
+        MetricChangeEntry entry = new MetricChangeEntry(amount, description, currentRound, currentDay);
+        currentDayHistory.resourceEfficiencyChanges.Add(entry);
+
+        if (showDebugInfo)
+            Debug.Log($"Recorded resource efficiency change: {amount:F1} - {description}");
     }
     
     void RefreshSatisfactionHistory()
     {
         ClearMetricItems();
-        
+
+        bool hasEntries = currentDayHistory != null && currentDayHistory.satisfactionChanges.Count > 0;
+        if (noEntriesText != null)
+            noEntriesText.SetActive(!hasEntries);
+
         if (currentDayHistory == null) return;
-        
+
         // Show today's changes in reverse order (newest first)
         for (int i = currentDayHistory.satisfactionChanges.Count - 1; i >= 0; i--)
         {
@@ -322,17 +342,39 @@ public class MetricsHistoryManager : MonoBehaviour
             CreateMetricEntryItem(entry, metricsContent, currentMetricItems);
         }
     }
-    
+
     void RefreshBudgetHistory()
     {
         ClearMetricItems();
-        
+
+        bool hasEntries = currentDayHistory != null && currentDayHistory.budgetChanges.Count > 0;
+        if (noEntriesText != null)
+            noEntriesText.SetActive(!hasEntries);
+
         if (currentDayHistory == null) return;
-        
+
         // Show today's changes in reverse order (newest first)
         for (int i = currentDayHistory.budgetChanges.Count - 1; i >= 0; i--)
         {
             MetricChangeEntry entry = currentDayHistory.budgetChanges[i];
+            CreateMetricEntryItem(entry, metricsContent, currentMetricItems);
+        }
+    }
+
+    void RefreshResourceEfficiencyHistory()
+    {
+        ClearMetricItems();
+
+        bool hasEntries = currentDayHistory != null && currentDayHistory.resourceEfficiencyChanges.Count > 0;
+        if (noEntriesText != null)
+            noEntriesText.SetActive(!hasEntries);
+
+        if (currentDayHistory == null) return;
+
+        // Show today's changes in reverse order (newest first)
+        for (int i = currentDayHistory.resourceEfficiencyChanges.Count - 1; i >= 0; i--)
+        {
+            MetricChangeEntry entry = currentDayHistory.resourceEfficiencyChanges[i];
             CreateMetricEntryItem(entry, metricsContent, currentMetricItems);
         }
     }
