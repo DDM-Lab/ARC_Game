@@ -13,10 +13,10 @@ MonoBehaviour:
   m_Name: Community_TransportRequest
   m_EditorClassIdentifier: 
   taskId: Community_TransportRequest
-  taskTitle: Population Relocation From Community
+  taskTitle: '[facility_name_plain] Relocation Request'
   taskType: 1
-  description: 100 clients in [facility_name] need relocation. Choose where to send
-    them based on available options and budget.
+  description: "100 clients from [facility_name] requested relocation. Choose where
+    to send them based on available options.\r"
   taskImage: {fileID: 21300000, guid: a2ba475e51fc353469fa5bc8ff4de77f, type: 3}
   taskOfficer: 2
   taskTag: 2
@@ -51,7 +51,7 @@ MonoBehaviour:
   hasRealTimeLimit: 0
   impacts:
   - impactType: 3
-    value: 20
+    value: 200
     isCountdown: 0
     customLabel: 
   - impactType: 5
@@ -63,16 +63,14 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   agentMessages:
-  - messageText: We have 100 clients that need immediate relocation in [facility_name].
+  - messageText: "We have 100 clients in [facility_name] who need immediate relocation.
+      They\u2019ve been displaced and need somewhere to stay tonight. Choose from
+      the available options."
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
-  - messageText: They've been displaced and need somewhere to stay tonight.
-    agentAvatar: {fileID: 0}
-    useTypingEffect: 1
-    typingSpeed: 0.05
-  - messageText: We have several options available. Where would you like to send
-      them?
+  - messageText: Once relocated, they will arrive at the selected location on their
+      own in [relocation_rounds] rounds. Where would you like to send them?
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
@@ -127,64 +125,6 @@ MonoBehaviour:
     budgetDelayRounds: 0
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 1
-  - choiceId: 2
-    choiceText: Rapid Response Vehicle Evacuation to Shelters (Immediate, $3000)
-    agentReasoning: 
-    choiceImpacts:
-    - impactType: 1
-      value: -3000
-      isCountdown: 0
-      customLabel: 
-    isSelected: 0
-    triggersDelivery: 1
-    immediateDelivery: 1
-    deliveryCargoType: 0
-    enableMultipleDeliveries: 1
-    multiDeliveryType: 1
-    quantityType: 0
-    deliveryQuantity: 100
-    deliveryPercentage: 0
-    deliverAll: 0
-    sourceType: 3
-    sourceBuilding: 3
-    sourcePrebuilt: 0
-    specificSourceName: 
-    destinationType: 1
-    destinationBuilding: 1
-    destinationPrebuilt: 1
-    specificDestinationName: 
-    budgetDelayRounds: 0
-    prioritizeNearestSource: 0
-    prioritizeNearestDestination: 0
-  - choiceId: 3
-    choiceText: Rapid Response Vehicle Evacuation to Motel (Immediate, $3000)
-    agentReasoning: 
-    choiceImpacts:
-    - impactType: 1
-      value: -3000
-      isCountdown: 0
-      customLabel: 
-    isSelected: 0
-    triggersDelivery: 1
-    immediateDelivery: 1
-    deliveryCargoType: 0
-    enableMultipleDeliveries: 0
-    multiDeliveryType: 0
-    quantityType: 0
-    deliveryQuantity: 100
-    deliveryPercentage: 0
-    deliverAll: 0
-    sourceType: 3
-    sourceBuilding: 3
-    sourcePrebuilt: 0
-    specificSourceName: 
-    destinationType: 2
-    destinationBuilding: 1
-    destinationPrebuilt: 1
-    specificDestinationName: 
-    budgetDelayRounds: 0
-    prioritizeNearestSource: 0
-    prioritizeNearestDestination: 0
   numericalInputs: []
   deliveryFailureSatisfactionPenalty: 10
   deliveryTimeLimit: 300

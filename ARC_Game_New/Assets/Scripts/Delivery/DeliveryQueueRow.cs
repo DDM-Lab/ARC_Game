@@ -18,7 +18,7 @@ public class DeliveryQueueRow : MonoBehaviour
     [Header("Text Fields")]
     public TextMeshProUGUI statusText;   // "Delivering" / "Picking up" / "Queued" / "Damaged"
     public TextMeshProUGUI cargoText;    // "5x meals"
-    public TextMeshProUGUI routeText;    // "Kitchen  →  Community 1"
+    public TextMeshProUGUI routeText;    // "Kitchen -> Community 1"
     public TextMeshProUGUI etaText;      // "ETA: 00:42" or "Queued"
 
     [Header("Locate Button")]
@@ -42,7 +42,7 @@ public class DeliveryQueueRow : MonoBehaviour
         {
             string src = GetBuildingDisplayName(delivery.sourceBuilding);
             string dst = GetBuildingDisplayName(delivery.destinationBuilding);
-            routeText.text = $"{src}  →  {dst}";
+            routeText.text = $"{src} -> {dst}";
         }
 
         // Status
@@ -172,6 +172,34 @@ public class DeliveryQueueRow : MonoBehaviour
             int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
             int daysLeft = Mathf.Max(0, request.arrivalDay - currentDay);
             statusText.text = daysLeft == 1 ? "Arrive in 1 day" : $"Arrive in {daysLeft} days";
+        }
+
+        if (etaText != null) etaText.text = "";
+
+        if (locateButton != null) locateButton.gameObject.SetActive(false);
+    }
+
+    public void InitializeClientRelocation(ClientRelocationHandler.PendingRelocation relocation)
+    {
+        associatedVehicle = null;
+
+        if (cargoText != null)
+        {
+            cargoText.text = $"{relocation.quantity}x clients";
+        }
+
+        if (routeText != null)
+        {
+            string src = GetBuildingDisplayName(relocation.source);
+            string dst = GetBuildingDisplayName(relocation.destination);
+            routeText.text = $"{src} -> {dst}";
+        }
+
+        if (statusText != null)
+        {
+            statusText.text = relocation.roundsRemaining == 1
+                ? "1 round"
+                : $"{relocation.roundsRemaining} rounds";
         }
 
         if (etaText != null) etaText.text = "";

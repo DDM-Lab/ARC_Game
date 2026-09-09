@@ -13,10 +13,10 @@ MonoBehaviour:
   m_Name: Shelter_FoodRequest
   m_EditorClassIdentifier: 
   taskId: Shelter_FoodRequest
-  taskTitle: Food Request From Shelter
+  taskTitle: '[facility_name_plain] Food Request'
   taskType: 1
-  description: '[facility_name] has people but no food supplies. We need to request
-    emergency food delivery from the nearest kitchen.'
+  description: "[facility_name] requested food supplies. We can either use prepared
+    meals from available kitchens or opt for quick but costly fast-food delivery.\r"
   taskImage: {fileID: 21300000, guid: a2ba475e51fc353469fa5bc8ff4de77f, type: 3}
   taskOfficer: 4
   taskTag: 1

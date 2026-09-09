@@ -1,12 +1,19 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
+using System;
 
 /// <summary>
 /// Handles client (Population) relocation for task choices.
 /// Source = task's requesting facility (always known from trigger).
 /// Destinations = shelters and/or motels, filled largest-effective-space-first.
 /// Accounts for in-flight reservations so we never over-promise space.
+///
+/// Clients relocate under their own mobility — no Vehicle is ever used here
+/// (vehicles are reserved for food delivery). The queued relocation path
+/// (Execute) has clients depart immediately and arrive after a configurable
+/// number of rounds. The immediate/emergency path (ExecuteImmediate) is
+/// unaffected and stays a zero-delay teleport.
 ///
 /// Example: Community B has 30 ppl.
 ///   Shelter 1: 20/20 (full)         → skip
@@ -19,15 +26,50 @@ public class ClientRelocationHandler : MonoBehaviour
     [Tooltip("Prefer shelters over motels when both have space.")]
     public bool preferShelters = true;
 
+    [Header("Self-Walk Relocation Timing")]
+    [Tooltip("Number of rounds after the relocation decision before clients arrive at their destination (self-walk, no vehicle).")]
+    public int relocationDelayRounds = 2;
+
     [Header("Debug")]
     public bool showDebugInfo = true;
 
     public static ClientRelocationHandler Instance { get; private set; }
 
+    // In-flight self-walk relocations, keyed by nothing (small list, scanned linearly).
+    public class PendingRelocation
+    {
+        public GameTask parentTask;
+        public MonoBehaviour source;
+        public MonoBehaviour destination;
+        public int quantity;
+        public int roundsRemaining;
+        public string groupName;
+    }
+
+    /// <summary>Raised when clients depart on foot — mirrors DeliverySystem.OnTaskCreated so UI (e.g. the delivery queue panel) can list them.</summary>
+    public event Action<PendingRelocation> OnRelocationQueued;
+    /// <summary>Raised when self-walking clients arrive at their destination — mirrors DeliverySystem.OnTaskCompleted.</summary>
+    public event Action<PendingRelocation> OnRelocationArrived;
+
+    private readonly List<PendingRelocation> pendingRelocations = new List<PendingRelocation>();
+
+    /// <summary>Snapshot of all clients currently self-walking (departed, not yet arrived). For UI display.</summary>
+    public List<PendingRelocation> GetPendingRelocations() => new List<PendingRelocation>(pendingRelocations);
+
     void Awake()
     {
         if (Instance == null) Instance = this;
         else Destroy(gameObject);
+    }
+
+    void OnEnable()
+    {
+        GlobalClock.OnRoundEnd += HandleRoundEnd;
+    }
+
+    void OnDisable()
+    {
+        GlobalClock.OnRoundEnd -= HandleRoundEnd;
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -36,7 +78,7 @@ public class ClientRelocationHandler : MonoBehaviour
 
     public bool CanExecute(GameTask parentTask, int requestedQuantity,
                            bool includeShelters, bool includeMotels,
-                           out string errorMessage, bool requireVehicle = true)
+                           out string errorMessage, bool requiresPathCheck = true)
     {
         errorMessage = "";
 
@@ -55,10 +97,9 @@ public class ClientRelocationHandler : MonoBehaviour
         }
 
         DeliverySystem ds = DeliverySystem.Instance;
-        if (ds == null) { errorMessage = "DeliverySystem not found"; return false; }
 
-        // Immediate delivery is a teleport — skip path check. Vehicle delivery requires a reachable road.
-        int totalEffectiveSpace = GetDestinationsSorted(ds, includeShelters, includeMotels, source, filterByPath: requireVehicle)
+        // Immediate delivery is a teleport — skip path check. Self-walk relocation requires a reachable road.
+        int totalEffectiveSpace = GetDestinationsSorted(ds, includeShelters, includeMotels, source, filterByPath: requiresPathCheck)
             .Sum(d => d.effectiveSpace);
 
         if (totalEffectiveSpace <= 0)
@@ -69,28 +110,18 @@ public class ClientRelocationHandler : MonoBehaviour
             return false;
         }
 
-        if (requireVehicle)
-        {
-            bool hasVehicle = FindObjectsOfType<Vehicle>()
-                .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.Population)
-                       && v.GetCurrentStatus() != VehicleStatus.Damaged);
-            if (!hasVehicle)
-            {
-                errorMessage = "No undamaged vehicle available for client transport";
-                return false;
-            }
-        }
-
         return true;
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // PUBLIC: QUEUED (vehicle) DELIVERY
+    // PUBLIC: QUEUED (self-walk) RELOCATION
     // ─────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Creates vehicle delivery tasks distributing clients across available
-    /// shelters and/or motels. Returns true if at least one delivery was queued.
+    /// Clients depart their source immediately under their own mobility and arrive at
+    /// their destination(s) after <see cref="relocationDelayRounds"/> rounds. No Vehicle
+    /// is used — vehicles are reserved for food delivery. Returns true if at least one
+    /// relocation was scheduled.
     /// </summary>
     public bool Execute(GameTask parentTask, int requestedQuantity,
                         bool includeShelters = true, bool includeMotels = false)
@@ -103,7 +134,6 @@ public class ClientRelocationHandler : MonoBehaviour
         }
 
         DeliverySystem ds = DeliverySystem.Instance;
-        if (ds == null) return false;
 
         int available = GetPopulation(source);
         int toSend    = requestedQuantity > 0 ? Mathf.Min(requestedQuantity, available) : available;
@@ -114,7 +144,7 @@ public class ClientRelocationHandler : MonoBehaviour
             return false;
         }
 
-        var destinations = GetDestinationsSorted(ds, includeShelters, includeMotels, source);
+        var destinations = GetDestinationsSorted(ds, includeShelters, includeMotels, source, filterByPath: true);
         if (destinations.Count == 0)
         {
             Debug.LogWarning($"[ClientRelocationTaskGenerator] No available destinations for '{parentTask.taskTitle}'");
@@ -129,26 +159,133 @@ public class ClientRelocationHandler : MonoBehaviour
             if (remaining <= 0) break;
 
             int sendAmount = Mathf.Min(remaining, effectiveSpace);
-            List<DeliveryTask> deliveries = ds.CreateDeliveryTask(source, dest, ResourceType.Population, sendAmount, 3);
+            if (sendAmount <= 0) continue;
 
-            if (deliveries.Count > 0)
-            {
-                TaskSystem.Instance.LinkDeliveriesToTask(parentTask, deliveries);
-                remaining  -= sendAmount;
-                anyCreated  = true;
+            int removed = RemovePopulation(source, sendAmount);
+            if (removed <= 0) continue;
 
-                if (showDebugInfo)
-                    Debug.Log($"[ClientRelocationTaskGenerator] Queued {sendAmount} clients from {source.name} → {dest.name}");
-                GameLogPanel.Instance?.LogTaskEvent($"Client relocation queued for task '{parentTask.taskTitle}': {sendAmount} clients {source.name} -> {dest.name}");
-            }
+            QueueSelfWalk(parentTask, source, dest, removed);
+
+            remaining  -= removed;
+            anyCreated  = true;
         }
 
         if (anyCreated)
             TaskSystem.Instance.SetTaskInProgress(parentTask);
         else
-            Debug.LogWarning($"[ClientRelocationTaskGenerator] Could not create any deliveries for '{parentTask.taskTitle}'");
+            Debug.LogWarning($"[ClientRelocationTaskGenerator] Could not create any relocations for '{parentTask.taskTitle}'");
 
         return anyCreated;
+    }
+
+    /// <summary>
+    /// Self-walk relocation to a single, specific destination building (e.g. Shelter → CaseworkSite).
+    /// Used by task choices that target a specific building rather than searching shelters/motels
+    /// for space (see TaskDetailUI.ExecuteFallbackDelivery). No Vehicle is used.
+    /// </summary>
+    public bool ExecuteToSpecificDestination(GameTask parentTask, MonoBehaviour source, MonoBehaviour destination, int requestedQuantity)
+    {
+        if (source == null || destination == null) return false;
+
+        // Clients still walk along roads — a route blocked by flooding blocks them too.
+        DeliverySystem ds = DeliverySystem.Instance;
+        DeliveryTimeEstimate pathEstimate;
+        if (ds != null && !ds.CanCreateDeliveryWithEstimate(source, destination, out pathEstimate))
+            return false;
+
+        int available = GetPopulation(source);
+        int toSend    = requestedQuantity > 0 ? Mathf.Min(requestedQuantity, available) : available;
+        if (toSend <= 0) return false;
+
+        int removed = RemovePopulation(source, toSend);
+        if (removed <= 0) return false;
+
+        QueueSelfWalk(parentTask, source, destination, removed);
+        TaskSystem.Instance.SetTaskInProgress(parentTask);
+        return true;
+    }
+
+    /// <summary>
+    /// Removes departing clients from the source's stay tracking and schedules their arrival
+    /// after <see cref="relocationDelayRounds"/> rounds. Assumes population has already been
+    /// removed from the source's resource storage by the caller.
+    /// </summary>
+    void QueueSelfWalk(GameTask parentTask, MonoBehaviour source, MonoBehaviour destination, int quantity)
+    {
+        if (ClientStayTracker.Instance != null)
+            ClientStayTracker.Instance.RemoveClientsByQuantity(source, quantity);
+
+        PendingRelocation relocation = new PendingRelocation
+        {
+            parentTask      = parentTask,
+            source          = source,
+            destination     = destination,
+            quantity        = quantity,
+            roundsRemaining = Mathf.Max(1, relocationDelayRounds),
+            groupName       = $"Relocate_{parentTask.taskId}_{source.name}_to_{destination.name}"
+        };
+        pendingRelocations.Add(relocation);
+
+        if (showDebugInfo)
+            Debug.Log($"[ClientRelocationHandler] {quantity} clients departing {source.name} → {destination.name} on foot, arriving in {relocationDelayRounds} round(s)");
+        GameLogPanel.Instance?.LogTaskEvent($"Client relocation for task '{parentTask.taskTitle}': {quantity} clients departing {source.name} -> {destination.name}, arriving in {relocationDelayRounds} round(s)");
+
+        OnRelocationQueued?.Invoke(relocation);
+    }
+
+    /// <summary>
+    /// Called once per round (GlobalClock.OnRoundEnd). Advances all in-flight self-walk
+    /// relocations and finalizes any that have arrived.
+    /// </summary>
+    void HandleRoundEnd()
+    {
+        if (pendingRelocations.Count == 0) return;
+
+        List<PendingRelocation> arrived = null;
+        foreach (var r in pendingRelocations)
+        {
+            r.roundsRemaining--;
+            if (r.roundsRemaining <= 0)
+            {
+                arrived ??= new List<PendingRelocation>();
+                arrived.Add(r);
+            }
+        }
+
+        if (arrived == null) return;
+
+        foreach (var r in arrived)
+        {
+            pendingRelocations.Remove(r);
+            FinalizeRelocation(r);
+        }
+    }
+
+    void FinalizeRelocation(PendingRelocation r)
+    {
+        int delivered = AddPopulation(r.destination, r.quantity);
+
+        // Return overflow if the destination filled up while clients were en route.
+        if (delivered < r.quantity)
+            AddPopulation(r.source, r.quantity - delivered);
+
+        if (ClientStayTracker.Instance != null && delivered > 0)
+            ClientStayTracker.Instance.RegisterClientArrival(r.destination, delivered, r.groupName);
+
+        if (showDebugInfo)
+            Debug.Log($"[ClientRelocationHandler] {delivered} clients arrived on foot at {r.destination.name}");
+        GameLogPanel.Instance?.LogTaskEvent($"Client relocation for task '{r.parentTask?.taskTitle}': {delivered} clients arrived at {r.destination.name}");
+        ToastManager.ShowToast($"{delivered} clients arrived at {GetDisplayName(r.destination)}", ToastType.Info, true);
+
+        OnRelocationArrived?.Invoke(r);
+
+        // Complete the parent task once all of its self-walk relocations have arrived.
+        if (r.parentTask != null
+            && r.parentTask.status == TaskStatus.InProgress
+            && !pendingRelocations.Any(p => p.parentTask == r.parentTask))
+        {
+            TaskSystem.Instance.CompleteTask(r.parentTask);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -250,7 +387,8 @@ public class ClientRelocationHandler : MonoBehaviour
 
                 int rawSpace       = storage.GetAvailableSpace(ResourceType.Population);
                 int inbound        = ds != null ? ds.GetReservedIncomingQuantity(shelter, ResourceType.Population) : 0;
-                int effectiveSpace = Mathf.Max(0, rawSpace - inbound);
+                int walking        = GetPendingIncomingQuantity(shelter);
+                int effectiveSpace = Mathf.Max(0, rawSpace - inbound - walking);
 
                 if (effectiveSpace > 0)
                     results.Add((shelter, effectiveSpace));
@@ -265,7 +403,8 @@ public class ClientRelocationHandler : MonoBehaviour
             {
                 int rawSpace       = motel.GetPopulationCapacity() - motel.GetCurrentPopulation();
                 int inbound        = ds != null ? ds.GetReservedIncomingQuantity(motel, ResourceType.Population) : 0;
-                int effectiveSpace = Mathf.Max(0, rawSpace - inbound);
+                int walking        = GetPendingIncomingQuantity(motel);
+                int effectiveSpace = Mathf.Max(0, rawSpace - inbound - walking);
 
                 if (effectiveSpace > 0)
                     results.Add((motel, effectiveSpace));
@@ -292,6 +431,45 @@ public class ClientRelocationHandler : MonoBehaviour
         }
 
         return results.OrderByDescending(r => r.Item2).ToList();
+    }
+
+    /// <summary>
+    /// Clients already walking toward this destination (departed but not yet arrived).
+    /// Prevents over-booking a shelter/motel while multiple self-walk relocations are in flight.
+    /// </summary>
+    int GetPendingIncomingQuantity(MonoBehaviour destination)
+    {
+        int total = 0;
+        foreach (var r in pendingRelocations)
+            if (r.destination == destination) total += r.quantity;
+        return total;
+    }
+
+    /// <summary>
+    /// Total clients currently self-walking toward any building of the given type
+    /// (e.g. all in-flight Shelter → CaseworkSite relocations). Used for reporting/UI,
+    /// since these no longer show up as DeliverySystem active tasks.
+    /// </summary>
+    public int GetPendingQuantityToBuildingType(BuildingType buildingType)
+    {
+        int total = 0;
+        foreach (var r in pendingRelocations)
+        {
+            Building b = r.destination as Building;
+            if (b != null && b.GetBuildingType() == buildingType)
+                total += r.quantity;
+        }
+        return total;
+    }
+
+    static string GetDisplayName(MonoBehaviour building)
+    {
+        if (building == null) return "Unknown";
+        PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
+        if (pb != null) return pb.GetBuildingName();
+        Building b = building.GetComponent<Building>();
+        if (b != null) return b.GetDisplayName();
+        return building.name;
     }
 
     int GetPopulation(MonoBehaviour building)

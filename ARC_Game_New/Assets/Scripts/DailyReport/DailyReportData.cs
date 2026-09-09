@@ -506,15 +506,25 @@ public class DailyReportData : MonoBehaviour
 
     public int GetCurrentPeopleInTransitToCasework()
     {
-        if (DeliverySystem.Instance == null) return 0;
-        return DeliverySystem.Instance.GetActiveTasks()
-            .Where(t => t.cargoType == ResourceType.Population)
-            .Where(t =>
-            {
-                Building b = t.destinationBuilding as Building;
-                return b != null && b.GetBuildingType() == BuildingType.CaseworkSite;
-            })
-            .Sum(t => t.quantity);
+        // Clients walk to casework on their own (no Vehicle/DeliveryTask involved) — count them separately.
+        int walking = ClientRelocationHandler.Instance != null
+            ? ClientRelocationHandler.Instance.GetPendingQuantityToBuildingType(BuildingType.CaseworkSite)
+            : 0;
+
+        int vehicled = 0;
+        if (DeliverySystem.Instance != null)
+        {
+            vehicled = DeliverySystem.Instance.GetActiveTasks()
+                .Where(t => t.cargoType == ResourceType.Population)
+                .Where(t =>
+                {
+                    Building b = t.destinationBuilding as Building;
+                    return b != null && b.GetBuildingType() == BuildingType.CaseworkSite;
+                })
+                .Sum(t => t.quantity);
+        }
+
+        return walking + vehicled;
     }
 
     // end new

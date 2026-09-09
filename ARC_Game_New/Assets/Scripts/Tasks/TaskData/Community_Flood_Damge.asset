@@ -13,9 +13,9 @@ MonoBehaviour:
   m_Name: Community_Flood_Damge
   m_EditorClassIdentifier: 
   taskId: Community_Flood_Damge
-  taskTitle: Community Emergency Evacuation
+  taskTitle: '[facility_name_plain] Flood Damage Evacuation'
   taskType: 0
-  description: Flood has reached [facility_name]. Emergency relocation of residents
+  description: Flood has affected [facility_name]. Emergency relocation 100 residents
     required.
   taskImage: {fileID: 21300000, guid: a2ba475e51fc353469fa5bc8ff4de77f, type: 3}
   taskOfficer: 2
@@ -30,7 +30,7 @@ MonoBehaviour:
   resourceTriggers:
   - facilityType: 3
     resourceType: 0
-    resourceThreshold: 100
+    resourceThreshold: 99
     condition: 3
   probabilityTriggers: []
   floodTileTriggers: []
@@ -64,29 +64,55 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   agentMessages:
-  - messageText: Flood water detected at [facility_name]! Large population at risk.
-      Immediate mass evacuation required.
+  - messageText: 'Flood detected at [facility_name]! 100 clients requested evacuation.
+      Choose where to send them. '
+    agentAvatar: {fileID: 0}
+    useTypingEffect: 1
+    typingSpeed: 0.05
+  - messageText: Once relocated, they will arrive at the selected location on their
+      own in [relocation_rounds] rounds. Where would you like to send them?
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
   agentChoices:
-  - choiceId: 0
-    choiceText: Evacuate 50% of community to shelters  (Satisfaction + 5)
+  - choiceId: 1
+    choiceText: Send to Motel
     agentReasoning: 
-    choiceImpacts:
-    - impactType: 0
-      value: 5
-      isCountdown: 0
-      customLabel: 
+    choiceImpacts: []
+    isSelected: 0
+    triggersDelivery: 1
+    immediateDelivery: 0
+    deliveryCargoType: 0
+    enableMultipleDeliveries: 1
+    multiDeliveryType: 0
+    quantityType: 0
+    deliveryQuantity: 100
+    deliveryPercentage: 0
+    deliverAll: 0
+    sourceType: 3
+    sourceBuilding: 0
+    sourcePrebuilt: 0
+    specificSourceName: 
+    destinationType: 2
+    destinationBuilding: 1
+    destinationPrebuilt: 1
+    specificDestinationName: 
+    budgetDelayRounds: 0
+    prioritizeNearestSource: 0
+    prioritizeNearestDestination: 1
+  - choiceId: 0
+    choiceText: Send to Shelters
+    agentReasoning: 
+    choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
     immediateDelivery: 0
     deliveryCargoType: 0
     enableMultipleDeliveries: 1
     multiDeliveryType: 1
-    quantityType: 1
-    deliveryQuantity: 0
-    deliveryPercentage: 50
+    quantityType: 0
+    deliveryQuantity: 100
+    deliveryPercentage: 0
     deliverAll: 0
     sourceType: 3
     sourceBuilding: 0
@@ -95,68 +121,6 @@ MonoBehaviour:
     destinationType: 1
     destinationBuilding: 1
     destinationPrebuilt: 0
-    specificDestinationName: 
-    budgetDelayRounds: 0
-    prioritizeNearestSource: 0
-    prioritizeNearestDestination: 0
-  - choiceId: 1
-    choiceText: Full community evacuation to Shelters (Satisfaction + 15)
-    agentReasoning: 
-    choiceImpacts:
-    - impactType: 0
-      value: 15
-      isCountdown: 0
-      customLabel: 
-    isSelected: 0
-    triggersDelivery: 1
-    immediateDelivery: 0
-    deliveryCargoType: 0
-    enableMultipleDeliveries: 1
-    multiDeliveryType: 1
-    quantityType: 2
-    deliveryQuantity: 0
-    deliveryPercentage: 0
-    deliverAll: 1
-    sourceType: 3
-    sourceBuilding: 0
-    sourcePrebuilt: 0
-    specificSourceName: 
-    destinationType: 1
-    destinationBuilding: 1
-    destinationPrebuilt: 0
-    specificDestinationName: 
-    budgetDelayRounds: 0
-    prioritizeNearestSource: 0
-    prioritizeNearestDestination: 1
-  - choiceId: 2
-    choiceText: 50% community evacuation to Motel (Immediate) (Satisfaction + 5)
-    agentReasoning: 
-    choiceImpacts:
-    - impactType: 0
-      value: 5
-      isCountdown: 0
-      customLabel: 
-    - impactType: 1
-      value: -5000
-      isCountdown: 0
-      customLabel: 
-    isSelected: 0
-    triggersDelivery: 1
-    immediateDelivery: 1
-    deliveryCargoType: 0
-    enableMultipleDeliveries: 0
-    multiDeliveryType: 0
-    quantityType: 2
-    deliveryQuantity: 0
-    deliveryPercentage: 0
-    deliverAll: 1
-    sourceType: 3
-    sourceBuilding: 0
-    sourcePrebuilt: 0
-    specificSourceName: 
-    destinationType: 2
-    destinationBuilding: 1
-    destinationPrebuilt: 1
     specificDestinationName: 
     budgetDelayRounds: 0
     prioritizeNearestSource: 0

@@ -349,15 +349,14 @@ public class TaskDetailUI : MonoBehaviour
             taskImage.sprite = currentTask.taskImage ?? defaultTaskImage;
 
         if (taskTitleText != null)
-            taskTitleText.text = currentTask.taskTitle;
+            taskTitleText.text = currentTask.ResolvePlaceholders(currentTask.taskTitle);
 
         if (facilityText != null)
             facilityText.text = string.IsNullOrEmpty(currentTask.facilityDisplayName) ? currentTask.affectedFacility : currentTask.facilityDisplayName;
 
         if (descriptionText != null)
         {
-            string facilityName = string.IsNullOrEmpty(currentTask.facilityDisplayName) ? currentTask.affectedFacility : currentTask.facilityDisplayName;
-            descriptionText.text = currentTask.description.Replace("[facility_name]", facilityName);
+            descriptionText.text = currentTask.ResolvePlaceholders(currentTask.description);
         }
 
         if (taskTypeImage != null)
@@ -455,7 +454,7 @@ public class TaskDetailUI : MonoBehaviour
             if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
                 yield break;
 
-            AgentMessage resolved = new AgentMessage(currentTask.ResolveFacilityName(message.messageText), message.agentAvatar);
+            AgentMessage resolved = new AgentMessage(currentTask.ResolvePlaceholders(message.messageText), message.agentAvatar);
             resolved.useTypingEffect = message.useTypingEffect;
             resolved.typingSpeed = message.typingSpeed;
             yield return StartCoroutine(DisplayAgentMessage(resolved, isFirstTimeShowing));
@@ -956,6 +955,14 @@ public class TaskDetailUI : MonoBehaviour
         {
             ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, choice.deliveryQuantity);
         }
+        else if (choice.deliveryCargoType == ResourceType.Population)
+        {
+            // Clients (e.g. Shelter -> CaseworkSite) relocate on their own — no Vehicle involved.
+            bool success = ClientRelocationHandler.Instance != null
+                && ClientRelocationHandler.Instance.ExecuteToSpecificDestination(currentTask, source, destination, choice.deliveryQuantity);
+            if (!success)
+                ShowAgentErrorMessage("Could not relocate clients — check destination capacity.");
+        }
         else
         {
             DeliverySystem ds = DeliverySystem.Instance ?? FindObjectOfType<DeliverySystem>();
@@ -1300,7 +1307,7 @@ public class TaskDetailUI : MonoBehaviour
                     return ClientRelocationHandler.Instance != null
                         && ClientRelocationHandler.Instance.CanExecute(
                             task, choice.deliveryQuantity, toShelter, toMotel,
-                            out errorMessage, requireVehicle: false);
+                            out errorMessage, requiresPathCheck: false);
                 }
 
                 default:

@@ -64,7 +64,7 @@ public class TaskResultPopup : MonoBehaviour
         }
         
         if (taskTitleText != null)
-            taskTitleText.text = task.taskTitle;
+            taskTitleText.text = task.ResolvePlaceholders(task.taskTitle);
         
         if (facilityText != null)
         {

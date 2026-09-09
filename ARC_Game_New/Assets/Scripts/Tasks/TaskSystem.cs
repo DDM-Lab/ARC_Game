@@ -179,13 +179,49 @@ public class GameTask
         timeCreated = Time.time;
     }
 
-    public string ResolveFacilityName(string text)
+    /// <summary>
+    /// Substitutes task-data placeholders — [facility_name], [facility_name_plain], and
+    /// [relocation_rounds] — with their live values. Use this everywhere a task's title,
+    /// description, or agent messages are displayed.
+    ///
+    /// [facility_name] renders as a clickable blue link that highlights the facility on the map.
+    /// [facility_name_plain] renders the same name as plain text, no link/color — use it wherever
+    /// the surrounding UI already applies its own text color (e.g. status-colored buttons/rows),
+    /// since a hardcoded link color would clash with it.
+    /// Pass plainFacilityName: true to render [facility_name] itself as plain for a given call,
+    /// without having to change the underlying task data.
+    /// </summary>
+    public string ResolvePlaceholders(string text, bool plainFacilityName = false)
     {
-        string name = !string.IsNullOrEmpty(facilityDisplayName) ? facilityDisplayName : affectedFacility;
-        if (string.IsNullOrEmpty(affectedFacility))
-            return text.Replace("[facility_name]", name);
-        string linked = $"<link=\"{affectedFacility}\"><u><color=#5B9BD5>{name}</color></u></link>";
-        return text.Replace("[facility_name]", linked);
+        if (string.IsNullOrEmpty(text)) return text;
+
+        string plainName = !string.IsNullOrEmpty(facilityDisplayName) ? facilityDisplayName : affectedFacility;
+
+        if (text.Contains("[facility_name]"))
+        {
+            if (plainFacilityName || string.IsNullOrEmpty(affectedFacility))
+            {
+                text = text.Replace("[facility_name]", plainName);
+            }
+            else
+            {
+                string linked = $"<link=\"{affectedFacility}\"><u><color=#5B9BD5>{plainName}</color></u></link>";
+                text = text.Replace("[facility_name]", linked);
+            }
+        }
+
+        if (text.Contains("[facility_name_plain]"))
+        {
+            text = text.Replace("[facility_name_plain]", plainName);
+        }
+
+        if (text.Contains("[relocation_rounds]"))
+        {
+            int rounds = ClientRelocationHandler.Instance != null ? ClientRelocationHandler.Instance.relocationDelayRounds : 0;
+            text = text.Replace("[relocation_rounds]", rounds.ToString());
+        }
+
+        return text;
     }
 }
 

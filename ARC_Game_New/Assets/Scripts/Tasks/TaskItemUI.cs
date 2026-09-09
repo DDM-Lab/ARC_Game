@@ -144,7 +144,7 @@ public class TaskItemUI : MonoBehaviour
         // Update task description
         if (taskDescriptionText != null)
         {
-            taskDescriptionText.text = assignedTask.taskTitle;
+            taskDescriptionText.text = assignedTask.ResolvePlaceholders(assignedTask.taskTitle);
         }
         else
         {
