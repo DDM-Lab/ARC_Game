@@ -248,7 +248,7 @@ public class ClientRelocationHandler : MonoBehaviour
             // Remove from tracker on source facility
             if (ClientStayTracker.Instance != null)
             {
-                ClientStayTracker.Instance.RemoveClientsByQuantity(source, removed);
+                ClientStayTracker.Instance.RemoveClientsByQuantity(source, removed, -1, creditCasework: false);
             }
 
             // Add to destination

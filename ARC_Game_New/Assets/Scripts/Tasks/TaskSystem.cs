@@ -749,6 +749,27 @@ public class TaskSystem : MonoBehaviour
     }
 
     /// <summary>
+    /// A lodging task replaced by an emergency task for the same facility. It is closed properly
+    /// (status, completedTasks, OnTaskExpired) so its linked deliveries and the UI see it end. Its
+    /// demand is not recorded -- the emergency task now carries this facility's demand -- and no
+    /// penalty applies (BUG_REPORTS A5).
+    /// </summary>
+    void SupersedeTask(GameTask stale)
+    {
+        stale.status = TaskStatus.Expired;
+        activeTasks.Remove(stale);
+        completedTasks.Add(stale);
+        OnTaskExpired?.Invoke(stale);
+    }
+
+    /// <summary>The active or closed task that owns this delivery, or null.</summary>
+    public GameTask FindTaskLinkedToDelivery(int deliveryTaskId)
+    {
+        return activeTasks.Concat(completedTasks).FirstOrDefault(t =>
+            t.linkedDeliveryTaskIds != null && t.linkedDeliveryTaskIds.Contains(deliveryTaskId));
+    }
+
+    /// <summary>
     /// A linked delivery ended without landing cargo (empty source, cancel, flood). Unlink it; if
     /// nothing else is in flight the parent either completes on what earlier trips landed or fails.
     /// </summary>
@@ -867,7 +888,11 @@ public class TaskSystem : MonoBehaviour
 
         Debug.Log($"Found {triggeredTasksWithFacilities.Count} triggered task-facility combinations");
 
-        int currentRound = GlobalClock.Instance != null ? (GlobalClock.Instance.lastDay * GlobalClock.Instance.roundsPerDay) : 0;
+        // Elapsed rounds so far (the spacing gate below compares against this). It used to be
+        // lastDay * roundsPerDay, a constant, which let exactly one global emergency fire per game.
+        int currentRound = GlobalClock.Instance != null
+            ? (GlobalClock.Instance.GetCurrentDay() - 1) * GlobalClock.Instance.roundsPerDay + GlobalClock.Instance.GetCurrentTimeSegment()
+            : 0;
         int dynamicInterval = CalculateEmergencyInterval();
 
         foreach (var (taskData, facility) in triggeredTasksWithFacilities)
@@ -956,7 +981,7 @@ public class TaskSystem : MonoBehaviour
                             // Evict non-emergency lodging tasks to make room for the emergency one
                             foreach (var stale in existingLodging.Where(t => t.taskType != TaskType.Emergency))
                             {
-                                activeTasks.Remove(stale);
+                                SupersedeTask(stale);
                                 Debug.Log($"Emergency lodging supersedes existing task for {facilityName} — removed '{stale.taskTitle}'");
                                 GameLogPanel.Instance.LogTaskEvent($"Emergency lodging supersedes '{stale.taskTitle}' for {facilityName}");
                             }
@@ -977,7 +1002,13 @@ public class TaskSystem : MonoBehaviour
                 }
 
                 Debug.Log($"Creating task: {taskData.taskTitle} for facility: {facilityName}");
-                CreateTaskFromDatabase(taskData, facility);
+                GameTask createdForFacility = CreateTaskFromDatabase(taskData, facility);
+                if (createdForFacility != null && createdForFacility.taskType == TaskType.Emergency)
+                {
+                    // Facility emergencies count toward the cap and the spacing like global ones.
+                    currEmergencyTaskCount++;
+                    lastEmergencyTaskRound = currentRound;
+                }
             }
         }
     }
@@ -1619,9 +1650,13 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
-    public GameTask CreateTaskFromData(TaskData taskData)
+    public GameTask CreateTaskFromData(TaskData taskData, MonoBehaviour facility = null)
     {
         GameTask newTask = new GameTask(nextTaskId++, taskData.taskTitle, taskData.taskType, taskData.targetFacilityType.ToString());
+        // The facility that raised the task must be known BEFORE the choice loop below sizes the
+        // deliveries; with only the type string, FindTriggeringFacility matched the first building
+        // of that type (BUG_REPORTS B9).
+        if (facility != null) newTask.affectedFacility = facility.name;
 
         // Copy basic info
         newTask.stableTaskId = taskData.taskId;
@@ -2081,7 +2116,7 @@ public class TaskSystem : MonoBehaviour
         string displayName = specificFacility is PrebuiltBuilding pb ? pb.GetBuildingName() :
                              specificFacility is Building bld ? bld.GetDisplayName() : facilityName;
 
-        GameTask newTask = CreateTaskFromData(taskData);
+        GameTask newTask = CreateTaskFromData(taskData, specificFacility);
         if (newTask == null)
         {
             if (showDebugInfo)

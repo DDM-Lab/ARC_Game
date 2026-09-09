@@ -414,6 +414,13 @@ public class ClientStayTracker : MonoBehaviour
         // Notify buildings to get rid of clients
         OnCaseworklessClientsDeparted?.Invoke(group);
 
+        // The departed people leave the BUILDING as well as the tracker: beds free up, they stop
+        // eating, and the motel stops billing them (BUG_REPORTS A10).
+        int leaving = group.clientsWithoutCaseworkNeed;
+        BuildingResourceStorage facilityStorage = GetFacilityStorage(group.currentFacility);
+        if (facilityStorage != null && leaving > 0)
+            facilityStorage.RemoveResource(ResourceType.Population, leaving);
+
         DailyReportData.Instance?.RecordDeparture(group.clientsWithoutCaseworkNeed);
 
         group.clientCount -= group.clientsWithoutCaseworkNeed;
@@ -444,49 +451,62 @@ public class ClientStayTracker : MonoBehaviour
     /// <summary>
     /// Remove clients by shelter and quantity (for casework departures)
     /// </summary>
-    public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity)
+    public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity, int preferredGroupId = -1, bool creditCasework = true)
     {
+        // People processed home at a casework site come out of the tracker in this order:
+        //   1. the group that raised the request, its casework-need members only;
+        //   2. anyone else still flagged for casework in the same facility;
+        //   3. only if the delivery carried more people than were flagged, people without a
+        //      casework need (they were physically moved, so the tracker must follow them).
+        // Casework throughput is credited for 1 and 2 only (BUG_REPORTS B25, A3).
         List<ClientGroup> shelterGroups = GetClientsInShelter(shelter);
         int remainingToRemove = quantity;
         int totalRemoved = 0;
-        
+        int caseworkRemoved = 0;
+
+        ClientGroup preferred = preferredGroupId >= 0
+            ? shelterGroups.FirstOrDefault(g => g.groupId == preferredGroupId) : null;
+
+        int TakeCasework(ClientGroup group)
+        {
+            int take = Mathf.Min(remainingToRemove, group.clientsWithCaseworkNeed);
+            if (take <= 0) return 0;
+            group.clientsWithCaseworkNeed -= take;
+            group.clientCount -= take;
+            remainingToRemove -= take;
+            totalRemoved += take;
+            caseworkRemoved += take;
+            GameLogPanel.Instance?.LogBuildingStatus($"Processed {take} clients home from group {group.groupName} (casework)");
+            if (group.clientCount <= 0) clientGroups.Remove(group);
+            return take;
+        }
+
+        if (preferred != null && remainingToRemove > 0)
+            TakeCasework(preferred);
+
         foreach (ClientGroup group in shelterGroups.ToList())
         {
             if (remainingToRemove <= 0) break;
-
-            if (group.clientCount <= remainingToRemove)
-            {
-                // Remove entire group
-                remainingToRemove -= group.clientCount;
-                totalRemoved += group.clientCount;
-                clientGroups.Remove(group);
-
-                if (showDebugInfo)
-                    Debug.Log($"Removed entire group {group.groupName} ({group.clientCount} clients) for casework");
-                GameLogPanel.Instance.LogBuildingStatus($"Removed entire group {group.groupName} ({group.clientCount} clients) for casework");
-            }
-            else
-            {
-                // Partial removal from group
-                group.clientCount -= remainingToRemove;
-
-                int deductCasework = Mathf.Min(group.clientsWithCaseworkNeed, remainingToRemove);
-                group.clientsWithCaseworkNeed -= deductCasework;
-
-                int residual = remainingToRemove - deductCasework;
-                group.clientsWithoutCaseworkNeed = Mathf.Max(0, group.clientsWithoutCaseworkNeed - residual);
-
-                totalRemoved += remainingToRemove;
-
-                if (showDebugInfo)
-                    Debug.Log($"Partially removed {remainingToRemove} clients from group {group.groupName}");
-                GameLogPanel.Instance.LogBuildingStatus($"Partially removed {remainingToRemove} clients from group {group.groupName}");
-                remainingToRemove = 0;
-            }
+            if (group == preferred || !clientGroups.Contains(group)) continue;
+            TakeCasework(group);
         }
 
-        // Casework throughput for the reward: these people were processed home.
-        RewardMetricsTracker.Instance?.RecordCaseworkProcessed(totalRemoved);
+        foreach (ClientGroup group in shelterGroups.ToList())
+        {
+            if (remainingToRemove <= 0) break;
+            if (!clientGroups.Contains(group)) continue;
+            int take = Mathf.Min(remainingToRemove, group.clientsWithoutCaseworkNeed);
+            if (take <= 0) continue;
+            group.clientsWithoutCaseworkNeed -= take;
+            group.clientCount -= take;
+            remainingToRemove -= take;
+            totalRemoved += take;
+            GameLogPanel.Instance?.LogBuildingStatus($"Removed {take} clients (no casework need) from group {group.groupName} -- moved with the delivery");
+            if (group.clientCount <= 0) clientGroups.Remove(group);
+        }
+
+        if (creditCasework)
+            RewardMetricsTracker.Instance?.RecordCaseworkProcessed(caseworkRemoved);
         return totalRemoved;
     }
 
@@ -500,6 +520,27 @@ public class ClientStayTracker : MonoBehaviour
         if (bld != null && bld.GetBuildingType() == BuildingType.Shelter) return true;
         PrebuiltBuilding pb = b.GetComponent<PrebuiltBuilding>();
         return pb != null && pb.GetPrebuiltType() == PrebuiltBuildingType.Motel;
+    }
+
+    /// <summary>The storage of a shelter (Building) or the motel (PrebuiltBuilding).</summary>
+    static BuildingResourceStorage GetFacilityStorage(MonoBehaviour facility)
+    {
+        if (facility == null) return null;
+        PrebuiltBuilding pb = facility.GetComponent<PrebuiltBuilding>();
+        if (pb != null) return pb.GetResourceStorage();
+        return facility.GetComponent<BuildingResourceStorage>();
+    }
+
+    /// <summary>The client group whose casework request this delivery answers (via the parent task's
+    /// CLIENT_GROUP_ID marker), or -1.</summary>
+    static int FindRequestingGroupId(int deliveryTaskId)
+    {
+        GameTask parent = TaskSystem.Instance?.FindTaskLinkedToDelivery(deliveryTaskId);
+        if (parent == null || string.IsNullOrEmpty(parent.description)) return -1;
+        const string marker = "|CLIENT_GROUP_ID:";
+        int idx = parent.description.IndexOf(marker);
+        if (idx < 0) return -1;
+        return int.TryParse(parent.description.Substring(idx + marker.Length), out int id) ? id : -1;
     }
 
     public static bool IsCaseworkSite(MonoBehaviour b)
@@ -517,7 +558,7 @@ public class ClientStayTracker : MonoBehaviour
         if (count <= 0 || dest == null) return;
         if (IsCaseworkSite(dest))
         {
-            if (source != null) RemoveClientsByQuantity(source, count);
+            if (source != null) RemoveClientsByQuantity(source, count, FindRequestingGroupId(taskId));
         }
         else if (IsLodgingBuilding(dest))
         {
@@ -536,7 +577,7 @@ public class ClientStayTracker : MonoBehaviour
 
 
         // Casework demand for the reward: these people now need processing home.
-        RewardMetricsTracker.Instance?.RecordCaseworkRequested(group.clientCount);
+        RewardMetricsTracker.Instance?.RecordCaseworkRequested(group.clientsWithCaseworkNeed);
         string facilityDisplayName = GetFacilityDisplayName(group.currentFacility);
         string facilityName = SafeFacilityName(group.currentFacility);
         int roundsInFacility = group.GetRoundsInFacility(currentRound);

@@ -38,7 +38,10 @@ public class FloodTaskGenerator : MonoBehaviour
             FloodSystem.Instance.OnFloodTileAdded += OnFloodExpanded;
 
         if (TaskSystem.Instance != null)
+        {
             TaskSystem.Instance.OnTaskCompleted += OnAnyTaskCompleted;
+            TaskSystem.Instance.OnTaskExpired += OnAnyTaskCompleted;   // an ignored blockage EXPIRES (BUG_REPORTS B8)
+        }
     }
 
     void OnFloodExpanded(Vector3Int floodPosition)
@@ -106,6 +109,10 @@ public class FloodTaskGenerator : MonoBehaviour
 
         if (originalDelivery.cargoType == ResourceType.FoodPacks)
         {
+            // The food choices deliver TO the original destination (FoodDeliveryHandler resolves
+            // the task's facility as the destination) -- without this every choice was a no-op.
+            roadBlockageTask.affectedFacility = originalDelivery.destinationBuilding != null
+                ? originalDelivery.destinationBuilding.name : null;
             CreateFoodBlockageChoices(roadBlockageTask, originalDelivery, blockedVehicle);
         }
         else if (originalDelivery.cargoType == ResourceType.Population)
@@ -118,6 +125,9 @@ public class FloodTaskGenerator : MonoBehaviour
             }
             else
             {
+                // Clients are still at the source: the relocation handler starts from the task's facility.
+                roadBlockageTask.affectedFacility = originalDelivery.sourceBuilding != null
+                    ? originalDelivery.sourceBuilding.name : null;
                 CreatePopulationUnloadedChoices(roadBlockageTask, originalDelivery, icon, srcName, dstName);
             }
         }
@@ -161,6 +171,9 @@ public class FloodTaskGenerator : MonoBehaviour
         // Choice 3: Emergency fast food delivery (expensive)
         AgentChoice fastDeliveryChoice = new AgentChoice(3, "Emergency fast food delivery ($1000)");
         fastDeliveryChoice.triggersDelivery = false; // No vehicle needed
+        fastDeliveryChoice.immediateDelivery = true;   // ...but the food must actually arrive
+        fastDeliveryChoice.deliveryCargoType = ResourceType.FoodPacks;
+        fastDeliveryChoice.deliveryQuantity  = originalDelivery.quantity;
         fastDeliveryChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1000, false, "Emergency Service"));
         fastDeliveryChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 15, false, "Immediate Relief"));
         task.agentChoices.Add(fastDeliveryChoice);
@@ -283,6 +296,7 @@ public class FloodTaskGenerator : MonoBehaviour
 
         if (TaskSystem.Instance != null)
             TaskSystem.Instance.OnTaskCompleted -= OnAnyTaskCompleted;
+            TaskSystem.Instance.OnTaskExpired -= OnAnyTaskCompleted;
     }
 
     void OnAnyTaskCompleted(GameTask task)

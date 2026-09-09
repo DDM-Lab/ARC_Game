@@ -111,6 +111,9 @@ public class RewardMetricsTracker : MonoBehaviour
     public void RecordTaskResolution(GameTask task, bool fulfilled)
     {
         if (task == null) return;
+        // Alerts and advisories are information, not demand (a tagged Flood Alert used to count as
+        // an unfulfilled lodging request every time it expired -- BUG_REPORTS B10).
+        if (task.taskType == TaskType.Alert || task.taskType == TaskType.Other) return;
         if (task.taskTag != TaskTag.Food && task.taskTag != TaskTag.Lodging) return;
 
         // Every resolution, with the numbers that produce the counters. The port matches
