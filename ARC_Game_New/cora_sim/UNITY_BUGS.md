@@ -7,17 +7,26 @@ paths are under `cora_sim/runs/` (headless captures with `ARC_SNAPSHOT_DEBUG=1`)
 
 ## Found 2026-09-09 on the merged build (v1_testing)
 
-1. **No database Emergency task can ever be generated when the config sheet is unreachable.**
-   `GameDataManager.SetDefaults()` assigns `defaultEmergencyTaskFrequency` (4) to
-   `InitialExternalRelationFrequency` and never sets `InitialEmergencyTaskFrequency`, which stays 0.
-   `TaskSystem.numEmergencyTasks` becomes 0 and `currEmergencyTaskCount >= numEmergencyTasks` is
-   true from the first generation pass, so Emergency Budget Crisis, Shelter Flood Damage and
-   Community Emergency Evacuation are all `[Limit] Skipping ...: Max emergencies reached` for the
-   whole game. Every headless run hits this (the `/sheet.csv` fetch fails offline); the deployed
-   WebGL client fetches the sheet and runs with 2. Evidence: `runs/validate_v1/staff_5901.log`
-   (38 skips, 0 creations; "GameDataManager: External config disabled or missing loader. Using
-   Hardcoded Defaults."). Surrogate: `_NUM_EMERGENCY_TASKS = 0` (sim.py). Also means the
-   external-relation frequency is silently 4 instead of 3 under defaults.
+1. **The headless game runs with an Emergency task cap of 0, so no database Emergency task is
+   ever generated.** Two defects combine:
+   (a) `GameDataManager.SetDefaults()` assigns `defaultEmergencyTaskFrequency` (4) to
+   `InitialExternalRelationFrequency` and never sets `InitialEmergencyTaskFrequency`, which stays 0
+   (the external-relation frequency is silently 4 instead of 3 at the same time).
+   (b) MainScene's GameDataManager has its `configLoader` reference unwired (`configLoader:
+   {fileID: 0}` in MainScene.unity; the TutorialScene copy is wired to its loader). The headless
+   build loads MainScene directly, so `LoadAllData` takes the `SetDefaults()` branch at Awake --
+   "GameDataManager: External config disabled or missing loader. Using Hardcoded Defaults." is
+   logged BEFORE MainScene's GameConfigLoader even starts its fetch (log lines 71 vs 187) -- and
+   every `Initial*` value in headless comes from the `default*` fields, never from the sheet or
+   the loader fallbacks, whether or not the fetch succeeds.
+   Result: `TaskSystem.numEmergencyTasks` = 0 and `currEmergencyTaskCount >= numEmergencyTasks`
+   is true from the first generation pass, so Emergency Budget Crisis, Shelter Flood Damage and
+   Community Emergency Evacuation are `[Limit] Skipping ...: Max emergencies reached` for the
+   whole game. Evidence: `runs/validate_v1/staff_5901.log` (38 skips, 0 creations).
+   Surrogate: `_NUM_EMERGENCY_TASKS = 0` (sim.py). The WebGL client enters through TutorialScene,
+   whose GameDataManager is wired (DontDestroyOnLoad, the MainScene copy self-destroys), so it
+   reads the loader: sheet value if the fetch succeeds, else the loader's fallback (4). NOT yet
+   confirmed from a WebGL log.
 
 ## Reproduced since the first calibration (see STATUS.md "Unity bugs reproduced on purpose")
 
@@ -31,7 +40,9 @@ paths are under `cora_sim/runs/` (headless captures with `ARC_SNAPSHOT_DEBUG=1`)
    fires `OnTaskCompleted`, so the stranded cargo is credited as a LATE DELIVERY
    (`lodgingFulfilled` rises with nobody housed).
 5. Emergency lodging eviction records nothing in the reward metrics.
-6. Construction advertises $1000 in the action list and deducts $2000.
+6. Construction advertises $1000 in the action list and deducts $2000. Still so on the merged
+   build: `runs/validate_v1/staff_5503.log` lines 1477-1490 show "Recorded budget change: -2000 -
+   Construction Cost for CaseworkSite" next to "Built CaseworkSite at site 14 (cost: $1000)".
 7. `caseworkRequested` credits the whole client group, not the members flagged as needing casework.
 8. Coroutine race after a load abort: `AssignDeliveryTask` never stops the old `ExecuteDeliveryTask`
    coroutine, so two coroutines advance one `currentPathIndex`; the source leg is skipped, the

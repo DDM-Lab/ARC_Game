@@ -20,7 +20,11 @@ changed nothing the surrogate can see, and its one gameplay change (reserved-car
 419f5762) never fired on these trajectories. Capture sets under `cora_sim/runs/`: `validate`
 (pre-merge oracle), `validate_v1_replay` (merged build, same inputs), `validate_v1` (merged
 build, the CURRENT debt-allowed action model driving -- new trajectories). Select with
-`CORA_SIM_VALIDATE=<dir>`. Ratchet: validate 10/14, validate_v1_replay 10/14, validate_v1 8/14.
+`CORA_SIM_VALIDATE=<dir>` (the tools read one set; `test_lockstep` ratchets EVERY `runs/validate*`
+set unless the env var is set). Ratchet: validate 10/14, validate_v1_replay 10/14, validate_v1 8/14.
+The worktree checkout of v1_testing (`_worktrees/arc-v1-testing`) has `cora_sim/runs` and `.venv` as
+symlinks into the main checkout (`ARC_Game/ARC_Game_New/`); a fresh clone has neither -- the run corpus
+is untracked (`cora_sim/.gitignore`).
 New this day: the headless emergency cap is 0 (a Unity bug, see UNITY_BUGS.md), and a
 last-frame sibling landing keeps its parent open through the pass.
 

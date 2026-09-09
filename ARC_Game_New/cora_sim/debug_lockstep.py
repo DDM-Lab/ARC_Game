@@ -37,10 +37,14 @@ from cora_sim import paths as P
 BUGS = [
     ("EXACT", "5503 5901 6001 7002", "all four validated seeds: draw stream identical for 32 rounds, every "
      "reward counter, the budget and the final score equal at every round (2026-09-08)."),
-    ("OPEN", "all", "The 14 calibration captures (scratchpad/cap32b, cap32_fresh) were wiped from the session "
-     "scratchpad on 2026-09-08, so test_replay_forward / diag_marks have no inputs. The four runs/validate "
-     "logs are the only oracles; regenerate captures with validate_plan.py (same trace format) before "
-     "trusting any further rule change beyond these four seeds."),
+    ("OPEN", "all", "The old harness-format calibration captures were wiped with the session scratchpad on "
+     "2026-09-08 (test_replay_forward / diag_marks have no inputs). The oracles are now the validate_plan "
+     "capture sets under cora_sim/runs/validate*/ (14 seeds each; CORA_SIM_VALIDATE selects one)."),
+    ("UNVERIFIED", "-", "main-bugfixes 419f5762 (merged into v1_testing): IsValidDeliverySource/Destination subtract "
+     "reserved outbound/inbound deliveries (single-source path only), and a single Community_FoodRequest orders "
+     "kitchens nearest-first. Its only log marker ('Inbound deliveries already cover') appears in NO capture, and "
+     "the replay set is 14/14 identical to the pre-merge oracle; the silent source-filter branch cannot be excluded "
+     "on the debt-driven validate_v1 trajectories. Not ported yet."),
     ("UNVERIFIED", "-", "Transcribed from the C# without a capture exercising them: Road Blockage choices for food "
      "cargo and for not-yet-loaded population (treated as inert, as the C# source lookup fails); casework "
      "choice 2 (wait, -10); casework deliveries split across 2-3 sites; kitchen orders from 2+ reachable "
@@ -65,10 +69,10 @@ BUGS = [
 
 
 class Session:
-    def __init__(self, seed, evo_log=None):
+    def __init__(self, seed, evo_log=None, validate_dir=None):
         self.seed = seed
         evo_log = evo_log or P.EVO_LOG
-        self.trace_path = os.path.join(P.VALIDATE, f"staff_{seed}.json")
+        self.trace_path = os.path.join(str(validate_dir or P.VALIDATE), f"staff_{seed}.json")
         self.log_path = self.trace_path.replace(".json", ".log")
         self.trace = json.load(open(self.trace_path))
         self.row = best_row(evo_log, seed)
