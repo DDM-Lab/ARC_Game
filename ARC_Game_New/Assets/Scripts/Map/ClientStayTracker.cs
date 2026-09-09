@@ -276,7 +276,7 @@ public class ClientStayTracker : MonoBehaviour
 
     void OnRoundChanged(int newRound)
     {
-        currentRound = GlobalClock.Instance.GetCurrentTimeSegment() + (GlobalClock.Instance.GetCurrentDay() - 1) * 4;
+        currentRound = GlobalClock.Instance.GetCurrentTimeSegment() + (GlobalClock.Instance.GetCurrentDay() - 1) * GlobalClock.Instance.roundsPerDay;
         CheckClientStayDurations();
         
         if (showDebugInfo)

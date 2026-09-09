@@ -24,7 +24,7 @@ public class WeatherReportSystem : MonoBehaviour
         // Subscribe to round changes
         if (GlobalClock.Instance != null)
         {
-            GlobalClock.Instance.OnTimeSegmentChanged += OnTimeSegmentChanged;
+            GlobalClock.Instance.OnDayChanged += OnDayChangedReport;   // the daily report opens each new day
         }
         
         // Find systems if not assigned
@@ -35,6 +35,12 @@ public class WeatherReportSystem : MonoBehaviour
             floodSystem = FindObjectOfType<FloodSystem>();
     }
     
+    void OnDayChangedReport(int newDay)
+    {
+        if (enableDailyReports)
+            GenerateDailyReport();
+    }
+
     void OnTimeSegmentChanged(int newRound)
     {
         // Generate daily report at start of each day (round 0)
@@ -259,7 +265,7 @@ public class WeatherReportSystem : MonoBehaviour
     {
         if (GlobalClock.Instance != null)
         {
-            GlobalClock.Instance.OnTimeSegmentChanged -= OnTimeSegmentChanged;
+            GlobalClock.Instance.OnDayChanged -= OnDayChangedReport;
         }
     }
     

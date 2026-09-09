@@ -2658,10 +2658,10 @@ public class TaskSystem : MonoBehaviour
             // Finite-horizon terminal: game is over once the last round of finalDay
             // has run (EndGamePanel condition is Day finalDay, segment >= 4) or the
             // clock has already rolled past finalDay.
-            int finalDay = DailyReportManager.Instance != null ? DailyReportManager.Instance.finalDay : 8;
+            int finalDay = GlobalClock.Instance.lastDay;   // the configured horizon (BUG_REPORTS B33)
             info.finalDay = finalDay;
             info.isGameOver = info.currentDay > finalDay
-                              || (info.currentDay == finalDay && info.currentRound >= 4);
+                              || (info.currentDay == finalDay && info.currentRound >= GlobalClock.Instance.roundsPerDay);
         }
 
         return info;

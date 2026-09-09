@@ -110,7 +110,7 @@ public class WeatherSystem : MonoBehaviour
             yield return null;
         }
         startWeather = GameDataManager.Instance.InitialWeather;
-        
+        SetWeather(startWeather);   // Start() applied the field's initial value before this ran (BUG_REPORTS B29)
     }
     void InitializeWeatherSystem()
     {

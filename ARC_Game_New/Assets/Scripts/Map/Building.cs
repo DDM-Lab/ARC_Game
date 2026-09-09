@@ -398,10 +398,13 @@ public class Building : MonoBehaviour
         {
             // Use BuildingSystem's existing deconstruction method
             // which knows how to find and restore the original AbandonedSite
-            buildingSystem.DeconstructBuilding(this);
-            successfullyHandled = buildingSystem.DeconstructBuilding(this);
-            Debug.Log("Deconstruction handled by BuildingSystem");
-            return; // BuildingSystem will handle destroying this building
+            successfullyHandled = buildingSystem.DeconstructBuilding(this);   // once (it used to run twice)
+            if (successfullyHandled)
+            {
+                Debug.Log("Deconstruction handled by BuildingSystem");
+                return; // BuildingSystem will handle destroying this building
+            }
+            Debug.LogWarning($"BuildingSystem could not deconstruct {name}; destroying it directly so it does not stay Deconstructing forever");
         }
         else
         {

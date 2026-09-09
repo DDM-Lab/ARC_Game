@@ -173,8 +173,9 @@ public class GameConfigLoader : MonoBehaviour
         
         foreach (string line in lines)
         {
-            if (string.IsNullOrWhiteSpace(line) || line.ToLower().Contains("parameter"))
-                continue;
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (line.Split(',')[0].Trim().Equals("parameter", System.StringComparison.OrdinalIgnoreCase))
+                continue;   // the header row only (a row whose description merely mentions 'parameter' must not be skipped)
             
             string[] parts = line.Split(',');
             if (parts.Length < 2) continue;
@@ -262,57 +263,57 @@ public class GameConfigLoader : MonoBehaviour
             }
             else if (parameter.Equals("initialSunnyFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float sunnyExpRt))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sunnyExpRt))
                     loadedInitialSunnyExpansionRate = sunnyExpRt;
             }
             else if (parameter.Equals("initialSunnyFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float sunnySCM))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sunnySCM))
                     loadedInitialSunnySpreadChanceMultiplier = sunnySCM;
             }
             else if (parameter.Equals("initialSmallRainFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float smallRainExpRt))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float smallRainExpRt))
                     loadedInitialSmallRainExpansionRate = smallRainExpRt;
             }
             else if (parameter.Equals("initialSmallRainFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float smallRainSCM))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float smallRainSCM))
                     loadedInitialSmallRainSpreadChanceMultiplier = smallRainSCM;
             }
             else if (parameter.Equals("initialMediumRainFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float mediumRainExpRt))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float mediumRainExpRt))
                     loadedInitialMediumRainExpansionRate = mediumRainExpRt;
             }
             else if (parameter.Equals("initialMediumRainFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float mediumRainSCM))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float mediumRainSCM))
                     loadedInitialMediumRainSpreadChanceMultiplier = mediumRainSCM;
             }
             else if (parameter.Equals("initialHeavyRainFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float heavyRainExpRt))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float heavyRainExpRt))
                     loadedInitialHeavyRainExpansionRate = heavyRainExpRt;
             }
             else if (parameter.Equals("initialHeavyRainFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float heavyRainSCM))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float heavyRainSCM))
                     loadedInitialHeavyRainSpreadChanceMultiplier = heavyRainSCM;
             }
             else if (parameter.Equals("initialStormFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float stormExpRt))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float stormExpRt))
                     loadedInitialStormExpansionRate = stormExpRt;
             }
             else if (parameter.Equals("initialStormFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float stormSCM))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float stormSCM))
                     loadedInitialStormSpreadChanceMultiplier = stormSCM;
             }
             else if (parameter.Equals("initialFoodDemandFrequency", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float foodDemandFreq))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float foodDemandFreq))
                     loadedInitialFoodDemandFrequency = Mathf.Clamp(foodDemandFreq, 0f, 1f);
             }
             else if (parameter.Equals("initialShelterFloodDamageComparison", System.StringComparison.OrdinalIgnoreCase))
@@ -334,7 +335,7 @@ public class GameConfigLoader : MonoBehaviour
             else if (parameter.Equals("initialShelterFloodDamageFloodDetectionRange", System.StringComparison.OrdinalIgnoreCase))
             {
                 if (int.TryParse(value, out int floodDetectionRange))
-                    loadedInitialShelterFloodThreshold = floodDetectionRange;
+                    loadedInitialShelterFloodRadius = floodDetectionRange;   // was overwriting the threshold (BUG_REPORTS B30)
             }
             else if (parameter.Equals("initialERVCount", System.StringComparison.OrdinalIgnoreCase))
             {
@@ -539,7 +540,8 @@ void ApplyInitExternalRelationFrequency()
     int emergencyInterval;
     if (budgetAdvisoryER != null && budgetEmergencyER != null)
     {
-        bool advisoryGetsLower = new System.Random().Next(0, 2) == 0;
+        // Deterministic split (an unseeded System.Random here broke same-seed reproducibility, BUG_REPORTS B31).
+        bool advisoryGetsLower = true;
         
         int smallHalf = loadedInitialExternalRelationFrequency / 2;
         int bigHalf = loadedInitialExternalRelationFrequency - smallHalf;

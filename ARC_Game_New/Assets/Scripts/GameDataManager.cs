@@ -97,6 +97,9 @@ public class GameDataManager : MonoBehaviour
             return;
         }
         
+        // A scene whose GameDataManager has no loader wired (MainScene) used to fall straight to
+        // SetDefaults(); find the loader that is in the scene instead (BUG_REPORTS A9).
+        if (configLoader == null) configLoader = FindObjectOfType<GameConfigLoader>();
         StartCoroutine(LoadAllData());
     }
 
@@ -247,6 +250,6 @@ public class GameDataManager : MonoBehaviour
         InitialShelterFloodComparison = defaultShelterFloodComparison;
         InitialERVCount = defaultERVCount;
         InitialExternalRelationFrequency = defaultExternalRelationFrequency;
-        InitialExternalRelationFrequency = defaultEmergencyTaskFrequency;
+        InitialEmergencyTaskFrequency = defaultEmergencyTaskFrequency;   // was assigned to the wrong field (BUG_REPORTS A9)
     }
 }

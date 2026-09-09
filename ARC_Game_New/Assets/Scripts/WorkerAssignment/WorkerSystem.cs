@@ -215,6 +215,26 @@ public class WorkerSystem : MonoBehaviour
     // assign exactly `workerCount` from the free pool (trained first, for max workforce).
     // Feasibility is checked BEFORE releasing, so a request we can't fulfill leaves the
     // building's existing staff untouched instead of stranding it empty.
+    /// <summary>
+    /// Release the building's workers and assign exactly trainedCount trained + untrainedCount
+    /// untrained from the pool (feasibility checked before anything is released). This is the
+    /// agent-side twin of the human staffing panel's exact composition.
+    /// </summary>
+    public bool TryStaffBuildingWithComposition(int buildingId, int trainedCount, int untrainedCount)
+    {
+        if (trainedCount < 0 || untrainedCount < 0) return false;
+        List<Worker> current = GetWorkersByBuildingId(buildingId);
+        List<Worker> free = GetAvailableWorkers();
+        int reachableTrained = free.Count(w => w.Type == WorkerType.Trained) + current.Count(w => w.Type == WorkerType.Trained);
+        int reachableUntrained = free.Count(w => w.Type == WorkerType.Untrained) + current.Count(w => w.Type == WorkerType.Untrained);
+        if (reachableTrained < trainedCount || reachableUntrained < untrainedCount) return false;
+        ReleaseWorkersFromBuilding(buildingId);
+        List<Worker> pool = GetAvailableWorkers();
+        foreach (Worker w in pool.Where(w => w.Type == WorkerType.Trained).Take(trainedCount)) w.TryAssignToBuilding(buildingId);
+        foreach (Worker w in pool.Where(w => w.Type == WorkerType.Untrained).Take(untrainedCount)) w.TryAssignToBuilding(buildingId);
+        return true;
+    }
+
     public bool TryReassignWorkerCountToBuilding(int buildingId, int workerCount)
     {
         if (workerCount < 0) return false;

@@ -129,7 +129,7 @@ public class BuildingResourceStorage : MonoBehaviour
 
     void OnRoundChanged(int newRound)
     {
-        if (newRound <= 4) // round 5 is daily report stage
+        if (newRound <= (GlobalClock.Instance != null ? GlobalClock.Instance.roundsPerDay : 4)) // every real round, incl. the last of the day
         {
             HandleRoundProduction();
             HandlePopulationConsumptionCycle();
@@ -261,7 +261,10 @@ public class BuildingResourceStorage : MonoBehaviour
             Building building = GetComponent<Building>();
             if (building != null)
             {
-                totalPeople += building.GetAssignedWorkforce();
+                // Mouths, not workforce points: a trained worker is one person (BUG_REPORTS B27).
+                totalPeople += WorkerSystem.Instance != null
+                    ? WorkerSystem.Instance.GetWorkersByBuildingId(building.GetOriginalSiteId()).Count
+                    : building.GetAssignedWorkforce();
             }
         }
         

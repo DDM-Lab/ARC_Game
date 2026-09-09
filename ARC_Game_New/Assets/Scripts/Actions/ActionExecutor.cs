@@ -123,6 +123,16 @@ public class ActionExecutor : MonoBehaviour
         // Parse building type
         BuildingType buildingType = ParseBuildingType(p.building_type);
 
+        // The price is the game's, never the client's: BuildingSystem charges its per-type field,
+        // so that is what the budget check and the log must use (BUG_REPORTS A6, B21).
+        action.cost = buildingType switch
+        {
+            BuildingType.Kitchen => buildingSystem.kitchenConstructionCost,
+            BuildingType.Shelter => buildingSystem.shelterConstructionCost,
+            BuildingType.CaseworkSite => buildingSystem.caseworkSiteConstructionCost,
+            _ => 0,
+        };
+
         // Check budget
         if (!HasBudget(action.cost))
         {
@@ -152,6 +162,19 @@ public class ActionExecutor : MonoBehaviour
 
         if (p == null) return Failure(action.action_id, "Missing worker parameters");
         if (workerSystem == null) return Failure(action.action_id, "WorkerSystem not available");
+        if (p.quantity <= 0) return Failure(action.action_id, "Worker quantity must be positive");
+
+        // Price = quantity x the configured per-worker rate. The client's number is ignored
+        // (it used to be charged verbatim, BUG_REPORTS B21).
+        int unitCost;
+        switch (p.worker_action_type)
+        {
+            case "hire_untrained": unitCost = WorkerRequestSystem.Instance != null ? WorkerRequestSystem.Instance.untrainedWorkerCost : 100; break;
+            case "hire_trained":   unitCost = WorkerRequestSystem.Instance != null ? WorkerRequestSystem.Instance.trainedWorkerCost : 300; break;
+            case "train_untrained": unitCost = WorkerTrainingSystem.Instance != null ? WorkerTrainingSystem.Instance.trainingCostPerWorker : 500; break;
+            default: return Failure(action.action_id, $"Unknown worker action: {p.worker_action_type}");
+        }
+        action.cost = unitCost * p.quantity;
 
         if (!HasBudget(action.cost))
         {
@@ -168,7 +191,10 @@ public class ActionExecutor : MonoBehaviour
                 SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Hired {p.quantity} untrained workers");
 
                 if (DailyReportData.Instance != null)
+                {
                     DailyReportData.Instance.RecordWorkerRequestCostCumulative(action.cost);
+                    DailyReportData.Instance.RecordWorkerRequestCostToday(action.cost);
+                }
 
                 if (WorkerRequestSystem.Instance != null)
                 {
@@ -193,7 +219,10 @@ public class ActionExecutor : MonoBehaviour
                 SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Hired {p.quantity} trained workers");
 
                 if (DailyReportData.Instance != null)
+                {
                     DailyReportData.Instance.RecordWorkerRequestCostCumulative(action.cost);
+                    DailyReportData.Instance.RecordWorkerRequestCostToday(action.cost);
+                }
 
                 if (WorkerRequestSystem.Instance != null)
                 {
@@ -226,7 +255,10 @@ public class ActionExecutor : MonoBehaviour
                 SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Trained {p.quantity} workers");
 
                 if (DailyReportData.Instance != null)
+                {
                     DailyReportData.Instance.RecordWorkerTrainingCostCumulative(action.cost);
+                    DailyReportData.Instance.RecordWorkerTrainingCostToday(action.cost);
+                }
 
                 // Route through the SAME delayed training pathway the human uses: selected
                 // workers flip to Training, land in the "Pending Actions" queue, and convert
@@ -338,12 +370,31 @@ public class ActionExecutor : MonoBehaviour
         // Full parity with the human "set staffing" flow: release the building's current
         // workers, then assign EXACTLY p.quantity workers (count, not workforce points).
         // Trained-first selection; feasibility is checked before any release.
-        bool success = workerSystem.TryReassignWorkerCountToBuilding(buildingId, p.quantity);
-
+        if (p.quantity < 0) return Failure(action.action_id, "Worker quantity cannot be negative");
+        int required = building.GetRequiredWorkforce();
+        int currentHead = workerSystem.GetWorkersByBuildingId(buildingId).Count;
+        bool locked = WorkerAssignmentTracker.Instance != null && WorkerAssignmentTracker.Instance.IsLockedForRelease(buildingId);
+        if (locked && p.quantity != currentHead)
+        {
+            return Failure(action.action_id, $"{p.building_name} is locked for this round: its {currentHead} committed workers cannot be released or added to");
+        }
+        // Same rule as the human staffing panel: assigned workforce points must EQUAL what the
+        // building needs (trained = 2 points, untrained = 1). q workers can only do that with
+        // t = required - q trained among them (BUG_REPORTS B22).
+        int trainedCount = required - p.quantity;
+        int untrainedCount = p.quantity - trainedCount;
+        if (p.quantity > 0 && (trainedCount < 0 || untrainedCount < 0))
+        {
+            return Failure(action.action_id, $"{p.quantity} workers cannot staff {p.building_name} exactly: it needs {required} workforce points (trained = 2, untrained = 1), so send between {Mathf.CeilToInt(required / 2f)} and {required} workers");
+        }
+        if (p.quantity == 0) { trainedCount = 0; untrainedCount = 0; }
+        bool success = workerSystem.TryStaffBuildingWithComposition(buildingId, trainedCount, untrainedCount);
         if (!success)
         {
-            return Failure(action.action_id, $"Failed to assign workers to {p.building_name} (insufficient available workers)");
+            return Failure(action.action_id, $"Failed to assign workers to {p.building_name}: need {trainedCount} trained + {untrainedCount} untrained free, not enough available");
         }
+        if (p.quantity > 0)
+            WorkerAssignmentTracker.Instance?.RecordAssignment(buildingId);   // agent-staffed buildings lock like human-staffed ones
 
         // Update building status after worker assignment
         // This triggers the building to check its worker count and transition to InUse if fully staffed

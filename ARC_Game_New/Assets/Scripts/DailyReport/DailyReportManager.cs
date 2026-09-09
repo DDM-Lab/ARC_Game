@@ -62,6 +62,8 @@ public class DailyReportManager : MonoBehaviour
         // Find GlobalClock if not assigned
         if (globalClock == null)
             globalClock = FindObjectOfType<GlobalClock>();
+        if (globalClock != null)
+            finalDay = globalClock.lastDay;   // one horizon, from the configuration (BUG_REPORTS B33)
         
         // Setup next day button
         if (nextDayButton != null)

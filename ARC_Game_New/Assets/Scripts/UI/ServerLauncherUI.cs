@@ -475,6 +475,11 @@ public class ServerLauncherUI : MonoBehaviour
             ? TMP_InputField.ContentType.Password
             : TMP_InputField.ContentType.Standard;
         input.text = "";
+        // Lay the text out once now: TMP's caret lookup on the first click threw on a field whose
+        // text had never been generated, and the field never activated (BUG_REPORTS A12).
+        LayoutRebuilder.ForceRebuildLayoutImmediate(go.GetComponent<RectTransform>());
+        text.ForceMeshUpdate();
+        ph.ForceMeshUpdate();
         return input;
     }
 

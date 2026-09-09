@@ -273,8 +273,10 @@ public class DailyReportUI : MonoBehaviour
         // Sync running totals from authoritative source before computing this day's delta
         if (SatisfactionAndBudget.Instance != null)
         {
-            currentSatisfaction = SatisfactionAndBudget.Instance.GetCurrentSatisfaction();
-            currentEfficiency = SatisfactionAndBudget.Instance.GetCurrentEfficiency();
+            // The report works on a 0-1000 scale; the authoritative values are 0-100. Seed the
+            // "previous" values on the report's scale so the day's change is real (BUG_REPORTS B34).
+            currentSatisfaction = SatisfactionAndBudget.Instance.GetCurrentSatisfaction() * 10f;
+            currentEfficiency = SatisfactionAndBudget.Instance.GetCurrentEfficiency() * 10f;
         }
 
         UpdateBottomPanels(metrics);
@@ -1250,7 +1252,8 @@ public class DailyReportUI : MonoBehaviour
         int roundsElapsed = d.GetCumulativeRoundsElapsed();
         if (roundsElapsed <= 0) return 0f;
 
-        float denom = assumedTotalWorkerPoolSize * roundsElapsed;
+        // Normalise by the LIVE pool (sum over rounds of workers that existed), not an assumed 200 (BUG_REPORTS B23).
+        float denom = Mathf.Max(1, d.GetCumulativeWorkerPoolRounds());
 
         float idleRatio = d.GetCumulativeIdleWorkerRounds() / denom;
         float workingRatio = d.GetCumulativeWorkingWorkerRounds() / denom;
@@ -1267,7 +1270,8 @@ public class DailyReportUI : MonoBehaviour
         int roundsElapsed = d.GetCumulativeRoundsElapsed();
         if (roundsElapsed <= 0) return (0f, 0f, 0f);
 
-        float denom = assumedTotalWorkerPoolSize * roundsElapsed;
+        // Normalise by the LIVE pool (sum over rounds of workers that existed), not an assumed 200 (BUG_REPORTS B23).
+        float denom = Mathf.Max(1, d.GetCumulativeWorkerPoolRounds());
         float idleRatio = d.GetCumulativeIdleWorkerRounds() / denom;
         float workingRatio = d.GetCumulativeWorkingWorkerRounds() / denom;
         float trainingRatio = d.GetCumulativeTrainingWorkerRounds() / denom;

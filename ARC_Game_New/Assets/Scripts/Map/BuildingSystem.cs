@@ -435,8 +435,9 @@ public class BuildingSystem : MonoBehaviour
             return false;
         }
         
-        // Return workers to pool if building has assigned workers
-        if (building.IsOperational() && workerSystem != null)
+        // Return workers to pool if building has assigned workers -- whatever its status: a
+        // partly staffed (NeedWorker) building also holds workers (BUG_REPORTS B20).
+        if (workerSystem != null)
         {
             int workforceToReturn = building.GetAssignedWorkforce();
             workerSystem.ReturnWorkersFromBuilding(siteId, workforceToReturn);

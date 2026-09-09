@@ -1562,8 +1562,9 @@ public class GymServerManager : MonoBehaviour
     {
         day = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 0;
         seg = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 0;
-        finalDay = DailyReportManager.Instance != null ? DailyReportManager.Instance.finalDay : 8;
-        return day > finalDay || (day == finalDay && seg >= 4);
+        finalDay = GlobalClock.Instance != null ? GlobalClock.Instance.lastDay : 8;   // the configured horizon (BUG_REPORTS B33)
+        int roundsPerDay = GlobalClock.Instance != null ? GlobalClock.Instance.roundsPerDay : 4;
+        return day > finalDay || (day == finalDay && seg >= roundsPerDay);
     }
 
     // Terminal response: the full current game_state payload, re-tagged type="game_over".

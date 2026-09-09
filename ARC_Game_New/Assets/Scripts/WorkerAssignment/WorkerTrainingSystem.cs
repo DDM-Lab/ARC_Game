@@ -69,7 +69,7 @@ public class WorkerTrainingSystem : MonoBehaviour
     }
     void OnTaskExpired(GameTask task)
     {
-        if (task.taskTitle == "Worker Training Program" && currentTrainingTask == task)
+        if (task.taskTitle == "Responder Training Program" && currentTrainingTask == task)
         {
             currentTrainingTask = null;
             if (showDebugInfo)
@@ -180,10 +180,21 @@ public class WorkerTrainingSystem : MonoBehaviour
         }
         
         int workersToTrain = task.numericalInputs[0].currentValue;
-        
         if (workersToTrain <= 0)
             return;
-        
+
+        // The free pool may have shrunk since the task was opened: clamp BEFORE charging, so
+        // money is never taken for training that then silently does not happen (BUG_REPORTS B17).
+        int freeUntrained = workerSystem.GetWorkersByType(WorkerType.Untrained)
+            .FindAll(w => w.GetCurrentStatus() == "Free").Count;
+        if (freeUntrained < workersToTrain)
+        {
+            ToastManager.ShowToast($"Only {freeUntrained} untrained workers are free to train (requested {workersToTrain})", ToastType.Warning, true);
+            workersToTrain = freeUntrained;
+            if (workersToTrain <= 0)
+                return;
+        }
+
         int totalCost = workersToTrain * trainingCostPerWorker;
         // if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
         // {

@@ -326,7 +326,7 @@ public class GlobalClock : MonoBehaviour
         // in the human path; deliberately dropped to preserve that design.)
         if (gymInstantMode)
         {
-            int roundNumber = (currentDay - 1) * 4 + currentTimeSegment + 1;
+            int roundNumber = (currentDay - 1) * roundsPerDay + currentTimeSegment + 1;
             if (WebSocketManager.Instance != null && WebSocketManager.Instance.isConnected)
             {
                 WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, currentTimeSegment);
@@ -416,7 +416,7 @@ public class GlobalClock : MonoBehaviour
         clockAnimationUI?.Show(openMsg);
 
         // Step through rounds 1-4: show round number → play clock → fire OnRoundEnd
-        for (int round = 0; round < 4; round++)
+        for (int round = 0; round < roundsPerDay; round++)
         {
             currentTimeSegment = round;
             UpdateTimeDisplay();
@@ -473,7 +473,7 @@ public class GlobalClock : MonoBehaviour
         if (WebSocketManager.Instance == null || !WebSocketManager.Instance.isConnected) return false;
         if (!WebSocketManager.Instance.HasSentGameStart()) return false;
 
-        int roundNumber = (currentDay - 1) * 4 + currentTimeSegment + 1;
+        int roundNumber = (currentDay - 1) * roundsPerDay + currentTimeSegment + 1;
         return WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, currentTimeSegment);
     }
 
@@ -525,7 +525,7 @@ public class GlobalClock : MonoBehaviour
         // ~zero (observed on the cluster, futex_wait deadlock). Catch, log the
         // FULL stack so the offending subscriber is identifiable from the Unity
         // log, and fall through to StartSimulation() so the round still runs.
-        if (currentTimeSegment >= 4)
+        if (currentTimeSegment >= roundsPerDay)
         {
             try
             {
@@ -706,6 +706,11 @@ public class GlobalClock : MonoBehaviour
         // Check if day is complete (4 rounds = end of day)
         if (currentTimeSegment >= roundsPerDay)
         {
+            // The last round's tick belongs to the last round (BUG_REPORTS A1): consumption,
+            // production, ageing, expiry and generation run NOW, before the daily report and
+            // before the rollover wastes what is left. It used to be delivered as segment 0
+            // after OnDayChanged, i.e. right after the day's food had been thrown away.
+            OnTimeSegmentChanged?.Invoke(currentTimeSegment);
             // Don't trigger OnDayChanged here anymore - wait for button click
             return; // Exit early, don't update display yet
         }
@@ -768,7 +773,7 @@ public class GlobalClock : MonoBehaviour
         SnapshotDebug.Mark("day:beforeOnDayChanged");
         OnDayChanged?.Invoke(currentDay);
         SnapshotDebug.Mark("day:afterOnDayChanged");
-        OnTimeSegmentChanged?.Invoke(currentTimeSegment);
+        // (No segment event here any more: the last round's tick fired in AdvanceTimeSegment.)
         SnapshotDebug.Mark("day:afterOnTimeSegmentChanged");
 
         // Update display
