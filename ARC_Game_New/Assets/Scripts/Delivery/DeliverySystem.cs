@@ -16,6 +16,8 @@ public class DeliveryTask
     public bool isUrgent = false;
     public float timeCreated;
     public float estimatedTimeSeconds = 0f;
+    /// <summary>What the vehicle actually unloaded at the destination (set at unload; 0 until then).</summary>
+    public int deliveredQuantity = 0;
 
     public DeliveryTask(MonoBehaviour source, MonoBehaviour destination, ResourceType cargo, int qty, int taskId)
     {
@@ -105,6 +107,7 @@ public class DeliverySystem : MonoBehaviour
     private Queue<DeliveryTask> pendingTasks = new Queue<DeliveryTask>();
     private List<DeliveryTask> activeTasks = new List<DeliveryTask>();
     private List<DeliveryTask> completedTasks = new List<DeliveryTask>();
+    private List<DeliveryTask> cancelledTasks = new List<DeliveryTask>();   // ended without landing cargo
 
     /// <summary>
     /// Snapshot support. In-flight deliveries decide whether a NEW demand gets generated:
@@ -193,6 +196,8 @@ public class DeliverySystem : MonoBehaviour
     public event Action<DeliveryTask> OnTaskCreated;
     public event Action<DeliveryTask, Vehicle> OnTaskAssigned;
     public event Action<DeliveryTask> OnTaskCompleted;
+    /// <summary>A delivery ended without landing cargo (abort, cancel, flood). Never credited.</summary>
+    public event Action<DeliveryTask, string> OnTaskCancelled;
     public int ervCount = 3;
 
     public static DeliverySystem Instance { get; private set; }
@@ -211,6 +216,7 @@ public class DeliverySystem : MonoBehaviour
         foreach (Vehicle vehicle in availableVehicles)
         {
             vehicle.OnDeliveryCompleted += OnVehicleDeliveryCompleted;
+            vehicle.OnDeliveryCancelled += OnVehicleDeliveryCancelled;
             Debug.Log($"DeliverySystem: Finalized {vehicle.GetVehicleName()}");
         }
 
@@ -497,7 +503,11 @@ public class DeliverySystem : MonoBehaviour
 
             if (workingVehicle != null)
             {
-                workingVehicle.CancelCurrentTask();
+                workingVehicle.CancelCurrentTask();   // raises OnDeliveryCancelled -> cancelledTasks
+            }
+            else
+            {
+                OnVehicleDeliveryCancelled(null, activeTask, "cancelled");
             }
 
             cancelled = true;
@@ -518,11 +528,32 @@ public class DeliverySystem : MonoBehaviour
         DeliveryTask activeTask = activeTasks.FirstOrDefault(t => t.taskId == taskId);
         if (activeTask != null)
         {
-            activeTasks.Remove(activeTask);
-            OnTaskCompleted?.Invoke(activeTask);
+            // A delivery that was stopped externally never landed cargo: it is CANCELLED, not
+            // completed (raising OnTaskCompleted here credited stranded cargo as a late delivery).
+            OnVehicleDeliveryCancelled(null, activeTask, "vehicle stopped externally");
             if (showDebugInfo)
                 Debug.Log($"Removed active delivery task {taskId} (vehicle stopped externally)");
         }
+    }
+
+    /// <summary>The vehicle ended a delivery without landing cargo. Nothing is credited.</summary>
+    void OnVehicleDeliveryCancelled(Vehicle vehicle, DeliveryTask task, string reason)
+    {
+        if (task == null) return;
+        activeTasks.RemoveAll(t => t.taskId == task.taskId);
+        if (!cancelledTasks.Any(t => t.taskId == task.taskId))
+            cancelledTasks.Add(task);
+        SnapshotDebug.MarkContext("delivery:cancel", "{\"id\":" + task.taskId
+            + ",\"cargo\":\"" + task.cargoType + "\",\"qty\":" + task.quantity
+            + ",\"why\":\"" + reason + "\",\"veh\":\"" + (vehicle != null ? vehicle.GetVehicleName() : "") + "\"}");
+        Debug.Log($"DeliverySystem: Task {task.taskId} cancelled ({reason})");
+        GameLogPanel.Instance?.LogVehicleEvent($"Delivery {task.taskId} cancelled: {reason}");
+        OnTaskCancelled?.Invoke(task, reason);
+    }
+
+    public List<DeliveryTask> GetCancelledTasks()
+    {
+        return new List<DeliveryTask>(cancelledTasks);
     }
 
 
@@ -686,25 +717,11 @@ public class DeliverySystem : MonoBehaviour
             + ",\"src\":\"" + (completedTask.sourceBuilding != null ? completedTask.sourceBuilding.name : "")
             + "\",\"dst\":\"" + (completedTask.destinationBuilding != null ? completedTask.destinationBuilding.name : "")
             + "\",\"veh\":\"" + (vehicle != null ? vehicle.GetVehicleName() : "") + "\"}");
-        Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
-        if (completedTask.cargoType == ResourceType.Population && ClientStayTracker.Instance != null)
-        {
-            if (completedTask.destinationBuilding != null)
-            {
-                ClientStayTracker.Instance.RegisterClientArrival(
-                    completedTask.destinationBuilding,
-                    completedTask.quantity,
-                    $"VehicleDeliv_{completedTask.taskId}"
-                );
-            }
-            if (completedTask.sourceBuilding != null)
-            {
-                ClientStayTracker.Instance.RemoveClientsByQuantity(
-                    completedTask.sourceBuilding,
-                    completedTask.quantity
-                );
-            }
-        }
+        Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()} ({completedTask.deliveredQuantity}/{completedTask.quantity} landed)");
+        // Client tracking (arrival at a shelter/motel, processing home at a casework site) is done
+        // ONCE, by Vehicle.UnloadCargo -> ClientStayTracker.HandlePopulationDelivery, with the
+        // quantity that actually landed. The nominal-quantity registration that used to live here
+        // doubled every group (BUG_REPORTS A2/A3).
         // Report to daily tracking
         if (DailyReportData.Instance != null)
         {
@@ -881,6 +898,7 @@ public class DeliverySystem : MonoBehaviour
         {
             availableVehicles.Add(vehicle);
             vehicle.OnDeliveryCompleted += OnVehicleDeliveryCompleted;
+            vehicle.OnDeliveryCancelled += OnVehicleDeliveryCancelled;
 
             if (showDebugInfo)
                 Debug.Log($"Added vehicle {vehicle.GetVehicleName()} to delivery fleet");
@@ -896,6 +914,7 @@ public class DeliverySystem : MonoBehaviour
         {
             availableVehicles.Remove(vehicle);
             vehicle.OnDeliveryCompleted -= OnVehicleDeliveryCompleted;
+            vehicle.OnDeliveryCancelled -= OnVehicleDeliveryCancelled;
 
             // Cancel current task if this vehicle was working
             if (!vehicle.IsAvailable())

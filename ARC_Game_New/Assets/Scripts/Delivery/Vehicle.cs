@@ -69,9 +69,13 @@ public class Vehicle : MonoBehaviour
 
     // Movement
     private Coroutine movementCoroutine;
+    private Coroutine deliveryCoroutine;   // the one ExecuteDeliveryTask alive on this vehicle
+    private bool loadAborted = false;      // set by LoadCargo when the source had nothing; unwound by ExecuteDeliveryTask
 
     // Events
     public event Action<Vehicle, DeliveryTask> OnDeliveryCompleted;
+    /// <summary>Raised when a delivery ends WITHOUT landing cargo (abort, cancel, flood). Nothing is credited.</summary>
+    public event Action<Vehicle, DeliveryTask, string> OnDeliveryCancelled;
     public event Action<Vehicle, VehicleStatus> OnStatusChanged;
     public event Action<Vehicle> OnCargoChanged;
 
@@ -167,8 +171,12 @@ public class Vehicle : MonoBehaviour
         sourceBuilding = task.sourceBuilding;
         destinationBuilding = task.destinationBuilding;
 
-        // Start the delivery process
-        StartCoroutine(ExecuteDeliveryTask());
+        // Start the delivery process. Exactly one ExecuteDeliveryTask may be alive per vehicle:
+        // a previous run that is still suspended would otherwise resume against THIS task and
+        // race it down the same path (two coroutines advancing one currentPathIndex).
+        if (deliveryCoroutine != null) StopCoroutine(deliveryCoroutine);
+        loadAborted = false;
+        deliveryCoroutine = StartCoroutine(ExecuteDeliveryTask());
 
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} assigned delivery task: {task.quantity} {task.cargoType} from {sourceBuilding.name} to {destinationBuilding.name}");
@@ -195,12 +203,12 @@ public class Vehicle : MonoBehaviour
         Debug.Log($"Vehicle {vehicleName} loading cargo");
         yield return StartCoroutine(LoadCargo());
         if (currentTask == null) yield break;
-
-        // LoadCargo aborts (nulling currentTask and resetting the vehicle to Idle)
-        // when the source building has no cargo. Stop the run here instead of
-        // dereferencing the now-null currentTask in the steps below.
-        if (currentTask == null)
+        if (loadAborted)
         {
+            // The source had nothing to load. Unwind HERE, on the outer coroutine, so the
+            // vehicle only becomes Idle once no suspended run remains that could resume
+            // against a newly assigned task.
+            AbortDelivery("source empty");
             yield break;
         }
 
@@ -376,18 +384,26 @@ public class Vehicle : MonoBehaviour
 
         // Stop all movement
         StopAllCoroutines();
+        deliveryCoroutine = null;
 
-        // Trigger road blockage task
+        // Trigger road blockage task (reads the cargo state; returns loaded clients itself)
         TriggerRoadBlockageTask();
 
         // Trigger vehicle repair task
         TriggerVehicleRepairTask();
 
-        // Remove the delivery from DeliverySystem's active list so it doesn't hang in the queue
+        // The delivery is over. Whatever is still aboard (food; clients were returned by the
+        // blockage task) goes back to its source instead of being erased by the next load,
+        // and DeliverySystem is told it was CANCELLED, not completed.
         if (currentTask != null)
         {
-            DeliverySystem.Instance?.RemoveActiveDeliveryTask(currentTask.taskId);
+            DeliveryTask stopped = currentTask;
+            ReturnAllCargoToSource("stopped by flood");
             currentTask = null;
+            sourceBuilding = null;
+            destinationBuilding = null;
+            currentPath.Clear();
+            OnDeliveryCancelled?.Invoke(this, stopped, "stopped by flood");
         }
 
         if (showDebugInfo)
@@ -564,10 +580,7 @@ public class Vehicle : MonoBehaviour
             {
                 Debug.LogWarning($"Vehicle {vehicleName}: source {sourceBuilding.name} had no " +
                                 $"{currentTask.cargoType} — aborting delivery");
-                currentTask        = null;
-                sourceBuilding     = null;
-                destinationBuilding = null;
-                SetStatus(VehicleStatus.Idle);
+                loadAborted = true;   // ExecuteDeliveryTask unwinds the run
                 yield break;
             }
             // ─────────────────────────────────────────────────────────────
@@ -604,6 +617,11 @@ public class Vehicle : MonoBehaviour
             int cargoAmount = currentCargo[currentTask.cargoType];
             int actualDelivered = destStorage.AddResource(currentTask.cargoType, cargoAmount);
             currentCargo[currentTask.cargoType] = 0;
+            currentTask.deliveredQuantity = actualDelivered;
+            // What did not fit is not destroyed: it goes back to the source.
+            int remainder = cargoAmount - actualDelivered;
+            if (remainder > 0)
+                ReturnCargoToSource(currentTask.cargoType, remainder, "destination full");
 
             // Track population movement for casework: register arrivals at shelters OR motels,
             // and process people home on delivery to a casework site (centralized — fixes the
@@ -661,6 +679,51 @@ public class Vehicle : MonoBehaviour
         return building.GetComponent<BuildingResourceStorage>();
     }
 
+    /// <summary>Put cargo back into the source building's storage; log what could not be taken back.</summary>
+    void ReturnCargoToSource(ResourceType type, int amount, string why)
+    {
+        if (amount <= 0) return;
+        BuildingResourceStorage src = sourceBuilding != null ? GetBuildingResourceStorage(sourceBuilding) : null;
+        int returned = src != null ? src.AddResource(type, amount) : 0;
+        string srcName = sourceBuilding != null ? sourceBuilding.name : "none";
+        if (returned < amount)
+            Debug.LogWarning($"Vehicle {vehicleName}: {amount - returned} {type} lost ({why}; {srcName} could not take it back)");
+        GameLogPanel.Instance?.LogVehicleEvent($"{vehicleName}: {returned} {type} returned to {srcName} ({why})");
+    }
+
+    void ReturnAllCargoToSource(string why)
+    {
+        foreach (ResourceType type in new List<ResourceType>(currentCargo.Keys))
+        {
+            int amount = currentCargo[type];
+            if (amount <= 0) continue;
+            currentCargo[type] = 0;
+            ReturnCargoToSource(type, amount, why);
+        }
+    }
+
+    /// <summary>
+    /// End the current delivery WITHOUT crediting it: cargo returns to the source, the vehicle
+    /// goes Idle, and DeliverySystem hears OnDeliveryCancelled (never OnDeliveryCompleted).
+    /// </summary>
+    void AbortDelivery(string reason)
+    {
+        DeliveryTask task = currentTask;
+        ReturnAllCargoToSource(reason);
+        currentTask = null;
+        sourceBuilding = null;
+        destinationBuilding = null;
+        currentPath.Clear();
+        loadAborted = false;
+        deliveryCoroutine = null;
+        SetStatus(VehicleStatus.Idle);
+        UpdateVisualState();
+        OnCargoChanged?.Invoke(this);
+        if (showDebugInfo)
+            Debug.Log($"Vehicle {vehicleName} delivery aborted ({reason})");
+        if (task != null) OnDeliveryCancelled?.Invoke(this, task, reason);
+    }
+
     /// <summary>
     /// Complete the delivery and return to idle
     /// </summary>
@@ -672,6 +735,8 @@ public class Vehicle : MonoBehaviour
         sourceBuilding = null;
         destinationBuilding = null;
         currentPath.Clear();
+        loadAborted = false;
+        deliveryCoroutine = null;
 
         SetStatus(VehicleStatus.Idle);
         OnDeliveryCompleted?.Invoke(this, taskToComplete); // pass completed task to event directly
@@ -743,7 +808,16 @@ public class Vehicle : MonoBehaviour
         }
 
         StopAllCoroutines();
-        CompleteDelivery();
+        deliveryCoroutine = null;
+        if (currentTask == null)
+        {
+            // Nothing in flight (e.g. a flood-damaged vehicle whose delivery already ended).
+            currentPath.Clear();
+            if (!isDamaged) SetStatus(VehicleStatus.Idle);
+            return;
+        }
+        // A cancellation is NOT a completion: nothing is credited, cargo goes back.
+        AbortDelivery("cancelled");
 
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} task cancelled");

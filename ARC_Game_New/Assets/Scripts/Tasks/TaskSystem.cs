@@ -502,6 +502,7 @@ public class TaskSystem : MonoBehaviour
         if (deliverySystem != null)
         {
             deliverySystem.OnTaskCompleted += OnDeliveryTaskCompleted;
+            deliverySystem.OnTaskCancelled += OnDeliveryTaskCancelled;
             Debug.Log("TaskSystem subscribed to DeliverySystem events");
         }
         else
@@ -703,11 +704,14 @@ public class TaskSystem : MonoBehaviour
         // People-based fulfillment (B2/D4): a completed population delivery housed deliveryTask.quantity
         // people — credit it to the parent task even if the task was already closed (late delivery still
         // physically relocated people; RecordTaskResolution already ran, so also credit the tracker directly).
-        if (deliveryTask.cargoType == ResourceType.Population && deliveryTask.quantity > 0)
+        // Credit what LANDED (Vehicle.UnloadCargo sets deliveredQuantity), never the nominal load:
+        // cargo that did not fit went back to the source (BUG_REPORTS B1).
+        int landed = deliveryTask.deliveredQuantity;
+        if (deliveryTask.cargoType == ResourceType.Population && landed > 0)
         {
-            parentTask.deliveredQuantity += deliveryTask.quantity;
+            parentTask.deliveredQuantity += landed;
             if (wasAlreadyCompleted)
-                RewardMetricsTracker.Instance?.AddLateDelivery(parentTask, deliveryTask.quantity);
+                RewardMetricsTracker.Instance?.AddLateDelivery(parentTask, landed);
         }
 
         // If the parent task is still in progress, check if all its deliveries are done
@@ -744,6 +748,33 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// A linked delivery ended without landing cargo (empty source, cancel, flood). Unlink it; if
+    /// nothing else is in flight the parent either completes on what earlier trips landed or fails.
+    /// </summary>
+    void OnDeliveryTaskCancelled(DeliveryTask deliveryTask, string reason)
+    {
+        GameTask parentTask = activeTasks.FirstOrDefault(t =>
+            t.linkedDeliveryTaskIds != null &&
+            t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
+        if (parentTask == null) return;
+        parentTask.linkedDeliveryTaskIds.Remove(deliveryTask.taskId);
+        if (showDebugInfo)
+            Debug.Log($"[TaskSystem] Delivery {deliveryTask.taskId} cancelled ({reason}) for task '{parentTask.taskTitle}'");
+        if (parentTask.status != TaskStatus.InProgress) return;
+        if (parentTask.linkedDeliveryTaskIds.Count == 0)
+        {
+            if (parentTask.deliveredQuantity > 0)
+                CompleteTask(parentTask);   // earlier trips landed people; resolution credits min(delivered, demand)
+            else
+                HandleDeliveryFailure(parentTask, $"Delivery cancelled: {reason}");
+        }
+        else if (AreAllLinkedDeliveriesComplete(parentTask))
+        {
+            CompleteTask(parentTask);
+        }
+    }
+
     bool AreAllLinkedDeliveriesComplete(GameTask task)
     {
         if (task.linkedDeliveryTaskIds == null || task.linkedDeliveryTaskIds.Count == 0)
@@ -771,6 +802,9 @@ public class TaskSystem : MonoBehaviour
             task.status = TaskStatus.Incomplete;
             activeTasks.Remove(task);
             completedTasks.Add(task);
+
+            // The demand this task carried is resolved (unfulfilled) -- it must be counted, not dropped.
+            RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
 
             // Apply penalties for delivery failure
             if (SatisfactionAndBudget.Instance != null && task.deliveryFailureSatisfactionPenalty > 0)
