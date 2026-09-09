@@ -28,6 +28,14 @@ paths are under `cora_sim/runs/` (headless captures with `ARC_SNAPSHOT_DEBUG=1`)
    reads the loader: sheet value if the fetch succeeds, else the loader's fallback (4). NOT yet
    confirmed from a WebGL log.
 
+12. **Editor-only: the server launcher's text boxes take no keyboard input.** Clicking the URL or
+   API-key box throws `IndexOutOfRangeException` in `TMP_TextUtilities.FindNearestCharacterOnLine`
+   (via `TMP_InputField.OnPointerDown`, TMP 3.0.7) before the field activates, so typing is neither
+   captured nor rendered. The fields are built at runtime by `ServerLauncherUI.MakeInput`; the caret
+   lookup runs before the field's text has ever been laid out. WebGL never hits it because the key is
+   entered through a DOM overlay there. The pre-filled defaults (ws://localhost:9876/ws, dev-local-key)
+   are used correctly, so the editor still connects. Seen 2026-09-09 in the editor on v1_testing.
+
 ## Reproduced since the first calibration (see STATUS.md "Unity bugs reproduced on purpose")
 
 2. Population deliveries register the client group twice (`Vehicle.UnloadCargo ->
