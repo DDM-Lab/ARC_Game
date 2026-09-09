@@ -28,6 +28,18 @@ is untracked (`cora_sim/.gitignore`).
 New this day: the headless emergency cap is 0 (a Unity bug, see UNITY_BUGS.md), and a
 last-frame sibling landing keeps its parent open through the pass.
 
+**2026-09-09, decisions closed on v1_testing.** Evolution keeps allowing debt (`CoraActions` default
+`no_debt=False`). The repo-root `docs/Build` WebGL blobs from main-bugfixes are removed (the pages
+scaffold `docs/index.html`, `TemplateData`, `StreamingAssets` remains, inert). The two "lost" UI pieces
+are not re-added: their 00134227 deliberately removed the ExpandablePanel from DeliveryQueuePanel
+(DeliveryQueuePanel.cs has hooked the same Button/Scroll View since 4aae16fd, so the component was a
+second handler on one click), and the tutorial CostEfficiencyButton lives on as their `EffciencyButton`
+in the redesigned metrics bar. InstructorConfigScene `serverSaveUrl` now points at our host
+(`https://cora_game_llm.dev.ddmlab.com/cgi-bin/new_map_config.cgi`); that CGI is NOT deployed on our
+Talos container yet (Apache proxies only /ws /configs /health /bundles + the sheet alias), so instructor
+saves 404 until it is. Their `Assets/StreamingAssets/game_param_config.csv` is byte-identical to the
+Talos `/sheet.csv` (which refresh-sheet.sh pulls from the Google Sheet) and no code reads it.
+
     make the numbers yourself, never quote them from memory:
       python -m cora_sim.debug_lockstep                    # every validated seed + the open-bug list
       python -m cora_sim.debug_lockstep 5503               # interactive: board / fleet / groups / draws per step
