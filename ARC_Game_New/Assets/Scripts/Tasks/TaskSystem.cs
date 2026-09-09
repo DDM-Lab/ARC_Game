@@ -495,6 +495,7 @@ public class TaskSystem : MonoBehaviour
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
+            GlobalClock.Instance.OnDayStarted += OnDayStarted;
         }
 
         // Listen for delivery task completion events
@@ -853,8 +854,10 @@ public class TaskSystem : MonoBehaviour
     void OnRoundChanged(int newSegment)
     {
         Debug.Log($"OnRoundChanged called in Task System: segment {newSegment}, auto generation: {enableAutoTaskGeneration}. (We skip generation when newSegment == 3)");
-        // Check for new tasks at the start of each round
-        if (enableAutoTaskGeneration && newSegment != 3)
+        // Generation passes: start of day (OnDayStarted, segment 0) and the ticks that open
+        // rounds 2 and 3 (segments 1, 2). The tick that opens round 4 (segment 3) and the
+        // end-of-day tick (segment 4) never generated tasks; keep it that way.
+        if (enableAutoTaskGeneration && newSegment < GlobalClock.Instance.roundsPerDay - 1)
         {
             Debug.Log("Attempting to generate tasks from database...");
             GenerateTasksFromDatabase();
@@ -862,6 +865,17 @@ public class TaskSystem : MonoBehaviour
 
         // (Background auto-housing removed: the agent/player must make every relocation decision
         // itself. GeneratePopulationTransportTasks is no longer invoked from the round loop.)
+    }
+
+    /// <summary>Start-of-day generation pass (was the segment-0 event before the A1 clock fix).
+    /// Round triggers with targetRound 0 are evaluated here and only here.</summary>
+    void OnDayStarted(int day)
+    {
+        if (enableAutoTaskGeneration)
+        {
+            Debug.Log($"OnDayStarted called in Task System: day {day}; generating tasks from database...");
+            GenerateTasksFromDatabase();
+        }
     }
 
     void GenerateTasksFromDatabase()

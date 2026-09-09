@@ -39,14 +39,28 @@ questionable behaviours for the design discussion. Part D = claims that did not 
 
 ## Fix status (branch `v1_fixes`, 2026-09-09)
 
-All fixes live on `v1_fixes` (from `v1_testing`, not merged, not pushed) in six commits, each of
+All fixes live on `v1_fixes` (from `v1_testing`, not merged, not pushed) in seven commits, each of
 which compiled as a headless build: `d5441454` deliveries, `21d05150` tasks + clients, `16d1a106`
-choice execution, `d17eb70f` workers + clock + config + report, `fee6733d` action menu prices.
-Verification: seed 5503's recorded actions replayed through the fixed build ran all 32 rounds with
-**zero exceptions** (the old build threw two NullReferenceExceptions on the same input), every day
-now delivers segment events 1-4, and the same shelters that logged `consumed 0/N` every day now log
-`consumed 100/400`, `100/300`, `100/200`. The surrogate has NOT been changed and now diverges from
-the fixed game by design (first at round 5); re-deriving it is the next job.
+choice execution, `d17eb70f` workers + clock + config + report, `fee6733d` action menu prices, and a
+seventh batch (R1, R2 below) found by replaying the fixes.
+Verification: the recorded actions of seeds 5503, 5504 and 5801 (the last two carry flood stops,
+road blockages and delivery failures) replayed through the fixed build ran all 32 rounds with
+**zero exceptions** (the old build threw NullReferenceExceptions on each), every day delivers
+segment events 1-4, database generation passes fall on exactly the old schedule (day 1: rounds 1-2;
+later days: start of day, rounds 1-2), Daily Budget Allocation fires 7 times and both offboarding
+alerts fire as before, and the same shelters that logged `consumed 0/N` every day now log
+`consumed 100/400`, `100/300`, `100/200`. Trajectories are not comparable with the old captures
+beyond day 1 (the RNG stream now includes emergency tasks and the daily weather differs), so
+budget/score totals of old and new runs must not be read against each other. The surrogate has NOT
+been changed and now diverges from the fixed game by design (first at round 5); re-deriving it is
+the next job.
+
+Regressions found and fixed while verifying:
+
+| entry | status |
+|---|---|
+| R1 | FIXED (batch 7) — the A1 change removed the rollover's segment-0 event, and three database tasks trigger on `Round == 0` (`Budget_Allocation`, `Offboarding_alert_day6/7`: `RoundTrigger.CheckCondition` compares `GetCurrentTimeSegment()`), so the +$5,000 Daily Budget Allocation and the offboarding alerts never appeared on the first fixed build (5503 replay: 0 of 7). Fix: `GlobalClock.OnDayStarted` fires right after all `OnDayChanged` handlers (segment 0, the old position); `TaskSystem.OnDayStarted` runs the generation pass there, and `OnRoundChanged` generates only for `segment < roundsPerDay - 1` so the end-of-day tick (4) does not add a fourth pass. Passes per day are back to the old three. |
+| R2 | FIXED (batch 7) — pre-existing, not a regression: at application quit `Building.OnDestroy → DeliverySystem.CancelAllDeliveriesInvolving → CancelDeliveryTask` dereferences `GameLogPanel.Instance` after the panel is gone (the NullReferenceException at the end of every old 5504/5801 log). Null-guarded. |
 
 | entry | status |
 |---|---|

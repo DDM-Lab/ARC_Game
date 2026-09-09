@@ -67,6 +67,11 @@ public class GlobalClock : MonoBehaviour
     public event Action OnSimulationEnded;
     public event Action<int> OnTimeSegmentChanged;
     public event Action<int> OnDayChanged;
+    /// <summary>Fires once per rollover, after every OnDayChanged handler, at the point where the
+    /// old segment-0 event used to fire. Start-of-day task generation hangs off this so that
+    /// database triggers written as "Round == 0" (Daily Budget Allocation, offboarding alerts)
+    /// keep firing now that the last round's tick happens before the rollover.</summary>
+    public event Action<int> OnDayStarted;
 
     public static event Action OnRoundEnd;
     // Singleton for easy access
@@ -774,6 +779,8 @@ public class GlobalClock : MonoBehaviour
         OnDayChanged?.Invoke(currentDay);
         SnapshotDebug.Mark("day:afterOnDayChanged");
         // (No segment event here any more: the last round's tick fired in AdvanceTimeSegment.)
+        // Start-of-day generation pass, currentTimeSegment == 0, same position as before.
+        OnDayStarted?.Invoke(currentDay);
         SnapshotDebug.Mark("day:afterOnTimeSegmentChanged");
 
         // Update display

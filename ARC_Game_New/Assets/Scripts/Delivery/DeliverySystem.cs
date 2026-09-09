@@ -513,7 +513,7 @@ public class DeliverySystem : MonoBehaviour
             cancelled = true;
             if (showDebugInfo)
                 Debug.Log($"Cancelled active delivery task: {activeTask}");
-            GameLogPanel.Instance.LogVehicleEvent($"Cancelled active delivery task: {activeTask}");
+            GameLogPanel.Instance?.LogVehicleEvent($"Cancelled active delivery task: {activeTask}");   // null during teardown (Building.OnDestroy)
         }
 
         return cancelled;
