@@ -650,8 +650,24 @@ class TaskBoard:
         for _v, _dam in enumerate(self.fleet.damaged):
             if _dam and _v not in self.repair_for.values():
                 self.open_repair_task(_v)
+        # A SIBLING THAT LANDS ON THE LAST FRAME KEEPS THE PARENT OPEN. `arrived` is settled
+        # after run_round with the fleet as it stands at the END of the round, so an earlier
+        # trip's `_trips_outstanding` already sees a sibling that unloaded on frame 34 at
+        # "complete" and would pop and resolve the parent NOW -- before this round's tracker
+        # pass -- while Unity completes it on the sibling's completion frame (+36), after
+        # the pass: the casework group re-arms a round later. 5503 on the merged build,
+        # step 14: task 37's second trip unloaded on the last frame; the port re-armed the
+        # group in the same pass and requested 20 casework Unity only requested at step 15.
+        # Only split siblings matter: an ordinary later sibling resolves the parent in this
+        # same tick, before the pass, exactly as the earlier trip would have.
+        _split_later = {}
+        for _e in arrived:
+            if len(_e) > 3 and _e[3] == "split":
+                _split_later[_e[0]] = _split_later.get(_e[0], 0) + 1
         for _entry in arrived:
             task_id, quantity, destination = _entry[0], _entry[1], _entry[2]
+            if len(_entry) > 3 and _entry[3] == "split":
+                _split_later[task_id] -= 1
             zombie = len(_entry) > 3 and _entry[3] == "zombie"
             late = len(_entry) > 3 and _entry[3] == "late"
             if late and not _settling:
@@ -670,6 +686,14 @@ class TaskBoard:
                 # its facility slot stays taken. Resolution is parked for settle_late().
                 task = self.active.get(task_id) or self.awaiting.get(task_id)
                 if task is None:
+                    # The parent was popped by a sibling that landed earlier this round (the
+                    # fleet is read at the END of the round, so that sibling saw this trip
+                    # already "complete"). Unity still lands it: UnloadCargo deposits the
+                    # cargo and both tracker removals run whether or not the parent is open.
+                    # 5503 on the merged build, step 14: task 37's second casework trip
+                    # unloaded on the last frame and was dropped, 20 caseworkProcessed short.
+                    if quantity > 0:
+                        landed_now.append((task_id, quantity, destination, "split"))
                     continue
                 if task.resolved:
                     self.late_delivery(task, quantity, counters)
@@ -686,7 +710,7 @@ class TaskBoard:
                     self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
                 continue
             task = self.active.get(task_id) or (
-                self.awaiting.get(task_id) if self._trips_outstanding(task_id)
+                self.awaiting.get(task_id) if (self._trips_outstanding(task_id) or _split_later.get(task_id, 0) > 0)
                 else self.awaiting.pop(task_id, None))
             if task is None:
                 # The parent is gone (HandleDeliveryFailure on a sibling trip took it off
@@ -722,7 +746,7 @@ class TaskBoard:
                 landed_now.append((task_id, quantity, destination, "late") if late
                                   else (task_id, quantity, destination))
             if (task_id not in self.active and not task.resolved
-                    and not self._trips_outstanding(task_id)):
+                    and not self._trips_outstanding(task_id) and _split_later.get(task_id, 0) <= 0):
                 # AreAllLinkedDeliveriesComplete: the parent completes with its LAST trip.
                 self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
         while self.queue and self.busy < VEHICLE_COUNT:
