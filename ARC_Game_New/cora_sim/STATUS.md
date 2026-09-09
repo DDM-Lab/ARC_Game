@@ -13,6 +13,17 @@ every seed there is exact). The other ten evolved seeds (5501 5502 5504 5601 570
 check `cora_sim/runs/validate/batch.log` and `python -m cora_sim.debug_lockstep` for their verdicts;
 NOTHING beyond the four seeds above has been checked yet.
 
+**2026-09-09, v1_testing (game-state-snapshot + main-bugfixes).** The merged headless build,
+driven with the 14 pre-merge captures' recorded actions (`validate_plan --replay`), reproduces
+every pre-merge capture round for round (`compare_captures`: 14/14 identical) -- the merge
+changed nothing the surrogate can see, and its one gameplay change (reserved-cargo validity,
+419f5762) never fired on these trajectories. Capture sets under `cora_sim/runs/`: `validate`
+(pre-merge oracle), `validate_v1_replay` (merged build, same inputs), `validate_v1` (merged
+build, the CURRENT debt-allowed action model driving -- new trajectories). Select with
+`CORA_SIM_VALIDATE=<dir>`. Ratchet: validate 10/14, validate_v1_replay 10/14, validate_v1 8/14.
+New this day: the headless emergency cap is 0 (a Unity bug, see UNITY_BUGS.md), and a
+last-frame sibling landing keeps its parent open through the pass.
+
     make the numbers yourself, never quote them from memory:
       python -m cora_sim.debug_lockstep                    # every validated seed + the open-bug list
       python -m cora_sim.debug_lockstep 5503               # interactive: board / fleet / groups / draws per step
