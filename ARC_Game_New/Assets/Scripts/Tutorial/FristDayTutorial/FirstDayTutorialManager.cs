@@ -284,7 +284,7 @@ public class FirstDayTutorialManager : MonoBehaviour
             return noKitchenMessage;
         }
         
-        if (buildingCount > 5)
+        if (buildingCount > 6)
         {
             return tooManyBuildingsMessage;
         }

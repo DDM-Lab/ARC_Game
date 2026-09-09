@@ -195,13 +195,12 @@ public class WorkerTrainingSystem : MonoBehaviour
             return;
         }
 
-
         SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $"Training {workersToTrain} workers");
-
-        // SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Training {workersToTrain} workers");
         if (DailyReportData.Instance != null)
+        {
             DailyReportData.Instance.RecordWorkerTrainingCostCumulative(totalCost);
-
+            DailyReportData.Instance.RecordWorkerTrainingCostToday(totalCost);
+        }
         StartWorkerTraining(workersToTrain);
     }
     

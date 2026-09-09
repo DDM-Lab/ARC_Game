@@ -218,12 +218,11 @@ public class WorkerRequestSystem : MonoBehaviour
         }
 
         SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $"Requesting {untrainedToRequest} untrained and {trainedToRequest} trained workers");
-
-
-        // SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Requesting {untrainedToRequest} untrained and {trainedToRequest} trained workers");
         if (DailyReportData.Instance != null)
+        {
             DailyReportData.Instance.RecordWorkerRequestCostCumulative(totalCost);
-
+            DailyReportData.Instance.RecordWorkerRequestCostToday(totalCost);
+        }
         if (untrainedToRequest > 0)
             StartWorkerRequest(untrainedToRequest, WorkerType.Untrained);
         if (trainedToRequest > 0)

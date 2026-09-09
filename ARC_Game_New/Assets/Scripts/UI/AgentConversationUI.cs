@@ -63,13 +63,16 @@ public class AgentConversationUI : MonoBehaviour
     [Header("Player Input")]
     public TMP_InputField playerInputField;
     public Button sendButton;
-    
+
     [Header("UI Colors")]
     public Color activeAgentColor = Color.green;
     public Color inactiveAgentColor = Color.white;
     public Color inactiveTaskColor = Color.gray;
+    public Color inactiveTaskTextColor = new Color(0.25f, 0.25f, 0.25f);
+    public Color inProgressTaskColor = new Color(0.95f, 0.85f, 0.2f);       
+    public Color inProgressTaskTextColor = new Color(0.35f, 0.28f, 0f);     
     public Color selectedTaskColor = new Color(0.3f, 0.6f, 1f);
-    
+
     [Header("New Message Popup")]
     public GameObject newMessagePopup;
     public TextMeshProUGUI newMessageCountText;
@@ -443,6 +446,10 @@ public class AgentConversationUI : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log($"Refreshed historical tasks for {currentSelectedAgent}: {currentAgentTasks.Count} tasks");
+
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Agent task list refreshed | agent={currentSelectedAgent} | count={currentAgentTasks.Count} | " +
+            $"tasks={string.Join(";", currentAgentTasks.Select(t => $"[{t.taskId}]{t.taskTitle}:{t.status}"))}");
     }
     
     List<GameTask> GetTasksForAgent(TaskOfficer agent)
@@ -454,7 +461,26 @@ public class AgentConversationUI : MonoBehaviour
         agentTasks.AddRange(TaskSystem.Instance.GetTasksByStatus(TaskStatus.Expired).Where(t => t.taskOfficer == agent));
         return agentTasks.OrderByDescending(t => t.timeCreated).ToList();
     }
-    
+
+    void GetStatusColors(TaskStatus status, out Color bgColor, out Color textColor)
+    {
+        switch (status)
+        {
+            case TaskStatus.InProgress:
+                bgColor = inProgressTaskColor;
+                textColor = inProgressTaskTextColor;
+                break;
+            case TaskStatus.Active:
+                bgColor = inactiveAgentColor; 
+                textColor = Color.black;
+                break;
+            default: 
+                bgColor = inactiveTaskColor;
+                textColor = inactiveTaskTextColor;
+                break;
+        }
+    }
+
     void CreateHistoricalTaskButton(GameTask task)
     {
         if (historicalTaskButtonPrefab == null || historicalTasksContent == null) return;
@@ -471,11 +497,14 @@ public class AgentConversationUI : MonoBehaviour
 
         if (buttonText != null) buttonText.text = label;
 
+
         if (task.status != TaskStatus.Active)
         {
             Image buttonImage = buttonObj.GetComponent<Image>();
-            if (buttonImage != null) buttonImage.color = inactiveTaskColor;
-            if (buttonText != null)  buttonText.color  = inactiveTaskColor;
+            Color bg, txt;
+            GetStatusColors(task.status, out bg, out txt);
+            if (buttonImage != null) buttonImage.color = bg;
+            if (buttonText != null) buttonText.color = txt;
         }
 
         if (taskButton != null) taskButton.onClick.AddListener(() => SelectHistoricalTask(task));
@@ -511,8 +540,10 @@ public class AgentConversationUI : MonoBehaviour
             }
             else if (task.status != TaskStatus.Active)
             {
-                if (buttonImage != null) buttonImage.color = inactiveTaskColor;
-                if (buttonText != null)  buttonText.color  = inactiveTaskColor;
+                Color bg, txt;
+                GetStatusColors(task.status, out bg, out txt);
+                if (buttonImage != null) buttonImage.color = bg;
+                if (buttonText != null) buttonText.color = txt;
             }
             else
             {
@@ -846,6 +877,10 @@ public class AgentConversationUI : MonoBehaviour
         if (clearFirst) ClearConversation();
         localSelectedChoice = null;
 
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Agent conversation showing task | agent={currentSelectedAgent} | task=[{task.taskType}] {task.taskTitle} | status={task.status}");
+        GameLogPanel.Instance?.LogTaskEvent(TaskDetailUI.SerializeTaskContent(task));
+
         bool isActive = task.status == TaskStatus.Active;
 
         DisplaySystemMessage($"=== {task.taskTitle} ===");
@@ -921,19 +956,53 @@ public class AgentConversationUI : MonoBehaviour
             choiceUI.SetValidationState(isValid, errorMessage);
             bool isImmediateFoodOrder = choice.immediateDelivery && choice.deliveryCargoType == ResourceType.FoodPacks;
 
-            bool canPreview = isValid
-                && !isImmediateFoodOrder
-                && TaskSystem.Instance != null
-                && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
-                && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
+            bool canPreview;
+            if (choice.deliveryCargoType == ResourceType.FoodPacks && choice.triggersDelivery && !choice.immediateDelivery)
+            {
+                canPreview = isValid && FoodDeliveryHandler.Instance != null
+                    && FoodDeliveryHandler.Instance.PlanSources(currentSelectedTask, choice).Count > 0;
+            }
+            else
+            {
+                canPreview = isValid
+                    && !isImmediateFoodOrder
+                    && TaskSystem.Instance != null
+                    && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
+                    && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
+            }
             choiceUI.SetPreviewVisible(canPreview);
         }
     }
 
+
     void PreviewChoiceRoute(AgentChoice choice)
     {
-        Debug.Log("RET RET HERE");
-        if (choice == null || currentSelectedTask == null || TaskSystem.Instance == null) return;
+        if (choice == null || currentSelectedTask == null || TaskSystem.Instance == null)
+        {
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Preview route clicked | agent={currentSelectedAgent} | task={currentSelectedTask?.taskTitle ?? "none"} | choice={choice?.choiceText ?? "none"} | source=unresolved | destination=unresolved");
+            return;
+        }
+        if (choice.deliveryCargoType == ResourceType.FoodPacks && choice.triggersDelivery && !choice.immediateDelivery
+            && FoodDeliveryHandler.Instance != null)
+        {
+            var plan = FoodDeliveryHandler.Instance.PlanSources(currentSelectedTask, choice);
+            MonoBehaviour foodDest = TaskSystem.Instance.FindTriggeringFacility(currentSelectedTask);
+
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Preview route clicked | agent={currentSelectedAgent} | task={currentSelectedTask.taskTitle} | choice={choice.choiceText} | " +
+                $"sources={(plan.Count > 0 ? string.Join(",", plan.Select(p => p.kitchen.name)) : "unresolved")} | destination={foodDest?.name ?? "unresolved"}");
+
+            if (plan.Count == 0 || foodDest == null)
+            {
+                Debug.LogWarning("[AgentConversationUI] Could not resolve food delivery plan.");
+                return;
+            }
+
+            GameTask foodTaskToRestore = currentSelectedTask;
+            StartCoroutine(PeekForMultiRoute(plan.Select(p => p.kitchen).ToList(), foodDest, foodTaskToRestore));
+            return;
+        }
 
         MonoBehaviour triggeringFacility = null;
         if (!string.IsNullOrEmpty(currentSelectedTask.affectedFacility))
@@ -946,14 +1015,16 @@ public class AgentConversationUI : MonoBehaviour
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
         MonoBehaviour dest   = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
 
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Preview route clicked | agent={currentSelectedAgent} | task={currentSelectedTask.taskTitle} | choice={choice.choiceText} | " +
+            $"source={source?.name ?? "unresolved"} | destination={dest?.name ?? "unresolved"}");
+
         if (source == null || dest == null)
         {
-            Debug.Log("RET HERERERE");
             Debug.LogWarning("[AgentConversationUI] Could not resolve route source or destination.");
             return;
         }
 
-        Debug.Log("HERERERERE");
         GameTask taskToRestore = currentSelectedTask;
         StartCoroutine(PeekForRoute(source, dest, taskToRestore));
     }
@@ -981,6 +1052,35 @@ public class AgentConversationUI : MonoBehaviour
         });
     }
 
+    IEnumerator PeekForMultiRoute(List<MonoBehaviour> sources, MonoBehaviour dest, GameTask taskToRestore)
+    {
+        bool wasExpanded = isExpanded;
+
+        if (wasExpanded)
+        {
+            isExpanded = false;
+            yield return StartCoroutine(AnimateExpand(false));
+        }
+
+        if (FacilityHighlightSystem.Instance == null)
+        {
+            yield return new WaitForSecondsRealtime(2f);
+            if (gameObject.activeInHierarchy)
+                StartCoroutine(RestoreUIAfterPreview(wasExpanded, taskToRestore));
+            yield break;
+        }
+
+        FacilityHighlightSystem.Instance.HighlightMultiSourceRoute(sources, dest, () =>
+        {
+            if (!gameObject.activeInHierarchy)
+            {
+                Debug.LogWarning("[AgentConversationUI] Panel inactive when restore callback fired — skipping.");
+                return;
+            }
+            StartCoroutine(RestoreUIAfterPreview(wasExpanded, taskToRestore));
+        });
+    }
+
     private IEnumerator RestoreUIAfterPreview(bool wasExpanded, GameTask taskToRestore)
     {
         if (wasExpanded)
@@ -989,7 +1089,11 @@ public class AgentConversationUI : MonoBehaviour
             yield return StartCoroutine(AnimateExpand(true));
         }
         if (taskToRestore != null)
+        {
+            currentSelectedTask = taskToRestore;
+            UpdateSelectedTaskHighlight();
             DisplayTaskConversation(taskToRestore);
+        }
     }
 
     void DisplayInteractiveNumericalInput(AgentNumericalInput input)
@@ -1014,6 +1118,9 @@ public class AgentConversationUI : MonoBehaviour
 
     void OnConfirmButtonClicked()
     {
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Confirm button clicked | agent={currentSelectedAgent} | task={currentSelectedTask?.taskTitle ?? "none"} | choice={localSelectedChoice?.choiceText ?? "none"}");
+
         // Continuous-agent inline proposals have no backing GameTask — if one is
         // selected, the panel Confirm executes it directly.
         if (TryInlineConfirm())
@@ -1036,6 +1143,8 @@ public class AgentConversationUI : MonoBehaviour
 
         if (!tui.TryConfirmTask(currentSelectedTask, localSelectedChoice, out string errorMessage))
         {
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Task confirmation failed | task={currentSelectedTask.taskTitle} | error={errorMessage}");
             bool wasAtBottom = IsAtScrollBottom();
             DisplaySystemMessage($"Error: {errorMessage}");
             if (wasAtBottom)
@@ -1121,6 +1230,8 @@ public class AgentConversationUI : MonoBehaviour
 
     void OnFacilityLinkClicked(string facilityObjectName)
     {
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Facility link clicked in conversation | agent={currentSelectedAgent} | task={currentSelectedTask?.taskTitle ?? "none"} | facility={facilityObjectName}");
         StartCoroutine(PeekAtFacility(facilityObjectName, currentSelectedTask));
     }
 
@@ -1144,6 +1255,7 @@ public class AgentConversationUI : MonoBehaviour
         });
     }
 
+
     private IEnumerator RestoreUIAfterFacilityPeek(bool wasExpanded, GameTask taskToRestore)
     {
         if (wasExpanded)
@@ -1153,6 +1265,8 @@ public class AgentConversationUI : MonoBehaviour
         }
         if (taskToRestore != null)
         {
+            currentSelectedTask = taskToRestore;
+            UpdateSelectedTaskHighlight();
             DisplayTaskConversation(taskToRestore);
         }
     }
@@ -1231,6 +1345,7 @@ public class AgentConversationUI : MonoBehaviour
 
     public void OnNewMessagePopupClicked()
     {
+        GameLogPanel.Instance?.LogUIInteraction($"New message popup clicked | agent={currentSelectedAgent}");
         HideNewMessagePopup();
         ScrollToBottom();
     }

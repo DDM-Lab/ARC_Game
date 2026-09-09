@@ -29,9 +29,19 @@ public class TutorialManager : MonoBehaviour
     void Start()
     {
         // Setup global skip button
-        if (globalSkipButton) 
+        if (globalSkipButton)
             globalSkipButton.onClick.AddListener(SkipTutorial);
-        
+
+        // Setup interactable progress bar for drag-to-navigate
+        if (progressBar)
+        {
+            progressBar.wholeNumbers = true;
+            progressBar.minValue = 0;
+            progressBar.maxValue = Mathf.Max(0, tutorialPages.Count - 1);
+            progressBar.interactable = true;
+            progressBar.onValueChanged.AddListener(OnProgressBarValueChanged);
+        }
+
         // Show first page
         ShowPage(0);
     }
@@ -78,16 +88,6 @@ public class TutorialManager : MonoBehaviour
             {
                 currentNextButton.onClick.RemoveAllListeners();
                 currentNextButton.onClick.AddListener(NextPage);
-                
-                // Change text on last page if needed
-                bool isLastPage = (currentPageIndex >= tutorialPages.Count - 1);
-                Text buttonText = currentNextButton.GetComponentInChildren<Text>();
-                TextMeshProUGUI buttonTMP = currentNextButton.GetComponentInChildren<TextMeshProUGUI>();
-                
-                if (buttonText != null)
-                    buttonText.text = isLastPage ? "Start Game" : "Next";
-                else if (buttonTMP != null)
-                    buttonTMP.text = isLastPage ? "Start Game" : "Next";
             }
         }
         
@@ -158,7 +158,8 @@ public class TutorialManager : MonoBehaviour
         
         if (progressBar)
         {
-            progressBar.value = (float)(currentPageIndex + 1) / tutorialPages.Count;
+            // SetValueWithoutNotify avoids re-triggering OnProgressBarValueChanged
+            progressBar.SetValueWithoutNotify(currentPageIndex);
         }
         
         // Hide skip on last page if desired
@@ -191,6 +192,16 @@ public class TutorialManager : MonoBehaviour
         }
     }
     
+    void OnProgressBarValueChanged(float value)
+    {
+        int pageIndex = Mathf.RoundToInt(value);
+        if (pageIndex != currentPageIndex)
+        {
+            ShowPage(pageIndex);
+            GameLogPanel.Instance?.LogUIInteraction($"Progress bar dragged, showing page {pageIndex}");
+        }
+    }
+
     public void SkipTutorial()
     {
         GameLogPanel.Instance?.LogUIInteraction("Skip Tutorial Button Clicked");
@@ -215,6 +226,9 @@ public class TutorialManager : MonoBehaviour
     void OnDestroy()
     {
         ClearCurrentButtonListeners();
+
+        if (progressBar)
+            progressBar.onValueChanged.RemoveListener(OnProgressBarValueChanged);
     }
 }
 

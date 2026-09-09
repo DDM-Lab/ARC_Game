@@ -216,6 +216,9 @@ public class WorkerReturnSystem : MonoBehaviour
             }
         }
 
+        if (DailyReportData.Instance != null)
+            DailyReportData.Instance.RecordWorkersReleasedToday(actualUntrained + actualTrained);
+
         FindObjectOfType<GlobalWorkerManagementUI>()?.RefreshCurrentTab();
 
         string summary = BuildCountString(actualUntrained, actualTrained);

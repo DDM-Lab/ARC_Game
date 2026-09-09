@@ -57,6 +57,7 @@ public class TaskDetailUI : MonoBehaviour
     public bool showDebugInfo = true;
 
     private GameTask currentTask;
+    public GameTask CurrentTask => currentTask;
     private List<GameObject> currentImpactItems = new List<GameObject>();
     private List<GameObject> currentConversationItems = new List<GameObject>();
     private AgentChoice selectedChoice;
@@ -210,7 +211,7 @@ public class TaskDetailUI : MonoBehaviour
             ph.text = "Ask me for different options…";
     }
 
-    string SerializeTaskContent(GameTask task)
+    public static string SerializeTaskContent(GameTask task)
     {
         var sb = new System.Text.StringBuilder();
         sb.Append($"TASK_DETAIL | id={task.taskId} | title={task.taskTitle} | type={task.taskType} | tag={task.taskTag} | facility={task.affectedFacility} | status={task.status}");
@@ -242,30 +243,69 @@ public class TaskDetailUI : MonoBehaviour
 
     void OnFacilityLinkClicked(string facilityObjectName)
     {
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Facility link clicked in agent message, now highlighting the referred facility on the map. | task={currentTask?.taskTitle ?? "none"} | facility={facilityObjectName}");
+
         StopAllCoroutines();
         isTyping = false;
         currentTypingMessage = null;
-        StartCoroutine(PeekAtFacility(facilityObjectName));
+        StartCoroutine(PeekAtFacility(facilityObjectName, currentTask));
     }
 
-    IEnumerator PeekAtFacility(string facilityObjectName)
+    IEnumerator PeekAtFacility(string facilityObjectName, GameTask taskToRestore)
     {
         taskDetailPanel.SetActive(false);
         FacilityHighlightSystem.Instance?.HighlightFacility(facilityObjectName);
         float wait = FacilityHighlightSystem.Instance?.TotalDuration ?? 2f;
         yield return new WaitForSecondsRealtime(wait);
+
+        if (currentTask != taskToRestore) yield break;
+
         taskDetailPanel.SetActive(true);
     }
 
     public void PreviewChoiceRoute(AgentChoice choice)
     {
-        if (choice == null || currentTask == null || TaskSystem.Instance == null) return;
+        if (choice == null || currentTask == null || TaskSystem.Instance == null)
+        {
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Preview route clicked | task={currentTask?.taskTitle ?? "none"} | choice={choice?.choiceText ?? "none"} | source=unresolved | destination=unresolved");
+            return;
+        }
+
+        if (choice.deliveryCargoType == ResourceType.FoodPacks && choice.triggersDelivery && !choice.immediateDelivery
+            && FoodDeliveryHandler.Instance != null)
+        {
+            // var plan = FoodDeliveryHandler.Instance.PlanSources(currentTask, choice.deliveryQuantity);
+            var plan = FoodDeliveryHandler.Instance.PlanSources(currentTask, choice); 
+            MonoBehaviour dest = TaskSystem.Instance.FindTriggeringFacility(currentTask);
+
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Preview route clicked | task={currentTask.taskTitle} | choice={choice.choiceText} | " +
+                $"sources={(plan.Count > 0 ? string.Join(",", plan.Select(p => p.kitchen.name)) : "unresolved")} | destination={dest?.name ?? "unresolved"}");
+
+            if (plan.Count == 0 || dest == null)
+            {
+                Debug.LogWarning("[PreviewChoiceRoute] Could not resolve food delivery plan.");
+                return;
+            }
+
+            StopAllCoroutines();
+            isTyping = false;
+            currentTypingMessage = null;
+            StartCoroutine(PeekForMultiRoute(plan.Select(p => p.kitchen).ToList(), dest, currentTask));
+            return;
+        }
 
         MonoBehaviour triggeringFacility = ResolveTriggeringFacility();
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
-        MonoBehaviour dest   = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
+        MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
 
-        if (source == null || dest == null)
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Preview route clicked | task={currentTask.taskTitle} | choice={choice.choiceText} | " +
+            $"source={source?.name ?? "unresolved"} | destination={destination?.name ?? "unresolved"}");
+
+        if (source == null || destination == null)
         {
             Debug.LogWarning("[PreviewChoiceRoute] Could not resolve source or destination.");
             return;
@@ -274,15 +314,38 @@ public class TaskDetailUI : MonoBehaviour
         StopAllCoroutines();
         isTyping = false;
         currentTypingMessage = null;
-        StartCoroutine(PeekForRoute(source, dest));
+        StartCoroutine(PeekForRoute(source, destination, currentTask));
     }
 
-    IEnumerator PeekForRoute(MonoBehaviour source, MonoBehaviour dest)
+    IEnumerator PeekForRoute(MonoBehaviour source, MonoBehaviour dest, GameTask taskToRestore)
     {
         taskDetailPanel.SetActive(false);
         FacilityHighlightSystem.Instance?.HighlightRoute(source, dest);
         float wait = FacilityHighlightSystem.Instance?.TotalDuration ?? 2f;
         yield return new WaitForSecondsRealtime(wait);
+
+        // Something else already opened/closed the panel for a different task while we were peeking — leave it alone.
+        if (currentTask != taskToRestore) yield break;
+
+        taskDetailPanel.SetActive(true);
+    }
+
+    IEnumerator PeekForMultiRoute(List<MonoBehaviour> sources, MonoBehaviour dest, GameTask taskToRestore)
+    {
+        taskDetailPanel.SetActive(false);
+
+        if (FacilityHighlightSystem.Instance == null)
+        {
+            yield return new WaitForSecondsRealtime(2f);
+        }
+        else
+        {
+            bool done = false;
+            FacilityHighlightSystem.Instance.HighlightMultiSourceRoute(sources, dest, () => done = true);
+            while (!done) yield return null;
+        }
+
+        if (currentTask != taskToRestore) yield break;
         taskDetailPanel.SetActive(true);
     }
 
@@ -1157,7 +1220,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
     else
     {
         // This queues the actual delivery tasks in the DeliverySystem
-        bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice.deliveryQuantity);
+        bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice);
         if (!success)
         {
             ShowAgentErrorMessage("Could not queue food delivery. Kitchen may be unavailable or vehicles damaged.");
@@ -2990,10 +3053,24 @@ switch (choice.deliveryCargoType)
                                 $"Task [{currentTask.taskTitle}] cost");
                             if (DailyReportData.Instance != null)
                             {
-                                if (currentTask.taskTag == TaskTag.Food)
+                                float costToday = -impact.value;
+                                // if (currentTask.taskTag == TaskTag.Food)
+                                //     DailyReportData.Instance.RecordFoodSpendCumulative(impact.value);
+                                // else if (currentTask.taskTag == TaskTag.Lodging)
+                                //     DailyReportData.Instance.RecordLodgingSpendCumulative(impact.value);
+                                if (choice.deliveryCargoType == ResourceType.Population)
+                                {
+                                    DailyReportData.Instance.RecordTransportCostToday(costToday);
+                                }
+                                else if (currentTask.taskTag == TaskTag.Food)
+                                {
                                     DailyReportData.Instance.RecordFoodSpendCumulative(impact.value);
+                                    DailyReportData.Instance.RecordFastFoodSpendToday(costToday);
+                                }
                                 else if (currentTask.taskTag == TaskTag.Lodging)
+                                {
                                     DailyReportData.Instance.RecordLodgingSpendCumulative(impact.value);
+                                }
                             }
                             ToastManager.ShowToast(
                                 $"Budget decreased by ${-impact.value:N0}",
@@ -3199,14 +3276,22 @@ switch (choice.deliveryCargoType)
             choiceUI.SetValidationState(isValid, errorMessage);
 
             bool isImmediateFoodOrder = choice.immediateDelivery && choice.deliveryCargoType == ResourceType.FoodPacks;
-            bool canPreview = isValid
-                && !isImmediateFoodOrder
-                && TaskSystem.Instance != null
-                && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
-                && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
-            
+            bool canPreview;
+            if (choice.deliveryCargoType == ResourceType.FoodPacks && choice.triggersDelivery && !choice.immediateDelivery)
+            {
+                canPreview = isValid && FoodDeliveryHandler.Instance != null
+                    && FoodDeliveryHandler.Instance.PlanSources(currentTask, choice).Count > 0;
+            }
+            else
+            {
+                canPreview = isValid
+                    && !isImmediateFoodOrder
+                    && TaskSystem.Instance != null
+                    && TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility) != null
+                    && TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility) != null;
+            }
             choiceUI.SetPreviewVisible(canPreview);
-        }
+            }
     }
 
     MonoBehaviour ResolveTriggeringFacility()

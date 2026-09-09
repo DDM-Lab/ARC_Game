@@ -1,0 +1,44 @@
+Parameter,Value,,related code refs,min,default,max,"category (if min, max not N/A)",Description
+initialBudget,8000,,,0,10000,999999,,Budget the player starts out with
+initialSatisfaction,0,,,0,50,100,,Satisfaction the player starts out with
+initialCommunityCount,4,"backend works, but visually no update (default has 3 alr in scene)",,1,3,8,,Number of communities on map throguhout the game
+initialCommunityResidentCount,30,,,20,40,80,,Initial amount of residents per community at game start
+initialDaysPerRun,8,,,1,8,10,,Number of days the game iterates through
+initialRoundsPerGameDay,4,pie chart no update - ask,,1,4,8,,Number of rounds taking place each day
+initialTrainedVolunteerCount,5,,,1,5,10,,"Number of ""free"" trained volunteers on game start"
+initialUntrainedVolunteerCount,5,,,1,5,10,,"Number of ""free"" untrained volunteers on game start"
+initialDailyBudgetAdditions,2000,,,0,3000,100000,,Amount of dollars players recieve in round 1 of each day to support gameplay
+initialCommunityDistanceSpread,,,,,,,,
+initialExternalRelationFrequency,5,task,"BudgetAdvisory, BudgetEmergency SOs",0,5,10,,"How many times in total are players contacted by outside relations to have additional budget (outside of daily allocation). There are two triggers for such events: running out of budget, or when the weather is severe"
+initialEmergencyTaskFrequency,2,task,"BudgetEmergency, CommunityFloodDamage, ShelterFloodDamage SOs",0,2,5,,"How many times in total players are given an ""emergency"" task. These fall in three categories: Budget emergency when an option for accepting additional budget is triggered during severe weather, community flood damage when the flood has reached a community and the player must relocate residents, and shelter flood damage when the flood has reached a shelter and the player must relocate residents"
+initialWeather,HeavyRain,,,,Sunny,,"Sunny, SmallRain, MediumRain, HeavyRain, Storm","The weather that Day 1, Round 1 of the game starts with."
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+initialKitchenCapacity,5,,,5,10,40,,The max amount of people that a kitchen can contain at once
+initialShelterCapacity,20,,,5,10,40,,The max amount of people a shelter can host at once
+initialCaseworkCapacity,15,,,5,40,40,,The max amount of cases a casework site can handle at once
+initialWorkerUnitsNeededPerLocation,2,,,2,4,,UI reflection,"The number of worker units needed for a kitchen, shelter, or casework site to operate. A ""unit"" is counted as one untrained worker."
+initialFoodDemandFrequency,0.2,task,"CommunityFoodReq, ShelterFoodReq SOs",0,0.2,0.5,,How frequently food is requested from communities or shelters. This percentage drives up the chance of this task being triggered.
+initialERVCount,5,,,1,3,20,,"How many vehicles available on Day 1, Round 1 of the game to start."
+,,,,,,,,
+,,,,,,,,
+initialShelterRepairTime,,BuildingStatus.Disabled,,,,,,N/A (for now)
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+,,,,,,,,
+initialShelterFloodDamageComparison,AtMost,initalShelterDamageFrequency params below!,,,AtLeast,,"ExactMatch, AtLeast, MoreThan, LessThan, AtMost",One of the triggers for shelter flood damage task for population relocation is how much of the shelter has been flooded. This is measured in how many map tiles of a certain radius of the shelter are affected. The comparison category tells when to trigger the shelter flood damage task compared to the number of shelter tiles currently flooded.
+initialShelterFloodDamageFloodTileThreshold,1,,,0,2,5,,Number of affected flood tiles that initialShelterFloodDamageComparison is measured against.
+initialShelterFloodDamageFloodDetectionRange,4,,,0,2,5,,Radius in number of tiles of the shelter that are considered for triggering the shelter flood damage task.
+rainExpansionRate,0-5,,,,,,,
+rainFloodProbability,0-1,,,,,,,
+initialKitchenFoodCapacity,285,,,,,,,The max amount of foodpacks that a kitchen can contain at once
+initialShelterFoodCapacity,340,,,,,,,The max amount of foodpacks that a shelter can contain at once

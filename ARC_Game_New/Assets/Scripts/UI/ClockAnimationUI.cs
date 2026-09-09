@@ -49,16 +49,24 @@ public class ClockAnimationUI : MonoBehaviour
     {
         if (panel != null)       panel.SetActive(true);
         if (messageText != null) messageText.text = message;
+
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Clock animation shown | message=\"{message}\"");
     }
 
     public void SetMessage(string message)
     {
         if (messageText != null) messageText.text = message;
+
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Clock animation message changed | message=\"{message}\"");
     }
 
     public void Hide()
     {
         if (panel != null) panel.SetActive(false);
+
+        GameLogPanel.Instance?.LogUIInteraction("Clock animation hidden");
     }
 
     // ── Callback-based helpers (existing callers unchanged) ──────────────────
