@@ -155,10 +155,16 @@ class ActionEnumerator:
     """
 
     # Game constants
-    UNTRAINED_WORKER_COST = 100
-    TRAINED_WORKER_COST = 300
-    TRAINING_COST_PER_WORKER = 500
-    BUILDING_CONSTRUCTION_COST = 1000
+    # Fallbacks only. The LIVE prices come from the game state each round (see __init__):
+    # workforceState.{untrainedWorkerCost,trainedWorkerCost,trainingCostPerWorker} and
+    # constructionState.buildingConstructionCost are the values the game actually charges
+    # (scene-serialized: 200 / 1000 / 300 / 2000 today). The old constants (100/300/500/1000)
+    # were what the client CLAIMED and, until ActionExecutor started pricing server-side, what
+    # it was charged (BUG_REPORTS A6, B21).
+    UNTRAINED_WORKER_COST = 200
+    TRAINED_WORKER_COST = 1000
+    TRAINING_COST_PER_WORKER = 300
+    BUILDING_CONSTRUCTION_COST = 2000
     BUILDING_REQUIRED_WORKFORCE = 4
 
     BUILDING_TYPES = ["Kitchen", "Shelter", "CaseworkSite"]
@@ -172,6 +178,13 @@ class ActionEnumerator:
         """
         self.game_state = game_state
         self.actions: List[Action] = []
+        # Prices as the game charges them this round (fall back to the class constants).
+        ws = game_state.get('workforceState') or {}
+        cs = game_state.get('constructionState') or {}
+        self.UNTRAINED_WORKER_COST = int(ws.get('untrainedWorkerCost') or self.UNTRAINED_WORKER_COST)
+        self.TRAINED_WORKER_COST = int(ws.get('trainedWorkerCost') or self.TRAINED_WORKER_COST)
+        self.TRAINING_COST_PER_WORKER = int(ws.get('trainingCostPerWorker') or self.TRAINING_COST_PER_WORKER)
+        self.BUILDING_CONSTRUCTION_COST = int(cs.get('buildingConstructionCost') or self.BUILDING_CONSTRUCTION_COST)
 
     def enumerate_all_actions(self) -> List[Dict[str, Any]]:
         """
