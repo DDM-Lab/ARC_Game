@@ -15,6 +15,22 @@ Each entry: **Where** · **What happens** (with an example) · **Intended** · *
 **Scope / status**. Status values: CONFIRMED (every branch read, or seen in a capture), PLAUSIBLE
 (read in code, needs a runtime check), NEEDS DECISION (the fix is a design choice).
 
+**Triage for the review meeting (highest impact first).**
+
+1. **A1** — delivered food is wasted at the day rollover before anyone eats it, in every capture; the
+   food mechanic does not function. Fix is a timing decision (Part C.1).
+2. **A2 / A3 / A7 / B25** — client tracking double-counts every relocation and drains the wrong group;
+   casework demand, processing and departures are all off by roughly 2x.
+3. **B1 / B2 / B3 / B4** — cargo destroyed on partial unload, cancellation credited as success,
+   stranded food erased, aborted deliveries left reserving stock forever.
+4. **B11 / B12 / B21 / B22 (+ A6)** — the agent path validates less, has no budget gate, charges what the
+   client says and ignores staffing rules; RL and benchmark runs are not playing the humans' game.
+5. **A9 / B6 / B7** — emergencies are effectively off (cap 0 headless; at most one global emergency
+   anywhere; facility emergencies uncounted).
+6. **B35** — sheet parameters that do nothing (weather, resident count, food capacities, flood knobs).
+
+Part C lists the behaviours that need a design ruling before the fixes above are ordered.
+
 Part A = the 12 bugs the surrogate work had already found. Part B = new findings from the 2026-09-09
 audit (six subsystem reviews, each claim re-read by hand before inclusion). Part C = intended-but-
 questionable behaviours for the design discussion. Part D = claims that did not survive verification.
@@ -226,7 +242,7 @@ call `DeliverySystem.RemoveActiveDeliveryTask` there (see B-D4).
 
 ### A9. Headless runs with an Emergency task cap of 0 — no database emergency ever appears
 
-**Where.** `GameDataManager.cs` `SetDefaults()` last lines (the file's `:32-33` inside that method):
+**Where.** `GameDataManager.cs:249-250` (the last two lines of `SetDefaults()`, which starts at `:218`):
 `InitialExternalRelationFrequency = defaultExternalRelationFrequency;` then
 `InitialExternalRelationFrequency = defaultEmergencyTaskFrequency;` — `InitialEmergencyTaskFrequency`
 is never assigned. `Assets/Scenes/MainScene.unity:61916` `configLoader: {fileID: 0}` (the MainScene
@@ -437,8 +453,8 @@ penalty never lands, and `blockageTaskLoadedState[id]` is never removed.
 
 **Where.** `TaskSystem.cs:1590` (`CreateTaskFromData` sets `affectedFacility = targetFacilityType.ToString()`),
 `:1639-1660` (delivery block calls `FindTriggeringFacility` with that type string; `FindFacilityByName`
-at `:1805` matches by `Contains`, returning the first operational building whose name contains
-e.g. "Shelter"); the real facility name is written only afterwards at `:2058` (and `:2026`). The
+(`:1768-1805`) matches by `Contains`, returning the first operational building whose name contains
+e.g. "Shelter"); the real facility name is written only afterwards at `:2058`. The
 `deliveryQuantity = 1` fallback at `:1653` is dead — overwritten at `:1660`.
 **What happens.** Shelter Flood Damage triggered by Shelter_3 (60 residents) sizes its relocation
 choices from Shelter_1; if no building of the type is operational, `source == null` and the quantity is
@@ -454,11 +470,13 @@ before the choice loop (the per-facility caller already has it).
 **Where.** `Flood_Alert.asset` (`taskType: 3` Alert, `taskTag: 2` Lodging, `roundsRemaining: 1`);
 `RewardMetricsTracker.RecordTaskResolution` filters on `taskTag` only; `TaskSystem.ExpireTask` calls it
 for every expiring task. Dismissing the alert via `CompleteAlertTask` (`:1997`) records nothing.
-**What happens.** Each unread flood alert adds 1 to `lodgingResolved` with 0 fulfilled.
+**What happens.** Each unread flood alert adds 1 to `lodgingResolved` with 0 fulfilled. Seen in every
+capture: all 42 `validate*` logs contain a `task:resolved` mark with `"title":"Flood Alert - Rising
+Water"`, `"tag":"Lodging"`, `"fulfilled":false`.
 **Intended.** Alerts and advisories are not demand.
 **Patch.** `if (task.taskType == TaskType.Alert || task.taskType == TaskType.Other) return;` at the top
 of `RecordTaskResolution`, or give alerts no tag.
-**Status.** CONFIRMED (code).
+**Status.** CONFIRMED (capture).
 
 ### Choice execution (UI path vs headless / agent path)
 
@@ -595,10 +613,12 @@ once and fall through to the fallback on false.
 **Where.** `Actions/ActionExecutor.cs:155` (`HasBudget(action.cost)`), `:168, :193, :226`
 (`RemoveBudget(action.cost, ...)`); nothing consults `WorkerRequestSystem.trainedWorkerCost` /
 `untrainedWorkerCost` / `WorkerTrainingSystem.trainingCostPerWorker`; same for builds (`:143`).
-**What happens.** `{hire_trained, quantity: 10, cost: 300}` buys 10 trained workers for $300; the UI
-path would charge $3000. The action menu (`cora_sim/actions.py:43`) advertises per-unit prices, so a
-model that sends the menu price for a multi-unit hire is undercharged by design, and any model that
-sends `cost: 0` plays for free.
+**What happens.** The executor trusts the client's arithmetic. The maintained gym/router client does
+compute the total (`validate_v1/staff_5503.log` lines 1488-1493: `Hire 4 untrained worker(s) ($100
+each)` → `-400`), so today's captures are correct. Any other client — a free-form command path, a
+model emitting its own JSON, or a deliberately adversarial one — can send `{hire_trained, quantity: 10,
+cost: 300}` and receive 10 trained workers for $300 (the UI path charges $3000), or `cost: 0` and play
+for free. Builds have the same shape (`:143`, and A6 shows the menu price is already wrong).
 **Intended.** Price computed server-side from quantity × configured rate.
 **Patch.** Ignore `action.cost`; compute from the systems' fields; reject on mismatch if you want the
 agent to state a price.
@@ -650,9 +670,11 @@ credited as processed.
 
 #### B26. Communities consume 400 meals a day each, and their population never comes from the configuration
 
-**Where.** `Prefabs/CommunityPrefab.prefab:131-138` (population 400, `enablePopulationBasedConsumption: 1`,
-`startingFoodPacks: 0`); nothing outside `GameDataManager`/`GameConfigLoader` reads
-`InitialResidentsPerCommunityNumber` (sheet `initialCommunityResidentCount = 30`).
+**Where.** `Prefabs/CommunityPrefab.prefab:127-137` (the Population resource entry: `maxCapacity: 400`,
+`amount: 400`; `startingFoodPacks: 0`; `enablePopulationBasedConsumption: 1`;
+`foodPerPersonPerNRounds: 1`). No script under `Assets/Scripts` other than `GameDataManager`,
+`GameConfigLoader` and the instructor panel reads `InitialResidentsPerCommunityNumber`, so the sheet's
+`initialCommunityResidentCount = 30` never reaches a community.
 **What happens.** `validate_v1/staff_5503.log` lines 820-824: `Community01 FOOD SHORTAGE: Need 400,
 only had 0` (and 02, 03) every day. Three communities add 1200/day of need the food-coverage score
 (`DailyReportUI.cs:1234-1236`, `consumed / needed`) can never meet, so coverage reads a few percent
