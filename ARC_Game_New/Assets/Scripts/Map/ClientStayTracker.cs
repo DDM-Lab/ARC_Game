@@ -522,6 +522,32 @@ public class ClientStayTracker : MonoBehaviour
         return pb != null && pb.GetPrebuiltType() == PrebuiltBuildingType.Motel;
     }
 
+    /// <summary>Immediate (no-vehicle) population transfer: same tracking as a vehicle delivery.</summary>
+    public void HandleImmediateTransfer(MonoBehaviour source, MonoBehaviour dest, int count, GameTask parentTask)
+    {
+        if (count <= 0 || dest == null) return;
+        if (IsCaseworkSite(dest))
+        {
+            if (source != null) RemoveClientsByQuantity(source, count, GroupIdFromDescription(parentTask?.description));
+        }
+        else if (IsLodgingBuilding(dest))
+        {
+            if (source != null && IsLodgingBuilding(source))
+                RemoveClientsByQuantity(source, count, -1, creditCasework: false);
+            int id = parentTask != null ? parentTask.taskId : 0;
+            RegisterClientArrival(dest, count, $"Immediate_{id}_{(source != null ? source.name : "?")}_to_{dest.name}");
+        }
+    }
+
+    static int GroupIdFromDescription(string description)
+    {
+        if (string.IsNullOrEmpty(description)) return -1;
+        const string marker = "|CLIENT_GROUP_ID:";
+        int idx = description.IndexOf(marker);
+        if (idx < 0) return -1;
+        return int.TryParse(description.Substring(idx + marker.Length), out int id) ? id : -1;
+    }
+
     /// <summary>The storage of a shelter (Building) or the motel (PrebuiltBuilding).</summary>
     static BuildingResourceStorage GetFacilityStorage(MonoBehaviour facility)
     {
@@ -536,11 +562,7 @@ public class ClientStayTracker : MonoBehaviour
     static int FindRequestingGroupId(int deliveryTaskId)
     {
         GameTask parent = TaskSystem.Instance?.FindTaskLinkedToDelivery(deliveryTaskId);
-        if (parent == null || string.IsNullOrEmpty(parent.description)) return -1;
-        const string marker = "|CLIENT_GROUP_ID:";
-        int idx = parent.description.IndexOf(marker);
-        if (idx < 0) return -1;
-        return int.TryParse(parent.description.Substring(idx + marker.Length), out int id) ? id : -1;
+        return GroupIdFromDescription(parent?.description);
     }
 
     public static bool IsCaseworkSite(MonoBehaviour b)
@@ -562,6 +584,10 @@ public class ClientStayTracker : MonoBehaviour
         }
         else if (IsLodgingBuilding(dest))
         {
+            // People moved out of a tracked lodging building (shelter/motel) are no longer that
+            // building's group; a community is not tracked, so nothing to remove there.
+            if (source != null && IsLodgingBuilding(source))
+                RemoveClientsByQuantity(source, count, -1, creditCasework: false);
             string src = source != null ? source.name : "?";
             RegisterClientArrival(dest, count, $"Relocate_{taskId}_{src}_to_{dest.name}");
         }

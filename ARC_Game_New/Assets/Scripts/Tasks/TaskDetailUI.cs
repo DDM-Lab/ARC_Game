@@ -1041,25 +1041,14 @@ public class TaskDetailUI : MonoBehaviour
         errorMessage = null;
         currentTask = task;
         selectedChoice = choice;
-
         numericalInputs.Clear();
         foreach (var input in task.numericalInputs)
             numericalInputs[input.inputId] = input;
 
-        if (task.isExpired) { errorMessage = "This task has expired and can no longer be completed."; return false; }
-
-        string numError;
-        if (!ValidateNumericalInputs(out numError)) { errorMessage = numError; return false; }
-
+        if (!ValidateBeforeConfirm(task, choice, out errorMessage)) return false;
         if (choice != null && (choice.triggersDelivery || choice.immediateDelivery || choice.enableMultipleDeliveries))
-        {
-            string delivError;
-            if (!ValidateChoiceDelivery(choice, out delivError)) { errorMessage = delivError; return false; }
             ToastManager.ShowToast($"Delivery for task '{task.taskTitle}' is added to queue.", ToastType.Info, true);
-        }
-
-        CompleteTaskAction();
-        return true;
+        return CompleteTaskAction(out errorMessage);
     }
 
     void OnConfirmButtonClicked()
@@ -1071,44 +1060,14 @@ public class TaskDetailUI : MonoBehaviour
                 ? $"task={currentTask.taskTitle} | choice=[{selectedChoice.choiceId}] {selectedChoice.choiceText}"
                 : $"task={currentTask.taskTitle} | choice=none");
 
-        if (currentTask.isExpired)
+        string validationError;
+        if (!ValidateBeforeConfirm(currentTask, selectedChoice, out validationError))
         {
-            ShowAgentErrorMessage("This task has expired and can no longer be completed.");
+            ShowAgentErrorMessage(validationError);
             return;
         }
-
-        // Validate numerical inputs before proceeding
-        string numericalValidationError;
-        if (!ValidateNumericalInputs(out numericalValidationError))
-        {
-            ShowAgentErrorMessage(numericalValidationError);
-            return;
-        }
-
-        if (selectedChoice != null && (selectedChoice.triggersDelivery || selectedChoice.immediateDelivery))
-        {
-            string errorMessage;
-            if (!ValidateChoiceDelivery(selectedChoice, out errorMessage))
-            {
-                ShowAgentErrorMessage($"Action Aborted: {errorMessage}");
-                return; 
-            }
-            else
-            {
-                ToastManager.ShowToast($"Delivery for '{currentTask.taskTitle}' queued.", ToastType.Info, true);
-            }
-        }
-
-        // Validate worker assignment if this task is managed by WorkerAssignmentHandler
-        if (WorkerAssignmentHandler.Instance != null)
-        {
-            string workerError;
-            if (!WorkerAssignmentHandler.Instance.ValidateForConfirm(currentTask, out workerError))
-            {
-                ShowAgentErrorMessage(workerError);
-                return;
-            }
-        }
+        if (selectedChoice != null && (selectedChoice.triggersDelivery || selectedChoice.immediateDelivery || selectedChoice.enableMultipleDeliveries))
+            ToastManager.ShowToast($"Delivery for '{currentTask.taskTitle}' queued.", ToastType.Info, true);
 
         // Check if this is the first time confirming a task
         /*if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstTaskConfirm())
@@ -1119,7 +1078,9 @@ public class TaskDetailUI : MonoBehaviour
                     message: "Once confirmed, this decision is irreversible. Are you sure you want to proceed? (This is a one-time tutorial prompt)",
                     onConfirm: () => {
                         FirstTimeActionTracker.Instance.MarkTaskConfirmCompleted();
-                        CompleteTaskAction();
+                        string why;
+        if (!CompleteTaskAction(out why))
+            ShowAgentErrorMessage($"Action Aborted: {why}");
                     },
                     title: "Confirm Task Decision"
                 );
@@ -1138,7 +1099,16 @@ public class TaskDetailUI : MonoBehaviour
 
 private bool CompleteTaskAction()
 {
+    return CompleteTaskAction(out _);
+}
+
+// Returns true if the action took effect. On false NOTHING was applied (no impacts, no status
+// change) and failReason says why.
+private bool CompleteTaskAction(out string failReason)
+{
+    failReason = null;
     Debug.Log("Complete task action called!");
+
     if (currentTask != null && currentTask.taskId == -1 && currentTask.multiAgentProposal != null)
     {
         HandleMultiAgentChoiceSelection();
@@ -1150,7 +1120,15 @@ private bool CompleteTaskAction()
 
     if (selectedChoice != null)
     {
-        // Handle Budget Delays
+        // Budget gate: the same rule ActionExecutor applies to build/hire actions (BUG_REPORTS B12).
+        int cost = GetChoiceImmediateCost(selectedChoice);
+        if (cost > 0 && SatisfactionAndBudget.Instance != null && !SatisfactionAndBudget.Instance.WouldAllowSpend(cost))
+        {
+            failReason = $"insufficient budget (option costs ${cost:N0}, budget is ${SatisfactionAndBudget.Instance.GetCurrentBudget():N0})";
+            return false;
+        }
+
+        // Handle Budget Delays (display mirror; the credit itself is scheduled by ApplyChoiceImpacts)
         if (selectedChoice.budgetDelayRounds > 0)
         {
             var budgetImpact = selectedChoice.choiceImpacts.FirstOrDefault(i => i.impactType == ImpactType.Budget);
@@ -1163,32 +1141,26 @@ private bool CompleteTaskAction()
         if (selectedChoice.immediateDelivery)
         {
             int moved = ExecuteGeneratorDelivery(selectedChoice, immediate: true);
-            if (moved != 0) // -1 for food, or > 0 for people
+            if (moved == 0)
             {
-                ApplyChoiceImpacts(selectedChoice);
-                TaskSystem.Instance.CompleteTask(currentTask);
+                failReason = "nothing could be moved (no source, no destination, or no space)";
+                return false;
             }
-            else return false; 
+            ApplyChoiceImpacts(selectedChoice);
+            TaskSystem.Instance.CompleteTask(currentTask);
         }
-        else if (selectedChoice.triggersDelivery)
+        else if (selectedChoice.triggersDelivery || selectedChoice.enableMultipleDeliveries)
         {
             // QUEUE THE DELIVERY
-            Debug.Log("Delivery queue attempting");
             int result = ExecuteGeneratorDelivery(selectedChoice, immediate: false);
-            if (result != 0) // -1 means successfully queued
+            if (result == 0)
             {
-                Debug.Log("impact application trying");
-                ApplyChoiceImpacts(selectedChoice);
-                Debug.Log("impact applied");
-                // CRITICAL: Set to InProgress so the task is tracked!
-                TaskSystem.Instance.SetTaskInProgress(currentTask); 
+                failReason = "delivery could not be queued (no source with stock, no destination with space, no vehicle, or the need is already covered by inbound deliveries)";
+                return false;
             }
-            else
-                {
-                    Debug.Log("Delivery Blocked");
-                    
-                    return false; // Blocked (likely no source found)
-                }
+            ApplyChoiceImpacts(selectedChoice);
+            // CRITICAL: Set to InProgress so the task is tracked!
+            TaskSystem.Instance.SetTaskInProgress(currentTask);
         }
         else
         {
@@ -1209,25 +1181,19 @@ private bool CompleteTaskAction()
 // Ensure Food Delivery properly returns success
 bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
 {
-    Debug.Log("ExecuteFoodDelivery called");
     if (FoodDeliveryHandler.Instance == null) return false;
-
     if (immediate)
     {
-        FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice.deliveryQuantity);
-        return true;
+        int added = FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice.deliveryQuantity);
+        if (added <= 0)
+            ShowAgentErrorMessage("Could not deliver food: the destination was not found or has no room.");
+        return added > 0;
     }
-    else
-    {
-        // This queues the actual delivery tasks in the DeliverySystem
-        bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice);
-        if (!success)
-        {
-            ShowAgentErrorMessage("Could not queue food delivery. Kitchen may be unavailable or vehicles damaged.");
-            return false;
-        }
-        return true;
-    }
+    // This queues the actual delivery tasks in the DeliverySystem
+    bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice);
+    if (!success)
+        ShowAgentErrorMessage("Could not queue food delivery. No kitchen has spare stock, vehicles are damaged, or the need is already covered by inbound deliveries.");
+    return success;
 }
 
     // Immediate (non-deferred) cost of committing this choice: the sum of negative Budget
@@ -1304,13 +1270,22 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
 
         currentTask = task;
         selectedChoice = choice;
-        // Propagate rejection (e.g. unaffordable under the no-debt policy) so the gym can
-        // report the action as failed rather than silently treating it as completed. The only
-        // way CompleteTaskAction returns false for a found choice is the no-debt budget gate.
-        bool ok = CompleteTaskAction();
+        numericalInputs.Clear();
+        foreach (var input in task.numericalInputs)
+            numericalInputs[input.inputId] = input;
+
+        // The SAME gate the UI runs (expiry, numerical inputs, delivery feasibility, worker rules,
+        // budget), then the SAME execution; the reason for any refusal is reported verbatim so the
+        // gym/router never has to guess (it used to say "insufficient budget" for every failure).
+        if (!ValidateBeforeConfirm(task, choice, out failReason))
+        {
+            failReason = $"Choice {choiceId} on task {taskId} rejected: {failReason}";
+            return false;
+        }
+        string why;
+        bool ok = CompleteTaskAction(out why);
         if (!ok)
-            failReason = $"Choice {choiceId} on task {taskId} rejected: insufficient budget " +
-                         $"(${GetChoiceImmediateCost(choice):N0}) under the no-debt policy";
+            failReason = $"Choice {choiceId} on task {taskId} rejected: {why}";
         return ok;
     }
 
@@ -1318,28 +1293,18 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
     // NOT mark the task fulfilled, B1). Returns -1 for food/other/deferred ("not gated, proceed").
     int ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)
     {
-        Debug.Log($"ExecuteGeneratorDelivery: choice={choice.choiceText}, immediate={immediate}");
-        // Multi-destination deliveries (e.g. "Send to casework site" — SingleSourceMultiDest,
-        // destinationBuilding=CaseworkSite) use a dedicated path that honors destinationBuilding,
-        // so casework processing actually routes to the CaseworkSite and triggers return-home
-        // removal. Without this, such choices fell through to ExecuteClientRelocation (shelter/
-        // motel) and casework was never processed.
+        // Multi-destination deliveries (e.g. "Send to casework site") use a dedicated path that
+        // honors destinationBuilding. It now reports whether anything was queued or moved, so a
+        // choice that could do nothing is refused instead of charged (BUG_REPORTS B13).
         if (choice.enableMultipleDeliveries)
-        {
-            Debug.Log("ExecuteGeneratorDelivery: multiple deliveries enabled, routing to ExecuteMultipleDeliveries");
-            ExecuteMultipleDeliveries(choice);
-            return -1;
-        }
+            return ExecuteMultipleDeliveries(choice) > 0 ? -1 : 0;
 
-switch (choice.deliveryCargoType)
+        switch (choice.deliveryCargoType)
         {
             case ResourceType.FoodPacks:
-                Debug.Log("executegeneratordelivery foodpacks");;
                 return ExecuteFoodDelivery(choice, immediate) ? -1 : 0;
-
             case ResourceType.Population:
                 return ExecuteClientRelocation(choice, immediate);
-
             default:
                 // Fallback for any other cargo type: single source→destination delivery
                 return ExecuteFallbackDelivery(choice, immediate) ? -1 : 0;
@@ -1410,8 +1375,7 @@ switch (choice.deliveryCargoType)
         if (choice.destinationType == DeliveryDestinationType.SpecificBuilding
             && choice.destinationBuilding != BuildingType.Shelter)
         {
-            ExecuteFallbackDelivery(choice, immediate);
-            return -1;
+            return ExecuteFallbackDelivery(choice, immediate) ? -1 : 0;
         }
 
         if (ClientRelocationHandler.Instance == null)
@@ -1469,8 +1433,7 @@ switch (choice.deliveryCargoType)
 
         if (immediate)
         {
-            ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, choice.deliveryQuantity);
-            return true;
+            return ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, choice.deliveryQuantity) > 0;
         }
         else
         {
@@ -1492,39 +1455,88 @@ switch (choice.deliveryCargoType)
     /// <summary>
     /// Validates all numerical inputs in the current task
     /// </summary>
+    // ---------ONE VALIDATION FOR EVERY ENTRY POINT (UI confirm, officer confirm, headless/agent) ---------
+    /// <summary>
+    /// Everything that must hold before a choice takes effect. The UI button, the officer
+    /// conversation confirm and the headless/agent path all call this, so an agent can never do
+    /// what a human is refused (BUG_REPORTS B11, B12, B16).
+    /// </summary>
+    bool ValidateBeforeConfirm(GameTask task, AgentChoice choice, out string errorMessage)
+    {
+        errorMessage = null;
+        if (task == null) { errorMessage = "No task selected."; return false; }
+        if (task.isExpired) { errorMessage = "This task has expired and can no longer be completed."; return false; }
+        string numError;
+        if (!ValidateNumericalInputs(out numError)) { errorMessage = numError; return false; }
+        if (choice != null && (choice.triggersDelivery || choice.immediateDelivery || choice.enableMultipleDeliveries))
+        {
+            string delivError;
+            if (!ValidateChoiceDelivery(choice, out delivError)) { errorMessage = delivError; return false; }
+        }
+        if (WorkerAssignmentHandler.Instance != null)
+        {
+            string workerError;
+            if (!WorkerAssignmentHandler.Instance.ValidateForConfirm(task, out workerError)) { errorMessage = workerError; return false; }
+        }
+        int cost = GetChoiceImmediateCost(choice);
+        if (cost > 0 && SatisfactionAndBudget.Instance != null && !SatisfactionAndBudget.Instance.WouldAllowSpend(cost))
+        {
+            errorMessage = $"Insufficient budget: this option costs ${cost:N0} and the budget is ${SatisfactionAndBudget.Instance.GetCurrentBudget():N0}.";
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>Stock a source can still give away: what it holds minus what is already promised outbound.</summary>
+    int EffectiveStock(MonoBehaviour building, ResourceType cargo, DeliverySystem ds)
+    {
+        BuildingResourceStorage storage = GetBuildingResourceStorage(building);
+        if (storage == null) return 0;
+        int reserved = ds != null ? ds.GetReservedOutgoingQuantity(building, cargo) : 0;
+        return Mathf.Max(0, storage.GetResourceAmount(cargo) - reserved);
+    }
+
+    /// <summary>Room a destination will still have once everything already inbound has arrived.</summary>
+    int EffectiveSpace(MonoBehaviour building, ResourceType cargo, DeliverySystem ds)
+    {
+        BuildingResourceStorage storage = GetBuildingResourceStorage(building);
+        if (storage == null) return 0;
+        int reserved = ds != null ? ds.GetReservedIncomingQuantity(building, cargo) : 0;
+        return Mathf.Max(0, storage.GetAvailableSpace(cargo) - reserved);
+    }
+
+    /// <summary>
+    /// Validates the task's numerical inputs from the task DATA (the UI keeps
+    /// AgentNumericalInput.currentValue in sync), so the check also runs when no panel exists.
+    /// </summary>
     bool ValidateNumericalInputs(out string errorMessage)
     {
         errorMessage = "";
-        
-        if (currentTask.numericalInputs == null || currentTask.numericalInputs.Count == 0)
+        if (currentTask == null || currentTask.numericalInputs == null || currentTask.numericalInputs.Count == 0)
             return true; // No numerical inputs to validate
-        
-        foreach (GameObject item in currentConversationItems)
+
+        foreach (AgentNumericalInput input in currentTask.numericalInputs)
         {
-            NumericalInputUI inputUI = item.GetComponent<NumericalInputUI>();
-            if (inputUI != null)
+            if (input == null) continue;
+            if (input.maxValue > input.minValue && (input.currentValue < input.minValue || input.currentValue > input.maxValue))
             {
-                int value = inputUI.GetCurrentValue();
-                NumericalInputType inputType = inputUI.GetInputType();
-                
-                // Perform type-specific validation
-                string validationError = ValidateSpecificInput(inputType, value);
-                if (!string.IsNullOrEmpty(validationError))
-                {
-                    errorMessage = validationError;
-                    return false;
-                }
+                errorMessage = $"{input.inputLabel}: {input.currentValue} is outside the allowed range {input.minValue}-{input.maxValue}.";
+                return false;
+            }
+            string validationError = ValidateSpecificInput(input.inputType, input.currentValue);
+            if (!string.IsNullOrEmpty(validationError))
+            {
+                errorMessage = validationError;
+                return false;
             }
         }
-        
-        // Perform cross-input validation (e.g., total budget checks)
+
         string crossValidationError = ValidateCrossInputConstraints();
         if (!string.IsNullOrEmpty(crossValidationError))
         {
             errorMessage = crossValidationError;
             return false;
         }
-        
         return true;
     }
 
@@ -1682,26 +1694,18 @@ switch (choice.deliveryCargoType)
     {
         int totalBudgetRequested = 0;
         int totalWorkersRequested = 0;
-        
-        foreach (GameObject item in currentConversationItems)
+        if (currentTask != null && currentTask.numericalInputs != null)
         {
-            NumericalInputUI inputUI = item.GetComponent<NumericalInputUI>();
-            if (inputUI != null)
+            foreach (AgentNumericalInput input in currentTask.numericalInputs)
             {
-                NumericalInputType type = inputUI.GetInputType();
-                int value = inputUI.GetCurrentValue();
-                
-                if (type == NumericalInputType.Budget)
-                {
-                    totalBudgetRequested += value;
-                }
-                else if (type == NumericalInputType.UntrainedWorkers || type == NumericalInputType.TrainedWorkers)
-                {
-                    totalWorkersRequested += value;
-                }
+                if (input == null) continue;
+                if (input.inputType == NumericalInputType.Budget)
+                    totalBudgetRequested += input.currentValue;
+                else if (input.inputType == NumericalInputType.UntrainedWorkers || input.inputType == NumericalInputType.TrainedWorkers)
+                    totalWorkersRequested += input.currentValue;
             }
         }
-        
+
         // Check total budget
         if (totalBudgetRequested > 0 && SatisfactionAndBudget.Instance != null)
         {
@@ -1711,14 +1715,7 @@ switch (choice.deliveryCargoType)
                 return $"Total budget requested (${totalBudgetRequested:N0}) exceeds available funds (${availableBudget:N0}).";
             }
         }
-        
-        // Check if total workers requested exceeds building capacity
-        if (totalWorkersRequested > 0 && currentTask.affectedFacility != null)
-        {
-            // Could add facility-specific worker capacity checks here
-        }
-        
-        return ""; // No error
+        return "";
     }
 
     /// <summary>
@@ -1766,8 +1763,12 @@ switch (choice.deliveryCargoType)
     }
 
     //  ---------CHOICE DELIVERY VALIDATION ---------
-    bool ValidateChoiceDelivery(AgentChoice choice, out string errorMessage) =>
-        ValidateChoiceDelivery(currentTask, choice, out errorMessage);
+    bool ValidateChoiceDelivery(AgentChoice choice, out string errorMessage)
+    {
+        if (choice != null && choice.enableMultipleDeliveries)
+            return ValidateMultipleDeliveries(choice, TaskSystem.Instance.FindTriggeringFacility(currentTask), out errorMessage);
+        return ValidateChoiceDelivery(currentTask, choice, out errorMessage);
+    }
 
     public static bool ValidateChoiceDelivery(GameTask task, AgentChoice choice, out string errorMessage)
     {
@@ -2338,70 +2339,28 @@ switch (choice.deliveryCargoType)
     /// <summary>
     /// Execute immediate delivery between specific facilities
     /// </summary>
-    void ExecuteImmediateDeliveryBetween(MonoBehaviour source, MonoBehaviour destination, ResourceType cargoType, int quantity)
+    /// <summary>Move cargo now, no vehicle. Returns what actually landed; overflow goes back to the source.</summary>
+    int ExecuteImmediateDeliveryBetween(MonoBehaviour source, MonoBehaviour destination, ResourceType cargoType, int quantity)
     {
-        // Get resource storages
         BuildingResourceStorage sourceStorage = GetBuildingResourceStorage(source);
         BuildingResourceStorage destStorage = GetBuildingResourceStorage(destination);
+        if (sourceStorage == null || destStorage == null || quantity <= 0)
+            return 0;
 
-        if (sourceStorage == null || destStorage == null)
-        {
-            Debug.LogError($"Could not find resource storage for immediate delivery: {source.name} → {destination.name}");
-            return;
-        }
-
-        // Perform immediate transfer
         int actualRemoved = sourceStorage.RemoveResource(cargoType, quantity);
         int actualDelivered = destStorage.AddResource(cargoType, actualRemoved);
-
-        // Handle overflow if destination couldn't accept all
         if (actualDelivered < actualRemoved)
-        {
-            int overflow = actualRemoved - actualDelivered;
-            sourceStorage.AddResource(cargoType, overflow);
-            Debug.LogWarning($"Immediate delivery overflow: {overflow} {cargoType} returned to {source.name}");
-        }
+            sourceStorage.AddResource(cargoType, actualRemoved - actualDelivered);
 
-        // Track client arrivals at shelters
-        if (cargoType == ResourceType.Population && ClientStayTracker.Instance != null)
-        {
-            Building destinationBuilding = destination.GetComponent<Building>();
-            if (destinationBuilding != null && destinationBuilding.GetBuildingType() == BuildingType.Shelter)
-            {
-                string groupName = $"Delivery_Vehicle_{currentTask.taskId}";
-                ClientStayTracker.Instance.RegisterClientArrival(destinationBuilding, actualDelivered, groupName);
-            }
-        }
+        // Client tracking happens ONCE, in the tracker (arrival at a shelter/motel, processing
+        // home at a casework site, leaving a tracked source). The two registrations that used
+        // to live here double-counted community->shelter moves.
+        if (cargoType == ResourceType.Population && ClientStayTracker.Instance != null && actualDelivered > 0)
+            ClientStayTracker.Instance.HandleImmediateTransfer(source, destination, actualDelivered, currentTask);
 
         if (showDebugInfo)
             Debug.Log($"Immediate delivery: {actualDelivered} {cargoType} from {source.name} to {destination.name}");
-
-        // NEW: Track client arrivals for multi-delivery immediate transfers
-        if (cargoType == ResourceType.Population && ClientStayTracker.Instance != null && actualDelivered > 0)
-        {
-            Building sourceBuilding = source.GetComponent<Building>();
-            Building destBuilding = destination.GetComponent<Building>();
-            PrebuiltBuilding sourcePrebuilt = source.GetComponent<PrebuiltBuilding>();
-
-            if (sourcePrebuilt != null && sourcePrebuilt.GetPrebuiltType() == PrebuiltBuildingType.Community &&
-                destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
-            {
-                string groupName = $"Multi_{currentTask.taskId}_{sourcePrebuilt.name}_to_{destBuilding.name}";
-                ClientStayTracker.Instance.RegisterClientArrival(destBuilding, actualDelivered, groupName);
-            }
-            else if (sourceBuilding != null && sourceBuilding.GetBuildingType() == BuildingType.Shelter &&
-                    destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
-            {
-                string groupName = $"Multi_{currentTask.taskId}_{sourceBuilding.name}_to_{destBuilding.name}";
-                ClientStayTracker.Instance.RegisterClientArrival(destBuilding, actualDelivered, groupName);
-            }
-            else if (sourceBuilding != null && sourceBuilding.GetBuildingType() == BuildingType.Shelter &&
-                    destBuilding != null && destBuilding.GetBuildingType() == BuildingType.CaseworkSite)
-            {
-                if (showDebugInfo)
-                    Debug.Log($"Multi-delivery casework: {actualDelivered} from {sourceBuilding.name}");
-            }
-        }
+        return actualDelivered;
     }
 
     /// <summary>
@@ -2507,37 +2466,27 @@ switch (choice.deliveryCargoType)
     /// <summary>
     /// Execute delivery with multiple sources/destinations
     /// </summary>
-    void ExecuteMultipleDeliveries(AgentChoice choice)
+    int ExecuteMultipleDeliveries(AgentChoice choice)
     {
         MonoBehaviour triggeringFacility = FindTriggeringFacility(currentTask);
 
-        // Track linked-delivery count so we can mark the parent task InProgress iff this
-        // selection actually queued at least one delivery. The single-delivery paths
-        // (ExecuteClientRelocation, food-single) each call SetTaskInProgress; the multi-
-        // delivery sub-handlers below only LinkDeliveriesToTask and historically omitted
-        // it. Without InProgress, OnDeliveryTaskCompleted's status gate (TaskSystem.cs)
-        // drops every completed delivery, so multi-delivery tasks (e.g. food kitchen→
-        // communities) were never credited as fulfilled. Set it here, once, centrally.
+        // Report what this selection actually did: deliveries queued (linked to the parent) or
+        // people/meals moved immediately. Zero means the choice must NOT take effect.
         int linkedBefore = (currentTask != null && currentTask.linkedDeliveryTaskIds != null)
             ? currentTask.linkedDeliveryTaskIds.Count : 0;
+        int movedImmediately = 0;
 
         switch (choice.multiDeliveryType)
         {
             case AgentChoice.MultiDeliveryType.SingleSourceMultiDest:
-                Debug.Log("calling singlesourcemultidest");
-                ExecuteSingleSourceMultiDest(choice, triggeringFacility);
+                movedImmediately += ExecuteSingleSourceMultiDest(choice, triggeringFacility);
                 break;
-
             case AgentChoice.MultiDeliveryType.MultiSourceSingleDest:
-                Debug.Log("calling multisourcesingledest");
-                ExecuteMultiSourceSingleDest(choice, triggeringFacility);
+                movedImmediately += ExecuteMultiSourceSingleDest(choice, triggeringFacility);
                 break;
-
             case AgentChoice.MultiDeliveryType.MultiSourceMultiDest:
-                Debug.Log("calling multisourcemultidest");
                 ExecuteMultiSourceMultiDest(choice, triggeringFacility);
                 break;
-
             default:
                 // Fall back to single delivery
                 ExecuteChoiceDelivery(choice);
@@ -2546,102 +2495,117 @@ switch (choice.deliveryCargoType)
 
         int linkedAfter = (currentTask != null && currentTask.linkedDeliveryTaskIds != null)
             ? currentTask.linkedDeliveryTaskIds.Count : 0;
-        if (currentTask != null && linkedAfter > linkedBefore)
+        int queued = linkedAfter - linkedBefore;
+        if (currentTask != null && queued > 0)
             TaskSystem.Instance.SetTaskInProgress(currentTask);
+        return queued + movedImmediately;
     }
 
     /// <summary>
     /// One source delivers to multiple destinations
     /// </summary>
-    void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFacility)
+    /// <summary>One source to up to three destinations. Returns people/meals moved immediately (0 for queued).</summary>
+    int ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFacility)
     {
-        Debug.Log("=== EXECUTING SINGLE SOURCE MULTI DEST ===");
-        Debug.Log($"Choice immediate delivery: {choice.immediateDelivery}");
-        Debug.Log($"Choice triggers delivery: {choice.triggersDelivery}");
-
         MonoBehaviour source = DetermineChoiceDeliverySource(choice, triggeringFacility);
-        if (source == null) return;
+        if (source == null) return 0;
 
-        // Find multiple destinations
         List<MonoBehaviour> destinations = FindMultipleDestinations(choice, triggeringFacility, 3)
-        .Where(dest => dest != source) // Exclude source
-        .ToList();
-
+            .Where(dest => dest != source)
+            .ToList();
         if (destinations.Count == 0)
         {
             Debug.LogWarning("No suitable destinations found for multi-destination delivery");
-            return;
+            return 0;
         }
 
-        int totalQuantity = CalculateDeliveryQuantity(choice, source);
-        int quantityPerDest = Mathf.Max(1, totalQuantity / destinations.Count);
+        DeliverySystem deliverySystem = DeliverySystem.Instance ?? FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null) return 0;
+        ResourceType cargo = choice.deliveryCargoType;
 
-        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
-        if (deliverySystem == null) return;
+        // ONE budget shared by all destinations, never more than the source can actually give.
+        int remaining = Mathf.Min(CalculateDeliveryQuantity(choice, source), EffectiveStock(source, cargo, deliverySystem));
+        if (remaining <= 0) return 0;
+        int share = Mathf.Max(1, Mathf.CeilToInt((float)remaining / destinations.Count));
 
+        int moved = 0;
         foreach (MonoBehaviour dest in destinations)
         {
+            if (remaining <= 0) break;
+            int amount = Mathf.Min(share, remaining, EffectiveSpace(dest, cargo, deliverySystem));
+            if (amount <= 0) continue;
             if (choice.immediateDelivery)
             {
-                ExecuteImmediateDeliveryBetween(source, dest, choice.deliveryCargoType, quantityPerDest);
+                int m = ExecuteImmediateDeliveryBetween(source, dest, cargo, amount);
+                moved += m;
+                remaining -= m;
             }
             else
             {
-                List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, dest, choice.deliveryCargoType, quantityPerDest, 3);
-                // Link all created deliveries → parent task
+                List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, dest, cargo, amount, 3);
+                if (deliveries.Count == 0) continue;
                 TaskSystem.Instance.LinkDeliveriesToTask(currentTask, deliveries);
+                remaining -= amount;
             }
-
             if (showDebugInfo)
-                Debug.Log($"Multi-delivery: {quantityPerDest} {choice.deliveryCargoType} from {source.name} to {dest.name}");
+                Debug.Log($"Multi-dest: {amount} {cargo} from {source.name} to {dest.name}");
         }
+        return moved;
     }
 
     /// <summary>
     /// Multiple sources deliver to one destination
     /// </summary>
-    void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFacility)
+    /// <summary>Up to three sources to one destination. Returns people/meals moved immediately (0 for queued).</summary>
+    int ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFacility)
     {
-        Debug.Log("=== EXECUTING MULTI SOURCE SINGLE DEST ===");
         MonoBehaviour destination = DetermineChoiceDeliveryDestination(choice, triggeringFacility);
-        if (destination == null) return;
+        if (destination == null) return 0;
 
-        // Find multiple sources
-        List<MonoBehaviour> sources = FindMultipleSources(choice, triggeringFacility, 3); // Max 3 sources
-
+        List<MonoBehaviour> sources = FindMultipleSources(choice, triggeringFacility, 3)
+            .Where(src => src != destination)
+            .ToList();
         if (sources.Count == 0)
         {
             Debug.LogWarning("No suitable sources found for multi-source delivery");
-            return;
+            return 0;
         }
 
-        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
-        if (deliverySystem == null) return;
+        DeliverySystem deliverySystem = DeliverySystem.Instance ?? FindObjectOfType<DeliverySystem>();
+        if (deliverySystem == null) return 0;
+        ResourceType cargo = choice.deliveryCargoType;
 
+        // ONE budget shared by all sources (a Fixed quantity used to be sent from EACH source),
+        // never more than the destination can still take.
+        int requested = choice.quantityType == DeliveryQuantityType.Fixed
+            ? choice.deliveryQuantity
+            : sources.Sum(src => CalculateDeliveryQuantity(choice, src));
+        int remaining = Mathf.Min(requested, EffectiveSpace(destination, cargo, deliverySystem));
+        if (remaining <= 0) return 0;
+
+        int moved = 0;
         foreach (MonoBehaviour source in sources)
         {
-            int availableQuantity = CalculateDeliveryQuantity(choice, source);
-            if (availableQuantity <= 0) continue;
-
+            if (remaining <= 0) break;
+            int amount = Mathf.Min(remaining, EffectiveStock(source, cargo, deliverySystem), CalculateDeliveryQuantity(choice, source));
+            if (amount <= 0) continue;
             if (choice.immediateDelivery)
             {
-                ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, availableQuantity);
+                int m = ExecuteImmediateDeliveryBetween(source, destination, cargo, amount);
+                moved += m;
+                remaining -= m;
             }
             else
             {
-                List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, destination, choice.deliveryCargoType, availableQuantity, 3);
-                if (deliveries.Count <= 0)
-                {
-                    Debug.Log("No delivery subtasks");
-                }
-                // Link all created deliveries → parent task
+                List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, destination, cargo, amount, 3);
+                if (deliveries.Count == 0) continue;
                 TaskSystem.Instance.LinkDeliveriesToTask(currentTask, deliveries);
-                Debug.Log("linked deliveries to parent task");
+                remaining -= amount;
             }
-
             if (showDebugInfo)
-                Debug.Log($"Multi-source: {availableQuantity} {choice.deliveryCargoType} from {source.name} to {destination.name}");
+                Debug.Log($"Multi-source: {amount} {cargo} from {source.name} to {destination.name}");
         }
+        return moved;
     }
 
     /// <summary>

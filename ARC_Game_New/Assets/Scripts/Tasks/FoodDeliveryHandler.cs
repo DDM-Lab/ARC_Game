@@ -112,8 +112,9 @@ public class FoodDeliveryHandler : MonoBehaviour
                 + ",\"inbound\":" + alreadyInbound + "}");
             if (showDebugInfo)
                 Debug.Log($"[FoodDeliveryTaskGenerator] Inbound deliveries already cover {alreadyInbound}/{choice.deliveryQuantity} for {destination.name}");
-            TaskSystem.Instance.CompleteTask(parentTask);
-            return true;
+            // Nothing to deliver. This is a refusal (the UI already refuses it), not a fulfilment:
+            // completing the task here credited a delivery that was never made.
+            return false;
         }
 
         var kitchens = GetKitchensSorted(ds, destination.transform.position, choice.prioritizeNearestSource);
@@ -167,19 +168,19 @@ public class FoodDeliveryHandler : MonoBehaviour
     /// Immediately transfers food from kitchens to destination (no vehicle needed).
     /// Used for "airdrop" / emergency-bypass choices.
     /// </summary>
-    public void ExecuteImmediate(GameTask parentTask, int requestedQuantity)
+    public int ExecuteImmediate(GameTask parentTask, int requestedQuantity)
     {
+        // External emergency supply: no kitchen is debited (design call), but the drop must have a
+        // destination and only what fits is credited (BUG_REPORTS B15).
         MonoBehaviour destination = TaskSystem.Instance.FindTriggeringFacility(parentTask);
-        if (destination == null) return;
-
+        if (destination == null) return 0;
         BuildingResourceStorage destStorage = GetStorage(destination);
-        if (destStorage == null) return;
-
+        if (destStorage == null) return 0;
         int amount = requestedQuantity > 0 ? requestedQuantity : destStorage.GetAvailableSpace(ResourceType.FoodPacks);
-        destStorage.AddResource(ResourceType.FoodPacks, amount);
-
+        int added = destStorage.AddResource(ResourceType.FoodPacks, amount);
         if (showDebugInfo)
-            Debug.Log($"[FoodDeliveryTaskGenerator] Immediate drop: added {amount} food to {destination.name}");
+            Debug.Log($"[FoodDeliveryTaskGenerator] Immediate drop: added {added}/{amount} food to {destination.name}");
+        return added;
     }
 
     // ─────────────────────────────────────────────────────────────────
