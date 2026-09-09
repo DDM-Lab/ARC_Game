@@ -4,6 +4,8 @@
 > from the 2026-09-09 audit live in `docs/BUG_REPORTS_v1_testing.md` (A1-A12 map to entries here:
 > A1=10 (+ the food-waste-before-consumption consequence), A2=2, A3=3, A4=4, A5=5, A6=6, A7=7, A8=8,
 > A9=1, A10=9, A11=11, A12=12). This file stays the surrogate-side index.
+> 2026-09-09: all of these are FIXED on branch `v1_fixes` (see the Fix status table there). The
+> surrogate still reproduces the OLD behaviour until it is re-derived; see STATUS.md.
 
 Each entry: what the game does, where in the C# it happens, how it was observed, and what the
 surrogate does about it. The surrogate reproduces every one of these on purpose -- it must match

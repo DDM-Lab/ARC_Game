@@ -40,6 +40,17 @@ Talos container yet (Apache proxies only /ws /configs /health /bundles + the she
 saves 404 until it is. Their `Assets/StreamingAssets/game_param_config.csv` is byte-identical to the
 Talos `/sheet.csv` (which refresh-sheet.sh pulls from the Google Sheet) and no code reads it.
 
+**2026-09-09, branch `v1_fixes` (NOT merged into v1_testing).** All 12 known bugs and most of the 35
+audit findings are fixed in six commits (see `docs/BUG_REPORTS_v1_testing.md`, "Fix status"). The
+surrogate is UNCHANGED and now models the OLD game: every `runs/validate*` set is still the
+pre-fix oracle and the ratchet still passes 28/42 against them. A capture of the fixed build
+(seed 5503, recorded actions replayed) is at `runs/fixed_v1/` -- deliberately outside the
+`validate*` glob so the ratchet ignores it. Next job: re-derive the port against the fixed game
+(rollover timing: segment 4 fires before the report and nothing at rollover; single registration
+per delivery; actual-quantity credit; cancel path; casework by group; departures leave storage;
+emergency spacing; agent prices 200/1000/300/2000; strict staffing composition), then recapture.
+
+
     make the numbers yourself, never quote them from memory:
       python -m cora_sim.debug_lockstep                    # every validated seed + the open-bug list
       python -m cora_sim.debug_lockstep 5503               # interactive: board / fleet / groups / draws per step
