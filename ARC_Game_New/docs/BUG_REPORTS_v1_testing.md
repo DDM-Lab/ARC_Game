@@ -863,6 +863,13 @@ loses every float parameter, and any row whose first cell contains "parameter" i
 9. **Officer display names** changed by main-bugfixes (`Tasks/AlertUIController.cs`: Logistics →
    Lodging, Mass Care → Food Services, External Relationship → External Relations) while officer tab
    names still come from the router roster.
+10. **Day 1 in the human GUI skips the round ticks.** `GlobalClock.Day1SkipCoroutine` (main-bugfixes)
+   sets `currentTimeSegment` directly and raises only `OnRoundEnd` for the four rounds, never
+   `OnTimeSegmentChanged`, so a human player's day 1 has no task generation, consumption, ageing or
+   client-tracker ticks; the gym/router path takes `SimulationCoroutine` and gets the normal passes
+   (generation at rounds 1-2, ticks 1-4). Same code on v1_fixes. If one build must serve humans and
+   agents alike, day 1 needs one rule; the choice is theirs (intro day with nothing happening, or a
+   real day).
 
 ## Part D — claims rejected during verification
 
