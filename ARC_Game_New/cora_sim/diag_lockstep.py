@@ -1,7 +1,7 @@
 """Lockstep diff: the port driving an evolved plan against the headless run of that same
 plan (validate_plan.py output), draw for draw and counter for counter.
 
-    python -m cora_sim.diag_lockstep runs/evo14.jsonl 5901 [--trace runs/validate/staff_5901.json]
+    python -m cora_sim.diag_lockstep cora_sim/runs/evo14.jsonl 5901 [--trace cora_sim/runs/validate/staff_5901.json]
 
 Reports the first gym step whose draw stream differs, the first round each rewardMetrics
 key differs, the first budget difference, and both final scores. The replay harness cannot
@@ -21,6 +21,7 @@ from cora_sim.floodmap import FloodMap             # noqa: E402
 from cora_sim.validate_plan import best_row        # noqa: E402
 import cora_sim.diag_marks as D                    # noqa: E402
 import cora_sim.sim as S                           # noqa: E402
+from cora_sim import paths as P
 
 _KEYS = ("foodResolved", "foodFulfilled", "lodgingResolved", "lodgingFulfilled", "cumWorkingWorkers",
          "cumIdleWorkers", "cumTrainingWorkers", "totalWorkers", "caseworkRequested", "caseworkProcessed",
@@ -33,7 +34,7 @@ def main():
     ap.add_argument("log"); ap.add_argument("unity_seed", type=int)
     ap.add_argument("--trace", default=None)
     args = ap.parse_args()
-    trace = args.trace or f"runs/validate/staff_{args.unity_seed}.json"
+    trace = args.trace or os.path.join(P.VALIDATE, f"staff_{args.unity_seed}.json")
     log = trace.replace(".json", ".log")
     row = best_row(args.log, args.unity_seed)
     t = json.load(open(trace))

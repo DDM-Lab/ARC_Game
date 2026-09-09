@@ -1,6 +1,6 @@
 """Evolve many full-episode plans on the surrogate and log EVERY evaluated trajectory.
 
-    python -m cora_sim.evolve --out runs/evo.jsonl --seeds 8 --population 32 --generations 30
+    python -m cora_sim.evolve --out cora_sim/runs/evo.jsonl --seeds 8 --population 32 --generations 30
 
 Each line of the JSONL is one evaluated trajectory: the seed (a Unity xorshift state, so any
 line can be replayed on the headless server), the genome, the game's own score components

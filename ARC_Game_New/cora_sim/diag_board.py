@@ -1,9 +1,10 @@
 """Task board side by side per step: the port's live tasks against Unity's allActiveTasks
 from the validation trace, driving the port exactly as diag_lockstep does.
 
-    python -m cora_sim.diag_board runs/evo14.jsonl 5503 --from 12 --to 13
+    python -m cora_sim.diag_board cora_sim/runs/evo14.jsonl 5503 --from 12 --to 13
 """
-import argparse, json, os, random, sys
+import argparse
+import os, json, os, random, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cora_sim.sim as S                                    # noqa: E402
 from cora_sim.actions import CoraActions                    # noqa: E402
@@ -11,6 +12,7 @@ from cora_sim.evolve import fresh_world                     # noqa: E402
 from cora_sim.floodmap import FloodMap                      # noqa: E402
 from cora_sim.diag_lockstep import best_row, drive_step                 # noqa: E402
 from cora_sim.test_replay_forward import seed_state         # noqa: E402
+from cora_sim import paths as P
 
 
 def board(w):
@@ -30,7 +32,7 @@ def main():
     ap.add_argument("--from", dest="lo", type=int, default=0)
     ap.add_argument("--to", dest="hi", type=int, default=32)
     a = ap.parse_args()
-    trace = f"runs/validate/staff_{a.unity_seed}.json"; ulog = trace.replace(".json", ".log")
+    trace = os.path.join(P.VALIDATE, f"staff_{a.unity_seed}.json"); ulog = trace.replace(".json", ".log")
     row = best_row(a.log, a.unity_seed)
     t = json.load(open(trace))
     w = fresh_world(seed_state(ulog), FloodMap.load())

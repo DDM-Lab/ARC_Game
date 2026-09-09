@@ -26,7 +26,7 @@ def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9899
     name = sys.argv[2] if len(sys.argv) > 2 else "dumped"
     sys.path.insert(0, os.getcwd())
-    from cora_search import SearchableEnv
+    from cora_sim.searchable_env import SearchableEnv
 
     log = os.path.abspath(f"dump_map_{name}.log")
     env = SearchableEnv(unity_exe_path=EXE, unity_port=port, seed=1, auto_start_unity=True,

@@ -1,9 +1,10 @@
 """Casework lifecycle, side by side: what Unity's ClientStayTracker generated / re-armed /
 closed per step against what the port did, driving the port exactly as diag_lockstep does.
 
-    python -m cora_sim.diag_casework runs/evo14.jsonl 5901 [--from 8 --to 14]
+    python -m cora_sim.diag_casework cora_sim/runs/evo14.jsonl 5901 [--from 8 --to 14]
 """
-import argparse, json, os, random, re, sys
+import argparse
+import os, json, os, random, re, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cora_sim.sim as S                                    # noqa: E402
 from cora_sim.actions import CoraActions                    # noqa: E402
@@ -11,6 +12,7 @@ from cora_sim.evolve import fresh_world                     # noqa: E402
 from cora_sim.floodmap import FloodMap                      # noqa: E402
 from cora_sim.diag_lockstep import best_row, drive_step                 # noqa: E402
 from cora_sim.test_replay_forward import seed_state         # noqa: E402
+from cora_sim import paths as P
 
 _STEP = re.compile(r"\] s(\d+)d\d+r\d+f\d+ round:advance")
 _LINES = ("generated casework task", "re-enabled for group", "Casework Request",
@@ -40,7 +42,7 @@ def main():
     ap.add_argument("--to", dest="hi", type=int, default=32)
     ap.add_argument("--fleet", action="store_true", help="also print vehicle events both sides")
     a = ap.parse_args()
-    trace = f"runs/validate/staff_{a.unity_seed}.json"; ulog = trace.replace(".json", ".log")
+    trace = os.path.join(P.VALIDATE, f"staff_{a.unity_seed}.json"); ulog = trace.replace(".json", ".log")
     row = best_row(a.log, a.unity_seed)
     t = json.load(open(trace))
     ue = unity_events(ulog)

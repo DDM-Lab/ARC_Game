@@ -1,9 +1,9 @@
-"""Ratchet: every headless validation run under runs/validate (staff_<seed>.json + .log, written
+"""Ratchet: every headless validation run under cora_sim/runs/validate (staff_<seed>.json + .log, written
 by validate_plan.py) must replay EXACTLY on the surrogate -- identical draw stream, every
-rewardMetrics counter, budget and score at every round.  Whatever is in runs/validate is
+rewardMetrics counter, budget and score at every round.  Whatever is in cora_sim/runs/validate is
 the floor; add seeds with
 
-    python -m cora_sim.validate_plan runs/evo14.jsonl <seed> --port 21050
+    python -m cora_sim.validate_plan cora_sim/runs/evo14.jsonl <seed> --port 21050
 
 and they are picked up automatically.  Skips (rc 0) when no run is present."""
 from __future__ import annotations
@@ -16,7 +16,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cora_sim.debug_lockstep import Session      # noqa: E402
 
-VALIDATE_DIR = "runs/validate"
+from cora_sim import paths as P      # noqa: E402
+
+VALIDATE_DIR = P.VALIDATE
 
 
 def seeds():
@@ -33,7 +35,7 @@ def seeds():
 def main():
     ss = seeds()
     if not ss:
-        print("  (no runs/validate/staff_<seed>.json+.log present; nothing to ratchet)")
+        print("  (no cora_sim/runs/validate/staff_<seed>.json+.log present; nothing to ratchet)")
         return 0
     failed = 0
     for s in ss:

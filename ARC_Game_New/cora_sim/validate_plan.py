@@ -2,7 +2,7 @@
 format, so test_replay_forward / diag_magnitude judge whether the surrogate is exact on a
 trajectory it was never calibrated on.
 
-    python -m cora_sim.validate_plan runs/evo14.jsonl 5901 --port 21050
+    python -m cora_sim.validate_plan cora_sim/runs/evo14.jsonl 5901 --port 21050
 
 Picks the best-scoring row for that Unity seed, launches headless with the same seed, and
 each round does exactly what the surrogate's CoraActions.apply did: answer every open task
@@ -12,6 +12,8 @@ executed that round, in order. Writes staff_<seed>.json/.log next to --out."""
 from __future__ import annotations
 
 import argparse
+
+from cora_sim import paths as P
 import json
 import os
 import sys
@@ -44,7 +46,7 @@ def play(row, port, out_dir, rounds=32):
     same order. Then both advance and their counters are compared. Order matters: staffing
     the Kitchen before the Shelter puts the trained workers in a different building."""
     import random
-    from cora_search import SearchableEnv
+    from cora_sim.searchable_env import SearchableEnv
     from cora_sim.actions import CoraActions
     from cora_sim.evolve import fresh_world, captured_seeds
     from cora_sim.floodmap import FloodMap
@@ -164,7 +166,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("log"); ap.add_argument("unity_seed", type=int)
     ap.add_argument("--port", type=int, default=21050)
-    ap.add_argument("--out", default="runs/validate")
+    ap.add_argument("--out", default=P.VALIDATE)
     ap.add_argument("--rounds", type=int, default=32)
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)

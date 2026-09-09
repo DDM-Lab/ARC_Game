@@ -2,22 +2,22 @@
 
 **The surrogate reproduces the Unity game's end-of-turn state exactly on every validation
 run we have (2026-09-08).** Four 32-round headless runs driven by EVOLVED plans (seeds 5503,
-5901, 6001, 7002; `runs/validate/staff_N.{json,log}`, ARC_SNAPSHOT_DEBUG=1): the RNG draw
+5901, 6001, 7002; `cora_sim/runs/validate/staff_N.{json,log}`, ARC_SNAPSHOT_DEBUG=1): the RNG draw
 stream is identical draw-for-draw, and every reward counter, the budget and the final score
 agree at every round. These are off-policy plans that build casework sites, strand vehicles
 in floods, run two kitchens and go into debt -- mechanics the earlier LLM-played captures
 never touched. The 14 earlier calibration captures were lost with the session scratchpad;
-`runs/validate` is the ratchet corpus now (`test_lockstep`, part of `test_all`, fails unless
+`cora_sim/runs/validate` is the ratchet corpus now (`test_lockstep`, part of `test_all`, fails unless
 every seed there is exact). The other ten evolved seeds (5501 5502 5504 5601 5701 5801 5802
-6101 7001 7003) were launched on headless with `runs/validate/run_batch.sh` on 2026-09-08 --
-check `runs/validate/batch.log` and `python -m cora_sim.debug_lockstep` for their verdicts;
+6101 7001 7003) were launched on headless with `cora_sim/runs/validate/run_batch.sh` on 2026-09-08 --
+check `cora_sim/runs/validate/batch.log` and `python -m cora_sim.debug_lockstep` for their verdicts;
 NOTHING beyond the four seeds above has been checked yet.
 
     make the numbers yourself, never quote them from memory:
       python -m cora_sim.debug_lockstep                    # every validated seed + the open-bug list
       python -m cora_sim.debug_lockstep 5503               # interactive: board / fleet / groups / draws per step
-      python -m cora_sim.diag_lockstep runs/evo14.jsonl 5503
-      python -m cora_sim.validate_plan runs/evo14.jsonl 5501 --port 21050   # add a seed (needs Unity, no sandbox)
+      python -m cora_sim.diag_lockstep cora_sim/runs/evo14.jsonl 5503
+      python -m cora_sim.validate_plan cora_sim/runs/evo14.jsonl 5501 --port 21050   # add a seed (needs Unity, no sandbox)
     older instruments (need STAFF_TRACES captures in the harness format):
       STAFF_TRACES=<dir>/staff_*.json python -m cora_sim.test_replay_forward   # counters, per round
       STAFF_TRACES=<dir>/staff_*.json python -m cora_sim.diag_marks            # draws, per step

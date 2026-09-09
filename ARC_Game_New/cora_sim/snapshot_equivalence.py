@@ -10,7 +10,7 @@ failure mode to notice. This session already produced four tests that passed whi
 nothing; this harness exists so the remaining capture work cannot repeat that.
 
 THE TEST
-Replay-restore (cora_search.py) is the ORACLE -- it is exact by construction and already
+Replay-restore (cora_sim/searchable_env.py) is the ORACLE -- it is exact by construction and already
 verified (reload equivalence, branch isolation, JSON round-trip). So:
 
     play to round r
@@ -24,11 +24,11 @@ offered, weather/flood, budget, satisfaction and every reward component. First m
 round is reported, because WHERE it diverges points at WHICH system is uncaptured.
 
 USAGE
-  python snapshot_equivalence.py [--rounds-before 6] [--rounds-after 6] [--seed 1234]
+  python -m cora_sim.snapshot_equivalence [--rounds-before 6] [--rounds-after 6] [--seed 1234]
 """
 import argparse, json, os, sys
 
-from cora_search import SearchableEnv
+from cora_sim.searchable_env import SearchableEnv
 
 DEFAULT_EXE = ("Build/Headless/macOS/ARC_Headless.app/Contents/MacOS/"
                "Collaborative Operations And Resource Management with Agentic AI")

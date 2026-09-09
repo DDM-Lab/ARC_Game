@@ -1,6 +1,6 @@
 import json, os, sys
 sys.path.insert(0, os.getcwd())
-from cora_search import SearchableEnv
+from cora_sim.searchable_env import SearchableEnv
 EXE=("Build/Headless/macOS/ARC_Headless.app/Contents/MacOS/"
      "Collaborative Operations And Resource Management with Agentic AI")
 SP=os.environ["SP"]

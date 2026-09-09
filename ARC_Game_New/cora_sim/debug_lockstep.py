@@ -5,9 +5,9 @@ step by step, with the known open bugs and where each seed first diverges.
     python -m cora_sim.debug_lockstep 5503                  # interactive session on one seed
     python -m cora_sim.debug_lockstep 5503 --cmd "first;b;f;g;d"   # scripted (no TTY needed)
 
-Inputs (per seed N): runs/validate/staff_N.json (the gym trace: before/taken/after per
-round) and runs/validate/staff_N.log (Unity's ARC_SNAPSHOT_DEBUG=1 log with [RNGMARK]/
-[RNGCTX] draw marks); the plan comes from runs/evo14.jsonl (best row for that seed).
+Inputs (per seed N): cora_sim/runs/validate/staff_N.json (the gym trace: before/taken/after per
+round) and cora_sim/runs/validate/staff_N.log (Unity's ARC_SNAPSHOT_DEBUG=1 log with [RNGMARK]/
+[RNGCTX] draw marks); the plan comes from cora_sim/runs/evo14.jsonl (best row for that seed).
 The port is driven with the trace's `taken` actions exactly as Unity was (diag_lockstep.
 drive_step), so any difference is a mechanic, not a policy.
 
@@ -32,6 +32,7 @@ from cora_sim.diag_lockstep import best_row, drive_step, _KEYS   # noqa: E402
 from cora_sim.diag_casework import unity_events             # noqa: E402
 from cora_sim.diag_board import board                       # noqa: E402
 from cora_sim.test_replay_forward import seed_state         # noqa: E402
+from cora_sim import paths as P
 
 BUGS = [
     ("EXACT", "5503 5901 6001 7002", "all four validated seeds: draw stream identical for 32 rounds, every "
@@ -64,9 +65,10 @@ BUGS = [
 
 
 class Session:
-    def __init__(self, seed, evo_log="runs/evo14.jsonl"):
+    def __init__(self, seed, evo_log=None):
         self.seed = seed
-        self.trace_path = f"runs/validate/staff_{seed}.json"
+        evo_log = evo_log or P.EVO_LOG
+        self.trace_path = os.path.join(P.VALIDATE, f"staff_{seed}.json")
         self.log_path = self.trace_path.replace(".json", ".log")
         self.trace = json.load(open(self.trace_path))
         self.row = best_row(evo_log, seed)
@@ -210,12 +212,12 @@ def run_session(sess, script=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("seed", nargs="?", type=int)
-    ap.add_argument("--log", default="runs/evo14.jsonl")
+    ap.add_argument("--log", default=P.EVO_LOG)
     ap.add_argument("--cmd", default=None, help="semicolon-separated commands, then exit")
     a = ap.parse_args()
     if a.seed is None:
-        seeds = sorted(int(re.match(r"staff_(\d+)\.json", f).group(1)) for f in os.listdir("runs/validate")
-                       if re.match(r"staff_(\d+)\.json", f) and os.path.exists(f"runs/validate/{f[:-5]}.log"))
+        seeds = sorted(int(re.match(r"staff_(\d+)\.json", f).group(1)) for f in os.listdir(P.VALIDATE)
+                       if re.match(r"staff_(\d+)\.json", f) and os.path.exists(os.path.join(P.VALIDATE, f"{f[:-5]}.log")))
         for s in seeds:
             print(Session(s, a.log).headline())
         print(); print_bugs()

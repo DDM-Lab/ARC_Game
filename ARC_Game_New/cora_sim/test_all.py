@@ -30,7 +30,7 @@ SUITES = (("rng", test_rng), ("flood", test_flood),
           ("roads + travel", test_roads),
           ("building lifecycle", test_lifecycle),
           ("exact replay", test_replay_forward),
-          ("lockstep ratchet (runs/validate)", test_lockstep))
+          ("lockstep ratchet (cora_sim/runs/validate)", test_lockstep))
 
 
 def main():

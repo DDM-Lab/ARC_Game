@@ -3,7 +3,7 @@
 The game's score is satisfaction MINUS cost_efficiency (reward_scoring.compute_score), so
 cost_efficiency is a penalty and the default frontier minimises it.
 
-    python -m cora_sim.pareto runs/evo.jsonl [--k 5] [--objectives satisfaction cost_efficiency]
+    python -m cora_sim.pareto cora_sim/runs/evo.jsonl [--k 5] [--objectives satisfaction cost_efficiency]
 
 Upper bound: the best score found per seed (what the search proved reachable; the true
 optimum is at least this). Frontier: trajectories no other trajectory beats on every
