@@ -25,6 +25,8 @@ public class GameDataManager : MonoBehaviour
     public int defaultKitchenCapacity = 10; // done
     public int defaultShelterCapacity = 10; // done
     public int defaultCaseworkCapacity = 10; // done
+    public int defaultKitchenFoodCapacity = 200;
+    public int defaultShelterFoodCapacity = 100;
     public int defaultRequiredWorkersPerLoc = 4; // done
     public float defaultSunnyExpansionRate = 0f;
     public float defaultSunnySpreadChanceMultiplier = 0.5f;
@@ -61,6 +63,8 @@ public class GameDataManager : MonoBehaviour
     public int InitialKitchenCapacity { get; private set; }
     public int InitialShelterCapacity { get; private set; }
     public int InitialCaseworkCapacity { get; private set; }
+    public int InitialKitchenFoodCapacity { get; private set; }
+    public int InitialShelterFoodCapacity { get; private set; }
     public int InitialRequiredWorkersPerLoc {get; private set; }
     public float InitialSunnyExpansionRate {get; private set; }
     public float InitialSunnySpreadChanceMultiplier {get; private set; }
@@ -125,6 +129,8 @@ public class GameDataManager : MonoBehaviour
             InitialKitchenCapacity = configLoader.GetInitialKitchenCapacity();
             InitialShelterCapacity = configLoader.GetInitialShelterCapacity();
             InitialCaseworkCapacity = configLoader.GetInitialCaseworkCapacity();
+            InitialKitchenFoodCapacity = configLoader.GetInitialKitchenFoodCapacity();
+            InitialShelterFoodCapacity = configLoader.GetInitialShelterFoodCapacity();
             InitialRequiredWorkersPerLoc = configLoader.GetInitialNeededWorkersPerLoc();
             InitialSunnyExpansionRate = configLoader.GetInitialSunnyFloodExpansionRate();
             InitialSunnySpreadChanceMultiplier = configLoader.GetInitialSunnyFloodSpreadChanceMultiplier();
@@ -214,8 +220,49 @@ public class GameDataManager : MonoBehaviour
             }
         }
 
+        ApplyConfigToScene();
         IsDataReady = true;
         Debug.Log("GameDataManager: Data initialization complete.");
+    }
+
+    /// <summary>
+    /// Push the loaded parameters into objects that initialised before the config arrived (scene
+    /// prebuilts, anything placed by the map config). Objects created later read GameDataManager in
+    /// their own Start. Also logs every value in effect so a capture is self-describing (BUG_REPORTS B35).
+    /// </summary>
+    void ApplyConfigToScene()
+    {
+        // IsDataReady is set right after this returns; the apply methods check it, so flag first.
+        IsDataReady = true;
+        foreach (var storage in FindObjectsOfType<BuildingResourceStorage>(true))
+            storage.ApplyConfiguredCapacities();
+        foreach (var building in FindObjectsOfType<Building>(true))
+            building.ApplyConfiguredWorkforce();
+        var map = FindObjectOfType<MapSystem>();
+        if (map != null && map.numberOfCommunities != InitialCommunityNumber)
+            Debug.LogWarning($"GameDataManager: initialCommunityCount={InitialCommunityNumber} but the map has " +
+                             $"{map.numberOfCommunities} communities; the count comes from the map, not the sheet.");
+        var ic = System.Globalization.CultureInfo.InvariantCulture;
+        string json = "{\"source\":\"" + (configLoader != null ? configLoader.ConfigSource : "none")
+            + "\",\"budget\":" + InitialBudget
+            + ",\"satisfaction\":" + InitialSatisfaction.ToString(ic)
+            + ",\"communityResidents\":" + InitialResidentsPerCommunityNumber
+            + ",\"days\":" + InitialGameDays + ",\"roundsPerDay\":" + InitialRoundsPerDay
+            + ",\"trained\":" + InitialTrainedVolunteerCount + ",\"untrained\":" + InitialUntrainedVolunteerCount
+            + ",\"dailyAddition\":" + InitialDailyBudgetAddition
+            + ",\"weather\":\"" + InitialWeather + "\""
+            + ",\"kitchenProductionPerRound\":" + InitialKitchenCapacity
+            + ",\"shelterCapacity\":" + InitialShelterCapacity + ",\"caseworkCapacity\":" + InitialCaseworkCapacity
+            + ",\"kitchenFoodCapacity\":" + InitialKitchenFoodCapacity + ",\"shelterFoodCapacity\":" + InitialShelterFoodCapacity
+            + ",\"workersPerLocation\":" + InitialRequiredWorkersPerLoc
+            + ",\"foodDemandFrequency\":" + InitialFoodDemandFrequency.ToString(ic)
+            + ",\"ervCount\":" + InitialERVCount
+            + ",\"externalRelationTotal\":" + InitialExternalRelationFrequency + ",\"emergencyTotal\":" + InitialEmergencyTaskFrequency
+            + ",\"shelterFlood\":{\"cmp\":\"" + InitialShelterFloodComparison + "\",\"threshold\":" + InitialShelterFloodThreshold + ",\"radius\":" + InitialShelterFloodRadius + "}"
+            + ",\"floodExpansion\":[" + InitialSunnyExpansionRate.ToString(ic) + "," + InitialSmallRainExpansionRate.ToString(ic) + "," + InitialMediumRainExpansionRate.ToString(ic) + "," + InitialHeavyRainExpansionRate.ToString(ic) + "," + InitialStormExpansionRate.ToString(ic) + "]"
+            + ",\"floodSpread\":[" + InitialSunnySpreadChanceMultiplier.ToString(ic) + "," + InitialSmallRainSpreadChanceMultiplier.ToString(ic) + "," + InitialMediumRainSpreadChanceMultiplier.ToString(ic) + "," + InitialHeavyRainSpreadChanceMultiplier.ToString(ic) + "," + InitialStormSpreadChanceMultiplier.ToString(ic) + "]}";
+        Debug.Log("GameDataManager: parameters in effect " + json);
+        SnapshotDebug.MarkContext("config:loaded", json);
     }
 
     void SetDefaults()
@@ -233,6 +280,8 @@ public class GameDataManager : MonoBehaviour
         InitialKitchenCapacity = defaultKitchenCapacity;
         InitialShelterCapacity = defaultShelterCapacity;
         InitialCaseworkCapacity = defaultCaseworkCapacity;
+        InitialKitchenFoodCapacity = defaultKitchenFoodCapacity;
+        InitialShelterFoodCapacity = defaultShelterFoodCapacity;
         InitialRequiredWorkersPerLoc = defaultRequiredWorkersPerLoc;
         InitialSunnyExpansionRate = defaultSunnyExpansionRate;
         InitialSunnySpreadChanceMultiplier = defaultSunnySpreadChanceMultiplier;

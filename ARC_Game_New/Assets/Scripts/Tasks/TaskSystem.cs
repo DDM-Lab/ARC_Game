@@ -415,6 +415,7 @@ public class TaskSystem : MonoBehaviour
         public List<string> shownAlertIds = new List<string>();
         public int currEmergencyTaskCount;
         public int lastEmergencyTaskRound;
+        public int currExternalRelationCount;
     }
 
     public Snapshot CaptureState()
@@ -424,6 +425,7 @@ public class TaskSystem : MonoBehaviour
             nextTaskId = nextTaskId,
             currEmergencyTaskCount = currEmergencyTaskCount,
             lastEmergencyTaskRound = lastEmergencyTaskRound,
+            currExternalRelationCount = currExternalRelationCount,
         };
         s.shownAlertIds.AddRange(shownAlertIds);
         s.activeTasks.AddRange(activeTasks);
@@ -440,6 +442,7 @@ public class TaskSystem : MonoBehaviour
         nextTaskId = s.nextTaskId;
         currEmergencyTaskCount = s.currEmergencyTaskCount;
         lastEmergencyTaskRound = s.lastEmergencyTaskRound;
+        currExternalRelationCount = s.currExternalRelationCount;
         shownAlertIds.Clear();
         foreach (var id in s.shownAlertIds) shownAlertIds.Add(id);
         deliveryToTaskMap.Clear();
@@ -450,6 +453,10 @@ public class TaskSystem : MonoBehaviour
     public int numEmergencyTasks = 4;
     public int currEmergencyTaskCount = 0;
     public int lastEmergencyTaskRound = 0;
+    // initialExternalRelationFrequency: total external-relation contacts per game (Storm Funding
+    // Advisory + Emergency Budget Crisis; the sheet's own text excludes the daily allocation). BUG_REPORTS B35.
+    public int numExternalRelationTasks = 3;
+    public int currExternalRelationCount = 0;
 
     // Events
     public event Action<GameTask> OnTaskCreated;
@@ -524,6 +531,7 @@ public class TaskSystem : MonoBehaviour
             yield return null;
         }
         numEmergencyTasks = GameDataManager.Instance.InitialEmergencyTaskFrequency;
+        numExternalRelationTasks = GameDataManager.Instance.InitialExternalRelationFrequency;
     }
 
     private int CalculateEmergencyInterval()
@@ -867,6 +875,34 @@ public class TaskSystem : MonoBehaviour
         // itself. GeneratePopulationTransportTasks is no longer invoked from the round loop.)
     }
 
+    static bool IsExternalRelationContact(TaskData taskData) =>
+        taskData.taskOfficer == TaskOfficer.ExternalRelationship && taskData.taskId != "Budget_Allocation";
+
+    /// <summary>
+    /// initialDailyBudgetAdditions -> the Daily Budget Allocation task (BUG_REPORTS B35). Applied to the
+    /// task instance's own copies, never to the ScriptableObject.
+    /// </summary>
+    void ApplyConfiguredAllocation(GameTask task, TaskData taskData)
+    {
+        if (taskData.taskId != "Budget_Allocation" || GameDataManager.Instance == null) return;
+        int amount = GameDataManager.Instance.InitialDailyBudgetAddition;
+        if (amount <= 0) return;
+        string shown = "$" + amount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+        foreach (var impact in task.impacts)
+            if (impact.impactType == ImpactType.Budget) impact.value = amount;
+        foreach (var choice in task.agentChoices)
+        {
+            bool budgetChoice = false;
+            foreach (var impact in choice.choiceImpacts)
+                if (impact.impactType == ImpactType.Budget) { impact.value = amount; budgetChoice = true; }
+            if (budgetChoice) choice.choiceText = $"Receive {shown} Budget";
+        }
+        foreach (var message in task.agentMessages)
+            if (!string.IsNullOrEmpty(message.messageText))
+                message.messageText = System.Text.RegularExpressions.Regex.Replace(
+                    message.messageText, @"\$[\d,]+", shown.Replace("$", "$$"));
+    }
+
     /// <summary>Start-of-day generation pass (was the segment-0 event before the A1 clock fix).
     /// Round triggers with targetRound 0 are evaluated here and only here.</summary>
     void OnDayStarted(int day)
@@ -935,6 +971,12 @@ public class TaskSystem : MonoBehaviour
                 }
             }
 
+            if (IsExternalRelationContact(taskData) && currExternalRelationCount >= numExternalRelationTasks)
+            {
+                if (showDebugInfo) Debug.Log($"[Limit] Skipping {taskData.taskTitle}: Max external-relation contacts reached ({numExternalRelationTasks}).");
+                continue;
+            }
+
             // Handle alert tasks (global check for duplicates)
             if (taskData.taskType == TaskType.Alert)
             {
@@ -961,6 +1003,8 @@ public class TaskSystem : MonoBehaviour
 
                 Debug.Log($"Creating global task: {taskData.taskTitle}");
                 GameTask newTask = CreateTaskFromDatabase(taskData);
+                if (newTask != null && IsExternalRelationContact(taskData))
+                    currExternalRelationCount++;
                 if (newTask != null && newTask.taskType == TaskType.Emergency)
                 {
                     currEmergencyTaskCount++;
@@ -1819,6 +1863,7 @@ public class TaskSystem : MonoBehaviour
         //     WebSocketManager.Instance.RequestTaskContent(newTask.taskId);
         // }
 
+        ApplyConfiguredAllocation(newTask, taskData);
         return newTask;
     }
 

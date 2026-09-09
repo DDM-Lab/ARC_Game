@@ -39,6 +39,10 @@ public class GameConfigLoader : MonoBehaviour
     public int loadedInitialShelterCapacity = 10;
     public int loadedInitialKitchenCapacity = 10;
     public int loadedInitialCaseworkCapacity = 10;
+    public int loadedInitialKitchenFoodCapacity = 200;   // FoodPacks a kitchen can hold (prefab value)
+    public int loadedInitialShelterFoodCapacity = 100;   // FoodPacks a shelter can hold (prefab value)
+    /// <summary>Which source the parameters in effect came from (BUG_REPORTS B35).</summary>
+    public string ConfigSource { get; private set; } = "fallbacks";
     public int loadedInitialRequiredWorkers = 4;
     public float loadedInitialSunnyExpansionRate = 0f;
     public float loadedInitialSunnySpreadChanceMultiplier = 0.5f;
@@ -64,11 +68,9 @@ public class GameConfigLoader : MonoBehaviour
 
 
     private bool configLoaded = false;
-    public TaskData dailyBudgetAlloc;
-    public TaskData shelterFoodReq; // for food demand frequency lever
-    public TaskData shelterFloodDmg; 
-    public TaskData budgetAdvisoryER;
-    public TaskData budgetEmergencyER;
+    // (The sheet rows that used to be pushed into ScriptableObjects from here -- daily allocation,
+    // food-demand probability, shelter flood-damage trigger, external-relation frequency -- are now
+    // applied where they are consumed: TaskSystem / TaskDatabases read GameDataManager. BUG_REPORTS B35.)
 
     // ── Map config (new) ──────────────────────────────────────────────────────
     private MapConfig loadedMapConfig;
@@ -99,69 +101,95 @@ public class GameConfigLoader : MonoBehaviour
     }
     
     /// <summary>
-    /// Load config from Google Sheets CSV
+    /// Parameter source chain (BUG_REPORTS B35): ARC_PARAM_CONFIG (a CSV path; RL runs vary parameters
+    /// per run without a rebuild) -> the sheet URL (a root-relative /sheet.csv is only meaningful inside
+    /// a browser, so it is skipped elsewhere) -> StreamingAssets/game_param_config.csv (editor,
+    /// headless, any offline build) -> the serialized fallback fields. One source wins; ConfigSource
+    /// names it and GameDataManager logs every value in effect.
     /// </summary>
     IEnumerator LoadConfigFromSheet()
     {
-        if (string.IsNullOrEmpty(googleSheetsCsvUrl))
+        string envPath = System.Environment.GetEnvironmentVariable("ARC_PARAM_CONFIG");
+        if (!string.IsNullOrEmpty(envPath))
         {
-            Debug.LogWarning("GameConfigLoader: No Google Sheets URL provided. Using default values.");
-            configLoaded = true;
-            yield break;
-        }
-    
-        // A root-relative URL ("/sheet.csv") is fetched same-origin — no CORS,
-        // and no hardcoded host. In WebGL, resolve it against the page origin so
-        // UnityWebRequest gets a fully-qualified URL (avoids any relative-URL
-        // quirk); it works identically on Talos (Apache Alias) and the dev proxy.
-        string resolvedUrl = googleSheetsCsvUrl;
-        if (resolvedUrl.StartsWith("/") && !string.IsNullOrEmpty(Application.absoluteURL))
-        {
-            try
-            {
-                var pageUri = new System.Uri(Application.absoluteURL);
-                resolvedUrl = pageUri.GetLeftPart(System.UriPartial.Authority) + resolvedUrl;
-            }
+            string text = null;
+            try { text = System.IO.File.ReadAllText(envPath); }
             catch (System.Exception ex)
             {
-                Debug.LogWarning($"GameConfigLoader: could not resolve relative CSV URL against " +
-                                 $"'{Application.absoluteURL}' — {ex.Message}. Using as-is.");
+                Debug.LogError($"GameConfigLoader: ARC_PARAM_CONFIG='{envPath}' could not be read - {ex.Message}");
+            }
+            if (text != null)
+            {
+                ParseCSV(text);
+                FinishLoad("ARC_PARAM_CONFIG=" + envPath);
+                yield break;
             }
         }
 
-        // Use "?" when the URL has no query yet (e.g. a same-origin mirror like
-        // /sheet.csv), otherwise "&" to extend the existing query (e.g. the Google
-        // Sheets pub URL). Appending "&t=" to a query-less URL makes it a literal
-        // path segment and 404s on static hosts.
-        string cacheBustSep = resolvedUrl.Contains("?") ? "&" : "?";
-        string urlWithCacheBuster = resolvedUrl + cacheBustSep + "t=" + System.DateTime.Now.Ticks;
-        
-        if (showDebugInfo)
-            Debug.Log("GameConfigLoader: Fetching config from Google Sheets...");
-        
-        using (UnityWebRequest request = UnityWebRequest.Get(urlWithCacheBuster))
+        bool rootRelative = !string.IsNullOrEmpty(googleSheetsCsvUrl) && googleSheetsCsvUrl.StartsWith("/");
+        bool inBrowser = !string.IsNullOrEmpty(Application.absoluteURL);
+        if (!string.IsNullOrEmpty(googleSheetsCsvUrl) && (!rootRelative || inBrowser))
         {
-            // Set timeout
-            request.timeout = 5;
-            
-            yield return request.SendWebRequest();
-            
-            if (request.result == UnityWebRequest.Result.Success)
+            // A root-relative URL ("/sheet.csv") is fetched same-origin -- no CORS, no hardcoded
+            // host; resolve it against the page origin so UnityWebRequest gets a full URL.
+            string resolvedUrl = googleSheetsCsvUrl;
+            if (rootRelative)
             {
-                string csvData = request.downloadHandler.text;
-                ParseCSV(csvData);
-                
-                if (showDebugInfo)
-                    Debug.Log("GameConfigLoader: Config loaded successfully!");
+                try
+                {
+                    var pageUri = new System.Uri(Application.absoluteURL);
+                    resolvedUrl = pageUri.GetLeftPart(System.UriPartial.Authority) + resolvedUrl;
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"GameConfigLoader: could not resolve relative CSV URL against " +
+                                     $"'{Application.absoluteURL}' - {ex.Message}. Using as-is.");
+                }
             }
-            else
+            // "?" when the URL has no query yet, "&" to extend an existing one.
+            string cacheBustSep = resolvedUrl.Contains("?") ? "&" : "?";
+            string urlWithCacheBuster = resolvedUrl + cacheBustSep + "t=" + System.DateTime.Now.Ticks;
+            if (showDebugInfo)
+                Debug.Log($"GameConfigLoader: Fetching config from {resolvedUrl} ...");
+            using (UnityWebRequest request = UnityWebRequest.Get(urlWithCacheBuster))
             {
-                Debug.LogWarning($"GameConfigLoader: Failed to load config - {request.error}. Using default values.");
-                configLoaded = true;
+                request.timeout = 5;
+                yield return request.SendWebRequest();
+                if (request.result == UnityWebRequest.Result.Success)
+                {
+                    ParseCSV(request.downloadHandler.text);
+                    FinishLoad(resolvedUrl);
+                    yield break;
+                }
+                Debug.LogWarning($"GameConfigLoader: Failed to load config from {resolvedUrl} - {request.error}. Trying the local copy.");
             }
         }
+
+        // The copy shipped with the build (kept identical to the deployed sheet).
+        string localPath = Application.streamingAssetsPath + "/game_param_config.csv";
+        string localUrl = localPath.Contains("://") ? localPath : "file://" + localPath;
+        using (UnityWebRequest request = UnityWebRequest.Get(localUrl))
+        {
+            request.timeout = 5;
+            yield return request.SendWebRequest();
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                ParseCSV(request.downloadHandler.text);
+                FinishLoad(localPath);
+                yield break;
+            }
+            Debug.LogWarning($"GameConfigLoader: Failed to load config - {request.error} - and no readable local copy at {localPath}. Using the serialized fallback values.");
+        }
+        FinishLoad("fallbacks");
     }
-    
+
+    void FinishLoad(string source)
+    {
+        ConfigSource = source;
+        configLoaded = true;
+        Debug.Log($"GameConfigLoader: parameters from {source}");
+    }
+
     /// <summary>
     /// Parse CSV data (simple implementation)
     /// Expected format: parameter,value
@@ -255,6 +283,16 @@ public class GameConfigLoader : MonoBehaviour
             {
                 if (int.TryParse(value, out int caseworkCapac))
                     loadedInitialCaseworkCapacity = caseworkCapac;
+            }
+            else if (parameter.Equals("initialKitchenFoodCapacity", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int kitchenFood))
+                    loadedInitialKitchenFoodCapacity = kitchenFood;
+            }
+            else if (parameter.Equals("initialShelterFoodCapacity", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int shelterFood))
+                    loadedInitialShelterFoodCapacity = shelterFood;
             }
             else if (parameter.Equals("initialWorkerUnitsNeededPerLocation", System.StringComparison.OrdinalIgnoreCase))
             {
@@ -354,12 +392,6 @@ public class GameConfigLoader : MonoBehaviour
             }
             
         }
-        ApplyInitBudgetAllocation();
-        ApplyInitFoodDemandFrequency();
-        ApplyInitShelterFloodDamage();
-        ApplyInitExternalRelationFrequency();
-        
-        configLoaded = true;
     }
 
     // ── Map Config from server (new) ──────────────────────────────────────────
@@ -499,104 +531,6 @@ public class GameConfigLoader : MonoBehaviour
     public MapConfig GetMapConfig() => loadedMapConfig;
 
 
-    void ApplyInitBudgetAllocation()
-    {
-        if (dailyBudgetAlloc != null)
-        {
-            dailyBudgetAlloc.impacts[0].value = loadedInitialBudgetDailyAllocs;
-            dailyBudgetAlloc.agentMessages[1].messageText = $"We received an additional ${loadedInitialBudgetDailyAllocs} in donations overnight, which can now be allocated to supply procurement or transport..";
-            dailyBudgetAlloc.agentChoices[0].choiceImpacts[0].value = loadedInitialBudgetDailyAllocs;
-            dailyBudgetAlloc.agentChoices[0].choiceText = $"Receive ${loadedInitialBudgetDailyAllocs} Budget";
-            
-            if (showDebugInfo)
-                Debug.Log($"Applied {loadedInitialBudgetDailyAllocs} to SO");
-        }
-    }
-
-    void ApplyInitFoodDemandFrequency()
-    {
-        if (loadedInitialFoodDemandFrequency < 0) return;
-        if (shelterFoodReq != null)
-        {
-            if (shelterFoodReq.probabilityTriggers.Count != 0 )
-            {
-                shelterFoodReq.probabilityTriggers[0].probability = loadedInitialFoodDemandFrequency;
-            } 
-            else
-            {
-                ProbabilityTrigger trigger = new ProbabilityTrigger
-                {
-                    probability = loadedInitialFoodDemandFrequency
-                };
-                shelterFoodReq.probabilityTriggers.Add(trigger);
-            }
-        }
-    }
-
-void ApplyInitExternalRelationFrequency()
-{
-    if (budgetAdvisoryER == null && budgetEmergencyER == null) return;
-    int advisoryInterval;
-    int emergencyInterval;
-    if (budgetAdvisoryER != null && budgetEmergencyER != null)
-    {
-        // Deterministic split (an unseeded System.Random here broke same-seed reproducibility, BUG_REPORTS B31).
-        bool advisoryGetsLower = true;
-        
-        int smallHalf = loadedInitialExternalRelationFrequency / 2;
-        int bigHalf = loadedInitialExternalRelationFrequency - smallHalf;
-
-        advisoryInterval = advisoryGetsLower ? smallHalf : bigHalf;
-        emergencyInterval = advisoryGetsLower ? bigHalf : smallHalf;
-    }
-    else
-    {
-        advisoryInterval = loadedInitialExternalRelationFrequency;
-        emergencyInterval = loadedInitialExternalRelationFrequency;
-    }
-    if (budgetAdvisoryER != null) ApplyTrigger(budgetAdvisoryER, advisoryInterval);
-    if (budgetEmergencyER != null) ApplyTrigger(budgetEmergencyER, emergencyInterval);
-}
-
-void ApplyTrigger(TaskData task, int interval)
-{
-    DayTrigger trigger = new DayTrigger
-    {
-        conditionType = DayTrigger.DayConditionType.DayInterval,
-        intervalDays = interval,
-        startDay = 2
-    };
-
-    if (task.dayTriggers.Count == 0 || task.dayTriggers[0] == null)
-    {
-        task.dayTriggers.Add(trigger);
-    }
-    else
-    {
-        task.dayTriggers[0] = trigger;
-    }
-}
-    void ApplyInitShelterFloodDamage()
-    {
-        if (shelterFloodDmg == null) return;
-
-        FloodedFacilityTrigger trigger = new FloodedFacilityTrigger
-        {
-            facilityType = FloodedFacilityTrigger.FacilityFloodType.SpecificBuildingType,
-            specificBuildingType = BuildingType.Shelter,
-            specificPrebuiltType = PrebuiltBuildingType.Community,
-
-            comparison = loadedInitialShelterFloodComparison,
-            floodTileThreshold = loadedInitialShelterFloodThreshold,
-            detectionRadius = loadedInitialShelterFloodRadius
-        };
-
-        if (shelterFloodDmg.floodedFacilityTriggers.Count != 0)
-            shelterFloodDmg.floodedFacilityTriggers[0] = trigger;
-        else
-            shelterFloodDmg.floodedFacilityTriggers.Add(trigger);
-    }
-
     /// <summary>
     /// Check if config is ready
     /// </summary>
@@ -662,6 +596,8 @@ void ApplyTrigger(TaskData task, int interval)
     {
         return loadedInitialCaseworkCapacity;
     }
+    public int GetInitialKitchenFoodCapacity() => loadedInitialKitchenFoodCapacity;
+    public int GetInitialShelterFoodCapacity() => loadedInitialShelterFoodCapacity;
     public int GetInitialNeededWorkersPerLoc()
     {
         return loadedInitialRequiredWorkers;

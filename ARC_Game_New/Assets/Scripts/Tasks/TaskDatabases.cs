@@ -52,13 +52,13 @@ public class TaskDatabase : ScriptableObject
             triggerResults.Add(trigger.CheckCondition());
         
         foreach (var trigger in taskData.probabilityTriggers)
-            triggerResults.Add(trigger.CheckCondition());
+            triggerResults.Add(CheckProbability(taskData, trigger));
 
         foreach (var trigger in taskData.floodTileTriggers)
             triggerResults.Add(trigger.CheckCondition());
 
         foreach (var trigger in taskData.floodedFacilityTriggers)
-            triggerResults.Add(trigger.CheckCondition());
+            triggerResults.Add(Configured(taskData, trigger).CheckCondition());
 
         foreach (var trigger in taskData.budgetTriggers)
             triggerResults.Add(trigger.CheckCondition());
@@ -243,14 +243,14 @@ public class TaskDatabase : ScriptableObject
         
         // Per-facility probability triggers (each facility rolls independently)
         foreach (var trigger in taskData.probabilityTriggers)
-            triggerResults.Add(trigger.CheckCondition()); // Each call is independent random roll
+            triggerResults.Add(CheckProbability(taskData, trigger)); // Each call is independent random roll
         
         foreach (var trigger in taskData.floodTileTriggers)
             triggerResults.Add(trigger.CheckCondition()); // Global
             
         // Per-facility flood triggers
         foreach (var trigger in taskData.floodedFacilityTriggers)
-            triggerResults.Add(CheckFloodedFacilityTriggerForFacility(trigger, facility));
+            triggerResults.Add(CheckFloodedFacilityTriggerForFacility(Configured(taskData, trigger), facility));
         
         foreach (var trigger in taskData.budgetTriggers)
             triggerResults.Add(trigger.CheckCondition()); // Global
@@ -278,6 +278,38 @@ public class TaskDatabase : ScriptableObject
         {
             return triggerResults.Any(result => result);
         }
+    }
+
+    // ── Sheet parameters applied at evaluation time (BUG_REPORTS B35); the ScriptableObjects are never mutated ──
+
+    /// <summary>initialFoodDemandFrequency replaces the asset probability of a food-request task that has one
+    /// (Shelter_FoodRequest today; Community_FoodRequest has no probability trigger and is unaffected).</summary>
+    bool CheckProbability(TaskData taskData, ProbabilityTrigger trigger)
+    {
+        var gdm = GameDataManager.Instance;
+        if (gdm != null && gdm.IsDataReady && gdm.InitialFoodDemandFrequency >= 0f && taskData.taskId.Contains("FoodRequest"))
+        {
+            SnapshotDebug.Mark("draw:TaskTrigger.probability");
+            return UnityEngine.Random.Range(0f, 1f) < gdm.InitialFoodDemandFrequency;
+        }
+        return trigger.CheckCondition();
+    }
+
+    /// <summary>initialShelterFloodDamage{Comparison,FloodTileThreshold,FloodDetectionRange} -> the
+    /// Shelter Flood Damage trigger.</summary>
+    FloodedFacilityTrigger Configured(TaskData taskData, FloodedFacilityTrigger trigger)
+    {
+        var gdm = GameDataManager.Instance;
+        if (gdm == null || !gdm.IsDataReady || taskData.taskId != "Shelter_Flood_Damage") return trigger;
+        return new FloodedFacilityTrigger
+        {
+            facilityType = trigger.facilityType,
+            specificBuildingType = trigger.specificBuildingType,
+            specificPrebuiltType = trigger.specificPrebuiltType,
+            comparison = gdm.InitialShelterFloodComparison,
+            floodTileThreshold = gdm.InitialShelterFloodThreshold,
+            detectionRadius = gdm.InitialShelterFloodRadius
+        };
     }
 
     /// <summary>

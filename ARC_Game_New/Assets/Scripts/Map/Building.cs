@@ -91,6 +91,7 @@ public class Building : MonoBehaviour
 
     void Start()
     {
+        ApplyConfiguredWorkforce();   // no-op until GameDataManager is ready; it calls back otherwise
         if (buildingRenderer == null)
             buildingRenderer = GetComponent<SpriteRenderer>();
 
@@ -633,6 +634,18 @@ public class Building : MonoBehaviour
     public string GetDisplayName() => !string.IsNullOrEmpty(buildingName) ? buildingName : $"{buildingType} {originalSiteId}";
     public void SetBuildingName(string name) => buildingName = name;
     public BuildingStatus GetCurrentStatus() => currentStatus;
+    bool workforceConfigApplied = false;
+    /// <summary>initialWorkerUnitsNeededPerLocation -> requiredWorkforce (BUG_REPORTS B35).</summary>
+    public void ApplyConfiguredWorkforce()
+    {
+        if (workforceConfigApplied) return;
+        var gdm = GameDataManager.Instance;
+        if (gdm == null || !gdm.IsDataReady || gdm.InitialRequiredWorkersPerLoc <= 0) return;
+        workforceConfigApplied = true;
+        requiredWorkforce = gdm.InitialRequiredWorkersPerLoc;
+        Debug.Log($"{gameObject.name} requiredWorkforce={requiredWorkforce} (initialWorkerUnitsNeededPerLocation)");
+    }
+
     public bool IsOperational() => currentStatus == BuildingStatus.InUse;
     public bool IsUnderConstruction() => currentStatus == BuildingStatus.UnderConstruction;
     public bool NeedsWorker() => currentStatus == BuildingStatus.NeedWorker;

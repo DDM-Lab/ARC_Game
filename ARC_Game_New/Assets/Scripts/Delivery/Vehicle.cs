@@ -468,11 +468,50 @@ public class Vehicle : MonoBehaviour
             t.linkedDeliveryTaskIds.Contains(currentTask.taskId));
     }
 
+    /// <summary>
+    /// A repaired vehicle still standing in the flood would fail again on its next assignment
+    /// (BUG_REPORTS B5): tow it to the nearest road tile that is not flooded. Ties break on the
+    /// lower (x, y) cell so the choice does not depend on hash-set iteration order.
+    /// </summary>
+    void RelocateToDryRoadIfFlooded()
+    {
+        if (FloodSystem.Instance == null || !FloodSystem.Instance.IsFloodedAt(transform.position)) return;
+        var roads = FindObjectOfType<RoadTilemapManager>();
+        if (roads == null) return;
+        Vector3 from = transform.position;
+        bool found = false;
+        Vector3Int bestCell = default;
+        Vector3 best = from;
+        float bestDist = float.MaxValue;
+        foreach (Vector3Int cell in roads.GetAllRoadPositions())
+        {
+            Vector3 world = roads.CellToWorld(cell);
+            if (FloodSystem.Instance.IsFloodedAt(world)) continue;
+            float d = (world - from).sqrMagnitude;
+            bool closer = d < bestDist - 1e-4f;
+            bool tie = !closer && Mathf.Abs(d - bestDist) <= 1e-4f
+                       && (cell.x < bestCell.x || (cell.x == bestCell.x && cell.y < bestCell.y));
+            if (closer || tie) { bestDist = d; best = world; bestCell = cell; found = true; }
+        }
+        if (!found)
+        {
+            Debug.LogWarning($"Vehicle {vehicleName}: repaired inside the flood and no dry road tile exists; staying put.");
+            return;
+        }
+        transform.position = best;
+        currentPath.Clear();
+        currentPathIndex = 0;
+        SnapshotDebug.MarkContext("vehicle:towed", "{\"veh\":\"" + vehicleName + "\",\"from\":\"" + from.ToString("F1")
+            + "\",\"to\":\"" + best.ToString("F1") + "\"}");
+        GameLogPanel.Instance?.LogVehicleEvent($"{vehicleName} towed to the nearest dry road at {best:F1} after repair");
+    }
+
     // Add repair method
     public void RepairVehicle()
     {
         isDamaged = false;
         SetStatus(VehicleStatus.Idle);
+        RelocateToDryRoadIfFlooded();
 
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} has been repaired");

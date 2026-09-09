@@ -186,8 +186,11 @@ def main():
     ap.add_argument("--port", type=int, default=21050)
     ap.add_argument("--out", default=P.VALIDATE)
     ap.add_argument("--rounds", type=int, default=32)
+    ap.add_argument("--param-config", default=None, help="CSV parameter sheet exported to the Unity process as ARC_PARAM_CONFIG")
     ap.add_argument("--replay", default=None, help="staff_<seed>.json whose recorded actions are sent instead of the surrogate's")
     args = ap.parse_args()
+    if args.param_config:
+        os.environ["ARC_PARAM_CONFIG"] = os.path.abspath(args.param_config)
     os.makedirs(args.out, exist_ok=True)
     row = best_row(args.log, args.unity_seed)
     print(f"seed {args.unity_seed}: surrogate score {row['score']:.4f}; executed rounds "

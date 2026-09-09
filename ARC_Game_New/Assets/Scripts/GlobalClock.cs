@@ -371,14 +371,9 @@ public class GlobalClock : MonoBehaviour
 
         // ---- Human / router GUI path (main-bugfixes game-logic) ----
 
-        // Day 1 is construction/intro — step through all 4 rounds with animation
-        if (currentDay == 1 && currentTimeSegment == 0)
-        {
-            Time.timeScale = 0f;
-            GameLogPanel.Instance.LogMetricsChange("Day 1: stepping through all rounds for construction/intro.");
-            StartCoroutine(Day1SkipCoroutine());
-            return;
-        }
+        // Day 1 used to be auto-stepped through all four rounds with no OnTimeSegmentChanged ticks
+        // (no generation, consumption, ageing or deliveries), unlike the gym path. One rule for
+        // humans and agents: day 1 is a normal day (BUG_REPORTS C.10).
 
         if (!HasActiveDeliveries())
         {
@@ -410,51 +405,7 @@ public class GlobalClock : MonoBehaviour
         }
     }
 
-    IEnumerator Day1SkipCoroutine()
-    {
-        bool hasFacilities = FindObjectsOfType<Building>().Length > 0;
-        string openMsg     = clockAnimationUI != null
-            ? (hasFacilities ? clockAnimationUI.day1SetupMessage : clockAnimationUI.day1NoFacilitiesMessage)
-            : "";
-        string completeMsg = clockAnimationUI != null ? clockAnimationUI.day1CompleteMessage : "";
-
-        clockAnimationUI?.Show(openMsg);
-
-        // Step through rounds 1-4: show round number → play clock → fire OnRoundEnd
-        for (int round = 0; round < roundsPerDay; round++)
-        {
-            currentTimeSegment = round;
-            UpdateTimeDisplay();
-
-            if (round == 3 && hasFacilities)
-                clockAnimationUI?.SetMessage(completeMsg);
-
-            if (clockAnimationUI != null)
-                yield return clockAnimationUI.PlayRoundLoops();
-            else
-                yield return new WaitForSecondsRealtime(0.1f);
-
-            OnRoundEnd?.Invoke();
-        }
-
-        clockAnimationUI?.Hide();
-
-        // Segment stays at 3 so display reads "Round 4"; advance state to end-of-day
-        currentTimeSegment  = 4;
-        isSimulationRunning = false;
-        currentState        = TimeState.Paused;
-        Time.timeScale      = 0f;
-        isWaitingForReport  = true;
-
-        executeButton?.GetComponentInChildren<TextMeshProUGUI>()?.SetText("End Today");
-        EnablePlayerInteractions();
-        OnSimulationEnded?.Invoke();
-
-        if (showDebugInfo)
-            Debug.Log("Day 1 complete — all 4 rounds stepped through.");
-        GameLogPanel.Instance?.LogMetricsChange("Day 1 complete — Click 'End Today' when ready.");
-    }
-
+    // (Day1SkipCoroutine removed: see BUG_REPORTS C.10.)
     bool HasActiveDeliveries()
     {
         return DeliverySystem.Instance != null && DeliverySystem.Instance.HasPendingOrActiveDeliveries();

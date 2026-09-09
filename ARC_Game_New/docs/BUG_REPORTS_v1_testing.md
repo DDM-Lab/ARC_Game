@@ -76,16 +76,16 @@ Regressions found and fixed while verifying:
 | A11 | FIXED `21d05150` — blockage tasks name their facility; fast-food choice delivers. |
 | A12 | FIXED `d17eb70f` (layout + mesh pass on creation) — **unverified in the editor**. |
 | B1-B4 | FIXED `d5441454`. |
-| B5 | NOT FIXED — PLAUSIBLE only; needs a runtime check first. |
+| B5 | FIXED (batch 8) — `Vehicle.RepairVehicle` tows a vehicle that is still in the flood to the nearest dry road tile (`vehicle:towed` mark). Code-verified only: no replay repairs a vehicle. |
 | B6-B10 | FIXED `21d05150`. |
 | B11-B15 | FIXED `16d1a106`. Part C.3 resolved as "refuse" (inbound-covered request is rejected on every path). |
 | B16 | FIXED `16d1a106` as validation: headless confirms are validated against the task's input data; they are NOT refused for input tasks (deciding that would block officer flows). |
 | B17-B24 | FIXED `d17eb70f`. B22: an agent's "assign N workers" must hit the building's exact workforce like the human panel and honours the lock. |
 | B25 | FIXED `21d05150`. |
-| B26 | NOT FIXED — design: community population/consumption and the `initialCommunityResidentCount` row need a ruling (400 vs 30 evacuees changes the game). |
+| B26 | RULED (2026-09-09): communities keep consuming, the motel does not. `initialCommunityResidentCount` now sets the community population (batch 8); the sheet copy carries 400 so nothing changes until the Google Sheet is updated. |
 | B27, B28 | FIXED `d17eb70f`. |
 | B29-B34 | FIXED `d17eb70f`. B31 made deterministic (advisory takes the smaller half); the count-vs-interval semantics is still Part C. |
-| B35 | PARTLY — culture-invariant parsing and the header-row skip are fixed; the dead rows (`rainExpansionRate`, `rainFloodProbability`, food capacities, resident count) still need a ruling on what they should drive. |
+| B35 | FIXED (batch 8) — every sheet row now drives the game and the headless build reads the sheet too; see the row table under B35 and the `parameters in effect` log line. |
 | C.2, C.4, C.5, C.6, C.7, C.8, C.9 | unchanged, pending the design discussion. |
 
 **Price note (found while fixing A6/B21).** The scene charges humans 200 per untrained hire,
@@ -464,7 +464,9 @@ assignment immediately re-triggers `StopVehicleDueToFlood` → another failure p
 blockage task, every round while the flood persists.
 **Intended.** Repair relocates the vehicle to the nearest dry road tile, or a repair is refused while
 the tile is flooded.
-**Status.** PLAUSIBLE (needs a runtime check; no capture repairs a vehicle).
+**Status.** PLAUSIBLE (no capture repairs a vehicle). FIXED batch 8: `Vehicle.RelocateToDryRoadIfFlooded`, called from
+`RepairVehicle`, moves the vehicle to the nearest unflooded road cell (ties on lower x, then y), clears its path and
+emits `vehicle:towed`. If no dry road exists it stays and logs a warning.
 
 ### Task lifecycle and generation
 
@@ -819,22 +821,66 @@ and keeps stepping to day 8.
 
 #### B35. Parameter sheet rows that do nothing, and loader fields no row can reach
 
-| sheet parameter | loader | effect |
-|---|---|---|
-| `initialWeather` | parsed | dead (B29) |
-| `initialShelterFloodDamageFloodDetectionRange` | parsed into the wrong field | corrupts the threshold (B30) |
-| `initialEmergencyTaskFrequency` | parsed | only caps `numEmergencyTasks`; spacing bug B6 limits to 1 |
-| `initialCommunityResidentCount` | parsed | nothing sets community population (B26) |
-| `initialDaysPerRun` | parsed | clock yes, gym/report no (B33) |
-| `initialRoundsPerGameDay` | parsed | partially (B32) |
-| `rainExpansionRate`, `rainFloodProbability` | not parsed | dead; the loader instead expects ten `initial<Weather>Flood{ExpansionRateMultiplier,SpreadChanceMultiplier}` rows that the sheet does not contain, so every flood knob is frozen at the loader default |
-| `initialKitchenFoodCapacity`, `initialShelterFoodCapacity` | not parsed | dead (scene/prefab values 100 apply) |
-| `initialCommunityDistanceSpread`, `initialShelterRepairTime` | not parsed (blank) | dead |
-| construction cost | no row | scene value 2000 (A6) |
+**Where (as found).** The sheet is fetched by `GameConfigLoader` from `/sheet.csv`; a root-relative URL only
+resolves inside a browser, so the editor and every headless build failed the fetch, waited out the 5 s
+timeout and ran on the loader's serialized fallbacks (`MainScene.unity`: budget 5000, satisfaction 50,
+3 ERVs, emergency cap 4 ...). The StreamingAssets copy of the sheet was never read. Rows the human WebGL
+game did apply reached it by mutating ScriptableObjects from the loader (`ApplyInitBudgetAllocation`,
+`ApplyInitFoodDemandFrequency`, `ApplyInitShelterFloodDamage`; `ApplyInitExternalRelationFrequency`
+replaced the assets' day triggers with a `DayInterval` whose check ignores `startDay`), and only through
+the three references wired in TutorialScene's loader. So humans on Talos played with allocation 2000,
+shelter-request probability 0.2 and the sheet's flood-damage trigger, while RL and the benchmarks played
+the asset values. Rows nothing consumed anywhere: `initialCommunityResidentCount`,
+`initialKitchenCapacity`, `initialShelterCapacity`, `initialCaseworkCapacity`,
+`initialWorkerUnitsNeededPerLocation`, `initialExternalRelationFrequency` (refs unwired in both scenes),
+`initialKitchenFoodCapacity`, `initialShelterFoodCapacity` (not even parsed), the `rainExpansionRate` /
+`rainFloodProbability` placeholders (ranges, not values; the loader expects ten per-weather rows the
+sheet lacked) and the blank `initialCommunityDistanceSpread` / `initialShelterRepairTime`.
 
-Also: `ParseCSV` uses culture-sensitive `float.TryParse` (`:265-316`), so a comma-decimal locale silently
-loses every float parameter, and any row whose first cell contains "parameter" is skipped (`:176`).
-**Status.** CONFIRMED (code). Matters for anyone who believes a sheet edit changed the game.
+**Fixed (batch 8).** Source chain `ARC_PARAM_CONFIG` env var (a CSV path; the gym env's
+`param_config=` and `validate_plan --param-config` export it) → sheet URL (browser only) → the
+StreamingAssets copy → serialized fallbacks; the source and every value in effect are logged
+(`GameDataManager: parameters in effect {...}`, mark `config:loaded`). Rows are applied where they are
+consumed and never by mutating a ScriptableObject:
+
+| row | consumer now | value in the StreamingAssets copy (Talos sheet value) |
+|---|---|---|
+| `initialBudget`, `initialSatisfaction`, days, rounds, volunteers, `initialERVCount`, `initialWeather`, `initialEmergencyTaskFrequency` | as before (already live where the sheet loaded) | sheet values: 8000, 0, 8, 4, 5/5, 5, HeavyRain, 2 |
+| `initialCommunityResidentCount` | `BuildingResourceStorage.ApplyConfiguredCapacities` sets each community's population | **400 (30)** — 30 never crosses the food-request threshold of 100 or sources a 100-client relocation |
+| `initialShelterCapacity`, `initialCaseworkCapacity` | Population capacity of built shelters / casework sites | **100 (20)**, **400 (15)** — prefab values kept |
+| `initialKitchenCapacity` | meals a kitchen produces per round (the report already used it as throughput) | **100 (5)** |
+| `initialKitchenFoodCapacity`, `initialShelterFoodCapacity` | FoodPacks capacity (new loader rows) | **200 (285)**, **100 (340)** |
+| `initialWorkerUnitsNeededPerLocation` | `Building.requiredWorkforce` | **4 (2)** |
+| `initialDailyBudgetAdditions` | `TaskSystem.ApplyConfiguredAllocation` on the task instance (impact, choice text, message) | 2000 (2000; the asset says 5000, the message said 3000 — humans already got 2000) |
+| `initialFoodDemandFrequency` | `TaskDatabases.CheckProbability` for food-request tasks that have a probability trigger (Shelter only) | 0.2 (0.2) |
+| `initialShelterFloodDamage{Comparison,FloodTileThreshold,FloodDetectionRange}` | `TaskDatabases.Configured` builds the Shelter Flood Damage trigger from the config | AtMost / 1 / 4 (same) — see B36 |
+| `initialExternalRelationFrequency` | total cap on Storm Funding Advisory + Emergency Budget Crisis creations (`TaskSystem.numExternalRelationTasks`, `[Limit]` log), the sheet's stated meaning; the old day-interval rewrite is gone | 5 (5) — newly enforced: seed 5801 lost 3 advisories |
+| ten `initial<Weather>Flood{ExpansionRateMultiplier,SpreadChanceMultiplier}` | as before | the `GameDataManager` defaults (0/0.5, 0.5/0.8, 1.5/1, 3/1.2, 5/1.5) |
+| `initialCommunityCount` | informational: the map decides; a mismatch is logged | 3 (4) |
+| removed rows | `rainExpansionRate`, `rainFloodProbability`, `initialCommunityDistanceSpread`, `initialShelterRepairTime` | — |
+
+Bold values are behaviour-preserving choices, NOT the Talos sheet's numbers: every people-scale row in
+the sheet is about a tenth of the prefabs and would ship a different game. The Google Sheet must be
+brought in line with the StreamingAssets copy before a WebGL deploy from this branch, because the wired
+rows take effect the moment the sheet loads. Verification: seed 5503 replayed with a CSV that
+reproduces the old fallbacks is RNG-identical to the batch-7 capture (`compare_captures`), and a probe
+CSV that changes every wired row shows each value in the log.
+
+Also fixed earlier: `ParseCSV` used culture-sensitive `float.TryParse` (comma-decimal locales lost every
+float) and skipped any row whose first cell contained "parameter".
+**Status.** CONFIRMED (code + captures).
+
+#### B36. Shelter Flood Damage fires when the flood is absent
+
+**Where.** `TaskData/Shelter_Flood_Damage.asset` (`comparison: 4` = AtMost, threshold 4, radius 5) and the
+sheet (`AtMost`, 1, 4); `FloodedFacilityTrigger.CheckComparison` (`TaskTrigger.cs:518-532`).
+**What happens.** "AtMost N flooded tiles within R" is true for a shelter with zero flooded tiles, so the
+trigger holds exactly when the shelter is dry and fails once the flood arrives. On the batch-8 replay of
+5503 the trigger was evaluated true only on passes with ≤1 flooded tile nearby and was then stopped by
+the emergency spacing gate; it never fired in any capture. The description in the sheet ("how much of the
+shelter has been flooded") and the emergency's own text describe the opposite condition.
+**Intended.** Almost certainly `AtLeast` with a threshold ≥ 1. NEEDS DECISION on the values.
+**Status.** CONFIRMED (code + capture). Not fixed: the values are configuration.
 
 ---
 
@@ -867,9 +913,11 @@ loses every float parameter, and any row whose first cell contains "parameter" i
    sets `currentTimeSegment` directly and raises only `OnRoundEnd` for the four rounds, never
    `OnTimeSegmentChanged`, so a human player's day 1 has no task generation, consumption, ageing or
    client-tracker ticks; the gym/router path takes `SimulationCoroutine` and gets the normal passes
-   (generation at rounds 1-2, ticks 1-4). Same code on v1_fixes. If one build must serve humans and
-   agents alike, day 1 needs one rule; the choice is theirs (intro day with nothing happening, or a
-   real day).
+   (generation at rounds 1-2, ticks 1-4). RULED 2026-09-09 and FIXED (batch 8): the day-1 branch and
+   `Day1SkipCoroutine` are gone, day 1 runs through the normal round flow for humans too (four clicks,
+   the "no active deliveries" clock skip per round, officers asked for proposals from round 1).
+   `FirstDayTutorialManager` still completes on the day-1 report; the setup-phase banner text in
+   `ClockAnimationUI` is now unused.
 
 ## Part D — claims rejected during verification
 

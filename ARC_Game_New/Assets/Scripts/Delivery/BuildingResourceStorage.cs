@@ -77,7 +77,70 @@ public class BuildingResourceStorage : MonoBehaviour
     void Start()
     {
         InitializeStorage();
+        storageInitialized = true;
         SubscribeToEvents();
+        ApplyConfiguredCapacities();   // no-op until GameDataManager is ready; it calls back otherwise
+    }
+
+    bool storageInitialized = false;
+    bool configApplied = false;
+
+    /// <summary>
+    /// Sheet parameters -> this storage (BUG_REPORTS B35). Runs once: from Start when the config is
+    /// already loaded (buildings constructed during play) or from GameDataManager.ApplyConfigToScene
+    /// for objects that initialised first (communities, motel).
+    /// </summary>
+    public void ApplyConfiguredCapacities()
+    {
+        if (!storageInitialized || configApplied) return;
+        var gdm = GameDataManager.Instance;
+        if (gdm == null || !gdm.IsDataReady) return;
+        configApplied = true;
+
+        var prebuilt = GetComponent<PrebuiltBuilding>();
+        if (prebuilt != null)
+        {
+            if (prebuilt.GetPrebuiltType() == PrebuiltBuildingType.Community && gdm.InitialResidentsPerCommunityNumber > 0)
+            {
+                int residents = gdm.InitialResidentsPerCommunityNumber;
+                SetCapacity(ResourceType.Population, Mathf.Max(GetResourceCapacity(ResourceType.Population), residents));
+                currentResources[ResourceType.Population] = residents;
+                Debug.Log($"{gameObject.name} population set to {residents} (initialCommunityResidentCount)");
+                GameLogPanel.Instance?.LogResourceChange($"{gameObject.name} population set to {residents} (initialCommunityResidentCount)");
+                OnStorageUpdated?.Invoke();
+            }
+            return;
+        }
+
+        var building = GetComponent<Building>();
+        if (building == null) return;
+        switch (building.GetBuildingType())
+        {
+            case BuildingType.Kitchen:
+                SetCapacity(ResourceType.FoodPacks, gdm.InitialKitchenFoodCapacity);
+                if (gdm.InitialKitchenCapacity > 0)
+                    foreach (var production in roundProduction)
+                        if (production.resourceType == ResourceType.FoodPacks)
+                            production.amountPerRound = gdm.InitialKitchenCapacity;   // meals per round
+                break;
+            case BuildingType.Shelter:
+                SetCapacity(ResourceType.Population, gdm.InitialShelterCapacity);
+                SetCapacity(ResourceType.FoodPacks, gdm.InitialShelterFoodCapacity);
+                break;
+            case BuildingType.CaseworkSite:
+                SetCapacity(ResourceType.Population, gdm.InitialCaseworkCapacity);
+                break;
+        }
+        Debug.Log($"{gameObject.name} ({building.GetBuildingType()}) configured: foodCap={GetResourceCapacity(ResourceType.FoodPacks)} popCap={GetResourceCapacity(ResourceType.Population)}");
+        OnStorageUpdated?.Invoke();
+    }
+
+    void SetCapacity(ResourceType type, int capacity)
+    {
+        if (capacity <= 0 || !maxCapacities.ContainsKey(type)) return;
+        maxCapacities[type] = capacity;
+        if (currentResources.TryGetValue(type, out int current) && current > capacity)
+            currentResources[type] = capacity;
     }
     
     void SubscribeToEvents()

@@ -167,3 +167,8 @@ anything (`scratchpad/cap32_fresh`):
     7001: every tracked counter matches at every round; draw stream identical, steps 2..32
     7002: every tracked counter matches at every round; draw stream identical, steps 2..32
     7003: every tracked counter matches at every round; draw stream draw streams identical across steps 2..32
+
+## 2026-09-09 batch 8 on v1_fixes: parameter sheet is live everywhere
+- `GameConfigLoader` source chain: `ARC_PARAM_CONFIG` (CSV path; `validate_plan --param-config`, gym `param_config=`) -> sheet URL (browser only) -> `StreamingAssets/game_param_config.csv` -> serialized fallbacks. Headless no longer runs on the MainScene fallbacks; the log line `GameDataManager: parameters in effect {...}` (mark `config:loaded`) states every value.
+- Reference captures: `runs/fixed_v1_b8/` (5503, 5504, 5801; real sheet: budget 8000, satisfaction 0, HeavyRain start, 5 ERVs, emergency cap 2, external cap 5). `runs/fixed_v1/` = batch 7 (old fallbacks). `runs/fixed_v1_parity/staff_5503` = batch 8 with a fallback-equivalent CSV, identical to batch 7 (wiring is behaviour-preserving).
+- Surrogate must absorb: sheet values as the default parameterisation, `initialCommunityResidentCount` -> community population, kitchen production/capacities from the sheet, external-relation total cap (`[Limit]` on Storm Funding / Emergency Budget), day-1 human path = gym path, `vehicle:towed` after repair (B5).

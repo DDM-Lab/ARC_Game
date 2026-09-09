@@ -165,6 +165,7 @@ class ARCGameGymEnv(gym.Env):
         max_days: int = 30,
         max_episode_steps: int = 100,
         render_mode: Optional[str] = None,
+        param_config: Optional[str] = None,
         auto_start_unity: bool = True,
         connection_timeout: float = 30.0,
         unity_log_path: Optional[str] = None,
@@ -250,6 +251,10 @@ class ARCGameGymEnv(gym.Env):
         # episode's Awake/Start randomness is covered) and again per reset_game. None
         # leaves the game unseeded, which is the previous behaviour.
         self.seed_value = seed
+        # Optional parameter sheet (CSV, same rows as StreamingAssets/game_param_config.csv) for this
+        # Unity process: exported as ARC_PARAM_CONFIG, read by GameConfigLoader before the network and
+        # local-copy sources. Lets an RL run vary game parameters without a rebuild.
+        self.param_config = param_config
 
         self._reset_count = 0
 
@@ -356,8 +361,12 @@ class ARCGameGymEnv(gym.Env):
             # server can accept a single request.
             if self.seed_value is not None:
                 cmd += ["-seed", str(int(self.seed_value))]
+            child_env = os.environ.copy()
+            if self.param_config:
+                child_env["ARC_PARAM_CONFIG"] = os.path.abspath(self.param_config)
             self.unity_process = subprocess.Popen(
                 cmd,
+                env=child_env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
