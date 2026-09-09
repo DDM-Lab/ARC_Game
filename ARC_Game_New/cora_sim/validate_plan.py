@@ -39,12 +39,15 @@ def best_row(log, unity_seed):
     return best
 
 
-def play(row, port, out_dir, rounds=32):
+def play(row, port, out_dir, rounds=32, replay=None):
     """The surrogate drives Unity in lockstep: each round the surrogate applies the gene
     first, and whatever it did -- which tasks it answered with what, which buildings it
     staffed in which order, which menu actions survived legality -- is sent to Unity in the
     same order. Then both advance and their counters are compared. Order matters: staffing
-    the Kitchen before the Shelter puts the trained workers in a different building."""
+    the Kitchen before the Shelter puts the trained workers in a different building.
+    `replay` (a previous staff_<seed>.json) sends THAT capture's recorded actions instead of the
+    surrogate's live decisions, so two Unity builds can be driven with identical inputs and
+    their captures diffed (compare_captures): the only differences left are the game's."""
     import random
     from cora_sim.searchable_env import SearchableEnv
     from cora_sim.actions import CoraActions
@@ -70,6 +73,7 @@ def play(row, port, out_dir, rounds=32):
         before = env._game_state_dict()
         gene = row["plan"][i] if i < len(row["plan"]) else {"choices": {}, "menu": []}
         taken = []
+        rec = replay[i]["taken"] if replay is not None and i < len(replay) else None
 
         def run(a, label):
             try:
@@ -79,28 +83,38 @@ def play(row, port, out_dir, rounds=32):
             except Exception as e:
                 taken.append({"kind": label, "action_id": a.get("action_id"), "error": str(e)})
 
-        # 1. the surrogate's turn, recording what it decided
+        # 1. the surrogate's turn, recording what it decided (or the recorded turn, replayed)
         econ = w.economy
         answered = {}
-        offered = {}
-        for tid, cid in S.open_choices(w):
-            offered.setdefault(tid, []).append(cid)
-        for tid, cids in offered.items():
-            spec = (w.generated_specs.get(tid) or ("Repair",))[0]
-            if tid in w.tasks.repair_for:
-                answered[tid] = ("Repair", REPAIR_CHOICE)
-            else:
-                want = gene["choices"].get(spec)
-                answered[tid] = (spec, want if want in cids else cids[0])
-        assigned_before = [b.get("assigned", 0) for b in econ.buildings]
-        executed = model.apply(w, ("turn", gene)) or []
-        staffed = [(b.get("site_id"), b["type"], b.get("assigned", 0) - a0)
-                   for b, a0 in zip(econ.buildings, assigned_before) if b.get("assigned", 0) != a0]
+        if rec is not None:
+            from cora_sim.diag_lockstep import drive_step
+            drive_step(w, model, replay[i], gene)          # the port takes the recorded actions too
+            by_type = {}
+            for x in rec:
+                if x.get("kind") == "choice" and "choiceId" in x:
+                    by_type.setdefault(x.get("stableTaskId") or "", []).append(x["choiceId"])
+            staffed = []
+            executed = [x.get("action_id") for x in rec if x.get("kind") == "menu" and x.get("action_id")]
+        else:
+            offered = {}
+            for tid, cid in S.open_choices(w):
+                offered.setdefault(tid, []).append(cid)
+            for tid, cids in offered.items():
+                spec = (w.generated_specs.get(tid) or ("Repair",))[0]
+                if tid in w.tasks.repair_for:
+                    answered[tid] = ("Repair", REPAIR_CHOICE)
+                else:
+                    want = gene["choices"].get(spec)
+                    answered[tid] = (spec, want if want in cids else cids[0])
+            assigned_before = [b.get("assigned", 0) for b in econ.buildings]
+            executed = model.apply(w, ("turn", gene)) or []
+            staffed = [(b.get("site_id"), b["type"], b.get("assigned", 0) - a0)
+                       for b, a0 in zip(econ.buildings, assigned_before) if b.get("assigned", 0) != a0]
+            by_type = {}
+            for spec, cid in answered.values():
+                by_type.setdefault(spec, []).append(cid)
 
         # 2. the same turn on Unity: choices by task type, staffing by site in the same order
-        by_type = {}
-        for spec, cid in answered.values():
-            by_type.setdefault(spec, []).append(cid)
         for t in (before.get("allActiveTasks") or []):
             cids = [c.get("choiceId") for c in (t.get("choices") or [])]
             if not cids:
@@ -126,6 +140,10 @@ def play(row, port, out_dir, rounds=32):
                 continue
             run({"action_type": "worker_assignment", "action_id": f"staff_{f.get('facilityName')}", "cost": 0,
                  "assignment": {"building_name": f.get("facilityName"), "quantity": REQUIRED_WORKFORCE}}, "staff")
+        if rec is not None:
+            for x in rec:                            # recorded staffing, verbatim and in order
+                if x.get("kind") == "staff" and x.get("payload"):
+                    run(x["payload"], "staff")
         acts = {a.get("action_id"): a for a in (env.get_valid_actions() or [])}
         for aid in executed:
             if aid.startswith("staff_"):
@@ -168,12 +186,14 @@ def main():
     ap.add_argument("--port", type=int, default=21050)
     ap.add_argument("--out", default=P.VALIDATE)
     ap.add_argument("--rounds", type=int, default=32)
+    ap.add_argument("--replay", default=None, help="staff_<seed>.json whose recorded actions are sent instead of the surrogate's")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     row = best_row(args.log, args.unity_seed)
     print(f"seed {args.unity_seed}: surrogate score {row['score']:.4f}; executed rounds "
           f"{[(i, a) for i, a in enumerate(row.get('executed', [])) if a]}")
-    play(row, args.port, args.out, args.rounds)
+    replay = json.load(open(args.replay)) if args.replay else None
+    play(row, args.port, args.out, args.rounds, replay=replay)
     return 0
 
 
