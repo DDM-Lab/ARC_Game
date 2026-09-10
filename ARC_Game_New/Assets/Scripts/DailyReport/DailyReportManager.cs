@@ -23,14 +23,12 @@ public class DailyReportManager : MonoBehaviour
     private bool isWaitingForNextDay = false;
     private bool isTransitioning = false;
 
-    [Header("Day 1 Special")]
-    public GameObject day1MaskPanel;
     [Header("Game End Settings")]
     public int finalDay = 8; // Game ends after this day
     
     [Header("History Navigation")]
     public GameObject historyNavigationPanel;
-    public Button[] dayButtons = new Button[7]; // Day 2-8 buttons
+    public Button[] dayButtons = new Button[7]; // Day 2-8 buttons; append an 8th button for Day 1
     
     [Header("Button States")]
     public Sprite selectedButtonSprite;
@@ -145,21 +143,15 @@ public class DailyReportManager : MonoBehaviour
         // Do the existing fade in animation first
         yield return StartCoroutine(FadeInReport());
 
-        // Show mask for Day 1, hide for other days
         int currentDay = globalClock != null ? globalClock.GetCurrentDay() : 1;
-        if (day1MaskPanel != null)
-        {
-            day1MaskPanel.SetActive(currentDay == 1);
-        }
 
         // Hide next day button if game ended
         if (currentDay >= finalDay && nextDayButton != null)
         {
             nextDayButton.gameObject.SetActive(false);
         }
-        
-        // Only generate report data if NOT Day 1
-        if (currentDay > 1 && DailyReportData.Instance != null && reportUI != null)
+
+        if (DailyReportData.Instance != null && reportUI != null)
         {
             var metrics = DailyReportData.Instance.GenerateDailyReport();
             reportUI.DisplayDailyReport(metrics);
@@ -252,11 +244,6 @@ public class DailyReportManager : MonoBehaviour
             panelCanvasGroup.blocksRaycasts = false;
         }
 
-        if (day1MaskPanel != null)
-        {
-            day1MaskPanel.SetActive(false);
-        }
-
         // Hide panel completely
         dailyReportPanel.SetActive(false);
         
@@ -332,15 +319,29 @@ public class DailyReportManager : MonoBehaviour
 
     void SetupHistoryNavigation()
     {
-        // Setup individual day buttons (Day 2-8)
+        // Setup individual day buttons (Day 2-8, plus an optional Day 1 button)
         for (int i = 0; i < dayButtons.Length; i++)
         {
-            int dayIndex = i + 2;
+            int dayIndex = GetDayForButtonIndex(i);
             if (dayButtons[i] != null)
             {
                 dayButtons[i].onClick.AddListener(() => OnDayButtonClicked(dayIndex));
             }
         }
+    }
+
+    /// <summary>
+    /// Maps a dayButtons array index to its day number. With the Day 1 button
+    /// inserted at the front, an 8-button array reads Day 1-8 in order.
+    /// Without it (legacy 7-button array), it reads Day 2-8.
+    /// </summary>
+    int GetDayForButtonIndex(int i)
+    {
+        if (dayButtons.Length == 8)
+        {
+            return i + 1;
+        }
+        return i + 2;
     }
 
     /// <summary>
@@ -388,7 +389,7 @@ public class DailyReportManager : MonoBehaviour
     {
         for (int i = 0; i < dayButtons.Length; i++)
         {
-            int dayIndex = i + 2; // Day 2-8
+            int dayIndex = GetDayForButtonIndex(i);
             Button btn = dayButtons[i];
             
             if (btn == null) continue;
