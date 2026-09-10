@@ -146,7 +146,6 @@ public class FloodTaskGenerator : MonoBehaviour
         fastDeliveryChoice.deliveryCargoType  = ResourceType.FoodPacks;
         fastDeliveryChoice.deliveryQuantity   = originalDelivery.quantity;
         fastDeliveryChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -cost, false, "Emergency Service"));
-        fastDeliveryChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 15, false, "Immediate Relief"));
         task.agentChoices.Add(fastDeliveryChoice);
     }
 
@@ -157,9 +156,7 @@ public class FloodTaskGenerator : MonoBehaviour
     {
         task.agentMessages.Add(new AgentMessage(
             $"The clients were already on board when the vehicle was stopped. " +
-            $"They have been safely escorted back to {srcName} for now.\n\n" +
-            $"⚠ If no emergency transport is arranged in time, the clients will give up and remain at {srcName} — " +
-            $"this will severely impact satisfaction.",
+            $"They have been safely escorted back to {srcName} for now.\n\n",
             icon));
 
         AgentChoice emergencyChoice = new AgentChoice(1, "Arrange emergency transport ($1500) — clients reach shelter immediately");
@@ -169,7 +166,6 @@ public class FloodTaskGenerator : MonoBehaviour
         emergencyChoice.destinationType     = DeliveryDestinationType.SpecificBuilding;
         emergencyChoice.destinationBuilding = BuildingType.Shelter;
         emergencyChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1500, false, "Emergency Transport"));
-        emergencyChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10, false, "Safe Arrival"));
         task.agentChoices.Add(emergencyChoice);
     }
 
@@ -190,7 +186,6 @@ public class FloodTaskGenerator : MonoBehaviour
         rerouteChoice.specificSourceName      = originalDelivery.sourceBuilding.name;
         rerouteChoice.destinationType         = DeliveryDestinationType.ManualAssignment;
         rerouteChoice.specificDestinationName = originalDelivery.destinationBuilding.name;
-        rerouteChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5, false, "Resolved"));
         task.agentChoices.Add(rerouteChoice);
     }
 

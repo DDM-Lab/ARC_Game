@@ -426,7 +426,7 @@ public class ClientStayTracker : MonoBehaviour
         caseworkTask.agentMessages.Add(new AgentMessage("How would you like to respond?"));
 
         AgentChoice sendToCasework = new AgentChoice(1,
-            $"Send {caseworkClientCount} clients to a casework site (+10 satisfaction)");
+            $"Send {caseworkClientCount} clients to a casework site");
         sendToCasework.triggersDelivery = true;
         sendToCasework.enableMultipleDeliveries = true;
         sendToCasework.multiDeliveryType = AgentChoice.MultiDeliveryType.SingleSourceMultiDest;
@@ -435,12 +435,10 @@ public class ClientStayTracker : MonoBehaviour
         sendToCasework.sourceType = DeliverySourceType.RequestingFacility;
         sendToCasework.destinationType = DeliveryDestinationType.SpecificBuilding;
         sendToCasework.destinationBuilding = BuildingType.CaseworkSite;
-        sendToCasework.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10));
         caseworkTask.agentChoices.Add(sendToCasework);
 
-        AgentChoice delay = new AgentChoice(2, "Ask them to wait longer (-10 satisfaction)");
+        AgentChoice delay = new AgentChoice(2, "Ask them to wait longer");
         delay.triggersDelivery = false;
-        delay.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -10));
         caseworkTask.agentChoices.Add(delay);
 
         caseworkTask.description += $"|CLIENT_GROUP_ID:{group.groupId}";

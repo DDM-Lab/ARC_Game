@@ -46,6 +46,7 @@ MonoBehaviour:
   workforceTriggers: []
   facilityStatusTriggers: []
   weatherTriggers: []
+  latestGenerationRound: 0
   requireAllTriggers: 1
   isGlobalTask: 0
   targetFacilityType: 1
@@ -78,13 +79,9 @@ MonoBehaviour:
     typingSpeed: 0.05
   agentChoices:
   - choiceId: 0
-    choiceText: Evacuate all residents to other shelters (Satisfaction + 10)
+    choiceText: Evacuate all to other shelters
     agentReasoning: 
-    choiceImpacts:
-    - impactType: 0
-      value: 10
-      isCountdown: 0
-      customLabel: 
+    choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
     immediateDelivery: 0
@@ -107,50 +104,12 @@ MonoBehaviour:
     prioritizeNearestSource: 1
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Evacuate all residents to Motel (Satisfaction + 10)
+    choiceText: Evacuate all to Motel
     agentReasoning: 
-    choiceImpacts:
-    - impactType: 0
-      value: 10
-      isCountdown: 0
-      customLabel: 
+    choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
     immediateDelivery: 0
-    deliveryCargoType: 0
-    enableMultipleDeliveries: 0
-    multiDeliveryType: 0
-    quantityType: 2
-    deliveryQuantity: 0
-    deliveryPercentage: 0
-    deliverAll: 1
-    sourceType: 3
-    sourceBuilding: 1
-    sourcePrebuilt: 0
-    specificSourceName: 
-    destinationType: 2
-    destinationBuilding: 0
-    destinationPrebuilt: 1
-    specificDestinationName: 
-    budgetDelayRounds: 0
-    prioritizeNearestSource: 0
-    prioritizeNearestDestination: 1
-  - choiceId: 2
-    choiceText: Rapid Response Vehicle evacuation to Motel (Immediate, $5000, Satisfaction
-      + 10)
-    agentReasoning: 
-    choiceImpacts:
-    - impactType: 1
-      value: -5000
-      isCountdown: 0
-      customLabel: 
-    - impactType: 0
-      value: 10
-      isCountdown: 0
-      customLabel: 
-    isSelected: 0
-    triggersDelivery: 1
-    immediateDelivery: 1
     deliveryCargoType: 0
     enableMultipleDeliveries: 0
     multiDeliveryType: 0

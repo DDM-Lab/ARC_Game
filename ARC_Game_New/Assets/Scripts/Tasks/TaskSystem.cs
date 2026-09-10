@@ -2066,7 +2066,6 @@ public class TaskSystem : MonoBehaviour
         choice1.destinationType = DeliveryDestinationType.AutoFind;
         choice1.choiceImpacts.Add(new TaskImpact(ImpactType.FoodPacks, -50));
         choice1.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -2000));
-        choice1.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 15));
         foodTask.agentChoices.Add(choice1);
 
         AgentChoice choice2 = new AgentChoice(2, "Limited food distribution (10 meals, $1000)");
@@ -2078,12 +2077,10 @@ public class TaskSystem : MonoBehaviour
         choice2.destinationType = DeliveryDestinationType.RequestingFacility;
         choice2.choiceImpacts.Add(new TaskImpact(ImpactType.FoodPacks, -10));
         choice2.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1000));
-        choice2.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5));
         foodTask.agentChoices.Add(choice2);
 
         AgentChoice choice3 = new AgentChoice(3, "Delay until next shipment arrives (no delivery)");
         choice3.triggersDelivery = false;
-        choice3.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -20));
         foodTask.agentChoices.Add(choice3);
     }
 
@@ -2104,12 +2101,10 @@ public class TaskSystem : MonoBehaviour
         AgentChoice upgradeChoice = new AgentChoice(1, "Approve equipment upgrade ($5000)");
         upgradeChoice.triggersDelivery = false;
         upgradeChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -5000));
-        upgradeChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 25));
         advisoryTask.agentChoices.Add(upgradeChoice);
 
         AgentChoice delayChoice = new AgentChoice(2, "Delay upgrade for now");
         delayChoice.triggersDelivery = false;
-        delayChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5));
         advisoryTask.agentChoices.Add(delayChoice);
     }
 
@@ -2139,7 +2134,6 @@ public class TaskSystem : MonoBehaviour
         // Add simple confirmation choice
         AgentChoice confirmChoice = new AgentChoice(1, "Confirm worker assignment");
         confirmChoice.triggersDelivery = false;
-        confirmChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5));
         numericalTask.agentChoices.Add(confirmChoice);
     }
 
@@ -2206,7 +2200,6 @@ public class TaskSystem : MonoBehaviour
         shelterChoice.sourceType = DeliverySourceType.RequestingFacility;
         shelterChoice.destinationType = DeliveryDestinationType.SpecificBuilding;
         shelterChoice.destinationBuilding = BuildingType.Shelter;
-        shelterChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5, false, "Quick Response"));
         transportTask.agentChoices.Add(shelterChoice);
 
         AgentChoice motelChoice = new AgentChoice(2, "Send to Motel ($200, always available)");
@@ -2217,7 +2210,6 @@ public class TaskSystem : MonoBehaviour
         motelChoice.destinationType = DeliveryDestinationType.SpecificPrebuilt;
         motelChoice.destinationPrebuilt = PrebuiltBuildingType.Motel;
         motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -200));
-        motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10, false, "Premium Housing"));
         transportTask.agentChoices.Add(motelChoice);
 
         AgentChoice airDrop = new AgentChoice(2, "Emergency airdrop to Motel(instant)");
@@ -2228,12 +2220,10 @@ public class TaskSystem : MonoBehaviour
         airDrop.destinationType = DeliveryDestinationType.SpecificPrebuilt;
         airDrop.destinationPrebuilt = PrebuiltBuildingType.Motel;
         airDrop.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1000, false, "Airdrop Cost"));
-        airDrop.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 20, false, "Premium Housing"));
         transportTask.agentChoices.Add(airDrop);
 
-        AgentChoice delayChoice = new AgentChoice(3, "Wait for better options (Risk satisfaction loss)");
+        AgentChoice delayChoice = new AgentChoice(3, "Wait for better options");
         delayChoice.triggersDelivery = false;
-        delayChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -8, false, "Delayed Response"));
         transportTask.agentChoices.Add(delayChoice);
 
         if (showDebugInfo)
@@ -2265,7 +2255,6 @@ public class TaskSystem : MonoBehaviour
         shelterChoice.sourcePrebuilt = PrebuiltBuildingType.Community;
         shelterChoice.destinationType = DeliveryDestinationType.SpecificBuilding;
         shelterChoice.destinationBuilding = BuildingType.Shelter;
-        shelterChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5));
         choiceTask.agentChoices.Add(shelterChoice);
 
         // Choice 2: Send to Motel
@@ -2278,13 +2267,11 @@ public class TaskSystem : MonoBehaviour
         motelChoice.destinationType = DeliveryDestinationType.SpecificPrebuilt;
         motelChoice.destinationPrebuilt = PrebuiltBuildingType.Motel;
         motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -500));
-        motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10));
         choiceTask.agentChoices.Add(motelChoice);
 
         // Choice 3: Keep them (no delivery)
         AgentChoice keepChoice = new AgentChoice(3, "Keep them here for now (overcrowding risk)");
         keepChoice.triggersDelivery = false;
-        keepChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5));
         choiceTask.agentChoices.Add(keepChoice);
 
         if (showDebugInfo)

@@ -24,7 +24,7 @@ MonoBehaviour:
   - conditionType: 3
     targetDay: 0
     intervalDays: 0
-    startDay: 2
+    startDay: 3
     endDay: 0
   resourceTriggers: []
   probabilityTriggers: []
@@ -39,6 +39,7 @@ MonoBehaviour:
   workforceTriggers: []
   facilityStatusTriggers: []
   weatherTriggers: []
+  latestGenerationRound: 0
   requireAllTriggers: 1
   isGlobalTask: 1
   targetFacilityType: 1
