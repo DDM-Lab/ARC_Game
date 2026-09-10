@@ -51,7 +51,12 @@ public class CommunityFoodDepletionManager : MonoBehaviour
         StartCoroutine(ApplyConfiguredChance());
 
         if (GlobalClock.Instance != null)
+        {
+            // Round 1 of each day is the OnDayStarted pass (segment 0) since the A1 clock fix; the
+            // segment events are 1-4, so without this the manager would only ever see rounds 2-3.
+            GlobalClock.Instance.OnDayStarted += OnDayStarted;
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
+        }
     }
 
     System.Collections.IEnumerator ApplyConfiguredChance()
@@ -67,8 +72,13 @@ public class CommunityFoodDepletionManager : MonoBehaviour
     void OnDestroy()
     {
         if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnDayStarted -= OnDayStarted;
             GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
+        }
     }
+
+    void OnDayStarted(int day) => OnRoundChanged(0);
 
     void OnRoundChanged(int newSegment)
     {
