@@ -15,7 +15,7 @@ MonoBehaviour:
   taskId: Offboarding_alert_day7
   taskTitle: Alert - Game Will End on Day 8
   taskType: 3
-  description: Game Will End on Day 8
+  description: Game Will End on Day 8.
   taskImage: {fileID: 21300000, guid: 3c8b727b245029b43b112ed24fc7c5d3, type: 3}
   taskOfficer: 0
   taskTag: 0
@@ -37,6 +37,7 @@ MonoBehaviour:
   workforceTriggers: []
   facilityStatusTriggers: []
   weatherTriggers: []
+  latestGenerationRound: 0
   requireAllTriggers: 1
   isGlobalTask: 1
   targetFacilityType: 1

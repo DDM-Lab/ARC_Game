@@ -537,10 +537,9 @@ public class BuildingUIOverlay : MonoBehaviour
                     message: message,
                     onConfirm: () => {
                         // This executes when user clicks Confirm
-                        building.StartDeconstruction();
-                        // Human direct game action (deconstruction via the UI).
-                        GameLogPanel.Instance?.LogUIInteraction("game_action", "deconstruction",
-                            $"building={building.GetBuildingType()} | site={building.GetOriginalSiteId()}");
+                        if (BuildingSystem.Instance != null) BuildingSystem.Instance.RequestDeconstruction(building);
+                        else building.StartDeconstruction();
+                        //building.StartDeconstruction();
                         Debug.Log($"User confirmed deconstruction of {building.name}");
                         GameLogPanel.Instance?.LogUIInteraction(
                             $"Deconstruction confirmed | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()}");
@@ -558,7 +557,9 @@ public class BuildingUIOverlay : MonoBehaviour
             {
                 Debug.LogError("ConfirmationPopup not found in scene!");
                 // Fallback: deconstruct immediately if popup system not available
-                building.StartDeconstruction();
+                if (BuildingSystem.Instance != null) BuildingSystem.Instance.RequestDeconstruction(building);
+                else building.StartDeconstruction();
+                //building.StartDeconstruction();
             }
         }
     }

@@ -11,7 +11,8 @@ public class BuildingSystem : MonoBehaviour
     
     [Header("Construction Settings")]
     public int constructionRounds = 4;
-    
+    public int deconstructionRounds = 2;
+
     [Header("UI References")]
     public BuildingSelectionUI buildingSelectionUI;
     
@@ -45,6 +46,21 @@ public class BuildingSystem : MonoBehaviour
         int index = buildingNameCounters[type]++;
         string typeName = type == BuildingType.CaseworkSite ? "Casework" : type.ToString();
         return $"{typeName} {greekNames[index % greekNames.Length]}";
+    }
+
+    public static BuildingSystem Instance { get; private set; }
+
+    void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+        else
+        {
+            Destroy(gameObject);
+            return;
+        }
     }
 
     void Start()
@@ -119,7 +135,18 @@ public class BuildingSystem : MonoBehaviour
             selectedSite = null;
         }
     }
-    
+
+    // Use this to pass in parameter deconstruction roud number
+    public void RequestDeconstruction(Building building)
+    {
+        if (building == null) return;
+        building.StartDeconstruction(deconstructionRounds); 
+    }
+
+    /// <summary>Returns whether construction actually STARTED: a build at a site already
+    /// consumed is a silent no-op in the game, and ActionExecutor/GameSnapshot need to tell
+    /// the difference (v1_fixes). Upstream's signature is void; the bool is ours and both
+    /// callers depend on it.</summary>
     public bool CreateBuildingImmediately(AbandonedSite site, BuildingType buildingType)
     {
         if (!site.IsAvailable())

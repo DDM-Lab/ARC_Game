@@ -640,9 +640,9 @@ public class GlobalClock : MonoBehaviour
         AdvanceTimeSegment();
         SnapshotDebug.Mark("endSim:afterAdvanceSegment");
 
-        OnRoundEnd?.Invoke();
+        SafeInvokeStatic(OnRoundEnd);
         SnapshotDebug.Mark("endSim:afterOnRoundEnd");
-        
+
         // Enable player interactions
         EnablePlayerInteractions();
         
@@ -704,7 +704,7 @@ public class GlobalClock : MonoBehaviour
             // production, ageing, expiry and generation run NOW, before the daily report and
             // before the rollover wastes what is left. It used to be delivered as segment 0
             // after OnDayChanged, i.e. right after the day's food had been thrown away.
-            OnTimeSegmentChanged?.Invoke(currentTimeSegment);
+            SafeInvoke(OnTimeSegmentChanged, currentTimeSegment);
             // Don't trigger OnDayChanged here anymore - wait for button click
             return; // Exit early, don't update display yet
         }
@@ -714,8 +714,9 @@ public class GlobalClock : MonoBehaviour
         {
             ActionTrackingManager.Instance.SetDayAndRound(currentDay, currentTimeSegment + 1);
         }
-        
-        OnTimeSegmentChanged?.Invoke(currentTimeSegment);
+
+        //OnTimeSegmentChanged?.Invoke(currentTimeSegment);
+        SafeInvoke(OnTimeSegmentChanged, currentTimeSegment);
         
         // Update display only if not end of day
         UpdateTimeDisplay();
@@ -770,11 +771,14 @@ public class GlobalClock : MonoBehaviour
         // PrepareForNewDay() instead (called above).
         // =====================================================
         SnapshotDebug.Mark("day:beforeOnDayChanged");
-        OnDayChanged?.Invoke(currentDay);
+        SafeInvoke(OnDayChanged, currentDay);
         SnapshotDebug.Mark("day:afterOnDayChanged");
-        // (No segment event here any more: the last round's tick fired in AdvanceTimeSegment.)
+        // (No segment event here any more: the last round's tick fired in AdvanceTimeSegment --
+        // BUG_REPORTS A1. Upstream still raises OnTimeSegmentChanged at the rollover; that is the
+        // pre-fix clock and would restore the wasted-food ordering, so only the invoke MECHANISM
+        // is taken from it.)
         // Start-of-day generation pass, currentTimeSegment == 0, same position as before.
-        OnDayStarted?.Invoke(currentDay);
+        SafeInvoke(OnDayStarted, currentDay);
         SnapshotDebug.Mark("day:afterOnTimeSegmentChanged");
 
         // Update display
@@ -973,5 +977,25 @@ public class GlobalClock : MonoBehaviour
     {
         // Reset time scale when destroyed
         Time.timeScale = 1f;
+    }
+
+    private void SafeInvoke(Action<int> evt, int arg)
+    {
+        if (evt == null) return;
+        foreach (Action<int> handler in evt.GetInvocationList())
+        {
+            try { handler(arg); }
+            catch (Exception e) { Debug.LogException(e); }
+        }
+    }
+
+    private static void SafeInvokeStatic(Action evt)
+    {
+        if (evt == null) return;
+        foreach (Action handler in evt.GetInvocationList())
+        {
+            try { handler(); }
+            catch (Exception e) { Debug.LogException(e); }
+        }
     }
 }

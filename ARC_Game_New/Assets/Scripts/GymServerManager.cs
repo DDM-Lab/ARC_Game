@@ -1019,6 +1019,10 @@ public class GymServerManager : MonoBehaviour
                               // IsExternalRelationContact == officer ExternalRelationship and
                               // taskId != Budget_Allocation.
                               .Append(",\"taskOfficer\":\"").Append(td.taskOfficer).Append('"')
+                              // What a FAILED delivery costs this task (HandleDeliveryFailure ->
+                              // RemoveSatisfaction). Per TaskData: 15 for a food request, 10 for a
+                              // relocation -- the port assumed the field default for all of them.
+                              .Append(",\"deliveryFailurePenalty\":").Append(td.deliveryFailureSatisfactionPenalty.ToString("R", ci))
                               .Append(",\"taskImpacts\":[")
                               .Append(string.Join(",", (td.impacts ?? new List<TaskImpact>()).Select(
                                   i => "{\"type\":\"" + i.impactType + "\",\"value\":" + i.value + "}")))
@@ -1188,6 +1192,10 @@ public class GymServerManager : MonoBehaviour
                         sb.Append(",\"construction\":{")
                           .Append("\"rounds\":").Append(bs.constructionRounds)
                           .Append(",\"shelterCost\":").Append(bs.shelterConstructionCost)
+                          // Deconstruction is round-based and inspector-driven since
+                          // main-bugfixes 48a2582f (BuildingSystem passes it to
+                          // Building.StartDeconstruction); the port used to assume 3.
+                          .Append(",\"deconstructionRounds\":").Append(bs.deconstructionRounds)
                           .Append(",\"kitchenCost\":").Append(bs.kitchenConstructionCost)
                           .Append(",\"caseworkSiteCost\":").Append(bs.caseworkSiteConstructionCost)
                           .Append('}');
@@ -1297,6 +1305,13 @@ public class GymServerManager : MonoBehaviour
                           .Append(",\"externalRelationTotal\":").Append(gdm.InitialExternalRelationFrequency)
                           // WorkerTrainingSystem.satisfactionPerTrainedWorker: completing a
                           // training grants this per worker (a scene value, not a sheet one).
+                          // TaskDatabases.Configured() rebuilds Shelter_Flood_Damage's
+                          // FloodedFacilityTrigger from the sheet at evaluation time and never
+                          // writes the asset, so the exported trigger carries the AUTHORED
+                          // threshold/radius and not the ones the game uses.
+                          .Append(",\"shelterFloodComparison\":\"").Append(gdm.InitialShelterFloodComparison).Append('"')
+                          .Append(",\"shelterFloodThreshold\":").Append(gdm.InitialShelterFloodThreshold)
+                          .Append(",\"shelterFloodRadius\":").Append(gdm.InitialShelterFloodRadius)
                           .Append(",\"satisfactionPerTrainedWorker\":")
                           .Append(FindObjectOfType<WorkerTrainingSystem>() != null
                                   ? FindObjectOfType<WorkerTrainingSystem>().satisfactionPerTrainedWorker : 0)
@@ -1353,6 +1368,25 @@ public class GymServerManager : MonoBehaviour
                         }
                         sb.Append('}');
                     }
+                    // SITE TRANSFORMS. A building constructed mid-episode sits on its site's
+                    // transform, and the per-facility flood triggers count tiles in a square
+                    // around floor(transform). The port's position table only had the map dump's
+                    // pre-placed buildings, so every flood trigger on a BUILT shelter silently
+                    // evaluated false -- Shelter_Flood_Damage could never fire there.
+                    sb.Append(",\"sitePositions\":{");
+                    {
+                        bool firstS = true;
+                        foreach (var site in FindObjectsOfType<AbandonedSite>())
+                        {
+                            if (!firstS) sb.Append(',');
+                            firstS = false;
+                            var pos = site.transform.position;
+                            sb.Append('"').Append(site.GetId()).Append("\":[")
+                              .Append(pos.x.ToString("R", ci)).Append(',')
+                              .Append(pos.y.ToString("R", ci)).Append(']');
+                        }
+                    }
+                    sb.Append('}');
                     sb.Append(",\"buildingWorkforce\":[");
                     {
                         bool first = true;

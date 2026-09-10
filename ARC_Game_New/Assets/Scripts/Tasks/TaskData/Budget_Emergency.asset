@@ -39,6 +39,7 @@ MonoBehaviour:
   workforceTriggers: []
   facilityStatusTriggers: []
   weatherTriggers: []
+  latestGenerationRound: 0
   requireAllTriggers: 1
   isGlobalTask: 1
   targetFacilityType: 1
@@ -68,15 +69,11 @@ MonoBehaviour:
     typingSpeed: 0.05
   agentChoices:
   - choiceId: 0
-    choiceText: Urgent allocation ($5,000) - Fast approval, satisfaction - 5
+    choiceText: Urgent allocation ($5,000) - Fast approval
     agentReasoning: 
     choiceImpacts:
     - impactType: 1
       value: 5000
-      isCountdown: 0
-      customLabel: 
-    - impactType: 0
-      value: -5
       isCountdown: 0
       customLabel: 
     isSelected: 0
@@ -101,15 +98,11 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Emergency allocation ($15,000) - 2 rounds delay, satisfaction - 10
+    choiceText: Emergency allocation ($15,000) - 2 rounds delay
     agentReasoning: 
     choiceImpacts:
     - impactType: 1
       value: 15000
-      isCountdown: 0
-      customLabel: 
-    - impactType: 0
-      value: -10
       isCountdown: 0
       customLabel: 
     isSelected: 0
@@ -134,15 +127,11 @@ MonoBehaviour:
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   - choiceId: 2
-    choiceText: Disaster Relief Fund ($30,000) - 3 rounds delay, satisfaction -15
+    choiceText: Disaster Relief Fund ($30,000) - 3 rounds delay
     agentReasoning: 
     choiceImpacts:
     - impactType: 1
       value: 30000
-      isCountdown: 0
-      customLabel: 
-    - impactType: 0
-      value: -15
       isCountdown: 0
       customLabel: 
     isSelected: 0
