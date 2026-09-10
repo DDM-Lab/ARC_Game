@@ -535,7 +535,7 @@ public class AgentConversationUI : MonoBehaviour
         AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
         if (choiceUI != null)
         {
-            choiceUI.Initialize(choice, null, PreviewChoiceRoute);
+            choiceUI.Initialize(choice, null, PreviewChoiceRoute, currentSelectedTask);
             //choiceUI.Initialize(choice, null, null);
             choiceUI.choiceButton.onClick.AddListener(() => OnLocalChoiceSelected(choice));
         }
@@ -853,10 +853,10 @@ public class AgentConversationUI : MonoBehaviour
         AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
 
         if (choiceUI != null)
-            choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentSelectedTask?.selectedChoiceId);
+            choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentSelectedTask?.selectedChoiceId, currentSelectedTask);
         currentConversationItems.Add(choiceItem);
     }
-    
+
     void DisplayHistoricalNumericalInput(AgentNumericalInput input)
     {
         GameObject inputItem = Instantiate(numericalInputPrefab, conversationContent);

@@ -301,10 +301,7 @@ MonoBehaviour:
   startingResources: []
   startingFoodPacks: 0
   enableFoodWaste: 1
-  roundProduction:
-  - resourceType: 1
-    amountPerRound: 100
-    requiredResources: []
+  fillFoodToCapacityDaily: 1
   enablePopulationBasedConsumption: 0
   foodPerPersonPerNRounds: 1
   consumptionRoundInterval: 4

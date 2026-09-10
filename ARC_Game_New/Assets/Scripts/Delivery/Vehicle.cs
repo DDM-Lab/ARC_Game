@@ -84,7 +84,7 @@ public class Vehicle : MonoBehaviour
         {
             VehicleUIOverlay.Instance.RegisterVehicle(this);
         }
-        
+
         // Ensure collider exists for click detection
         if (GetComponent<Collider2D>() == null)
         {
@@ -92,6 +92,33 @@ public class Vehicle : MonoBehaviour
             collider.radius = 0.5f;
         }
 
+        if (GlobalClock.Instance != null)
+            GlobalClock.Instance.OnDayChanged += OnDayChanged;
+    }
+
+    /// <summary>
+    /// Food must not carry over between days. A vehicle mid-delivery when the day rolls over
+    /// still has FoodPacks loaded — waste it here (Population cargo is unaffected; people don't
+    /// "expire"). The delivery itself is left alone: it will simply unload 0 food on arrival.
+    /// </summary>
+    void OnDayChanged(int newDay)
+    {
+        int loadedFood = currentCargo.TryGetValue(ResourceType.FoodPacks, out int amount) ? amount : 0;
+        if (loadedFood <= 0) return;
+
+        currentCargo[ResourceType.FoodPacks] = 0;
+
+        if (DailyReportData.Instance != null)
+        {
+            DailyReportData.Instance.RecordFoodWasted(loadedFood);
+            DailyReportData.Instance.RecordFoodWasteCumulative(loadedFood);
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"Vehicle {vehicleName} wasted {loadedFood} in-transit meals at day change");
+        GameLogPanel.Instance?.LogResourceChange($"Vehicle {vehicleName} wasted {loadedFood} in-transit meals at day change");
+
+        OnCargoChanged?.Invoke(this);
     }
 
     public ResourceType GetPrimaryCargoType()
@@ -746,6 +773,9 @@ public class Vehicle : MonoBehaviour
         {
             VehicleUIOverlay.Instance.UnregisterVehicle(this);
         }
+
+        if (GlobalClock.Instance != null)
+            GlobalClock.Instance.OnDayChanged -= OnDayChanged;
     }
 
     // Getters

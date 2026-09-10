@@ -64,8 +64,7 @@ public class GameConfigLoader : MonoBehaviour
 
     private bool configLoaded = false;
     public TaskData dailyBudgetAlloc;
-    public TaskData shelterFoodReq; // for food demand frequency lever
-    public TaskData shelterFloodDmg; 
+    public TaskData shelterFloodDmg;
     public TaskData budgetAdvisoryER;
     public TaskData budgetEmergencyER;
 
@@ -292,6 +291,9 @@ public class GameConfigLoader : MonoBehaviour
             }
             else if (parameter.Equals("initialFoodDemandFrequency", System.StringComparison.OrdinalIgnoreCase))
             {
+                // Consumed by CommunityFoodDepletionManager as its per-community, per-round chance
+                // of a food-depletion event (which is what actually spawns a Community_FoodRequest
+                // task) — see GetInitialFoodDemandFrequency() below.
                 if (float.TryParse(value, out float foodDemandFreq))
                     loadedInitialFoodDemandFrequency = Mathf.Clamp(foodDemandFreq, 0f, 1f);
             }
@@ -334,7 +336,6 @@ public class GameConfigLoader : MonoBehaviour
             
         }
         ApplyInitBudgetAllocation();
-        ApplyInitFoodDemandFrequency();
         ApplyInitShelterFloodDamage();
         ApplyInitExternalRelationFrequency();
         
@@ -445,25 +446,9 @@ public class GameConfigLoader : MonoBehaviour
         }
     }
 
-    void ApplyInitFoodDemandFrequency()
-    {
-        if (loadedInitialFoodDemandFrequency < 0) return;
-        if (shelterFoodReq != null)
-        {
-            if (shelterFoodReq.probabilityTriggers.Count != 0 )
-            {
-                shelterFoodReq.probabilityTriggers[0].probability = loadedInitialFoodDemandFrequency;
-            } 
-            else
-            {
-                ProbabilityTrigger trigger = new ProbabilityTrigger
-                {
-                    probability = loadedInitialFoodDemandFrequency
-                };
-                shelterFoodReq.probabilityTriggers.Add(trigger);
-            }
-        }
-    }
+    // Community food demand is no longer probability-trigger-driven — see
+    // CommunityFoodDepletionManager, which reads GetInitialFoodDemandFrequency() directly as its
+    // per-round depletion chance.
 
 void ApplyInitExternalRelationFrequency()
 {
@@ -648,6 +633,10 @@ void ApplyTrigger(TaskData task, int interval)
         return loadedInitialStormSpreadChanceMultiplier;
     }
 
+    /// <summary>
+    /// Used by CommunityFoodDepletionManager as its per-round depletion chance for communities
+    /// (-1 = not configured, caller should keep its own Inspector default).
+    /// </summary>
     public float GetInitialFoodDemandFrequency()
     {
         return loadedInitialFoodDemandFrequency;

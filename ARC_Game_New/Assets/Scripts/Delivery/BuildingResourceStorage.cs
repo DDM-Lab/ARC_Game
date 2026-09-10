@@ -13,10 +13,9 @@ public class BuildingResourceStorage : MonoBehaviour
     [Header("Daily Food Settings")]
     public int startingFoodPacks = 0; // Separate food allocation per game start
     public bool enableFoodWaste = true;
+    [Tooltip("If true, this storage's FoodPacks are topped up to full capacity at the start of each day (e.g. Kitchens), instead of the flat startingFoodPacks amount.")]
+    public bool fillFoodToCapacityDaily = false;
 
-    [Header("Round-Based Production")]
-    public List<RoundResourceProduction> roundProduction = new List<RoundResourceProduction>();
-    
     [Header("Population-Based Consumption")]
     public bool enablePopulationBasedConsumption = true;
     public int foodPerPersonPerNRounds  = 1;
@@ -36,6 +35,7 @@ public class BuildingResourceStorage : MonoBehaviour
     public event Action OnStorageUpdated;
 
     private int roundsSinceLastConsumption = 0;
+    private int lastConsumptionRoundKey = int.MinValue;
 
     private int todayFoodPacksConsumed = 0;
     
@@ -68,7 +68,8 @@ public class BuildingResourceStorage : MonoBehaviour
         
         // Set daily starting resources
         SetStartingResources();
-        
+        FillFoodToCapacityIfConfigured();
+
         OnStorageUpdated?.Invoke();
     }
     
@@ -96,7 +97,6 @@ public class BuildingResourceStorage : MonoBehaviour
     {
         if (newRound <= 4) // round 5 is daily report stage
         {
-            HandleRoundProduction();
             HandlePopulationConsumptionCycle();
         }
     }
@@ -105,105 +105,18 @@ public class BuildingResourceStorage : MonoBehaviour
     {
         HandleDailyReset();
     }
-    
-    void HandleRoundProduction()
-    {
-        // Check if this building is operational before producing
-        Building building = GetComponent<Building>();
-        if (building != null && !building.IsOperational())
-        {
-            if (showDebugInfo)
-                Debug.Log($"{gameObject.name} cannot produce - building not operational (Status: {building.GetCurrentStatus()})");
-            return;
-        }
 
-        foreach (RoundResourceProduction production in roundProduction)
-        {
-            // Check if we can produce (capacity available)
-            if (CanAddResource(production.resourceType, production.amountPerRound))
-            {
-                // Check if we have required input resources
-                bool canProduce = true;
-                foreach (ResourceAmount requirement in production.requiredResources)
-                {
-                    if (!HasResource(requirement.type, requirement.amount))
-                    {
-                        canProduce = false;
-                        break;
-                    }
-                }
-
-                if (canProduce)
-                {
-                    // Consume input resources
-                    foreach (ResourceAmount requirement in production.requiredResources)
-                    {
-                        RemoveResource(requirement.type, requirement.amount);
-                    }
-
-                    // Produce output resource
-                    AddResource(production.resourceType, production.amountPerRound);
-
-                    if (showDebugInfo)
-                        Debug.Log($"{gameObject.name} produced {production.amountPerRound} {production.resourceType} this round");
-                    GameLogPanel.Instance.LogResourceChange($"{gameObject.name} produced {production.amountPerRound} {production.resourceType} this round");
-                }
-                else
-                {
-                    if (showDebugInfo)
-                        Debug.Log($"{gameObject.name} cannot produce {production.resourceType} - missing required resources");
-                    GameLogPanel.Instance.LogResourceChange($"{gameObject.name} cannot produce {production.resourceType} - missing required resources");
-                }
-            }
-            else
-            {
-                if (showDebugInfo)
-                    Debug.Log($"{gameObject.name} cannot produce {production.resourceType} - storage full");
-                GameLogPanel.Instance.LogResourceChange($"{gameObject.name} cannot produce {production.resourceType} - storage full");
-            }
-
-            
-        }
-    }
-    
     void HandlePopulationConsumptionCycle()
     {
         if (!enablePopulationBasedConsumption) return;
-        
+
         roundsSinceLastConsumption++;
 
         // Only consume food every N rounds
         if (roundsSinceLastConsumption >= consumptionRoundInterval)
         {
-            int totalPeopleToFeed = GetTotalPeopleCount();
-            int foodNeeded = totalPeopleToFeed * foodPerPersonPerNRounds;
-
-            if (foodNeeded > 0)
-            {
-                int foodConsumed = RemoveResource(ResourceType.FoodPacks, foodNeeded);
-                if (DailyReportData.Instance != null)
-                    DailyReportData.Instance.RecordFoodConsumptionCumulative(foodConsumed, foodNeeded);
-                todayFoodPacksConsumed += foodConsumed;
-
-                if (showDebugInfo)
-                {
-                    Debug.Log($"{gameObject.name} fed {totalPeopleToFeed} people after {consumptionRoundInterval} rounds, consumed {foodConsumed}/{foodNeeded} meals");
-
-                    if (foodConsumed < foodNeeded)
-                    {
-                        Debug.Log($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
-                    }
-                }
-
-                GameLogPanel.Instance.LogResourceChange($"{gameObject.name} fed {totalPeopleToFeed} people after {consumptionRoundInterval} rounds, consumed {foodConsumed}/{foodNeeded} meals");
-                if (foodConsumed < foodNeeded)
-                {
-                    GameLogPanel.Instance.LogResourceChange($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
-                }
-            }
-
-            // Reset counter
-            roundsSinceLastConsumption = 0;
+            if (ConsumeFoodForPopulationOncePerRound($"after {consumptionRoundInterval} rounds"))
+                roundsSinceLastConsumption = 0;
         }
         else
         {
@@ -212,7 +125,65 @@ public class BuildingResourceStorage : MonoBehaviour
             GameLogPanel.Instance.LogResourceChange($"{gameObject.name} consumption cycle: {roundsSinceLastConsumption}/{consumptionRoundInterval} rounds");
         }
     }
-    
+
+    /// <summary>
+    /// Runs ConsumeFoodForPopulation at most once per round, no matter how many times it's
+    /// requested — a single "deliver enough for two rounds" request can arrive as several
+    /// separate vehicle drop-offs (destination stock split across kitchens/vehicle capacity),
+    /// and each one calls AddResource. Without this guard every one of those arrivals would
+    /// independently re-feed the whole population, consuming far more than one round's need.
+    /// Returns true if consumption actually ran (so callers know whether to reset their own
+    /// round-interval counters).
+    /// </summary>
+    bool ConsumeFoodForPopulationOncePerRound(string reasonSuffix)
+    {
+        if (GlobalClock.Instance == null)
+        {
+            ConsumeFoodForPopulation(reasonSuffix);
+            return true;
+        }
+
+        int roundKey = GlobalClock.Instance.GetCurrentDay() * 100 + GlobalClock.Instance.GetCurrentTimeSegment();
+        if (roundKey == lastConsumptionRoundKey) return false;
+
+        lastConsumptionRoundKey = roundKey;
+        ConsumeFoodForPopulation(reasonSuffix);
+        return true;
+    }
+
+    /// <summary>
+    /// Feeds everyone currently at this facility one consumption cycle's worth of food
+    /// (population count × foodPerPersonPerNRounds), deducting from storage. This is the single
+    /// place food is ever consumed — called both by the round-based timer above and immediately
+    /// when a food delivery arrives (see AddResource), so there is exactly one consumption path.
+    /// Go through ConsumeFoodForPopulationOncePerRound rather than calling this directly.
+    /// </summary>
+    void ConsumeFoodForPopulation(string reasonSuffix)
+    {
+        int totalPeopleToFeed = GetTotalPeopleCount();
+        int foodNeeded = totalPeopleToFeed * foodPerPersonPerNRounds;
+
+        if (foodNeeded <= 0) return;
+
+        int foodConsumed = RemoveResource(ResourceType.FoodPacks, foodNeeded);
+        if (DailyReportData.Instance != null)
+            DailyReportData.Instance.RecordFoodConsumptionCumulative(foodConsumed, foodNeeded);
+        todayFoodPacksConsumed += foodConsumed;
+
+        if (showDebugInfo)
+        {
+            Debug.Log($"{gameObject.name} fed {totalPeopleToFeed} people {reasonSuffix}, consumed {foodConsumed}/{foodNeeded} meals");
+
+            if (foodConsumed < foodNeeded)
+                Debug.Log($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
+        }
+
+        GameLogPanel.Instance.LogResourceChange($"{gameObject.name} fed {totalPeopleToFeed} people {reasonSuffix}, consumed {foodConsumed}/{foodNeeded} meals");
+        if (foodConsumed < foodNeeded)
+            GameLogPanel.Instance.LogResourceChange($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
+    }
+
+
     int GetTotalPeopleCount()
     {
         int totalPeople = 0;
@@ -265,17 +236,45 @@ public class BuildingResourceStorage : MonoBehaviour
             }
         }
         
-        // Add starting meals at the start of each day
-        if (startingFoodPacks > 0)
+        // Start the new day fully stocked (e.g. Kitchens), or with a flat starting amount.
+        if (fillFoodToCapacityDaily)
+        {
+            FillFoodToCapacityIfConfigured();
+        }
+        else if (startingFoodPacks > 0)
         {
             int actualAdded = AddResource(ResourceType.FoodPacks, startingFoodPacks);
             if (showDebugInfo)
                 Debug.Log($"{gameObject.name} received {actualAdded} starting meals at start of day");
             GameLogPanel.Instance.LogResourceChange($"{gameObject.name} received {actualAdded} starting meals at start of day");
         }
-        
     }
-    
+
+    /// <summary>
+    /// Tops FoodPacks up to full capacity (used by storages with fillFoodToCapacityDaily,
+    /// e.g. Kitchens) — called at initial game start and at each day's reset.
+    /// </summary>
+    void FillFoodToCapacityIfConfigured()
+    {
+        if (!fillFoodToCapacityDaily) return;
+
+        Building building = GetComponent<Building>();
+        if (building != null && !building.IsOperational())
+        {
+            if (showDebugInfo)
+                Debug.Log($"{gameObject.name} not stocked - building not operational (Status: {building.GetCurrentStatus()})");
+            return;
+        }
+
+        int missing = GetResourceCapacity(ResourceType.FoodPacks) - GetResourceAmount(ResourceType.FoodPacks);
+        if (missing <= 0) return;
+
+        int actualAdded = AddResource(ResourceType.FoodPacks, missing);
+        if (showDebugInfo)
+            Debug.Log($"{gameObject.name} stocked to full capacity: +{actualAdded} food packs");
+        GameLogPanel.Instance.LogResourceChange($"{gameObject.name} stocked to full capacity: +{actualAdded} food packs");
+    }
+
     /// <summary>
     /// Add resources to storage
     /// </summary>
@@ -301,7 +300,17 @@ public class BuildingResourceStorage : MonoBehaviour
         if (showDebugInfo && actualAdded > 0)
             Debug.Log($"{gameObject.name} received {actualAdded} {type} ({currentResources[type]}/{capacity})");
         GameLogPanel.Instance.LogResourceChange($"{gameObject.name} received {actualAdded} {type} ({currentResources[type]}/{capacity})");
-        
+
+        // Clients eat as soon as food arrives, rather than waiting for the next round-based
+        // consumption tick. Guarded to once per round (see ConsumeFoodForPopulationOncePerRound)
+        // so a single request fulfilled via several separate vehicle drop-offs in the same round
+        // doesn't feed everyone once per drop-off.
+        if (type == ResourceType.FoodPacks && actualAdded > 0 && enablePopulationBasedConsumption)
+        {
+            if (ConsumeFoodForPopulationOncePerRound("immediately after delivery"))
+                roundsSinceLastConsumption = 0;
+        }
+
         return actualAdded;
     }
     
@@ -461,14 +470,6 @@ public class ResourceCapacity
 {
     public ResourceType resourceType;
     public int maxCapacity;
-}
-
-[System.Serializable]
-public class RoundResourceProduction
-{
-    public ResourceType resourceType;
-    public int amountPerRound;
-    public List<ResourceAmount> requiredResources = new List<ResourceAmount>(); // input requirements
 }
 
 [System.Serializable]

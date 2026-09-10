@@ -48,7 +48,8 @@ public enum DeliveryQuantityType
 {
     Fixed,          // Use deliveryQuantity value
     Percentage,     // Use deliveryPercentage of available resources
-    All             // Move all available resources
+    All,            // Move all available resources
+    PopulationBased // Use the destination's current need (population x consumption rate, minus what it already has) — FoodPacks only
 }
 
 public enum DeliveryDestinationType
@@ -116,6 +117,7 @@ public class GameTask
     public TaskStatus status;
     public string affectedFacility;      // GameObject name — used for delivery lookup
     public string facilityDisplayName;   // Human-readable name — used for UI display only
+    public int foodAmount;               // Snapshot of the facility's current food need at task creation — for [food_amount] display only
     public string description;
     public Sprite taskImage;
 
@@ -180,9 +182,9 @@ public class GameTask
     }
 
     /// <summary>
-    /// Substitutes task-data placeholders — [facility_name], [facility_name_plain], and
-    /// [relocation_rounds] — with their live values. Use this everywhere a task's title,
-    /// description, or agent messages are displayed.
+    /// Substitutes task-data placeholders — [facility_name], [facility_name_plain],
+    /// [relocation_rounds], and [food_amount] — with their live values. Use this everywhere a
+    /// task's title, description, or agent messages are displayed.
     ///
     /// [facility_name] renders as a clickable blue link that highlights the facility on the map.
     /// [facility_name_plain] renders the same name as plain text, no link/color — use it wherever
@@ -190,6 +192,8 @@ public class GameTask
     /// since a hardcoded link color would clash with it.
     /// Pass plainFacilityName: true to render [facility_name] itself as plain for a given call,
     /// without having to change the underlying task data.
+    /// [food_amount] is a snapshot of the requesting facility's food need taken when this task
+    /// was created (see foodAmount) — the current round's request only, not any follow-up task.
     /// </summary>
     public string ResolvePlaceholders(string text, bool plainFacilityName = false)
     {
@@ -219,6 +223,11 @@ public class GameTask
         {
             int rounds = ClientRelocationHandler.Instance != null ? ClientRelocationHandler.Instance.relocationDelayRounds : 0;
             text = text.Replace("[relocation_rounds]", rounds.ToString());
+        }
+
+        if (text.Contains("[food_amount]"))
+        {
+            text = text.Replace("[food_amount]", foodAmount.ToString());
         }
 
         return text;
@@ -460,6 +469,7 @@ public class TaskSystem : MonoBehaviour
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
+            GlobalClock.Instance.OnSimulationEnded += OnSimulationEndedCheckDayComplete;
         }
 
         // Listen for delivery task completion events
@@ -730,6 +740,51 @@ public class TaskSystem : MonoBehaviour
                     reason = $"Delivery failed for task: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}.";
                 TaskResultManager.Instance.ShowTaskResult(task, reason);
             }
+        }
+    }
+
+    /// <summary>
+    /// Fires after every round transition. Only acts when the round that just ended was the
+    /// last one of the day (GlobalClock.isWaitingForReport becomes true) — i.e. the moment the
+    /// "Proceed" button turns into "End Today". Food spoils overnight, so any delivery still
+    /// queued or in transit at that point can never arrive and is cancelled outright.
+    /// </summary>
+    void OnSimulationEndedCheckDayComplete()
+    {
+        if (GlobalClock.Instance != null && GlobalClock.Instance.isWaitingForReport)
+        {
+            CancelIncompleteFoodDeliveries();
+        }
+    }
+
+    void CancelIncompleteFoodDeliveries()
+    {
+        DeliverySystem ds = DeliverySystem.Instance;
+        if (ds == null) return;
+
+        var incompleteFoodDeliveries = ds.GetPendingTasks()
+            .Concat(ds.GetActiveTasks())
+            .Where(t => t.cargoType == ResourceType.FoodPacks)
+            .ToList();
+
+        foreach (DeliveryTask delivery in incompleteFoodDeliveries)
+        {
+            ds.CancelDeliveryTask(delivery.taskId);
+
+            GameTask parentTask = activeTasks.FirstOrDefault(t =>
+                t.linkedDeliveryTaskIds != null && t.linkedDeliveryTaskIds.Contains(delivery.taskId));
+
+            if (parentTask != null)
+            {
+                string reason = $"The day ended before this delivery could arrive — {delivery.quantity} meals from " +
+                    $"{delivery.sourceBuilding?.name ?? "the source"} to {delivery.destinationBuilding?.name ?? "the destination"} " +
+                    "were not delivered in time and the request has failed. Food cannot be delivered overnight.";
+                HandleDeliveryFailure(parentTask, reason);
+            }
+
+            if (showDebugInfo)
+                Debug.Log($"[TaskSystem] Cancelled incomplete food delivery {delivery.taskId} at end of day ({delivery.quantity} meals {delivery.sourceBuilding?.name} -> {delivery.destinationBuilding?.name})");
+            GameLogPanel.Instance?.LogTaskEvent($"Cancelled incomplete food delivery {delivery.taskId} at end of day ({delivery.quantity} meals {delivery.sourceBuilding?.name} -> {delivery.destinationBuilding?.name})");
         }
     }
 
@@ -1948,10 +2003,41 @@ public class TaskSystem : MonoBehaviour
         newTask.affectedFacility = facilityName;
         newTask.facilityDisplayName = displayName;
 
+        BuildingResourceStorage destStorage = specificFacility?.GetComponent<BuildingResourceStorage>();
+        if (destStorage != null)
+        {
+            if (destStorage.enablePopulationBasedConsumption)
+            {
+                // Facility actually consumes food over time (Shelter, Motel) — need is derived
+                // from population x consumption rate, same as the normal per-round feeding.
+                newTask.foodAmount = destStorage.GetFoodNeed();
+            }
+            else
+            {
+                // No consumption rate (e.g. Community) — this facility is never fed by the
+                // per-round cycle, so its "need" is whatever this specific task's choices
+                // actually ask for, not a population formula. Recording this facility's food
+                // demand for the day is the caller's responsibility (see
+                // CommunityFoodDepletionManager), since only the caller knows whether this
+                // particular quantity is the definitive, final amount for the day.
+                newTask.foodAmount = GetPrimaryFoodRequestAmount(newTask);
+            }
+        }
+
         if (showDebugInfo)
             Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
         GameLogPanel.Instance.LogTaskEvent($"Generated task from database: {taskData.taskId} for facility {facilityName}");
         return newTask;
+    }
+
+    /// <summary>
+    /// The fixed/authored quantity this task's primary food-delivery choice asks for — used as
+    /// the "amount requested" for facilities with no consumption rate (see CreateTaskFromDatabase).
+    /// </summary>
+    int GetPrimaryFoodRequestAmount(GameTask task)
+    {
+        AgentChoice foodChoice = task.agentChoices.FirstOrDefault(c => c.deliveryCargoType == ResourceType.FoodPacks);
+        return foodChoice?.deliveryQuantity ?? 0;
     }
 
     [ContextMenu("Create Test Food Demand Task")]

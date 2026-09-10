@@ -36,6 +36,12 @@ public class TaskData : ScriptableObject
     public List<FacilityStatusTrigger> facilityStatusTriggers = new List<FacilityStatusTrigger>();
     public List<WeatherTrigger> weatherTriggers = new List<WeatherTrigger>();
 
+    [Tooltip("Hard cutoff, independent of the triggers above (and checked before any of them, " +
+        "including probability rolls) — this task will never be generated after this round of " +
+        "the day, no matter what the triggers say. Uses the same 1-4 'Round N' numbering shown " +
+        "to the player. 0 = no limit.")]
+    public int latestGenerationRound = 0;
+
     public bool requireAllTriggers = true; // AND vs OR logic
 
     [Header("Facility Targeting")]

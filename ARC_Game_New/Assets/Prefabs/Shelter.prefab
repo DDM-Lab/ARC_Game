@@ -272,6 +272,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   buildingType: 1
   originalSiteId: 0
+  buildingName: 
   currentStatus: 0
   capacity: 10
   operationalEfficiency: 1
@@ -304,15 +305,15 @@ MonoBehaviour:
   - resourceType: 0
     maxCapacity: 100
   - resourceType: 1
-    maxCapacity: 100
+    maxCapacity: 200
   startingResources: []
   startingFoodPacks: 0
   enableFoodWaste: 1
-  roundProduction: []
+  fillFoodToCapacityDaily: 0
   enablePopulationBasedConsumption: 1
   foodPerPersonPerNRounds: 1
-  consumptionRoundInterval: 4
-  workersConsumeFoodToo: 1
+  consumptionRoundInterval: 2
+  workersConsumeFoodToo: 0
   showDebugInfo: 1
 --- !u!114 &-3025893776972649351
 MonoBehaviour:

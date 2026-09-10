@@ -300,15 +300,26 @@ public class ClientStayTracker : MonoBehaviour
 
     void TriggerNonCaseworkDeparture(ClientGroup group)
     {
+        int departing = group.clientsWithoutCaseworkNeed;
+
         if (showDebugInfo)
-            Debug.Log($"[ClientStayTracker] Group {group.groupName}: {group.clientsWithoutCaseworkNeed} clients without casework departed at round {currentRound}.");
+            Debug.Log($"[ClientStayTracker] Group {group.groupName}: {departing} clients without casework departed at round {currentRound}.");
 
         // Notify buildings to get rid of clients
         OnCaseworklessClientsDeparted?.Invoke(group);
 
-        DailyReportData.Instance?.RecordDeparture(group.clientsWithoutCaseworkNeed);
+        DailyReportData.Instance?.RecordDeparture(departing);
 
-        group.clientCount -= group.clientsWithoutCaseworkNeed;
+        // Actually remove them from the facility's real population count. This bookkeeping
+        // (group.clientCount) only tracked casework stay-duration — nothing previously removed
+        // the departing clients from BuildingResourceStorage itself, so population (and anything
+        // derived from it, like food need) stayed stale after a natural departure.
+        if (departing > 0 && group.currentFacility != null)
+        {
+            group.currentFacility.GetComponent<BuildingResourceStorage>()?.RemoveResource(ResourceType.Population, departing);
+        }
+
+        group.clientCount -= departing;
         group.clientsWithoutCaseworkNeed = 0;
     }
 

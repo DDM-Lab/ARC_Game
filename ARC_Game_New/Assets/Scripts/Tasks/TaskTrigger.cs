@@ -111,23 +111,24 @@ public class ResourceTrigger : TaskTrigger
         Empty,      // resource == 0
         Full,       // resource >= capacity
         LessThan,   // resource < threshold
-        MoreThan    // resource > threshold
+        MoreThan,   // resource > threshold
+        NeedsFood   // population-based food need > 0 (BuildingResourceStorage.GetFoodNeed()) — ignores resourceThreshold
     }
-    
+
     public override bool CheckCondition()
     {
         Building[] buildings = Object.FindObjectsOfType<Building>();
-        
+
         foreach (Building building in buildings)
         {
             if (building.GetBuildingType() == facilityType && building.IsOperational())
             {
                 BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
                 if (storage == null) continue;
-                
+
                 int currentResource = storage.GetResourceAmount(resourceType);
                 int capacity = storage.GetResourceCapacity(resourceType);
-                
+
                 switch (condition)
                 {
                     case ResourceCondition.Empty:
@@ -142,17 +143,20 @@ public class ResourceTrigger : TaskTrigger
                     case ResourceCondition.MoreThan:
                         if (currentResource > resourceThreshold) return true;
                         break;
+                    case ResourceCondition.NeedsFood:
+                        if (storage.GetFoodNeed() > 0) return true;
+                        break;
                 }
             }
         }
-        
+
         return false;
     }
-    
+
     public override string GetDescription()
     {
         return $"{facilityType} {resourceType} {condition}" +
-               (condition == ResourceCondition.LessThan || condition == ResourceCondition.MoreThan 
+               (condition == ResourceCondition.LessThan || condition == ResourceCondition.MoreThan
                 ? $" {resourceThreshold}" : "");
     }
 }

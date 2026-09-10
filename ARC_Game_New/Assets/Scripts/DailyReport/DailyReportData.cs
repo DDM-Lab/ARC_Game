@@ -65,7 +65,12 @@ public class DailyReportData : MonoBehaviour
     private int cumulativeFoodPacksConsumedByClients = 0;  // record
     private int cumulativeFoodPacksNeededByClients = 0;    // record
     private int cumulativeFoodPacksWasted = 0;            // record
-                                        
+
+    // Communities have no consumption rate — their demand is the sum of food-request task
+    // quantities generated for them, tracked separately from the consumption-rate "clients" above.
+    private int todayCommunityFoodDemand = 0;
+    private int cumulativeCommunityFoodDemand = 0;
+
 
 
     [Header("Cumulative Lodging")]
@@ -140,14 +145,6 @@ public class DailyReportData : MonoBehaviour
             taskSystem.OnTaskCreated += OnTaskCreated;
         }
         
-        // FIX: Only subscribe to OnSimulationStarted (for food production tracking).
-        // REMOVED OnDayChanged subscription — see PrepareForNewDay() comments.
-        if (GlobalClock.Instance != null)
-        {
-            GlobalClock.Instance.OnSimulationStarted += OnRoundStarted;
-        }
-
-
         //NEW
         GlobalClock.OnRoundEnd += AccumulateRoundMetrics;
 
@@ -231,6 +228,7 @@ public class DailyReportData : MonoBehaviour
             Debug.LogWarning("budgetSystem null during RecordDayStartMetrics - will retry in GenerateDailyReport");
         }
         dayStartPopulation = CalculateTotalPopulation();
+        todayFoodProduced = CalculateKitchenProductionCapacity();
     }
 
 
@@ -262,11 +260,6 @@ public class DailyReportData : MonoBehaviour
             todayCreatedTasks.Add(task);
             processedTaskIds.Add(task.taskId);
         }
-    }
-    
-    void OnRoundStarted()
-    {
-        TrackFoodProduction();
     }
     
     public void PrepareForNewDay()
@@ -320,6 +313,7 @@ public class DailyReportData : MonoBehaviour
         todayWorkerTrainingCost = 0f;
 
         todayWorkersReleased = 0;
+        todayCommunityFoodDemand = 0;
     }
 
     //NEW
@@ -413,6 +407,20 @@ public class DailyReportData : MonoBehaviour
     {
         cumulativeWorkerTrainingCost += amount;
     }
+
+    /// <summary>
+    /// Called once when a food-request task is generated for a facility with no consumption rate
+    /// (e.g. Community) — see TaskSystem.CreateTaskFromDatabase. Not touched by fulfillment,
+    /// multi-delivery, or later rounds, so each task counts toward today's demand exactly once.
+    /// </summary>
+    public void RecordCommunityFoodDemand(int amount)
+    {
+        todayCommunityFoodDemand += amount;
+        cumulativeCommunityFoodDemand += amount;
+    }
+
+    public int GetTodayCommunityFoodDemand() => todayCommunityFoodDemand;
+    public int GetCumulativeCommunityFoodDemand() => cumulativeCommunityFoodDemand;
 
     public int GetCumulativeFoodPacksConsumedByClients() => cumulativeFoodPacksConsumedByClients;
     public int GetCumulativeFoodPacksNeededByClients() => cumulativeFoodPacksNeededByClients;
@@ -596,6 +604,7 @@ public class DailyReportData : MonoBehaviour
         metrics.foodConsumed = CalculateFoodConsumed();
         metrics.foodWasted = todayFoodWasted;
         metrics.wastedFoodPacks = todayFoodWasted;
+        metrics.communityFoodDemand = todayCommunityFoodDemand;
         metrics.expiredFoodPacks = todayExpiredFood;
         metrics.currentFoodInStorage = CalculateCurrentFoodStorage();
         
@@ -892,16 +901,18 @@ public class DailyReportData : MonoBehaviour
         return totalVacant;
     }
     
-    void TrackFoodProduction()
+    /// <summary>
+    /// Kitchens produce their full FoodPacks capacity exactly once, at the start of the day
+    /// (see BuildingResourceStorage.fillFoodToCapacityDaily). So "today's production" is simply
+    /// the capacity of every kitchen that was operational at that moment.
+    /// </summary>
+    int CalculateKitchenProductionCapacity()
     {
-        Building[] kitchens = FindObjectsOfType<Building>()
-            .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational()).ToArray();
-        foreach (var kitchen in kitchens)
-        {
-            todayFoodProduced += 10;
-        }
+        return FindObjectsOfType<Building>()
+            .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
+            .Sum(b => b.GetComponent<BuildingResourceStorage>()?.GetResourceCapacity(ResourceType.FoodPacks) ?? 0);
     }
-    
+
     // =========================================================================
     // PUBLIC TRACKING METHODS
     // =========================================================================

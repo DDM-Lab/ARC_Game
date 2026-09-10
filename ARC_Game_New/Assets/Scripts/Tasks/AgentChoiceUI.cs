@@ -28,7 +28,7 @@ public class AgentChoiceUI : MonoBehaviour
     private bool isValid = true;
     private string validationMessage = "";
 
-    public void Initialize(AgentChoice agentChoice, TaskDetailUI parent, System.Action<AgentChoice> onPreviewRoute = null)
+    public void Initialize(AgentChoice agentChoice, TaskDetailUI parent, System.Action<AgentChoice> onPreviewRoute = null, GameTask task = null)
     {
         if (agentChoice == null)
         {
@@ -39,8 +39,11 @@ public class AgentChoiceUI : MonoBehaviour
         choice = agentChoice;
         parentUI = parent;
 
+        GameTask resolvingTask = task ?? parent?.CurrentTask;
         if (choiceText != null)
-            choiceText.text = agentChoice.choiceText ?? "";
+            choiceText.text = resolvingTask != null
+                ? resolvingTask.ResolvePlaceholders(agentChoice.choiceText ?? "")
+                : (agentChoice.choiceText ?? "");
 
         // Display agent reasoning/description if available
         if (descriptionText != null)
@@ -138,9 +141,9 @@ public class AgentChoiceUI : MonoBehaviour
         }
     }
     
-    public void InitializeAsHistorical(AgentChoice choice, bool wasSelected = false)
+    public void InitializeAsHistorical(AgentChoice choice, bool wasSelected = false, GameTask task = null)
     {
-        Initialize(choice, null); // parent=null disables preview button automatically
+        Initialize(choice, null, null, task); // parent=null disables preview button automatically
 
         if (choiceButton != null)
         {

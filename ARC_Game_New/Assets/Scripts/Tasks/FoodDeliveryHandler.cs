@@ -28,7 +28,7 @@ public class FoodDeliveryHandler : MonoBehaviour
     /// <summary>
     /// Call from TaskDetailUI before showing a food-delivery choice as valid.
     /// </summary>
-    public bool CanExecute(GameTask parentTask, int requestedQuantity, out string errorMessage)
+    public bool CanExecute(GameTask parentTask, AgentChoice choice, out string errorMessage)
     {
         errorMessage = "";
 
@@ -42,35 +42,44 @@ public class FoodDeliveryHandler : MonoBehaviour
         DeliverySystem ds = DeliverySystem.Instance;
         if (ds == null) { errorMessage = "DeliverySystem not found"; return false; }
 
+        int requestedQuantity = ResolveQuantity(choice, destination);
+
         // How much does the destination still actually need, after accounting for already-inbound food?
         int alreadyInbound = ds.GetReservedIncomingQuantity(destination, ResourceType.FoodPacks);
         int effectiveNeed   = Mathf.Max(0, requestedQuantity - alreadyInbound);
 
         if (effectiveNeed <= 0)
         {
-            errorMessage = $"{alreadyInbound} meals already inbound — need is covered";
+            errorMessage = alreadyInbound > 0
+                ? $"{alreadyInbound} meals already inbound — need is covered"
+                : "No food is currently needed here";
             return false;
         }
 
-        // Is there at least enough food across all kitchens (minus already-outbound) to partially help?
-        int totalEffective = GetTotalEffectiveFood(ds);
-        if (totalEffective <= 0)
+        // Immediate deliveries don't draw from kitchens or use a vehicle (see ExecuteImmediate) —
+        // the checks below only apply to the queued, vehicle-based path.
+        if (!choice.immediateDelivery)
         {
-            int totalRawStock = GetTotalRawFood();
-            errorMessage = totalRawStock > 0
-                ? "All available meals are already scheduled for other deliveries"
-                : "No meals available across any kitchen";
-            return false;
-        }
+            // Is there at least enough food across all kitchens (minus already-outbound) to partially help?
+            int totalEffective = GetTotalEffectiveFood(ds);
+            if (totalEffective <= 0)
+            {
+                int totalRawStock = GetTotalRawFood();
+                errorMessage = totalRawStock > 0
+                    ? "All available meals are already scheduled for other deliveries"
+                    : "No meals available across any kitchen";
+                return false;
+            }
 
-        // At least one vehicle must be capable
-        bool hasVehicle = FindObjectsOfType<Vehicle>()
-            .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.FoodPacks)
-                   && v.GetCurrentStatus() != VehicleStatus.Damaged);
-        if (!hasVehicle)
-        {
-            errorMessage = "No undamaged vehicle available for food delivery";
-            return false;
+            // At least one vehicle must be capable
+            bool hasVehicle = FindObjectsOfType<Vehicle>()
+                .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.FoodPacks)
+                       && v.GetCurrentStatus() != VehicleStatus.Damaged);
+            if (!hasVehicle)
+            {
+                errorMessage = "No undamaged vehicle available for food delivery";
+                return false;
+            }
         }
 
         return true;
@@ -97,13 +106,14 @@ public class FoodDeliveryHandler : MonoBehaviour
         DeliverySystem ds = DeliverySystem.Instance;
         if (ds == null) return false;
 
+        int requestedQuantity = ResolveQuantity(choice, destination);
         int alreadyInbound = ds.GetReservedIncomingQuantity(destination, ResourceType.FoodPacks);
-        int remaining = Mathf.Max(0, choice.deliveryQuantity - alreadyInbound);
+        int remaining = Mathf.Max(0, requestedQuantity - alreadyInbound);
 
         if (remaining <= 0)
         {
             if (showDebugInfo)
-                Debug.Log($"[FoodDeliveryTaskGenerator] Inbound deliveries already cover {alreadyInbound}/{choice.deliveryQuantity} for {destination.name}");
+                Debug.Log($"[FoodDeliveryTaskGenerator] Inbound deliveries already cover {alreadyInbound}/{requestedQuantity} for {destination.name}");
             TaskSystem.Instance.CompleteTask(parentTask);
             return true;
         }
@@ -151,7 +161,7 @@ public class FoodDeliveryHandler : MonoBehaviour
     /// Immediately transfers food from kitchens to destination (no vehicle needed).
     /// Used for "airdrop" / emergency-bypass choices.
     /// </summary>
-    public void ExecuteImmediate(GameTask parentTask, int requestedQuantity)
+    public void ExecuteImmediate(GameTask parentTask, AgentChoice choice)
     {
         MonoBehaviour destination = TaskSystem.Instance.FindTriggeringFacility(parentTask);
         if (destination == null) return;
@@ -159,6 +169,7 @@ public class FoodDeliveryHandler : MonoBehaviour
         BuildingResourceStorage destStorage = GetStorage(destination);
         if (destStorage == null) return;
 
+        int requestedQuantity = ResolveQuantity(choice, destination);
         int amount = requestedQuantity > 0 ? requestedQuantity : destStorage.GetAvailableSpace(ResourceType.FoodPacks);
         destStorage.AddResource(ResourceType.FoodPacks, amount);
 
@@ -202,8 +213,9 @@ public class FoodDeliveryHandler : MonoBehaviour
         DeliverySystem ds = DeliverySystem.Instance;
         if (ds == null) return plan;
 
+        int requestedQuantity = ResolveQuantity(choice, destination);
         int alreadyInbound = ds.GetReservedIncomingQuantity(destination, ResourceType.FoodPacks);
-        int remaining = Mathf.Max(0, choice.deliveryQuantity - alreadyInbound);
+        int remaining = Mathf.Max(0, requestedQuantity - alreadyInbound);
         if (remaining <= 0) return plan;
 
         foreach (var (kitchen, effectiveStock) in GetKitchensSorted(ds, destination.transform.position, choice.prioritizeNearestSource))
@@ -235,6 +247,29 @@ public class FoodDeliveryHandler : MonoBehaviour
                 int outbound = ds.GetReservedOutgoingQuantity(b, ResourceType.FoodPacks);
                 return Mathf.Max(0, stock - outbound);
             });
+    }
+
+    /// <summary>
+    /// Resolves a choice's actual requested quantity. PopulationBased ignores the authored
+    /// deliveryQuantity and instead asks the destination how much it actually needs right now
+    /// (population x consumption rate, minus what's already in storage) — see
+    /// BuildingResourceStorage.GetFoodNeed(). deliveryPercentage acts as a configurable multiplier
+    /// on that need — 100 = exactly the current need, 200 = double (e.g. "cover this round plus the
+    /// follow-up"), 0/unset defaults to 100 for backward compatibility. Every other quantityType
+    /// uses the fixed deliveryQuantity value as authored (Percentage/All aren't meaningful for food,
+    /// which draws from many kitchens rather than one source, so they fall back to Fixed here).
+    /// </summary>
+    int ResolveQuantity(AgentChoice choice, MonoBehaviour destination)
+    {
+        if (choice.quantityType == DeliveryQuantityType.PopulationBased)
+        {
+            BuildingResourceStorage destStorage = GetStorage(destination);
+            int need = destStorage?.GetFoodNeed() ?? 0;
+            float multiplier = choice.deliveryPercentage > 0 ? choice.deliveryPercentage / 100f : 1f;
+            return Mathf.RoundToInt(need * multiplier);
+        }
+
+        return choice.deliveryQuantity;
     }
 
     BuildingResourceStorage GetStorage(MonoBehaviour building)

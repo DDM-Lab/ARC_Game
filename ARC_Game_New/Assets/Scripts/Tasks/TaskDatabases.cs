@@ -18,9 +18,10 @@ public class TaskDatabase : ScriptableObject
     public List<TaskData> CheckTriggeredTasks()
     {
         List<TaskData> triggeredTasks = new List<TaskData>();
-        
+
         foreach (TaskData taskData in allTasks)
-        {  
+        {
+            if (!IsWithinGenerationRoundLimit(taskData)) continue;
 
             if (AreTriggersActivated(taskData))
             {
@@ -34,6 +35,21 @@ public class TaskDatabase : ScriptableObject
         return triggeredTasks;
     }
     
+    /// <summary>
+    /// Hard cutoff on when a task may be generated, independent of (and checked before) the
+    /// AND/OR trigger combination below — so it applies unconditionally, including skipping the
+    /// probability roll entirely once past the limit. taskData.latestGenerationRound uses the
+    /// same 1-indexed "Round N" numbering shown to the player; 0 means no limit.
+    /// </summary>
+    bool IsWithinGenerationRoundLimit(TaskData taskData)
+    {
+        if (taskData.latestGenerationRound <= 0) return true;
+        if (GlobalClock.Instance == null) return true;
+
+        int currentRoundInDay = GlobalClock.Instance.GetCurrentTimeSegment() + 1;
+        return currentRoundInDay <= taskData.latestGenerationRound;
+    }
+
     /// <summary>
     /// Check if all trigger conditions are met for a task
     /// </summary>
@@ -192,7 +208,8 @@ public class TaskDatabase : ScriptableObject
         foreach (TaskData taskData in allTasks)
         {
             if (taskData == null) continue;
-            
+            if (!IsWithinGenerationRoundLimit(taskData)) continue;
+
             // For global tasks, check triggers once globally
             if (taskData.isGlobalTask)
             {
@@ -318,6 +335,8 @@ public class TaskDatabase : ScriptableObject
                 return currentResource < trigger.resourceThreshold;
             case ResourceTrigger.ResourceCondition.MoreThan:
                 return currentResource > trigger.resourceThreshold;
+            case ResourceTrigger.ResourceCondition.NeedsFood:
+                return storage.GetFoodNeed() > 0;
             default:
                 return false;
         }

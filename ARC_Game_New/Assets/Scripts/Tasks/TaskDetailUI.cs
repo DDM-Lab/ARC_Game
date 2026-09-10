@@ -529,7 +529,7 @@ public class TaskDetailUI : MonoBehaviour
                 if (currentTask.status == TaskStatus.Active)
                     choiceUI.Initialize(choice, this);
                 else
-                    choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentTask.selectedChoiceId);
+                    choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentTask.selectedChoiceId, currentTask);
             }
 
             currentConversationItems.Add(choiceItem);
@@ -886,7 +886,7 @@ public class TaskDetailUI : MonoBehaviour
 
         if (immediate)
         {
-            FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice.deliveryQuantity);
+            FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice);
         }
         else
         {
@@ -1268,33 +1268,11 @@ public class TaskDetailUI : MonoBehaviour
             switch (choice.deliveryCargoType)
             {
                 case ResourceType.FoodPacks:
-                {
-                    MonoBehaviour destination = TaskSystem.Instance.FindTriggeringFacility(task);
-                    if (destination == null)
-                    {
-                        errorMessage = $"Cannot find destination facility '{task.affectedFacility}'";
-                        return false;
-                    }
-                    DeliverySystem ds = DeliverySystem.Instance;
-                    if (ds == null) { errorMessage = "DeliverySystem not found"; return false; }
-                    int alreadyInbound = ds.GetReservedIncomingQuantity(destination, ResourceType.FoodPacks);
-                    int effectiveNeed = Mathf.Max(0, choice.deliveryQuantity - alreadyInbound);
-                    if (effectiveNeed <= 0)
-                    {
-                        errorMessage = $"{alreadyInbound} meals already inbound — need is covered";
-                        return false;
-                    }
-                    bool hasVehicle = UnityEngine.Object.FindObjectsOfType<Vehicle>()
-                        .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.FoodPacks)
-                                && v.GetCurrentStatus() != VehicleStatus.Damaged);
-
-                    if (!hasVehicle)
-                    {
-                        errorMessage = "No undamaged vehicle available for food delivery";
-                        return false;
-                    }
-                    return true; 
-                }
+                    // Same validation as queued delivery (including PopulationBased quantity
+                    // resolution) — immediate food only differs in bypassing the vehicle at
+                    // execution time, not in how much food is actually needed.
+                    return FoodDeliveryHandler.Instance != null
+                        && FoodDeliveryHandler.Instance.CanExecute(task, choice, out errorMessage);
 
 
                 case ResourceType.Population:
@@ -1320,7 +1298,7 @@ public class TaskDetailUI : MonoBehaviour
         {
             case ResourceType.FoodPacks:
                 return FoodDeliveryHandler.Instance != null
-                    && FoodDeliveryHandler.Instance.CanExecute(task, choice.deliveryQuantity, out errorMessage);
+                    && FoodDeliveryHandler.Instance.CanExecute(task, choice, out errorMessage);
 
             case ResourceType.Population:
                 // Non-shelter SpecificBuilding (e.g. CaseworkSite): verify it exists on the map.

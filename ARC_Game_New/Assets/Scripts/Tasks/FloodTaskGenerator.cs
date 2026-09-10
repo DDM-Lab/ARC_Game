@@ -106,6 +106,7 @@ public class FloodTaskGenerator : MonoBehaviour
 
         if (originalDelivery.cargoType == ResourceType.FoodPacks)
         {
+            roadBlockageTask.affectedFacility = originalDelivery.destinationBuilding.name;
             CreateFoodBlockageChoices(roadBlockageTask, originalDelivery, blockedVehicle);
         }
         else if (originalDelivery.cargoType == ResourceType.Population)
@@ -131,45 +132,22 @@ public class FloodTaskGenerator : MonoBehaviour
         GameLogPanel.Instance?.LogTaskEvent($"Road blockage: {blockedVehicle.GetVehicleName()} ({phase})");
     }
 
+    // Food already on the blocked vehicle (if any) is treated as spoiled/discarded — it cannot be
+    // recovered, so the only path forward is an emergency immediate delivery of a fresh batch,
+    // priced per meal needed rather than a flat fee.
     void CreateFoodBlockageChoices(GameTask task, DeliveryTask originalDelivery, Vehicle blockedVehicle)
     {
-        // Choice 1: Find alternative route (if possible)
-        AgentChoice altRouteChoice = new AgentChoice(1, "Find alternative route (may take longer)");
-        altRouteChoice.triggersDelivery = true;
-        altRouteChoice.deliveryCargoType = originalDelivery.cargoType;
-        altRouteChoice.deliveryQuantity = originalDelivery.quantity;
-        altRouteChoice.sourceType = DeliverySourceType.ManualAssignment;
-        altRouteChoice.specificSourceName = originalDelivery.sourceBuilding.name;
-        altRouteChoice.destinationType = DeliveryDestinationType.ManualAssignment;
-        altRouteChoice.specificDestinationName = originalDelivery.destinationBuilding.name;
-        altRouteChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5, false, "Problem Solved"));
-        task.agentChoices.Add(altRouteChoice);
+        DiscardVehicleCargo(blockedVehicle, originalDelivery);
 
-        // Choice 2: Send from different kitchen
-        AgentChoice altSourceChoice = new AgentChoice(2, "Send food from nearest available kitchen");
-        altSourceChoice.triggersDelivery = true;
-        altSourceChoice.deliveryCargoType = originalDelivery.cargoType;
-        altSourceChoice.deliveryQuantity = originalDelivery.quantity;
-        altSourceChoice.sourceType = DeliverySourceType.SpecificBuilding;
-        altSourceChoice.sourceBuilding = BuildingType.Kitchen;
-        altSourceChoice.destinationType = DeliveryDestinationType.ManualAssignment;
-        altSourceChoice.specificDestinationName = originalDelivery.destinationBuilding.name;
-        altSourceChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -200, false, "Extra Transport Cost"));
-        altSourceChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 8, false, "Quick Resolution"));
-        task.agentChoices.Add(altSourceChoice);
+        int cost = originalDelivery.quantity * 10;
 
-        // Choice 3: Emergency fast food delivery (expensive)
-        AgentChoice fastDeliveryChoice = new AgentChoice(3, "Emergency fast food delivery ($1000)");
-        fastDeliveryChoice.triggersDelivery = false; // No vehicle needed
-        fastDeliveryChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1000, false, "Emergency Service"));
+        AgentChoice fastDeliveryChoice = new AgentChoice(1, $"Emergency fast food delivery (${cost})");
+        fastDeliveryChoice.immediateDelivery  = true;
+        fastDeliveryChoice.deliveryCargoType  = ResourceType.FoodPacks;
+        fastDeliveryChoice.deliveryQuantity   = originalDelivery.quantity;
+        fastDeliveryChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -cost, false, "Emergency Service"));
         fastDeliveryChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 15, false, "Immediate Relief"));
         task.agentChoices.Add(fastDeliveryChoice);
-
-        // Choice 4: Wait for flood to recede
-        AgentChoice waitChoice = new AgentChoice(4, "Wait for flood to recede (high dissatisfaction)");
-        waitChoice.triggersDelivery = false;
-        waitChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -30, false, "Delayed Response"));
-        task.agentChoices.Add(waitChoice);
     }
 
     // Situation 2: vehicle already loaded clients, now blocked.
@@ -263,9 +241,8 @@ public class FloodTaskGenerator : MonoBehaviour
         immediateRepairChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1200, false, "Repair Cost"));
         repairTask.agentChoices.Add(immediateRepairChoice);
 
-        AgentChoice delayRepairChoice = new AgentChoice(2, "Delay repair (vehicle remains unavailable, Satisfaction - 5)");
+        AgentChoice delayRepairChoice = new AgentChoice(2, "Delay repair (vehicle remains unavailable)");
         delayRepairChoice.triggersDelivery = false;
-        delayRepairChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5, false, "Reduced Capacity"));
         repairTask.agentChoices.Add(delayRepairChoice);
 
         // Store vehicle reference for later repair
@@ -334,6 +311,30 @@ public class FloodTaskGenerator : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"[FloodTaskGenerator] Returned {amount} {delivery.cargoType} to {src.name}");
+    }
+
+    /// <summary>
+    /// Food already loaded on a blocked vehicle can't be salvaged — it spoils. Clears the cargo
+    /// and records it as waste (same accounting as food lost to a day change or overnight cancel).
+    /// </summary>
+    void DiscardVehicleCargo(Vehicle vehicle, DeliveryTask delivery)
+    {
+        if (vehicle == null) return;
+
+        int amount = vehicle.GetCargoAmount(delivery.cargoType);
+        if (amount <= 0) return;
+
+        vehicle.ClearAllCargo();
+
+        if (delivery.cargoType == ResourceType.FoodPacks && DailyReportData.Instance != null)
+        {
+            DailyReportData.Instance.RecordFoodWasted(amount);
+            DailyReportData.Instance.RecordFoodWasteCumulative(amount);
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"[FloodTaskGenerator] Discarded {amount} {delivery.cargoType} from blocked vehicle {vehicle.GetVehicleName()}");
+        GameLogPanel.Instance?.LogResourceChange($"[FloodTaskGenerator] Discarded {amount} {delivery.cargoType} from blocked vehicle {vehicle.GetVehicleName()}");
     }
 
     static string GetBuildingDisplayName(MonoBehaviour building)

@@ -74,6 +74,9 @@ public class DailyReportMetrics
     public int expiredFoodPacks;    // Compatibility alias for expired food
     public int currentFoodInStorage;
     public float mealUsageRate;
+    // Communities have no consumption rate — this is the sum of food-request task quantities
+    // generated for communities today, tracked separately from consumption-rate facilities.
+    public int communityFoodDemand;
     
     [Header("Population Metrics")]
     public int totalPopulation;
