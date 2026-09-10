@@ -34,7 +34,7 @@ public class AgentChoiceUI : MonoBehaviour
     private bool isValid = true;
     private string validationMessage = "";
 
-    public void Initialize(AgentChoice agentChoice, TaskDetailUI parent, System.Action<AgentChoice> onPreviewRoute = null)
+    public void Initialize(AgentChoice agentChoice, TaskDetailUI parent, System.Action<AgentChoice> onPreviewRoute = null, GameTask task = null)
     {
         if (agentChoice == null)
         {
@@ -49,9 +49,16 @@ public class AgentChoiceUI : MonoBehaviour
         // SAME anchored position, so they render on top of each other. Rather
         // than fight the layout, present the whole package as ONE block: a bold
         // title header above the grounded cost/outcome + action list. The second
-        // field is hidden so nothing can overlap.
+        // field is hidden so nothing can overlap. Placeholders ([food_amount],
+        // [facility_name_plain], ...) are resolved against the task (main-bugfixes).
+        GameTask resolvingTask = task ?? parent?.CurrentTask;
         string title = (agentChoice.choiceText ?? "").Trim();
         string body = (agentChoice.agentReasoning ?? "").Trim();
+        if (resolvingTask != null)
+        {
+            title = resolvingTask.ResolvePlaceholders(title, plainFacilityName: true);
+            body = resolvingTask.ResolvePlaceholders(body, plainFacilityName: true);
+        }
         string combined;
         if (title.Length > 0 && body.Length > 0)
             combined = $"<b>{title}</b>\n{body}";
@@ -286,9 +293,9 @@ public class AgentChoiceUI : MonoBehaviour
         }
     }
     
-    public void InitializeAsHistorical(AgentChoice choice, bool wasSelected = false)
+    public void InitializeAsHistorical(AgentChoice choice, bool wasSelected = false, GameTask task = null)
     {
-        Initialize(choice, null); // parent=null disables preview button automatically
+        Initialize(choice, null, null, task); // parent=null disables preview button automatically
 
         if (choiceButton != null)
         {

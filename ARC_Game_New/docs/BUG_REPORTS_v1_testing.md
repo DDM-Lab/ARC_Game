@@ -55,6 +55,46 @@ budget/score totals of old and new runs must not be read against each other. The
 been changed and now diverges from the fixed game by design (first at round 5); re-deriving it is
 the next job.
 
+## Merge of `origin/main-bugfixes` d5e5f683 (branch `v1_merge_test`, 2026-09-10)
+
+Two colleague commits (5d922203 self-walk relocation, d5e5f683 food overhaul) were merged on top of
+`v1_fixes` in a test branch. Eleven files conflicted; resolution policy: their new mechanics win
+(no-vehicle relocation, daily kitchen fill, motel food, community depletion events, overnight food
+cancellation, priced fast delivery on road blockage), our fixes win wherever both touched the same
+line (loader source chain and consumer-side row application, null-safe blockage facility, C.3 refusal
+of covered requests, unified validation/budget gate). Scenes: MainScene = theirs + our five component
+edits (WebSocketManager active/URLs, DebugUI URL, allowNegativeBudget, loader URLs); TutorialScene =
+ours minus the deleted `shelterFoodReq` field.
+
+Defects in the incoming commits, fixed during the merge (their branch still has them):
+- `CommunityFoodDepletionManager` was never placed in a scene, so community depletion (the ONLY
+  source of community food requests now) never ran. Added to MainScene's TaskSystem object.
+- The scene copies of the three communities had `enableFoodWaste: 1`, so their 400 meals were wasted
+  at the first rollover and no depletion could ever fire (their prefab and commit message say never
+  waste). Set to 0.
+- The scene copy of the Motel storage had no FoodPacks capacity and consumption off, so the new
+  Motel food-request tasks could not deliver anywhere. Given their MotelPrefab values (6000, on).
+- The manager read `initialFoodDemandFrequency` from the loader at Start, before the sheet loads.
+  It now waits for GameDataManager, and its draw carries a `draw:CommunityFoodDepletion` mark.
+- `TaskDetailUI.ExecuteFallbackDelivery` did not return on the new self-walk branch (compile error).
+- Task titles/descriptions/choice texts now use placeholders (`[facility_name_plain]`,
+  `[food_amount]`, `[relocation_rounds]`); they were resolved only in the UI, so agents (gym and
+  router payloads) received the raw templates. Resolved in `TaskSystem.GetTaskContext` and
+  `WebSocketManager` too.
+- Self-walk departures/arrivals now go through `ClientStayTracker.HandleSelfWalk{Departure,Arrival}`
+  (casework credited at departure, only lodging destinations register groups) instead of the raw
+  `RemoveClientsByQuantity`/`RegisterClientArrival` calls, which would have registered client
+  groups at casework sites; marks `relocation:queue` / `relocation:arrive` added.
+
+Consequences to note: kitchens no longer produce per round, so `initialKitchenCapacity` lost its
+consumer and was removed from the sheet copy (the daily report uses `initialKitchenFoodCapacity`);
+`initialShelterFoodCapacity` follows their prefab (200); shelters consume every 2 rounds and workers
+no longer eat there (their prefab); the community/motel consumption rulings of 2026-09-09 are
+superseded by their design (communities lose food to events, the motel eats). Verified: 5503, 5504,
+5801 replayed on the merged build, 32 rounds each, zero exceptions; depletion events, community and
+motel requests, self-walk arrivals, overnight cancellations all observed. Recorded actions no longer
+match the changed choice sets, so these captures are smoke tests, not parity evidence.
+
 Regressions found and fixed while verifying:
 
 | entry | status |

@@ -351,8 +351,8 @@ public class WebSocketManager : MonoBehaviour
         TaskContext context = new TaskContext
         {
             taskId = task.taskId,
-            taskTitle = task.taskTitle,
-            taskDescription = task.description,
+            taskTitle = task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true),
+            taskDescription = task.ResolvePlaceholders(task.description, plainFacilityName: true),
             taskType = task.taskType.ToString(),
             affectedFacility = task.affectedFacility,
             roundsRemaining = task.roundsRemaining

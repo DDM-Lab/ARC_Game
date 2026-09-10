@@ -489,7 +489,8 @@ public class AgentConversationUI : MonoBehaviour
         Button taskButton = buttonObj.GetComponent<Button>();
         TextMeshProUGUI buttonText = buttonObj.GetComponentInChildren<TextMeshProUGUI>();
         
-        string label = task.taskTitle;
+        // Plain (no blue link) — this label's color is overridden per-status below, which would clash with a hardcoded link color.
+        string label = task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true);
         if      (task.status == TaskStatus.Expired)    label = "[Expired] " + label;
         else if (task.status == TaskStatus.Completed)  label = "[Complete] " + label;
         else if (task.status == TaskStatus.Incomplete) label = "[Incomplete] " + label;
@@ -883,11 +884,11 @@ public class AgentConversationUI : MonoBehaviour
 
         bool isActive = task.status == TaskStatus.Active;
 
-        DisplaySystemMessage($"=== {task.taskTitle} ===");
+        DisplaySystemMessage($"=== {task.ResolvePlaceholders(task.taskTitle)} ===");
 
         foreach (AgentMessage message in task.agentMessages)
         {
-            AgentMessage resolved = new AgentMessage(task.ResolveFacilityName(message.messageText), message.agentAvatar);
+            AgentMessage resolved = new AgentMessage(task.ResolvePlaceholders(message.messageText), message.agentAvatar);
             resolved.useTypingEffect = message.useTypingEffect;
             resolved.typingSpeed = message.typingSpeed;
             DisplayAgentMessage(resolved);
@@ -922,7 +923,7 @@ public class AgentConversationUI : MonoBehaviour
         AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
         if (choiceUI != null)
         {
-            choiceUI.Initialize(choice, null, PreviewChoiceRoute);
+            choiceUI.Initialize(choice, null, PreviewChoiceRoute, currentSelectedTask);
             //choiceUI.Initialize(choice, null, null);
             choiceUI.choiceButton.onClick.AddListener(() => OnLocalChoiceSelected(choice));
         }
@@ -1277,10 +1278,10 @@ public class AgentConversationUI : MonoBehaviour
         AgentChoiceUI choiceUI = choiceItem.GetComponent<AgentChoiceUI>();
 
         if (choiceUI != null)
-            choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentSelectedTask?.selectedChoiceId);
+            choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentSelectedTask?.selectedChoiceId, currentSelectedTask);
         currentConversationItems.Add(choiceItem);
     }
-    
+
     void DisplayHistoricalNumericalInput(AgentNumericalInput input)
     {
         GameObject inputItem = Instantiate(numericalInputPrefab, conversationContent);

@@ -653,6 +653,10 @@ public class GameConfigLoader : MonoBehaviour
         return loadedInitialStormSpreadChanceMultiplier;
     }
 
+    /// <summary>
+    /// Used by CommunityFoodDepletionManager as its per-round depletion chance for communities
+    /// (-1 = not configured, caller should keep its own Inspector default).
+    /// </summary>
     public float GetInitialFoodDemandFrequency()
     {
         return loadedInitialFoodDemandFrequency;

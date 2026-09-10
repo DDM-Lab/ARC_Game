@@ -401,7 +401,7 @@ public class CategoryTaskManager : MonoBehaviour
         
         if (taskTitle != null)
         {
-            taskTitle.text = task.taskTitle;
+            taskTitle.text = task.ResolvePlaceholders(task.taskTitle);
         }
         else
         {

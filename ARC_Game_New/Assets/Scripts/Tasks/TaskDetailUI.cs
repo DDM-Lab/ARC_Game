@@ -390,15 +390,14 @@ public class TaskDetailUI : MonoBehaviour
             taskImage.sprite = currentTask.taskImage ?? defaultTaskImage;
 
         if (taskTitleText != null)
-            taskTitleText.text = currentTask.taskTitle;
+            taskTitleText.text = currentTask.ResolvePlaceholders(currentTask.taskTitle);
 
         if (facilityText != null)
             facilityText.text = string.IsNullOrEmpty(currentTask.facilityDisplayName) ? currentTask.affectedFacility : currentTask.facilityDisplayName;
 
         if (descriptionText != null)
         {
-            string facilityName = string.IsNullOrEmpty(currentTask.facilityDisplayName) ? currentTask.affectedFacility : currentTask.facilityDisplayName;
-            descriptionText.text = currentTask.description.Replace("[facility_name]", facilityName);
+            descriptionText.text = currentTask.ResolvePlaceholders(currentTask.description);
         }
 
         if (taskTypeImage != null)
@@ -496,7 +495,7 @@ public class TaskDetailUI : MonoBehaviour
             if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy)
                 yield break;
 
-            AgentMessage resolved = new AgentMessage(currentTask.ResolveFacilityName(message.messageText), message.agentAvatar);
+            AgentMessage resolved = new AgentMessage(currentTask.ResolvePlaceholders(message.messageText), message.agentAvatar);
             resolved.useTypingEffect = message.useTypingEffect;
             resolved.typingSpeed = message.typingSpeed;
             yield return StartCoroutine(DisplayAgentMessage(resolved, isFirstTimeShowing));
@@ -580,9 +579,7 @@ public class TaskDetailUI : MonoBehaviour
                         choiceUI.SetValidationState(false, reason);
                 }
                 else
-                {
-                    choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentTask.selectedChoiceId);
-                }
+                    choiceUI.InitializeAsHistorical(choice, choice.choiceId == currentTask.selectedChoiceId, currentTask);
             }
 
             currentConversationItems.Add(choiceItem);
@@ -865,7 +862,7 @@ public class TaskDetailUI : MonoBehaviour
         {
             // Immediate food = external airlift (no kitchen needed). Deferred = from kitchens.
             if (choice.immediateDelivery || FoodDeliveryHandler.Instance == null) return true;
-            return FoodDeliveryHandler.Instance.CanExecute(currentTask, choice.deliveryQuantity, out reason);
+            return FoodDeliveryHandler.Instance.CanExecute(currentTask, choice, out reason);
         }
 
         // "Send to casework site" is return-home processing, not a shelter/motel relocation —
@@ -1184,7 +1181,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
     if (FoodDeliveryHandler.Instance == null) return false;
     if (immediate)
     {
-        int added = FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice.deliveryQuantity);
+        int added = FoodDeliveryHandler.Instance.ExecuteImmediate(currentTask, choice);
         if (added <= 0)
             ShowAgentErrorMessage("Could not deliver food: the destination was not found or has no room.");
         return added > 0;
@@ -1434,6 +1431,15 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
         if (immediate)
         {
             return ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, choice.deliveryQuantity) > 0;
+        }
+        else if (choice.deliveryCargoType == ResourceType.Population)
+        {
+            // Clients (e.g. Shelter -> CaseworkSite) relocate on their own — no Vehicle involved.
+            bool success = ClientRelocationHandler.Instance != null
+                && ClientRelocationHandler.Instance.ExecuteToSpecificDestination(currentTask, source, destination, choice.deliveryQuantity);
+            if (!success)
+                ShowAgentErrorMessage("Could not relocate clients — check destination capacity.");
+            return success;
         }
         else
         {
@@ -1783,33 +1789,11 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
             switch (choice.deliveryCargoType)
             {
                 case ResourceType.FoodPacks:
-                {
-                    MonoBehaviour destination = TaskSystem.Instance.FindTriggeringFacility(task);
-                    if (destination == null)
-                    {
-                        errorMessage = $"Cannot find destination facility '{task.affectedFacility}'";
-                        return false;
-                    }
-                    DeliverySystem ds = DeliverySystem.Instance;
-                    if (ds == null) { errorMessage = "DeliverySystem not found"; return false; }
-                    int alreadyInbound = ds.GetReservedIncomingQuantity(destination, ResourceType.FoodPacks);
-                    int effectiveNeed = Mathf.Max(0, choice.deliveryQuantity - alreadyInbound);
-                    if (effectiveNeed <= 0)
-                    {
-                        errorMessage = $"{alreadyInbound} meals already inbound — need is covered";
-                        return false;
-                    }
-                    bool hasVehicle = UnityEngine.Object.FindObjectsOfType<Vehicle>()
-                        .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.FoodPacks)
-                                && v.GetCurrentStatus() != VehicleStatus.Damaged);
-
-                    if (!hasVehicle)
-                    {
-                        errorMessage = "No undamaged vehicle available for food delivery";
-                        return false;
-                    }
-                    return true; 
-                }
+                    // Same validation as queued delivery (including PopulationBased quantity
+                    // resolution) — immediate food only differs in bypassing the vehicle at
+                    // execution time, not in how much food is actually needed.
+                    return FoodDeliveryHandler.Instance != null
+                        && FoodDeliveryHandler.Instance.CanExecute(task, choice, out errorMessage);
 
 
                 case ResourceType.Population:
@@ -1822,7 +1806,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                     return ClientRelocationHandler.Instance != null
                         && ClientRelocationHandler.Instance.CanExecute(
                             task, choice.deliveryQuantity, toShelter, toMotel,
-                            out errorMessage, requireVehicle: false);
+                            out errorMessage, requiresPathCheck: false);
                 }
 
                 default:
@@ -1835,7 +1819,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
         {
             case ResourceType.FoodPacks:
                 return FoodDeliveryHandler.Instance != null
-                    && FoodDeliveryHandler.Instance.CanExecute(task, choice.deliveryQuantity, out errorMessage);
+                    && FoodDeliveryHandler.Instance.CanExecute(task, choice, out errorMessage);
 
             case ResourceType.Population:
                 // Non-shelter SpecificBuilding (e.g. CaseworkSite): verify it exists on the map.

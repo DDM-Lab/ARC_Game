@@ -408,22 +408,26 @@ public class ClientStayTracker : MonoBehaviour
 
     void TriggerNonCaseworkDeparture(ClientGroup group)
     {
+        int departing = group.clientsWithoutCaseworkNeed;
+
         if (showDebugInfo)
-            Debug.Log($"[ClientStayTracker] Group {group.groupName}: {group.clientsWithoutCaseworkNeed} clients without casework departed at round {currentRound}.");
+            Debug.Log($"[ClientStayTracker] Group {group.groupName}: {departing} clients without casework departed at round {currentRound}.");
 
         // Notify buildings to get rid of clients
         OnCaseworklessClientsDeparted?.Invoke(group);
 
-        // The departed people leave the BUILDING as well as the tracker: beds free up, they stop
-        // eating, and the motel stops billing them (BUG_REPORTS A10).
-        int leaving = group.clientsWithoutCaseworkNeed;
-        BuildingResourceStorage facilityStorage = GetFacilityStorage(group.currentFacility);
-        if (facilityStorage != null && leaving > 0)
-            facilityStorage.RemoveResource(ResourceType.Population, leaving);
+        DailyReportData.Instance?.RecordDeparture(departing);
 
-        DailyReportData.Instance?.RecordDeparture(group.clientsWithoutCaseworkNeed);
+        // Actually remove them from the facility's real population count. This bookkeeping
+        // (group.clientCount) only tracked casework stay-duration — nothing previously removed
+        // the departing clients from BuildingResourceStorage itself, so population (and anything
+        // derived from it, like food need) stayed stale after a natural departure.
+        if (departing > 0 && group.currentFacility != null)
+        {
+            group.currentFacility.GetComponent<BuildingResourceStorage>()?.RemoveResource(ResourceType.Population, departing);
+        }
 
-        group.clientCount -= group.clientsWithoutCaseworkNeed;
+        group.clientCount -= departing;
         group.clientsWithoutCaseworkNeed = 0;
     }
 
@@ -520,6 +524,25 @@ public class ClientStayTracker : MonoBehaviour
         if (bld != null && bld.GetBuildingType() == BuildingType.Shelter) return true;
         PrebuiltBuilding pb = b.GetComponent<PrebuiltBuilding>();
         return pb != null && pb.GetPrebuiltType() == PrebuiltBuildingType.Motel;
+    }
+
+    /// <summary>Self-walk relocation (main-bugfixes): people leave the source's tracker when they set
+    /// off. A walk to a casework site is a processing-home event (credited here, the decision is
+    /// irrevocable); a walk between lodging buildings just moves the group.</summary>
+    public void HandleSelfWalkDeparture(MonoBehaviour source, MonoBehaviour dest, int count, GameTask parentTask)
+    {
+        if (count <= 0 || dest == null || source == null) return;
+        if (IsCaseworkSite(dest))
+            RemoveClientsByQuantity(source, count, GroupIdFromDescription(parentTask?.description));
+        else if (IsLodgingBuilding(dest) && IsLodgingBuilding(source))
+            RemoveClientsByQuantity(source, count, -1, creditCasework: false);
+    }
+
+    /// <summary>Self-walk arrival: only lodging buildings hold tracked groups.</summary>
+    public void HandleSelfWalkArrival(MonoBehaviour dest, int count, string groupName)
+    {
+        if (count <= 0 || dest == null || !IsLodgingBuilding(dest)) return;
+        RegisterClientArrival(dest, count, groupName);
     }
 
     /// <summary>Immediate (no-vehicle) population transfer: same tracking as a vehicle delivery.</summary>

@@ -251,7 +251,6 @@ public class GameDataManager : MonoBehaviour
             + ",\"trained\":" + InitialTrainedVolunteerCount + ",\"untrained\":" + InitialUntrainedVolunteerCount
             + ",\"dailyAddition\":" + InitialDailyBudgetAddition
             + ",\"weather\":\"" + InitialWeather + "\""
-            + ",\"kitchenProductionPerRound\":" + InitialKitchenCapacity
             + ",\"shelterCapacity\":" + InitialShelterCapacity + ",\"caseworkCapacity\":" + InitialCaseworkCapacity
             + ",\"kitchenFoodCapacity\":" + InitialKitchenFoodCapacity + ",\"shelterFoodCapacity\":" + InitialShelterFoodCapacity
             + ",\"workersPerLocation\":" + InitialRequiredWorkersPerLoc

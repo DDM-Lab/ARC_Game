@@ -1394,7 +1394,7 @@ public class DailyReportUI : MonoBehaviour
         int days = gdm.InitialGameDays;
         float totalBudget = maxBudget;
 
-        float min = (float)bs.kitchenConstructionCost / (gdm.InitialKitchenCapacity * days);
+        float min = (float)bs.kitchenConstructionCost / (gdm.InitialKitchenFoodCapacity * days);
         float max = Mathf.Max(bs.kitchenConstructionCost * mapSpots * days, totalBudget);
 
         return Mathf.Clamp01(1f - (raw - min) / (max - min));
