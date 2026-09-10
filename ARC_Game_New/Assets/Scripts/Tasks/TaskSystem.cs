@@ -924,9 +924,12 @@ public class TaskSystem : MonoBehaviour
         DeliverySystem ds = DeliverySystem.Instance;
         if (ds == null) return;
 
+        // A delivery whose cargo has already landed (Vehicle.UnloadCargo sets deliveredQuantity
+        // before its unload wait finishes) is not "incomplete": the round can end inside that
+        // window, and cancelling it would fail the parent task for food that was delivered (B38).
         var incompleteFoodDeliveries = ds.GetPendingTasks()
             .Concat(ds.GetActiveTasks())
-            .Where(t => t.cargoType == ResourceType.FoodPacks)
+            .Where(t => t.cargoType == ResourceType.FoodPacks && t.deliveredQuantity <= 0)
             .ToList();
 
         foreach (DeliveryTask delivery in incompleteFoodDeliveries)

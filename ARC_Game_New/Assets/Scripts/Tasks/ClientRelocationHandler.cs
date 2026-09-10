@@ -248,6 +248,18 @@ public class ClientRelocationHandler : MonoBehaviour
 
         int available = GetPopulation(source);
         int toSend    = requestedQuantity > 0 ? Mathf.Min(requestedQuantity, available) : available;
+        // Never send more people than the destination can still take (capacity minus vehicle
+        // reservations minus clients already walking there). Before the walk mechanic the
+        // multi-delivery validator enforced this (B13); a walk that bounces at arrival would
+        // return people to a source the stay tracker has already discharged them from.
+        int space = GetEffectiveSpace(destination);
+        if (space <= 0)
+        {
+            SnapshotDebug.MarkContext("relocation:refused", "{\"task\":" + (parentTask != null ? parentTask.taskId : -1)
+                + ",\"dst\":\"" + destination.name + "\",\"reason\":\"full\"}");
+            return false;
+        }
+        toSend = Mathf.Min(toSend, space);
         if (toSend <= 0) return false;
 
         int removed = RemovePopulation(source, toSend);
@@ -541,6 +553,30 @@ public class ClientRelocationHandler : MonoBehaviour
         Building b = building.GetComponent<Building>();
         if (b != null) return b.GetDisplayName();
         return building.name;
+    }
+
+    /// <summary>Population space still bookable at a destination: storage space minus reserved
+    /// vehicle inbound minus clients already walking there. Works for shelters, casework sites
+    /// (Building + storage) and motels (PrebuiltBuilding).</summary>
+    int GetEffectiveSpace(MonoBehaviour destination)
+    {
+        if (destination == null) return 0;
+        DeliverySystem ds = DeliverySystem.Instance;
+        int rawSpace;
+        PrebuiltBuilding pb = destination.GetComponent<PrebuiltBuilding>();
+        if (pb != null && pb.GetPrebuiltType() == PrebuiltBuildingType.Motel)
+            rawSpace = pb.GetPopulationCapacity() - pb.GetCurrentPopulation();
+        else
+        {
+            BuildingResourceStorage storage =
+                destination.GetComponent<Building>()?.GetComponent<BuildingResourceStorage>()
+                ?? destination.GetComponent<BuildingResourceStorage>();
+            if (storage == null) return 0;
+            rawSpace = storage.GetAvailableSpace(ResourceType.Population);
+        }
+        int inbound = ds != null ? ds.GetReservedIncomingQuantity(destination, ResourceType.Population) : 0;
+        int walking = GetPendingIncomingQuantity(destination);
+        return Mathf.Max(0, rawSpace - inbound - walking);
     }
 
     int GetPopulation(MonoBehaviour building)

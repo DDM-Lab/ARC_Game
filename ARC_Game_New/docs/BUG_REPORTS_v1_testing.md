@@ -97,9 +97,9 @@ match the changed choice sets, so these captures are smoke tests, not parity evi
 
 ### Verification of the colleague's mechanism note (2026-09-10, branch `v1_merge_test`)
 
-Checked on the merged headless build with two scripted probes (`scratchpad/probe_followup.py`,
-`probe_covered.py`: fresh game, one kitchen, 100 people walked to the motel, first motel request
-answered with the "double" choice) and the three smoke replays.
+Checked on the merged headless build with scripted probes in `cora_sim/probes/` (`probe_followup.py`;
+`probe_covered_motel.py` / `probe_covered_shelter.py`: fresh game, one kitchen (+ one shelter), 100 people
+walked to the motel / shelter, the first request answered with the "double" choice) and the three smoke replays.
 
 | claim in the note | status | evidence / note |
 |---|---|---|
@@ -107,11 +107,11 @@ answered with the "double" choice) and the three smoke replays.
 | No overnight carry-over for kitchens, shelters, motel; in-transit food is waste | HOLDS | rollover waste lines; end-of-round-4 cancellation returns cargo to the kitchen, which then wastes it (counted once) |
 | Communities stay full except depletion | HOLDS after the scene fix (`enableFoodWaste` 0) | depletion events observed; nothing else refills a community, so a community whose replacement delivery fails stays short |
 | Shelter and motel: two requests per day, rounds 1 and 3 | HOLDS | `Motel_FoodRequest_First` at every day's round-1 pass, `_Second` at the round-3 pass |
-| First request: fulfil current or both; follow-up skipped if covered | HOLDS after the routing fix below | double choice queued 200 for a 100-person motel; the follow-up did not spawn that day (`_Second` needs `FoodPacks Empty` AND `NeedsFood`) |
+| First request: fulfil current or both; follow-up skipped if covered | HOLDS (motel and shelter) after the routing fix below | motel: double queued 200 for 100 people, the follow-up did not spawn that day (`_Second` needs `FoodPacks Empty` AND `NeedsFood`); shelter probe day 3: same, and the second 100 was eaten by the periodic tick two rounds later. "Covered" means stock on hand: shelter probe day 4, the double was still in transit at the round-3 pass, so the follow-up spawned anyway; the agent's attempt to fill it was refused "200 meals already inbound — need is covered" (C.3), and after arrival "No food is currently needed". No double-payment, but an extra task the agent has to decline. |
 | Clients arriving during the day generate demand the next day | PARTLY | no explicit mechanism; quantities are computed from the live population at each request, so arrivals before round 3 are in the follow-up, arrivals after it wait for the next day |
-| Food is consumed immediately on delivery, population-based | HOLDS, with a leftover | `fed 100 people immediately after delivery`; BUT the old periodic cycle still runs (shelters every 2 rounds, motel every 4). It records `FOOD SHORTAGE` on rounds with no delivery and, when its tick lands in the same round as a delivery, the once-per-round guard SKIPS the on-delivery consumption (probe day 4: tick at round 1 logged "Need 22, only had 0", the 44 meals delivered that round were never eaten and were wasted at night). The note describes on-delivery consumption only; the periodic cycle should be switched off for shelters and the motel (their design call) |
+| Food is consumed immediately on delivery, population-based | HOLDS, with a leftover | `fed 100 people immediately after delivery`; BUT the old periodic cycle still runs (shelters every 2 rounds, motel every 4). It records `FOOD SHORTAGE` when the stock is empty and, when its tick falls in the same round as a delivery, the once-per-round guard skips the on-delivery consumption (motel probe day 4: tick at round 1 logged `Need 22, only had 0`, the 44 meals delivered that round were never eaten). At the shelter the periodic tick also eats the second half of a "double" (probe day 3: 100 on delivery + 100 two rounds later = 200 meals for 100 people in one day), at the motel the second half sits until the overnight waste. NEEDS RULING: keep the periodic cycle (then define what a shelter/motel "meal" is) or remove it for shelters and motel. |
 | Community requests: day 2+, rounds 1-3, probability = initialFoodDemandFrequency, 100 packs, exact replacement | HOLDS after the manager fixes | 63 draws per game = 3 communities x 3 passes x 7 days; request quantity overridden to the amount lost |
-| Deliveries still queued/in transit at end of round 4 are cancelled and fail | HOLDS | `Cancelled incomplete food delivery ... at end of day`; the parent task takes the normal 15-point delivery-failure satisfaction penalty (the note only says "marked as failed") |
+| Deliveries still queued/in transit at end of round 4 are cancelled and fail | HOLDS after B37/B38 | `Cancelled incomplete food delivery ... at end of day`; the parent task takes the normal 15-point delivery-failure satisfaction penalty (the note does not mention a penalty). On the agent path the check fired at the end of EVERY round of days 2-8 (B37: the end-of-day flag was only ever cleared by the human "End Today" button), and it also cancelled deliveries whose cargo had already landed (B38). 5504 replay: 15 cancellations / 16 penalties before, 7 / 10 after, all at "Day N complete". |
 | Relocation without vehicles, immediate departure, arrival after 2 rounds, delay configurable | HOLDS | `relocation:queue` at dXrN, `relocation:arrive` two round-ends later; zero Population vehicle deliveries in any capture; `relocationDelayRounds` on the TaskSystem object |
 | Balance (not a claim): one kitchen = 200 meals/day vs. a motel of 300+ eating twice a day | — | most shelter/motel requests in the replays were refused for lack of unreserved stock; expect many kitchens or a bigger sheet capacity |
 
@@ -120,6 +120,9 @@ Defects found by the probes and fixed in this pass (`v1_merge_test`):
 - Self-walk arrivals never set `deliveredQuantity`, so every relocation resolved with 0 people housed for the lodging metric (RL reward). Fixed in `FinalizeRelocation`.
 - Agent payloads: population-based choices reported `deliveryQuantity 0`; now the resolved need (what the button says). `logistics.pendingRelocations` added (task, source, destination, quantity, roundsRemaining) and rendered by `obs_encoder` as a `walking:` line.
 - `ActionExecutor` population transfers (`<transfer>` grammar, manual_transfers mode) created vehicle deliveries; they now walk via the relocation handler, linked to the source's open lodging task when one exists.
+- B37 (agent path only): `GlobalClock.isWaitingForReport` is set at the end of round 4 and was cleared only by the "End Today" confirm button. `ProceedToNextDay` (gym, router) never cleared it, so from day 2 on `TaskSystem.OnSimulationEndedCheckDayComplete` treated every round end as end-of-day and cancelled every in-flight food delivery with a 15-point penalty. Cleared in `ProceedToNextDay`.
+- B38: `Vehicle.UnloadCargo` lands the cargo and sets `deliveredQuantity` before its unload wait ends; a round ending inside that window left the delivery in the active list and the overnight cancel failed the parent task for food that was on the shelf (shelter probe day 3, `Vehicle2`). Deliveries with `deliveredQuantity > 0` are no longer cancelled.
+- Walk path capacity (B13 reopened by the cargo routing): `ClientRelocationHandler.ExecuteToSpecificDestination` capped only by the source population, so a walk to a full destination departed, bounced on arrival and returned people the stay tracker had already discharged. Now capped by the destination's effective space (capacity minus reserved vehicle inbound minus walkers already en route), refused at zero (`relocation:refused` mark). No bounce or refusal occurred in the three smoke replays; code-verified.
 
 Still stale for agents (config files, not changed here): the officer prompts state "consumes 1 food/person every 4 rounds", "Food: produced by kitchens, distributed via vehicles", "Vehicles: transfer resources between buildings", "Resource transfers require available vehicles", and the domain config's "moving resources (food packs, population) between facilities with available vehicles" / "a kitchen needs staff to produce food packs". Replace with: kitchens are stocked to capacity each morning; food is consumed on delivery; people walk (2 rounds); vehicles carry food only; food does not keep overnight. The surrogate (`cora_sim`) still models the old game.
 
@@ -949,6 +952,33 @@ the emergency spacing gate; it never fired in any capture. The description in th
 shelter has been flooded") and the emergency's own text describe the opposite condition.
 **Intended.** Almost certainly `AtLeast` with a threshold ≥ 1. NEEDS DECISION on the values.
 **Status.** CONFIRMED (code + capture). Not fixed: the values are configuration.
+
+---
+
+#### B37. Agent-path day rollover never clears the end-of-day flag; every round end cancels food deliveries
+
+**Where.** `GlobalClock.cs` `EndSimulation` (`isWaitingForReport = true` once `currentTimeSegment >= roundsPerDay`),
+`OnExecuteButtonClicked` (the only reset), `ProceedToNextDay` (no reset); `TaskSystem.OnSimulationEndedCheckDayComplete`.
+**What happens.** Humans clear the flag by confirming "End Today". The gym (`GymAdvanceRound`) and the router
+call `ProceedToNextDay` directly, so the flag stays true for the rest of the game and the end-of-day
+cancellation runs at the end of every round from day 2: 5504 smoke replay, cancellations after
+`Simulation ended - Now at Day 3, Round 3` etc. (8 round ends, 15 deliveries, 16 penalties); shelter probe
+day 3: the second vehicle of a 200-meal double, dispatched at round 2, cancelled at the end of round 2.
+**Intended.** Cancellation only at the end of round 4.
+**Status.** FIXED (`v1_merge_test`): `ProceedToNextDay` clears the flag. After the fix all cancellations
+follow `Day N complete`; 5504: 7 cancellations / 10 penalties, 5801: 4 → 0.
+
+#### B38. Overnight cancellation fails deliveries whose cargo has already landed
+
+**Where.** `Vehicle.UnloadCargo` (cargo added to the destination and `deliveredQuantity` set at the top of the
+coroutine, then the unload wait), `Vehicle.ExecuteDeliveryTask` step 5 (`CompleteDelivery` after the wait),
+`TaskSystem.CancelIncompleteFoodDeliveries` (took every pending + active food delivery).
+**What happens.** A round ending inside the unload wait leaves the task in `activeTasks`; the cancel removed
+it, marked the parent task failed with the 15-point penalty, and the food that was already on the shelf was
+then eaten by the periodic tick (shelter probe day 3, `Vehicle2`: `received 100 FoodPacks (100/200)`, then
+`Cancelled incomplete food delivery 2`, then `fed 100 people after 2 rounds, consumed 100/100`).
+**Intended.** A delivery whose cargo landed is complete for the purpose of the overnight rule.
+**Status.** FIXED (`v1_merge_test`): deliveries with `deliveredQuantity > 0` are skipped by the cancel.
 
 ---
 

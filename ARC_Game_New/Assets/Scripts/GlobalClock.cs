@@ -702,6 +702,11 @@ public class GlobalClock : MonoBehaviour
         // Actually advance to next day after report confirmation
         currentDay++;
         currentTimeSegment = 0; // Reset to first round (not 1)
+        // The "End Today" confirm button clears this before calling us; the gym / router day
+        // rollover does not go through the button, so clear it here too. Left true, every
+        // round end of the next day looked like end-of-day to TaskSystem and cancelled all
+        // in-flight food deliveries with a failure penalty (B37).
+        isWaitingForReport = false;
 
         // Update ActionTrackingManager for new day
         if (ActionTrackingManager.Instance != null)
