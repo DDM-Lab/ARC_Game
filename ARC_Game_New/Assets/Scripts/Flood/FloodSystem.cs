@@ -3,7 +3,6 @@ using UnityEngine.Tilemaps;
 using System.Collections.Generic;
 using System.Collections;
 using System;
-using System.Linq;
 
 public class FloodSystem : MonoBehaviour
 {
@@ -806,17 +805,42 @@ public class FloodSystem : MonoBehaviour
         Debug.Log("Flood reset to river positions only");
     }
 
-    [ContextMenu("Add Flood Tiles at Left Part of Map")]
-    public void AddFloodTilesAtLeftPart()
+    /// <summary>
+    /// Debug: floods every ground tile on the map. A single ad-hoc tile placed under a
+    /// specific vehicle isn't reliable for testing flood/vehicle interaction (position
+    /// rounding, timing, or road-cell alignment can make the vehicle miss it) — flooding
+    /// the entire map guarantees every vehicle, wherever it is, ends up on a flooded cell.
+    /// Use "Clear All Flood" afterward to test recovery once the flood "disappears".
+    /// </summary>
+    [ContextMenu("Debug: Flood Entire Map")]
+    public void DebugFloodEntireMap()
     {
-        for (int x = -5; x <= -1; x++)
+        if (groundTilemap == null)
         {
-            for (int y = -2; y <= 2; y++)
+            Debug.LogWarning("[FloodSystem] groundTilemap not assigned — cannot flood entire map");
+            return;
+        }
+
+        BoundsInt bounds = groundTilemap.cellBounds;
+        int flooded = 0;
+
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+        {
+            for (int y = bounds.yMin; y < bounds.yMax; y++)
             {
-                Vector3Int floodPos = new Vector3Int(x, y, 0);
-                AddFloodTile(floodPos);
+                Vector3Int position = new Vector3Int(x, y, 0);
+                if (groundTilemap.GetTile(position) == null) continue; // skip empty/out-of-map cells
+
+                if (!currentFloodTiles.Contains(position))
+                    flooded++;
+
+                AddFloodTile(position);
             }
         }
+
+        OnFloodSizeChanged?.Invoke(currentFloodTiles.Count);
+
+        Debug.Log($"[FloodSystem] Flooded entire map: {flooded} new tile(s), {currentFloodTiles.Count} total flooded");
     }
 
     void OnDrawGizmos()
@@ -850,91 +874,4 @@ public class FloodSystem : MonoBehaviour
         }
     }
     
-    [ContextMenu("Test: Create Flood at Vehicle Position")]
-    public void TestCreateFloodAtVehicle()
-    {
-        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-        if (vehicles.Length == 0)
-        {
-            Debug.LogWarning("No vehicles found to test flood blocking");
-            return;
-        }
-        
-        // Get first vehicle that's moving
-        Vehicle targetVehicle = null;
-        foreach (Vehicle vehicle in vehicles)
-        {
-            if (vehicle.GetCurrentStatus() == VehicleStatus.InTransit)
-            {
-                targetVehicle = vehicle;
-                break;
-            }
-        }
-        
-        // If no moving vehicle, use first available
-        if (targetVehicle == null)
-            targetVehicle = vehicles[0];
-        
-        Vector3 vehiclePos = targetVehicle.transform.position;
-        Vector3Int floodPos = floodTilemap.WorldToCell(vehiclePos);
-        
-        // Create flood at vehicle position
-        AddFloodTile(floodPos);
-        
-        Debug.Log($"Created flood tile at {vehiclePos} to block vehicle {targetVehicle.GetVehicleName()}");
-    }
-
-    [ContextMenu("Test: Create Flood Path Between Buildings")]
-    public void TestCreateFloodPath()
-    {
-        // Fix the LINQ syntax - FindObjectsOfType returns an array, not a single object
-        Building kitchen = FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Kitchen).FirstOrDefault();
-        Building shelter = FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Shelter).FirstOrDefault();
-        
-        if (kitchen == null || shelter == null)
-        {
-            Debug.LogWarning("Need at least one kitchen and one shelter to test flood path");
-            return;
-        }
-        
-        // Create flood tiles between them
-        Vector3 startPos = kitchen.transform.position;
-        Vector3 endPos = shelter.transform.position;
-        Vector3 midPoint = (startPos + endPos) / 2;
-        
-        // Create a line of flood tiles in the middle
-        for (int i = -2; i <= 2; i++)
-        {
-            Vector3 floodWorldPos = midPoint + new Vector3(i * 2, 0, 0);
-            Vector3Int floodGridPos = floodTilemap.WorldToCell(floodWorldPos);
-            AddFloodTile(floodGridPos);
-        }
-        
-        Debug.Log($"Created flood path between {kitchen.name} and {shelter.name}");
-    }
-
-    [ContextMenu("Test: Force Vehicle Damage")]
-    public void TestForceVehicleDamage()
-    {
-        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-        if (vehicles.Length == 0)
-        {
-            Debug.LogWarning("No vehicles found to damage");
-            return;
-        }
-        
-        Vehicle targetVehicle = vehicles[0];
-        
-        // Force damage the vehicle
-        targetVehicle.isDamaged = true;
-        targetVehicle.SetStatus(VehicleStatus.Damaged);
-        
-        // Trigger repair task
-        if (FloodTaskGenerator.Instance != null)
-        {
-            FloodTaskGenerator.Instance.CreateVehicleRepairTask(targetVehicle);
-        }
-        
-        Debug.Log($"Forced damage on vehicle {targetVehicle.GetVehicleName()} and created repair task");
-    }
 }

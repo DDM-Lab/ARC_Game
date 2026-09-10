@@ -5,7 +5,6 @@ using System.Linq;
 public class FloodTaskGenerator : MonoBehaviour
 {
     [Header("Emergency Task Configuration")]
-    public bool enableFloodTasks = true;
     public TaskDatabase emergencyTaskDatabase;
     public Sprite vehicleDamageImage;
 
@@ -35,7 +34,10 @@ public class FloodTaskGenerator : MonoBehaviour
     void Start()
     {
         if (FloodSystem.Instance != null)
+        {
             FloodSystem.Instance.OnFloodTileAdded += OnFloodExpanded;
+            FloodSystem.Instance.OnFloodTileRemoved += OnFloodTileRemoved;
+        }
 
         if (TaskSystem.Instance != null)
             TaskSystem.Instance.OnTaskCompleted += OnAnyTaskCompleted;
@@ -45,6 +47,30 @@ public class FloodTaskGenerator : MonoBehaviour
     {
         // Check if any vehicles are now blocked by this new flood tile
         CheckForBlockedVehicles();
+    }
+
+    void OnFloodTileRemoved(Vector3Int floodPosition)
+    {
+        // The paid Vehicle Repair task is permanently disabled (see CreateVehicleRepairTask
+        // below), so this is now the only way a flood-damaged vehicle becomes available again.
+        RestoreVehiclesClearOfFlood();
+    }
+
+    void RestoreVehiclesClearOfFlood()
+    {
+        if (FloodSystem.Instance == null) return;
+
+        foreach (Vehicle vehicle in FindObjectsOfType<Vehicle>())
+        {
+            if (vehicle.GetCurrentStatus() != VehicleStatus.Damaged) continue;
+            if (FloodSystem.Instance.IsFloodedAt(vehicle.transform.position)) continue;
+
+            vehicle.RepairVehicle();
+
+            if (showDebugInfo)
+                Debug.Log($"[FloodTaskGenerator] Auto-restored {vehicle.GetVehicleName()} — flood cleared");
+            GameLogPanel.Instance?.LogVehicleEvent($"{vehicle.GetVehicleName()} automatically restored after flood cleared");
+        }
     }
 
     void CheckForBlockedVehicles()
@@ -67,13 +93,6 @@ public class FloodTaskGenerator : MonoBehaviour
     /// </summary>
     public void CreateRoadBlockageTask(Vehicle blockedVehicle, DeliveryTask originalDelivery)
     {
-        if (!enableFloodTasks || TaskSystem.Instance == null)
-        {
-            if (showDebugInfo)
-                Debug.Log("Flood tasks disabled or TaskSystem not found");
-            return;
-        }
-
         if (blockedVehicle == null || originalDelivery == null)
         {
             if (showDebugInfo)
@@ -82,6 +101,19 @@ public class FloodTaskGenerator : MonoBehaviour
         }
 
         bool hasLoadedCargo = blockedVehicle.GetCargoAmount(originalDelivery.cargoType) > 0;
+
+        // Resolve the vehicle's in-progress cargo before building the task below.
+        if (originalDelivery.cargoType == ResourceType.FoodPacks)
+            DiscardVehicleCargo(blockedVehicle, originalDelivery);
+        else if (originalDelivery.cargoType == ResourceType.Population && hasLoadedCargo)
+            ReturnCargoToSource(blockedVehicle, originalDelivery);
+
+        if (TaskSystem.Instance == null)
+        {
+            if (showDebugInfo)
+                Debug.Log("TaskSystem not found - cannot create road blockage task");
+            return;
+        }
         string cargoLabel   = originalDelivery.cargoType == ResourceType.Population ? "clients" : "meals";
         string phase        = hasLoadedCargo ? "en route to drop-off" : "en route to pick-up";
         string srcName      = GetBuildingDisplayName(originalDelivery.sourceBuilding);
@@ -101,19 +133,27 @@ public class FloodTaskGenerator : MonoBehaviour
         Sprite icon = TaskSystem.Instance.foodMassCareSprite;
         roadBlockageTask.agentMessages.Add(new AgentMessage(
             $"Emergency! Vehicle {blockedVehicle.GetVehicleName()} is blocked by flooding while {phase}.", icon));
-        roadBlockageTask.agentMessages.Add(new AgentMessage(
-            $"It was carrying {originalDelivery.quantity} {cargoLabel} from {srcName} to {dstName}.", icon));
+
+        // Only true if the vehicle had actually picked the cargo up — while still en route to
+        // pick-up, it isn't "carrying" anything yet. The type-specific choice builders below
+        // (CreateFoodBlockageChoices / CreatePopulationUnloadedChoices) already explain the
+        // not-yet-loaded case, so nothing is lost by omitting this line then.
+        if (hasLoadedCargo)
+        {
+            roadBlockageTask.agentMessages.Add(new AgentMessage(
+                $"It was carrying {originalDelivery.quantity} {cargoLabel} from {srcName} to {dstName}.", icon));
+        }
 
         if (originalDelivery.cargoType == ResourceType.FoodPacks)
         {
             roadBlockageTask.affectedFacility = originalDelivery.destinationBuilding.name;
-            CreateFoodBlockageChoices(roadBlockageTask, originalDelivery, blockedVehicle);
+            CreateFoodBlockageChoices(roadBlockageTask, originalDelivery, blockedVehicle, hasLoadedCargo);
         }
         else if (originalDelivery.cargoType == ResourceType.Population)
         {
             if (hasLoadedCargo)
             {
-                ReturnCargoToSource(blockedVehicle, originalDelivery);
+                // ReturnCargoToSource already called unconditionally above.
                 roadBlockageTask.affectedFacility = originalDelivery.sourceBuilding.name;
                 CreatePopulationLoadedChoices(roadBlockageTask, originalDelivery, icon, srcName);
             }
@@ -134,10 +174,20 @@ public class FloodTaskGenerator : MonoBehaviour
 
     // Food already on the blocked vehicle (if any) is treated as spoiled/discarded — it cannot be
     // recovered, so the only path forward is an emergency immediate delivery of a fresh batch,
-    // priced per meal needed rather than a flat fee.
-    void CreateFoodBlockageChoices(GameTask task, DeliveryTask originalDelivery, Vehicle blockedVehicle)
+    // priced per meal needed rather than a flat fee. If the vehicle hadn't picked the food up yet,
+    // nothing was actually on board, so nothing went to waste — only the delivery itself failed.
+    void CreateFoodBlockageChoices(GameTask task, DeliveryTask originalDelivery, Vehicle blockedVehicle, bool hasLoadedCargo)
     {
-        DiscardVehicleCargo(blockedVehicle, originalDelivery);
+        // DiscardVehicleCargo already called unconditionally in CreateRoadBlockageTask above
+        // (it's a no-op when the vehicle had nothing loaded).
+
+        string wasteMessage = hasLoadedCargo
+            ? $"The {originalDelivery.quantity} meals already on board have gone to waste and cannot be recovered."
+            : $"The vehicle had not yet picked up the {originalDelivery.quantity} meals, so nothing was lost — but the delivery itself has failed.";
+
+        task.agentMessages.Add(new AgentMessage(
+            $"{wasteMessage} Emergency fast food delivery can make up this shortfall.",
+            TaskSystem.Instance.foodMassCareSprite));
 
         int cost = originalDelivery.quantity * 10;
 
@@ -190,68 +240,26 @@ public class FloodTaskGenerator : MonoBehaviour
     }
 
     /// <summary>
-    /// Create vehicle repair task
+    /// Vehicle Repair Required task — permanently disabled. Flood-damaged vehicles now
+    /// self-recover automatically once the flood clears (see RestoreVehiclesClearOfFlood),
+    /// so this paid repair task no longer gets created. Kept as a no-op stub (rather than
+    /// removed) so existing callers (Vehicle.TriggerVehicleRepairTask, debug context menus
+    /// below) don't need to change — restoring this would mean reinstating the task-building
+    /// logic that used to live here (title "Vehicle Repair Required", $1200 repair choice,
+    /// VEHICLE_ID-tagged description for TaskDetailUI.RepairVehicleById).
     /// </summary>
     public void CreateVehicleRepairTask(Vehicle damagedVehicle)
     {
-        if (!enableFloodTasks || TaskSystem.Instance == null) return;
-
-        // Check if repair task already exists for this vehicle (double-check)
-        var activeTasks = TaskSystem.Instance.GetAllActiveTasks();
-        bool repairTaskExists = activeTasks.Any(t =>
-            t.taskTitle.Contains("Vehicle Repair") &&
-            t.description.Contains(damagedVehicle.GetVehicleName()));
-
-        if (repairTaskExists)
-        {
-            if (showDebugInfo)
-                Debug.Log($"Repair task already exists for vehicle {damagedVehicle.GetVehicleName()}");
-            return;
-        }
-
-        string taskTitle = "Vehicle Repair Required";
-        string description = $"Vehicle {damagedVehicle.GetVehicleName()} has been damaged by flood and requires repair before it can operate again.";
-
-        GameTask repairTask = TaskSystem.Instance.CreateTask(
-            taskTitle, TaskType.Emergency, "Maintenance", description);
-
-        repairTask.taskImage = vehicleDamageImage;
-        repairTask.taskOfficer = TaskOfficer.LodgingMassCare;
-
-        // Longer time for repair tasks
-        repairTask.roundsRemaining = 2;
-        repairTask.hasRealTimeLimit = false;
-
-        // Add impacts
-        repairTask.impacts.Add(new TaskImpact(ImpactType.Budget, -800, false, "Repair Cost"));
-        repairTask.impacts.Add(new TaskImpact(ImpactType.Workforce, 2, false, "Repair Crew"));
-
-        // Add agent messages
-        repairTask.agentMessages.Add(new AgentMessage($"Vehicle {damagedVehicle.GetVehicleName()} needs repair after flood damage.", TaskSystem.Instance.foodMassCareSprite));
-        repairTask.agentMessages.Add(new AgentMessage("We can either repair it now or wait, but the vehicle won't be available until fixed.", TaskSystem.Instance.foodMassCareSprite));
-
-        // Add repair choices
-        AgentChoice immediateRepairChoice = new AgentChoice(1, "Repair immediately ($1200)");
-        immediateRepairChoice.triggersDelivery = false;
-        immediateRepairChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1200, false, "Repair Cost"));
-        repairTask.agentChoices.Add(immediateRepairChoice);
-
-        AgentChoice delayRepairChoice = new AgentChoice(2, "Delay repair (vehicle remains unavailable)");
-        delayRepairChoice.triggersDelivery = false;
-        repairTask.agentChoices.Add(delayRepairChoice);
-
-        // Store vehicle reference for later repair
-        repairTask.description += $"|VEHICLE_ID:{damagedVehicle.GetVehicleId()}";
-
-        if (showDebugInfo)
-            Debug.Log($"Created vehicle repair task for {damagedVehicle.GetVehicleName()}");
-        GameLogPanel.Instance.LogTaskEvent($"Created vehicle repair task for {damagedVehicle.GetVehicleName()}");
+        // Intentionally does nothing.
     }
 
     void OnDestroy()
     {
         if (FloodSystem.Instance != null)
+        {
             FloodSystem.Instance.OnFloodTileAdded -= OnFloodExpanded;
+            FloodSystem.Instance.OnFloodTileRemoved -= OnFloodTileRemoved;
+        }
 
         if (TaskSystem.Instance != null)
             TaskSystem.Instance.OnTaskCompleted -= OnAnyTaskCompleted;
@@ -363,32 +371,17 @@ public class FloodTaskGenerator : MonoBehaviour
         Debug.Log("Force-created road blockage task");
     }
 
-    [ContextMenu("Test: Force Vehicle Repair")]
-    public void TestForceVehicleRepair()
-    {
-        Vehicle testVehicle = FindObjectOfType<Vehicle>();
-        if (testVehicle == null)
-        {
-            Debug.LogWarning("No vehicle found for repair test");
-            return;
-        }
-        
-        CreateVehicleRepairTask(testVehicle);
-        Debug.Log($"Force-created vehicle repair task for {testVehicle.GetVehicleName()}");
-    }
-
     [ContextMenu("Test: Damage All Vehicles")]
     public void TestDamageAllVehicles()
     {
         Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-        
+
         foreach (Vehicle vehicle in vehicles)
         {
             vehicle.isDamaged = true;
             vehicle.SetStatus(VehicleStatus.Damaged);
-            CreateVehicleRepairTask(vehicle);
         }
-        
-        Debug.Log($"Damaged {vehicles.Length} vehicles and created repair tasks");
+
+        Debug.Log($"Damaged {vehicles.Length} vehicles (Vehicle Repair task is disabled — use FloodSystem's 'Clear All Flood' or 'Debug: Flood Entire Map' + clear to test auto-recovery)");
     }
 }
