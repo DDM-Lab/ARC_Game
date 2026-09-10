@@ -73757,6 +73757,7 @@ MonoBehaviour:
   capacityText: {fileID: 967406416}
   foodPackNeedText: {fileID: 0}
   foodPackConsumedText: {fileID: 0}
+  foodPackScheduledText: {fileID: 0}
   workersHeaderText: {fileID: 596619884}
   trainedWorkersText: {fileID: 2023226161}
   untrainedWorkersText: {fileID: 922061118}
@@ -82397,7 +82398,7 @@ MonoBehaviour:
     m_PressedTrigger: Pressed
     m_SelectedTrigger: Selected
     m_DisabledTrigger: Disabled
-  m_Interactable: 1
+  m_Interactable: 0
   m_TargetGraphic: {fileID: 1357706338}
   m_FillRect: {fileID: 1090579298}
   m_HandleRect: {fileID: 1357706337}
@@ -110958,14 +110959,14 @@ MonoBehaviour:
   metricsPanel: {fileID: 1503276240}
   panelTitleText: {fileID: 1107199613}
   exitButton: {fileID: 1570249799}
+  maskPanel: {fileID: 0}
   satisfactionTabButton: {fileID: 841045181}
   budgetTabButton: {fileID: 1345233705}
+  resourceEfficiencyTabButton: {fileID: 0}
   metricsScrollView: {fileID: 1503276241}
   metricsContent: {fileID: 1896210984}
   metricEntryPrefab: {fileID: 7869847872010092576, guid: c600e5e4adb80e94fa68dd74fbb02c6a, type: 3}
-  expandedHeight: 350
-  collapsedHeight: 20
-  animationDuration: 0.3
+  noEntriesText: {fileID: 0}
   positiveColor: {r: 0, g: 1, b: 0, a: 1}
   negativeColor: {r: 1, g: 0, b: 0, a: 1}
   activeTabColor: {r: 1, g: 1, b: 1, a: 1}
@@ -137784,14 +137785,14 @@ MonoBehaviour:
   metricsPanel: {fileID: 1069949695}
   panelTitleText: {fileID: 4213095}
   exitButton: {fileID: 672332994}
+  maskPanel: {fileID: 0}
   satisfactionTabButton: {fileID: 2077387836}
   budgetTabButton: {fileID: 1824224603}
+  resourceEfficiencyTabButton: {fileID: 0}
   metricsScrollView: {fileID: 1069949696}
   metricsContent: {fileID: 33834816}
   metricEntryPrefab: {fileID: 7869847872010092576, guid: c600e5e4adb80e94fa68dd74fbb02c6a, type: 3}
-  expandedHeight: 350
-  collapsedHeight: 20
-  animationDuration: 0.3
+  noEntriesText: {fileID: 0}
   positiveColor: {r: 0, g: 1, b: 0, a: 1}
   negativeColor: {r: 1, g: 0, b: 0, a: 1}
   activeTabColor: {r: 1, g: 1, b: 1, a: 1}
@@ -152578,13 +152579,13 @@ MonoBehaviour:
   - {fileID: 964166150}
   - {fileID: 958471390}
   - {fileID: 1931996426}
+  - {fileID: 281228961}
   - {fileID: 286292158}
   - {fileID: 1904497027}
   - {fileID: 509766899}
   - {fileID: 1572293611}
   - {fileID: 1213508859}
   - {fileID: 852721527}
-  - {fileID: 281228961}
   - {fileID: 880989386}
   - {fileID: 231313611}
   - {fileID: 342748894}
@@ -173311,7 +173312,6 @@ MonoBehaviour:
     m_PostInfinity: 2
     m_RotationOrder: 4
   globalClock: {fileID: 0}
-  day1MaskPanel: {fileID: 341493482}
   finalDay: 8
   historyNavigationPanel: {fileID: 460186938}
   dayButtons:
@@ -375388,6 +375388,7 @@ MonoBehaviour:
   capacityText: {fileID: 1401987936}
   foodPackNeedText: {fileID: 1048560934}
   foodPackConsumedText: {fileID: 125452617}
+  foodPackScheduledText: {fileID: 0}
   workersHeaderText: {fileID: 536343285}
   trainedWorkersText: {fileID: 701476418}
   untrainedWorkersText: {fileID: 2112235963}
@@ -378830,7 +378831,6 @@ MonoBehaviour:
     m_PostInfinity: 2
     m_RotationOrder: 4
   globalClock: {fileID: 0}
-  day1MaskPanel: {fileID: 0}
   finalDay: 8
   historyNavigationPanel: {fileID: 0}
   dayButtons:
