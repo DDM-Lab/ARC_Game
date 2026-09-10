@@ -76,6 +76,7 @@ public class TaskCenterNotification : MonoBehaviour
         {
             taskCenterUI.ToggleTaskCenter();
             Debug.Log("Task Center UI toggled via notification button");
+            GameLogPanel.Instance?.LogUIInteraction("Task Center UI toggled via notification button");
         }
     }
     

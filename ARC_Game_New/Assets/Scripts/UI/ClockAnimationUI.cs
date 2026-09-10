@@ -29,8 +29,17 @@ public class ClockAnimationUI : MonoBehaviour
 
     private bool isPaused = false;
 
-    public void Pause()  { isPaused = true; }
-    public void Resume() { isPaused = false; }
+    public void Pause()
+    {
+        isPaused = true;
+        GameLogPanel.Instance?.LogUIInteraction("Clock animation paused");
+    }
+
+    public void Resume()
+    {
+        isPaused = false;
+        GameLogPanel.Instance?.LogUIInteraction("Clock animation resumed");
+    }
 
     void Awake()
     {
@@ -91,9 +100,12 @@ public class ClockAnimationUI : MonoBehaviour
     // Does NOT show or hide the panel; the caller controls that.
     public IEnumerator PlayRoundLoops()
     {
+        GameLogPanel.Instance?.LogUIInteraction("Clock animation round loop started");
+
         if (frames == null || frames.Length == 0)
         {
             yield return new WaitForSecondsRealtime(skipLoopDuration * 3);
+            GameLogPanel.Instance?.LogUIInteraction("Clock animation round loop completed (no frames assigned)");
             yield break;
         }
 
@@ -106,6 +118,8 @@ public class ClockAnimationUI : MonoBehaviour
                 yield return new WaitForSecondsRealtime(frameDuration);
                 while (isPaused) yield return null;
             }
+
+        GameLogPanel.Instance?.LogUIInteraction("Clock animation round loop completed");
     }
 
     // ── Internal ─────────────────────────────────────────────────────────────

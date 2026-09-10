@@ -59,6 +59,8 @@ public class PlayerSession : MonoBehaviour
             sessionPanel.SetActive(true);
 
         Time.timeScale = 0f;
+
+        GameLogPanel.Instance?.LogUIInteraction("Player session panel shown");
     }
 
     void OnStartButtonClicked()
@@ -83,6 +85,7 @@ public class PlayerSession : MonoBehaviour
         IsSessionActive = true;
 
         Debug.Log($"[PlayerSession] Session started: {PlayerName} ({SessionId})");
+        GameLogPanel.Instance?.LogPlayerAction($"Session started: {PlayerName} ({SessionId})");
 
         if (sessionPanel != null)
             sessionPanel.SetActive(false);

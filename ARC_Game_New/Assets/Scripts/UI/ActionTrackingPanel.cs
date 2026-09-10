@@ -61,9 +61,11 @@ public class ActionTrackingPanel : MonoBehaviour
             
         isExpanded = true;
         animationCoroutine = StartCoroutine(AnimatePanel(expandedHeight));
-        
+
         // Refresh messages when expanding
         RefreshMessageList();
+
+        GameLogPanel.Instance?.LogUIInteraction("Action tracking panel expanded");
     }
 
     public void CollapsePanel()
@@ -73,6 +75,8 @@ public class ActionTrackingPanel : MonoBehaviour
             
         isExpanded = false;
         animationCoroutine = StartCoroutine(AnimatePanel(collapsedHeight));
+
+        GameLogPanel.Instance?.LogUIInteraction("Action tracking panel collapsed");
     }
 
     private IEnumerator AnimatePanel(float targetHeight)

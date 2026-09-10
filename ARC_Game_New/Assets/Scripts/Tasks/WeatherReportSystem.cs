@@ -61,6 +61,7 @@ public class WeatherReportSystem : MonoBehaviour
             
             if (showDebugInfo)
                 Debug.Log("Generated daily weather and disaster report");
+            GameLogPanel.Instance?.LogEnvironmentChange("Generated daily weather and disaster report");
         }
     }
     

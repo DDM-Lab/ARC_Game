@@ -117,6 +117,7 @@ public class Worker
         }
         
         Debug.Log($"Worker {workerId} ({workerType}) assigned to building {buildingId}");
+        GameLogPanel.Instance?.LogWorkerAction($"Worker {workerId} ({workerType}) assigned to building {buildingId}");
         return true;
     }
     
@@ -142,6 +143,7 @@ public class Worker
         }
         
         Debug.Log($"Worker {workerId} ({workerType}) released from building {previousBuildingId}");
+        GameLogPanel.Instance?.LogWorkerAction($"Worker {workerId} ({workerType}) released from building {previousBuildingId}");
     }
     
     // Special status transitions
@@ -151,6 +153,7 @@ public class Worker
         {
             SetUntrainedStatus(UntrainedWorkerStatus.Training);
             Debug.Log($"Untrained worker {workerId} started training");
+            GameLogPanel.Instance?.LogWorkerAction($"Untrained worker {workerId} started training");
         }
         else
         {
@@ -164,6 +167,7 @@ public class Worker
         {
             SetTrainedStatus(TrainedWorkerStatus.Free);
             Debug.Log($"Trained worker {workerId} has arrived and is now available");
+            GameLogPanel.Instance?.LogWorkerAction($"Trained worker {workerId} has arrived and is now available");
         }
         else
         {
@@ -181,6 +185,7 @@ public class Worker
             trainedWorker.SetTrainedStatus(TrainedWorkerStatus.Free);
             
             Debug.Log($"Untrained worker {workerId} has been converted to trained worker");
+            GameLogPanel.Instance?.LogWorkerAction($"Untrained worker {workerId} has been converted to trained worker");
             return trainedWorker;
         }
         else

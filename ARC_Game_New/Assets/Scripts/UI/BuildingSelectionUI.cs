@@ -203,8 +203,9 @@ public class BuildingSelectionUI : MonoBehaviour
         
         // Update building info
         UpdateBuildingInfo(buildingType);
-        
+
         Debug.Log($"Showing confirmation panel for: {buildingType}");
+        GameLogPanel.Instance?.LogUIInteraction($"Building confirmation panel shown for: {buildingType}");
     }
     
     void UpdateBuildingInfo(BuildingType buildingType)
@@ -244,7 +245,8 @@ public class BuildingSelectionUI : MonoBehaviour
     void OnConfirmBuild()
     {
         Debug.Log($"Player confirmed building: {selectedBuildingType}");
-        
+        GameLogPanel.Instance?.LogPlayerAction($"Player confirmed building: {selectedBuildingType}");
+
         // Notify building system to actually build
         if (buildingSystem != null)
         {
@@ -282,7 +284,8 @@ public class BuildingSelectionUI : MonoBehaviour
     void OnCancelSelected()
     {
         Debug.Log("Player cancelled building selection");
-        
+        GameLogPanel.Instance?.LogPlayerAction("Player cancelled building selection");
+
         // Notify building system
         if (buildingSystem != null)
         {

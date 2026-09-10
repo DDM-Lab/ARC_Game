@@ -39,10 +39,12 @@ public class AccessibilityManager : MonoBehaviour
         if (IsSpeaking() == 1)
         {
             CancelSpeech();
+            GameLogPanel.Instance?.LogPlayerAction("Player cancelled text-to-speech readout");
             return;
         }
 
         SpeakText(tmp.text);
+        GameLogPanel.Instance?.LogPlayerAction("Player triggered text-to-speech readout via right-click");
     }
 
     TMP_Text GetTMPUnderCursor()

@@ -80,6 +80,7 @@ public class BuildingStatsUI : MonoBehaviour
             isPanelOpen = true;
             UpdateStatsDisplay(); // Immediate update when opening
             Debug.Log("Building stats panel opened");
+            GameLogPanel.Instance?.LogUIInteraction("Building stats panel opened");
         }
     }
     
@@ -90,6 +91,7 @@ public class BuildingStatsUI : MonoBehaviour
             statsPanel.SetActive(false);
             isPanelOpen = false;
             Debug.Log("Building stats panel closed");
+            GameLogPanel.Instance?.LogUIInteraction("Building stats panel closed");
         }
     }
     

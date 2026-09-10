@@ -212,7 +212,10 @@ public class DailyReportManager : MonoBehaviour
     {
         isTransitioning = true;
         isWaitingForNextDay = false;
-        
+
+        // Hide the building status table alongside the report it was shown with
+        BuildingStatusTableUI.Instance?.HideTable();
+
         // Disable interactions immediately
         if (panelCanvasGroup != null)
         {

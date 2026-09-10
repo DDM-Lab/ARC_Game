@@ -33607,6 +33607,7 @@ MonoBehaviour:
   shelterPrefab: {fileID: 842235218019612437, guid: f69c0c22978cd5948ba85f4fdc12376e, type: 3}
   caseworkSitePrefab: {fileID: 6231314852880352424, guid: 392b6c3b8fe6c014d8762918ba8f08b2, type: 3}
   constructionRounds: 4
+  deconstructionRounds: 2
   buildingSelectionUI: {fileID: 133791604}
   workerSystem: {fileID: 550057045}
   globalFacilityButton: {fileID: 287412888}
@@ -66016,6 +66017,7 @@ GameObject:
   - component: {fileID: 978749007}
   - component: {fileID: 978749006}
   - component: {fileID: 978749005}
+  - component: {fileID: 978749008}
   m_Layer: 0
   m_Name: TaskSystem
   m_TagString: Untagged
@@ -66255,6 +66257,24 @@ MonoBehaviour:
   taskSystem: {fileID: 978748996}
   workerSystem: {fileID: 550057045}
   taskDetailUI: {fileID: 978748999}
+  showDebugInfo: 1
+--- !u!114 &978749008
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 978748995}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c35be885c255bf4e80ec7448402cc27, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  communityFoodRequestTask: {fileID: 11400000, guid: f6d71222fa0fe7640acde3729f7509d5, type: 2}
+  depletionAmount: 100
+  depletionChancePerRound: 0.2
+  lastEligibleRound: 3
+  firstEligibleDay: 2
   showDebugInfo: 1
 --- !u!1 &986312716
 GameObject:

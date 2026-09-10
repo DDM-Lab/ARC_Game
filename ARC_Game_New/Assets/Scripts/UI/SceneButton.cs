@@ -9,6 +9,10 @@ public class SceneButton : MonoBehaviour
 
     private void Awake()
     {
-        GetComponent<Button>().onClick.AddListener(() => SceneManager.LoadScene(sceneName));
+        GetComponent<Button>().onClick.AddListener(() =>
+        {
+            GameLogPanel.Instance?.LogPlayerAction($"Player navigated to scene: {sceneName}");
+            SceneManager.LoadScene(sceneName);
+        });
     }
 }

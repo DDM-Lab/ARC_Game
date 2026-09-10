@@ -148,4 +148,32 @@ public class BuildingStatusTableUI : MonoBehaviour
                 kvp.Value.Refresh();
         }
     }
+
+    /// <summary>
+    /// Reveal the table (e.g. once the Daily Report has finished displaying its content)
+    /// and refresh every row so it shows current data the moment it becomes visible.
+    /// </summary>
+    public void ShowTable()
+    {
+        gameObject.SetActive(true);
+        RefreshAllRows();
+
+        if (showDebugInfo)
+            Debug.Log("[BuildingStatusTableUI] Table shown");
+        GameLogPanel.Instance?.LogUIInteraction("Building status table shown");
+    }
+
+    /// <summary>
+    /// Hide the table (e.g. when the Daily Report is dismissed). Row tracking and
+    /// per-round refreshes keep running while hidden, since those are driven by
+    /// events rather than Unity's Update loop.
+    /// </summary>
+    public void HideTable()
+    {
+        gameObject.SetActive(false);
+
+        if (showDebugInfo)
+            Debug.Log("[BuildingStatusTableUI] Table hidden");
+        GameLogPanel.Instance?.LogUIInteraction("Building status table hidden");
+    }
 }

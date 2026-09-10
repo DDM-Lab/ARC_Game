@@ -26,6 +26,9 @@ public class DemoEndPanel : MonoBehaviour
     void OnDayChanged(int newDay)
     {
         if (newDay == demoFinalDay + 1)
+        {
             panel?.SetActive(true);
+            GameLogPanel.Instance?.LogUIInteraction("Demo end panel shown");
+        }
     }
 }
