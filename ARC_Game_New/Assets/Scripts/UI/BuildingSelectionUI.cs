@@ -203,8 +203,9 @@ public class BuildingSelectionUI : MonoBehaviour
         
         // Update building info
         UpdateBuildingInfo(buildingType);
-        
+
         Debug.Log($"Showing confirmation panel for: {buildingType}");
+        GameLogPanel.Instance?.LogUIInteraction($"Building confirmation panel shown for: {buildingType}");
     }
     
     void UpdateBuildingInfo(BuildingType buildingType)
@@ -212,21 +213,24 @@ public class BuildingSelectionUI : MonoBehaviour
         string buildingName = "";
         string buildingDescription = "";
         
+        int openingRounds = buildingSystem != null ? buildingSystem.constructionRounds : 1;
+        string roundLabel = openingRounds == 1 ? "Round" : "Rounds";
+
         switch (buildingType)
         {
             case BuildingType.Kitchen:
                 buildingName = "Kitchen";
-                buildingDescription = "Provides food for clients.\nCapacity: 100 meals\n" + "<color=#00FF00>Opening Time: 1 Round</color>\n" +
+                buildingDescription = "Provides food for clients.\nCapacity: 100 meals\n" + $"<color=#00FF00>Opening Time: {openingRounds} {roundLabel}</color>\n" +
                                         $"<color=#00FF00>Setup Cost: ${buildingSystem.kitchenConstructionCost}</color>";
                 break;
             case BuildingType.Shelter:
                 buildingName = "Shelter";
-                buildingDescription = "Provides lodging for clients.\nCapacity: 100 people\n" + "<color=#00FF00>Opening Time: 1 Round</color>\n" +
+                buildingDescription = "Provides lodging for clients.\nCapacity: 100 people\n" + $"<color=#00FF00>Opening Time: {openingRounds} {roundLabel}</color>\n" +
                                         $"<color=#00FF00>Setup Cost: ${buildingSystem.shelterConstructionCost}</color>";
                 break;
             case BuildingType.CaseworkSite:
                 buildingName = "Casework Site";
-                buildingDescription = "Handles administrative tasks.\nCapacity: 400 cases\n" + "<color=#00FF00>Opening Time: 1 Round</color>\n" +
+                buildingDescription = "Handles administrative tasks.\nCapacity: 400 cases\n" + $"<color=#00FF00>Opening Time: {openingRounds} {roundLabel}</color>\n" +
                                         $"<color=#00FF00>Setup Cost: ${buildingSystem.caseworkSiteConstructionCost}</color>";
                 break;
         }
@@ -241,7 +245,8 @@ public class BuildingSelectionUI : MonoBehaviour
     void OnConfirmBuild()
     {
         Debug.Log($"Player confirmed building: {selectedBuildingType}");
-        
+        GameLogPanel.Instance?.LogPlayerAction($"Player confirmed building: {selectedBuildingType}");
+
         // Notify building system to actually build
         if (buildingSystem != null)
         {
@@ -279,7 +284,8 @@ public class BuildingSelectionUI : MonoBehaviour
     void OnCancelSelected()
     {
         Debug.Log("Player cancelled building selection");
-        
+        GameLogPanel.Instance?.LogPlayerAction("Player cancelled building selection");
+
         // Notify building system
         if (buildingSystem != null)
         {

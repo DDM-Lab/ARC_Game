@@ -35,6 +35,7 @@ public class FacilityHighlightSystem : MonoBehaviour
 
     public void HighlightFacility(string facilityObjectName)
     {
+        GameLogPanel.Instance?.LogUIInteraction($"Highlighted facility on map: {facilityObjectName}");
         StartCoroutine(RunHighlight(facilityObjectName));
     }
 
@@ -76,6 +77,7 @@ public class FacilityHighlightSystem : MonoBehaviour
 
     public void HighlightRoute(MonoBehaviour source, MonoBehaviour dest)
     {
+        GameLogPanel.Instance?.LogUIInteraction($"Highlighted delivery route on map: {source?.name} to {dest?.name}");
         StartCoroutine(RunRouteHighlight(source, dest));
     }
 
@@ -92,6 +94,7 @@ public class FacilityHighlightSystem : MonoBehaviour
             return;
         }
 
+        GameLogPanel.Instance?.LogUIInteraction($"Highlighted multi-source delivery route on map: {sources.Count} sources to {dest?.name}");
         StartCoroutine(RunMultiSourceRouteHighlight(sources, dest, onComplete));
     }
 

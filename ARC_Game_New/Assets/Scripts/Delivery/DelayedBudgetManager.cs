@@ -52,6 +52,7 @@ public class DelayedBudgetManager : MonoBehaviour
         activeDelayedBudgets.Add(item);
         OnBudgetQueueChanged?.Invoke();
         DeliveryQueuePanel.Instance?.OnItemAdded(item);
+        GameLogPanel.Instance?.LogMetricsChange($"Delayed budget queued: ${amount} from '{taskTitle}' arriving in {delayRounds} rounds");
     }
 
     /// <summary>

@@ -152,6 +152,7 @@ public class ActionExecutor : MonoBehaviour
         {
             Debug.Log($"✅ Built {buildingType} at site {p.site_id} (cost: ${action.cost})");
         }
+        GameLogPanel.Instance?.LogPlayerAction($"Action executed: built {buildingType} at site {p.site_id} (cost: ${action.cost})");
 
         return Success(action.action_id);
     }
@@ -213,6 +214,7 @@ public class ActionExecutor : MonoBehaviour
                 {
                     Debug.Log($"✅ Requested {p.quantity} untrained workers (cost: ${action.cost})");
                 }
+                GameLogPanel.Instance?.LogPlayerAction($"Action executed: hired {p.quantity} untrained workers (cost: ${action.cost})");
                 break;
 
             case "hire_trained":
@@ -239,6 +241,7 @@ public class ActionExecutor : MonoBehaviour
                 {
                     Debug.Log($"✅ Requested {p.quantity} trained workers (cost: ${action.cost})");
                 }
+                GameLogPanel.Instance?.LogPlayerAction($"Action executed: hired {p.quantity} trained workers (cost: ${action.cost})");
                 break;
 
             case "train_untrained":
@@ -282,6 +285,7 @@ public class ActionExecutor : MonoBehaviour
                 {
                     Debug.Log($"✅ Started training {p.quantity} workers (cost: ${action.cost})");
                 }
+                GameLogPanel.Instance?.LogPlayerAction($"Action executed: trained {p.quantity} workers (cost: ${action.cost})");
                 break;
 
             default:
@@ -360,6 +364,7 @@ public class ActionExecutor : MonoBehaviour
         {
             Debug.Log($"✅ Created transfer: {p.quantity} {p.resource_type} from {p.source_facility} to {p.destination_facility}");
         }
+        GameLogPanel.Instance?.LogPlayerAction($"Action executed: transfer {p.quantity} {p.resource_type} from {p.source_facility} to {p.destination_facility}");
 
         return Success(action.action_id);
     }
@@ -419,6 +424,7 @@ public class ActionExecutor : MonoBehaviour
         {
             Debug.Log($"✅ Assigned workers to {p.building_name}");
         }
+        GameLogPanel.Instance?.LogPlayerAction($"Action executed: assigned {p.quantity} workers to {p.building_name}");
 
         return Success(action.action_id);
     }
@@ -441,12 +447,11 @@ public class ActionExecutor : MonoBehaviour
             if (buildingSystem != null) buildingSystem.RequestDeconstruction(building);
             else building.StartDeconstruction();
 
-            ToastManager.ShowToast($"Deconstructing {p.building_name}", ToastType.Info);
-
             if (logActions)
             {
                 Debug.Log($"✅ Started deconstruction of {p.building_name}");
             }
+            GameLogPanel.Instance?.LogPlayerAction($"Action executed: started deconstruction of {p.building_name}");
 
             return Success(action.action_id);
         }
@@ -528,6 +533,7 @@ public class ActionExecutor : MonoBehaviour
         {
             Debug.LogWarning($"❌ Action {actionId} failed: {error}");
         }
+        GameLogPanel.Instance?.LogError($"Action {actionId} failed: {error}");
 
         return new ActionExecutionResult
         {

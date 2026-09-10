@@ -45,6 +45,31 @@ leg crosses is what decides a collision, and that depends on
 dispatch. That is a much larger project than anything above and is not needed for a leaf
 evaluator; recorded here rather than attempted.
 
+**2026-09-10, PENDING after the main-bugfixes merge (aa423cad..5f330f7c).** The merge
+changes mechanics the port models, and every number above was measured on captures taken
+BEFORE it. They are not yet re-validated.
+
+1. `HandleDeliveryFailure` no longer applies the delivery-failure satisfaction penalty --
+   upstream commented it out game-wide, noting it is "the single shared path every delivery
+   failure (flood-blocked vehicle, overnight food cancellation, etc.) goes through". The
+   port applies that penalty in TWO places and both must go: `World._blocked_delivery`
+   (-15 on a food request, -10 on a relocation) and `cancel_overnight_food`
+   (`deliveryFailurePenalty`). NOT changed yet -- doing so now would break the 12/14 against
+   merge_v6 while proving nothing, because merge_v6 was recorded on the pre-merge build.
+2. `CreateFoodBlockageChoices` now takes `hasLoadedCargo`, but reads it ONLY to pick the
+   message text -- the emergency choice is created identically either way. So the port's
+   `if not spec.get("_loaded"): return False` gate in the food-blockage answer, which was
+   fitted to 5504 vs 5802 on the old build, is NOT explained by the new code and may simply
+   be wrong against it.
+3. The whole flood/vehicle-damage path was reworked (`FloodTaskGenerator` -163/+163,
+   `FloodSystem`, `Vehicle.StopVehicleDueToFlood` now clears source/destination/path). Since
+   the residue on 5504/5601/5802 is precisely unreproduced flood collisions, this may move
+   those seeds in either direction.
+
+REQUIRED NEXT: recapture the 14 seeds on the merged build (`validate_plan --replay` into a
+new `runs/merge_v7`), then re-measure before touching any of the above. Changing the port
+against the old corpus would be fitting to a build that no longer exists.
+
 **The repo's own ratchet is stale and currently vacuous.** `test_lockstep` reports 0/42
 across `runs/validate`, `runs/validate_v1` and `runs/validate_v1_replay`, and `test_sim` /
 `test_triggers` fail on the pre-merge `cap_*` fixtures -- all of them diverging at draw 3 /

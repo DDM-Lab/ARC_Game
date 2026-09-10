@@ -285,6 +285,7 @@ public class ToastUI : MonoBehaviour
 
     private void OnCloseButtonClicked()
     {
+        GameLogPanel.Instance?.LogUIInteraction("Player dismissed toast notification");
         StartCoroutine(FadeOutAndClose());
     }
 

@@ -433,6 +433,12 @@ public class Vehicle : MonoBehaviour
             OnDeliveryCancelled?.Invoke(this, stopped, "stopped by flood");
         }
 
+        // Clear mission/destination state (mirrors CompleteDelivery) so info panels don't keep
+        // showing a stale destination/source after the vehicle is later repaired.
+        sourceBuilding = null;
+        destinationBuilding = null;
+        currentPath.Clear();
+
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} stopped due to flood at position {transform.position}");
     }
@@ -453,8 +459,7 @@ public class Vehicle : MonoBehaviour
                 string dst = GetBuildingDisplayName(currentTask.destinationBuilding);
                 string reason =
                     $"Vehicle \"{vehicleName}\" was {phase} ({currentTask.quantity} {cargoLabel} from {src} to {dst}) " +
-                    $"when it was stopped by flooding. The delivery has been halted. " +
-                    $"Satisfaction penalty: {relatedTask.deliveryFailureSatisfactionPenalty}.";
+                    $"when it was stopped by flooding. The delivery has been halted.";
 
                 TaskSystem.Instance?.HandleDeliveryFailure(relatedTask, reason);
             }

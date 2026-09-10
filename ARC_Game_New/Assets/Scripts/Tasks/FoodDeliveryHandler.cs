@@ -171,7 +171,10 @@ public class FoodDeliveryHandler : MonoBehaviour
         }
 
         if (anyCreated)
+        {
             TaskSystem.Instance.SetTaskInProgress(parentTask);
+            GameLogPanel.Instance?.LogTaskEvent($"Food delivery choice fulfilled for '{parentTask.taskTitle}': queued from {kitchens.Count} kitchen(s)");
+        }
         else
             Debug.LogWarning($"[FoodDeliveryTaskGenerator] Could not create any deliveries for '{parentTask.taskTitle}'");
 
@@ -200,6 +203,7 @@ public class FoodDeliveryHandler : MonoBehaviour
         int added = destStorage.AddResource(ResourceType.FoodPacks, amount);
         if (showDebugInfo)
             Debug.Log($"[FoodDeliveryTaskGenerator] Immediate drop: added {added}/{amount} food to {destination.name}");
+        GameLogPanel.Instance?.LogTaskEvent($"Immediate food drop executed for '{parentTask.taskTitle}': delivered {added} meals to {destination.name}");
         return added;
     }
 

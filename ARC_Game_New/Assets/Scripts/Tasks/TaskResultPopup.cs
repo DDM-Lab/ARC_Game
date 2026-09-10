@@ -233,6 +233,7 @@ public class TaskResultPopup : MonoBehaviour
         if (taskDetailUI != null)
         {
             taskDetailUI.ShowTaskDetail(currentTask);
+            GameLogPanel.Instance?.LogUIInteraction($"Player opened task detail from result popup for '{currentTask.taskTitle}'");
         }
         else
         {

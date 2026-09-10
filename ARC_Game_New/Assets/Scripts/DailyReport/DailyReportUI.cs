@@ -282,7 +282,14 @@ public class DailyReportUI : MonoBehaviour
         UpdateBottomPanels(metrics);
 
         SaveCompletedReportToHistory();
-        
+
+        // Record everything immediately — do NOT wait for the animation coroutine below.
+        // This must complete synchronously before returning, since on Day 8
+        // DailyReportManager sends all logs to the server right after this call returns.
+        LogDailyReportAsDisplayed();
+        LogDailyReportScoreFormulas();
+        BuildingStatusTableUI.Instance?.LogTableContents(GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1);
+
         StartCoroutine(AnimateReportDisplay());
     }
 
@@ -364,6 +371,12 @@ public class DailyReportUI : MonoBehaviour
     {
         // Note: SaveCompletedReportToHistory() already called BEFORE this starts
 
+        // Start the satisfaction/efficiency score-change animation immediately, in
+        // parallel with the rest of the report, instead of waiting for every other
+        // section to finish first.
+        Coroutine satisfactionAnim = StartCoroutine(AnimateFinalSatisfactionChanges());
+        Coroutine efficiencyAnim = StartCoroutine(AnimateFinalEfficiencyChanges());
+
         // Step 1: Display satisfaction panel sections one by one
         yield return StartCoroutine(DisplaySatisfactionSections());
 
@@ -376,13 +389,206 @@ public class DailyReportUI : MonoBehaviour
         // bottom curr status
         yield return StartCoroutine(DisplayLiveStatusSection());
 
-        // Step 3: Show final satisfaction changes
-        yield return StartCoroutine(AnimateFinalSatisfactionChanges());
+        // Make sure the score-change animation has actually finished before
+        // revealing the building status table.
+        yield return satisfactionAnim;
+        yield return efficiencyAnim;
 
-        // Step 4: Show final efficiency changes
-        yield return StartCoroutine(AnimateFinalEfficiencyChanges());
-        
         // No save needed here - already saved before animation started
+        // (Data logging already happened synchronously in DisplayDailyReport(),
+        // before this coroutine was even started — see LogDailyReportAsDisplayed()
+        // and LogDailyReportScoreFormulas(). Everything below here is purely visual.)
+
+        // Reveal the building status table now that the report's own content is fully shown
+        BuildingStatusTableUI.Instance?.ShowTable();
+    }
+
+    // =========================================================================
+    // GAME LOG — mirrors what the report UI will display (not a separately-computed stat dump)
+    // =========================================================================
+
+    /// <summary>
+    /// Records the Daily Report the same instant the player enters it — computed
+    /// directly from currentMetrics/DailyReportData using the exact same values and
+    /// format strings the animation coroutines below use, rather than waiting for
+    /// those coroutines to run and reading the result off the UI. This must stay
+    /// callable synchronously (no waiting on animation), since on Day 8 the log is
+    /// sent to the server immediately after DisplayDailyReport() returns.
+    /// Order matches the on-screen sequence: DisplaySatisfactionSections,
+    /// DisplayEfficiencySections, DisplayReceiptSection, DisplayLiveStatusSection,
+    /// AnimateFinalSatisfactionChanges, AnimateFinalEfficiencyChanges.
+    /// </summary>
+    void LogDailyReportAsDisplayed()
+    {
+        if (currentMetrics == null) return;
+        var d = DailyReportData.Instance;
+        if (d == null) return;
+
+        int day = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
+        int seq = 0;
+
+        void Row(string label, string value)
+        {
+            if (string.IsNullOrEmpty(value)) return;
+            seq++;
+            GameLogPanel.Instance?.LogMetricsChange($"DAILY_REPORT_UI | day={day} | #{seq} | {label}: {value}");
+        }
+
+        // Matches AnimateNumberText's final text: sign + whole number
+        string Score(float v) => (v >= 0 ? "+" : "") + v.ToString("F0");
+        // Matches AnimateCostNumberText's final text
+        string Cost(float v) => $"${v:F0}";
+        // Matches AnimateLiveNumberText's final text
+        string Live(int v) => $"{v}";
+
+        var m = currentMetrics;
+
+        // --- Bottom Panel: What We Did Today ---
+        Row("Tasks Completed", m.completedTasks.ToString());
+        Row("Facilities Constructed", m.buildingsConstructed.ToString());
+        Row("Money Spent", $"${m.budgetSpent:F0}");
+        Row("Money Received", $"${m.budgetReceived:F0}");
+        Row("Workers Hired", m.newWorkersHired.ToString());
+        Row("Workers Trained", m.workersInTraining.ToString());
+
+        // --- Bottom Panel: Today's Data ---
+        Row("Incomplete/Expired Tasks", m.incompleteExpiredTasks.ToString());
+        Row("Food Task Ratio", $"{m.completedFoodTasks}/{m.totalFoodTasks}");
+        Row("Lodging Task Ratio", $"{m.completedLodgingTasks}/{m.totalLodgingTasks}");
+        Row("Cases Resolved Ratio", $"{m.completedCasesResolved}/{m.totalCasesResolvable}");
+        Row("Emergency Task Ratio", $"{m.completedEmergencyTasks}/{m.totalEmergencyTasks}");
+
+        // --- Satisfaction Panel (order matches DisplaySatisfactionSections) ---
+        Row("Food Satisfaction", Score(m.satFoodScore));
+        Row("Food Delivery Status", $"{m.cumFoodPacksConsumedByClients}/{m.cumFoodPacksNeededByClients} food packs consumed by clients (cumulative).");
+        Row("Lodging Satisfaction", Score(m.satLodgingScore));
+        Row("Lodging Status", $"{m.cumLodgingNightsConsumed}/{m.cumLodgingNightsNeeded} lodging-nights consumed by clients (cumulative).");
+        Row("Worker Use Satisfaction", Score(m.satWorkerScore));
+        Row("Worker Status", $"Idle: {m.cumIdleWorkerRounds} | Working: {m.cumWorkingWorkerRounds} | Training: {m.cumTrainingWorkerRounds}");
+        Row("Idle", Score(m.workerIdleSatScore));
+        Row("Working", Score(m.workerWorkingSatScore));
+        Row("Training", Score(m.workerTrainingSatScore));
+        Row("Food Waste Penalty", Score(m.satWasteScore));
+        Row("Waste Status", $"{m.cumFoodPacksWasted} of {m.cumFoodPacksConsumedByClients + m.cumFoodPacksWasted} food packs requested went to waste (cumulative).");
+        Row("Casework Satisfaction", Score(m.satCaseworkScore));
+        Row("Casework Status", $"{m.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework, out of {m.cumClientsRequestedCasework} clients who requested it.");
+
+        // --- Efficiency Panel (order matches DisplayEfficiencySections) ---
+        Row("Food Cost Efficiency", Score(m.costFoodScore));
+        Row("Food Usage Summary", $"${m.cumFoodSpend:F0} spent, {m.cumFoodPacksConsumedByClients} packs consumed (cumulative).");
+        Row("Lodging Cost Efficiency", Score(m.costLodgingScore));
+        Row("Lodging Usage Summary", $"${m.cumLodgingSpend:F0} spent, {m.cumLodgingNightsConsumed} nights used (cumulative).");
+        Row("Worker Cost Efficiency", Score(m.costWorkerScore));
+        Row("Worker Usage Summary", $"${(m.cumWorkerRequestCost + m.cumWorkerTrainingCost):F0} spent over {m.cumWorkingWorkerRounds} working-rounds.");
+
+        // --- Receipt (order matches DisplayReceiptSection) ---
+        Row("Opened Kitchen", Cost(m.todayKitchenOpenCost));
+        Row("Opened Shelter", Cost(m.todayShelterOpenCost));
+        Row("Opened Casework", Cost(m.todayCaseworkOpenCost));
+        Row("Fast Food Delivery", Cost(m.todayFastFoodCost));
+        Row("Transport of People", Cost(m.todayTransportCost));
+        Row("Motel / Lodging", Cost(m.todayLodgingCost));
+        Row("Requested Workers", Cost(m.todayWorkerRequestCost));
+        Row("Worker Training", Cost(m.todayWorkerTrainingCost));
+        Row("Released Workers", Cost(0f));
+        Row("Other", Cost(m.todayOtherExpenses));
+        Row("Total", Cost(m.budgetSpent));
+
+        // --- Live Status (order matches DisplayLiveStatusSection) ---
+        int currentBudget = SatisfactionAndBudget.Instance != null ? SatisfactionAndBudget.Instance.GetCurrentBudget() : 0;
+        Row("Current Budget", $"${currentBudget:N0}");
+        Row("Food packs in transit", Live(d.GetCurrentFoodPacksInTransit()));
+        Row("Kitchen production", Live(m.foodProduced));
+        Row("Food waste", Live(m.foodWasted));
+        Row("Need lodging", Live(d.GetCurrentPopulationNeedingLodging()));
+        Row("Working", Live(d.GetCurrentWorkingWorkers()));
+        Row("Waiting", Live(d.GetCurrentWaitingWorkers()));
+        Row("Training", Live(d.GetCurrentTrainingWorkers()));
+        Row("Released today", Live(d.GetTodayWorkersReleased()));
+        Row("Need casework", Live(d.GetCurrentClientsNeedingCasework()));
+        Row("In transit to casework", Live(d.GetCurrentPeopleInTransitToCasework()));
+
+        // --- Final Summary (order matches AnimateFinalSatisfactionChanges / AnimateFinalEfficiencyChanges) ---
+        Row("Overall Satisfaction", $"{m.finalSatisfactionValue:F0}/1000");
+        Row("Satisfaction Change", Score(m.satisfactionChangeCalculated));
+        Row("Overall Efficiency", $"{m.finalEfficiencyValue:F0}/1000");
+        Row("Efficiency Change", Score(m.costEfficiencyChangeCalculated));
+    }
+
+    /// <summary>
+    /// Logs the raw statistics and formulas behind every satisfaction/efficiency
+    /// component for the day, including scores that aren't currently rendered
+    /// anywhere on screen (e.g. the per-category Kitchen/Shelter/Worker/Budget
+    /// Efficiency Scores). This is deliberately separate from
+    /// LogDailyReportAsDisplayed() — that method is a screen transcript, this one
+    /// is the "how we got this number" breakdown, read straight from currentMetrics
+    /// (already fully populated by SaveCompletedReportToHistory() before this runs).
+    /// </summary>
+    void LogDailyReportScoreFormulas()
+    {
+        if (currentMetrics == null) return;
+        var d = DailyReportData.Instance;
+        if (d == null) return;
+
+        int day = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
+
+        void F(string text) => GameLogPanel.Instance?.LogMetricsChange($"DAILY_REPORT_FORMULA | day={day} | {text}");
+
+        // ── Satisfaction subscores (cumulative ratios, each weighted 20% of 1000) ──
+        int foodConsumed = d.GetCumulativeFoodPacksConsumedByClients();
+        int foodNeeded = d.GetCumulativeFoodPacksNeededByClients();
+        F($"Food Satisfaction = (food packs consumed / needed) x 20% weight x 1000 | consumed={foodConsumed}, needed={foodNeeded} => score={currentMetrics.satFoodScore:F1}");
+
+        int lodgingConsumed = d.GetCumulativeLodgingNightsConsumed();
+        int lodgingNeeded = d.GetCumulativeLodgingNightsNeeded();
+        F($"Lodging Satisfaction = (lodging-nights consumed / needed) x 20% weight x 1000 | consumed={lodgingConsumed}, needed={lodgingNeeded} => score={currentMetrics.satLodgingScore:F1}");
+
+        int idleRounds = d.GetCumulativeIdleWorkerRounds();
+        int workingRounds = d.GetCumulativeWorkingWorkerRounds();
+        int trainingRounds = d.GetCumulativeTrainingWorkerRounds();
+        int roundsElapsed = d.GetCumulativeRoundsElapsed();
+        F($"Worker Use Satisfaction = (1-idle_ratio)/3 + working_ratio/3 + training_ratio/3, ratios vs {assumedTotalWorkerPoolSize} workers x {roundsElapsed} rounds elapsed, x 20% weight x 1000" +
+          $" | idle_rounds={idleRounds}, working_rounds={workingRounds}, training_rounds={trainingRounds}" +
+          $" => idle_sub={currentMetrics.workerIdleSatScore:F1}, working_sub={currentMetrics.workerWorkingSatScore:F1}, training_sub={currentMetrics.workerTrainingSatScore:F1}, total={currentMetrics.satWorkerScore:F1}");
+
+        int wasted = d.GetCumulativeFoodPacksWasted();
+        F($"Food Waste Penalty = (food packs wasted / (consumed+wasted)) x 20% weight x 1000 | wasted={wasted}, consumed={foodConsumed} => score={currentMetrics.satWasteScore:F1}");
+
+        int caseworkAwaiting = d.GetCumulativeClientRoundsAwaitingCasework();
+        int caseworkRequested = d.GetCumulativeClientsRequestedCasework();
+        F($"Casework Satisfaction = (1 - client-rounds awaiting / total possible rounds) x 20% weight x 1000 | awaiting={caseworkAwaiting}, requested={caseworkRequested} => score={currentMetrics.satCaseworkScore:F1}");
+
+        float satTotal = currentMetrics.satFoodScore + currentMetrics.satLodgingScore + currentMetrics.satWorkerScore + currentMetrics.satWasteScore + currentMetrics.satCaseworkScore;
+        F($"Satisfaction Total (this calculation) = Food+Lodging+Worker+Waste+Casework = {currentMetrics.satFoodScore:F1}+{currentMetrics.satLodgingScore:F1}+{currentMetrics.satWorkerScore:F1}+{currentMetrics.satWasteScore:F1}+{currentMetrics.satCaseworkScore:F1} = {satTotal:F1}");
+
+        // ── Cost-efficiency subscores (cumulative $/unit, each weighted 1/3 of 1000) ──
+        float foodSpend = d.GetCumulativeFoodSpend();
+        F($"Food Cost Efficiency = normalized($ spent / packs consumed) x 1/3 weight x 1000 | spent=${foodSpend:F0}, consumed={foodConsumed} => score={currentMetrics.costFoodScore:F1}");
+
+        float lodgingSpend = d.GetCumulativeLodgingSpend();
+        F($"Lodging Cost Efficiency = normalized($ spent / nights consumed) x 1/3 weight x 1000 | spent=${lodgingSpend:F0}, nights consumed={lodgingConsumed} => score={currentMetrics.costLodgingScore:F1}");
+
+        float workerReqCost = d.GetCumulativeWorkerRequestCost();
+        float workerTrainCost = d.GetCumulativeWorkerTrainingCost();
+        F($"Worker Cost Efficiency = normalized($ spent / working-rounds) x 1/3 weight x 1000 | request cost=${workerReqCost:F0}, training cost=${workerTrainCost:F0}, working_rounds={workingRounds} => score={currentMetrics.costWorkerScore:F1}");
+
+        float costTotal = currentMetrics.costFoodScore + currentMetrics.costLodgingScore + currentMetrics.costWorkerScore;
+        F($"Cost Efficiency Total (this calculation) = Food+Lodging+Worker = {currentMetrics.costFoodScore:F1}+{currentMetrics.costLodgingScore:F1}+{currentMetrics.costWorkerScore:F1} = {costTotal:F1}");
+
+        // ── Per-category Efficiency Scores — today-only (not cumulative), not currently rendered on screen ──
+        F($"Kitchen Efficiency Score = 5.0 - (food packs in storage x 0.05) | food_in_storage={currentMetrics.currentFoodInStorage} => score={currentMetrics.kitchenEfficiencyScore:F1}");
+        F($"Shelter Efficiency Score = (shelter occupancy rate - 50) x 0.1 | occupancy_rate={currentMetrics.shelterOccupancyRate:F1}% => score={currentMetrics.shelterEfficiencyScore:F1}");
+        F($"Worker Efficiency Score = ((100 - idle worker rate) - 50) x 0.1 | idle_rate={currentMetrics.idleWorkerRate:F1}% => score={currentMetrics.workerEfficiencyScore:F1}");
+        F($"Budget Efficiency Score = (70 - budget usage rate) x 0.2 | budget_usage={currentMetrics.budgetUsageRate:F1}% => score={currentMetrics.budgetEfficiencyScore:F1}");
+        float categoryEffTotal = currentMetrics.kitchenEfficiencyScore + currentMetrics.shelterEfficiencyScore + currentMetrics.workerEfficiencyScore + currentMetrics.budgetEfficiencyScore;
+        F($"Per-Category Efficiency Total (today only) = Kitchen+Shelter+Worker+Budget = {currentMetrics.kitchenEfficiencyScore:F1}+{currentMetrics.shelterEfficiencyScore:F1}+{currentMetrics.workerEfficiencyScore:F1}+{currentMetrics.budgetEfficiencyScore:F1} = {categoryEffTotal:F1}");
+
+        // ── Final rollups ──
+        float prevSatisfaction = currentMetrics.finalSatisfactionValue - currentMetrics.satisfactionChangeCalculated;
+        F($"Satisfaction Change = new_running_total - previous_running_total = {currentMetrics.finalSatisfactionValue:F1} - {prevSatisfaction:F1} = {currentMetrics.satisfactionChangeCalculated:F1}");
+
+        float prevEfficiency = currentMetrics.finalEfficiencyValue - currentMetrics.costEfficiencyChangeCalculated;
+        F($"Efficiency Change = new_running_total - previous_running_total = {currentMetrics.finalEfficiencyValue:F1} - {prevEfficiency:F1} = {currentMetrics.costEfficiencyChangeCalculated:F1}");
     }
 
     IEnumerator DisplaySatisfactionSections()
@@ -817,67 +1023,13 @@ public class DailyReportUI : MonoBehaviour
         DailyReportData.Instance.SaveReportToHistory(currentDay, currentMetrics);
         //END NEW
 
-        // ── Log all metrics and scores ──────────────────────────────
-        int day = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
+        // Note: player-facing game-log entries are recorded by LogDailyReportAsDisplayed(),
+        // called once the report has finished animating onto screen — see AnimateReportDisplay().
+        // That reads the actual rendered UI text rather than raw metric fields here, so it can
+        // never drift out of sync with what the player is shown (some of these currentMetrics
+        // fields, e.g. foodCompletionBonus/foodOnTimeBonus/foodDelayScore, are computed for
+        // backward compatibility but are not displayed anywhere in the current UI).
 
-        // Task summary
-        GameLogPanel.Instance?.LogMetricsChange(
-            $"DAILY_REPORT | day={day}" +
-            $" | tasks_total={currentMetrics.totalTasks}" +
-            $" | tasks_completed={currentMetrics.completedTasks}" +
-            $" | tasks_expired={currentMetrics.expiredTasks}" +
-            $" | food_tasks={currentMetrics.completedFoodTasks}/{currentMetrics.totalFoodTasks}" +
-            $" | lodging_tasks={currentMetrics.completedLodgingTasks}/{currentMetrics.totalLodgingTasks}" +
-            $" | emergency_tasks={currentMetrics.completedEmergencyTasks}/{currentMetrics.totalEmergencyTasks}" +
-            $" | cases_resolved={currentMetrics.completedCasesResolved}/{currentMetrics.totalCasesResolvable}");
-
-        // Resource & population
-        GameLogPanel.Instance?.LogMetricsChange(
-            $"DAILY_RESOURCES | day={day}" +
-            $" | food_produced={currentMetrics.foodProduced}" +
-            $" | food_delivered={currentMetrics.foodDelivered}" +
-            $" | food_in_storage={currentMetrics.currentFoodInStorage}" +
-            $" | food_wasted={currentMetrics.foodWasted}" +
-            $" | population={currentMetrics.totalPopulation}" +
-            $" | shelter_occupancy={currentMetrics.shelterOccupancyRate:F1}%" +
-            $" | vacant_slots={currentMetrics.vacantShelterSlots}" +
-            $" | overstay_groups={currentMetrics.groupsOver48Hours}");
-
-        // Workers & budget
-        GameLogPanel.Instance?.LogMetricsChange(
-            $"DAILY_WORKERS_BUDGET | day={day}" +
-            $" | workers_total={currentMetrics.totalWorkers}" +
-            $" | workers_idle={currentMetrics.idleWorkers}" +
-            $" | idle_rate={currentMetrics.idleWorkerRate:F1}%" +
-            $" | workers_in_training={currentMetrics.workersReceivingTraining}" +
-            $" | workers_hired={currentMetrics.newWorkersHired}" +
-            $" | budget_start={currentMetrics.startingBudget:F0}" +
-            $" | budget_spent={currentMetrics.budgetSpent:F0}" +
-            $" | budget_end={currentMetrics.endingBudget:F0}" +
-            $" | budget_usage={currentMetrics.budgetUsageRate:F1}%");
-
-        // Satisfaction score breakdown
-        GameLogPanel.Instance?.LogMetricsChange(
-            $"SATISFACTION_SCORES | day={day}" +
-            $" | food_completion_bonus={currentMetrics.foodCompletionBonus:F1}" +
-            $" | food_ontime_bonus={currentMetrics.foodOnTimeBonus:F1}" +
-            $" | food_delay_score={currentMetrics.foodDelayScore:F1}" +
-            $" | lodging_completion_bonus={currentMetrics.lodgingCompletionBonus:F1}" +
-            $" | lodging_overstay_penalty={currentMetrics.lodgingOverstayPenalty:F1}" +
-            $" | worker_training_bonus={currentMetrics.workerTrainingBonus:F1}" +
-            $" | satisfaction_change={currentMetrics.satisfactionChangeCalculated:F1}" +
-            $" | satisfaction_final={currentMetrics.finalSatisfactionValue:F1}");
-
-        // Efficiency score breakdown
-        GameLogPanel.Instance?.LogMetricsChange(
-            $"EFFICIENCY_SCORES | day={day}" +
-            $" | kitchen_efficiency={currentMetrics.kitchenEfficiencyScore:F1}" +
-            $" | shelter_efficiency={currentMetrics.shelterEfficiencyScore:F1}" +
-            $" | worker_efficiency={currentMetrics.workerEfficiencyScore:F1}" +
-            $" | budget_efficiency={currentMetrics.budgetEfficiencyScore:F1}" +
-            $" | efficiency_final={currentMetrics.finalEfficiencyValue:F1}");
-        // ─────────────────────────────────────────────────────────────────
-        
         Debug.Log($"Saved completed report for Day {currentDay} to history (pre-computed final sat={currentMetrics.finalSatisfactionValue:F1}, eff={currentMetrics.finalEfficiencyValue:F1})");
     }
 

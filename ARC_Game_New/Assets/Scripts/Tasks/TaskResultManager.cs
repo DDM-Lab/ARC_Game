@@ -47,6 +47,8 @@ public class TaskResultManager : MonoBehaviour
         {
             popup.Initialize(task, reason);
         }
+
+        GameLogPanel.Instance?.LogUIInteraction($"Task result popup shown for '{task.taskTitle}' ({task.status})");
     }
 
     public void OnPopupClosed()

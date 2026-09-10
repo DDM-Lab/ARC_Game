@@ -232,56 +232,16 @@ public class Building : MonoBehaviour
     //         return;
     //     }
 
-    //     ReleaseAllWorkers();
-
-    //     DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
-
-    //     currentStatus = BuildingStatus.Deconstructing;
-    //     deconstructionRoundsElapsed = 0;
-    //     deconstructionProgress = 0f;
-
-    //     // Show progress bar
-    //     if (constructionProgressBar != null)
-    //         constructionProgressBar.SetActive(true);
-
-    //     // Hide workforce indicator
-    //     if (mapWorkforceIndicator != null)
-    //         mapWorkforceIndicator.gameObject.SetActive(false);
-
-    //     // Drive deconstruction off the round clock, same as construction
-    //     GlobalClock.OnRoundEnd += OnDeconstructionRoundEnd;
-
-    //     UpdateBuildingVisual();
-
-    //     Debug.Log($"{buildingType} at site {originalSiteId} deconstruction started");
-    //     GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deconstruction started");
-    //     ToastManager.ShowToast($"{buildingType} is now closing — workers released.", ToastType.Info, true);
-    // }
-
-    // void OnDeconstructionRoundEnd()
-    // {
-    //     deconstructionRoundsElapsed++;
-    //     deconstructionProgress = (float)deconstructionRoundsElapsed / deconstructionRoundsTotal;
-    //     UpdateDeconstructionProgress(deconstructionProgress);
-    //     UpdateBuildingVisual();
-
-    //     if (deconstructionRoundsElapsed >= deconstructionRoundsTotal)
-    //     {
-    //         GlobalClock.OnRoundEnd -= OnDeconstructionRoundEnd;
-    //         CompleteDeconstruction();
-    //     }
-    // }
     void OnDeconstructionRoundEnd()
     {
         deconstructionRoundsElapsed++;
-        Debug.Log($"[Deconstruct] {buildingType} site {originalSiteId}: round {deconstructionRoundsElapsed}/{deconstructionRoundsTotal}, Day={GlobalClock.Instance.GetCurrentDay()}, Segment={GlobalClock.Instance.GetCurrentTimeSegment()}");
         deconstructionProgress = (float)deconstructionRoundsElapsed / deconstructionRoundsTotal;
+
         UpdateDeconstructionProgress(deconstructionProgress);
         UpdateBuildingVisual();
 
         if (deconstructionRoundsElapsed >= deconstructionRoundsTotal)
         {
-            Debug.Log($"[Deconstruct] {buildingType} site {originalSiteId}: COMPLETE");
             GlobalClock.OnRoundEnd -= OnDeconstructionRoundEnd;
             CompleteDeconstruction();
         }

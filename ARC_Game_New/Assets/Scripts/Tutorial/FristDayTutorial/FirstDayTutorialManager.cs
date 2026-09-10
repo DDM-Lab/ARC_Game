@@ -97,7 +97,8 @@ public class FirstDayTutorialManager : MonoBehaviour
     
         if (showDebugInfo)
             Debug.Log("FirstDayTutorial: Starting tutorial");
-        
+        GameLogPanel.Instance?.LogUIInteraction("First-day tutorial started");
+
         // Show intro messages immediately
         ShowMessageStream(introStream, () => {
             // After intro, show construction guide
@@ -157,7 +158,8 @@ public class FirstDayTutorialManager : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log($"FirstDayTutorial: Highlighted {siteHighlights.Count} abandoned sites");
-        
+        GameLogPanel.Instance?.LogUIInteraction($"Tutorial highlighted {siteHighlights.Count} abandoned sites");
+
         // Start timer to remove highlights
         StartCoroutine(RemoveHighlightsAfterDelay());
     }
@@ -185,6 +187,7 @@ public class FirstDayTutorialManager : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log("FirstDayTutorial: Highlights cleared");
+        GameLogPanel.Instance?.LogUIInteraction("Tutorial site highlights cleared");
     }
     
     void OnRoundChanged(int _)
@@ -205,6 +208,7 @@ public class FirstDayTutorialManager : MonoBehaviour
     {
         if (showDebugInfo)
             Debug.Log("FirstDayTutorial: Showing feedback");
+        GameLogPanel.Instance?.LogUIInteraction("Tutorial Day 1 feedback shown");
         
         List<TutorialMessage> messages = new List<TutorialMessage>();
         
@@ -251,6 +255,7 @@ public class FirstDayTutorialManager : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log($"FirstDayTutorial: Highlighted {siteHighlights.Count} built facilities");
+        GameLogPanel.Instance?.LogUIInteraction($"Tutorial highlighted {siteHighlights.Count} built facilities");
         
         highlightsActive = true;
         StartCoroutine(RemoveHighlightsAfterDelay());

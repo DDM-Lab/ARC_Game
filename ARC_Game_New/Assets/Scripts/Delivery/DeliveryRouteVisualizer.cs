@@ -71,6 +71,8 @@ public class DeliveryRouteVisualizer : MonoBehaviour
 
         // Directional chevrons
         DrawChevrons(path, z - 0.05f);
+
+        GameLogPanel.Instance?.LogUIInteraction("Delivery route visualized on map");
     }
 
     public void HideRoute()

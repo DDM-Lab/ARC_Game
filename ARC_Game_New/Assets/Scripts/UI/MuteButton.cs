@@ -38,6 +38,7 @@ public class MuteButton : MonoBehaviour
         PlayerPrefs.SetInt(PrefKey, _isMuted ? 1 : 0);
         PlayerPrefs.Save();
         OnMuteChanged?.Invoke(_isMuted);
+        GameLogPanel.Instance?.LogUIInteraction(_isMuted ? "Player muted audio" : "Player unmuted audio");
     }
 
     void UpdateDisplay(bool muted)

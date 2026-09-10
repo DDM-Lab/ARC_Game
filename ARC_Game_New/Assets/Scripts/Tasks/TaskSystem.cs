@@ -882,24 +882,28 @@ public class TaskSystem : MonoBehaviour
             // The demand this task carried is resolved (unfulfilled) -- it must be counted, not dropped.
             RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
 
-            // Apply penalties for delivery failure
-            if (SatisfactionAndBudget.Instance != null && task.deliveryFailureSatisfactionPenalty > 0)
-            {
-                SatisfactionAndBudget.Instance.RemoveSatisfaction(task.deliveryFailureSatisfactionPenalty, $"Delivery Failure Penalty from [{task.taskTitle}]");
-            }
+            // Delivery-failure satisfaction penalty disabled game-wide (main-bugfixes
+            // aa423cad) -- this is the single shared path every delivery failure
+            // (flood-blocked vehicle, overnight food cancellation, ...) goes through, so
+            // disabling it here covers all of them. deliveryFailureSatisfactionPenalty is
+            // left intact on GameTask/TaskData so it can be restored by re-enabling this.
+            //
+            // if (SatisfactionAndBudget.Instance != null && task.deliveryFailureSatisfactionPenalty > 0)
+            // {
+            //     SatisfactionAndBudget.Instance.RemoveSatisfaction(task.deliveryFailureSatisfactionPenalty, $"Delivery Failure Penalty from [{task.taskTitle}]");
+            // }
 
             OnTaskCompleted?.Invoke(task);
 
             if (showDebugInfo)
-                Debug.Log($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
-            GameLogPanel.Instance.LogTaskEvent($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
-            //ToastManager.ShowToast($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}", ToastType.Warning, true);
+                Debug.Log($"Task marked incomplete due to delivery failure: {task.taskTitle}");
+            GameLogPanel.Instance.LogTaskEvent($"Task marked incomplete due to delivery failure: {task.taskTitle}");
 
             // Show task result popup with delivery failure reason
             if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
             {
                 if (string.IsNullOrEmpty(reason))
-                    reason = $"Delivery failed for task: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}.";
+                    reason = $"Delivery failed for task: {task.taskTitle}.";
                 TaskResultManager.Instance.ShowTaskResult(task, reason);
             }
         }

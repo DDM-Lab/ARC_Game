@@ -9,6 +9,7 @@ public class TutorialManager : MonoBehaviour
     [Header("Tutorial Pages")]
     [SerializeField] private List<GameObject> tutorialPages = new List<GameObject>();
     [SerializeField] private int currentPageIndex = 0;
+    private int maxReachedPageIndex = 0; // Furthest page the player has actually reached — the slider can revisit up to here, never beyond
     
     [Header("Global Skip Button")]
     [SerializeField] private Button globalSkipButton; // Always in same place
@@ -64,7 +65,9 @@ public class TutorialManager : MonoBehaviour
         }
         
         currentPageIndex = pageIndex;
-        
+        if (currentPageIndex > maxReachedPageIndex)
+            maxReachedPageIndex = currentPageIndex;
+
         // Find and setup buttons on the new page
         SetupPageButtons(tutorialPages[pageIndex]);
         
@@ -195,6 +198,14 @@ public class TutorialManager : MonoBehaviour
     void OnProgressBarValueChanged(float value)
     {
         int pageIndex = Mathf.RoundToInt(value);
+
+        // Never allow dragging past the furthest page already reached
+        if (pageIndex > maxReachedPageIndex)
+        {
+            progressBar.SetValueWithoutNotify(currentPageIndex);
+            return;
+        }
+
         if (pageIndex != currentPageIndex)
         {
             ShowPage(pageIndex);
