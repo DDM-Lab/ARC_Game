@@ -250,6 +250,11 @@ public class ClientStayTracker : MonoBehaviour
 
         foreach (ClientGroup group in clientGroups.ToList())
         {
+            if (group.currentFacility == null)
+            {
+                groupsToRemove.Add(group);
+                continue;
+            }
             int roundsInFacility = group.GetRoundsInFacility(currentRound);
 
             // Caseworkless Clients
@@ -398,6 +403,12 @@ public class ClientStayTracker : MonoBehaviour
     void GenerateCaseworkTask(ClientGroup group)
     {
         if (TaskSystem.Instance == null) return;
+        if (group.currentFacility == null)
+        {
+            if (showDebugInfo)
+                Debug.LogWarning($"[ClientStayTracker] Skipping casework task for group {group.groupId} — facility was destroyed.");
+            return;
+        }
 
         string facilityDisplayName = GetFacilityDisplayName(group.currentFacility);
         string facilityName = group.currentFacility?.name ?? "Unknown Facility";

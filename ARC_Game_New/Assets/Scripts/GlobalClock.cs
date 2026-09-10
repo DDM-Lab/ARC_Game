@@ -367,7 +367,8 @@ public class GlobalClock : MonoBehaviour
             else
                 yield return new WaitForSecondsRealtime(0.1f);
 
-            OnRoundEnd?.Invoke();
+            //OnRoundEnd?.Invoke();
+            SafeInvokeStatic(OnRoundEnd);
         }
 
         clockAnimationUI?.Hide();
@@ -465,8 +466,9 @@ public class GlobalClock : MonoBehaviour
         // Advance to next time segment
         AdvanceTimeSegment();
 
-        OnRoundEnd?.Invoke();
-        
+        //OnRoundEnd?.Invoke();
+        SafeInvokeStatic(OnRoundEnd);
+
         // Enable player interactions
         EnablePlayerInteractions();
         
@@ -529,8 +531,9 @@ public class GlobalClock : MonoBehaviour
         {
             ActionTrackingManager.Instance.SetDayAndRound(currentDay, currentTimeSegment + 1);
         }
-        
-        OnTimeSegmentChanged?.Invoke(currentTimeSegment);
+
+        //OnTimeSegmentChanged?.Invoke(currentTimeSegment);
+        SafeInvoke(OnTimeSegmentChanged, currentTimeSegment);
         
         // Update display only if not end of day
         UpdateTimeDisplay();
@@ -578,8 +581,10 @@ public class GlobalClock : MonoBehaviour
         // listens to this event for resetting — it uses
         // PrepareForNewDay() instead (called above).
         // =====================================================
-        OnDayChanged?.Invoke(currentDay);
-        OnTimeSegmentChanged?.Invoke(currentTimeSegment);
+        //OnDayChanged?.Invoke(currentDay);
+        SafeInvoke(OnDayChanged, currentDay);
+        //OnTimeSegmentChanged?.Invoke(currentTimeSegment);
+        SafeInvoke(OnTimeSegmentChanged, currentTimeSegment);
 
         // Update display
         UpdateTimeDisplay();
@@ -772,5 +777,25 @@ public class GlobalClock : MonoBehaviour
     {
         // Reset time scale when destroyed
         Time.timeScale = 1f;
+    }
+
+    private void SafeInvoke(Action<int> evt, int arg)
+    {
+        if (evt == null) return;
+        foreach (Action<int> handler in evt.GetInvocationList())
+        {
+            try { handler(arg); }
+            catch (Exception e) { Debug.LogException(e); }
+        }
+    }
+
+    private static void SafeInvokeStatic(Action evt)
+    {
+        if (evt == null) return;
+        foreach (Action handler in evt.GetInvocationList())
+        {
+            try { handler(); }
+            catch (Exception e) { Debug.LogException(e); }
+        }
     }
 }

@@ -295,7 +295,8 @@ public class ActionExecutor : MonoBehaviour
         // Check if building has StartDeconstruction method
         try
         {
-            building.StartDeconstruction();
+            if (buildingSystem != null) buildingSystem.RequestDeconstruction(building);
+            else building.StartDeconstruction();
 
             if (logActions)
             {
