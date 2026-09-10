@@ -120,9 +120,11 @@ Defects found by the probes and fixed in this pass (`v1_merge_test`):
 - Self-walk arrivals never set `deliveredQuantity`, so every relocation resolved with 0 people housed for the lodging metric (RL reward). Fixed in `FinalizeRelocation`.
 - Agent payloads: population-based choices reported `deliveryQuantity 0`; now the resolved need (what the button says). `logistics.pendingRelocations` added (task, source, destination, quantity, roundsRemaining) and rendered by `obs_encoder` as a `walking:` line.
 - `ActionExecutor` population transfers (`<transfer>` grammar, manual_transfers mode) created vehicle deliveries; they now walk via the relocation handler, linked to the source's open lodging task when one exists.
-- B37 (agent path only): `GlobalClock.isWaitingForReport` is set at the end of round 4 and was cleared only by the "End Today" confirm button. `ProceedToNextDay` (gym, router) never cleared it, so from day 2 on `TaskSystem.OnSimulationEndedCheckDayComplete` treated every round end as end-of-day and cancelled every in-flight food delivery with a 15-point penalty. Cleared in `ProceedToNextDay`.
+- B37 (headless/gym only): `GlobalClock.isWaitingForReport` is set at the end of round 4 and was cleared only by the "End Today" confirm button. `GymAdvanceRound` → `ProceedToNextDay` never cleared it, so from day 2 on `TaskSystem.OnSimulationEndedCheckDayComplete` treated every round end as end-of-day and cancelled every in-flight food delivery with a 15-point penalty. Cleared in `ProceedToNextDay`.
 - B38: `Vehicle.UnloadCargo` lands the cargo and sets `deliveredQuantity` before its unload wait ends; a round ending inside that window left the delivery in the active list and the overnight cancel failed the parent task for food that was on the shelf (shelter probe day 3, `Vehicle2`). Deliveries with `deliveredQuantity > 0` are no longer cancelled.
 - Walk path capacity (B13 reopened by the cargo routing): `ClientRelocationHandler.ExecuteToSpecificDestination` capped only by the source population, so a walk to a full destination departed, bounced on arrival and returned people the stay tracker had already discharged. Now capped by the destination's effective space (capacity minus reserved vehicle inbound minus walkers already en route), refused at zero (`relocation:refused` mark). No bounce or refusal occurred in the three smoke replays; code-verified.
+- Data typo (their side): `Shelter_FoodRequest_First.asset` writes the placeholder as `\u3010food_amount]` (full-width left bracket), so the shelter's first food request reached agents and players as "has requested 【food_amount] meals". Corrected to `[food_amount]`.
+- Still leaking to HUMANS (their side, not fixed here): `GameTask.taskTitle` itself keeps the raw template, so the game log and the satisfaction history read `Delivery Failure Penalty from [[facility_name_plain] Food Request]`. Agent payloads are clean (`WebSocketManager`/`GetTaskContext` resolve); fixing it for humans means resolving at task creation, which is a their-side call.
 
 Still stale for agents (config files, not changed here): the officer prompts state "consumes 1 food/person every 4 rounds", "Food: produced by kitchens, distributed via vehicles", "Vehicles: transfer resources between buildings", "Resource transfers require available vehicles", and the domain config's "moving resources (food packs, population) between facilities with available vehicles" / "a kitchen needs staff to produce food packs". Replace with: kitchens are stocked to capacity each morning; food is consumed on delivery; people walk (2 rounds); vehicles carry food only; food does not keep overnight. The surrogate (`cora_sim`) still models the old game.
 
@@ -959,12 +961,15 @@ shelter has been flooded") and the emergency's own text describe the opposite co
 
 **Where.** `GlobalClock.cs` `EndSimulation` (`isWaitingForReport = true` once `currentTimeSegment >= roundsPerDay`),
 `OnExecuteButtonClicked` (the only reset), `ProceedToNextDay` (no reset); `TaskSystem.OnSimulationEndedCheckDayComplete`.
-**What happens.** Humans clear the flag by confirming "End Today". The gym (`GymAdvanceRound`) and the router
-call `ProceedToNextDay` directly, so the flag stays true for the rest of the game and the end-of-day
+**What happens.** Humans clear the flag by confirming "End Today" (the report manager then calls `ProceedToNextDay`).
+The gym (`GymServerManager` → `GymAdvanceRound`) calls `ProceedToNextDay` directly, so the flag stays true for the rest of the game and the end-of-day
 cancellation runs at the end of every round from day 2: 5504 smoke replay, cancellations after
 `Simulation ended - Now at Day 3, Round 3` etc. (8 round ends, 15 deliveries, 16 penalties); shelter probe
 day 3: the second vehicle of a 200-meal double, dispatched at round 2, cancelled at the end of round 2.
 **Intended.** Cancellation only at the end of round 4.
+**Scope.** Headless/gym only (RL + benchmark + the surrogate's replays). WebGL and editor play go through
+the button, so human sessions and the router's officers on a human clock were never affected; nothing was
+pushed, so no published result is affected.
 **Status.** FIXED (`v1_merge_test`): `ProceedToNextDay` clears the flag. After the fix all cancellations
 follow `Day N complete`; 5504: 7 cancellations / 10 penalties, 5801: 4 → 0.
 

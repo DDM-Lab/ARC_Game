@@ -15,7 +15,7 @@ MonoBehaviour:
   taskId: Shelter_FoodRequest_First
   taskTitle: '[facility_name_plain] Food Request'
   taskType: 1
-  description: "[facility_name] has requested \u3010food_amount] meals. We can either
+  description: "[facility_name] has requested [food_amount] meals. We can either
     send prepared meals from an available kitchen or use a quick but more costly
     fast-food delivery. We can also choose to fulfill the follow-up food request
     now, allowing us to plan ahead and satisfy both requests at once, or fulfill

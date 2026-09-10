@@ -2,11 +2,12 @@
 answer the motel's first food request with the 'double' choice, and watch what the follow-up
 request does (email: 'if both are fulfilled at once, the follow-up task will not spawn')."""
 import json, os, sys
-sys.path.insert(0, '/Users/cpulling/Work/CORA/ARC_Game/ARC_Game_New')
-os.chdir('/Users/cpulling/Work/CORA/ARC_Game/ARC_Game_New')
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, ROOT)
+os.chdir(ROOT)
 from cora_sim.searchable_env import SearchableEnv
 from cora_sim.validate_plan import EXE
-SP = 'cora_sim/runs/probes'  # unity logs land here (untracked)
+SP = os.path.join(ROOT, 'cora_sim/runs/probes')  # unity logs land here (untracked)
 os.makedirs(SP, exist_ok=True)
 port, rounds = int(sys.argv[1]), int(sys.argv[2])
 os.environ["ARC_SNAPSHOT_DEBUG"] = "1"

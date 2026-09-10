@@ -2,11 +2,12 @@
 FIRST food request with the 'double' choice and every follow-up with choice 0, to see what the
 follow-up does when the first request already covered it. Community requests: choice 0."""
 import json, os, sys
-sys.path.insert(0, '/Users/cpulling/Work/CORA/ARC_Game/ARC_Game_New')
-os.chdir('/Users/cpulling/Work/CORA/ARC_Game/ARC_Game_New')
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, ROOT)
+os.chdir(ROOT)
 from cora_sim.searchable_env import SearchableEnv
 from cora_sim.validate_plan import EXE
-SP = 'cora_sim/runs/probes'  # unity logs land here (untracked)
+SP = os.path.join(ROOT, 'cora_sim/runs/probes')  # unity logs land here (untracked)
 os.makedirs(SP, exist_ok=True)
 seed, port, rounds = 5801, int(sys.argv[1]), int(sys.argv[2])
 replay = json.load(open('cora_sim/runs/validate/staff_5801.json'))
