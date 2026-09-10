@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using GameActions;
 
 /// <summary>
@@ -886,6 +887,32 @@ public class GymServerManager : MonoBehaviour
     /// from Unity and desynced the RNG stream. Every constant below must come from the
     /// live objects, never from a transcription.
     /// </summary>
+    /// <summary>Per-storage consumption settings for the sim_constants export. One global sample
+    /// cannot describe them any more: since the food overhaul a Shelter eats every 2 rounds, the
+    /// Motel every 4, a Community not at all, and only a Kitchen refills to capacity daily.</summary>
+    static string StorageConsumptionJson(BuildingResourceStorage st)
+    {
+        if (st == null) return "";
+        return ",\"consumptionEnabled\":" + (st.enablePopulationBasedConsumption ? "true" : "false")
+             + ",\"foodPerPersonPerNRounds\":" + st.foodPerPersonPerNRounds
+             + ",\"consumptionRoundInterval\":" + st.consumptionRoundInterval
+             + ",\"workersConsumeFoodToo\":" + (st.workersConsumeFoodToo ? "true" : "false")
+             + ",\"fillFoodToCapacityDaily\":" + (st.fillFoodToCapacityDaily ? "true" : "false")
+             + ",\"foodCapacity\":" + StorageCapacity(st, ResourceType.FoodPacks)
+             + ",\"populationCapacity\":" + StorageCapacity(st, ResourceType.Population);
+    }
+
+    /// <summary>Capacity that also works on a PREFAB, whose Start()/InitializeStorage() never ran:
+    /// the runtime dictionary is empty there, so fall back to the serialized authoring list.</summary>
+    static int StorageCapacity(BuildingResourceStorage st, ResourceType type)
+    {
+        int live = st.GetResourceCapacity(type);
+        if (live > 0) return live;
+        foreach (var c in st.resourceCapacities)
+            if (c.resourceType == type) return c.maxCapacity;
+        return 0;
+    }
+
     /// <summary>Count of a trigger list, null-safe. Used only by the sim_constants export.</summary>
     static int Cnt<T>(System.Collections.Generic.List<T> list) { return list == null ? 0 : list.Count; }
 
@@ -986,6 +1013,16 @@ public class GymServerManager : MonoBehaviour
                               // and neither is inferable from the trigger set.
                               .Append(",\"taskType\":\"").Append(td.taskType).Append("\"")
                               .Append(",\"roundsRemaining\":").Append(td.roundsRemaining)
+                              // The task's OWN impact list (TaskData.impacts): what ApplyTaskPenalties
+                              // removes when the task expires Incomplete. Not the choices' impacts.
+                              // The officer decides the external-relation cap:
+                              // IsExternalRelationContact == officer ExternalRelationship and
+                              // taskId != Budget_Allocation.
+                              .Append(",\"taskOfficer\":\"").Append(td.taskOfficer).Append('"')
+                              .Append(",\"taskImpacts\":[")
+                              .Append(string.Join(",", (td.impacts ?? new List<TaskImpact>()).Select(
+                                  i => "{\"type\":\"" + i.impactType + "\",\"value\":" + i.value + "}")))
+                              .Append(']')
                               // targetFacilityType + isGlobalTask are what decide HOW MANY
                               // facilities a task rolls against, and therefore how many
                               // draws the pass consumes.
@@ -1096,6 +1133,12 @@ public class GymServerManager : MonoBehaviour
                                   .Append(",\"triggersDelivery\":").Append(c.triggersDelivery ? "true" : "false")
                                   .Append(",\"immediateDelivery\":").Append(c.immediateDelivery ? "true" : "false")
                                   .Append(",\"deliveryQuantity\":").Append(c.deliveryQuantity)
+                                  // PopulationBased choices (main-bugfixes d5e5f683) size
+                                  // themselves from the destination's live food need at
+                                  // execution time; deliveryQuantity is 0 on those, so
+                                  // without these two fields the port delivers nothing.
+                                  .Append(",\"quantityType\":\"").Append(c.quantityType).Append('"')
+                                  .Append(",\"deliveryPercentage\":").Append(c.deliveryPercentage.ToString("R", ci))
                                   .Append(",\"budgetDelayRounds\":").Append(c.budgetDelayRounds)
                                   .Append(",\"destinationCategory\":\"");
                                 if (c.triggersDelivery || c.immediateDelivery)
@@ -1225,6 +1268,91 @@ public class GymServerManager : MonoBehaviour
                           .Append(",\"startingFoodPacks\":").Append(brs.startingFoodPacks)
                           .Append('}');
                     }
+                    // THE PARAMETER SHEET IN EFFECT. Since 3d8c8b00 the sheet drives every
+                    // build, so the surrogate cannot hardcode a start state: initialBudget
+                    // and initialSatisfaction (and the horizon) come from whichever CSV this
+                    // process loaded, which ARC_PARAM_CONFIG can vary per run.
+                    var gdm = GameDataManager.Instance;
+                    if (gdm != null && gdm.IsDataReady)
+                    {
+                        sb.Append(",\"initialState\":{")
+                          .Append("\"budget\":").Append(gdm.InitialBudget)
+                          .Append(",\"satisfaction\":").Append(gdm.InitialSatisfaction.ToString("R", ci))
+                          .Append(",\"days\":").Append(gdm.InitialGameDays)
+                          .Append(",\"roundsPerDay\":").Append(gdm.InitialRoundsPerDay)
+                          .Append(",\"trained\":").Append(gdm.InitialTrainedVolunteerCount)
+                          .Append(",\"untrained\":").Append(gdm.InitialUntrainedVolunteerCount)
+                          .Append(",\"dailyBudgetAddition\":").Append(gdm.InitialDailyBudgetAddition)
+                          .Append(",\"residentsPerCommunity\":").Append(gdm.InitialResidentsPerCommunityNumber)
+                          .Append(",\"requiredWorkersPerLocation\":").Append(gdm.InitialRequiredWorkersPerLoc)
+                          // Day 1 Round 1's weather. The port used to hardcode Sunny, which with a
+                          // HeavyRain sheet means no rain, no flood spawn, and a draw stream that
+                          // is hundreds of randoms short on the very first round.
+                          .Append(",\"weather\":\"").Append(gdm.InitialWeather).Append('"')
+                          // Emergency/external-relation caps. TaskSystem.numEmergencyTasks reads
+                          // InitialEmergencyTaskFrequency, and since 3d8c8b00 wired the loader
+                          // that is the SHEET's value -- the port's hardcoded 0 was measured on a
+                          // build whose GameDataManager had no configLoader and took SetDefaults.
+                          .Append(",\"emergencyTotal\":").Append(gdm.InitialEmergencyTaskFrequency)
+                          .Append(",\"externalRelationTotal\":").Append(gdm.InitialExternalRelationFrequency)
+                          // WorkerTrainingSystem.satisfactionPerTrainedWorker: completing a
+                          // training grants this per worker (a scene value, not a sheet one).
+                          .Append(",\"satisfactionPerTrainedWorker\":")
+                          .Append(FindObjectOfType<WorkerTrainingSystem>() != null
+                                  ? FindObjectOfType<WorkerTrainingSystem>().satisfactionPerTrainedWorker : 0)
+                          .Append('}');
+                    }
+                    // EVENT ORDER + BUILD IDENTITY. Which build produced this export, so a
+                    // stale corpus fails loudly, and the clock's handler order so the port's
+                    // phase order is data rather than something read off a trace.
+                    sb.Append(",\"buildGUID\":\"").Append(Application.buildGUID).Append('"');
+                    if (GlobalClock.Instance != null)
+                        sb.Append(",\"eventOrder\":").Append(GlobalClock.Instance.DescribeSubscribersJson());
+                    // COMMUNITY FOOD DEPLETION (main-bugfixes d5e5f683). Communities no longer
+                    // consume; a per-community, per-round draw removes a fixed chunk and spawns
+                    // the request for exactly what was lost. One live draw site per community
+                    // per round, so the surrogate cannot reproduce the stream without these.
+                    var cfd = FindObjectOfType<CommunityFoodDepletionManager>();
+                    if (cfd != null)
+                    {
+                        sb.Append(",\"communityDepletion\":{")
+                          .Append("\"chancePerRound\":").Append(cfd.depletionChancePerRound.ToString("R", ci))
+                          .Append(",\"amount\":").Append(cfd.depletionAmount)
+                          .Append(",\"firstEligibleDay\":").Append(cfd.firstEligibleDay)
+                          .Append(",\"lastEligibleRound\":").Append(cfd.lastEligibleRound)
+                          .Append('}');
+                    }
+                    // SELF-WALK RELOCATION (main-bugfixes 5d922203). Population moves without a
+                    // vehicle and lands this many rounds later.
+                    var crh = FindObjectOfType<ClientRelocationHandler>();
+                    if (crh != null)
+                        sb.Append(",\"relocationDelayRounds\":").Append(crh.relocationDelayRounds);
+                    // STORAGE SETTINGS BY BUILDING TYPE, read off the BUILD PREFABS. At reset only
+                    // the prebuilts exist, so a Shelter's "eats every 2 rounds" and a Kitchen's
+                    // fill-to-capacity are invisible to the export above until one is built. Read
+                    // capacities here as authored; the sheet overrides them at ApplyConfiguredCapacities.
+                    var bsys = FindObjectOfType<BuildingSystem>();
+                    if (bsys != null)
+                    {
+                        sb.Append(",\"storagePrefabs\":{");
+                        bool firstP = true;
+                        foreach (var pair in new[] {
+                            new { Key = "Kitchen", Go = bsys.kitchenPrefab },
+                            new { Key = "Shelter", Go = bsys.shelterPrefab },
+                            new { Key = "CaseworkSite", Go = bsys.caseworkSitePrefab } })
+                        {
+                            var pst = pair.Go != null ? pair.Go.GetComponent<BuildingResourceStorage>() : null;
+                            if (pst == null) continue;
+                            if (!firstP) sb.Append(',');
+                            firstP = false;
+                            sb.Append('"').Append(pair.Key).Append("\":{\"startingFoodPacks\":")
+                              .Append(pst.startingFoodPacks)
+                              .Append(",\"enableFoodWaste\":").Append(pst.enableFoodWaste ? "true" : "false")
+                              .Append(StorageConsumptionJson(pst))
+                              .Append('}');
+                        }
+                        sb.Append('}');
+                    }
                     sb.Append(",\"buildingWorkforce\":[");
                     {
                         bool first = true;
@@ -1244,6 +1372,7 @@ public class GymServerManager : MonoBehaviour
                               .Append(st0 != null ? st0.startingFoodPacks : 0)
                               .Append(",\"enableFoodWaste\":")
                               .Append(st0 != null && st0.enableFoodWaste ? "true" : "false")
+                              .Append(StorageConsumptionJson(st0))
                               .Append('}');
                         }
                         foreach (var b in pres)
@@ -1257,6 +1386,7 @@ public class GymServerManager : MonoBehaviour
                               .Append(st1 != null ? st1.startingFoodPacks : 0)
                               .Append(",\"enableFoodWaste\":")
                               .Append(st1 != null && st1.enableFoodWaste ? "true" : "false")
+                              .Append(StorageConsumptionJson(st1))
                               .Append('}');
                         }
                     }

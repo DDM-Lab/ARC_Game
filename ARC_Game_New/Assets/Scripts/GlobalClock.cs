@@ -67,6 +67,44 @@ public class GlobalClock : MonoBehaviour
     public event Action OnSimulationEnded;
     public event Action<int> OnTimeSegmentChanged;
     public event Action<int> OnDayChanged;
+
+    /// <summary>The clock's subscribers, in invocation order, as JSON -- for the sim_constants
+    /// export. The surrogate reproduces the ORDER handlers run in on each clock event, and that
+    /// order is Start()/FindObjectsOfType order, written down nowhere else. Reading it off the
+    /// delegate lists turns "where does this phase go" from trace archaeology into a lookup.</summary>
+    public string DescribeSubscribersJson()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append('{');
+        AppendList(sb, "OnTimeSegmentChanged", OnTimeSegmentChanged);
+        sb.Append(',');
+        AppendList(sb, "OnDayChanged", OnDayChanged);
+        sb.Append(',');
+        AppendList(sb, "OnDayStarted", OnDayStarted);
+        sb.Append(',');
+        AppendList(sb, "OnRoundEnd", OnRoundEnd);
+        sb.Append(',');
+        AppendList(sb, "OnSimulationEnded", OnSimulationEnded);
+        sb.Append('}');
+        return sb.ToString();
+    }
+
+    static void AppendList(System.Text.StringBuilder sb, string name, Delegate evt)
+    {
+        sb.Append('"').Append(name).Append("\":[");
+        if (evt != null)
+        {
+            bool first = true;
+            foreach (var d in evt.GetInvocationList())
+            {
+                if (!first) sb.Append(',');
+                first = false;
+                string owner = d.Target != null ? d.Target.GetType().Name : d.Method.DeclaringType?.Name;
+                sb.Append('"').Append(owner).Append('.').Append(d.Method.Name).Append('"');
+            }
+        }
+        sb.Append(']');
+    }
     /// <summary>Fires once per rollover, after every OnDayChanged handler, at the point where the
     /// old segment-0 event used to fire. Start-of-day task generation hangs off this so that
     /// database triggers written as "Round == 0" (Daily Budget Allocation, offboarding alerts)

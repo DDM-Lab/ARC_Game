@@ -102,7 +102,10 @@ class Session:
                 d["budget"] = (ub, w.economy.budget)
             self.diffs.append(d)
         # concatenated draw streams (Unity labels choice-time draws with the previous step)
-        unity = [(s, x) for s in sorted(self.um) if self.s0 is not None and s > self.s0 for x in self.um[s]]
+        # The port is seeded at a step BOUNDARY (test_replay_forward.seed_state, first
+        # round:advance), so Unity's first marked step is the port's step 0 and belongs in
+        # the comparison -- dropping it was the old mid-step seeding's workaround.
+        unity = [(s, x) for s in sorted(self.um) if self.s0 is None or s >= self.s0 for x in self.um[s]]
         port = [(i + 1, x) for i, ms in enumerate(self.marks) for x in ms]
         k = next((j for j, (a, b) in enumerate(zip(unity, port)) if a[1] != b[1]), None)
         self.draw_div = None if k is None and len(unity) == len(port) else (k, unity[k] if k is not None and k < len(unity) else None, port[k] if k is not None and k < len(port) else None)

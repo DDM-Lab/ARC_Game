@@ -27,7 +27,8 @@ from cora_sim.actions import CoraActions          # noqa: E402
 from cora_sim.floodmap import FloodMap            # noqa: E402
 from cora_sim.rng import UnityRandom              # noqa: E402
 from cora_sim.search import RHEA                  # noqa: E402
-import cora_sim.sim as S                          # noqa: E402
+import cora_sim.sim as S
+from .economy import C as _ECON_C                          # noqa: E402
 
 _CAPTURES = os.environ.get("STAFF_TRACES") or (
     "/private/tmp/claude-501/-Users-cpulling-Work-CORA/b762a1aa-9f0c-4053-9897-bfd6aeeb9623/"
@@ -49,8 +50,12 @@ def captured_seeds():
     return out
 
 
-def fresh_world(state, fmap):
-    w = S.World(rng=UnityRandom(state=state), weather="Sunny", fmap=fmap)
+def fresh_world(state, fmap, weather=None):
+    # Day 1's weather comes from the parameter sheet (initialState.weather). Hardcoding Sunny
+    # against a HeavyRain sheet loses the whole first-round flood spawn.
+    if weather is None:
+        weather = (_ECON_C.get("initial_state") or {}).get("weather") or "Sunny"
+    w = S.World(rng=UnityRandom(state=state), weather=weather, fmap=fmap)
     w.use_generation = True
     return w
 

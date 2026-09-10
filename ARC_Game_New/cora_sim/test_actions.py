@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cora_sim.actions import CoraActions, ADVERTISED          # noqa: E402
+from cora_sim.economy import C as ECON_C                     # noqa: E402
 from cora_sim.floodmap import FloodMap                         # noqa: E402
 from cora_sim.rng import UnityRandom                           # noqa: E402
 from cora_sim.search import RHEA                               # noqa: E402
@@ -51,8 +52,21 @@ def test_apply_answers_every_open_task_and_spends():
     assert S.open_choices(w), "expected open tasks by round 5"
     b0 = w.economy.budget
     m.apply(w, ("turn", {"choices": {}, "menu": ("hire_untrained_2",)}))
-    assert not S.open_choices(w), "every open task should have been answered"
-    assert w.economy.budget == b0 - 2 * ADVERTISED["untrained"], (b0, w.economy.budget)
+    # Everything ANSWERABLE is answered. A food request in a world with no kitchen is not:
+    # FoodDeliveryHandler refuses ("No meals available across any kitchen"), the choice
+    # returns false and the task stays on the board until it expires -- so this scenario,
+    # which builds nothing, always ends with its community food requests still open. Before
+    # the food overhaul those requests came from a probability trigger and were rare enough
+    # that the old blanket assertion held by luck; the depletion manager now raises one per
+    # community per day.
+    left = {tid for tid, _c in S.open_choices(w)}
+    unanswerable = {tid for tid in left
+                    if (w.generated_specs.get(tid) or ("", None, {}))[0] == "Community_FoodRequest"}
+    assert left == unanswerable, sorted(left - unanswerable)
+    assert not [b for b in w.economy.buildings if b["type"] == "Kitchen"], "scenario builds no kitchen"
+    # The game prices a hire itself (quantity x the configured rate, BUG_REPORTS B21); the
+    # menu's advertised number is not what moves the budget.
+    assert w.economy.budget == b0 - 2 * ECON_C["untrained_cost"], (b0, w.economy.budget)
 
 
 def test_search_never_below_baseline_and_is_reproducible():

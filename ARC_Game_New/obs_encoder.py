@@ -317,7 +317,11 @@ def _short_affects(a: str) -> str:
     Shelter_0→S0, Motel→MOTEL, CaseworkSite_2→CS2. Deterministic across turns."""
     if not a:
         return "X"
-    a = a.strip()
+    # Facilities gained display names with spaces in them ("Community Trinity",
+    # "Shelter Alpha"); a token with a space in it is not addressable in a cmd line, so
+    # every suffix is squeezed to alphanumerics before it is returned.
+    a = "".join(c for c in a.strip() if c.isalnum() or c.isspace()).strip()
+    a = " ".join(a.split())
     up = a.upper()
     if up == "MOTEL":
         return "MOTEL"
@@ -325,20 +329,25 @@ def _short_affects(a: str) -> str:
         return "MAINT"
     if up.startswith("COMMUNITY"):
         tail = a[len("Community"):]
-        return f"C{tail}" if tail.isdigit() or tail == "" else f"C{tail.upper()}"
+        return _squeeze(f"C{tail.upper()}")
     if up.startswith("SHELTER"):
         tail = a[len("Shelter"):].lstrip("_")
-        return f"S{tail}" if tail else "S"
+        return _squeeze(f"S{tail.upper()}") if tail else "S"
     if up.startswith("KITCHEN"):
         tail = a[len("Kitchen"):].lstrip("_")
-        return f"K{tail}" if tail else "K"
+        return _squeeze(f"K{tail.upper()}") if tail else "K"
     if up.startswith("CASEWORKSITE"):
         tail = a[len("CaseworkSite"):].lstrip("_")
-        return f"CS{tail}" if tail else "CS"
+        return _squeeze(f"CS{tail.upper()}") if tail else "CS"
     if up.startswith("CASEWORK"):
         return "CASE"
     # unknown facility label → uppercase, alphanumeric-only
-    return "".join(c for c in a.upper() if c.isalnum()) or "X"
+    return _squeeze(a.upper())
+
+
+def _squeeze(s: str) -> str:
+    """Alphanumerics only — tokens are command-line addressable, so no spaces."""
+    return "".join(c for c in s if c.isalnum()) or "X"
 
 
 def stable_task_token(t: dict) -> str:
@@ -361,14 +370,21 @@ def stable_task_token(t: dict) -> str:
         return "ALERT_WORKFORCE"
     if "flood alert" in tl:
         return "ALERT_FLOOD"
-    if "food request from community" in tl:
+    # The food overhaul (main-bugfixes d5e5f683) retitled every facility task to
+    # "<facility> <thing>", so the old "food request from community" style matches all fell
+    # through to TASK_<taskId> -- the drifting integer these tokens exist to avoid. Both
+    # spellings are kept: captures and transcripts from before the merge still parse.
+    if "follow-up food request" in tl:
+        return f"FOODF_{_short_affects(affects)}"
+    if "food request from community" in tl or "food request from shelter" in tl \
+            or "food request" in tl:
         return f"FOOD_{_short_affects(affects)}"
-    if "food request from shelter" in tl:
-        return f"FOOD_{_short_affects(affects)}"
-    if "population relocation" in tl:
+    if "population relocation" in tl or "relocation request" in tl:
         return f"RELOC_{_short_affects(affects)}"
-    if "community emergency evacuation" in tl:
+    if "community emergency evacuation" in tl or "flood damage evacuation" in tl:
         return f"EVAC_{_short_affects(affects)}"
+    if "flood damage relocation" in tl:
+        return f"FLOODRELOC_{_short_affects(affects)}"
     if "casework request" in tl:
         return f"CASEWORK_{_short_affects(affects)}"
     if "vehicle repair" in tl:

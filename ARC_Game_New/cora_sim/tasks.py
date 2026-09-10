@@ -70,9 +70,10 @@ class Task:
     """One live task instance."""
 
     __slots__ = ("task_id", "tag", "demand", "delivered", "rounds_remaining",
-                 "resolved", "chosen", "destination", "source", "fresh", "chosen_id")
+                 "resolved", "chosen", "destination", "source", "fresh", "chosen_id",
+                 "task_type")
 
-    def __init__(self, task_id, tag, demand=0, rounds_remaining=1):
+    def __init__(self, task_id, tag, demand=0, rounds_remaining=1, task_type="Demand"):
         self.task_id = task_id
         self.tag = tag                      # "Food" | "Lodging" | "None"
         self.demand = demand                # people, for Lodging; 0 for Food (legacy path)
@@ -84,6 +85,10 @@ class Task:
         self.source = ""            # facility the people or goods come FROM
         self.fresh = True           # created this round; not aged until the next one
         self.chosen_id = None       # which choice was answered, for arrival-time sourcing
+        # TaskType, because RecordTaskResolution returns early for Alert and Other however
+        # the task is tagged: Flood_Alert carries TaskTag.Lodging and must NOT move
+        # lodgingResolved (merge_v4 step 18: Unity +0, the port +1 for exactly that alert).
+        self.task_type = task_type
 
     def clone(self):
         t = Task.__new__(Task)
@@ -310,6 +315,25 @@ class TaskBoard:
                 total += load[1]
         return total
 
+    def outbound_by_kitchen(self):
+        """GetReservedOutgoingQuantity per SOURCE kitchen: {kitchen name -> packs promised}.
+
+        The scalar total above answers "is any food spoken for"; ranking kitchens needs it
+        per source, because effectiveStock is that kitchen's own stock minus its own
+        outbound. The source is carried in the payload tag ("__food__<dest>|<kitchen>")."""
+        out = {}
+        def add(tag, qty):
+            tag = str(tag or "")
+            if not tag.startswith("__food__") or "|" not in tag:
+                return
+            out[tag.split("|", 1)[1]] = out.get(tag.split("|", 1)[1], 0) + qty
+        for _seq, payload, _src, _dst, qty in self.pending:
+            add(payload[2], qty)
+        for load in self.fleet.carrying:
+            if load is not None:
+                add(load[2], load[1])
+        return out
+
     def inbound_to(self, destination):
         """DeliverySystem.GetReservedIncomingQuantity: population already en route.
 
@@ -532,7 +556,8 @@ class TaskBoard:
 
         Only Food and Lodging tasks touch the counters at all; advisories and worker
         notices resolve silently."""
-        if task.resolved or task.tag not in ("Food", "Lodging"):
+        if (task.resolved or task.tag not in ("Food", "Lodging")
+                or getattr(task, "task_type", "Demand") in ("Alert", "Other")):
             task.resolved = True
             return
         demand = task.demand

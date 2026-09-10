@@ -32,8 +32,27 @@ import os
 import sys
 import time
 
-CONFIG = "config/continuous_agents_domain.json"
-EXE = "Build/Headless/macOS/ARC_Headless.app/Contents/MacOS/ARC_DisasterSimulation"
+# ARC_AGENT_CONFIG points the shake-out at another roster (e.g. a local-model one) without
+# editing the shipped config.
+CONFIG = os.environ.get("ARC_AGENT_CONFIG", "config/continuous_agents_domain.json")
+def _default_exe():
+    """The macOS player is named after PlayerSettings.productName, which has changed once
+    already (ARC_DisasterSimulation -> "Collaborative Operations..."), so take whatever is
+    inside the bundle rather than a hardcoded name. ARC_HEADLESS_EXE overrides, exactly as
+    in benchmark_models.py."""
+    env = os.environ.get("ARC_HEADLESS_EXE")
+    if env:
+        return env
+    macos = "Build/Headless/macOS/ARC_Headless.app/Contents/MacOS"
+    if os.path.isdir(macos):
+        for name in sorted(os.listdir(macos)):
+            path = os.path.join(macos, name)
+            if os.access(path, os.X_OK) and os.path.isfile(path):
+                return path
+    return os.path.join(macos, "ARC_DisasterSimulation")
+
+
+EXE = _default_exe()
 
 
 def load_env_file(path=".env"):

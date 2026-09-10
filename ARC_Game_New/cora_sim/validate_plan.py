@@ -23,8 +23,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cora_sim.actions import REPAIR_CHOICE   # noqa: E402
 from cora_sim.economy import REQUIRED_WORKFORCE   # noqa: E402
 
-EXE = ("Build/Headless/macOS/ARC_Headless.app/Contents/MacOS/"
-       "Collaborative Operations And Resource Management with Agentic AI")
+# The bundle's executable is named after productName, which has changed once already;
+# ARC_HEADLESS_EXE overrides for a non-standard layout (the cluster's Linux build).
+EXE = os.environ.get("ARC_HEADLESS_EXE") or (
+    "Build/Headless/macOS/ARC_Headless.app/Contents/MacOS/"
+    "Collaborative Operations And Resource Management with Agentic AI")
 
 
 def best_row(log, unity_seed):
@@ -171,8 +174,16 @@ def play(row, port, out_dir, rounds=32, replay=None):
               f"food {um.get('foodFulfilled')}/{um.get('foodResolved')} lodging {um.get('lodgingFulfilled')}/{um.get('lodgingResolved')} "
               f"sent={[x.get('action_id') or x.get('choiceId') for x in taken]}" + ("  <-- DIFF " + ",".join(map(str, diffs)) if diffs else ""),
               flush=True)
+    # Stamp the capture with the build that produced it, so obs_diff can refuse to compare a
+    # corpus exported from one build against a capture taken from another.
+    try:
+        _consts = env._send_request({"type": "sim_constants"}) or {}
+    except Exception:
+        _consts = {}
     env.close()
     json.dump(trace, open(out, "w"))
+    json.dump({"buildGUID": _consts.get("buildGUID"), "seed": row.get("unity_seed"), "rounds": len(trace)},
+              open(out.replace(".json", ".meta.json"), "w"))
     import reward_scoring
     print(f"wrote {out}")
     print(f"surrogate score {model.value(w):.4f}   unity score {reward_scoring.compute_score(after.get('rewardMetrics') or {})[2]:.4f}"

@@ -1030,3 +1030,153 @@ then eaten by the periodic tick (shelter probe day 3, `Vehicle2`: `received 100 
 - "`SetTaskInProgress` after `CompleteTask` double-processes." It guards on `activeTasks.Contains`; no-op.
 - "A task can be resolved twice." `CompleteTask`, `ExpireTask` and `SetTaskIncomplete` all remove from
   `activeTasks` first; no double `RecordTaskResolution` path exists (A4/A5 are the *missing* ones).
+
+---
+
+## Part E — questions for the food-overhaul / self-walk merge (asked 2026-09-10)
+
+Everything below is on `34d2133d` (`v1_merge_test`), i.e. `origin/main-bugfixes` `d5e5f683`
+("major food related mechanism update and client relocation changed (no vehicle)") plus
+`5d922203` (self-walk relocation) merged onto `v1_fixes`. The rest of this document is still
+pinned to `868c192e`, so line numbers elsewhere predate these changes.
+
+These are questions, not defect claims: the mechanics below are being **kept as they are** until
+they are ruled on. Each says what the code does today and what an answer would change.
+
+### E.1 Motel eats once a day, shelters twice — intended?
+
+`Shelter.prefab:310-313` `consumptionRoundInterval: 2`; `MotelPrefab.prefab:129-133`
+`consumptionRoundInterval: 4`. With the A1 clock fix the day delivers four segment events
+(1, 2, 3, 4), so a shelter runs its population-consumption tick twice a day and the motel once,
+even though both were given the same *pair* of daily food-request tasks (`*_FoodRequest_First`
+at `targetRound: 0` = round 1, `*_FoodRequest_Second` at `targetRound: 2` = round 3).
+`d5e5f683`'s message says the motel change "mirrors Shelter", which the interval does not.
+
+*Follow-on:* if the motel only eats once, is its round-3 follow-up request ever legitimately
+open, or does `GetFoodNeed() > 0` (`NeedsFood`, `resourceTriggers.condition: 3`) simply fail and
+the task never appears? Same question for the "Deliver double to cover the current and follow-up
+requests" choice (`quantityType: PopulationBased`, `deliveryPercentage` 200) on the motel task:
+double of a once-a-day need is a full day of waste at the rollover (`enableFoodWaste: 1`).
+
+*Changes:* difficulty and the food-coverage score for lodging; the surrogate's per-building
+consumption schedule.
+
+### E.2 Communities no longer consume; depletion is the whole demand model
+
+`CommunityPrefab.prefab` now has `enablePopulationBasedConsumption: 0`, `enableFoodWaste: 0`, and
+communities start and stay at food capacity (400). `Tasks/CommunityFoodDepletionManager.cs` rolls
+`UnityEngine.Random.value < depletionChancePerRound` (sheet `initialFoodDemandFrequency`, 0.2)
+per community per round, days ≥ 2, rounds 1-3, removes `depletionAmount` (100) and spawns
+`Community_FoodRequest` for exactly what was lost, skipping if a request for that community is
+already active.
+
+Questions: (a) is 100 packs per event / 0.2 per community-round the intended pressure, or a
+placeholder? (b) communities are never refilled except by fulfilled requests — a community that
+loses four events and gets none fulfilled sits at 0 and (with `enableFoodWaste: 0`) stays there;
+is starvation meant to be absorbing? (c) B26 (communities consuming 400/day and the sheet's
+resident count never reaching them) is superseded by this — confirm B26 is closed rather than
+re-derived.
+
+*Changes:* B26's status, the RNG stream (this is a new per-community draw per round —
+`SnapshotDebug.Mark("draw:CommunityFoodDepletion")`), and the surrogate's food-request generator.
+
+### E.3 Two consumption paths: the round tick and consume-on-delivery
+
+`BuildingResourceStorage.AddResource` now feeds the whole population the moment food arrives, and
+the round tick does the same; both go through `ConsumeFoodForPopulationOncePerRound`, keyed on
+`day*100 + segment`. So a facility eats at most once per round, but *which* round it eats in now
+depends on when a delivery lands.
+
+Question: when a delivery consumes in a round where the interval tick would also have fired, the
+tick returns false and `roundsSinceLastConsumption` is **not** reset by the tick path (the
+delivery path resets it), so the phase of the cycle shifts with delivery timing. Is that
+intended, or should a delivery-triggered feed count as that cycle's feed?
+
+*Changes:* whether the surrogate can model consumption on a fixed schedule at all, or has to
+model it as an event keyed to delivery arrival.
+
+### E.4 Shelters stopped feeding their workers — RULED 2026-09-10: workers do not consume food
+
+`Shelter.prefab` `workersConsumeFoodToo: 1 → 0` in `d5e5f683`. No building now feeds staff.
+**Ruling (2026-09-10):** intended — workers never consume food. Every prefab already carries the
+flag off and the surrogate reads it from the export, so nothing changes; the flag is now a
+constraint, not a question.
+Deliberate simplification, or collateral? (Note `GetTotalPeopleCount` was simultaneously fixed to
+count heads rather than workforce points, B27, which only matters if some building turns the flag
+back on.)
+
+### E.5 Overnight cancellation of food deliveries
+
+`TaskSystem.CancelIncompleteFoodDeliveries` cancels every food delivery still queued or in
+transit when round 4 ends and fails the parent task ("Food cannot be delivered overnight").
+B37 already fixed the case where the cargo had landed. Remaining question: a request generated at
+round 3 whose delivery cannot physically arrive before the day ends is a guaranteed failure —
+should such a request be generated at all (that is what `TaskData.latestGenerationRound` exists
+for), or should the delivery survive the night?
+
+*Changes:* whether a rational agent should ever answer a late-day food request; the penalty
+distribution in benchmark and RL runs.
+
+### E.6 Food requests only from day 2
+
+Both `*_FoodRequest_First/Second` carry `dayTriggers: conditionType: 3, startDay: 2`, and the
+community depletion manager has `firstEligibleDay = 2`. Day 1 therefore has no food demand of any
+kind. Intended tutorial ramp, or an artefact of the day-1 rework (C.10)?
+
+### E.7 Kitchens: fill-to-capacity replaces production
+
+`Kitchen.prefab` `fillFoodToCapacityDaily: 1`; the whole `roundProduction` mechanism is deleted.
+A kitchen is now a daily bucket of `initialKitchenFoodCapacity` (sheet: 200) that resets each
+morning, and `initialKitchenCapacity` has no consumer any more. Confirm 200/day/kitchen is the
+intended supply ceiling — with a shelter of 100 people eating twice a day, one kitchen feeds one
+full shelter and nothing else.
+
+### E.8 Self-walk relocation
+
+`ClientRelocationHandler.QueueSelfWalk` — population moves without a vehicle, departing
+immediately and arriving after `relocationDelayRounds` (default 2, Inspector-configurable, not in
+the sheet); vehicles are food-only now. Questions: is the delay meant to be uniform regardless of
+distance or flooding? Should a walk be blocked or delayed by flooded roads (deliveries are
+flood-aware, walks are not)? And is `relocationDelayRounds` meant to be a sheet parameter?
+
+*Changes:* the surrogate's transfer model (currently instantaneous-at-round-end), and the RL
+action semantics for relocation.
+
+### E.9 The shipped parameter sheet starts satisfaction at 0 — this breaks headless runs
+
+`Assets/StreamingAssets/game_param_config.csv` (merged in with `d5e5f683`) has
+`initialSatisfaction,0` (its own "default" column says 50) and `initialBudget,8000` (default
+10000). Since `3d8c8b00` the sheet drives every build, including headless.
+
+`arc_game_gym_env_tcp.py:684` terminates an episode on `satisfaction <= 0`, so **every** gym /
+benchmark episode now ends after round 1 with reward 0. Verified on this build: with the sheet as
+committed, 1 round played, `terminated: true`; with `ARC_PARAM_CONFIG` pointing at the same sheet
+edited to `initialSatisfaction,50`, the episode runs normally.
+
+Question: is satisfaction 0 the intended start for play-testing (in which case the gym's
+termination rule needs to change — e.g. terminate only on a *drop* to 0 after round 1, or on
+`isGameOver`), or is the committed value a leftover from a local test? Nothing has been edited
+here pending the answer.
+
+### E.11 Per-facility worker counts are never serialised
+
+`GameStateStructures.cs:156-157` declares `ResourceInventory.trainedWorkers/untrainedWorkers`;
+the only place a facility's `resources` block is built (`TaskSystem.cs:2982-2988`) sets food and
+population and nothing else, so both read 0 for every building in every observation. Nothing
+downstream reads them (`obs_encoder`, router, prompts, tools all use `assignedWorkforce` and the
+global `workforceState`, which are correct), so agents were not misled — but the fields are dead
+weight in the payload and the per-building mix is genuinely unavailable to a consumer that wanted
+it. Populate from `WorkerSystem.GetWorkersByBuildingId`, or remove the fields.
+
+### E.10 Smaller items
+
+- **`[food_amount]`** is resolved from `GameTask.foodAmount`, a snapshot taken at task creation
+  (`TaskSystem`), while the delivered amount is recomputed live by
+  `FoodDeliveryHandler.ResolveQuantity`. The number the officer/agent reads can therefore differ
+  from the number delivered. Intended?
+- **Immediate ("Rapid Response Vehicle", $1000, 100 meals)** still debits no kitchen (B15/C.7).
+  Now that kitchens are a fixed daily bucket, is external supply meant to be the release valve?
+- **Motel food capacity is 6000** (`MotelPrefab.prefab` `resourceCapacities`), not sheet-driven,
+  while shelter/kitchen food capacities are. Intended asymmetry?
+- **Flood road-blockage (food)** is now a single immediate-delivery choice priced per meal, and
+  vehicle repair's "delay" choice lost its satisfaction penalty. Confirm both are final.

@@ -185,45 +185,57 @@ class ClientTracker:
                 if rng.value_lt(threshold_for(f32(pct / 100.0))):
                     group.casework_generated = True
                     group.casework_round = current_round
-                    counters["caseworkRequested"] += group.count
+                    # v1_fixes 21d05150 ("credit casework by group", A7): the credit is the
+                    # NEEDY count -- RecordCaseworkRequested(group.clientsWithCaseworkNeed).
+                    # The whole-group credit above was the pre-fix game.
+                    counters["caseworkRequested"] += group.with_need
                     # GenerateCaseworkTask: the task asks for the NEEDY count, credits the
                     # WHOLE group, and belongs to this group's facility.
                     if generated is not None:
                         generated.append((group.gid, group.facility, group.with_need))
         return departures
 
-    def process_home(self, facility, quantity, counters):
-        """RemoveClientsByQuantity(facility, quantity), transcribed.
+    def process_home(self, facility, quantity, counters, gid=-1, credit=True):
+        """RemoveClientsByQuantity(shelter, quantity, preferredGroupId, creditCasework).
 
-        Only the SOURCE facility's groups are touched, in insertion order: a group whose
-        whole count fits in what remains is removed outright (`<=`, so an empty group is
-        swept too); the first that does not fit is trimmed, needy members first. Credits
-        caseworkProcessed with what was actually removed -- which is less than `quantity`
-        when the tracker holds fewer people at that facility than the vehicle carried
-        (the Motel's original residents were never tracked).
-
-        Called TWICE per delivery in Unity: Vehicle.UnloadCargo -> HandlePopulationDelivery
-        with the actual amount unloaded, then DeliverySystem's completion handler with the
-        nominal amount. 5503 validation: Casework Alpha received 46 people and
-        caseworkProcessed read 92. The double count is the game's, so it is the port's."""
+        Since the self-walk merge this is the DEPARTURE side of a casework walk (and of a
+        lodging-to-lodging walk, uncredited). The order is the game's: the preferred
+        group's casework-needing members first, then every other group's casework-needing
+        members, then non-needing members in group order; a group emptied on the way is
+        dropped. Only the CASEWORK-NEEDING removals are credited to caseworkProcessed --
+        the old whole-count credit was the pre-fix game."""
         remaining = quantity
-        removed = 0
-        keep = []
-        for group in self.groups:
-            if group.facility != facility or remaining <= 0:
-                keep.append(group)
+        casework_removed = 0
+        mine = [g for g in self.groups if g.facility == facility]
+        preferred = next((g for g in mine if g.gid == gid), None) if gid is not None and gid >= 0 else None
+
+        def take_casework(group):
+            nonlocal remaining, casework_removed
+            take = min(remaining, group.with_need)
+            if take <= 0:
+                return
+            group.with_need -= take
+            group.count -= take
+            remaining -= take
+            casework_removed += take
+
+        if preferred is not None and remaining > 0:
+            take_casework(preferred)
+        for g in mine:
+            if remaining <= 0:
+                break
+            if g is preferred:
                 continue
-            if group.count <= remaining:
-                remaining -= group.count
-                removed += group.count
-                continue                          # whole group removed
-            group.count -= remaining
-            deduct = min(group.with_need, remaining)
-            group.with_need -= deduct
-            removed += remaining
-            remaining = 0
-            keep.append(group)
-        self.groups = keep
-        if removed > 0:
-            counters["caseworkProcessed"] += removed
-        return removed
+            take_casework(g)
+        for g in mine:
+            if remaining <= 0:
+                break
+            take = min(remaining, g.without_need)
+            if take <= 0:
+                continue
+            g.count -= take
+            remaining -= take
+        self.groups = [g for g in self.groups if g.count > 0]
+        if credit and casework_removed > 0:
+            counters["caseworkProcessed"] += casework_removed
+        return quantity - remaining

@@ -41,7 +41,7 @@ from .flood import FloodState, update_flood
 from .floodmap import FloodMap
 from . import roads
 from .tasks import Task, TaskBoard, demand_of, VEHICLE_CAPACITY
-from .generation import TriggerContext, generation_pass, suitable_facilities
+from .generation import TriggerContext, generation_pass, suitable_facilities, _food_need
 from .triggers import INVENTORY as _INVENTORY
 
 # Task definitions by id, so a generated task carries its own choices.
@@ -77,6 +77,9 @@ CODE_BUILT_TASKS = {"Casework Request": "Casework_Request",
 # generated_specs holds the case's actual list. Verified on 5503 (population, loaded);
 # the food and not-yet-loaded cases are transcribed from the C# and unverified.
 ROAD_BLOCKAGE_SPEC_ID = "Road_Blockage"
+# CommunityFoodDepletionManager spawns this one directly (its own triggers are empty), so it
+# is never produced by a generation pass.
+COMMUNITY_FOOD_SPEC_ID = "Community_FoodRequest"
 _BLOCKAGE_FAILURE_PENALTY = 10.0      # GameTask.deliveryFailureSatisfactionPenalty default
 _BLOCKAGE_ABANDON_PENALTY = 30.0      # FloodTaskGenerator.OnAnyTaskCompleted, loaded clients
 _TASK_SPEC[ROAD_BLOCKAGE_SPEC_ID] = {
@@ -111,29 +114,32 @@ ROUNDS_PER_DAY = 4
 # This is read off the trace rather than derived from the segment numbering, because the
 # numbering does not line up: the mark tag counts 1..4 while OnRoundChanged reports 1,2,3
 # then 0. Encoding the observable schedule is honest; encoding a guessed numbering is not.
-_GENERATION_SEGMENTS = (2,)
-# GameDataManager.InitialEmergencyTaskFrequency, as the HEADLESS game actually runs it: ZERO.
-# MainScene's GameDataManager has no configLoader wired (configLoader: {fileID: 0} in the
-# scene), so LoadAllData takes the SetDefaults() branch at Awake ("External config disabled or
-# missing loader. Using Hardcoded Defaults." -- logged before the loader's fetch even starts)
-# -- and SetDefaults assigns defaultEmergencyTaskFrequency (4) to
-# InitialExternalRelationFrequency and never sets InitialEmergencyTaskFrequency at all
-# (GameDataManager.cs, the last line of SetDefaults). TaskSystem.numEmergencyTasks is
-# therefore 0, currEmergencyTaskCount (0) >= 0 from the first pass, and every database
-# Emergency task -- Emergency Budget Crisis, Shelter Flood Damage, Community Emergency
-# Evacuation -- is "[Limit] Skipping ...: Max emergencies reached" in EVERY capture (38 skips,
-# 0 creations on 5901). Only the code-built Road Blockage Emergency exists. The port's cap of 4
-# (the .cs default) never showed because the probability draws happened not to fire one on the
-# calibrated trajectories; 5901 on the merged build (a debt-driven plan) created Emergency
-# Budget Crisis at step 17 and paid itself $30,000 the game never granted. A Unity bug for the
-# hunt list (UNITY_BUGS.md #1). The WebGL client enters through TutorialScene, whose
-# GameDataManager IS wired to a loader, so it should run with the sheet value (2) or the loader
-# fallback (4) -- not confirmed from a WebGL log yet.
-_NUM_EMERGENCY_TASKS = 0
+# Since the A1 clock fix (v1_fixes d17eb70f) the gate is explicit in the source:
+# TaskSystem.OnRoundChanged generates when `newSegment < roundsPerDay - 1`, i.e. segments 0,
+# 1 and 2 -- day start plus the ticks opening rounds 2 and 3. The rollover step covers 0 and
+# 1; a normal step covers 2. Day 1 is the case that needs segment 1 here: it starts at
+# segment 0 with no rollover, so its round-2 pass is a normal step (capture merge_v2 s1,
+# d1r1: TaskTrigger.probability x3 before any flood draw).
+_GENERATION_SEGMENTS = (1, 2)
+# TaskSystem.numEmergencyTasks = GameDataManager.InitialEmergencyTaskFrequency, which since
+# 3d8c8b00 ("parameter sheet drives every build") is the SHEET's value -- 2, not 0.
+#
+# It really was 0 before: MainScene's GameDataManager had no configLoader wired, LoadAllData
+# took the SetDefaults() branch, and SetDefaults never assigned InitialEmergencyTaskFrequency at
+# all, so every database Emergency was "[Limit] Skipping ...: Max emergencies reached" (38 skips,
+# 0 creations on 5901). With the loader wired the cap is live, and merge_v4 shows the
+# consequence: Unity expires an Emergency Budget Crisis at s17 for satisfaction +1 / budget -1,
+# a task the port could not create. Reading the export keeps this correct when the sheet changes.
+_NUM_EMERGENCY_TASKS = int((_ECON_C.get("initial_state") or {}).get("emergencyTotal", 0) or 0)
+_NUM_EXTERNAL_RELATION_TASKS = int((_ECON_C.get("initial_state") or {}).get("externalRelationTotal", 0) or 0)
+
 _FINAL_DAY = 8
 _ROLLOVER_PASSES = 2
 # TaskSystem.CreateTask's per-type defaults: Emergency 1, Demand 2, Advisory 3, Alert 2.
 _ALERT_ROUNDS = 2
+# GameTask.deliveryFailureSatisfactionPenalty, the field default. Not exported per task, so a
+# TaskData asset that overrides it is not modelled -- flagged rather than guessed.
+_DELIVERY_FAILURE_PENALTY = 10.0
 
 
 class World:
@@ -143,10 +149,10 @@ class World:
     a task rolls against, and Unity's order is FindObjectsOfType order, which is neither
     sorted nor creation order (see PLAN.md). Guessing it here would be inventing physics."""
 
-    __slots__ = ("rng", "flood", "fmap", "weather", "day", "segment",
+    __slots__ = ("walks", "rng", "flood", "fmap", "weather", "day", "segment",
                  "facilities_for", "generated", "clients", "economy", "tasks",
                  "round_index", "_trigger_memory", "use_generation",
-                 "pending_arrivals", "pending_removals", "_casework_live", "generated_specs", "_alerts_shown",
+                 "pending_arrivals", "pending_removals", "_casework_live", "generated_specs", "_alerts_shown", "_external_count",
                  "_emergency_count", "_last_emergency_round", "_sourced_now", "_pop_loaded",
                  "_food_reserved")
 
@@ -190,11 +196,15 @@ class World:
         self.round_index = 0
         self._trigger_memory = {}       # stateful triggers (FloodExpanded, BudgetDropped)
         self.pending_arrivals = []      # deliveries that landed LAST round, drawn this one
+        # ClientRelocationHandler.pendingRelocations: population WALKS now, no vehicle.
+        # [rounds_remaining, source, destination, quantity, task_id]
+        self.walks = []
         self.pending_removals = []      # (facility, n): casework removals queued by a landing
         self._casework_live = {}        # casework task id -> client group id, until it ends
         self.generated_specs = {}       # live task id -> (definition id, facility, spec)
         self._alerts_shown = set()      # Alert tasks fire once per GAME
         self._emergency_count = 0
+        self._external_count = 0
         # TaskSystem initialises lastEmergencyTaskRound to 0, NOT to "long ago". The gate
         # is `currentRound < lastEmergencyTaskRound + dynamicInterval`, so with an interval
         # of totalRounds/numEmergencyTasks = 32/4 = 8 the FIRST emergency cannot fire
@@ -360,8 +370,16 @@ class World:
             flood_tiles=len(self.flood.tiles), budget=self.economy.budget,
             satisfaction=self.economy.satisfaction, free_workforce=free,
             idle_ratio=100.0 * free / total, facilities=self.economy.facilities(),
-            trained=self.economy.free_trained + self.economy.working_trained,
-            untrained=self.economy.free_untrained + self.economy.working_untrained,
+            # WorkerSystem.GetTrainedWorkersCount/GetUntrainedWorkersCount count EVERY
+            # Worker object of the type, and StartWorkerRequest creates the hire at once as
+            # NotArrived -- so the day's hires are in the ratio before they land. merge_v4
+            # s6: hire_untrained_4 at d2r1 makes it 5/9 < 1 and Training Recommendation
+            # Alert fires that round; counting arrived workers only kept it at 5/5.
+            trained=(self.economy.free_trained + self.economy.working_trained
+                     + sum(1 for _d, k in self.economy.arriving if k == "trained")),
+            untrained=(self.economy.free_untrained + self.economy.working_untrained
+                       + sum(1 for _d, k in self.economy.arriving if k == "untrained")
+                       + len(self.economy.in_training)),
             idle_trained=self.economy.free_trained,
             idle_untrained=self.economy.free_untrained,
             prev=self._trigger_memory,
@@ -383,6 +401,7 @@ class World:
         w.round_index = self.round_index
         w._trigger_memory = dict(self._trigger_memory)
         w.pending_arrivals = list(self.pending_arrivals)
+        w.walks = [list(x) for x in self.walks]
         w.pending_removals = list(self.pending_removals)
         w._casework_live = dict(self._casework_live)
         w.generated_specs = dict(self.generated_specs)
@@ -391,6 +410,7 @@ class World:
         w._pop_loaded = {k: list(v) for k, v in self._pop_loaded.items()}
         w._food_reserved = self._food_reserved
         w._emergency_count = self._emergency_count
+        w._external_count = self._external_count
         w._last_emergency_round = self._last_emergency_round
         w.use_generation = self.use_generation
         # REBIND CALLBACKS TO THE CLONE. TaskBoard holds bound methods of the World that
@@ -455,6 +475,15 @@ def _admits(w: World, spec, facility) -> bool:
     `numEmergencyTasks` comes from GameDataManager and is the ONE constant here not
     exported; 4 is the .cs default and matches the observed spacing. Flagged rather than
     silently assumed."""
+    # EXTERNAL-RELATION CONTACTS ARE CAPPED TOO (TaskSystem:1068): an ExternalRelationship
+    # task other than Budget_Allocation counts against InitialExternalRelationFrequency (5).
+    # Unity logs "[Limit] Skipping Storm Funding Advisory: Max external-relation contacts
+    # reached (5)" three times on seed 5901; the port had no cap, generated the extras and
+    # paid itself their +5 satisfaction.
+    if (spec.get("taskOfficer") == "ExternalRelationship"
+            and spec.get("taskId") != "Budget_Allocation"
+            and w._external_count >= _NUM_EXTERNAL_RELATION_TASKS):
+        return False
     kind = spec.get("taskType")
     if kind == "Emergency":
         if w._emergency_count >= _NUM_EMERGENCY_TASKS:
@@ -520,6 +549,155 @@ def _pass(w: World, marks):
 
 
 
+def community_depletion(w, marks=None):
+    """CommunityFoodDepletionManager.OnRoundChanged (main-bugfixes d5e5f683).
+
+    Communities no longer eat. Instead every community rolls ONE Random.value per round
+    (days >= firstEligibleDay, rounds 1..lastEligibleRound); on a hit it loses
+    `amount` food packs and a Community_FoodRequest for exactly that amount is created --
+    the request IS the community's demand, there is no population x rate term any more.
+    A community with a request already open is skipped, and so is one already at 0 food,
+    but NEITHER skip happens before the draw: the draw is unconditional, which is what
+    matters for the RNG stream.
+
+    POSITION IN THE STREAM IS UNVERIFIED. The manager is a scene object subscribing in
+    Start(), so where its draws sit relative to the tracker and the generation pass is a
+    subscription-order question that only a capture of the new build can settle; this
+    places it before the tracker. Every draw is marked draw:CommunityFoodDepletion, the
+    same string Unity's SnapshotDebug emits, so a capture diff will point straight at it.
+    """
+    cfg = _ECON_C.get("community_depletion") or {}
+    chance = float(cfg.get("chancePerRound", 0) or 0)
+    if chance <= 0:
+        return []
+    if w.day < int(cfg.get("firstEligibleDay", 2) or 2):
+        return []
+    if (w.segment + 1) > int(cfg.get("lastEligibleRound", 3) or 3):
+        return []
+    amount = int(cfg.get("amount", 100) or 100)
+    hits = []
+    for b in w.economy.buildings:
+        if b.get("type") != "Community":
+            continue
+        if marks is not None:
+            marks.append("draw:CommunityFoodDepletion")
+        if w.rng.value() >= chance:
+            continue
+        res = b.setdefault("resources", {})
+        available = res.get("foodPacks") or 0
+        if available <= 0:
+            continue
+        # "Don't stack a second request while one is already pending for this community":
+        # TaskSystem.GetAllActiveTasks, so only a LIVE task blocks -- generated_specs keeps
+        # its entry after the task resolves, and matching on that silenced a community for
+        # the rest of the episode.
+        # GetAllActiveTasks() holds tasks that are Active or InProgress; a task the port has
+        # already RESOLVED (an immediate delivery resolves at answer time and then sits in
+        # `awaiting` with resolved=True) is not one of them. Counting it blocked Amherst's
+        # next request for the rest of merge_v4 -- its food stayed at 400 against Unity's 300.
+        if any(spec_id == COMMUNITY_FOOD_SPEC_ID and fac == b["name"] and not _task.resolved
+               for live, (spec_id, fac, _sp) in w.generated_specs.items()
+               for _task in (w.tasks.active.get(live) or w.tasks.awaiting.get(live),)
+               if _task is not None):
+            continue
+        lost = min(amount, available)
+        res["foodPacks"] = available - lost
+        _create_community_food_task(w, b["name"], lost)
+        hits.append((b["name"], lost))
+    return hits
+
+
+def cancel_overnight_food(w) -> None:
+    """TaskSystem.CancelIncompleteFoodDeliveries (main-bugfixes d5e5f683).
+
+    "Food cannot be delivered overnight": when round 4 ends, every food delivery still
+    queued or in transit is cancelled and its parent task fails -- Incomplete, its demand
+    counted as resolved-unfulfilled, and the delivery-failure satisfaction penalty applied.
+    A trip whose cargo already landed is left alone (B37, fixed on v1_merge_test)."""
+    board = w.tasks
+    victims = set()
+    keep = []
+    for entry in board.pending:
+        payload = entry[1]
+        if str(payload[2] or "").startswith("__food__"):
+            victims.add(payload[0])
+        else:
+            keep.append(entry)
+    board.pending = keep
+    fleet = board.fleet
+    for i, load in enumerate(fleet.carrying):
+        if load is not None and str(load[2] or "").startswith("__food__"):
+            victims.add(load[0])
+            fleet.carrying[i] = None
+    for task_id in victims:
+        task = board.awaiting.pop(task_id, None) or board.active.pop(task_id, None)
+        if task is None or task.delivered > 0:
+            continue
+        board.resolve(task, fulfilled=False, counters=w.economy.counters)
+        w.economy.satisfaction = max(0.0, w.economy.satisfaction - _DELIVERY_FAILURE_PENALTY)
+
+
+def _spec_id(w, task_id):
+    """The definition id behind a live task, for the impact overrides."""
+    entry = w.generated_specs.get(task_id)
+    return entry[0] if entry else None
+
+
+_BUDGET_ALLOCATION_SPEC_ID = "Budget_Allocation"
+
+
+def _configured_impacts(def_id, impacts):
+    """TaskSystem.ApplyConfiguredAllocation (BUG_REPORTS B35).
+
+    The Daily Budget Allocation's grant comes from the sheet
+    (initialDailyBudgetAdditions), rewritten onto the TASK INSTANCE at creation and never
+    onto the asset -- so the exported TaskData still says the authored 5000 while the game
+    hands out 2000. Reading the export verbatim credits 3000 a day the game never gave."""
+    if def_id != _BUDGET_ALLOCATION_SPEC_ID:
+        return impacts
+    amount = int((_ECON_C.get("initial_state") or {}).get("dailyBudgetAddition") or 0)
+    if amount <= 0:
+        return impacts
+    return [dict(i, value=amount) if i.get("type") == "Budget" else i
+            for i in (impacts or [])]
+
+
+def _resolve_quantity(w, choice, facility) -> int:
+    """FoodDeliveryHandler.ResolveQuantity (main-bugfixes d5e5f683).
+
+    A PopulationBased choice carries deliveryQuantity 0 and sizes itself at EXECUTION time
+    from the destination's live food need x deliveryPercentage -- 100% for "fulfil this
+    round", 200% for "deliver double to cover the follow-up request". Reading the authored
+    quantity instead delivers nothing at all for the two ordinary shelter/motel choices."""
+    if str(choice.get("quantityType") or "Fixed") != "PopulationBased":
+        return choice.get("deliveryQuantity", 0) or 0
+    fac = w.economy.facility(facility)
+    if fac is None:
+        return 0
+    need = _food_need(dict(fac, name=facility))
+    pct = float(choice.get("deliveryPercentage") or 0) or 100.0
+    return int(round(need * pct / 100.0))
+
+
+def _create_community_food_task(w, facility, amount):
+    """CommunityFoodDepletionManager.SpawnRequestTask -> TaskSystem.CreateTaskFromDatabase.
+
+    Every food-delivering choice on the instance is overridden to the amount actually lost;
+    the asset's authored deliveryQuantity is only a default."""
+    spec = dict(_TASK_SPEC[COMMUNITY_FOOD_SPEC_ID])
+    spec["choices"] = [dict(c) for c in spec["choices"]]
+    for c in spec["choices"]:
+        if c.get("deliveryQuantity"):
+            c["deliveryQuantity"] = amount
+    task = Task(w.tasks.next_id, spec.get("taskTag") or "Food", 0, spec["roundsRemaining"],
+                task_type=spec.get("taskType") or "Demand")
+    task.source = ""
+    task.destination = ""
+    w.tasks.next_id += 1
+    w.tasks.add(task)
+    w.generated_specs[task.task_id] = (COMMUNITY_FOOD_SPEC_ID, str(facility), spec)
+
+
 def _tracker(w, marks):
     """ClientStayTracker.OnRoundChanged: unfiltered, so once per segment advance.
 
@@ -539,8 +717,9 @@ def _tracker(w, marks):
     # the group rolls again in the second pass (5901 validation, day-4 rollover: group 2's
     # task went Incomplete in d4r0 and its new request was generated in d4r1).
     _sweep_casework(w)
-    if w.segment >= ROUNDS_PER_DAY:
-        return
+    # Segment 4 IS an invoke since the A1 clock fix: Unity's s8 on merge_v4 (d2r4) rolls
+    # caseworkGen for the group that walked in at d2r3, then lands the next walk. The old
+    # early return here was the pre-fix clock (no segment-4 invoke at all).
     generated = []
     for count, facility in w.clients.update(w.rng, _unity_round(w), w.economy.counters, marks,
                                             generated=generated):
@@ -550,10 +729,128 @@ def _tracker(w, marks):
         # by a CONSTANT every day (5901: +120,000 per rollover for the whole episode), while the
         # port's dwindled to nothing as its residents 'went home'. That gap was 46.7M of the
         # 46.9M total state error and invisible to every first-divergence report.
-        pass
+        # DEPARTURES LEAVE STORAGE (v1_fixes d5441454, never re-derived here):
+        # TriggerNonCaseworkDeparture removes the leavers from the facility's Population
+        # resource, not just from the tracker. merge_v4 s12: "84 clients without casework
+        # departed" and Shelter_0 reads 0 the same round, where the port still held 84 --
+        # and then raised a shelter food request Unity never did.
+        w.economy.move_population(facility, -count)
         w.economy.motel_pop = w.economy.motel_population
     for gid, facility, with_need in generated:
         _create_casework_task(w, gid, facility, with_need)
+
+
+def _walk_destinations(w, source, include_shelters, include_motels):
+    """ClientRelocationHandler.GetDestinationsSorted(filterByPath: true).
+
+    Operational shelters and/or the motel, each with the space it has LEFT after what is
+    already walking towards it, and only those a road path can reach -- a walk is
+    flood-aware even though it uses no vehicle. Order is the game's: nearest first."""
+    src_cell = w._facility_cell(str(source))
+    flooded = w.flooded_road_cells()
+    out = []
+    for b in w.economy.buildings:
+        if b["type"] == "Shelter" and include_shelters and b["status"] == "InUse":
+            pass
+        elif b["type"] == "Motel" and include_motels:
+            pass
+        else:
+            continue
+        res = b.get("resources") or {}
+        cap = res.get("populationCapacity")
+        space = (10 ** 9 if cap is None
+                 else cap - (res.get("population") or 0) - _walking_to(w, b["name"]))
+        if space <= 0:
+            continue
+        dst_cell = w._facility_cell(b["name"])
+        if src_cell is None or dst_cell is None:
+            continue
+        dist = roads.path_length(src_cell, dst_cell, flooded)
+        if dist is None:
+            continue
+        out.append((dist, b["name"], space))
+    out.sort(key=lambda r: r[0])
+    return [(name, space) for _d, name, space in out]
+
+
+def _walking_to(w, destination) -> int:
+    """People already on foot towards this destination (effectiveSpace's inbound term)."""
+    return sum(x[3] for x in w.walks if x[2] == destination)
+
+
+def queue_walks(w, task_id, task, facility, demanded,
+                include_shelters=True, include_motels=False) -> bool:
+    """ClientRelocationHandler.Execute (main-bugfixes 5d922203).
+
+    People leave the source the moment the choice is made and arrive `relocationDelayRounds`
+    rounds later, split across destinations by the space each has left. No vehicle, no
+    route latency; the only thing that can stop a leg is having nowhere reachable to put
+    people. Returns False when nothing could be queued, which is Unity's `anyCreated ==
+    false` -> CompleteTaskAction false -> the task stays on the board."""
+    src = w.economy.facility(str(facility))
+    available = ((src.get("resources") or {}).get("population") or 0) if src else 0
+    to_send = min(demanded, available) if demanded > 0 else available
+    if to_send <= 0:
+        return False
+    rounds = max(1, int(_ECON_C.get("relocation_delay_rounds", 2) or 2))
+    remaining, any_created = to_send, False
+    for name, space in _walk_destinations(w, facility, include_shelters, include_motels):
+        if remaining <= 0:
+            break
+        send = min(remaining, space)
+        if send <= 0:
+            continue
+        removed = -w.economy.move_population(str(facility), -send)
+        if removed <= 0:
+            continue
+        w.walks.append([rounds, str(facility), name, removed, task_id])
+        remaining -= removed
+        any_created = True
+    if any_created:
+        # SetTaskInProgress: off the board, still alive, resolved when the walk lands.
+        w.tasks.active.pop(task_id, None)
+        w.tasks.awaiting[task_id] = task
+    return any_created
+
+
+def tick_walks(w) -> None:
+    """ClientRelocationHandler.HandleRoundEnd -> FinalizeRelocation, at OnRoundEnd.
+
+    Capture merge_v2: queued at s5 (d2r1), landed at s7 (d2r3) -- two rounds -- and the
+    arriving group registers with the tracker in the SAME step, immediately before the
+    `relocation:arrive` mark, not on the next one as a vehicle unload does. Overflow goes
+    back to the source; the parent task resolves once its last walk has landed."""
+    if not w.walks:
+        return
+    for entry in w.walks:
+        entry[0] -= 1
+    arrived = [e for e in w.walks if e[0] <= 0]
+    w.walks = [e for e in w.walks if e[0] > 0]
+    for _r, source, dest, qty, task_id in arrived:
+        delivered = w.economy.move_population(dest, qty)
+        if delivered < qty:
+            w.economy.move_population(source, qty - delivered)
+        task = w.tasks.awaiting.get(task_id) or w.tasks.active.get(task_id)
+        if task is not None and delivered > 0:
+            # deliveredQuantity always grows, but NOTHING is credited unless the task is
+            # still alive to be completed. FinalizeRelocation has no AddLateDelivery call --
+            # that is the VEHICLE path (OnVehicleDeliveryCompleted). A relocation carries
+            # roundsRemaining 2 and its people need 2 rounds, so it usually expires
+            # Incomplete with delivered 0 the round before they land, and Unity's
+            # lodgingFulfilled stays 0 (merge_v4: 700 resolved, 100 fulfilled, and the one
+            # credit is a task that was still InProgress when its walk arrived).
+            task.delivered += delivered
+        # HandleSelfWalkArrival registers a group only at a LODGING building; people who
+        # walk to a casework site are already off the tracker (departure processed them).
+        d = w.economy.facility(dest)
+        if delivered > 0 and d is not None and d.get("type") in ("Shelter", "Motel"):
+            w.pending_arrivals.append((delivered, dest))
+        if task is not None and not task.resolved and not any(e[4] == task_id for e in w.walks):
+            # CompleteTask only if the parent is still InProgress; one that already expired
+            # Incomplete is not resolved a second time.
+            w.tasks.awaiting.pop(task_id, None)
+            w.tasks.active.pop(task_id, None)
+            w.tasks.resolve(task, fulfilled=delivered > 0, counters=w.economy.counters)
 
 
 def _create_casework_task(w, gid, facility, with_need):
@@ -569,7 +866,8 @@ def _create_casework_task(w, gid, facility, with_need):
     spec["choices"] = [dict(c) for c in spec["choices"]]
     spec["choices"][0]["deliveryQuantity"] = with_need
     spec["_gid"] = gid
-    t = Task(w.tasks.next_id, "BackToHome", 0, spec["roundsRemaining"])
+    t = Task(w.tasks.next_id, "BackToHome", 0, spec["roundsRemaining"],
+             task_type=spec.get("taskType") or "Advisory")
     t.rounds_remaining -= 1
     t.fresh = False
     t.source = str(facility)
@@ -610,7 +908,8 @@ def _create_blockage_task(w, payload, loaded, parent):
                     "enableMultipleDeliveries": False,
                     "impacts": [{"type": "Satisfaction", "value": 5}]}]
     spec["choices"] = choices
-    t = Task(w.tasks.next_id, "None", 0, spec["roundsRemaining"])
+    t = Task(w.tasks.next_id, "None", 0, spec["roundsRemaining"],
+             task_type=spec.get("taskType") or "Emergency")
     t.source = source
     w.tasks.next_id += 1
     w.tasks.add(t)
@@ -648,7 +947,10 @@ def _unity_round(w):
     # clients at Shelter_0 (Group: Relocate_47..., Round: 15)" under a d4r4 tag (5503). Stamping
     # 16 put that group's departure a round late, so its casework roll credited 63 instead
     # of the 15 left after the non-casework members had gone home.
-    return min(w.segment, ROUNDS_PER_DAY - 1) + (w.day - 1) * ROUNDS_PER_DAY
+    # (That staleness was the pre-A1 clock. The tracker now fires on segment 4 and stamps
+    # currentRound = 4 + (day-1)*4 there -- the same number the next day's segment 0 would
+    # carry, which is harmless because no tracker invoke happens on segment 0 any more.)
+    return w.segment + (w.day - 1) * ROUNDS_PER_DAY
 
 
 def _create_tasks(w, rolls, day_changed):
@@ -663,10 +965,13 @@ def _create_tasks(w, rolls, day_changed):
         spec = _TASK_SPEC.get(task_id)
         if spec is None or not _admits(w, spec, facility):
             continue
+        if (spec.get("taskOfficer") == "ExternalRelationship"
+                and spec.get("taskId") != "Budget_Allocation"):
+            w._external_count += 1
         state = {"choices": spec.get("choices") or []}
         tag = spec.get("taskTag") or "None"
         t = Task(w.tasks.next_id, tag, demand_of(state, tag),
-                 spec.get("roundsRemaining") or 1)
+                 spec.get("roundsRemaining") or 1, task_type=spec.get("taskType") or "Demand")
         t.destination = ""
         # A task born in the ROLLOVER is not new to the round that follows it. The
         # rollover IS a segment advance (Unity's d2r0), so OnTimeSegmentAdvanced ticks
@@ -754,7 +1059,13 @@ def _land(w, _task_id, quantity, destination):
             else:
                 w._sourced_now.pop(_task_id, None)
         if sourced:
-            w.economy.add_food(dest[len("__food__"):].split("|")[0], sourced)
+            # The landing belongs to the round the vehicles drove in -- the step's
+            # PRE-advance round -- so it shares that round's once-per-round consumption
+            # key: a load arriving after the tick already fed the building is not eaten
+            # until the next tick (merge_v4 s14: two 100-pack loads reach a 225-person
+            # Motel, the first is eaten, the second sits at 100).
+            w.economy.add_food(dest[len("__food__"):].split("|")[0], sourced,
+                               round_key=w.day * 100 + w.segment)
         if task is not None:
             task.delivered = sourced
         return
@@ -838,6 +1149,19 @@ def _incomplete_penalties(w: World, expired) -> None:
             drop = 20.0 + (_BLOCKAGE_ABANDON_PENALTY if entry[2].get("_loaded") else 0.0)
             w.economy.satisfaction = max(0.0, min(100.0, w.economy.satisfaction - drop))
             continue
+        # The task's own impact list, when the export carries it (taskImpacts): Unity's
+        # ApplyTaskPenalties REMOVES each Budget/Satisfaction value, so a Budget impact of
+        # -1 on every food request is the "+1 on expiry" the old captures measured. The
+        # measured table is only the fallback for a corpus exported before this existed.
+        impacts = entry[2].get("taskImpacts")
+        if impacts is not None:
+            for imp in impacts:
+                v = float(imp.get("value") or 0)
+                if imp.get("type") == "Budget":
+                    w.economy.budget = max(BUDGET_MIN, min(BUDGET_MAX, w.economy.budget - int(v)))
+                elif imp.get("type") == "Satisfaction":
+                    w.economy.satisfaction = max(0.0, min(100.0, w.economy.satisfaction - v))
+            continue
         pen = table.get(entry[0])
         if not pen:
             continue
@@ -852,25 +1176,35 @@ def _rollover_pass(w, i, marks, rolls):
     """One of the two OnTimeSegmentChanged invokes of a day change (segment 0, then 1).
     The order INSIDE the pass is calibrated; do not reorder it."""
     w.segment = i
-    # OnTimeSegmentAdvanced fires per ADVANCE, and the rollover advances twice, so a
-    # rounds=2 task created before it ages 2 -> 0 and expires inside this step.
-    w.tasks.age()
-    _tracker(w, marks)
+    # Pass 0 is OnDayStarted: TaskSystem and the depletion manager subscribe to it, the
+    # clock's per-advance subscribers (ageing, tracker, storage, expiry) do not. Pass 1 is
+    # the segment-1 advance and runs all of them. (Pre-A1 the rollover fired two segment
+    # invokes, 0 and 1, and a rounds=2 task aged out inside the step; it no longer does.)
+    if i > 0:
+        w.tasks.age()
+    # The day-start pass is OnDayStarted, not OnTimeSegmentChanged, and the tracker only
+    # subscribes to the latter: merge_v4 s9 shows no caseworkGen between afterOnDayChanged
+    # and afterOnTimeSegmentChanged, and the two tracker draws only after endSim:afterMetrics
+    # -- the segment-1 advance. So pass 0 generates without the tracker; pass 1 runs it.
+    if i > 0:
+        _tracker(w, marks)
     _r = [r + (i,) for r in _pass(w, marks)]
     rolls += _r
     if w.use_generation:
         _create_tasks(w, _r, True)
+    # CommunityFoodDepletionManager subscribed AFTER TaskSystem, so its draws land after the
+    # generation pass on the same invoke -- capture merge_v2 d2r0: Weather.select,
+    # TaskTrigger.probability x3, CommunityFoodDepletion x3, in that order.
+    community_depletion(w, marks)
     # BuildingResourceStorage.OnRoundChanged is subscribed after TaskSystem's, so on
     # the same invoke consumption runs AFTER the generation pass: at the rollover's
     # segment 0 the pass sees pre-consumption stock, and segment 1's sees the drained
     # communities. That split is why Unity requests food for one community at pass 0
     # and the other two at pass 1 -- and the queue order that follows from it decides
     # which vehicle is left for a stranded assignment three rounds later.
-    w.economy.production_tick()
-    w.economy.consumption_tick()
-    # CheckExpiredTasks runs on the Update AFTER the advance: the dying task held its
-    # slot through the generation pass above.
-    _incomplete_penalties(w, w.tasks.expire(w.economy.counters))
+    if i > 0:
+        w.economy.production_tick()
+        w.economy.consumption_tick(round_key=w.day * 100 + w.segment)
 
 def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     """Advance one round: segment bookkeeping, then generation, then flood.
@@ -965,7 +1299,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         # carries no choices, so it cannot move a counter. It DOES consume a task id, and
         # task identity is what the exact-replay suite cannot otherwise align. It draws no
         # randoms, so the census is untouched.
-        w.tasks.add(Task(w.tasks.next_id, "None", 0, _ALERT_ROUNDS))
+        w.tasks.add(Task(w.tasks.next_id, "None", 0, _ALERT_ROUNDS, task_type="Alert"))
         w.generated_specs[w.tasks.next_id] = (
             "Daily_Report", None, {"taskId": "Daily_Report",
                                    "taskTitle": f"Day {w.day} Start of Day Report",
@@ -1030,23 +1364,39 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         # are 0, 1, 2, 3: nothing subscribed to the clock -- ageing, the tracker, generation,
         # consumption -- runs on the last round of a day. The port aged and expired tasks
         # there, one decrement per day too many.
-        if w.segment < ROUNDS_PER_DAY:
-            w.tasks.age()
+        # Every advance is an invoke since the A1 clock fix, segment 4 included:
+        # TaskSystem.OnTimeSegmentAdvanced decrements roundsRemaining with no segment
+        # gate, BuildingResourceStorage.OnRoundChanged consumes for newRound <=
+        # roundsPerDay, and CheckExpiredTasks runs on the Update after. Only the generation
+        # pass stays off segments 3 and 4.
+        w.tasks.age()
         _tracker(w, marks)
         if w.segment in _GENERATION_SEGMENTS:
             _r = [r + (w.segment,) for r in _pass(w, marks)]
             rolls += _r
             if w.use_generation:
                 _create_tasks(w, _r, day_changed)
-        if w.segment < ROUNDS_PER_DAY:
-            w.economy.production_tick()
-            w.economy.consumption_tick()
-            _incomplete_penalties(w, w.tasks.expire(w.economy.counters))
+        community_depletion(w, marks)
+        w.economy.production_tick()
+        w.economy.consumption_tick(round_key=w.day * 100 + w.segment)
     w.generated = rolls
     # THE JOIN THAT MAKES THE SURROGATE SELF-DRIVING. generation_pass decides WHICH tasks
     # fire; without this the port produced a list of ids and created nothing, so it could
     # generate a task and never answer one -- which is why every equivalence test so far
     # has had to feed it Unity's own task lifecycle.
+
+    # GlobalClock's OnRoundEnd sits between the segment advance and the flood update
+    # (capture merge_v3 s7/s11: ... endSim:afterAdvanceSegment -> the arriving group's
+    # Client.caseworkNeed/stayDuration draws -> relocation:arrive -> endSim:afterOnRoundEnd
+    # -> flood:enter). Walks therefore land, and their groups register with the tracker,
+    # before this round's water moves.
+    if w.segment >= ROUNDS_PER_DAY:
+        cancel_overnight_food(w)          # food cannot be delivered overnight
+    _n = len(w.pending_arrivals)
+    tick_walks(w)
+    for count, facility in w.pending_arrivals[_n:]:
+        w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
+    del w.pending_arrivals[_n:]
 
     if on_flood_enter is not None:
         on_flood_enter(w)
@@ -1094,6 +1444,25 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
             w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
         del w.pending_arrivals[_n:]
         _apply_removals(w)
+    # GlobalClock.OnRoundEnd -> ClientRelocationHandler.HandleRoundEnd. Walks land at the
+    # very end of the step (capture merge_v2: the arriving group's tracker draws sit
+    # immediately before `relocation:arrive`, which itself sits just before
+    # `endSim:afterOnRoundEnd`), so the registration happens HERE, in this step, not on the
+    # next one the way a vehicle unload's does.
+    # THE LAST DAY IS BILLED. MotelCostManager subscribes to OnSimulationEnded as well as
+    # OnDayChanged and charges again when `day == lastDay && segment >= roundsPerDay` -- the
+    # final round of the episode, which no day rollover ever follows (B28, fixed on this
+    # build). Without it the port under-bills one full day of occupancy: seeds 6001 and 7002
+    # ended 20,000 and 28,200 light, exactly the motel's last-round population x $200.
+    if w.day >= _FINAL_DAY and w.segment >= ROUNDS_PER_DAY:
+        residents = w.economy.motel_population or w.economy.motel_pop
+        if residents > 0:
+            w.economy.spend(int(residents * _ECON_C["motel_per_person_per_day"]), "lodging")
+    # CheckExpiredTasks runs on the UPDATE AFTER the round, which is after OnRoundEnd and
+    # after the flood: merge_v4 s7 reads ... endSim:afterOnRoundEnd -> flood:enter -> the
+    # flood draws -> task:resolved. Expiring before the walks land killed a relocation the
+    # round its own people arrived, so Unity credited lodgingFulfilled 100 and the port 0.
+    _incomplete_penalties(w, w.tasks.expire(w.economy.counters))
     economy_step(w.economy, False, w.day)   # day-end already run above
     w.round_index += 1
 
@@ -1167,7 +1536,7 @@ def answer(w: World, task_id, choice_id) -> bool:
     # Delivering the promised number instead both inflates fulfilment AND empties the
     # communities, which then silences every population-threshold trigger: the port drained
     # all three to zero by round 8 while Unity ended near 200 each.
-    demanded = choice.get("deliveryQuantity", 0) or 0
+    demanded = _resolve_quantity(w, choice, str(_facility))
     qty = demanded
     dest_cat = choice.get("destinationCategory") or ""
     def _land_now(kind, amount, where):
@@ -1196,7 +1565,7 @@ def answer(w: World, task_id, choice_id) -> bool:
             w.tasks.answer(task_id, demanded, immediate=True, destination="__food__" + facility,
                            counters=w.economy.counters, destination_facility=facility)
             _land_now("food", demanded, facility)
-            w.economy.apply_choice(task.tag, choice.get("impacts"),
+            w.economy.apply_choice(task.tag, _configured_impacts(_def_id, choice.get("impacts")),
                                    choice.get("budgetDelayRounds", 0) or 0, "", 0)
             return True
         # THE KITCHEN ORDER IS A MULTI-DELIVERY (choices 0/1: enableMultipleDeliveries), so
@@ -1210,31 +1579,50 @@ def answer(w: World, task_id, choice_id) -> bool:
         # the first in-use kitchen and reject the answer when THAT route was cut (6001,
         # step 21: two of three orders lost). No creation -> the multi rule: impacts applied,
         # task parked InProgress until it expires.
-        kitchens = [b for b in w.economy.buildings if b["type"] == "Kitchen"][::-1]
-        kitchens = [k for k in kitchens if k["status"] == "InUse"
-                    and ((k.get("resources") or {}).get("foodPacks") or 0) > 0][:_CASEWORK_DESTS]
+        # FoodDeliveryHandler.Execute + GetKitchensSorted (main-bugfixes d5e5f683): every
+        # operational kitchen with UNRESERVED stock, NEAREST to the destination first, each
+        # shipping min(what is still needed, its effective stock) until the request is
+        # covered -- then CreateDeliveryTask chunks that amount by vehicle capacity. The old
+        # multi-source rule (up to three kitchens, each shipping the FULL quantity) was the
+        # pre-overhaul game and delivered 2-3x what was asked.
         dst = w._facility_cell(facility)
         flooded = w.flooded_road_cells()
-        legs = []
-        for k in kitchens:
-            src = w._facility_cell(k["name"])
-            if src is None or dst is None or roads.path_length(src, dst, flooded) is None:
+        outbound = w.tasks.outbound_by_kitchen()
+        kitchens = []
+        for k in w.economy.buildings:
+            if k["type"] != "Kitchen" or k["status"] != "InUse":
                 continue
-            remaining = demanded
-            while remaining > 0:
-                q = min(remaining, VEHICLE_CAPACITY)
-                legs.append((q, src, dst, "__food__" + facility + "|" + k["name"]))
-                remaining -= q
+            stock = ((k.get("resources") or {}).get("foodPacks") or 0) - outbound.get(k["name"], 0)
+            if stock <= 0:
+                continue
+            src = w._facility_cell(k["name"])
+            if src is None or dst is None:
+                continue
+            kitchens.append((((src[0] - dst[0]) ** 2 + (src[1] - dst[1]) ** 2) ** 0.5, k["name"], src, stock))
+        kitchens.sort(key=lambda r: r[0])
+        legs = []
+        remaining = demanded
+        for _d, kname, src, stock in kitchens:
+            if remaining <= 0:
+                break
+            if roads.path_length(src, dst, flooded) is None:
+                continue
+            send = min(remaining, stock)
+            remaining -= send
+            while send > 0:
+                q = min(send, VEHICLE_CAPACITY)
+                legs.append((q, src, dst, "__food__" + facility + "|" + kname))
+                send -= q
         if not legs:
             if not choice.get("enableMultipleDeliveries"):
                 return False
-            w.economy.apply_choice(task.tag, choice.get("impacts"),
+            w.economy.apply_choice(task.tag, _configured_impacts(_def_id, choice.get("impacts")),
                                    choice.get("budgetDelayRounds", 0) or 0, "", 0)
             return _park_blocked(w, task_id, task, choice_id)
         task.source = legs[0][3].split("|")[1]
         w.tasks.flooded = flooded
         w.tasks.answer_legs(task_id, legs)
-        w.economy.apply_choice(task.tag, choice.get("impacts"),
+        w.economy.apply_choice(task.tag, _configured_impacts(_def_id, choice.get("impacts")),
                                choice.get("budgetDelayRounds", 0) or 0, "", 0)
         return True
     if _def_id == ROAD_BLOCKAGE_SPEC_ID and (choice.get("triggersDelivery")
@@ -1250,6 +1638,18 @@ def answer(w: World, task_id, choice_id) -> bool:
     if dest_cat == "CaseworkSite" and (choice.get("triggersDelivery")
                                        or choice.get("immediateDelivery")):
         return _answer_casework(w, task_id, task, choice, choice_id, str(_facility), demanded)
+    # SELF-WALK (main-bugfixes 5d922203). Every non-immediate population relocation is now a
+    # walk: no vehicle, no load/unload, no multi-source machinery. The immediate ("emergency
+    # transport") choices below still teleport, which is unchanged.
+    if (demanded > 0 and dest_cat in ("Shelter", "Motel")
+            and choice.get("triggersDelivery") and not choice.get("immediateDelivery")):
+        w.economy.apply_choice(task.tag, _configured_impacts(_def_id, choice.get("impacts")),
+                               choice.get("budgetDelayRounds", 0) or 0, dest_cat, demanded)
+        task.chosen_id = choice_id
+        task.source = str(_facility)
+        return queue_walks(w, task_id, task, str(_facility), demanded,
+                           include_shelters=(dest_cat == "Shelter"),
+                           include_motels=(dest_cat == "Motel"))
     if (demanded > 0 and dest_cat == "Shelter" and choice.get("enableMultipleDeliveries")
             and choice.get("triggersDelivery") and not choice.get("immediateDelivery")):
         return _answer_multi_shelter(w, task_id, task, choice, choice_id, str(_facility), demanded)
@@ -1269,7 +1669,7 @@ def answer(w: World, task_id, choice_id) -> bool:
             cap = res.get("populationCapacity")
             if cap is not None:
                 qty = min(qty, max(0, cap - (res.get("population") or 0)))
-    w.economy.apply_choice(task.tag, choice.get("impacts"),
+    w.economy.apply_choice(task.tag, _configured_impacts(_def_id, choice.get("impacts")),
                            choice.get("budgetDelayRounds", 0) or 0,
                            dest_cat, qty)
     # RELOCATION MOVES PEOPLE OUT OF THE SOURCE. Without this the community stays at 400
@@ -1345,35 +1745,67 @@ def answer(w: World, task_id, choice_id) -> bool:
 
 
 def _answer_casework(w: World, task_id, task, choice, choice_id, facility, demanded) -> bool:
-    """ExecuteSingleSourceMultiDest for a casework request.
+    """The casework choice is a SELF-WALK since main-bugfixes 5d922203.
 
-    Destinations: operational CaseworkSites with population space, FindObjectsOfType
-    order (constructed newest first), at most three. None -> "No suitable destinations":
-    the +10 still applies and the task parks InProgress with nothing linked (5503, task
-    10). Otherwise `quantityPerDest = max(1, total / n)` and one delivery per site;
-    CreateDeliveryTask refuses a site whose route is cut, and if every site is cut the
-    task parks the same way. The quantity is the choice's Fixed deliveryQuantity -- the
-    group's needy count -- not capped by the source here; LoadCargo caps it."""
-    sites = _casework_sites(w)
-    w.economy.apply_choice(task.tag, choice.get("impacts"),
-                           choice.get("budgetDelayRounds", 0) or 0, "CaseworkSite", 0)
-    if not sites:
-        return _park_blocked(w, task_id, task, choice_id)
-    per = max(1, demanded // len(sites))
-    src = w._facility_cell(facility)
+    TaskDetailUI routes a SpecificBuilding=CaseworkSite destination through
+    ExecuteFallbackDelivery -> DetermineChoiceDeliveryDestination (operational casework
+    sites other than the source, with room once inbound is counted, NEAREST first) ->
+    ClientRelocationHandler.ExecuteToSpecificDestination: route must exist, send =
+    min(requested, source population, effective space), the people leave the source NOW
+    and land `relocationDelayRounds` later. Departure is the processing-home event:
+    HandleSelfWalkDeparture -> RemoveClientsByQuantity(source, count, groupId) takes the
+    task's own group's needy members first and credits caseworkProcessed at that moment --
+    merge_v4 s10: Shelter_0 100 -> 84 and caseworkProcessed 16 the round the walk is
+    queued, the 16 landing at Casework Alpha two rounds later with no tracker draws.
+    No destination, no route or no room -> false -> the task stays on the board (its
+    impacts are applied first, as CompleteTaskAction does)."""
+    src_cell = w._facility_cell(facility)
     flooded = w.flooded_road_cells()
-    legs = []
-    for name in sites:
-        dst = w._facility_cell(name)
-        if src is None or dst is None or roads.path_length(src, dst, flooded) is None:
+    best = None
+    for b in w.economy.buildings:
+        if b["type"] != "CaseworkSite" or b["status"] != "InUse" or b["name"] == facility:
             continue
-        legs.append((per, dst, "__cw__" + name))
-    if not legs:
-        return _park_blocked(w, task_id, task, choice_id)
+        res = b.get("resources") or {}
+        cap = res.get("populationCapacity")
+        space = 10 ** 9 if cap is None else cap - (res.get("population") or 0) - _walking_to(w, b["name"])
+        if space <= 0:
+            continue
+        dst_cell = w._facility_cell(b["name"])
+        if src_cell is None or dst_cell is None:
+            continue
+        dist = ((dst_cell[0] - src_cell[0]) ** 2 + (dst_cell[1] - src_cell[1]) ** 2) ** 0.5
+        if best is None or dist < best[0]:
+            best = (dist, b["name"], space, dst_cell)
+    if best is None:
+        return False
+    _dist, dest, space, dst_cell = best
+    if roads.path_length(src_cell, dst_cell, flooded) is None:
+        return False
+    src = w.economy.facility(facility)
+    available = ((src.get("resources") or {}).get("population") or 0) if src else 0
+    to_send = min(demanded, available) if demanded > 0 else available
+    to_send = min(to_send, space)
+    if to_send <= 0:
+        return False
+    removed = -w.economy.move_population(facility, -to_send)
+    if removed <= 0:
+        return False
+    spec = (w.generated_specs.get(task_id) or (None, None, {}))[2]
+    w.clients.process_home(facility, removed, w.economy.counters, gid=spec.get("_gid", -1))
+    w.economy.motel_pop = w.economy.motel_population
+    rounds = max(1, int(_ECON_C.get("relocation_delay_rounds", 2) or 2))
+    w.walks.append([rounds, facility, dest, removed, task_id])
+    # IMPACTS ONLY ON SUCCESS. A refused choice (no operational casework site, no room, no
+    # route) is not executed and applies nothing -- the single validation gate of v1_fixes
+    # 16d1a106. The port used to apply them first and then refuse, so on seed 6001 it paid
+    # itself the casework +10 about a hundred times against Unity's twelve and sat pinned at
+    # 100 satisfaction while Unity drifted to 87.
+    w.economy.apply_choice(task.tag, _configured_impacts(_spec_id(w, task_id), choice.get("impacts")),
+                           choice.get("budgetDelayRounds", 0) or 0, "CaseworkSite", 0)
     task.source = facility
     task.chosen_id = choice_id
-    w.tasks.flooded = flooded
-    w.tasks.answer_multi(task_id, src, legs)
+    w.tasks.active.pop(task_id, None)
+    w.tasks.awaiting[task_id] = task
     return True
 
 
@@ -1397,7 +1829,7 @@ def _answer_blockage_food(w: World, task_id, task, choice, choice_id, spec) -> b
     task.chosen_id = choice_id
     w.tasks.flooded = flooded
     w.tasks.answer_multi(task_id, src, [(choice.get("deliveryQuantity") or 0, dst, "__food__" + facility)])
-    w.economy.apply_choice(task.tag, choice.get("impacts"), 0, "", 0)
+    w.economy.apply_choice(task.tag, _configured_impacts(_spec_id(w, task_id), choice.get("impacts")), 0, "", 0)
     return True
 
 
@@ -1413,7 +1845,7 @@ def _answer_multi_shelter(w: World, task_id, task, choice, choice_id, facility, 
     23 on unload, and the parent is credited the nominal 100. The port used to cap the
     order at the space (23), which under-credited the landing and every downstream event
     (the stranded-cargo credit, the emergency transport's quantity)."""
-    w.economy.apply_choice(task.tag, choice.get("impacts"),
+    w.economy.apply_choice(task.tag, _configured_impacts(_spec_id(w, task_id), choice.get("impacts")),
                            choice.get("budgetDelayRounds", 0) or 0, "Shelter", demanded)
     sites = []
     for b in [x for x in w.economy.buildings if x["type"] == "Shelter"][::-1]:
@@ -1481,7 +1913,7 @@ def _answer_multi_shelter_immediate(w: World, task_id, task, choice, choice_id, 
             w.pending_arrivals.append((delivered, name))
     task.source = facility
     task.chosen_id = choice_id
-    w.economy.apply_choice(task.tag, choice.get("impacts"),
+    w.economy.apply_choice(task.tag, _configured_impacts(_spec_id(w, task_id), choice.get("impacts")),
                            choice.get("budgetDelayRounds", 0) or 0, "Shelter", 0)
     w.tasks.answer(task_id, 0, immediate=True, destination="Shelter",
                    counters=w.economy.counters, destination_facility=sites[0] if sites else "",

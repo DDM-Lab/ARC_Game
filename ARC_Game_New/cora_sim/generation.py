@@ -160,7 +160,28 @@ def _resource_ok(t, ctx, facility=None):
             return True
         if cond == "MoreThan" and amount > t["threshold"]:
             return True
+        # NeedsFood (main-bugfixes d5e5f683) is BuildingResourceStorage.GetFoodNeed() > 0:
+        # this facility's own population times its own rate, minus what it holds. It is what
+        # gates the Shelter/Motel follow-up food request, so it needs the per-type storage
+        # settings rather than the resource dict alone.
+        if cond == "NeedsFood" and _food_need(f) > 0:
+            return True
     return False
+
+
+def _food_need(f) -> int:
+    """BuildingResourceStorage.GetFoodNeed for one facility dict."""
+    from .economy import C as _C, _consumes
+    cfg = (_C.get("storage_by_type") or {}).get(f.get("type"), {})
+    glob = _C.get("consumption") or {}
+    if not _consumes(cfg, glob):
+        return 0
+    res = f.get("resources") or {}
+    people = res.get("population") or 0
+    if cfg.get("workersConsumeFoodToo", glob.get("workersConsumeFoodToo", True)):
+        people += (f.get("trained") or 0) + (f.get("untrained") or 0)
+    per = int(cfg.get("foodPerPersonPerNRounds") or glob.get("foodPerPersonPerNRounds", 1) or 1)
+    return max(0, people * per - (res.get("foodPacks") or 0))
 
 
 def _stateful(kind, current, target, comparison, key, ctx):

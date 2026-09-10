@@ -40,14 +40,22 @@ _DEFAULT = ("/private/tmp/claude-501/-Users-cpulling-Work-CORA/"
 
 
 def seed_state(log_path):
-    """The RNG state Unity recorded at its first flood:enter -- the port's starting point."""
+    """The RNG state Unity recorded at the first `round:advance` -- the port's starting point.
+
+    It used to seed from the first `flood:enter`, which sits MID-step: after that step's
+    generation pass. The port then replayed a pass Unity had already run, so its stream
+    carried three spurious TaskTrigger draws at the head and every draw comparison was
+    off by that much (the diff tooling papered over it by dropping Unity's whole first
+    step). `round:advance` is the clean boundary: the state there is the state the step
+    begins with, so port step 0 and Unity's first step describe the same instant."""
     import re
-    rx = re.compile(r"\[RNGCTX\] \S+ flood:enter (\{.*?\}) ")
-    for line in open(log_path, errors="ignore"):
-        m = rx.search(line)
-        if m:
-            st = json.loads(m.group(1))
-            return tuple(st[k] & 0xFFFFFFFF for k in ("s0", "s1", "s2", "s3"))
+    for name in ("round:advance", "flood:enter"):
+        rx = re.compile(r"\[RNGCTX\] \S+ " + name + r" (\{.*?\}) ")
+        for line in open(log_path, errors="ignore"):
+            m = rx.search(line)
+            if m:
+                st = json.loads(m.group(1))
+                return tuple(st[k] & 0xFFFFFFFF for k in ("s0", "s1", "s2", "s3"))
     return None
 
 

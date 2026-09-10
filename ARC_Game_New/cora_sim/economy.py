@@ -102,10 +102,54 @@ def load_economy_constants(path=None):
         # the motel wastes, and a Kitchen refills to 200 every day -- observed directly,
         # since a Kitchen only exists once built and so is absent from the reset-time
         # export. That 200 is what makes kitchen food orders fulfillable at all.
-        "storage_by_type": {b.get("type"): {"startingFoodPacks": b.get("startingFoodPacks", 0),
-                                            "enableFoodWaste": bool(b.get("enableFoodWaste"))}
-                            for b in (d.get("buildingWorkforce") or [])},
+        # Per-building storage settings, keyed by TYPE. Since the food overhaul
+        # (main-bugfixes d5e5f683) one global sample cannot describe them: a Shelter eats
+        # every 2 rounds, the Motel every 4, a Community not at all, and only a Kitchen
+        # refills to capacity daily. `buildingWorkforce` covers the prebuilts that exist at
+        # reset; `storagePrefabs` covers the types that only exist once built.
+        "storage_by_type": _storage_by_type(d),
+        # CommunityFoodDepletionManager: communities no longer consume, a per-community
+        # per-round draw takes a fixed chunk and asks for exactly that back.
+        "community_depletion": d.get("communityDepletion") or {},
+        # initialBudget / initialSatisfaction / horizon as the sheet in effect set them.
+        "initial_state": d.get("initialState") or {},
+        # ClientRelocationHandler.relocationDelayRounds -- population walks, no vehicle.
+        "relocation_delay_rounds": int(d.get("relocationDelayRounds", 0) or 0),
     }
+
+
+_STORAGE_KEYS = (("startingFoodPacks", "startingFoodPacks", 0),
+                 ("enableFoodWaste", "enableFoodWaste", False),
+                 ("consumptionEnabled", "consumptionEnabled", None),
+                 ("foodPerPersonPerNRounds", "foodPerPersonPerNRounds", 1),
+                 ("consumptionRoundInterval", "consumptionRoundInterval", 4),
+                 ("workersConsumeFoodToo", "workersConsumeFoodToo", False),
+                 ("fillFoodToCapacityDaily", "fillFoodToCapacityDaily", False),
+                 ("foodCapacity", "foodCapacity", None),
+                 ("populationCapacity", "populationCapacity", None))
+
+
+def _storage_by_type(d):
+    """{building type -> storage settings}, from the two export blocks.
+
+    A type present in both wins from `buildingWorkforce` (a live instance, sheet-applied)
+    over `storagePrefabs` (the authored prefab). `consumptionEnabled` is None when an older
+    export has no per-building block, and every consumer then falls back to the global
+    `consumption` block -- so a stale corpus keeps the pre-overhaul behaviour rather than
+    silently switching every building off."""
+    out = {}
+    for name, cfg in (d.get("storagePrefabs") or {}).items():
+        out[name] = {k: cfg.get(src, dflt) for k, src, dflt in _STORAGE_KEYS}
+    for b in (d.get("buildingWorkforce") or []):
+        out[b.get("type")] = {k: b.get(src, dflt) for k, src, dflt in _STORAGE_KEYS}
+    return out
+
+
+def _consumes(cfg, glob) -> bool:
+    """Whether a building type runs population-based consumption at all. Per-building when
+    the export has it, the old single global flag when it does not (a stale corpus)."""
+    enabled = cfg.get("consumptionEnabled")
+    return bool(glob.get("enabled", True)) if enabled is None else bool(enabled)
 
 
 C = load_economy_constants()
@@ -126,27 +170,44 @@ class Economy:
         They carry the population and food storage the ResourceTrigger reads, which is why
         the port needs per-facility resources at all rather than a single global pool: a
         food request fires because ONE community is empty, not because the map is."""
+        # CommunityPrefab.startingResources is Population 400 AND FoodPacks 400, so a
+        # community begins the game FULL and, with enableFoodWaste 0 and consumption off,
+        # only ever loses food to a depletion event. The motel's food store is new
+        # (main-bugfixes d5e5f683): capacity 6000, starting empty.
+        cap = C.get("storage_by_type") or {}
+        c_cap = int((cap.get("Community") or {}).get("foodCapacity") or 400)
+        c_pop = int((cap.get("Community") or {}).get("populationCapacity") or 400)
+        m_cap = int((cap.get("Motel") or {}).get("foodCapacity") or 0)
+        m_pop = int((cap.get("Motel") or {}).get("populationCapacity") or 3000)
+        community = lambda name: {
+            "name": name, "type": "Community", "status": STATUS_PREBUILT,
+            "assigned": 0, "trained": 0, "untrained": 0,
+            "resources": {"foodPacks": c_cap, "foodPacksCapacity": c_cap,
+                          "population": c_pop, "populationCapacity": c_pop}}
         return [
-            {"name": "Community Charleston", "type": "Community", "status": STATUS_PREBUILT,
-             "assigned": 0, "trained": 0, "untrained": 0,
-             "resources": {"foodPacks": 0, "foodPacksCapacity": 400,
-                           "population": 400, "populationCapacity": 400}},
-            {"name": "Community Trinity", "type": "Community", "status": STATUS_PREBUILT,
-             "assigned": 0, "trained": 0, "untrained": 0,
-             "resources": {"foodPacks": 0, "foodPacksCapacity": 400,
-                           "population": 400, "populationCapacity": 400}},
-            {"name": "Community Amherst", "type": "Community", "status": STATUS_PREBUILT,
-             "assigned": 0, "trained": 0, "untrained": 0,
-             "resources": {"foodPacks": 0, "foodPacksCapacity": 400,
-                           "population": 400, "populationCapacity": 400}},
+            community("Community Charleston"),
+            community("Community Trinity"),
+            community("Community Amherst"),
             {"name": "Motel", "type": "Motel", "status": STATUS_PREBUILT,
              "assigned": 0, "trained": 0, "untrained": 0,
-             "resources": {"foodPacks": 0, "foodPacksCapacity": 0,
-                           "population": 0, "populationCapacity": 3000}},
+             "resources": {"foodPacks": 0, "foodPacksCapacity": m_cap,
+                           "population": 0, "populationCapacity": m_pop}},
         ]
 
-    def __init__(self, budget=5000, satisfaction=50.0, free_trained=5, free_untrained=5,
+    def __init__(self, budget=None, satisfaction=None, free_trained=None, free_untrained=None,
                  prebuilts=True):
+        # The parameter sheet drives every build since 3d8c8b00, so the start state is
+        # exported (`initialState`) rather than hardcoded: a run under a different
+        # ARC_PARAM_CONFIG starts somewhere else and the port has to follow it.
+        init = C.get("initial_state") or {}
+        if budget is None:
+            budget = init.get("budget", 5000)
+        if satisfaction is None:
+            satisfaction = init.get("satisfaction", 50.0)
+        if free_trained is None:
+            free_trained = init.get("trained", 5)
+        if free_untrained is None:
+            free_untrained = init.get("untrained", 5)
         self.budget = int(budget)
         self.satisfaction = float(satisfaction)
         self.counters = dict.fromkeys(COUNTERS, 0)
@@ -263,14 +324,38 @@ class Economy:
         self.spend(cost, SPEND_CATEGORY.get(building_type, "other"))
         # site_id rides along so the finished building knows WHERE it is: delivery time
         # is the drive to it, and without a location it falls back to a fitted constant.
-        self.under_construction.append([C["construction_rounds"], building_type, site_id])
+        # The building EXISTS from this round -- Unity's facility list carries it as
+        # UnderConstruction with its capacities set and isOperational false, and a leaf
+        # evaluator's observation has to show the same. It only becomes staffable when the
+        # construction clock in on_round_end runs out (NeedWorker), never in service before.
+        # Capacities are the prefab's BuildingResourceStorage maxCapacity per resource
+        # (corpus "capacities"). A Shelter holds 100 people, not 400: with 400 the port
+        # kept offering "Send to Shelters" on a shelter Unity had already filled, and a
+        # plan that took that phantom option scored 2.79 here against 2.39 in the game.
+        cap = (C.get("capacities") or {}).get(building_type, {})
+        name = f"{building_type}_{len(self.buildings)}"
+        self.buildings.append({"name": name, "type": building_type,
+                               "status": STATUS_UNDER_CONSTRUCTION, "assigned": 0,
+                               "trained": 0, "untrained": 0,
+                               "resources": {"foodPacks": 0,
+                                             "foodPacksCapacity": cap.get("foodPacks", 0),
+                                             "population": 0,
+                                             "populationCapacity": cap.get("population", 0)},
+                               "site_id": site_id})
+        self.under_construction.append([C["construction_rounds"], building_type, site_id, name])
         return True
 
-    def hire(self, kind: str, quantity: int, advertised_cost: int) -> bool:
-        """ActionExecutor deducts `action.cost` verbatim -- measured, both worker paths."""
+    def hire(self, kind: str, quantity: int, advertised_cost: int = 0) -> bool:
+        """ActionExecutor.ExecuteWorkerAction.
+
+        THE PRICE IS THE GAME'S, NOT THE CALLER'S: `action.cost = unitCost * quantity`
+        where unitCost is WorkerRequestSystem's configured rate (BUG_REPORTS B21 -- the
+        client's number used to be charged verbatim, and the port still charged whatever
+        the menu enumerator advertised: 400 for four untrained where Unity charged 800)."""
         if kind not in ("trained", "untrained") or quantity <= 0:
             return False
-        self.spend(advertised_cost, "worker")
+        cost = quantity * C["trained_cost" if kind == "trained" else "untrained_cost"]
+        self.spend(cost, "worker")
         days = C["trained_arrival_days"] if kind == "trained" else C["untrained_arrival_days"]
         self.arriving += [[days, kind]] * quantity
         return True
@@ -282,7 +367,7 @@ class Economy:
         # had trained one and charged for five).
         if quantity <= 0 or self.free_untrained < quantity:
             return False
-        self.spend(advertised_cost, "worker")
+        self.spend(quantity * C["training_cost"], "worker")   # same rule as hire, B21
         self.free_untrained -= quantity
         self.in_training += [C["training_days"]] * quantity
         return True
@@ -307,6 +392,14 @@ class Economy:
             cfg = by_type.get(b["type"], {})
             if cfg.get("enableFoodWaste"):
                 res["foodPacks"] = 0
+            if cfg.get("fillFoodToCapacityDaily") and b.get("status") == STATUS_IN_USE:
+                # Kitchens no longer produce per round; the day reset tops them straight up
+                # to capacity, which IS their daily throughput (main-bugfixes d5e5f683).
+                cap = res.get("foodPacksCapacity")
+                if cap is None:
+                    cap = cfg.get("foodCapacity")
+                if cap is not None:
+                    res["foodPacks"] = max(res.get("foodPacks") or 0, int(cap))
             start = cfg.get("startingFoodPacks", 0)
             # No daily restock floor: Kitchen.prefab has startingFoodPacks 0 and
             # enableFoodWaste 1, so the day change EMPTIES a kitchen and round production
@@ -339,49 +432,59 @@ class Economy:
             room = max(0, (cap if cap is not None else 10**9) - have)
             res["foodPacks"] = have + min(room, int(cfg.get("amountPerRound", 0)))
 
-    def consumption_tick(self) -> None:
-        """BuildingResourceStorage.OnRoundChanged -> HandlePopulationConsumptionCycle, once per
-        clock INVOKE. roundsSinceLastConsumption++ then consume at >= interval and reset. The
-        clock invokes segments 0, 1, 2, 3 (segment 4 returns early), so with interval 4 the
-        count reaches 4 on the rollover's segment-0 invoke every day from day 2 -- which is
-        exactly where every one of the eleven captures drops community food (steps 9, 13,
-        17, ...). Counting rounds instead drained them a step early."""
-        self.rounds_since_consumption += 1
-        cfg = C.get("consumption") or {}
-        interval = int(cfg.get("roundInterval", 4) or 4)
-        if self.rounds_since_consumption >= interval:
-            self.consume_food(interval)          # rounds_elapsed % interval == 0 -> consumes
-            self.rounds_since_consumption = 0
+    def consumption_tick(self, round_key=None) -> None:
+        """BuildingResourceStorage.OnRoundChanged -> HandlePopulationConsumptionCycle, once
+        per clock INVOKE, PER BUILDING.
+
+        Since the food overhaul each storage runs its own counter against its OWN interval
+        (Shelter 2, Motel 4, Community disabled), so there is no single global cadence any
+        more. `round_key` is Unity's `day*100 + segment` guard: a building eats at most once
+        per round however many times it is asked (round tick, or a delivery landing)."""
+        by_type = C.get("storage_by_type") or {}
+        glob = C.get("consumption") or {}
+        for b in self.buildings:
+            cfg = by_type.get(b.get("type"), {})
+            if not _consumes(cfg, glob):
+                continue
+            interval = int(cfg.get("consumptionRoundInterval")
+                           or glob.get("roundInterval", 4) or 4)
+            b["rounds_since_consumption"] = (b.get("rounds_since_consumption") or 0) + 1
+            if b["rounds_since_consumption"] >= interval:
+                # Unity resets the counter only when consumption actually RAN: a delivery
+                # that already fed this building this round leaves the counter standing, so
+                # the cycle's phase shifts with delivery timing (BUG_REPORTS E.3).
+                if self._consume_one(b, cfg, glob, round_key):
+                    b["rounds_since_consumption"] = 0
+
+    def _consume_one(self, b, cfg, glob, round_key) -> bool:
+        """ConsumeFoodForPopulationOncePerRound for one building. Returns whether it ran."""
+        if round_key is not None and b.get("last_consumption_round_key") == round_key:
+            return False
+        b["last_consumption_round_key"] = round_key
+        res = b.setdefault("resources", {})
+        people = res.get("population") or 0
+        if cfg.get("workersConsumeFoodToo", glob.get("workersConsumeFoodToo", True)):
+            # Mouths, not workforce points (BUG_REPORTS B27).
+            people += (b.get("trained") or 0) + (b.get("untrained") or 0)
+        per_person = int(cfg.get("foodPerPersonPerNRounds")
+                         or glob.get("foodPerPersonPerNRounds", 1) or 1)
+        need = people * per_person
+        if need > 0:
+            res["foodPacks"] = max(0, (res.get("foodPacks") or 0) - need)
+        return True
 
     def consume_food(self, rounds_elapsed) -> None:
-        """BuildingResourceStorage.HandlePopulationConsumptionCycle.
-
-            roundsSinceLastConsumption++;
-            if (roundsSinceLastConsumption >= consumptionRoundInterval) {
-                int totalPeopleToFeed = GetTotalPeopleCount();
-                int foodNeeded = totalPeopleToFeed * foodPerPersonPerNRounds;
-                RemoveResource(ResourceType.FoodPacks, foodNeeded);
-            }
-
-        This is what makes a food request come BACK. A community stocked once and never
-        eating never asks again -- the port resolved 3 food tasks against Unity's 15. Every
-        facility runs its own counter, so they empty on the same cadence but from their own
-        populations."""
-        cfg = C.get("consumption") or {}
-        if not cfg.get("enabled", True):
-            return
-        interval = int(cfg.get("roundInterval", 4) or 4)
+        """Back-compat shim: the old whole-map tick, expressed through the per-building one.
+        Kept because tests and diagnostics call it directly with a round count."""
+        interval = int((C.get("consumption") or {}).get("roundInterval", 4) or 4)
         if interval <= 0 or rounds_elapsed % interval:
             return
-        per_person = int(cfg.get("foodPerPersonPerNRounds", 1) or 1)
+        by_type = C.get("storage_by_type") or {}
+        glob = C.get("consumption") or {}
         for b in self.buildings:
-            res = b.get("resources") or {}
-            people = res.get("population") or 0
-            if cfg.get("workersConsumeFoodToo", True):
-                people += (b.get("trained") or 0) + (b.get("untrained") or 0)
-            need = people * per_person
-            if need > 0:
-                res["foodPacks"] = max(0, (res.get("foodPacks") or 0) - need)
+            cfg = by_type.get(b.get("type"), {})
+            if _consumes(cfg, glob):
+                self._consume_one(b, cfg, glob, None)
 
     def on_round_end(self) -> None:
         """RewardMetricsTracker.OnRoundEnded.
@@ -398,23 +501,14 @@ class Economy:
             entry[0] -= 1
         finished = [e for e in self.under_construction if e[0] <= 0]
         self.under_construction = [e for e in self.under_construction if e[0] > 0]
-        for _rounds, btype, *_site in finished:
-            # Construction completing puts a building in NeedWorker, NOT in service.
-            # Capacities are the prefab's BuildingResourceStorage maxCapacity per resource
-            # (corpus "capacities"). A Shelter holds 100 people, not 400: with 400 the port
-            # kept offering "Send to Shelters" on a shelter Unity had already filled, and a
-            # plan that took that phantom option scored 2.79 here against 2.39 in the game.
-            cap = (C.get("capacities") or {}).get(btype, {})
-            self.buildings.append({"name": f"{btype}_{len(self.buildings)}", "type": btype,
-                                   "status": STATUS_NEED_WORKER, "assigned": 0,
-                                   "trained": 0, "untrained": 0,
-                                   "resources": {"foodPacks": 0,
-                                                 "foodPacksCapacity": cap.get("foodPacks", 0),
-                                                 "population": 0,
-                                                 "populationCapacity": cap.get("population", 0)},
-                                   "site_id": (_site[0] if _site else None)})
+        for _rounds, _btype, _site, name in finished:
+            # Construction completing puts a building in NeedWorker, NOT in service. The
+            # facility itself was added at build time (see build()); this only flips it.
             # A kitchen that finishes construction is stocked at the next day reset, not
             # immediately -- it is still NeedWorker here.
+            b = self.facility(name)
+            if b is not None and b["status"] == STATUS_UNDER_CONSTRUCTION:
+                b["status"] = STATUS_NEED_WORKER
         # Deconstruction runs on the same round clock as construction.
         for b in self.buildings:
             if b.get("deconstruct_rounds"):
@@ -446,7 +540,15 @@ class Economy:
                 self.free_untrained += 1
         self.arriving = [e for e in self.arriving if e[0] > 0]
         self.in_training = [d - 1 for d in self.in_training]
-        self.free_trained += sum(1 for d in self.in_training if d <= 0)
+        # WorkerTrainingSystem.CompleteTraining grants satisfactionPerTrainedWorker (scene: 2)
+        # for every worker that finishes -- "Satisfaction: 87 -> 91 (+4.0) - Completed training
+        # 2 workers" on seed 6001, a gain the port never made.
+        done = sum(1 for d in self.in_training if d <= 0)
+        if done:
+            per = float((C.get("initial_state") or {}).get("satisfactionPerTrainedWorker", 0) or 0)
+            if per:
+                self.satisfaction = max(0.0, min(100.0, self.satisfaction + done * per))
+        self.free_trained += done
         self.in_training = [d for d in self.in_training if d > 0]
         self.counters["daysCompleted"] = day
         self.counters["totalWorkers"] = self.total_workers()
@@ -492,10 +594,16 @@ class Economy:
         res["population"] = pop + delta
         return delta
 
-    def add_food(self, name, amount) -> int:
-        """Deliver food packs. A community holding food stops satisfying the `Empty`
+    def add_food(self, name, amount, round_key=None) -> int:
+        """Deliver food packs. A facility holding food stops satisfying the `NeedsFood`
         condition, which is what makes Unity's food requests STOP -- a port with static
-        storage asks forever."""
+        storage asks forever.
+
+        Since the food overhaul the arrival ITSELF feeds the population
+        (`BuildingResourceStorage.AddResource` -> ConsumeFoodForPopulationOncePerRound), so
+        a delivery that lands is eaten in the same round rather than sitting until the next
+        tick. Pass `round_key` (day*100 + segment) so several drop-offs answering one
+        request do not each re-feed the building."""
         b = self.facility(name)
         if b is None or amount <= 0:
             return 0
@@ -504,6 +612,11 @@ class Economy:
         room = amount if cap is None else max(0, cap - (res.get("foodPacks") or 0))
         moved = min(amount, room)
         res["foodPacks"] = (res.get("foodPacks") or 0) + moved
+        if moved > 0:
+            cfg = (C.get("storage_by_type") or {}).get(b.get("type"), {})
+            glob = C.get("consumption") or {}
+            if _consumes(cfg, glob) and self._consume_one(b, cfg, glob, round_key):
+                b["rounds_since_consumption"] = 0
         return moved
 
     @property
@@ -562,24 +675,29 @@ class Economy:
         if not self.can_staff(index):
             return False
         if trained is None and untrained is None:
-            # TryReassignWorkerCountToBuilding assigns EXACTLY `count` workers or nothing:
-            # it releases the building's current workers back to the pool, and if the
-            # reachable pool (free + released) is short of `count` it returns false with
-            # "Not enough workers to staff building". Measured on the 5901 validation run:
-            # Shelter Bravo, 2 free untrained, quantity 4 -> ok:false, nothing assigned,
-            # where the port had put the 2 on it. Greedy trained-first for the selection.
+            # EXACT COMPOSITION (ActionExecutor.ExecuteAssignment + WorkerSystem.
+            # TryStaffBuildingWithComposition, BUG_REPORTS B22). `count` is a HEAD count and
+            # the assigned workforce POINTS must equal what the building needs, so the mix is
+            # forced: t = required - count trained, u = 2*count - required untrained. Only
+            # required/2 .. required heads can ever staff a building, and each type must be
+            # separately available (free + the ones this building already holds, which the
+            # release returns to the pool). The old model took `count` workers trained-first,
+            # which both over-staffed to 2x and accepted counts Unity refuses -- it staffed a
+            # kitchen at merge_v2 step 5 that Unity left empty for the rest of the run.
             b = self.buildings[index]
-            reachable = (self.free_trained + self.free_untrained
-                         + b.get("trained", 0) + b.get("untrained", 0))
-            if count <= 0 or reachable < count:
+            required = REQUIRED_WORKFORCE
+            trained = required - count
+            untrained = count - trained
+            if count <= 0 or trained < 0 or untrained < 0:
+                return False
+            if (self.free_trained + b.get("trained", 0) < trained
+                    or self.free_untrained + b.get("untrained", 0) < untrained):
                 return False
             self.free_trained += b.get("trained", 0)
             self.free_untrained += b.get("untrained", 0)
             self.working_trained -= b.get("trained", 0)
             self.working_untrained -= b.get("untrained", 0)
             b["trained"] = b["untrained"] = 0
-            trained = min(count, self.free_trained)
-            untrained = min(count - trained, self.free_untrained)
         else:
             trained = min(trained or 0, self.free_trained)
             untrained = min(untrained or 0, self.free_untrained)

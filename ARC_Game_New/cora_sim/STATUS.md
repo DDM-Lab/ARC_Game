@@ -40,6 +40,64 @@ Talos container yet (Apache proxies only /ws /configs /health /bundles + the she
 saves 404 until it is. Their `Assets/StreamingAssets/game_param_config.csv` is byte-identical to the
 Talos `/sheet.csv` (which refresh-sheet.sh pulls from the Google Sheet) and no code reads it.
 
+**2026-09-10, branch `v1_merge_test` — the surrogate tracks the new build.** Measured on a
+32-round lockstep capture of `34d2133d` + the export additions below (`runs/merge_v4`, seed 5503,
+the port driving, then replayed with `obs_diff`):
+
+    RNG draw stream    identical for all 32 rounds
+    final score        Unity 2.2103   port 2.2101   (delta 0.0002)
+    counters           foodResolved/foodFulfilled, caseworkRequested/caseworkProcessed,
+                       lodgingFulfilled, cumWorkingWorkers, every spend: EQUAL
+    budget             equal to step 15, then +1 for the rest of the episode
+    residual           lodgingResolved 700 vs 701; satisfaction 96 vs 95 at step 9;
+                       a Casework_Request the port keeps on the board and Unity does not
+
+THE TARGET IS OBSERVATION EQUALITY, NOT BIT-EXACTNESS (2026-09-10 ruling). The surrogate is a
+leaf evaluator for RHEA/MCTS: what it owes is the same end-of-round observation and the same
+outcome per action, not the same random stream. `obs_diff` is the instrument for that -- it
+projects both sides into one canonical observation (budget, satisfaction, per-facility
+status/pop/food/workforce, worker pools, task board, in-flight walks, every reward counter) and
+diffs field by field, marking each field deterministic or stochastic and reporting the step where
+the draw streams part. A deterministic diff while the streams are aligned is a mechanic bug; a
+stochastic one after they part is not. That reframing is what made the last ten mechanics
+findable -- the draw-stream diff only ever showed the first divergence.
+
+PORTED THIS ROUND, each verified by the diff moving: the A1 clock (segment 4 is a real invoke:
+ageing, tracker, storage and expiry all run there; the day-start pass is OnDayStarted, which
+TaskSystem and the depletion manager subscribe to and the per-advance subscribers do not);
+generation gate `newSegment < roundsPerDay - 1`; depletion draws AFTER the generation pass;
+day-1 weather from the sheet; per-type consumption, consume-on-delivery, kitchen daily fill;
+`NeedsFood`; the depletion manager; `PopulationBased` quantities incl. "deliver double";
+self-walk relocation AND the casework walk (`ExecuteToSpecificDestination`: nearest site with
+room, departure is the processing-home event crediting caseworkProcessed, arrival registers a
+tracker group only at a lodging building); overnight food cancellation; exact-composition
+staffing (B22); game-priced hire/train (B21); the sheet's daily allocation (B35); casework
+credited by needy count (A7); departures leaving facility storage; not-yet-arrived hires
+counting in the trained/untrained ratio; kitchen legs nearest-first capped by unreserved stock;
+and expiry running on the Update AFTER the round -- after OnRoundEnd and the flood -- which is
+what lets a relocation be completed by its own people arriving.
+
+EXPORT ADDITIONS (`GymServerManager.HandleSimConstants`): per-building and per-prefab storage
+settings, `communityDepletion`, `relocationDelayRounds`, per-choice `quantityType`/
+`deliveryPercentage`, per-task `taskImpacts` (what ApplyTaskPenalties removes on expiry -- the
+measured penalty table was keyed by pre-overhaul task ids), `initialState` (budget, satisfaction,
+horizon, workers, day-1 weather), `buildGUID`, and `eventOrder` -- the clock's subscriber lists
+in invocation order, so the port's phase order is a lookup instead of trace archaeology.
+`validate_plan` writes a `.meta.json` beside each capture with the build GUID; `obs_diff` warns
+when a capture and the corpus come from different builds. The export races the sheet's async
+load: `initialState: null` means it was asked too early (the exporter now retries).
+
+TOOLING FIX: `seed_state` seeds the port from the first `round:advance` (a step boundary), not
+the first `flood:enter` (mid-step, after that step's generation pass). The old seeding made the
+port replay a pass Unity had already run and `debug_lockstep` compensated by dropping Unity's
+whole first step, so every draw comparison was an artifact reporting a divergence at index 3
+that did not exist.
+
+STALE CORPORA, not regressions: `runs/validate*` are PRE-overhaul oracles, so the ratchet reads
+0/42 and `test_sim`'s closed loop fails against them; `test_triggers` fails on `cap_555_24r.log`
+because Community_FoodRequest had probability triggers then and has none now. `test_flood` is
+172/172. `runs/merge_v4` is the oracle for this build.
+
 **2026-09-09, branch `v1_fixes` (NOT merged into v1_testing).** All 12 known bugs and most of the 35
 audit findings are fixed in six commits (see `docs/BUG_REPORTS_v1_testing.md`, "Fix status"). The
 surrogate is UNCHANGED and now models the OLD game: every `runs/validate*` set is still the
