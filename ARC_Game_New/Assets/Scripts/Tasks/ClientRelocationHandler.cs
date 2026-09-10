@@ -56,6 +56,94 @@ public class ClientRelocationHandler : MonoBehaviour
     /// <summary>Snapshot of all clients currently self-walking (departed, not yet arrived). For UI display.</summary>
     public List<PendingRelocation> GetPendingRelocations() => new List<PendingRelocation>(pendingRelocations);
 
+    // ── save / restore ────────────────────────────────────────────────────────────────
+    //
+    // THE PEOPLE IN THIS LIST ARE NOWHERE ELSE. QueueSelfWalk is called AFTER the caller has
+    // already removed the population from the source's storage, so an in-flight walk exists
+    // only here: not at the source, not yet at the destination. A snapshot that skips it
+    // loses those clients outright, and since the walk is `relocationDelayRounds` (2) long
+    // and a save is taken during the planning pause, having one in flight is ordinary rather
+    // than a corner case.
+    //
+    // References are stored by NAME and by task ID because the objects they point at do not
+    // survive the scene rebuild a restore performs.
+    [System.Serializable]
+    public class Snapshot
+    {
+        [System.Serializable]
+        public class Walk
+        {
+            public int parentTaskId = -1;
+            public string sourceName;
+            public string destinationName;
+            public int quantity;
+            public int roundsRemaining;
+            public string groupName;
+        }
+        public List<Walk> walks = new List<Walk>();
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot();
+        foreach (var r in pendingRelocations)
+        {
+            if (r == null) continue;
+            s.walks.Add(new Snapshot.Walk
+            {
+                parentTaskId    = r.parentTask != null ? r.parentTask.taskId : -1,
+                sourceName      = r.source != null ? r.source.name : null,
+                destinationName = r.destination != null ? r.destination.name : null,
+                quantity        = r.quantity,
+                roundsRemaining = r.roundsRemaining,
+                groupName       = r.groupName,
+            });
+        }
+        return s;
+    }
+
+    /// <summary>Restore in-flight walks. Must run AFTER TaskSystem.RestoreState, or the
+    /// parent lookup finds nothing and an arriving group cannot resolve its task.</summary>
+    public void RestoreState(Snapshot s)
+    {
+        pendingRelocations.Clear();
+        if (s == null || s.walks == null) return;
+        foreach (var w in s.walks)
+        {
+            if (w == null) continue;
+            MonoBehaviour src = FindFacility(w.sourceName);
+            MonoBehaviour dst = FindFacility(w.destinationName);
+            if (dst == null)
+            {
+                // Without a destination the walk can never land, and keeping it would hold
+                // its clients in limbo for the rest of the game. Drop it loudly instead.
+                Debug.LogWarning($"[ClientRelocationHandler] restore: dropping walk of {w.quantity} "
+                               + $"to missing destination '{w.destinationName}'");
+                continue;
+            }
+            pendingRelocations.Add(new PendingRelocation
+            {
+                parentTask      = w.parentTaskId >= 0 && TaskSystem.Instance != null
+                                    ? TaskSystem.Instance.GetTaskById(w.parentTaskId) : null,
+                source          = src,
+                destination     = dst,
+                quantity        = w.quantity,
+                roundsRemaining = w.roundsRemaining,
+                groupName       = w.groupName,
+            });
+        }
+    }
+
+    static MonoBehaviour FindFacility(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        GameObject go = GameObject.Find(name);
+        if (go == null) return null;
+        MonoBehaviour mb = go.GetComponent<Building>();
+        if (mb == null) mb = go.GetComponent<PrebuiltBuilding>();
+        return mb;
+    }
+
     void Awake()
     {
         if (Instance == null) Instance = this;

@@ -25,6 +25,33 @@ public class BudgetAllocationManager : MonoBehaviour
     // Read-only view for UI (e.g. "incoming funds" display)
     public IReadOnlyList<PendingAllocation> PendingAllocations => pending.AsReadOnly();
 
+    // ── save / restore ────────────────────────────────────────────────────────────────
+    // Money already approved but not yet paid. This is the real credit path (DelayedBudget-
+    // Manager is display-only -- BUG_REPORTS Part D), so a snapshot that omits it loses
+    // funding the player has already earned, and the loss is invisible: the budget simply
+    // never goes up on the round it was due.
+    [System.Serializable]
+    public class Snapshot
+    {
+        public List<PendingAllocation> pending = new List<PendingAllocation>();
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot();
+        foreach (var p in pending)
+            if (p != null) s.pending.Add(new PendingAllocation(p.amount, p.roundsRemaining, p.label));
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        pending.Clear();
+        if (s == null || s.pending == null) return;
+        foreach (var p in s.pending)
+            if (p != null) pending.Add(new PendingAllocation(p.amount, p.roundsRemaining, p.label));
+    }
+
     void Awake()
     {
         if (Instance == null) Instance = this;

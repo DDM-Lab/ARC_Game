@@ -211,25 +211,149 @@ public class Vehicle : MonoBehaviour
         return true;
     }
 
+    // ── save / restore ────────────────────────────────────────────────────────────────
+    //
+    // A vehicle mid-leg is the NORMAL case for a save, not an edge one: a save is taken in
+    // the planning pause and legs routinely span round boundaries. Without this, a restored
+    // game silently idles every vehicle, its cargo evaporates, and the parent task waits
+    // forever for a delivery that will never land.
+    [System.Serializable]
+    public class Snapshot
+    {
+        public string vehicleName;
+        public Vector3 position;
+        public string status;                 // VehicleStatus
+        public bool isDamaged;
+        public int currentTaskId = -1;        // DeliveryTask.taskId, re-linked on restore
+        // WHETHER THE VEHICLE IS ACTUALLY MID-DELIVERY. `currentTask` is NOT cleared when a
+        // delivery completes -- an Idle vehicle with nothing aboard still reports a stale
+        // task (observed: status Idle, currentTaskId 0, no cargo) -- so the id alone cannot
+        // distinguish "carrying delivery 0" from "finished long ago". Status is what decides.
+        public bool onDelivery;
+        public int step = 1;                  // where ExecuteDeliveryTask resumes
+        public List<string> cargoTypes = new List<string>();
+        public List<int> cargoAmounts = new List<int>();
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot
+        {
+            vehicleName   = vehicleName,
+            position      = transform.position,
+            status        = currentStatus.ToString(),
+            isDamaged     = isDamaged,
+            currentTaskId = currentTask != null ? currentTask.taskId : -1,
+            onDelivery    = currentTask != null && IsDeliveringStatus(currentStatus),
+            step          = CurrentStep(),
+        };
+        foreach (var kv in currentCargo)
+        {
+            if (kv.Value <= 0) continue;
+            s.cargoTypes.Add(kv.Key.ToString());
+            s.cargoAmounts.Add(kv.Value);
+        }
+        return s;
+    }
+
+    /// <summary>Which ExecuteDeliveryTask step this vehicle is inside, from the state that
+    /// is actually observable. Cargo aboard is what separates "driving to the source" from
+    /// "driving to the destination" -- both are InTransit.</summary>
+    static bool IsDeliveringStatus(VehicleStatus st) =>
+        st == VehicleStatus.InTransit || st == VehicleStatus.Loading || st == VehicleStatus.Unloading;
+
+    int CurrentStep()
+    {
+        if (currentTask == null) return 1;
+        bool loaded = false;
+        foreach (var kv in currentCargo) if (kv.Value > 0) { loaded = true; break; }
+        switch (currentStatus)
+        {
+            case VehicleStatus.Loading:   return 2;
+            case VehicleStatus.Unloading: return 4;
+            case VehicleStatus.InTransit: return loaded ? 3 : 1;
+            default:                      return loaded ? 3 : 1;
+        }
+    }
+
+    /// <summary>
+    /// Put the vehicle back where it was and, if it was mid-delivery, resume that delivery
+    /// at the step it had reached. `task` is the already-restored DeliveryTask this vehicle
+    /// was carrying, or null.
+    /// </summary>
+    public void RestoreState(Snapshot s, DeliveryTask task)
+    {
+        if (s == null) return;
+        transform.position = s.position;
+        isDamaged = s.isDamaged;
+
+        currentCargo.Clear();
+        int n = Mathf.Min(s.cargoTypes.Count, s.cargoAmounts.Count);
+        for (int i = 0; i < n; i++)
+            if (System.Enum.TryParse(s.cargoTypes[i], out ResourceType rt))
+                currentCargo[rt] = s.cargoAmounts[i];
+
+        if (movementCoroutine != null) { StopCoroutine(movementCoroutine); movementCoroutine = null; }
+        if (deliveryCoroutine != null) { StopCoroutine(deliveryCoroutine); deliveryCoroutine = null; }
+        currentPath.Clear();
+        loadAborted = false;
+
+        if (task == null || isDamaged || !s.onDelivery)
+        {
+            // No task to resume. A damaged vehicle stays damaged and out of the fleet --
+            // its repair task is part of the task snapshot and drives it back.
+            currentTask = null;
+            sourceBuilding = null;
+            destinationBuilding = null;
+            SetStatus(isDamaged ? VehicleStatus.Damaged : VehicleStatus.Idle);
+            OnCargoChanged?.Invoke(this);
+            return;
+        }
+
+        currentTask = task;
+        sourceBuilding = task.sourceBuilding;
+        destinationBuilding = task.destinationBuilding;
+        OnCargoChanged?.Invoke(this);
+        deliveryCoroutine = StartCoroutine(ExecuteDeliveryTask(Mathf.Clamp(s.step, 1, 4)));
+    }
+
     /// <summary>
     /// Execute the complete delivery task
     /// </summary>
-    IEnumerator ExecuteDeliveryTask()
+    /// <param name="startStep">
+    /// Where to resume. 1 = drive to the source (a fresh assignment), 2 = load, 3 = drive to
+    /// the destination, 4 = unload. Only a snapshot restore passes anything but 1.
+    ///
+    /// RESUMING AT 3 MUST NOT RE-RUN LoadCargo: the cargo is already aboard and the source
+    /// was already debited, so loading again would take the goods twice. That is the whole
+    /// reason this takes a step rather than always starting from the top.
+    ///
+    /// A vehicle that was part-way along a leg re-paths from where it now stands rather than
+    /// resuming at an exact path index. Exact frame resume is not meaningful here anyway --
+    /// the dispatch cadence depends on real-time pause length, which no save can carry.
+    /// </param>
+    IEnumerator ExecuteDeliveryTask(int startStep = 1)
     {
-        Debug.Log($"Vehicle {vehicleName} starting delivery task");
+        Debug.Log($"Vehicle {vehicleName} starting delivery task (step {startStep})");
 
-        // Step 1: Move to source building
-        SetStatus(VehicleStatus.InTransit);
-        Vector3 sourcePos = currentTask.GetSourceRoadConnection();
-        Debug.Log($"Vehicle {vehicleName} moving to source: {sourcePos}");
-        yield return StartCoroutine(MoveToPosition(sourcePos));
-        if (currentTask == null) yield break;
+        if (startStep <= 1)
+        {
+            // Step 1: Move to source building
+            SetStatus(VehicleStatus.InTransit);
+            Vector3 sourcePos = currentTask.GetSourceRoadConnection();
+            Debug.Log($"Vehicle {vehicleName} moving to source: {sourcePos}");
+            yield return StartCoroutine(MoveToPosition(sourcePos));
+            if (currentTask == null) yield break;
+        }
 
-        // Step 2: Load cargo
-        SetStatus(VehicleStatus.Loading);
-        Debug.Log($"Vehicle {vehicleName} loading cargo");
-        yield return StartCoroutine(LoadCargo());
-        if (currentTask == null) yield break;
+        if (startStep <= 2)
+        {
+            // Step 2: Load cargo
+            SetStatus(VehicleStatus.Loading);
+            Debug.Log($"Vehicle {vehicleName} loading cargo");
+            yield return StartCoroutine(LoadCargo());
+            if (currentTask == null) yield break;
+        }
         if (loadAborted)
         {
             // The source had nothing to load. Unwind HERE, on the outer coroutine, so the
@@ -239,12 +363,15 @@ public class Vehicle : MonoBehaviour
             yield break;
         }
 
-        // Step 3: Move to destination building
-        SetStatus(VehicleStatus.InTransit);
-        Vector3 destPos = currentTask.GetDestinationRoadConnection();
-        Debug.Log($"Vehicle {vehicleName} moving to destination: {destPos}");
-        yield return StartCoroutine(MoveToPosition(destPos));
-        if (currentTask == null) yield break;
+        if (startStep <= 3)
+        {
+            // Step 3: Move to destination building
+            SetStatus(VehicleStatus.InTransit);
+            Vector3 destPos = currentTask.GetDestinationRoadConnection();
+            Debug.Log($"Vehicle {vehicleName} moving to destination: {destPos}");
+            yield return StartCoroutine(MoveToPosition(destPos));
+            if (currentTask == null) yield break;
+        }
 
         // Step 4: Unload cargo
         SetStatus(VehicleStatus.Unloading);

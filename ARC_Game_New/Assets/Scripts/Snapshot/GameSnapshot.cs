@@ -65,6 +65,19 @@ public class GameSnapshot
     public RewardMetricsTracker.Snapshot rewardMetrics;
     public SatisfactionAndBudget.SpendSnapshot spend;
 
+    // Vehicles, including any mid-delivery. Their cargo and their position exist nowhere
+    // else, and a save is taken in the planning pause, when a leg spanning a round boundary
+    // is ordinary rather than exceptional.
+    public List<Vehicle.Snapshot> vehicles = new List<Vehicle.Snapshot>();
+
+    // Clients walking between facilities right now. QueueSelfWalk debits the source before
+    // the walk starts, so these people exist ONLY in this list -- omitting it deleted them.
+    public ClientRelocationHandler.Snapshot relocations;
+
+    // Funding approved but not yet paid (the real credit path; DelayedBudgetManager is
+    // display-only, BUG_REPORTS Part D).
+    public BudgetAllocationManager.Snapshot budgetAllocations;
+
     [Serializable]
     public class RngState
     {
@@ -161,6 +174,12 @@ public static class GameSnapshotManager
         if (deliv != null) s.deliveries = deliv.CaptureState();
         var clients = UnityEngine.Object.FindObjectOfType<ClientStayTracker>();
         if (clients != null) s.clients = clients.CaptureState();
+        var reloc = ClientRelocationHandler.Instance;
+        if (reloc != null) s.relocations = reloc.CaptureState();
+        var alloc = BudgetAllocationManager.Instance;
+        if (alloc != null) s.budgetAllocations = alloc.CaptureState();
+        foreach (var v in UnityEngine.Object.FindObjectsOfType<Vehicle>())
+            if (v != null) s.vehicles.Add(v.CaptureState());
 
         var rmt = RewardMetricsTracker.Instance;
         if (rmt != null) s.rewardMetrics = rmt.CaptureState();
@@ -232,6 +251,40 @@ public static class GameSnapshotManager
         if (deliv != null && s.deliveries != null) deliv.RestoreState(s.deliveries);
         var clients = UnityEngine.Object.FindObjectOfType<ClientStayTracker>();
         if (clients != null && s.clients != null) clients.RestoreState(s.clients);
+        // AFTER tasks: an in-flight walk re-links to its parent BY ID, so the tasks must
+        // already be back. AFTER buildings: its endpoints resolve by GameObject name.
+        var reloc = ClientRelocationHandler.Instance;
+        if (reloc != null) reloc.RestoreState(s.relocations);
+        var alloc = BudgetAllocationManager.Instance;
+        if (alloc != null) alloc.RestoreState(s.budgetAllocations);
+
+        // Vehicles LAST: each re-links to its delivery by id, so DeliverySystem must already
+        // hold the restored tasks. Matched by name -- vehicleId is not stable across a scene
+        // rebuild, but the names (Vehicle1..N) are.
+        if (s.vehicles != null && s.vehicles.Count > 0)
+        {
+            var byName = new Dictionary<string, Vehicle>();
+            foreach (var v in UnityEngine.Object.FindObjectsOfType<Vehicle>())
+                if (v != null) byName[v.GetVehicleName()] = v;
+
+            var tasksById = new Dictionary<int, DeliveryTask>();
+            if (deliv != null)
+            {
+                foreach (var t in deliv.GetActiveTasks()) if (t != null) tasksById[t.taskId] = t;
+                foreach (var t in deliv.GetPendingTasks()) if (t != null) tasksById[t.taskId] = t;
+            }
+
+            foreach (var vs in s.vehicles)
+            {
+                if (vs == null || !byName.TryGetValue(vs.vehicleName, out Vehicle v)) continue;
+                DeliveryTask task = null;
+                // Only re-link when the vehicle was genuinely mid-delivery; a completed
+                // vehicle keeps a stale currentTask whose id would otherwise match.
+                if (vs.onDelivery && vs.currentTaskId >= 0)
+                    tasksById.TryGetValue(vs.currentTaskId, out task);
+                v.RestoreState(vs, task);
+            }
+        }
 
         var econ = SatisfactionAndBudget.Instance;
         if (econ != null)

@@ -135,6 +135,18 @@ public class DeliverySystem : MonoBehaviour
         }
         public List<TaskState> active = new List<TaskState>();
         public List<TaskState> completed = new List<TaskState>();
+
+        // ORDERS WAITING FOR A VEHICLE. CreateDeliveryTask enqueues here and
+        // AssignPendingTasks drains it as vehicles free up, so at any save taken during the
+        // planning pause this queue routinely holds real work. Omitting it silently dropped
+        // every unassigned order on restore.
+        public List<TaskState> pending = new List<TaskState>();
+
+        // The id counter. Without it a restored game restarts at 1 and immediately mints
+        // delivery ids that collide with the ones already carried in `active` -- and task
+        // linkage (GameTask.linkedDeliveryTaskIds, deliveryToTaskMap) is BY ID, so the
+        // collision attaches a new delivery's completion to an old parent.
+        public int nextTaskId = 1;
     }
 
     static Snapshot.TaskState Freeze(DeliveryTask t) => new Snapshot.TaskState
@@ -177,6 +189,8 @@ public class DeliverySystem : MonoBehaviour
         var s = new Snapshot();
         foreach (var t in activeTasks) if (t != null) s.active.Add(Freeze(t));
         foreach (var t in completedTasks) if (t != null) s.completed.Add(Freeze(t));
+        foreach (var t in pendingTasks) if (t != null) s.pending.Add(Freeze(t));
+        s.nextTaskId = nextTaskId;
         return s;
     }
 
@@ -185,8 +199,16 @@ public class DeliverySystem : MonoBehaviour
         if (s == null) return;
         activeTasks.Clear();
         completedTasks.Clear();
+        pendingTasks.Clear();
         foreach (var ts in s.active) { var t = Thaw(ts); if (t != null) activeTasks.Add(t); }
         foreach (var ts in s.completed) { var t = Thaw(ts); if (t != null) completedTasks.Add(t); }
+        if (s.pending != null)
+            foreach (var ts in s.pending) { var t = Thaw(ts); if (t != null) pendingTasks.Enqueue(t); }
+        // Never move the counter BACKWARDS: a snapshot written before this field existed
+        // carries 0, and rewinding the counter is the id-collision this exists to prevent.
+        nextTaskId = Mathf.Max(nextTaskId, Mathf.Max(1, s.nextTaskId));
+        foreach (var t in activeTasks) if (t != null) nextTaskId = Mathf.Max(nextTaskId, t.taskId + 1);
+        foreach (var t in pendingTasks) if (t != null) nextTaskId = Mathf.Max(nextTaskId, t.taskId + 1);
     }
 
     private int nextTaskId = 1;
