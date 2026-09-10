@@ -1293,16 +1293,17 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
         // Multi-destination deliveries (e.g. "Send to casework site") use a dedicated path that
         // honors destinationBuilding. It now reports whether anything was queued or moved, so a
         // choice that could do nothing is refused instead of charged (BUG_REPORTS B13).
-        if (choice.enableMultipleDeliveries)
-            return ExecuteMultipleDeliveries(choice) > 0 ? -1 : 0;
-
         switch (choice.deliveryCargoType)
         {
             case ResourceType.FoodPacks:
+                // FoodDeliveryHandler drains kitchens itself and resolves population-based
+                // quantities; the multi-delivery flag on the food assets must not divert it.
                 return ExecuteFoodDelivery(choice, immediate) ? -1 : 0;
             case ResourceType.Population:
                 return ExecuteClientRelocation(choice, immediate);
             default:
+                if (choice.enableMultipleDeliveries)
+                    return ExecuteMultipleDeliveries(choice) > 0 ? -1 : 0;
                 // Fallback for any other cargo type: single source→destination delivery
                 return ExecuteFallbackDelivery(choice, immediate) ? -1 : 0;
         }
@@ -1771,7 +1772,12 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
     //  ---------CHOICE DELIVERY VALIDATION ---------
     bool ValidateChoiceDelivery(AgentChoice choice, out string errorMessage)
     {
-        if (choice != null && choice.enableMultipleDeliveries)
+        // Cargo decides the path (main-bugfixes): food always goes through FoodDeliveryHandler (it
+        // drains several kitchens itself and understands population-based quantities), people
+        // always relocate on foot through ClientRelocationHandler. The multi-delivery flag only
+        // routes other cargo.
+        if (choice != null && choice.enableMultipleDeliveries
+            && choice.deliveryCargoType != ResourceType.FoodPacks && choice.deliveryCargoType != ResourceType.Population)
             return ValidateMultipleDeliveries(choice, TaskSystem.Instance.FindTriggeringFacility(currentTask), out errorMessage);
         return ValidateChoiceDelivery(currentTask, choice, out errorMessage);
     }

@@ -313,6 +313,19 @@ public class ActionExecutor : MonoBehaviour
 
         // Parse resource type
         ResourceType resourceType = p.resource_type == "FoodPacks" ? ResourceType.FoodPacks : ResourceType.Population;
+        if (resourceType == ResourceType.Population)
+        {
+            // People relocate on foot (main-bugfixes); vehicles are for food only. Link the walk to
+            // the open lodging task for the source so its arrival satisfies that demand.
+            if (ClientRelocationHandler.Instance == null) return Failure(action.action_id, "ClientRelocationHandler not available");
+            GameTask lodgingTask = TaskSystem.Instance?.activeTasks?.FirstOrDefault(t =>
+                t.taskTag == TaskTag.Lodging && t.status != TaskStatus.Completed && t.affectedFacility == source.name);
+            if (!ClientRelocationHandler.Instance.ExecuteToSpecificDestination(lodgingTask, source, destination, p.quantity))
+                return Failure(action.action_id, "Failed to relocate clients (no route, no people or no space at the destination)");
+            ToastManager.ShowToast($"{p.quantity} people set off from {p.source_facility} to {p.destination_facility}", ToastType.Info);
+            if (logActions) Debug.Log($"✅ Relocation on foot: {p.quantity} people from {p.source_facility} to {p.destination_facility}");
+            return Success(action.action_id);
+        }
 
         // Create delivery
         var tasks = deliverySystem.CreateDeliveryTask(source, destination, resourceType, p.quantity);

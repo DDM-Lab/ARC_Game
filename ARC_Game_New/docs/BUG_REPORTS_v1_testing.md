@@ -95,6 +95,34 @@ superseded by their design (communities lose food to events, the motel eats). Ve
 motel requests, self-walk arrivals, overnight cancellations all observed. Recorded actions no longer
 match the changed choice sets, so these captures are smoke tests, not parity evidence.
 
+### Verification of the colleague's mechanism note (2026-09-10, branch `v1_merge_test`)
+
+Checked on the merged headless build with two scripted probes (`scratchpad/probe_followup.py`,
+`probe_covered.py`: fresh game, one kitchen, 100 people walked to the motel, first motel request
+answered with the "double" choice) and the three smoke replays.
+
+| claim in the note | status | evidence / note |
+|---|---|---|
+| Kitchens produce once at day start, to capacity | HOLDS | `Kitchen_0 wasted N` then `stocked to full capacity: +200` at every rollover; a kitchen that is not operational at rollover stays empty until the next one |
+| No overnight carry-over for kitchens, shelters, motel; in-transit food is waste | HOLDS | rollover waste lines; end-of-round-4 cancellation returns cargo to the kitchen, which then wastes it (counted once) |
+| Communities stay full except depletion | HOLDS after the scene fix (`enableFoodWaste` 0) | depletion events observed; nothing else refills a community, so a community whose replacement delivery fails stays short |
+| Shelter and motel: two requests per day, rounds 1 and 3 | HOLDS | `Motel_FoodRequest_First` at every day's round-1 pass, `_Second` at the round-3 pass |
+| First request: fulfil current or both; follow-up skipped if covered | HOLDS after the routing fix below | double choice queued 200 for a 100-person motel; the follow-up did not spawn that day (`_Second` needs `FoodPacks Empty` AND `NeedsFood`) |
+| Clients arriving during the day generate demand the next day | PARTLY | no explicit mechanism; quantities are computed from the live population at each request, so arrivals before round 3 are in the follow-up, arrivals after it wait for the next day |
+| Food is consumed immediately on delivery, population-based | HOLDS, with a leftover | `fed 100 people immediately after delivery`; BUT the old periodic cycle still runs (shelters every 2 rounds, motel every 4). It records `FOOD SHORTAGE` on rounds with no delivery and, when its tick lands in the same round as a delivery, the once-per-round guard SKIPS the on-delivery consumption (probe day 4: tick at round 1 logged "Need 22, only had 0", the 44 meals delivered that round were never eaten and were wasted at night). The note describes on-delivery consumption only; the periodic cycle should be switched off for shelters and the motel (their design call) |
+| Community requests: day 2+, rounds 1-3, probability = initialFoodDemandFrequency, 100 packs, exact replacement | HOLDS after the manager fixes | 63 draws per game = 3 communities x 3 passes x 7 days; request quantity overridden to the amount lost |
+| Deliveries still queued/in transit at end of round 4 are cancelled and fail | HOLDS | `Cancelled incomplete food delivery ... at end of day`; the parent task takes the normal 15-point delivery-failure satisfaction penalty (the note only says "marked as failed") |
+| Relocation without vehicles, immediate departure, arrival after 2 rounds, delay configurable | HOLDS | `relocation:queue` at dXrN, `relocation:arrive` two round-ends later; zero Population vehicle deliveries in any capture; `relocationDelayRounds` on the TaskSystem object |
+| Balance (not a claim): one kitchen = 200 meals/day vs. a motel of 300+ eating twice a day | — | most shelter/motel requests in the replays were refused for lack of unreserved stock; expect many kitchens or a bigger sheet capacity |
+
+Defects found by the probes and fixed in this pass (`v1_merge_test`):
+- Their shelter/motel food choices carry `enableMultipleDeliveries`, and our batch-3 routing sent every such choice to the generic multi-delivery path, which does not understand population-based quantities: every "Fulfil [food_amount]" / "double" choice was refused ("No resources available at any of the 1 sources") in the gym and the UI alike. Cargo now decides the path (food -> FoodDeliveryHandler, people -> ClientRelocationHandler) as in their code; the multi flag only routes other cargo.
+- Self-walk arrivals never set `deliveredQuantity`, so every relocation resolved with 0 people housed for the lodging metric (RL reward). Fixed in `FinalizeRelocation`.
+- Agent payloads: population-based choices reported `deliveryQuantity 0`; now the resolved need (what the button says). `logistics.pendingRelocations` added (task, source, destination, quantity, roundsRemaining) and rendered by `obs_encoder` as a `walking:` line.
+- `ActionExecutor` population transfers (`<transfer>` grammar, manual_transfers mode) created vehicle deliveries; they now walk via the relocation handler, linked to the source's open lodging task when one exists.
+
+Still stale for agents (config files, not changed here): the officer prompts state "consumes 1 food/person every 4 rounds", "Food: produced by kitchens, distributed via vehicles", "Vehicles: transfer resources between buildings", "Resource transfers require available vehicles", and the domain config's "moving resources (food packs, population) between facilities with available vehicles" / "a kitchen needs staff to produce food packs". Replace with: kitchens are stocked to capacity each morning; food is consumed on delivery; people walk (2 rounds); vehicles carry food only; food does not keep overnight. The surrogate (`cora_sim`) still models the old game.
+
 Regressions found and fixed while verifying:
 
 | entry | status |

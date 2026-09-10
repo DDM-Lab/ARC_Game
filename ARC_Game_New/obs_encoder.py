@@ -127,6 +127,11 @@ def build_observation(game_state, actions=None, *, new=True, v2=True,
                     "working": wf.get("workingTrainedWorkers", 0) + wf.get("workingUntrainedWorkers", 0),
                     "inTraining": wf.get("untrainedWorkersInTraining")},
         "logistics": {"vehiclesFree": gs.get("logistics", {}).get("availableVehicles")},
+        # Clients relocating on foot (no vehicle; main-bugfixes self-walk). Destination space
+        # already discounts them, so the agent must see why a shelter/motel looks fuller.
+        "walking": [{"n": r.get("quantity"), "from": r.get("source"), "to": r.get("destination"),
+                     "rounds": r.get("roundsRemaining")}
+                    for r in (gs.get("logistics", {}).get("pendingRelocations") or [])],
         "facilities": facs,
         "tasks": tasks,
     }
@@ -275,6 +280,9 @@ def _render_scalars(obs):
     L.append(f"workers: freeTrained {_num0(w,'freeTrained')} freeUntrained {_num0(w,'freeUntrained')} "
              f"working {_num0(w,'working')} inTraining {_num0(w,'inTraining')}")
     L.append(f"logistics: vehiclesFree {_num0(obs.get('logistics',{}),'vehiclesFree')}")
+    walking = obs.get("walking") or []
+    if walking:
+        L.append("walking: " + "; ".join(f"{w.get('n')} {w.get('from')}->{w.get('to')} in {w.get('rounds')}r" for w in walking))
     # Emit spend/costs only when non-empty. A bare "spend:" with nothing after it was printed
     # every turn — it reads as a section the model failed to receive rather than one that is
     # simply empty, and it costs tokens to say nothing.

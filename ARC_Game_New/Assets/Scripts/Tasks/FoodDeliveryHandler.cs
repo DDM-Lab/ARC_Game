@@ -285,7 +285,7 @@ public class FoodDeliveryHandler : MonoBehaviour
     /// uses the fixed deliveryQuantity value as authored (Percentage/All aren't meaningful for food,
     /// which draws from many kitchens rather than one source, so they fall back to Fixed here).
     /// </summary>
-    int ResolveQuantity(AgentChoice choice, MonoBehaviour destination)
+    public int ResolveQuantity(AgentChoice choice, MonoBehaviour destination)
     {
         if (choice.quantityType == DeliveryQuantityType.PopulationBased)
         {

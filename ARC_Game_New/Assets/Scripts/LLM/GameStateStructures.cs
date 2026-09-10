@@ -197,8 +197,19 @@ public class DistributedResources
 }
 
 [System.Serializable]
+public class PendingRelocation
+{
+    public int taskId;
+    public string source;
+    public string destination;
+    public int quantity;
+    public int roundsRemaining;
+}
+
+[System.Serializable]
 public class Logistics
 {
+    public List<PendingRelocation> pendingRelocations;   // clients walking (main-bugfixes self-walk relocation)
     public int availableVehicles;
     public int vehiclesInTransit;
     public int damagedVehicles;

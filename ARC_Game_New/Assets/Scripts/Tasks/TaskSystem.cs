@@ -2917,7 +2917,14 @@ public class TaskSystem : MonoBehaviour
                         brief.destinationCategory = "Motel";
                     else
                         brief.destinationCategory = c.destinationBuilding.ToString();
+                    // Population-based food choices author 0 and resolve against the destination's
+                    // need at execution; agents get the number a human reads in the button.
                     brief.deliveryQuantity = c.deliveryQuantity;
+                    if (c.quantityType == DeliveryQuantityType.PopulationBased && FoodDeliveryHandler.Instance != null)
+                    {
+                        MonoBehaviour dest = FindTriggeringFacility(task);
+                        if (dest != null) brief.deliveryQuantity = FoodDeliveryHandler.Instance.ResolveQuantity(c, dest);
+                    }
                     brief.immediateDelivery = c.immediateDelivery;
                     brief.triggersDelivery = c.triggersDelivery;
                 }
@@ -3167,6 +3174,17 @@ public class TaskSystem : MonoBehaviour
     {
         Logistics logistics = new Logistics();
         logistics.activeDeliveries = new List<ActiveDelivery>();
+        logistics.pendingRelocations = new List<PendingRelocation>();
+        if (ClientRelocationHandler.Instance != null)
+            foreach (var r in ClientRelocationHandler.Instance.GetPendingRelocations())
+                logistics.pendingRelocations.Add(new PendingRelocation
+                {
+                    taskId = r.parentTask != null ? r.parentTask.taskId : -1,
+                    source = r.source != null ? r.source.name : "?",
+                    destination = r.destination != null ? r.destination.name : "?",
+                    quantity = r.quantity,
+                    roundsRemaining = r.roundsRemaining
+                });
 
         // Defensive throughout: this runs on every gym get_game_state. A null vehicle
         // or dangling delivery task (e.g. left by an aborted delivery) must NOT throw,

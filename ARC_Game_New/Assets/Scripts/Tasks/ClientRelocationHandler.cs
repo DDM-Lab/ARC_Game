@@ -254,7 +254,7 @@ public class ClientRelocationHandler : MonoBehaviour
         if (removed <= 0) return false;
 
         QueueSelfWalk(parentTask, source, destination, removed);
-        TaskSystem.Instance.SetTaskInProgress(parentTask);
+        if (parentTask != null) TaskSystem.Instance.SetTaskInProgress(parentTask);
         return true;
     }
 
@@ -275,15 +275,15 @@ public class ClientRelocationHandler : MonoBehaviour
             destination     = destination,
             quantity        = quantity,
             roundsRemaining = Mathf.Max(1, relocationDelayRounds),
-            groupName       = $"Relocate_{parentTask.taskId}_{source.name}_to_{destination.name}"
+            groupName       = $"Relocate_{(parentTask != null ? parentTask.taskId : 0)}_{source.name}_to_{destination.name}"
         };
         pendingRelocations.Add(relocation);
-        SnapshotDebug.MarkContext("relocation:queue", "{\"task\":" + parentTask.taskId + ",\"qty\":" + quantity
+        SnapshotDebug.MarkContext("relocation:queue", "{\"task\":" + (parentTask != null ? parentTask.taskId : -1) + ",\"qty\":" + quantity
             + ",\"src\":\"" + source.name + "\",\"dst\":\"" + destination.name + "\",\"rounds\":" + relocation.roundsRemaining + "}");
 
         if (showDebugInfo)
             Debug.Log($"[ClientRelocationHandler] {quantity} clients departing {source.name} → {destination.name} on foot, arriving in {relocationDelayRounds} round(s)");
-        GameLogPanel.Instance?.LogTaskEvent($"Client relocation for task '{parentTask.taskTitle}': {quantity} clients departing {source.name} -> {destination.name}, arriving in {relocationDelayRounds} round(s)");
+        GameLogPanel.Instance?.LogTaskEvent($"Client relocation for task '{parentTask?.taskTitle ?? "manual transfer"}': {quantity} clients departing {source.name} -> {destination.name}, arriving in {relocationDelayRounds} round(s)");
 
         OnRelocationQueued?.Invoke(relocation);
     }
@@ -319,6 +319,9 @@ public class ClientRelocationHandler : MonoBehaviour
     void FinalizeRelocation(PendingRelocation r)
     {
         int delivered = AddPopulation(r.destination, r.quantity);
+        // People who actually arrived are what the lodging metric credits (RewardMetricsTracker
+        // reads task.deliveredQuantity); a vehicle unload used to set this, a walk must too.
+        if (r.parentTask != null && delivered > 0) r.parentTask.deliveredQuantity += delivered;
 
         // Return overflow if the destination filled up while clients were en route.
         if (delivered < r.quantity)
