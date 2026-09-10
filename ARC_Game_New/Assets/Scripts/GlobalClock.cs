@@ -763,6 +763,16 @@ public class GlobalClock : MonoBehaviour
         Debug.Log($"Waiting for Report: {isWaitingForReport}");
     }
 
+    [ContextMenu("Debug: Jump to Day 7")]
+    public void DebugJumpToDay7()
+    {
+        currentDay = 7;
+        currentTimeSegment = 0; // Start of Day 8, Round 1
+        UpdateTimeDisplay();
+        
+        Debug.Log("Jumped to Day 7, Round 1");
+    }
+
     [ContextMenu("Debug: Jump to Day 8")]
     public void DebugJumpToDay8()
     {

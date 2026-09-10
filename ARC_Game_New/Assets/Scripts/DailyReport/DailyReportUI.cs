@@ -280,7 +280,14 @@ public class DailyReportUI : MonoBehaviour
         UpdateBottomPanels(metrics);
 
         SaveCompletedReportToHistory();
-        
+
+        // Record everything immediately — do NOT wait for the animation coroutine below.
+        // This must complete synchronously before returning, since on Day 8
+        // DailyReportManager sends all logs to the server right after this call returns.
+        LogDailyReportAsDisplayed();
+        LogDailyReportScoreFormulas();
+        BuildingStatusTableUI.Instance?.LogTableContents(GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1);
+
         StartCoroutine(AnimateReportDisplay());
     }
 
@@ -380,38 +387,41 @@ public class DailyReportUI : MonoBehaviour
         // bottom curr status
         yield return StartCoroutine(DisplayLiveStatusSection());
 
-        // Make sure the score-change animation has actually finished (not just started)
-        // before logging/revealing anything that reads its final displayed text.
+        // Make sure the score-change animation has actually finished before
+        // revealing the building status table.
         yield return satisfactionAnim;
         yield return efficiencyAnim;
 
         // No save needed here - already saved before animation started
-
-        // Log exactly what the player now sees on screen, in the order it was displayed
-        LogDailyReportAsDisplayed();
-
-        // Log the statistics and formulas behind each score (not necessarily on screen,
-        // but needed to understand how the displayed numbers were derived)
-        LogDailyReportScoreFormulas();
+        // (Data logging already happened synchronously in DisplayDailyReport(),
+        // before this coroutine was even started — see LogDailyReportAsDisplayed()
+        // and LogDailyReportScoreFormulas(). Everything below here is purely visual.)
 
         // Reveal the building status table now that the report's own content is fully shown
         BuildingStatusTableUI.Instance?.ShowTable();
     }
 
     // =========================================================================
-    // GAME LOG — mirrors the actual rendered UI (not a separately-computed stat dump)
+    // GAME LOG — mirrors what the report UI will display (not a separately-computed stat dump)
     // =========================================================================
 
     /// <summary>
-    /// Records the Daily Report exactly as the player saw it: reads the live text
-    /// straight off each UI element (label + value, or sentence) in the same order
-    /// AnimateReportDisplay() reveals them, and logs one entry per displayed row.
-    /// Deliberately does NOT recompute or reference raw metric fields directly —
-    /// if a value isn't currently shown on screen, it isn't logged, and if the UI
-    /// wording changes, the log follows automatically since it reads the live text.
+    /// Records the Daily Report the same instant the player enters it — computed
+    /// directly from currentMetrics/DailyReportData using the exact same values and
+    /// format strings the animation coroutines below use, rather than waiting for
+    /// those coroutines to run and reading the result off the UI. This must stay
+    /// callable synchronously (no waiting on animation), since on Day 8 the log is
+    /// sent to the server immediately after DisplayDailyReport() returns.
+    /// Order matches the on-screen sequence: DisplaySatisfactionSections,
+    /// DisplayEfficiencySections, DisplayReceiptSection, DisplayLiveStatusSection,
+    /// AnimateFinalSatisfactionChanges, AnimateFinalEfficiencyChanges.
     /// </summary>
     void LogDailyReportAsDisplayed()
     {
+        if (currentMetrics == null) return;
+        var d = DailyReportData.Instance;
+        if (d == null) return;
+
         int day = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
         int seq = 0;
 
@@ -422,88 +432,85 @@ public class DailyReportUI : MonoBehaviour
             GameLogPanel.Instance?.LogMetricsChange($"DAILY_REPORT_UI | day={day} | #{seq} | {label}: {value}");
         }
 
-        void SectionRow(SectionElement element)
-        {
-            if (element == null) return;
-            string label = element.labelText != null ? element.labelText.text : null;
-            string value = element.numberText != null ? element.numberText.text : null;
-            string sentence = element.sentenceText != null ? element.sentenceText.text : null;
+        // Matches AnimateNumberText's final text: sign + whole number
+        string Score(float v) => (v >= 0 ? "+" : "") + v.ToString("F0");
+        // Matches AnimateCostNumberText's final text
+        string Cost(float v) => $"${v:F0}";
+        // Matches AnimateLiveNumberText's final text
+        string Live(int v) => $"{v}";
 
-            if (!string.IsNullOrEmpty(label) && !string.IsNullOrEmpty(value))
-                Row(label, value);
-            else if (!string.IsNullOrEmpty(sentence))
-                Row(string.IsNullOrEmpty(label) ? "Status" : label, sentence);
-        }
+        var m = currentMetrics;
 
         // --- Bottom Panel: What We Did Today ---
-        Row("Tasks Completed", tasksCompletedText != null ? tasksCompletedText.text : null);
-        Row("Facilities Constructed", facilitiesConstructedText != null ? facilitiesConstructedText.text : null);
-        Row("Money Spent", moneySpentText != null ? moneySpentText.text : null);
-        Row("Money Received", moneyReceivedText != null ? moneyReceivedText.text : null);
-        Row("Workers Hired", workersHiredText != null ? workersHiredText.text : null);
-        Row("Workers Trained", workersTrainedText != null ? workersTrainedText.text : null);
+        Row("Tasks Completed", m.completedTasks.ToString());
+        Row("Facilities Constructed", m.buildingsConstructed.ToString());
+        Row("Money Spent", $"${m.budgetSpent:F0}");
+        Row("Money Received", $"${m.budgetReceived:F0}");
+        Row("Workers Hired", m.newWorkersHired.ToString());
+        Row("Workers Trained", m.workersInTraining.ToString());
 
         // --- Bottom Panel: Today's Data ---
-        Row("Incomplete/Expired Tasks", incompleteExpiredTasksText != null ? incompleteExpiredTasksText.text : null);
-        Row("Food Task Ratio", foodTaskRatioText != null ? foodTaskRatioText.text : null);
-        Row("Lodging Task Ratio", lodgingTaskRatioText != null ? lodgingTaskRatioText.text : null);
-        Row("Cases Resolved Ratio", casesResolvedRatioText != null ? casesResolvedRatioText.text : null);
-        Row("Emergency Task Ratio", emergencyTaskRatioText != null ? emergencyTaskRatioText.text : null);
+        Row("Incomplete/Expired Tasks", m.incompleteExpiredTasks.ToString());
+        Row("Food Task Ratio", $"{m.completedFoodTasks}/{m.totalFoodTasks}");
+        Row("Lodging Task Ratio", $"{m.completedLodgingTasks}/{m.totalLodgingTasks}");
+        Row("Cases Resolved Ratio", $"{m.completedCasesResolved}/{m.totalCasesResolvable}");
+        Row("Emergency Task Ratio", $"{m.completedEmergencyTasks}/{m.totalEmergencyTasks}");
 
         // --- Satisfaction Panel (order matches DisplaySatisfactionSections) ---
-        SectionRow(foodDeliveryTotal);
-        SectionRow(foodDeliveryStatus);
-        SectionRow(lodgingTotal);
-        SectionRow(lodgingStatus);
-        SectionRow(workerTotal);
-        SectionRow(workerStatus);
-        SectionRow(idleWorker);
-        SectionRow(workerWorkingElement);
-        SectionRow(workerTrainingBonusElement);
-        SectionRow(wasteTotal);
-        SectionRow(wasteStatus);
-        SectionRow(caseworkTotal);
-        SectionRow(caseworkStatus);
+        Row("Food Satisfaction", Score(m.satFoodScore));
+        Row("Food Delivery Status", $"{m.cumFoodPacksConsumedByClients}/{m.cumFoodPacksNeededByClients} food packs consumed by clients (cumulative).");
+        Row("Lodging Satisfaction", Score(m.satLodgingScore));
+        Row("Lodging Status", $"{m.cumLodgingNightsConsumed}/{m.cumLodgingNightsNeeded} lodging-nights consumed by clients (cumulative).");
+        Row("Worker Use Satisfaction", Score(m.satWorkerScore));
+        Row("Worker Status", $"Idle: {m.cumIdleWorkerRounds} | Working: {m.cumWorkingWorkerRounds} | Training: {m.cumTrainingWorkerRounds}");
+        Row("Idle", Score(m.workerIdleSatScore));
+        Row("Working", Score(m.workerWorkingSatScore));
+        Row("Training", Score(m.workerTrainingSatScore));
+        Row("Food Waste Penalty", Score(m.satWasteScore));
+        Row("Waste Status", $"{m.cumFoodPacksWasted} of {m.cumFoodPacksConsumedByClients + m.cumFoodPacksWasted} food packs requested went to waste (cumulative).");
+        Row("Casework Satisfaction", Score(m.satCaseworkScore));
+        Row("Casework Status", $"{m.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework, out of {m.cumClientsRequestedCasework} clients who requested it.");
 
         // --- Efficiency Panel (order matches DisplayEfficiencySections) ---
-        SectionRow(foodUtilizationTotal);
-        SectionRow(foodUsageSummary);
-        SectionRow(shelterUtilizationTotal);
-        SectionRow(shelterUsageSummary);
-        SectionRow(workerUtilizationTotal);
-        SectionRow(workerUsageSummary);
+        Row("Food Cost Efficiency", Score(m.costFoodScore));
+        Row("Food Usage Summary", $"${m.cumFoodSpend:F0} spent, {m.cumFoodPacksConsumedByClients} packs consumed (cumulative).");
+        Row("Lodging Cost Efficiency", Score(m.costLodgingScore));
+        Row("Lodging Usage Summary", $"${m.cumLodgingSpend:F0} spent, {m.cumLodgingNightsConsumed} nights used (cumulative).");
+        Row("Worker Cost Efficiency", Score(m.costWorkerScore));
+        Row("Worker Usage Summary", $"${(m.cumWorkerRequestCost + m.cumWorkerTrainingCost):F0} spent over {m.cumWorkingWorkerRounds} working-rounds.");
 
         // --- Receipt (order matches DisplayReceiptSection) ---
-        SectionRow(receiptKitchen);
-        SectionRow(receiptShelter);
-        SectionRow(receiptCasework);
-        SectionRow(receiptFastFood);
-        SectionRow(receiptTransport);
-        SectionRow(receiptLodging);
-        SectionRow(receiptWorkerRequest);
-        SectionRow(receiptWorkerTraining);
-        SectionRow(receiptWorkerReleased);
-        SectionRow(receiptOther);
-        SectionRow(receiptTotal);
+        Row("Opened Kitchen", Cost(m.todayKitchenOpenCost));
+        Row("Opened Shelter", Cost(m.todayShelterOpenCost));
+        Row("Opened Casework", Cost(m.todayCaseworkOpenCost));
+        Row("Fast Food Delivery", Cost(m.todayFastFoodCost));
+        Row("Transport of People", Cost(m.todayTransportCost));
+        Row("Motel / Lodging", Cost(m.todayLodgingCost));
+        Row("Requested Workers", Cost(m.todayWorkerRequestCost));
+        Row("Worker Training", Cost(m.todayWorkerTrainingCost));
+        Row("Released Workers", Cost(0f));
+        Row("Other", Cost(m.todayOtherExpenses));
+        Row("Total", Cost(m.budgetSpent));
 
         // --- Live Status (order matches DisplayLiveStatusSection) ---
-        Row("Current Budget", currentBudgetDisplayText != null ? currentBudgetDisplayText.text : null);
-        SectionRow(liveFoodInTransit);
-        SectionRow(liveKitchenProduction);
-        SectionRow(liveFoodWaste);
-        SectionRow(liveNeedLodging);
-        SectionRow(liveWorkersWorking);
-        SectionRow(liveWorkersWaiting);
-        SectionRow(liveWorkersTraining);
-        SectionRow(liveWorkersReleasedToday);
-        SectionRow(liveNeedCasework);
-        SectionRow(liveInTransitToCasework);
+        int currentBudget = SatisfactionAndBudget.Instance != null ? SatisfactionAndBudget.Instance.GetCurrentBudget() : 0;
+        Row("Current Budget", $"${currentBudget:N0}");
+        Row("Food packs in transit", Live(d.GetCurrentFoodPacksInTransit()));
+        Row("Kitchen production", Live(m.foodProduced));
+        Row("Food waste", Live(m.foodWasted));
+        Row("Need lodging", Live(d.GetCurrentPopulationNeedingLodging()));
+        Row("Working", Live(d.GetCurrentWorkingWorkers()));
+        Row("Waiting", Live(d.GetCurrentWaitingWorkers()));
+        Row("Training", Live(d.GetCurrentTrainingWorkers()));
+        Row("Released today", Live(d.GetTodayWorkersReleased()));
+        Row("Need casework", Live(d.GetCurrentClientsNeedingCasework()));
+        Row("In transit to casework", Live(d.GetCurrentPeopleInTransitToCasework()));
 
         // --- Final Summary (order matches AnimateFinalSatisfactionChanges / AnimateFinalEfficiencyChanges) ---
-        Row("Overall Satisfaction", satisfactionValueText != null ? satisfactionValueText.text : null);
-        Row("Satisfaction Change", satisfactionChangeText != null ? satisfactionChangeText.text : null);
-        Row("Overall Efficiency", efficiencyValueText != null ? efficiencyValueText.text : null);
-        Row("Efficiency Change", efficiencyChangeText != null ? efficiencyChangeText.text : null);
+        Row("Overall Satisfaction", $"{m.finalSatisfactionValue:F0}/1000");
+        Row("Satisfaction Change", Score(m.satisfactionChangeCalculated));
+        Row("Overall Efficiency", $"{m.finalEfficiencyValue:F0}/1000");
+        Row("Efficiency Change", Score(m.costEfficiencyChangeCalculated));
     }
 
     /// <summary>

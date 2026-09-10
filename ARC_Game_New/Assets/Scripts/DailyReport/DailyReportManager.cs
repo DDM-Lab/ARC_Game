@@ -154,13 +154,26 @@ public class DailyReportManager : MonoBehaviour
         if (DailyReportData.Instance != null && reportUI != null)
         {
             var metrics = DailyReportData.Instance.GenerateDailyReport();
+            // DisplayDailyReport() logs the full report + building status table
+            // SYNCHRONOUSLY before it returns (see LogDailyReportAsDisplayed() /
+            // LogDailyReportScoreFormulas() / BuildingStatusTableUI.LogTableContents()
+            // in DailyReportUI.cs) — only the visual animation continues afterward
+            // in the background. Do not move the TriggerEndGameLogSend() call below
+            // to before this line, and do not make DisplayDailyReport()'s logging
+            // depend on the animation coroutine again — LogSender.SendAllLogs()
+            // snapshots the log buffer synchronously the instant it's called, so
+            // anything logged after that point would silently be left out of the
+            // Day 8 server upload.
             reportUI.DisplayDailyReport(metrics);
         }
-        
+
         // Send logs to server if game ended
         if (currentDay >= finalDay)
         {
             GameLogPanel.Instance?.TriggerEndGameLogSend();
+
+            // Player-facing prompt only — does not affect report display or logging above.
+            EndOfGamePanel.Instance?.ShowPanel();
         }
 
         // Update button states

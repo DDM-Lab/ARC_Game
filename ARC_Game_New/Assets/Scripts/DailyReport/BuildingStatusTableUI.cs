@@ -160,7 +160,6 @@ public class BuildingStatusTableUI : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log("[BuildingStatusTableUI] Table shown");
-        GameLogPanel.Instance?.LogUIInteraction("Building status table shown");
     }
 
     /// <summary>
@@ -175,5 +174,45 @@ public class BuildingStatusTableUI : MonoBehaviour
         if (showDebugInfo)
             Debug.Log("[BuildingStatusTableUI] Table hidden");
         GameLogPanel.Instance?.LogUIInteraction("Building status table hidden");
+    }
+
+    /// <summary>
+    /// Records every row's current content, in the same top-to-bottom order it
+    /// appears in the UI (i.e. tableContent's child order, not dictionary order).
+    /// Refreshes first so the logged data is current, independent of whether
+    /// ShowTable() has revealed the table yet — this can run before that, since
+    /// data logging must not wait on any visual reveal or animation.
+    /// </summary>
+    public void LogTableContents(int day)
+    {
+        if (tableContent == null) return;
+
+        RefreshAllRows();
+
+        int seq = 0;
+        for (int i = 0; i < tableContent.childCount; i++)
+        {
+            BuildingStatusRow row = tableContent.GetChild(i).GetComponent<BuildingStatusRow>();
+            if (row == null) continue;
+
+            string location = row.locationText != null ? row.locationText.text : "";
+            if (string.IsNullOrEmpty(location)) continue;
+
+            string foodNeed = row.foodPackNeedText != null ? row.foodPackNeedText.text : "";
+            string foodConsumed = row.foodPackConsumedText != null ? row.foodPackConsumedText.text : "";
+            string occupancy = row.lodgingOccupancyText != null ? row.lodgingOccupancyText.text : "";
+            string capacity = row.capacityText != null ? row.capacityText.text : "";
+
+            seq++;
+            GameLogPanel.Instance?.LogMetricsChange(
+                $"DAILY_REPORT_BUILDING_STATUS | day={day} | #{seq} | {location}" +
+                $" | Food Pack Need: {foodNeed}" +
+                $" | Food Packs Consumed: {foodConsumed}" +
+                $" | Occupancy: {occupancy}" +
+                $" | Capacity: {capacity}");
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"[BuildingStatusTableUI] Logged {seq} row(s) for day {day}");
     }
 }
