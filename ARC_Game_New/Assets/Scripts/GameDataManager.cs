@@ -88,6 +88,11 @@ public class GameDataManager : MonoBehaviour
 
     public bool IsDataReady { get; private set; } = false;
 
+    /// <summary>The exact parameter set this session is running under, as the JSON that is
+    /// also written to the log. A .cora save carries it so a file recorded under a different
+    /// sheet is detected at load time instead of quietly loading into different mechanics.</summary>
+    public static string ParametersInEffectJson { get; private set; } = "";
+
     void Awake()
     {
         if (Instance == null)
@@ -260,6 +265,7 @@ public class GameDataManager : MonoBehaviour
             + ",\"shelterFlood\":{\"cmp\":\"" + InitialShelterFloodComparison + "\",\"threshold\":" + InitialShelterFloodThreshold + ",\"radius\":" + InitialShelterFloodRadius + "}"
             + ",\"floodExpansion\":[" + InitialSunnyExpansionRate.ToString(ic) + "," + InitialSmallRainExpansionRate.ToString(ic) + "," + InitialMediumRainExpansionRate.ToString(ic) + "," + InitialHeavyRainExpansionRate.ToString(ic) + "," + InitialStormExpansionRate.ToString(ic) + "]"
             + ",\"floodSpread\":[" + InitialSunnySpreadChanceMultiplier.ToString(ic) + "," + InitialSmallRainSpreadChanceMultiplier.ToString(ic) + "," + InitialMediumRainSpreadChanceMultiplier.ToString(ic) + "," + InitialHeavyRainSpreadChanceMultiplier.ToString(ic) + "," + InitialStormSpreadChanceMultiplier.ToString(ic) + "]}";
+        ParametersInEffectJson = json;
         Debug.Log("GameDataManager: parameters in effect " + json);
         SnapshotDebug.MarkContext("config:loaded", json);
     }
