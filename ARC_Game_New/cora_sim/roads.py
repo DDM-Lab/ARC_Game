@@ -276,7 +276,8 @@ class Fleet:
     Kitchen->Community route was measured at 0 rounds one day and 5 the next.
     """
 
-    __slots__ = ("pos", "busy_seconds", "carrying", "damaged", "spec", "frame", "trip", "events", "aborted")
+    __slots__ = ("pos", "busy_seconds", "carrying", "damaged", "spec", "frame", "trip", "events", "aborted",
+                 "pauses")
 
     # Kept for callers that reference Fleet.DEPOTS; the live values come from the spec.
     DEPOTS = DEFAULT_MAP.depots
@@ -293,6 +294,12 @@ class Fleet:
         # route therefore costs a third of the delivery capacity indefinitely.
         self.damaged = [False, False, False]
         self.frame = 0                       # cumulative SIM frames since the game began
+        # DIAGNOSTIC ONLY (validation harness): Unity's per-round PAUSED planning frames,
+        # popped one per round. Time.time advances through the pause, so AssignPendingTasks
+        # keeps its 4-frame cadence across it and the dispatch offset inside each round
+        # depends on how long the pause was -- which is agent latency, not game state. Left
+        # empty in normal use, where the counter simply advances 34 a round.
+        self.pauses = None
         self.trip = [None, None, None]       # per-vehicle in-flight state, see run_round
         self.events = None                   # set to a list to record (frame, kind, veh, id)
         self.aborted = []                    # payloads abandoned by an empty-source load this round
@@ -305,6 +312,7 @@ class Fleet:
         f.carrying = list(self.carrying)
         f.damaged = list(self.damaged)
         f.frame = self.frame
+        f.pauses = self.pauses
         f.trip = [dict(t) if t else None for t in self.trip]
         f.events = None
         f.aborted = list(self.aborted)
@@ -608,6 +616,8 @@ class Fleet:
         # busy_seconds is kept for callers that read it: frames still to run, in seconds.
         for v, t in enumerate(self.trip):
             self.busy_seconds[v] = (t["left"] * self.spec.fixed_delta) if (t and "left" in t) else 0.0
+        if self.pauses:
+            self.frame += self.pauses.pop(0)   # burn the pause: no movement, cadence only
         return landed, queue, dropped
 
     def run_epilogue(self, flooded=frozenset()):

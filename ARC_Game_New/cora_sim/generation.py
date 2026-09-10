@@ -171,11 +171,13 @@ def _resource_ok(t, ctx, facility=None):
 
 def _food_need(f) -> int:
     """BuildingResourceStorage.GetFoodNeed for one facility dict."""
-    from .economy import C as _C, _consumes
+    from .economy import C as _C
     cfg = (_C.get("storage_by_type") or {}).get(f.get("type"), {})
     glob = _C.get("consumption") or {}
-    if not _consumes(cfg, glob):
-        return 0
+    # NO CONSUMPTION GATE. BuildingResourceStorage.GetFoodNeed() is population x rate minus
+    # stock and never looks at enablePopulationBasedConsumption, so a facility that does not
+    # eat still REPORTS a need and still raises its NeedsFood-gated food request. Gating here
+    # cost the port every Motel_FoodRequest_Second on the merged build.
     res = f.get("resources") or {}
     people = res.get("population") or 0
     if cfg.get("workersConsumeFoodToo", glob.get("workersConsumeFoodToo", True)):
@@ -275,6 +277,7 @@ def _flooded_facility_ok(t, ctx, facility=None):
     at least one flood tile within two cells.
     """
     from math import floor
+    from .floodmap import pack as _pack
     if facility is None:
         return False          # global CheckCondition path is not used for these tasks
     if not isinstance(facility, dict):
@@ -303,8 +306,13 @@ def _flooded_facility_ok(t, ctx, facility=None):
         return False
     r = int(t.get("detectionRadius", 2))
     cx, cy = floor(pos[0]), floor(pos[1])
+    # ctx.flooded holds PACKED coordinates (floodmap.pack), not (x, y) tuples. Testing the
+    # tuple silently counted zero for every facility, so any AtLeast/MoreThan
+    # FloodedFacilityTrigger could never fire -- Community_Flood_Damge (AtLeast 1) never
+    # once fired in the port. It went unnoticed because Shelter_Flood_Damage's live params
+    # rewrite the comparison to AtMost 4, which n=0 satisfies.
     n = sum(1 for dx in range(-r, r + 1) for dy in range(-r, r + 1)
-            if (cx + dx, cy + dy) in ctx.flooded)
+            if _pack(cx + dx, cy + dy) in ctx.flooded)
     thr = int(t.get("floodTileThreshold", 1))
     cmp = _FF_CMP.get(t.get("comparison"), t.get("comparison"))
     return {"ExactMatch": n == thr, "AtLeast": n >= thr, "MoreThan": n > thr,

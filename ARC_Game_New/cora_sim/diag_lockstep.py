@@ -105,6 +105,12 @@ def drive_step(w, m, step, gene):
             key = entry[0] if entry else ""
         q = queues.get(key)
         want = q.pop(0) if q else gene["choices"].get(key)
+        if want is None:
+            # DECLINING IS A MOVE. Falling back to cids[0] answered every task the officer
+            # left alone, which is not what the capture did -- 5504's road blockage was
+            # offered, declined, and expired for +20 satisfaction; forcing choice 0 bought
+            # an emergency delivery Unity never bought.
+            continue
         S.answer(w, tid, want if want in cids else cids[0])
     m.apply(w, ("turn", {"choices": {}, "menu": tuple(menu)}))
 

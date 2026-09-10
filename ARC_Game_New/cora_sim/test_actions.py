@@ -30,7 +30,16 @@ def test_basket_is_pruned_and_spanned():
     assert any(i.startswith("build_Kitchen_") for i in ids), ids
     assert len({i.rsplit("_", 1)[1] for i in ids if i.startswith("build_Kitchen_")}) >= 2, "sites collapsed to one"
     assert "hire_untrained_1" in ids and "hire_untrained_5" in ids, "quantity endpoints missing"
-    assert not any(i.startswith("transfer_") for i in ids), "transfers must stay off by default"
+    # The BASE space is Unity's, so transfers and deconstruction are in it; a searcher that
+    # wants less asks the pruner for less. (They used to be excluded outright because the
+    # port's menu transfer only bumped a counter -- it self-walks now, so there is nothing
+    # left to protect the search from.)
+    assert any(i.startswith("transfer_population_") for i in ids), "transfers belong in the base space"
+    raw = [a["action_id"] for a in m.basket(w, span=False)]
+    assert any(i.startswith("transfer_population_") for i in raw), raw[:5]
+    off = CoraActions(random.Random(0), allow_transfers=False, allow_deconstruct=False)
+    kept = [a["action_id"] for a in off.basket(w)]
+    assert not any(i.startswith(("transfer_", "deconstruct_")) for i in kept), "pruner must still remove them"
     w.economy.used_sites.add(0)
     assert not any(i.startswith("build_") and i.endswith("_0") for i in
                    [a["action_id"] for a in m.basket(w)]), "built-on site still offered"

@@ -29,7 +29,9 @@ def main():
     #    operational and can never be staffed, so the new shelter lands after them.
     e = Economy(budget=50000)
     e.build("Shelter", 1)
-    idx = len(e.buildings)                 # where the shelter will appear once it finishes
+    # The facility is listed from the round it is ORDERED (UnderConstruction), the way Unity's
+    # map state carries it, so it is the last entry already -- it just is not staffable yet.
+    idx = len(e.buildings) - 1
     kept, _ = prune([_staff(idx)], econ=e, budget=e.budget)
     during = len(kept)
     for _ in range(4):

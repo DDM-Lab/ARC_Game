@@ -1158,6 +1158,33 @@ termination rule needs to change — e.g. terminate only on a *drop* to 0 after 
 `isGameOver`), or is the committed value a leftover from a local test? Nothing has been edited
 here pending the answer.
 
+### E.12 `MainScene.unity` on main-bugfixes reverted the Motel's food mechanic
+
+**Where.** `Assets/Scenes/MainScene.unity` at `origin/main-bugfixes` (48a2582f), the Motel's
+`BuildingResourceStorage`.
+
+**What happens.** `d5e5f683` says "Motel: added FoodPacks storage/consumption (it previously had
+none) and a matching pair of food-request tasks, mirroring Shelter". The scene on that branch now
+carries `enablePopulationBasedConsumption: 0` and NO FoodPacks capacity entry at all — the
+6000-pack store is gone; only `Population 3000` remains. Our pre-merge scene (34d2133d) has
+`consumption: 1` and `caps [(Population, 3000), (FoodPacks, 6000)]`.
+
+The scene is LFS-tracked, so a merge takes one side of the whole file with no 3-way. A later
+scene edit made from a checkout without the motel change therefore reverts it silently — the same
+hazard that deactivated `WebSocketManager` in a9bf1135, and `MainScene.unity` on that branch now
+also ships `WebSocketManager` with `m_IsActive: 0` (LLM officers never connect).
+
+**Why it is not cosmetic.** `BuildingResourceStorage.GetFoodNeed()` is `population x rate - stock`
+and never checks `enablePopulationBasedConsumption`, so `Motel_FoodRequest_First/Second` still fire
+on their `NeedsFood` trigger for a motel that cannot hold a single pack. Every one of those tasks
+is unwinnable and expires Incomplete with its penalty (satisfaction -1, budget +1 each).
+
+**Fix applied here.** Restored on our merge: consumption on, FoodPacks capacity 6000, and
+`WebSocketManager` re-activated. Upstream should re-apply both on their side, or the next scene
+edit will revert them again.
+
+**Scope / status.** CONFIRMED (read off both scenes). Needs an upstream fix, not just ours.
+
 ### E.11 Per-facility worker counts are never serialised
 
 `GameStateStructures.cs:156-157` declares `ResourceInventory.trainedWorkers/untrainedWorkers`;

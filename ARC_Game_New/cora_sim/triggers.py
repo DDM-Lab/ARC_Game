@@ -46,7 +46,29 @@ def load_inventory(path=None):
     if rows is None:
         raise KeyError("sim_constants.json has no 'taskTriggers' block -- re-export it "
                        "from a build that includes the trigger inventory")
-    return [t for t in rows if t]
+    return [_configured(t, d) for t in rows if t]
+
+
+def _configured(task, consts):
+    """TaskDatabases.Configured(): Shelter_Flood_Damage's FloodedFacilityTrigger is REBUILT
+    from the sheet every time it is evaluated -- comparison, threshold and radius all come
+    from GameDataManager -- and the TaskData asset is never written. So the exported trigger
+    carries the AUTHORED values (AtMost 4 within radius 5) while the game evaluates the
+    sheet's (AtMost 1 within radius 4), and the port fired the task in a different flood
+    state than Unity: merge_v6 seed 5503 step 17, Unity resolves a 100-person Flood Damage
+    Relocation the port never created."""
+    if task.get("taskId") != "Shelter_Flood_Damage":
+        return task
+    init = consts.get("initialState") or {}
+    if "shelterFloodThreshold" not in init:
+        return task                     # corpus predates the export; keep the asset values
+    trg = dict(task.get("triggers") or {})
+    ff = [dict(x, comparison=init.get("shelterFloodComparison", x.get("comparison")),
+               floodTileThreshold=init.get("shelterFloodThreshold", x.get("floodTileThreshold")),
+               detectionRadius=init.get("shelterFloodRadius", x.get("detectionRadius")))
+          for x in (trg.get("floodedFacility") or [])]
+    trg["floodedFacility"] = ff
+    return dict(task, triggers=trg)
 
 
 INVENTORY = load_inventory()

@@ -58,10 +58,14 @@ _TASK_SPEC[CASEWORK_SPEC_ID] = {
     "choices": [
         {"choiceId": 1, "triggersDelivery": True, "immediateDelivery": False,
          "deliveryQuantity": 0, "budgetDelayRounds": 0, "destinationCategory": "CaseworkSite",
-         "enableMultipleDeliveries": True, "impacts": [{"type": "Satisfaction", "value": 10}]},
+         # main-bugfixes 2a435b4e removed the satisfaction impacts from every code-built
+         # task choice: answering casework no longer pays +10, waiting no longer costs -10.
+         # These are built in ClientStayTracker, not from a TaskData asset, so they are not
+         # in the export and have to track the C# by hand.
+         "enableMultipleDeliveries": True, "impacts": []},
         {"choiceId": 2, "triggersDelivery": False, "immediateDelivery": False,
          "deliveryQuantity": 0, "budgetDelayRounds": 0, "destinationCategory": "",
-         "enableMultipleDeliveries": False, "impacts": [{"type": "Satisfaction", "value": -10}]},
+         "enableMultipleDeliveries": False, "impacts": []},
     ]}
 _CASEWORK_DESTS = 3          # FindMultipleDestinations(choice, facility, 3)
 # Tasks the game builds in code (no TaskData asset, stableTaskId ""), by title, for the
@@ -139,7 +143,7 @@ _ROLLOVER_PASSES = 2
 _ALERT_ROUNDS = 2
 # GameTask.deliveryFailureSatisfactionPenalty, the field default. Not exported per task, so a
 # TaskData asset that overrides it is not modelled -- flagged rather than guessed.
-_DELIVERY_FAILURE_PENALTY = 10.0
+_DELIVERY_FAILURE_PENALTY = 10.0      # fallback only; the per-task value is exported
 
 
 class World:
@@ -152,7 +156,7 @@ class World:
     __slots__ = ("walks", "rng", "flood", "fmap", "weather", "day", "segment",
                  "facilities_for", "generated", "clients", "economy", "tasks",
                  "round_index", "_trigger_memory", "use_generation",
-                 "pending_arrivals", "pending_removals", "_casework_live", "generated_specs", "_alerts_shown", "_external_count",
+                 "pending_arrivals", "pending_removals", "_casework_live", "generated_specs", "_alerts_shown", "_external_count", "_pos_cache",
                  "_emergency_count", "_last_emergency_round", "_sourced_now", "_pop_loaded",
                  "_food_reserved")
 
@@ -205,6 +209,7 @@ class World:
         self._alerts_shown = set()      # Alert tasks fire once per GAME
         self._emergency_count = 0
         self._external_count = 0
+        self._pos_cache = None
         # TaskSystem initialises lastEmergencyTaskRound to 0, NOT to "long ago". The gate
         # is `currentRound < lastEmergencyTaskRound + dynamicInterval`, so with an interval
         # of totalRounds/numEmergencyTasks = 32/4 = 8 the FIRST emergency cannot fire
@@ -264,8 +269,14 @@ class World:
         `loaded` whether the cargo was aboard, `was_open` whether HandleDeliveryFailure found
         it InProgress (then it charges the failure penalty)."""
         if was_open:
-            self.economy.satisfaction = max(0.0, min(100.0, self.economy.satisfaction
-                                                     - _BLOCKAGE_FAILURE_PENALTY))
+            # Vehicle.StopVehicleDueToFlood -> HandleDeliveryFailure charges the PARENT TASK's
+            # own deliveryFailureSatisfactionPenalty, which is 15 on a food request and 10 on a
+            # relocation -- not one constant. Seed 5504 step 9: Unity -15, the port -10.
+            _pen = _BLOCKAGE_FAILURE_PENALTY
+            _entry = self.generated_specs.get(payload[0])
+            if _entry:
+                _pen = float(_entry[2].get("deliveryFailurePenalty", _pen) or 0)
+            self.economy.satisfaction = max(0.0, min(100.0, self.economy.satisfaction - _pen))
         if loaded and not str(payload[2] or "").startswith("__food__"):
             # StopVehicleDueToFlood -> ReturnCargoToSource: the people go back where they
             # were loaded from (they left the source at LoadCargo, see _can_source).
@@ -297,6 +308,32 @@ class World:
         take = max(0, min(quantity, free))
         self._food_reserved += take
         return take
+
+    def _positions(self):
+        """Facility name -> transform, INCLUDING buildings constructed this episode.
+
+        A built building sits on its site's transform, and the per-facility flood triggers
+        count tiles in a square around floor(that). The static table only knows the map
+        dump's pre-placed buildings, so without this every flood trigger on a built shelter
+        evaluated false and Shelter_Flood_Damage could never fire (merge_v6 seed 5503: Unity
+        resolves a 100-person Flood Damage Relocation the port never created)."""
+        global _SITE_POS
+        if _SITE_POS is None:
+            _SITE_POS = _site_positions()
+        # Rebuilt only when the building list changes -- this runs on every trigger context
+        # (several times a round) and the static table is ~20 entries that never move.
+        n = len(self.economy.buildings)
+        cached = self._pos_cache
+        if cached is not None and cached[0] == n:
+            return cached[1]
+        out = dict(_facility_positions())
+        if _SITE_POS:
+            for b in self.economy.buildings:
+                sid = b.get("site_id")
+                if sid is not None and sid in _SITE_POS:
+                    out[b["name"]] = _SITE_POS[sid]
+        self._pos_cache = (n, out)
+        return out
 
     def _facility_cell(self, name):
         """Facility name -> its road-network cell, resolved geometrically.
@@ -383,7 +420,7 @@ class World:
             idle_trained=self.economy.free_trained,
             idle_untrained=self.economy.free_untrained,
             prev=self._trigger_memory,
-            flooded=self.flood.tiles, positions=_facility_positions())
+            flooded=self.flood.tiles, positions=self._positions())
 
     def clone(self) -> "World":
         w = World.__new__(World)
@@ -411,6 +448,7 @@ class World:
         w._food_reserved = self._food_reserved
         w._emergency_count = self._emergency_count
         w._external_count = self._external_count
+        w._pos_cache = self._pos_cache
         w._last_emergency_round = self._last_emergency_round
         w.use_generation = self.use_generation
         # REBIND CALLBACKS TO THE CLONE. TaskBoard holds bound methods of the World that
@@ -629,12 +667,27 @@ def cancel_overnight_food(w) -> None:
         if load is not None and str(load[2] or "").startswith("__food__"):
             victims.add(load[0])
             fleet.carrying[i] = None
+    # A TRIP STILL DRIVING TO THE KITCHEN COUNTS TOO. Unity cancels the DELIVERY TASK
+    # ("Cancelled active delivery task: Task 3: 100 FoodPacks from Kitchen_0 to Motel"),
+    # which is live from CreateDeliveryTask onward -- whether or not LoadCargo has run yet.
+    # Matching only `carrying` let a vehicle that was still on its source leg at the end of
+    # round 4 survive the night and deliver on day N+1, which Unity never does.
+    for i, trip in enumerate(fleet.trip):
+        if trip is None or "race_ready" in trip:
+            continue
+        payload = trip.get("payload")
+        if payload is not None and str(payload[2] or "").startswith("__food__"):
+            victims.add(payload[0])
+            fleet.carrying[i] = None
+            fleet.trip[i] = None
     for task_id in victims:
         task = board.awaiting.pop(task_id, None) or board.active.pop(task_id, None)
         if task is None or task.delivered > 0:
             continue
         board.resolve(task, fulfilled=False, counters=w.economy.counters)
-        w.economy.satisfaction = max(0.0, w.economy.satisfaction - _DELIVERY_FAILURE_PENALTY)
+        spec = (w.generated_specs.get(task_id) or (None, None, {}))[2]
+        pen = spec.get("deliveryFailurePenalty", _DELIVERY_FAILURE_PENALTY)
+        w.economy.satisfaction = max(0.0, w.economy.satisfaction - float(pen or 0))
 
 
 def _spec_id(w, task_id):
@@ -778,6 +831,65 @@ def _walking_to(w, destination) -> int:
     return sum(x[3] for x in w.walks if x[2] == destination)
 
 
+def queue_menu_transfer(w, source, destination, quantity) -> bool:
+    """The menu action `transfer_population_<src>_<dst>_<qty>`.
+
+    ActionExecutor.ExecuteTransfer routes a Population transfer through
+    ClientRelocationHandler.ExecuteToSpecificDestination -- the SAME self-walk path a task
+    choice takes: route-checked, capped by the destination's effective space, people leave
+    the source now and arrive `relocationDelayRounds` later, and a walk to a casework site
+    is the processing-home event. The port used to append to `pending_transfers`, which
+    only bumped the motel counter and never moved anybody; that is why transfers were
+    excluded from the search basket ("optimising a hole").
+
+    Returns whether anything was queued -- a refused transfer is a no-op in the game."""
+    src = w.economy.facility(str(source))
+    dst = w.economy.facility(str(destination))
+    if src is None or dst is None or quantity <= 0:
+        return False
+    src_cell, dst_cell = w._facility_cell(str(source)), w._facility_cell(str(destination))
+    if src_cell is None or dst_cell is None:
+        return False
+    if roads.path_length(src_cell, dst_cell, w.flooded_road_cells()) is None:
+        return False
+    res = dst.get("resources") or {}
+    cap = res.get("populationCapacity")
+    space = (10 ** 9 if cap is None
+             else cap - (res.get("population") or 0) - _walking_to(w, dst["name"]))
+    available = (src.get("resources") or {}).get("population") or 0
+    send = min(int(quantity), available, max(0, space))
+    if send <= 0:
+        return False
+    removed = -w.economy.move_population(str(source), -send)
+    if removed <= 0:
+        return False
+    if dst.get("type") == "CaseworkSite":
+        w.clients.process_home(str(source), removed, w.economy.counters)
+    w.economy.motel_pop = w.economy.motel_population
+    # THE TRANSFER ADOPTS AN OPEN LODGING TASK. ExecuteTransfer looks for the first active,
+    # not-Completed Lodging task whose affectedFacility is the SOURCE and hands it to
+    # ExecuteToSpecificDestination as the parent -- so a menu transfer can take a relocation
+    # request off the board, and the walk's arrival credits its deliveredQuantity and
+    # completes it. Passing no parent left that task on the board in the port and cost a
+    # whole lodgingResolved credit (probe_tx r06, the first transfer aimed at a shelter).
+    # `status != Completed` includes an InProgress one, which the port keeps in `awaiting`,
+    # and activeTasks is in creation order -- so scan both, lowest id first.
+    parent = None
+    for tid in sorted(list(w.tasks.active) + list(w.tasks.awaiting)):
+        task = w.tasks.active.get(tid) or w.tasks.awaiting.get(tid)
+        if task is None or task.tag != "Lodging" or task.resolved:
+            continue
+        entry = w.generated_specs.get(tid)
+        if entry and entry[1] == str(source):
+            parent = tid
+            break
+    rounds = max(1, int(_ECON_C.get("relocation_delay_rounds", 2) or 2))
+    w.walks.append([rounds, str(source), dst["name"], removed, parent])
+    if parent is not None and parent in w.tasks.active:
+        w.tasks.awaiting[parent] = w.tasks.active.pop(parent)   # SetTaskInProgress
+    return True
+
+
 def queue_walks(w, task_id, task, facility, demanded,
                 include_shelters=True, include_motels=False) -> bool:
     """ClientRelocationHandler.Execute (main-bugfixes 5d922203).
@@ -890,9 +1002,16 @@ def _create_blockage_task(w, payload, loaded, parent):
     spec["_cargo"] = "food" if food else "people"
     spec["_dest"] = dest
     if food:
-        choices = [dict(c) for c in base["choices"]]
-        for c in choices[:2]:
-            c["deliveryQuantity"] = quantity
+        # CreateFoodBlockageChoices: the spoiled cargo is discarded and the ONLY way forward
+        # is one immediate emergency delivery of a fresh batch, priced per meal
+        # (quantity * 10), not the generic four-choice list -- which is the population
+        # blockage's. 5802 step 28: Unity charged -$370 for 37 meals and completed the task;
+        # the port offered choices the game never had, could not answer any of them, and let
+        # the blockage expire instead.
+        choices = [{"choiceId": 1, "triggersDelivery": False, "immediateDelivery": True,
+                    "deliveryQuantity": quantity, "budgetDelayRounds": 0,
+                    "destinationCategory": "", "enableMultipleDeliveries": False,
+                    "impacts": [{"type": "Budget", "value": -10 * int(quantity)}]}]
     elif loaded:
         # CreatePopulationLoadedChoices: clients returned to the source by
         # ReturnCargoToSource (_blocked_delivery), one $1500 immediate transport.
@@ -913,7 +1032,14 @@ def _create_blockage_task(w, payload, loaded, parent):
     t.source = source
     w.tasks.next_id += 1
     w.tasks.add(t)
-    w.generated_specs[t.task_id] = (ROAD_BLOCKAGE_SPEC_ID, source, spec)
+    # WHICH END THE BLOCKAGE IS FILED UNDER (FloodTaskGenerator.CreateRoadBlockageTask):
+    # a FoodPacks blockage takes affectedFacility from the DESTINATION -- "the food choices
+    # deliver TO the original destination (FoodDeliveryHandler resolves the task's facility
+    # as the destination)" -- while a Population blockage takes it from the source, loaded
+    # or not. The port filed both under the source, so a stopped kitchen run showed up on
+    # the kitchen instead of the motel it was feeding (5504 s9, 5601 s9).
+    affected = (dest[len("__food__"):].split("|")[0] or source) if food else source
+    w.generated_specs[t.task_id] = (ROAD_BLOCKAGE_SPEC_ID, affected, spec)
 
 
 def _sweep_casework(w):
@@ -953,6 +1079,44 @@ def _unity_round(w):
     return w.segment + (w.day - 1) * ROUNDS_PER_DAY
 
 
+def _sized_for(w, spec, facility):
+    """TaskSystem.CreateTask sizes every delivering choice AT CREATION.
+
+    `newChoice.deliveryQuantity = CalculateDeliveryQuantity(choice, source)`: Fixed keeps the
+    authored number, All takes the triggering facility's whole stock of the cargo, Percentage
+    takes a share of it. The instance is what the game then uses -- for the choice AND for
+    `demandQuantity` (the largest delivering quantity, which is what lodgingResolved counts) --
+    and the TaskData asset is never written, so the export carries the authored 0.
+
+    Shelter_Flood_Damage's two choices are `All` over a 100-person shelter: Unity resolves them
+    to 100 and books 100 lodgingResolved, the port read 0 and booked the zero-demand 1.
+    PopulationBased is deliberately NOT resolved here -- CalculateDeliveryQuantity has no case
+    for it, so it keeps the authored value and FoodDeliveryHandler.ResolveQuantity sizes it at
+    execution instead (see _resolve_quantity)."""
+    choices = spec.get("choices") or []
+    if not any(c.get("quantityType") in ("All", "Percentage") for c in choices):
+        return spec
+    fac = w.economy.facility(str(facility)) if facility else None
+    res = (fac.get("resources") or {}) if fac else {}
+    # Lodging tasks move people; a food task's All would take the facility's packs.
+    key = "foodPacks" if (spec.get("taskTag") == "Food") else "population"
+    available = res.get(key) or 0
+    out = []
+    for c in choices:
+        if not (c.get("triggersDelivery") or c.get("immediateDelivery")):
+            out.append(c)
+            continue
+        qt = c.get("quantityType")
+        if qt == "All":
+            out.append(dict(c, deliveryQuantity=available))
+        elif qt == "Percentage":
+            pct = float(c.get("deliveryPercentage") or 0)
+            out.append(dict(c, deliveryQuantity=int(round(available * pct / 100.0))))
+        else:
+            out.append(c)
+    return dict(spec, choices=out)
+
+
 def _create_tasks(w, rolls, day_changed):
     """Build task objects from rolls that have already drawn.
 
@@ -968,6 +1132,7 @@ def _create_tasks(w, rolls, day_changed):
         if (spec.get("taskOfficer") == "ExternalRelationship"
                 and spec.get("taskId") != "Budget_Allocation"):
             w._external_count += 1
+        spec = _sized_for(w, spec, facility)
         state = {"choices": spec.get("choices") or []}
         tag = spec.get("taskTag") or "None"
         t = Task(w.tasks.next_id, tag, demand_of(state, tag),
@@ -1000,6 +1165,15 @@ _POSITIONS = {}
 
 from .floodmap import pack as _pack_cell
 _PACKED_ROADS = {_pack_cell(c[0], c[1]): c for c in roads.ROAD_CELLS}
+
+
+def _site_positions():
+    """site id -> transform, from the sim_constants export (AbandonedSite transforms)."""
+    raw = (_ECON_C.get("site_positions") or {})
+    return {int(k): (float(v[0]), float(v[1])) for k, v in raw.items()}
+
+
+_SITE_POS = None
 
 
 def _facility_positions(spec=None):
@@ -1139,15 +1313,31 @@ def _incomplete_penalties(w: World, expired) -> None:
     across the captures; a relocation costs satisfaction only. The TaskData assets in the
     working tree list other impacts than the build applies, so the log is the source."""
     table = _INCOMPLETE_PENALTY
-    for tid in expired:
+    for tid, answered in expired:
         entry = w.generated_specs.get(tid)
-        if not entry or entry[2].get("taskType") not in ("Emergency", "Demand"):
+        if not entry:
+            continue
+        # THE TYPE FILTER BELONGS TO ExpireTask ONLY. CheckExpiredTasks routes an InProgress
+        # task to SetTaskIncomplete, which calls ApplyTaskPenalties unconditionally, while
+        # ExpireTask applies it only when the status became Incomplete -- Emergency or
+        # Demand. Filtering both under-penalised every answered task of another type whose
+        # delivery never landed.
+        if not answered and entry[2].get("taskType") not in ("Emergency", "Demand"):
             continue
         if entry[0] == ROAD_BLOCKAGE_SPEC_ID:
-            # ApplyTaskPenalties on the task's own impact (-20), then FloodTaskGenerator's
-            # OnAnyTaskCompleted abandonment penalty (-30) when the clients were aboard.
-            drop = 20.0 + (_BLOCKAGE_ABANDON_PENALTY if entry[2].get("_loaded") else 0.0)
-            w.economy.satisfaction = max(0.0, min(100.0, w.economy.satisfaction - drop))
+            # SIGN. FloodTaskGenerator adds TaskImpact(Satisfaction, -20) to the task, and
+            # ApplyTaskPenalties REMOVES each impact -- RemoveSatisfaction(-20) is +20, which is
+            # what the log says: "Satisfaction: 84.0 -> 100.0 (+20.0) - Task Incomplete Penalty
+            # from [Road Blockage Emergency]". The abandonment penalty is a direct
+            # RemoveSatisfaction(30) and really is -30, so a blockage that stranded clients nets
+            # -10 and one that did not nets +20. The port subtracted both.
+            # FloodTaskGenerator.OnAnyTaskCompleted bails unless the task id is in
+            # `blockageTaskLoadedState`, and CreateRoadBlockageTask only records that for
+            # ResourceType.Population -- so a FOOD blockage never pays the -30 abandonment,
+            # loaded or not. The port charged it on both and handed a food blockage +50.
+            abandoned = (entry[2].get("_loaded") and entry[2].get("_cargo") != "food")
+            delta = -20.0 - (_BLOCKAGE_ABANDON_PENALTY if abandoned else 0.0)
+            w.economy.satisfaction = max(0.0, min(100.0, w.economy.satisfaction - delta))
             continue
         # The task's own impact list, when the export carries it (taskImpacts): Unity's
         # ApplyTaskPenalties REMOVES each Budget/Satisfaction value, so a Budget impact of
@@ -1455,7 +1645,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # build). Without it the port under-bills one full day of occupancy: seeds 6001 and 7002
     # ended 20,000 and 28,200 light, exactly the motel's last-round population x $200.
     if w.day >= _FINAL_DAY and w.segment >= ROUNDS_PER_DAY:
-        residents = w.economy.motel_population or w.economy.motel_pop
+        residents = w.economy.motel_population        # never the legacy `motel_pop` shadow
         if residents > 0:
             w.economy.spend(int(residents * _ECON_C["motel_per_person_per_day"]), "lodging")
     # CheckExpiredTasks runs on the UPDATE AFTER the round, which is after OnRoundEnd and
@@ -1625,6 +1815,23 @@ def answer(w: World, task_id, choice_id) -> bool:
         w.economy.apply_choice(task.tag, _configured_impacts(_def_id, choice.get("impacts")),
                                choice.get("budgetDelayRounds", 0) or 0, "", 0)
         return True
+    if _def_id == ROAD_BLOCKAGE_SPEC_ID and spec.get("_cargo") == "food":
+        # The emergency food run. Without this dispatch the branch below swallowed the
+        # choice and `_answer_blockage_food` was dead code -- defined and never called.
+        #
+        # IT ONLY LANDS IF THE VEHICLE HAD LOADED -- MEASURED ON TWO CAPTURES, MECHANISM
+        # UNVERIFIED. Both send choice 1 and the outcomes split on the blockage's phase:
+        # 5802 s28 "en route to drop-off" applies "Emergency fast food delivery ($370)" and
+        # COMPLETES the task, while 5504 s10 "en route to pick-up" logs
+        # `choice:at {"task":15,"choice":1}` and then nothing -- no impacts, no completion --
+        # and the task expires Incomplete for +20. CreateFoodBlockageChoices itself does NOT
+        # branch on hasLoadedCargo, so the gate is somewhere in CompleteTaskAction /
+        # ExecuteGeneratorDelivery that this has not located; the immediate FoodPacks choice
+        # carries no ManualAssignment endpoints and its source falls back to the task's
+        # facility, which for a food blockage is the DESTINATION. Two samples, both agree.
+        if not spec.get("_loaded"):
+            return False
+        return _answer_blockage_food(w, task_id, task, choice, choice_id, spec)
     if _def_id == ROAD_BLOCKAGE_SPEC_ID and (choice.get("triggersDelivery")
                                             and not choice.get("immediateDelivery")):
         # INERT IN THE GAME. The food choices (1, 2) and the not-yet-loaded population

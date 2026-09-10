@@ -80,6 +80,7 @@
    "taskType": "Advisory",
    "roundsRemaining": 2,
    "taskOfficer": "ExternalRelationship",
+   "deliveryFailurePenalty": 10,
    "taskImpacts": [
     {
      "type": "Budget",
@@ -186,6 +187,7 @@
    "taskType": "Advisory",
    "roundsRemaining": 3,
    "taskOfficer": "ExternalRelationship",
+   "deliveryFailurePenalty": 10,
    "taskImpacts": [
     {
      "type": "Budget",
@@ -261,6 +263,7 @@
    "taskType": "Emergency",
    "roundsRemaining": 1,
    "taskOfficer": "ExternalRelationship",
+   "deliveryFailurePenalty": 10,
    "taskImpacts": [
     {
      "type": "Satisfaction",
@@ -328,10 +331,6 @@
       {
        "type": "Budget",
        "value": 5000
-      },
-      {
-       "type": "Satisfaction",
-       "value": -5
       }
      ]
     },
@@ -348,10 +347,6 @@
       {
        "type": "Budget",
        "value": 15000
-      },
-      {
-       "type": "Satisfaction",
-       "value": -10
       }
      ]
     },
@@ -368,10 +363,6 @@
       {
        "type": "Budget",
        "value": 30000
-      },
-      {
-       "type": "Satisfaction",
-       "value": -15
       }
      ]
     }
@@ -385,6 +376,7 @@
    "taskType": "Emergency",
    "roundsRemaining": 2,
    "taskOfficer": "LodgingMassCare",
+   "deliveryFailurePenalty": 10,
    "taskImpacts": [
     {
      "type": "Satisfaction",
@@ -481,6 +473,7 @@
    "taskType": "Demand",
    "roundsRemaining": 2,
    "taskOfficer": "FoodMassCare",
+   "deliveryFailurePenalty": 15,
    "taskImpacts": [
     {
      "type": "Satisfaction",
@@ -562,6 +555,7 @@
    "taskType": "Demand",
    "roundsRemaining": 2,
    "taskOfficer": "LodgingMassCare",
+   "deliveryFailurePenalty": 10,
    "taskImpacts": [
     {
      "type": "Clients",
@@ -655,6 +649,7 @@
    "taskType": "Alert",
    "roundsRemaining": 1,
    "taskOfficer": "DisasterOfficer",
+   "deliveryFailurePenalty": 10,
    "taskImpacts": [],
    "targetFacilityType": "Shelter",
    "isGlobalTask": true,
@@ -709,6 +704,7 @@
    "taskType": "Alert",
    "roundsRemaining": 1,
    "taskOfficer": "DisasterOfficer",
+   "deliveryFailurePenalty": 10,
    "taskImpacts": [],
    "targetFacilityType": "Shelter",
    "isGlobalTask": true,
@@ -762,6 +758,7 @@
    "taskType": "Alert",
    "roundsRemaining": 1,
    "taskOfficer": "DisasterOfficer",
+   "deliveryFailurePenalty": 10,
    "taskImpacts": [],
    "targetFacilityType": "Shelter",
    "isGlobalTask": true,
@@ -815,6 +812,7 @@
    "taskType": "Emergency",
    "roundsRemaining": 2,
    "taskOfficer": "LodgingMassCare",
+   "deliveryFailurePenalty": 10,
    "taskImpacts": [
     {
      "type": "Satisfaction",
@@ -888,12 +886,7 @@
      "deliveryPercentage": 0,
      "budgetDelayRounds": 0,
      "destinationCategory": "Shelter",
-     "impacts": [
-      {
-       "type": "Satisfaction",
-       "value": 10
-      }
-     ]
+     "impacts": []
     },
     {
      "choiceId": 1,
@@ -904,32 +897,7 @@
      "deliveryPercentage": 0,
      "budgetDelayRounds": 0,
      "destinationCategory": "Motel",
-     "impacts": [
-      {
-       "type": "Satisfaction",
-       "value": 10
-      }
-     ]
-    },
-    {
-     "choiceId": 2,
-     "triggersDelivery": true,
-     "immediateDelivery": true,
-     "deliveryQuantity": 0,
-     "quantityType": "All",
-     "deliveryPercentage": 0,
-     "budgetDelayRounds": 0,
-     "destinationCategory": "Motel",
-     "impacts": [
-      {
-       "type": "Budget",
-       "value": -5000
-      },
-      {
-       "type": "Satisfaction",
-       "value": 10
-      }
-     ]
+     "impacts": []
     }
    ],
    "probabilities": []
@@ -941,6 +909,7 @@
    "taskType": "Demand",
    "roundsRemaining": 2,
    "taskOfficer": "FoodMassCare",
+   "deliveryFailurePenalty": 15,
    "taskImpacts": [
     {
      "type": "Budget",
@@ -1053,6 +1022,7 @@
    "taskType": "Demand",
    "roundsRemaining": 2,
    "taskOfficer": "FoodMassCare",
+   "deliveryFailurePenalty": 15,
    "taskImpacts": [
     {
      "type": "Budget",
@@ -1160,6 +1130,7 @@
    "taskType": "Demand",
    "roundsRemaining": 2,
    "taskOfficer": "FoodMassCare",
+   "deliveryFailurePenalty": 15,
    "taskImpacts": [
     {
      "type": "Budget",
@@ -1272,6 +1243,7 @@
    "taskType": "Demand",
    "roundsRemaining": 2,
    "taskOfficer": "FoodMassCare",
+   "deliveryFailurePenalty": 15,
    "taskImpacts": [
     {
      "type": "Budget",
@@ -1379,6 +1351,7 @@
    "taskType": "Advisory",
    "roundsRemaining": 1,
    "taskOfficer": "WorkforceService",
+   "deliveryFailurePenalty": 10,
    "taskImpacts": [],
    "targetFacilityType": "Shelter",
    "isGlobalTask": true,
@@ -1438,6 +1411,7 @@
    "taskType": "Advisory",
    "roundsRemaining": 1,
    "taskOfficer": "WorkforceService",
+   "deliveryFailurePenalty": 10,
    "taskImpacts": [],
    "targetFacilityType": "Shelter",
    "isGlobalTask": true,
@@ -1499,6 +1473,7 @@
    "taskType": "Alert",
    "roundsRemaining": 1,
    "taskOfficer": "WorkforceService",
+   "deliveryFailurePenalty": 10,
    "taskImpacts": [],
    "targetFacilityType": "Shelter",
    "isGlobalTask": true,
@@ -1555,6 +1530,7 @@
  "construction": {
   "rounds": 4,
   "shelterCost": 2000,
+  "deconstructionRounds": 2,
   "kitchenCost": 2000,
   "caseworkSiteCost": 2000
  },
@@ -1607,9 +1583,12 @@
   "weather": "HeavyRain",
   "emergencyTotal": 2,
   "externalRelationTotal": 5,
+  "shelterFloodComparison": "AtMost",
+  "shelterFloodThreshold": 1,
+  "shelterFloodRadius": 4,
   "satisfactionPerTrainedWorker": 2
  },
- "buildGUID": "cdffeba1ac4845b99617be32e2581e07",
+ "buildGUID": "0a051b6d779244c89be9c58bcc7e88e9",
  "eventOrder": {
   "OnTimeSegmentChanged": [
    "FirstDayTutorialManager.OnRoundChanged",
@@ -1619,7 +1598,6 @@
    "TaskSystem.OnRoundChanged",
    "BuildingResourceStorage.OnRoundChanged",
    "BuildingResourceStorage.OnRoundChanged",
-   "CommunityFoodDepletionManager.OnRoundChanged",
    "MetricsHistoryManager.OnRoundChanged",
    "BuildingResourceStorage.OnRoundChanged",
    "BuildingResourceStorage.OnRoundChanged",
@@ -1643,8 +1621,7 @@
    "Vehicle.OnDayChanged"
   ],
   "OnDayStarted": [
-   "TaskSystem.OnDayStarted",
-   "CommunityFoodDepletionManager.OnDayStarted"
+   "TaskSystem.OnDayStarted"
   ],
   "OnRoundEnd": [
    "BudgetAllocationManager.OnRoundEnd",
@@ -1661,12 +1638,6 @@
    "SimulationPauseUI.OnSimulationEnded",
    "TaskSystem.OnSimulationEndedCheckDayComplete"
   ]
- },
- "communityDepletion": {
-  "chancePerRound": 0.2,
-  "amount": 100,
-  "firstEligibleDay": 2,
-  "lastEligibleRound": 3
  },
  "relocationDelayRounds": 2,
  "storagePrefabs": {
@@ -1704,13 +1675,75 @@
    "populationCapacity": 400
   }
  },
+ "sitePositions": {
+  "0": [
+   -7.86,
+   -3.89558077
+  ],
+  "1": [
+   6.05,
+   5
+  ],
+  "2": [
+   9.81,
+   5
+  ],
+  "3": [
+   -3,
+   -1.89
+  ],
+  "4": [
+   -5.87,
+   3.15
+  ],
+  "5": [
+   2.99,
+   3.98
+  ],
+  "6": [
+   3.02,
+   -4.89
+  ],
+  "7": [
+   -1.07,
+   -4.93
+  ],
+  "8": [
+   -1.07,
+   -1.89
+  ],
+  "9": [
+   -5.940299,
+   -3.89558077
+  ],
+  "10": [
+   6.1,
+   -5.26
+  ],
+  "11": [
+   -3.13,
+   -4.93
+  ],
+  "12": [
+   1.07,
+   3.98
+  ],
+  "13": [
+   6.05,
+   -2.73
+  ],
+  "14": [
+   -0.87,
+   3.98
+  ]
+ },
  "buildingWorkforce": [
   {
    "name": "Community01",
    "type": "Community",
    "prebuilt": true,
    "startingFoodPacks": 0,
-   "enableFoodWaste": false,
+   "enableFoodWaste": true,
    "consumptionEnabled": false,
    "foodPerPersonPerNRounds": 1,
    "consumptionRoundInterval": 4,
@@ -1738,7 +1771,7 @@
    "type": "Community",
    "prebuilt": true,
    "startingFoodPacks": 0,
-   "enableFoodWaste": false,
+   "enableFoodWaste": true,
    "consumptionEnabled": false,
    "foodPerPersonPerNRounds": 1,
    "consumptionRoundInterval": 4,
@@ -1752,7 +1785,7 @@
    "type": "Community",
    "prebuilt": true,
    "startingFoodPacks": 0,
-   "enableFoodWaste": false,
+   "enableFoodWaste": true,
    "consumptionEnabled": false,
    "foodPerPersonPerNRounds": 1,
    "consumptionRoundInterval": 4,

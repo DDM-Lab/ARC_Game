@@ -78,7 +78,10 @@ def project_unity(after: dict) -> dict:
         fac = str(t.get("affectedFacility"))
         # Global tasks report their targetFacilityType ("Shelter") or "Daily Report" as the
         # facility; the port stores none. Only facility-scoped tasks compare on it.
-        fac = "" if fac in ("Shelter", "Daily Report", "") else INTERNAL_TO_DISPLAY.get(fac, fac)
+        # "Maintenance" is the vehicle-repair task's label, not a facility, exactly like
+        # "Shelter" (a targetFacilityType) and "Daily Report"; the port stores none.
+        fac = ("" if fac in ("Shelter", "Daily Report", "Maintenance", "")
+               else INTERNAL_TO_DISPLAY.get(fac, fac))
         out["board"].append((key, _norm_fac(fac), t.get("roundsRemaining")))
     out["board"].sort()
     for r in (after.get("logistics") or {}).get("pendingRelocations") or []:
@@ -118,7 +121,10 @@ def project_port(w) -> dict:
                       "arriving_trained": sum(1 for d, k in e.arriving if k == "trained"),
                       "arriving_untrained": sum(1 for d, k in e.arriving if k == "untrained"),
                       "training": len(e.in_training)}
-    for tid, t in list(w.tasks.active.items()) + list(w.tasks.awaiting.items()):
+    # Unity's GetAllActiveTaskContexts filters `activeTasks.Where(t => t.status == Active)`,
+    # so a task moved to InProgress by SetTaskInProgress (the port's `awaiting`) drops out of
+    # the observation even though it is still live. Match that: active-and-unresolved only.
+    for tid, t in w.tasks.active.items():
         if t.resolved:
             continue                      # off Unity's activeTasks; the port just never swept it
         entry = w.generated_specs.get(tid) or ("Repair" if tid in w.tasks.repair_for else "?", None, {})

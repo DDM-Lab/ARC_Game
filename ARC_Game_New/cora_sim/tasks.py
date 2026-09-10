@@ -891,17 +891,27 @@ class TaskBoard:
 
     def expire(self, counters: dict) -> list:
         """CheckExpiredTasks: resolve everything at or below zero, AFTER generation ran.
-        Returns the ids that expired now, for the caller's incomplete-task penalties."""
+        Returns (task_id, answered) for everything that expired now, for the caller's
+        incomplete-task penalties. `answered` distinguishes Unity's two routes:
+        CheckExpiredTasks sends an InProgress task to SetTaskIncomplete and everything else
+        to ExpireTask, and only ExpireTask filters the penalty to Emergency/Demand.
+
+        ONE LIST IN CREATION ORDER. CheckExpiredTasks walks `activeTasks`, and an ANSWERED
+        task stays in it (SetTaskInProgress does not remove it), so Unity expires an
+        InProgress relocation and a live blockage in the order they were CREATED. Doing all
+        the active ones and then all the awaiting ones reverses that whenever the two
+        interleave, which shows up whenever an effect clamps: seed 5504 step 10, Unity
+        applies -1 then +20 (85 -> 84 -> 100) where the port applied +20 then -1 (85 -> 100
+        -> 99).
+        """
+        due = [(tid, task, False) for tid, task in self.active.items()
+               if task.rounds_remaining <= 0]
+        due += [(tid, task, True) for tid, task in self.awaiting.items()
+                if task.rounds_remaining <= 0 and not task.resolved]
+        due.sort(key=lambda r: r[0])
         expired = []
-        for task in list(self.active.values()):
-            if task.rounds_remaining <= 0:
-                # An expired task resolves UNFULFILLED, but a lodging task still credits
-                # whatever actually got delivered -- resolved counts demand either way.
-                self.resolve(task, fulfilled=False, counters=counters)
-                del self.active[task.task_id]
-                expired.append(task.task_id)
-        for task_id, task in list(self.awaiting.items()):
-            if task.rounds_remaining <= 0 and not task.resolved:
+        for task_id, task, answered in due:
+            if answered:
                 # KEEP THE TASK SO A LATE LANDING CAN FIND IT (see the fleet-arrival loop).
                 # SetTaskIncomplete / ExpireTask pass fulfilled: false. Only lodging still
                 # credits what landed (min(delivered, demand)); a food task that expires with
@@ -910,7 +920,12 @@ class TaskBoard:
                 # kitchen, so never).
                 self.resolve(task, fulfilled=(task.delivered > 0 and task.tag != "Food"),
                              counters=counters)
-                expired.append(task_id)
+            else:
+                # An expired task resolves UNFULFILLED, but a lodging task still credits
+                # whatever actually got delivered -- resolved counts demand either way.
+                self.resolve(task, fulfilled=False, counters=counters)
+                del self.active[task_id]
+            expired.append((task_id, answered))
         return expired
 
     def age_and_expire(self, counters: dict) -> None:

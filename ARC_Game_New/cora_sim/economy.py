@@ -113,6 +113,8 @@ def load_economy_constants(path=None):
         "community_depletion": d.get("communityDepletion") or {},
         # initialBudget / initialSatisfaction / horizon as the sheet in effect set them.
         "initial_state": d.get("initialState") or {},
+        # AbandonedSite transforms: where a building constructed this episode stands.
+        "site_positions": d.get("sitePositions") or {},
         # ClientRelocationHandler.relocationDelayRounds -- population walks, no vehicle.
         "relocation_delay_rounds": int(d.get("relocationDelayRounds", 0) or 0),
     }
@@ -528,7 +530,12 @@ class Economy:
         day, charged on the day change for the day that just ended. It is also the reason
         an unused shelter is actively expensive: the residents keep billing."""
         self.daily_food_reset()
-        residents = self.motel_population or self.motel_pop
+        # MotelCostManager bills the Motel's ACTUAL occupancy. `motel_pop` is a legacy
+        # shadow of that number left over from the vehicle-era transfer path, and it is
+        # still incremented per queued transfer in economy_step -- so `A or B` billed a
+        # phantom 400 residents ($80,000) on 5802's day-3 rollover with the Motel empty,
+        # because an empty motel makes the left operand falsy rather than absent.
+        residents = self.motel_population
         if residents > 0:
             self.spend(int(residents * C["motel_per_person_per_day"]), "lodging")
         for entry in self.arriving:
@@ -553,6 +560,14 @@ class Economy:
         self.counters["daysCompleted"] = day
         self.counters["totalWorkers"] = self.total_workers()
 
+    def deconstruct_allowed(self, index: int) -> bool:
+        """ActionEnumerator only offers deconstruction for facilityType "Building" -- never a
+        prebuilt community or the motel -- and not for one already coming down."""
+        if not (0 <= index < len(self.buildings)):
+            return False
+        return self.buildings[index]["status"] not in (
+            STATUS_PREBUILT, STATUS_DECONSTRUCTING, STATUS_DISABLED)
+
     def deconstruct(self, index: int) -> bool:
         """Begin tearing a building down. Takes `deconstructionTimeDays` and frees its
         workers only when it COMPLETES -- until then the workers stay committed and the
@@ -563,6 +578,9 @@ class Economy:
         if b["status"] in (STATUS_PREBUILT, STATUS_DECONSTRUCTING, STATUS_DISABLED):
             return False
         b["status"] = STATUS_DECONSTRUCTING
+        # BuildingSystem.RequestDeconstruction passes its own inspector value to
+        # Building.StartDeconstruction (main-bugfixes 48a2582f); it is 2, not the 3 the port
+        # assumed, and it is exported now rather than defaulted.
         b["deconstruct_rounds"] = C.get("deconstruction_rounds", 3)
         return True
 
@@ -754,7 +772,8 @@ def advertised_cost_error(action: dict) -> int:
 # basket in selection order gets a different game: the staff action would find no free
 # workers, silently do nothing, and leave the building unstaffed -- which then makes it
 # invisible to the triggers and deliveries that depend on IsOperational().
-EXECUTION_ORDER = {"deconstruct": 0, "construction": 1, "worker": 2, "resource_transfer": 5}
+EXECUTION_ORDER = {"deconstruct": 0, "construction": 1, "worker": 2,
+                   "worker_assignment": 3, "resource_transfer": 5}
 
 
 def basket_order(action: dict) -> int:
@@ -814,6 +833,10 @@ def apply_action(econ: Economy, action: dict) -> bool:
         w = action.get("worker") or {}
         return econ.staff(int(w.get("building_index", -1)),
                           count=int(w.get("quantity") or w.get("count") or 0))
+    if kind == "deconstruct":
+        name = (action.get("deconstruction") or {}).get("building_name")
+        idx = next((i for i, b in enumerate(econ.buildings) if b.get("name") == name), None)
+        return econ.deconstruct(idx) if idx is not None else False
     if kind == "resource_transfer":
         tr = action.get("transfer") or {}
         if tr.get("resource_type") == "FoodPacks":

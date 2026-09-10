@@ -35,7 +35,7 @@ been replayed exactly.
 """
 from __future__ import annotations
 
-from .economy import (REQUIRED_WORKFORCE, STATUS_NEED_WORKER, action_from_id, apply_action,
+from .economy import (REQUIRED_WORKFORCE, STATUS_IN_USE, STATUS_NEED_WORKER, action_from_id, apply_action,
                       basket_order)
 from .pruning import prune
 from .search import ActionModel
@@ -59,8 +59,9 @@ def _components(world):
 
 
 class CoraActions(ActionModel):
-    def __init__(self, rng, max_menu=16, max_per_turn=2, allow_transfers=False,
-                 shaping=0.0, idle_turn_rate=0.62, auto_staff=True, no_debt=False):
+    def __init__(self, rng, max_menu=16, max_per_turn=2, allow_transfers=True,
+                 shaping=0.0, idle_turn_rate=0.62, auto_staff=True, no_debt=False,
+                 allow_deconstruct=True):
         self.auto_staff = auto_staff
         # 62% of real benchmark turns take no menu action at all (5,482 turns measured in
         # play.py); random genes follow that so a fresh population is not all spenders.
@@ -69,6 +70,7 @@ class CoraActions(ActionModel):
         self.max_menu = max_menu
         self.max_per_turn = max_per_turn
         self.allow_transfers = allow_transfers
+        self.allow_deconstruct = allow_deconstruct
         self.no_debt = no_debt
         self.shaping = shaping
         self._specs = None
@@ -101,25 +103,72 @@ class CoraActions(ActionModel):
             if s not in used:
                 raw.extend(builds)
         raw.extend(self._static[1])
+        # STAFFING. The enumerator offers it for NeedWorker AND understaffed InUse buildings
+        # (ActionEnumerator._enumerate_worker_assignment_actions), so the base space does too.
         for i, b in enumerate(econ.buildings):
-            if econ.can_staff(i) and b.get("assigned", 0) < REQUIRED_WORKFORCE \
-                    and b.get("status") == STATUS_NEED_WORKER:
+            if econ.can_staff(i) and b.get("assigned", 0) < REQUIRED_WORKFORCE:
                 raw.append({"action_type": "worker_assignment", "cost": 0,
                             "action_id": f"staff_{b['name']}",
                             "assignment": {"building_name": b["name"],
                                            "quantity": REQUIRED_WORKFORCE}})
-        if self.allow_transfers:
-            for b in econ.buildings:
-                if b.get("type") == "Community" and (b.get("resources") or {}).get("population", 0) > 0:
+        # TRANSFERS. Population transfers are self-walks now (sim.queue_menu_transfer), so
+        # they move real people on the real timeline and belong in the base space rather
+        # than behind a flag. `allow_transfers=False` still removes them, but as a PRUNE.
+        for b in econ.buildings:
+            if (b.get("resources") or {}).get("population", 0) > 0:
+                for dst in econ.buildings:
+                    if dst is b or dst.get("type") not in ("Shelter", "Motel", "CaseworkSite"):
+                        continue
+                    if dst.get("type") != "Motel" and dst.get("status") != STATUS_IN_USE:
+                        continue
                     for q in TRANSFER_QUANTITIES:
-                        raw.append(action_from_id(f"transfer_population_{b['name']}_Motel_{q}", 0))
+                        # Built as a dict, NOT parsed back out of the id: a constructed
+                        # building's name contains an underscore ("Shelter_4"), so
+                        # action_from_id's split reads that as destination "Shelter",
+                        # quantity 4. The id stays as the genome's handle; the dict carries
+                        # the truth.
+                        raw.append({"action_type": "resource_transfer", "cost": 0,
+                                    "action_id": f"transfer_population_{b['name']}_{dst['name']}_{q}",
+                                    "transfer": {"resource_type": "Population", "quantity": q,
+                                                 "source_facility": b["name"],
+                                                 "destination_facility": dst["name"]}})
+        # DECONSTRUCTION. Only player-built buildings, never a prebuilt -- the same rule the
+        # enumerator applies (facilityType == "Building").
+        for i, b in enumerate(econ.buildings):
+            if econ.deconstruct_allowed(i):
+                raw.append({"action_type": "deconstruct", "cost": 0,
+                            "action_id": f"deconstruct_{b['name']}",
+                            "deconstruction": {"building_name": b["name"]}})
         # allowNegativeBudget is TRUE in the shipped scene (SatisfactionAndBudget, env
         # ARC_ALLOW_NEGATIVE_BUDGET overrides it): WouldAllowSpend never refuses, so a hire
         # at -$9,199 goes through and the budget clamps at minBudget (6001 validation, round
         # 31). Pruning "unaffordable" actions is therefore a search preference, not a rule
         # of the game, and it is off unless the model is built with no_debt=True.
-        kept, _dropped = prune(raw, econ=econ, budget=econ.budget if self.no_debt else None)
-        return self._span_families(kept) if span else kept
+        if not span:
+            return raw          # legality check: the base space, unpruned
+        return self._span_families(self.prune_basket(raw, econ))
+
+    def prune_basket(self, raw, econ):
+        """The HEURISTIC layer, kept separate from what the game allows.
+
+        The base space above is Unity's: every build on a free site, every hire/train
+        quantity, staffing for anything understaffed, every population transfer between
+        occupied and receiving facilities, and deconstruction of anything the player built.
+        A searcher may legitimately want less than that; nothing here is a rule of the game,
+        so a caller that wants the raw space can take basket(span=False) or set the flags off.
+        """
+        out = raw
+        if not self.allow_transfers:
+            out = [a for a in out if a.get("action_type") != "resource_transfer"]
+        if not self.allow_deconstruct:
+            out = [a for a in out if a.get("action_type") != "deconstruct"]
+        # allowNegativeBudget is TRUE in the shipped scene (SatisfactionAndBudget, env
+        # ARC_ALLOW_NEGATIVE_BUDGET overrides it): WouldAllowSpend never refuses, so a hire
+        # at -$9,199 goes through and the budget clamps at minBudget (6001 validation, round
+        # 31). Pruning "unaffordable" actions is therefore a search preference, not a rule
+        # of the game, and it is off unless the model is built with no_debt=True.
+        kept, _dropped = prune(out, econ=econ, budget=econ.budget if self.no_debt else None)
+        return kept
 
     def _span_families(self, actions):
         """At most max_menu actions, spread across families, endpoints + middle within one."""
@@ -224,6 +273,16 @@ class CoraActions(ActionModel):
             if a is None:
                 continue                      # not legal in this state: the game ignores it
             if self.no_debt and _true_cost(a) > world.economy.budget:
+                continue
+            if a.get("action_type") == "resource_transfer":
+                # A population transfer is a SELF-WALK against world state (walks, the client
+                # tracker, an adoptable lodging task), none of which the economy-only
+                # apply_action can reach -- see sim.queue_menu_transfer.
+                tr = a.get("transfer") or {}
+                if S.queue_menu_transfer(world, tr.get("source_facility"),
+                                         tr.get("destination_facility"),
+                                         tr.get("quantity", 0)):
+                    done.append(aid)
                 continue
             apply_action(world.economy, a); done.append(aid)
         return done

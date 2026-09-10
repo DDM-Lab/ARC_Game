@@ -1,5 +1,124 @@
 # cora_sim -- status
 
+**2026-09-10, observation parity on the merged build: 12 of 14 seeds have ZERO
+deterministic diffs, and the RNG stream holds lockstep on all 14.** Measured with the new
+`cora_sim/obs_diff.py` (see below), which projects Unity's `get_game_state` and the port's
+`World` into one canonical observation -- budget, satisfaction, per-facility
+status/population/food/workforce, worker pools, the task board, in-flight walks and every
+reward counter -- and diffs them field by field, per round, across `cora_sim/runs/merge_v6`.
+
+    python -m cora_sim.obs_diff cora_sim/runs/merge_v6 5503 [--all]
+
+| seed | det | sto | note |
+|------|-----|-----|------|
+| 5501 5502 5901 6001 7001 7002 | 0 | 0 | bit-identical |
+| 5504 | 0 | 35 | missed flood collision (below) |
+| 5802 | 0 | 5 | " |
+| 5503 5701 5801 6101 | 0 | 1 | delivery frame phase (below) |
+| 5601 | 42 | 50 | missed flood collision (see below) |
+| 7003 | 22 | 0 | confirmed dispatch-phase (see below) |
+
+**Where the residue actually lives: vehicle flood collisions.** Unity stops a vehicle in
+water in exactly THREE of the fourteen captures, and the port reproduces one of those six
+stops. Every capture with no flood stop is deterministically clean.
+
+| seed | Unity flood stops | port collisions | residue |
+|------|-------------------|-----------------|---------|
+| 5504 | 2 | 0 | 35 sto |
+| 5601 | 2 | 0 | 42 det |
+| 5802 | 2 | 1 | 5 sto |
+| the other 11 | 0 | 0 | 0-1 |
+
+5601 traced end to end: at s10 both sides queue the SAME two Kitchen_5 -> Motel legs of 100
+(`answer_legs tid=11` matches Unity's two `delivery:queue` marks), but Unity dispatches
+Vehicle3 AND Vehicle2 -- the latter re-used from where the flood had stranded it, `at
+(2.7, -3.6)`, a non-cell-centre position -- then `HandleDeliveryFailure` closes task 11
+Incomplete with demand 0 / delivered 0, so Vehicle3's later unload lands into a closed
+parent and credits nothing. The port, with no stranding history, dispatches one leg,
+delivers it cleanly and credits `foodFulfilled`. Everything downstream (foodResolved 1 vs 0
+from s9, then the constant +1 budget / -1 satisfaction) follows from that one divergence.
+
+Closing this needs two things the port does not have: Unity's exact A* ROUTE CELLS (not
+just the length -- `path_length` is deliberately tie-break independent, but which cells a
+leg crosses is what decides a collision, and that depends on
+`OrderBy(FCost).ThenBy(HCost)`), and the mid-leg stranding positions that feed the next
+dispatch. That is a much larger project than anything above and is not needed for a leaf
+evaluator; recorded here rather than attempted.
+
+**The repo's own ratchet is stale and currently vacuous.** `test_lockstep` reports 0/42
+across `runs/validate`, `runs/validate_v1` and `runs/validate_v1_replay`, and `test_sim` /
+`test_triggers` fail on the pre-merge `cap_*` fixtures -- all of them diverging at draw 3 /
+round 2 because they are pre-merge captures replayed against a merged-build port. Verified
+to predate 2026-09-10 by re-running each with this day's changes reverted: identical
+failures. `merge_v6` is not matched by the `runs/validate*` glob, so nothing guards these
+fixes. Repointing the ratchet at `merge_v6` is a decision for the owner, not a silent edit.
+
+Transfers and deconstruction are validated: `cora_sim/runs/transfer_probe.jsonl` is a
+deliberate 32-round plan for 5503 with five menu transfers (r5, r6, r9, r12, r20) and two
+deconstructs (r16, r24); `cora_sim/runs/probe_tx3` diffs 0/0 over all 32 rounds.
+
+**The floor: delivery frame phase (CONFIRMED for 7003, NOT the cause for 5601).** Unity's
+rounds are 34 MOVING frames plus 1-14 PAUSED planning frames, and the pause length varies
+with how long the agent took to answer (measured over all 14 captures: 35 frames x107,
+40-48 x328). `AssignPendingTasks` is gated on `Time.time`, which advances through the
+pause, so Unity's dispatch pass lands at a different offset within each round; the port's
+counter collapses pauses. The consequence has one shape -- a delivery lands on the last
+movement frame in the port and two frames into the next round in Unity -- surfacing as a
+food task the port completes and Unity expires `Incomplete` (+1 budget, -1 satisfaction,
+`ApplyTaskPenalties` REMOVES each impact), or a kitchen/motel stock swap for one round.
+
+Tested rather than assumed: `Fleet.pauses` (diagnostic only, `CORA_SIM_UNITY_PAUSES=1`,
+default off and no effect when unset) feeds Unity's own per-round pause into the pass
+cadence.
+
+    CORA_SIM_UNITY_PAUSES=1 python -m cora_sim.obs_diff cora_sim/runs/merge_v6 7003
+
+  * 7003: 22 deterministic diffs -> 0. The dispatch phase IS the cause there.
+  * 5601: unchanged at 42 -- correctly, since its cause is a missed flood collision
+    (above), not the dispatch phase.
+  * 6101 (0 -> 18) and 5802 (5 -> 27 stochastic) get WORSE, so the pause estimate --
+    RNGCTX span minus 34, charged entirely at the round end -- is too coarse to be a fix.
+    RNGCTX lines are only emitted where something was logged, so the span understates a
+    quiet round, and the pause is probably not all at the end.
+
+Agent latency is not in the capture, so exact phase is not reproducible. Neither 7003 nor
+5601 is worth chasing further.
+
+**Bugs found and fixed on 2026-09-10** (each verified against the capture that exposed it,
+with all 14 seeds re-measured after every change):
+
+1. `generation._flooded_facility_ok` tested `(x, y) in ctx.flooded` against a set of PACKED
+   ints, so every `FloodedFacilityTrigger` counted zero tiles for every facility, always.
+   `Community_Flood_Damge` (AtLeast 1) could never fire -- the mechanic had no coverage in
+   any earlier "exact" run. Masked because `Shelter_Flood_Damage`'s live sheet params
+   rewrite the comparison to `AtMost 4`, which n=0 satisfies.
+2. `obs_diff.project_port` counted InProgress tasks. Unity's `GetAllActiveTaskContexts`
+   filters `activeTasks.Where(t => t.status == Active)`, so a task parked by
+   `SetTaskInProgress` leaves the observation.
+3. `cancel_overnight_food` matched only queued orders and LOADED cargo. Unity cancels the
+   delivery TASK, live from `CreateDeliveryTask` on, so a vehicle still driving to the
+   kitchen at the end of round 4 is cancelled too. Fixed 5801 outright.
+4. Motel billing read `self.motel_population or self.motel_pop`. `motel_pop` is a legacy
+   shadow still incremented per queued transfer, and an EMPTY motel makes the left operand
+   falsy rather than absent -- 5802 was billed a phantom 400 residents ($80,000) on the
+   day-3 rollover. Bill `motel_population`, never the shadow.
+5. A FoodPacks road blockage takes `affectedFacility` from the DESTINATION
+   (`FloodTaskGenerator.CreateRoadBlockageTask`); a Population one from the source. The
+   port filed both under the source.
+6. The food blockage's choice list was the population one, and `_answer_blockage_food` was
+   DEAD CODE -- defined and never called. Unity offers exactly one choice: an immediate
+   emergency batch priced at `quantity * 10`. It only lands if the vehicle had LOADED
+   (5802 s28 "en route to drop-off" completes for -$370; 5504 s10 "en route to pick-up"
+   logs `choice:at` and applies nothing, expiring Incomplete for +20).
+7. The -30 abandonment penalty is POPULATION-ONLY: `OnAnyTaskCompleted` bails unless the id
+   is in `blockageTaskLoadedState`, which `CreateRoadBlockageTask` fills for
+   `ResourceType.Population` alone. The port charged it on food blockages too (+50 error).
+8. `SetTaskIncomplete` calls `ApplyTaskPenalties` unconditionally while `ExpireTask` filters
+   to Emergency/Demand. `expire()` now returns `(task_id, answered)` so the port applies the
+   right rule per route.
+9. Harness: `diag_lockstep.drive_step` answered EVERY offered task, falling back to
+   `cids[0]` when the capture recorded no choice. Declining is a move; it now skips.
+
 **The surrogate reproduces the Unity game's end-of-turn state exactly on every validation
 run we have (2026-09-08).** Four 32-round headless runs driven by EVOLVED plans (seeds 5503,
 5901, 6001, 7002; `cora_sim/runs/validate/staff_N.{json,log}`, ARC_SNAPSHOT_DEBUG=1): the RNG draw

@@ -81,8 +81,25 @@ class Session:
         self.uev = unity_events(self.log_path)
         self._drive()
 
+    @staticmethod
+    def unity_pauses(log_path):
+        """Unity's PAUSED frames per round, from the RNGCTX stamps: raw span minus the 34
+        moving frames. Diagnostic only -- see Fleet.pauses."""
+        import re as _re
+        pat = _re.compile(r"s(\d+)d\d+r\d+f(\d+)")
+        span = {}
+        for line in open(log_path, errors="ignore"):
+            m = pat.search(line)
+            if m:
+                st, f = int(m.group(1)), int(m.group(2))
+                lo, hi = span.get(st, (f, f))
+                span[st] = (min(lo, f), max(hi, f))
+        return [max(0, span[k][1] - span[k][0] + 1 - 34) for k in sorted(span)]
+
     def _drive(self):
         w = fresh_world(seed_state(self.log_path), FloodMap.load())
+        if os.environ.get("CORA_SIM_UNITY_PAUSES"):
+            w.tasks.fleet.pauses = Session.unity_pauses(self.log_path)
         m = CoraActions(random.Random(0))
         self.before, self.after, self.marks, self.fleet, self.diffs = [], [], [], [], []
         for i, step in enumerate(self.trace):
