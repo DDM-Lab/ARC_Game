@@ -72,9 +72,38 @@ public class LogExportData
     public string exportTime;
     public int totalMessages;
 
+    // ── Episode reproduction ──
+    // The random state the episode started from (see EpisodeReproLog). With the build id
+    // and the parameters below, this is everything needed to reproduce the scenario.
+    public string rngState;
+    public string buildGuid;
+
     // ── Environment Config ──
+    // The full parameter set, not just budget/satisfaction: a replay under a different sheet
+    // silently produces a different game, and the difference is invisible after the fact.
     public int initialBudget;
     public int initialSatisfaction;
+    public int initialCommunityCount;
+    public int initialResidentsPerCommunity;
+    public int initialNumDays;
+    public int initialRoundsPerDay;
+    public int initialTrainedVolunteers;
+    public int initialUntrainedVolunteers;
+    public int initialBudgetDailyAdditions;
+    public string initialWeather;
+    public int initialKitchenCapacity;
+    public int initialShelterCapacity;
+    public int initialCaseworkCapacity;
+    public int initialNeededWorkersPerLoc;
+    public float initialFoodDemandFrequency;
+    public int initialERVCount;
+    public int initialExternalRelationFrequency;
+    public int initialEmergencyTaskFrequency;
+    public int initialShelterFloodThreshold;
+    public int initialShelterFloodRadius;
+    public string initialShelterFloodComparison;
+    public float[] floodExpansionRates;      // sunny, smallRain, mediumRain, heavyRain, storm
+    public float[] floodSpreadMultipliers;   // same order
 
     public List<LogMessage> messages;
 
@@ -140,6 +169,13 @@ public class GameLogPanel : MonoBehaviour
         public bool dataCollectionEnabled = true;
     }
 
+    // Set on OnApplicationQuit (fires before the object-teardown cascade begins, both on a
+    // real quit and when stopping Play mode in the Editor). Guards AddLogMessage so nothing
+    // tries StartCoroutine on a component that's mid-destruction — Instance?.LogXxx(...) call
+    // sites elsewhere don't reliably short-circuit on a destroyed-but-not-yet-null Unity Object
+    // via the ?. operator, so the guard has to live here rather than at each call site.
+    private static bool isQuitting = false;
+
     private void Awake()
     {
         if (Instance == null)
@@ -150,6 +186,17 @@ public class GameLogPanel : MonoBehaviour
         {
             Destroy(gameObject);
         }
+    }
+
+    private void OnApplicationQuit()
+    {
+        isQuitting = true;
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+            Instance = null;
     }
 
     private void Start()
@@ -260,6 +307,9 @@ public class GameLogPanel : MonoBehaviour
 
     void AddLogMessage(string content, LogMessageType type, LogCategory category)
     {
+        if (isQuitting)
+            return;
+
         if (!DataCollectionEnabled)
             return;
 
@@ -501,11 +551,49 @@ public class GameLogPanel : MonoBehaviour
 
         LogExportData exportData = new LogExportData(messagesToExport);
 
+        // Inject the episode's random state (captured before the scene loaded)
+        exportData.rngState  = EpisodeReproLog.RngStateJson;
+        exportData.buildGuid = EpisodeReproLog.BuildGuid;
+
         // Inject environment config
         if (GameConfigLoader.Instance != null)
         {
-            exportData.initialBudget      = GameConfigLoader.Instance.GetInitialBudget();
-            exportData.initialSatisfaction = GameConfigLoader.Instance.GetInitialSatisfaction();
+            GameConfigLoader c = GameConfigLoader.Instance;
+            exportData.initialBudget      = c.GetInitialBudget();
+            exportData.initialSatisfaction = c.GetInitialSatisfaction();
+            exportData.initialCommunityCount        = c.GetInitialCommunityCount();
+            exportData.initialResidentsPerCommunity = c.GetInitialResidentCountPerCommunity();
+            exportData.initialNumDays               = c.GetInitialNumDays();
+            exportData.initialRoundsPerDay          = c.GetInitialNumRoundsPerGame();
+            exportData.initialTrainedVolunteers     = c.GetInitialTrainedVolunteerCount();
+            exportData.initialUntrainedVolunteers   = c.GetInitialUntrainedVolunteerCount();
+            exportData.initialBudgetDailyAdditions  = c.GetInitialBudgetDailyAdditions();
+            exportData.initialWeather               = c.GetInitialWeather().ToString();
+            exportData.initialKitchenCapacity       = c.GetInitialKitchenCapacity();
+            exportData.initialShelterCapacity       = c.GetInitialShelterCapacity();
+            exportData.initialCaseworkCapacity      = c.GetInitialCaseworkCapacity();
+            exportData.initialNeededWorkersPerLoc   = c.GetInitialNeededWorkersPerLoc();
+            exportData.initialFoodDemandFrequency   = c.GetInitialFoodDemandFrequency();
+            exportData.initialERVCount              = c.GetInitialERVCount();
+            exportData.initialExternalRelationFrequency = c.GetInitialExternalRelationFrequency();
+            exportData.initialEmergencyTaskFrequency    = c.GetInitialEmergencyTaskFrequency();
+            exportData.initialShelterFloodThreshold  = c.GetInitialShelterFloodThreshold();
+            exportData.initialShelterFloodRadius     = c.GetInitialShelterFloodRadius();
+            exportData.initialShelterFloodComparison = c.GetInitialShelterFloodComparison().ToString();
+            exportData.floodExpansionRates = new[] {
+                c.GetInitialSunnyFloodExpansionRate(),
+                c.GetInitialSmallRainFloodExpansionRate(),
+                c.GetInitialMediumRainFloodExpansionRate(),
+                c.GetInitialHeavyRainFloodExpansionRate(),
+                c.GetInitialStormFloodExpansionRate(),
+            };
+            exportData.floodSpreadMultipliers = new[] {
+                c.GetInitialSunnyFloodSpreadChanceMultiplier(),
+                c.GetInitialSmallRainFloodSpreadChanceMultiplier(),
+                c.GetInitialMediumRainFloodSpreadChanceMultiplier(),
+                c.GetInitialHeavyRainFloodSpreadChanceMultiplier(),
+                c.GetInitialStormFloodSpreadChanceMultiplier(),
+            };
         }
 
         return JsonUtility.ToJson(exportData, true);
