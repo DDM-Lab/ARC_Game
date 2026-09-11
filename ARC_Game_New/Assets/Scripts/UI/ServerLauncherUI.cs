@@ -477,6 +477,28 @@ public class ServerLauncherUI : MonoBehaviour
         phRT.anchorMax = Vector2.one;
         phRT.offsetMin = phRT.offsetMax = Vector2.zero;
 
+        // HOVER/FOCUS FEEDBACK. Selectable.targetGraphic is wired by Reset(), which only runs
+        // in the editor -- a field built at runtime has none, so the box never tinted on
+        // hover and gave no sign it could be clicked at all. Assign it explicitly and give
+        // the states enough contrast to be visible on the dark card.
+        var bg = go.GetComponent<Image>();
+        input.targetGraphic = bg;
+        input.transition = Selectable.Transition.ColorTint;
+        var cb = input.colors;
+        cb.normalColor      = Color.white;                          // multiplies the Image colour
+        cb.highlightedColor = new Color(1.35f, 1.35f, 1.4f);
+        cb.selectedColor    = new Color(1.5f, 1.55f, 1.7f);
+        cb.pressedColor     = new Color(1.2f, 1.2f, 1.25f);
+        cb.fadeDuration     = 0.08f;
+        input.colors = cb;
+        input.interactable = true;
+
+        // A caret you can actually see, and a selection highlight to match.
+        input.caretColor = new Color(0.92f, 0.93f, 0.95f);
+        input.customCaretColor = true;
+        input.caretWidth = 2;
+        input.selectionColor = new Color(0.30f, 0.45f, 0.75f, 0.75f);
+
         input.textViewport = taRT;
         input.textComponent = text;
         input.placeholder = ph;
