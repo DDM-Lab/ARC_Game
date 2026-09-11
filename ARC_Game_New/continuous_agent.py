@@ -543,6 +543,24 @@ def _openai_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
     budget = _max_tokens(agent_cfg)
     choice = None
     _dump_prompt(agent_cfg, messages, tools=tools)   # ARC_LOG_PROMPTS=1 → logs/prompt_debug/<agent>.txt
+    # THINKING OFF IS THE SINGLE BIGGEST LATENCY LEVER ON A LOCAL SERVER, by a wide margin.
+    # Measured on Auton (2x A6000, vLLM 0.27.1, Qwen3.8-27B FP8), one officer turn end to end:
+    # 72.4s with thinking, 6.8s without -- 10.6x -- and both took the SAME tool sequence
+    # (build -> hire -> staff -> stop). Five officers serialised: 6.0 min vs 0.6 min per round.
+    # See proj_dashboard/serve/QWEN27B_SERVING.md section 7.
+    #
+    # Opt-in per agent, because it is not universally safe: a hosted provider that does not
+    # know the field rejects the request outright, and on Ollama the same switch was measured
+    # to strip thinking from `content` WITHOUT reducing generation (benchmark_models.py) --
+    # i.e. it buys correctness there and speed here. Server-dependent, so the config decides.
+    extra = {}
+    ctk = agent_cfg.get("chat_template_kwargs")
+    if ctk:
+        extra["extra_body"] = {"chat_template_kwargs": ctk}
+    effort = agent_cfg.get("reasoning_effort")
+    if effort:
+        extra["reasoning_effort"] = effort
+
     for attempt in range(2):
         _kw = {"temperature": 0.3} if _accepts_temperature(model) else {}
         resp = client.chat.completions.create(
@@ -552,6 +570,7 @@ def _openai_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
             tool_choice="auto",
             max_tokens=budget,
             **_kw,
+            **extra,
         )
         choice = resp.choices[0]
         if choice.finish_reason != "length":

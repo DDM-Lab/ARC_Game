@@ -1306,8 +1306,17 @@ Respond with ONLY the package index number (0, 1, or 2).
     # message and the current turn are always retained; only OLD tool-spam is shed.
     _CONTINUOUS_KEEP_TURNS = 8
 
+    # HYSTERESIS, so compaction does not shift the prefix on EVERY turn. Shedding one turn
+    # per activation once the window is full moves the cut point each time, which invalidates
+    # the whole retained window for prefix caching and re-prefills it. Letting the transcript
+    # grow to HIGH and only then cutting back to KEEP makes compaction bite every
+    # (HIGH - KEEP) turns instead of every turn -- same context ceiling, ~4x the cross-turn
+    # reuse. Measured rationale: proj_dashboard/serve/QWEN27B_SERVING.md section 7.2.
+    _CONTINUOUS_COMPACT_AT = 12
+
     @staticmethod
-    def _compact_transcript(messages: List[dict], keep_turns: int) -> List[dict]:
+    def _compact_transcript(messages: List[dict], keep_turns: int,
+                            compact_at: int = 0) -> List[dict]:
         """Bound a continuous transcript to system + the last `keep_turns` turns.
 
         A continuous officer carries ONE transcript for the whole game; left
@@ -1326,7 +1335,9 @@ Respond with ONLY the package index number (0, 1, or 2).
             return messages
         system, body = messages[0], messages[1:]
         starts = [i for i, m in enumerate(body) if m.get("role") == "user"]
-        if len(starts) <= keep_turns:
+        # Only compact once the transcript has grown PAST the trigger, then cut all the way
+        # back to keep_turns. Between rewrites the prefix is stable and cacheable.
+        if len(starts) <= max(keep_turns, compact_at):
             return messages
         return [system] + body[starts[-keep_turns]:]
 
@@ -1419,7 +1430,8 @@ Respond with ONLY the package index number (0, 1, or 2).
         # tool-spam. The committed ledger rides inside each turn message, so it is
         # never dropped. Reassign both the persistent store and the local handle so
         # the loop below appends onto the compacted list.
-        messages = self._compact_transcript(messages, self._CONTINUOUS_KEEP_TURNS)
+        messages = self._compact_transcript(messages, self._CONTINUOUS_KEEP_TURNS,
+                                            self._CONTINUOUS_COMPACT_AT)
         self._continuous_transcripts[name] = messages
 
         sat_before = _get_satisfaction(game_state)

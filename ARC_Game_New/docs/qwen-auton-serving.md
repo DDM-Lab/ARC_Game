@@ -1,4 +1,27 @@
-# Serving Qwen3.8-27B on Auton (2×A40) for CORA — settings to investigate
+# Serving Qwen3.8-27B on Auton for CORA — settings to investigate
+
+> **SUPERSEDED for anything measured.** `proj_dashboard/serve/QWEN27B_SERVING.md`
+> contains numbers taken from a RUNNING engine on Auton `debug` (2× RTX A6000, sm_86,
+> vLLM 0.27.1, FP8 checkpoint, 2026-09-11). Prefer it. This file was written from
+> published specs BEFORE that existed, and it got things wrong. Corrections:
+>
+> * **Parallelism: use TP=2, not data parallel.** This file argued DP-over-TP. That
+>   holds only if the weights are small; the FP8 checkpoint is 29 GB on a 48 GB card,
+>   so duplicating it halves the KV pool (~28 GB DP vs ~57 GB TP=2), and on a
+>   concurrency-bound service the KV pool IS the agent count. DP becomes right again
+>   only if the model is requantised to INT4 (~15 GB).
+> * **Prefix caching is chunked at 784 tokens and this is architectural.** Below 784
+>   nothing caches at all; growth inside a chunk buys nothing. That INVERTS this
+>   file's advice to shrink the static prefix — larger static heads cache
+>   proportionally better, and should be padded toward a multiple of 784.
+> * **`--kv-cache-dtype fp8` is refused on sm_86** (needs SM89+). Not a tuning choice.
+> * **Measured concurrency is 41 sequences at 16k**, from the engine's own startup
+>   line — an arithmetic estimate was 40% optimistic.
+> * **The biggest lever is client-side:** `chat_template_kwargs {"enable_thinking":
+>   false}` measured 10.6x on a real officer turn (72.4s -> 6.8s, same tool sequence).
+>
+> What remains useful here: the workload description, the tool-parser trap, and the
+> prompt-size measurements.
 
 Handoff list for whoever sets this up. Nothing here has been run on Auton; the
 local numbers are measured on an M5 Pro (mlx-dspark, `127.0.0.1:8090`), the A40
