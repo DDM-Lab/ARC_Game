@@ -781,6 +781,99 @@ public class DailyReportData : MonoBehaviour
     // How much of each component's score has already been pushed into
     // SatisfactionAndBudget's running total. Waste is deliberately excluded —
     // it's still applied once, at end of day, in DailyReportUI.
+    // ── save / restore ────────────────────────────────────────────────────────────────
+    //
+    // THESE ACCUMULATORS DECIDE SATISFACTION, so they must round-trip. Recalc*Satisfaction
+    // pushes the CHANGE in a component's score (newScore - applied) into the authoritative
+    // field. If `applied*` comes back as 0 after a restore, the next Recalc pushes the whole
+    // component score again as if it were new, and satisfaction jumps -- measured at 60
+    // against the oracle's 40 on the trajectory test before this existed.
+    //
+    // The cumulative* counters are the INPUTS to those scores, so they have to come back too
+    // or the scores themselves are computed from a blank history.
+    [System.Serializable]
+    public class Snapshot
+    {
+        public float dayStartBudget, dayStartSatisfaction, dayStartEfficiency;
+        public int dayStartPopulation;
+
+        public int roundsElapsed;
+        public int foodPacksConsumedByClients, foodPacksNeededByClients, foodPacksWasted;
+        public int communityFoodDemand;
+        public int lodgingNightsConsumed, lodgingNightsNeeded;
+        public int idleWorkerRounds, workingWorkerRounds, trainingWorkerRounds, workerPoolRounds;
+        public int clientRoundsAwaitingCasework, clientsRequestedCasework;
+        public float foodSpend, lodgingSpend, workerRequestCost, workerTrainingCost;
+
+        public float appliedFoodSat, appliedLodgingSat, appliedWorkerSat, appliedCaseworkSat;
+        public float appliedFoodEff, appliedLodgingEff, appliedWorkerEff;
+    }
+
+    public Snapshot CaptureState() => new Snapshot
+    {
+        dayStartBudget = dayStartBudget,
+        dayStartSatisfaction = dayStartSatisfaction,
+        dayStartEfficiency = dayStartEfficiency,
+        dayStartPopulation = dayStartPopulation,
+        roundsElapsed = cumulativeRoundsElapsed,
+        foodPacksConsumedByClients = cumulativeFoodPacksConsumedByClients,
+        foodPacksNeededByClients = cumulativeFoodPacksNeededByClients,
+        foodPacksWasted = cumulativeFoodPacksWasted,
+        communityFoodDemand = cumulativeCommunityFoodDemand,
+        lodgingNightsConsumed = cumulativeLodgingNightsConsumed,
+        lodgingNightsNeeded = cumulativeLodgingNightsNeeded,
+        idleWorkerRounds = cumulativeIdleWorkerRounds,
+        workingWorkerRounds = cumulativeWorkingWorkerRounds,
+        trainingWorkerRounds = cumulativeTrainingWorkerRounds,
+        workerPoolRounds = cumulativeWorkerPoolRounds,
+        clientRoundsAwaitingCasework = cumulativeClientRoundsAwaitingCasework,
+        clientsRequestedCasework = cumulativeClientsRequestedCasework,
+        foodSpend = cumulativeFoodSpend,
+        lodgingSpend = cumulativeLodgingSpend,
+        workerRequestCost = cumulativeWorkerRequestCost,
+        workerTrainingCost = cumulativeWorkerTrainingCost,
+        appliedFoodSat = appliedFoodSat,
+        appliedLodgingSat = appliedLodgingSat,
+        appliedWorkerSat = appliedWorkerSat,
+        appliedCaseworkSat = appliedCaseworkSat,
+        appliedFoodEff = appliedFoodEff,
+        appliedLodgingEff = appliedLodgingEff,
+        appliedWorkerEff = appliedWorkerEff,
+    };
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        dayStartBudget = s.dayStartBudget;
+        dayStartSatisfaction = s.dayStartSatisfaction;
+        dayStartEfficiency = s.dayStartEfficiency;
+        dayStartPopulation = s.dayStartPopulation;
+        cumulativeRoundsElapsed = s.roundsElapsed;
+        cumulativeFoodPacksConsumedByClients = s.foodPacksConsumedByClients;
+        cumulativeFoodPacksNeededByClients = s.foodPacksNeededByClients;
+        cumulativeFoodPacksWasted = s.foodPacksWasted;
+        cumulativeCommunityFoodDemand = s.communityFoodDemand;
+        cumulativeLodgingNightsConsumed = s.lodgingNightsConsumed;
+        cumulativeLodgingNightsNeeded = s.lodgingNightsNeeded;
+        cumulativeIdleWorkerRounds = s.idleWorkerRounds;
+        cumulativeWorkingWorkerRounds = s.workingWorkerRounds;
+        cumulativeTrainingWorkerRounds = s.trainingWorkerRounds;
+        cumulativeWorkerPoolRounds = s.workerPoolRounds;
+        cumulativeClientRoundsAwaitingCasework = s.clientRoundsAwaitingCasework;
+        cumulativeClientsRequestedCasework = s.clientsRequestedCasework;
+        cumulativeFoodSpend = s.foodSpend;
+        cumulativeLodgingSpend = s.lodgingSpend;
+        cumulativeWorkerRequestCost = s.workerRequestCost;
+        cumulativeWorkerTrainingCost = s.workerTrainingCost;
+        appliedFoodSat = s.appliedFoodSat;
+        appliedLodgingSat = s.appliedLodgingSat;
+        appliedWorkerSat = s.appliedWorkerSat;
+        appliedCaseworkSat = s.appliedCaseworkSat;
+        appliedFoodEff = s.appliedFoodEff;
+        appliedLodgingEff = s.appliedLodgingEff;
+        appliedWorkerEff = s.appliedWorkerEff;
+    }
+
     private float appliedFoodSat, appliedLodgingSat, appliedWorkerSat, appliedCaseworkSat;
     private float appliedFoodEff, appliedLodgingEff, appliedWorkerEff;
 

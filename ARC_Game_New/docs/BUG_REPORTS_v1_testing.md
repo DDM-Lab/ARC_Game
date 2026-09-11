@@ -1158,6 +1158,58 @@ termination rule needs to change — e.g. terminate only on a *drop* to 0 after 
 `isGameOver`), or is the committed value a leftover from a local test? Nothing has been edited
 here pending the answer.
 
+### E.13 The backend satisfaction rewrite crosses the report and authoritative scales
+
+**Where.** `origin/main-bugfixes` `0868f3cf` — `DailyReport/DailyReportData.cs` (`ApplyDelta`
+and the seven `Recalc*` call sites) and `DailyReport/DailyReportUI.cs` (the day-start seed).
+
+**Two scales.** The daily report DISPLAYS on 0-1000 (`{currentSatisfaction:F0}/1000`,
+`satisfactionBar.value = currentSatisfaction / 1000f`). The AUTHORITATIVE fields on
+`SatisfactionAndBudget` are 0-100 — the human slider, `get_game_state`, the officers and the
+surrogate all read those. The commit crosses them in both directions.
+
+1. `ApplyDelta` pushes `S_x() * WEIGHT * 1000f` into the authoritative field. The five
+   satisfaction weights sum to 1, so the factor must be 100. `AddSatisfaction` clamps to
+   [0,100] (a guard added earlier for exactly this), so the symptom is NOT an absurd number:
+   satisfaction pins at 100 and then collapses. A 50% food shortfall would cost 100 points
+   where it should cost 10.
+2. `DailyReportUI` seeds the report-scale `currentSatisfaction`/`currentEfficiency` from the
+   0-100 day-start values, so the day's reported change is wrong by 10x. That is B34 again.
+
+**Fix applied here.** `SCORE_SCALE = 100f` at all seven call sites; `* 10f` restored on the
+day-start seed. Upstream should take both, or the next merge reintroduces them.
+
+**Scope / status.** CONFIRMED (read off the merged code; the satisfaction path is live —
+`Recalc*` is called from the recording methods during play, not only at day end).
+
+### E.14 B23's hard-coded worker pool came back in the new backend copy
+
+**Where.** `DailyReportData.S_WorkerUse` and `GetWorkerSatisfactionComponents` after
+`0868f3cf`: both normalise by `assumedTotalWorkerPoolSize * roundsElapsed`. The live-pool
+version sits commented out directly above the first one.
+
+**What happens.** Exactly B23 — with a pool below the assumed size the ratios span a sliver
+of their range; above it they exceed 1. The move from UI to backend carried the OLD formula.
+
+**Fix applied here.** Both use `GetCumulativeWorkerPoolRounds()`, which the class already
+accumulates. The display breakdown uses the same denominator as the score it explains, or
+the three parts do not add up to it.
+
+**Scope / status.** CONFIRMED. Needs an upstream fix, not just ours.
+
+### E.15 The satisfaction accumulators are not snapshot state (was: silently)
+
+**Where.** `DailyReportData`'s `applied*Sat`/`applied*Eff` and its `cumulative*` counters.
+
+**What happens.** Since `0868f3cf`, `Recalc*` pushes the CHANGE in each component
+(`newScore - applied`) into satisfaction during play. That makes those fields load-bearing
+game state. They were not in `GameSnapshot`, so a restored game came back with `applied* = 0`
+and the next Recalc re-applied every component in full. MEASURED on the trajectory test:
+satisfaction 60 against the oracle's 40, diverging on the very first round after a load.
+
+**Fix applied here.** `DailyReportData.Snapshot` captures the accumulators and the counters
+that feed them; `cora_sim.snapshot_equivalence` passes again on seeds 1234 and 4242.
+
 ### E.12 `MainScene.unity` on main-bugfixes reverted the Motel's food mechanic
 
 **Where.** `Assets/Scenes/MainScene.unity` at `origin/main-bugfixes` (48a2582f), the Motel's

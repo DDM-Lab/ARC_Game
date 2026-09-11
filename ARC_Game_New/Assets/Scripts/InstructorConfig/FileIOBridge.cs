@@ -111,8 +111,32 @@ public class FileIOBridge : MonoBehaviour
             OnFileImported?.Invoke(text);
         };
 #else
-        Debug.LogWarning("[FileIOBridge] File picker not supported in Standalone build. " +
-                         "Place a config.json in: " + Application.persistentDataPath);
+        // STANDALONE HAS NO PICKER, so "load" used to log a warning and do nothing at all --
+        // the player clicked and the game sat there. Fall back to the NEWEST matching file in
+        // persistentDataPath, which is also where DownloadText saves on this platform, so
+        // save-then-load round-trips without a dialog.
+        try
+        {
+            string dir = Application.persistentDataPath;
+            string newest = null;
+            System.DateTime newestAt = System.DateTime.MinValue;
+            foreach (string path in System.IO.Directory.GetFiles(dir, "*." + extension))
+            {
+                System.DateTime at = System.IO.File.GetLastWriteTimeUtc(path);
+                if (at > newestAt) { newestAt = at; newest = path; }
+            }
+            if (newest == null)
+            {
+                Debug.LogWarning($"[FileIOBridge] No .{extension} file found in {dir}");
+                return;
+            }
+            Debug.Log($"[FileIOBridge] Standalone: loading newest .{extension} — {newest}");
+            OnFileImported?.Invoke(System.IO.File.ReadAllText(newest));
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[FileIOBridge] Standalone import failed: {e}");
+        }
 #endif
     }
 }

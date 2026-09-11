@@ -65,6 +65,11 @@ public class GameSnapshot
     public RewardMetricsTracker.Snapshot rewardMetrics;
     public SatisfactionAndBudget.SpendSnapshot spend;
 
+    // The satisfaction/efficiency accumulators and their input counters. Since
+    // main-bugfixes 0868f3cf these DRIVE satisfaction during play (Recalc* pushes the change
+    // in each component), so a blank one on restore re-applies every component in full.
+    public DailyReportData.Snapshot dailyReport;
+
     // Vehicles, including any mid-delivery. Their cargo and their position exist nowhere
     // else, and a save is taken in the planning pause, when a leg spanning a round boundary
     // is ordinary rather than exceptional.
@@ -178,6 +183,8 @@ public static class GameSnapshotManager
         if (reloc != null) s.relocations = reloc.CaptureState();
         var alloc = BudgetAllocationManager.Instance;
         if (alloc != null) s.budgetAllocations = alloc.CaptureState();
+        var drd = DailyReportData.Instance;
+        if (drd != null) s.dailyReport = drd.CaptureState();
         foreach (var v in UnityEngine.Object.FindObjectsOfType<Vehicle>())
             if (v != null) s.vehicles.Add(v.CaptureState());
 
@@ -257,6 +264,10 @@ public static class GameSnapshotManager
         if (reloc != null) reloc.RestoreState(s.relocations);
         var alloc = BudgetAllocationManager.Instance;
         if (alloc != null) alloc.RestoreState(s.budgetAllocations);
+        // BEFORE the economy is written below: restoring these does not itself move
+        // satisfaction, but leaving them blank makes the NEXT Recalc re-apply everything.
+        var drd = DailyReportData.Instance;
+        if (drd != null) drd.RestoreState(s.dailyReport);
 
         // Vehicles LAST: each re-links to its delivery by id, so DeliverySystem must already
         // hold the restored tasks. Matched by name -- vehicleId is not stable across a scene
