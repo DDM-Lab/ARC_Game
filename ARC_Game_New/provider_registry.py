@@ -29,6 +29,7 @@ class Provider(str, Enum):
     cmu_gateway = "cmu-gateway"
     openai = "openai"
     ollama_local = "ollama-local"
+    qwen_local = "qwen-local"
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,11 @@ PROVIDER_REGISTRY: dict[Provider, ProviderSpec] = {
     # ollama runs OpenAI-compatible on localhost; no key. base_url explicit so the resolved
     # triple is self-contained regardless of any caller-side default.
     Provider.ollama_local:     ProviderSpec("ollama", "http://localhost:11434/v1", None),
+    # Local MLX server (mlx-dspark) speaking the OpenAI wire format, so the `openai` backend
+    # drives it -- NOT the `ollama` backend, which talks to :11434. Loopback and keyless: it
+    # is a process on this machine, so there is no secret to name. Verified to return real
+    # tool_calls (finish_reason="tool_calls"), which is what the continuous officers need.
+    Provider.qwen_local:       ProviderSpec("openai", "http://127.0.0.1:8090/v1", None),
 }
 
 

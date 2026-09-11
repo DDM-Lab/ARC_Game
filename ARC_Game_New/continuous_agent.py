@@ -338,6 +338,28 @@ for _t in _cora_tools.openai_tools(manual_transfers=True):  # include transfer i
 DEFAULT_TOOLS = [n for n in TOOL_SCHEMAS if n != "execute_commands"]
 
 
+
+def _resolve_api_key(agent_cfg: dict, default_env: str) -> str:
+    """The API key for this agent, or a placeholder for a keyless local provider.
+
+    TWO TRAPS HERE.
+
+    1. `agent_cfg.get("api_key_env", DEFAULT)` returns the STORED value when the key is
+       present and null -- which is exactly what a keyless provider (ollama-local,
+       qwen-local) resolves to -- so the default never applies and `os.environ.get(None)`
+       raises `TypeError: str expected, not NoneType`. `or` is required, not `get`'s default.
+    2. Falling back to OPENAI_API_KEY for a keyless provider would send a real hosted
+       credential to a process on loopback. There is no secret to present to a local server,
+       so send a placeholder: the OpenAI client only requires a non-empty string.
+    """
+    key_env = agent_cfg.get("api_key_env") or None
+    if key_env:
+        return os.environ.get(key_env) or ""
+    base = (agent_cfg.get("llm_endpoint") or "")
+    if "127.0.0.1" in base or "localhost" in base:
+        return "local"                      # keyless loopback server
+    return os.environ.get(default_env) or ""
+
 def build_tools(allowlist: Optional[List[str]] = None,
                 descriptions: Optional[dict] = None) -> List[dict]:
     """Return the OpenAI-format tool schemas for the given allowlist.
@@ -506,10 +528,10 @@ def _openai_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
     if openai is None:
         return {"content": None, "tool_calls": [], "raw": "", "error": "openai lib not installed"}
 
-    api_key = os.environ.get(agent_cfg.get("api_key_env", "OPENAI_API_KEY"))
+    api_key = _resolve_api_key(agent_cfg, "OPENAI_API_KEY")
     if not api_key:
         return {"content": None, "tool_calls": [], "raw": "",
-                "error": f"missing API key ({agent_cfg.get('api_key_env', 'OPENAI_API_KEY')})"}
+                "error": f"missing API key ({agent_cfg.get('api_key_env') or 'OPENAI_API_KEY'})"}
 
     base_url = agent_cfg.get("llm_endpoint")
     client = openai.OpenAI(api_key=api_key, base_url=base_url) if base_url else openai.OpenAI(api_key=api_key)
@@ -568,10 +590,10 @@ def _anthropic_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
     if anthropic is None:
         return {"content": None, "tool_calls": [], "raw": "", "error": "anthropic lib not installed"}
 
-    api_key = os.environ.get(agent_cfg.get("api_key_env", "ANTHROPIC_API_KEY"))
+    api_key = _resolve_api_key(agent_cfg, "ANTHROPIC_API_KEY")
     if not api_key:
         return {"content": None, "tool_calls": [], "raw": "",
-                "error": f"missing API key ({agent_cfg.get('api_key_env', 'ANTHROPIC_API_KEY')})"}
+                "error": f"missing API key ({agent_cfg.get('api_key_env') or 'ANTHROPIC_API_KEY'})"}
 
     base_url = agent_cfg.get("llm_endpoint")
     client = anthropic.Anthropic(api_key=api_key, base_url=base_url) if base_url else anthropic.Anthropic(api_key=api_key)
@@ -809,7 +831,7 @@ def _plain_completion(prompt: str, agent_cfg: dict, provider: str) -> str:
             )
             return resp["message"]["content"]
         # OpenAI-compatible fallback (also lets us force text mode on a gateway).
-        api_key = os.environ.get(agent_cfg.get("api_key_env", "OPENAI_API_KEY"))
+        api_key = _resolve_api_key(agent_cfg, "OPENAI_API_KEY")
         base_url = agent_cfg.get("llm_endpoint")
         client = openai.OpenAI(api_key=api_key, base_url=base_url) if base_url else openai.OpenAI(api_key=api_key)
         _kw = {"temperature": 0.3} if _accepts_temperature(model) else {}
