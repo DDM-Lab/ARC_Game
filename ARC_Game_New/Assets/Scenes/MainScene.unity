@@ -21201,10 +21201,10 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 477889595}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 0, y: 0}
+  m_AnchorMin: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 1}
+  m_AnchoredPosition: {x: 192.5, y: -34.5}
+  m_SizeDelta: {x: 375, y: 49}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &336536752
 MonoBehaviour:
@@ -27607,6 +27607,8 @@ MonoBehaviour:
   deliverySystem: {fileID: 1185566962}
   budgetSystem: {fileID: 146349969}
   clientTracker: {fileID: 550057047}
+  assumedTotalWorkerPoolSize: 200
+  maxEmergencyFunding: 600000
 --- !u!4 &443953164
 Transform:
   m_ObjectHideFlags: 0
@@ -66065,7 +66067,6 @@ GameObject:
   - component: {fileID: 978749007}
   - component: {fileID: 978749006}
   - component: {fileID: 978749005}
-  - component: {fileID: 978749008}
   m_Layer: 0
   m_Name: TaskSystem
   m_TagString: Untagged
@@ -66195,7 +66196,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 66720790f2f4b5b42a4bf5007fcb1589, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enableFloodTasks: 1
   emergencyTaskDatabase: {fileID: 11400000, guid: d773dce99ee24314cadca581debfc3db, type: 2}
   vehicleDamageImage: {fileID: 21300000, guid: 7f32a521caf956d4ea919297c4eed924, type: 3}
   showDebugInfo: 1
@@ -66305,24 +66305,6 @@ MonoBehaviour:
   taskSystem: {fileID: 978748996}
   workerSystem: {fileID: 550057045}
   taskDetailUI: {fileID: 978748999}
-  showDebugInfo: 1
---- !u!114 &978749008
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 978748995}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4c35be885c255bf4e80ec7448402cc27, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  communityFoodRequestTask: {fileID: 11400000, guid: f6d71222fa0fe7640acde3729f7509d5, type: 2}
-  depletionAmount: 100
-  depletionChancePerRound: 0.2
-  lastEligibleRound: 3
-  firstEligibleDay: 2
   showDebugInfo: 1
 --- !u!1 &986312716
 GameObject:
@@ -110138,162 +110120,189 @@ MonoBehaviour:
     labelText: {fileID: 1383123190}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1232287895}
+    progressBar: {fileID: 0}
   foodDeliveryStatus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   foodCompletionBonus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   foodOnTimeBonus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   foodDelayScore:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   lodgingTotal:
     layoutObject: {fileID: 1258364704}
     numberText: {fileID: 1692329241}
     labelText: {fileID: 1865438844}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1258364707}
+    progressBar: {fileID: 0}
   lodgingStatus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   lodgingCompletionBonus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   lodgingOverstayPenalty:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   workerTotal:
     layoutObject: {fileID: 1814650577}
     numberText: {fileID: 509488935}
     labelText: {fileID: 61502206}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1814650580}
+    progressBar: {fileID: 0}
   workerStatus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   workerTrainingBonusElement:
     layoutObject: {fileID: 357999808}
     numberText: {fileID: 910056564}
     labelText: {fileID: 807889983}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 357999810}
+    progressBar: {fileID: 0}
   workerWorkingElement:
     layoutObject: {fileID: 1219407950}
     numberText: {fileID: 43827022}
     labelText: {fileID: 1370085390}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1219407952}
+    progressBar: {fileID: 0}
   idleWorker:
     layoutObject: {fileID: 1854750721}
     numberText: {fileID: 608401099}
     labelText: {fileID: 397550716}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1854750723}
+    progressBar: {fileID: 0}
   wasteTotal:
     layoutObject: {fileID: 1247785779}
     numberText: {fileID: 1371116152}
     labelText: {fileID: 591837083}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1247785781}
+    progressBar: {fileID: 0}
   wasteStatus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   caseworkTotal:
     layoutObject: {fileID: 688685246}
     numberText: {fileID: 1288374150}
     labelText: {fileID: 543921533}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 688685248}
+    progressBar: {fileID: 0}
   caseworkStatus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   foodUtilizationTotal:
     layoutObject: {fileID: 742928327}
     numberText: {fileID: 1089727875}
     labelText: {fileID: 929825609}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 742928330}
+    progressBar: {fileID: 0}
   foodUsageSummary:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   kitchenEfficiencyScore:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   shelterUtilizationTotal:
     layoutObject: {fileID: 502044944}
     numberText: {fileID: 1935726159}
     labelText: {fileID: 782959907}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 502044947}
+    progressBar: {fileID: 0}
   shelterUsageSummary:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   shelterEfficiencyScore:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   workerUtilizationTotal:
     layoutObject: {fileID: 937093275}
     numberText: {fileID: 1620697340}
     labelText: {fileID: 2058397769}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 937093278}
+    progressBar: {fileID: 0}
   workerUsageSummary:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   workerEfficiencyScore:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   assumedTotalWorkerPoolSize: 200
   maxBudget: 999999
   budgetEfficiencyTotal:
@@ -110302,18 +110311,21 @@ MonoBehaviour:
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   budgetUsageSummary:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   budgetEfficiencyScore:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   positiveChangeColor: {r: 0.27450982, g: 0.58431375, b: 0.2627451, a: 1}
   negativeChangeColor: {r: 0.87058824, g: 0.3254902, b: 0.1882353, a: 1}
   satisfactionValueText: {fileID: 249749658}
@@ -110346,66 +110358,77 @@ MonoBehaviour:
     labelText: {fileID: 1845667862}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 393394069}
+    progressBar: {fileID: 0}
   receiptShelter:
     layoutObject: {fileID: 896326864}
     numberText: {fileID: 1950078740}
     labelText: {fileID: 1274424277}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 896326866}
+    progressBar: {fileID: 0}
   receiptCasework:
     layoutObject: {fileID: 4733909}
     numberText: {fileID: 1628163886}
     labelText: {fileID: 1406794658}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 4733911}
+    progressBar: {fileID: 0}
   receiptFastFood:
     layoutObject: {fileID: 1915904533}
     numberText: {fileID: 454373041}
     labelText: {fileID: 248887162}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1915904535}
+    progressBar: {fileID: 0}
   receiptTransport:
     layoutObject: {fileID: 1271152984}
     numberText: {fileID: 1341871572}
     labelText: {fileID: 342192429}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1271152986}
+    progressBar: {fileID: 0}
   receiptLodging:
     layoutObject: {fileID: 1837967056}
     numberText: {fileID: 295259032}
     labelText: {fileID: 1765775886}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1837967058}
+    progressBar: {fileID: 0}
   receiptWorkerRequest:
     layoutObject: {fileID: 1687363425}
     numberText: {fileID: 55534143}
     labelText: {fileID: 828457552}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1687363427}
+    progressBar: {fileID: 0}
   receiptWorkerTraining:
     layoutObject: {fileID: 26003170}
     numberText: {fileID: 1313835639}
     labelText: {fileID: 1360674158}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 26003172}
+    progressBar: {fileID: 0}
   receiptWorkerReleased:
     layoutObject: {fileID: 1279293846}
     numberText: {fileID: 468748127}
     labelText: {fileID: 2098165220}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1279293848}
+    progressBar: {fileID: 0}
   receiptOther:
     layoutObject: {fileID: 1152543406}
     numberText: {fileID: 327068910}
     labelText: {fileID: 891428902}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1152543408}
+    progressBar: {fileID: 0}
   receiptTotal:
     layoutObject: {fileID: 2006466034}
     numberText: {fileID: 1655397748}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 2006466036}
+    progressBar: {fileID: 0}
   currentBudgetDisplayText: {fileID: 1810838498}
   liveFoodInTransit:
     layoutObject: {fileID: 298456711}
@@ -110413,60 +110436,70 @@ MonoBehaviour:
     labelText: {fileID: 1532336803}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 298456713}
+    progressBar: {fileID: 0}
   liveKitchenProduction:
     layoutObject: {fileID: 720056577}
     numberText: {fileID: 88945748}
     labelText: {fileID: 1665479184}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 720056579}
+    progressBar: {fileID: 0}
   liveFoodWaste:
     layoutObject: {fileID: 2000507810}
     numberText: {fileID: 309235727}
     labelText: {fileID: 1432588433}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 2000507812}
+    progressBar: {fileID: 0}
   liveNeedLodging:
     layoutObject: {fileID: 186001148}
     numberText: {fileID: 303282001}
     labelText: {fileID: 233893594}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 186001150}
+    progressBar: {fileID: 0}
   liveWorkersWorking:
     layoutObject: {fileID: 155747820}
     numberText: {fileID: 456751513}
     labelText: {fileID: 760965979}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 155747822}
+    progressBar: {fileID: 0}
   liveWorkersWaiting:
     layoutObject: {fileID: 1393253364}
     numberText: {fileID: 1811658238}
     labelText: {fileID: 173399124}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1393253366}
+    progressBar: {fileID: 0}
   liveWorkersTraining:
     layoutObject: {fileID: 711742160}
     numberText: {fileID: 1645243372}
     labelText: {fileID: 1045227887}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 711742162}
+    progressBar: {fileID: 0}
   liveWorkersReleasedToday:
     layoutObject: {fileID: 1639189573}
     numberText: {fileID: 1253234253}
     labelText: {fileID: 737667198}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1639189575}
+    progressBar: {fileID: 0}
   liveNeedCasework:
     layoutObject: {fileID: 218583146}
     numberText: {fileID: 1953297580}
     labelText: {fileID: 127677528}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 218583148}
+    progressBar: {fileID: 0}
   liveInTransitToCasework:
     layoutObject: {fileID: 584905971}
     numberText: {fileID: 577387822}
     labelText: {fileID: 1329116460}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 584905973}
+    progressBar: {fileID: 0}
 --- !u!114 &1776780032
 MonoBehaviour:
   m_ObjectHideFlags: 0

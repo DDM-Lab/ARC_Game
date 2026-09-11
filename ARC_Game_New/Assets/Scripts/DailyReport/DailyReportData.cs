@@ -699,10 +699,9 @@ public class DailyReportData : MonoBehaviour
     // =========================================================================
     // cost-eff new scores
     // =========================================================================
-
     public float C_Food()
     {
-        var d = DailyReportData.Instance;
+        var d = this;
         int consumed = d.GetCumulativeFoodPacksConsumedByClients();
         if (consumed <= 0) return 0f;
 
@@ -710,19 +709,17 @@ public class DailyReportData : MonoBehaviour
 
         var gdm = GameDataManager.Instance;
         var bs = FindObjectOfType<BuildingSystem>();
-        int mapSpots = bs != null ? bs.RegisteredSites.Count : 0;
         int days = gdm.InitialGameDays;
-        float totalBudget = GetMaxPossibleBudget();
 
         float min = (float)bs.kitchenConstructionCost / (gdm.InitialKitchenCapacity * days);
-        float max = Mathf.Max(bs.kitchenConstructionCost * mapSpots * days, totalBudget);
+        if (min <= 0f) return 1f; // avoid divide-by-zero if min is misconfigured
 
-        return Mathf.Clamp01(1f - (raw - min) / (max - min));
+        return Mathf.Clamp01(1f - (raw - min) / (49f * min));
     }
 
     public float C_Lodging()
     {
-        var d = DailyReportData.Instance;
+        var d = this;
         var gdm = GameDataManager.Instance;
 
         float nightsConsumed = d.GetCumulativeLodgingNightsConsumed();
@@ -731,37 +728,92 @@ public class DailyReportData : MonoBehaviour
         float raw = d.GetCumulativeLodgingSpend() / nightsConsumed;
 
         var bs = FindObjectOfType<BuildingSystem>();
-        int mapSpots = bs != null ? bs.RegisteredSites.Count : 0;
         int days = gdm.InitialGameDays;
-        float totalBudget = GetMaxPossibleBudget();
 
         float min = (float)bs.shelterConstructionCost / (gdm.InitialShelterCapacity * days);
-        float max = Mathf.Max(bs.shelterConstructionCost * mapSpots * days, totalBudget);
+        if (min <= 0f) return 1f;
 
-        return Mathf.Clamp01(1f - (raw - min) / (max - min));
+        return Mathf.Clamp01(1f - (raw - min) / (49f * min));
     }
 
     public float C_Worker()
     {
-        var d = DailyReportData.Instance;
+        var d = this;
         int workingRounds = d.GetCumulativeWorkingWorkerRounds();
         if (workingRounds <= 0) return 0f;
 
         float raw = (d.GetCumulativeWorkerTrainingCost() + d.GetCumulativeWorkerRequestCost()) / workingRounds;
 
-        var gdm = GameDataManager.Instance;
         var wrs = FindObjectOfType<WorkerRequestSystem>();
-        var wts = FindObjectOfType<WorkerTrainingSystem>();
         float untrainedCost = wrs != null ? wrs.untrainedWorkerCost : 100f;
-        float trainedCost = wrs != null ? wrs.trainedWorkerCost : 100f;
-        float trainingCost = wts != null ? wts.trainingCostPerWorker : 100f;
-        float min = untrainedCost;
-        float totalBudget = GetMaxPossibleBudget();
-        float maxCostWorkforceUnit = Mathf.Max(untrainedCost, Mathf.Max(trainedCost / 2f, (untrainedCost + trainingCost) / 2f));
-        float max = Mathf.Max(assumedTotalWorkerPoolSize * maxCostWorkforceUnit, totalBudget);
 
-        return Mathf.Clamp01(1f - (raw - min) / (max - min));
+        float min = untrainedCost;
+        if (min <= 0f) return 1f;
+
+        return Mathf.Clamp01(1f - (raw - min) / (49f * min));
     }
+    //public float C_Food()
+    //{
+    //    var d = DailyReportData.Instance;
+    //    int consumed = d.GetCumulativeFoodPacksConsumedByClients();
+    //    if (consumed <= 0) return 0f;
+
+    //    float raw = d.GetCumulativeFoodSpend() / consumed;
+
+    //    var gdm = GameDataManager.Instance;
+    //    var bs = FindObjectOfType<BuildingSystem>();
+    //    int mapSpots = bs != null ? bs.RegisteredSites.Count : 0;
+    //    int days = gdm.InitialGameDays;
+    //    float totalBudget = GetMaxPossibleBudget();
+
+    //    float min = (float)bs.kitchenConstructionCost / (gdm.InitialKitchenCapacity * days);
+    //    float max = Mathf.Max(bs.kitchenConstructionCost * mapSpots * days, totalBudget);
+
+    //    return Mathf.Clamp01(1f - (raw - min) / (max - min));
+    //}
+
+    //public float C_Lodging()
+    //{
+    //    var d = DailyReportData.Instance;
+    //    var gdm = GameDataManager.Instance;
+
+    //    float nightsConsumed = d.GetCumulativeLodgingNightsConsumed();
+    //    if (nightsConsumed <= 0f) return 0f;
+
+    //    float raw = d.GetCumulativeLodgingSpend() / nightsConsumed;
+
+    //    var bs = FindObjectOfType<BuildingSystem>();
+    //    int mapSpots = bs != null ? bs.RegisteredSites.Count : 0;
+    //    int days = gdm.InitialGameDays;
+    //    float totalBudget = GetMaxPossibleBudget();
+
+    //    float min = (float)bs.shelterConstructionCost / (gdm.InitialShelterCapacity * days);
+    //    float max = Mathf.Max(bs.shelterConstructionCost * mapSpots * days, totalBudget);
+
+    //    return Mathf.Clamp01(1f - (raw - min) / (max - min));
+    //}
+
+    //public float C_Worker()
+    //{
+    //    var d = DailyReportData.Instance;
+    //    int workingRounds = d.GetCumulativeWorkingWorkerRounds();
+    //    if (workingRounds <= 0) return 0f;
+
+    //    float raw = (d.GetCumulativeWorkerTrainingCost() + d.GetCumulativeWorkerRequestCost()) / workingRounds;
+
+    //    var gdm = GameDataManager.Instance;
+    //    var wrs = FindObjectOfType<WorkerRequestSystem>();
+    //    var wts = FindObjectOfType<WorkerTrainingSystem>();
+    //    float untrainedCost = wrs != null ? wrs.untrainedWorkerCost : 100f;
+    //    float trainedCost = wrs != null ? wrs.trainedWorkerCost : 100f;
+    //    float trainingCost = wts != null ? wts.trainingCostPerWorker : 100f;
+    //    float min = untrainedCost;
+    //    float totalBudget = GetMaxPossibleBudget();
+    //    float maxCostWorkforceUnit = Mathf.Max(untrainedCost, Mathf.Max(trainedCost / 2f, (untrainedCost + trainingCost) / 2f));
+    //    float max = Mathf.Max(assumedTotalWorkerPoolSize * maxCostWorkforceUnit, totalBudget);
+
+    //    return Mathf.Clamp01(1f - (raw - min) / (max - min));
+    //}
 
     public float CalculateLiveCostEfficiencyScore()
     {

@@ -3676,81 +3676,6 @@ MonoBehaviour:
   m_ChildScaleWidth: 0
   m_ChildScaleHeight: 0
   m_ReverseArrangement: 0
---- !u!1 &1181118401052561876
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 7598940684557403437}
-  - component: {fileID: 2124739207431098759}
-  - component: {fileID: 873561066303543338}
-  m_Layer: 5
-  m_Name: Fill
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!224 &7598940684557403437
-RectTransform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1181118401052561876}
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 7187964309838953378}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 10, y: 0}
-  m_Pivot: {x: 0.5, y: 0.5}
---- !u!222 &2124739207431098759
-CanvasRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1181118401052561876}
-  m_CullTransparentMesh: 1
---- !u!114 &873561066303543338
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1181118401052561876}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 0.5176471, b: 0, a: 1}
-  m_RaycastTarget: 1
-  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
-  m_Maskable: 1
-  m_OnCullStateChanged:
-    m_PersistentCalls:
-      m_Calls: []
-  m_Sprite: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
-  m_Type: 1
-  m_PreserveAspect: 0
-  m_FillCenter: 1
-  m_FillMethod: 4
-  m_FillAmount: 1
-  m_FillClockwise: 1
-  m_FillOrigin: 0
-  m_UseSpriteMesh: 0
-  m_PixelsPerUnitMultiplier: 1
 --- !u!1 &1213900505356102397
 GameObject:
   m_ObjectHideFlags: 0
@@ -5652,95 +5577,6 @@ MonoBehaviour:
   m_Value: 1
   m_Size: 1
   m_NumberOfSteps: 0
-  m_OnValueChanged:
-    m_PersistentCalls:
-      m_Calls: []
---- !u!1 &2003018870269636313
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 3939166522785366893}
-  - component: {fileID: 1095833287942421512}
-  m_Layer: 5
-  m_Name: BudgetSlider
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!224 &3939166522785366893
-RectTransform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2003018870269636313}
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 2928716467505636988}
-  - {fileID: 7187964309838953378}
-  m_Father: {fileID: 7927713253088949116}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 500, y: 26}
-  m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &1095833287942421512
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2003018870269636313}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 67db9e8f0e2ae9c40bc1e2b64352a6b4, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_Navigation:
-    m_Mode: 3
-    m_WrapAround: 0
-    m_SelectOnUp: {fileID: 0}
-    m_SelectOnDown: {fileID: 0}
-    m_SelectOnLeft: {fileID: 0}
-    m_SelectOnRight: {fileID: 0}
-  m_Transition: 1
-  m_Colors:
-    m_NormalColor: {r: 1, g: 1, b: 1, a: 1}
-    m_HighlightedColor: {r: 0.9607843, g: 0.9607843, b: 0.9607843, a: 1}
-    m_PressedColor: {r: 0.78431374, g: 0.78431374, b: 0.78431374, a: 1}
-    m_SelectedColor: {r: 0.9607843, g: 0.9607843, b: 0.9607843, a: 1}
-    m_DisabledColor: {r: 0.78431374, g: 0.78431374, b: 0.78431374, a: 0.5019608}
-    m_ColorMultiplier: 1
-    m_FadeDuration: 0.1
-  m_SpriteState:
-    m_HighlightedSprite: {fileID: 0}
-    m_PressedSprite: {fileID: 0}
-    m_SelectedSprite: {fileID: 0}
-    m_DisabledSprite: {fileID: 0}
-  m_AnimationTriggers:
-    m_NormalTrigger: Normal
-    m_HighlightedTrigger: Highlighted
-    m_PressedTrigger: Pressed
-    m_SelectedTrigger: Selected
-    m_DisabledTrigger: Disabled
-  m_Interactable: 0
-  m_TargetGraphic: {fileID: 0}
-  m_FillRect: {fileID: 7598940684557403437}
-  m_HandleRect: {fileID: 0}
-  m_Direction: 0
-  m_MinValue: 0
-  m_MaxValue: 1
-  m_WholeNumbers: 0
-  m_Value: 0.152
   m_OnValueChanged:
     m_PersistentCalls:
       m_Calls: []
@@ -8651,81 +8487,6 @@ MonoBehaviour:
   m_hasFontAssetChanged: 0
   m_baseMaterial: {fileID: 0}
   m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
---- !u!1 &2831160648413676275
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 2928716467505636988}
-  - component: {fileID: 4670562655630749070}
-  - component: {fileID: 6456164415829515101}
-  m_Layer: 5
-  m_Name: Background
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!224 &2928716467505636988
-RectTransform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2831160648413676275}
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 3939166522785366893}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0.25}
-  m_AnchorMax: {x: 1, y: 0.75}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0.5, y: 0.5}
---- !u!222 &4670562655630749070
-CanvasRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2831160648413676275}
-  m_CullTransparentMesh: 1
---- !u!114 &6456164415829515101
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2831160648413676275}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_RaycastTarget: 1
-  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
-  m_Maskable: 1
-  m_OnCullStateChanged:
-    m_PersistentCalls:
-      m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: 44b402f9754e1434d94769579e44cd6f, type: 3}
-  m_Type: 0
-  m_PreserveAspect: 0
-  m_FillCenter: 1
-  m_FillMethod: 4
-  m_FillAmount: 1
-  m_FillClockwise: 1
-  m_FillOrigin: 0
-  m_UseSpriteMesh: 0
-  m_PixelsPerUnitMultiplier: 1
 --- !u!1 &2882530163537329196
 GameObject:
   m_ObjectHideFlags: 0
@@ -11079,42 +10840,6 @@ MonoBehaviour:
   m_OnValueChanged:
     m_PersistentCalls:
       m_Calls: []
---- !u!1 &3480817704120364504
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 7187964309838953378}
-  m_Layer: 5
-  m_Name: Fill Area
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!224 &7187964309838953378
-RectTransform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3480817704120364504}
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 7598940684557403437}
-  m_Father: {fileID: 3939166522785366893}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0.25}
-  m_AnchorMax: {x: 1, y: 0.75}
-  m_AnchoredPosition: {x: -0.1499939, y: 0}
-  m_SizeDelta: {x: -10.300002, y: 0}
-  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &3484781753366020896
 GameObject:
   m_ObjectHideFlags: 0
@@ -23773,162 +23498,189 @@ MonoBehaviour:
     labelText: {fileID: 6261214596964525539}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 4938527661000758904}
+    progressBar: {fileID: 0}
   foodDeliveryStatus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   foodCompletionBonus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   foodOnTimeBonus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   foodDelayScore:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   lodgingTotal:
     layoutObject: {fileID: 5224643707432521291}
     numberText: {fileID: 2259323973307876451}
     labelText: {fileID: 6526368349332888975}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 4240535348635916598}
+    progressBar: {fileID: 0}
   lodgingStatus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   lodgingCompletionBonus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   lodgingOverstayPenalty:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   workerTotal:
     layoutObject: {fileID: 6663593280504122412}
     numberText: {fileID: 4067310767275640005}
     labelText: {fileID: 500408904820994782}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 5369521272207820579}
+    progressBar: {fileID: 0}
   workerStatus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   workerTrainingBonusElement:
     layoutObject: {fileID: 704464197425028341}
     numberText: {fileID: 1164983708057004996}
     labelText: {fileID: 2465403054726500867}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 4159558932766177531}
+    progressBar: {fileID: 0}
   workerWorkingElement:
     layoutObject: {fileID: 5749543568763291478}
     numberText: {fileID: 6132425701781669966}
     labelText: {fileID: 2763645604211994784}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1651232272298256662}
+    progressBar: {fileID: 0}
   idleWorker:
     layoutObject: {fileID: 7953762950033356776}
     numberText: {fileID: 8531219570818015496}
     labelText: {fileID: 3652941545461074959}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 2838269469223234165}
+    progressBar: {fileID: 0}
   wasteTotal:
     layoutObject: {fileID: 150215990932619845}
     numberText: {fileID: 6638240928781874131}
     labelText: {fileID: 5434297701293883161}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1408424833526832449}
+    progressBar: {fileID: 0}
   wasteStatus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   caseworkTotal:
     layoutObject: {fileID: 3568525024143095786}
     numberText: {fileID: 4545878243636691765}
     labelText: {fileID: 2006187273724968358}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 3693267211284018673}
+    progressBar: {fileID: 0}
   caseworkStatus:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   foodUtilizationTotal:
     layoutObject: {fileID: 6164417583403077550}
     numberText: {fileID: 5009338099851263332}
     labelText: {fileID: 3679302575966960345}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 2226914646661827106}
+    progressBar: {fileID: 0}
   foodUsageSummary:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   kitchenEfficiencyScore:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   shelterUtilizationTotal:
     layoutObject: {fileID: 6606405541833025176}
     numberText: {fileID: 7581460401553848470}
     labelText: {fileID: 5520108626148675697}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1070321140294655216}
+    progressBar: {fileID: 0}
   shelterUsageSummary:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   shelterEfficiencyScore:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   workerUtilizationTotal:
     layoutObject: {fileID: 263411832588521805}
     numberText: {fileID: 2197967033243865749}
     labelText: {fileID: 2288369256827026383}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 2016031061866521236}
+    progressBar: {fileID: 0}
   workerUsageSummary:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   workerEfficiencyScore:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   assumedTotalWorkerPoolSize: 200
   maxBudget: 999999
   budgetEfficiencyTotal:
@@ -23937,18 +23689,21 @@ MonoBehaviour:
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   budgetUsageSummary:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   budgetEfficiencyScore:
     layoutObject: {fileID: 0}
     numberText: {fileID: 0}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   positiveChangeColor: {r: 0.27450982, g: 0.58431375, b: 0.2627451, a: 1}
   negativeChangeColor: {r: 0.87058824, g: 0.3254902, b: 0.1882353, a: 1}
   satisfactionValueText: {fileID: 6112667583392180010}
@@ -23981,66 +23736,77 @@ MonoBehaviour:
     labelText: {fileID: 2301539016207086320}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 8947420863196017406}
+    progressBar: {fileID: 0}
   receiptShelter:
     layoutObject: {fileID: 2530271936673915554}
     numberText: {fileID: 7452043498885438119}
     labelText: {fileID: 9208513523814148591}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1966119115584250027}
+    progressBar: {fileID: 0}
   receiptCasework:
     layoutObject: {fileID: 3217712786013580954}
     numberText: {fileID: 5589946168886836301}
     labelText: {fileID: 1437475240249468800}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 686663064012888674}
+    progressBar: {fileID: 0}
   receiptFastFood:
     layoutObject: {fileID: 3159086400638833030}
     numberText: {fileID: 3069809018720161144}
     labelText: {fileID: 931274217824375338}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 4350260171980217851}
+    progressBar: {fileID: 0}
   receiptTransport:
     layoutObject: {fileID: 5194005170186541610}
     numberText: {fileID: 6515321346528889653}
     labelText: {fileID: 3212021690226642305}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 6701775283365135030}
+    progressBar: {fileID: 0}
   receiptLodging:
     layoutObject: {fileID: 8362675937782884472}
     numberText: {fileID: 8601040258936331751}
     labelText: {fileID: 1796032895821246860}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 8205541471824477748}
+    progressBar: {fileID: 0}
   receiptWorkerRequest:
     layoutObject: {fileID: 15512064842347020}
     numberText: {fileID: 1546742926413322987}
     labelText: {fileID: 658612666605881639}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 9054364811752340691}
+    progressBar: {fileID: 0}
   receiptWorkerTraining:
     layoutObject: {fileID: 9036968844694138505}
     numberText: {fileID: 1029918563455191898}
     labelText: {fileID: 178310343488616925}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 4325641934083551064}
+    progressBar: {fileID: 0}
   receiptWorkerReleased:
     layoutObject: {fileID: 2691673175390142811}
     numberText: {fileID: 8563336544476890452}
     labelText: {fileID: 7512935797549206855}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 5101404100606887435}
+    progressBar: {fileID: 0}
   receiptOther:
     layoutObject: {fileID: 8893293047682845234}
     numberText: {fileID: 986248056764345233}
     labelText: {fileID: 4503746444903672420}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1521703512480657425}
+    progressBar: {fileID: 0}
   receiptTotal:
     layoutObject: {fileID: 4033578968191787540}
     numberText: {fileID: 5514702507642962440}
     labelText: {fileID: 0}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 350454223389097655}
+    progressBar: {fileID: 0}
   currentBudgetDisplayText: {fileID: 911824034832956347}
   liveFoodInTransit:
     layoutObject: {fileID: 7188082561242666231}
@@ -24048,60 +23814,70 @@ MonoBehaviour:
     labelText: {fileID: 7380426761948479601}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 6366018141257725055}
+    progressBar: {fileID: 0}
   liveKitchenProduction:
     layoutObject: {fileID: 6004354181431444165}
     numberText: {fileID: 6658832922677845384}
     labelText: {fileID: 2153595934921983405}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 874011164217811039}
+    progressBar: {fileID: 0}
   liveFoodWaste:
     layoutObject: {fileID: 1497022639421360522}
     numberText: {fileID: 8287897744880022821}
     labelText: {fileID: 532665015758045565}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1867320690349978382}
+    progressBar: {fileID: 0}
   liveNeedLodging:
     layoutObject: {fileID: 5360402830460430601}
     numberText: {fileID: 2946350649149602755}
     labelText: {fileID: 1834269875337971397}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 9001637878290433448}
+    progressBar: {fileID: 0}
   liveWorkersWorking:
     layoutObject: {fileID: 3262885326060756380}
     numberText: {fileID: 925740445838898096}
     labelText: {fileID: 997162145223489693}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 5296784773006952396}
+    progressBar: {fileID: 0}
   liveWorkersWaiting:
     layoutObject: {fileID: 5643944231240020055}
     numberText: {fileID: 5647055697838846576}
     labelText: {fileID: 806203127198108468}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 683663545746990850}
+    progressBar: {fileID: 0}
   liveWorkersTraining:
     layoutObject: {fileID: 5655437087369095575}
     numberText: {fileID: 3917863761160749487}
     labelText: {fileID: 2266464754834242826}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 1732867539010939620}
+    progressBar: {fileID: 0}
   liveWorkersReleasedToday:
     layoutObject: {fileID: 510154163021793637}
     numberText: {fileID: 6971170990422157445}
     labelText: {fileID: 6346906120288922215}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 4581912598805998292}
+    progressBar: {fileID: 0}
   liveNeedCasework:
     layoutObject: {fileID: 9153564422057576582}
     numberText: {fileID: 7574407444519085184}
     labelText: {fileID: 5498845607076731453}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 7870435945409272307}
+    progressBar: {fileID: 0}
   liveInTransitToCasework:
     layoutObject: {fileID: 5866705852625779294}
     numberText: {fileID: 7450724967209507136}
     labelText: {fileID: 7984846548805860397}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 5992190514045380207}
+    progressBar: {fileID: 0}
 --- !u!114 &7128823514553927590
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -27555,4 +27331,125 @@ PrefabInstance:
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 5385097897676283551, guid: 1c7a1381b3d9249a1b77595641236fc3, type: 3}
   m_PrefabInstance: {fileID: 3729843307186559879}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &5288124694697733580
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 7927713253088949116}
+    m_Modifications:
+    - target: {fileID: 2312577718977505505, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_AnchorMax.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2312577718977505505, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5958005470982472469, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_Name
+      value: BudgetSlider
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_Pivot.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_Pivot.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_AnchorMax.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_AnchorMin.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 500
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_SizeDelta.y
+      value: 26
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+--- !u!114 &1095833287942421512 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 5068273570593296836, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+  m_PrefabInstance: {fileID: 5288124694697733580}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 67db9e8f0e2ae9c40bc1e2b64352a6b4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!224 &3939166522785366893 stripped
+RectTransform:
+  m_CorrespondingSourceObject: {fileID: 9208043129307295393, guid: 19acc2f0f00450746b23fb4a93bcb04c, type: 3}
+  m_PrefabInstance: {fileID: 5288124694697733580}
   m_PrefabAsset: {fileID: 0}

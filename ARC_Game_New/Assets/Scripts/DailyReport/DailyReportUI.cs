@@ -13,6 +13,7 @@ public class SectionElement
     public TextMeshProUGUI labelText;
     public TextMeshProUGUI sentenceText;
     public CanvasGroup canvasGroup;
+    public Slider progressBar;
 }
 
 public class DailyReportUI : MonoBehaviour
@@ -585,49 +586,89 @@ public class DailyReportUI : MonoBehaviour
         F($"Efficiency Change = new_running_total - previous_running_total = {currentMetrics.finalEfficiencyValue:F1} - {prevEfficiency:F1} = {currentMetrics.costEfficiencyChangeCalculated:F1}");
     }
 
+    //IEnumerator DisplaySatisfactionSections()
+    //{
+    //    yield return StartCoroutine(AnimateSectionElement(foodDeliveryTotal, currentMetrics.satFoodScore, "Food Satisfaction"));
+    //    yield return StartCoroutine(AnimateSectionElement(foodDeliveryStatus,
+    //        $"{currentMetrics.cumFoodPacksConsumedByClients}/{currentMetrics.cumFoodPacksNeededByClients} food packs consumed by clients (cumulative)."));
+
+    //    yield return StartCoroutine(AnimateSectionElement(lodgingTotal, currentMetrics.satLodgingScore, "Lodging Satisfaction"));
+    //    yield return StartCoroutine(AnimateSectionElement(lodgingStatus,
+    //        $"{currentMetrics.cumLodgingNightsConsumed}/{currentMetrics.cumLodgingNightsNeeded} lodging-nights consumed by clients (cumulative)."));
+
+    //    yield return StartCoroutine(AnimateSectionElement(workerTotal, currentMetrics.satWorkerScore, "Worker Use Satisfaction"));
+    //    yield return StartCoroutine(AnimateSectionElement(workerStatus,
+    //        $"Idle: {currentMetrics.cumIdleWorkerRounds} | Working: {currentMetrics.cumWorkingWorkerRounds} | Training: {currentMetrics.cumTrainingWorkerRounds}"));
+    //    // worker subscores
+    //    yield return StartCoroutine(AnimateSectionElement(idleWorker, currentMetrics.workerIdleSatScore, "Idle"));
+    //    yield return StartCoroutine(AnimateSectionElement(workerWorkingElement, currentMetrics.workerWorkingSatScore, "Working"));
+    //    yield return StartCoroutine(AnimateSectionElement(workerTrainingBonusElement, currentMetrics.workerTrainingSatScore, "Training"));
+
+    //    yield return StartCoroutine(AnimateSectionElement(wasteTotal, currentMetrics.satWasteScore, "Food Waste Penalty"));
+    //    yield return StartCoroutine(AnimateSectionElement(wasteStatus,
+    //        $"{currentMetrics.cumFoodPacksWasted} of {currentMetrics.cumFoodPacksConsumedByClients + currentMetrics.cumFoodPacksWasted} food packs requested went to waste (cumulative)."));
+
+    //    yield return StartCoroutine(AnimateSectionElement(caseworkTotal, currentMetrics.satCaseworkScore, "Casework Satisfaction"));
+    //    yield return StartCoroutine(AnimateSectionElement(caseworkStatus,
+    //        $"{currentMetrics.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework, out of {currentMetrics.cumClientsRequestedCasework} clients who requested it."));
+    //}
     IEnumerator DisplaySatisfactionSections()
     {
-        yield return StartCoroutine(AnimateSectionElement(foodDeliveryTotal, currentMetrics.satFoodScore, "Food Satisfaction"));
+        yield return StartCoroutine(AnimateSectionElement(foodDeliveryTotal, currentMetrics.satFoodScore, "Food Satisfaction", 200f));
         yield return StartCoroutine(AnimateSectionElement(foodDeliveryStatus,
             $"{currentMetrics.cumFoodPacksConsumedByClients}/{currentMetrics.cumFoodPacksNeededByClients} food packs consumed by clients (cumulative)."));
 
-        yield return StartCoroutine(AnimateSectionElement(lodgingTotal, currentMetrics.satLodgingScore, "Lodging Satisfaction"));
+        yield return StartCoroutine(AnimateSectionElement(lodgingTotal, currentMetrics.satLodgingScore, "Lodging Satisfaction", 200f));
         yield return StartCoroutine(AnimateSectionElement(lodgingStatus,
             $"{currentMetrics.cumLodgingNightsConsumed}/{currentMetrics.cumLodgingNightsNeeded} lodging-nights consumed by clients (cumulative)."));
 
-        yield return StartCoroutine(AnimateSectionElement(workerTotal, currentMetrics.satWorkerScore, "Worker Use Satisfaction"));
+        yield return StartCoroutine(AnimateSectionElement(workerTotal, currentMetrics.satWorkerScore, "Worker Use Satisfaction", 200f));
         yield return StartCoroutine(AnimateSectionElement(workerStatus,
             $"Idle: {currentMetrics.cumIdleWorkerRounds} | Working: {currentMetrics.cumWorkingWorkerRounds} | Training: {currentMetrics.cumTrainingWorkerRounds}"));
-        // worker subscores
-        yield return StartCoroutine(AnimateSectionElement(idleWorker, currentMetrics.workerIdleSatScore, "Idle"));
-        yield return StartCoroutine(AnimateSectionElement(workerWorkingElement, currentMetrics.workerWorkingSatScore, "Working"));
-        yield return StartCoroutine(AnimateSectionElement(workerTrainingBonusElement, currentMetrics.workerTrainingSatScore, "Training"));
+        yield return StartCoroutine(AnimateSectionElement(idleWorker, currentMetrics.workerIdleSatScore, "Idle", 200f / 3f));
+        yield return StartCoroutine(AnimateSectionElement(workerWorkingElement, currentMetrics.workerWorkingSatScore, "Working", 200f / 3f));
+        yield return StartCoroutine(AnimateSectionElement(workerTrainingBonusElement, currentMetrics.workerTrainingSatScore, "Training", 200f / 3f));
 
-        yield return StartCoroutine(AnimateSectionElement(wasteTotal, currentMetrics.satWasteScore, "Food Waste Penalty"));
+        yield return StartCoroutine(AnimateSectionElement(wasteTotal, currentMetrics.satWasteScore, "Food Waste Penalty", 200f));
         yield return StartCoroutine(AnimateSectionElement(wasteStatus,
             $"{currentMetrics.cumFoodPacksWasted} of {currentMetrics.cumFoodPacksConsumedByClients + currentMetrics.cumFoodPacksWasted} food packs requested went to waste (cumulative)."));
 
-        yield return StartCoroutine(AnimateSectionElement(caseworkTotal, currentMetrics.satCaseworkScore, "Casework Satisfaction"));
+        yield return StartCoroutine(AnimateSectionElement(caseworkTotal, currentMetrics.satCaseworkScore, "Casework Satisfaction", 200f));
         yield return StartCoroutine(AnimateSectionElement(caseworkStatus,
             $"{currentMetrics.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework, out of {currentMetrics.cumClientsRequestedCasework} clients who requested it."));
     }
 
     IEnumerator DisplayEfficiencySections()
     {
-        yield return StartCoroutine(AnimateSectionElement(foodUtilizationTotal, currentMetrics.costFoodScore, "Food Cost Efficiency"));
+        yield return StartCoroutine(AnimateSectionElement(foodUtilizationTotal, currentMetrics.costFoodScore, "Food Cost Efficiency", 1000f / 3f));
         yield return StartCoroutine(AnimateSectionElement(foodUsageSummary,
             $"${currentMetrics.cumFoodSpend:F0} spent, {currentMetrics.cumFoodPacksConsumedByClients} packs consumed (cumulative)."));
-       
 
-        yield return StartCoroutine(AnimateSectionElement(shelterUtilizationTotal, currentMetrics.costLodgingScore, "Lodging Cost Efficiency"));
+        yield return StartCoroutine(AnimateSectionElement(shelterUtilizationTotal, currentMetrics.costLodgingScore, "Lodging Cost Efficiency", 1000f / 3f));
         yield return StartCoroutine(AnimateSectionElement(shelterUsageSummary,
             $"${currentMetrics.cumLodgingSpend:F0} spent, {currentMetrics.cumLodgingNightsConsumed} nights used (cumulative)."));
 
-
-        yield return StartCoroutine(AnimateSectionElement(workerUtilizationTotal, currentMetrics.costWorkerScore, "Worker Cost Efficiency"));
+        yield return StartCoroutine(AnimateSectionElement(workerUtilizationTotal, currentMetrics.costWorkerScore, "Worker Cost Efficiency", 1000f / 3f));
         yield return StartCoroutine(AnimateSectionElement(workerUsageSummary,
             $"${(currentMetrics.cumWorkerRequestCost + currentMetrics.cumWorkerTrainingCost):F0} spent over {currentMetrics.cumWorkingWorkerRounds} working-rounds."));
     }
+
+    //IEnumerator DisplayEfficiencySections()
+    //{
+    //    yield return StartCoroutine(AnimateSectionElement(foodUtilizationTotal, currentMetrics.costFoodScore, "Food Cost Efficiency"));
+    //    yield return StartCoroutine(AnimateSectionElement(foodUsageSummary,
+    //        $"${currentMetrics.cumFoodSpend:F0} spent, {currentMetrics.cumFoodPacksConsumedByClients} packs consumed (cumulative)."));
+       
+
+    //    yield return StartCoroutine(AnimateSectionElement(shelterUtilizationTotal, currentMetrics.costLodgingScore, "Lodging Cost Efficiency"));
+    //    yield return StartCoroutine(AnimateSectionElement(shelterUsageSummary,
+    //        $"${currentMetrics.cumLodgingSpend:F0} spent, {currentMetrics.cumLodgingNightsConsumed} nights used (cumulative)."));
+
+
+    //    yield return StartCoroutine(AnimateSectionElement(workerUtilizationTotal, currentMetrics.costWorkerScore, "Worker Cost Efficiency"));
+    //    yield return StartCoroutine(AnimateSectionElement(workerUsageSummary,
+    //        $"${(currentMetrics.cumWorkerRequestCost + currentMetrics.cumWorkerTrainingCost):F0} spent over {currentMetrics.cumWorkingWorkerRounds} working-rounds."));
+    //}
 
     //receipt
     IEnumerator DisplayReceiptSection()
@@ -746,23 +787,88 @@ public class DailyReportUI : MonoBehaviour
         currentBudgetDisplayText.text = $"${budget:N0}";
     }
     // end bottom curr status
-    IEnumerator AnimateSectionElement(SectionElement element, float numberValue, string labelValue)
+    //IEnumerator AnimateSectionElement(SectionElement element, float numberValue, string labelValue)
+    //{
+    //    if (element == null || element.layoutObject == null) yield break;
+
+    //    // Update content
+    //    if (element.numberText != null)
+    //    {
+    //        yield return StartCoroutine(AnimateNumberText(element.numberText, 0f, numberValue));
+    //    }
+
+    //    if (element.labelText != null)
+    //    {
+    //        element.labelText.text = labelValue;
+    //    }
+
+    //    // Fade in the entire layout
+    //    yield return StartCoroutine(FadeInElement(element));
+    //}
+    /// <summary>
+    /// Same as the existing AnimateSectionElement(element, numberValue, labelValue), but also
+    /// animates element.progressBar (if assigned) from 0 to numberValue/maxValue.
+    /// maxValue is the ceiling for this specific subscore — e.g. 200 for a satisfaction
+    /// subscore weighted at 0.2 (0.2 * 1000), or 333.33 for a cost-efficiency subscore
+    /// weighted at 1/3 (1/3 * 1000).
+    /// </summary>
+    IEnumerator AnimateSectionElement(SectionElement element, float numberValue, string labelValue, float maxValue)
     {
         if (element == null || element.layoutObject == null) yield break;
 
-        // Update content
         if (element.numberText != null)
         {
-            yield return StartCoroutine(AnimateNumberText(element.numberText, 0f, numberValue));
+            yield return StartCoroutine(AnimateNumberTextWithBar(element.numberText, element.progressBar, 0f, numberValue, maxValue));
+        }
+        else if (element.progressBar != null)
+        {
+            yield return StartCoroutine(AnimateBarOnly(element.progressBar, 0f, numberValue, maxValue));
         }
 
         if (element.labelText != null)
-        {
             element.labelText.text = labelValue;
+
+        yield return StartCoroutine(FadeInElement(element));
+    }
+
+    IEnumerator AnimateNumberTextWithBar(TextMeshProUGUI numberText, Slider bar, float fromValue, float toValue, float maxValue)
+    {
+        if (bar != null) bar.value = Mathf.Clamp01(fromValue / maxValue);
+
+        float elapsed = 0f;
+        while (elapsed < numberCountDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float progress = elapsed / numberCountDuration;
+            float currentValue = Mathf.Lerp(fromValue, toValue, progress);
+
+            string sign = currentValue >= 0 ? "+" : "";
+            numberText.text = $"{sign}{currentValue:F0}";
+            numberText.color = currentValue >= 0 ? positiveChangeColor : negativeChangeColor;
+
+            if (bar != null) bar.value = Mathf.Clamp01(currentValue / maxValue);
+
+            yield return null;
         }
 
-        // Fade in the entire layout
-        yield return StartCoroutine(FadeInElement(element));
+        string finalSign = toValue >= 0 ? "+" : "";
+        numberText.text = $"{finalSign}{toValue:F0}";
+        numberText.color = toValue >= 0 ? positiveChangeColor : negativeChangeColor;
+        if (bar != null) bar.value = Mathf.Clamp01(toValue / maxValue);
+    }
+
+    IEnumerator AnimateBarOnly(Slider bar, float fromValue, float toValue, float maxValue)
+    {
+        bar.value = Mathf.Clamp01(fromValue / maxValue);
+        float elapsed = 0f;
+        while (elapsed < numberCountDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float currentValue = Mathf.Lerp(fromValue, toValue, elapsed / numberCountDuration);
+            bar.value = Mathf.Clamp01(currentValue / maxValue);
+            yield return null;
+        }
+        bar.value = Mathf.Clamp01(toValue / maxValue);
     }
 
     IEnumerator AnimateSectionElement(SectionElement element, string sentenceValue)
@@ -1020,40 +1126,40 @@ public class DailyReportUI : MonoBehaviour
 
     void SetAllStoredSectionValues(DailyReportMetrics metrics)
     {
-        SetSectionValueFormatted(foodDeliveryTotal, metrics.satFoodScore);
+        SetSectionValueFormatted(foodDeliveryTotal, metrics.satFoodScore, 200);
         // SetSectionSentence(foodDeliveryStatus, $"{metrics.cumFoodPacksConsumedByClients}/{metrics.cumFoodPacksNeededByClients} food packs delivered to clients (cumulative).");
         SetSectionSentence(foodDeliveryStatus, $"{metrics.cumFoodPacksConsumedByClients}/{metrics.cumFoodPacksNeededByClients} food packs consumed by clients (cumulative).");
 
-        SetSectionValueFormatted(lodgingTotal, metrics.satLodgingScore);
+        SetSectionValueFormatted(lodgingTotal, metrics.satLodgingScore, 200);
         // SetSectionSentence(lodgingStatus, $"{metrics.cumLodgingNightsConsumed}/{metrics.cumLodgingNightsNeeded} lodging-nights provided (cumulative).");
         SetSectionSentence(lodgingStatus, $"{metrics.cumLodgingNightsConsumed}/{metrics.cumLodgingNightsNeeded} lodging-nights consumed by clients (cumulative).");
 
-        SetSectionValueFormatted(workerTotal, metrics.satWorkerScore);
+        SetSectionValueFormatted(workerTotal, metrics.satWorkerScore, 200);
         // worker subscores
         SetSectionValueFormatted(idleWorker, metrics.workerIdleSatScore);
         SetSectionValueFormatted(workerWorkingElement, metrics.workerWorkingSatScore);
         SetSectionValueFormatted(workerTrainingBonusElement, metrics.workerTrainingSatScore);
 
-        SetSectionValueFormatted(wasteTotal, metrics.satWasteScore);
+        SetSectionValueFormatted(wasteTotal, metrics.satWasteScore, 200);
         // SetSectionSentence(wasteStatus, $"{metrics.cumFoodPacksWasted} food pack(s) wasted (cumulative).");
         SetSectionSentence(wasteStatus, $"{metrics.cumFoodPacksWasted} of {metrics.cumFoodPacksConsumedByClients + metrics.cumFoodPacksWasted} food packs requested went to waste (cumulative).");
 
-        SetSectionValueFormatted(caseworkTotal, metrics.satCaseworkScore);
+        SetSectionValueFormatted(caseworkTotal, metrics.satCaseworkScore, 200);
         // SetSectionSentence(caseworkStatus, $"{metrics.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework.");
         SetSectionSentence(caseworkStatus, $"{metrics.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework, out of {metrics.cumClientsRequestedCasework} clients who requested it.");
 
         SetSectionValueFormatted(foodUtilizationTotal, metrics.costFoodScore);
         SetSectionSentence(foodUsageSummary, $"${metrics.cumFoodSpend:F0} spent, {metrics.cumFoodPacksConsumedByClients} packs consumed.");
-        SetSectionValueFormatted(kitchenEfficiencyScore, metrics.costFoodScore);
+        SetSectionValueFormatted(kitchenEfficiencyScore, metrics.costFoodScore, 333);
 
         SetSectionValueFormatted(shelterUtilizationTotal, metrics.costLodgingScore);
         SetSectionSentence(shelterUsageSummary, $"${metrics.cumLodgingSpend:F0} spent, {metrics.cumLodgingNightsConsumed} nights used.");
-        SetSectionValueFormatted(shelterEfficiencyScore, metrics.costLodgingScore);
+        SetSectionValueFormatted(shelterEfficiencyScore, metrics.costLodgingScore, 333);
 
-        SetSectionValueFormatted(workerUtilizationTotal, metrics.costWorkerScore);
+        SetSectionValueFormatted(workerUtilizationTotal, metrics.costWorkerScore, 333);
         // SetSectionSentence(workerUsageSummary, $"${(metrics.cumWorkerRequestCost + metrics.cumWorkerTrainingCost):F0} spent over {metrics.cumWorkingWorkerRounds} working-rounds.");
         SetSectionSentence(workerStatus, $"Idle: {metrics.cumIdleWorkerRounds} | Working: {metrics.cumWorkingWorkerRounds} | Training: {metrics.cumTrainingWorkerRounds}");
-        SetSectionValueFormatted(workerEfficiencyScore, metrics.costWorkerScore);
+        SetSectionValueFormatted(workerEfficiencyScore, metrics.costWorkerScore, 333);
 
         float totalCostEff = metrics.costFoodScore + metrics.costLodgingScore + metrics.costWorkerScore;
         SetSectionValueFormatted(budgetEfficiencyTotal, totalCostEff);
@@ -1148,19 +1254,25 @@ public class DailyReportUI : MonoBehaviour
     void SetSectionValueFormatted(SectionElement element, float value)
     {
         if (element == null || element.numberText == null) return;
-        
+
         string sign = value >= 0 ? "+" : "";
         // element.numberText.text = $"{sign}{value:F1}";
         element.numberText.text = $"{sign}{value:F0}";
-        
+
         // Set color based on positive/negative
         element.numberText.color = value >= 0 ? positiveChangeColor : negativeChangeColor;
-        
+
         // Make visible
         if (element.canvasGroup != null)
             element.canvasGroup.alpha = 1f;
         if (element.layoutObject != null)
             element.layoutObject.SetActive(true);
+    }
+    void SetSectionValueFormatted(SectionElement element, float value, float maxValue)
+    {
+        SetSectionValueFormatted(element, value);
+        if (element?.progressBar != null)
+            element.progressBar.value = Mathf.Clamp01(value / maxValue);
     }
 
     //receipt
