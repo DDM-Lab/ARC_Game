@@ -139,15 +139,21 @@ public class ServerLauncherUI : MonoBehaviour
         if (Application.platform == RuntimePlatform.WebGLPlayer)
             urlField.text = DefaultServerUrl();   // always same-origin for hosted builds
         else
-            urlField.text = PlayerPrefs.GetString(PREFS_URL, DEFAULT_URL);
+            urlField.text = NonBlank(PlayerPrefs.GetString(PREFS_URL, DEFAULT_URL), DEFAULT_URL);
 
         // In the browser, don't pre-fill a dev key — make users enter their own.
         string defaultKey = (Application.platform == RuntimePlatform.WebGLPlayer) ? "" : DEFAULT_KEY;
-        keyField.text = PlayerPrefs.GetString(PREFS_KEY, defaultKey);
+        keyField.text = NonBlank(PlayerPrefs.GetString(PREFS_KEY, defaultKey), defaultKey);
 
         // A config requested via ?config=... is auto-selected after the fetch.
         desiredConfig = UrlParam("config");
     }
+
+    /// <summary>A stored-but-blank pref must not beat the default: SavePrefs writes whatever
+    /// is in the box, so one Connect with an empty field persists "" and every later launch
+    /// starts blank.</summary>
+    static string NonBlank(string value, string fallback)
+        => string.IsNullOrWhiteSpace(value) ? fallback : value;
 
     void SavePrefs(string configName)
     {
@@ -423,14 +429,17 @@ public class ServerLauncherUI : MonoBehaviour
 
     static TMP_InputField MakeInput(Transform parent, string defaultText, bool password)
     {
+        // SafeInputField, not TMP_InputField: clicking a field with no laid-out line throws
+        // out of TMP's caret lookup before the field activates, which presents as "I can't
+        // type in this box". See SafeInputField for the full path.
         var go = new GameObject("InputField",
                                 typeof(RectTransform), typeof(Image),
-                                typeof(LayoutElement), typeof(TMP_InputField));
+                                typeof(LayoutElement), typeof(SafeInputField));
         go.transform.SetParent(parent, false);
         go.GetComponent<Image>().color = new Color(0.08f, 0.09f, 0.11f, 1f);
         go.GetComponent<LayoutElement>().preferredHeight = 40;
 
-        var input = go.GetComponent<TMP_InputField>();
+        var input = go.GetComponent<SafeInputField>();
 
         // Text Area child (required by TMP_InputField)
         var ta = new GameObject("TextArea",

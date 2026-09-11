@@ -36,13 +36,36 @@ public class CoraSaveLoad : MonoBehaviour
     FileIOBridge bridge;
     bool busy;
 
+    /// <summary>Draw the on-screen Save/Load buttons. The hotkeys alone are not enough:
+    /// macOS reserves F9/F10 for Mission Control and media unless the user has turned on
+    /// "Use F1, F2, etc. as standard function keys", and a browser can take Ctrl+S before the
+    /// WebGL canvas sees it. A button cannot be intercepted by either.</summary>
+    public bool showButtons = true;
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Install()
     {
         if (Instance != null) return;
+        if (Application.isBatchMode) return;      // headless/gym drives save_state over TCP
         var go = new GameObject("[CoraSaveLoad]");
         DontDestroyOnLoad(go);
         Instance = go.AddComponent<CoraSaveLoad>();
+        Debug.Log("[CoraSaveLoad] installed — F9/Ctrl+S saves a .cora, F10/Ctrl+O loads one, "
+                + "or use the on-screen buttons (top right).");
+    }
+
+    void OnGUI()
+    {
+        if (!showButtons) return;
+        const float w = 92f, h = 24f, pad = 8f;
+        float x = Screen.width - (w * 2 + pad * 2);
+        // Depth far in front of the game UI; OnGUI is drawn over the scene regardless, but
+        // this keeps it above any other IMGUI a debug panel might draw.
+        GUI.depth = -1000;
+        GUI.enabled = !busy;
+        if (GUI.Button(new Rect(x, pad, w, h), busy ? "…" : "Save .cora")) SaveToFile();
+        if (GUI.Button(new Rect(x + w + pad, pad, w, h), busy ? "…" : "Load .cora")) LoadFromFile();
+        GUI.enabled = true;
     }
 
     void Awake()
