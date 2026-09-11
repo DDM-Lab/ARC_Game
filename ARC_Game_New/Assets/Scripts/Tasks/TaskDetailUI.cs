@@ -696,6 +696,12 @@ public class TaskDetailUI : MonoBehaviour
 
         if (task.isExpired) { errorMessage = "This task has expired and can no longer be completed."; return false; }
 
+        if (task.agentChoices != null && task.agentChoices.Count > 0 && choice == null)
+        {
+            errorMessage = "Please select a choice before confirming.";
+            return false;
+        }
+
         string numError;
         if (!ValidateNumericalInputs(out numError)) { errorMessage = numError; return false; }
 
@@ -717,6 +723,12 @@ public class TaskDetailUI : MonoBehaviour
         if (currentTask.isExpired)
         {
             ShowAgentErrorMessage("This task has expired and can no longer be completed.");
+            return;
+        }
+
+        if (currentTask.agentChoices != null && currentTask.agentChoices.Count > 0 && selectedChoice == null)
+        {
+            ShowAgentErrorMessage("Please select a choice before confirming.");
             return;
         }
 
