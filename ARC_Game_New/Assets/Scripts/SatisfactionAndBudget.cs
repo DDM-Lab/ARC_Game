@@ -9,11 +9,13 @@ public class SatisfactionAndBudget : MonoBehaviour
     [Header("Satisfaction Settings")]
     [Range(0f, 100f)]
     public float currentSatisfaction = 50f;
-    public float maxSatisfaction = 100f;
+    public float maxSatisfaction = 1000f;
     public float minSatisfaction = 0f;
-    
+
     [Header("Efficiency Settings")]
     public float currentEfficiency = 0f;
+    public float minEfficiency = 0f;
+    public float maxEfficiency = 1000f;   
 
     [Header("Budget Settings")]
     public int currentBudget = 10000;
@@ -46,8 +48,9 @@ public class SatisfactionAndBudget : MonoBehaviour
     [Header("Config Loading")]
     public bool useExternalConfig = true;
     public GameConfigLoader configLoader;
+ 
 
-    
+
     // Events for other systems to listen to
     public event Action<float> OnSatisfactionChanged;
     public event Action<int> OnBudgetChanged;
@@ -315,14 +318,14 @@ public class SatisfactionAndBudget : MonoBehaviour
     }
 
     // ===== EFFICIENCY METHODS =====
-
+    public event Action<float> OnEfficiencyChanged;
     /// <summary>
     /// Add resource allocation efficiency score (called by DailyReportUI at end of day).
     /// </summary>
     public void AddEfficiency(float amount, string description = "")
     {
         float previousValue = currentEfficiency;
-        currentEfficiency += amount;
+        currentEfficiency = Mathf.Clamp(currentEfficiency + amount, minEfficiency, maxEfficiency); // was: currentEfficiency += amount;
 
         if (string.IsNullOrEmpty(description))
             description = GetDefaultEfficiencyDescription(amount);
@@ -336,6 +339,8 @@ public class SatisfactionAndBudget : MonoBehaviour
         UpdateEfficiencyValueText();
         if (feedbackEffects == null && efficiencySlider != null)
             efficiencySlider.value = currentEfficiency;
+
+        OnEfficiencyChanged?.Invoke(currentEfficiency);   // NEW
 
         if (showDebugInfo)
             Debug.Log($"Efficiency: {previousValue:F1} → {currentEfficiency:F1} ({amount:+0.0;-0.0}) - {description}");
