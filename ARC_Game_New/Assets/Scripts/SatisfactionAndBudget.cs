@@ -324,13 +324,15 @@ public class SatisfactionAndBudget : MonoBehaviour
         float previousValue = currentEfficiency;
         currentEfficiency += amount;
 
-        // Show feedback effects
-        if (feedbackEffects != null && Mathf.Abs(amount) > 0.01f)
-        {
-            feedbackEffects.ShowEfficiencyChange(previousValue, currentEfficiency);
-        }
+        if (string.IsNullOrEmpty(description))
+            description = GetDefaultEfficiencyDescription(amount);
 
-        // Update text directly; slider is animated by feedback effects
+        if (MetricsHistoryManager.Instance != null)
+            MetricsHistoryManager.Instance.RecordResourceEfficiencyChange(amount, description);
+
+        if (feedbackEffects != null && Mathf.Abs(amount) > 0.01f)
+            feedbackEffects.ShowEfficiencyChange(previousValue, currentEfficiency);
+
         UpdateEfficiencyValueText();
         if (feedbackEffects == null && efficiencySlider != null)
             efficiencySlider.value = currentEfficiency;
@@ -338,6 +340,14 @@ public class SatisfactionAndBudget : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Efficiency: {previousValue:F1} → {currentEfficiency:F1} ({amount:+0.0;-0.0}) - {description}");
         GameLogPanel.Instance?.LogMetricsChange($"Efficiency: {previousValue:F1} → {currentEfficiency:F1} ({amount:+0.0;-0.0}) - {description}");
+    }
+
+    private string GetDefaultEfficiencyDescription(float amount)
+    {
+        int currentRound = (GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 1) + 1;
+        if (amount > 0) return $"Round {currentRound} - Efficiency gain";
+        if (amount < 0) return $"Round {currentRound} - Efficiency loss";
+        return $"Round {currentRound}";
     }
 
     public float GetCurrentEfficiency() => currentEfficiency;
@@ -494,6 +504,8 @@ public class SatisfactionAndBudget : MonoBehaviour
         GameLogPanel.Instance.LogDebug($"Cannot afford {budgetPrefix}{cost:N0} - Current budget: {budgetPrefix}{currentBudget:N0}");
         return false;
     }
+
+    //=
     
     // ===== GETTER METHODS =====
     
