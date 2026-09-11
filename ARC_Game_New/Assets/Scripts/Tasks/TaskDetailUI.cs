@@ -1473,6 +1473,15 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
         errorMessage = null;
         if (task == null) { errorMessage = "No task selected."; return false; }
         if (task.isExpired) { errorMessage = "This task has expired and can no longer be completed."; return false; }
+        // From origin/main-bugfixes 2238e799: a task offering choices cannot be confirmed
+        // until one is selected. Folded INTO this helper rather than inlined at each call
+        // site (as upstream does) so all three confirm paths get it -- the manual path, the
+        // agent path, and the programmatic one -- instead of only the two upstream patched.
+        if (task.agentChoices != null && task.agentChoices.Count > 0 && choice == null)
+        {
+            errorMessage = "Please select a choice before confirming.";
+            return false;
+        }
         string numError;
         if (!ValidateNumericalInputs(out numError)) { errorMessage = numError; return false; }
         if (choice != null && (choice.triggersDelivery || choice.immediateDelivery || choice.enableMultipleDeliveries))

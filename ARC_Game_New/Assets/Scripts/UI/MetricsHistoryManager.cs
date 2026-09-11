@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System.Collections.Generic;
+using System.Collections;
 using System;
 
 [System.Serializable]
@@ -71,7 +72,14 @@ public class MetricsHistoryManager : MonoBehaviour
     public Color negativeColor = Color.red;
     public Color activeTabColor = Color.green;
     public Color inactiveTabColor = Color.white;
-    
+
+    [Header("Live Score Sliders")]
+    public Slider satisfactionTabSlider;
+    public TextMeshProUGUI satisfactionTabValueText;
+
+    public Slider resourceEfficiencyTabSlider;
+    public TextMeshProUGUI resourceEfficiencyTabValueText;
+
     [Header("Debug")]
     public bool showDebugInfo = true;
     
@@ -110,6 +118,7 @@ public class MetricsHistoryManager : MonoBehaviour
         SetupUI();
         InitializeHistory();
         SubscribeToEvents();
+        StartCoroutine(SyncInitialSliderValues());
 
         // Start closed - panel and mask both hidden
         if (metricsPanel != null)
@@ -144,21 +153,37 @@ public class MetricsHistoryManager : MonoBehaviour
         if (showDebugInfo)
             Debug.Log("Metrics history initialized for Day 1");
     }
-    
+
+    //void SubscribeToEvents()
+    //{
+    //    if (SatisfactionAndBudget.Instance != null)
+    //    {
+    //        SatisfactionAndBudget.Instance.OnSatisfactionChanged += OnSatisfactionChanged;
+    //        SatisfactionAndBudget.Instance.OnBudgetChanged += OnBudgetChanged;
+    //    }
+
+    //    if (GlobalClock.Instance != null)
+    //    {
+    //        GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
+    //        GlobalClock.Instance.OnDayChanged += OnDayChanged;
+    //    }
+    //}
     void SubscribeToEvents()
     {
         if (SatisfactionAndBudget.Instance != null)
         {
             SatisfactionAndBudget.Instance.OnSatisfactionChanged += OnSatisfactionChanged;
             SatisfactionAndBudget.Instance.OnBudgetChanged += OnBudgetChanged;
+            SatisfactionAndBudget.Instance.OnEfficiencyChanged += OnEfficiencyChangedHandler; // NEW
         }
-        
+
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
             GlobalClock.Instance.OnDayChanged += OnDayChanged;
         }
     }
+
 
     void OnDayChanged(int newDay)
     {
@@ -281,12 +306,46 @@ public class MetricsHistoryManager : MonoBehaviour
                 break;
         }
     }
-    
+
+    //void OnSatisfactionChanged(float newValue)
+    //{
+    //    // Handled through RecordSatisfactionChange
+    //}
     void OnSatisfactionChanged(float newValue)
     {
-        // Handled through RecordSatisfactionChange
+        UpdateSatisfactionTabSlider(newValue);
     }
-    
+
+    void OnEfficiencyChangedHandler(float newValue)
+    {
+        UpdateEfficiencyTabSlider(newValue);
+    }
+
+    void UpdateSatisfactionTabSlider(float value)
+    {
+        if (satisfactionTabSlider != null)
+            satisfactionTabSlider.value = Mathf.Clamp01(value / 1000f);
+        if (satisfactionTabValueText != null)
+            satisfactionTabValueText.text = $"{value:F0}/1000";
+    }
+
+    void UpdateEfficiencyTabSlider(float value)
+    {
+        if (resourceEfficiencyTabSlider != null)
+            resourceEfficiencyTabSlider.value = Mathf.Clamp01(value / 1000f);
+        if (resourceEfficiencyTabValueText != null)
+            resourceEfficiencyTabValueText.text = $"{value:F0}/1000";
+    }
+
+    IEnumerator SyncInitialSliderValues()
+    {
+        while (SatisfactionAndBudget.Instance == null)
+            yield return null;
+
+        UpdateSatisfactionTabSlider(SatisfactionAndBudget.Instance.GetCurrentSatisfaction());
+        UpdateEfficiencyTabSlider(SatisfactionAndBudget.Instance.GetCurrentEfficiency());
+    }
+
     void OnBudgetChanged(int newValue)
     {
         // Handled through RecordBudgetChange
@@ -434,15 +493,16 @@ public class MetricsHistoryManager : MonoBehaviour
     {
         return currentDayHistory;
     }
-    
+
     void OnDestroy()
     {
         if (SatisfactionAndBudget.Instance != null)
         {
             SatisfactionAndBudget.Instance.OnSatisfactionChanged -= OnSatisfactionChanged;
             SatisfactionAndBudget.Instance.OnBudgetChanged -= OnBudgetChanged;
+            SatisfactionAndBudget.Instance.OnEfficiencyChanged -= OnEfficiencyChangedHandler; // NEW
         }
-        
+
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
