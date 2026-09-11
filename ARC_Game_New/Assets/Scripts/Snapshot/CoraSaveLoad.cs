@@ -52,29 +52,25 @@ public class CoraSaveLoad : MonoBehaviour
         DontDestroyOnLoad(gameObject);
     }
 
-    IEnumerator Start()
-    {
-        // A snapshot queued before the reload is applied here, once the reloaded scene's
-        // Awake/Start chain has re-established Day 1 and re-applied the config. Two frames
-        // is what the gym's reset waits for the same reason.
-        if (pendingRestore != null)
-        {
-            yield return null;
-            yield return null;
-            var snap = pendingRestore;
-            pendingRestore = null;
-            ApplyRestore(snap);
-        }
-    }
-
     void Update()
     {
-        if (!hotkeysEnabled || busy) return;
+        if (!hotkeysEnabled) return;
+        CheckFunctionKeys();
+        if (busy) return;
         bool mod = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)
                 || Input.GetKey(KeyCode.LeftCommand) || Input.GetKey(KeyCode.RightCommand);
         if (!mod) return;
         if (Input.GetKeyDown(KeyCode.S)) SaveToFile();
         else if (Input.GetKeyDown(KeyCode.O)) LoadFromFile();
+    }
+
+    void CheckFunctionKeys()
+    {
+        // F9/F10 as well: in WebGL the browser may take Ctrl+S for "save page" before the
+        // canvas sees it, and then the modifier chord silently does nothing.
+        if (busy) return;
+        if (Input.GetKeyDown(KeyCode.F9)) SaveToFile();
+        else if (Input.GetKeyDown(KeyCode.F10)) LoadFromFile();
     }
 
     // ── save ──────────────────────────────────────────────────────────────────────────
@@ -182,8 +178,20 @@ public class CoraSaveLoad : MonoBehaviour
         AsyncOperation op = SceneManager.LoadSceneAsync(buildIndex, LoadSceneMode.Single);
         while (op != null && !op.isDone) yield return null;
 
-        // Start() applies `pendingRestore` after the reloaded scene settles. Restoring here
-        // instead would write over singletons that have not finished their Awake chain.
+        // APPLY HERE, NOT IN Start(). This object is DontDestroyOnLoad, so it is not
+        // recreated by the reload and its Start() already ran once at install time -- it
+        // would never fire again, and the queued snapshot would sit unapplied while the
+        // player watched the game silently restart at Day 1.
+        //
+        // Two frames first, so the reloaded scene's Awake/Start chain has re-established the
+        // clock and re-applied the config before the snapshot is written over it. This is
+        // the same wait, for the same reason, as the gym's reset.
+        yield return null;
+        yield return null;
+
+        var snap = pendingRestore;
+        pendingRestore = null;
+        if (snap != null) ApplyRestore(snap);
         busy = false;
     }
 

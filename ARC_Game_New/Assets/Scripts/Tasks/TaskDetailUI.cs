@@ -3018,12 +3018,12 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                                 }
                                 else if (currentTask.taskTag == TaskTag.Food)
                                 {
-                                    DailyReportData.Instance.RecordFoodSpendCumulative(impact.value);
+                                    DailyReportData.Instance.RecordFoodSpendCumulative(costToday);
                                     DailyReportData.Instance.RecordFastFoodSpendToday(costToday);
                                 }
                                 else if (currentTask.taskTag == TaskTag.Lodging)
                                 {
-                                    DailyReportData.Instance.RecordLodgingSpendCumulative(impact.value);
+                                    DailyReportData.Instance.RecordLodgingSpendCumulative(costToday);
                                 }
                             }
                             ToastManager.ShowToast(

@@ -270,22 +270,20 @@ public class DailyReportUI : MonoBehaviour
         currentMetrics = metrics;
         currentDayDisplay.text = GlobalClock.Instance.currentDay.ToString();
 
-        // Sync running totals from authoritative source before computing this day's delta
-        if (SatisfactionAndBudget.Instance != null)
+
+        if (DailyReportData.Instance != null)
         {
-            // The report works on a 0-1000 scale; the authoritative values are 0-100. Seed the
-            // "previous" values on the report's scale so the day's change is real (BUG_REPORTS B34).
-            currentSatisfaction = SatisfactionAndBudget.Instance.GetCurrentSatisfaction() * 10f;
-            currentEfficiency = SatisfactionAndBudget.Instance.GetCurrentEfficiency() * 10f;
+            // ON THE REPORT'S SCALE. The report reads 0-1000 (`{currentSatisfaction:F0}/1000`,
+            // bar = value/1000) while the authoritative field these come from is 0-100, so
+            // seeding them raw makes the day's reported change wrong by 10x -- BUG_REPORTS
+            // B34, which this merge would otherwise have reintroduced.
+            currentSatisfaction = DailyReportData.Instance.GetDayStartSatisfaction() * 10f;
+            currentEfficiency = DailyReportData.Instance.GetDayStartEfficiency() * 10f;
         }
 
         UpdateBottomPanels(metrics);
-
         SaveCompletedReportToHistory();
 
-        // Record everything immediately — do NOT wait for the animation coroutine below.
-        // This must complete synchronously before returning, since on Day 8
-        // DailyReportManager sends all logs to the server right after this call returns.
         LogDailyReportAsDisplayed();
         LogDailyReportScoreFormulas();
         BuildingStatusTableUI.Instance?.LogTableContents(GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1);
@@ -595,13 +593,13 @@ public class DailyReportUI : MonoBehaviour
     {
         yield return StartCoroutine(AnimateSectionElement(foodDeliveryTotal, currentMetrics.satFoodScore, "Food Satisfaction"));
         yield return StartCoroutine(AnimateSectionElement(foodDeliveryStatus,
-            $"{currentMetrics.cumFoodPacksConsumedByClients}/{currentMetrics.cumFoodPacksNeededByClients} net food packs consumed by clients."));
+            $"{currentMetrics.cumFoodPacksConsumedByClients}/{currentMetrics.cumFoodPacksNeededByClients} food packs consumed by clients (cumulative)."));
 
         yield return StartCoroutine(AnimateSectionElement(lodgingTotal, currentMetrics.satLodgingScore, "Lodging Satisfaction"));
         yield return StartCoroutine(AnimateSectionElement(lodgingStatus,
             $"{currentMetrics.cumLodgingNightsConsumed}/{currentMetrics.cumLodgingNightsNeeded} lodging-nights consumed by clients (cumulative)."));
 
-        yield return StartCoroutine(AnimateSectionElement(workerTotal, currentMetrics.satWorkerScore, "Worker Satisfaction"));
+        yield return StartCoroutine(AnimateSectionElement(workerTotal, currentMetrics.satWorkerScore, "Worker Use Satisfaction"));
         yield return StartCoroutine(AnimateSectionElement(workerStatus,
             $"Idle: {currentMetrics.cumIdleWorkerRounds} | Working: {currentMetrics.cumWorkingWorkerRounds} | Training: {currentMetrics.cumTrainingWorkerRounds}"));
         // worker subscores
@@ -615,24 +613,24 @@ public class DailyReportUI : MonoBehaviour
 
         yield return StartCoroutine(AnimateSectionElement(caseworkTotal, currentMetrics.satCaseworkScore, "Casework Satisfaction"));
         yield return StartCoroutine(AnimateSectionElement(caseworkStatus,
-            $"{currentMetrics.cumClientRoundsAwaitingCasework} net rounds clients awaited casework, out of {currentMetrics.cumClientsRequestedCasework} clients who requested it."));
+            $"{currentMetrics.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework, out of {currentMetrics.cumClientsRequestedCasework} clients who requested it."));
     }
 
     IEnumerator DisplayEfficiencySections()
     {
         yield return StartCoroutine(AnimateSectionElement(foodUtilizationTotal, currentMetrics.costFoodScore, "Food Cost Efficiency"));
         yield return StartCoroutine(AnimateSectionElement(foodUsageSummary,
-            $"${currentMetrics.cumFoodSpend:F0} spent, {currentMetrics.cumFoodPacksConsumedByClients} net meals consumed."));
+            $"${currentMetrics.cumFoodSpend:F0} spent, {currentMetrics.cumFoodPacksConsumedByClients} packs consumed (cumulative)."));
        
 
         yield return StartCoroutine(AnimateSectionElement(shelterUtilizationTotal, currentMetrics.costLodgingScore, "Lodging Cost Efficiency"));
         yield return StartCoroutine(AnimateSectionElement(shelterUsageSummary,
-            $"${currentMetrics.cumLodgingSpend:F0} spent, {currentMetrics.cumLodgingNightsConsumed} net nights used."));
+            $"${currentMetrics.cumLodgingSpend:F0} spent, {currentMetrics.cumLodgingNightsConsumed} nights used (cumulative)."));
 
 
         yield return StartCoroutine(AnimateSectionElement(workerUtilizationTotal, currentMetrics.costWorkerScore, "Worker Cost Efficiency"));
         yield return StartCoroutine(AnimateSectionElement(workerUsageSummary,
-            $"${(currentMetrics.cumWorkerRequestCost + currentMetrics.cumWorkerTrainingCost):F0} spent over {currentMetrics.cumWorkingWorkerRounds} networking rounds."));
+            $"${(currentMetrics.cumWorkerRequestCost + currentMetrics.cumWorkerTrainingCost):F0} spent over {currentMetrics.cumWorkingWorkerRounds} working-rounds."));
     }
 
     //receipt
@@ -933,9 +931,10 @@ public class DailyReportUI : MonoBehaviour
     /// </summary>
     void SaveCompletedReportToHistory()
     {
-        //NEW
         if (DailyReportData.Instance == null || currentMetrics == null)
             return;
+
+        var d = DailyReportData.Instance;
 
         currentMetrics.foodCompletionBonus = CalculateFoodCompletionBonus();
         currentMetrics.foodOnTimeBonus = CalculateFoodOnTimeBonus();
@@ -949,67 +948,57 @@ public class DailyReportUI : MonoBehaviour
         currentMetrics.workerEfficiencyScore = CalculateWorkerUtilizationScore();
         currentMetrics.budgetEfficiencyScore = CalculateBudgetEfficiencyScore();
 
-        float newSatisfaction = CalculateLiveSatisfactionScore() * 1000f; 
-        float newEfficiency = CalculateLiveCostEfficiencyScore() * 1000f;
-        float sFood = S_Food(), sLodging = S_Lodging(), sWorker = S_WorkerUse(), sWaste = S_Waste(), sCasework = S_Casework();
+        int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
 
-        const float wSat = 0.2f;
-        currentMetrics.satFoodScore     = sFood     * wSat * 1000f;
-        currentMetrics.satLodgingScore  = sLodging  * wSat * 1000f;
-        currentMetrics.satWorkerScore   = sWorker   * wSat * 1000f;
-        // worker subscores
-        var (idleScore, workingScore, trainingScore) = GetWorkerSatisfactionComponents();
+        float freshSat = d.ComputeFreshSatisfactionTotal();
+        float freshEff = d.ComputeFreshEfficiencyTotal();
+
+        float satBefore = SatisfactionAndBudget.Instance.GetCurrentSatisfaction();
+        float effBefore = SatisfactionAndBudget.Instance.GetCurrentEfficiency();
+
+        SatisfactionAndBudget.Instance?.AddSatisfaction(freshSat - satBefore, $"Day {currentDay} report (waste + reconciliation)");
+        SatisfactionAndBudget.Instance?.AddEfficiency(freshEff - effBefore, $"Day {currentDay} report (reconciliation)");
+
+        d.SyncAppliedScoresToFresh();
+
+
+        currentMetrics.satFoodScore = d.S_Food() * 0.2f * 1000f;
+        currentMetrics.satLodgingScore = d.S_Lodging() * 0.2f * 1000f;
+        currentMetrics.satWorkerScore = d.S_WorkerUse() * 0.2f * 1000f;
+        currentMetrics.satWasteScore = d.S_Waste() * 0.2f * 1000f;
+        currentMetrics.satCaseworkScore = d.S_Casework() * 0.2f * 1000f;
+
+        var (idleScore, workingScore, trainingScore) = d.GetWorkerSatisfactionComponents();
         currentMetrics.workerIdleSatScore = idleScore;
         currentMetrics.workerWorkingSatScore = workingScore;
         currentMetrics.workerTrainingSatScore = trainingScore;
-        currentMetrics.satWasteScore    = sWaste    * wSat * 1000f;
-        currentMetrics.satCaseworkScore = sCasework * wSat * 1000f;
 
-        float cFood = C_Food(), cLodging = C_Lodging(), cWorker = C_Worker();
-        const float wCost = 1f / 3f;
-        currentMetrics.costFoodScore    = cFood    * wCost * 1000f;
-        currentMetrics.costLodgingScore = cLodging * wCost * 1000f;
-        currentMetrics.costWorkerScore  = cWorker  * wCost * 1000f;
+        currentMetrics.costFoodScore = d.C_Food() * (1f / 3f) * 1000f;
+        currentMetrics.costLodgingScore = d.C_Lodging() * (1f / 3f) * 1000f;
+        currentMetrics.costWorkerScore = d.C_Worker() * (1f / 3f) * 1000f;
 
-        currentMetrics.costEfficiencyChangeCalculated = newEfficiency - currentEfficiency;
+        currentMetrics.finalSatisfactionValue = SatisfactionAndBudget.Instance.GetCurrentSatisfaction();
+        currentMetrics.finalEfficiencyValue = SatisfactionAndBudget.Instance.GetCurrentEfficiency();   
+        currentMetrics.satisfactionChangeCalculated = currentMetrics.finalSatisfactionValue - currentSatisfaction;
+        currentMetrics.costEfficiencyChangeCalculated = currentMetrics.finalEfficiencyValue - currentEfficiency;
 
-        currentMetrics.satisfactionChangeCalculated = newSatisfaction - currentSatisfaction;
-        currentMetrics.finalSatisfactionValue = newSatisfaction;
-        currentMetrics.finalEfficiencyValue = newEfficiency;
-        var d = DailyReportData.Instance;
+        currentMetrics.liveSatisfactionScore = currentMetrics.finalSatisfactionValue / 1000f;
+        currentMetrics.liveCostEfficiencyScore = currentMetrics.finalEfficiencyValue / 1000f;
 
         currentMetrics.cumFoodPacksConsumedByClients = d.GetCumulativeFoodPacksConsumedByClients();
         currentMetrics.cumFoodPacksNeededByClients = d.GetCumulativeFoodPacksNeededByClients();
-        currentMetrics.cumFoodPacksWasted = d.GetCumulativeFoodPacksWasted(); 
-
+        currentMetrics.cumFoodPacksWasted = d.GetCumulativeFoodPacksWasted();
         currentMetrics.cumIdleWorkerRounds = d.GetCumulativeIdleWorkerRounds();
         currentMetrics.cumWorkingWorkerRounds = d.GetCumulativeWorkingWorkerRounds();
         currentMetrics.cumTrainingWorkerRounds = d.GetCumulativeTrainingWorkerRounds();
-
         currentMetrics.cumClientRoundsAwaitingCasework = d.GetCumulativeClientRoundsAwaitingCasework();
         currentMetrics.cumClientsRequestedCasework = d.GetCumulativeClientsRequestedCasework();
-
         currentMetrics.cumLodgingNightsConsumed = d.GetCumulativeLodgingNightsConsumed();
         currentMetrics.cumLodgingNightsNeeded = d.GetCumulativeLodgingNightsNeeded();
-
         currentMetrics.cumFoodSpend = d.GetCumulativeFoodSpend();
         currentMetrics.cumLodgingSpend = d.GetCumulativeLodgingSpend();
         currentMetrics.cumWorkerRequestCost = d.GetCumulativeWorkerRequestCost();
         currentMetrics.cumWorkerTrainingCost = d.GetCumulativeWorkerTrainingCost();
-
-        currentMetrics.liveSatisfactionScore = newSatisfaction / 1000f; 
-        currentMetrics.liveCostEfficiencyScore = newEfficiency / 1000f;
-
-        int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
-
-        // The authoritative satisfaction/efficiency fields are on a 0-100 scale (the human
-        // slider + the officer game_state read them). newSatisfaction/newEfficiency above are
-        // the report's DISPLAY-scale score (0..1 * 10000). Pushing (display - current) as a
-        // delta blew currentSatisfaction to ~6001. Set the authoritative field to the live
-        // score on its native 0-100 scale instead (SetSatisfaction clamps to [0,100]).
-        SatisfactionAndBudget.Instance?.SetSatisfaction(CalculateLiveSatisfactionScore() * 100f);
-        SatisfactionAndBudget.Instance?.SetEfficiency(CalculateLiveCostEfficiencyScore() * 100f);
-
 
         currentMetrics.foodSatisfaction = CalculateFoodSatisfactionTotal();
         currentMetrics.lodgingSatisfaction = CalculateLodgingSatisfactionTotal();
@@ -1019,18 +1008,9 @@ public class DailyReportUI : MonoBehaviour
         currentMetrics.workerEfficiency = CalculateWorkerUtilizationTotal();
         currentMetrics.budgetEfficiency = CalculateBudgetEfficiencyScore();
 
-        // Save to history
-        DailyReportData.Instance.SaveReportToHistory(currentDay, currentMetrics);
-        //END NEW
+        d.SaveReportToHistory(currentDay, currentMetrics);
 
-        // Note: player-facing game-log entries are recorded by LogDailyReportAsDisplayed(),
-        // called once the report has finished animating onto screen — see AnimateReportDisplay().
-        // That reads the actual rendered UI text rather than raw metric fields here, so it can
-        // never drift out of sync with what the player is shown (some of these currentMetrics
-        // fields, e.g. foodCompletionBonus/foodOnTimeBonus/foodDelayScore, are computed for
-        // backward compatibility but are not displayed anywhere in the current UI).
-
-        Debug.Log($"Saved completed report for Day {currentDay} to history (pre-computed final sat={currentMetrics.finalSatisfactionValue:F1}, eff={currentMetrics.finalEfficiencyValue:F1})");
+        Debug.Log($"Saved completed report for Day {currentDay} to history (final sat={currentMetrics.finalSatisfactionValue:F1}, eff={currentMetrics.finalEfficiencyValue:F1})");
     }
 
     // =========================================================================
@@ -1377,97 +1357,6 @@ public class DailyReportUI : MonoBehaviour
     /// </summary>
     float CalculateWorkerTrainingBonus() { return currentMetrics.workersReceivingTraining * 3f; }
 
-    //NEW
-    // =========================================================================
-    // satisfaction subscores (cummulative)
-    // =========================================================================
-
-    float S_Food()
-    {
-        var d = DailyReportData.Instance;
-        int needed = d.GetCumulativeFoodPacksNeededByClients();
-        if (needed <= 0) return 1f;
-        return Mathf.Clamp01((float)d.GetCumulativeFoodPacksConsumedByClients() / needed);
-    }
-
-    float S_Lodging()
-    {
-        var d = DailyReportData.Instance;
-        int needed = d.GetCumulativeLodgingNightsNeeded();
-        if (needed <= 0) return 1f;
-        return Mathf.Clamp01((float)d.GetCumulativeLodgingNightsConsumed() / needed);
-    }
-
-    float S_WorkerUse()
-    {
-        var d = DailyReportData.Instance;
-        int roundsElapsed = d.GetCumulativeRoundsElapsed();
-        if (roundsElapsed <= 0) return 0f;
-
-        // Normalise by the LIVE pool (sum over rounds of workers that existed), not an assumed 200 (BUG_REPORTS B23).
-        float denom = Mathf.Max(1, d.GetCumulativeWorkerPoolRounds());
-
-        float idleRatio = d.GetCumulativeIdleWorkerRounds() / denom;
-        float workingRatio = d.GetCumulativeWorkingWorkerRounds() / denom;
-        float trainingRatio = d.GetCumulativeTrainingWorkerRounds() / denom;
-
-        const float wIdle = 1f / 3f, wWorking = 1f / 3f, wTraining = 1f / 3f;
-        return (1f - idleRatio) * wIdle + (workingRatio * wWorking) + (trainingRatio * wTraining);
-    }
-
-    // Get worker satisfaction components (idle, working, training) for display in UI
-    (float idle, float working, float training) GetWorkerSatisfactionComponents()
-    {
-        var d = DailyReportData.Instance;
-        int roundsElapsed = d.GetCumulativeRoundsElapsed();
-        if (roundsElapsed <= 0) return (0f, 0f, 0f);
-
-        // Normalise by the LIVE pool (sum over rounds of workers that existed), not an assumed 200 (BUG_REPORTS B23).
-        float denom = Mathf.Max(1, d.GetCumulativeWorkerPoolRounds());
-        float idleRatio = d.GetCumulativeIdleWorkerRounds() / denom;
-        float workingRatio = d.GetCumulativeWorkingWorkerRounds() / denom;
-        float trainingRatio = d.GetCumulativeTrainingWorkerRounds() / denom;
-
-        const float wIdle = 1f / 3f, wWorking = 1f / 3f, wTraining = 1f / 3f;
-        const float wSat = 0.2f;
-
-        float idleScore     = (1f - idleRatio) * wIdle     * wSat * 1000f;
-        float workingScore  = workingRatio     * wWorking  * wSat * 1000f;
-        float trainingScore = trainingRatio    * wTraining * wSat * 1000f;
-
-        return (idleScore, workingScore, trainingScore);
-    }
-
-    float S_Waste()
-    {
-        var d = DailyReportData.Instance;
-        int used = d.GetCumulativeFoodPacksConsumedByClients();
-        int wasted = d.GetCumulativeFoodPacksWasted();
-        int requested = used + wasted; 
-
-        if (requested <= 0) return 1f; 
-        return (float)wasted / requested; 
-    }
-
-    float S_Casework()
-    {
-        var d = DailyReportData.Instance;
-        int requested = d.GetCumulativeClientsRequestedCasework();
-        if (requested <= 0 || GameDataManager.Instance == null) return 1f;
-        int denom = GameDataManager.Instance.InitialGameDays * GameDataManager.Instance.InitialRoundsPerDay * requested;
-        if (denom <= 0) return 1f;
-
-        return Mathf.Clamp01(1f - ((float)d.GetCumulativeClientRoundsAwaitingCasework() / denom));
-    }
-
-    float CalculateLiveSatisfactionScore()
-    {
-        const float wFood = 0.2f, wLodging = 0.2f, wWorker = 0.2f, wWaste = 0.2f, wCasework = 0.2f;
-        return S_Food() * wFood + S_Lodging() * wLodging + S_WorkerUse() * wWorker
-             + S_Waste() * wWaste + S_Casework() * wCasework;
-    }
-
-    //END NEW
 
     // =========================================================================
     // EFFICIENCY SCORE CALCULATIONS
@@ -1527,80 +1416,6 @@ public class DailyReportUI : MonoBehaviour
         return CalculateFoodUtilizationTotal() + CalculateShelterUtilizationTotal() + CalculateWorkerUtilizationTotal() + CalculateBudgetEfficiencyTotal();
     }
 
-//NEW
-// =========================================================================
-// cost-eff new scores
-// =========================================================================
-
-    float C_Food()
-    {
-        var d = DailyReportData.Instance;
-        int consumed = d.GetCumulativeFoodPacksConsumedByClients();
-        if (consumed <= 0) return 0f;
-
-        float raw = d.GetCumulativeFoodSpend() / consumed;
-
-        var gdm = GameDataManager.Instance;
-        var bs = FindObjectOfType<BuildingSystem>();
-        int mapSpots = bs != null ? bs.RegisteredSites.Count : 0; 
-        int days = gdm.InitialGameDays;
-        float totalBudget = maxBudget;
-
-        float min = (float)bs.kitchenConstructionCost / (gdm.InitialKitchenFoodCapacity * days);
-        float max = Mathf.Max(bs.kitchenConstructionCost * mapSpots * days, totalBudget);
-
-        return Mathf.Clamp01(1f - (raw - min) / (max - min));
-    }
-
-    float C_Lodging()
-    {
-        var d = DailyReportData.Instance;
-        var gdm = GameDataManager.Instance;
-
-        float nightsConsumed = d.GetCumulativeLodgingNightsConsumed(); 
-        if (nightsConsumed <= 0f) return 0f;
-
-        float raw = d.GetCumulativeLodgingSpend() / nightsConsumed;
-
-        var bs = FindObjectOfType<BuildingSystem>();
-        int mapSpots = bs != null ? bs.RegisteredSites.Count : 0; 
-        int days = gdm.InitialGameDays;
-        float totalBudget = maxBudget;
-
-        float min = (float)bs.shelterConstructionCost / (gdm.InitialShelterCapacity * days);
-        float max = Mathf.Max(bs.shelterConstructionCost * mapSpots * days, totalBudget);
-
-        return Mathf.Clamp01(1f - (raw - min) / (max - min));
-    }
-
-    float C_Worker()
-    {
-        var d = DailyReportData.Instance;
-        int workingRounds = d.GetCumulativeWorkingWorkerRounds();
-        if (workingRounds <= 0) return 0f;
-
-        float raw = (d.GetCumulativeWorkerTrainingCost() + d.GetCumulativeWorkerRequestCost()) / workingRounds;
-
-        var gdm = GameDataManager.Instance;
-        var wrs = FindObjectOfType<WorkerRequestSystem>();
-        var wts = FindObjectOfType<WorkerTrainingSystem>();
-        float untrainedCost = wrs != null ? wrs.untrainedWorkerCost : 100f;
-        float trainedCost   = wrs != null ? wrs.trainedWorkerCost   : 100f;
-        float trainingCost = wts != null ? wts.trainingCostPerWorker : 100f;
-        float min = untrainedCost;
-        float totalBudget = maxBudget;
-        float maxCostWorkforceUnit = Mathf.Max(untrainedCost, Mathf.Max(trainedCost/2f, (untrainedCost+trainingCost)/2f));
-        float max = Mathf.Max(assumedTotalWorkerPoolSize*maxCostWorkforceUnit, totalBudget);
-
-        return Mathf.Clamp01(1f - (raw - min) / (max - min));
-    }
-
-    float CalculateLiveCostEfficiencyScore()
-    {
-        const float wFood = 1f / 3f, wLodging = 1f / 3f, wWorker = 1f / 3f;
-        return C_Food() * wFood + C_Lodging() * wLodging + C_Worker() * wWorker;
-    }
-    //END NEW
 
     // =========================================================================
     // TEXT GENERATION METHODS
