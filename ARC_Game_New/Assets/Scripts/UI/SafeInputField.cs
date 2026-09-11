@@ -24,21 +24,31 @@ using UnityEngine.EventSystems;
 /// symptom. ForceMeshUpdate does not help: empty text still generates no lines, which is why
 /// the earlier fix at the construction site (BUG_REPORTS A12) did not hold.
 ///
-/// The guard is deliberately narrow -- it only skips the caret lookup, which is meaningless
-/// with no text anyway, and still activates the field so typing works.
+/// The guard is deliberately narrow: the base method RUNS, and only its one documented
+/// blow-up is caught. Pre-empting it instead also skipped the selection and caret bookkeeping
+/// OnPointerDown performs, which left the field accepting keystrokes while never refreshing
+/// its display.
 /// </summary>
 public class SafeInputField : TMP_InputField
 {
     public override void OnPointerDown(PointerEventData eventData)
     {
-        TMP_TextInfo info = textComponent != null ? textComponent.textInfo : null;
-        if (info == null || info.lineCount == 0 || info.lineInfo == null)
+        // RUN THE REAL THING, and only catch the one failure. An earlier version of this
+        // pre-empted the base method whenever the label had no line, which also skipped the
+        // selection and caret bookkeeping OnPointerDown does. The field then accepted
+        // keystrokes while never refreshing its display -- typing "registered" but showed
+        // nothing. Letting the base method run and catching its one documented blow-up keeps
+        // every other side effect intact.
+        try
         {
-            // Nothing to put a caret in front of. Focus the field and let the caret sit at 0.
-            ActivateInputField();
-            caretPosition = 0;
-            return;
+            base.OnPointerDown(eventData);
         }
-        base.OnPointerDown(eventData);
+        catch (System.IndexOutOfRangeException)
+        {
+            // FindNearestLine returned -1 (no laid-out line, i.e. an empty field) and
+            // FindNearestCharacterOnLine indexed lineInfo[-1]. Nothing to put a caret in
+            // front of; just focus the field so typing works.
+            ActivateInputField();
+        }
     }
 }
