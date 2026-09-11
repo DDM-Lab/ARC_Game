@@ -140,6 +140,13 @@ public class GameLogPanel : MonoBehaviour
         public bool dataCollectionEnabled = true;
     }
 
+    // Set on OnApplicationQuit (fires before the object-teardown cascade begins, both on a
+    // real quit and when stopping Play mode in the Editor). Guards AddLogMessage so nothing
+    // tries StartCoroutine on a component that's mid-destruction — Instance?.LogXxx(...) call
+    // sites elsewhere don't reliably short-circuit on a destroyed-but-not-yet-null Unity Object
+    // via the ?. operator, so the guard has to live here rather than at each call site.
+    private static bool isQuitting = false;
+
     private void Awake()
     {
         if (Instance == null)
@@ -150,6 +157,17 @@ public class GameLogPanel : MonoBehaviour
         {
             Destroy(gameObject);
         }
+    }
+
+    private void OnApplicationQuit()
+    {
+        isQuitting = true;
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+            Instance = null;
     }
 
     private void Start()
@@ -239,6 +257,9 @@ public class GameLogPanel : MonoBehaviour
 
     void AddLogMessage(string content, LogMessageType type, LogCategory category)
     {
+        if (isQuitting)
+            return;
+
         if (!DataCollectionEnabled)
             return;
 
