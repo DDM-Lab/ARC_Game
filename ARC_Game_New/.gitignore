@@ -152,3 +152,4 @@ plugins/*/
 
 # Plugin persist store (durable runtime state)
 data/
+rhea_pull_20260911/
