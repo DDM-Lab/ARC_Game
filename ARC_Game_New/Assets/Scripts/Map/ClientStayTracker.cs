@@ -324,8 +324,38 @@ public class ClientStayTracker : MonoBehaviour
             group.currentFacility.GetComponent<BuildingResourceStorage>()?.RemoveResource(ResourceType.Population, departing);
         }
 
+        if (departing > 0)
+        {
+            string facilityDisplayName = GetFacilityDisplayName(group.currentFacility);
+            GameLogPanel.Instance.LogBuildingStatus($"{departing} clients departed voluntarily from {facilityDisplayName} (no casework needed)");
+            ShowDepartureAlert(group, departing, facilityDisplayName);
+        }
+
         group.clientCount -= departing;
         group.clientsWithoutCaseworkNeed = 0;
+    }
+
+    /// <summary>
+    /// Simple, dismiss-only popup telling the player that clients left a shelter/motel on their
+    /// own (no casework needed, so nothing else would otherwise surface this). Reuses the same
+    /// Alert-task pipeline WeatherReportSystem uses for the daily weather report — no new UI.
+    /// </summary>
+    void ShowDepartureAlert(ClientGroup group, int departing, string facilityDisplayName)
+    {
+        if (TaskSystem.Instance == null || AlertUIController.Instance == null) return;
+
+        GameTask alert = TaskSystem.Instance.CreateTask(
+            "Clients Departed",
+            TaskType.Alert,
+            group.currentFacility?.name ?? "Unknown Facility",
+            $"{departing} clients left {facilityDisplayName} on their own.");
+
+        alert.taskOfficer = TaskOfficer.LodgingMassCare;
+        alert.agentMessages = new List<AgentMessage>();
+        alert.agentMessages.Add(new AgentMessage(
+            $"{departing} client(s) at {facilityDisplayName} have left on their own after finishing their stay. No casework was needed for this group."));
+
+        AlertUIController.Instance.ShowAlert(alert);
     }
 
     /// <summary>
@@ -546,5 +576,33 @@ public class ClientStayTracker : MonoBehaviour
             RegisterClientArrival(shelters[0], 3, "Test Family");
             Debug.Log($"Added test clients to {shelters[0].name}");
         }
+    }
+
+    /// <summary>
+    /// Fires TriggerNonCaseworkDeparture immediately on a synthetic 3-client group, bypassing the
+    /// normal 4-8 round wait, so the departure alert popup can be verified on demand instead of
+    /// waiting a day or two of real play. Does not touch clientGroups — no side effects on real
+    /// tracked groups.
+    /// </summary>
+    [ContextMenu("Test: Force Caseworkless Departure Alert")]
+    public void TestForceCaseworklessDeparture()
+    {
+        Building[] shelters = FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Shelter).ToArray();
+        if (shelters.Length == 0)
+        {
+            Debug.LogWarning("No shelters found to test departure");
+            return;
+        }
+
+        Building shelter = shelters[0];
+        BuildingResourceStorage storage = shelter.GetComponent<BuildingResourceStorage>();
+        storage?.AddResource(ResourceType.Population, 3); // so RemoveResource below has something real to remove
+
+        ClientGroup testGroup = new ClientGroup(nextGroupId++, "Test_Departure_Group", 3, shelter, currentRound, 0f, 0, 0);
+        testGroup.clientsWithCaseworkNeed = 0;
+        testGroup.clientsWithoutCaseworkNeed = 3;
+
+        TriggerNonCaseworkDeparture(testGroup);
+        Debug.Log($"Forced a caseworkless departure alert at {shelter.name} for testing");
     }
 }

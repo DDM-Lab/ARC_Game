@@ -11,9 +11,13 @@ using System;
 ///
 /// Clients relocate under their own mobility — no Vehicle is ever used here
 /// (vehicles are reserved for food delivery). The queued relocation path
-/// (Execute) has clients depart immediately and arrive after a configurable
-/// number of rounds. The immediate/emergency path (ExecuteImmediate) is
-/// unaffected and stays a zero-delay teleport.
+/// (Execute / ExecuteToSpecificDestination) has clients depart immediately and
+/// arrive after a configurable number of rounds; the parent task is marked
+/// Completed as soon as the decision is queued rather than waiting for that
+/// arrival, since the task's own time limit can otherwise expire mid-walk and
+/// wrongly auto-fail a task the player already responded to. The
+/// immediate/emergency path (ExecuteImmediate) is unaffected and stays a
+/// zero-delay teleport.
 ///
 /// Example: Community B has 30 ppl.
 ///   Shelter 1: 20/20 (full)         → skip
@@ -171,7 +175,15 @@ public class ClientRelocationHandler : MonoBehaviour
         }
 
         if (anyCreated)
-            TaskSystem.Instance.SetTaskInProgress(parentTask);
+        {
+            // Mark the task finished as soon as the decision is queued, not once clients
+            // physically arrive — self-walk takes relocationDelayRounds rounds, and the task's
+            // own time limit can expire before that arrival happens (e.g. a 2-round task
+            // decided on round 1, with a 2-round walk still ahead of it), which was wrongly
+            // auto-failing tasks the player had already responded to. The walk itself is
+            // unaffected and continues in the background (see HandleRoundEnd/FinalizeRelocation).
+            TaskSystem.Instance.CompleteTask(parentTask);
+        }
         else
             Debug.LogWarning($"[ClientRelocationTaskGenerator] Could not create any relocations for '{parentTask.taskTitle}'");
 
@@ -201,7 +213,9 @@ public class ClientRelocationHandler : MonoBehaviour
         if (removed <= 0) return false;
 
         QueueSelfWalk(parentTask, source, destination, removed);
-        TaskSystem.Instance.SetTaskInProgress(parentTask);
+        // See the matching comment in Execute() above — completed immediately on decision,
+        // not on arrival, so the task's own time limit can't race the self-walk.
+        TaskSystem.Instance.CompleteTask(parentTask);
         return true;
     }
 
@@ -279,13 +293,10 @@ public class ClientRelocationHandler : MonoBehaviour
 
         OnRelocationArrived?.Invoke(r);
 
-        // Complete the parent task once all of its self-walk relocations have arrived.
-        if (r.parentTask != null
-            && r.parentTask.status == TaskStatus.InProgress
-            && !pendingRelocations.Any(p => p.parentTask == r.parentTask))
-        {
-            TaskSystem.Instance.CompleteTask(r.parentTask);
-        }
+        // Note: the parent task is already marked Completed back when the relocation was
+        // queued (see Execute()/ExecuteToSpecificDestination()) — arrival here is purely
+        // physical (moving the population, registering the stay) and no longer gates task
+        // completion.
     }
 
     // ─────────────────────────────────────────────────────────────────
