@@ -462,12 +462,18 @@ public class GlobalClock : MonoBehaviour
         
         // Pause Unity's time again for player interaction phase
         Time.timeScale = 0f;
-        
-        // Advance to next time segment
-        AdvanceTimeSegment();
 
+        // Finalize everything tied to the round that just ended (self-walk client arrivals,
+        // construction/deconstruction progress, delayed budget, etc.) BEFORE advancing the
+        // segment. Round-triggered task generation (TaskSystem.OnRoundChanged) listens for the
+        // segment change right after this, so anything that lands here — e.g. clients who
+        // self-walked in during this round — is now actually present in time to be picked up
+        // by that same round's checks, instead of arriving one step too late to count.
         //OnRoundEnd?.Invoke();
         SafeInvokeStatic(OnRoundEnd);
+
+        // Advance to next time segment
+        AdvanceTimeSegment();
 
         // Enable player interactions
         EnablePlayerInteractions();

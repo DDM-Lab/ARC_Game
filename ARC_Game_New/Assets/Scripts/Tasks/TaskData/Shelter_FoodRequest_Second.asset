@@ -49,6 +49,7 @@ MonoBehaviour:
   workforceTriggers: []
   facilityStatusTriggers: []
   weatherTriggers: []
+  latestGenerationRound: 0
   requireAllTriggers: 1
   isGlobalTask: 0
   targetFacilityType: 1
@@ -76,11 +77,6 @@ MonoBehaviour:
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0
-  - messageText: We can also plan ahead by fulfilling their follow-up request now,
-      or provide only what they need for the current round.
-    agentAvatar: {fileID: 0}
-    useTypingEffect: 1
-    typingSpeed: 0
   agentChoices:
   - choiceId: 0
     choiceText: Fulfill [food_amount] food packs for the current round.
@@ -99,11 +95,11 @@ MonoBehaviour:
     sourceType: 1
     sourceBuilding: 0
     sourcePrebuilt: 0
-    specificSourceName:
+    specificSourceName: 
     destinationType: 3
     destinationBuilding: 1
     destinationPrebuilt: 0
-    specificDestinationName:
+    specificDestinationName: 
     budgetDelayRounds: 0
     prioritizeNearestSource: 1
     prioritizeNearestDestination: 0

@@ -5976,6 +5976,10 @@ PrefabInstance:
       propertyPath: m_AnchoredPosition.y
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 672746602581531575, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 674544615912781597, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchorMax.y
       value: 0
@@ -6611,6 +6615,10 @@ PrefabInstance:
     - target: {fileID: 1798366240108520906, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchoredPosition.y
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1853401471262206584, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 1924719766296074900, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchorMax.y
@@ -66212,6 +66220,7 @@ GameObject:
   - component: {fileID: 978749007}
   - component: {fileID: 978749006}
   - component: {fileID: 978749005}
+  - component: {fileID: 978749008}
   m_Layer: 0
   m_Name: TaskSystem
   m_TagString: Untagged
@@ -66450,6 +66459,24 @@ MonoBehaviour:
   taskSystem: {fileID: 978748996}
   workerSystem: {fileID: 550057045}
   taskDetailUI: {fileID: 978748999}
+  showDebugInfo: 1
+--- !u!114 &978749008
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 978748995}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c35be885c255bf4e80ec7448402cc27, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  communityFoodRequestTask: {fileID: 11400000, guid: f6d71222fa0fe7640acde3729f7509d5, type: 2}
+  depletionAmount: 100
+  depletionChancePerRound: 0.2
+  lastEligibleRound: 3
+  firstEligibleDay: 2
   showDebugInfo: 1
 --- !u!1 &986312716
 GameObject:
