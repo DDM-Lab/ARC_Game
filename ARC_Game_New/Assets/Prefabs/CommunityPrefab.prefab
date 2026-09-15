@@ -137,7 +137,7 @@ MonoBehaviour:
   fillFoodToCapacityDaily: 0
   enablePopulationBasedConsumption: 0
   foodPerPersonPerNRounds: 1
-  consumptionRoundInterval: 4
+  consumptionRoundInterval: 2
   workersConsumeFoodToo: 0
   showDebugInfo: 1
 --- !u!114 &8140164214645353103

@@ -636,12 +636,23 @@ public class GlobalClock : MonoBehaviour
         RewardMetricsTracker.Instance?.OnRoundEnded();
         SnapshotDebug.Mark("endSim:afterMetrics");
 
-        // Advance to next time segment
-        AdvanceTimeSegment();
-        SnapshotDebug.Mark("endSim:afterAdvanceSegment");
-
+        // Finalize everything tied to the round that just ended (self-walk client arrivals,
+        // construction/deconstruction progress, delayed budget, etc.) BEFORE advancing the
+        // segment. Round-triggered task generation (TaskSystem.OnRoundChanged) listens for the
+        // segment change right after this, so anything that lands here — e.g. clients who
+        // self-walked in during this round — is now actually present in time to be picked up
+        // by that same round's checks, instead of arriving one step too late to count.
         SafeInvokeStatic(OnRoundEnd);
         SnapshotDebug.Mark("endSim:afterOnRoundEnd");
+
+        // Advance to next time segment -- AFTER the round-end finalize above, per
+        // origin/main-bugfixes e85fe2c9. Ours used to advance first; upstream moved it so a
+        // client who self-walks in during the round is present before TaskSystem.OnRoundChanged
+        // reacts to the segment change. NOTE FOR THE SURROGATE: this reorders the endSim
+        // SnapshotDebug marks (afterOnRoundEnd now precedes afterAdvanceSegment), which is a
+        // real within-round sequencing change the lockstep port has to follow.
+        AdvanceTimeSegment();
+        SnapshotDebug.Mark("endSim:afterAdvanceSegment");
 
         // Enable player interactions
         EnablePlayerInteractions();
