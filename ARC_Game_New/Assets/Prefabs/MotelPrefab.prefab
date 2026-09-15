@@ -130,9 +130,10 @@ MonoBehaviour:
   startingResources: []
   startingFoodPacks: 0
   enableFoodWaste: 1
+  fillFoodToCapacityDaily: 0
   enablePopulationBasedConsumption: 1
   foodPerPersonPerNRounds: 1
-  consumptionRoundInterval: 4
+  consumptionRoundInterval: 2
   workersConsumeFoodToo: 0
   showDebugInfo: 1
 --- !u!114 &8654362891323091995
