@@ -71,6 +71,17 @@ public class FoodDeliveryHandler : MonoBehaviour
                 return false;
             }
 
+            // Some choices (e.g. "deliver double") must be fully coverable rather than just
+            // partially helped — otherwise they'd silently under-deliver relative to what the
+            // player asked for. totalEffective already excludes meals reserved for other
+            // deliveries, so a shortfall here can mean either not enough raw stock or enough
+            // stock but most of it already scheduled elsewhere.
+            if (choice.requireFullQuantity && totalEffective < effectiveNeed)
+            {
+                errorMessage = $"Not enough food across all kitchens for this request (some meals may already be scheduled for other deliveries). Available: {totalEffective}, Required: {effectiveNeed}";
+                return false;
+            }
+
             // At least one vehicle must be capable
             bool hasVehicle = FindObjectsOfType<Vehicle>()
                 .Any(v => v.GetAllowedCargoTypes().Contains(ResourceType.FoodPacks)
@@ -263,7 +274,7 @@ public class FoodDeliveryHandler : MonoBehaviour
     /// uses the fixed deliveryQuantity value as authored (Percentage/All aren't meaningful for food,
     /// which draws from many kitchens rather than one source, so they fall back to Fixed here).
     /// </summary>
-    int ResolveQuantity(AgentChoice choice, MonoBehaviour destination)
+    public int ResolveQuantity(AgentChoice choice, MonoBehaviour destination)
     {
         if (choice.quantityType == DeliveryQuantityType.PopulationBased)
         {

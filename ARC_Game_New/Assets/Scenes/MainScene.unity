@@ -66387,7 +66387,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   trainWorkerButton: {fileID: 1864253045}
-  trainingCostPerWorker: 300
+  trainingCostPerWorker: 500
   trainingDurationDays: 1
   satisfactionPerTrainedWorker: 2
   taskSystem: {fileID: 978748996}
@@ -66407,7 +66407,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   requestWorkersButton: {fileID: 1831715209}
-  untrainedWorkerCost: 200
+  untrainedWorkerCost: 300
   untrainedArrivalDays: 1
   trainedWorkerCost: 1000
   trainedArrivalDays: 1
