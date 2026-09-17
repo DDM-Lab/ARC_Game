@@ -50,6 +50,9 @@ public class DailyReportData : MonoBehaviour
 
     private int todayWorkersReleased = 0;
 
+    private int todayLodgingRequested = 0;
+    private int todayLodgingSatisfied = 0;
+
     [Header("Score Assumptions")]
     public int assumedTotalWorkerPoolSize = 40;
     public float maxEmergencyFunding = 600000f;
@@ -322,6 +325,9 @@ public class DailyReportData : MonoBehaviour
 
         todayWorkersReleased = 0;
         todayCommunityFoodDemand = 0;
+
+        todayLodgingRequested = 0;
+        todayLodgingSatisfied = 0;
     }
 
     //NEW
@@ -440,6 +446,11 @@ public class DailyReportData : MonoBehaviour
         todayCommunityFoodDemand += amount;
         cumulativeCommunityFoodDemand += amount;
     }
+
+    public void RecordLodgingRequestedToday(int amount) => todayLodgingRequested += amount;
+    public void RecordLodgingSatisfiedToday(int amount) => todayLodgingSatisfied += amount;
+    public int GetTodayLodgingRequested() => todayLodgingRequested;
+    public int GetTodayLodgingSatisfied() => todayLodgingSatisfied;
 
     public int GetTodayCommunityFoodDemand() => todayCommunityFoodDemand;
     public int GetCumulativeCommunityFoodDemand() => cumulativeCommunityFoodDemand;
@@ -1052,7 +1063,9 @@ public class DailyReportData : MonoBehaviour
             .Count();
         
         Debug.Log($"[DailyReport] Workers hired today: {metrics.newWorkersHired}, Workers in training: {metrics.workersInTraining}, Food in storage: {metrics.currentFoodInStorage}");
-        
+
+        metrics.lodgingRequestedToday = todayLodgingRequested;
+        metrics.lodgingSatisfiedToday = todayLodgingSatisfied;
         return metrics;
     }
     

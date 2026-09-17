@@ -1674,6 +1674,12 @@ public class TaskSystem : MonoBehaviour
         newTask.deliveryTimeLimit = taskData.deliveryTimeLimit;
         newTask.deliveryFailureSatisfactionPenalty = taskData.deliveryFailureSatisfactionPenalty;
 
+        if (newTask.taskTag == TaskTag.Lodging)
+        {
+            int clients = newTask.impacts.FirstOrDefault(i => i.impactType == ImpactType.Clients)?.value ?? 0;
+            DailyReportData.Instance?.RecordLodgingRequestedToday(clients);
+        }
+
         activeTasks.Add(newTask);
         OnTaskCreated?.Invoke(newTask);
 

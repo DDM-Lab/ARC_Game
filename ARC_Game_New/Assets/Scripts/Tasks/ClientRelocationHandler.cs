@@ -283,6 +283,16 @@ public class ClientRelocationHandler : MonoBehaviour
         if (delivered < r.quantity)
             AddPopulation(r.source, r.quantity - delivered);
 
+        if (delivered > 0)
+        {
+            Building destBuilding = r.destination.GetComponent<Building>();
+            if (destBuilding != null && destBuilding.GetBuildingType() == BuildingType.CaseworkSite)
+                Debug.Log("placehold casework recording");
+            //DailyReportData.Instance?.RecordCaseworkSatisfiedToday(delivered);
+            else
+                DailyReportData.Instance?.RecordLodgingSatisfiedToday(delivered);
+        }
+
         if (ClientStayTracker.Instance != null && delivered > 0)
             ClientStayTracker.Instance.RegisterClientArrival(r.destination, delivered, r.groupName);
 
@@ -352,6 +362,7 @@ public class ClientRelocationHandler : MonoBehaviour
 
             if (delivered > 0) anyMoved = true;
 
+
             // Track client arrivals
             Building destBuilding = dest.GetComponent<Building>();
             //if (destBuilding != null && ClientStayTracker.Instance != null && delivered > 0)
@@ -360,6 +371,18 @@ public class ClientRelocationHandler : MonoBehaviour
             //    ClientStayTracker.Instance.RegisterClientArrival(destBuilding, delivered, groupName);
             //}
             // Track client arrivals for both Shelters and Motels
+
+            if (delivered > 0)
+            {
+                anyMoved = true;
+                Building destBuilding2 = dest.GetComponent<Building>();
+                if (destBuilding2 != null && destBuilding2.GetBuildingType() == BuildingType.CaseworkSite)
+                    Debug.Log("placehold casework recording");
+                //DailyReportData.Instance?.RecordCaseworkSatisfiedToday(delivered);
+                else
+                    DailyReportData.Instance?.RecordLodgingSatisfiedToday(delivered);
+            }
+
             if (ClientStayTracker.Instance != null && delivered > 0)
             {
                 string groupName = $"Relocate_{parentTask.taskId}_{source.name}_to_{dest.name}";
