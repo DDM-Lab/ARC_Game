@@ -1,5 +1,5 @@
 {
-  "_comment": "All officers on the LOCAL Qwen3.8-Flash-Next endpoint (mlx-dspark, 127.0.0.1:8090/v1) instead of a metered API. Cloned from continuous_all_officers_ddmlab.json; only provider/model and the step/token budgets differ.",
+  "_comment": "MiniCPM5-2B (2B) on Auton via the tunnel on :8097. Same officers, prompt and tools as the 27B config so the only variable is the model. NOTE this is the smallest model in the ladder: the officers' job needs multi-step tool use plus arithmetic off the observation, and a 2B may drop tool calls or mis-read counts where the 27B does not. Worth watching the probe set (identity, act-vs-ask, post-action counts) before trusting a session. Cloned from continuous_all_officers_qwen.json 2026-09-14; both endpoints verified that day to return real tool_calls and to accept chat_template_kwargs {enable_thinking:false}. Both advertise max_model_len 32768, so known_ctx_limit discovers the window and the max_tokens clamp / token-budget compaction size themselves.",
   "agent_order_rule": "sequential",
   "agents": [
     {
@@ -22,8 +22,8 @@
       "subobservation_space": [
         "all"
       ],
-      "provider": "qwen-auton",
-      "llm_model": "Qwen3.8-27B",
+      "provider": "minicpm5-2b-auton",
+      "llm_model": "MiniCPM5-2B",
       "turn_token_budget": 8192,
       "max_steps": 4,
       "tool_mode": "auto",
@@ -55,8 +55,8 @@
       "subobservation_space": [
         "all"
       ],
-      "provider": "qwen-auton",
-      "llm_model": "Qwen3.8-27B",
+      "provider": "minicpm5-2b-auton",
+      "llm_model": "MiniCPM5-2B",
       "turn_token_budget": 8192,
       "max_steps": 4,
       "tool_mode": "auto",
@@ -88,8 +88,8 @@
       "subobservation_space": [
         "all"
       ],
-      "provider": "qwen-auton",
-      "llm_model": "Qwen3.8-27B",
+      "provider": "minicpm5-2b-auton",
+      "llm_model": "MiniCPM5-2B",
       "turn_token_budget": 8192,
       "max_steps": 4,
       "tool_mode": "auto",
@@ -121,8 +121,8 @@
       "subobservation_space": [
         "all"
       ],
-      "provider": "qwen-auton",
-      "llm_model": "Qwen3.8-27B",
+      "provider": "minicpm5-2b-auton",
+      "llm_model": "MiniCPM5-2B",
       "turn_token_budget": 8192,
       "max_steps": 4,
       "tool_mode": "auto",
@@ -151,8 +151,8 @@
       "subobservation_space": [
         "all"
       ],
-      "provider": "qwen-auton",
-      "llm_model": "Qwen3.8-27B",
+      "provider": "minicpm5-2b-auton",
+      "llm_model": "MiniCPM5-2B",
       "turn_token_budget": 8192,
       "max_steps": 4,
       "tool_mode": "auto",
@@ -179,13 +179,13 @@
       "subobservation_space": [
         "all"
       ],
-      "llm_model": "Qwen3.8-27B",
+      "llm_model": "MiniCPM5-2B",
       "llm_provider": null,
       "turn_token_budget": 8192,
       "use_global_prompt": false,
       "system_prompt": null,
       "can_address": [],
-      "provider": "qwen-auton",
+      "provider": "minicpm5-2b-auton",
       "chat_template_kwargs": {
         "enable_thinking": false
       }

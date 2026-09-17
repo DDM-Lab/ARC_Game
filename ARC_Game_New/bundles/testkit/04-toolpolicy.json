@@ -6,7 +6,7 @@
     "cora_api_version": "1.0",
     "description": "tool_policy replaced, contract clauses kept"
   },
-  "tool_policy": "Call exactly one tool per step. Stay in your remit \u2014 never act outside your lane. Never claim to have built or hired anything unless a tool actually succeeded. Call talk_to_director to report, then finish.",
+  "tool_policy": "Call exactly one tool per step. Stay in your remit — never act outside your lane. Never claim to have built or hired anything unless a tool actually succeeded. Call send_message to report, then finish.",
   "config": {
     "agent_order_rule": "sequential",
     "agents": [

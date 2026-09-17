@@ -91,8 +91,22 @@ public class WebSocketManager : MonoBehaviour
         if (PlayerPrefs.HasKey("arc_config_name"))
             configName = PlayerPrefs.GetString("arc_config_name");
 
-        // Headless / gym training mode: auto-connect immediately.
-        if (Application.isBatchMode)
+        if (LlmDisabled())
+        {
+            enableWebSocket = false;
+            headlessMode = false;
+            connectionStatus = "AI teammates disabled";
+            Debug.Log("[WS] AI teammates DISABLED for this run (-no-llm / ARC_NO_LLM / ?llm=0). "
+                    + "The game runs solo; no router connection is attempted.");
+            return;
+        }
+
+        // Headless / gym training mode: auto-connect immediately — UNLESS the run asked for the
+        // AI teammates to be off. Batchmode used to force enableWebSocket = true unconditionally,
+        // which meant a headless run had no way to play the game without the LLM path attached;
+        // the parity harness needs exactly that ("does this build still play like upstream with
+        // the teammates off?"), and so does anyone collecting a no-AI control condition.
+        if (Application.isBatchMode && !LlmDisabled())
         {
             Debug.Log("Running in Unity headless mode (batchmode)");
             headlessMode = true;
@@ -115,6 +129,33 @@ public class WebSocketManager : MonoBehaviour
             connectionStatus = "WebSocket Disabled";
             Debug.Log("WebSocket is disabled. Game will run in offline mode.");
         }
+    }
+
+    /// <summary>
+    /// True when this run was explicitly started with the AI teammates OFF: `-no-llm` on the
+    /// command line, ARC_NO_LLM=1 in the environment, or ?llm=0 on a WebGL page URL.
+    ///
+    /// Evaluated fresh rather than cached in a field so it cannot be flipped by a PlayerPrefs
+    /// value or a launcher screen left over from a previous run — "off" has to mean off for the
+    /// whole process, or a control condition silently becomes a treatment condition.
+    /// </summary>
+    public static bool LlmDisabled()
+    {
+        try
+        {
+            foreach (string a in Environment.GetCommandLineArgs())
+                if (a == "-no-llm" || a == "--no-llm") return true;
+            string env = Environment.GetEnvironmentVariable("ARC_NO_LLM");
+            if (!string.IsNullOrEmpty(env) && env != "0") return true;
+        }
+        catch (Exception) { }   // WebGL has neither, and asking can throw rather than return empty
+        try
+        {
+            string url = Application.absoluteURL;
+            if (!string.IsNullOrEmpty(url) && url.Contains("llm=0")) return true;
+        }
+        catch (Exception) { }
+        return false;
     }
 
     IEnumerator LoadConfigThenConnect()
@@ -163,6 +204,14 @@ public class WebSocketManager : MonoBehaviour
     public async void ConnectToServer()
     {
         if (!enableWebSocket) return;
+        // Belt and braces: the switch is checked here too, so no other caller (launcher UI,
+        // gym bootstrap, a reconnect timer) can quietly re-attach the LLM path to a run that
+        // was started with the teammates off.
+        if (LlmDisabled())
+        {
+            connectionStatus = "AI teammates disabled";
+            return;
+        }
 
         // Study mode (config.json strictMap): the configured map could not be applied, so this
         // run would silently use the DEFAULT layout — a different experimental condition than
@@ -593,6 +642,18 @@ public class WebSocketManager : MonoBehaviour
     /// </summary>
     [System.Serializable] public class OfficerRosterEntry { public string name; public string endpoint; }
     [System.Serializable] private class HelloAckRoster { public OfficerRosterEntry[] officers; }
+    [System.Serializable] private class HelloAckCaps { public string[] capabilities; }
+
+    /// <summary>Capabilities of the API key this session connected with, from hello_ack.
+    /// Drives which OPTIONAL controls the client reveals — today `play_tester`, which shows
+    /// Load .cora and Flag Interaction. This is a UI gate, not a security boundary: the
+    /// router enforces anything that matters on the request that does the work. Empty until
+    /// the handshake completes, so callers must treat "no caps yet" as "not allowed".</summary>
+    public static readonly System.Collections.Generic.HashSet<string> Capabilities =
+        new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>True once hello_ack has arrived AND granted the capability.</summary>
+    public static bool HasCapability(string cap) => Capabilities.Contains(cap);
 
     /// <summary>Officer roster from the router's hello_ack: talkinghead_endpoint -> display name,
     /// for the ACTUAL loaded config. The WebGL client has no local agents_config.json, so this is
@@ -630,6 +691,20 @@ public class WebSocketManager : MonoBehaviour
             if (convUI != null) convUI.ApplyOfficerRoster();
         }
         catch (System.Exception ex) { Debug.LogWarning($"[WS] officer roster parse failed: {ex.Message}"); }
+
+        // Key capabilities -> optional client controls (play_tester). Parsed defensively and
+        // separately from the roster: a failure here must not cost us the roster or the
+        // handshake, it just means no optional controls appear.
+        try
+        {
+            HelloAckCaps caps = JsonUtility.FromJson<HelloAckCaps>(data);
+            Capabilities.Clear();
+            if (caps != null && caps.capabilities != null)
+                foreach (var c in caps.capabilities)
+                    if (!string.IsNullOrEmpty(c)) Capabilities.Add(c);
+            Debug.Log($"[WS] capabilities: {(Capabilities.Count == 0 ? "(none)" : string.Join(",", Capabilities))}");
+        }
+        catch (System.Exception ex) { Debug.LogWarning($"[WS] capabilities parse failed: {ex.Message}"); }
 
         connectionStatus = "Connected";
         Debug.Log($"[WS] hello_ack received (session={sessionId})");
@@ -912,19 +987,38 @@ public class WebSocketManager : MonoBehaviour
         try
         {
             var msg = JsonUtility.FromJson<AgentConversationMessage>(data);
-            Debug.Log($"[WS] agent_message received from {msg.agent_name}: {msg.content}");
+            Debug.Log($"[WS] agent_message from {msg.agent_name} to {(string.IsNullOrEmpty(msg.to) ? "Director" : msg.to)}: {msg.content}");
 
             // Parse talkinghead_endpoint to TaskOfficer enum
             TaskOfficer officer;
             if (TryResolveOfficer(msg.talkinghead_endpoint, out officer))
             {
+                // INTER-OFFICER MESSAGE. `officer` above is the SENDER; when `to` names another
+                // officer the message belongs in the RECIPIENT's tab, badged with the sender.
+                // Filing it under the sender would read as that officer talking to the
+                // director, which is precisely the confusion this routing avoids.
+                // Initialised to the sender so it is definitely assigned on every path: C#
+                // cannot prove assignment through the && short-circuit below, since
+                // TryResolveOfficer may never run.
+                TaskOfficer recipient = officer;
+                bool toPeer = !string.IsNullOrEmpty(msg.to)
+                              && msg.to != "Director"
+                              && TryResolveOfficer(msg.to_endpoint, out recipient);
+
                 // Forward to conversation UI
                 if (AgentConversationUI.Instance != null)
                 {
                     // Response arrived: drop this officer's waiting bubble before
                     // the message is appended so the message lands at the bottom.
+                    // Clear the SENDER's spinner either way — they are the one who was
+                    // thinking, regardless of who the message was addressed to.
                     AgentConversationUI.Instance.SetOfficerGenerating(officer, false);
-                    AgentConversationUI.Instance.AddAgentMessage(officer, msg.content, msg.message_type);
+                    if (toPeer)
+                        AgentConversationUI.Instance.AddAgentMessage(
+                            recipient, msg.content, msg.message_type, officer, msg.agent_name);
+                    else
+                        AgentConversationUI.Instance.AddAgentMessage(
+                            officer, msg.content, msg.message_type);
                 }
                 else
                 {
@@ -1502,6 +1596,12 @@ public class AgentConversationMessage
     public string message_type;
     public int round;
     public double timestamp;
+    /// <summary>Recipient name. "Director" (or empty) for the normal case; another officer's
+    /// name when officers message each other.</summary>
+    public string to;
+    /// <summary>Recipient's talkinghead endpoint, so the client can pick the tab without
+    /// inverting OfficerRoster (which maps endpoint -> name, not the other way).</summary>
+    public string to_endpoint;
 }
 
 [System.Serializable]

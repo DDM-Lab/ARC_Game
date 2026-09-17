@@ -31,7 +31,12 @@ public class CoraFile
 {
     public const string FORMAT = "cora";
     public const int FORMAT_VERSION = 1;
-    public const string EXTENSION = "cora";
+    /// <summary>File extension. PLAIN .json on purpose: the payload really is JSON, a
+    /// browser picker handles a standard extension more reliably than a bespoke one, and
+    /// "cora" in the filename meant nothing to a play-tester. The FORMAT marker below is what
+    /// actually identifies the file -- see Inspect, which matters more now that the picker
+    /// shows every .json on the machine.</summary>
+    public const string EXTENSION = "json";
 
     public string format = FORMAT;
     public int formatVersion = FORMAT_VERSION;
@@ -53,6 +58,18 @@ public class CoraFile
     /// <summary>The GameSnapshot, as JSON. Kept as a string so this envelope round-trips
     /// through JsonUtility without needing GameSnapshot to be a serialisable field of it.</summary>
     public string snapshot = "";
+
+    /// <summary>Moments the play-tester flagged as a bad interaction with the AI, in order.
+    /// MARKERS ONLY -- a flag records WHERE it happened, not a snapshot of the world at that
+    /// instant. That was a deliberate choice: a snapshot per flag would let you load the exact
+    /// moment, but a tester may flag a dozen times and each snapshot is the size of the whole
+    /// save. The marker carries enough to find the moment in the transcript instead.
+    ///
+    /// Each flag is ALSO sent to the router as a client_event with the same `id`, so the two
+    /// sinks can be joined after the fact. The id is the join key on purpose: day/round/
+    /// timestamp alone are not unique if a tester flags twice inside one round, which is
+    /// exactly when they are most likely to.</summary>
+    public InteractionFlag[] flags = new InteractionFlag[0];
 
     public enum Compatibility { Ok, ParametersDiffer, BuildDiffers, WrongFormat, Unreadable }
 
@@ -89,6 +106,7 @@ public static class CoraFileIO
             note = note ?? "",
             label = Describe(snap),
             snapshot = JsonUtility.ToJson(snap),
+            flags = InteractionFlags.Collected(),
         };
         return file;
     }
@@ -105,8 +123,9 @@ public static class CoraFileIO
     public static string SuggestFilename(GameSnapshot s = null)
     {
         string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-        if (s == null) return $"cora-{stamp}.{CoraFile.EXTENSION}";
-        return $"cora-d{s.clock.currentDay}r{s.clock.currentTimeSegment}-{stamp}.{CoraFile.EXTENSION}";
+        if (s == null) return $"cora-checkpoint-{stamp}.{CoraFile.EXTENSION}";
+        return $"cora-checkpoint-d{s.clock.currentDay}r{s.clock.currentTimeSegment}"
+             + $"-{stamp}.{CoraFile.EXTENSION}";
     }
 
     public static string ToJson(CoraFile file) => JsonUtility.ToJson(file, true);
@@ -126,13 +145,16 @@ public static class CoraFileIO
     {
         if (file == null)
             return new CoraFile.Check { level = CoraFile.Compatibility.Unreadable,
-                                        message = "Not a .cora file (could not be parsed)." };
+                                        message = "That file isn't a CORA checkpoint — it could not be parsed as one." };
         if (file.format != CoraFile.FORMAT)
             return new CoraFile.Check { level = CoraFile.Compatibility.WrongFormat,
-                                        message = $"Not a .cora file (format=\"{file.format}\")." };
+                                        message = "That's a JSON file, but not a CORA checkpoint "
+                                                + $"(format=\"{file.format}\"). Pick a file saved with "
+                                                + "Save JSON Checkpoint." };
         if (file.formatVersion != CoraFile.FORMAT_VERSION)
             return new CoraFile.Check { level = CoraFile.Compatibility.WrongFormat,
-                                        message = $"This file is .cora v{file.formatVersion}; this build reads v{CoraFile.FORMAT_VERSION}." };
+                                        message = $"This checkpoint is v{file.formatVersion}; this build reads "
+                                                + $"v{CoraFile.FORMAT_VERSION}." };
         if (string.IsNullOrEmpty(file.snapshot))
             return new CoraFile.Check { level = CoraFile.Compatibility.Unreadable,
                                         message = "The file carries no snapshot." };
@@ -167,4 +189,21 @@ public static class CoraFileIO
         if (file == null || string.IsNullOrEmpty(file.snapshot)) return null;
         return GameSnapshotManager.FromJson(file.snapshot);
     }
+}
+
+
+/// <summary>One play-tester "this interaction was bad" marker. Written into the .cora file
+/// and mirrored into the session transcript under the same id.</summary>
+[Serializable]
+public class InteractionFlag
+{
+    /// <summary>Join key between the .cora file and the transcript. Unique per flag.</summary>
+    public string id = "";
+    public string utc = "";
+    public int day;
+    public int round;
+    /// <summary>Officer the tester was talking to when they flagged, if any.</summary>
+    public string officer = "";
+    /// <summary>Optional free text from the tester.</summary>
+    public string note = "";
 }

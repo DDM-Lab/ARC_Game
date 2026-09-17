@@ -833,6 +833,7 @@ public class ClientStayTracker : MonoBehaviour
 
             clientGroups.Remove(group);
         }
+    }
     /// <summary>
     /// Fires TriggerNonCaseworkDeparture immediately on a synthetic 3-client group, bypassing the
     /// normal 4-8 round wait, so the departure alert popup can be verified on demand instead of

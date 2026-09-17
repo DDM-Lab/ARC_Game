@@ -1,5 +1,5 @@
 {
-  "_comment": "All officers on the LOCAL Qwen3.8-Flash-Next endpoint (mlx-dspark, 127.0.0.1:8090/v1) instead of a metered API. Cloned from continuous_all_officers_ddmlab.json; only provider/model and the step/token budgets differ.",
+  "_comment": "Qwen3.5-4B on Auton via the tunnel on :8096. Same officers, same prompt and same tool palette as the 27B config -- ONLY provider/model differ, so a run against this is a clean model-size comparison rather than a different experiment. Cloned from continuous_all_officers_qwen.json 2026-09-14; both endpoints verified that day to return real tool_calls and to accept chat_template_kwargs {enable_thinking:false}. Both advertise max_model_len 32768, so known_ctx_limit discovers the window and the max_tokens clamp / token-budget compaction size themselves. MODEL ID CORRECTED 2026-09-14: the endpoint first advertised 'Qwen3-4B' (root models--Qwen--Qwen3-4B) and later 'Qwen3.5-4B' (root Qwen/Qwen3.5-4B) after the job was restarted. The id must match what /v1/models reports EXACTLY or every call 404s, so re-check it if the endpoint is ever relaunched.",
   "agent_order_rule": "sequential",
   "agents": [
     {
@@ -22,8 +22,8 @@
       "subobservation_space": [
         "all"
       ],
-      "provider": "qwen-auton",
-      "llm_model": "Qwen3.8-27B",
+      "provider": "qwen3-4b-auton",
+      "llm_model": "Qwen3.5-4B",
       "turn_token_budget": 8192,
       "max_steps": 4,
       "tool_mode": "auto",
@@ -55,8 +55,8 @@
       "subobservation_space": [
         "all"
       ],
-      "provider": "qwen-auton",
-      "llm_model": "Qwen3.8-27B",
+      "provider": "qwen3-4b-auton",
+      "llm_model": "Qwen3.5-4B",
       "turn_token_budget": 8192,
       "max_steps": 4,
       "tool_mode": "auto",
@@ -88,8 +88,8 @@
       "subobservation_space": [
         "all"
       ],
-      "provider": "qwen-auton",
-      "llm_model": "Qwen3.8-27B",
+      "provider": "qwen3-4b-auton",
+      "llm_model": "Qwen3.5-4B",
       "turn_token_budget": 8192,
       "max_steps": 4,
       "tool_mode": "auto",
@@ -121,8 +121,8 @@
       "subobservation_space": [
         "all"
       ],
-      "provider": "qwen-auton",
-      "llm_model": "Qwen3.8-27B",
+      "provider": "qwen3-4b-auton",
+      "llm_model": "Qwen3.5-4B",
       "turn_token_budget": 8192,
       "max_steps": 4,
       "tool_mode": "auto",
@@ -151,8 +151,8 @@
       "subobservation_space": [
         "all"
       ],
-      "provider": "qwen-auton",
-      "llm_model": "Qwen3.8-27B",
+      "provider": "qwen3-4b-auton",
+      "llm_model": "Qwen3.5-4B",
       "turn_token_budget": 8192,
       "max_steps": 4,
       "tool_mode": "auto",
@@ -179,13 +179,13 @@
       "subobservation_space": [
         "all"
       ],
-      "llm_model": "Qwen3.8-27B",
+      "llm_model": "Qwen3.5-4B",
       "llm_provider": null,
       "turn_token_budget": 8192,
       "use_global_prompt": false,
       "system_prompt": null,
       "can_address": [],
-      "provider": "qwen-auton",
+      "provider": "qwen3-4b-auton",
       "chat_template_kwargs": {
         "enable_thinking": false
       }

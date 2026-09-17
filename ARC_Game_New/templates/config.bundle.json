@@ -9,7 +9,11 @@
   "config": {
     "agent_order_rule": "sequential",
     "agents": [
-      { "subagent_name": "Player", "role": "director", "actor_type": "manual" },
+      {
+        "subagent_name": "Player",
+        "role": "director",
+        "actor_type": "manual"
+      },
       {
         "_comment": "provider is an ENUM: anthropic | anthropic-ddmlab | cmu-gateway | openai | ollama-local (never an endpoint/secret)",
         "subagent_name": "Food Officer",
@@ -17,10 +21,26 @@
         "actor_type": "continuous",
         "provider": "anthropic",
         "llm_model": "claude-sonnet-4-6",
-        "subaction_space": [ { "category": "task_choice", "group": "food" } ],
-        "subobservation_space": [ "sessionInfo", "satisfactionAndBudget", "tasks:food" ],
+        "subaction_space": [
+          {
+            "category": "task_choice",
+            "group": "food"
+          }
+        ],
+        "subobservation_space": [
+          "sessionInfo",
+          "satisfactionAndBudget",
+          "tasks:food"
+        ],
         "system_prompt": "You are the Food Officer. Answer the number first, one sentence.",
-        "tools": [ "read_state", "get_facilities", "execute_commands", "talk_to_director", "finish", "unmet_needs" ]
+        "tools": [
+          "read_state",
+          "get_facilities",
+          "execute_commands",
+          "send_message",
+          "finish",
+          "unmet_needs"
+        ]
       }
     ]
   }

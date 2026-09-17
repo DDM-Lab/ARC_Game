@@ -1,0 +1,4700 @@
+[
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -114,0 +115,3 @@ public class GameTask",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "public string stableTaskId;"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -154,0 +158,8 @@ public class GameTask",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "[Header(\"Demand / Fulfillment accounting (people-based)\")]; public int demandQuantity = 0;"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -424,0 +436,62 @@ public class TaskSystem : MonoBehaviour",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 43,
+  "removed": 0,
+  "sample": "[System.Serializable]; public class Snapshot"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -427,0 +501,4 @@ public class TaskSystem : MonoBehaviour",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "public int numExternalRelationTasks = 3;; public int currExternalRelationCount = 0;"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -461,0 +539 @@ void Start()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -471,0 +550 @@ void Start()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "GlobalClock.Instance.OnDayStarted += OnDayStarted;"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -479,0 +559 @@ void Start()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "deliverySystem.OnTaskCancelled += OnDeliveryTaskCancelled;"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -490,0 +571 @@ void Start()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -498,0 +580 @@ IEnumerator InitializeWithCentralConfig()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "numExternalRelationTasks = GameDataManager.Instance.InitialExternalRelationFrequency;"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -676,0 +759,13 @@ void OnDeliveryTaskCompleted(DeliveryTask deliveryTask)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 7,
+  "removed": 0,
+  "sample": "int landed = deliveryTask.deliveredQuantity;; if (deliveryTask.cargoType == ResourceType.Population && landed > 0)"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -691,0 +787,64 @@ void OnDeliveryTaskCompleted(DeliveryTask deliveryTask)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 42,
+  "removed": 0,
+  "sample": "if (deliveryTask.cargoType == ResourceType.FoodPacks; && (parentTask.status == TaskStatus.Incomplete || parentTask.status == TaskStatus.Expired)"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -723,5 +882,8 @@ public void HandleDeliveryFailure(GameTask task, string reason = \"\")",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -768,0 +931,3 @@ void CancelIncompleteFoodDeliveries()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -771 +936 @@ void CancelIncompleteFoodDeliveries()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": ".Where(t => t.cargoType == ResourceType.FoodPacks && t.deliveredQuantity <= 0)"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -798,2 +963,4 @@ void OnRoundChanged(int newSegment)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (enableAutoTaskGeneration && newSegment < GlobalClock.Instance.roundsPerDay - 1)"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -803,0 +971,42 @@ void OnRoundChanged(int newSegment)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 30,
+  "removed": 0,
+  "sample": "}; static bool IsExternalRelationContact(TaskData taskData) =>"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -816,0 +1026,7 @@ void GenerateTasksFromDatabase()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"gen:pass\", \"{\\\"active\\\":\" + activeTasks.Count + \"}\");"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -823 +1039,5 @@ void GenerateTasksFromDatabase()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 1,
+  "sample": "int currentRound = GlobalClock.Instance != null; ? (GlobalClock.Instance.GetCurrentDay() - 1) * GlobalClock.Instance.roundsPerDay + GlobalClock.Instan"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -851,0 +1072,6 @@ void GenerateTasksFromDatabase()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 5,
+  "removed": 0,
+  "sample": "if (IsExternalRelationContact(taskData) && currExternalRelationCount >= numExternalRelationTasks); {"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -877,0 +1104,2 @@ void GenerateTasksFromDatabase()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "if (newTask != null && IsExternalRelationContact(taskData)); currExternalRelationCount++;"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -912 +1140 @@ void GenerateTasksFromDatabase()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "SupersedeTask(stale);"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -933 +1161,7 @@ void GenerateTasksFromDatabase()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 6,
+  "removed": 1,
+  "sample": "GameTask createdForFacility = CreateTaskFromDatabase(taskData, facility);; if (createdForFacility != null && createdForFacility.taskType == TaskType.E"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1249,0 +1484,8 @@ public GameTask CreateTask(string title, TaskType type, string facility, string",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 4,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"task:created\", \"{\\\"id\\\":\" + newTask.taskId; + \",\\\"title\\\":\\\"\" + newTask.taskTitle"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1268,0 +1511 @@ public void CompleteTask(GameTask task)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: true);"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1281,2 +1524,7 @@ public void CompleteTask(GameTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 4,
+  "removed": 1,
+  "sample": "if (TaskResultManager.Instance != null; && task.taskType != TaskType.Alert"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1359 +1607 @@ public void ExpireTask(GameTask task)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "ApplyTaskPenalties(task);"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1361,0 +1610 @@ public void ExpireTask(GameTask task)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1444 +1693,2 @@ public void SetTaskIncomplete(GameTask task)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "ApplyTaskPenalties(task);; RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1526,0 +1777,3 @@ public GameTask GetOrCreateMultiAgentTask(string talkingheadEndpoint, string age",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"task:created\", \"{\\\"id\\\":\" + newTask.taskId; + \",\\\"title\\\":\\\"\" + newTask.taskTitle"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1556 +1809 @@ public int CalculateDeliveryQuantity(AgentChoice choice, MonoBehaviour source)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "public GameTask CreateTaskFromData(TaskData taskData, MonoBehaviour facility = null)"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1558,0 +1812,4 @@ public GameTask CreateTaskFromData(TaskData taskData)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "if (facility != null) newTask.affectedFacility = facility.name;"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1560,0 +1818 @@ public GameTask CreateTaskFromData(TaskData taskData)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "newTask.stableTaskId = taskData.taskId;"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1634,0 +1893 @@ public GameTask CreateTaskFromData(TaskData taskData)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "newChoice.multiDeliveryType = choice.multiDeliveryType; // ADDED"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1666,0 +1926,17 @@ public GameTask CreateTaskFromData(TaskData taskData)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 11,
+  "removed": 0,
+  "sample": "if (newTask.taskTag == TaskTag.Lodging); {"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1687,0 +1964 @@ public GameTask CreateTaskFromData(TaskData taskData)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "ApplyConfiguredAllocation(newTask, taskData);"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -1999 +2276 @@ public GameTask CreateTaskFromDatabase(TaskData taskData, MonoBehaviour specific",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameTask newTask = CreateTaskFromData(taskData, specificFacility);"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2410,0 +2688,2 @@ public void DebugTestPerFacilityProbability()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:TaskSystem.coinflip\");; SnapshotDebug.Mark(\"draw:Task.coinflip\");"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2482,0 +2762,6 @@ public GameStatePayload GetCurrentGameState(int taskId = -1)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "try; {"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2485,0 +2771,3 @@ public GameStatePayload GetCurrentGameState(int taskId = -1)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "state.satisfactionAndBudget = GetSatisfactionAndBudgetState();"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2498,0 +2787,3 @@ public GameStatePayload GetCurrentGameState(int taskId = -1)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "state.rewardMetrics = RewardMetricsTracker.Instance?.BuildPayload();"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2519,0 +2811,6 @@ public GameStatePayload GetCurrentGameState(int taskId = -1)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 5,
+  "removed": 0,
+  "sample": "}; catch (System.Exception e)"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2534,0 +2832,8 @@ private SessionInfo GetSessionInfo()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 4,
+  "removed": 0,
+  "sample": "int finalDay = GlobalClock.Instance.lastDay;   // the configured horizon (BUG_REPORTS B33); info.finalDay = finalDay;"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2539,0 +2845,21 @@ private SessionInfo GetSessionInfo()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 15,
+  "removed": 0,
+  "sample": "private SatisfactionAndBudgetState GetSatisfactionAndBudgetState(); {"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2541,0 +2868,61 @@ private TaskContext GetTaskContextFromTask(GameTask task)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 47,
+  "removed": 0,
+  "sample": "List<TaskChoiceBrief> choices = null;; if (task.agentChoices != null && task.agentChoices.Count > 0)"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2545,2 +2932,5 @@ private TaskContext GetTaskContextFromTask(GameTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 2,
+  "sample": "stableTaskId = task.stableTaskId,; taskTitle = task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true),"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2549 +2939,2 @@ private TaskContext GetTaskContextFromTask(GameTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 1,
+  "sample": "roundsRemaining = task.roundsRemaining,; choices = choices"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2558,0 +2950,4 @@ private MapState GetMapState()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "try; {"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2564 +2959,5 @@ private MapState GetMapState()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "facilityState.facilityName = building.GetDisplayName();"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2603 +3002,4 @@ private MapState GetMapState()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 1,
+  "sample": "facilityState.facilityName = !string.IsNullOrEmpty(prebuilt.GetBuildingName()); ? prebuilt.GetBuildingName() : prebuilt.name;"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2651 +3053,7 @@ private MapState GetMapState()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 5,
+  "removed": 1,
+  "sample": "var src = vehicle.currentTask.GetSource();; var dst = vehicle.currentTask.GetDestination();"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2680,0 +3089,5 @@ private MapState GetMapState()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 5,
+  "removed": 0,
+  "sample": "}; catch (System.Exception e)"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2758,13 +3171,26 @@ private Logistics GetLogisticsState()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 19,
+  "removed": 9,
+  "sample": "logistics.pendingRelocations = new List<PendingRelocation>();; if (ClientRelocationHandler.Instance != null)"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2772,11 +3198,19 @@ private Logistics GetLogisticsState()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 17,
+  "removed": 9,
+  "sample": "List<DeliveryTask> activeTasks = deliverySystem.GetActiveTasks();; if (activeTasks != null)"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2784,0 +3219,4 @@ private Logistics GetLogisticsState()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 4,
+  "removed": 0,
+  "sample": "catch (System.Exception e); {"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2813 +3251,4 @@ private List<TaskContext> GetAllActiveTaskContexts()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "foreach (GameTask task in activeTasks.Where(t => t.status == TaskStatus.Active))"
+ },
+ {
+  "file": "Tasks/TaskSystem.cs",
+  "hunk": "@@ -2950,0 +3392,20 @@ public void ApplyLLMTaskContent(LLMTaskContent llmContent)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 9,
+  "removed": 0,
+  "sample": "ApplyLLMTaskContent(task, llmContent);; }"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -71,0 +72,2 @@ public class Vehicle : MonoBehaviour",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "private Coroutine deliveryCoroutine;   // the one ExecuteDeliveryTask alive on this vehicle; private bool loadAborted = false;      // set by LoadCarg"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -74,0 +77,2 @@ public class Vehicle : MonoBehaviour",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "public event Action<Vehicle, DeliveryTask, string> OnDeliveryCancelled;"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -197,2 +201,6 @@ public bool AssignDeliveryTask(DeliveryTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 1,
+  "sample": "if (deliveryCoroutine != null) StopCoroutine(deliveryCoroutine);; loadAborted = false;"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -205,0 +214,106 @@ public bool AssignDeliveryTask(DeliveryTask task)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 77,
+  "removed": 0,
+  "sample": "[System.Serializable]; public class Snapshot"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -209 +323,13 @@ public bool AssignDeliveryTask(DeliveryTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "IEnumerator ExecuteDeliveryTask(int startStep = 1)"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -211 +337 @@ IEnumerator ExecuteDeliveryTask()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "Debug.Log($\"Vehicle {vehicleName} starting delivery task (step {startStep})\");"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -213,6 +339,9 @@ IEnumerator ExecuteDeliveryTask()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 8,
+  "removed": 5,
+  "sample": "if (startStep <= 1); {"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -220,5 +349,16 @@ IEnumerator ExecuteDeliveryTask()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 12,
+  "removed": 4,
+  "sample": "if (startStep <= 2); {"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -226,6 +366,9 @@ IEnumerator ExecuteDeliveryTask()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 8,
+  "removed": 5,
+  "sample": "if (startStep <= 3); {"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -246,0 +390,36 @@ IEnumerator ExecuteDeliveryTask()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 21,
+  "removed": 0,
+  "sample": "string FloodedRoadCellsForDump(); {"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -260,0 +440,25 @@ IEnumerator MoveToPosition(Vector3 targetPos)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 20,
+  "removed": 0,
+  "sample": "{; float _len = 0f;"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -264,0 +469 @@ IEnumerator MoveToPosition(Vector3 targetPos)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"delivery:blocked\", \"{\\\"veh\\\":\\\"\" + vehicleName + \"\\\",\\\"why\\\":\\\"nopath\\\"}\");"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -293,0 +499 @@ IEnumerator MoveToPosition(Vector3 targetPos)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"delivery:blocked\", \"{\\\"veh\\\":\\\"\" + vehicleName + \"\\\",\\\"why\\\":\\\"collision\\\"}\");"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -298,0 +505,10 @@ IEnumerator MoveToPosition(Vector3 targetPos)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 5,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"leg:tick\", \"{\\\"veh\\\":\\\"\" + vehicleName; + \"\\\",\\\"idx\\\":\" + currentPathIndex + \",\\\"n\\\":\" + currentPath.Count"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -324,0 +541 @@ public void StopVehicleDueToFlood()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "deliveryCoroutine = null;"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -326 +543 @@ public void StopVehicleDueToFlood()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -332 +549,3 @@ public void StopVehicleDueToFlood()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -335 +554,2 @@ public void StopVehicleDueToFlood()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 1,
+  "sample": "DeliveryTask stopped = currentTask;; ReturnAllCargoToSource(\"stopped by flood\");"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -336,0 +557,4 @@ public void StopVehicleDueToFlood()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 4,
+  "removed": 0,
+  "sample": "sourceBuilding = null;; destinationBuilding = null;"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -405,0 +630,38 @@ GameTask FindRelatedGameTask()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 32,
+  "removed": 0,
+  "sample": "void RelocateToDryRoadIfFlooded(); {"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -410,0 +673 @@ public void RepairVehicle()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "RelocateToDryRoadIfFlooded();"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -518,4 +781 @@ IEnumerator LoadCargo()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 4,
+  "sample": "loadAborted = true;   // ExecuteDeliveryTask unwinds the run"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -558,2 +818,9 @@ IEnumerator UnloadCargo()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 4,
+  "removed": 0,
+  "sample": "currentTask.deliveredQuantity = actualDelivered;; int remainder = cargoAmount - actualDelivered;"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -562,28 +829,2 @@ IEnumerator UnloadCargo()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 23,
+  "sample": "ClientStayTracker.Instance.HandlePopulationDelivery(; currentTask.sourceBuilding, currentTask.destinationBuilding, actualDelivered, currentTask.taskId"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -591,0 +833,11 @@ IEnumerator UnloadCargo()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 6,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"delivery:unload\", \"{\\\"veh\\\":\\\"\" + vehicleName; + \"\\\",\\\"cargo\\\":\\\"\" + currentTask.cargoType"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -627,0 +880,45 @@ BuildingResourceStorage GetBuildingResourceStorage(MonoBehaviour building)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 37,
+  "removed": 0,
+  "sample": "void ReturnCargoToSource(ResourceType type, int amount, string why); {"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -638,0 +936,2 @@ void CompleteDelivery()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "loadAborted = false;; deliveryCoroutine = null;"
+ },
+ {
+  "file": "Delivery/Vehicle.cs",
+  "hunk": "@@ -710 +1009,10 @@ public void CancelCurrentTask()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 8,
+  "removed": 1,
+  "sample": "deliveryCoroutine = null;; if (currentTask == null)"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -70,0 +71,43 @@ public class GlobalClock : MonoBehaviour",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 33,
+  "removed": 0,
+  "sample": "public string DescribeSubscribersJson(); {"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -89,0 +133,19 @@ void Awake()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 9,
+  "removed": 0,
+  "sample": "private bool initialProposalSent = false;; void Update()"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -100 +162 @@ void Start()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogMetricsChange($\"Game started - Day {currentDay}, Round {currentTimeSegment + 1}\");"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -287 +349 @@ void OnSpeedDropdownChanged(int dropdownValue)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogMetricsChange($\"Time speed set to {currentTimeSpeed}x\");"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -295,0 +358,21 @@ void StartSimulation()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 9,
+  "removed": 0,
+  "sample": "RequestLLMAgentDecision();; if (gymInstantMode)"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -301,2 +384,5 @@ void StartSimulation()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (gymInstantMode)"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -304,3 +390,17 @@ void StartSimulation()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 10,
+  "removed": 3,
+  "sample": "float gymWaitTime = simulationDuration / (int)currentTimeSpeed;; Time.timeScale = (int)currentTimeSpeed;"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -310 +410 @@ void StartSimulation()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 1,
+  "sample": "RequestLLMAgentDecision();"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -312,3 +412,3 @@ void StartSimulation()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 0,
+  "removed": 3,
+  "sample": "int roundNumber = (currentDay - 1) * 4 + currentTimeSegment + 1;; if (WebSocketManager.Instance != null && WebSocketManager.Instance.isConnected)"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -346 +446,2 @@ void StartSimulation()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "bool HasActiveDeliveries()"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -348,34 +449,2 @@ IEnumerator Day1SkipCoroutine()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 24,
+  "sample": "return DeliverySystem.Instance != null && DeliverySystem.Instance.HasPendingOrActiveDeliveries();; }"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -383,3 +452,17 @@ IEnumerator Day1SkipCoroutine()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 5,
+  "removed": 3,
+  "sample": "bool RequestAgentProposal(); {"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -387,3 +470,2 @@ IEnumerator Day1SkipCoroutine()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 2,
+  "removed": 3,
+  "sample": "int roundNumber = (currentDay - 1) * roundsPerDay + currentTimeSegment + 1;; return WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, "
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -392 +474,25 @@ IEnumerator Day1SkipCoroutine()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 4,
+  "removed": 1,
+  "sample": "private bool gymInstantMode = false;; private const float GYM_FIXED_DELTA = 0.3f;"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -394 +500,36 @@ bool HasActiveDeliveries()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 20,
+  "removed": 1,
+  "sample": "if (isSimulationRunning) return;; gymInstantMode = true;"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -437 +578 @@ void RequestLLMAgentDecision()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogMetricsChange($\"Requested AI decision for Day {currentDay}, Round {currentTimeSegment + 1}\");"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -446,2 +587,16 @@ IEnumerator SimulationCoroutine(float playerWaitTime)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 6,
+  "removed": 1,
+  "sample": "if (gymInstantMode); {"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -462 +617 @@ void EndSimulation()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -464,0 +620,18 @@ void EndSimulation()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 8,
+  "removed": 0,
+  "sample": "if (gymInstantMode); {"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -472 +644,0 @@ void EndSimulation()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -474,2 +646,8 @@ void EndSimulation()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"endSim:afterOnRoundEnd\");"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -476,0 +655 @@ void EndSimulation()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"endSim:afterAdvanceSegment\");"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -507 +686 @@ void EndSimulation()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogMetricsChange($\"Day {currentDay} complete - Click 'End Today' when ready\");"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -515 +694 @@ void EndSimulation()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogMetricsChange($\"Simulation ended - Now at Day {currentDay}, Round {currentTimeSegment + 1}\");"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -517,0 +697,4 @@ void EndSimulation()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "RequestAgentProposal();"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -519 +702 @@ void EndSimulation()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -530,0 +714,5 @@ void AdvanceTimeSegment()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SafeInvoke(OnTimeSegmentChanged, currentTimeSegment);"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -557,0 +746 @@ public void ProceedToNextDay()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"day:enterProceedToNextDay\");"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -565,0 +755,5 @@ public void ProceedToNextDay()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "isWaitingForReport = false;"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -590 +784 @@ public void ProceedToNextDay()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"day:beforeOnDayChanged\");"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -592,2 +786,8 @@ public void ProceedToNextDay()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 3,
+  "removed": 1,
+  "sample": "SnapshotDebug.Mark(\"day:afterOnDayChanged\");; SafeInvoke(OnDayStarted, currentDay);"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -600 +800,6 @@ public void ProceedToNextDay()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 2,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogMetricsChange($\"Advanced to Day {currentDay}, Round 1\");; RequestAgentProposal();"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -615 +820 @@ public void PauseSimulation()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogMetricsChange(\"Simulation paused by external system\");"
+ },
+ {
+  "file": "GlobalClock.cs",
+  "hunk": "@@ -626 +831 @@ public void ResumeSimulation()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogMetricsChange(\"Simulation resumed - ready for player interaction\");"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -38,0 +39 @@ public ClientGroup(int id, string name, int count, MonoBehaviour facility, int r",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Client.caseworkNeed\");"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -45,0 +47 @@ public ClientGroup(int id, string name, int count, MonoBehaviour facility, int r",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Client.stayDuration\");"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -68 +70 @@ public OverstayRecord(ClientGroup group, int currentRound, int threshold)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "facilityName = ClientStayTracker.SafeFacilityName(group.currentFacility);"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -120,0 +123,89 @@ public class ClientStayTracker : MonoBehaviour",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 71,
+  "removed": 0,
+  "sample": "[System.Serializable]; public class Snapshot"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -188 +279 @@ void OnRoundChanged(int newRound)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "currentRound = GlobalClock.Instance.GetCurrentTimeSegment() + (GlobalClock.Instance.GetCurrentDay() - 1) * GlobalClock.Instance.roundsPerDay;"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -270 +360,0 @@ void CheckClientStayDurations()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 1,
+  "sample": "int Y = Mathf.Max(1, roundsInFacility); // rounds stayed"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -272,4 +362,4 @@ void CheckClientStayDurations()",
+  "kind": "MODIFIES EXISTING",
+  "rng": true,
+  "added": 3,
+  "removed": 3,
+  "sample": "Building facilityBuilding = group.currentFacility != null ? group.currentFacility.GetComponent<Building>() : null;; bool facilityDeconstructing = faci"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -277,3 +367,10 @@ void CheckClientStayDurations()",
+  "kind": "instrumentation/LLM",
+  "rng": true,
+  "added": 10,
+  "removed": 3,
+  "sample": "int Y = Mathf.Max(1, roundsInFacility);; float currentProbability = baseCaseworkProbability * Mathf.Pow(probabilityGrowthFactor, Y - 1);"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -280,0 +378,11 @@ void CheckClientStayDurations()",
+  "kind": "comment-only",
+  "rng": true,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -372 +480 @@ public bool RemoveClientGroup(int groupId)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "Debug.Log($\"Removed client group {group.groupName} from {SafeFacilityName(group.currentFacility)}\");"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -374 +482 @@ public bool RemoveClientGroup(int groupId)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance.LogBuildingStatus($\"Removed client group {group.groupName} from {SafeFacilityName(group.currentFacility)}\");"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -385 +493 @@ public bool RemoveClientGroup(int groupId)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity, int preferredGroupId = -1, bool creditCasework = true)"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -386,0 +495,6 @@ public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -390 +504,22 @@ public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 18,
+  "removed": 0,
+  "sample": "int caseworkRemoved = 0;; ClientGroup preferred = preferredGroupId >= 0"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -393,0 +529,3 @@ public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "if (group == preferred || !clientGroups.Contains(group)) continue;; TakeCasework(group);"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -395,6 +533,13 @@ public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 13,
+  "removed": 5,
+  "sample": "foreach (ClientGroup group in shelterGroups.ToList()); {"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -402,8 +547,4 @@ public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 4,
+  "removed": 7,
+  "sample": "if (creditCasework); RewardMetricsTracker.Instance?.RecordCaseworkProcessed(caseworkRemoved);"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -411,2 +552,11 @@ public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 8,
+  "removed": 2,
+  "sample": "public static bool IsLodgingBuilding(MonoBehaviour b); {"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -414,2 +564,11 @@ public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 8,
+  "removed": 2,
+  "sample": "public void HandleSelfWalkDeparture(MonoBehaviour source, MonoBehaviour dest, int count, GameTask parentTask); {"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -417 +576,6 @@ public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 5,
+  "removed": 1,
+  "sample": "public void HandleSelfWalkArrival(MonoBehaviour dest, int count, string groupName); {"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -419,5 +583,68 @@ public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 53,
+  "removed": 5,
+  "sample": "public void HandleImmediateTransfer(MonoBehaviour source, MonoBehaviour dest, int count, GameTask parentTask); {"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -425,2 +651,0 @@ public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 1,
+  "sample": "return totalRemoved;"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -442,0 +668,3 @@ void GenerateCaseworkTask(ClientGroup group)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "RewardMetricsTracker.Instance?.RecordCaseworkRequested(group.clientsWithCaseworkNeed);"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -444 +672 @@ void GenerateCaseworkTask(ClientGroup group)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "string facilityName = SafeFacilityName(group.currentFacility);"
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -447,0 +676 @@ void GenerateCaseworkTask(ClientGroup group)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Map/ClientStayTracker.cs",
+  "hunk": "@@ -580,0 +810,26 @@ public void TestAddClients()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 16,
+  "removed": 0,
+  "sample": "public static string SafeFacilityName(MonoBehaviour facility); {"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -18,0 +19,2 @@ public class DeliveryTask",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "public int deliveredQuantity = 0;"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -32 +34,5 @@ public override string ToString()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 1,
+  "sample": "string src = sourceBuilding != null ? sourceBuilding.name : \"Unknown\";; string dst = destinationBuilding != null ? destinationBuilding.name : \"Unknown"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -35,0 +42,2 @@ public override string ToString()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -38 +46 @@ public Vector3 GetSourcePosition()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return sourceBuilding != null ? sourceBuilding.transform.position : Vector3.zero;"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -43 +51 @@ public Vector3 GetDestinationPosition()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return destinationBuilding != null ? destinationBuilding.transform.position : Vector3.zero;"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -48,0 +57 @@ public Vector3 GetSourceRoadConnection()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "if (sourceBuilding == null) return Vector3.zero;"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -54,0 +64 @@ public Vector3 GetDestinationRoadConnection()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "if (destinationBuilding == null) return Vector3.zero;"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -83,0 +94,5 @@ public class DeliverySystem : MonoBehaviour",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -94,0 +110,103 @@ public class DeliverySystem : MonoBehaviour",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 74,
+  "removed": 0,
+  "sample": "private List<DeliveryTask> cancelledTasks = new List<DeliveryTask>();   // ended without landing cargo; [System.Serializable]"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -102,0 +221,2 @@ public class DeliverySystem : MonoBehaviour",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "public event Action<DeliveryTask, string> OnTaskCancelled;"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -120,0 +241 @@ void Start()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "vehicle.OnDeliveryCancelled += OnVehicleDeliveryCancelled;"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -123,0 +245,7 @@ void Start()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"delivery:config\", \"{\\\"taskAssignmentInterval\\\":\"; + taskAssignmentInterval + \",\\\"ervCount\\\":\" + ervCount"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -169,0 +298,2 @@ public void AdjustSceneCount(int targetCount)",
+  "kind": "comment-only",
+  "rng": true,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -170,0 +301,3 @@ public void AdjustSceneCount(int targetCount)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "roadList.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x); : a.y != b.y ? a.y.CompareTo(b.y)"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -174,0 +308 @@ public void AdjustSceneCount(int targetCount)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Delivery.roadTile\");"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -182,0 +317 @@ public void AdjustSceneCount(int targetCount)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Delivery.neighbor\");"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -322,0 +458,9 @@ public List<DeliveryTask> CreateDeliveryTask(MonoBehaviour source, MonoBehaviour",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 4,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"delivery:queue\", \"{\\\"cargo\\\":\\\"\" + newTask.cargoType; + \"\\\",\\\"qty\\\":\" + newTask.quantity"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -384 +528,5 @@ public bool CancelDeliveryTask(int taskId)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 5,
+  "removed": 1,
+  "sample": "workingVehicle.CancelCurrentTask();   // raises OnDeliveryCancelled -> cancelledTasks; }"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -390 +538 @@ public bool CancelDeliveryTask(int taskId)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogVehicleEvent($\"Cancelled active delivery task: {activeTask}\");   // null during teardown (Building.OnDestroy)"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -405,2 +553,3 @@ public void RemoveActiveDeliveryTask(int taskId)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 2,
+  "sample": "OnVehicleDeliveryCancelled(null, activeTask, \"vehicle stopped externally\");"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -411,0 +561,20 @@ public void RemoveActiveDeliveryTask(int taskId)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 17,
+  "removed": 0,
+  "sample": "void OnVehicleDeliveryCancelled(Vehicle vehicle, DeliveryTask task, string reason); {"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -466,0 +636,10 @@ void AssignPendingTasks()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 6,
+  "removed": 0,
+  "sample": "if (task == null || task.GetSource() == null || task.GetDestination() == null); {"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -476,0 +656,7 @@ void AssignPendingTasks()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 7,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"delivery:dispatch\", \"{\\\"cargo\\\":\\\"\" + task.cargoType; + \"\\\",\\\"qty\\\":\" + task.quantity"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -546,19 +732,15 @@ void OnVehicleDeliveryCompleted(Vehicle vehicle, DeliveryTask completedTask)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 6,
+  "removed": 19,
+  "sample": "SnapshotDebug.MarkContext(\"delivery:complete\", \"{\\\"cargo\\\":\\\"\" + completedTask.cargoType; + \"\\\",\\\"qty\\\":\" + completedTask.quantity"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -593,0 +776,11 @@ void GenerateAutoTasks()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 5,
+  "removed": 0,
+  "sample": "public void RunBackgroundHousing(); {"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -659,0 +853,12 @@ void GeneratePopulationTransportTasks()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 8,
+  "removed": 0,
+  "sample": "string communityName = ((MonoBehaviour)community).name;; GameTask demandTask = TaskSystem.Instance != null && TaskSystem.Instance.activeTasks != null"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -696 +901,9 @@ void GeneratePopulationTransportTasks()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 6,
+  "removed": 1,
+  "sample": "var created = CreateDeliveryTask(community, bestDestination, ResourceType.Population, transportAmount, 3);; if (created != null && created.Count > 0)"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -709,0 +923 @@ public void AddVehicle(Vehicle vehicle)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "vehicle.OnDeliveryCancelled += OnVehicleDeliveryCancelled;"
+ },
+ {
+  "file": "Delivery/DeliverySystem.cs",
+  "hunk": "@@ -724,0 +939 @@ public void RemoveVehicle(Vehicle vehicle)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "vehicle.OnDeliveryCancelled -= OnVehicleDeliveryCancelled;"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -46,0 +47,19 @@ void Start()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 9,
+  "removed": 0,
+  "sample": "public void ReresolveSceneRefs(); {"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -106,0 +126,10 @@ ActionExecutionResult ExecuteConstruction(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 7,
+  "removed": 0,
+  "sample": "action.cost = buildingType switch; {"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -114,2 +143,7 @@ ActionExecutionResult ExecuteConstruction(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 5,
+  "removed": 1,
+  "sample": "bool built = buildingSystem.CreateBuildingImmediately(site, buildingType);; if (!built)"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -131,0 +166,13 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 10,
+  "removed": 0,
+  "sample": "if (p.quantity <= 0) return Failure(action.action_id, \"Worker quantity must be positive\");; int unitCost;"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -142,5 +189,4 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 5,
+  "sample": "SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $\"Hired {p.quantity} untrained workers\");"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -148,0 +195 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "{"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -149,0 +197,2 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "DailyReportData.Instance.RecordWorkerRequestCostToday(action.cost);; }"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -150,0 +200,12 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 10,
+  "removed": 0,
+  "sample": "if (WorkerRequestSystem.Instance != null); {"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -154 +215 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "Debug.Log($\"\u2705 Requested {p.quantity} untrained workers (cost: ${action.cost})\");"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -160,5 +221,2 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 5,
+  "sample": "SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $\"Hired {p.quantity} trained workers\");"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -165,0 +224 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "{"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -166,0 +226,13 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 12,
+  "removed": 0,
+  "sample": "DailyReportData.Instance.RecordWorkerRequestCostToday(action.cost);; }"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -170 +242 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "Debug.Log($\"\u2705 Requested {p.quantity} trained workers (cost: ${action.cost})\");"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -176,4 +248,4 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 2,
+  "sample": "var freeUntrained = workerSystem.GetWorkersByType(WorkerType.Untrained); .FindAll(w => w.GetCurrentStatus() == \"Free\");"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -181 +253 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (freeUntrained.Count < p.quantity)"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -183 +255 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return Failure(action.action_id, $\"Insufficient untrained workers (need {p.quantity}, have {freeUntrained.Count})\");"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -186,6 +258 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 5,
+  "sample": "SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $\"Trained {p.quantity} workers\");"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -193 +259,0 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 1,
+  "sample": "SatisfactionAndBudget.Instance.RemoveBudget(action.cost, $\"Trained {p.quantity} workers\");"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -194,0 +261 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "{"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -195,0 +263,20 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 15,
+  "removed": 0,
+  "sample": "DailyReportData.Instance.RecordWorkerTrainingCostToday(action.cost);; }"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -199 +286 @@ ActionExecutionResult ExecuteWorker(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "Debug.Log($\"\u2705 Started training {p.quantity} workers (cost: ${action.cost})\");"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -232,0 +320,13 @@ ActionExecutionResult ExecuteTransfer(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 11,
+  "removed": 0,
+  "sample": "if (resourceType == ResourceType.Population); {"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -241,0 +342,21 @@ ActionExecutionResult ExecuteTransfer(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 15,
+  "removed": 0,
+  "sample": "if (resourceType == ResourceType.Population && TaskSystem.Instance != null; && TaskSystem.Instance.activeTasks != null)"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -267,4 +388,22 @@ ActionExecutionResult ExecuteAssignment(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 16,
+  "removed": 1,
+  "sample": "if (p.quantity < 0) return Failure(action.action_id, \"Worker quantity cannot be negative\");; int required = building.GetRequiredWorkforce();"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -273 +412 @@ ActionExecutionResult ExecuteAssignment(GameAction action)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return Failure(action.action_id, $\"Failed to assign workers to {p.building_name}: need {trainedCount} trained + {untrainedCount} untrained free, not e"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -274,0 +414,2 @@ ActionExecutionResult ExecuteAssignment(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "if (p.quantity > 0); WorkerAssignmentTracker.Instance?.RecordAssignment(buildingId);   // agent-staffed buildings lock like human-staffed ones"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -279,0 +421,2 @@ ActionExecutionResult ExecuteAssignment(GameAction action)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "ToastManager.ShowToast($\"Assigned {p.quantity} worker(s) to {p.building_name}\", ToastType.Info);"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -331 +474,3 @@ MonoBehaviour FindBuildingByName(string buildingName)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -333 +478,3 @@ MonoBehaviour FindBuildingByName(string buildingName)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 1,
+  "sample": "Building building = buildings.FirstOrDefault(b => b.GetDisplayName() == buildingName);; if (building != null) return building;"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -337 +484 @@ MonoBehaviour FindBuildingByName(string buildingName)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "building = buildings.FirstOrDefault(b => b.GetDisplayName().Contains(buildingName) || b.name.Contains(buildingName));"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -340 +487 @@ MonoBehaviour FindBuildingByName(string buildingName)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -342 +489,3 @@ MonoBehaviour FindBuildingByName(string buildingName)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 1,
+  "sample": "PrebuiltBuilding prebuiltBuilding = prebuilt.FirstOrDefault(p => p.GetBuildingName() == buildingName);; if (prebuiltBuilding != null) return prebuiltB"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -346 +495 @@ MonoBehaviour FindBuildingByName(string buildingName)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "prebuiltBuilding = prebuilt.FirstOrDefault(p => (p.GetBuildingName() ?? \"\").Contains(buildingName) || p.name.Contains(buildingName));"
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -362,0 +512,3 @@ bool HasBudget(int cost)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Actions/ActionExecutor.cs",
+  "hunk": "@@ -364 +516 @@ bool HasBudget(int cost)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "SatisfactionAndBudget.Instance.WouldAllowSpend(cost);"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -62,0 +63,88 @@ public class PendingRelocation",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 69,
+  "removed": 0,
+  "sample": "[System.Serializable]; public class Snapshot"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -119,0 +208,53 @@ public bool CanExecute(GameTask parentTask, int requestedQuantity,",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 35,
+  "removed": 0,
+  "sample": "public bool HasDestinationSpace(GameTask parentTask, bool includeShelters, bool includeMotels); {"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -209,0 +351,12 @@ public bool ExecuteToSpecificDestination(GameTask parentTask, MonoBehaviour sour",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 8,
+  "removed": 0,
+  "sample": "int space = GetEffectiveSpace(destination);; if (space <= 0)"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -230 +383 @@ void QueueSelfWalk(GameTask parentTask, MonoBehaviour source, MonoBehaviour dest",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "ClientStayTracker.Instance.HandleSelfWalkDeparture(source, destination, quantity, parentTask);"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -239 +392 @@ void QueueSelfWalk(GameTask parentTask, MonoBehaviour source, MonoBehaviour dest",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "groupName       = $\"Relocate_{(parentTask != null ? parentTask.taskId : 0)}_{source.name}_to_{destination.name}\""
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -241,0 +395,2 @@ void QueueSelfWalk(GameTask parentTask, MonoBehaviour source, MonoBehaviour dest",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"relocation:queue\", \"{\\\"task\\\":\" + (parentTask != null ? parentTask.taskId : -1) + \",\\\"qty\\\":\" + quantity; + \",\\\"src\\\":\\\"\" +"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -245 +400 @@ void QueueSelfWalk(GameTask parentTask, MonoBehaviour source, MonoBehaviour dest",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogTaskEvent($\"Client relocation for task '{parentTask?.taskTitle ?? \"manual transfer\"}': {quantity} clients departing {source."
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -280,0 +436,3 @@ void FinalizeRelocation(PendingRelocation r)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "if (r.parentTask != null && delivered > 0) r.parentTask.deliveredQuantity += delivered;"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -287 +445,3 @@ void FinalizeRelocation(PendingRelocation r)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 3,
+  "removed": 1,
+  "sample": "ClientStayTracker.Instance.HandleSelfWalkArrival(r.destination, delivered, r.groupName);; SnapshotDebug.MarkContext(\"relocation:arrive\", \"{\\\"task\\\":\" "
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -306 +466,3 @@ void FinalizeRelocation(PendingRelocation r)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "public int ExecuteImmediate(GameTask parentTask, int requestedQuantity,"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -310 +472 @@ public bool ExecuteImmediate(GameTask parentTask, int requestedQuantity,",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (source == null) return 0;"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -314 +476 @@ public bool ExecuteImmediate(GameTask parentTask, int requestedQuantity,",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (toSend <= 0) return 0;"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -318,0 +481 @@ public bool ExecuteImmediate(GameTask parentTask, int requestedQuantity,",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -324 +487 @@ public bool ExecuteImmediate(GameTask parentTask, int requestedQuantity,",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return 0;"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -327,2 +490,2 @@ public bool ExecuteImmediate(GameTask parentTask, int requestedQuantity,",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 2,
+  "sample": "int remaining     = toSend;; int totalDelivered = 0;"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -343 +506 @@ public bool ExecuteImmediate(GameTask parentTask, int requestedQuantity,",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "ClientStayTracker.Instance.RemoveClientsByQuantity(source, removed, -1, creditCasework: false);"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -353 +516,3 @@ public bool ExecuteImmediate(GameTask parentTask, int requestedQuantity,",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 1,
+  "sample": "if (delivered > 0) anyMoved = true;"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -362,0 +528,2 @@ public bool ExecuteImmediate(GameTask parentTask, int requestedQuantity,",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -366,0 +534 @@ public bool ExecuteImmediate(GameTask parentTask, int requestedQuantity,",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "ClientStayTracker.Instance.HandlePopulationDelivery(source, dest, delivered, parentTask.taskId);"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -369,0 +538 @@ public bool ExecuteImmediate(GameTask parentTask, int requestedQuantity,",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "totalDelivered += delivered;"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -376 +545,3 @@ public bool ExecuteImmediate(GameTask parentTask, int requestedQuantity,",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 1,
+  "sample": "if (parentTask != null) parentTask.deliveredQuantity += totalDelivered;; return totalDelivered;"
+ },
+ {
+  "file": "Tasks/ClientRelocationHandler.cs",
+  "hunk": "@@ -485,0 +657,24 @@ static string GetDisplayName(MonoBehaviour building)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 20,
+  "removed": 0,
+  "sample": "int GetEffectiveSpace(MonoBehaviour destination); {"
+ },
+ {
+  "file": "SatisfactionAndBudget.cs",
+  "hunk": "@@ -24 +24,10 @@ public class SatisfactionAndBudget : MonoBehaviour",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "[Tooltip(\"When true (default, game-wide rule), discretionary spending \u2014 construction, hiring, training, and costly task choices \u2014 is ALLOWED to drive "
+ },
+ {
+  "file": "SatisfactionAndBudget.cs",
+  "hunk": "@@ -67,0 +77,14 @@ void Awake()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 10,
+  "removed": 0,
+  "sample": "string envNeg = System.Environment.GetEnvironmentVariable(\"ARC_ALLOW_NEGATIVE_BUDGET\");; if (!string.IsNullOrEmpty(envNeg))"
+ },
+ {
+  "file": "SatisfactionAndBudget.cs",
+  "hunk": "@@ -83 +106,5 @@ IEnumerator InitializeWithCentralConfig()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (useExternalConfig)"
+ },
+ {
+  "file": "SatisfactionAndBudget.cs",
+  "hunk": "@@ -85 +112,22 @@ IEnumerator InitializeWithCentralConfig()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 18,
+  "removed": 1,
+  "sample": "if (configLoader == null); configLoader = GameConfigLoader.Instance;"
+ },
+ {
+  "file": "SatisfactionAndBudget.cs",
+  "hunk": "@@ -88,2 +136,3 @@ IEnumerator InitializeWithCentralConfig()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 2,
+  "sample": "ConfigApplied = true;"
+ },
+ {
+  "file": "SatisfactionAndBudget.cs",
+  "hunk": "@@ -90,0 +140 @@ IEnumerator InitializeWithCentralConfig()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "SatisfactionAndBudget.cs",
+  "hunk": "@@ -104,0 +155,32 @@ IEnumerator InitializeWithCentralConfig()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 19,
+  "removed": 0,
+  "sample": "public void EnsureConfigApplied(); {"
+ },
+ {
+  "file": "SatisfactionAndBudget.cs",
+  "hunk": "@@ -180 +262,3 @@ public void AddSatisfaction(float amount, string description = \"\")",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "currentSatisfaction = Mathf.Clamp(currentSatisfaction + amount, minSatisfaction, maxSatisfaction);"
+ },
+ {
+  "file": "SatisfactionAndBudget.cs",
+  "hunk": "@@ -359,0 +444,17 @@ private string GetDefaultEfficiencyDescription(float amount)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 11,
+  "removed": 0,
+  "sample": "public void SetEfficiency(float value); {"
+ },
+ {
+  "file": "SatisfactionAndBudget.cs",
+  "hunk": "@@ -422,0 +524,47 @@ public void RemoveBudget(int amount, string description = \"\")",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 33,
+  "removed": 0,
+  "sample": "public enum SpendCategory { Other, Food, Lodging, Worker, Casework }; private int cumFoodSpend = 0, cumLodgingSpend = 0, cumWorkerSpend = 0, cumCasewo"
+ },
+ {
+  "file": "SatisfactionAndBudget.cs",
+  "hunk": "@@ -495 +643,15 @@ public bool CanAfford(int cost)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 4,
+  "removed": 0,
+  "sample": "public bool WouldAllowSpend(int cost); {"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -32 +32 @@ public class DailyReportData : MonoBehaviour",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 1,
+  "sample": "private int todayFoodConsumed = 0;"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -304 +304 @@ void ResetDailyTracking()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 1,
+  "sample": "todayFoodConsumed = 0;"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -616 +616,5 @@ public float S_WorkerUse()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "float denom = Mathf.Max(1, d.GetCumulativeWorkerPoolRounds());"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -653 +657,5 @@ public float S_WorkerUse()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "float denom = Mathf.Max(1, d.GetCumulativeWorkerPoolRounds());"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -827,0 +836,93 @@ public float CalculateLiveCostEfficiencyScore()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 78,
+  "removed": 0,
+  "sample": "[System.Serializable]; public class Snapshot"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -830,0 +932,2 @@ public float CalculateLiveCostEfficiencyScore()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "const float SCORE_SCALE = 100f;"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -833,0 +937,11 @@ public float CalculateLiveCostEfficiencyScore()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -846 +960 @@ public void RecalcFoodSatisfaction(string reason = \"Food delivery progress\")",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "=> ApplyDelta(ref appliedFoodSat, S_Food() * SAT_W * SCORE_SCALE, false, reason);"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -849 +963 @@ public void RecalcLodgingSatisfaction(string reason = \"Lodging progress\")",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "=> ApplyDelta(ref appliedLodgingSat, S_Lodging() * SAT_W * SCORE_SCALE, false, reason);"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -852 +966 @@ public void RecalcWorkerSatisfaction(string reason = \"Worker use progress\")",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "=> ApplyDelta(ref appliedWorkerSat, S_WorkerUse() * SAT_W * SCORE_SCALE, false, reason);"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -855 +969 @@ public void RecalcCaseworkSatisfaction(string reason = \"Casework progress\")",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "=> ApplyDelta(ref appliedCaseworkSat, S_Casework() * SAT_W * SCORE_SCALE, false, reason);"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -858 +972 @@ public void RecalcFoodEfficiency(string reason = \"Food cost efficiency\")",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "=> ApplyDelta(ref appliedFoodEff, C_Food() * EFF_W * SCORE_SCALE, true, reason);"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -861 +975 @@ public void RecalcLodgingEfficiency(string reason = \"Lodging cost efficiency\")",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "=> ApplyDelta(ref appliedLodgingEff, C_Lodging() * EFF_W * SCORE_SCALE, true, reason);"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -864 +978 @@ public void RecalcWorkerEfficiency(string reason = \"Worker cost efficiency\")",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "=> ApplyDelta(ref appliedWorkerEff, C_Worker() * EFF_W * SCORE_SCALE, true, reason);"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -878,4 +992,4 @@ public void SyncAppliedScoresToFresh()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 4,
+  "removed": 4,
+  "sample": "appliedFoodSat = S_Food() * SAT_W * SCORE_SCALE;; appliedLodgingSat = S_Lodging() * SAT_W * SCORE_SCALE;"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -883,3 +997,3 @@ public void SyncAppliedScoresToFresh()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 3,
+  "sample": "appliedFoodEff = C_Food() * EFF_W * SCORE_SCALE;; appliedLodgingEff = C_Lodging() * EFF_W * SCORE_SCALE;"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -889 +1003 @@ public float ComputeFreshSatisfactionTotal()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "=> (S_Food() + S_Lodging() + S_WorkerUse() + S_Waste() + S_Casework()) * SAT_W * SCORE_SCALE;"
+ },
+ {
+  "file": "DailyReport/DailyReportData.cs",
+  "hunk": "@@ -892 +1006 @@ public float ComputeFreshEfficiencyTotal()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "=> (C_Food() + C_Lodging() + C_Worker()) * EFF_W * SCORE_SCALE;"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -37,0 +38,95 @@ public class FloodSystem : MonoBehaviour",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 54,
+  "removed": 0,
+  "sample": "[System.Serializable]; public class Snapshot"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -261 +356 @@ void InitializeFloodFromRivers()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "foreach (Vector3Int riverPos in RiverTilesInOrder())"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -309,0 +405,19 @@ void UpdateFlood()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 16,
+  "removed": 0,
+  "sample": "if (true); {"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -389 +503 @@ void SpawnFloodFromRain(float rainIntensity)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "foreach (Vector3Int riverPos in RiverTilesInOrder())"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -390,0 +505 @@ void SpawnFloodFromRain(float rainIntensity)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Flood.1\");"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -429 +544 @@ void ExpandFlood(WeatherFloodData weatherData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "foreach (Vector3Int floodPos in FloodTilesInOrder())"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -443,0 +559,5 @@ void ExpandFlood(WeatherFloodData weatherData)",
+  "kind": "comment-only",
+  "rng": true,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -444,0 +565,3 @@ void ExpandFlood(WeatherFloodData weatherData)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "expansionCandidates.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x); : a.y != b.y ? a.y.CompareTo(b.y)"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -450,0 +574 @@ void ExpandFlood(WeatherFloodData weatherData)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Flood.2\");"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -469,0 +594 @@ void HandleRandomExpansion(WeatherFloodData weatherData)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Flood.3\");"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -476,3 +601,6 @@ void HandleRandomExpansion(WeatherFloodData weatherData)",
+  "kind": "instrumentation/LLM",
+  "rng": true,
+  "added": 3,
+  "removed": 3,
+  "sample": "var floodArray = FloodTilesInOrder();; SnapshotDebug.Mark(\"draw:Flood.4\");"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -481,0 +610 @@ void HandleRandomExpansion(WeatherFloodData weatherData)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Flood.5\");"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -483,0 +613 @@ void HandleRandomExpansion(WeatherFloodData weatherData)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Flood.6\");"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -512 +642 @@ void ShrinkFlood(WeatherFloodData weatherData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "foreach (Vector3Int floodPos in FloodTilesInOrder())"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -521,0 +652 @@ void ShrinkFlood(WeatherFloodData weatherData)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Flood.7\");"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -563,0 +695 @@ bool CanFloodSpreadTo(Vector3Int position, WeatherFloodData weatherData)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Flood.8\");"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -579,0 +712 @@ bool CanFloodSpreadTo(Vector3Int position, WeatherFloodData weatherData)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Flood.9\");"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -586,0 +720 @@ bool CanFloodSpreadTo(Vector3Int position, WeatherFloodData weatherData)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Flood.10\");"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -796 +930 @@ public void ResetFloodToRivers()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "foreach (Vector3Int pos in FloodTilesInOrder())"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -852 +986 @@ void OnDrawGizmos()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "foreach (Vector3Int floodPos in FloodTilesInOrder())"
+ },
+ {
+  "file": "Flood/FloodSystem.cs",
+  "hunk": "@@ -860 +994 @@ void OnDrawGizmos()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "foreach (Vector3Int riverPos in RiverTilesInOrder())"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -10,2 +10,3 @@ public class GameConfigLoader : MonoBehaviour",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 2,
+  "sample": "[Tooltip(\"CSV URL. A root-relative path like \\\"/sheet.csv\\\" is fetched same-origin \" +; \"(no CORS) \u2014 served on Talos by an Apache Alias, and locally b"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -40,0 +42,4 @@ public class GameConfigLoader : MonoBehaviour",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "public int loadedInitialKitchenFoodCapacity = 200;   // FoodPacks a kitchen can hold (prefab value); public int loadedInitialShelterFoodCapacity = 100"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -66,4 +71,3 @@ public class GameConfigLoader : MonoBehaviour",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 4,
+  "sample": "public TaskData dailyBudgetAlloc;; public TaskData shelterFloodDmg;"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -98,0 +103,7 @@ void Start()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -101,10 +112,2 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 9,
+  "sample": "string envPath = System.Environment.GetEnvironmentVariable(\"ARC_PARAM_CONFIG\");; if (!string.IsNullOrEmpty(envPath))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -112 +115,12 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 12,
+  "removed": 1,
+  "sample": "string text = null;; try { text = System.IO.File.ReadAllText(envPath); }"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -114 +127,0 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 1,
+  "sample": "yield return null;"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -116,2 +129,3 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 2,
+  "sample": "bool rootRelative = !string.IsNullOrEmpty(googleSheetsCsvUrl) && googleSheetsCsvUrl.StartsWith(\"/\");; bool inBrowser = !string.IsNullOrEmpty(Applicati"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -119,3 +133,4 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 2,
+  "sample": "string resolvedUrl = googleSheetsCsvUrl;; if (rootRelative)"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -123,2 +138,10 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 10,
+  "removed": 2,
+  "sample": "try; {"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -126 +149,6 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 5,
+  "removed": 1,
+  "sample": "string cacheBustSep = resolvedUrl.Contains(\"?\") ? \"&\" : \"?\";; string urlWithCacheBuster = resolvedUrl + cacheBustSep + \"t=\" + System.DateTime.Now.Tick"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -128 +156,9 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 9,
+  "removed": 1,
+  "sample": "request.timeout = 5;; yield return request.SendWebRequest();"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -131 +166,0 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 1,
+  "sample": "#endif"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -133,5 +168,4 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 5,
+  "sample": "string localPath = Application.streamingAssetsPath + \"/game_param_config.csv\";; string localUrl = localPath.Contains(\"://\") ? localPath : \"file://\" + "
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -139,2 +173,9 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 9,
+  "removed": 2,
+  "sample": "request.timeout = 5;; yield return request.SendWebRequest();"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -141,0 +183 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "FinishLoad(\"fallbacks\");"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -143 +185,8 @@ IEnumerator LoadConfigFromSheet()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 6,
+  "removed": 0,
+  "sample": "void FinishLoad(string source); {"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -155,2 +204,3 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 2,
+  "sample": "if (string.IsNullOrWhiteSpace(line)) continue;; if (line.Split(',')[0].Trim().Equals(\"parameter\", System.StringComparison.OrdinalIgnoreCase))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -236,0 +287,10 @@ void ParseCSV(string csvData)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 10,
+  "removed": 0,
+  "sample": "else if (parameter.Equals(\"initialKitchenFoodCapacity\", System.StringComparison.OrdinalIgnoreCase)); {"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -244 +304 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sunnyExpRt))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -249 +309 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sunnySCM))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -254 +314 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float smallRainExpRt))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -259 +319 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float smallRainSCM))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -264 +324 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float mediumRainExpRt))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -269 +329 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float mediumRainSCM))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -274 +334 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float heavyRainExpRt))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -279 +339 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float heavyRainSCM))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -284 +344 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float stormExpRt))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -289 +349 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float stormSCM))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -294,4 +354 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float foodDemandFreq))"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -319 +376 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "loadedInitialShelterFloodRadius = floodDetectionRange;   // was overwriting the threshold (BUG_REPORTS B30)"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -338,5 +394,0 @@ void ParseCSV(string csvData)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 4,
+  "sample": "ApplyInitBudgetAllocation();; ApplyInitShelterFloodDamage();"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -346,0 +399,28 @@ void ParseCSV(string csvData)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 15,
+  "removed": 0,
+  "sample": "public static string MapUrl { get; private set; } = \"\";; public static string MapHash { get; private set; } = \"\";"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -349,0 +430 @@ IEnumerator LoadMapConfigFromServer()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "bool strictMap = false;"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -359,0 +441 @@ IEnumerator LoadMapConfigFromServer()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "strictMap = cfg != null && cfg.strictMap;"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -361,0 +444 @@ IEnumerator LoadMapConfigFromServer()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "MapUrl = mapConfigServerUrl ?? \"\";"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -366,0 +450 @@ IEnumerator LoadMapConfigFromServer()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "MapStatus = \"default\";"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -394,3 +478,4 @@ IEnumerator LoadMapConfigFromServer()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 4,
+  "removed": 3,
+  "sample": "MapStatus = \"loaded\";; MapHash = ShortHash(json);"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -399,0 +485 @@ IEnumerator LoadMapConfigFromServer()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "MapStatus = \"invalid\";"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -404,0 +491 @@ IEnumerator LoadMapConfigFromServer()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "MapStatus = \"invalid\";"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -409,0 +497 @@ IEnumerator LoadMapConfigFromServer()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "MapStatus = \"unreachable\";"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -412,0 +501,11 @@ IEnumerator LoadMapConfigFromServer()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 8,
+  "removed": 0,
+  "sample": "if (strictMap && MapStatus != \"loaded\"); {"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -435,81 +533,0 @@ IEnumerator LoadMapConfigFromServer()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 67,
+  "sample": "void ApplyInitBudgetAllocation(); {"
+ },
+ {
+  "file": "ScenarioLoader/GameConfigLoader.cs",
+  "hunk": "@@ -580,0 +599,2 @@ public int GetInitialCaseworkCapacity()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "public int GetInitialKitchenFoodCapacity() => loadedInitialKitchenFoodCapacity;; public int GetInitialShelterFoodCapacity() => loadedInitialShelterFoo"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -169,0 +170,3 @@ public void ShowTaskDetail(GameTask task)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SetReproposePlaceholder();"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -172,0 +176,38 @@ public void ShowTaskDetail(GameTask task)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 19,
+  "removed": 0,
+  "sample": "public void RefreshProposalIfShowing(TaskOfficer officer); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -521,0 +563 @@ void DisplayAgentChoices()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "bool live = currentTask.status == TaskStatus.Active || currentTask.status == TaskStatus.InProgress;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -529 +571,2 @@ void DisplayAgentChoices()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 1,
+  "sample": "if (live); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -530,0 +574,7 @@ void DisplayAgentChoices()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 4,
+  "removed": 0,
+  "sample": "string reason;; if (!IsChoiceFeasible(choice, out reason))"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -537,0 +588,5 @@ void DisplayAgentChoices()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -540,0 +596,292 @@ void DisplayAgentChoices()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 225,
+  "removed": 0,
+  "sample": "void AddFreeTextChoiceCard(); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -558,4 +904,0 @@ void DisplayNumericalInputs()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 2,
+  "sample": "if (conversationScrollView != null); conversationScrollView.vertical = false;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -584,3 +926,0 @@ void ClearConversation()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 2,
+  "sample": "if (conversationScrollView != null); conversationScrollView.vertical = true;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -628,0 +969,4 @@ public void OnChoiceSelected(AgentChoice choice)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "AgentChoice previous = selectedChoice;; bool isSwitch = previous != null && previous != choice;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -643,0 +988,5 @@ public void OnChoiceSelected(AgentChoice choice)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 5,
+  "removed": 0,
+  "sample": "GameLogPanel.Instance?.LogUIInteraction(\"choice\",; isSwitch ? \"choice_switched\" : \"choice_selected\","
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -692 +1040,0 @@ public bool TryConfirmTask(GameTask task, AgentChoice choice, out string errorMe",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -697,11 +1045 @@ public bool TryConfirmTask(GameTask task, AgentChoice choice, out string errorMe",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 8,
+  "sample": "if (!ValidateBeforeConfirm(task, choice, out errorMessage)) return false;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -709,3 +1046,0 @@ public bool TryConfirmTask(GameTask task, AgentChoice choice, out string errorMe",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 3,
+  "sample": "{; string delivError;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -713,4 +1048 @@ public bool TryConfirmTask(GameTask task, AgentChoice choice, out string errorMe",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 3,
+  "sample": "return CompleteTaskAction(out errorMessage);"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -723,11 +1055,4 @@ void OnConfirmButtonClicked()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 4,
+  "removed": 10,
+  "sample": "GameLogPanel.Instance?.LogUIInteraction(\"choice\", \"choice_confirm_clicked\",; selectedChoice != null"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -735,3 +1060,2 @@ void OnConfirmButtonClicked()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 2,
+  "sample": "string validationError;; if (!ValidateBeforeConfirm(currentTask, selectedChoice, out validationError))"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -739 +1063 @@ void OnConfirmButtonClicked()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "ShowAgentErrorMessage(validationError);"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -742,2 +1065,0 @@ void OnConfirmButtonClicked()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -745,23 +1067 @@ void OnConfirmButtonClicked()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 21,
+  "sample": "ToastManager.ShowToast($\"Delivery for '{currentTask.taskTitle}' queued.\", ToastType.Info, true);"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -778 +1078,3 @@ void OnConfirmButtonClicked()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 1,
+  "sample": "string why;; if (!CompleteTaskAction(out why))"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -790 +1092,18 @@ void OnConfirmButtonClicked()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 9,
+  "removed": 1,
+  "sample": "private bool CompleteTaskAction(); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -792,6 +1111,3 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 5,
+  "sample": "HandleMultiAgentChoiceSelection();; return true;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -799,2 +1115,2 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 2,
+  "sample": "if (selectedChoice != null); currentTask.selectedChoiceId = selectedChoice.choiceId;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -802,2 +1118,5 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 4,
+  "removed": 1,
+  "sample": "if (selectedChoice != null); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -805,5 +1124,3 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 4,
+  "sample": "failReason = $\"insufficient budget (option costs ${cost:N0}, budget is ${SatisfactionAndBudget.Instance.GetCurrentBudget():N0})\";; return false;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -811,12 +1128,5 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 4,
+  "removed": 11,
+  "sample": "if (selectedChoice.budgetDelayRounds > 0); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -824,7 +1134 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 6,
+  "sample": "DelayedBudgetManager.Instance?.AddDelayedBudget(currentTask.taskTitle, budgetImpact.value, selectedChoice.budgetDelayRounds);"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -832,2 +1136 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "}"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -835,10 +1138,4 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 4,
+  "removed": 10,
+  "sample": "if (selectedChoice.immediateDelivery); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -846,3 +1143,2 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 3,
+  "sample": "failReason = \"nothing could be moved (no source, no destination, or no space)\";; return false;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -850 +1146,8 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 7,
+  "removed": 1,
+  "sample": "ApplyChoiceImpacts(selectedChoice);; TaskSystem.Instance.CompleteTask(currentTask);"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -852,2 +1155,2 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 2,
+  "sample": "failReason = \"delivery could not be queued (no source with stock, no destination with space, no vehicle, or the need is already covered by inbound del"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -854,0 +1158,3 @@ private void CompleteTaskAction()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "ApplyChoiceImpacts(selectedChoice);; TaskSystem.Instance.SetTaskInProgress(currentTask);"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -857,0 +1164,2 @@ private void CompleteTaskAction()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "ApplyChoiceImpacts(selectedChoice);"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -859,0 +1168,5 @@ private void CompleteTaskAction()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 5,
+  "removed": 0,
+  "sample": "}; else"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -861,4 +1174,3 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 3,
+  "sample": "CloseTaskDetail();; return true;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -866,2 +1178,10 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 9,
+  "removed": 2,
+  "sample": "bool ExecuteFoodDelivery(AgentChoice choice, bool immediate); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -868,0 +1189,6 @@ private void CompleteTaskAction()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 5,
+  "removed": 0,
+  "sample": "bool success = FoodDeliveryHandler.Instance.Execute(currentTask, choice);; if (!success)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -870 +1196,4 @@ private void CompleteTaskAction()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "int GetChoiceImmediateCost(AgentChoice choice)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -872 +1201,2 @@ bool ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 1,
+  "sample": "int cost = 0;; if (choice != null && choice.choiceImpacts != null)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -874,11 +1204,5 @@ bool ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 5,
+  "removed": 8,
+  "sample": "foreach (TaskImpact impact in choice.choiceImpacts); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -886 +1210 @@ bool ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return cost;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -888,0 +1213,11 @@ bool ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 4,
+  "removed": 0,
+  "sample": "public bool SelectTaskChoiceHeadless(int taskId, int choiceId); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -890,2 +1225,5 @@ bool ExecuteGeneratorDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "public bool SelectTaskChoiceHeadless(int taskId, int choiceId, out string failReason)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -893 +1231,13 @@ void ExecuteFoodDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 6,
+  "removed": 1,
+  "sample": "return SelectTaskChoiceHeadless(taskId, choiceId, null, out failReason);; }"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -895,2 +1245,21 @@ void ExecuteFoodDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 21,
+  "removed": 2,
+  "sample": "failReason = \"TaskSystem not ready\";; return false;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -899 +1268,10 @@ void ExecuteFoodDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 6,
+  "removed": 1,
+  "sample": "currentTask = task;; selectedChoice = choice;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -901 +1279,2 @@ void ExecuteFoodDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 1,
+  "sample": "failReason = $\"Choice {choiceId} on task {taskId} rejected: {failReason}\";; return false;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -903 +1282,15 @@ void ExecuteFoodDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 9,
+  "removed": 1,
+  "sample": "string why;; bool ok = CompleteTaskAction(out why);"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -905,3 +1298,11 @@ void ExecuteFoodDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 8,
+  "removed": 3,
+  "sample": "case ResourceType.FoodPacks:; return ExecuteFoodDelivery(choice, immediate) ? -1 : 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -911,2 +1312,58 @@ void ExecuteFoodDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "int ExecuteClientRelocation(AgentChoice choice, bool immediate)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -919,2 +1376 @@ bool ExecuteClientRelocation(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 2,
+  "sample": "return ExecuteFallbackDelivery(choice, immediate) ? -1 : 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -926 +1382 @@ bool ExecuteClientRelocation(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return -1;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -937 +1393 @@ bool ExecuteClientRelocation(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "int moved = ClientRelocationHandler.Instance.ExecuteImmediate("
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -939,3 +1395,3 @@ bool ExecuteClientRelocation(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 3,
+  "sample": "if (moved <= 0); ShowAgentErrorMessage(\"No shelter/motel space available \u2014 no one could be relocated.\");"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -947,3 +1403,11 @@ bool ExecuteClientRelocation(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 6,
+  "removed": 3,
+  "sample": "if (!success) {; ShowAgentErrorMessage(\"No shelter or motel space available to receive the population \u2014 the relocation could not be scheduled.\");"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -954 +1418,2 @@ bool ExecuteClientRelocation(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "bool ExecuteFallbackDelivery(AgentChoice choice, bool immediate)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -963 +1428,2 @@ void ExecuteFallbackDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 1,
+  "sample": "ShowAgentErrorMessage($\"Could not queue delivery \u2014 no available {choice.deliveryCargoType} route.\");; return false;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -968 +1434 @@ void ExecuteFallbackDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return ExecuteImmediateDeliveryBetween(source, destination, choice.deliveryCargoType, choice.deliveryQuantity) > 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -976,0 +1443 @@ void ExecuteFallbackDelivery(AgentChoice choice, bool immediate)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "return success;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -981 +1448 @@ void ExecuteFallbackDelivery(AgentChoice choice, bool immediate)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (ds == null) return false;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -984,0 +1452 @@ void ExecuteFallbackDelivery(AgentChoice choice, bool immediate)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "{"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -985,0 +1454,4 @@ void ExecuteFallbackDelivery(AgentChoice choice, bool immediate)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 4,
+  "removed": 0,
+  "sample": "return true;; }"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -992,0 +1465,63 @@ void ExecuteFallbackDelivery(AgentChoice choice, bool immediate)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 44,
+  "removed": 0,
+  "sample": "bool ValidateBeforeConfirm(GameTask task, AgentChoice choice, out string errorMessage); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -996,2 +1531 @@ bool ValidateNumericalInputs(out string errorMessage)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (currentTask == null || currentTask.numericalInputs == null || currentTask.numericalInputs.Count == 0)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -999,2 +1533,2 @@ bool ValidateNumericalInputs(out string errorMessage)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "foreach (AgentNumericalInput input in currentTask.numericalInputs)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1002,2 +1536,2 @@ bool ValidateNumericalInputs(out string errorMessage)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 2,
+  "sample": "if (input == null) continue;; if (input.maxValue > input.minValue && (input.currentValue < input.minValue || input.currentValue > input.maxValue))"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1005,10 +1539,8 @@ bool ValidateNumericalInputs(out string errorMessage)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 8,
+  "removed": 8,
+  "sample": "errorMessage = $\"{input.inputLabel}: {input.currentValue} is outside the allowed range {input.minValue}-{input.maxValue}.\";; return false;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1017,2 +1549 @@ bool ValidateNumericalInputs(out string errorMessage)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1025 +1555,0 @@ bool ValidateNumericalInputs(out string errorMessage)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1041 +1571 @@ string ValidateSpecificInput(NumericalInputType type, int value)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (!SatisfactionAndBudget.Instance.WouldAllowSpend(value))"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1183,2 +1713 @@ string ValidateCrossInputConstraints()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (currentTask != null && currentTask.numericalInputs != null)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1186,2 +1715 @@ string ValidateCrossInputConstraints()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 2,
+  "sample": "foreach (AgentNumericalInput input in currentTask.numericalInputs)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1189,11 +1717,5 @@ string ValidateCrossInputConstraints()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 5,
+  "removed": 10,
+  "sample": "if (input == null) continue;; if (input.inputType == NumericalInputType.Budget)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1202 +1724 @@ string ValidateCrossInputConstraints()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1207 +1729 @@ string ValidateCrossInputConstraints()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (!SatisfactionAndBudget.Instance.WouldAllowSpend(totalBudgetRequested))"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1212,8 +1734 @@ string ValidateCrossInputConstraints()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 4,
+  "sample": "return \"\";"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1234 +1749 @@ string ValidateTrainingCapacity(int workersToTrain)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (!SatisfactionAndBudget.Instance.WouldAllowSpend(trainingCost))"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1267,2 +1782,11 @@ string ValidateTransportCapacity(int peopleToTransport)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 7,
+  "removed": 2,
+  "sample": "bool ValidateChoiceDelivery(AgentChoice choice, out string errorMessage); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1748,2 +2272,4 @@ void ShowAgentErrorMessage(string errorText)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (Application.isBatchMode || agentMessagePrefab == null || conversationContent == null)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1751,2 +2277 @@ void ShowAgentErrorMessage(string errorText)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 2,
+  "sample": "GameLogPanel.Instance?.LogTaskEvent($\"[TaskDetail] {errorText}\");"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1755,0 +2281,22 @@ void ShowAgentErrorMessage(string errorText)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 9,
+  "removed": 0,
+  "sample": "if (taskDetailPanel == null || !taskDetailPanel.activeInHierarchy; || Application.isBatchMode || agentMessagePrefab == null || conversationContent == "
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1794 +2341,2 @@ void ShowAgentErrorMessage(string errorText)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "int ExecuteImmediateDeliveryBetween(MonoBehaviour source, MonoBehaviour destination, ResourceType cargoType, int quantity)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1796 +2343,0 @@ void ExecuteImmediateDeliveryBetween(MonoBehaviour source, MonoBehaviour destina",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1798,0 +2346,2 @@ void ExecuteImmediateDeliveryBetween(MonoBehaviour source, MonoBehaviour destina",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "if (sourceStorage == null || destStorage == null || quantity <= 0); return 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1800,7 +2348,0 @@ void ExecuteImmediateDeliveryBetween(MonoBehaviour source, MonoBehaviour destina",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 5,
+  "sample": "if (sourceStorage == null || destStorage == null); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1809,2 +2350,0 @@ void ExecuteImmediateDeliveryBetween(MonoBehaviour source, MonoBehaviour destina",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1812,5 +2352 @@ void ExecuteImmediateDeliveryBetween(MonoBehaviour source, MonoBehaviour destina",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 5,
+  "sample": "sourceStorage.AddResource(cargoType, actualRemoved - actualDelivered);"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1818,10 +2354,5 @@ void ExecuteImmediateDeliveryBetween(MonoBehaviour source, MonoBehaviour destina",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 9,
+  "sample": "if (cargoType == ResourceType.Population && ClientStayTracker.Instance != null && actualDelivered > 0); ClientStayTracker.Instance.HandleImmediateTran"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1831,27 +2362 @@ void ExecuteImmediateDeliveryBetween(MonoBehaviour source, MonoBehaviour destina",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 24,
+  "sample": "return actualDelivered;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1963 +2468 @@ void ExecuteChoiceDelivery(AgentChoice choice)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "int ExecuteMultipleDeliveries(AgentChoice choice)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1966,0 +2472,6 @@ void ExecuteMultipleDeliveries(AgentChoice choice)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "int linkedBefore = (currentTask != null && currentTask.linkedDeliveryTaskIds != null); ? currentTask.linkedDeliveryTaskIds.Count : 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1970 +2481 @@ void ExecuteMultipleDeliveries(AgentChoice choice)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "movedImmediately += ExecuteSingleSourceMultiDest(choice, triggeringFacility);"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1972 +2482,0 @@ void ExecuteMultipleDeliveries(AgentChoice choice)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1974 +2484 @@ void ExecuteMultipleDeliveries(AgentChoice choice)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "movedImmediately += ExecuteMultiSourceSingleDest(choice, triggeringFacility);"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1976 +2485,0 @@ void ExecuteMultipleDeliveries(AgentChoice choice)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1980 +2488,0 @@ void ExecuteMultipleDeliveries(AgentChoice choice)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1985,0 +2494,7 @@ void ExecuteMultipleDeliveries(AgentChoice choice)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 6,
+  "removed": 0,
+  "sample": "int linkedAfter = (currentTask != null && currentTask.linkedDeliveryTaskIds != null); ? currentTask.linkedDeliveryTaskIds.Count : 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1991 +2506,2 @@ void ExecuteMultipleDeliveries(AgentChoice choice)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "int ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFacility)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1993,4 +2508,0 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 3,
+  "sample": "Debug.Log(\"=== EXECUTING SINGLE SOURCE MULTI DEST ===\");; Debug.Log($\"Choice immediate delivery: {choice.immediateDelivery}\");"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -1998 +2510 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (source == null) return 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2000 +2511,0 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2002,3 +2513,2 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 2,
+  "sample": ".Where(dest => dest != source); .ToList();"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2008 +2518 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2011,2 +2521,3 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 2,
+  "sample": "DeliverySystem deliverySystem = DeliverySystem.Instance ?? FindObjectOfType<DeliverySystem>();; if (deliverySystem == null) return 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2014,2 +2525,4 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 2,
+  "sample": "int remaining = Mathf.Min(CalculateDeliveryQuantity(choice, source), EffectiveStock(source, cargo, deliverySystem));; if (remaining <= 0) return 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2016,0 +2530 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "int moved = 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2018,0 +2533,3 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "if (remaining <= 0) break;; int amount = Mathf.Min(share, remaining, EffectiveSpace(dest, cargo, deliverySystem));"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2021 +2538,3 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 1,
+  "sample": "int m = ExecuteImmediateDeliveryBetween(source, dest, cargo, amount);; moved += m;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2025,2 +2544,2 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 1,
+  "sample": "List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, dest, cargo, amount, 3);; if (deliveries.Count == 0) continue;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2027,0 +2547 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "remaining -= amount;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2029 +2548,0 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2031 +2550 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "Debug.Log($\"Multi-dest: {amount} {cargo} from {source.name} to {dest.name}\");"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2032,0 +2552 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "return moved;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2038 +2558,2 @@ void ExecuteSingleSourceMultiDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "int ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFacility)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2041,4 +2562 @@ void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 2,
+  "sample": "if (destination == null) return 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2045,0 +2564,3 @@ void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "List<MonoBehaviour> sources = FindMultipleSources(choice, triggeringFacility, 3); .Where(src => src != destination)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2049 +2570 @@ void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2052,2 +2573,11 @@ void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 8,
+  "removed": 2,
+  "sample": "DeliverySystem deliverySystem = DeliverySystem.Instance ?? FindObjectOfType<DeliverySystem>();; if (deliverySystem == null) return 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2054,0 +2585 @@ void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "int moved = 0;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2057,3 +2588,3 @@ void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 2,
+  "sample": "if (remaining <= 0) break;; int amount = Mathf.Min(remaining, EffectiveStock(source, cargo, deliverySystem), CalculateDeliveryQuantity(choice, source)"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2062 +2593,3 @@ void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 1,
+  "sample": "int m = ExecuteImmediateDeliveryBetween(source, destination, cargo, amount);; moved += m;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2066,2 +2599,2 @@ void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 1,
+  "sample": "List<DeliveryTask> deliveries = deliverySystem.CreateDeliveryTask(source, destination, cargo, amount, 3);; if (deliveries.Count == 0) continue;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2068,0 +2602 @@ void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "remaining -= amount;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2070 +2603,0 @@ void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2072 +2605 @@ void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "Debug.Log($\"Multi-source: {amount} {cargo} from {source.name} to {destination.name}\");"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2073,0 +2607 @@ void ExecuteMultiSourceSingleDest(AgentChoice choice, MonoBehaviour triggeringFa",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "return moved;"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2403 +2937,2 @@ void ExecuteImmediateDelivery(AgentChoice choice)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2406,27 +2941 @@ void ExecuteImmediateDelivery(AgentChoice choice)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 23,
+  "sample": "ClientStayTracker.Instance.HandlePopulationDelivery(source, destination, actualDelivered, currentTask.taskId);"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2499 +3008,5 @@ void ApplyChoiceImpacts(AgentChoice choice)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "var choiceCat = currentTask.taskTag == TaskTag.Food ? SatisfactionAndBudget.SpendCategory.Food; : currentTask.taskTag == TaskTag.Lodging ? Satisfactio"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2501,0 +3015 @@ void ApplyChoiceImpacts(AgentChoice choice)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "choiceCat,"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2579 +3093,14 @@ void OnSendPlayerMessage()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 9,
+  "removed": 1,
+  "sample": "if (currentTask.taskId == -1 && currentTask.multiAgentProposal != null); {"
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2709 +3235,0 @@ void UpdateChoiceValidation()",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/TaskDetailUI.cs",
+  "hunk": "@@ -2711 +3237,2 @@ void UpdateChoiceValidation()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "bool isValid = ValidateChoiceDelivery(currentTask, choice, out errorMessage);"
+ },
+ {
+  "file": "WeatherSystem.cs",
+  "hunk": "@@ -45,0 +46,17 @@ public class WeatherSystem : MonoBehaviour",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 10,
+  "removed": 0,
+  "sample": "[System.Serializable]; public class Snapshot { public string current; public string start; }"
+ },
+ {
+  "file": "WeatherSystem.cs",
+  "hunk": "@@ -96 +113 @@ IEnumerator InitializeWithCentralConfig()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SetWeather(startWeather);   // Start() applied the field's initial value before this ran (BUG_REPORTS B29)"
+ },
+ {
+  "file": "WeatherSystem.cs",
+  "hunk": "@@ -160,0 +178 @@ void GenerateRandomWeather()",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "SnapshotDebug.Mark(\"draw:Weather.select\");"
+ },
+ {
+  "file": "Tasks/CommunityFoodDepletionManager.cs",
+  "hunk": "@@ -49,5 +49,3 @@ void Start()",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 5,
+  "sample": "StartCoroutine(ApplyConfiguredChance());"
+ },
+ {
+  "file": "Tasks/CommunityFoodDepletionManager.cs",
+  "hunk": "@@ -55,0 +54,4 @@ void Start()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "{; GlobalClock.Instance.OnDayStarted += OnDayStarted;"
+ },
+ {
+  "file": "Tasks/CommunityFoodDepletionManager.cs",
+  "hunk": "@@ -56,0 +59,11 @@ void Start()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 10,
+  "removed": 0,
+  "sample": "}; }"
+ },
+ {
+  "file": "Tasks/CommunityFoodDepletionManager.cs",
+  "hunk": "@@ -61,0 +75,2 @@ void OnDestroy()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "{; GlobalClock.Instance.OnDayStarted -= OnDayStarted;"
+ },
+ {
+  "file": "Tasks/CommunityFoodDepletionManager.cs",
+  "hunk": "@@ -62,0 +78 @@ void OnDestroy()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "}"
+ },
+ {
+  "file": "Tasks/CommunityFoodDepletionManager.cs",
+  "hunk": "@@ -64,0 +81,2 @@ void OnDestroy()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "void OnDayStarted(int day) => OnRoundChanged(0);"
+ },
+ {
+  "file": "Tasks/CommunityFoodDepletionManager.cs",
+  "hunk": "@@ -83 +101,2 @@ void TryDeplete(PrebuiltBuilding community)",
+  "kind": "instrumentation/LLM",
+  "rng": true,
+  "added": 2,
+  "removed": 1,
+  "sample": "SnapshotDebug.Mark(\"draw:CommunityFoodDepletion\");; if (UnityEngine.Random.value >= depletionChancePerRound) return; // routine miss \u2014 not logged, wou"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -34 +33,0 @@ public bool CanExecute(GameTask parentTask, AgentChoice choice, out string error",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -36,5 +35 @@ public bool CanExecute(GameTask parentTask, AgentChoice choice, out string error",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 5,
+  "sample": "if (destination == null) { errorMessage = \"Destination not found\"; return false; }"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -43 +38 @@ public bool CanExecute(GameTask parentTask, AgentChoice choice, out string error",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (ds == null) { errorMessage = \"Delivery System missing\"; return false; }"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -63,3 +58,19 @@ public bool CanExecute(GameTask parentTask, AgentChoice choice, out string error",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 17,
+  "removed": 2,
+  "sample": "int totalReachableFood = 0;; bool atLeastOneKitchenReachable = false;"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -114,0 +126,5 @@ public bool Execute(GameTask parentTask, AgentChoice choice)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"food:exit\", \"{\\\"branch\\\":\\\"inbound-covered\\\",\\\"dst\\\":\\\"\"; + destination.name + \"\\\",\\\"requested\\\":\" + choice.deliveryQuantit"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -117,2 +133,3 @@ public bool Execute(GameTask parentTask, AgentChoice choice)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 2,
+  "sample": "return false;"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -123,0 +141,5 @@ public bool Execute(GameTask parentTask, AgentChoice choice)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"food:exit\", \"{\\\"branch\\\":\\\"no-kitchen-stock\\\",\\\"dst\\\":\\\"\"; + destination.name + \"\\\",\\\"requested\\\":\" + choice.deliveryQuanti"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -138,0 +161,3 @@ public bool Execute(GameTask parentTask, AgentChoice choice)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 3,
+  "removed": 0,
+  "sample": "SnapshotDebug.MarkContext(\"food:exit\", \"{\\\"branch\\\":\\\"created\\\",\\\"dst\\\":\\\"\"; + destination.name + \"\\\",\\\"kitchen\\\":\\\"\" + kitchen.name"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -167 +192 @@ public bool Execute(GameTask parentTask, AgentChoice choice)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "public int ExecuteImmediate(GameTask parentTask, AgentChoice choice)"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -168,0 +194,2 @@ public void ExecuteImmediate(GameTask parentTask, AgentChoice choice)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -170,2 +197 @@ public void ExecuteImmediate(GameTask parentTask, AgentChoice choice)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (destination == null) return 0;"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -173 +199 @@ public void ExecuteImmediate(GameTask parentTask, AgentChoice choice)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (destStorage == null) return 0;"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -177,2 +203 @@ public void ExecuteImmediate(GameTask parentTask, AgentChoice choice)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "int added = destStorage.AddResource(ResourceType.FoodPacks, amount);"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -180,2 +205,3 @@ public void ExecuteImmediate(GameTask parentTask, AgentChoice choice)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 3,
+  "removed": 2,
+  "sample": "Debug.Log($\"[FoodDeliveryTaskGenerator] Immediate drop: added {added}/{amount} food to {destination.name}\");; GameLogPanel.Instance?.LogTaskEvent($\"Im"
+ },
+ {
+  "file": "Tasks/FoodDeliveryHandler.cs",
+  "hunk": "@@ -266 +292 @@ int GetTotalEffectiveFood(DeliverySystem ds)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "public int ResolveQuantity(AgentChoice choice, MonoBehaviour destination)"
+ },
+ {
+  "file": "Tasks/BudgetAllocationManager.cs",
+  "hunk": "@@ -27,0 +28,27 @@ public class BudgetAllocationManager : MonoBehaviour",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 19,
+  "removed": 0,
+  "sample": "[System.Serializable]; public class Snapshot"
+ },
+ {
+  "file": "WorkerAssignment/WorkerTrainingSystem.cs",
+  "hunk": "@@ -72 +72 @@ void OnTaskExpired(GameTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (task.taskTitle == \"Responder Training Program\" && currentTrainingTask == task)"
+ },
+ {
+  "file": "WorkerAssignment/WorkerTrainingSystem.cs",
+  "hunk": "@@ -183 +182,0 @@ void OnTaskCompleted(GameTask task)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "WorkerAssignment/WorkerTrainingSystem.cs",
+  "hunk": "@@ -186,2 +184,0 @@ void OnTaskCompleted(GameTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 1,
+  "sample": "int totalCost = workersToTrain * trainingCostPerWorker;"
+ },
+ {
+  "file": "WorkerAssignment/WorkerTrainingSystem.cs",
+  "hunk": "@@ -189,5 +186,18 @@ void OnTaskCompleted(GameTask task)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 10,
+  "removed": 0,
+  "sample": "int freeUntrained = workerSystem.GetWorkersByType(WorkerType.Untrained); .FindAll(w => w.GetCurrentStatus() == \"Free\").Count;"
+ },
+ {
+  "file": "WorkerAssignment/WorkerTrainingSystem.cs",
+  "hunk": "@@ -196 +205,0 @@ void OnTaskCompleted(GameTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance.LogError($\"Game error, unable to allocate: ${totalCost}\");"
+ },
+ {
+  "file": "WorkerAssignment/WorkerTrainingSystem.cs",
+  "hunk": "@@ -200,4 +209 @@ void OnTaskCompleted(GameTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $\"Training {workersToTrain} workers\");"
+ },
+ {
+  "file": "WorkerAssignment/WorkerTrainingSystem.cs",
+  "hunk": "@@ -212 +218 @@ void OnTaskCompleted(GameTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "public void StartWorkerTraining(int workerCount)"
+ },
+ {
+  "file": "WorkerAssignment/WorkerTrainingSystem.cs",
+  "hunk": "@@ -247 +253 @@ void StartWorkerTraining(int workerCount)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogWorkerAction($\"Started training {workerCount} workers (completion Day {completionDay})\");"
+ },
+ {
+  "file": "WorkerAssignment/WorkerTrainingSystem.cs",
+  "hunk": "@@ -294 +300 @@ void CompleteWorkerTraining(TrainingTask training)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogMetricsChange(\"Satisfaction increased by \" + (successfullyTrained * satisfactionPerTrainedWorker) + \" for training completio"
+ },
+ {
+  "file": "WorkerAssignment/WorkerRequestSystem.cs",
+  "hunk": "@@ -209,6 +209,6 @@ void OnTaskCompleted(GameTask task)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "WorkerAssignment/WorkerRequestSystem.cs",
+  "hunk": "@@ -217 +216,0 @@ void OnTaskCompleted(GameTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 0,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance.LogError($\"Game error, unable to allocate: ${totalCost}\");"
+ },
+ {
+  "file": "WorkerAssignment/WorkerRequestSystem.cs",
+  "hunk": "@@ -221,4 +220 @@ void OnTaskCompleted(GameTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $\"Requesting {untrainedToRequest} untrained and {tr"
+ },
+ {
+  "file": "WorkerAssignment/WorkerRequestSystem.cs",
+  "hunk": "@@ -236 +232 @@ void OnTaskCompleted(GameTask task)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "public void StartWorkerRequest(int workerCount, WorkerType workerType)"
+ },
+ {
+  "file": "WorkerAssignment/WorkerRequestSystem.cs",
+  "hunk": "@@ -268 +264 @@ void StartWorkerRequest(int workerCount, WorkerType workerType)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogWorkerAction($\"Requested {workerCount} {label} workers (arrival Day {arrivalDay})\");"
+ },
+ {
+  "file": "WorkerAssignment/WorkerRequestSystem.cs",
+  "hunk": "@@ -313 +309 @@ void CompleteWorkerRequest(RequestTask request)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "GameLogPanel.Instance?.LogWorkerAction($\"Worker request complete: {workersArrived} {label} workers arrived\");"
+ },
+ {
+  "file": "WorkerAssignment/WorkerSystem.cs",
+  "hunk": "@@ -212,0 +213,56 @@ public bool TryAssignWorkersToBuilding(int buildingId, int requiredWorkforce = 4",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 36,
+  "removed": 0,
+  "sample": "public bool TryStaffBuildingWithComposition(int buildingId, int trainedCount, int untrainedCount); {"
+ },
+ {
+  "file": "WorkerAssignment/WorkerSystem.cs",
+  "hunk": "@@ -236,0 +293,40 @@ public void ReleaseWorkersFromBuilding(int buildingId)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 34,
+  "removed": 0,
+  "sample": "[System.Serializable]; public class Snapshot"
+ },
+ {
+  "file": "DailyReport/DailyReportUI.cs",
+  "hunk": "@@ -277,2 +277,6 @@ public void DisplayDailyReport(DailyReportMetrics metrics)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 2,
+  "sample": "currentSatisfaction = DailyReportData.Instance.GetDayStartSatisfaction() * 10f;; currentEfficiency = DailyReportData.Instance.GetDayStartEfficiency() "
+ },
+ {
+  "file": "Tasks/FloodTaskGenerator.cs",
+  "hunk": "@@ -42,0 +43 @@ void Start()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "{"
+ },
+ {
+  "file": "Tasks/FloodTaskGenerator.cs",
+  "hunk": "@@ -43,0 +45,2 @@ void Start()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "TaskSystem.Instance.OnTaskExpired += OnAnyTaskCompleted;   // an ignored blockage EXPIRES (BUG_REPORTS B8); }"
+ },
+ {
+  "file": "Tasks/FloodTaskGenerator.cs",
+  "hunk": "@@ -149 +152,6 @@ public void CreateRoadBlockageTask(Vehicle blockedVehicle, DeliveryTask original",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 2,
+  "removed": 1,
+  "sample": "roadBlockageTask.affectedFacility = originalDelivery.destinationBuilding != null; ? originalDelivery.destinationBuilding.name : null;"
+ },
+ {
+  "file": "Tasks/FloodTaskGenerator.cs",
+  "hunk": "@@ -161,0 +170,3 @@ public void CreateRoadBlockageTask(Vehicle blockedVehicle, DeliveryTask original",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "roadBlockageTask.affectedFacility = originalDelivery.sourceBuilding != null; ? originalDelivery.sourceBuilding.name : null;"
+ },
+ {
+  "file": "Tasks/FloodTaskGenerator.cs",
+  "hunk": "@@ -265,0 +277 @@ void OnDestroy()",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "TaskSystem.Instance.OnTaskExpired -= OnAnyTaskCompleted;"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -128,0 +129 @@ public void OnBuildingTypeSelected(BuildingType buildingType)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "string siteName = selectedSite.name;"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -129,0 +131,3 @@ public void OnBuildingTypeSelected(BuildingType buildingType)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 2,
+  "removed": 0,
+  "sample": "GameLogPanel.Instance?.LogUIInteraction(\"game_action\", \"construction\",; $\"building={buildingType} | site={siteName}\");"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -142 +146,5 @@ public void RequestDeconstruction(Building building)",
+  "kind": "instrumentation/LLM",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "public bool CreateBuildingImmediately(AbandonedSite site, BuildingType buildingType)"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -148 +156 @@ public void CreateBuildingImmediately(AbandonedSite site, BuildingType buildingT",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return false;"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -153,0 +162,7 @@ public void CreateBuildingImmediately(AbandonedSite site, BuildingType buildingT",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 5,
+  "removed": 0,
+  "sample": "if (Application.isBatchMode); {"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -164 +179 @@ public void CreateBuildingImmediately(AbandonedSite site, BuildingType buildingT",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return true; // interactive UI: construction proceeds on confirm"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -167 +182 @@ public void CreateBuildingImmediately(AbandonedSite site, BuildingType buildingT",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "return PerformConstruction(site, buildingType);"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -170,2 +185,2 @@ public void CreateBuildingImmediately(AbandonedSite site, BuildingType buildingT",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "private bool PerformConstruction(AbandonedSite site, BuildingType buildingType)"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -173 +188,17 @@ private void PerformConstruction(AbandonedSite site, BuildingType buildingType)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 13,
+  "removed": 0,
+  "sample": "int plannedCost = buildingType switch; {"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -219 +250,9 @@ private void PerformConstruction(AbandonedSite site, BuildingType buildingType)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 5,
+  "removed": 1,
+  "sample": "var spendCat = buildingType == BuildingType.Kitchen ? SatisfactionAndBudget.SpendCategory.Food; : buildingType == BuildingType.Shelter ? SatisfactionA"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -236,0 +276 @@ private void PerformConstruction(AbandonedSite site, BuildingType buildingType)",
+  "kind": "comment-only",
+  "rng": false,
+  "added": 0,
+  "removed": 0,
+  "sample": ""
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -256,0 +297 @@ private void PerformConstruction(AbandonedSite site, BuildingType buildingType)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "return true;"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -261,0 +303 @@ private void PerformConstruction(AbandonedSite site, BuildingType buildingType)",
+  "kind": "ADDITION",
+  "rng": false,
+  "added": 1,
+  "removed": 0,
+  "sample": "return false;"
+ },
+ {
+  "file": "Map/BuildingSystem.cs",
+  "hunk": "@@ -423,2 +465,3 @@ public bool DeconstructBuilding(Building building)",
+  "kind": "MODIFIES EXISTING",
+  "rng": false,
+  "added": 1,
+  "removed": 1,
+  "sample": "if (workerSystem != null)"
+ }
+]

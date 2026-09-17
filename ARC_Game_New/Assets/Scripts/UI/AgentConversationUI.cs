@@ -81,6 +81,21 @@ public class AgentConversationUI : MonoBehaviour
     public bool showDebugInfo = true;
 
     private TaskOfficer currentSelectedAgent = TaskOfficer.DisasterOfficer;
+
+    /// <summary>Display name of the officer whose conversation is open, resolved through the
+    /// router's roster so it matches what the player is actually reading (the enum slot name
+    /// is often not the config's officer name). Used by the play-tester Flag Interaction
+    /// control to record WHO the tester was talking to when the exchange went badly.</summary>
+    public string CurrentOfficerName()
+    {
+        string slot = currentSelectedAgent.ToString();
+        string name;
+        if (WebSocketManager.OfficerRoster != null
+            && WebSocketManager.OfficerRoster.TryGetValue(slot, out name)
+            && !string.IsNullOrEmpty(name))
+            return name;
+        return slot;
+    }
     private bool isExpanded = false;
     private bool isAnimating = false;
     private int newMessageCount = 0;
@@ -699,13 +714,18 @@ public class AgentConversationUI : MonoBehaviour
         generatingWatchdog = null;
     }
 
-    void RecordAgentMessage(TaskOfficer officer, string content)
+    /// <summary>Record a message into `officer`'s thread. `badgeOfficer` is normally the same
+    /// officer, but for an INTER-OFFICER message it is the SENDER: the message is filed under
+    /// the recipient's tab (that is whose conversation it belongs to) while showing the
+    /// sender's avatar, so a peer message reads as arriving from someone rather than as the
+    /// tab's own officer talking to themselves.</summary>
+    void RecordAgentMessage(TaskOfficer officer, string content, TaskOfficer? badgeOfficer = null)
     {
         AppendHistory(officer, new ConversationEntry
         {
             kind = EntryKind.AgentMessage,
             content = content,
-            avatar = GetOfficerAvatar(officer),
+            avatar = GetOfficerAvatar(badgeOfficer ?? officer),
         });
     }
 
@@ -1370,10 +1390,23 @@ public class AgentConversationUI : MonoBehaviour
     /// Add agent conversational message to UI.
     /// Called by WebSocketManager when agent_message is received.
     /// </summary>
-    public void AddAgentMessage(TaskOfficer officer, string content, string messageType)
+    public void AddAgentMessage(TaskOfficer officer, string content, string messageType,
+                                TaskOfficer? fromOfficer = null, string fromName = null)
     {
+        // INTER-OFFICER MESSAGE. `officer` is the RECIPIENT (whose tab this belongs in) and
+        // `fromOfficer` the sender. Label it so the director can tell at a glance that this
+        // is officers talking to each other rather than an officer addressing them -- that
+        // distinction is the whole point of showing these at all.
+        if (fromOfficer.HasValue)
+        {
+            string who = string.IsNullOrEmpty(fromName)
+                       ? fromOfficer.Value.ToString()
+                       : fromName;
+            content = $"<b>From: {who}</b>\n{content}";
+        }
+
         // Persist to per-officer history first so tab switches can replay it.
-        RecordAgentMessage(officer, content);
+        RecordAgentMessage(officer, content, fromOfficer);
 
         // Only display now if this is the currently selected agent
         if (officer != currentSelectedAgent || !isExpanded)
@@ -1392,8 +1425,9 @@ public class AgentConversationUI : MonoBehaviour
 
             if (messageUI != null)
             {
-                // Use the correct officer avatar so the live render matches the replay.
-                var agentMsg = new AgentMessage(content, GetOfficerAvatar(officer));
+                // Use the correct officer avatar so the live render matches the replay --
+                // the SENDER's for a peer message, this tab's officer otherwise.
+                var agentMsg = new AgentMessage(content, GetOfficerAvatar(fromOfficer ?? officer));
                 messageUI.Initialize(agentMsg);
                 StartCoroutine(messageUI.PlayTypingEffect(0.02f));
             }

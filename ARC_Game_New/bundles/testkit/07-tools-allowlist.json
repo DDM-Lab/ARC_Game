@@ -48,7 +48,7 @@
           "read_state",
           "get_facilities",
           "get_tasks",
-          "talk_to_director",
+          "send_message",
           "finish"
         ]
       }

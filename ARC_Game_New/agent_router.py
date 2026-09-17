@@ -45,7 +45,8 @@ from agent_filters import filter_observation, filter_actions
 from agent_ordering import get_agent_order
 from episode_logger import EpisodeLogger
 from llm_query import query_llm, load_global_prompt
-from continuous_agent import build_tools, run_tool_step, DEFAULT_TOOLS, TOOL_SCHEMAS
+from continuous_agent import (build_tools, run_tool_step, DEFAULT_TOOLS, TOOL_SCHEMAS,
+                              known_ctx_limit, _est_prompt_tokens)
 import cora_tools
 # The typed action tools (build/hire/train/staff/deconstruct/task/transfer) the officer emits.
 # Each is translated to its command tag and routed through the execute_commands path.
@@ -59,7 +60,7 @@ from cmd_parser import parse_commands, ParserEnv  # SHARED parser + env shim (be
 from obs_encoder import (
     render_state_text, _num, task_officer, task_group, stable_task_token,
     render_facilities_text, render_workforce_text, render_tasks_text,
-    render_logistics_text,
+    render_logistics_text, _vehicle_capacity,
 )
 from choices_reliability import (
     dedupe_packages,
@@ -183,6 +184,26 @@ def _wrap_actor(name: str) -> dict:
     return {"kind": name, "name": name, "role": name, "actor_type": name}
 
 
+
+def _num_free_vehicles(game_state):
+    """Vehicles idle right now, or None if the state doesn't say."""
+    lg = (game_state or {}).get("logistics") or {}
+    v = lg.get("availableVehicles")
+    if v is None:
+        v = lg.get("vehiclesFree")
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+# How many peer-triggered officer activations one round may spawn. Generous on purpose: the
+# point is to let inter-agent conversation actually happen and to SEE how far it runs, not to
+# clip it at the first exchange. It exists so a pathological loop ends the round instead of
+# the session.
+PEER_TRIGGER_BUDGET_PER_ROUND = 12
+
+
 class Session:
     """One isolated game session for a single connected Unity client.
 
@@ -277,6 +298,9 @@ class Session:
         # outputs are already present as assistant/tool turns, so re-pulling the
         # whole conversation would duplicate them.
         self._director_injected_count: Dict[str, int] = {}
+        # (name, partner) -> how many of that partner's messages this officer has already
+        # seen. Replaces the director-only counter so peer threads are tracked too.
+        self._msg_injected_count: dict = {}
         self._director_agent: Optional[AgentConfig] = self._find_director()
 
     def _find_director(self) -> Optional[AgentConfig]:
@@ -491,6 +515,15 @@ class Session:
 
     async def _handle_begin_round(self, msg: dict):
         self.round_num += 1
+        # Peer-triggered activations left this round. A message to a colleague WAKES them,
+        # exactly like a director message does, so officers can actually converse. That makes
+        # an A->B->A chain possible by design -- it is a model behaviour to observe (and train
+        # out), not something to prevent in the harness. What the harness does owe you is that
+        # a runaway chain cannot silently consume the whole session: the budget bounds it,
+        # every hop is logged, and exhaustion is announced rather than swallowed. Raise or
+        # lower it per config with `peer_trigger_budget`.
+        self._peer_triggers_left = int(
+            getattr(self.config, "peer_trigger_budget", None) or PEER_TRIGGER_BUDGET_PER_ROUND)
         self.day = msg.get("day", self.day)
         self.segment = msg.get("segment", self.segment)
         game_state = msg.get("game_state", {})
@@ -1125,7 +1158,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         "packages. Use it when the call is genuinely theirs, the stakes or ambiguity "
         "are high, or you want their steer. The director's review time is scarce — "
         "propose only when it adds real value, and keep packages genuinely distinct.\n"
-        "- talk_to_director: explain, recommend, ask, or flag something — grounded in the "
+        "- send_message: explain, recommend, ask, or flag something — grounded in the "
         "real state numbers.\n"
         "- read_state / list_actions: refresh your view of the state and the OPTIONS "
         "you can act on. get_facilities / get_workforce / get_tasks / get_logistics pull "
@@ -1167,6 +1200,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         game_state: dict,
         all_actions: List[dict],
         triggered_by_director: bool = False,
+        triggered_by_peer: bool = False,
     ) -> Tuple[dict, List[dict]]:
         """Serialize turns FOR THIS OFFICER, then drive one turn.
 
@@ -1187,7 +1221,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         async with self._agent_lock(agent.subagent_name):
             return await self._run_continuous_inner(
                 agent, filtered_state, filtered_actions, game_state, all_actions,
-                triggered_by_director,
+                triggered_by_director, triggered_by_peer,
             )
 
     async def _run_continuous_concurrent(self, agent: AgentConfig) -> None:
@@ -1258,7 +1292,8 @@ Respond with ONLY the package index number (0, 1, or 2).
             return msg["game_state"]
         return self._latest_game_state
 
-    async def _run_continuous_for_message(self, agent: AgentConfig) -> None:
+    async def _run_continuous_for_message(self, agent: AgentConfig,
+                                          by_peer: bool = False) -> None:
         """Drive a continuous turn triggered by a mid-round director_message.
 
         Recomputes the filtered state/actions from the FRESHEST session snapshot
@@ -1283,7 +1318,8 @@ Respond with ONLY the package index number (0, 1, or 2).
             # "reactive" opening_mode it is now allowed to act (full palette this turn).
             await self._run_continuous(
                 agent, filtered_state, filtered_actions, gs, all_actions,
-                triggered_by_director=True,
+                triggered_by_director=not by_peer,
+                triggered_by_peer=by_peer,
             )
         except Exception as e:
             # A director explicitly addressed this officer; an uncaught error must not
@@ -1312,12 +1348,53 @@ Respond with ONLY the package index number (0, 1, or 2).
     # grow to HIGH and only then cutting back to KEEP makes compaction bite every
     # (HIGH - KEEP) turns instead of every turn -- same context ceiling, ~4x the cross-turn
     # reuse. Measured rationale: proj_dashboard/serve/QWEN27B_SERVING.md section 7.2.
+    #
+    # TURN COUNTS ARE THE FALLBACK, NOT THE TRIGGER. A turn count cannot know how big a turn
+    # is: a talk-only activation costs a few hundred tokens and a four-step tool turn costs
+    # thousands, so any fixed count is simultaneously too eager for cheap turns and too lax
+    # for expensive ones. Tuned at 12 against a 16k window it was too lax in the direction
+    # that actually hurts -- the transcript blew the window at ~5 activations and the server
+    # rejected the request outright (400 "maximum context length"), so compaction never ran
+    # at all. These two constants now apply only when the endpoint's context window is
+    # unknown; when it IS known, the watermarks below drive compaction instead.
     _CONTINUOUS_COMPACT_AT = 12
+
+    # TOKEN WATERMARKS, as a fraction of the usable transcript budget (the context window
+    # minus the static head minus the reserved completion budget). Compaction fires once the
+    # transcript passes HIGH and cuts back to LOW -- the same hysteresis idea as above, now
+    # measured in the unit the server actually enforces.
+    #
+    # The gap between them is what buys prefix-cache reuse: a rewrite discards every cached
+    # block from the cut point down, so compaction must be RARE and LARGE rather than
+    # per-turn and small. HIGH is not 1.0 because the estimate is deliberately pessimistic
+    # and one more activation lands on top of it before the next compaction check.
+    _CONTINUOUS_HIGH_WATER = 0.80
+    _CONTINUOUS_LOW_WATER = 0.50
+
+    # Never shed below this many activation turns, whatever the arithmetic says. A turn
+    # carries the committed ledger and the director's last exchange; dropping to zero
+    # context would make the officer answer the same question twice.
+    _CONTINUOUS_MIN_TURNS = 2
+
+    # Held back from the transcript budget for the model's own reply. Sized for a
+    # thinking-off tool step (measured 40-300 tokens for a real turn), with headroom.
+    _CONTINUOUS_RESERVE_OUTPUT = 1024
 
     @staticmethod
     def _compact_transcript(messages: List[dict], keep_turns: int,
-                            compact_at: int = 0) -> List[dict]:
-        """Bound a continuous transcript to system + the last `keep_turns` turns.
+                            compact_at: int = 0, *,
+                            token_budget: Optional[int] = None,
+                            high_water: float = 0.80,
+                            low_water: float = 0.50,
+                            min_turns: int = 2) -> List[dict]:
+        """Bound a continuous transcript, by TOKEN BUDGET when the window is known.
+
+        `token_budget` is how many tokens the transcript itself may occupy — the
+        context window minus the static head (system prompt + tool schemas) minus a
+        reservation for the reply. Given it, this compacts on the same quantity the
+        server enforces: over `high_water` triggers a cut back to `low_water`. Without
+        it (window unknown) it falls back to the legacy `keep_turns`/`compact_at`
+        turn counting, which is why both parameters are still here.
 
         A continuous officer carries ONE transcript for the whole game; left
         unbounded it accretes step-by-step tool JSON (read_state dumps, action
@@ -1335,6 +1412,46 @@ Respond with ONLY the package index number (0, 1, or 2).
             return messages
         system, body = messages[0], messages[1:]
         starts = [i for i, m in enumerate(body) if m.get("role") == "user"]
+        if not starts:
+            return messages
+
+        # ---- TOKEN-DRIVEN PATH (preferred): compact against the real window ----------
+        if token_budget and token_budget > 0:
+            high = int(token_budget * high_water)
+            low = int(token_budget * low_water)
+            # Measure the BODY only. The caller already subtracted the static head
+            # (system message + tool schemas) from the window to form `token_budget`,
+            # so counting the system message again here would shrink the effective
+            # budget by its own size and fire compaction earlier than intended --
+            # defeating the "rare and large" rewrite that keeps the prefix cacheable.
+            est = _est_prompt_tokens(body, None)
+            if est <= high:
+                return messages                      # still inside the watermark
+
+            # Walk user boundaries from the NEWEST backwards, taking as many whole turns
+            # as fit under LOW. Cutting only at a user message is what keeps every tool
+            # result paired with the assistant tool_call that produced it -- an orphan is
+            # a hard 400 from the provider, so this invariant outranks the budget.
+            kept, cut_at = 0, starts[-1]
+            for i in range(len(starts) - 1, -1, -1):
+                seg_end = starts[i + 1] if i + 1 < len(starts) else len(body)
+                seg = _est_prompt_tokens(body[starts[i]:seg_end], None)
+                turns_taken = len(starts) - i
+                # Always take the newest turn, and honour the floor, even if over budget:
+                # an over-budget CURRENT turn is the caller's problem to clamp, whereas an
+                # empty transcript is a correctness bug.
+                if kept + seg > low and turns_taken > max(1, min_turns):
+                    break
+                kept += seg
+                cut_at = starts[i]
+            if cut_at == 0:
+                return messages                      # nothing sheddable
+            shed = len(starts) - sum(1 for x in starts if x >= cut_at)
+            print(f"[router]   ✂ compacted transcript: ~{est} -> ~{kept} tok "
+                  f"(budget {token_budget}, high {high}, low {low}); shed {shed} turn(s)")
+            return [system] + body[cut_at:]
+
+        # ---- TURN-COUNT FALLBACK: only when the context window is unknown -------------
         # Only compact once the transcript has grown PAST the trigger, then cut all the way
         # back to keep_turns. Between rewrites the prefix is stable and cacheable.
         if len(starts) <= max(keep_turns, compact_at):
@@ -1356,6 +1473,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         game_state: dict,
         all_actions: List[dict],
         triggered_by_director: bool = False,
+        triggered_by_peer: bool = False,
     ) -> Tuple[dict, List[dict]]:
         """Drive one turn of the continuous (tool-using) agent."""
         # Reactive autonomy ("activate when spoken to"): on an UNPROMPTED turn a
@@ -1364,20 +1482,32 @@ Respond with ONLY the package index number (0, 1, or 2).
         # to commit anything unbidden; no reliance on prompt adherence. Any other
         # opening_mode (emergent/brief_first) keeps the full configured palette.
         opening_mode = getattr(agent, "opening_mode", "emergent")
-        brief_only = (opening_mode == "reactive") and not triggered_by_director
+        # THREE activation shapes now, not two:
+        #   director-triggered -> may act, converses freely
+        #   peer-triggered     -> may NOT act, but converses freely (a colleague wrote to it)
+        #   unprompted tick    -> may NOT act, and briefs only
+        # `may_act` and `brief_only` used to be the same boolean. Splitting them is what lets a
+        # peer message wake an officer WITHOUT handing it action tools: only the Director
+        # authorises action, which is the rule the prompt states and this is the harness half
+        # that actually enforces it.
+        may_act = (opening_mode != "reactive") or triggered_by_director
+        brief_only = ((opening_mode == "reactive")
+                      and not triggered_by_director and not triggered_by_peer)
         # build_tools only knows built-ins; keep plugin names out of its allowlist (they're
         # added below by _plugin_tool_schemas_for) so it doesn't log "unknown tool".
         # Per-config rewording of built-in tool descriptions (bundle `tool_descriptions`).
         _tdesc = getattr(self.config, "tool_descriptions", None)
-        if brief_only:
+        if not may_act:
             base = list(agent.tools) if agent.tools else list(DEFAULT_TOOLS)
             tools = build_tools([t for t in base
                                  if t not in self._ACTING_TOOLS and cora_ext.get_tool(t) is None],
-                                descriptions=_tdesc)
+                                descriptions=_tdesc,
+                                recipients=self._recipients_for(agent))
         else:
             _builtins = ([t for t in agent.tools if cora_ext.get_tool(t) is None]
                          if agent.tools else None)
-            tools = build_tools(_builtins, descriptions=_tdesc)
+            tools = build_tools(_builtins, descriptions=_tdesc,
+                                recipients=self._recipients_for(agent))
         # Append registered plugin (cora_ext) tool schemas this agent may use. Inert when no
         # plugins are loaded; respects the reactive acting-strip and the per-agent allowlist,
         # de-duped against built-ins by name.
@@ -1400,14 +1530,13 @@ Respond with ONLY the package index number (0, 1, or 2).
             e for e in self.message_queue.get_conversation(name, "Director")
             if e.get("from") == "Director"
         ]
-        already = self._director_injected_count.get(name, 0)
-        for e in director_entries[already:]:
-            messages.append({"role": "user", "content": f"[Director] {e.get('content', '')}"})
-        self._director_injected_count[name] = len(director_entries)
         director_has_spoken = len(director_entries) > 0
+        # Folds in the Director AND any peer officers this agent can be addressed by.
+        heard_from_peer = self._inject_unseen_messages(agent, messages)
         messages.append(self._continuous_turn_message(
             agent, filtered_state, filtered_actions, director_has_spoken,
-            brief_only=brief_only, triggered_by_director=triggered_by_director))
+            brief_only=brief_only, triggered_by_director=triggered_by_director,
+            heard_from_peer=heard_from_peer, triggered_by_peer=triggered_by_peer))
 
         # LOOP-SHAPING HOOK: let a plugin add context before the officer's first step —
         # a ReAct scratchpad, retrieved notes, a self-critique preamble, an experimental
@@ -1430,15 +1559,37 @@ Respond with ONLY the package index number (0, 1, or 2).
         # tool-spam. The committed ledger rides inside each turn message, so it is
         # never dropped. Reassign both the persistent store and the local handle so
         # the loop below appends onto the compacted list.
-        messages = self._compact_transcript(messages, self._CONTINUOUS_KEEP_TURNS,
-                                            self._CONTINUOUS_COMPACT_AT)
+        # Size the transcript against the ENDPOINT'S REAL WINDOW when we know it. The
+        # static head (system prompt + every tool schema) is re-sent on every request but
+        # never accumulates, so it comes off the top as a fixed cost; what is left is what
+        # the conversation may occupy. Falls back to turn counting when the window is
+        # unknown (cold cache on the very first activation, or a provider that does not
+        # advertise one) -- see continuous_agent.known_ctx_limit.
+        _ctx = known_ctx_limit(agent_cfg)
+        _budget = None
+        if _ctx:
+            _head = _est_prompt_tokens([messages[0]] if messages else [], tools)
+            _budget = _ctx - _head - self._CONTINUOUS_RESERVE_OUTPUT
+            if _budget < 1024:
+                # A head this large leaves no room to converse; compacting cannot fix it.
+                # Say so once rather than silently shedding the whole transcript.
+                print(f"[router]   ⚠️  {name}: static head ~{_head} tok leaves only "
+                      f"{_budget} of {_ctx} for the transcript — narrow the tool palette "
+                      f"or raise max-model-len.")
+                _budget = None
+        messages = self._compact_transcript(
+            messages, self._CONTINUOUS_KEEP_TURNS, self._CONTINUOUS_COMPACT_AT,
+            token_budget=_budget,
+            high_water=self._CONTINUOUS_HIGH_WATER,
+            low_water=self._CONTINUOUS_LOW_WATER,
+            min_turns=self._CONTINUOUS_MIN_TURNS)
         self._continuous_transcripts[name] = messages
 
         sat_before = _get_satisfaction(game_state)
         budget_before = _get_budget(game_state)
         executed_total = 0
         # Whether the officer sent the director a message this turn. Answering a
-        # question via talk_to_director is real work even though it executes no game
+        # question via send_message is real work even though it executes no game
         # action, so a talk-only turn must NOT get the "no action taken" note below —
         # that note seeds a status-report register the model then echoes ("Answered X;
         # no action taken") instead of giving the actual answer.
@@ -1458,7 +1609,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         turn_results: List[dict] = []
         last_text = None
         # `spoke`: whether a director-FACING agent_message was actually SENT this turn (set
-        # on a real _send_agent_response, not merely on a talk_to_director tool NAME — an
+        # on a real _send_agent_response, not merely on a send_message tool NAME — an
         # empty message or a note-less finish sends nothing). `errored`: a provider/tool
         # error broke the loop. Together they drive the post-loop fallback that guarantees a
         # director-TRIGGERED turn always yields exactly one visible reply (no silent hang).
@@ -1520,7 +1671,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                     })
                     continue
                 turn_attempts.append({"tool": tc["name"], "arguments": tc.get("arguments")})
-                if tc["name"] == "talk_to_director":
+                if tc["name"] == "send_message":
                     talked = True
                 result_str, game_state, all_actions, filtered_actions, meta = \
                     await self._dispatch_continuous_tool(
@@ -1544,7 +1695,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 # Brief-only turns are capped at ONE director-facing message: after
                 # the officer briefs, end the turn even if it didn't call finish, so
                 # it can't tack on a redundant "awaiting guidance" follow-up.
-                if brief_only and tc["name"] == "talk_to_director":
+                if brief_only and tc["name"] == "send_message":
                     stop = True
             # LOOP-SHAPING HOOK: a plugin may end the turn early (custom stopping rule —
             # e.g. "stop once any action executed", a confidence gate, a step budget of its
@@ -1586,7 +1737,7 @@ Respond with ONLY the package index number (0, 1, or 2).
 
         # Guarantee a director-TRIGGERED turn always produces exactly ONE visible reply.
         # Without this, a provider error, an all-read-only turn hitting max_steps, an empty
-        # talk_to_director, or a note-less finish ends the turn with nothing sent — the
+        # send_message, or a note-less finish ends the turn with nothing sent — the
         # director's "thinking" bubble hangs with no answer and no surfaced error
         # (messaging-flow audit, HIGH #1). Guard on triggered_by_director so unprompted
         # begin_round ticks may still legitimately stay silent.
@@ -1609,6 +1760,90 @@ Respond with ONLY the package index number (0, 1, or 2).
         print(f"[router]   ✓ Continuous agent {agent.subagent_name}: "
               f"{executed_total} action(s) executed this turn.")
         return game_state, all_actions
+
+
+    @staticmethod
+    def _transfer_trip_note(action: dict, game_state: dict) -> str:
+        """For a committed transfer, say how many vehicle trips it actually needs.
+
+        WHY THIS IS A TOOL RESULT AND NOT A PROMPT RULE. DeliverySystem.CreateDeliveryTask
+        loops `Mathf.Min(remaining, maxCapacity)` and returns a LIST, so a request larger
+        than one vehicle load is split into that many trips, each needing its own vehicle.
+        Measured: an officer told to move 400 food with 3 vehicles free committed it and
+        reported "Sent 400 food" with no caveat -- yet asked directly, the SAME officer
+        computed "4 vehicles (400 / 100 load each), we've got 3 free" correctly off the
+        same observation. It could do the arithmetic; it just didn't think to, under a
+        direct instruction. Telling it harder in the prompt is the lever that already
+        failed, so the count is returned as engine fact alongside the action instead.
+
+        Returns "" when the transfer fits in one trip, when the fleet covers it, or when
+        the load/quantity is unknown -- a note that fires on every transfer is noise.
+        """
+        t = action.get("transfer") or action.get("resource_transfer") or {}
+        try:
+            qty = int(t.get("quantity") or 0)
+        except (TypeError, ValueError):
+            return ""
+        load = _vehicle_capacity(game_state)
+        if not qty or not load:
+            return ""
+        trips = -(-qty // int(load))          # ceil
+        if trips <= 1:
+            return ""
+        free = _num_free_vehicles(game_state)
+        note = f" — needs {trips} vehicle trips at {load}/load"
+        if free is not None:
+            note += (f"; {free} free, so {trips - free} trip(s) wait for a vehicle"
+                     if trips > free else f"; {free} free, covered")
+        return note
+
+
+    def _recipients_for(self, agent: AgentConfig) -> List[str]:
+        """Who this officer may address: the Director, plus its config's `can_address`.
+
+        `can_address` has existed on AgentConfig since the schema was written and was never
+        read by anything -- inter-agent messaging is what it was reserved for. An empty list
+        (the default, and what every shipped config has today) means director-only, which is
+        exactly the previous behaviour, so nothing changes for configs that don't opt in.
+
+        Names are validated against the live roster: a config naming an officer that isn't in
+        this session would otherwise put an unreachable address in the tool's enum, and the
+        officer would keep trying it.
+        """
+        roster = {a.subagent_name for a in self.config.agents}
+        peers = [n for n in (getattr(agent, "can_address", None) or [])
+                 if n in roster and n != agent.subagent_name]
+        return ["Director"] + peers
+
+    def _inject_unseen_messages(self, agent: AgentConfig, messages: List[dict]) -> bool:
+        """Fold every message this officer has not yet seen into its transcript.
+
+        Covers the Director AND peer officers with one mechanism. Returns True if any PEER
+        message was newly injected, which the caller uses to tell the officer it has something
+        from a colleague waiting -- a *potential* response, not an obligation.
+
+        DELIBERATELY NOT AN ACTIVATION TRIGGER. A peer message never wakes an officer up: it
+        waits in the queue until the officer's next ordinary turn (a round tick, or the
+        director addressing it). That keeps the loop exactly as it was and makes an A->B->A
+        ping-pong impossible -- with immediate activation, two officers could message each
+        other indefinitely, burning budget and drowning the director. It also sidesteps a
+        deadlock: _agent_lock is per-agent, so an officer's turn that synchronously drove a
+        peer's turn could end up awaiting a lock it already holds.
+        """
+        name = agent.subagent_name
+        got_peer = False
+        for partner in self._recipients_for(agent):
+            entries = [e for e in self.message_queue.get_conversation(name, partner)
+                       if e.get("from") == partner]
+            key = (name, partner)
+            already = self._msg_injected_count.get(key, 0)
+            for e in entries[already:]:
+                tag = "[Director]" if partner == "Director" else f"[From: {partner}]"
+                messages.append({"role": "user", "content": f"{tag} {e.get('content', '')}"})
+                if partner != "Director":
+                    got_peer = True
+            self._msg_injected_count[key] = len(entries)
+        return got_peer
 
     def _continuous_system_message(self, agent: AgentConfig) -> dict:
         """The system message (role + global prompt + tool policy). Built ONCE per
@@ -1667,6 +1902,8 @@ Respond with ONLY the package index number (0, 1, or 2).
         director_has_spoken: bool,
         brief_only: bool = False,
         triggered_by_director: bool = False,
+        heard_from_peer: bool = False,
+        triggered_by_peer: bool = False,
     ) -> dict:
         """The per-activation user turn: re-grounds the agent on the LIVE state,
         action list, and planning-phase ledger. Appended fresh each activation on
@@ -1688,7 +1925,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "You have NOT been directly addressed this turn, and you act only "
                 "when the director speaks to you. You have NO action tools right now, "
                 "so do not attempt to build, hire, transfer, or propose. Send AT MOST "
-                f"ONE short talk_to_director message that (1) opens by naming your "
+                f"ONE short send_message (to: Director) message that (1) opens by naming your "
                 f"office (you are the {title}), states your responsibility "
                 "in one line and what you can do for the director "
                 f"(you can {capabilities}), and (2) in at most 2 more sentences gives "
@@ -1712,14 +1949,14 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "as pending even if the situation still shows it absent. If the ask is "
                 "ambiguous or unaffordable, ask ONE short question instead of guessing. "
                 "If they asked a question, lead with the answer itself (the number or a "
-                "yes/no), not a recap of what you did. Send ONE talk_to_director "
+                "yes/no), not a recap of what you did. Send ONE send_message (to: Director) "
                 "message, then finish."
             )
         elif opening_mode == "brief_first" and not director_has_spoken:
             # FIRST message (opening brief): introduce the office by name.
             closing = (
                 "The director has not given you any direction yet. Do NOT commit any "
-                "builds, hires, or transfers. Send EXACTLY ONE short talk_to_director "
+                "builds, hires, or transfers. Send EXACTLY ONE short send_message (to: Director) "
                 f"message that opens by naming your office (you are the {title}), "
                 "then in at most 3 sentences: the single biggest need, the budget "
                 "remaining, and one recommendation — then immediately call finish. Do "
@@ -1745,12 +1982,32 @@ Respond with ONLY the package index number (0, 1, or 2).
         # of each is a prompt-engineering lever — it is what drives terseness, hesitancy and
         # self-introduction, so an experiment that cannot touch it is missing a real knob.
         # `{title}` and `{capabilities}` are substituted. Omitted key -> harness default.
-        which = ("brief_only" if brief_only
+        which = ("peer_addressed" if (triggered_by_peer and not triggered_by_director)
+                 else "brief_only" if brief_only
                  else "addressed" if (opening_mode == "reactive" and triggered_by_director)
                  else "first_brief" if (opening_mode == "brief_first" and not director_has_spoken)
                  else "after_brief" if opening_mode == "brief_first"
                  else "default")
+        if triggered_by_peer and not triggered_by_director:
+            closing = (
+                "A fellow officer has just messaged you (marked \"[From: ...]\" above). You "
+                "may reply to them with send_message, raise it with the Director, or let it "
+                "go. You have NO action tools this turn: a colleague's request is NOT "
+                "authorisation to act. If you think they are right, say so and put it to the "
+                "Director — only the Director can tell you to do it. Send at most one message, "
+                "then call finish.")
         closing = self._turn_instruction(which, closing, title=title, capabilities=capabilities)
+        # A colleague wrote to this officer since it last ran. Surfaced as an OPTION, not an
+        # instruction: the officer decides whether the message is worth answering. It also
+        # restates the non-negotiable part -- a peer's suggestion is not authority to act --
+        # because this is the exact moment the officer is most likely to treat it as one.
+        if heard_from_peer:
+            closing += (
+                "\n\nAnother officer has messaged you since your last turn (marked "
+                "\"[From: ...]\" above). You may reply to them with send_message if it is "
+                "worth answering, or ignore it. Either way: another officer's suggestion is "
+                "NOT authorisation to act. If you think their idea is right, put it to the "
+                "director and wait for their word before doing it.")
 
         state_text = render_state_text(filtered_state)
         action_text = self._render_options_compact(filtered_actions, filtered_state)
@@ -2433,7 +2690,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             return (
                 "REFUSED: you have not been directly addressed this turn, so you "
                 "cannot take actions or send proposals. Brief the director via "
-                "talk_to_director (or call finish); they will tell you what to do.",
+                "send_message to the Director (or call finish); they will tell you what to do.",
                 game_state, all_actions, filtered_actions, meta,
             )
 
@@ -2445,7 +2702,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             if brief_only and _plugin_spec.acting:
                 return (
                     "REFUSED: you have not been directly addressed this turn, so you cannot "
-                    "take actions. Brief the director via talk_to_director (or call finish).",
+                    "take actions. Brief the director via send_message (or call finish).",
                     game_state, all_actions, filtered_actions, meta,
                 )
             _ctx = _SessionToolContext(self, agent, game_state, all_actions, filtered_actions)
@@ -2579,12 +2836,14 @@ Respond with ONLY the package index number (0, 1, or 2).
                     # Riverside for $2,000") — no emojis, no command-tag syntax.
                     # This is a distinct, log-style confirmation channel; the
                     # officer still speaks to the director in its own words via
-                    # talk_to_director. Also ground-truth logged via _log_action
+                    # send_message. Also ground-truth logged via _log_action
                     # above and surfaced to the MODEL in `lines` below.
                     await self._send_agent_response(
                         agent, "Action: " + self._humanize_committed_action(action),
                         "agent_response")
-                    lines.append(f"  ✅ {desc}")
+                    lines.append(f"  ✅ {desc}"
+                                 + (self._transfer_trip_note(action, game_state)
+                                    if action.get("action_type") == "resource_transfer" else ""))
                 else:
                     lines.append(f"  ❌ {desc}" + (f" — {err}" if err else ""))
             # Answer any choice tasks (<task>ID,choiceId</task>). Scope is enforced
@@ -2731,13 +2990,28 @@ Respond with ONLY the package index number (0, 1, or 2).
                 meta["spoke"] = True
             return result_text, game_state, all_actions, filtered_actions, meta
 
-        if name == "talk_to_director":
+        if name == "send_message":
             message = str(args.get("message") or "").strip()
             if not message:
                 return "ERROR: empty message.", game_state, all_actions, filtered_actions, meta
-            await self._send_agent_response(agent, message, "agent_response")
-            meta["spoke"] = True
-            return "Message delivered to the director.", \
+            to = str(args.get("to") or "Director").strip() or "Director"
+            allowed = self._recipients_for(agent)
+            if to not in allowed:
+                # The enum should make this unreachable, but a model can still emit a name
+                # outside it. Refuse with the real list rather than silently delivering to the
+                # director: a misdelivered message read as a successful handoff is exactly the
+                # failure this channel exists to make impossible.
+                return (f"ERROR: you cannot message {to!r}. You may address: "
+                        + ", ".join(allowed) + "."), \
+                    game_state, all_actions, filtered_actions, meta
+            await self._send_agent_response(agent, message, "agent_response", to=to)
+            # `spoke` is what the post-loop fallback uses to decide whether the DIRECTOR got a
+            # reply. A message to a peer is real work but it is NOT a reply to the director, so
+            # it must not suppress that fallback -- otherwise an officer the director addressed
+            # could answer its colleague and leave the director staring at a silent bubble.
+            if to == "Director":
+                meta["spoke"] = True
+            return f"Message delivered to {to}.", \
                 game_state, all_actions, filtered_actions, meta
 
         if name == "finish":
@@ -3005,6 +3279,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         # start it clean (no stale trajectory bleeding across games).
         self._continuous_transcripts.clear()
         self._director_injected_count.clear()
+        self._msg_injected_count.clear()
         print("[router] 🆕 game_start received — message queue cleared, round counter reset.")
 
     async def _handle_director_message(self, msg: dict):
@@ -3110,22 +3385,28 @@ Respond with ONLY the package index number (0, 1, or 2).
         response_text = await asyncio.to_thread(self._generate_conversational_response, agent, conversation)
         await self._send_agent_response(agent, response_text, "agent_response")
 
-    async def _send_agent_response(self, agent: AgentConfig, response_text: str, msg_type: str):
-        """Persist + log + push an agent's conversational reply to the Director."""
+    async def _send_agent_response(self, agent: AgentConfig, response_text: str, msg_type: str,
+                                   to: str = "Director"):
+        """Persist + log + push an agent's conversational message to `to`.
+
+        Peer messages ride the SAME path as director messages on purpose: they land in the
+        transcript, the session log and the GUI exactly like anything else an officer says.
+        Nothing an officer tells a colleague is hidden from the director -- if officers could
+        coordinate privately, the one interaction the study measures would be unobservable."""
         # Drop a leading "<Role> Officer:" self-label badge (the avatar already shows
         # who's speaking); the prompt asks officers to introduce themselves once, not
         # on every message. See _strip_self_label.
         response_text = _strip_self_label(response_text)
         response_message = self.message_queue.send_message(
             from_agent=agent.subagent_name,
-            to_agent="Director",
+            to_agent=to,
             content=response_text,
             msg_type=msg_type,
             round_num=self.round_num,
         )
         self._emit("conversation_message", {
             "from": agent.subagent_name,
-            "to": "Director",
+            "to": to,
             "content": response_text,
             "message_type": msg_type,
             "message_id": response_message["id"],
@@ -3134,12 +3415,41 @@ Respond with ONLY the package index number (0, 1, or 2).
             "type": "agent_message",
             "agent_name": agent.subagent_name,
             "talkinghead_endpoint": agent.talkinghead_endpoint,
+            # Recipient, so the client can render a peer message under the RECIPIENT's tab
+            # with a "From: <sender>" badge instead of dropping it into the sender's own
+            # thread with the director. `to_endpoint` is sent alongside the name because the
+            # client routes tabs by talkinghead_endpoint, and it has no name->endpoint map
+            # (OfficerRoster is endpoint->name). Resolving it here keeps the client from
+            # having to invert a mapping that is not guaranteed to be one-to-one.
+            "to": to,
+            "to_endpoint": ("" if to == "Director" else
+                            (getattr(self._get_agent_by_name(to), "talkinghead_endpoint", "") or "")),
             "content": response_text,
             "message_type": msg_type,
             "round": self.round_num,
             "timestamp": response_message["timestamp"],
         })
-        print(f"[router] {agent.subagent_name} → Director: {response_text[:60]}...")
+        print(f"[router] {agent.subagent_name} → {to}: {response_text[:60]}...")
+
+        # A message to a COLLEAGUE wakes them, the same way a director message does. Spawned as
+        # a background task and never awaited: _agent_lock is per-agent, so awaiting the
+        # recipient's turn inline would deadlock the moment that officer messaged back (the
+        # director path carries the same warning for the same reason).
+        if to != "Director":
+            recipient = self._get_agent_by_name(to)
+            if recipient is not None and recipient.actor_type == "continuous":
+                if getattr(self, "_peer_triggers_left", 0) > 0 and self._latest_game_state:
+                    self._peer_triggers_left -= 1
+                    print(f"[router]   ✉ peer trigger: {agent.subagent_name} → {to} "
+                          f"({self._peer_triggers_left} left this round)")
+                    _t = asyncio.create_task(
+                        self._run_continuous_for_message(recipient, by_peer=True))
+                    _t.add_done_callback(self._on_round_task_done)
+                else:
+                    # Not dropped -- _inject_unseen_messages still delivers it on the
+                    # recipient's next ordinary turn. Only the immediate wake-up is skipped.
+                    print(f"[router]   ✉ peer message queued (no trigger budget left this "
+                          f"round): {agent.subagent_name} → {to}")
 
     def _build_observation_snapshot(self, agent: AgentConfig) -> str:
         """Compact factual ground-truth snapshot for the CLARIFY branch.
@@ -4736,7 +5046,9 @@ def _load_keys(path: Optional[Path]) -> Dict[str, dict]:
     dev_key = "dev-local-key"
     print(f"[router] No --keys-file or ARC_API_KEYS env; accepting dev key '{dev_key}'")
     # Local dev key is an admin: it can mint cohort keys and upload plugin code.
-    return {dev_key: {"label": "dev", "caps": ["mint", "upload_code"]}}
+    # `play_tester` is included so the unrestricted dev key exercises the play-tester
+    # controls locally; a real cohort key only gets it if minted with it.
+    return {dev_key: {"label": "dev", "caps": ["mint", "upload_code", "play_tester"]}}
 
 
 def _bearer_to_key(auth: Optional[str]) -> Optional[str]:
@@ -5458,6 +5770,13 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
         "officers": [{"name": a.subagent_name, "endpoint": a.talkinghead_endpoint}
                      for a in cfg.agents if a.talkinghead_endpoint],
         "label": key_label,
+        # Capabilities of the presented key, so the CLIENT can gate its own controls.
+        # This is a convenience for the UI, NOT a security boundary: anything that must
+        # actually be enforced is enforced server-side on the request that does the work.
+        # Used today by `play_tester`, which reveals Load .cora and Flag Interaction —
+        # both are local-only actions (a file picker, a log line), so a client that lies
+        # about its caps gains nothing it could not already do by editing its own save.
+        "capabilities": sorted(service.caps_for(api_key)),
         "player_id": player_id,
     }))
     print(f"[router] hello_ack -> {key_label} (session {session_id[:8]}, "

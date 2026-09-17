@@ -50,21 +50,28 @@ public class CoraSaveLoad : MonoBehaviour
         var go = new GameObject("[CoraSaveLoad]");
         DontDestroyOnLoad(go);
         Instance = go.AddComponent<CoraSaveLoad>();
-        Debug.Log("[CoraSaveLoad] installed — F9/Ctrl+S saves a .cora, F10/Ctrl+O loads one, "
+        Debug.Log("[CoraSaveLoad] installed — F9/Ctrl+S saves a JSON checkpoint, F10/Ctrl+O loads one, "
                 + "or use the on-screen buttons (top right).");
     }
 
     void OnGUI()
     {
         if (!showButtons) return;
-        const float w = 92f, h = 24f, pad = 8f;
+        // Nothing to save outside a running game. The build boots into TitleScene and passes
+        // through Info/Tutorial before MainScene, and this component is DontDestroyOnLoad, so
+        // without this the fallback buttons sit in the corner of the title and tutorial
+        // screens -- where they cannot do anything, and where they read as the Settings-panel
+        // controls having failed to install. GlobalClock only exists in MainScene, so its
+        // presence is the cheapest "a game is actually running" test available here.
+        if (GlobalClock.Instance == null) return;
+        const float w = 168f, h = 24f, pad = 8f;   // widened for the longer labels
         float x = Screen.width - (w * 2 + pad * 2);
         // Depth far in front of the game UI; OnGUI is drawn over the scene regardless, but
         // this keeps it above any other IMGUI a debug panel might draw.
         GUI.depth = -1000;
         GUI.enabled = !busy;
-        if (GUI.Button(new Rect(x, pad, w, h), busy ? "…" : "Save .cora")) SaveToFile();
-        if (GUI.Button(new Rect(x + w + pad, pad, w, h), busy ? "…" : "Load .cora")) LoadFromFile();
+        if (GUI.Button(new Rect(x, pad, w, h), busy ? "…" : "Save JSON Checkpoint")) SaveToFile();
+        if (GUI.Button(new Rect(x + w + pad, pad, w, h), busy ? "…" : "Load JSON Checkpoint")) LoadFromFile();
         GUI.enabled = true;
     }
 
@@ -108,7 +115,7 @@ public class CoraSaveLoad : MonoBehaviour
             GameSnapshot snap = CoraFileIO.ReadSnapshot(file);
             string json = CoraFileIO.ToJson(file);
             string name = CoraFileIO.SuggestFilename(snap);
-            Bridge().DownloadText(name, json, "Save CORA game state", CoraFile.EXTENSION);
+            Bridge().DownloadText(name, json, "Save JSON Checkpoint", CoraFile.EXTENSION);
             Report($"Saved {name} — {file.label}");
         }
         catch (System.Exception e)
@@ -127,7 +134,8 @@ public class CoraSaveLoad : MonoBehaviour
         FileIOBridge b = Bridge();
         b.OnFileImported -= OnPicked;
         b.OnFileImported += OnPicked;
-        b.OpenImportPicker("Open CORA game state", CoraFile.EXTENSION, "." + CoraFile.EXTENSION);
+        b.OpenImportPicker("Load JSON Checkpoint", CoraFile.EXTENSION,
+                           "." + CoraFile.EXTENSION + ",application/json");
     }
 
     void OnPicked(string text)
@@ -141,7 +149,7 @@ public class CoraSaveLoad : MonoBehaviour
     {
         CoraFile file = null;
         try { file = CoraFileIO.FromJson(json); }
-        catch (System.Exception e) { Debug.LogError($"[CoraSaveLoad] unparsable .cora: {e}"); }
+        catch (System.Exception e) { Debug.LogError($"[CoraSaveLoad] unparsable checkpoint JSON: {e}"); }
 
         CoraFile.Check check = CoraFileIO.Inspect(file);
         if (!check.CanLoad)
@@ -162,7 +170,7 @@ public class CoraSaveLoad : MonoBehaviour
         GameSnapshot snap = CoraFileIO.ReadSnapshot(file);
         if (snap == null)
         {
-            Report("That .cora carries no readable snapshot.");
+            Report("That checkpoint carries no readable snapshot.");
             return false;
         }
 
@@ -226,7 +234,7 @@ public class CoraSaveLoad : MonoBehaviour
             GameSnapshotManager.Restore(snap);
             Debug.Log($"[CoraSaveLoad] loaded — Day {snap.clock.currentDay}, "
                     + $"round {snap.clock.currentTimeSegment}, budget {snap.economy.currentBudget}");
-            Report(string.IsNullOrEmpty(pendingNote) ? "Loaded .cora" : "Loaded: " + pendingNote);
+            Report(string.IsNullOrEmpty(pendingNote) ? "Checkpoint loaded" : "Loaded: " + pendingNote);
         }
         catch (System.Exception e)
         {

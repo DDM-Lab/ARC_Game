@@ -31,12 +31,23 @@ mergeInto(LibraryManager.library, {
         var callbackMethod = UTF8ToString(callbackMethodPtr);
         var accept         = acceptPtr ? UTF8ToString(acceptPtr) : "";
 
+        // DIAGNOSTIC + ACTIVATION PROBE. A browser refuses to open a file dialog from a
+        // synthetic input.click() unless the page has "transient user activation" -- and
+        // Unity polls input during requestAnimationFrame, OUTSIDE the DOM click handler, so
+        // activation can already be spent by the time a UGUI button handler runs. That
+        // failure is SILENT: no exception, no dialog, nothing in the console. These lines
+        // make it visible and report whether activation was present at the moment we asked.
+        var act = (navigator.userActivation && navigator.userActivation.isActive);
+        console.log("[FileIO] OpenFilePicker accept=" + accept
+                    + " userActivation.isActive=" + act);
+
         var input = document.createElement("input");
         input.type   = "file";
         if (accept) input.accept = accept;
         input.style.display = "none";
 
         input.onchange = function (e) {
+            console.log("[FileIO] picker onchange fired");
             var file   = e.target.files[0];
             if (!file) return;
 
@@ -51,6 +62,11 @@ mergeInto(LibraryManager.library, {
         };
 
         document.body.appendChild(input);
-        input.click();
+        try {
+            input.click();
+            console.log("[FileIO] input.click() dispatched (no exception)");
+        } catch (err) {
+            console.error("[FileIO] input.click() threw: " + err);
+        }
     }
 });

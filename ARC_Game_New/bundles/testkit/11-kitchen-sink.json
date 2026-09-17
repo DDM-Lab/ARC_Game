@@ -9,13 +9,13 @@
   "global_prompt": {
     "behavior": "Prefix every message with [SINK]. Be brief."
   },
-  "tool_policy": "One tool per step. Stay in your remit/lane. Never claim an action unless the tool succeeded. Use talk_to_director, then finish.",
+  "tool_policy": "One tool per step. Stay in your remit/lane. Never claim an action unless the tool succeeded. Use send_message, then finish.",
   "turn_instructions": {
     "preamble": "=== SINK STATE ===",
     "default": "One action, then finish."
   },
   "tool_descriptions": {
-    "talk_to_director": "Message the Director. Start with [SINK]."
+    "send_message": "Message the Director. Start with [SINK]."
   },
   "config": {
     "agent_order_rule": "sequential",
@@ -60,7 +60,7 @@
           "get_tasks",
           "build",
           "task",
-          "talk_to_director",
+          "send_message",
           "finish"
         ]
       }

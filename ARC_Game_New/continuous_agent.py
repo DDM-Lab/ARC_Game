@@ -22,6 +22,7 @@ the loop never has to care which provider is behind it.
 """
 import json
 import os
+import re
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -284,22 +285,32 @@ TOOL_SCHEMAS: Dict[str, dict] = {
             },
         },
     },
-    "talk_to_director": {
+    # ONE CHANNEL FOR EVERY RECIPIENT. This replaced `talk_to_director`, which could only
+    # reach the human. The `to` field is rewritten per agent by build_tools() into an ENUM of
+    # exactly who that officer may address -- the Director, plus whatever its config lists in
+    # `can_address`. Making it an enum rather than a free string is the point: an officer once
+    # told the director "I've passed it along to the Disaster Ops officer" when no such channel
+    # existed, and a free-text recipient would let that happen again (and would also let it
+    # address an officer that isn't in the roster at all).
+    "send_message": {
         "type": "function",
         "function": {
-            "name": "talk_to_director",
+            "name": "send_message",
             "description": (
-                "Send a message to the human director: an explanation grounded in the "
-                "state, a clarifying question, a heads-up, or plain conversation. This "
-                "does NOT change the game. (Later this same channel will also reach the "
-                "other officers — for now it goes to the director.)"
+                "Send a message to the human director or to another officer: an explanation "
+                "grounded in the state, a clarifying question, a heads-up, or plain "
+                "conversation. This does NOT change the game and does NOT commit anyone to "
+                "anything. Pick the recipient with `to`; you may only address the names listed "
+                "there."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "to": {"type": "string", "enum": ["Director"],
+                           "description": "Who receives this message."},
                     "message": {"type": "string", "description": "The message text."},
                 },
-                "required": ["message"],
+                "required": ["to", "message"],
             },
         },
     },
@@ -361,7 +372,8 @@ def _resolve_api_key(agent_cfg: dict, default_env: str) -> str:
     return os.environ.get(default_env) or ""
 
 def build_tools(allowlist: Optional[List[str]] = None,
-                descriptions: Optional[dict] = None) -> List[dict]:
+                descriptions: Optional[dict] = None,
+                recipients: Optional[List[str]] = None) -> List[dict]:
     """Return the OpenAI-format tool schemas for the given allowlist.
 
     `allowlist=None` (the default) exposes the full palette — the no-gating
@@ -391,6 +403,18 @@ def build_tools(allowlist: Optional[List[str]] = None,
         if override and str(override).strip():
             schema = {**schema, "function": {**schema["function"],
                                              "description": str(override).strip()}}
+        # Per-agent recipient list for send_message. Rewritten on a COPY for the same reason
+        # description overrides are: TOOL_SCHEMAS is module-level and shared by every session
+        # on the server, so mutating it would leak one officer's address book into everyone
+        # else's. Falls back to the schema's own ["Director"] when no list is supplied, which
+        # is the no-inter-agent-messaging default.
+        if name == "send_message" and recipients:
+            fn = schema["function"]
+            params = {**fn["parameters"],
+                      "properties": {**fn["parameters"]["properties"],
+                                     "to": {**fn["parameters"]["properties"]["to"],
+                                            "enum": list(recipients)}}}
+            schema = {**schema, "function": {**fn, "parameters": params}}
         tools.append(schema)
     return tools
 
@@ -503,6 +527,144 @@ def _max_tokens(agent_cfg: dict) -> int:
     return int(agent_cfg.get("turn_token_budget") or 1024)
 
 
+# ---------------------------------------------------------------------------
+# Fitting the completion budget inside the server's context window
+# ---------------------------------------------------------------------------
+# A LOCAL SERVER HAS A HARD WINDOW AND `turn_token_budget` DOES NOT KNOW ABOUT IT.
+# vLLM rejects the whole request when prompt + max_tokens exceeds max-model-len:
+#
+#   400 BadRequestError: This model's maximum context length is 16384 tokens.
+#   However, you requested 8192 output tokens and your prompt contains at least
+#   8193 input tokens, for a total of at least 16385 tokens.
+#
+# That is a REQUEST-TIME rejection, not a generation problem, so it fires at step 0
+# before any tool has run. The router turns it into the canned
+# "I hit an internal error handling that" reply, which reads like a tool bug and is
+# not one. Retrying is useless: the same prompt reproduces the same 400 exactly.
+#
+# Hosted providers (Anthropic, OpenAI) do NOT behave this way -- they cap max_tokens
+# against the window silently -- which is why this never surfaced before pointing the
+# officers at a self-hosted endpoint. So the clamp is applied only when a window is
+# actually discoverable, and everything else keeps today's behaviour byte for byte.
+
+# Leave headroom for the chat-template wrapper and any special tokens the server adds
+# on top of what we serialise. Small; the point is only to not land exactly on the edge.
+_CTX_SAFETY = 64
+
+# Attempts allowed inside one tool step. Each context-overflow retry HALVES the budget,
+# so five covers 8192 -> 256 -- the full useful range -- and bounds the worst case at a
+# few cheap rejections (a 400 costs only the server's tokenize pass, not a generation).
+_CTX_RETRIES = 5
+
+# Discovered window per base_url. None is cached too -- a provider that does not report
+# one must not be re-probed on every step.
+_CTX_LIMIT_CACHE: Dict[str, Optional[int]] = {}
+
+
+def _ctx_limit(client, model: str, base_url: Optional[str]) -> Optional[int]:
+    """The server's max context length in tokens, or None if it doesn't say.
+
+    vLLM advertises `max_model_len` per model on GET /v1/models. Hosted OpenAI does
+    not, and returns None here, which disables the clamp for them. Probed once per
+    endpoint and cached, including the None: a failed probe must not cost a round trip
+    on every tool step.
+    """
+    key = base_url or "__default__"
+    if key in _CTX_LIMIT_CACHE:
+        return _CTX_LIMIT_CACHE[key]
+    limit = None
+    try:
+        for m in client.models.list().data:
+            if getattr(m, "id", None) != model:
+                continue
+            # The SDK's Model object has no max_model_len field, so a vendor extension
+            # lands in model_extra rather than as an attribute. Check both.
+            v = getattr(m, "max_model_len", None)
+            if v is None:
+                v = (getattr(m, "model_extra", None) or {}).get("max_model_len")
+            if v:
+                limit = int(v)
+            break
+    except Exception as e:  # noqa: BLE001 — probing is best-effort; never block a turn
+        print(f"[continuous_agent] context-window probe failed for {key}: {e}")
+    _CTX_LIMIT_CACHE[key] = limit
+    if limit:
+        print(f"[continuous_agent] {key} advertises max_model_len={limit}")
+    return limit
+
+
+def known_ctx_limit(agent_cfg: dict) -> Optional[int]:
+    """The context window for this agent's endpoint, WITHOUT issuing a probe.
+
+    Read by the router to size transcript compaction against the real window instead
+    of a turn count. Returns, in order of preference: the window discovered by a live
+    request to this endpoint (populated by `_ctx_limit` on the first tool step), then
+    an explicit `context_window` in the agent config, then None.
+
+    Deliberately non-blocking: compaction runs BEFORE the turn's first request, and a
+    network probe there would put a round trip in front of every activation. On the
+    very first activation of a session the cache is cold and this returns the configured
+    value or None -- which is safe, because a transcript that early is far too short to
+    need compacting anyway.
+    """
+    base_url = agent_cfg.get("llm_endpoint")
+    cached = _CTX_LIMIT_CACHE.get(base_url or "__default__")
+    if cached:
+        return cached
+    cfg_val = agent_cfg.get("context_window")
+    try:
+        return int(cfg_val) if cfg_val else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _est_prompt_tokens(messages, tools) -> int:
+    """Deliberately PESSIMISTIC token estimate for the outgoing request.
+
+    chars/3.0, not the ~3.3 that a prose-weighted count suggests: the payload is mostly
+    JSON, which tokenizes worse than prose (the 17-tool schema measured 9828 chars ->
+    2978 tokens, i.e. 3.3, and that is the best case in the payload). Over-estimating
+    only shortens the completion; UNDER-estimating puts the 400 back.
+    """
+    try:
+        n = len(json.dumps(messages)) + len(json.dumps(tools or []))
+    except (TypeError, ValueError):
+        n = len(str(messages)) + len(str(tools))
+    return int(n / 3.0)
+
+
+def _fit_budget(budget: int, messages, tools, ctx: Optional[int], name: str) -> int:
+    """Shrink `budget` so prompt + completion fits the window. No-op without a window."""
+    if not ctx:
+        return budget
+    room = ctx - _est_prompt_tokens(messages, tools) - _CTX_SAFETY
+    if room >= budget:
+        return budget
+    fitted = max(256, room)
+    print(f"[continuous_agent] [{name}] max_tokens {budget}->{fitted} "
+          f"to fit {ctx}-token window (est. prompt ~{_est_prompt_tokens(messages, tools)})")
+    return fitted
+
+
+# The server counted the prompt for us in its own rejection; that number beats any
+# estimate. Pull it back out so the retry is sized correctly rather than guessed.
+_CTX_400_RE = re.compile(r"prompt contains at least (\d+) input tokens")
+
+
+def _ctx_overflow_prompt_tokens(err: Exception) -> Optional[int]:
+    """The server-reported prompt length if `err` is a context-overflow 400, else None."""
+    body = getattr(err, "body", None)
+    if isinstance(body, dict):
+        e = body.get("error")
+        if isinstance(e, dict) and e.get("param") == "input_tokens":
+            try:
+                return int(e.get("value"))
+            except (TypeError, ValueError):
+                pass
+    m = _CTX_400_RE.search(str(err))
+    return int(m.group(1)) if m else None
+
+
 # Sonnet 5 and other next-gen models reject the `temperature` param
 # (400: "`temperature` is deprecated for this model."). Older 4.x models still
 # accept it. Only send temperature to models that support it.
@@ -561,21 +723,52 @@ def _openai_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
     if effort:
         extra["reasoning_effort"] = effort
 
-    for attempt in range(2):
+    # Clamp BEFORE the first call, not just on the way out of a failure: a self-hosted
+    # server rejects an oversized max_tokens outright instead of capping it, and the
+    # rejection is indistinguishable from a tool bug once the router has wrapped it.
+    ctx = _ctx_limit(client, model, base_url)
+    budget = _fit_budget(budget, messages, tools, ctx, name)
+
+    for attempt in range(_CTX_RETRIES):
         _kw = {"temperature": 0.3} if _accepts_temperature(model) else {}
-        resp = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=tools,
-            tool_choice="auto",
-            max_tokens=budget,
-            **_kw,
-            **extra,
-        )
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                max_tokens=budget,
+                **_kw,
+                **extra,
+            )
+        except Exception as e:  # noqa: BLE001 — only context overflow is handled here
+            reported = _ctx_overflow_prompt_tokens(e)
+            # The estimate was short. Retrying UNCHANGED reproduces this 400 exactly --
+            # which is what made it look like an intermittent fault rather than a sizing
+            # one -- so the budget has to actually move.
+            if reported is None or attempt == _CTX_RETRIES - 1:
+                raise
+            # DO NOT size the retry from `reported`. vLLM's "prompt contains AT LEAST N
+            # input tokens" is a lower bound it derives from the request itself
+            # (max_model_len - requested + 1), NOT the true prompt length: successive
+            # retries reported 8193, 8210, 8227 -- creeping up by exactly the amount the
+            # budget came down. Subtracting it gives back ~17 tokens a round and never
+            # converges. Halving does, in a bounded number of tries, and needs no token
+            # count at all.
+            resized = max(256, budget // 2)
+            if resized >= budget:
+                raise   # already at the floor: the PROMPT is too long, not the budget
+            print(f"[continuous_agent] [{name}] context overflow "
+                  f"(window={ctx or '?'}, server floor={reported}); "
+                  f"max_tokens {budget}->{resized}")
+            budget = resized
+            continue
         choice = resp.choices[0]
         if choice.finish_reason != "length":
             break
-        grown = min(budget * 2, _TOKEN_RETRY_CEILING)
+        # _TOKEN_RETRY_CEILING is the whole window on a 16k server, so the doubled
+        # budget must be refitted too or the self-heal becomes a guaranteed 400.
+        grown = _fit_budget(min(budget * 2, _TOKEN_RETRY_CEILING), messages, tools, ctx, name)
         if attempt == 0 and grown > budget:
             print(f"[continuous_agent] [{name}] completion truncated "
                   f"(finish_reason=length); retrying with max_tokens {budget}->{grown}")

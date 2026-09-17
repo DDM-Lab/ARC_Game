@@ -39,7 +39,7 @@
           "read_state",
           "build",
           "task",
-          "talk_to_director",
+          "send_message",
           "finish"
         ]
       }

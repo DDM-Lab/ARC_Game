@@ -11,7 +11,7 @@ config file is touched). Verifies:
      execute_commands is refused at dispatch — zero execute_action frames reach Unity.
   2. SPOKEN-TO (director_message) turn MAY ACT: the palette includes execute_commands,
      the closing says "do exactly what was asked", and a command tag executes for real.
-  3. ONE-MESSAGE CAP: a brief-only turn stops after the first talk_to_director even
+  3. ONE-MESSAGE CAP: a brief-only turn stops after the first send_message even
      if the model would send a second — exactly one director-facing message.
   4. NON-REACTIVE UNCHANGED: an "emergent" officer keeps the full palette on an
      unprompted turn and can act (no regression to existing behavior).
@@ -97,9 +97,9 @@ def instrument(sess):
 
     orig = sess._send_agent_response
 
-    async def rec_response(agent, text, kind):
+    async def rec_response(agent, text, kind, to="Director"):
         responses.append(text)
-        return await orig(agent, text, kind)
+        return await orig(agent, text, kind, to=to)
     sess._send_agent_response = rec_response
     return executed, responses
 
@@ -135,7 +135,7 @@ async def test_unprompted_brief_only():
         leaked = ACTING_TOOLS & set(tools)
         assert not leaked, f"acting tool leaked into brief-only palette: {sorted(leaked)}"
         assert "propose_choices" not in tools, f"propose_choices leaked into palette: {tools}"
-        assert "talk_to_director" in tools, f"brief tool missing: {tools}"
+        assert "send_message" in tools, f"brief tool missing: {tools}"
         assert executed == [], f"brief-only turn executed actions: {executed}"
         assert "act only when the director speaks" in seen_closing["Food Officer"], \
             f"brief-only closing missing: {seen_closing['Food Officer'][-200:]}"
@@ -178,7 +178,7 @@ async def test_spoken_to_may_act():
 
 
 async def test_one_message_cap():
-    """Brief-only turn: two talk_to_director calls collapse to exactly one."""
+    """Brief-only turn: two send_message calls collapse to exactly one."""
     with tempfile.TemporaryDirectory() as td:
         cfg, sess = make_session(td, reactive=True)
         executed, responses = instrument(sess)
@@ -190,7 +190,7 @@ async def test_one_message_cap():
             step[name] = s + 1
             # The model would happily send a briefing then a filler follow-up.
             return {"content": f"msg {s}",
-                    "tool_calls": [{"id": f"{name}-{s}", "name": "talk_to_director",
+                    "tool_calls": [{"id": f"{name}-{s}", "name": "send_message",
                                     "arguments": {"message": f"brief #{s}"}}]}
         agent_router.run_tool_step = fake_run_tool_step
         agent_router._enumerate_actions = fake_enumerate

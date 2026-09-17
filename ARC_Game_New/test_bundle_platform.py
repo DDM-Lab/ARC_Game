@@ -52,7 +52,11 @@ def test_provider_registry():
     check("anthropic-ddmlab key_env", resolve("anthropic-ddmlab").key_env == "DDMLAB_ANTHROPIC_API_KEY")
     check("ollama-local base_url", resolve(Provider.ollama_local).base_url == "http://localhost:11434/v1")
     check("is_valid", is_valid("anthropic") and not is_valid("nope"))
-    check("5 providers", len(valid_names()) == 5)
+    # Membership, not a count. This used to assert `len(valid_names()) == 5` and had been
+    # failing silently since qwen-local/qwen-auton were added -- an exact count breaks every
+    # time a provider is registered, which says nothing about whether the registry works.
+    _core = {"anthropic", "anthropic-ddmlab", "cmu-gateway", "openai", "ollama-local"}
+    check("core providers registered", _core <= set(valid_names()))
     expect_raises("unknown provider raises", lambda: resolve("nope"), KeyError)
 
 

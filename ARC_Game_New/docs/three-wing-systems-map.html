@@ -1,0 +1,313 @@
+<title>CORA — Three-Wing Systems Map</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --paper:#f4f3ee; --surface:#ffffff; --ink:#1b1d22; --muted:#5c616d;
+    --hair:#e3e1d8; --accent:#1f7a6b; --accent-soft:#dcebe7;
+    --live:#b45309; --bench:#1d5fa8; --rl:#6d4aad;
+    --sheet:#f8f7f1; --sheet-line:#e6e3d7;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Roboto Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --maxw:74rem;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#14161b; --surface:#1b1e25; --ink:#e9e8e3; --muted:#9aa0ab;
+      --hair:#2a2e37; --accent:#54b7a4; --accent-soft:#172a29;
+      --live:#e0902f; --bench:#5b9bea; --rl:#a686e0;
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#f4f3ee; --surface:#ffffff; --ink:#1b1d22; --muted:#5c616d;
+    --hair:#e3e1d8; --accent:#1f7a6b; --accent-soft:#dcebe7;
+    --live:#b45309; --bench:#1d5fa8; --rl:#6d4aad;
+  }
+  :root[data-theme="dark"]{
+    --paper:#14161b; --surface:#1b1e25; --ink:#e9e8e3; --muted:#9aa0ab;
+    --hair:#2a2e37; --accent:#54b7a4; --accent-soft:#172a29;
+    --live:#e0902f; --bench:#5b9bea; --rl:#a686e0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    line-height:1.6;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:clamp(1.5rem,4vw,3.5rem) clamp(1.1rem,4vw,2.5rem);}
+
+  /* header */
+  header{border-bottom:2px solid var(--ink);padding-bottom:1.6rem;margin-bottom:2.6rem;}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--accent);margin:0 0 1rem;}
+  h1{font-family:var(--mono);font-weight:600;font-size:clamp(1.7rem,4.4vw,2.9rem);line-height:1.05;
+    letter-spacing:-.01em;margin:0 0 .9rem;text-wrap:balance;}
+  .lede{font-size:clamp(1rem,1.6vw,1.18rem);color:var(--muted);max-width:60ch;margin:0;}
+  .meta{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1.5rem;}
+  .chip{font-family:var(--mono);font-size:.7rem;letter-spacing:.04em;color:var(--muted);
+    border:1px solid var(--hair);border-radius:999px;padding:.28rem .7rem;background:var(--surface);}
+  .chip b{color:var(--ink);font-weight:600;}
+
+  /* sections */
+  section{margin:0 0 3.4rem;}
+  .kicker{font-family:var(--mono);font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--muted);display:flex;align-items:center;gap:.7rem;margin:0 0 .5rem;}
+  .kicker::before{content:"";width:1.6rem;height:2px;background:var(--accent);display:inline-block;}
+  h2{font-family:var(--mono);font-weight:600;font-size:clamp(1.25rem,2.6vw,1.7rem);
+    letter-spacing:-.01em;margin:0 0 .7rem;text-wrap:balance;}
+  section > p{max-width:70ch;color:var(--ink);margin:0 0 1.2rem;}
+  section > p.sub{color:var(--muted);}
+
+  /* drafting-sheet diagram panel — fixed light in both themes (blueprint) */
+  figure{margin:1.4rem 0;background:var(--sheet);border:1px solid var(--sheet-line);border-radius:12px;
+    background-image:linear-gradient(var(--sheet-line) 1px,transparent 1px),
+      linear-gradient(90deg,var(--sheet-line) 1px,transparent 1px);
+    background-size:100% 2.2rem,2.2rem 100%;background-position:-1px -1px;
+    box-shadow:0 1px 0 rgba(0,0,0,.04),0 14px 30px -22px rgba(0,0,0,.35);overflow:hidden;}
+  .fig-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;
+    padding:.6rem .95rem;border-bottom:1px solid var(--sheet-line);background:rgba(255,255,255,.55);}
+  .fig-id{font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:#7c7a6d;}
+  .fig-id b{color:#3a3a30;}
+  .fig-cap{font-family:var(--mono);font-size:.68rem;color:#7c7a6d;}
+  .mermaid{padding:clamp(.8rem,2.4vw,1.6rem);overflow-x:auto;text-align:center;color:#2a2a22;}
+  figcaption{padding:.2rem .95rem 0;}
+
+  /* module / matrix tables */
+  .tablewrap{overflow-x:auto;border:1px solid var(--hair);border-radius:12px;background:var(--surface);}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:34rem;}
+  th,td{text-align:left;padding:.7rem .9rem;border-bottom:1px solid var(--hair);vertical-align:top;}
+  thead th{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted);font-weight:600;background:var(--paper);position:sticky;top:0;}
+  tbody tr:last-child td{border-bottom:none;}
+  td code,p code,li code{font-family:var(--mono);font-size:.82em;background:var(--accent-soft);
+    color:var(--ink);padding:.08em .38em;border-radius:5px;}
+  .tag{font-family:var(--mono);font-size:.66rem;letter-spacing:.03em;padding:.16rem .5rem;border-radius:999px;
+    white-space:nowrap;display:inline-block;font-weight:600;}
+  .tag.new{background:var(--accent);color:#fff;}
+  .tag.have{background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent);}
+  :root[data-theme="dark"] .tag.new,@media (prefers-color-scheme:dark){.tag.new{color:#0b1211;}}
+
+  /* wing cards */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem;}
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:1.15rem 1.2rem;
+    border-top:3px solid var(--wc,var(--accent));}
+  .card.live{--wc:var(--live);} .card.bench{--wc:var(--bench);} .card.rl{--wc:var(--rl);}
+  .card h3{font-family:var(--mono);font-size:.95rem;margin:0 0 .1rem;color:var(--wc);letter-spacing:.01em;}
+  .card .who{font-size:.78rem;color:var(--muted);margin:0 0 .8rem;}
+  .card ul{margin:0;padding-left:1.05rem;font-size:.86rem;}
+  .card li{margin:.32rem 0;}
+  .card li b{font-weight:600;}
+
+  .legend{display:flex;flex-wrap:wrap;gap:1.1rem;margin:.2rem 0 0;font-family:var(--mono);font-size:.72rem;color:var(--muted);}
+  .legend span{display:inline-flex;align-items:center;gap:.4rem;}
+  .dot{width:.7rem;height:.7rem;border-radius:3px;display:inline-block;}
+  .dot.live{background:var(--live);} .dot.bench{background:var(--bench);} .dot.rl{background:var(--rl);}
+  .dot.shared{background:var(--accent);}
+
+  footer{border-top:1px solid var(--hair);margin-top:2rem;padding-top:1.2rem;
+    font-family:var(--mono);font-size:.72rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;justify-content:space-between;}
+  a{color:var(--accent);}
+  @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth;}}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">CORA · Architecture Reference</p>
+  <h1>Three wings, one contract, one game</h1>
+  <p class="lede">How the live human-AI game, the benchmark harness, and the RL trainer share a single action contract and one game engine — and how people, models, and run-data move between them.</p>
+  <div class="meta">
+    <span class="chip"><b>Scope</b>&nbsp;ARC_Game + Verlog fork</span>
+    <span class="chip"><b>Target state</b>&nbsp;post-unification</span>
+    <span class="chip"><b>Companion</b>&nbsp;three-wing-unification-plan.md</span>
+    <span class="chip">2026-08-06</span>
+  </div>
+</header>
+
+<!-- 1 · OVERVIEW -->
+<section id="overview">
+  <p class="kicker">01 — The shape</p>
+  <h2>Three wings drive the same engine through the same contract</h2>
+  <p>Each wing is a different <em>driver</em> of the ARC disaster-response game: humans-plus-officers (live), scripted evaluation (benchmark), and a training loop (RL). They diverge only in <em>who acts and why</em>. Everything below the driver — the action grammar, the tool schema, the observation text, the reward, the run-record — is shared code owned by ARC_Game and imported everywhere. The engine underneath is one Unity build, reached two ways.</p>
+  <figure>
+    <div class="fig-head"><span class="fig-id"><b>fig.1</b> — system overview</span><span class="fig-cap">shared contract in teal · engine in slate</span></div>
+    <pre class="mermaid">
+flowchart TD
+  H["👤 Human Director + LLM officers"]:::live
+  B["📊 benchmark_models.py"]:::bench
+  R["🎯 Verlog · verl PPO (Qwen3)"]:::rl
+
+  subgraph CON["SHARED CONTRACT — owned by ARC_Game, imported by all"]
+    direction LR
+    P["cmd_parser"]:::sh
+    PR["cora_prompts"]:::sh
+    T["cora_tools<br/>schema + translate"]:::sh
+    O["obs_encoder"]:::sh
+    RW["reward"]:::sh
+    TR["cora_trajectory<br/>run-record"]:::sh
+  end
+
+  ENG["🎮 Unity game engine — one build"]:::eng
+  WS(["WebSocket · live"]):::port
+  TCP(["Gym TCP :9876 · headless"]):::port
+
+  H --> CON
+  B --> CON
+  R --> CON
+  CON --> WS --> ENG
+  CON --> TCP --> ENG
+
+  classDef live fill:#f7e6cf,stroke:#b45309,color:#5a3208,stroke-width:1.5px;
+  classDef bench fill:#d9e6f6,stroke:#1d5fa8,color:#123a68,stroke-width:1.5px;
+  classDef rl fill:#e4dbf4,stroke:#6d4aad,color:#3c2568,stroke-width:1.5px;
+  classDef sh fill:#d7ebe6,stroke:#1f7a6b,color:#0f3d36,stroke-width:1.5px;
+  classDef eng fill:#e7e5dc,stroke:#57564d,color:#2f2e26,stroke-width:1.5px;
+  classDef port fill:#fbfaf5,stroke:#9a978a,color:#4a483d;
+  style CON fill:#eef6f3,stroke:#1f7a6b,color:#0f3d36;
+    </pre>
+    <figcaption></figcaption>
+  </figure>
+  <div class="legend">
+    <span><i class="dot shared"></i> shared contract</span>
+    <span><i class="dot live"></i> live wing</span>
+    <span><i class="dot bench"></i> benchmark wing</span>
+    <span><i class="dot rl"></i> RL wing</span>
+  </div>
+</section>
+
+<!-- 2 · CONTRACT -->
+<section id="contract">
+  <p class="kicker">02 — The interfaces</p>
+  <h2>The shared contract: six modules, one home</h2>
+  <p class="sub">These are the seams between wings. Owning them in one place is the whole point of the unification — change the schema once and it flows to officer, benchmark, and trainer. The Verlog fork already imports ARC_Game live via <code>ARC_GAME_PATH</code>, so it consumes these the same way it already consumes <code>parse_commands</code>.</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Module</th><th>Owns</th><th>Consumed by</th><th>State</th></tr></thead>
+    <tbody>
+      <tr><td><code>cmd_parser</code></td><td>Action grammar — validate &amp; resolve tags to executable actions</td><td>all three</td><td><span class="tag have">shared</span></td></tr>
+      <tr><td><code>cora_prompts</code></td><td>Shared <b>mechanics preamble</b> + composable fragments; each wing adds its own framing on top</td><td>all three</td><td><span class="tag new">new · from llm_smoke_test</span></td></tr>
+      <tr><td><code>cora_tools</code></td><td>Canonical <b>typed</b> tool schema (<code>build/hire/train…</code>) + <code>translate_tool_calls</code> + tag-map</td><td>officer + RL (benchmark opt-in)</td><td><span class="tag new">new</span></td></tr>
+      <tr><td><code>obs_encoder</code></td><td>Single observation renderer — the state block every model reads</td><td>all three</td><td><span class="tag new">new consumer: Verlog</span></td></tr>
+      <tr><td><code>reward</code></td><td>Per-turn <b>and</b> per-action scoring (extracted from the logger)</td><td>all three</td><td><span class="tag new">new</span></td></tr>
+      <tr><td><code>cora_trajectory</code></td><td>Unified run-record: <code>messages</code>, <code>raw_response</code>, actions, reward, provenance, <code>behavior_logprobs?</code></td><td>all three (emit)</td><td><span class="tag new">new</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- 3 · COLLABORATORS -->
+<section id="collab">
+  <p class="kicker">03 — Who works on what</p>
+  <h2>How collaborators plug into each wing</h2>
+  <p>Different people extend different wings, and each has a self-serve entry point that never requires touching the core. The unified contract means a prompt or tool authored for one wing means the same thing in the others.</p>
+  <figure>
+    <div class="fig-head"><span class="fig-id"><b>fig.2</b> — contributor entry points</span><span class="fig-cap">author → mechanism → wing</span></div>
+    <pre class="mermaid">
+flowchart LR
+  PE["✍️ Prompt / tool<br/>engineers"] --> BUN["cora-bundle CLI<br/>config + prompts + plugins"]
+  BUN --> LW["LIVE wing<br/>POST /bundles · minted keys · cohorts"]:::live
+  EV["🔬 Eval<br/>researchers"] --> PP["prompt packs<br/>prompts/*.json"]
+  PP --> BW["BENCH wing<br/>run_benchmark.sh → numbers + transcripts"]:::bench
+  RE["🧠 RL<br/>engineers"] --> SB["Verlog sbatch<br/>configs on the cluster"]
+  SB --> RW["RL wing<br/>PPO · Qwen3 checkpoints"]:::rl
+  AG["🤖 LLM self-play<br/>agents (remote)"] --> KEY["minted API keys"]
+  KEY --> LW
+
+  classDef live fill:#f7e6cf,stroke:#b45309,color:#5a3208,stroke-width:1.5px;
+  classDef bench fill:#d9e6f6,stroke:#1d5fa8,color:#123a68,stroke-width:1.5px;
+  classDef rl fill:#e4dbf4,stroke:#6d4aad,color:#3c2568,stroke-width:1.5px;
+    </pre>
+    <figcaption></figcaption>
+  </figure>
+  <div class="cards">
+    <div class="card live">
+      <h3>Live wing</h3>
+      <p class="who">Trusted lab collaborators · remote agents</p>
+      <ul>
+        <li>Upload <b>config bundles</b> (prompts, tool selection) with the <code>cora-bundle</code> CLI → <code>POST /bundles</code></li>
+        <li>Mint their own <b>API keys</b> for experiment cohorts</li>
+        <li>Add <b>tools &amp; hooks</b> as <code>cora_ext</code> plugins, hot-reloaded</li>
+        <li>Pull their cohort's data back via <code>/my/sessions</code></li>
+      </ul>
+    </div>
+    <div class="card bench">
+      <h3>Benchmark wing</h3>
+      <p class="who">Prompt &amp; evaluation researchers</p>
+      <ul>
+        <li>Author declarative <b>prompt packs</b> (<code>prompts/*.json</code>)</li>
+        <li>Run <code>run_benchmark.sh --prompt-pack</code> against headless Unity</li>
+        <li>Get comparable <b>numbers + full transcripts</b> out</li>
+        <li>Swap prompt → measure, no core changes</li>
+      </ul>
+    </div>
+    <div class="card rl">
+      <h3>RL wing</h3>
+      <p class="who">RL / ML engineers</p>
+      <ul>
+        <li>Edit <b>sbatch + configs</b> in the Verlog fork</li>
+        <li>Submit <b>PPO</b> runs on the cluster (tool-call arm)</li>
+        <li>Consume the shared contract via <code>ARC_GAME_PATH</code></li>
+        <li>Produce <b>checkpoints</b> that redeploy as live officers</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 4 · PARTICIPANTS -->
+<section id="participants">
+  <p class="kicker">04 — The live experience</p>
+  <h2>How a participant plays the GUI/live version</h2>
+  <p>A study participant is the <b>Director</b>. They open the WebGL game in a browser; LLM <b>officers</b> connect through the router and advise them each round. The Director stays in control — every officer suggestion is a proposal the human accepts, edits, or overrides, and the Director can also act directly. Both kinds of action are captured, tagged by who did it.</p>
+  <figure>
+    <div class="fig-head"><span class="fig-id"><b>fig.3</b> — one live round</span><span class="fig-cap">human-in-the-loop turn</span></div>
+    <pre class="mermaid">
+sequenceDiagram
+  participant D as 👤 Director (human)
+  participant U as 🌐 Unity WebGL
+  participant RT as ⚙️ agent_router
+  participant OF as 🤖 LLM officers
+  D->>U: open game URL, start round
+  U->>RT: round state (WebSocket)
+  RT->>OF: observation via obs_encoder
+  OF-->>RT: typed tool_calls / proposed choices
+  RT-->>U: officer suggestions surfaced in GUI
+  D->>U: approve · edit · or act directly
+  U->>RT: chosen actions (+ who acted)
+  RT->>U: cmd_parser → execute in engine
+  U-->>RT: new state, time advances
+  Note over RT: every turn → cora_trajectory<br/>(is_human flag on Director acts)
+    </pre>
+    <figcaption></figcaption>
+  </figure>
+  <p class="sub">The provenance flag matters downstream: a Director's direct action and an officer's tool-call land in the <em>same</em> run-record schema, distinguished only by <code>is_human</code> — which is exactly what lets live human play become off-policy data for training.</p>
+</section>
+
+<!-- 5 · DATA FLOW -->
+<section id="dataflow">
+  <p class="kicker">05 — The closing loop</p>
+  <h2>Where run-data goes — and how the wings feed each other</h2>
+  <p>Every wing appends the same <b>JSONL run-records at the edge</b> (cheap, inspectable, wherever it runs). An aggregation step converts them to <b>parquet</b> for training. That one buffer mixes on-policy RL rollouts, off-policy frontier benchmark runs, and off-policy live-human play — and the model it trains redeploys back into all three wings. That is the research payoff: benchmark and live-human data become fuel for off-policy PPO.</p>
+  <figure>
+    <div class="fig-head"><span class="fig-id"><b>fig.4</b> — data flywheel</span><span class="fig-cap">capture in JSONL · train in parquet · redeploy</span></div>
+    <pre class="mermaid">
+flowchart LR
+  L["LIVE<br/>human + officers"]:::live --> J["cora_trajectory<br/>JSONL shards"]:::sh
+  B["BENCHMARK<br/>frontier models"]:::bench --> J
+  R["RL<br/>on-policy rollouts"]:::rl --> J
+  J --> AG["aggregate →<br/>parquet buffer"]:::sh
+  AG --> PPO["off-policy PPO<br/>on-policy + off-policy mix"]:::rl
+  PPO --> CK["Qwen3 checkpoint"]:::rl
+  CK -.redeploy.-> L
+  CK -.evaluate.-> B
+  CK -.continue.-> R
+
+  classDef live fill:#f7e6cf,stroke:#b45309,color:#5a3208,stroke-width:1.5px;
+  classDef bench fill:#d9e6f6,stroke:#1d5fa8,color:#123a68,stroke-width:1.5px;
+  classDef rl fill:#e4dbf4,stroke:#6d4aad,color:#3c2568,stroke-width:1.5px;
+  classDef sh fill:#d7ebe6,stroke:#1f7a6b,color:#0f3d36,stroke-width:1.5px;
+    </pre>
+    <figcaption></figcaption>
+  </figure>
+  <p class="sub">Honest constraint carried in the schema: frontier and human records have no token log-probs, so <code>behavior_logprobs</code> is nullable and <code>messages</code>+<code>raw_response</code> are mandatory — keeping the recompute-under-policy path open without a re-capture, even though we start with the current true-IS setup.</p>
+</section>
+
+<footer>
+  <span>CORA — three-wing systems map</span>
+  <span>reference for the unification plan · not a spec</span>
+</footer>
+</div>
