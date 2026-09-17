@@ -295,12 +295,11 @@ public class DeliverySystem : MonoBehaviour
 
             if (roadManager != null)
             {
-                // Sorted: GetAllRoadPositions() returns a HashSet, so ToList() inherits a
-                // layout-dependent order that the Random.Range below indexes into.
+                // PARITY BUILD (ledger D24): unsorted, as upstream has it. The sort is the right
+                // fix -- GetAllRoadPositions() returns a HashSet and Random.Range indexes into
+                // whatever order ToList() inherits -- but upstream does not do it, so sorting
+                // picks a different vehicle spawn tile from the same draw.
                 List<Vector3Int> roadList = roadManager.GetAllRoadPositions().ToList();
-                roadList.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x)
-                                      : a.y != b.y ? a.y.CompareTo(b.y)
-                                      : a.z.CompareTo(b.z));
                 if (roadList.Count > 0)
                 {
                     for (int i = 0; i < numberToAdd; i++)

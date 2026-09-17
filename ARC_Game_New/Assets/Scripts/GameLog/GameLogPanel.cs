@@ -220,12 +220,6 @@ public class GameLogPanel : MonoBehaviour
             exportAllButton.onClick.AddListener(() => ExportMessages(true));
     }
 
-    void OnDestroy()
-    {
-        if (Instance == this)
-            Instance = null;
-    }
-
     void SetupDropdowns()
     {
         if (messageTypeDropdown != null)

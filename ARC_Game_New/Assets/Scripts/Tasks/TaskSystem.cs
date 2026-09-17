@@ -547,7 +547,8 @@ public class TaskSystem : MonoBehaviour
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
-            GlobalClock.Instance.OnDayStarted += OnDayStarted;
+            // PARITY BUILD (ledger D15): NOT subscribed. Upstream has no start-of-day generation
+            // pass at all; it generates only from OnTimeSegmentChanged.
             GlobalClock.Instance.OnSimulationEnded += OnSimulationEndedCheckDayComplete;
         }
 
@@ -960,10 +961,14 @@ public class TaskSystem : MonoBehaviour
     void OnRoundChanged(int newSegment)
     {
         Debug.Log($"OnRoundChanged called in Task System: segment {newSegment}, auto generation: {enableAutoTaskGeneration}. (We skip generation when newSegment == 3)");
-        // Generation passes: start of day (OnDayStarted, segment 0) and the ticks that open
-        // rounds 2 and 3 (segments 1, 2). The tick that opens round 4 (segment 3) and the
-        // end-of-day tick (segment 4) never generated tasks; keep it that way.
-        if (enableAutoTaskGeneration && newSegment < GlobalClock.Instance.roundsPerDay - 1)
+        // PARITY BUILD (ledger D15): upstream's gate, `newSegment != 3`, not ours. The two are
+        // not the same set: upstream generates on segments 0, 1, 2 AND 4, ours only on 0, 1, 2.
+        // Ours also moved the segment-0 pass onto OnDayStarted, which does not fire for day 1 --
+        // so on day 1 upstream ran a generation pass this build never ran, and upstream's first
+        // day produced a Budget_Allocation, two relocation requests and a workforce alert that
+        // ours did not. Different tasks means different trigger evaluations, which means a
+        // different number of draws off the shared Random stream.
+        if (enableAutoTaskGeneration && newSegment != 3)
         {
             Debug.Log("Attempting to generate tasks from database...");
             GenerateTasksFromDatabase();
@@ -982,6 +987,14 @@ public class TaskSystem : MonoBehaviour
     /// </summary>
     void ApplyConfiguredAllocation(GameTask task, TaskData taskData)
     {
+        // PARITY BUILD (ledger D21): DISABLED. Upstream has no equivalent — the Daily Budget
+        // Allocation grants whatever the task ASSET says (5000), not the sheet's
+        // initialDailyBudgetAdditions (3000). Applied every day the funding task is confirmed,
+        // the 2000/day difference compounds into a median 292,000 gap across a 32-seed suite,
+        // against a starting budget of 10,000. Same family as D7 and D20: the sheet drives our
+        // build where an asset or prefab drives upstream's.
+        return;
+#pragma warning disable 0162
         if (taskData.taskId != "Budget_Allocation" || GameDataManager.Instance == null) return;
         int amount = GameDataManager.Instance.InitialDailyBudgetAddition;
         if (amount <= 0) return;
@@ -999,6 +1012,7 @@ public class TaskSystem : MonoBehaviour
             if (!string.IsNullOrEmpty(message.messageText))
                 message.messageText = System.Text.RegularExpressions.Regex.Replace(
                     message.messageText, @"\$[\d,]+", shown.Replace("$", "$$"));
+#pragma warning restore 0162
     }
 
     /// <summary>Start-of-day generation pass (was the segment-0 event before the A1 clock fix).
@@ -1069,11 +1083,13 @@ public class TaskSystem : MonoBehaviour
                 }
             }
 
-            if (IsExternalRelationContact(taskData) && currExternalRelationCount >= numExternalRelationTasks)
-            {
-                if (showDebugInfo) Debug.Log($"[Limit] Skipping {taskData.taskTitle}: Max external-relation contacts reached ({numExternalRelationTasks}).");
-                continue;
-            }
+            // PARITY BUILD (ledger D6): the external-relation CAP is removed. Upstream has no
+            // equivalent -- its own scheme (ApplyInitExternalRelationFrequency, which splits the
+            // frequency into two day-intervals) never runs, because budgetAdvisoryER and
+            // budgetEmergencyER are null in every scene that ships. So upstream places no limit
+            // on external-relation contacts at all, and a cap here would suppress task
+            // generation this build is supposed to match -- changing task counts, and with them
+            // the number of draws taken from the shared Random stream.
 
             // Handle alert tasks (global check for duplicates)
             if (taskData.taskType == TaskType.Alert)
@@ -1604,7 +1620,12 @@ public class TaskSystem : MonoBehaviour
             // Apply penalties for incomplete emergency/demand tasks
             if (task.status == TaskStatus.Incomplete)
             {
-                ApplyTaskPenalties(task);
+                // PARITY BUILD (ledger D22): upstream has this call COMMENTED OUT
+                // (`//ApplyTaskPenalties(task);`), so an expired task costs it nothing. We
+                // re-enabled it, which is why this build loses 1-3 satisfaction during each day
+                // where upstream loses none. Whether an unfulfilled task should carry a penalty
+                // at all is a design question, not obviously a bug on either side.
+                // ApplyTaskPenalties(task);
             }
 
             RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
@@ -1690,7 +1711,8 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            ApplyTaskPenalties(task);
+            // PARITY BUILD (ledger D22): the SECOND penalty site, also commented out upstream.
+            // ApplyTaskPenalties(task);
             RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
             OnTaskCompleted?.Invoke(task);
 

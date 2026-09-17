@@ -409,9 +409,20 @@ public class GlobalClock : MonoBehaviour
 
         // ---- Human / router GUI path (main-bugfixes game-logic) ----
 
-        // Day 1 used to be auto-stepped through all four rounds with no OnTimeSegmentChanged ticks
-        // (no generation, consumption, ageing or deliveries), unlike the gym path. One rule for
-        // humans and agents: day 1 is a normal day (BUG_REPORTS C.10).
+        // PARITY BUILD (ledger D16): upstream's day-1 skip is RESTORED. Our fix (BUG_REPORTS
+        // C.10) made day 1 a normal day for humans as it already was for the gym; upstream
+        // auto-steps all four rounds through a clock animation that sets currentTimeSegment
+        // directly and never raises OnTimeSegmentChanged. The consequence is total: upstream's
+        // day 1 runs NO generation, consumption, ageing or delivery ticks and takes NO draws,
+        // which is why its RNG cursor is frozen for the whole first day while ours advances.
+        // This is the single largest behavioural divergence found so far.
+        if (currentDay == 1 && currentTimeSegment == 0)
+        {
+            Time.timeScale = 0f;
+            GameLogPanel.Instance.LogMetricsChange("Day 1: stepping through all rounds for construction/intro.");
+            StartCoroutine(Day1SkipCoroutine());
+            return;
+        }
 
         if (!HasActiveDeliveries())
         {
@@ -443,7 +454,52 @@ public class GlobalClock : MonoBehaviour
         }
     }
 
-    // (Day1SkipCoroutine removed: see BUG_REPORTS C.10.)
+    IEnumerator Day1SkipCoroutine()
+    {
+        bool hasFacilities = FindObjectsOfType<Building>().Length > 0;
+        string openMsg     = clockAnimationUI != null
+            ? (hasFacilities ? clockAnimationUI.day1SetupMessage : clockAnimationUI.day1NoFacilitiesMessage)
+            : "";
+        string completeMsg = clockAnimationUI != null ? clockAnimationUI.day1CompleteMessage : "";
+
+        clockAnimationUI?.Show(openMsg);
+
+        // Step through rounds 1-4: show round number → play clock → fire OnRoundEnd
+        for (int round = 0; round < 4; round++)
+        {
+            currentTimeSegment = round;
+            UpdateTimeDisplay();
+
+            if (round == 3 && hasFacilities)
+                clockAnimationUI?.SetMessage(completeMsg);
+
+            if (clockAnimationUI != null)
+                yield return clockAnimationUI.PlayRoundLoops();
+            else
+                yield return new WaitForSecondsRealtime(0.1f);
+
+            //OnRoundEnd?.Invoke();
+            SafeInvokeStatic(OnRoundEnd);
+        }
+
+        clockAnimationUI?.Hide();
+
+        // Segment stays at 3 so display reads "Round 4"; advance state to end-of-day
+        currentTimeSegment  = 4;
+        isSimulationRunning = false;
+        currentState        = TimeState.Paused;
+        Time.timeScale      = 0f;
+        isWaitingForReport  = true;
+
+        executeButton?.GetComponentInChildren<TextMeshProUGUI>()?.SetText("End Today");
+        EnablePlayerInteractions();
+        OnSimulationEnded?.Invoke();
+
+        if (showDebugInfo)
+            Debug.Log("Day 1 complete — all 4 rounds stepped through.");
+        GameLogPanel.Instance.LogMetricsChange("Day 1 complete — Click 'End Today' when ready.");
+    }
+
     bool HasActiveDeliveries()
     {
         return DeliverySystem.Instance != null && DeliverySystem.Instance.HasPendingOrActiveDeliveries();
@@ -711,11 +767,12 @@ public class GlobalClock : MonoBehaviour
         // Check if day is complete (4 rounds = end of day)
         if (currentTimeSegment >= roundsPerDay)
         {
-            // The last round's tick belongs to the last round (BUG_REPORTS A1): consumption,
-            // production, ageing, expiry and generation run NOW, before the daily report and
-            // before the rollover wastes what is left. It used to be delivered as segment 0
-            // after OnDayChanged, i.e. right after the day's food had been thrown away.
-            SafeInvoke(OnTimeSegmentChanged, currentTimeSegment);
+            // PARITY BUILD (ledger D15): NO tick here. Our A1 fix delivers the last round's tick
+            // as segment 4 before the daily report, so consumption, ageing, expiry and generation
+            // run before the rollover wastes what is left. Upstream returns early with no event
+            // at all and delivers that tick as segment 0 after OnDayChanged instead — i.e. after
+            // the day's food has already been thrown away. That is the bug; it is also what this
+            // build has to reproduce.
             // Don't trigger OnDayChanged here anymore - wait for button click
             return; // Exit early, don't update display yet
         }
@@ -784,12 +841,13 @@ public class GlobalClock : MonoBehaviour
         SnapshotDebug.Mark("day:beforeOnDayChanged");
         SafeInvoke(OnDayChanged, currentDay);
         SnapshotDebug.Mark("day:afterOnDayChanged");
-        // (No segment event here any more: the last round's tick fired in AdvanceTimeSegment --
-        // BUG_REPORTS A1. Upstream still raises OnTimeSegmentChanged at the rollover; that is the
-        // pre-fix clock and would restore the wasted-food ordering, so only the invoke MECHANISM
-        // is taken from it.)
-        // Start-of-day generation pass, currentTimeSegment == 0, same position as before.
-        SafeInvoke(OnDayStarted, currentDay);
+        // PARITY BUILD (ledger D15): the segment-0 tick at the rollover, as upstream raises it,
+        // instead of our OnDayStarted. This is the other half of the A1 fix and the half that
+        // actually moved the numbers: with OnDayStarted here, day 1 gets no start-of-day
+        // generation pass at all (the event fires only from day 2 onward), so upstream's first
+        // day produced a Budget_Allocation, two relocation requests and a workforce alert that
+        // ours never generated.
+        SafeInvoke(OnTimeSegmentChanged, currentTimeSegment);
         SnapshotDebug.Mark("day:afterOnTimeSegmentChanged");
 
         // Update display

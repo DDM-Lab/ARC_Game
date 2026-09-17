@@ -359,21 +359,21 @@ public class ClientStayTracker : MonoBehaviour
             if (group.clientsWithCaseworkNeed > 0 && !group.caseworkRequestGenerated && enableCaseworkTaskGeneration)
             {
 
-                Building facilityBuilding = group.currentFacility != null ? group.currentFacility.GetComponent<Building>() : null;
-                bool facilityDeconstructing = facilityBuilding != null && facilityBuilding.IsDeconstructing();
-
-                if (!facilityDeconstructing)
+                // PARITY BUILD (ledger D1): the deconstruction guard is REMOVED here on purpose.
+                // Upstream rolls unconditionally, and because every stochastic system shares one
+                // global Random stream, a draw skipped on one build shifts every later flood,
+                // weather roll and task trigger on that build only. Keeping the fix would make
+                // this build diverge from upstream for a reason that has nothing to do with the
+                // LLM code — which is the one thing version 2 exists to measure.
+                int Y = Mathf.Max(1, roundsInFacility);
+                float currentProbability = baseCaseworkProbability * Mathf.Pow(probabilityGrowthFactor, Y - 1);
+                currentProbability = Mathf.Clamp(currentProbability, 0f, 100f);
+                SnapshotDebug.Mark("draw:Client.caseworkGen");
+                if (UnityEngine.Random.value < (currentProbability / 100f))
                 {
-                    int Y = Mathf.Max(1, roundsInFacility);
-                    float currentProbability = baseCaseworkProbability * Mathf.Pow(probabilityGrowthFactor, Y - 1);
-                    currentProbability = Mathf.Clamp(currentProbability, 0f, 100f);
-                    SnapshotDebug.Mark("draw:Client.caseworkGen");
-                    if (UnityEngine.Random.value < (currentProbability / 100f))
-                    {
-                        GenerateCaseworkTask(group);
-                        group.caseworkRequestGenerated = true;
-                        OnCaseworkRequested?.Invoke(group);
-                    }
+                    GenerateCaseworkTask(group);
+                    group.caseworkRequestGenerated = true;
+                    OnCaseworkRequested?.Invoke(group);
                 }
                 // int Y = Mathf.Max(1, roundsInFacility); // rounds stayed 
 
@@ -833,6 +833,7 @@ public class ClientStayTracker : MonoBehaviour
 
             clientGroups.Remove(group);
         }
+    }
     /// <summary>
     /// Fires TriggerNonCaseworkDeparture immediately on a synthetic 3-client group, bypassing the
     /// normal 4-8 round wait, so the departure alert popup can be verified on demand instead of

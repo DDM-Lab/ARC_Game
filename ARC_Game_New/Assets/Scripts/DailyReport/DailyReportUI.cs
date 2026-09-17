@@ -274,12 +274,11 @@ public class DailyReportUI : MonoBehaviour
 
         if (DailyReportData.Instance != null)
         {
-            // ON THE REPORT'S SCALE. The report reads 0-1000 (`{currentSatisfaction:F0}/1000`,
-            // bar = value/1000) while the authoritative field these come from is 0-100, so
-            // seeding them raw makes the day's reported change wrong by 10x -- BUG_REPORTS
-            // B34, which this merge would otherwise have reintroduced.
-            currentSatisfaction = DailyReportData.Instance.GetDayStartSatisfaction() * 10f;
-            currentEfficiency = DailyReportData.Instance.GetDayStartEfficiency() * 10f;
+            // PARITY BUILD (ledger D3): seeded RAW, as upstream does, without the `* 10f` that
+            // puts these on the report's 0-1000 scale. Upstream's reported day change is wrong
+            // by 10x (BUG_REPORTS B34); version 2 reproduces that on purpose.
+            currentSatisfaction = DailyReportData.Instance.GetDayStartSatisfaction();
+            currentEfficiency = DailyReportData.Instance.GetDayStartEfficiency();
         }
 
         UpdateBottomPanels(metrics);

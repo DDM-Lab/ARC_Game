@@ -91,8 +91,21 @@ public class WebSocketManager : MonoBehaviour
         if (PlayerPrefs.HasKey("arc_config_name"))
             configName = PlayerPrefs.GetString("arc_config_name");
 
-        // Headless / gym training mode: auto-connect immediately.
-        if (Application.isBatchMode)
+        if (LlmDisabled())
+        {
+            enableWebSocket = false;
+            headlessMode = false;
+            connectionStatus = "AI teammates disabled";
+            Debug.Log("[WS] AI teammates DISABLED for this run (-no-llm / ARC_NO_LLM / ?llm=0). "
+                    + "The game runs solo; no router connection is attempted.");
+            return;
+        }
+
+        // Headless / gym training mode: auto-connect immediately — UNLESS the run asked for the
+        // AI teammates to be off. Batchmode used to force enableWebSocket = true unconditionally,
+        // so a headless run had no way to play the game without the LLM path attached; the
+        // parity harness needs exactly that, and so does any no-AI control condition.
+        if (Application.isBatchMode && !LlmDisabled())
         {
             Debug.Log("Running in Unity headless mode (batchmode)");
             headlessMode = true;
@@ -115,6 +128,33 @@ public class WebSocketManager : MonoBehaviour
             connectionStatus = "WebSocket Disabled";
             Debug.Log("WebSocket is disabled. Game will run in offline mode.");
         }
+    }
+
+    /// <summary>
+    /// True when this run was explicitly started with the AI teammates OFF: `-no-llm` on the
+    /// command line, ARC_NO_LLM=1 in the environment, or ?llm=0 on a WebGL page URL.
+    ///
+    /// Evaluated fresh rather than cached, so a stale PlayerPrefs value or a leftover launcher
+    /// selection cannot flip it — "off" has to mean off for the whole process, or a control
+    /// condition silently becomes a treatment condition.
+    /// </summary>
+    public static bool LlmDisabled()
+    {
+        try
+        {
+            foreach (string a in Environment.GetCommandLineArgs())
+                if (a == "-no-llm" || a == "--no-llm") return true;
+            string env = Environment.GetEnvironmentVariable("ARC_NO_LLM");
+            if (!string.IsNullOrEmpty(env) && env != "0") return true;
+        }
+        catch (Exception) { }   // WebGL has neither, and asking can throw rather than return empty
+        try
+        {
+            string url = Application.absoluteURL;
+            if (!string.IsNullOrEmpty(url) && url.Contains("llm=0")) return true;
+        }
+        catch (Exception) { }
+        return false;
     }
 
     IEnumerator LoadConfigThenConnect()
@@ -163,6 +203,13 @@ public class WebSocketManager : MonoBehaviour
     public async void ConnectToServer()
     {
         if (!enableWebSocket) return;
+        // Belt and braces: checked here too, so no other caller (launcher UI, gym bootstrap, a
+        // reconnect timer) can quietly re-attach the LLM path to a run started with AI off.
+        if (LlmDisabled())
+        {
+            connectionStatus = "AI teammates disabled";
+            return;
+        }
 
         // Study mode (config.json strictMap): the configured map could not be applied, so this
         // run would silently use the DEFAULT layout — a different experimental condition than

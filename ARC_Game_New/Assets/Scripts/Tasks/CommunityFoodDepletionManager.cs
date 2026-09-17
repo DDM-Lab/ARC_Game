@@ -46,15 +46,23 @@ public class CommunityFoodDepletionManager : MonoBehaviour
 
     void Start()
     {
-        // The sheet is loaded asynchronously; read initialFoodDemandFrequency once GameDataManager
-        // has the value in effect (the loader's own field is still the fallback at Start).
-        StartCoroutine(ApplyConfiguredChance());
+        // PARITY BUILD (ledger D18): upstream's synchronous read straight off the loader. Ours
+        // waits for GameDataManager so the SHEET's value wins; upstream reads the loader's own
+        // field at Start, which is still the fallback then. Different source, different depletion
+        // chance, and a depletion hit spawns a food-request task -- so this changes not just an
+        // outcome but how many tasks exist to be evaluated on later rounds, and with them how
+        // many draws come off the shared stream.
+        if (GameConfigLoader.Instance != null)
+        {
+            float configured = GameConfigLoader.Instance.GetInitialFoodDemandFrequency();
+            if (configured >= 0f) depletionChancePerRound = configured;
+        }
 
         if (GlobalClock.Instance != null)
         {
-            // Round 1 of each day is the OnDayStarted pass (segment 0) since the A1 clock fix; the
-            // segment events are 1-4, so without this the manager would only ever see rounds 2-3.
-            GlobalClock.Instance.OnDayStarted += OnDayStarted;
+            // PARITY BUILD (ledger D18): no OnDayStarted subscription. It existed because the A1
+            // clock fix moved the segment-0 tick onto OnDayStarted; with that fix reverted (D16)
+            // the rollover raises OnTimeSegmentChanged(0) again, as upstream does.
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
         }
     }
@@ -73,12 +81,9 @@ public class CommunityFoodDepletionManager : MonoBehaviour
     {
         if (GlobalClock.Instance != null)
         {
-            GlobalClock.Instance.OnDayStarted -= OnDayStarted;
             GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
         }
     }
-
-    void OnDayStarted(int day) => OnRoundChanged(0);
 
     void OnRoundChanged(int newSegment)
     {

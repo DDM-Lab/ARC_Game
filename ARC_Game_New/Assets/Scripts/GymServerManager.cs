@@ -162,8 +162,17 @@ public class GymServerManager : MonoBehaviour
             }
         }
 
+        // "AI teammates off" must not quietly become "gym server on". The auto-enable below keys
+        // off enableWebSocket being false, which -no-llm sets — so without this guard, asking for
+        // a solo run would start an RL control socket instead.
+        if (Application.isBatchMode && !hasGymServerArg && WebSocketManager.LlmDisabled())
+        {
+            Debug.Log("[GymServer] AI disabled for this run (-no-llm); gym server stays off. "
+                    + "Pass -gym-server to run the gym explicitly.");
+            enableGymServer = false;
+        }
         // Auto-enable in batch mode ONLY if explicitly requested OR WebSocketManager is disabled
-        if (Application.isBatchMode && !hasGymServerArg)
+        else if (Application.isBatchMode && !hasGymServerArg)
         {
             // Check if WebSocketManager is active
             if (WebSocketManager.Instance != null && WebSocketManager.Instance.enableWebSocket)

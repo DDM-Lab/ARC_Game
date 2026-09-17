@@ -259,9 +259,12 @@ public class SatisfactionAndBudget : MonoBehaviour
     public void AddSatisfaction(float amount, string description = "")
     {
         float previousValue = currentSatisfaction;
-        // Clamp to [0,100] so no caller can drive satisfaction out of range (defense
-        // against display-scale deltas leaking in — see DailyReportUI daily report).
-        currentSatisfaction = Mathf.Clamp(currentSatisfaction + amount, minSatisfaction, maxSatisfaction);
+        // PARITY BUILD (ledger D13): UNCLAMPED, as upstream is. Our clamp to [0,100] is the
+        // right behaviour and it is what stops a 1000-scale delta from wrecking the metric, but
+        // upstream lets satisfaction run past its own maximum — a seeded upstream episode reads
+        // 313.33 on a 0-100 field by the first round. Version 2 has to reproduce that to be
+        // comparable at all.
+        currentSatisfaction += amount;
 
         // Use default description if none provided
         if (string.IsNullOrEmpty(description))
