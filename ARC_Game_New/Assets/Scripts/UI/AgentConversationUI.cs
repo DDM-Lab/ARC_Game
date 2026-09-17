@@ -2264,14 +2264,48 @@ public class AgentConversationUI : MonoBehaviour
     {
         return mainPanel != null && mainPanel.activeInHierarchy && isExpanded;
     }
-    
+
     public void OpenPanel()
     {
         if (mainPanel != null) mainPanel.SetActive(true);
     }
-    
+
     public void ClosePanel()
     {
         if (mainPanel != null) mainPanel.SetActive(false);
+    }
+
+    /// <summary>
+    /// Called by GlobalClock when the player proceeds to the next round. Collapses the panel if
+    /// it's currently expanded, then locks out interaction entirely — see SetInteractable(false).
+    /// Skips the collapse animation if one is already mid-flight (same guard the click-driven
+    /// toggle uses) rather than forcing it, to avoid stepping on an in-progress coroutine.
+    /// </summary>
+    public void CloseAndLockForSimulation()
+    {
+        if (isExpanded && !isAnimating)
+        {
+            isExpanded = false;
+            StartCoroutine(AnimateExpand(false));
+        }
+
+        SetInteractable(false);
+    }
+
+    /// <summary>
+    /// Enables/disables every way the player can open or act on this panel — the agent tabs,
+    /// confirm/send buttons, and the input field. Re-enabled by GlobalClock once the round ends.
+    /// </summary>
+    public void SetInteractable(bool interactable)
+    {
+        if (expandButton != null) expandButton.interactable = interactable;
+        if (disasterOfficerButton != null) disasterOfficerButton.interactable = interactable;
+        if (foodMassCareButton != null) foodMassCareButton.interactable = interactable;
+        if (lodgingMassCareButton != null) lodgingMassCareButton.interactable = interactable;
+        if (workforceServiceButton != null) workforceServiceButton.interactable = interactable;
+        if (externalRelationshipButton != null) externalRelationshipButton.interactable = interactable;
+        if (confirmButton != null) confirmButton.interactable = interactable;
+        if (sendButton != null) sendButton.interactable = interactable;
+        if (playerInputField != null) playerInputField.interactable = interactable;
     }
 }

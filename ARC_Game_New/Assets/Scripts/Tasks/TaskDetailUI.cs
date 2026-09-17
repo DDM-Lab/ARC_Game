@@ -1137,13 +1137,28 @@ private bool CompleteTaskAction(out string failReason)
 
         if (selectedChoice.immediateDelivery)
         {
+            // MERGE 74304870: resolve the quantity BEFORE executing. ExecuteGeneratorDelivery
+            // mutates destination storage (FoodDeliveryHandler.ExecuteImmediate), which would
+            // change GetFoodNeed()'s answer if resolved afterwards; this snapshot is what
+            // costPerUnit pricing in ApplyChoiceImpacts scales by. Without it that pricing is
+            // dead code -- the merge dropped upstream's only caller, because it landed inside a
+            // method this branch had rewritten.
+            int? resolvedQuantity = null;
+            if (selectedChoice.costPerUnit > 0 && selectedChoice.deliveryCargoType == ResourceType.FoodPacks
+                && FoodDeliveryHandler.Instance != null)
+            {
+                MonoBehaviour dest = TaskSystem.Instance.FindTriggeringFacility(currentTask);
+                if (dest != null)
+                    resolvedQuantity = FoodDeliveryHandler.Instance.ResolveQuantity(selectedChoice, dest);
+            }
+
             int moved = ExecuteGeneratorDelivery(selectedChoice, immediate: true);
             if (moved == 0)
             {
                 failReason = "nothing could be moved (no source, no destination, or no space)";
                 return false;
             }
-            ApplyChoiceImpacts(selectedChoice);
+            ApplyChoiceImpacts(selectedChoice, resolvedQuantity);
             TaskSystem.Instance.CompleteTask(currentTask);
         }
         else if (selectedChoice.triggersDelivery || selectedChoice.enableMultipleDeliveries)
@@ -2963,7 +2978,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
         return building.GetComponent<BuildingResourceStorage>();
     }
 
-    void ApplyChoiceImpacts(AgentChoice choice)
+    void ApplyChoiceImpacts(AgentChoice choice, int? resolvedDeliveryQuantity = null)
     {
         foreach (TaskImpact impact in choice.choiceImpacts)
         {
@@ -2989,17 +3004,28 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                     if (SatisfactionAndBudget.Instance != null)
                     {
                         int delayRounds = choice.budgetDelayRounds;
-                        if (impact.value > 0)
+
+                        // costPerUnit scales this cost with the actual resolved delivery quantity
+                        // (e.g. population-based food need) instead of the fixed authored value.
+                        // Only overrides negative (cost) impacts — positive/incoming-funds impacts
+                        // are untouched, same as before.
+                        float impactValue = impact.value;
+                        if (choice.costPerUnit > 0 && resolvedDeliveryQuantity.HasValue && impactValue < 0)
+                        {
+                            impactValue = -(choice.costPerUnit * resolvedDeliveryQuantity.Value);
+                        }
+
+                        if (impactValue > 0)
                         {
                             // Positive budget = incoming funds — respect delay
                             BudgetAllocationManager.Instance?.ScheduleAllocation(
-                                (int)impact.value,
+                                (int)impactValue,
                                 delayRounds,
                                 $"Task: {currentTask.taskTitle}");
                             // rounds delayed
                             if (delayRounds > 0){
                                 ToastManager.ShowToast(
-                                    $"${impact.value:N0} funding approved — arrives in {delayRounds} round(s)",
+                                    $"${impactValue:N0} funding approved — arrives in {delayRounds} round(s)",
                                     ToastType.Info, true);
                             }
                         }
@@ -3011,12 +3037,12 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                                           : currentTask.taskTag == TaskTag.Lodging ? SatisfactionAndBudget.SpendCategory.Lodging
                                           : SatisfactionAndBudget.SpendCategory.Other;
                             SatisfactionAndBudget.Instance.RemoveBudget(
-                                -(int)impact.value,
+                                -(int)impactValue,
                                 choiceCat,
                                 $"Task [{currentTask.taskTitle}] cost");
                             if (DailyReportData.Instance != null)
                             {
-                                float costToday = -impact.value;
+                                float costToday = -impactValue;
                                 // if (currentTask.taskTag == TaskTag.Food)
                                 //     DailyReportData.Instance.RecordFoodSpendCumulative(impact.value);
                                 // else if (currentTask.taskTag == TaskTag.Lodging)
@@ -3036,7 +3062,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                                 }
                             }
                             ToastManager.ShowToast(
-                                $"Budget decreased by ${-impact.value:N0}",
+                                $"Budget decreased by ${-impactValue:N0}",
                                 ToastType.Info, true);
                         }
                     }

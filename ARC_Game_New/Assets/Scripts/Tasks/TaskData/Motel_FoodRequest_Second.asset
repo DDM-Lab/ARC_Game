@@ -11,14 +11,14 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4c182747abbcaae4ab5183b8a6d24a10, type: 3}
   m_Name: Motel_FoodRequest_Second
-  m_EditorClassIdentifier:
+  m_EditorClassIdentifier: 
   taskId: Motel_FoodRequest_Second
   taskTitle: '[facility_name_plain] Follow-up Food Request'
   taskType: 1
   description: "[facility_name] has requested food supplies. We can either send prepared
     meals from an available kitchen or use a quick but more costly fast-food delivery.
     We can also choose to fulfill the follow-up food request now, allowing us to
-    plan ahead and satisfy both requests at once, or fulfill only the current round’s
+    plan ahead and satisfy both requests at once, or fulfill only the current round\u2019s
     demand.\r\r"
   taskImage: {fileID: 21300000, guid: a2ba475e51fc353469fa5bc8ff4de77f, type: 3}
   taskOfficer: 4
@@ -49,6 +49,7 @@ MonoBehaviour:
   workforceTriggers: []
   facilityStatusTriggers: []
   weatherTriggers: []
+  latestGenerationRound: 0
   requireAllTriggers: 1
   isGlobalTask: 0
   targetFacilityType: 4
@@ -61,15 +62,15 @@ MonoBehaviour:
   - impactType: 1
     value: -1
     isCountdown: 0
-    customLabel:
+    customLabel: 
   - impactType: 0
     value: 1
     isCountdown: 0
-    customLabel:
+    customLabel: 
   - impactType: 5
     value: 2
     isCountdown: 0
-    customLabel:
+    customLabel: 
   agentMessages:
   - messageText: '[facility_name] needs food supplies. We can send prepared meals
       from an available kitchen or use a faster, more costly fast-food delivery.'
@@ -83,8 +84,8 @@ MonoBehaviour:
     typingSpeed: 0
   agentChoices:
   - choiceId: 0
-    choiceText: Fulfill [food_amount] food packs for the current round.
-    agentReasoning:
+    choiceText: Fulfill [food_amount] meals for the current round.
+    agentReasoning: 
     choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
@@ -96,43 +97,47 @@ MonoBehaviour:
     deliveryQuantity: 0
     deliveryPercentage: 100
     deliverAll: 0
+    costPerUnit: 0
+    requireFullQuantity: 0
     sourceType: 1
     sourceBuilding: 0
     sourcePrebuilt: 0
-    specificSourceName:
+    specificSourceName: 
     destinationType: 3
     destinationBuilding: 4
     destinationPrebuilt: 0
-    specificDestinationName:
+    specificDestinationName: 
     budgetDelayRounds: 0
     prioritizeNearestSource: 1
     prioritizeNearestDestination: 0
   - choiceId: 2
-    choiceText: Rapid Response Vehicle deliver 100 meals (Immediate, $1000)
-    agentReasoning:
+    choiceText: Rapid Response Vehicle deliver [food_amount] meals immediately ($10/meal).
+    agentReasoning: 
     choiceImpacts:
     - impactType: 1
-      value: -1000
+      value: -1
       isCountdown: 0
-      customLabel:
+      customLabel: 
     isSelected: 0
     triggersDelivery: 1
     immediateDelivery: 1
     deliveryCargoType: 1
     enableMultipleDeliveries: 0
     multiDeliveryType: 0
-    quantityType: 0
+    quantityType: 3
     deliveryQuantity: 100
-    deliveryPercentage: 0
+    deliveryPercentage: 100
     deliverAll: 0
+    costPerUnit: 10
+    requireFullQuantity: 0
     sourceType: 1
     sourceBuilding: 0
     sourcePrebuilt: 0
-    specificSourceName:
+    specificSourceName: 
     destinationType: 3
     destinationBuilding: 4
     destinationPrebuilt: 0
-    specificDestinationName:
+    specificDestinationName: 
     budgetDelayRounds: 0
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0

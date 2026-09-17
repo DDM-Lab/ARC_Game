@@ -287,7 +287,7 @@ MonoBehaviour:
   deconstructionColor: {r: 1, g: 0.29803923, b: 0.29803923, a: 1}
   workerSystem: {fileID: 0}
   mapWorkforceIndicator: {fileID: 1497958618288529501}
-  deconstructionRoundsTotal: 3
+  deconstructionRoundsTotal: 4
   enableManualTasks: 1
 --- !u!114 &1693157771992400789
 MonoBehaviour:
@@ -305,7 +305,7 @@ MonoBehaviour:
   - resourceType: 0
     maxCapacity: 100
   - resourceType: 1
-    maxCapacity: 200
+    maxCapacity: 400
   startingResources: []
   startingFoodPacks: 0
   enableFoodWaste: 1

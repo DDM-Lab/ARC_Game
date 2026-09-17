@@ -198,7 +198,7 @@ public class ClientRelocationHandler : MonoBehaviour
         {
             string destLabel = includeShelters && includeMotels ? "shelter/motel"
                              : includeShelters ? "shelter" : "motel";
-            errorMessage = $"No reachable {destLabel} with available space — routes may be blocked by flooding";
+            errorMessage = $"There's currently no accessible {destLabel} on the map.";
             return false;
         }
 
