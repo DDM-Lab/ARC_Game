@@ -136,6 +136,10 @@ public class DailyReportMetrics
     /// Replaces old "totalInfluencedResidents" which was never populated correctly.
     /// </summary>
     public int incompleteExpiredTasks;
+
+    [Header("Today's Status Panel - Lodging")]
+    public int lodgingRequestedToday;
+    public int lodgingSatisfiedToday;
     [Header("Today's Expenses (Receipt)")]
     public float todayKitchenOpenCost;
     public float todayShelterOpenCost;
