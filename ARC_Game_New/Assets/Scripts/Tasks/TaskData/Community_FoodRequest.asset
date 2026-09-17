@@ -55,14 +55,14 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   agentMessages:
-  - messageText: We need 100 meals at [facility_name]. Please arrange delivery from
-      an available source.
+  - messageText: We need [food_amount] meals at [facility_name]. Please arrange delivery
+      from an available source.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0
   agentChoices:
   - choiceId: 0
-    choiceText: Request 100 meals from kitchens
+    choiceText: Request [food_amount] meals from kitchens
     agentReasoning: 
     choiceImpacts: []
     isSelected: 0
@@ -89,7 +89,7 @@ MonoBehaviour:
     prioritizeNearestSource: 1
     prioritizeNearestDestination: 0
   - choiceId: 2
-    choiceText: 'Rapid Response Vehicle delivers 100 fast-food meals (immediate). '
+    choiceText: 'Rapid Response Vehicle delivers [food_amount] fast-food meals (immediate). '
     agentReasoning: 
     choiceImpacts:
     - impactType: 1

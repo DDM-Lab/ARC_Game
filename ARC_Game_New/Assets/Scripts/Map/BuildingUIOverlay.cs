@@ -26,6 +26,11 @@ public class BuildingUIOverlay : MonoBehaviour
     
     // Dictionary to track building-to-UI mapping
     private Dictionary<Building, GameObject> buildingUIMap = new Dictionary<Building, GameObject>();
+
+    // Whether deconstruct buttons should currently be interactable — false while simulation is
+    // running (see SetDeconstructButtonsInteractable, called from GlobalClock). Applied both to
+    // existing buttons and to any newly-shown one (see "Show the deconstruct button" below).
+    private bool deconstructButtonsInteractable = true;
     
     // Singleton
     public static BuildingUIOverlay Instance { get; private set; }
@@ -448,6 +453,9 @@ public class BuildingUIOverlay : MonoBehaviour
         if (deconstructButton != null)
         {
             deconstructButton.gameObject.SetActive(true);
+            Button deconstructBtnComponent = deconstructButton.GetComponent<Button>();
+            if (deconstructBtnComponent != null)
+                deconstructBtnComponent.interactable = deconstructButtonsInteractable;
         }
 
         Debug.Log($"Building {building.name} workers assigned - UI updated");
@@ -610,5 +618,26 @@ public class BuildingUIOverlay : MonoBehaviour
             return buildingUIMap[building];
         }
         return null;
+    }
+
+    /// <summary>
+    /// Called by GlobalClock to disable every building's deconstruct button while simulation is
+    /// running, and re-enable them once the round ends and the player can act again. Applies to
+    /// every overlay currently tracked, and is remembered so any deconstruct button shown later
+    /// (see "Show the deconstruct button" above) starts in the correct state too.
+    /// </summary>
+    public void SetDeconstructButtonsInteractable(bool interactable)
+    {
+        deconstructButtonsInteractable = interactable;
+
+        foreach (GameObject uiOverlay in buildingUIMap.Values)
+        {
+            if (uiOverlay == null) continue;
+
+            Transform deconstructButton = uiOverlay.transform.Find("DeconstructButton");
+            Button deconstructBtnComponent = deconstructButton?.GetComponent<Button>();
+            if (deconstructBtnComponent != null)
+                deconstructBtnComponent.interactable = interactable;
+        }
     }
 }
