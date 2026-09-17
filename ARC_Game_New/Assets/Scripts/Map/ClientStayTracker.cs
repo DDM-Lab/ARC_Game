@@ -166,13 +166,7 @@ public class ClientStayTracker : MonoBehaviour
     void OnCaseworkTaskFinished(GameTask task)
     {
         if (task.taskTag != TaskTag.BackToHome) return;
-
-        string desc = task.description ?? "";
-        const string marker = "|CLIENT_GROUP_ID:";
-        int idx = desc.IndexOf(marker);
-        if (idx < 0) return;
-
-        if (!int.TryParse(desc.Substring(idx + marker.Length), out int groupId)) return;
+        if (!TryParseClientGroupId(task, out int groupId)) return;
 
         ClientGroup group = clientGroups.FirstOrDefault(g => g.groupId == groupId);
         if (group != null)
@@ -181,6 +175,40 @@ public class ClientStayTracker : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"[ClientStayTracker] Casework request re-enabled for group {groupId} — task ended without resolution");
         }
+    }
+
+    /// <summary>
+    /// Extracts the |CLIENT_GROUP_ID: marker GenerateCaseworkTask embeds in a casework task's
+    /// description. Shared by OnCaseworkTaskFinished above and GetClientsWithCaseworkNeedForTask
+    /// below so the marker format only lives in one place.
+    /// </summary>
+    static bool TryParseClientGroupId(GameTask task, out int groupId)
+    {
+        groupId = 0;
+        string desc = task.description ?? "";
+        const string marker = "|CLIENT_GROUP_ID:";
+        int idx = desc.IndexOf(marker);
+        if (idx < 0) return false;
+        return int.TryParse(desc.Substring(idx + marker.Length), out groupId);
+    }
+
+    /// <summary>
+    /// Live headcount of clients still requesting casework for the specific group a casework task
+    /// was generated for — NOT the facility's total population, which can include other residents
+    /// who were never part of this request. Used by TaskSystem.RefreshTaskAgainstLiveState to keep
+    /// a casework task's displayed/tracked quantity honest: if some of this group's clients get
+    /// relocated away by a different task, the count here drops even though the facility itself
+    /// may still hold plenty of other, unrelated people.
+    /// Returns null if the task has no group marker at all (it isn't a casework task — the caller
+    /// should fall back to whatever quantity logic applies to that task instead). Returns 0 if the
+    /// group no longer exists (e.g. every member of it already left/was relocated) — the caller
+    /// should treat that the same as "nobody left to act on."
+    /// </summary>
+    public int? GetClientsWithCaseworkNeedForTask(GameTask task)
+    {
+        if (!TryParseClientGroupId(task, out int groupId)) return null;
+        ClientGroup group = clientGroups.FirstOrDefault(g => g.groupId == groupId);
+        return group?.clientsWithCaseworkNeed ?? 0;
     }
 
     void OnRoundChanged(int newRound)
@@ -459,15 +487,21 @@ public class ClientStayTracker : MonoBehaviour
         // only for clients w/ casework needs
         int caseworkClientCount = group.clientsWithCaseworkNeed;
 
+        // Initial value only — TaskSystem.RefreshTaskAgainstLiveState keeps this in sync with the
+        // facility's actual current population every time the task is opened, confirmed, or swept
+        // at round-end, so [population_amount] below can't drift from what execution actually sends
+        // (e.g. if some of these clients get relocated away by a different task first).
+        caseworkTask.populationAmount = caseworkClientCount;
+
         caseworkTask.impacts.Add(new TaskImpact(ImpactType.Clients, caseworkClientCount, false, "Clients Requesting Casework"));
         caseworkTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, roundsInFacility, false, "Rounds in Facility"));
 
         caseworkTask.agentMessages.Add(new AgentMessage(
-            $"{caseworkClientCount} clients at [facility_name] require casework assistance after {roundsInFacility} rounds."));
+            $"[population_amount] clients at [facility_name] require casework assistance after {roundsInFacility} rounds."));
         caseworkTask.agentMessages.Add(new AgentMessage("How would you like to respond?"));
 
         AgentChoice sendToCasework = new AgentChoice(1,
-            $"Send {caseworkClientCount} clients to a casework site");
+            "Send [population_amount] clients to a casework site");
         sendToCasework.triggersDelivery = true;
         sendToCasework.enableMultipleDeliveries = true;
         sendToCasework.multiDeliveryType = AgentChoice.MultiDeliveryType.SingleSourceMultiDest;
@@ -478,10 +512,11 @@ public class ClientStayTracker : MonoBehaviour
         sendToCasework.destinationBuilding = BuildingType.CaseworkSite;
         caseworkTask.agentChoices.Add(sendToCasework);
 
-        AgentChoice delay = new AgentChoice(2, "Ask them to wait longer");
-        delay.triggersDelivery = false;
-        caseworkTask.agentChoices.Add(delay);
-
+        // No "wait longer" fallback any more — a no-op choice masked the fact that this task
+        // becomes meaningless once the clients it refers to are gone (e.g. relocated elsewhere
+        // by a different task earlier in the round). That case is now handled by
+        // TaskSystem.RefreshTaskAgainstLiveState auto-resolving this task instead of leaving a
+        // choice that pretended waiting still made sense.
         caseworkTask.description += $"|CLIENT_GROUP_ID:{group.groupId}";
 
         if (showDebugInfo)

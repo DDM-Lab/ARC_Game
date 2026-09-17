@@ -376,6 +376,11 @@ public class ClientRelocationHandler : MonoBehaviour
         return anyMoved;
     }
 
+    // Population/food tasks stranded by an emptied facility are no longer resolved reactively
+    // here — TaskSystem runs a round-end sweep (SweepStalePopulationTasks) instead, since it
+    // catches every drain path (natural departure, flood, etc.), not just the ones that happen
+    // to go through this handler's own methods.
+
     // ─────────────────────────────────────────────────────────────────
     // PRIVATE HELPERS
     // ─────────────────────────────────────────────────────────────────
@@ -483,7 +488,9 @@ public class ClientRelocationHandler : MonoBehaviour
         return building.name;
     }
 
-    int GetPopulation(MonoBehaviour building)
+    /// <summary>Public so callers outside this handler (TaskSystem's stale-task sweep, TaskDetailUI's
+    /// choice validation) can check a facility's current population without duplicating this logic.</summary>
+    public int GetPopulation(MonoBehaviour building)
     {
         PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
         if (pb != null) return pb.GetCurrentPopulation();

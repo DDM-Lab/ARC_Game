@@ -492,6 +492,19 @@ public class AgentConversationUI : MonoBehaviour
     void DisplayTaskConversation(GameTask task)
     {
         if (task == null) return;
+
+        // Re-check live state before rendering — mirrors TaskDetailUI.ShowTaskDetail's guard. This
+        // panel has its own independent rendering path (doesn't go through ShowTaskDetail), so
+        // without this, a task opened here (e.g. by clicking the agent's icon) could still show a
+        // quantity that's drifted from what confirming would actually do, or stay interactive after
+        // going stale. If this auto-resolves the task, fall back to whatever's next for this agent.
+        if (TaskSystem.Instance != null && !TaskSystem.Instance.RefreshTaskAgainstLiveState(task))
+        {
+            RefreshHistoricalTasks();
+            DisplayLatestConversation();
+            return;
+        }
+
         ClearConversation();
         localSelectedChoice = null;
 

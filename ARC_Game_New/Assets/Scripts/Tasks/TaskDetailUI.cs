@@ -143,6 +143,20 @@ public class TaskDetailUI : MonoBehaviour
 
     public void ShowTaskDetail(GameTask task)
     {
+        // Re-check the task's live state before displaying it — a population/food-dependent choice
+        // can go stale (or its displayed quantity can drift from what confirming will actually cost)
+        // within the same round it's opened, before TaskSystem's next round-end sweep would catch
+        // it. If this auto-resolves the task, there's nothing left to show.
+        if (TaskSystem.Instance != null && !TaskSystem.Instance.RefreshTaskAgainstLiveState(task))
+        {
+            if (taskDetailPanel != null && currentTask == task)
+                taskDetailPanel.SetActive(false);
+
+            FindObjectOfType<TaskCenterNotification>()?.RefreshNotification();
+            FindObjectOfType<CategoryTaskManager>()?.RefreshTaskList();
+            return;
+        }
+
         // Check if this task was shown before
         bool isFirstTimeShowing = !previouslyShownTaskIds.Contains(task.taskId);
         
@@ -696,6 +710,16 @@ public class TaskDetailUI : MonoBehaviour
 
         if (task.isExpired) { errorMessage = "This task has expired and can no longer be completed."; return false; }
 
+        // Re-check live state right before acting, not just when the panel was opened — the
+        // facility this task depends on may have been drained by a different task confirmed while
+        // this panel sat open (see TaskSystem.RefreshTaskAgainstLiveState). If that auto-resolves
+        // the task, its own popup already explains why — don't also try to execute a dead choice.
+        if (TaskSystem.Instance != null && !TaskSystem.Instance.RefreshTaskAgainstLiveState(task))
+        {
+            errorMessage = "This task is no longer needed and has been automatically closed — see the popup for details.";
+            return false;
+        }
+
         if (task.agentChoices != null && task.agentChoices.Count > 0 && choice == null)
         {
             errorMessage = "Please select a choice before confirming.";
@@ -723,6 +747,17 @@ public class TaskDetailUI : MonoBehaviour
         if (currentTask.isExpired)
         {
             ShowAgentErrorMessage("This task has expired and can no longer be completed.");
+            return;
+        }
+
+        // Re-check live state right before acting — same reasoning as TryConfirmTask. If this
+        // auto-resolves the task, ResolveTaskClientsAlreadyRelocated already showed the explanatory
+        // popup, so just close this panel on it instead of also raising a redundant error.
+        if (!TaskSystem.Instance.RefreshTaskAgainstLiveState(currentTask))
+        {
+            CloseTaskDetail();
+            FindObjectOfType<TaskCenterNotification>()?.RefreshNotification();
+            FindObjectOfType<CategoryTaskManager>()?.RefreshTaskList();
             return;
         }
 
@@ -1326,8 +1361,11 @@ public class TaskDetailUI : MonoBehaviour
                     && FoodDeliveryHandler.Instance.CanExecute(task, choice, out errorMessage);
 
             case ResourceType.Population:
-                // Non-shelter SpecificBuilding (e.g. CaseworkSite): verify it exists on the map.
-                // SpecificBuilding+Shelter falls through to ClientRelocationHandler validation below.
+                // Non-shelter SpecificBuilding (e.g. CaseworkSite): verify it exists on the map AND
+                // that the requesting facility still has clients to send — building existence alone
+                // doesn't mean there's anyone left to relocate (e.g. already relocated elsewhere
+                // earlier in the round). SpecificBuilding+Shelter falls through to
+                // ClientRelocationHandler validation below, which already checks this.
                 if (choice.destinationType == DeliveryDestinationType.SpecificBuilding
                     && choice.destinationBuilding != BuildingType.Shelter)
                 {
@@ -1336,6 +1374,15 @@ public class TaskDetailUI : MonoBehaviour
                     if (!exists)
                     {
                         errorMessage = $"There is no {choice.destinationBuilding} currently built on the map. Build one first to use this option.";
+                        return false;
+                    }
+
+                    MonoBehaviour source = TaskSystem.Instance?.FindTriggeringFacility(task);
+                    int available = source != null && ClientRelocationHandler.Instance != null
+                        ? ClientRelocationHandler.Instance.GetPopulation(source) : 0;
+                    if (available <= 0)
+                    {
+                        errorMessage = $"No clients at {(source != null ? source.name : task.affectedFacility)} to relocate";
                         return false;
                     }
                     return true;

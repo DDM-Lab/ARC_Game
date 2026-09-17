@@ -10991,6 +10991,7 @@ MonoBehaviour:
   buildingStatsButton: {fileID: 287412885}
   workerCenterButton: {fileID: 1126803211}
   taskCenterButton: {fileID: 1292063389}
+  agentConversationUI: {fileID: 37581660}
   timeSegmentImages:
   - {fileID: 87327292}
   - {fileID: 2111961907}
