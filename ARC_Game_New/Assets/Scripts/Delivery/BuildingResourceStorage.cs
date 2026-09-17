@@ -19,7 +19,7 @@ public class BuildingResourceStorage : MonoBehaviour
     [Header("Population-Based Consumption")]
     public bool enablePopulationBasedConsumption = true;
     public int foodPerPersonPerNRounds  = 1;
-    public int consumptionRoundInterval = 4; // Consume food every N rounds
+    public int consumptionRoundInterval = 2; // Consume food every N rounds
     public bool workersConsumeFoodToo = true;
 
     

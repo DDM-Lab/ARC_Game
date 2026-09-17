@@ -46,12 +46,6 @@ public class CommunityFoodDepletionManager : MonoBehaviour
 
     void Start()
     {
-        // PARITY BUILD (ledger D18): upstream's synchronous read straight off the loader. Ours
-        // waits for GameDataManager so the SHEET's value wins; upstream reads the loader's own
-        // field at Start, which is still the fallback then. Different source, different depletion
-        // chance, and a depletion hit spawns a food-request task -- so this changes not just an
-        // outcome but how many tasks exist to be evaluated on later rounds, and with them how
-        // many draws come off the shared stream.
         if (GameConfigLoader.Instance != null)
         {
             float configured = GameConfigLoader.Instance.GetInitialFoodDemandFrequency();
@@ -59,30 +53,65 @@ public class CommunityFoodDepletionManager : MonoBehaviour
         }
 
         if (GlobalClock.Instance != null)
-        {
-            // PARITY BUILD (ledger D18): no OnDayStarted subscription. It existed because the A1
-            // clock fix moved the segment-0 tick onto OnDayStarted; with that fix reverted (D16)
-            // the rollover raises OnTimeSegmentChanged(0) again, as upstream does.
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
-        }
-    }
 
-    System.Collections.IEnumerator ApplyConfiguredChance()
-    {
-        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
-            yield return null;
-        float configured = GameDataManager.Instance.InitialFoodDemandFrequency;
-        if (configured >= 0f) depletionChancePerRound = configured;
-        if (showDebugInfo)
-            Debug.Log($"[CommunityFoodDepletionManager] depletion chance per community per round = {depletionChancePerRound}");
+        if (TaskSystem.Instance != null)
+        {
+            TaskSystem.Instance.OnTaskCompleted += HandleCommunityFoodRequestEnded;
+            TaskSystem.Instance.OnTaskExpired += HandleCommunityFoodRequestEnded;
+        }
     }
 
     void OnDestroy()
     {
         if (GlobalClock.Instance != null)
-        {
             GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
+
+        if (TaskSystem.Instance != null)
+        {
+            TaskSystem.Instance.OnTaskCompleted -= HandleCommunityFoodRequestEnded;
+            TaskSystem.Instance.OnTaskExpired -= HandleCommunityFoodRequestEnded;
         }
+    }
+
+    /// <summary>
+    /// Fires on every task completion/expiry in the game (OnTaskCompleted also covers the
+    /// mid-delivery-failure and timed-out-in-progress paths, both of which end a task as
+    /// Incomplete just like OnTaskExpired does for an unanswered Demand task) — filtered down to
+    /// just this community's food-request task ending as Incomplete. Rather than silently waiting
+    /// for the next random depletion roll to happen to notice the shortfall, immediately spawn a
+    /// replacement request for whatever's still missing. This can repeat indefinitely if the
+    /// follow-up also fails — each attempt is still bounded by the round/day eligibility window
+    /// and can never stack with an already-pending request.
+    /// </summary>
+    void HandleCommunityFoodRequestEnded(GameTask task)
+    {
+        if (communityFoodRequestTask == null || task == null) return;
+        if (task.status != TaskStatus.Incomplete) return;
+        if (task.taskTitle != communityFoodRequestTask.taskTitle) return;
+
+        PrebuiltBuilding community = FindObjectsOfType<PrebuiltBuilding>()
+            .FirstOrDefault(p => p.GetPrebuiltType() == PrebuiltBuildingType.Community && p.name == task.affectedFacility);
+        if (community == null) return;
+
+        if (GlobalClock.Instance != null)
+        {
+            if (GlobalClock.Instance.GetCurrentDay() < firstEligibleDay) return;
+            int currentRoundInDay = GlobalClock.Instance.GetCurrentTimeSegment() + 1;
+            if (currentRoundInDay > lastEligibleRound) return;
+        }
+
+        if (HasPendingRequest(community)) return; // safety net; shouldn't happen right as this one just ended
+
+        BuildingResourceStorage storage = community.GetResourceStorage();
+        if (storage == null) return;
+
+        int requestAmount = storage.GetAvailableSpace(ResourceType.FoodPacks);
+        if (requestAmount <= 0) return; // already full
+
+        if (showDebugInfo)
+            Debug.Log($"[CommunityFoodDepletionManager] {community.name}'s food request failed — immediately following up.");
+        SpawnRequestTask(community, lostAmount: 0, requestAmount: requestAmount);
     }
 
     void OnRoundChanged(int newSegment)
@@ -101,10 +130,25 @@ public class CommunityFoodDepletionManager : MonoBehaviour
         }
     }
 
-    void TryDeplete(PrebuiltBuilding community)
+    [ContextMenu("Debug: Force Depletion On All Communities")]
+    public void DebugForceDepletionAllCommunities()
     {
-        SnapshotDebug.Mark("draw:CommunityFoodDepletion");
-        if (UnityEngine.Random.value >= depletionChancePerRound) return; // routine miss — not logged, would fire every community every round
+        if (communityFoodRequestTask == null || TaskSystem.Instance == null)
+        {
+            Debug.LogWarning("[CommunityFoodDepletionManager] Cannot force depletion — task template or TaskSystem missing.");
+            return;
+        }
+
+        foreach (PrebuiltBuilding community in FindObjectsOfType<PrebuiltBuilding>()
+            .Where(p => p.GetPrebuiltType() == PrebuiltBuildingType.Community))
+        {
+            TryDeplete(community, force: true);
+        }
+    }
+
+    void TryDeplete(PrebuiltBuilding community, bool force = false)
+    {
+        if (!force && Random.value >= depletionChancePerRound) return; // routine miss — not logged, would fire every community every round
 
         BuildingResourceStorage storage = community.GetResourceStorage();
         if (storage == null)
@@ -123,17 +167,6 @@ public class CommunityFoodDepletionManager : MonoBehaviour
             return;
         }
 
-        // Don't stack a second request while one is already pending for this community.
-        bool alreadyRequested = TaskSystem.Instance.GetAllActiveTasks()
-            .Any(t => t.taskTitle == communityFoodRequestTask.taskTitle && t.affectedFacility == community.name);
-        if (alreadyRequested)
-        {
-            if (showDebugInfo)
-                Debug.Log($"[CommunityFoodDepletionManager] {community.name} rolled a depletion event but already has a pending food request — skipped.");
-            GameLogPanel.Instance?.LogTaskEvent($"{community.name} rolled a depletion event but already has a pending food request — skipped.");
-            return;
-        }
-
         int lost = storage.RemoveResource(ResourceType.FoodPacks, Mathf.Min(depletionAmount, available));
         if (lost <= 0)
         {
@@ -142,34 +175,64 @@ public class CommunityFoodDepletionManager : MonoBehaviour
             return;
         }
 
-        SpawnRequestTask(community, lost);
-    }
-
-    void SpawnRequestTask(PrebuiltBuilding community, int amount)
-    {
-        GameTask task = TaskSystem.Instance.CreateTaskFromDatabase(communityFoodRequestTask, community);
-        if (task == null)
+        // Food keeps depleting every eligible round regardless of a pending request — otherwise
+        // leaving/letting a task expire would freeze the community's stock in place with nothing
+        // further happening. Only the TASK is deduped to one at a time; once the pending one
+        // resolves, the follow-up (HandleCommunityFoodRequestEnded) picks up the full, now-larger
+        // shortfall via a live GetAvailableSpace() read, so nothing here needs to track or sum it.
+        if (HasPendingRequest(community))
         {
-            Debug.LogWarning($"[CommunityFoodDepletionManager] {community.name} lost {amount} food packs but the replacement task failed to create.");
-            GameLogPanel.Instance?.LogError($"{community.name} lost {amount} food packs but the replacement request failed to create.");
+            if (showDebugInfo)
+                Debug.Log($"[CommunityFoodDepletionManager] {community.name} lost {lost} more food packs, but already has a pending request — not spawning another.");
+            GameLogPanel.Instance?.LogResourceChange($"{community.name} lost {lost} more food packs to an unforeseen event while a food request was already pending.");
             return;
         }
 
-        // Replace exactly what was lost — override every food-delivering choice on this task
-        // instance (the template's authored deliveryQuantity is just a placeholder/default).
+        // Request enough to top back up to full capacity, not just what this one event lost —
+        // if capacity isn't configured for this storage (GetResourceCapacity <= 0), fall back to
+        // replacing exactly what was lost, same as before.
+        int requestAmount = storage.GetResourceCapacity(ResourceType.FoodPacks) > 0
+            ? storage.GetAvailableSpace(ResourceType.FoodPacks)
+            : lost;
+
+        SpawnRequestTask(community, lost, requestAmount);
+    }
+
+    void SpawnRequestTask(PrebuiltBuilding community, int lostAmount, int requestAmount)
+    {
+        // lostAmount == 0 means this is an immediate follow-up after a prior request failed —
+        // no new food was lost, we're just re-asking for whatever's still missing.
+        string causeText = lostAmount > 0 ? $"lost {lostAmount} food packs" : "a previous request failed";
+
+        GameTask task = TaskSystem.Instance.CreateTaskFromDatabase(communityFoodRequestTask, community);
+        if (task == null)
+        {
+            Debug.LogWarning($"[CommunityFoodDepletionManager] {community.name} {causeText} but the replacement task failed to create.");
+            GameLogPanel.Instance?.LogError($"{community.name} {causeText} but the replacement request failed to create.");
+            return;
+        }
+
+        // Request enough to refill to capacity — override every food-delivering choice on this
+        // task instance (the template's authored deliveryQuantity is just a placeholder/default).
         foreach (AgentChoice choice in task.agentChoices)
         {
             if (choice.deliveryCargoType == ResourceType.FoodPacks)
-                choice.deliveryQuantity = amount;
+                choice.deliveryQuantity = requestAmount;
         }
-        task.foodAmount = amount;
+        task.foodAmount = requestAmount;
 
         // This request IS the community's entire food demand for today — recorded exactly once,
         // here, at the moment the request is created (not on fulfillment/completion).
-        DailyReportData.Instance?.RecordCommunityFoodDemand(amount);
+        DailyReportData.Instance?.RecordCommunityFoodDemand(requestAmount);
 
         if (showDebugInfo)
-            Debug.Log($"[CommunityFoodDepletionManager] {community.name} lost {amount} food packs — requesting replacement.");
-        GameLogPanel.Instance?.LogTaskEvent($"{community.name} lost {amount} food packs to an unforeseen event — requesting replacement.");
+            Debug.Log($"[CommunityFoodDepletionManager] {community.name} {causeText} — requesting {requestAmount} to refill to capacity.");
+        GameLogPanel.Instance?.LogTaskEvent($"{community.name} {causeText} — requesting {requestAmount} to refill to capacity.");
+    }
+
+    bool HasPendingRequest(PrebuiltBuilding community)
+    {
+        return TaskSystem.Instance.GetAllActiveTasks()
+            .Any(t => t.taskTitle == communityFoodRequestTask.taskTitle && t.affectedFacility == community.name);
     }
 }

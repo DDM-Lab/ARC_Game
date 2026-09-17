@@ -30,12 +30,13 @@ public class GlobalClock : MonoBehaviour
     public int roundsPerDay = 4;
     
     [Header("UI References")]
-    public Button executeButton;    
+    public Button executeButton;
     public TMP_Dropdown speedDropdown;
     public Button buildingStatsButton;
     public Button workerCenterButton;
     public Button taskCenterButton;
-    
+    public AgentConversationUI agentConversationUI;
+
 
     public Image[] timeSegmentImages = new Image[4]; // 4 time segments
 
@@ -916,6 +917,13 @@ public class GlobalClock : MonoBehaviour
         if (workerCenterButton != null)
             workerCenterButton.interactable = false;
 
+        // Close the agent conversation panel if it's open, and lock it out entirely until the
+        // round ends — otherwise the player could keep confirming/sending choices mid-simulation.
+        agentConversationUI?.CloseAndLockForSimulation();
+
+        // Disable every building's deconstruct button during simulation.
+        BuildingUIOverlay.Instance?.SetDeconstructButtonsInteractable(false);
+
         // ***Can add more UI elements to disable here
     }
 
@@ -945,6 +953,11 @@ public class GlobalClock : MonoBehaviour
 
         if (workerCenterButton != null)
             workerCenterButton.interactable = true;
+
+        agentConversationUI?.SetInteractable(true);
+
+        // Re-enable every building's deconstruct button now that the player can act again.
+        BuildingUIOverlay.Instance?.SetDeconstructButtonsInteractable(true);
 
         // Re-enable other UI elements here
     }

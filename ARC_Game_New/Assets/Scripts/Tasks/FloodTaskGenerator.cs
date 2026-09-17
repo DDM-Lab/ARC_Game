@@ -40,10 +40,7 @@ public class FloodTaskGenerator : MonoBehaviour
         }
 
         if (TaskSystem.Instance != null)
-        {
             TaskSystem.Instance.OnTaskCompleted += OnAnyTaskCompleted;
-            TaskSystem.Instance.OnTaskExpired += OnAnyTaskCompleted;   // an ignored blockage EXPIRES (BUG_REPORTS B8)
-        }
     }
 
     void OnFloodExpanded(Vector3Int floodPosition)
@@ -122,6 +119,17 @@ public class FloodTaskGenerator : MonoBehaviour
         string srcName      = GetBuildingDisplayName(originalDelivery.sourceBuilding);
         string dstName      = GetBuildingDisplayName(originalDelivery.destinationBuilding);
 
+        // Food: there's no player action to offer any more (the emergency fast-food choice was
+        // removed) — the vehicle self-repairs once the flood clears, and the destination's normal
+        // food-request cycle will pick up the still-unmet need on its own next check, since
+        // StopVehicleDueToFlood already released the delivery's reservation on that destination.
+        // So this is purely informational: no task, no choices, just an Alert.
+        if (originalDelivery.cargoType == ResourceType.FoodPacks)
+        {
+            ShowFoodBlockageAlert(blockedVehicle, originalDelivery, hasLoadedCargo, phase, srcName, dstName);
+            return;
+        }
+
         GameTask roadBlockageTask = TaskSystem.Instance.CreateTask(
             "Road Blockage Emergency", TaskType.Emergency, "Emergency Response",
             $"Vehicle {blockedVehicle.GetVehicleName()} is blocked by flood while {phase} with {originalDelivery.quantity} {cargoLabel}.");
@@ -139,44 +147,27 @@ public class FloodTaskGenerator : MonoBehaviour
 
         // Only true if the vehicle had actually picked the cargo up — while still en route to
         // pick-up, it isn't "carrying" anything yet. The type-specific choice builders below
-        // (CreateFoodBlockageChoices / CreatePopulationUnloadedChoices) already explain the
-        // not-yet-loaded case, so nothing is lost by omitting this line then.
+        // already explain the not-yet-loaded case, so nothing is lost by omitting this line then.
         if (hasLoadedCargo)
         {
             roadBlockageTask.agentMessages.Add(new AgentMessage(
                 $"It was carrying {originalDelivery.quantity} {cargoLabel} from {srcName} to {dstName}.", icon));
         }
 
-        if (originalDelivery.cargoType == ResourceType.FoodPacks)
+        // Population only from here on — Food already returned as an Alert above.
+        if (hasLoadedCargo)
         {
-            // The food choices deliver TO the original destination (FoodDeliveryHandler resolves
-            // the task's facility as the destination) -- without this every choice was a no-op.
-            // Null-guarded: a destroyed MonoBehaviour compares == null but still dereferences,
-            // and `.name` on one is the fake-null NRE class this project has been bitten by.
-            roadBlockageTask.affectedFacility = originalDelivery.destinationBuilding != null
-                ? originalDelivery.destinationBuilding.name : null;
-            CreateFoodBlockageChoices(roadBlockageTask, originalDelivery, blockedVehicle, hasLoadedCargo);
+            // ReturnCargoToSource already called unconditionally above.
+            roadBlockageTask.affectedFacility = originalDelivery.sourceBuilding.name;
+            CreatePopulationLoadedChoices(roadBlockageTask, originalDelivery, icon, srcName);
         }
-        else if (originalDelivery.cargoType == ResourceType.Population)
+        else
         {
-            if (hasLoadedCargo)
-            {
-                // ReturnCargoToSource already called unconditionally above.
-                roadBlockageTask.affectedFacility = originalDelivery.sourceBuilding.name;
-                CreatePopulationLoadedChoices(roadBlockageTask, originalDelivery, icon, srcName);
-            }
-            else
-            {
-                // Clients are still at the source: the relocation handler starts from the task's facility.
-                roadBlockageTask.affectedFacility = originalDelivery.sourceBuilding != null
-                    ? originalDelivery.sourceBuilding.name : null;
-                CreatePopulationUnloadedChoices(roadBlockageTask, originalDelivery, icon, srcName, dstName);
-            }
+            CreatePopulationUnloadedChoices(roadBlockageTask, originalDelivery, icon, srcName, dstName);
         }
 
         // Track loaded state so expiry handler can apply the correct penalty
-        if (originalDelivery.cargoType == ResourceType.Population)
-            blockageTaskLoadedState[roadBlockageTask.taskId] = hasLoadedCargo;
+        blockageTaskLoadedState[roadBlockageTask.taskId] = hasLoadedCargo;
 
         if (showDebugInfo)
             Debug.Log($"[FloodTaskGenerator] Road blockage task created for {blockedVehicle.GetVehicleName()} ({phase})");
@@ -184,30 +175,33 @@ public class FloodTaskGenerator : MonoBehaviour
     }
 
     // Food already on the blocked vehicle (if any) is treated as spoiled/discarded — it cannot be
-    // recovered, so the only path forward is an emergency immediate delivery of a fresh batch,
-    // priced per meal needed rather than a flat fee. If the vehicle hadn't picked the food up yet,
-    // nothing was actually on board, so nothing went to waste — only the delivery itself failed.
-    void CreateFoodBlockageChoices(GameTask task, DeliveryTask originalDelivery, Vehicle blockedVehicle, bool hasLoadedCargo)
+    // recovered (see DiscardVehicleCargo, called unconditionally above). There's no player choice
+    // to offer here any more, so this just informs the player what happened and why.
+    void ShowFoodBlockageAlert(Vehicle blockedVehicle, DeliveryTask originalDelivery, bool hasLoadedCargo, string phase, string srcName, string dstName)
     {
-        // DiscardVehicleCargo already called unconditionally in CreateRoadBlockageTask above
-        // (it's a no-op when the vehicle had nothing loaded).
+        if (TaskSystem.Instance == null || AlertUIController.Instance == null) return;
 
         string wasteMessage = hasLoadedCargo
             ? $"The {originalDelivery.quantity} meals already on board have gone to waste and cannot be recovered."
             : $"The vehicle had not yet picked up the {originalDelivery.quantity} meals, so nothing was lost — but the delivery itself has failed.";
 
-        task.agentMessages.Add(new AgentMessage(
-            $"{wasteMessage} Emergency fast food delivery can make up this shortfall.",
+        GameTask alert = TaskSystem.Instance.CreateTask(
+            "Delivery Blocked by Flood",
+            TaskType.Alert,
+            originalDelivery.destinationBuilding.name,
+            $"Vehicle {blockedVehicle.GetVehicleName()} was blocked by flooding while {phase} with {originalDelivery.quantity} meals from {srcName} to {dstName}.");
+
+        alert.taskOfficer = TaskOfficer.FoodMassCare;
+        alert.agentMessages = new List<AgentMessage>();
+        alert.agentMessages.Add(new AgentMessage(
+            $"Vehicle {blockedVehicle.GetVehicleName()} was blocked by flooding while {phase} from {srcName} to {dstName}. {wasteMessage}",
             TaskSystem.Instance.foodMassCareSprite));
 
-        int cost = originalDelivery.quantity * 10;
+        AlertUIController.Instance.ShowAlert(alert);
 
-        AgentChoice fastDeliveryChoice = new AgentChoice(1, $"Emergency fast food delivery (${cost})");
-        fastDeliveryChoice.immediateDelivery  = true;
-        fastDeliveryChoice.deliveryCargoType  = ResourceType.FoodPacks;
-        fastDeliveryChoice.deliveryQuantity   = originalDelivery.quantity;
-        fastDeliveryChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -cost, false, "Emergency Service"));
-        task.agentChoices.Add(fastDeliveryChoice);
+        if (showDebugInfo)
+            Debug.Log($"[FloodTaskGenerator] Food delivery blockage alert shown for {blockedVehicle.GetVehicleName()} ({phase})");
+        GameLogPanel.Instance?.LogTaskEvent($"Food delivery blocked by flood: {blockedVehicle.GetVehicleName()} ({phase}) — {srcName} to {dstName}");
     }
 
     // Situation 2: vehicle already loaded clients, now blocked.
@@ -274,7 +268,6 @@ public class FloodTaskGenerator : MonoBehaviour
 
         if (TaskSystem.Instance != null)
             TaskSystem.Instance.OnTaskCompleted -= OnAnyTaskCompleted;
-            TaskSystem.Instance.OnTaskExpired -= OnAnyTaskCompleted;
     }
 
     void OnAnyTaskCompleted(GameTask task)

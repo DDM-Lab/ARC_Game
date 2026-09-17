@@ -291,6 +291,14 @@ public class AgentChoice
     public float deliveryPercentage = 100f; // For percentage-based
     public bool deliverAll = false; // For "all available" option
 
+    [Header("Dynamic Cost (optional)")]
+    [Tooltip("FoodPacks choices only. If > 0, this choice's Budget cost is computed as costPerUnit × the actual resolved delivery quantity (e.g. the population-based need, see quantityType) instead of using the fixed value authored in choiceImpacts. Lets a choice like an emergency fast-food delivery scale its cost with facility population instead of always charging for a flat 100 meals. Leave 0 to keep the fixed cost exactly as authored.")]
+    public float costPerUnit = 0f;
+
+    [Header("Validation")]
+    [Tooltip("Queued (non-immediate) FoodPacks choices only. If true, this choice is only selectable when the effective food across all kitchens (stock minus what's already reserved/outbound for other deliveries) can fully cover the resolved quantity — otherwise AgentChoiceUI's validationText shows why and the choice can't be confirmed. If false (default), the choice stays selectable as long as kitchens can at least partially help, same as before.")]
+    public bool requireFullQuantity = false;
+
     [Header("Delivery Source")]
     public DeliverySourceType sourceType = DeliverySourceType.RequestingFacility;
     public BuildingType sourceBuilding = BuildingType.Community;
@@ -1927,7 +1935,9 @@ public class TaskSystem : MonoBehaviour
             newChoice.prioritizeNearestSource = choice.prioritizeNearestSource;
             newChoice.prioritizeNearestDestination = choice.prioritizeNearestDestination;
             newChoice.budgetDelayRounds = choice.budgetDelayRounds;
-            
+            newChoice.costPerUnit = choice.costPerUnit;
+            newChoice.requireFullQuantity = choice.requireFullQuantity;
+
             newTask.agentChoices.Add(newChoice);
         }
 
