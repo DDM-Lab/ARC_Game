@@ -52,6 +52,25 @@ public class RoadTilemapManager : MonoBehaviour
         isInitialized = true;
         
         Debug.Log($"Road system initialized with {roadPositions.Count} road tiles and {intersectionPositions.Count} intersections");
+
+        // The road graph is static scene data, so the surrogate can bake it once instead of
+        // shipping a tilemap. Dumped here rather than read from the .unity file because the
+        // scene stores serialized tile references, and because scene values have overridden
+        // .cs initialisers six times already in this port.
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append("[ROADDUMP] {\"anchor\":\"").Append(roadTilemap.tileAnchor.ToString("F3"))
+              .Append("\",\"cells\":[");
+            bool first = true;
+            foreach (Vector3Int rp in roadPositions)
+            {
+                if (!first) sb.Append(",");
+                sb.Append("[").Append(rp.x).Append(",").Append(rp.y).Append("]");
+                first = false;
+            }
+            sb.Append("]}");
+            Debug.Log(sb.ToString());
+        }
     }
     
     /// <summary>

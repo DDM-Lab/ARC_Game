@@ -24,7 +24,18 @@ public class MotelCostManager : MonoBehaviour
     void Start()
     {
         if (GlobalClock.Instance != null)
+        {
             GlobalClock.Instance.OnDayChanged += OnDayChanged;
+            GlobalClock.Instance.OnSimulationEnded += OnSimulationEnded;
+        }
+    }
+
+    // The last day never rolls over, so its lodging was never billed (BUG_REPORTS B28).
+    void OnSimulationEnded()
+    {
+        GlobalClock c = GlobalClock.Instance;
+        if (c != null && c.GetCurrentDay() == c.lastDay && c.GetCurrentTimeSegment() >= c.roundsPerDay)
+            ChargeMotelCost();
     }
 
     void EnsureMotelReference()
@@ -43,7 +54,10 @@ public class MotelCostManager : MonoBehaviour
     void OnDestroy()
     {
         if (GlobalClock.Instance != null)
+        {
             GlobalClock.Instance.OnDayChanged -= OnDayChanged;
+            GlobalClock.Instance.OnSimulationEnded -= OnSimulationEnded;
+        }
     }
 
     void OnDayChanged(int newDay)
@@ -66,6 +80,7 @@ public class MotelCostManager : MonoBehaviour
 
         SatisfactionAndBudget.Instance.RemoveBudget(
             (int)totalCost,
+            SatisfactionAndBudget.SpendCategory.Lodging,
             $"Motel housing: {residents} residents × ${costPerPersonPerDay:F0}/day");
             
         if (DailyReportData.Instance != null)

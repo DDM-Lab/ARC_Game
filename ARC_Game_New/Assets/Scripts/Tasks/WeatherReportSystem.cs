@@ -24,6 +24,10 @@ public class WeatherReportSystem : MonoBehaviour
         // Subscribe to round changes
         if (GlobalClock.Instance != null)
         {
+            // PARITY BUILD (ledger D23): upstream subscribes to OnTimeSegmentChanged and generates
+            // the report from segment 0, not from OnDayChanged. OnDayChanged fires FIRST at the
+            // rollover, so ours opens the daily report BEFORE the segment-0 tick and upstream
+            // opens it AFTER — the same work either side of a round boundary.
             GlobalClock.Instance.OnTimeSegmentChanged += OnTimeSegmentChanged;
         }
         
@@ -35,6 +39,12 @@ public class WeatherReportSystem : MonoBehaviour
             floodSystem = FindObjectOfType<FloodSystem>();
     }
     
+    void OnDayChangedReport(int newDay)
+    {
+        if (enableDailyReports)
+            GenerateDailyReport();
+    }
+
     void OnTimeSegmentChanged(int newRound)
     {
         // Generate daily report at start of each day (round 0)
@@ -194,7 +204,7 @@ public class WeatherReportSystem : MonoBehaviour
 
         if (rain > 0.6f || (floodSystem != null && floodSystem.GetFloodTileCount() > 20))
         {
-            outlook += "• Expect rescue and evacuation requests — keep vehicles ready.\n";
+            outlook += "• Expect rescue and evacuation requests\n";
             outlook += "• Shelters may fill up quickly. Open additional capacity if you can.\n";
         }
         else if (rain > 0.3f || flooding)

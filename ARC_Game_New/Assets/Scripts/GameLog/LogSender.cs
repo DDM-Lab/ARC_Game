@@ -7,7 +7,9 @@ using UnityEngine.Networking;
 public class LogSender : MonoBehaviour
 {
     [Header("Server Settings")]
-    [SerializeField] private string serverUrl = "http://janus.hss.cmu.edu/cgi-bin/save_game_logs.py";
+    // janus is decommissioned; game logging is handled server-side by the router now.
+    // Leave empty (manual log upload disabled) unless a real endpoint is configured.
+    [SerializeField] private string serverUrl = "";
     [SerializeField] private float requestTimeout = 30f;
 
     public static LogSender Instance { get; private set; }

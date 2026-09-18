@@ -29,7 +29,7 @@ public class DailyReportData : MonoBehaviour
     private List<DeliveryTask> todayCompletedDeliveries = new List<DeliveryTask>();
     private int todayFoodProduced = 0;
     private int todayFoodDelivered = 0;
-    private int todayFoodConsumed = 0;
+    // private int todayFoodConsumed = 0; // Reserved for future use
     private int todayFoodWasted = 0;
     private int todayExpiredFood = 0;
     private int todayNewArrivals = 0;
@@ -372,7 +372,7 @@ public class DailyReportData : MonoBehaviour
         processedTaskIds.Clear();
         todayFoodProduced = 0;
         todayFoodDelivered = 0;
-        todayFoodConsumed = 0;
+        // todayFoodConsumed = 0; // Reserved for future use
         todayFoodWasted = 0;
         todayExpiredFood = 0;
         todayNewArrivals = 0;
@@ -734,6 +734,11 @@ public class DailyReportData : MonoBehaviour
         int roundsElapsed = d.GetCumulativeRoundsElapsed();
         if (roundsElapsed <= 0) return 0f;
 
+        // PARITY BUILD (ledger D17): upstream's fixed assumed headcount, not our live
+        // pool-rounds (BUG_REPORTS B23). With a pool far below the assumed size the ratios span
+        // a sliver of their range and above it they exceed 1 -- our fix is right, and it is also
+        // why this build reports no "Worker use progress" delta at all on day 1 where upstream
+        // reports +63.3.
         float denom = assumedTotalWorkerPoolSize * roundsElapsed;
 
         float idleRatio = Mathf.Clamp01(d.GetCumulativeIdleWorkerRounds() / denom);
@@ -771,7 +776,11 @@ public class DailyReportData : MonoBehaviour
         int roundsElapsed = d.GetCumulativeRoundsElapsed();
         if (roundsElapsed <= 0) return (0f, 0f, 0f);
 
-        float denom = assumedTotalWorkerPoolSize * roundsElapsed;
+        // Same denominator as S_WorkerUse (B23, live pool-rounds): this is the DISPLAYED
+        // breakdown of that term, so a different normaliser would make the three parts fail
+        // to add up to the worker score they are supposed to explain. The 1000 below is the
+        // report's display scale and is correct here, unlike in ApplyDelta.
+        float denom = Mathf.Max(1, d.GetCumulativeWorkerPoolRounds());
         float idleRatio = Mathf.Clamp01(d.GetCumulativeIdleWorkerRounds() / denom);
         float workingRatio = Mathf.Clamp01(d.GetCumulativeWorkingWorkerRounds() / denom);
         float trainingRatio = Mathf.Clamp01(d.GetCumulativeTrainingWorkerRounds() / denom);
@@ -946,12 +955,123 @@ public class DailyReportData : MonoBehaviour
     // How much of each component's score has already been pushed into
     // SatisfactionAndBudget's running total. Waste is deliberately excluded —
     // it's still applied once, at end of day, in DailyReportUI.
+    // ── save / restore ────────────────────────────────────────────────────────────────
+    //
+    // THESE ACCUMULATORS DECIDE SATISFACTION, so they must round-trip. Recalc*Satisfaction
+    // pushes the CHANGE in a component's score (newScore - applied) into the authoritative
+    // field. If `applied*` comes back as 0 after a restore, the next Recalc pushes the whole
+    // component score again as if it were new, and satisfaction jumps -- measured at 60
+    // against the oracle's 40 on the trajectory test before this existed.
+    //
+    // The cumulative* counters are the INPUTS to those scores, so they have to come back too
+    // or the scores themselves are computed from a blank history.
+    [System.Serializable]
+    public class Snapshot
+    {
+        public float dayStartBudget, dayStartSatisfaction, dayStartEfficiency;
+        public int dayStartPopulation;
+
+        public int roundsElapsed;
+        public int foodPacksConsumedByClients, foodPacksNeededByClients, foodPacksWasted;
+        public int communityFoodDemand;
+        public int lodgingNightsConsumed, lodgingNightsNeeded;
+        public int idleWorkerRounds, workingWorkerRounds, trainingWorkerRounds, workerPoolRounds;
+        public int clientRoundsAwaitingCasework, clientsRequestedCasework;
+        public float foodSpend, lodgingSpend, workerRequestCost, workerTrainingCost;
+
+        public float appliedFoodSat, appliedLodgingSat, appliedWorkerSat, appliedCaseworkSat;
+        public float appliedFoodEff, appliedLodgingEff, appliedWorkerEff;
+    }
+
+    public Snapshot CaptureState() => new Snapshot
+    {
+        dayStartBudget = dayStartBudget,
+        dayStartSatisfaction = dayStartSatisfaction,
+        dayStartEfficiency = dayStartEfficiency,
+        dayStartPopulation = dayStartPopulation,
+        roundsElapsed = cumulativeRoundsElapsed,
+        foodPacksConsumedByClients = cumulativeFoodPacksConsumedByClients,
+        foodPacksNeededByClients = cumulativeFoodPacksNeededByClients,
+        foodPacksWasted = cumulativeFoodPacksWasted,
+        communityFoodDemand = cumulativeCommunityFoodDemand,
+        lodgingNightsConsumed = cumulativeLodgingNightsConsumed,
+        lodgingNightsNeeded = cumulativeLodgingNightsNeeded,
+        idleWorkerRounds = cumulativeIdleWorkerRounds,
+        workingWorkerRounds = cumulativeWorkingWorkerRounds,
+        trainingWorkerRounds = cumulativeTrainingWorkerRounds,
+        workerPoolRounds = cumulativeWorkerPoolRounds,
+        clientRoundsAwaitingCasework = cumulativeClientRoundsAwaitingCasework,
+        clientsRequestedCasework = cumulativeClientsRequestedCasework,
+        foodSpend = cumulativeFoodSpend,
+        lodgingSpend = cumulativeLodgingSpend,
+        workerRequestCost = cumulativeWorkerRequestCost,
+        workerTrainingCost = cumulativeWorkerTrainingCost,
+        appliedFoodSat = appliedFoodSat,
+        appliedLodgingSat = appliedLodgingSat,
+        appliedWorkerSat = appliedWorkerSat,
+        appliedCaseworkSat = appliedCaseworkSat,
+        appliedFoodEff = appliedFoodEff,
+        appliedLodgingEff = appliedLodgingEff,
+        appliedWorkerEff = appliedWorkerEff,
+    };
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        dayStartBudget = s.dayStartBudget;
+        dayStartSatisfaction = s.dayStartSatisfaction;
+        dayStartEfficiency = s.dayStartEfficiency;
+        dayStartPopulation = s.dayStartPopulation;
+        cumulativeRoundsElapsed = s.roundsElapsed;
+        cumulativeFoodPacksConsumedByClients = s.foodPacksConsumedByClients;
+        cumulativeFoodPacksNeededByClients = s.foodPacksNeededByClients;
+        cumulativeFoodPacksWasted = s.foodPacksWasted;
+        cumulativeCommunityFoodDemand = s.communityFoodDemand;
+        cumulativeLodgingNightsConsumed = s.lodgingNightsConsumed;
+        cumulativeLodgingNightsNeeded = s.lodgingNightsNeeded;
+        cumulativeIdleWorkerRounds = s.idleWorkerRounds;
+        cumulativeWorkingWorkerRounds = s.workingWorkerRounds;
+        cumulativeTrainingWorkerRounds = s.trainingWorkerRounds;
+        cumulativeWorkerPoolRounds = s.workerPoolRounds;
+        cumulativeClientRoundsAwaitingCasework = s.clientRoundsAwaitingCasework;
+        cumulativeClientsRequestedCasework = s.clientsRequestedCasework;
+        cumulativeFoodSpend = s.foodSpend;
+        cumulativeLodgingSpend = s.lodgingSpend;
+        cumulativeWorkerRequestCost = s.workerRequestCost;
+        cumulativeWorkerTrainingCost = s.workerTrainingCost;
+        appliedFoodSat = s.appliedFoodSat;
+        appliedLodgingSat = s.appliedLodgingSat;
+        appliedWorkerSat = s.appliedWorkerSat;
+        appliedCaseworkSat = s.appliedCaseworkSat;
+        appliedFoodEff = s.appliedFoodEff;
+        appliedLodgingEff = s.appliedLodgingEff;
+        appliedWorkerEff = s.appliedWorkerEff;
+    }
+
     private float appliedFoodSat, appliedLodgingSat, appliedWorkerSat, appliedCaseworkSat;
     private float appliedFoodEff, appliedLodgingEff, appliedWorkerEff;
 
+    // PARITY BUILD (ledger D2): 1000f, matching upstream, NOT the correct 100f.
+    // Our fix is right and upstream's value is wrong -- the five satisfaction weights sum to 1,
+    // so components sum to SCORE_SCALE, and at 1000 one component's delta is ten times what it
+    // should be against a field AddSatisfaction clamps to [0,100]. Version 2 reproduces the bug
+    // deliberately: it exists to isolate "does the LLM code change the game", and carrying a
+    // score fix into it would answer a different question.
+    const float SCORE_SCALE = 1000f;
     const float SAT_W = 0.2f;
     const float EFF_W = 1f / 3f;
 
+    /// <summary>
+    /// Push the change in one component's score into the AUTHORITATIVE satisfaction/efficiency
+    /// field, which is 0-100 (the human slider and the officer game_state both read it).
+    ///
+    /// SCALE. The callers below compute `S_x() * WEIGHT * SCORE_SCALE`. That must be 100, not
+    /// the report's 1000: the five satisfaction weights sum to 1, so the components sum to
+    /// SCORE_SCALE, and at 1000 a single component's delta is ten times what it should be.
+    /// AddSatisfaction clamps to [0,100], so the symptom is not an absurd number but a metric
+    /// pinned at 100 that then collapses -- a 50% food shortfall would cost 100 points instead
+    /// of 10. The report's own 0-1000 display scaling is applied in DailyReportUI, separately.
+    /// </summary>
     void ApplyDelta(ref float applied, float newScore, bool isEfficiency, string reason)
     {
         float delta = newScore - applied;
@@ -964,25 +1084,25 @@ public class DailyReportData : MonoBehaviour
     }
 
     public void RecalcFoodSatisfaction(string reason = "Food delivery progress")
-        => ApplyDelta(ref appliedFoodSat, S_Food() * SAT_W * 1000f, false, reason);
+        => ApplyDelta(ref appliedFoodSat, S_Food() * SAT_W * SCORE_SCALE, false, reason);
 
     public void RecalcLodgingSatisfaction(string reason = "Lodging progress")
-        => ApplyDelta(ref appliedLodgingSat, S_Lodging() * SAT_W * 1000f, false, reason);
+        => ApplyDelta(ref appliedLodgingSat, S_Lodging() * SAT_W * SCORE_SCALE, false, reason);
 
     public void RecalcWorkerSatisfaction(string reason = "Worker use progress")
-        => ApplyDelta(ref appliedWorkerSat, S_WorkerUse() * SAT_W * 1000f, false, reason);
+        => ApplyDelta(ref appliedWorkerSat, S_WorkerUse() * SAT_W * SCORE_SCALE, false, reason);
 
     public void RecalcCaseworkSatisfaction(string reason = "Casework progress")
-        => ApplyDelta(ref appliedCaseworkSat, S_Casework() * SAT_W * 1000f, false, reason);
+        => ApplyDelta(ref appliedCaseworkSat, S_Casework() * SAT_W * SCORE_SCALE, false, reason);
 
     public void RecalcFoodEfficiency(string reason = "Food cost efficiency")
-        => ApplyDelta(ref appliedFoodEff, C_Food() * EFF_W * 1000f, true, reason);
+        => ApplyDelta(ref appliedFoodEff, C_Food() * EFF_W * SCORE_SCALE, true, reason);
 
     public void RecalcLodgingEfficiency(string reason = "Lodging cost efficiency")
-        => ApplyDelta(ref appliedLodgingEff, C_Lodging() * EFF_W * 1000f, true, reason);
+        => ApplyDelta(ref appliedLodgingEff, C_Lodging() * EFF_W * SCORE_SCALE, true, reason);
 
     public void RecalcWorkerEfficiency(string reason = "Worker cost efficiency")
-        => ApplyDelta(ref appliedWorkerEff, C_Worker() * EFF_W * 1000f, true, reason);
+        => ApplyDelta(ref appliedWorkerEff, C_Worker() * EFF_W * SCORE_SCALE, true, reason);
 
 
     // Read what's already been applied, for DailyReportUI's end-of-day display
@@ -996,21 +1116,21 @@ public class DailyReportData : MonoBehaviour
 
     public void SyncAppliedScoresToFresh()
     {
-        appliedFoodSat = S_Food() * SAT_W * 1000f;
-        appliedLodgingSat = S_Lodging() * SAT_W * 1000f;
-        appliedWorkerSat = S_WorkerUse() * SAT_W * 1000f;
-        appliedCaseworkSat = S_Casework() * SAT_W * 1000f;
+        appliedFoodSat = S_Food() * SAT_W * SCORE_SCALE;
+        appliedLodgingSat = S_Lodging() * SAT_W * SCORE_SCALE;
+        appliedWorkerSat = S_WorkerUse() * SAT_W * SCORE_SCALE;
+        appliedCaseworkSat = S_Casework() * SAT_W * SCORE_SCALE;
 
-        appliedFoodEff = C_Food() * EFF_W * 1000f;
-        appliedLodgingEff = C_Lodging() * EFF_W * 1000f;
-        appliedWorkerEff = C_Worker() * EFF_W * 1000f;
+        appliedFoodEff = C_Food() * EFF_W * SCORE_SCALE;
+        appliedLodgingEff = C_Lodging() * EFF_W * SCORE_SCALE;
+        appliedWorkerEff = C_Worker() * EFF_W * SCORE_SCALE;
     }
 
     public float ComputeFreshSatisfactionTotal()
-    => (S_Food() + S_Lodging() + S_WorkerUse() + S_Waste() + S_Casework()) * SAT_W * 1000f;
+    => (S_Food() + S_Lodging() + S_WorkerUse() + S_Waste() + S_Casework()) * SAT_W * SCORE_SCALE;
 
     public float ComputeFreshEfficiencyTotal()
-        => (C_Food() + C_Lodging() + C_Worker()) * EFF_W * 1000f;
+        => (C_Food() + C_Lodging() + C_Worker()) * EFF_W * SCORE_SCALE;
     //END NEW
 
     //score move end //

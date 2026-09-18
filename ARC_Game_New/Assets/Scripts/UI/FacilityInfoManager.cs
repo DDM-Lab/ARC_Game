@@ -216,7 +216,7 @@ public class FacilityInfoManager : MonoBehaviour
 
         isPanelOpen = true;
         Debug.Log($"Opened facility panel for: {facility.name}");
-        GameLogPanel.Instance?.LogUIInteraction($"Opened facility panel for: {facility.name}");
+        GameLogPanel.Instance?.LogUIInteraction("game_state", "facility_opened", $"facility={facility.name}");
     }
 
     void PositionPanel(MonoBehaviour facility, RectTransform panelRect)
@@ -277,7 +277,7 @@ public class FacilityInfoManager : MonoBehaviour
     
     public void CloseFacilityPanel()
     {
-        GameLogPanel.Instance?.LogUIInteraction($"Closed facility panel for: {currentSelectedFacility.name}");
+        GameLogPanel.Instance?.LogUIInteraction("game_state", "facility_closed", $"facility={currentSelectedFacility.name}");
 
         if (facilityInfoPanel != null)
         {

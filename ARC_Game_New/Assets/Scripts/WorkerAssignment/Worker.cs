@@ -49,6 +49,39 @@ public class Worker
         }
     }
     
+    /// <summary>Snapshot support. Status is the whole story for a worker -- "NotArrived"
+    /// and "Training" are statuses rather than countdowns, so there is no separate timer
+    /// to carry, but assignedBuildingId must survive or restored workers detach from
+    /// their buildings.</summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public int workerId;
+        public string workerType;
+        public string trainedStatus;
+        public string untrainedStatus;
+        public int assignedBuildingId;
+    }
+
+    public Snapshot CaptureState() => new Snapshot
+    {
+        workerId = workerId,
+        workerType = workerType.ToString(),
+        trainedStatus = trainedStatus.ToString(),
+        untrainedStatus = untrainedStatus.ToString(),
+        assignedBuildingId = assignedBuildingId,
+    };
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        workerId = s.workerId;
+        if (System.Enum.TryParse(s.workerType, out WorkerType wt)) workerType = wt;
+        if (System.Enum.TryParse(s.trainedStatus, out TrainedWorkerStatus ts)) trainedStatus = ts;
+        if (System.Enum.TryParse(s.untrainedStatus, out UntrainedWorkerStatus us)) untrainedStatus = us;
+        assignedBuildingId = s.assignedBuildingId;
+    }
+
     // Properties
     public int WorkerId => workerId;
     public WorkerType Type => workerType;

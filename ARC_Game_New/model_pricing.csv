@@ -1,0 +1,28 @@
+model_id,provider,family,input_usd_per_1M,output_usd_per_1M,input_usd_per_token,output_usd_per_token,confidence,notes
+us.anthropic.claude-opus-4-8,Anthropic,Claude Opus,5.00,25.00,0.000005,0.000025,high,Opus 4.8 standard; Fast Mode is 2x ($10/$50)
+us.anthropic.claude-opus-4-7,Anthropic,Claude Opus,5.00,25.00,0.000005,0.000025,high,Opus 4.7
+us.anthropic.claude-opus-4-6-v1,Anthropic,Claude Opus,5.00,25.00,0.000005,0.000025,low,assumed same as 4.7/4.8 tier; no separate 4.6 rate confirmed
+us.anthropic.claude-sonnet-4-6,Anthropic,Claude Sonnet,3.00,15.00,0.000003,0.000015,high,Sonnet 4.6
+claude-sonnet-4-20250514-v1:0,Anthropic,Claude Sonnet,3.00,15.00,0.000003,0.000015,med,Sonnet 4 (May 2025); Sonnet-tier rate
+us.anthropic.claude-haiku-4-5-20251001-v1:0,Anthropic,Claude Haiku,1.00,5.00,0.000001,0.000005,high,Haiku 4.5
+claude-haiku-4-5-20251001-v1:0,Anthropic,Claude Haiku,1.00,5.00,0.000001,0.000005,high,Haiku 4.5 (duplicate alias)
+claude-3-haiku-20240307,Anthropic,Claude Haiku,0.25,1.25,0.00000025,0.00000125,high,Claude 3 Haiku (legacy)
+gpt-5.5,OpenAI,GPT-5,5.00,30.00,0.000005,0.00003,high,flagship; cached input $0.50/1M
+gpt-5.4-pro,OpenAI,GPT-5,15.00,120.00,0.000015,0.00012,low,Pro tier estimate; no public 5.4-pro rate (5.5-Pro is $30/$180)
+gpt-5.4,OpenAI,GPT-5,2.50,15.00,0.0000025,0.000015,high,GPT-5.4
+gpt-5.4-mini,OpenAI,GPT-5,0.75,4.50,0.00000075,0.0000045,med,GPT-5.4-mini
+gpt-5.4-nano,OpenAI,GPT-5,0.75,4.50,0.00000075,0.0000045,low,reported same as 5.4-mini; likely cheaper - verify
+gpt-5,OpenAI,GPT-5,1.25,10.00,0.00000125,0.00001,high,original GPT-5
+gpt-5-mini,OpenAI,GPT-5,0.25,2.00,0.00000025,0.000002,med,GPT-5-mini
+gpt-5-nano,OpenAI,GPT-5,0.05,0.40,0.00000005,0.0000004,med,GPT-5-nano
+gpt-4.1-mini,OpenAI,GPT-4,0.40,1.60,0.0000004,0.0000016,high,GPT-4.1-mini
+gpt-4o-transcribe,OpenAI,GPT-4o audio,NA,NA,NA,NA,na,audio transcription model - billed per audio token/minute not text
+gemini/gemini-3.1-pro-preview,Google,Gemini Pro,2.00,12.00,0.000002,0.000012,high,<=200k context; >200k = $4.00/$18.00
+gemini/gemini-3.5-flash,Google,Gemini Flash,1.50,9.00,0.0000015,0.000009,med,Gemini 3.5 Flash
+gemini-2.5-pro,Google,Gemini Pro,1.25,10.00,0.00000125,0.00001,high,<=200k context; >200k = $2.50/$15.00
+gemini-2.5-flash,Google,Gemini Flash,0.30,2.50,0.0000003,0.0000025,high,Gemini 2.5 Flash
+gemini/gemini-2.5-flash-lite,Google,Gemini Flash-Lite,0.10,0.40,0.0000001,0.0000004,high,Gemini 2.5 Flash-Lite
+llama3-2-90b-instruct,Meta (via Bedrock),Llama,0.72,0.72,0.00000072,0.00000072,low,Bedrock estimate; 90B rate not separately confirmed
+llama3-2-11b-instruct,Meta (via Bedrock),Llama,0.16,0.16,0.00000016,0.00000016,low,Bedrock estimate
+meta.llama3-1-8b-instruct-v1:0,Meta (via Bedrock),Llama,0.22,0.22,0.00000022,0.00000022,med,Bedrock Llama 3.1 8B
+azure/text-embedding-3-small,OpenAI (via Azure),Embedding,0.02,0.00,0.00000002,0.0,high,embeddings - input only, no output tokens

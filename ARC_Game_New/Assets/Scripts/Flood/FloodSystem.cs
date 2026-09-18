@@ -35,6 +35,97 @@ public class FloodSystem : MonoBehaviour
     private Queue<Vector3Int> floodExpansionQueue = new Queue<Vector3Int>();
     private WeatherType lastWeatherType = WeatherType.Sunny;
 
+    /// <summary>
+    /// Snapshot support. The flood tile set is the largest piece of hidden simulation
+    /// state: it drives isFlooding, blocked roads and damaged vehicles, and its expansion
+    /// consumes random draws EVERY round. Leaving it uncaptured makes a restored game
+    /// drift a couple of rounds later even when everything visible looks correct -- which
+    /// is exactly what the trajectory-equivalence harness reported.
+    ///
+    /// riverTiles and blockedPositions are derived from the tilemaps at startup and are
+    /// stable across a scene rebuild, so only the mutable flood set and the per-round
+    /// counters are carried.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public List<int> tileX = new List<int>();
+        public List<int> tileY = new List<int>();
+        public List<int> tileZ = new List<int>();
+        public int previousFloodCount;
+        public int floodChangeThisRound;
+        public string lastWeatherType;
+    }
+
+
+    /// <summary>
+    /// Deterministic iteration order over the flood set.
+    ///
+    /// currentFloodTiles is a HashSet, whose enumeration order depends on internal bucket
+    /// layout and therefore on the HISTORY of adds and removes -- not just on the set's
+    /// contents. Flood spread and shrinkage draw one random per tile as they iterate, so
+    /// two runs holding the SAME tiles in a different internal order remove different
+    /// tiles and diverge from there.
+    ///
+    /// That is exactly what broke state restore: a restored set is rebuilt with Clear()
+    /// plus re-Add, which reproduces the contents but not the layout, so a restored game
+    /// evolved its flood differently while every visible field matched. Sorting makes the
+    /// order a function of the CONTENTS alone, which is what both replay and restore can
+    /// reproduce.
+    /// </summary>
+
+    /// <summary>Deterministic order over the river set, for the same reason as
+    /// FloodTilesInOrder: HashSet enumeration depends on internal layout, and any loop
+    /// that draws or mutates while iterating must not depend on it.</summary>
+    List<Vector3Int> RiverTilesInOrder()
+    {
+        var ordered = new List<Vector3Int>(riverTiles);
+        // PARITY BUILD (ledger D24): no sort — upstream enumerates the HashSet raw.
+        return ordered;
+    }
+
+    List<Vector3Int> FloodTilesInOrder()
+    {
+        var ordered = new List<Vector3Int>(currentFloodTiles);
+        // PARITY BUILD (ledger D24): no sort — upstream enumerates the HashSet raw.
+        return ordered;
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot
+        {
+            previousFloodCount = previousFloodCount,
+            floodChangeThisRound = floodChangeThisRound,
+            lastWeatherType = lastWeatherType.ToString(),
+        };
+        foreach (var t in currentFloodTiles) { s.tileX.Add(t.x); s.tileY.Add(t.y); s.tileZ.Add(t.z); }
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+
+        // Clear the tilemap for tiles we are dropping, then paint the restored set, so the
+        // visual map and the authoritative set cannot disagree.
+        if (floodTilemap != null)
+            foreach (var t in currentFloodTiles) floodTilemap.SetTile(t, null);
+        currentFloodTiles.Clear();
+
+        int n = Mathf.Min(s.tileX.Count, Mathf.Min(s.tileY.Count, s.tileZ.Count));
+        for (int i = 0; i < n; i++)
+        {
+            var pos = new Vector3Int(s.tileX[i], s.tileY[i], s.tileZ[i]);
+            currentFloodTiles.Add(pos);
+            if (floodTilemap != null && floodRuleTile != null) floodTilemap.SetTile(pos, floodRuleTile);
+        }
+
+        previousFloodCount = s.previousFloodCount;
+        floodChangeThisRound = s.floodChangeThisRound;
+        if (System.Enum.TryParse(s.lastWeatherType, out WeatherType w)) lastWeatherType = w;
+    }
+
     // Events
     public event Action<Vector3Int> OnFloodTileAdded;
     public event Action<Vector3Int> OnFloodTileRemoved;
@@ -258,7 +349,7 @@ public class FloodSystem : MonoBehaviour
     void InitializeFloodFromRivers()
     {
         // Start flood at all river positions
-        foreach (Vector3Int riverPos in riverTiles)
+        foreach (Vector3Int riverPos in RiverTilesInOrder())
         {
             AddFloodTile(riverPos, false); // Don't trigger events during initialization
         }
@@ -307,6 +398,25 @@ public class FloodSystem : MonoBehaviour
         WeatherType currentWeather = WeatherSystem.Instance.GetCurrentWeather();
         WeatherFloodData weatherData = GetWeatherFloodData(currentWeather);
         float rainIntensity = WeatherSystem.Instance.GetRainIntensity();
+
+        // Self-describing entry mark: the port test needs the EXACT weather, rain and tile
+        // set this update sees, not what a between-rounds snapshot happens to hold.
+        if (true)
+        {
+            var _ord = FloodTilesInOrder();
+            var _sb = new System.Text.StringBuilder();
+            _sb.Append("{\"lastWeather\":\"").Append(lastWeatherType).Append("\",")
+               .Append("\"weather\":\"").Append(currentWeather).Append("\",\"rain\":")
+               .Append(rainIntensity.ToString(System.Globalization.CultureInfo.InvariantCulture))
+               .Append(",\"tiles\":[");
+            for (int _i = 0; _i < _ord.Count; _i++)
+            {
+                if (_i > 0) _sb.Append(',');
+                _sb.Append('[').Append(_ord[_i].x).Append(',').Append(_ord[_i].y).Append(']');
+            }
+            _sb.Append("]}");
+            SnapshotDebug.MarkContext("flood:enter", _sb.ToString());
+        }
         Debug.Log($"Current weather: {currentWeather}, Rain intensity: {rainIntensity}");
         
         bool wasRaining = WeatherSystem.Instance.IsRaining();
@@ -386,8 +496,9 @@ public class FloodSystem : MonoBehaviour
         Debug.Log($"Flood spawn chance: {spawnChance:F2}");
 
         int spawned = 0;
-        foreach (Vector3Int riverPos in riverTiles)
+        foreach (Vector3Int riverPos in RiverTilesInOrder())
         {
+            SnapshotDebug.Mark("draw:Flood.1");
             if (UnityEngine.Random.value < spawnChance)
             {
                 AddFloodTile(riverPos, false);
@@ -426,7 +537,7 @@ public class FloodSystem : MonoBehaviour
         
         // Get all possible expansion positions
         Debug.Log($"Checking expansion from {currentFloodTiles.Count} current flood tiles");
-        foreach (Vector3Int floodPos in currentFloodTiles)
+        foreach (Vector3Int floodPos in FloodTilesInOrder())
         {
             List<Vector3Int> neighbors = GetAdjacentPositions(floodPos);
             foreach (Vector3Int neighbor in neighbors)
@@ -441,6 +552,11 @@ public class FloodSystem : MonoBehaviour
 
         // Remove duplicates
         int candidatesBeforeDedup = expansionCandidates.Count;
+        // PARITY BUILD (ledger D24): dedup only, NO sort — upstream's exact line. Our sort is a
+        // real determinism fix (HashSet order is not guaranteed, and the loop below indexes into
+        // this list with Random.Range, so an identical candidate SET can still expand different
+        // tiles). But upstream does not sort, so with the sort in place the two builds pick
+        // different tiles from the same draw, and every later flood decision diverges from there.
         expansionCandidates = new List<Vector3Int>(new HashSet<Vector3Int>(expansionCandidates));
         Debug.Log($"Expansion candidates: {candidatesBeforeDedup} -> {expansionCandidates.Count} (after dedup)");
 
@@ -448,6 +564,7 @@ public class FloodSystem : MonoBehaviour
         int actualExpansions = 0;
         for (int i = 0; i < tilesToExpand && expansionCandidates.Count > 0; i++)
         {
+            SnapshotDebug.Mark("draw:Flood.2");
             int randomIndex = UnityEngine.Random.Range(0, expansionCandidates.Count);
             Vector3Int expandTo = expansionCandidates[randomIndex];
 
@@ -467,20 +584,26 @@ public class FloodSystem : MonoBehaviour
 
     void HandleRandomExpansion(WeatherFloodData weatherData)
     {
+        SnapshotDebug.Mark("draw:Flood.3");
         if (UnityEngine.Random.value > floodParameters.randomExpansionChance)
             return;
 
         // Pick a random flood tile as expansion source
         if (currentFloodTiles.Count == 0) return;
 
-        Vector3Int[] floodArray = new Vector3Int[currentFloodTiles.Count];
-        currentFloodTiles.CopyTo(floodArray);
-        Vector3Int sourcePos = floodArray[UnityEngine.Random.Range(0, floodArray.Length)];
+        // Sorted, not a raw HashSet copy: CopyTo preserves the set's internal layout order,
+        // which depends on add/remove history rather than contents, and the draw below
+        // indexes straight into it. Same defect as the expansion-candidate list.
+        var floodArray = FloodTilesInOrder();
+        SnapshotDebug.Mark("draw:Flood.4");
+        Vector3Int sourcePos = floodArray[UnityEngine.Random.Range(0, floodArray.Count)];
 
         // Try to expand in a random direction up to max distance
         Vector3Int[] directions = { Vector3Int.up, Vector3Int.down, Vector3Int.left, Vector3Int.right };
+        SnapshotDebug.Mark("draw:Flood.5");
         Vector3Int direction = directions[UnityEngine.Random.Range(0, directions.Length)];
 
+        SnapshotDebug.Mark("draw:Flood.6");
         int expansionDistance = UnityEngine.Random.Range(1, floodParameters.maxRandomExpansionDistance + 1);
         Vector3Int targetPos = sourcePos + (direction * expansionDistance);
 
@@ -509,7 +632,7 @@ public class FloodSystem : MonoBehaviour
             Debug.Log("No rain - applying heavy shrinkage");
         }
 
-        foreach (Vector3Int floodPos in currentFloodTiles)
+        foreach (Vector3Int floodPos in FloodTilesInOrder())
         {
             float tileShrinkChance = shrinkChance;
 
@@ -519,6 +642,7 @@ public class FloodSystem : MonoBehaviour
                 tileShrinkChance += floodParameters.edgeShrinkageBonus;
             }
 
+            SnapshotDebug.Mark("draw:Flood.7");
             if (UnityEngine.Random.value < tileShrinkChance)
             {
                 tilesToRemove.Add(floodPos);
@@ -561,6 +685,7 @@ public class FloodSystem : MonoBehaviour
                                        weatherData.spreadChanceMultiplier *
                                        floodParameters.terrainBlockMultiplier;
 
+            SnapshotDebug.Mark("draw:Flood.8");
             bool canSpread = UnityEngine.Random.value < blockedSpreadChance;
             Debug.Log($"    -> Terrain blocked. Spread chance: {blockedSpreadChance:F2}, result: {canSpread}");
             return canSpread;
@@ -577,6 +702,7 @@ public class FloodSystem : MonoBehaviour
                                    weatherData.spreadChanceMultiplier *
                                    floodParameters.landSpreadMultiplier;
 
+            SnapshotDebug.Mark("draw:Flood.9");
             bool canSpread = UnityEngine.Random.value < landSpreadChance;
             Debug.Log($"    -> Land tile. Spread chance: {landSpreadChance:F2}, result: {canSpread}");
             return canSpread;
@@ -584,6 +710,7 @@ public class FloodSystem : MonoBehaviour
 
         // Default spread chance for river tiles or empty spaces
         float normalSpreadChance = floodParameters.baseSpreadChance * weatherData.spreadChanceMultiplier;
+        SnapshotDebug.Mark("draw:Flood.10");
         bool canSpreadNormal = UnityEngine.Random.value < normalSpreadChance;
         Debug.Log($"    -> River/empty. Spread chance: {normalSpreadChance:F2}, result: {canSpreadNormal}");
         return canSpreadNormal;
@@ -793,7 +920,7 @@ public class FloodSystem : MonoBehaviour
     public void ResetFloodToRivers()
     {
         // Clear all flood tiles
-        foreach (Vector3Int pos in currentFloodTiles)
+        foreach (Vector3Int pos in FloodTilesInOrder())
         {
             floodTilemap.SetTile(pos, null);
         }
@@ -849,7 +976,7 @@ public class FloodSystem : MonoBehaviour
 
         // Draw flood tiles
         Gizmos.color = floodGizmoColor;
-        foreach (Vector3Int floodPos in currentFloodTiles)
+        foreach (Vector3Int floodPos in FloodTilesInOrder())
         {
             Vector3 worldPos = floodTilemap.CellToWorld(floodPos) + floodTilemap.tileAnchor;
             Gizmos.DrawWireCube(worldPos, Vector3.one * 0.8f);
@@ -857,7 +984,7 @@ public class FloodSystem : MonoBehaviour
 
         // Draw river tiles
         Gizmos.color = riverGizmoColor;
-        foreach (Vector3Int riverPos in riverTiles)
+        foreach (Vector3Int riverPos in RiverTilesInOrder())
         {
             Vector3 worldPos = groundTilemap.CellToWorld(riverPos) + groundTilemap.tileAnchor;
             Gizmos.DrawWireCube(worldPos, Vector3.one * 0.6f);

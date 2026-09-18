@@ -10,17 +10,54 @@ using System.Collections.Generic;
 public class TaskContext
 {
     public int taskId;
+    public string stableTaskId;
     public string taskTitle;
     public string taskDescription;
     public string taskType;
     public string affectedFacility;
     public int roundsRemaining;
+    // Choices the task offers, if any (bare minimum: id + text). Select one via
+    // the gym 'select_task_choice' action / the UI. Empty for non-choice tasks.
+    public List<TaskChoiceBrief> choices;
+}
+
+[System.Serializable]
+public class TaskChoiceBrief
+{
+    public int choiceId;
+    public string choiceText;
+    // Sparse: only the choice's non-zero impacts (e.g. Budget +5000, Satisfaction +10,
+    // Budget -2000 cost). Always populated in the payload; the Python observation layer
+    // decides whether to surface it to the model (ablation toggle).
+    public List<ChoiceImpactBrief> impacts;
+    // Structured delivery destination — avoids choiceText parsing in non-LLM policies.
+    // "Motel" | "Shelter" | "CaseworkSite" | "Kitchen" | ... for delivery choices; null otherwise.
+    public string destinationCategory;
+    // Expected delivery quantity (people for relocation, food units, etc.).
+    // Only meaningful when destinationCategory is non-null.
+    public int deliveryQuantity;
+    // Does this choice deliver in the SAME round, or queue a delivery that lands later?
+    // The distinction decides whether a task is fulfilled at all: a deferred delivery can
+    // arrive after its task has already resolved, at which point it is credited by the
+    // late-delivery path with different capping rules. Non-LLM policies and the cora_sim
+    // surrogate previously had to infer this from choiceText ("(immediate)", "Rapid
+    // Response"), which is right for food and wrong for lodging.
+    public bool immediateDelivery;
+    public bool triggersDelivery;
+}
+
+[System.Serializable]
+public class ChoiceImpactBrief
+{
+    public string type;   // ImpactType name (Budget, Satisfaction, Clients, ...)
+    public int value;     // signed: positive = gain (e.g. funding), negative = cost
 }
 
 [System.Serializable]
 public class GameStatePayload
 {
     public SessionInfo sessionInfo;
+    public SatisfactionAndBudgetState satisfactionAndBudget;
     public TaskContext taskContext;
     public List<TaskContext> allActiveTasks;
     public MapState mapState;
@@ -30,6 +67,34 @@ public class GameStatePayload
     public DailyMetrics dailyMetrics;
     public WorkforceState workforceState;
     public ConstructionState constructionState;
+    public RewardMetrics rewardMetrics;
+}
+
+// Raw cumulative quantities for the (Python-side) reward function. Unity reports
+// facts only; scoring/weighting/clamping happens in Python.
+[System.Serializable]
+public class RewardMetrics
+{
+    // Needs-met (Food/Lodging Demand/Emergency tasks): fulfilled / resolved
+    public int foodResolved;
+    public int foodFulfilled;
+    public int lodgingResolved;
+    public int lodgingFulfilled;
+    // Casework / return-home (people who requested casework vs people actually processed home)
+    public int caseworkRequested;
+    public int caseworkProcessed;
+    // Worker allocation summed across rounds (person-rounds)
+    public long cumWorkingWorkers;
+    public long cumTrainingWorkers;
+    public long cumIdleWorkers;
+    public int roundsCompleted;
+    public int daysCompleted;
+    public int totalWorkers;        // current present workforce
+    // Cumulative spend by service category
+    public int foodSpend;
+    public int lodgingSpend;
+    public int workerSpend;
+    public int caseworkSpend;
 }
 
 [System.Serializable]
@@ -40,6 +105,18 @@ public class SessionInfo
     public string currentGameTime;
     public float simulationSpeed;
     public bool isPaused;
+    // Finite-horizon terminal signal for the gym: the game ends after finalDay's last
+    // round (EndGamePanel shows at Day finalDay, Round 4). isGameOver lets the Python
+    // env terminate the episode there instead of advancing into meaningless Day 9+.
+    public int finalDay;
+    public bool isGameOver;
+}
+
+[System.Serializable]
+public class SatisfactionAndBudgetState
+{
+    public int satisfaction;
+    public int budget;
 }
 
 [System.Serializable]
@@ -120,8 +197,19 @@ public class DistributedResources
 }
 
 [System.Serializable]
+public class PendingRelocation
+{
+    public int taskId;
+    public string source;
+    public string destination;
+    public int quantity;
+    public int roundsRemaining;
+}
+
+[System.Serializable]
 public class Logistics
 {
+    public List<PendingRelocation> pendingRelocations;   // clients walking (main-bugfixes self-walk relocation)
     public int availableVehicles;
     public int vehiclesInTransit;
     public int damagedVehicles;
@@ -269,7 +357,10 @@ public class ConstructionState
     public List<AbandonedSiteState> availableSites;
     public List<string> buildingsUnderConstruction;
     public List<string> buildingsNeedingWorkers;
-    public int buildingConstructionCost; // $1000
+    // Live value from BuildingSystem (serialized in MainScene, currently 2000) — NOT the 1000
+    // default declared in BuildingSystem.cs. Do not restate this number in prompts or docs;
+    // it is sent to the model each round as state.costs.build.
+    public int buildingConstructionCost;
     public float constructionTimeDays;
     public float deconstructionTimeDays;
 }

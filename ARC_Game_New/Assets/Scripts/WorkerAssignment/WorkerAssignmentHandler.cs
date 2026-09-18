@@ -342,7 +342,7 @@ public class WorkerAssignmentHandler : MonoBehaviour
         //    return false;
         //}
 
-        if (isLocked && newWorkforce < currentHeadCount)
+        if (isLocked && newHeadCount < currentHeadCount)   // heads vs heads (workforce POINTS let locked workers escape, BUG_REPORTS B19)
         {
             errorMessage = $"Workers committed previously cannot be released.";
             return false;

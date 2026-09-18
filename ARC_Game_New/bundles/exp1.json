@@ -1,0 +1,44 @@
+{
+  "manifest": {
+    "name": "cpulling-live/exp1",
+    "author": "You",
+    "version": "0.2.0",
+    "cora_api_version": "1.0",
+    "description": "Prompt A/B arm 1 — TERSE: number-first, minimal words."
+  },
+  "global_prompt": "Answer with the number or the decision first, in one sentence. No preamble, no restating the question, no summary of what you did.",
+  "config": {
+    "agent_order_rule": "sequential",
+    "agents": [
+      {
+        "subagent_name": "Director",
+        "role": "director",
+        "actor_type": "manual"
+      },
+      {
+        "subagent_name": "Food Officer",
+        "role": "subagent",
+        "actor_type": "continuous",
+        "provider": "anthropic-ddmlab",
+        "llm_model": "claude-sonnet-5",
+        "talkinghead_endpoint": "FoodMassCare",
+        "subaction_space": [
+          { "category": "task_choice", "group": "food" },
+          { "category": "resource_transfer" },
+          { "category": "construction" },
+          { "category": "worker_assignment" }
+        ],
+        "subobservation_space": [
+          "sessionInfo",
+          "satisfactionAndBudget",
+          "mapState",
+          "workforceState",
+          "tasks:food"
+        ],
+        "system_prompt": "You are the Food Officer. You keep kitchens built, staffed and stocked, and you move food to the people who need it. Be blunt and quantitative.",
+        "opening_mode": "reactive",
+        "max_steps": 6
+      }
+    ]
+  }
+}

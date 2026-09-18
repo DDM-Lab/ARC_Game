@@ -1,0 +1,1832 @@
+{
+ "type": "sim_constants",
+ "flood": {
+  "baseSpreadChance": 0.7,
+  "randomExpansionChance": 0.4,
+  "maxRandomExpansionDistance": 5,
+  "landSpreadMultiplier": 1,
+  "terrainBlockMultiplier": 1,
+  "blockingRadius": 5,
+  "minimumRainForSpawning": 0.3,
+  "edgeShrinkageBonus": 0.2,
+  "floodSpawnChance": 0.7,
+  "rainIntensitySpawnBonus": 0.2,
+  "baseShrinkageChance": 0.1,
+  "weatherFloodRates": [
+   {
+    "weather": "Sunny",
+    "expansionRate": 0,
+    "spreadChanceMultiplier": 0.5,
+    "shrinkageChance": 0.3
+   },
+   {
+    "weather": "SmallRain",
+    "expansionRate": 0.5,
+    "spreadChanceMultiplier": 0.8,
+    "shrinkageChance": 0.3
+   },
+   {
+    "weather": "MediumRain",
+    "expansionRate": 1.5,
+    "spreadChanceMultiplier": 1,
+    "shrinkageChance": 0.3
+   },
+   {
+    "weather": "HeavyRain",
+    "expansionRate": 3,
+    "spreadChanceMultiplier": 1.2,
+    "shrinkageChance": 0.3
+   },
+   {
+    "weather": "Storm",
+    "expansionRate": 5,
+    "spreadChanceMultiplier": 1.5,
+    "shrinkageChance": 0.3
+   }
+  ]
+ },
+ "weather": [
+  {
+   "index": 0,
+   "weather": "Sunny",
+   "probability": 0.2
+  },
+  {
+   "index": 1,
+   "weather": "SmallRain",
+   "probability": 0.2
+  },
+  {
+   "index": 2,
+   "weather": "MediumRain",
+   "probability": 0.2
+  },
+  {
+   "index": 3,
+   "weather": "HeavyRain",
+   "probability": 0.2
+  },
+  {
+   "index": 4,
+   "weather": "Storm",
+   "probability": 0.2
+  }
+ ],
+ "taskTriggers": [
+  {
+   "taskId": "Budget_Advisory",
+   "taskTitle": "Storm Funding Advisory",
+   "taskTag": "None",
+   "taskType": "Advisory",
+   "roundsRemaining": 2,
+   "taskOfficer": "ExternalRelationship",
+   "deliveryFailurePenalty": 10,
+   "taskImpacts": [
+    {
+     "type": "Budget",
+     "value": 1
+    }
+   ],
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 1
+   },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "DayRange",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 7
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": [
+     {
+      "severity": "Severe"
+     }
+    ]
+   },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "All",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 2,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": 50000
+      }
+     ]
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 4,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": 100000
+      }
+     ]
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Satisfaction",
+       "value": 5
+      }
+     ]
+    }
+   ],
+   "probabilities": []
+  },
+  {
+   "taskId": "Budget_Allocation",
+   "taskTitle": "Daily Budget Allocation",
+   "taskTag": "None",
+   "taskType": "Advisory",
+   "roundsRemaining": 3,
+   "taskOfficer": "ExternalRelationship",
+   "deliveryFailurePenalty": 10,
+   "taskImpacts": [
+    {
+     "type": "Budget",
+     "value": 1
+    }
+   ],
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 0,
+      "exactMatch": true
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": 5000
+      }
+     ]
+    }
+   ],
+   "probabilities": []
+  },
+  {
+   "taskId": "Budget_Emergency",
+   "taskTitle": "Emergency Budget Crisis",
+   "taskTag": "None",
+   "taskType": "Emergency",
+   "roundsRemaining": 1,
+   "taskOfficer": "ExternalRelationship",
+   "deliveryFailurePenalty": 10,
+   "taskImpacts": [
+    {
+     "type": "Satisfaction",
+     "value": -1
+    },
+    {
+     "type": "Budget",
+     "value": 1
+    }
+   ],
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 1,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [
+     {
+      "conditionType": "CurrentAmount",
+      "comparison": "LessThan",
+      "targetValue": 1
+     }
+    ],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": 5000
+      }
+     ]
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 2,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": 15000
+      }
+     ]
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": false,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 3,
+     "destinationCategory": "",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": 30000
+      }
+     ]
+    }
+   ],
+   "probabilities": []
+  },
+  {
+   "taskId": "Community_Flood_Damge",
+   "taskTitle": "[facility_name_plain] Flood Damage Evacuation",
+   "taskTag": "Lodging",
+   "taskType": "Emergency",
+   "roundsRemaining": 2,
+   "taskOfficer": "LodgingMassCare",
+   "deliveryFailurePenalty": 10,
+   "taskImpacts": [
+    {
+     "type": "Satisfaction",
+     "value": 1
+    },
+    {
+     "type": "TotalTime",
+     "value": 2
+    }
+   ],
+   "targetFacilityType": "Community",
+   "isGlobalTask": false,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 1,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 1,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [
+     {
+      "facilityType": "Community",
+      "resourceType": "Population",
+      "threshold": 99,
+      "condition": "MoreThan"
+     }
+    ],
+    "floodTile": [],
+    "floodedFacility": [
+     {
+      "facilityType": "SpecificPrebuiltType",
+      "comparison": "AtLeast",
+      "floodTileThreshold": 1,
+      "specificBuildingType": "Kitchen",
+      "specificPrebuiltType": "Community",
+      "detectionRadius": 2
+     }
+    ],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [
+    {
+     "choiceId": 1,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 100,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": []
+    },
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 100,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": []
+    }
+   ],
+   "probabilities": []
+  },
+  {
+   "taskId": "Community_FoodRequest",
+   "taskTitle": "[facility_name_plain] Food Request",
+   "taskTag": "Food",
+   "taskType": "Demand",
+   "roundsRemaining": 2,
+   "taskOfficer": "FoodMassCare",
+   "deliveryFailurePenalty": 15,
+   "taskImpacts": [
+    {
+     "type": "Satisfaction",
+     "value": 1
+    },
+    {
+     "type": "TotalTime",
+     "value": 2
+    },
+    {
+     "type": "Budget",
+     "value": -1
+    }
+   ],
+   "targetFacilityType": "Community",
+   "isGlobalTask": false,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 0,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [],
+    "day": [],
+    "resource": [],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 100,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": []
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": true,
+     "immediateDelivery": true,
+     "deliveryQuantity": 100,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": -1000
+      }
+     ]
+    }
+   ],
+   "probabilities": []
+  },
+  {
+   "taskId": "Community_TransportRequest",
+   "taskTitle": "[facility_name_plain] Relocation Request",
+   "taskTag": "Lodging",
+   "taskType": "Demand",
+   "roundsRemaining": 2,
+   "taskOfficer": "LodgingMassCare",
+   "deliveryFailurePenalty": 10,
+   "taskImpacts": [
+    {
+     "type": "Clients",
+     "value": 200
+    },
+    {
+     "type": "TotalTime",
+     "value": 2
+    },
+    {
+     "type": "Satisfaction",
+     "value": 1
+    }
+   ],
+   "targetFacilityType": "Community",
+   "isGlobalTask": false,
+   "autoSelectFacility": false,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 1,
+    "probability": 1,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [
+     {
+      "facilityType": "Community",
+      "resourceType": "Population",
+      "threshold": 200,
+      "condition": "MoreThan"
+     }
+    ],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 100,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": []
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 100,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": []
+    }
+   ],
+   "probabilities": [
+    0.5
+   ]
+  },
+  {
+   "taskId": "Flood_Alert",
+   "taskTitle": "Flood Alert - Rising Water",
+   "taskTag": "Lodging",
+   "taskType": "Alert",
+   "roundsRemaining": 1,
+   "taskOfficer": "DisasterOfficer",
+   "deliveryFailurePenalty": 10,
+   "taskImpacts": [],
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 1,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "DayRange",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 6
+     }
+    ],
+    "resource": [],
+    "floodTile": [
+     {
+      "conditionType": "CurrentFloodTiles",
+      "comparison": "MoreThan",
+      "targetValue": 10
+     }
+    ],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [],
+   "probabilities": []
+  },
+  {
+   "taskId": "Offboarding_alert_day6",
+   "taskTitle": "Alert - Game Will End on Day 8",
+   "taskTag": "None",
+   "taskType": "Alert",
+   "roundsRemaining": 1,
+   "taskOfficer": "DisasterOfficer",
+   "deliveryFailurePenalty": 10,
+   "taskImpacts": [],
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 0,
+      "exactMatch": true
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "SpecificDay",
+      "targetDay": 8,
+      "intervalDays": 0,
+      "startDay": 0,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [],
+   "probabilities": []
+  },
+  {
+   "taskId": "Offboarding_alert_day7",
+   "taskTitle": "Alert - Game Will End on Day 8",
+   "taskTag": "None",
+   "taskType": "Alert",
+   "roundsRemaining": 1,
+   "taskOfficer": "DisasterOfficer",
+   "deliveryFailurePenalty": 10,
+   "taskImpacts": [],
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 0,
+      "exactMatch": true
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "SpecificDay",
+      "targetDay": 7,
+      "intervalDays": 0,
+      "startDay": 0,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [],
+   "probabilities": []
+  },
+  {
+   "taskId": "Shelter_Flood_Damage",
+   "taskTitle": "[facility_name_plain] Flood Damage Relocation",
+   "taskTag": "Lodging",
+   "taskType": "Emergency",
+   "roundsRemaining": 2,
+   "taskOfficer": "LodgingMassCare",
+   "deliveryFailurePenalty": 10,
+   "taskImpacts": [
+    {
+     "type": "Satisfaction",
+     "value": 1
+    },
+    {
+     "type": "TotalTime",
+     "value": 2
+    }
+   ],
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": false,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 1,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 1,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [
+     {
+      "facilityType": "Shelter",
+      "resourceType": "Population",
+      "threshold": 0,
+      "condition": "MoreThan"
+     }
+    ],
+    "floodTile": [],
+    "floodedFacility": [
+     {
+      "facilityType": "SpecificBuildingType",
+      "comparison": "AtMost",
+      "floodTileThreshold": 4,
+      "specificBuildingType": "Shelter",
+      "specificPrebuiltType": "Community",
+      "detectionRadius": 5
+     }
+    ],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "All",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": []
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "All",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": []
+    }
+   ],
+   "probabilities": []
+  },
+  {
+   "taskId": "Shelter_FoodRequest_First",
+   "taskTitle": "[facility_name_plain] Food Request",
+   "taskTag": "Food",
+   "taskType": "Demand",
+   "roundsRemaining": 2,
+   "taskOfficer": "FoodMassCare",
+   "deliveryFailurePenalty": 15,
+   "taskImpacts": [
+    {
+     "type": "Budget",
+     "value": -1
+    },
+    {
+     "type": "Satisfaction",
+     "value": 1
+    },
+    {
+     "type": "TotalTime",
+     "value": 2
+    }
+   ],
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": false,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 1,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 0,
+      "exactMatch": true
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [
+     {
+      "facilityType": "Shelter",
+      "resourceType": "Population",
+      "threshold": 0,
+      "condition": "MoreThan"
+     }
+    ],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "PopulationBased",
+     "deliveryPercentage": 100,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": []
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "PopulationBased",
+     "deliveryPercentage": 200,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": []
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": true,
+     "immediateDelivery": true,
+     "deliveryQuantity": 100,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": -1000
+      }
+     ]
+    }
+   ],
+   "probabilities": []
+  },
+  {
+   "taskId": "Shelter_FoodRequest_Second",
+   "taskTitle": "[facility_name_plain] Follow-up Food Request",
+   "taskTag": "Food",
+   "taskType": "Demand",
+   "roundsRemaining": 2,
+   "taskOfficer": "FoodMassCare",
+   "deliveryFailurePenalty": 15,
+   "taskImpacts": [
+    {
+     "type": "Budget",
+     "value": -1
+    },
+    {
+     "type": "Satisfaction",
+     "value": 1
+    },
+    {
+     "type": "TotalTime",
+     "value": 2
+    }
+   ],
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": false,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 2,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 2,
+      "exactMatch": true
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [
+     {
+      "facilityType": "Shelter",
+      "resourceType": "Population",
+      "threshold": 0,
+      "condition": "MoreThan"
+     },
+     {
+      "facilityType": "Shelter",
+      "resourceType": "FoodPacks",
+      "threshold": 0,
+      "condition": "NeedsFood"
+     }
+    ],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "PopulationBased",
+     "deliveryPercentage": 100,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": []
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": true,
+     "immediateDelivery": true,
+     "deliveryQuantity": 100,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Shelter",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": -1000
+      }
+     ]
+    }
+   ],
+   "probabilities": []
+  },
+  {
+   "taskId": "Motel_FoodRequest_First",
+   "taskTitle": "[facility_name_plain] Food Request",
+   "taskTag": "Food",
+   "taskType": "Demand",
+   "roundsRemaining": 2,
+   "taskOfficer": "FoodMassCare",
+   "deliveryFailurePenalty": 15,
+   "taskImpacts": [
+    {
+     "type": "Budget",
+     "value": -1
+    },
+    {
+     "type": "Satisfaction",
+     "value": 1
+    },
+    {
+     "type": "TotalTime",
+     "value": 2
+    }
+   ],
+   "targetFacilityType": "Motel",
+   "isGlobalTask": false,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 1,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 0,
+      "exactMatch": true
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [
+     {
+      "facilityType": "Motel",
+      "resourceType": "Population",
+      "threshold": 0,
+      "condition": "MoreThan"
+     }
+    ],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "PopulationBased",
+     "deliveryPercentage": 100,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": []
+    },
+    {
+     "choiceId": 1,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "PopulationBased",
+     "deliveryPercentage": 200,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": []
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": true,
+     "immediateDelivery": true,
+     "deliveryQuantity": 100,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": -1000
+      }
+     ]
+    }
+   ],
+   "probabilities": []
+  },
+  {
+   "taskId": "Motel_FoodRequest_Second",
+   "taskTitle": "[facility_name_plain] Follow-up Food Request",
+   "taskTag": "Food",
+   "taskType": "Demand",
+   "roundsRemaining": 2,
+   "taskOfficer": "FoodMassCare",
+   "deliveryFailurePenalty": 15,
+   "taskImpacts": [
+    {
+     "type": "Budget",
+     "value": -1
+    },
+    {
+     "type": "Satisfaction",
+     "value": 1
+    },
+    {
+     "type": "TotalTime",
+     "value": 2
+    }
+   ],
+   "targetFacilityType": "Motel",
+   "isGlobalTask": false,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 2,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 0,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 2,
+      "exactMatch": true
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [
+     {
+      "facilityType": "Motel",
+      "resourceType": "Population",
+      "threshold": 0,
+      "condition": "MoreThan"
+     },
+     {
+      "facilityType": "Motel",
+      "resourceType": "FoodPacks",
+      "threshold": 0,
+      "condition": "NeedsFood"
+     }
+    ],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [
+    {
+     "choiceId": 0,
+     "triggersDelivery": true,
+     "immediateDelivery": false,
+     "deliveryQuantity": 0,
+     "quantityType": "PopulationBased",
+     "deliveryPercentage": 100,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": []
+    },
+    {
+     "choiceId": 2,
+     "triggersDelivery": true,
+     "immediateDelivery": true,
+     "deliveryQuantity": 100,
+     "quantityType": "Fixed",
+     "deliveryPercentage": 0,
+     "budgetDelayRounds": 0,
+     "destinationCategory": "Motel",
+     "impacts": [
+      {
+       "type": "Budget",
+       "value": -1000
+      }
+     ]
+    }
+   ],
+   "probabilities": []
+  },
+  {
+   "taskId": "Worker_BadRatio",
+   "taskTitle": "Training Recommendation Alert",
+   "taskTag": "None",
+   "taskType": "Advisory",
+   "roundsRemaining": 1,
+   "taskOfficer": "WorkforceService",
+   "deliveryFailurePenalty": 10,
+   "taskImpacts": [],
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 1,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 1,
+      "exactMatch": false
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [
+     {
+      "conditionType": "TrainedUntrainedRatio",
+      "comparison": "LessThan",
+      "targetValue": 1
+     }
+    ],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [],
+   "probabilities": []
+  },
+  {
+   "taskId": "Worker_NoAvaliable",
+   "taskTitle": "Worker Shortage Advice",
+   "taskTag": "None",
+   "taskType": "Advisory",
+   "roundsRemaining": 1,
+   "taskOfficer": "WorkforceService",
+   "deliveryFailurePenalty": 10,
+   "taskImpacts": [],
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 0,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 1,
+    "facilityStatus": 1,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [
+     {
+      "conditionType": "CurrentAvailableWorkforce",
+      "comparison": "LessThan",
+      "targetValue": 4
+     }
+    ],
+    "facilityStatus": [
+     {
+      "facilityType": "Kitchen",
+      "requiredStatus": "NeedWorker",
+      "minimumCount": 1,
+      "specificOnly": false
+     }
+    ],
+    "weather": []
+   },
+   "choices": [],
+   "probabilities": []
+  },
+  {
+   "taskId": "Worker_TooMany_Idle",
+   "taskTitle": "Workforce Optimization Alert",
+   "taskTag": "None",
+   "taskType": "Alert",
+   "roundsRemaining": 1,
+   "taskOfficer": "WorkforceService",
+   "deliveryFailurePenalty": 10,
+   "taskImpacts": [],
+   "targetFacilityType": "Shelter",
+   "isGlobalTask": true,
+   "autoSelectFacility": true,
+   "requireAllTriggers": true,
+   "counts": {
+    "round": 1,
+    "day": 1,
+    "resource": 0,
+    "probability": 0,
+    "floodTile": 0,
+    "floodedFacility": 0,
+    "budget": 0,
+    "satisfaction": 0,
+    "workforce": 1,
+    "facilityStatus": 0,
+    "weather": 0
+   },
+   "triggers": {
+    "round": [
+     {
+      "targetRound": 1,
+      "exactMatch": false
+     }
+    ],
+    "day": [
+     {
+      "conditionType": "StartsFrom",
+      "targetDay": 0,
+      "intervalDays": 0,
+      "startDay": 2,
+      "endDay": 0
+     }
+    ],
+    "resource": [],
+    "floodTile": [],
+    "floodedFacility": [],
+    "budget": [],
+    "satisfaction": [],
+    "workforce": [
+     {
+      "conditionType": "IdleUntrainedWorkerPercentage",
+      "comparison": "MoreThan",
+      "targetValue": 20
+     }
+    ],
+    "facilityStatus": [],
+    "weather": []
+   },
+   "choices": [],
+   "probabilities": []
+  }
+ ],
+ "construction": {
+  "rounds": 4,
+  "shelterCost": 2000,
+  "deconstructionRounds": 2,
+  "kitchenCost": 2000,
+  "caseworkSiteCost": 2000
+ },
+ "motel": {
+  "costPerPersonPerDay": 200
+ },
+ "workers": {
+  "untrainedCost": 200,
+  "untrainedArrivalDays": 1,
+  "trainedCost": 1000,
+  "trainedArrivalDays": 1,
+  "trainingCostPerWorker": 300,
+  "trainingDurationDays": 1
+ },
+ "satisfaction": {
+  "max": 100,
+  "min": 0,
+  "small": 5,
+  "medium": 15,
+  "large": 30,
+  "budgetSmall": 500,
+  "budgetMedium": 2000,
+  "budgetLarge": 5000
+ },
+ "clientStay": {
+  "caseworkNeedProbability": 23.4,
+  "baseCaseworkProbability": 10,
+  "probabilityGrowthFactor": 1.5,
+  "minStayRounds": 4,
+  "maxStayRounds": 8,
+  "overstayThreshold": 8
+ },
+ "consumption": {
+  "enabled": false,
+  "foodPerPersonPerNRounds": 1,
+  "roundInterval": 4,
+  "workersConsumeFoodToo": false,
+  "startingFoodPacks": 0
+ },
+ "initialState": {
+  "budget": 8000,
+  "satisfaction": 100,
+  "days": 8,
+  "roundsPerDay": 4,
+  "trained": 5,
+  "untrained": 5,
+  "dailyBudgetAddition": 2000,
+  "residentsPerCommunity": 400,
+  "requiredWorkersPerLocation": 4,
+  "weather": "HeavyRain",
+  "emergencyTotal": 2,
+  "externalRelationTotal": 5,
+  "shelterFloodComparison": "AtMost",
+  "shelterFloodThreshold": 1,
+  "shelterFloodRadius": 4,
+  "satisfactionPerTrainedWorker": 2
+ },
+ "buildGUID": "0a051b6d779244c89be9c58bcc7e88e9",
+ "eventOrder": {
+  "OnTimeSegmentChanged": [
+   "FirstDayTutorialManager.OnRoundChanged",
+   "FloodSystem.OnTimeSegmentChanged",
+   "ClientStayTracker.OnRoundChanged",
+   "TaskSystem.OnTimeSegmentAdvanced",
+   "TaskSystem.OnRoundChanged",
+   "BuildingResourceStorage.OnRoundChanged",
+   "BuildingResourceStorage.OnRoundChanged",
+   "MetricsHistoryManager.OnRoundChanged",
+   "BuildingResourceStorage.OnRoundChanged",
+   "BuildingResourceStorage.OnRoundChanged",
+   "ToastManager.OnRoundChanged"
+  ],
+  "OnDayChanged": [
+   "WeatherSystem.OnDayChanged",
+   "MotelCostManager.OnDayChanged",
+   "DailyReportData.OnDayChangedForLodgingNights",
+   "WeatherReportSystem.OnDayChangedReport",
+   "WorkerTrainingSystem.OnDayChanged",
+   "WorkerRequestSystem.OnDayChanged",
+   "BuildingResourceStorage.OnDayChanged",
+   "BuildingResourceStorage.OnDayChanged",
+   "MetricsHistoryManager.OnDayChanged",
+   "DeliveryQueuePanel.<SubscribeToEvents>b__14_0",
+   "BuildingResourceStorage.OnDayChanged",
+   "BuildingResourceStorage.OnDayChanged",
+   "Vehicle.OnDayChanged",
+   "Vehicle.OnDayChanged",
+   "Vehicle.OnDayChanged"
+  ],
+  "OnDayStarted": [
+   "TaskSystem.OnDayStarted"
+  ],
+  "OnRoundEnd": [
+   "BudgetAllocationManager.OnRoundEnd",
+   "DelayedBudgetManager.AdvanceRound",
+   "ClientRelocationHandler.HandleRoundEnd",
+   "DailyReportData.AccumulateRoundMetrics",
+   "DeliveryQueuePanel.HandleQueueChanged",
+   "BuildingStatusTableUI.RefreshAllRows"
+  ],
+  "OnSimulationEnded": [
+   "MotelCostManager.OnSimulationEnded",
+   "FirstDayTutorialManager.OnSimulationEnded",
+   "FloodSystem.OnSimulationEnded",
+   "SimulationPauseUI.OnSimulationEnded",
+   "TaskSystem.OnSimulationEndedCheckDayComplete"
+  ]
+ },
+ "relocationDelayRounds": 2,
+ "storagePrefabs": {
+  "Kitchen": {
+   "startingFoodPacks": 0,
+   "enableFoodWaste": true,
+   "consumptionEnabled": false,
+   "foodPerPersonPerNRounds": 1,
+   "consumptionRoundInterval": 4,
+   "workersConsumeFoodToo": false,
+   "fillFoodToCapacityDaily": true,
+   "foodCapacity": 200,
+   "populationCapacity": 0
+  },
+  "Shelter": {
+   "startingFoodPacks": 0,
+   "enableFoodWaste": true,
+   "consumptionEnabled": true,
+   "foodPerPersonPerNRounds": 1,
+   "consumptionRoundInterval": 2,
+   "workersConsumeFoodToo": false,
+   "fillFoodToCapacityDaily": false,
+   "foodCapacity": 200,
+   "populationCapacity": 100
+  },
+  "CaseworkSite": {
+   "startingFoodPacks": 0,
+   "enableFoodWaste": true,
+   "consumptionEnabled": false,
+   "foodPerPersonPerNRounds": 1,
+   "consumptionRoundInterval": 4,
+   "workersConsumeFoodToo": false,
+   "fillFoodToCapacityDaily": false,
+   "foodCapacity": 0,
+   "populationCapacity": 400
+  }
+ },
+ "sitePositions": {
+  "0": [
+   -7.86,
+   -3.89558077
+  ],
+  "1": [
+   6.05,
+   5
+  ],
+  "2": [
+   9.81,
+   5
+  ],
+  "3": [
+   -3,
+   -1.89
+  ],
+  "4": [
+   -5.87,
+   3.15
+  ],
+  "5": [
+   2.99,
+   3.98
+  ],
+  "6": [
+   3.02,
+   -4.89
+  ],
+  "7": [
+   -1.07,
+   -4.93
+  ],
+  "8": [
+   -1.07,
+   -1.89
+  ],
+  "9": [
+   -5.940299,
+   -3.89558077
+  ],
+  "10": [
+   6.1,
+   -5.26
+  ],
+  "11": [
+   -3.13,
+   -4.93
+  ],
+  "12": [
+   1.07,
+   3.98
+  ],
+  "13": [
+   6.05,
+   -2.73
+  ],
+  "14": [
+   -0.87,
+   3.98
+  ]
+ },
+ "buildingWorkforce": [
+  {
+   "name": "Community01",
+   "type": "Community",
+   "prebuilt": true,
+   "startingFoodPacks": 0,
+   "enableFoodWaste": true,
+   "consumptionEnabled": false,
+   "foodPerPersonPerNRounds": 1,
+   "consumptionRoundInterval": 4,
+   "workersConsumeFoodToo": false,
+   "fillFoodToCapacityDaily": false,
+   "foodCapacity": 400,
+   "populationCapacity": 400
+  },
+  {
+   "name": "Motel",
+   "type": "Motel",
+   "prebuilt": true,
+   "startingFoodPacks": 0,
+   "enableFoodWaste": true,
+   "consumptionEnabled": true,
+   "foodPerPersonPerNRounds": 1,
+   "consumptionRoundInterval": 4,
+   "workersConsumeFoodToo": false,
+   "fillFoodToCapacityDaily": false,
+   "foodCapacity": 6000,
+   "populationCapacity": 3000
+  },
+  {
+   "name": "Community03",
+   "type": "Community",
+   "prebuilt": true,
+   "startingFoodPacks": 0,
+   "enableFoodWaste": true,
+   "consumptionEnabled": false,
+   "foodPerPersonPerNRounds": 1,
+   "consumptionRoundInterval": 4,
+   "workersConsumeFoodToo": false,
+   "fillFoodToCapacityDaily": false,
+   "foodCapacity": 400,
+   "populationCapacity": 400
+  },
+  {
+   "name": "Community02",
+   "type": "Community",
+   "prebuilt": true,
+   "startingFoodPacks": 0,
+   "enableFoodWaste": true,
+   "consumptionEnabled": false,
+   "foodPerPersonPerNRounds": 1,
+   "consumptionRoundInterval": 4,
+   "workersConsumeFoodToo": false,
+   "fillFoodToCapacityDaily": false,
+   "foodCapacity": 400,
+   "populationCapacity": 400
+  }
+ ],
+ "capacities": {
+  "Shelter": {
+   "population": 100,
+   "foodPacks": 100,
+   "source": "Assets/Prefabs/Shelter.prefab BuildingResourceStorage (ResourceType 0=Population, 1=FoodPacks)"
+  },
+  "Kitchen": {
+   "population": 0,
+   "foodPacks": 200,
+   "source": "Assets/Prefabs/Kitchen.prefab"
+  },
+  "CaseworkSite": {
+   "population": 400,
+   "foodPacks": 0,
+   "source": "Assets/Prefabs/Casework.prefab"
+  }
+ },
+ "incompletePenalty": {
+  "_source": "ApplyTaskPenalties on ExpireTask/SetTaskIncomplete (Emergency/Demand tasks only). Values MEASURED from the headless logs (108/108: 'Recorded budget change: 1 - Task Incomplete Penalty from [Food Request From Community]', satisfaction -1; relocation satisfaction -1 only); the TaskData assets in the working tree list different impacts than the build applies. Shelter_FoodRequest measured on 5503 (round 28): 'Recorded budget change: 1 - Task Incomplete Penalty from [Food Request From Shelter]', satisfaction 99 -> 98.",
+  "Community_FoodRequest": {
+   "budget": 1,
+   "satisfaction": -1
+  },
+  "Community_TransportRequest": {
+   "budget": 0,
+   "satisfaction": -1
+  },
+  "Shelter_FoodRequest": {
+   "budget": 1,
+   "satisfaction": -1
+  }
+ },
+ "_enableMultipleDeliveries_source": "Assets/Scripts/Tasks/TaskData/*.asset (AgentChoice.enableMultipleDeliveries); not in the C# exporter yet",
+ "_production_removed": "roundProduction deleted by main-bugfixes d5e5f683; kitchens use fillFoodToCapacityDaily"
+}

@@ -45,6 +45,25 @@ public class ActionExecutor : MonoBehaviour
     }
 
     /// <summary>
+    /// Re-resolve scene-object references after a gym reset_game scene reload.
+    /// This ActionExecutor persists across the reload because it shares the
+    /// DontDestroyOnLoad "WebSocketManager" GameObject (preserved gym infra), so its
+    /// serialized buildingSystem/workerSystem/deliverySystem refs still point at the
+    /// destroyed old scene's systems (Unity fake-null). Called by GymServerManager's
+    /// ResetRoutine once the freshly-loaded scene has settled so the new systems exist.
+    /// </summary>
+    public void ReresolveSceneRefs()
+    {
+        buildingSystem = FindObjectOfType<BuildingSystem>();
+        workerSystem = WorkerSystem.Instance;
+        deliverySystem = FindObjectOfType<DeliverySystem>();
+
+        if (buildingSystem == null) Debug.LogError("ActionExecutor.ReresolveSceneRefs: BuildingSystem not found after reload!");
+        if (workerSystem == null) Debug.LogError("ActionExecutor.ReresolveSceneRefs: WorkerSystem not found after reload!");
+        if (deliverySystem == null) Debug.LogError("ActionExecutor.ReresolveSceneRefs: DeliverySystem not found after reload!");
+    }
+
+    /// <summary>
     /// Execute a game action
     /// Returns result indicating success/failure
     /// </summary>
@@ -104,6 +123,16 @@ public class ActionExecutor : MonoBehaviour
         // Parse building type
         BuildingType buildingType = ParseBuildingType(p.building_type);
 
+        // The price is the game's, never the client's: BuildingSystem charges its per-type field,
+        // so that is what the budget check and the log must use (BUG_REPORTS A6, B21).
+        action.cost = buildingType switch
+        {
+            BuildingType.Kitchen => buildingSystem.kitchenConstructionCost,
+            BuildingType.Shelter => buildingSystem.shelterConstructionCost,
+            BuildingType.CaseworkSite => buildingSystem.caseworkSiteConstructionCost,
+            _ => 0,
+        };
+
         // Check budget
         if (!HasBudget(action.cost))
         {
@@ -111,8 +140,13 @@ public class ActionExecutor : MonoBehaviour
             return Failure(action.action_id, $"Insufficient budget (need ${action.cost}, have ${currentBudget})");
         }
 
-        // Execute construction
-        buildingSystem.CreateBuildingImmediately(site, buildingType);
+        // Execute construction — report a real failure if nothing was built
+        // (e.g. site unavailable, no prefab) instead of silently succeeding.
+        bool built = buildingSystem.CreateBuildingImmediately(site, buildingType);
+        if (!built)
+        {
+            return Failure(action.action_id, $"Construction did not complete for {buildingType} at site {p.site_id}");
+        }
 
         if (logActions)
         {
@@ -129,6 +163,19 @@ public class ActionExecutor : MonoBehaviour
 
         if (p == null) return Failure(action.action_id, "Missing worker parameters");
         if (workerSystem == null) return Failure(action.action_id, "WorkerSystem not available");
+        if (p.quantity <= 0) return Failure(action.action_id, "Worker quantity must be positive");
+
+        // Price = quantity x the configured per-worker rate. The client's number is ignored
+        // (it used to be charged verbatim, BUG_REPORTS B21).
+        int unitCost;
+        switch (p.worker_action_type)
+        {
+            case "hire_untrained": unitCost = WorkerRequestSystem.Instance != null ? WorkerRequestSystem.Instance.untrainedWorkerCost : 100; break;
+            case "hire_trained":   unitCost = WorkerRequestSystem.Instance != null ? WorkerRequestSystem.Instance.trainedWorkerCost : 300; break;
+            case "train_untrained": unitCost = WorkerTrainingSystem.Instance != null ? WorkerTrainingSystem.Instance.trainingCostPerWorker : 500; break;
+            default: return Failure(action.action_id, $"Unknown worker action: {p.worker_action_type}");
+        }
+        action.cost = unitCost * p.quantity;
 
         if (!HasBudget(action.cost))
         {
@@ -139,64 +186,104 @@ public class ActionExecutor : MonoBehaviour
         switch (p.worker_action_type)
         {
             case "hire_untrained":
-                for (int i = 0; i < p.quantity; i++)
-                {
-                    workerSystem.CreateUntrainedWorker();
-                }
-                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, $"Hired {p.quantity} untrained workers");
+                // Route through the SAME delayed request pathway the human player uses:
+                // workers arrive as NotArrived, land in the "Pending Actions" queue, and
+                // become assignable only after untrainedArrivalDays (see WorkerRequestSystem).
+                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Hired {p.quantity} untrained workers");
 
                 if (DailyReportData.Instance != null)
+                {
                     DailyReportData.Instance.RecordWorkerRequestCostCumulative(action.cost);
+                    DailyReportData.Instance.RecordWorkerRequestCostToday(action.cost);
+                }
 
+                if (WorkerRequestSystem.Instance != null)
+                {
+                    // Emits its own "Requested … arrival Day X" toast + Pending Actions entry.
+                    WorkerRequestSystem.Instance.StartWorkerRequest(p.quantity, WorkerType.Untrained);
+                }
+                else
+                {
+                    // Headless fallback (no WorkerRequestSystem in scene): create immediately.
+                    for (int i = 0; i < p.quantity; i++)
+                        workerSystem.CreateUntrainedWorker();
+                    ToastManager.ShowToast($"Hired {p.quantity} untrained worker(s) for ${action.cost}", ToastType.Info);
+                }
 
                 if (logActions)
                 {
-                    Debug.Log($"✅ Hired {p.quantity} untrained workers (cost: ${action.cost})");
+                    Debug.Log($"✅ Requested {p.quantity} untrained workers (cost: ${action.cost})");
                 }
                 GameLogPanel.Instance?.LogPlayerAction($"Action executed: hired {p.quantity} untrained workers (cost: ${action.cost})");
                 break;
 
             case "hire_trained":
-                for (int i = 0; i < p.quantity; i++)
-                {
-                    workerSystem.CreateTrainedWorker();
-                }
-                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, $"Hired {p.quantity} trained workers");
+                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Hired {p.quantity} trained workers");
+
                 if (DailyReportData.Instance != null)
+                {
                     DailyReportData.Instance.RecordWorkerRequestCostCumulative(action.cost);
+                    DailyReportData.Instance.RecordWorkerRequestCostToday(action.cost);
+                }
+
+                if (WorkerRequestSystem.Instance != null)
+                {
+                    WorkerRequestSystem.Instance.StartWorkerRequest(p.quantity, WorkerType.Trained);
+                }
+                else
+                {
+                    for (int i = 0; i < p.quantity; i++)
+                        workerSystem.CreateTrainedWorker();
+                    ToastManager.ShowToast($"Hired {p.quantity} trained worker(s) for ${action.cost}", ToastType.Info);
+                }
 
                 if (logActions)
                 {
-                    Debug.Log($"✅ Hired {p.quantity} trained workers (cost: ${action.cost})");
+                    Debug.Log($"✅ Requested {p.quantity} trained workers (cost: ${action.cost})");
                 }
                 GameLogPanel.Instance?.LogPlayerAction($"Action executed: hired {p.quantity} trained workers (cost: ${action.cost})");
                 break;
 
             case "train_untrained":
-                // For immediate LLM execution: convert untrained to trained directly
-                // Get untrained workers
-                var allWorkers = workerSystem.GetAllWorkers();
-                var untrainedWorkers = allWorkers.Where(w => w.Type == WorkerType.Untrained && !w.IsWorking).Take(p.quantity).ToList();
+                // Match the human training pathway's selection: only FREE untrained workers
+                // are trainable (not NotArrived / already Training / working).
+                var freeUntrained = workerSystem.GetWorkersByType(WorkerType.Untrained)
+                    .FindAll(w => w.GetCurrentStatus() == "Free");
 
-                if (untrainedWorkers.Count < p.quantity)
+                if (freeUntrained.Count < p.quantity)
                 {
-                    return Failure(action.action_id, $"Insufficient untrained workers (need {p.quantity}, have {untrainedWorkers.Count})");
+                    return Failure(action.action_id, $"Insufficient untrained workers (need {p.quantity}, have {freeUntrained.Count})");
                 }
 
-                // Remove untrained workers and create trained ones
-                foreach (var worker in untrainedWorkers)
-                {
-                    workerSystem.RemoveWorker(worker);
-                    workerSystem.CreateTrainedWorker();
-                }
+                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Trained {p.quantity} workers");
 
-                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, $"Trained {p.quantity} workers");
                 if (DailyReportData.Instance != null)
+                {
                     DailyReportData.Instance.RecordWorkerTrainingCostCumulative(action.cost);
+                    DailyReportData.Instance.RecordWorkerTrainingCostToday(action.cost);
+                }
+
+                // Route through the SAME delayed training pathway the human uses: selected
+                // workers flip to Training, land in the "Pending Actions" queue, and convert
+                // to trained (plus the satisfaction bonus) after trainingDurationDays.
+                if (WorkerTrainingSystem.Instance != null)
+                {
+                    WorkerTrainingSystem.Instance.StartWorkerTraining(p.quantity);
+                }
+                else
+                {
+                    // Headless fallback: convert immediately.
+                    for (int i = 0; i < p.quantity; i++)
+                    {
+                        workerSystem.RemoveWorker(freeUntrained[i]);
+                        workerSystem.CreateTrainedWorker();
+                    }
+                    ToastManager.ShowToast($"Training {p.quantity} untrained worker(s) for ${action.cost}", ToastType.Info);
+                }
 
                 if (logActions)
                 {
-                    Debug.Log($"✅ Trained {p.quantity} workers (cost: ${action.cost})");
+                    Debug.Log($"✅ Started training {p.quantity} workers (cost: ${action.cost})");
                 }
                 GameLogPanel.Instance?.LogPlayerAction($"Action executed: trained {p.quantity} workers (cost: ${action.cost})");
                 break;
@@ -230,6 +317,19 @@ public class ActionExecutor : MonoBehaviour
 
         // Parse resource type
         ResourceType resourceType = p.resource_type == "FoodPacks" ? ResourceType.FoodPacks : ResourceType.Population;
+        if (resourceType == ResourceType.Population)
+        {
+            // People relocate on foot (main-bugfixes); vehicles are for food only. Link the walk to
+            // the open lodging task for the source so its arrival satisfies that demand.
+            if (ClientRelocationHandler.Instance == null) return Failure(action.action_id, "ClientRelocationHandler not available");
+            GameTask lodgingTask = TaskSystem.Instance?.activeTasks?.FirstOrDefault(t =>
+                t.taskTag == TaskTag.Lodging && t.status != TaskStatus.Completed && t.affectedFacility == source.name);
+            if (!ClientRelocationHandler.Instance.ExecuteToSpecificDestination(lodgingTask, source, destination, p.quantity))
+                return Failure(action.action_id, "Failed to relocate clients (no route, no people or no space at the destination)");
+            ToastManager.ShowToast($"{p.quantity} people set off from {p.source_facility} to {p.destination_facility}", ToastType.Info);
+            if (logActions) Debug.Log($"✅ Relocation on foot: {p.quantity} people from {p.source_facility} to {p.destination_facility}");
+            return Success(action.action_id);
+        }
 
         // Create delivery
         var tasks = deliverySystem.CreateDeliveryTask(source, destination, resourceType, p.quantity);
@@ -238,6 +338,27 @@ public class ActionExecutor : MonoBehaviour
         {
             return Failure(action.action_id, "Failed to create delivery (route may be blocked or no vehicles available)");
         }
+
+        // B3/D4: a population transfer should satisfy the matching open lodging demand. Link these
+        // deliveries to an active Lodging task for the SOURCE community so that, when they complete,
+        // OnDeliveryTaskCompleted credits deliveredQuantity and completes the task — instead of the
+        // people landing in the motel with no demand satisfied.
+        if (resourceType == ResourceType.Population && TaskSystem.Instance != null
+                && TaskSystem.Instance.activeTasks != null)
+        {
+            GameTask demandTask = TaskSystem.Instance.activeTasks.FirstOrDefault(t =>
+                t.taskTag == TaskTag.Lodging
+                && t.status != TaskStatus.Completed
+                && t.affectedFacility == source.name);
+            if (demandTask != null)
+            {
+                TaskSystem.Instance.LinkDeliveriesToTask(demandTask, tasks);
+                TaskSystem.Instance.SetTaskInProgress(demandTask);
+            }
+        }
+
+        string resourceLabel = p.resource_type == "FoodPacks" ? "food packs" : "people";
+        ToastManager.ShowToast($"Transferred {p.quantity} {resourceLabel} from {p.source_facility} to {p.destination_facility}", ToastType.Info);
 
         if (logActions)
         {
@@ -264,18 +385,40 @@ public class ActionExecutor : MonoBehaviour
         // Get building ID (use originalSiteId, not Unity's InstanceID)
         int buildingId = building.GetOriginalSiteId();
 
-        // Use the WorkerSystem's assignment method
-        // This method assigns workers automatically (trained first, then untrained)
-        bool success = workerSystem.TryAssignWorkersToBuilding(buildingId, p.quantity);
-
+        // Full parity with the human "set staffing" flow: release the building's current
+        // workers, then assign EXACTLY p.quantity workers (count, not workforce points).
+        // Trained-first selection; feasibility is checked before any release.
+        if (p.quantity < 0) return Failure(action.action_id, "Worker quantity cannot be negative");
+        int required = building.GetRequiredWorkforce();
+        int currentHead = workerSystem.GetWorkersByBuildingId(buildingId).Count;
+        bool locked = WorkerAssignmentTracker.Instance != null && WorkerAssignmentTracker.Instance.IsLockedForRelease(buildingId);
+        if (locked && p.quantity != currentHead)
+        {
+            return Failure(action.action_id, $"{p.building_name} is locked for this round: its {currentHead} committed workers cannot be released or added to");
+        }
+        // Same rule as the human staffing panel: assigned workforce points must EQUAL what the
+        // building needs (trained = 2 points, untrained = 1). q workers can only do that with
+        // t = required - q trained among them (BUG_REPORTS B22).
+        int trainedCount = required - p.quantity;
+        int untrainedCount = p.quantity - trainedCount;
+        if (p.quantity > 0 && (trainedCount < 0 || untrainedCount < 0))
+        {
+            return Failure(action.action_id, $"{p.quantity} workers cannot staff {p.building_name} exactly: it needs {required} workforce points (trained = 2, untrained = 1), so send between {Mathf.CeilToInt(required / 2f)} and {required} workers");
+        }
+        if (p.quantity == 0) { trainedCount = 0; untrainedCount = 0; }
+        bool success = workerSystem.TryStaffBuildingWithComposition(buildingId, trainedCount, untrainedCount);
         if (!success)
         {
-            return Failure(action.action_id, $"Failed to assign workers to {p.building_name} (insufficient available workers)");
+            return Failure(action.action_id, $"Failed to assign workers to {p.building_name}: need {trainedCount} trained + {untrainedCount} untrained free, not enough available");
         }
+        if (p.quantity > 0)
+            WorkerAssignmentTracker.Instance?.RecordAssignment(buildingId);   // agent-staffed buildings lock like human-staffed ones
 
         // Update building status after worker assignment
         // This triggers the building to check its worker count and transition to InUse if fully staffed
         building.UpdateWorkerStatus();
+
+        ToastManager.ShowToast($"Assigned {p.quantity} worker(s) to {p.building_name}", ToastType.Info);
 
         if (logActions)
         {
@@ -328,22 +471,28 @@ public class ActionExecutor : MonoBehaviour
 
     MonoBehaviour FindBuildingByName(string buildingName)
     {
-        // Try exact match first
+        // Observations now expose the human-facing display name (GetDisplayName /
+        // GetBuildingName), so match that FIRST, then fall back to the raw GameObject
+        // name for back-compat with any caller still using it.
         Building[] buildings = FindObjectsOfType<Building>();
-        Building building = buildings.FirstOrDefault(b => b.name == buildingName);
+        Building building = buildings.FirstOrDefault(b => b.GetDisplayName() == buildingName);
+        if (building != null) return building;
+        building = buildings.FirstOrDefault(b => b.name == buildingName);
         if (building != null) return building;
 
         // Try partial match
-        building = buildings.FirstOrDefault(b => b.name.Contains(buildingName));
+        building = buildings.FirstOrDefault(b => b.GetDisplayName().Contains(buildingName) || b.name.Contains(buildingName));
         if (building != null) return building;
 
-        // Check prebuilt buildings
+        // Check prebuilt buildings (display name first, then GameObject name)
         PrebuiltBuilding[] prebuilt = FindObjectsOfType<PrebuiltBuilding>();
-        PrebuiltBuilding prebuiltBuilding = prebuilt.FirstOrDefault(p => p.name == buildingName);
+        PrebuiltBuilding prebuiltBuilding = prebuilt.FirstOrDefault(p => p.GetBuildingName() == buildingName);
+        if (prebuiltBuilding != null) return prebuiltBuilding;
+        prebuiltBuilding = prebuilt.FirstOrDefault(p => p.name == buildingName);
         if (prebuiltBuilding != null) return prebuiltBuilding;
 
         // Try partial match for prebuilt
-        prebuiltBuilding = prebuilt.FirstOrDefault(p => p.name.Contains(buildingName));
+        prebuiltBuilding = prebuilt.FirstOrDefault(p => (p.GetBuildingName() ?? "").Contains(buildingName) || p.name.Contains(buildingName));
         return prebuiltBuilding;
     }
 
@@ -360,8 +509,11 @@ public class ActionExecutor : MonoBehaviour
 
     bool HasBudget(int cost)
     {
+        // Honors the no-debt policy: when SatisfactionAndBudget.allowNegativeBudget is
+        // false (default), discretionary actions (construction/hire/train) are rejected
+        // if the budget can't cover them; when true, they may drive the budget negative.
         return SatisfactionAndBudget.Instance != null &&
-               SatisfactionAndBudget.Instance.GetCurrentBudget() >= cost;
+               SatisfactionAndBudget.Instance.WouldAllowSpend(cost);
     }
 
     ActionExecutionResult Success(string actionId)

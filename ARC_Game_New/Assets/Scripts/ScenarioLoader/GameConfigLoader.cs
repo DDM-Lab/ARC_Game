@@ -7,8 +7,9 @@ using UnityEngine.Networking;
 public class GameConfigLoader : MonoBehaviour
 {
     [Header("Google Sheets Config")]
-    [Tooltip("Publish your Google Sheet as CSV and paste the URL here")]
-    public string googleSheetsCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTGcKtnKuRq1dS-ZMMYKmepAEsfeaYhKlt8IMSkZ1xe-5_JApbSfTokI_VHFS8v0g3XIHWHWEPSdSzS/pub?gid=0&single=true&output=csv";
+    [Tooltip("CSV URL. A root-relative path like \"/sheet.csv\" is fetched same-origin " +
+             "(no CORS) — served on Talos by an Apache Alias, and locally by the dev proxy.")]
+    public string googleSheetsCsvUrl = "/sheet.csv";
 
     [Header("Map Config Server")]
     [Tooltip("GET endpoint served by map_config_server.py  (leave blank to skip)")]
@@ -38,6 +39,10 @@ public class GameConfigLoader : MonoBehaviour
     public int loadedInitialShelterCapacity = 10;
     public int loadedInitialKitchenCapacity = 10;
     public int loadedInitialCaseworkCapacity = 10;
+    public int loadedInitialKitchenFoodCapacity = 200;   // FoodPacks a kitchen can hold (prefab value)
+    public int loadedInitialShelterFoodCapacity = 100;   // FoodPacks a shelter can hold (prefab value)
+    /// <summary>Which source the parameters in effect came from (BUG_REPORTS B35).</summary>
+    public string ConfigSource { get; private set; } = "fallbacks";
     public int loadedInitialRequiredWorkers = 4;
     public float loadedInitialSunnyExpansionRate = 0f;
     public float loadedInitialSunnySpreadChanceMultiplier = 0.5f;
@@ -63,10 +68,9 @@ public class GameConfigLoader : MonoBehaviour
 
 
     private bool configLoaded = false;
-    public TaskData dailyBudgetAlloc;
-    public TaskData shelterFloodDmg;
-    public TaskData budgetAdvisoryER;
-    public TaskData budgetEmergencyER;
+    // (The sheet rows that used to be pushed into ScriptableObjects from here -- daily allocation,
+    // food-demand probability, shelter flood-damage trigger, external-relation frequency -- are now
+    // applied where they are consumed: TaskSystem / TaskDatabases read GameDataManager. BUG_REPORTS B35.)
 
     // ── Map config (new) ──────────────────────────────────────────────────────
     private MapConfig loadedMapConfig;
@@ -96,51 +100,96 @@ public class GameConfigLoader : MonoBehaviour
         StartCoroutine(LoadMapConfigFromServer());
     }
     
+    /// <summary>
+    /// Parameter source chain (BUG_REPORTS B35): ARC_PARAM_CONFIG (a CSV path; RL runs vary parameters
+    /// per run without a rebuild) -> the sheet URL (a root-relative /sheet.csv is only meaningful inside
+    /// a browser, so it is skipped elsewhere) -> StreamingAssets/game_param_config.csv (editor,
+    /// headless, any offline build) -> the serialized fallback fields. One source wins; ConfigSource
+    /// names it and GameDataManager logs every value in effect.
+    /// </summary>
     IEnumerator LoadConfigFromSheet()
     {
-        string csvData = "";
-        string path = System.IO.Path.Combine(Application.streamingAssetsPath, "game_param_config.csv");
-
-    #if UNITY_EDITOR
-        if (System.IO.File.Exists(path))
+        string envPath = System.Environment.GetEnvironmentVariable("ARC_PARAM_CONFIG");
+        if (!string.IsNullOrEmpty(envPath))
         {
-            csvData = System.IO.File.ReadAllText(path);
-            Debug.Log("[GameConfigLoader] Successfully read CSV from StreamingAssets using File IO.");
+            string text = null;
+            try { text = System.IO.File.ReadAllText(envPath); }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"GameConfigLoader: ARC_PARAM_CONFIG='{envPath}' could not be read - {ex.Message}");
+            }
+            if (text != null)
+            {
+                ParseCSV(text);
+                FinishLoad("ARC_PARAM_CONFIG=" + envPath);
+                yield break;
+            }
         }
-        else
-        {
-            Debug.LogError($"[GameConfigLoader] ERROR: CSV file does NOT exist at path: {path}");
-        }
-        yield return null; 
 
-    #else
-        using (UnityWebRequest request = UnityWebRequest.Get(path))
+        bool rootRelative = !string.IsNullOrEmpty(googleSheetsCsvUrl) && googleSheetsCsvUrl.StartsWith("/");
+        bool inBrowser = !string.IsNullOrEmpty(Application.absoluteURL);
+        if (!string.IsNullOrEmpty(googleSheetsCsvUrl) && (!rootRelative || inBrowser))
         {
+            // A root-relative URL ("/sheet.csv") is fetched same-origin -- no CORS, no hardcoded
+            // host; resolve it against the page origin so UnityWebRequest gets a full URL.
+            string resolvedUrl = googleSheetsCsvUrl;
+            if (rootRelative)
+            {
+                try
+                {
+                    var pageUri = new System.Uri(Application.absoluteURL);
+                    resolvedUrl = pageUri.GetLeftPart(System.UriPartial.Authority) + resolvedUrl;
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"GameConfigLoader: could not resolve relative CSV URL against " +
+                                     $"'{Application.absoluteURL}' - {ex.Message}. Using as-is.");
+                }
+            }
+            // "?" when the URL has no query yet, "&" to extend an existing one.
+            string cacheBustSep = resolvedUrl.Contains("?") ? "&" : "?";
+            string urlWithCacheBuster = resolvedUrl + cacheBustSep + "t=" + System.DateTime.Now.Ticks;
+            if (showDebugInfo)
+                Debug.Log($"GameConfigLoader: Fetching config from {resolvedUrl} ...");
+            using (UnityWebRequest request = UnityWebRequest.Get(urlWithCacheBuster))
+            {
+                request.timeout = 5;
+                yield return request.SendWebRequest();
+                if (request.result == UnityWebRequest.Result.Success)
+                {
+                    ParseCSV(request.downloadHandler.text);
+                    FinishLoad(resolvedUrl);
+                    yield break;
+                }
+                Debug.LogWarning($"GameConfigLoader: Failed to load config from {resolvedUrl} - {request.error}. Trying the local copy.");
+            }
+        }
+
+        // The copy shipped with the build (kept identical to the deployed sheet).
+        string localPath = Application.streamingAssetsPath + "/game_param_config.csv";
+        string localUrl = localPath.Contains("://") ? localPath : "file://" + localPath;
+        using (UnityWebRequest request = UnityWebRequest.Get(localUrl))
+        {
+            request.timeout = 5;
             yield return request.SendWebRequest();
-
             if (request.result == UnityWebRequest.Result.Success)
             {
-                csvData = request.downloadHandler.text;
-                Debug.Log("[GameConfigLoader] Successfully loaded CSV via WebRequest.");
+                ParseCSV(request.downloadHandler.text);
+                FinishLoad(localPath);
+                yield break;
             }
-            else
-            {
-                Debug.LogError($"[GameConfigLoader] WebRequest failed: {request.error} | Path: {path}");
-            }
+            Debug.LogWarning($"GameConfigLoader: Failed to load config - {request.error} - and no readable local copy at {localPath}. Using the serialized fallback values.");
         }
-    #endif
-
-        if (!string.IsNullOrEmpty(csvData))
-        {
-            ParseCSV(csvData);
-        }
-        else
-        {
-            Debug.LogWarning("[GameConfigLoader] CSV string was empty! Keeping default values.");
-            configLoaded = true;
-        }
+        FinishLoad("fallbacks");
     }
-    
+
+    void FinishLoad(string source)
+    {
+        ConfigSource = source;
+        configLoaded = true;
+        Debug.Log($"GameConfigLoader: parameters from {source}");
+    }
+
     /// <summary>
     /// Parse CSV data (simple implementation)
     /// Expected format: parameter,value
@@ -152,8 +201,9 @@ public class GameConfigLoader : MonoBehaviour
         
         foreach (string line in lines)
         {
-            if (string.IsNullOrWhiteSpace(line) || line.ToLower().Contains("parameter"))
-                continue;
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (line.Split(',')[0].Trim().Equals("parameter", System.StringComparison.OrdinalIgnoreCase))
+                continue;   // the header row only (a row whose description merely mentions 'parameter' must not be skipped)
             
             string[] parts = line.Split(',');
             if (parts.Length < 2) continue;
@@ -234,6 +284,16 @@ public class GameConfigLoader : MonoBehaviour
                 if (int.TryParse(value, out int caseworkCapac))
                     loadedInitialCaseworkCapacity = caseworkCapac;
             }
+            else if (parameter.Equals("initialKitchenFoodCapacity", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int kitchenFood))
+                    loadedInitialKitchenFoodCapacity = kitchenFood;
+            }
+            else if (parameter.Equals("initialShelterFoodCapacity", System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(value, out int shelterFood))
+                    loadedInitialShelterFoodCapacity = shelterFood;
+            }
             else if (parameter.Equals("initialWorkerUnitsNeededPerLocation", System.StringComparison.OrdinalIgnoreCase))
             {
                 if (int.TryParse(value, out int reqWorkers))
@@ -241,60 +301,57 @@ public class GameConfigLoader : MonoBehaviour
             }
             else if (parameter.Equals("initialSunnyFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float sunnyExpRt))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sunnyExpRt))
                     loadedInitialSunnyExpansionRate = sunnyExpRt;
             }
             else if (parameter.Equals("initialSunnyFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float sunnySCM))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sunnySCM))
                     loadedInitialSunnySpreadChanceMultiplier = sunnySCM;
             }
             else if (parameter.Equals("initialSmallRainFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float smallRainExpRt))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float smallRainExpRt))
                     loadedInitialSmallRainExpansionRate = smallRainExpRt;
             }
             else if (parameter.Equals("initialSmallRainFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float smallRainSCM))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float smallRainSCM))
                     loadedInitialSmallRainSpreadChanceMultiplier = smallRainSCM;
             }
             else if (parameter.Equals("initialMediumRainFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float mediumRainExpRt))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float mediumRainExpRt))
                     loadedInitialMediumRainExpansionRate = mediumRainExpRt;
             }
             else if (parameter.Equals("initialMediumRainFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float mediumRainSCM))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float mediumRainSCM))
                     loadedInitialMediumRainSpreadChanceMultiplier = mediumRainSCM;
             }
             else if (parameter.Equals("initialHeavyRainFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float heavyRainExpRt))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float heavyRainExpRt))
                     loadedInitialHeavyRainExpansionRate = heavyRainExpRt;
             }
             else if (parameter.Equals("initialHeavyRainFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float heavyRainSCM))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float heavyRainSCM))
                     loadedInitialHeavyRainSpreadChanceMultiplier = heavyRainSCM;
             }
             else if (parameter.Equals("initialStormFloodExpansionRateMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float stormExpRt))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float stormExpRt))
                     loadedInitialStormExpansionRate = stormExpRt;
             }
             else if (parameter.Equals("initialStormFloodSpreadChanceMultiplier", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (float.TryParse(value, out float stormSCM))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float stormSCM))
                     loadedInitialStormSpreadChanceMultiplier = stormSCM;
             }
             else if (parameter.Equals("initialFoodDemandFrequency", System.StringComparison.OrdinalIgnoreCase))
             {
-                // Consumed by CommunityFoodDepletionManager as its per-community, per-round chance
-                // of a food-depletion event (which is what actually spawns a Community_FoodRequest
-                // task) — see GetInitialFoodDemandFrequency() below.
-                if (float.TryParse(value, out float foodDemandFreq))
+                if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float foodDemandFreq))
                     loadedInitialFoodDemandFrequency = Mathf.Clamp(foodDemandFreq, 0f, 1f);
             }
             else if (parameter.Equals("initialShelterFloodDamageComparison", System.StringComparison.OrdinalIgnoreCase))
@@ -316,7 +373,7 @@ public class GameConfigLoader : MonoBehaviour
             else if (parameter.Equals("initialShelterFloodDamageFloodDetectionRange", System.StringComparison.OrdinalIgnoreCase))
             {
                 if (int.TryParse(value, out int floodDetectionRange))
-                    loadedInitialShelterFloodThreshold = floodDetectionRange;
+                    loadedInitialShelterFloodRadius = floodDetectionRange;   // was overwriting the threshold (BUG_REPORTS B30)
             }
             else if (parameter.Equals("initialERVCount", System.StringComparison.OrdinalIgnoreCase))
             {
@@ -335,18 +392,42 @@ public class GameConfigLoader : MonoBehaviour
             }
             
         }
-        ApplyInitBudgetAllocation();
-        ApplyInitShelterFloodDamage();
-        ApplyInitExternalRelationFrequency();
-        
-        configLoaded = true;
     }
 
     // ── Map Config from server (new) ──────────────────────────────────────────
 
+    // ── Map provenance (read by WebSocketManager for the hello frame) ─────────
+    // Maps are served OUTSIDE the router (see mapConfigServerUrl) so the router stays an
+    // LLM/session concern and a partner can expose a map derived from proprietary data.
+    // The cost of that separation is that a session log otherwise has NO record of which
+    // map was actually in play — and a failed fetch silently falls back to the default
+    // scene layout, quietly changing the experimental condition. These fields make the map
+    // identity reportable, so the corpus is self-describing when transcripts are merged.
+    public static string MapUrl { get; private set; } = "";
+    public static string MapHash { get; private set; } = "";
+    /// <summary>"loaded" (server map applied) | "default" (no URL configured — intentional)
+    /// | "unreachable" (URL set, fetch failed) | "invalid" (fetched but unusable).</summary>
+    public static string MapStatus { get; private set; } = "default";
+    /// <summary>Set when strictMap is on in config.json AND the map could not be applied.
+    /// A study deployment should refuse to run rather than silently use another map.</summary>
+    public static bool MapFatal { get; private set; } = false;
+
+    static string ShortHash(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        using (var md5 = System.Security.Cryptography.MD5.Create())
+        {
+            byte[] h = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(s));
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < 6; i++) sb.Append(h[i].ToString("x2"));
+            return sb.ToString();
+        }
+    }
+
     IEnumerator LoadMapConfigFromServer()
     {
         // Override mapConfigServerUrl from config.json if present
+        bool strictMap = false;
         string configPath = Application.streamingAssetsPath + "/config.json";
         using (UnityWebRequest cfgReq = UnityWebRequest.Get(configPath))
         {
@@ -357,13 +438,16 @@ public class GameConfigLoader : MonoBehaviour
                 var cfg = JsonUtility.FromJson<AppConfig>(cfgReq.downloadHandler.text);
                 if (!string.IsNullOrEmpty(cfg?.mapConfigUrl))
                     mapConfigServerUrl = cfg.mapConfigUrl;
+                strictMap = cfg != null && cfg.strictMap;
             }
         }
+        MapUrl = mapConfigServerUrl ?? "";
 
         if (string.IsNullOrEmpty(mapConfigServerUrl))
         {
             if (showDebugInfo)
                 Debug.Log("GameConfigLoader: No map config URL set — using default scene layout.");
+            MapStatus = "default";
             mapConfigLoaded = true;
             yield break;
         }
@@ -391,23 +475,38 @@ public class GameConfigLoader : MonoBehaviour
                     {
                         loadedMapConfig = parsed;
                         mapConfigSuccess = true;
-                        if (showDebugInfo)
-                            Debug.Log($"GameConfigLoader: Map config loaded (schema v{parsed.schemaVersion}, " +
-                                      $"{parsed.objects?.Count ?? 0} objects).");
+                        MapStatus = "loaded";
+                        MapHash = ShortHash(json);
+                        Debug.Log($"GameConfigLoader: Map config loaded (schema v{parsed.schemaVersion}, "
+                                  + $"{parsed.objects?.Count ?? 0} objects, hash {MapHash}) from {mapConfigServerUrl}");
                     }
                     else
                     {
+                        MapStatus = "invalid";
                         Debug.LogWarning("GameConfigLoader: Map config JSON was empty or invalid. Using default layout.");
                     }
                 }
                 catch (System.Exception ex)
                 {
+                    MapStatus = "invalid";
                     Debug.LogWarning($"GameConfigLoader: Failed to parse map config JSON — {ex.Message}. Using default layout.");
                 }
             }
             else
             {
+                MapStatus = "unreachable";
                 Debug.LogWarning($"GameConfigLoader: Could not reach map config server ({request.error}). Using default scene layout.");
+            }
+
+            // Study mode: a map that was CONFIGURED but could not be applied means this run
+            // would silently execute a different condition than intended. Refuse instead.
+            if (strictMap && MapStatus != "loaded")
+            {
+                MapFatal = true;
+                Debug.LogError($"[GameConfigLoader] STRICT MAP: configured map '{mapConfigServerUrl}' "
+                    + $"could not be applied (status={MapStatus}). This run would use the DEFAULT layout "
+                    + "instead of the intended map — refusing to start. Fix the map endpoint, or unset "
+                    + "strictMap in config.json.");
             }
 
             mapConfigLoaded = true;
@@ -431,87 +530,6 @@ public class GameConfigLoader : MonoBehaviour
     /// </summary>
     public MapConfig GetMapConfig() => loadedMapConfig;
 
-
-    void ApplyInitBudgetAllocation()
-    {
-        if (dailyBudgetAlloc != null)
-        {
-            dailyBudgetAlloc.impacts[0].value = loadedInitialBudgetDailyAllocs;
-            dailyBudgetAlloc.agentMessages[1].messageText = $"We received an additional ${loadedInitialBudgetDailyAllocs} in donations overnight, which can now be allocated to supply procurement or transport..";
-            dailyBudgetAlloc.agentChoices[0].choiceImpacts[0].value = loadedInitialBudgetDailyAllocs;
-            dailyBudgetAlloc.agentChoices[0].choiceText = $"Receive ${loadedInitialBudgetDailyAllocs} Budget";
-            
-            if (showDebugInfo)
-                Debug.Log($"Applied {loadedInitialBudgetDailyAllocs} to SO");
-        }
-    }
-
-    // Community food demand is no longer probability-trigger-driven — see
-    // CommunityFoodDepletionManager, which reads GetInitialFoodDemandFrequency() directly as its
-    // per-round depletion chance.
-
-void ApplyInitExternalRelationFrequency()
-{
-    if (budgetAdvisoryER == null && budgetEmergencyER == null) return;
-    int advisoryInterval;
-    int emergencyInterval;
-    if (budgetAdvisoryER != null && budgetEmergencyER != null)
-    {
-        bool advisoryGetsLower = new System.Random().Next(0, 2) == 0;
-        
-        int smallHalf = loadedInitialExternalRelationFrequency / 2;
-        int bigHalf = loadedInitialExternalRelationFrequency - smallHalf;
-
-        advisoryInterval = advisoryGetsLower ? smallHalf : bigHalf;
-        emergencyInterval = advisoryGetsLower ? bigHalf : smallHalf;
-    }
-    else
-    {
-        advisoryInterval = loadedInitialExternalRelationFrequency;
-        emergencyInterval = loadedInitialExternalRelationFrequency;
-    }
-    if (budgetAdvisoryER != null) ApplyTrigger(budgetAdvisoryER, advisoryInterval);
-    if (budgetEmergencyER != null) ApplyTrigger(budgetEmergencyER, emergencyInterval);
-}
-
-void ApplyTrigger(TaskData task, int interval)
-{
-    DayTrigger trigger = new DayTrigger
-    {
-        conditionType = DayTrigger.DayConditionType.DayInterval,
-        intervalDays = interval,
-        startDay = 2
-    };
-
-    if (task.dayTriggers.Count == 0 || task.dayTriggers[0] == null)
-    {
-        task.dayTriggers.Add(trigger);
-    }
-    else
-    {
-        task.dayTriggers[0] = trigger;
-    }
-}
-    void ApplyInitShelterFloodDamage()
-    {
-        if (shelterFloodDmg == null) return;
-
-        FloodedFacilityTrigger trigger = new FloodedFacilityTrigger
-        {
-            facilityType = FloodedFacilityTrigger.FacilityFloodType.SpecificBuildingType,
-            specificBuildingType = BuildingType.Shelter,
-            specificPrebuiltType = PrebuiltBuildingType.Community,
-
-            comparison = loadedInitialShelterFloodComparison,
-            floodTileThreshold = loadedInitialShelterFloodThreshold,
-            detectionRadius = loadedInitialShelterFloodRadius
-        };
-
-        if (shelterFloodDmg.floodedFacilityTriggers.Count != 0)
-            shelterFloodDmg.floodedFacilityTriggers[0] = trigger;
-        else
-            shelterFloodDmg.floodedFacilityTriggers.Add(trigger);
-    }
 
     /// <summary>
     /// Check if config is ready
@@ -578,6 +596,8 @@ void ApplyTrigger(TaskData task, int interval)
     {
         return loadedInitialCaseworkCapacity;
     }
+    public int GetInitialKitchenFoodCapacity() => loadedInitialKitchenFoodCapacity;
+    public int GetInitialShelterFoodCapacity() => loadedInitialShelterFoodCapacity;
     public int GetInitialNeededWorkersPerLoc()
     {
         return loadedInitialRequiredWorkers;

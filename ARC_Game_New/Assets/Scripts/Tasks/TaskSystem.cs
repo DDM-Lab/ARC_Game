@@ -112,6 +112,9 @@ public class TaskImpact
 public class GameTask
 {
     public int taskId;
+    // Stable cross-regeneration id from TaskData.taskId; the transient int taskId is
+    // reassigned each round for recurring tasks (e.g. "Daily Budget Allocation").
+    public string stableTaskId;
     public string taskTitle;
     public TaskType taskType;
     public TaskStatus status;
@@ -152,6 +155,14 @@ public class GameTask
     public float deliveryTimeLimit = 300f;
     public float deliveryFailureSatisfactionPenalty = 10f;
     public List<int> linkedDeliveryTaskIds = new List<int>(); // support multiple linked delivery tasks
+
+    [Header("Demand / Fulfillment accounting (people-based)")]
+    // demandQuantity = number of people this Food/Lodging task needs served (set at creation).
+    // deliveredQuantity = number actually delivered/housed so far (accumulated by the immediate
+    // and deferred relocation/delivery paths). RewardMetricsTracker credits resolved/fulfilled
+    // by these counts so the metric reflects PEOPLE HOUSED, not choices clicked. See B1/B2.
+    public int demandQuantity = 0;
+    public int deliveredQuantity = 0;
 
     public float timeCreated;
     public bool isExpired 
@@ -437,9 +448,75 @@ public class TaskSystem : MonoBehaviour
     // Task ID counter
     private int nextTaskId = 1;
 
+    /// <summary>
+    /// Snapshot support. GameTask is [System.Serializable] with public fields and its one
+    /// unserialisable member (multiAgentProposal) is already [NonSerialized], so the task
+    /// lists round-trip through JsonUtility via a wrapper.
+    ///
+    /// CAVEAT: GameTask.taskImage is a Sprite, i.e. a UnityEngine.Object reference. It does
+    /// not survive serialisation across a scene reload and comes back null. That is
+    /// cosmetic (UI art only, never read by the gym or the scoring), but it is a real gap
+    /// rather than something the tests happen to miss.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public List<GameTask> activeTasks = new List<GameTask>();
+        public List<GameTask> completedTasks = new List<GameTask>();
+        public int nextTaskId;
+        public List<int> deliveryIds = new List<int>();
+        public List<int> deliveryTaskIds = new List<int>();
+
+        // GENERATION-GATING STATE. Not part of any task object, and reset by a scene
+        // rebuild, so without it a restored game re-fires Alerts that had already been
+        // shown and re-frontloads Emergencies. This is what made a restored game grow an
+        // extra "Workforce Optimization Alert" two rounds after load while every visible
+        // field matched.
+        public List<string> shownAlertIds = new List<string>();
+        public int currEmergencyTaskCount;
+        public int lastEmergencyTaskRound;
+        public int currExternalRelationCount;
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot
+        {
+            nextTaskId = nextTaskId,
+            currEmergencyTaskCount = currEmergencyTaskCount,
+            lastEmergencyTaskRound = lastEmergencyTaskRound,
+            currExternalRelationCount = currExternalRelationCount,
+        };
+        s.shownAlertIds.AddRange(shownAlertIds);
+        s.activeTasks.AddRange(activeTasks);
+        s.completedTasks.AddRange(completedTasks);
+        foreach (var kv in deliveryToTaskMap) { s.deliveryIds.Add(kv.Key); s.deliveryTaskIds.Add(kv.Value); }
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        activeTasks.Clear(); activeTasks.AddRange(s.activeTasks);
+        completedTasks.Clear(); completedTasks.AddRange(s.completedTasks);
+        nextTaskId = s.nextTaskId;
+        currEmergencyTaskCount = s.currEmergencyTaskCount;
+        lastEmergencyTaskRound = s.lastEmergencyTaskRound;
+        currExternalRelationCount = s.currExternalRelationCount;
+        shownAlertIds.Clear();
+        foreach (var id in s.shownAlertIds) shownAlertIds.Add(id);
+        deliveryToTaskMap.Clear();
+        for (int i = 0; i < s.deliveryIds.Count && i < s.deliveryTaskIds.Count; i++)
+            deliveryToTaskMap[s.deliveryIds[i]] = s.deliveryTaskIds[i];
+    }
+
     public int numEmergencyTasks = 4;
     public int currEmergencyTaskCount = 0;
     public int lastEmergencyTaskRound = 0;
+    // initialExternalRelationFrequency: total external-relation contacts per game (Storm Funding
+    // Advisory + Emergency Budget Crisis; the sheet's own text excludes the daily allocation). BUG_REPORTS B35.
+    public int numExternalRelationTasks = 3;
+    public int currExternalRelationCount = 0;
 
     // Events
     public event Action<GameTask> OnTaskCreated;
@@ -474,6 +551,7 @@ public class TaskSystem : MonoBehaviour
 
     void Start()
     {
+        
         StartCoroutine(InitializeWithCentralConfig());
         // Subscribe to global clock for round-based countdown
         if (GlobalClock.Instance != null)
@@ -484,6 +562,8 @@ public class TaskSystem : MonoBehaviour
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
+            // PARITY BUILD (ledger D15): NOT subscribed. Upstream has no start-of-day generation
+            // pass at all; it generates only from OnTimeSegmentChanged.
             GlobalClock.Instance.OnSimulationEnded += OnSimulationEndedCheckDayComplete;
         }
 
@@ -495,6 +575,7 @@ public class TaskSystem : MonoBehaviour
         if (deliverySystem != null)
         {
             deliverySystem.OnTaskCompleted += OnDeliveryTaskCompleted;
+            deliverySystem.OnTaskCancelled += OnDeliveryTaskCancelled;
             Debug.Log("TaskSystem subscribed to DeliverySystem events");
         }
         else
@@ -506,6 +587,7 @@ public class TaskSystem : MonoBehaviour
         if (showDebugInfo)
             Debug.Log("Task System initialized");
     }
+    
 
     IEnumerator InitializeWithCentralConfig()
     {
@@ -514,6 +596,7 @@ public class TaskSystem : MonoBehaviour
             yield return null;
         }
         numEmergencyTasks = GameDataManager.Instance.InitialEmergencyTaskFrequency;
+        numExternalRelationTasks = GameDataManager.Instance.InitialExternalRelationFrequency;
     }
 
     private int CalculateEmergencyInterval()
@@ -692,6 +775,19 @@ public class TaskSystem : MonoBehaviour
             Debug.Log($"[TaskSystem] Delivery {deliveryTask.taskId} completed for task '{parentTask.taskTitle}'" +
                     (wasAlreadyCompleted ? " (task was already closed)" : ""));
 
+        // People-based fulfillment (B2/D4): a completed population delivery housed deliveryTask.quantity
+        // people — credit it to the parent task even if the task was already closed (late delivery still
+        // physically relocated people; RecordTaskResolution already ran, so also credit the tracker directly).
+        // Credit what LANDED (Vehicle.UnloadCargo sets deliveredQuantity), never the nominal load:
+        // cargo that did not fit went back to the source (BUG_REPORTS B1).
+        int landed = deliveryTask.deliveredQuantity;
+        if (deliveryTask.cargoType == ResourceType.Population && landed > 0)
+        {
+            parentTask.deliveredQuantity += landed;
+            if (wasAlreadyCompleted)
+                RewardMetricsTracker.Instance?.AddLateDelivery(parentTask, landed);
+        }
+
         // If the parent task is still in progress, check if all its deliveries are done
         if (!wasAlreadyCompleted && parentTask.status == TaskStatus.InProgress)
         {
@@ -707,6 +803,70 @@ public class TaskSystem : MonoBehaviour
         {
             GameLogPanel.Instance?.LogTaskEvent(
                 $"Late delivery {deliveryTask.taskId} arrived for closed task '{parentTask.taskTitle}'");
+
+            // Fix 2a: a food delivery that lands after its task closed UNFULFILLED still fed people —
+            // credit it retroactively. Population (lodging) already gets this via deliveredQuantity +
+            // AddLateDelivery above; food had no late-credit path, so a delivery completing after the
+            // task's short window expired was silently lost. Gate on: FoodPacks cargo, all linked
+            // deliveries now done (fires once, on the last one), and the task closed unfulfilled
+            // (Incomplete/Expired) — NOT Completed, so this can never double-credit a task that Fix 1
+            // already completed on time (which sets status Completed).
+            if (deliveryTask.cargoType == ResourceType.FoodPacks
+                && (parentTask.status == TaskStatus.Incomplete || parentTask.status == TaskStatus.Expired)
+                && AreAllLinkedDeliveriesComplete(parentTask))
+            {
+                RewardMetricsTracker.Instance?.AddLateFoodTask(parentTask);
+                if (showDebugInfo)
+                    Debug.Log($"[TaskSystem] Late food delivery credited for closed task '{parentTask.taskTitle}'");
+            }
+        }
+    }
+
+    /// <summary>
+    /// A lodging task replaced by an emergency task for the same facility. It is closed properly
+    /// (status, completedTasks, OnTaskExpired) so its linked deliveries and the UI see it end. Its
+    /// demand is not recorded -- the emergency task now carries this facility's demand -- and no
+    /// penalty applies (BUG_REPORTS A5).
+    /// </summary>
+    void SupersedeTask(GameTask stale)
+    {
+        stale.status = TaskStatus.Expired;
+        activeTasks.Remove(stale);
+        completedTasks.Add(stale);
+        OnTaskExpired?.Invoke(stale);
+    }
+
+    /// <summary>The active or closed task that owns this delivery, or null.</summary>
+    public GameTask FindTaskLinkedToDelivery(int deliveryTaskId)
+    {
+        return activeTasks.Concat(completedTasks).FirstOrDefault(t =>
+            t.linkedDeliveryTaskIds != null && t.linkedDeliveryTaskIds.Contains(deliveryTaskId));
+    }
+
+    /// <summary>
+    /// A linked delivery ended without landing cargo (empty source, cancel, flood). Unlink it; if
+    /// nothing else is in flight the parent either completes on what earlier trips landed or fails.
+    /// </summary>
+    void OnDeliveryTaskCancelled(DeliveryTask deliveryTask, string reason)
+    {
+        GameTask parentTask = activeTasks.FirstOrDefault(t =>
+            t.linkedDeliveryTaskIds != null &&
+            t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
+        if (parentTask == null) return;
+        parentTask.linkedDeliveryTaskIds.Remove(deliveryTask.taskId);
+        if (showDebugInfo)
+            Debug.Log($"[TaskSystem] Delivery {deliveryTask.taskId} cancelled ({reason}) for task '{parentTask.taskTitle}'");
+        if (parentTask.status != TaskStatus.InProgress) return;
+        if (parentTask.linkedDeliveryTaskIds.Count == 0)
+        {
+            if (parentTask.deliveredQuantity > 0)
+                CompleteTask(parentTask);   // earlier trips landed people; resolution credits min(delivered, demand)
+            else
+                HandleDeliveryFailure(parentTask, $"Delivery cancelled: {reason}");
+        }
+        else if (AreAllLinkedDeliveriesComplete(parentTask))
+        {
+            CompleteTask(parentTask);
         }
     }
 
@@ -738,11 +898,14 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            // Delivery-failure satisfaction penalty disabled game-wide — this is the single
-            // shared path every delivery failure (flood-blocked vehicle, overnight food
-            // cancellation, etc.) goes through, so disabling it here covers all of them.
-            // task.deliveryFailureSatisfactionPenalty is left intact on GameTask/TaskData so
-            // this can be restored by re-enabling the block below.
+            // The demand this task carried is resolved (unfulfilled) -- it must be counted, not dropped.
+            RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
+
+            // Delivery-failure satisfaction penalty disabled game-wide (main-bugfixes
+            // aa423cad) -- this is the single shared path every delivery failure
+            // (flood-blocked vehicle, overnight food cancellation, ...) goes through, so
+            // disabling it here covers all of them. deliveryFailureSatisfactionPenalty is
+            // left intact on GameTask/TaskData so it can be restored by re-enabling this.
             //
             // if (SatisfactionAndBudget.Instance != null && task.deliveryFailureSatisfactionPenalty > 0)
             // {
@@ -784,9 +947,12 @@ public class TaskSystem : MonoBehaviour
         DeliverySystem ds = DeliverySystem.Instance;
         if (ds == null) return;
 
+        // A delivery whose cargo has already landed (Vehicle.UnloadCargo sets deliveredQuantity
+        // before its unload wait finishes) is not "incomplete": the round can end inside that
+        // window, and cancelling it would fail the parent task for food that was delivered (B38).
         var incompleteFoodDeliveries = ds.GetPendingTasks()
             .Concat(ds.GetActiveTasks())
-            .Where(t => t.cargoType == ResourceType.FoodPacks)
+            .Where(t => t.cargoType == ResourceType.FoodPacks && t.deliveredQuantity <= 0)
             .ToList();
 
         foreach (DeliveryTask delivery in incompleteFoodDeliveries)
@@ -813,10 +979,67 @@ public class TaskSystem : MonoBehaviour
     void OnRoundChanged(int newSegment)
     {
         Debug.Log($"OnRoundChanged called in Task System: segment {newSegment}, auto generation: {enableAutoTaskGeneration}. (We skip generation when newSegment == 3)");
-        // Check for new tasks at the start of each round
+        // PARITY BUILD (ledger D15): upstream's gate, `newSegment != 3`, not ours. The two are
+        // not the same set: upstream generates on segments 0, 1, 2 AND 4, ours only on 0, 1, 2.
+        // Ours also moved the segment-0 pass onto OnDayStarted, which does not fire for day 1 --
+        // so on day 1 upstream ran a generation pass this build never ran, and upstream's first
+        // day produced a Budget_Allocation, two relocation requests and a workforce alert that
+        // ours did not. Different tasks means different trigger evaluations, which means a
+        // different number of draws off the shared Random stream.
         if (enableAutoTaskGeneration && newSegment != 3)
         {
             Debug.Log("Attempting to generate tasks from database...");
+            GenerateTasksFromDatabase();
+        }
+
+        // (Background auto-housing removed: the agent/player must make every relocation decision
+        // itself. GeneratePopulationTransportTasks is no longer invoked from the round loop.)
+    }
+
+    static bool IsExternalRelationContact(TaskData taskData) =>
+        taskData.taskOfficer == TaskOfficer.ExternalRelationship && taskData.taskId != "Budget_Allocation";
+
+    /// <summary>
+    /// initialDailyBudgetAdditions -> the Daily Budget Allocation task (BUG_REPORTS B35). Applied to the
+    /// task instance's own copies, never to the ScriptableObject.
+    /// </summary>
+    void ApplyConfiguredAllocation(GameTask task, TaskData taskData)
+    {
+        // PARITY BUILD (ledger D21): DISABLED. Upstream has no equivalent — the Daily Budget
+        // Allocation grants whatever the task ASSET says (5000), not the sheet's
+        // initialDailyBudgetAdditions (3000). Applied every day the funding task is confirmed,
+        // the 2000/day difference compounds into a median 292,000 gap across a 32-seed suite,
+        // against a starting budget of 10,000. Same family as D7 and D20: the sheet drives our
+        // build where an asset or prefab drives upstream's.
+        return;
+#pragma warning disable 0162
+        if (taskData.taskId != "Budget_Allocation" || GameDataManager.Instance == null) return;
+        int amount = GameDataManager.Instance.InitialDailyBudgetAddition;
+        if (amount <= 0) return;
+        string shown = "$" + amount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+        foreach (var impact in task.impacts)
+            if (impact.impactType == ImpactType.Budget) impact.value = amount;
+        foreach (var choice in task.agentChoices)
+        {
+            bool budgetChoice = false;
+            foreach (var impact in choice.choiceImpacts)
+                if (impact.impactType == ImpactType.Budget) { impact.value = amount; budgetChoice = true; }
+            if (budgetChoice) choice.choiceText = $"Receive {shown} Budget";
+        }
+        foreach (var message in task.agentMessages)
+            if (!string.IsNullOrEmpty(message.messageText))
+                message.messageText = System.Text.RegularExpressions.Regex.Replace(
+                    message.messageText, @"\$[\d,]+", shown.Replace("$", "$$"));
+#pragma warning restore 0162
+    }
+
+    /// <summary>Start-of-day generation pass (was the segment-0 event before the A1 clock fix).
+    /// Round triggers with targetRound 0 are evaluated here and only here.</summary>
+    void OnDayStarted(int day)
+    {
+        if (enableAutoTaskGeneration)
+        {
+            Debug.Log($"OnDayStarted called in Task System: day {day}; generating tasks from database...");
             GenerateTasksFromDatabase();
         }
     }
@@ -832,13 +1055,24 @@ public class TaskSystem : MonoBehaviour
 
         Debug.Log("Checking for triggered tasks per facility...");
 
+        // WHEN generation runs, relative to the round's deliveries. The port creates tasks
+        // before its delivery tick; Unity re-requests a relocation inside the round its
+        // predecessor delivered. Moving the port's creation after the tick took two exact
+        // traces to zero, so the ordering is not the simple one -- this makes Unity's
+        // actual position observable instead of inferred.
+        SnapshotDebug.MarkContext("gen:pass", "{\"active\":" + activeTasks.Count + "}");
+
         // Get tasks with their specific facilities
         List<(TaskData taskData, MonoBehaviour facility)> triggeredTasksWithFacilities =
             taskDatabase.CheckTriggeredTasksPerFacility();
 
         Debug.Log($"Found {triggeredTasksWithFacilities.Count} triggered task-facility combinations");
 
-        int currentRound = GlobalClock.Instance != null ? (GlobalClock.Instance.lastDay * GlobalClock.Instance.roundsPerDay) : 0;
+        // Elapsed rounds so far (the spacing gate below compares against this). It used to be
+        // lastDay * roundsPerDay, a constant, which let exactly one global emergency fire per game.
+        int currentRound = GlobalClock.Instance != null
+            ? (GlobalClock.Instance.GetCurrentDay() - 1) * GlobalClock.Instance.roundsPerDay + GlobalClock.Instance.GetCurrentTimeSegment()
+            : 0;
         int dynamicInterval = CalculateEmergencyInterval();
 
         foreach (var (taskData, facility) in triggeredTasksWithFacilities)
@@ -867,6 +1101,14 @@ public class TaskSystem : MonoBehaviour
                 }
             }
 
+            // PARITY BUILD (ledger D6): the external-relation CAP is removed. Upstream has no
+            // equivalent -- its own scheme (ApplyInitExternalRelationFrequency, which splits the
+            // frequency into two day-intervals) never runs, because budgetAdvisoryER and
+            // budgetEmergencyER are null in every scene that ships. So upstream places no limit
+            // on external-relation contacts at all, and a cap here would suppress task
+            // generation this build is supposed to match -- changing task counts, and with them
+            // the number of draws taken from the shared Random stream.
+
             // Handle alert tasks (global check for duplicates)
             if (taskData.taskType == TaskType.Alert)
             {
@@ -893,6 +1135,8 @@ public class TaskSystem : MonoBehaviour
 
                 Debug.Log($"Creating global task: {taskData.taskTitle}");
                 GameTask newTask = CreateTaskFromDatabase(taskData);
+                if (newTask != null && IsExternalRelationContact(taskData))
+                    currExternalRelationCount++;
                 if (newTask != null && newTask.taskType == TaskType.Emergency)
                 {
                     currEmergencyTaskCount++;
@@ -927,7 +1171,7 @@ public class TaskSystem : MonoBehaviour
                             // Evict non-emergency lodging tasks to make room for the emergency one
                             foreach (var stale in existingLodging.Where(t => t.taskType != TaskType.Emergency))
                             {
-                                activeTasks.Remove(stale);
+                                SupersedeTask(stale);
                                 Debug.Log($"Emergency lodging supersedes existing task for {facilityName} — removed '{stale.taskTitle}'");
                                 GameLogPanel.Instance.LogTaskEvent($"Emergency lodging supersedes '{stale.taskTitle}' for {facilityName}");
                             }
@@ -948,7 +1192,13 @@ public class TaskSystem : MonoBehaviour
                 }
 
                 Debug.Log($"Creating task: {taskData.taskTitle} for facility: {facilityName}");
-                CreateTaskFromDatabase(taskData, facility);
+                GameTask createdForFacility = CreateTaskFromDatabase(taskData, facility);
+                if (createdForFacility != null && createdForFacility.taskType == TaskType.Emergency)
+                {
+                    // Facility emergencies count toward the cap and the spacing like global ones.
+                    currEmergencyTaskCount++;
+                    lastEmergencyTaskRound = currentRound;
+                }
             }
         }
     }
@@ -1265,6 +1515,14 @@ public class TaskSystem : MonoBehaviour
                 break;
         }
 
+        // Paired with task:resolved. The port resolves one lodging task where Unity resolves
+        // two, and both agree on what was delivered -- so the difference is WHEN Unity gives
+        // up on a task, which is creation round plus roundsRemaining. This makes the
+        // lifetime readable instead of inferred.
+        SnapshotDebug.MarkContext("task:created", "{\"id\":" + newTask.taskId
+            + ",\"title\":\"" + newTask.taskTitle
+            + "\",\"rounds\":" + newTask.roundsRemaining
+            + ",\"type\":\"" + type + "\"}");
         activeTasks.Add(newTask);
         OnTaskCreated?.Invoke(newTask);
 
@@ -1284,6 +1542,7 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
+            RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: true);
             OnTaskCompleted?.Invoke(task);
 
             if (taskCenterUI != null && taskCenterUI.taskCenterPanel.activeInHierarchy)
@@ -1296,8 +1555,13 @@ public class TaskSystem : MonoBehaviour
             GameLogPanel.Instance.LogTaskEvent($"Completed task: {task.taskTitle}");
             // ToastManager.ShowToast($"Completed task: {task.taskTitle}", ToastType.Success, true);
 
-            // Show task result popup
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other) )
+            // Show task result popup. Multi-agent recommendation tasks (those that
+            // carry a multiAgentProposal — the choices-agent flow) are silent on
+            // completion; the conversation panel is their UI surface.
+            if (TaskResultManager.Instance != null
+                && task.taskType != TaskType.Alert
+                && task.taskType != TaskType.Other
+                && task.multiAgentProposal == null)
             {
                 TaskResultManager.Instance.ShowTaskResult(task);
             }
@@ -1543,9 +1807,15 @@ public class TaskSystem : MonoBehaviour
             // Apply penalties for incomplete emergency/demand tasks
             if (task.status == TaskStatus.Incomplete)
             {
-                //ApplyTaskPenalties(task);
+                // PARITY BUILD (ledger D22): upstream has this call COMMENTED OUT
+                // (`//ApplyTaskPenalties(task);`), so an expired task costs it nothing. We
+                // re-enabled it, which is why this build loses 1-3 satisfaction during each day
+                // where upstream loses none. Whether an unfulfilled task should carry a penalty
+                // at all is a design question, not obviously a bug on either side.
+                // ApplyTaskPenalties(task);
             }
 
+            RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
             OnTaskExpired?.Invoke(task);
 
             if (showDebugInfo)
@@ -1628,7 +1898,9 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            //ApplyTaskPenalties(task);
+            // PARITY BUILD (ledger D22): the SECOND penalty site, also commented out upstream.
+            // ApplyTaskPenalties(task);
+            RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
             OnTaskCompleted?.Invoke(task);
 
             if (showDebugInfo)
@@ -1711,6 +1983,9 @@ public class TaskSystem : MonoBehaviour
         newTask.description = $"Action recommendations from {agentName}";
         newTask.isGlobalTask = true;
 
+        SnapshotDebug.MarkContext("task:created", "{\"id\":" + newTask.taskId
+            + ",\"title\":\"" + newTask.taskTitle
+            + "\",\"rounds\":" + newTask.roundsRemaining + "}");
         activeTasks.Add(newTask);
         return newTask;
     }
@@ -1740,11 +2015,16 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
-    public GameTask CreateTaskFromData(TaskData taskData)
+    public GameTask CreateTaskFromData(TaskData taskData, MonoBehaviour facility = null)
     {
         GameTask newTask = new GameTask(nextTaskId++, taskData.taskTitle, taskData.taskType, taskData.targetFacilityType.ToString());
+        // The facility that raised the task must be known BEFORE the choice loop below sizes the
+        // deliveries; with only the type string, FindTriggeringFacility matched the first building
+        // of that type (BUG_REPORTS B9).
+        if (facility != null) newTask.affectedFacility = facility.name;
 
         // Copy basic info
+        newTask.stableTaskId = taskData.taskId;
         newTask.description = taskData.description;
         newTask.taskImage = taskData.taskImage;
         newTask.taskOfficer = taskData.taskOfficer;
@@ -1819,6 +2099,7 @@ public class TaskSystem : MonoBehaviour
             newChoice.triggersDelivery = choice.triggersDelivery;
             newChoice.immediateDelivery = choice.immediateDelivery; // New
             newChoice.enableMultipleDeliveries = choice.enableMultipleDeliveries; // New
+            newChoice.multiDeliveryType = choice.multiDeliveryType; // ADDED
             newChoice.deliveryCargoType = choice.deliveryCargoType;
             newChoice.quantityType = choice.quantityType; // NEW: Copy quantity type
             newChoice.deliveryPercentage = choice.deliveryPercentage; // NEW: Copy percentage
@@ -1880,6 +2161,7 @@ public class TaskSystem : MonoBehaviour
         //     WebSocketManager.Instance.RequestTaskContent(newTask.taskId);
         // }
 
+        ApplyConfiguredAllocation(newTask, taskData);
         return newTask;
     }
 
@@ -2223,7 +2505,7 @@ public class TaskSystem : MonoBehaviour
         string displayName = specificFacility is PrebuiltBuilding pb ? pb.GetBuildingName() :
                              specificFacility is Building bld ? bld.GetDisplayName() : facilityName;
 
-        GameTask newTask = CreateTaskFromData(taskData);
+        GameTask newTask = CreateTaskFromData(taskData, specificFacility);
         if (newTask == null)
         {
             if (showDebugInfo)
@@ -2635,6 +2917,8 @@ public class TaskSystem : MonoBehaviour
             foreach (PrebuiltBuilding community in communities)
             {
                 // Simulate 50% probability for each community independently
+                SnapshotDebug.Mark("draw:TaskSystem.coinflip");
+                SnapshotDebug.Mark("draw:Task.coinflip");
                 bool triggered = UnityEngine.Random.Range(0f, 1f) < 0.5f;
                 
                 if (triggered)
@@ -2707,8 +2991,17 @@ public class TaskSystem : MonoBehaviour
     {
         GameStatePayload state = new GameStatePayload();
 
+        // Backstop: get_game_state must never throw (a throw makes the gym return an
+        // error and abort the episode). If any sub-builder hits a stray NRE despite
+        // its own guards, return the partially-populated state instead.
+        try
+        {
+
         // Session Info
         state.sessionInfo = GetSessionInfo();
+
+        // Satisfaction and Budget
+        state.satisfactionAndBudget = GetSatisfactionAndBudgetState();
 
         // Task Context (if specific task requested)
         if (taskId >= 0)
@@ -2722,6 +3015,9 @@ public class TaskSystem : MonoBehaviour
 
         // All Active Tasks
         state.allActiveTasks = GetAllActiveTaskContexts();
+
+        // Reward metrics (raw cumulative quantities; Python computes the score)
+        state.rewardMetrics = RewardMetricsTracker.Instance?.BuildPayload();
 
         // Map State
         state.mapState = GetMapState();
@@ -2744,6 +3040,12 @@ public class TaskSystem : MonoBehaviour
         // Construction State
         state.constructionState = GetConstructionState();
 
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[TaskSystem] GetCurrentGameState hit an error; returning partial state: {e.Message}");
+        }
+
         return state;
     }
 
@@ -2759,21 +3061,115 @@ public class TaskSystem : MonoBehaviour
             info.currentGameTime = $"Day {info.currentDay}, Round {info.currentRound}";
             info.simulationSpeed = GlobalClock.Instance.IsSimulationRunning() ? 1.0f : 0.0f;
             info.isPaused = !GlobalClock.Instance.IsSimulationRunning();
+
+            // Finite-horizon terminal: game is over once the last round of finalDay
+            // has run (EndGamePanel condition is Day finalDay, segment >= 4) or the
+            // clock has already rolled past finalDay.
+            int finalDay = GlobalClock.Instance.lastDay;   // the configured horizon (BUG_REPORTS B33)
+            info.finalDay = finalDay;
+            info.isGameOver = info.currentDay > finalDay
+                              || (info.currentDay == finalDay && info.currentRound >= GlobalClock.Instance.roundsPerDay);
         }
 
         return info;
     }
 
+    
+
+    private SatisfactionAndBudgetState GetSatisfactionAndBudgetState()
+    {
+        SatisfactionAndBudgetState state = new SatisfactionAndBudgetState();
+
+        if (SatisfactionAndBudget.Instance != null)
+        {
+            state.satisfaction = (int)SatisfactionAndBudget.Instance.GetCurrentSatisfaction();
+            state.budget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+        }
+        else
+        {
+            // Default values if system not available
+            state.satisfaction = 5000;
+            state.budget = 8000;
+        }
+
+        return state;
+    }
+
     private TaskContext GetTaskContextFromTask(GameTask task)
     {
+        List<TaskChoiceBrief> choices = null;
+        if (task.agentChoices != null && task.agentChoices.Count > 0)
+        {
+            choices = new List<TaskChoiceBrief>();
+            foreach (AgentChoice c in task.agentChoices)
+            {
+                // B5/D5: don't offer a population-relocation choice whose destination(s) can't
+                // house anyone right now (no shelter/motel space). Same shelter/motel derivation
+                // as ExecuteClientRelocation. NOTE: this gate is only for shelter/motel relocation —
+                // a "send to casework site" choice (destination CaseworkSite) is return-home
+                // processing, NOT a shelter relocation, so it must NOT be gated on shelter space.
+                if (c.deliveryCargoType == ResourceType.Population && (c.triggersDelivery || c.immediateDelivery)
+                        && c.destinationBuilding != BuildingType.CaseworkSite
+                        && ClientRelocationHandler.Instance != null)
+                {
+                    bool toShelter = c.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                                  || c.destinationPrebuilt != PrebuiltBuildingType.Motel;
+                    bool toMotel   = c.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                                  && c.destinationPrebuilt == PrebuiltBuildingType.Motel;
+                    if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+                    if (!ClientRelocationHandler.Instance.HasDestinationSpace(task, toShelter, toMotel))
+                        continue;
+                }
+                var brief = new TaskChoiceBrief { choiceId = c.choiceId, choiceText = task.ResolvePlaceholders(c.choiceText, plainFacilityName: true) };
+                // Sparse impacts: expose only the choice's non-zero consequences so the
+                // agent can reason about budget/satisfaction tradeoffs (e.g. funding choices).
+                if (c.choiceImpacts != null && c.choiceImpacts.Count > 0)
+                {
+                    brief.impacts = new List<ChoiceImpactBrief>();
+                    foreach (TaskImpact imp in c.choiceImpacts)
+                        if (imp.value != 0)
+                            brief.impacts.Add(new ChoiceImpactBrief { type = imp.impactType.ToString(), value = imp.value });
+                }
+                // Forward structured destination so Python policies don't need to parse choiceText.
+                // CaseworkSite is checked first: a casework choice's name includes the client group
+                // name, which may contain "Motel" or "Shelter" (the group's origin) and would
+                // confuse any substring-based classification.
+                if (c.triggersDelivery || c.immediateDelivery)
+                {
+                    if (c.destinationBuilding == BuildingType.CaseworkSite)
+                        brief.destinationCategory = "CaseworkSite";
+                    else if (c.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                             && c.destinationPrebuilt == PrebuiltBuildingType.Motel)
+                        brief.destinationCategory = "Motel";
+                    else
+                        brief.destinationCategory = c.destinationBuilding.ToString();
+                    // Population-based food choices author 0 and resolve against the destination's
+                    // need at execution; agents get the number a human reads in the button.
+                    brief.deliveryQuantity = c.deliveryQuantity;
+                    if (c.quantityType == DeliveryQuantityType.PopulationBased && FoodDeliveryHandler.Instance != null)
+                    {
+                        MonoBehaviour dest = FindTriggeringFacility(task);
+                        if (dest != null) brief.deliveryQuantity = FoodDeliveryHandler.Instance.ResolveQuantity(c, dest);
+                    }
+                    brief.immediateDelivery = c.immediateDelivery;
+                    brief.triggersDelivery = c.triggersDelivery;
+                }
+                choices.Add(brief);
+            }
+        }
+
         return new TaskContext
         {
             taskId = task.taskId,
-            taskTitle = task.taskTitle,
-            taskDescription = task.description,
+            stableTaskId = task.stableTaskId,
+            // Placeholders ([facility_name_plain], [food_amount], ...) are resolved for agents exactly
+            // as the UI resolves them for humans; the raw template never leaves the game.
+            taskTitle = task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true),
+            taskDescription = task.ResolvePlaceholders(task.description, plainFacilityName: true),
             taskType = task.taskType.ToString(),
             affectedFacility = task.affectedFacility,
-            roundsRemaining = task.roundsRemaining
+            roundsRemaining = task.roundsRemaining,
+            choices = choices
         };
     }
 
@@ -2783,12 +3179,20 @@ public class TaskSystem : MonoBehaviour
         mapState.facilities = new List<FacilityState>();
         mapState.vehicles = new List<VehicleState>();
 
+        // Defensive net: a stray destroyed-object deref must never fail the whole
+        // gym get_game_state. Collect what we can; return partial state on error.
+        try
+        {
         // Collect building states
         Building[] buildings = FindObjectsOfType<Building>();
         foreach (Building building in buildings)
         {
             FacilityState facilityState = new FacilityState();
-            facilityState.facilityName = building.name;
+            // Use the SAME human-facing display name the player sees in the UI
+            // (FacilityInfoPanel uses GetDisplayName()), so officers and the human
+            // refer to facilities by one shared name. FindBuildingByName still
+            // resolves either the display name or the raw GameObject name.
+            facilityState.facilityName = building.GetDisplayName();
             facilityState.facilityType = "Building";
             facilityState.buildingType = building.GetBuildingType().ToString();
             facilityState.isOperational = building.IsOperational();
@@ -2827,7 +3231,10 @@ public class TaskSystem : MonoBehaviour
         foreach (PrebuiltBuilding prebuilt in prebuilts)
         {
             FacilityState facilityState = new FacilityState();
-            facilityState.facilityName = prebuilt.name;
+            // Match the human-facing name (communities/motels/etc. are named via
+            // SetBuildingName); fall back to the GameObject name if unset.
+            facilityState.facilityName = !string.IsNullOrEmpty(prebuilt.GetBuildingName())
+                ? prebuilt.GetBuildingName() : prebuilt.name;
             facilityState.facilityType = "Prebuilt";
             facilityState.buildingType = prebuilt.GetPrebuiltType().ToString();
             facilityState.isOperational = true;
@@ -2875,7 +3282,13 @@ public class TaskSystem : MonoBehaviour
 
             if (vehicle.currentTask != null)
             {
-                vehicleState.currentTask = $"{vehicle.currentTask.cargoType} delivery: {vehicle.currentTask.GetSource()?.name} → {vehicle.currentTask.GetDestination()?.name}";
+                // Unity null-check (not ?.): a deconstructed source/destination is a
+                // fake-null destroyed object that passes ?. but throws on .name.
+                var src = vehicle.currentTask.GetSource();
+                var dst = vehicle.currentTask.GetDestination();
+                string srcName = src != null ? src.name : "Unknown";
+                string dstName = dst != null ? dst.name : "Unknown";
+                vehicleState.currentTask = $"{vehicle.currentTask.cargoType} delivery: {srcName} → {dstName}";
             }
             else
             {
@@ -2904,6 +3317,11 @@ public class TaskSystem : MonoBehaviour
                 };
                 mapState.abandonedSites.Add(siteState);
             }
+        }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[TaskSystem] GetMapState failed; returning partial map state: {e.Message}");
         }
 
         return mapState;
@@ -2982,32 +3400,57 @@ public class TaskSystem : MonoBehaviour
     {
         Logistics logistics = new Logistics();
         logistics.activeDeliveries = new List<ActiveDelivery>();
+        logistics.pendingRelocations = new List<PendingRelocation>();
+        if (ClientRelocationHandler.Instance != null)
+            foreach (var r in ClientRelocationHandler.Instance.GetPendingRelocations())
+                logistics.pendingRelocations.Add(new PendingRelocation
+                {
+                    taskId = r.parentTask != null ? r.parentTask.taskId : -1,
+                    source = r.source != null ? r.source.name : "?",
+                    destination = r.destination != null ? r.destination.name : "?",
+                    quantity = r.quantity,
+                    roundsRemaining = r.roundsRemaining
+                });
 
-        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-        // VehicleStatus uses Idle, not Available
-        logistics.availableVehicles = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.Idle);
-        logistics.vehiclesInTransit = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.InTransit);
-        logistics.damagedVehicles = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.Damaged);
-
-        // Collect active deliveries
-        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
-        if (deliverySystem != null)
+        // Defensive throughout: this runs on every gym get_game_state. A null vehicle
+        // or dangling delivery task (e.g. left by an aborted delivery) must NOT throw,
+        // or the gym's state request never returns and the episode hangs.
+        try
         {
-            List<DeliveryTask> activeTasks = deliverySystem.GetActiveTasks();
-            foreach (DeliveryTask task in activeTasks)
-            {
-                ActiveDelivery delivery = new ActiveDelivery();
-                delivery.deliveryId = task.taskId;
-                delivery.cargoType = task.cargoType.ToString();
-                delivery.quantity = task.quantity;
-                // Use GetSource() and GetDestination() methods
-                delivery.source = task.GetSource()?.name ?? "Unknown";
-                delivery.destination = task.GetDestination()?.name ?? "Unknown";
-                delivery.status = "Active"; // DeliveryTask doesn't have status field
-                delivery.progress = 0.5f; // Could be calculated from vehicle position if needed
+            Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+            // VehicleStatus uses Idle, not Available
+            logistics.availableVehicles = vehicles.Count(v => v != null && v.GetCurrentStatus() == VehicleStatus.Idle);
+            logistics.vehiclesInTransit = vehicles.Count(v => v != null && v.GetCurrentStatus() == VehicleStatus.InTransit);
+            logistics.damagedVehicles = vehicles.Count(v => v != null && v.GetCurrentStatus() == VehicleStatus.Damaged);
 
-                logistics.activeDeliveries.Add(delivery);
+            // Collect active deliveries
+            DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+            if (deliverySystem != null)
+            {
+                List<DeliveryTask> activeTasks = deliverySystem.GetActiveTasks();
+                if (activeTasks != null)
+                {
+                    foreach (DeliveryTask task in activeTasks)
+                    {
+                        if (task == null) continue;
+                        ActiveDelivery delivery = new ActiveDelivery();
+                        delivery.deliveryId = task.taskId;
+                        delivery.cargoType = task.cargoType.ToString();
+                        delivery.quantity = task.quantity;
+                        // Use GetSource() and GetDestination() methods
+                        delivery.source = task.GetSource()?.name ?? "Unknown";
+                        delivery.destination = task.GetDestination()?.name ?? "Unknown";
+                        delivery.status = "Active"; // DeliveryTask doesn't have status field
+                        delivery.progress = 0.5f; // Could be calculated from vehicle position if needed
+
+                        logistics.activeDeliveries.Add(delivery);
+                    }
+                }
             }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[TaskSystem] GetLogisticsState failed; returning partial logistics: {e.Message}");
         }
 
         return logistics;
@@ -3037,7 +3480,10 @@ public class TaskSystem : MonoBehaviour
     {
         List<TaskContext> taskContexts = new List<TaskContext>();
 
-        foreach (GameTask task in activeTasks)
+        // Only surface tasks the human UI would show as open (Active). Resolved tasks left in
+        // activeTasks with status InProgress (SetTaskInProgress does NOT remove them) must drop
+        // out of the officer observation, mirroring CategoryTaskManager's Active-only filter.
+        foreach (GameTask task in activeTasks.Where(t => t.status == TaskStatus.Active))
         {
             taskContexts.Add(GetTaskContextFromTask(task));
         }
@@ -3172,6 +3618,26 @@ public class TaskSystem : MonoBehaviour
         if (task == null)
         {
             Debug.LogError($"Task with ID {llmContent.taskId} not found");
+            return;
+        }
+
+        ApplyLLMTaskContent(task, llmContent);
+    }
+
+    /// <summary>
+    /// Apply LLM content to a SPECIFIC task instance. Required for multi-agent
+    /// choice proposals: every officer's proposal shares taskId == -1, so resolving
+    /// the target by id (GetTaskById) would return whichever officer's -1 task is
+    /// first in the list, cross-wiring one officer's proposal onto another's task in
+    /// multi-officer scenarios. Callers that already hold the exact task (e.g.
+    /// WebSocketManager.HandleChoicesProposal via GetOrCreateMultiAgentTask) pass it
+    /// here directly.
+    /// </summary>
+    public void ApplyLLMTaskContent(GameTask task, LLMTaskContent llmContent)
+    {
+        if (task == null || llmContent == null)
+        {
+            Debug.LogError("ApplyLLMTaskContent(task, content) called with a null argument");
             return;
         }
 

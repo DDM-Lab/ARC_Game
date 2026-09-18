@@ -12,6 +12,8 @@ from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 import ollama
 
+from obs_encoder import render_state_text, _num
+
 load_dotenv(Path(__file__).parent / ".env")
 
 # Import optional providers
@@ -29,6 +31,16 @@ except ImportError:
 # Global prompt cache
 _GLOBAL_PROMPT_CACHE = None
 _GLOBAL_PROMPT_CONFIG_PATH = Path(__file__).parent / "config" / "global_prompt_config.json"
+
+
+def _accepts_temperature(model: str) -> bool:
+    """Sonnet 5 / next-gen models reject the `temperature` param
+    (400: "`temperature` is deprecated for this model."). 4.x still accepts it."""
+    m = (model or "").lower()
+    for tok in ("sonnet-5", "opus-5", "haiku-5", "fable-5", "mythos-5"):
+        if tok in m:
+            return False
+    return True
 
 
 def load_global_prompt(config_path: Optional[str] = None) -> str:
@@ -110,25 +122,42 @@ def _build_prompt(
     messages.append({"role": "system", "content": system_prompt})
 
     # Inject conversation history (prior rounds)
+    # History can be in two formats:
+    # 1. Old format: [{"user": "...", "assistant": "..."}]
+    # 2. New format (from message_queue): [{"from": "agent", "to": "Director", "content": "...", "round": N}]
     for entry in history:
-        messages.append({"role": "user",    "content": entry.get("user", "")})
-        messages.append({"role": "assistant","content": entry.get("assistant", "")})
+        if "user" in entry and "assistant" in entry:
+            # Old format
+            messages.append({"role": "user",    "content": entry.get("user", "")})
+            messages.append({"role": "assistant","content": entry.get("assistant", "")})
+        elif "from" in entry and "to" in entry:
+            # New format - conversation message
+            from_agent = entry.get("from")
+            to_agent = entry.get("to")
+            content = entry.get("content", "")
+            round_num = entry.get("round", "?")
 
-    # Current state summary
-    session = game_state.get("sessionInfo", {})
-    sat_budget = game_state.get("satisfactionAndBudget", {})
-    state_text = (
-        f"Day {session.get('currentDay', '?')}, "
-        f"Segment {session.get('currentTimeSegment', '?')}. "
-        f"Satisfaction: {sat_budget.get('satisfaction', '?')}. "
-        f"Budget: ${sat_budget.get('budget', '?'):,}."
-        if isinstance(sat_budget.get('budget'), (int, float))
-        else f"Day {session.get('currentDay', '?')}."
-    )
+            # Determine role based on who sent the message
+            # If agent sent it, it's "assistant". If Director sent it, it's "user"
+            if from_agent == "Director":
+                role = "user"
+                label = f"Director (Round {round_num})"
+            else:
+                role = "assistant"
+                label = f"You (Round {round_num})"
 
-    # Action list
+            formatted_content = f"[{label}] {content}"
+            messages.append({"role": role, "content": formatted_content})
+
+    # Current state summary — grounded, engine-computed facts (facilities, worker
+    # pools, open tasks with per-choice impacts, spend). See obs_encoder.py.
+    state_text = render_state_text(game_state)
+
+    # Action list. NOTE: action dicts use snake_case `action_type` (from
+    # ActionEnumerator.to_dict), not `actionType`; the old camelCase read always
+    # rendered "[?]". Cost is real engine data — surface it as ground truth.
     action_lines = [
-        f"{i}. [{a.get('actionType','?')}] {a.get('description','?')} (cost: ${a.get('cost', 0)})"
+        f"{i}. [{a.get('action_type','?')}] {a.get('description','?')} (cost: ${_num(a.get('cost')):,})"
         for i, a in enumerate(actions)
     ]
     action_text = "\n".join(action_lines) if action_lines else "(no valid actions)"
@@ -166,28 +195,57 @@ def _build_prompt(
         user_content = (
             f"Current situation:\n{state_text}\n\n"
             f"Available actions:\n{action_text}\n\n"
-            f"Propose {num_choices} different strategy packages for the director.\n"
-            f"Each package should contain up to {max_per_package} action indices.\n\n"
-            f"Response format:\n"
-            f"REASONING: [1-2 sentences explaining the current situation and priorities]\n"
-            f"PACKAGE1: [strategy name] | [action indices] | [brief outcome description]\n"
-            f"PACKAGE2: [strategy name] | [action indices] | [brief outcome description]\n"
-            f"PACKAGE3: [strategy name] | [action indices] | [brief outcome description]\n\n"
-            f"Example:\n"
-            f"REASONING: Satisfaction is low and shelter is critical. Focus on immediate needs.\n"
-            f"PACKAGE1: Emergency Shelter | 0,2 | Build 2 shelters for immediate housing\n"
-            f"PACKAGE2: Balanced Growth | 1,3,5 | Build shelter, kitchen, and medical facility\n"
-            f"PACKAGE3: Resource Focus | 4 | Hire workers to boost capacity\n\n"
-            f"Use concise strategy names (2-4 words) and outcome descriptions (under 60 characters)."
+            f"Propose {num_choices} strategy packages, up to {max_per_package} action indices each.\n\n"
+            f"GROUNDING: the situation above lists real, engine-computed numbers — each action's cost, "
+            f"cumulative spend, worker pools, facility state, and each open task choice's exact impacts "
+            f"(e.g. [Budget +5000] [Satisfaction +10]). A package's cost is the SUM of its actions' listed "
+            f"costs — compute it, do not estimate. Do NOT invent satisfaction/budget numbers that are not "
+            f"shown: if an outcome isn't given, describe it qualitatively (e.g. 'adds shelter capacity').\n\n"
+            f"DIVERSITY (critical): the {num_choices} packages MUST be genuinely DIFFERENT strategies — NOT "
+            f"the same plan at different spend levels. Each must differ in FOCUS. Pick distinct focuses from: "
+            f"food, shelter, workforce, respond to an open task, or conserve budget. Vary WHAT the option "
+            f"prioritizes, not just how much it spends. Include at least one low-cost / conserve option; if an "
+            f"open task offers a reward, make one package take it. If two of your packages would touch the same "
+            f"kinds of actions, replace one with a different focus.\n\n"
+            f"Response format — each PACKAGE has FOUR fields separated by '|':\n"
+            f"  name | indices | what it does | why pick it\n"
+            f"REASONING: 2 short sentences. First names the key constraint (budget, gap, pressing task). Second says why these options.\n"
+            f"PACKAGE1: <name, 2-4 words> | <indices> | <what it does, no $ amount, ~55 chars> | <why choose it — the trade-off, ~70 chars>\n"
+            f"PACKAGE2: <name, 2-4 words> | <indices> | <what it does, no $ amount, ~55 chars> | <why choose it — the trade-off, ~70 chars>\n"
+            f"PACKAGE3: <name, 2-4 words> | <indices> | <what it does, no $ amount, ~55 chars> | <why choose it — the trade-off, ~70 chars>\n\n"
+            f"Example (each option has a DIFFERENT focus; the 'why' names the trade-off with NO numbers):\n"
+            f"REASONING: Budget is tight and shelter capacity trails population. These options trade shelter expansion against food and keeping a reserve for next-round flood costs.\n"
+            f"PACKAGE1: Cheap Food | 0,5,7 | restocks kitchen food | cheapest fix; keeps a reserve but ignores housing\n"
+            f"PACKAGE2: Shelter First | 1,2,8 | adds shelter capacity | houses people now, but little left for floods\n"
+            f"PACKAGE3: Fund + Balance | 0,1,5 | build + task choice 3 [Budget +5000] | unlocks budget for next round; slower now\n\n"
+            f"Hard limits: name ≤ 4 words, 'what it does' ≤ 60 chars, 'why' ≤ 70 chars. In 'why' give the QUALITATIVE "
+            f"trade-off (what it gains vs gives up) — do NOT put ANY $ amounts in 'what it does' OR 'why'; the $cost "
+            f"and remaining budget ('leaves $X') are computed and shown automatically. REASONING ≤ 2 sentences.\n"
+            f"Constraint: do not include two construction actions targeting the same site in one package."
         )
     else:
-        # Auto agent: execute immediately
+        # Auto agent: execute immediately with structured rationale
+        max_actions = agent_cfg.get("max_actions_per_turn", 5)
         user_content = (
             f"Current situation:\n{state_text}\n\n"
             f"Available actions:\n{action_text}\n\n"
-            f"Respond with only the action index numbers you want to take, "
-            f"comma-separated (e.g. '0,3,5'). "
-            f"Respond with an empty string to pass."
+            f"GROUNDING: the situation above lists real, engine-computed numbers — each action's cost, "
+            f"cumulative spend, worker pools, facility state, and each open task choice's exact impacts. "
+            f"Total cost is the SUM of the chosen actions' listed costs — compute it, do not estimate. Do "
+            f"NOT invent satisfaction/budget numbers that are not shown; describe unquantified effects "
+            f"qualitatively.\n\n"
+            f"Pick up to {max_actions} actions. Reply with EXACTLY these four lines:\n"
+            f"ACTIONS: <comma-separated indices, or empty>\n"
+            f"REASONING: <one short sentence: why these actions, now>\n"
+            f"EXPECTED_IMPACT: <one short sentence: summed cost spent, and capacity/task effects>\n"
+            f"NEXT_STEPS: <one short clause: what you'd do next, or what would change your plan>\n\n"
+            f"Example:\n"
+            f"ACTIONS: 0,1,5\n"
+            f"REASONING: Closing the housing/food gap before satisfaction drops further.\n"
+            f"EXPECTED_IMPACT: Spends $2,400; adds shelter capacity and staffs the kitchen.\n"
+            f"NEXT_STEPS: Watch flood tasks; pause new builds if budget < $5k.\n\n"
+            f"One sentence per section. Write 'None.' if a section truly does not apply.\n"
+            f"Constraint: do not include two construction actions targeting the same site this turn."
         )
 
     messages.append({"role": "user", "content": user_content})
@@ -284,16 +342,23 @@ def _query_openai(
                   f"in environment variable '{api_key_env}'")
             return ""
 
-        client = openai.OpenAI(api_key=api_key)
+        # Support custom base_url for third-party providers
+        base_url = agent_cfg.get("llm_endpoint")
+        if base_url:
+            client = openai.OpenAI(api_key=api_key, base_url=base_url)
+            print(f"[llm_query] [{agent_name}] Querying OPENAI (custom endpoint) model: {model}")
+        else:
+            client = openai.OpenAI(api_key=api_key)
+            print(f"[llm_query] [{agent_name}] Querying OPENAI model: {model}")
+
         messages = _build_prompt(game_state, actions, agent_cfg, history)
 
-        print(f"[llm_query] [{agent_name}] Querying OPENAI model: {model}")
-
+        _kw = {"temperature": 0.3} if _accepts_temperature(model) else {}
         response = client.chat.completions.create(
             model=model,
             messages=messages,
-            temperature=0.3,
             max_tokens=agent_cfg.get("turn_token_budget") or 64,
+            **_kw,
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -341,7 +406,7 @@ def _query_anthropic(
             model=model,
             system=system_prompt,
             messages=conversation,
-            temperature=0.3,
+            temperature=0.3 if _accepts_temperature(model) else anthropic.NOT_GIVEN,
             max_tokens=agent_cfg.get("turn_token_budget") or 256,
         )
         return response.content[0].text.strip()
