@@ -485,6 +485,39 @@ public class ClientRelocationHandler : MonoBehaviour
     }
 
     /// <summary>
+    /// Effective available population space at a single, specific destination — same "raw
+    /// capacity minus reserved-inbound deliveries minus already-walking self-walk relocations"
+    /// accounting GetDestinationsSorted uses for Shelters/Motels above, just for one building
+    /// instead of searching by type. Used to validate SpecificBuilding destinations (e.g.
+    /// Shelter → CaseworkSite) that don't go through GetDestinationsSorted's aggregate search,
+    /// so a full destination is caught at confirm time instead of only failing silently later
+    /// (DetermineChoiceDeliveryDestination returning null at execution).
+    /// </summary>
+    public int GetEffectiveSpace(MonoBehaviour destination)
+    {
+        if (destination == null) return 0;
+
+        int rawSpace;
+        PrebuiltBuilding prebuilt = destination.GetComponent<PrebuiltBuilding>();
+        if (prebuilt != null)
+        {
+            rawSpace = prebuilt.GetPopulationCapacity() - prebuilt.GetCurrentPopulation();
+        }
+        else
+        {
+            BuildingResourceStorage storage = destination.GetComponent<BuildingResourceStorage>();
+            if (storage == null) return 0;
+            rawSpace = storage.GetAvailableSpace(ResourceType.Population);
+        }
+
+        int inbound = DeliverySystem.Instance != null
+            ? DeliverySystem.Instance.GetReservedIncomingQuantity(destination, ResourceType.Population) : 0;
+        int walking = GetPendingIncomingQuantity(destination);
+
+        return Mathf.Max(0, rawSpace - inbound - walking);
+    }
+
+    /// <summary>
     /// Total clients currently self-walking toward any building of the given type
     /// (e.g. all in-flight Shelter → CaseworkSite relocations). Used for reporting/UI,
     /// since these no longer show up as DeliverySystem active tasks.

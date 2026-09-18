@@ -2036,12 +2036,26 @@ public class TaskSystem : MonoBehaviour
                 return FindFacilityByName(choice.specificDestinationName);
 
             case DeliveryDestinationType.SpecificBuilding:
+                // For Population cargo, a destination must have room for the FULL amount this
+                // choice would actually send — not just some room — so this agrees with
+                // TaskDetailUI.ValidateChoiceDelivery's confirm-time check and with
+                // ClientRelocationHandler.ExecuteToSpecificDestination's own toSend calculation.
+                // Other cargo types are unaffected (defaults to requiring just 1, same as before).
+                int requiredQuantity = 1;
+                if (choice.deliveryCargoType == ResourceType.Population
+                    && triggeringFacility != null && ClientRelocationHandler.Instance != null)
+                {
+                    int sourcePopulation = ClientRelocationHandler.Instance.GetPopulation(triggeringFacility);
+                    requiredQuantity = choice.deliveryQuantity > 0
+                        ? Mathf.Min(choice.deliveryQuantity, sourcePopulation) : sourcePopulation;
+                }
+
                 // Exclude the triggering facility from destination search
                 Building[] buildings = FindObjectsOfType<Building>()
                 .Where(b => b.GetBuildingType() == choice.destinationBuilding)
                 .Where(b => b.IsOperational()) // Only operational buildings
                 .Where(b => b != triggeringFacility) // Exclude source facility
-                .Where(b => IsValidDeliveryDestination(b, choice.deliveryCargoType))
+                .Where(b => IsValidDeliveryDestination(b, choice.deliveryCargoType, requiredQuantity))
                 .ToArray();
 
                 if (buildings.Length == 0)
@@ -2117,12 +2131,30 @@ public class TaskSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Validates a facility as a destination for a cargo type
+    /// Validates a facility as a destination for a cargo type. requiredQuantity is how many units
+    /// must actually fit — default 1 preserves the original "not already totally full" behavior
+    /// for callers that don't know/care about an exact amount.
     /// </summary>
-    private bool IsValidDeliveryDestination(MonoBehaviour facility, ResourceType cargo)
+    private bool IsValidDeliveryDestination(MonoBehaviour facility, ResourceType cargo, int requiredQuantity = 1)
     {
         if (facility == null) return false;
         if (facility is Building building && !building.IsOperational()) return false;
+
+        // Population destinations (e.g. CaseworkSite) can also be filled by in-flight self-walk
+        // relocations tracked in ClientRelocationHandler, which never show up as DeliverySystem
+        // reservations — the generic check below only sees currentAmount + reservedInbound, so a
+        // site with a full round's worth of people already walking toward it (but not yet arrived)
+        // still looks empty and keeps getting picked as a destination for round after round, until
+        // those arrivals finally land and currentAmount catches up. GetEffectiveSpace already
+        // accounts for that on top of reserved-inbound deliveries — reuse it here instead so this
+        // matches the same capacity accounting TaskDetailUI's validation and Shelter/Motel routing
+        // already use. Must fit the full requiredQuantity, not just be non-zero — otherwise a site
+        // with only a couple of slots left still passes here and gets chosen over a genuinely empty
+        // second site (whichever sorts first/nearest), silently sending far more people than it can
+        // actually hold instead of routing them to the site that actually has room.
+        if (cargo == ResourceType.Population && ClientRelocationHandler.Instance != null)
+            return ClientRelocationHandler.Instance.GetEffectiveSpace(facility) >= Mathf.Max(1, requiredQuantity);
+
         BuildingResourceStorage storage = facility.GetComponent<BuildingResourceStorage>();
         if (storage != null)
         {

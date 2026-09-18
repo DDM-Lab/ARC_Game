@@ -543,7 +543,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: '-----------------------------------'
+  m_text: -----------------------------------
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: ad881f4c28b597942977dda570c5317c, type: 2}
   m_sharedMaterial: {fileID: 6377536458067307535, guid: ad881f4c28b597942977dda570c5317c, type: 2}
@@ -5772,11 +5772,11 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "The mission has come to an end. Thank you for the decisions you made! From
-    allocating resources to responding under pressure, each action helped guide the
-    community toward recovery. Your journey has been carefully documented, and now
-    it\u2019s time to reflect on the impact you created. Open the Final Report to
-    review your strategy, key milestones, and how your choices shaped the outcome."
+  m_text: "The mission has come to an end. Thank you for the decisions you made!
+    From allocating resources to responding under pressure, each action helped guide
+    the community toward recovery. Your journey has been carefully documented, and
+    now it\u2019s time to reflect on the impact you created. Open the Final Report
+    to review your strategy, key milestones, and how your choices shaped the outcome."
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 9eb5f65f1ed54304f927d58539c83245, type: 2}
   m_sharedMaterial: {fileID: 8299410941356011029, guid: 9eb5f65f1ed54304f927d58539c83245, type: 2}
@@ -9846,7 +9846,8 @@ PrefabInstance:
       value: -12
       objectReference: {fileID: 0}
     m_RemovedComponents: []
-    m_RemovedGameObjects: [{fileID: 7188082561242666231, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}]
+    m_RemovedGameObjects:
+    - {fileID: 7188082561242666231, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
     m_AddedGameObjects:
     - targetCorrespondingSourceObject: {fileID: 6755899588033031393, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       insertIndex: -1
@@ -11255,6 +11256,7 @@ MonoBehaviour:
   buildingStatsButton: {fileID: 287412885}
   workerCenterButton: {fileID: 1126803211}
   taskCenterButton: {fileID: 1292063389}
+  agentConversationUI: {fileID: 37581660}
   timeSegmentImages:
   - {fileID: 87327292}
   - {fileID: 2111961907}
@@ -11267,7 +11269,6 @@ MonoBehaviour:
   roundText: {fileID: 1253246064}
   TaskCenterDayRoundText: {fileID: 1869181402}
   clockAnimationUI: {fileID: 595964840}
-  agentConversationUI: {fileID: 37581660}
   showDebugInfo: 1
   isWaitingForReport: 0
 --- !u!4 &146349967
@@ -18783,7 +18784,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: '---------------------------------'
+  m_text: ---------------------------------
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: ad881f4c28b597942977dda570c5317c, type: 2}
   m_sharedMaterial: {fileID: 6377536458067307535, guid: ad881f4c28b597942977dda570c5317c, type: 2}
@@ -29525,14 +29526,15 @@ MonoBehaviour:
     messages:
     - Don't forget to assign workers so your facilities can run. Check the Workers
       panel for details, and consider training them early for better performance.
-  noBuildingsMessage: Looks like you didn't open any facilities at the start. An interesting
-    choice. Most people prepare early, but we'll see how this approach plays out.
+  noBuildingsMessage: Looks like you didn't open any facilities at the start. An
+    interesting choice. Most people prepare early, but we'll see how this approach
+    plays out.
   noKitchenMessage: Looks like you didn't open any kitchen. Kitchens produce food
     to keep clients satisfied and stable. Without one, you may need to rely on costly
     fast food delivery to meet demand.
   tooManyBuildingsMessage: Looks like you've opened a lot of facilities. Remember,
-    if you want to close a facility, click the "X" button on a facility to close it
-    and free up resources.
+    if you want to close a facility, click the "X" button on a facility to close
+    it and free up resources.
   tooFewBuildingsMessage: Looks like you're being conservative with facilities. Feel
     free to build more anytime, but remember that opening a facility takes time.
   goodStartMessage: Nice work so far. A strong opening setup sets you up well for
@@ -58373,7 +58375,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: '---- No Change For Today ----'
+  m_text: ---- No Change For Today ----
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 9eb5f65f1ed54304f927d58539c83245, type: 2}
   m_sharedMaterial: {fileID: 8299410941356011029, guid: 9eb5f65f1ed54304f927d58539c83245, type: 2}
@@ -69535,14 +69537,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   resourceCapacities:
   - resourceType: 0
-    maxCapacity: 400
+    maxCapacity: 600
   - resourceType: 1
-    maxCapacity: 400
+    maxCapacity: 600
   startingResources:
   - type: 0
-    amount: 400
+    amount: 600
   - type: 1
-    amount: 400
+    amount: 600
   startingFoodPacks: 0
   enableFoodWaste: 1
   fillFoodToCapacityDaily: 0
@@ -76895,7 +76897,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: '---------------------------------------------'
+  m_text: ---------------------------------------------
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: ad881f4c28b597942977dda570c5317c, type: 2}
   m_sharedMaterial: {fileID: 6377536458067307535, guid: ad881f4c28b597942977dda570c5317c, type: 2}
@@ -104713,7 +104715,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: '---------------------------------------'
+  m_text: ---------------------------------------
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: ad881f4c28b597942977dda570c5317c, type: 2}
   m_sharedMaterial: {fileID: 6377536458067307535, guid: ad881f4c28b597942977dda570c5317c, type: 2}
@@ -109891,14 +109893,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   resourceCapacities:
   - resourceType: 0
-    maxCapacity: 400
+    maxCapacity: 600
   - resourceType: 1
-    maxCapacity: 400
+    maxCapacity: 600
   startingResources:
   - type: 0
-    amount: 400
+    amount: 600
   - type: 1
-    amount: 400
+    amount: 600
   startingFoodPacks: 0
   enableFoodWaste: 1
   fillFoodToCapacityDaily: 0
@@ -113516,14 +113518,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   resourceCapacities:
   - resourceType: 0
-    maxCapacity: 400
+    maxCapacity: 600
   - resourceType: 1
-    maxCapacity: 400
+    maxCapacity: 600
   startingResources:
   - type: 0
-    amount: 400
+    amount: 600
   - type: 1
-    amount: 400
+    amount: 600
   startingFoodPacks: 0
   enableFoodWaste: 1
   fillFoodToCapacityDaily: 0
