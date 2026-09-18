@@ -143,19 +143,24 @@ public class DailyReportUI : MonoBehaviour
     [Header("Live Status - Food")]
     public SectionElement liveFoodInTransit;
     public SectionElement liveKitchenProduction;
+    public SectionElement liveFoodNeeded;
+    public SectionElement liveFoodConsumed;
     public SectionElement liveFoodWaste;
 
     [Header("Live Status - Lodging")]
     public SectionElement liveNeedLodging;
+    public SectionElement liveLodgingSatisfied;
 
     [Header("Live Status - Workers")]
     public SectionElement liveWorkersWorking;
     public SectionElement liveWorkersWaiting;
     public SectionElement liveWorkersTraining;
     public SectionElement liveWorkersReleasedToday;
+    public SectionElement liveWorkersUnassigned;
 
     [Header("Live Status - Casework")]
     public SectionElement liveNeedCasework;
+    public SectionElement liveCaseworkSatisfied;
     public SectionElement liveInTransitToCasework;
 
     private DailyReportMetrics currentMetrics;
@@ -234,15 +239,20 @@ public class DailyReportUI : MonoBehaviour
         InitializeSectionElement(receiptTotal);
 
         // curr bottom stats
-        InitializeSectionElement(liveFoodInTransit);
+        //InitializeSectionElement(liveFoodInTransit);
         InitializeSectionElement(liveKitchenProduction);
+        InitializeSectionElement(liveFoodNeeded);
+        InitializeSectionElement(liveFoodConsumed);
         InitializeSectionElement(liveFoodWaste);
         InitializeSectionElement(liveNeedLodging);
+        InitializeSectionElement(liveLodgingSatisfied);
         InitializeSectionElement(liveWorkersWorking);
         InitializeSectionElement(liveWorkersWaiting);
         InitializeSectionElement(liveWorkersTraining);
         InitializeSectionElement(liveWorkersReleasedToday);
+        InitializeSectionElement(liveWorkersUnassigned);
         InitializeSectionElement(liveNeedCasework);
+        InitializeSectionElement(liveCaseworkSatisfied);
         InitializeSectionElement(liveInTransitToCasework);
     }
 
@@ -492,18 +502,29 @@ public class DailyReportUI : MonoBehaviour
         Row("Other", Cost(m.todayOtherExpenses));
         Row("Total", Cost(m.budgetSpent));
 
-        // --- Live Status (order matches DisplayLiveStatusSection) ---
+        //// --- Live Status (order matches DisplayLiveStatusSection) ---
         int currentBudget = SatisfactionAndBudget.Instance != null ? SatisfactionAndBudget.Instance.GetCurrentBudget() : 0;
         Row("Current Budget", $"${currentBudget:N0}");
-        Row("Food packs in transit", Live(d.GetCurrentFoodPacksInTransit()));
         Row("Kitchen production", Live(m.foodProduced));
+        Row("Food Needed", Live(m.foodNeededToday));
+        Row("Food Consumed", Live(m.foodConsumedTotalToday));
         Row("Food waste", Live(m.foodWasted));
-        Row("Need lodging", Live(d.GetCurrentPopulationNeedingLodging()));
+        Row("Lodging Needed", Live(m.lodgingRequestedToday));
+        Row("Lodging Satisfied", Live(m.lodgingSatisfiedToday));
         Row("Working", Live(d.GetCurrentWorkingWorkers()));
-        Row("Waiting", Live(d.GetCurrentWaitingWorkers()));
+        //int currentBudget = SatisfactionAndBudget.Instance != null ? SatisfactionAndBudget.Instance.GetCurrentBudget() : 0;
+        //Row("Current Budget", $"${currentBudget:N0}");
+        ////Row("Food packs in transit", Live(d.GetCurrentFoodPacksInTransit()));
+        //Row("Kitchen production", Live(m.foodProduced));
+        //Row("Food waste", Live(m.foodWasted));
+        //Row("Need lodging", Live(d.GetCurrentPopulationNeedingLodging()));
+        //Row("Working", Live(d.GetCurrentWorkingWorkers()));
+        Row("Requested", Live(d.GetCurrentWaitingWorkers()));
         Row("Training", Live(d.GetCurrentTrainingWorkers()));
         Row("Released today", Live(d.GetTodayWorkersReleased()));
+        Row("Unassigned", Live(m.workersUnassignedToday));
         Row("Need casework", Live(d.GetCurrentClientsNeedingCasework()));
+        Row("Casework Satisfied", Live(m.caseworkSatisfiedToday));
         Row("In transit to casework", Live(d.GetCurrentPeopleInTransitToCasework()));
 
         // --- Final Summary (order matches AnimateFinalSatisfactionChanges / AnimateFinalEfficiencyChanges) ---
@@ -728,23 +749,43 @@ public class DailyReportUI : MonoBehaviour
     //new bottom curr status
     IEnumerator DisplayLiveStatusSection()
     {
+        //UpdateCurrentBudgetText();
+
+        //var d = DailyReportData.Instance;
+        //if (d == null) yield break;
+
+        //yield return StartCoroutine(AnimateLiveElement(liveFoodInTransit, d.GetCurrentFoodPacksInTransit(), "Food packs in transit"));
+        //yield return StartCoroutine(AnimateLiveElement(liveKitchenProduction, currentMetrics.foodProduced, "Kitchen production"));
+        //yield return StartCoroutine(AnimateLiveElement(liveFoodWaste, currentMetrics.foodWasted, "Food waste"));
+
+        ////yield return StartCoroutine(AnimateLiveElement(liveNeedLodging, d.GetCurrentPopulationNeedingLodging(), "Need lodging"));
+        //yield return StartCoroutine(AnimateLiveElement(liveNeedLodging, d.GetTodayLodgingRequested(), "Lodging Needed"));
+        //yield return StartCoroutine(AnimateLiveElement(liveLodgingSatisfied, d.GetTodayLodgingSatisfied(), "Lodging Satisfied"));
+
+        //yield return StartCoroutine(AnimateLiveElement(liveWorkersWorking, d.GetCurrentWorkingWorkers(), "Working"));
+
         UpdateCurrentBudgetText();
 
         var d = DailyReportData.Instance;
         if (d == null) yield break;
 
-        yield return StartCoroutine(AnimateLiveElement(liveFoodInTransit, d.GetCurrentFoodPacksInTransit(), "Food packs in transit"));
         yield return StartCoroutine(AnimateLiveElement(liveKitchenProduction, currentMetrics.foodProduced, "Kitchen production"));
+        yield return StartCoroutine(AnimateLiveElement(liveFoodNeeded, currentMetrics.foodNeededToday, "Food Needed"));
+        yield return StartCoroutine(AnimateLiveElement(liveFoodConsumed, currentMetrics.foodConsumedTotalToday, "Food Consumed"));
         yield return StartCoroutine(AnimateLiveElement(liveFoodWaste, currentMetrics.foodWasted, "Food waste"));
 
-        yield return StartCoroutine(AnimateLiveElement(liveNeedLodging, d.GetCurrentPopulationNeedingLodging(), "Need lodging"));
+        yield return StartCoroutine(AnimateLiveElement(liveNeedLodging, currentMetrics.lodgingRequestedToday, "Lodging Needed"));
+        yield return StartCoroutine(AnimateLiveElement(liveLodgingSatisfied, currentMetrics.lodgingSatisfiedToday, "Lodging Satisfied"));
 
         yield return StartCoroutine(AnimateLiveElement(liveWorkersWorking, d.GetCurrentWorkingWorkers(), "Working"));
-        yield return StartCoroutine(AnimateLiveElement(liveWorkersWaiting, d.GetCurrentWaitingWorkers(), "Waiting"));
+
+        yield return StartCoroutine(AnimateLiveElement(liveWorkersWaiting, d.GetCurrentWaitingWorkers(), "Requested"));
         yield return StartCoroutine(AnimateLiveElement(liveWorkersTraining, d.GetCurrentTrainingWorkers(), "Training"));
         yield return StartCoroutine(AnimateLiveElement(liveWorkersReleasedToday, d.GetTodayWorkersReleased(), "Released today"));
+        yield return StartCoroutine(AnimateLiveElement(liveWorkersUnassigned, d.GetCurrentUnassignedWorkers(), "Unassigned"));
 
-        yield return StartCoroutine(AnimateLiveElement(liveNeedCasework, d.GetCurrentClientsNeedingCasework(), "Need casework"));
+        yield return StartCoroutine(AnimateLiveElement(liveNeedCasework, d.GetCurrentClientsNeedingCasework(), "Casework Needed"));
+        yield return StartCoroutine(AnimateLiveElement(liveCaseworkSatisfied, currentMetrics.caseworkSatisfiedToday, "Casework Satisfied"));
         yield return StartCoroutine(AnimateLiveElement(liveInTransitToCasework, d.GetCurrentPeopleInTransitToCasework(), "In transit to casework"));
     }
 
@@ -1186,18 +1227,29 @@ public class DailyReportUI : MonoBehaviour
         var d = DailyReportData.Instance;
         if (d != null)
         {
-            SetSectionLiveFormatted(liveFoodInTransit, d.GetCurrentFoodPacksInTransit());
+            //SetSectionLiveFormatted(liveFoodInTransit, d.GetCurrentFoodPacksInTransit());
+            //SetSectionLiveFormatted(liveKitchenProduction, metrics.foodProduced);
+            //SetSectionLiveFormatted(liveFoodWaste, metrics.foodWasted);
+
+            //SetSectionLiveFormatted(liveNeedLodging, d.GetCurrentPopulationNeedingLodging());
+
+            //SetSectionLiveFormatted(liveWorkersWorking, d.GetCurrentWorkingWorkers());
             SetSectionLiveFormatted(liveKitchenProduction, metrics.foodProduced);
+            SetSectionLiveFormatted(liveFoodNeeded, metrics.foodNeededToday);
+            SetSectionLiveFormatted(liveFoodConsumed, metrics.foodConsumedTotalToday);
             SetSectionLiveFormatted(liveFoodWaste, metrics.foodWasted);
 
-            SetSectionLiveFormatted(liveNeedLodging, d.GetCurrentPopulationNeedingLodging());
+            SetSectionLiveFormatted(liveNeedLodging, metrics.lodgingRequestedToday);
+            SetSectionLiveFormatted(liveLodgingSatisfied, metrics.lodgingSatisfiedToday);
 
             SetSectionLiveFormatted(liveWorkersWorking, d.GetCurrentWorkingWorkers());
             SetSectionLiveFormatted(liveWorkersWaiting, d.GetCurrentWaitingWorkers());
             SetSectionLiveFormatted(liveWorkersTraining, d.GetCurrentTrainingWorkers());
             SetSectionLiveFormatted(liveWorkersReleasedToday, d.GetTodayWorkersReleased());
+            SetSectionLiveFormatted(liveWorkersUnassigned, metrics.workersUnassignedToday);
 
             SetSectionLiveFormatted(liveNeedCasework, d.GetCurrentClientsNeedingCasework());
+            SetSectionLiveFormatted(liveCaseworkSatisfied, metrics.caseworkSatisfiedToday);
             SetSectionLiveFormatted(liveInTransitToCasework, d.GetCurrentPeopleInTransitToCasework());
         }
 
@@ -1403,15 +1455,20 @@ public class DailyReportUI : MonoBehaviour
         ShowSectionElement(receiptTotal);
 
         // curr status
-        ShowSectionElement(liveFoodInTransit);
+        //ShowSectionElement(liveFoodInTransit);
         ShowSectionElement(liveKitchenProduction);
+        ShowSectionElement(liveFoodNeeded);
+        ShowSectionElement(liveFoodConsumed);
         ShowSectionElement(liveFoodWaste);
         ShowSectionElement(liveNeedLodging);
+        ShowSectionElement(liveLodgingSatisfied);
         ShowSectionElement(liveWorkersWorking);
         ShowSectionElement(liveWorkersWaiting);
         ShowSectionElement(liveWorkersTraining);
         ShowSectionElement(liveWorkersReleasedToday);
+        ShowSectionElement(liveWorkersUnassigned);
         ShowSectionElement(liveNeedCasework);
+        ShowSectionElement(liveCaseworkSatisfied);
         ShowSectionElement(liveInTransitToCasework);
     }
 
@@ -1684,15 +1741,20 @@ public class DailyReportUI : MonoBehaviour
         ResetSectionElement(receiptTotal);
 
         // new curr status
-        ResetSectionElement(liveFoodInTransit);
+        //ResetSectionElement(liveFoodInTransit);
         ResetSectionElement(liveKitchenProduction);
+        ResetSectionElement(liveFoodNeeded);
+        ResetSectionElement(liveFoodConsumed);
         ResetSectionElement(liveFoodWaste);
         ResetSectionElement(liveNeedLodging);
+        ResetSectionElement(liveLodgingSatisfied);
         ResetSectionElement(liveWorkersWorking);
         ResetSectionElement(liveWorkersWaiting);
         ResetSectionElement(liveWorkersTraining);
         ResetSectionElement(liveWorkersReleasedToday);
+        ResetSectionElement(liveWorkersUnassigned);
         ResetSectionElement(liveNeedCasework);
+        ResetSectionElement(liveCaseworkSatisfied);
         ResetSectionElement(liveInTransitToCasework);
 
         if (satisfactionAnimationSection != null)

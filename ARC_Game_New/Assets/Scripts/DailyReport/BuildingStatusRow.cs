@@ -74,20 +74,38 @@ public class BuildingStatusRow : MonoBehaviour
         if (locationText != null)
         {
             PrebuiltBuildingType type = prebuilt.GetPrebuiltType();
-            if (type == PrebuiltBuildingType.Motel) return;
             locationText.text = prebuilt.GetBuildingName();
 
-            // PrebuiltBuildingType type = prebuilt.GetPrebuiltType();
-
-             if (type == PrebuiltBuildingType.Community && storage != null)
+            if (type == PrebuiltBuildingType.Community && storage != null)
             {
+                int population = storage.GetResourceAmount(ResourceType.Population);
+                int capacity = storage.GetResourceCapacity(ResourceType.Population);
+
+                // Communities don't consume food by population anymore — their need/use come
+                // purely from CommunityFoodDepletionManager's probabilistic requests, tracked
+                // per-facility in DailyReportData.
+                int foodNeed = DailyReportData.Instance != null
+                    ? DailyReportData.Instance.GetTodayCommunityFoodDemandForFacility(prebuilt.name)
+                    : 0;
+                int foodUsed = DailyReportData.Instance != null
+                    ? DailyReportData.Instance.GetTodayCommunityFoodUsedForFacility(prebuilt.name)
+                    : 0;
+
+                if (foodPackNeedText != null) foodPackNeedText.text = $"{foodNeed}";
+                if (foodPackConsumedText != null) foodPackConsumedText.text = $"{foodUsed}";
+                if (lodgingOccupancyText != null) lodgingOccupancyText.text = $"{population}";
+                if (capacityText != null) capacityText.text = $"{capacity}";
+            }
+            else if (type == PrebuiltBuildingType.Motel && storage != null)
+            {
+
                 int population = storage.GetResourceAmount(ResourceType.Population);
                 int foodOnHand = storage.GetResourceAmount(ResourceType.FoodPacks);
                 int foodNeed = Mathf.Max(0, population - foodOnHand);
                 int capacity = storage.GetResourceCapacity(ResourceType.Population);
 
                 if (foodPackNeedText != null) foodPackNeedText.text = $"{foodNeed}";
-                if (foodPackConsumedText != null) foodPackConsumedText.text =$"{storage.GetTodayFoodPacksConsumed()}";
+                if (foodPackConsumedText != null) foodPackConsumedText.text = $"{storage.GetTodayFoodPacksConsumed()}";
                 if (lodgingOccupancyText != null) lodgingOccupancyText.text = $"{population}";
                 if (capacityText != null) capacityText.text = $"{capacity}";
             }

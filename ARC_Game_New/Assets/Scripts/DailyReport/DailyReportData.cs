@@ -50,6 +50,11 @@ public class DailyReportData : MonoBehaviour
 
     private int todayWorkersReleased = 0;
 
+    private int todayLodgingRequested = 0;
+    private int todayLodgingSatisfied = 0;
+    private int todayCaseworkRequestedNew = 0;
+    private int todayCaseworkSatisfied = 0;
+
     [Header("Score Assumptions")]
     public int assumedTotalWorkerPoolSize = 40;
     public float maxEmergencyFunding = 600000f;
@@ -75,6 +80,12 @@ public class DailyReportData : MonoBehaviour
     // quantities generated for them, tracked separately from the consumption-rate "clients" above.
     private int todayCommunityFoodDemand = 0;
     private int cumulativeCommunityFoodDemand = 0;
+    private int todayCommunityFoodUsed = 0;
+    private Dictionary<string, int> todayCommunityFoodDemandByFacility = new Dictionary<string, int>();
+    private Dictionary<string, int> todayCommunityFoodUsedByFacility = new Dictionary<string, int>();
+
+    private int todayFoodNeedStartOfDay = 0;
+    private int todayFoodNeedRound3 = 0;
 
 
 
@@ -157,7 +168,10 @@ public class DailyReportData : MonoBehaviour
             ClientStayTracker.Instance.OnCaseworkRequested += OnCaseworkRequested;
 
         if (GlobalClock.Instance != null)
+        {
             GlobalClock.Instance.OnDayChanged += OnDayChangedForLodgingNights;
+            GlobalClock.Instance.OnTimeSegmentChanged += CaptureRound3FoodNeed; // NEW
+        }
         //END NEW
     }
 
@@ -167,11 +181,13 @@ public class DailyReportData : MonoBehaviour
         
         if (ClientStayTracker.Instance != null)
             ClientStayTracker.Instance.OnCaseworkRequested -= OnCaseworkRequested;
-        if (GlobalClock.Instance != null) {
+        if (GlobalClock.Instance != null)
+        {
             GlobalClock.OnRoundEnd -= AccumulateRoundMetrics;
             GlobalClock.Instance.OnDayChanged -= OnDayChangedForLodgingNights;
+            GlobalClock.Instance.OnTimeSegmentChanged -= CaptureRound3FoodNeed; // NEW
         }
-            
+
     }
     //END NEW
 
@@ -218,13 +234,32 @@ public class DailyReportData : MonoBehaviour
         Debug.Log($"After sync - Created: {todayCreatedTasks.Count}, Completed: {todayCompletedTasks.Count}, Expired: {todayExpiredTasks.Count}");
     }
 
+    //void RecordDayStartMetrics()
+    //{
+    //    if (budgetSystem != null)
+    //    {
+    //        dayStartBudget = budgetSystem.GetCurrentBudget();
+    //        dayStartSatisfaction = budgetSystem.GetCurrentSatisfaction();
+    //        dayStartEfficiency = budgetSystem.GetCurrentEfficiency();   
+    //        dayStartBudgetRecorded = true;
+    //        Debug.Log($"Recorded day start budget: {dayStartBudget}, satisfaction: {dayStartSatisfaction}, efficiency: {dayStartEfficiency}");
+    //    }
+    //    else
+    //    {
+    //        dayStartBudgetRecorded = false;
+    //        Debug.LogWarning("budgetSystem null during RecordDayStartMetrics - will retry in GenerateDailyReport");
+    //    }
+    //    dayStartPopulation = CalculateTotalPopulation();
+    //    todayFoodProduced = CalculateKitchenProductionCapacity();
+    //}
+
     void RecordDayStartMetrics()
     {
         if (budgetSystem != null)
         {
             dayStartBudget = budgetSystem.GetCurrentBudget();
             dayStartSatisfaction = budgetSystem.GetCurrentSatisfaction();
-            dayStartEfficiency = budgetSystem.GetCurrentEfficiency();   
+            dayStartEfficiency = budgetSystem.GetCurrentEfficiency();
             dayStartBudgetRecorded = true;
             Debug.Log($"Recorded day start budget: {dayStartBudget}, satisfaction: {dayStartSatisfaction}, efficiency: {dayStartEfficiency}");
         }
@@ -235,6 +270,42 @@ public class DailyReportData : MonoBehaviour
         }
         dayStartPopulation = CalculateTotalPopulation();
         todayFoodProduced = CalculateKitchenProductionCapacity();
+        todayFoodNeedStartOfDay = SumShelterMotelFoodDemand(); // NEW
+    }
+
+    int SumShelterMotelFoodDemand()
+    {
+        int total = 0;
+        foreach (var b in FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Shelter))
+        {
+            var s = b.GetComponent<BuildingResourceStorage>();
+            if (s == null) continue;
+            int people = s.GetResourceAmount(ResourceType.Population) + (s.workersConsumeFoodToo ? b.GetAssignedWorkforce() : 0);
+            total += people * s.foodPerPersonPerNRounds;
+        }
+        foreach (var pb in FindObjectsOfType<PrebuiltBuilding>().Where(p => p.GetPrebuiltType() == PrebuiltBuildingType.Motel))
+        {
+            var s = pb.GetResourceStorage();
+            if (s == null) continue;
+            total += s.GetResourceAmount(ResourceType.Population) * s.foodPerPersonPerNRounds;
+        }
+        return total;
+    }
+
+    void CaptureRound3FoodNeed(int newSegment)
+    {
+        if (newSegment == 2) // 0 idx
+            todayFoodNeedRound3 = SumShelterMotelFoodDemand();
+    }
+
+    public int GetTodayFoodNeeded() => todayFoodNeedStartOfDay + todayFoodNeedRound3 + GetTodayCommunityFoodDemand();
+
+    public int GetTodayFoodConsumedTotal()
+    {
+        int total = GetTodayCommunityFoodUsed();
+        foreach (var s in FindObjectsOfType<BuildingResourceStorage>())
+            total += s.GetTodayFoodPacksConsumed();
+        return total;
     }
 
     public float GetDayStartSatisfaction() => dayStartSatisfaction;
@@ -321,7 +392,18 @@ public class DailyReportData : MonoBehaviour
         todayWorkerTrainingCost = 0f;
 
         todayWorkersReleased = 0;
+        //todayCommunityFoodDemand = 0;
         todayCommunityFoodDemand = 0;
+        todayCommunityFoodUsed = 0;
+        todayCommunityFoodDemandByFacility.Clear();
+        todayCommunityFoodUsedByFacility.Clear();
+        todayFoodNeedRound3 = 0;
+
+        todayLodgingRequested = 0;
+        todayLodgingSatisfied = 0;
+
+        todayCaseworkRequestedNew = 0;
+        todayCaseworkSatisfied = 0;
     }
 
     //NEW
@@ -364,7 +446,8 @@ public class DailyReportData : MonoBehaviour
     void OnCaseworkRequested(ClientGroup group)
     {
         cumulativeClientsRequestedCasework += group.clientsWithCaseworkNeed;
-        RecalcCaseworkSatisfaction();   
+        todayCaseworkRequestedNew += group.clientsWithCaseworkNeed; // NEW
+        RecalcCaseworkSatisfaction();
     }
 
     void OnDayChangedForLodgingNights(int newDay)
@@ -430,19 +513,49 @@ public class DailyReportData : MonoBehaviour
         RecalcWorkerEfficiency();
     }
 
-    /// <summary>
-    /// Called once when a food-request task is generated for a facility with no consumption rate
-    /// (e.g. Community) — see TaskSystem.CreateTaskFromDatabase. Not touched by fulfillment,
-    /// multi-delivery, or later rounds, so each task counts toward today's demand exactly once.
-    /// </summary>
+
     public void RecordCommunityFoodDemand(int amount)
     {
         todayCommunityFoodDemand += amount;
         cumulativeCommunityFoodDemand += amount;
     }
 
+    public void RecordCommunityFoodDemand(string facilityName, int amount)
+    {
+        RecordCommunityFoodDemand(amount); 
+        if (string.IsNullOrEmpty(facilityName)) return;
+        todayCommunityFoodDemandByFacility.TryGetValue(facilityName, out int existing);
+        todayCommunityFoodDemandByFacility[facilityName] = existing + amount;
+    }
+
+    public void RecordCommunityFoodUsedToday(string facilityName, int amount)
+    {
+        todayCommunityFoodUsed += amount;
+        if (string.IsNullOrEmpty(facilityName)) return;
+        todayCommunityFoodUsedByFacility.TryGetValue(facilityName, out int existing);
+        todayCommunityFoodUsedByFacility[facilityName] = existing + amount;
+    }
+
     public int GetTodayCommunityFoodDemand() => todayCommunityFoodDemand;
     public int GetCumulativeCommunityFoodDemand() => cumulativeCommunityFoodDemand;
+    public int GetTodayCommunityFoodUsed() => todayCommunityFoodUsed;
+
+    public int GetTodayCommunityFoodDemandForFacility(string facilityName) =>
+        todayCommunityFoodDemandByFacility.TryGetValue(facilityName, out int v) ? v : 0;
+
+    public int GetTodayCommunityFoodUsedForFacility(string facilityName) =>
+        todayCommunityFoodUsedByFacility.TryGetValue(facilityName, out int v) ? v : 0;
+
+    public void RecordLodgingRequestedToday(int amount) => todayLodgingRequested += amount;
+    public void RecordLodgingSatisfiedToday(int amount) => todayLodgingSatisfied += amount;
+    public int GetTodayLodgingRequested() => todayLodgingRequested;
+    public int GetTodayLodgingSatisfied() => todayLodgingSatisfied;
+
+    public void RecordCaseworkSatisfiedToday(int amount) => todayCaseworkSatisfied += amount;
+    public int GetTodayCaseworkRequestedNew() => todayCaseworkRequestedNew;
+    public int GetTodayCaseworkSatisfied() => todayCaseworkSatisfied;
+
+    
 
     public int GetCumulativeFoodPacksConsumedByClients() => cumulativeFoodPacksConsumedByClients;
     public int GetCumulativeFoodPacksNeededByClients() => cumulativeFoodPacksNeededByClients;
@@ -500,6 +613,14 @@ public class DailyReportData : MonoBehaviour
         if (workerSystem == null) return 0;
         var stats = workerSystem.GetWorkerStatistics();
         return stats.trainedNotArrived + stats.untrainedNotArrived;
+    }
+
+    public int GetCurrentUnassignedWorkers()
+    {
+        if (workerSystem == null) workerSystem = FindObjectOfType<WorkerSystem>();
+        if (workerSystem == null) return 0;
+        var stats = workerSystem.GetWorkerStatistics();
+        return stats.trainedFree + stats.untrainedFree;
     }
 
     public int GetCurrentTrainingWorkers()
@@ -1172,7 +1293,15 @@ public class DailyReportData : MonoBehaviour
             .Count();
         
         Debug.Log($"[DailyReport] Workers hired today: {metrics.newWorkersHired}, Workers in training: {metrics.workersInTraining}, Food in storage: {metrics.currentFoodInStorage}");
-        
+
+        metrics.lodgingRequestedToday = todayLodgingRequested;
+        metrics.lodgingSatisfiedToday = todayLodgingSatisfied;
+        metrics.caseworkRequestedTodayNew = todayCaseworkRequestedNew;
+        metrics.caseworkSatisfiedToday = todayCaseworkSatisfied;
+        metrics.workersUnassignedToday = GetCurrentUnassignedWorkers();
+        metrics.foodNeededToday = GetTodayFoodNeeded();
+        metrics.foodConsumedTotalToday = GetTodayFoodConsumedTotal();
+
         return metrics;
     }
     

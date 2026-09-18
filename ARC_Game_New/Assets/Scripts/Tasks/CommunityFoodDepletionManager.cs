@@ -223,7 +223,8 @@ public class CommunityFoodDepletionManager : MonoBehaviour
 
         // This request IS the community's entire food demand for today — recorded exactly once,
         // here, at the moment the request is created (not on fulfillment/completion).
-        DailyReportData.Instance?.RecordCommunityFoodDemand(requestAmount);
+        //DailyReportData.Instance?.RecordCommunityFoodDemand(requestAmount);
+        DailyReportData.Instance?.RecordCommunityFoodDemand(community.name, requestAmount);
 
         if (showDebugInfo)
             Debug.Log($"[CommunityFoodDepletionManager] {community.name} {causeText} — requesting {requestAmount} to refill to capacity.");

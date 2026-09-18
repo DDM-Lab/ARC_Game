@@ -728,21 +728,34 @@ public class DeliverySystem : MonoBehaviour
     /// </summary>
     void OnVehicleDeliveryCompleted(Vehicle vehicle, DeliveryTask completedTask)
     {
-        // Delivery completions are the last unmeasured event in the round. Every other
-        // mechanic was pinned by marking the thing itself rather than inferring it from a
-        // counter, and inference has run out here: no single latency reproduces "three
-        // orders outstanding, exactly one resolves", because the fleet queue is what
-        // decides. This mark makes that queue observable.
-        SnapshotDebug.MarkContext("delivery:complete", "{\"cargo\":\"" + completedTask.cargoType
-            + "\",\"qty\":" + completedTask.quantity
-            + ",\"src\":\"" + (completedTask.sourceBuilding != null ? completedTask.sourceBuilding.name : "")
-            + "\",\"dst\":\"" + (completedTask.destinationBuilding != null ? completedTask.destinationBuilding.name : "")
-            + "\",\"veh\":\"" + (vehicle != null ? vehicle.GetVehicleName() : "") + "\"}");
-        Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()} ({completedTask.deliveredQuantity}/{completedTask.quantity} landed)");
-        // Client tracking (arrival at a shelter/motel, processing home at a casework site) is done
-        // ONCE, by Vehicle.UnloadCargo -> ClientStayTracker.HandlePopulationDelivery, with the
-        // quantity that actually landed. The nominal-quantity registration that used to live here
-        // doubled every group (BUG_REPORTS A2/A3).
+        Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
+
+        // NEW: record food actually delivered to a community, for Building Stats / Food Used.
+        if (completedTask.cargoType == ResourceType.FoodPacks)
+        {
+            var destCommunity = completedTask.destinationBuilding as PrebuiltBuilding;
+            if (destCommunity != null && destCommunity.GetPrebuiltType() == PrebuiltBuildingType.Community)
+                DailyReportData.Instance?.RecordCommunityFoodUsedToday(destCommunity.name, completedTask.quantity);
+        }
+
+        if (completedTask.cargoType == ResourceType.Population && ClientStayTracker.Instance != null)
+        {
+            if (completedTask.destinationBuilding != null)
+            {
+                ClientStayTracker.Instance.RegisterClientArrival(
+                    completedTask.destinationBuilding,
+                    completedTask.quantity,
+                    $"VehicleDeliv_{completedTask.taskId}"
+                );
+            }
+            if (completedTask.sourceBuilding != null)
+            {
+                ClientStayTracker.Instance.RemoveClientsByQuantity(
+                    completedTask.sourceBuilding,
+                    completedTask.quantity
+                );
+            }
+        }
         // Report to daily tracking
         if (DailyReportData.Instance != null)
         {

@@ -34,6 +34,14 @@ public class WorkerAssignmentHandler : MonoBehaviour
             TaskSystem.Instance.OnTaskCompleted -= OnTaskCompleted;
     }
 
+    /// <summary>
+    /// Call when a building is deconstructed. Site IDs are reused by whatever new building gets
+    /// built on the same AbandonedSite afterward, so a pending "Other"-type task left over from
+    /// the old building (e.g. never closed via TaskDetailUI) must not be reopened for it — see the
+    /// matching WorkerAssignmentTracker.ClearBuilding for the sibling staleness this addresses.
+    /// </summary>
+    public void ClearPendingTask(int buildingId) => pendingTasks.Remove(buildingId);
+
     // ─────────────────────────────────────────────────────────────────
     // ENTRY POINT
     // ─────────────────────────────────────────────────────────────────

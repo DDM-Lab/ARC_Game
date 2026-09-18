@@ -30,10 +30,10 @@ MonoBehaviour:
   resourceTriggers:
   - facilityType: 3
     resourceType: 0
-    resourceThreshold: 200
+    resourceThreshold: 99
     condition: 3
   probabilityTriggers:
-  - probability: 0.5
+  - probability: 0.4
   floodTileTriggers: []
   floodedFacilityTriggers: []
   budgetTriggers: []
@@ -41,6 +41,7 @@ MonoBehaviour:
   workforceTriggers: []
   facilityStatusTriggers: []
   weatherTriggers: []
+  latestGenerationRound: 0
   requireAllTriggers: 1
   isGlobalTask: 0
   targetFacilityType: 3
@@ -89,6 +90,8 @@ MonoBehaviour:
     deliveryQuantity: 100
     deliveryPercentage: 0
     deliverAll: 0
+    costPerUnit: 0
+    requireFullQuantity: 0
     sourceType: 3
     sourceBuilding: 3
     sourcePrebuilt: 0
@@ -114,6 +117,8 @@ MonoBehaviour:
     deliveryQuantity: 100
     deliveryPercentage: 0
     deliverAll: 0
+    costPerUnit: 0
+    requireFullQuantity: 0
     sourceType: 3
     sourceBuilding: 3
     sourcePrebuilt: 0

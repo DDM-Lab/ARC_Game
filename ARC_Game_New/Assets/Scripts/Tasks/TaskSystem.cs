@@ -120,7 +120,8 @@ public class GameTask
     public TaskStatus status;
     public string affectedFacility;      // GameObject name — used for delivery lookup
     public string facilityDisplayName;   // Human-readable name — used for UI display only
-    public int foodAmount;               // Snapshot of the facility's current food need at task creation — for [food_amount] display only
+    public int foodAmount;               // Facility's food need — for [food_amount] display only. Kept live by TaskSystem.RefreshTaskAgainstLiveState, not just a creation-time snapshot.
+    public int populationAmount;         // Facility's population — for [population_amount] display only. Same live refresh as foodAmount.
     public string description;
     public Sprite taskImage;
 
@@ -194,8 +195,8 @@ public class GameTask
 
     /// <summary>
     /// Substitutes task-data placeholders — [facility_name], [facility_name_plain],
-    /// [relocation_rounds], and [food_amount] — with their live values. Use this everywhere a
-    /// task's title, description, or agent messages are displayed.
+    /// [relocation_rounds], [food_amount], and [population_amount] — with their live values. Use
+    /// this everywhere a task's title, description, or agent messages are displayed.
     ///
     /// [facility_name] renders as a clickable blue link that highlights the facility on the map.
     /// [facility_name_plain] renders the same name as plain text, no link/color — use it wherever
@@ -203,8 +204,9 @@ public class GameTask
     /// since a hardcoded link color would clash with it.
     /// Pass plainFacilityName: true to render [facility_name] itself as plain for a given call,
     /// without having to change the underlying task data.
-    /// [food_amount] is a snapshot of the requesting facility's food need taken when this task
-    /// was created (see foodAmount) — the current round's request only, not any follow-up task.
+    /// [food_amount] and [population_amount] read foodAmount/populationAmount, which
+    /// TaskSystem.RefreshTaskAgainstLiveState keeps in sync with the facility's actual current
+    /// need/population — not frozen at whatever they were when the task was created.
     /// </summary>
     public string ResolvePlaceholders(string text, bool plainFacilityName = false)
     {
@@ -239,6 +241,11 @@ public class GameTask
         if (text.Contains("[food_amount]"))
         {
             text = text.Replace("[food_amount]", foodAmount.ToString());
+        }
+
+        if (text.Contains("[population_amount]"))
+        {
+            text = text.Replace("[population_amount]", populationAmount.ToString());
         }
 
         return text;
@@ -559,6 +566,9 @@ public class TaskSystem : MonoBehaviour
             // pass at all; it generates only from OnTimeSegmentChanged.
             GlobalClock.Instance.OnSimulationEnded += OnSimulationEndedCheckDayComplete;
         }
+
+        // Round-end sweep for tasks stranded by an emptied facility (see SweepStalePopulationTasks)
+        GlobalClock.OnRoundEnd += SweepStalePopulationTasks;
 
         // Listen for delivery task completion events
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
@@ -1555,7 +1565,176 @@ public class TaskSystem : MonoBehaviour
             {
                 TaskResultManager.Instance.ShowTaskResult(task);
             }
+
+            // This decision may have just drained the facility another task depends on (e.g. a
+            // shelter relocation confirmed here can empty a shelter a food/casework request is
+            // still waiting on). Don't wait for the player to happen to open that other task, or
+            // for the next round-end sweep — check everyone else right now.
+            SweepStalePopulationTasks();
         }
+    }
+
+    /// <summary>
+    /// Auto-resolves an active task whose remaining choices depend on clients being present at a
+    /// facility that's now empty — relocated away or fed by a different task earlier in the same
+    /// round (e.g. a shelter relocation task moved the same clients away before a pending casework
+    /// task could act on them). Left alone, the task's choice would fail validation forever, or
+    /// worse, pass validation and only fail at execution with a misleading error — this resolves
+    /// it immediately as Completed with an explanatory reason instead, since there was nothing
+    /// left for the player to do and it isn't a result of anything they did wrong.
+    /// </summary>
+    public void ResolveTaskClientsAlreadyRelocated(GameTask task, string reason = null)
+    {
+        if (task == null || !activeTasks.Contains(task)) return;
+
+        task.status = TaskStatus.Completed;
+        activeTasks.Remove(task);
+        completedTasks.Add(task);
+
+        OnTaskCompleted?.Invoke(task);
+
+        if (taskCenterUI != null && taskCenterUI.taskCenterPanel.activeInHierarchy)
+        {
+            taskCenterUI.RefreshTaskList();
+        }
+
+        if (reason == null)
+        {
+            string facilityLabel = !string.IsNullOrEmpty(task.facilityDisplayName) ? task.facilityDisplayName : task.affectedFacility;
+            reason = $"This task has been automatically canceled — there are no longer any people at {facilityLabel} to act on. They were already relocated elsewhere before this task could be resolved.";
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"Auto-resolved task (clients already relocated): {task.taskTitle}");
+        GameLogPanel.Instance.LogTaskEvent($"Auto-resolved task '{task.taskTitle}': {reason}");
+
+        if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
+        {
+            TaskResultManager.Instance.ShowTaskResult(task, reason);
+        }
+    }
+
+    /// <summary>
+    /// Runs once per round (GlobalClock.OnRoundEnd) as a safety net over every active task — see
+    /// RefreshTaskAgainstLiveState for what it actually checks/fixes per task.
+    ///
+    /// The per-round cadence deliberately doesn't care HOW a facility emptied out — relocated by
+    /// another task, left naturally (ClientStayTracker.TriggerNonCaseworkDeparture removes
+    /// population directly, with no event this system could hook), flood damage, etc. An earlier
+    /// version tried hooking every population-draining code path individually and missed cases
+    /// like that; checking actual state instead can't miss a path that hasn't been found yet.
+    /// TaskDetailUI additionally calls RefreshTaskAgainstLiveState directly when a task is opened,
+    /// so staleness within the same round doesn't have to wait for the next sweep.
+    /// </summary>
+    void SweepStalePopulationTasks()
+    {
+        if (activeTasks.Count == 0) return;
+
+        foreach (GameTask task in activeTasks.ToList())
+            RefreshTaskAgainstLiveState(task);
+    }
+
+    /// <summary>
+    /// Re-validates one task's client/food-dependent choices against LIVE facility state. Called
+    /// both by the round-end sweep above and by TaskDetailUI.ShowTaskDetail right before a task is
+    /// displayed, since a task can go stale — or its displayed numbers can drift from what
+    /// execution will actually do — within the same round it's opened, before the next sweep runs.
+    ///
+    /// Two things can happen, per delivery choice on the task:
+    ///  - Population choices: if the facility's population has dropped to zero, there's nothing
+    ///    left to relocate — the whole task is auto-resolved via ResolveTaskClientsAlreadyRelocated
+    ///    and this returns false. The caller should treat that as "nothing to show." Otherwise,
+    ///    populationAmount (what [population_amount] placeholders render) is refreshed to the live
+    ///    count, so choice text like "Send N clients..." can't drift from how many will actually
+    ///    move once ClientRelocationHandler clamps the request to what's actually there.
+    ///  - PopulationBased FoodPacks choices: foodAmount (the [food_amount] placeholder) would
+    ///    otherwise stay frozen at whatever the facility needed at task creation, but
+    ///    FoodDeliveryHandler.ResolveQuantity always computes the LIVE need at cost/execution time —
+    ///    so if population dropped after creation (e.g. residents relocated away mid-round), the
+    ///    displayed meal count and the actual cost/delivery could silently disagree. This refreshes
+    ///    foodAmount to match, or auto-resolves the task if the live need has dropped to zero.
+    ///
+    /// Returns true if the task is still valid (whether or not anything needed refreshing).
+    /// </summary>
+    public bool RefreshTaskAgainstLiveState(GameTask task)
+    {
+        if (task == null || !activeTasks.Contains(task) || task.agentChoices == null) return task != null;
+
+        MonoBehaviour facility = FindTriggeringFacility(task);
+        if (facility == null) return true;
+
+        foreach (AgentChoice choice in task.agentChoices)
+        {
+            if (!(choice.triggersDelivery || choice.immediateDelivery)) continue;
+
+            if (choice.deliveryCargoType == ResourceType.Population)
+            {
+                // Casework tasks are about a specific ClientGroup (a subset of the facility's
+                // residents — e.g. 100 people at a motel, only 30 of whom actually requested
+                // casework), not the facility's total occupancy. ClientStayTracker tracks that
+                // group's live headcount via the |CLIENT_GROUP_ID marker GenerateCaseworkTask
+                // embeds in the task description; only fall back to total facility population
+                // (correct for whole-population tasks like Community_TransportRequest or
+                // Shelter_Flood_Damage evacuation) when this task has no such marker at all.
+                int? caseworkNeed = ClientStayTracker.Instance?.GetClientsWithCaseworkNeedForTask(task);
+                int population = caseworkNeed
+                    ?? (ClientRelocationHandler.Instance != null ? ClientRelocationHandler.Instance.GetPopulation(facility) : 0);
+
+                if (population <= 0)
+                {
+                    // caseworkNeed.HasValue means the facility itself may still hold plenty of
+                    // other residents — it's specifically this task's clients who are gone, so say
+                    // that rather than the generic "no one left at this facility" wording.
+                    string reason = caseworkNeed.HasValue
+                        ? "This casework request has been automatically canceled — the clients it was for have already been relocated elsewhere."
+                        : null;
+                    ResolveTaskClientsAlreadyRelocated(task, reason);
+                    return false;
+                }
+
+                if (population != task.populationAmount)
+                {
+                    if (showDebugInfo)
+                        Debug.Log($"Refreshed live population for '{task.taskTitle}': {task.populationAmount} -> {population}");
+                    task.populationAmount = population;
+                }
+
+                // TaskItemUI's task-list "N people" line reads impact.value directly (not
+                // populationAmount/[population_amount]) — without this, it keeps showing the
+                // creation-time headcount forever, even though the actual relocation always uses
+                // live population and populationAmount above is already correct.
+                foreach (TaskImpact impact in task.impacts)
+                {
+                    if (impact.impactType == ImpactType.Clients && impact.value != population)
+                        impact.value = population;
+                }
+            }
+            else if (choice.deliveryCargoType == ResourceType.FoodPacks
+                     && choice.quantityType == DeliveryQuantityType.PopulationBased)
+            {
+                BuildingResourceStorage storage = facility.GetComponent<BuildingResourceStorage>()
+                    ?? facility.GetComponent<PrebuiltBuilding>()?.GetResourceStorage();
+                if (storage == null || !storage.enablePopulationBasedConsumption) continue;
+
+                int liveNeed = storage.GetFoodNeed();
+                if (liveNeed <= 0)
+                {
+                    string facilityLabel = !string.IsNullOrEmpty(task.facilityDisplayName) ? task.facilityDisplayName : task.affectedFacility;
+                    ResolveTaskClientsAlreadyRelocated(task,
+                        $"This request has been automatically canceled — {facilityLabel}'s food need has already been met and no longer applies.");
+                    return false;
+                }
+
+                if (liveNeed != task.foodAmount)
+                {
+                    if (showDebugInfo)
+                        Debug.Log($"Refreshed live food need for '{task.taskTitle}': {task.foodAmount} -> {liveNeed}");
+                    task.foodAmount = liveNeed;
+                }
+            }
+        }
+
+        return true;
     }
 
     // =========================================================================
@@ -1955,23 +2134,12 @@ public class TaskSystem : MonoBehaviour
         newTask.deliveryTimeLimit = taskData.deliveryTimeLimit;
         newTask.deliveryFailureSatisfactionPenalty = taskData.deliveryFailureSatisfactionPenalty;
 
-        // Demand quantity for people-based fulfillment (B2). Scoped to LODGING (relocation): demand =
-        // the largest delivery quantity among its delivery choices = the people to be housed.
-        // RewardMetricsTracker then credits resolved/fulfilled by PEOPLE for lodging. Food is left on
-        // the legacy per-task path (we don't track food delivered quantity, and food fulfillment
-        // already works), so demandQuantity stays 0 for food and the tracker falls back accordingly.
         if (newTask.taskTag == TaskTag.Lodging)
         {
-            int demand = 0;
-            foreach (AgentChoice c in newTask.agentChoices)
-                if (c.triggersDelivery || c.immediateDelivery)
-                    demand = Mathf.Max(demand, c.deliveryQuantity);
-            newTask.demandQuantity = demand;
+            int clients = newTask.impacts.FirstOrDefault(i => i.impactType == ImpactType.Clients)?.value ?? 0;
+            DailyReportData.Instance?.RecordLodgingRequestedToday(clients);
         }
 
-        SnapshotDebug.MarkContext("task:created", "{\"id\":" + newTask.taskId
-            + ",\"title\":\"" + newTask.taskTitle
-            + "\",\"rounds\":" + newTask.roundsRemaining + "}");
         activeTasks.Add(newTask);
         OnTaskCreated?.Invoke(newTask);
 
@@ -2150,12 +2318,26 @@ public class TaskSystem : MonoBehaviour
                 return FindFacilityByName(choice.specificDestinationName);
 
             case DeliveryDestinationType.SpecificBuilding:
+                // For Population cargo, a destination must have room for the FULL amount this
+                // choice would actually send — not just some room — so this agrees with
+                // TaskDetailUI.ValidateChoiceDelivery's confirm-time check and with
+                // ClientRelocationHandler.ExecuteToSpecificDestination's own toSend calculation.
+                // Other cargo types are unaffected (defaults to requiring just 1, same as before).
+                int requiredQuantity = 1;
+                if (choice.deliveryCargoType == ResourceType.Population
+                    && triggeringFacility != null && ClientRelocationHandler.Instance != null)
+                {
+                    int sourcePopulation = ClientRelocationHandler.Instance.GetPopulation(triggeringFacility);
+                    requiredQuantity = choice.deliveryQuantity > 0
+                        ? Mathf.Min(choice.deliveryQuantity, sourcePopulation) : sourcePopulation;
+                }
+
                 // Exclude the triggering facility from destination search
                 Building[] buildings = FindObjectsOfType<Building>()
                 .Where(b => b.GetBuildingType() == choice.destinationBuilding)
                 .Where(b => b.IsOperational()) // Only operational buildings
                 .Where(b => b != triggeringFacility) // Exclude source facility
-                .Where(b => IsValidDeliveryDestination(b, choice.deliveryCargoType))
+                .Where(b => IsValidDeliveryDestination(b, choice.deliveryCargoType, requiredQuantity))
                 .ToArray();
 
                 if (buildings.Length == 0)
@@ -2231,12 +2413,30 @@ public class TaskSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Validates a facility as a destination for a cargo type
+    /// Validates a facility as a destination for a cargo type. requiredQuantity is how many units
+    /// must actually fit — default 1 preserves the original "not already totally full" behavior
+    /// for callers that don't know/care about an exact amount.
     /// </summary>
-    private bool IsValidDeliveryDestination(MonoBehaviour facility, ResourceType cargo)
+    private bool IsValidDeliveryDestination(MonoBehaviour facility, ResourceType cargo, int requiredQuantity = 1)
     {
         if (facility == null) return false;
         if (facility is Building building && !building.IsOperational()) return false;
+
+        // Population destinations (e.g. CaseworkSite) can also be filled by in-flight self-walk
+        // relocations tracked in ClientRelocationHandler, which never show up as DeliverySystem
+        // reservations — the generic check below only sees currentAmount + reservedInbound, so a
+        // site with a full round's worth of people already walking toward it (but not yet arrived)
+        // still looks empty and keeps getting picked as a destination for round after round, until
+        // those arrivals finally land and currentAmount catches up. GetEffectiveSpace already
+        // accounts for that on top of reserved-inbound deliveries — reuse it here instead so this
+        // matches the same capacity accounting TaskDetailUI's validation and Shelter/Motel routing
+        // already use. Must fit the full requiredQuantity, not just be non-zero — otherwise a site
+        // with only a couple of slots left still passes here and gets chosen over a genuinely empty
+        // second site (whichever sorts first/nearest), silently sending far more people than it can
+        // actually hold instead of routing them to the site that actually has room.
+        if (cargo == ResourceType.Population && ClientRelocationHandler.Instance != null)
+            return ClientRelocationHandler.Instance.GetEffectiveSpace(facility) >= Mathf.Max(1, requiredQuantity);
+
         BuildingResourceStorage storage = facility.GetComponent<BuildingResourceStorage>();
         if (storage != null)
         {

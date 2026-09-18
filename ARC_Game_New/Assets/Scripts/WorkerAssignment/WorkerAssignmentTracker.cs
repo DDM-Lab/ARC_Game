@@ -36,4 +36,13 @@ public class WorkerAssignmentTracker : MonoBehaviour
     }
 
     public bool HasBeenAssigned(int buildingId) => assignmentRounds.ContainsKey(buildingId);
+
+    /// <summary>
+    /// Call when a building is deconstructed. Site IDs (buildingId) are reused by whatever new
+    /// building gets built on the same AbandonedSite afterward — without this, the new building
+    /// would inherit the old one's assignment record and IsLockedForRelease would wrongly return
+    /// true (locked) even though the new building has zero workers, capping both worker-count
+    /// inputs at 0 and making it impossible to assign anyone.
+    /// </summary>
+    public void ClearBuilding(int buildingId) => assignmentRounds.Remove(buildingId);
 }

@@ -441,6 +441,16 @@ public class ClientRelocationHandler : MonoBehaviour
         if (delivered < r.quantity)
             AddPopulation(r.source, r.quantity - delivered);
 
+        if (delivered > 0)
+        {
+            Building destBuilding = r.destination.GetComponent<Building>();
+            if (destBuilding != null && destBuilding.GetBuildingType() == BuildingType.CaseworkSite)
+                //Debug.Log("placehold casework recording");
+                DailyReportData.Instance?.RecordCaseworkSatisfiedToday(delivered);
+            else
+                DailyReportData.Instance?.RecordLodgingSatisfiedToday(delivered);
+        }
+
         if (ClientStayTracker.Instance != null && delivered > 0)
             ClientStayTracker.Instance.HandleSelfWalkArrival(r.destination, delivered, r.groupName);
         SnapshotDebug.MarkContext("relocation:arrive", "{\"task\":" + (r.parentTask != null ? r.parentTask.taskId : -1)
@@ -517,6 +527,7 @@ public class ClientRelocationHandler : MonoBehaviour
 
 
 
+
             // Track client arrivals
             Building destBuilding = dest.GetComponent<Building>();
             //if (destBuilding != null && ClientStayTracker.Instance != null && delivered > 0)
@@ -525,8 +536,18 @@ public class ClientRelocationHandler : MonoBehaviour
             //    ClientStayTracker.Instance.RegisterClientArrival(destBuilding, delivered, groupName);
             //}
             // Track client arrivals for both Shelters and Motels
-             // Track arrivals at shelter OR motel for casework (centralized; fixes the
-            // motel-not-tracked bug — motels now generate casework like shelters).
+
+            if (delivered > 0)
+            {
+                anyMoved = true;
+                Building destBuilding2 = dest.GetComponent<Building>();
+                if (destBuilding2 != null && destBuilding2.GetBuildingType() == BuildingType.CaseworkSite)
+                    //Debug.Log("placehold casework recording");
+                    DailyReportData.Instance?.RecordCaseworkSatisfiedToday(delivered);
+                else
+                    DailyReportData.Instance?.RecordLodgingSatisfiedToday(delivered);
+            }
+
             if (ClientStayTracker.Instance != null && delivered > 0)
             {
                 string groupName = $"Relocate_{parentTask.taskId}_{source.name}_to_{dest.name}";
@@ -546,6 +567,11 @@ public class ClientRelocationHandler : MonoBehaviour
         if (parentTask != null) parentTask.deliveredQuantity += totalDelivered;
         return totalDelivered;
     }
+
+    // Population/food tasks stranded by an emptied facility are no longer resolved reactively
+    // here — TaskSystem runs a round-end sweep (SweepStalePopulationTasks) instead, since it
+    // catches every drain path (natural departure, flood, etc.), not just the ones that happen
+    // to go through this handler's own methods.
 
     // ─────────────────────────────────────────────────────────────────
     // PRIVATE HELPERS
@@ -628,6 +654,39 @@ public class ClientRelocationHandler : MonoBehaviour
     }
 
     /// <summary>
+    /// Effective available population space at a single, specific destination — same "raw
+    /// capacity minus reserved-inbound deliveries minus already-walking self-walk relocations"
+    /// accounting GetDestinationsSorted uses for Shelters/Motels above, just for one building
+    /// instead of searching by type. Used to validate SpecificBuilding destinations (e.g.
+    /// Shelter → CaseworkSite) that don't go through GetDestinationsSorted's aggregate search,
+    /// so a full destination is caught at confirm time instead of only failing silently later
+    /// (DetermineChoiceDeliveryDestination returning null at execution).
+    /// </summary>
+    public int GetEffectiveSpace(MonoBehaviour destination)
+    {
+        if (destination == null) return 0;
+
+        int rawSpace;
+        PrebuiltBuilding prebuilt = destination.GetComponent<PrebuiltBuilding>();
+        if (prebuilt != null)
+        {
+            rawSpace = prebuilt.GetPopulationCapacity() - prebuilt.GetCurrentPopulation();
+        }
+        else
+        {
+            BuildingResourceStorage storage = destination.GetComponent<BuildingResourceStorage>();
+            if (storage == null) return 0;
+            rawSpace = storage.GetAvailableSpace(ResourceType.Population);
+        }
+
+        int inbound = DeliverySystem.Instance != null
+            ? DeliverySystem.Instance.GetReservedIncomingQuantity(destination, ResourceType.Population) : 0;
+        int walking = GetPendingIncomingQuantity(destination);
+
+        return Mathf.Max(0, rawSpace - inbound - walking);
+    }
+
+    /// <summary>
     /// Total clients currently self-walking toward any building of the given type
     /// (e.g. all in-flight Shelter → CaseworkSite relocations). Used for reporting/UI,
     /// since these no longer show up as DeliverySystem active tasks.
@@ -654,31 +713,9 @@ public class ClientRelocationHandler : MonoBehaviour
         return building.name;
     }
 
-    /// <summary>Population space still bookable at a destination: storage space minus reserved
-    /// vehicle inbound minus clients already walking there. Works for shelters, casework sites
-    /// (Building + storage) and motels (PrebuiltBuilding).</summary>
-    int GetEffectiveSpace(MonoBehaviour destination)
-    {
-        if (destination == null) return 0;
-        DeliverySystem ds = DeliverySystem.Instance;
-        int rawSpace;
-        PrebuiltBuilding pb = destination.GetComponent<PrebuiltBuilding>();
-        if (pb != null && pb.GetPrebuiltType() == PrebuiltBuildingType.Motel)
-            rawSpace = pb.GetPopulationCapacity() - pb.GetCurrentPopulation();
-        else
-        {
-            BuildingResourceStorage storage =
-                destination.GetComponent<Building>()?.GetComponent<BuildingResourceStorage>()
-                ?? destination.GetComponent<BuildingResourceStorage>();
-            if (storage == null) return 0;
-            rawSpace = storage.GetAvailableSpace(ResourceType.Population);
-        }
-        int inbound = ds != null ? ds.GetReservedIncomingQuantity(destination, ResourceType.Population) : 0;
-        int walking = GetPendingIncomingQuantity(destination);
-        return Mathf.Max(0, rawSpace - inbound - walking);
-    }
-
-    int GetPopulation(MonoBehaviour building)
+    /// <summary>Public so callers outside this handler (TaskSystem's stale-task sweep, TaskDetailUI's
+    /// choice validation) can check a facility's current population without duplicating this logic.</summary>
+    public int GetPopulation(MonoBehaviour building)
     {
         PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
         if (pb != null) return pb.GetCurrentPopulation();

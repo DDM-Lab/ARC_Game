@@ -1,4 +1,6 @@
+using System.Runtime.InteropServices;
 using UnityEngine;
+using UnityEngine.Networking;
 using UnityEngine.UI;
 using TMPro;
 
@@ -9,6 +11,10 @@ using TMPro;
 /// only controls visibility/timing). Purely a player-facing prompt on top of the
 /// report — does not touch report display, animation, or the data-collection/
 /// logging flow in DailyReportUI/DailyReportManager.
+///
+/// Also redirects the browser to the Qualtrics follow-up survey (carrying the
+/// same participant ID captured at session start — see PlayerSession) the
+/// instant the panel is shown, i.e. the moment the game is considered finished.
 /// </summary>
 public class EndOfGamePanel : MonoBehaviour
 {
@@ -19,8 +25,17 @@ public class EndOfGamePanel : MonoBehaviour
     [Tooltip("Only revealed once the panel above is closed, so the code stays visible while reviewing the rest of the Day 8 report. Text is predefined in the scene — this script only shows/hides it.")]
     public TextMeshProUGUI reminderText;
 
+    [Header("Qualtrics Follow-up Redirect")]
+    [Tooltip("Follow-up Qualtrics survey URL. {uid} is replaced with the participant's ID (PlayerSession.PlayerName) before redirecting. Leave empty to disable the redirect.")]
+    public string followUpSurveyUrlTemplate = "https://xxxx.qualtrics.com/jfe/form/xxxx/?uid={uid}";
 
     public static EndOfGamePanel Instance { get; private set; }
+
+    // ── jslib import — see Assets/Plugins/WebGL/BrowserRedirect.jslib ──────────
+#if UNITY_WEBGL && !UNITY_EDITOR
+    [DllImport("__Internal")]
+    static extern void RedirectToUrl(string url);
+#endif
 
     void Awake()
     {
@@ -58,6 +73,32 @@ public class EndOfGamePanel : MonoBehaviour
 
         Debug.Log("[EndOfGamePanel] Shown");
         GameLogPanel.Instance?.LogUIInteraction($"Qualtrics code panel shown | session_id={PlayerSession.SessionId}");
+
+        RedirectToFollowUpSurvey();
+    }
+
+    /// <summary>
+    /// Sends the browser straight to the follow-up Qualtrics survey, carrying the same
+    /// participant ID (PlayerSession.PlayerName) that was captured at session start. Uses the
+    /// BrowserRedirect.jslib plugin in WebGL builds; falls back to Application.OpenURL when
+    /// running outside UNITY_WEBGL (e.g. in-editor testing), which opens the system browser
+    /// instead of navigating the page.
+    /// </summary>
+    void RedirectToFollowUpSurvey()
+    {
+        if (string.IsNullOrEmpty(followUpSurveyUrlTemplate)) return;
+
+        string uid = UnityWebRequest.EscapeURL(PlayerSession.PlayerName);
+        string url = followUpSurveyUrlTemplate.Replace("{uid}", uid);
+
+        Debug.Log($"[EndOfGamePanel] Redirecting to follow-up survey: {url}");
+        GameLogPanel.Instance?.LogUIInteraction($"Redirecting to follow-up survey | uid={PlayerSession.PlayerName}");
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        RedirectToUrl(url);
+#else
+        Application.OpenURL(url);
+#endif
     }
 
     public void ClosePanel()

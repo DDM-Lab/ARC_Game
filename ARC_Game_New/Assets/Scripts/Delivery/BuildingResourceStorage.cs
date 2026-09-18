@@ -153,17 +153,50 @@ public class BuildingResourceStorage : MonoBehaviour
         if (currentResources.TryGetValue(type, out int current) && current > capacity)
             currentResources[type] = capacity;
     }
-    
+
+    //void SubscribeToEvents()
+    //{
+    //    // Subscribe to round changes for production and consumption
+    //    if (GlobalClock.Instance != null)
+    //    {
+    //        GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
+    //        GlobalClock.Instance.OnDayChanged += OnDayChanged;
+    //    }
+    //}
+
     void SubscribeToEvents()
     {
-        // Subscribe to round changes for production and consumption
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
             GlobalClock.Instance.OnDayChanged += OnDayChanged;
+            GlobalClock.Instance.OnSimulationEnded += OnSimulationEndedCheckEndOfDayWaste; // NEW
         }
     }
-    
+
+    private bool wasteRecordedToday = false;
+
+    void OnSimulationEndedCheckEndOfDayWaste()
+    {
+        if (GlobalClock.Instance == null || !GlobalClock.Instance.isWaitingForReport) return;
+        if (wasteRecordedToday) return; 
+
+        bool isCommunity = GetComponent<PrebuiltBuilding>()?.GetPrebuiltType() == PrebuiltBuildingType.Community;
+        if (!enableFoodWaste || isCommunity) return;
+
+        int wastedFood = GetResourceAmount(ResourceType.FoodPacks);
+        if (wastedFood > 0)
+        {
+            DailyReportData.Instance.RecordFoodWasted(wastedFood);
+            DailyReportData.Instance.RecordFoodWasteCumulative(wastedFood);
+
+            if (showDebugInfo)
+                Debug.Log($"{gameObject.name} logged {wastedFood} unused meals as today's waste (still shown in storage until day change)");
+            GameLogPanel.Instance.LogResourceChange($"{gameObject.name} logged {wastedFood} unused meals as today's waste");
+        }
+        wasteRecordedToday = true;
+    }
+
     void InitializeStorage()
     {
         // Initialize capacities
@@ -323,23 +356,17 @@ public class BuildingResourceStorage : MonoBehaviour
         return Mathf.Max(0, required - inStorage);
     }
 
-    void HandleDailyReset()
+    void HandleEndOfDayWaste()
     {
-        if (enableFoodWaste)
+        bool isCommunity = GetComponent<PrebuiltBuilding>()?.GetPrebuiltType() == PrebuiltBuildingType.Community;
+
+        if (enableFoodWaste && !isCommunity)
         {
-
-            todayFoodPacksConsumed = 0;
-
-            // Remove all unused food at end of day
             int wastedFood = GetResourceAmount(ResourceType.FoodPacks);
             if (wastedFood > 0)
             {
-                // Report to daily tracking
                 DailyReportData.Instance.RecordFoodWasted(wastedFood);
-
                 DailyReportData.Instance.RecordFoodWasteCumulative(wastedFood);
-
-                
                 RemoveResource(ResourceType.FoodPacks, wastedFood);
 
                 if (showDebugInfo)
@@ -347,8 +374,26 @@ public class BuildingResourceStorage : MonoBehaviour
                 GameLogPanel.Instance.LogResourceChange($"{gameObject.name} wasted {wastedFood} unused meals at end of day");
             }
         }
-        
-        // Start the new day fully stocked (e.g. Kitchens), or with a flat starting amount.
+    }
+
+
+    void HandleDailyReset()
+    {
+        if (enableFoodWaste)
+        {
+            todayFoodPacksConsumed = 0;
+
+            bool isCommunity = GetComponent<PrebuiltBuilding>()?.GetPrebuiltType() == PrebuiltBuildingType.Community;
+            if (!isCommunity)
+            {
+                int leftover = GetResourceAmount(ResourceType.FoodPacks);
+                if (leftover > 0)
+                    RemoveResource(ResourceType.FoodPacks, leftover);
+            }
+        }
+
+        wasteRecordedToday = false; 
+
         if (fillFoodToCapacityDaily)
         {
             FillFoodToCapacityIfConfigured();
@@ -361,6 +406,44 @@ public class BuildingResourceStorage : MonoBehaviour
             GameLogPanel.Instance.LogResourceChange($"{gameObject.name} received {actualAdded} starting meals at start of day");
         }
     }
+
+    //void HandleDailyReset()
+    //{
+    //    bool isCommunity = GetComponent<PrebuiltBuilding>()?.GetPrebuiltType() == PrebuiltBuildingType.Community;
+
+    //    if (enableFoodWaste && !isCommunity)
+    //    {
+    //        todayFoodPacksConsumed = 0;
+    //        int wastedFood = GetResourceAmount(ResourceType.FoodPacks);
+    //        if (wastedFood > 0)
+    //        {
+    //            // Report to daily tracking
+    //            DailyReportData.Instance.RecordFoodWasted(wastedFood);
+
+    //            DailyReportData.Instance.RecordFoodWasteCumulative(wastedFood);
+
+
+    //            RemoveResource(ResourceType.FoodPacks, wastedFood);
+
+    //            if (showDebugInfo)
+    //                Debug.Log($"{gameObject.name} wasted {wastedFood} unused meals at end of day");
+    //            GameLogPanel.Instance.LogResourceChange($"{gameObject.name} wasted {wastedFood} unused meals at end of day");
+    //        }
+    //    }
+
+    //    // Start the new day fully stocked (e.g. Kitchens), or with a flat starting amount.
+    //    if (fillFoodToCapacityDaily)
+    //    {
+    //        FillFoodToCapacityIfConfigured();
+    //    }
+    //    else if (startingFoodPacks > 0)
+    //    {
+    //        int actualAdded = AddResource(ResourceType.FoodPacks, startingFoodPacks);
+    //        if (showDebugInfo)
+    //            Debug.Log($"{gameObject.name} received {actualAdded} starting meals at start of day");
+    //        GameLogPanel.Instance.LogResourceChange($"{gameObject.name} received {actualAdded} starting meals at start of day");
+    //    }
+    //}
 
     /// <summary>
     /// Tops FoodPacks up to full capacity (used by storages with fillFoodToCapacityDaily,
@@ -552,7 +635,17 @@ public class BuildingResourceStorage : MonoBehaviour
         
         return string.Join(", ", summary);
     }
-    
+
+    //void OnDestroy()
+    //{
+    //    // Unsubscribe from events
+    //    if (GlobalClock.Instance != null)
+    //    {
+    //        GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
+    //        GlobalClock.Instance.OnDayChanged -= OnDayChanged;
+    //    }
+    //}
+
     void OnDestroy()
     {
         // Unsubscribe from events
@@ -560,6 +653,7 @@ public class BuildingResourceStorage : MonoBehaviour
         {
             GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
             GlobalClock.Instance.OnDayChanged -= OnDayChanged;
+            GlobalClock.Instance.OnSimulationEnded -= OnSimulationEndedCheckEndOfDayWaste; // NEW
         }
     }
 

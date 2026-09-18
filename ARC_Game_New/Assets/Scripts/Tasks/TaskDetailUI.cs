@@ -143,6 +143,20 @@ public class TaskDetailUI : MonoBehaviour
 
     public void ShowTaskDetail(GameTask task)
     {
+        // Re-check the task's live state before displaying it — a population/food-dependent choice
+        // can go stale (or its displayed quantity can drift from what confirming will actually cost)
+        // within the same round it's opened, before TaskSystem's next round-end sweep would catch
+        // it. If this auto-resolves the task, there's nothing left to show.
+        if (TaskSystem.Instance != null && !TaskSystem.Instance.RefreshTaskAgainstLiveState(task))
+        {
+            if (taskDetailPanel != null && currentTask == task)
+                taskDetailPanel.SetActive(false);
+
+            FindObjectOfType<TaskCenterNotification>()?.RefreshNotification();
+            FindObjectOfType<CategoryTaskManager>()?.RefreshTaskList();
+            return;
+        }
+
         // Check if this task was shown before
         bool isFirstTimeShowing = !previouslyShownTaskIds.Contains(task.taskId);
         
@@ -1042,7 +1056,27 @@ public class TaskDetailUI : MonoBehaviour
         foreach (var input in task.numericalInputs)
             numericalInputs[input.inputId] = input;
 
-        if (!ValidateBeforeConfirm(task, choice, out errorMessage)) return false;
+        if (task.isExpired) { errorMessage = "This task has expired and can no longer be completed."; return false; }
+
+        // Re-check live state right before acting, not just when the panel was opened — the
+        // facility this task depends on may have been drained by a different task confirmed while
+        // this panel sat open (see TaskSystem.RefreshTaskAgainstLiveState). If that auto-resolves
+        // the task, its own popup already explains why — don't also try to execute a dead choice.
+        if (TaskSystem.Instance != null && !TaskSystem.Instance.RefreshTaskAgainstLiveState(task))
+        {
+            errorMessage = "This task is no longer needed and has been automatically closed — see the popup for details.";
+            return false;
+        }
+
+        if (task.agentChoices != null && task.agentChoices.Count > 0 && choice == null)
+        {
+            errorMessage = "Please select a choice before confirming.";
+            return false;
+        }
+
+        string numError;
+        if (!ValidateNumericalInputs(out numError)) { errorMessage = numError; return false; }
+
         if (choice != null && (choice.triggersDelivery || choice.immediateDelivery || choice.enableMultipleDeliveries))
             ToastManager.ShowToast($"Delivery for task '{task.taskTitle}' is added to queue.", ToastType.Info, true);
         return CompleteTaskAction(out errorMessage);
@@ -1063,6 +1097,33 @@ public class TaskDetailUI : MonoBehaviour
             ShowAgentErrorMessage(validationError);
             return;
         }
+
+        // Re-check live state right before acting — same reasoning as TryConfirmTask. If this
+        // auto-resolves the task, ResolveTaskClientsAlreadyRelocated already showed the explanatory
+        // popup, so just close this panel on it instead of also raising a redundant error.
+        if (!TaskSystem.Instance.RefreshTaskAgainstLiveState(currentTask))
+        {
+            CloseTaskDetail();
+            FindObjectOfType<TaskCenterNotification>()?.RefreshNotification();
+            FindObjectOfType<CategoryTaskManager>()?.RefreshTaskList();
+            return;
+        }
+
+        if (currentTask.agentChoices != null && currentTask.agentChoices.Count > 0 && selectedChoice == null)
+        {
+            ShowAgentErrorMessage("Please select a choice before confirming.");
+            return;
+        }
+
+        // Validate numerical inputs before proceeding
+        string numericalValidationError;
+        if (!ValidateNumericalInputs(out numericalValidationError))
+        {
+            ShowAgentErrorMessage(numericalValidationError);
+            return;
+        }
+
+        // Validate selected choice if it involves any type of delivery
         if (selectedChoice != null && (selectedChoice.triggersDelivery || selectedChoice.immediateDelivery || selectedChoice.enableMultipleDeliveries))
             ToastManager.ShowToast($"Delivery for '{currentTask.taskTitle}' queued.", ToastType.Info, true);
 
@@ -1845,6 +1906,17 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
 
                 case ResourceType.Population:
                 {
+                    // Non-shelter SpecificBuilding (e.g. CaseworkSite): ExecuteClientRelocation
+                    // already routes this to the fallback delivery path (the same one queued
+                    // delivery uses) regardless of immediate/queued, so validation must match —
+                    // otherwise this would validate against Shelter/Motel capacity while execution
+                    // actually targets a completely different building.
+                    if (choice.destinationType == DeliveryDestinationType.SpecificBuilding
+                        && choice.destinationBuilding != BuildingType.Shelter)
+                    {
+                        return ValidateSpecificBuildingPopulationDestination(task, choice, out errorMessage);
+                    }
+
                     bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
                                 || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
                     bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
@@ -1869,19 +1941,17 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                     && FoodDeliveryHandler.Instance.CanExecute(task, choice, out errorMessage);
 
             case ResourceType.Population:
-                // Non-shelter SpecificBuilding (e.g. CaseworkSite): verify it exists on the map.
-                // SpecificBuilding+Shelter falls through to ClientRelocationHandler validation below.
+                // Non-shelter SpecificBuilding (e.g. CaseworkSite) shares one validation helper
+                // with the immediate-delivery branch above, so the two paths can't drift apart —
+                // that's exactly what happened before this was factored out (immediate delivery
+                // had no CaseworkSite case at all and silently validated against Shelter/Motel
+                // capacity instead of the real target). SpecificBuilding+Shelter falls through to
+                // ClientRelocationHandler validation below, which already checks all of this for
+                // Shelter/Motel destinations.
                 if (choice.destinationType == DeliveryDestinationType.SpecificBuilding
                     && choice.destinationBuilding != BuildingType.Shelter)
                 {
-                    bool exists = UnityEngine.Object.FindObjectsOfType<Building>()
-                        .Any(b => b.GetBuildingType() == choice.destinationBuilding && b.IsOperational());
-                    if (!exists)
-                    {
-                        errorMessage = $"There is no {choice.destinationBuilding} currently built on the map. Build one first to use this option.";
-                        return false;
-                    }
-                    return true;
+                    return ValidateSpecificBuildingPopulationDestination(task, choice, out errorMessage);
                 }
                 bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
                             || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
@@ -1899,6 +1969,58 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                 if (!hasVehicle) errorMessage = $"No undamaged vehicle for {choice.deliveryCargoType}";
                 return hasVehicle;
         }
+    }
+
+    /// <summary>
+    /// Validates a Population choice whose destination is a specific, non-Shelter building type
+    /// (currently only CaseworkSite) — used by both the immediate and queued branches of
+    /// ValidateChoiceDelivery above so they can't independently drift out of sync with each other
+    /// or with what ClientRelocationHandler.ExecuteToSpecificDestination actually does. Checks, in
+    /// order: at least one operational building of that type exists; the source facility still has
+    /// clients to send; and at least one candidate has enough effective capacity (accounting for
+    /// reserved-inbound deliveries and in-flight self-walk relocations, same as
+    /// TaskSystem.IsValidDeliveryDestination and Shelter/Motel's GetDestinationsSorted) for the
+    /// full quantity this choice would actually try to send.
+    /// </summary>
+    static bool ValidateSpecificBuildingPopulationDestination(GameTask task, AgentChoice choice, out string errorMessage)
+    {
+        errorMessage = "";
+
+        Building[] candidates = UnityEngine.Object.FindObjectsOfType<Building>()
+            .Where(b => b.GetBuildingType() == choice.destinationBuilding && b.IsOperational())
+            .ToArray();
+        if (candidates.Length == 0)
+        {
+            errorMessage = $"There is no {choice.destinationBuilding} currently built on the map. Build one first to use this option.";
+            return false;
+        }
+
+        MonoBehaviour source = TaskSystem.Instance?.FindTriggeringFacility(task);
+        int available = source != null && ClientRelocationHandler.Instance != null
+            ? ClientRelocationHandler.Instance.GetPopulation(source) : 0;
+        if (available <= 0)
+        {
+            errorMessage = $"No clients at {(source != null ? source.name : task.affectedFacility)} to relocate";
+            return false;
+        }
+
+        // How many clients this choice would actually try to send — mirrors
+        // ClientRelocationHandler.ExecuteToSpecificDestination's own toSend calculation exactly,
+        // so validation agrees with what execution will attempt.
+        int requestedQuantity = choice.deliveryQuantity > 0
+            ? Mathf.Min(choice.deliveryQuantity, available) : available;
+
+        // Must have room for the FULL requested quantity — ExecuteToSpecificDestination sends to
+        // only one destination with no splitting, so partial space isn't good enough.
+        bool hasEnoughSpace = ClientRelocationHandler.Instance != null
+            && candidates.Any(b => ClientRelocationHandler.Instance.GetEffectiveSpace(b) >= requestedQuantity);
+        if (!hasEnoughSpace)
+        {
+            errorMessage = $"{choice.destinationBuilding} doesn't have enough available capacity to receive {requestedQuantity} clients.";
+            return false;
+        }
+
+        return true;
     }
 
     // Helper — reads population from the task's triggering facility
