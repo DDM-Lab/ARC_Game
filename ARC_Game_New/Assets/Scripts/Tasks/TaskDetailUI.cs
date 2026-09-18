@@ -1196,65 +1196,43 @@ private bool CompleteTaskAction(out string failReason)
             }
         }
 
+        // PARITY BUILD: upstream's confirm block verbatim, with the single adaptation that
+        // ExecuteGeneratorDelivery returns int here and bool upstream (`!= 0`). The previous
+        // resolution of this region interleaved both sides and produced code that called
+        // ExecuteGeneratorDelivery up to THREE times, applied ApplyChoiceImpacts TWICE, and ran
+        // the costPerUnit pricing only when the delivery had FAILED — which is why food requests
+        // cost 1 here against upstream's 1000 (the asset now carries value:1 and gets its real
+        // price from costPerUnit x resolved quantity).
         if (selectedChoice.immediateDelivery)
         {
-            int moved = ExecuteGeneratorDelivery(selectedChoice, immediate: true);
-            if (moved == 0)
+            // Resolve the actual quantity BEFORE executing delivery — ExecuteGeneratorDelivery
+            // mutates destination storage (see FoodDeliveryHandler.ExecuteImmediate), which would
+            // change GetFoodNeed()'s result if resolved again afterward. This snapshot is what
+            // costPerUnit-based scaling below uses to price the delivery.
+            int? resolvedQuantity = null;
+            if (selectedChoice.costPerUnit > 0 && selectedChoice.deliveryCargoType == ResourceType.FoodPacks
+                && FoodDeliveryHandler.Instance != null)
             {
-                failReason = "nothing could be moved (no source, no destination, or no space)";
-                return false;
+                MonoBehaviour dest = TaskSystem.Instance.FindTriggeringFacility(currentTask);
+                if (dest != null)
+                    resolvedQuantity = FoodDeliveryHandler.Instance.ResolveQuantity(selectedChoice, dest);
             }
-            ApplyChoiceImpacts(selectedChoice);
-            TaskSystem.Instance.CompleteTask(currentTask);
-        }
-        else if (selectedChoice.triggersDelivery || selectedChoice.enableMultipleDeliveries)
-        {
-            // QUEUE THE DELIVERY
-            int result = ExecuteGeneratorDelivery(selectedChoice, immediate: false);
-            if (result == 0)
-            {
-                // Resolve the actual quantity BEFORE executing delivery — ExecuteGeneratorDelivery
-                // mutates destination storage (see FoodDeliveryHandler.ExecuteImmediate), which would
-                // change GetFoodNeed()'s result if resolved again afterward. This snapshot is what
-                // costPerUnit-based scaling below uses to price the delivery.
-                int? resolvedQuantity = null;
-                if (selectedChoice.costPerUnit > 0 && selectedChoice.deliveryCargoType == ResourceType.FoodPacks
-                    && FoodDeliveryHandler.Instance != null)
-                {
-                    MonoBehaviour dest = TaskSystem.Instance.FindTriggeringFacility(currentTask);
-                    if (dest != null)
-                        resolvedQuantity = FoodDeliveryHandler.Instance.ResolveQuantity(selectedChoice, dest);
-                }
 
-                // MERGE FIX (74304870): upstream's ExecuteGeneratorDelivery returns bool; ours
-                // returns int (0 = nothing queued or moved), because BUG_REPORTS B13 refuses to
-                // charge for a choice that does nothing. Mapped rather than reconciled — whether
-                // that difference actually matters is left for the parity suite to say.
-                bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: true) != 0;
-                if (success)
-                {
-                    ApplyChoiceImpacts(selectedChoice, resolvedQuantity);
-                    TaskSystem.Instance.CompleteTask(currentTask);
-                }
-            }
-            else if (selectedChoice.triggersDelivery)
+            bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: true) != 0;
+            if (success)
             {
-                bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: false) != 0;
-                if (success)
-                    ApplyChoiceImpacts(selectedChoice);
-            }
-            else
-            {
-                ApplyChoiceImpacts(selectedChoice);
+                ApplyChoiceImpacts(selectedChoice, resolvedQuantity);
                 TaskSystem.Instance.CompleteTask(currentTask);
             }
-            ApplyChoiceImpacts(selectedChoice);
-            // CRITICAL: Set to InProgress so the task is tracked!
-            TaskSystem.Instance.SetTaskInProgress(currentTask);
+        }
+        else if (selectedChoice.triggersDelivery)
+        {
+            bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: false) != 0;
+            if (success)
+                ApplyChoiceImpacts(selectedChoice);
         }
         else
         {
-            // Standard choice (Budget/Advisory)
             ApplyChoiceImpacts(selectedChoice);
             TaskSystem.Instance.CompleteTask(currentTask);
         }
