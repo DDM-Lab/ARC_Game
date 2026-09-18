@@ -579,9 +579,12 @@ public class DailyReportUI : MonoBehaviour
         int workingRounds = d.GetCumulativeWorkingWorkerRounds();
         int trainingRounds = d.GetCumulativeTrainingWorkerRounds();
         int roundsElapsed = d.GetCumulativeRoundsElapsed();
-        F($"Worker Use Satisfaction = (1-idle_ratio)/3 + working_ratio/3 + training_ratio/3, ratios vs {assumedTotalWorkerPoolSize} workers x {roundsElapsed} rounds elapsed, x 20% weight x 1000" +
-          $" | idle_rounds={idleRounds}, working_rounds={workingRounds}, training_rounds={trainingRounds}" +
-          $" => idle_sub={currentMetrics.workerIdleSatScore:F1}, working_sub={currentMetrics.workerWorkingSatScore:F1}, training_sub={currentMetrics.workerTrainingSatScore:F1}, total={currentMetrics.satWorkerScore:F1}");
+        //F($"Worker Use Satisfaction = (1-idle_ratio)/3 + working_ratio/3 + training_ratio/3, ratios vs {assumedTotalWorkerPoolSize} workers x {roundsElapsed} rounds elapsed, x 20% weight x 1000" +
+        //  $" | idle_rounds={idleRounds}, working_rounds={workingRounds}, training_rounds={trainingRounds}" +
+        //  $" => idle_sub={currentMetrics.workerIdleSatScore:F1}, working_sub={currentMetrics.workerWorkingSatScore:F1}, training_sub={currentMetrics.workerTrainingSatScore:F1}, total={currentMetrics.satWorkerScore:F1}");
+        int activatedRounds = idleRounds + workingRounds + trainingRounds;
+        F($"Worker Use Satisfaction = 1 - (idle worker-rounds / activated worker-rounds) x 20% weight x 1000" +
+          $" | idle_rounds={idleRounds}, activated_rounds={activatedRounds} => total={currentMetrics.satWorkerScore:F1}");
 
         int wasted = d.GetCumulativeFoodPacksWasted();
         F($"Food Waste Penalty = (food packs wasted / (consumed+wasted)) x 20% weight x 1000 | wasted={wasted}, consumed={foodConsumed} => score={currentMetrics.satWasteScore:F1}");
