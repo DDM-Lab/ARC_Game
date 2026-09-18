@@ -71,8 +71,18 @@ public class ParityProbe : MonoBehaviour
 
     void Start()
     {
-        path = System.IO.Path.Combine(Application.persistentDataPath,
-                   $"{FILE_PREFIX}_{DateTime.UtcNow:yyyyMMdd-HHmmss}.jsonl");
+        // An explicit destination when one is given (ARC_PARITY_TRACE). The default writes a
+        // timestamped file into persistentDataPath and the runner picks the newest — which is a
+        // race the moment two runs overlap, and overlapping runs are the only way to make a
+        // 64-episode suite finish in minutes rather than an hour. Two runs starting inside the
+        // same second would also collide on the filename itself.
+        string explicitPath = null;
+        try { explicitPath = Environment.GetEnvironmentVariable("ARC_PARITY_TRACE"); }
+        catch (Exception) { }
+        path = !string.IsNullOrEmpty(explicitPath)
+            ? explicitPath
+            : System.IO.Path.Combine(Application.persistentDataPath,
+                  $"{FILE_PREFIX}_{DateTime.UtcNow:yyyyMMdd-HHmmss}_{System.Diagnostics.Process.GetCurrentProcess().Id}.jsonl");
         Debug.Log($"[ParityProbe] writing {path}");
         Emit("boot");
     }

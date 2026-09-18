@@ -1259,3 +1259,96 @@ it. Populate from `WorkerSystem.GetWorkersByBuildingId`, or remove the fields.
   while shelter/kitchen food capacities are. Intended asymmetry?
 - **Flood road-blockage (food)** is now a single immediate-delivery choice priced per meal, and
   vehicle repair's "delay" choice lost its satisfaction penalty. Confirm both are final.
+
+---
+
+# Part E — found by the parity harness (2026-09-16/18)
+
+These affect the SHIPPING branch (v1_merge_test), not just the parity instrument. They were
+found while building the parity harness and were previously recorded only in
+`docs/PARITY_LEDGER.md`, which is the wrong home for them — the ledger is about
+V3-vs-upstream differences, these are bugs in our build.
+
+## E1 — the parameter sheet's budget and satisfaction never reach the live economy
+
+**Severity: high.** Across an 18-round headless run the game held `budget 10000, satisfaction 50`
+(the inspector defaults) while the same run logged `budget 8000, satisfaction 100` loaded from
+the sheet. So the sheet is read, reported, and then ignored by the thing it configures.
+
+Suspected mechanism, stated as a hypothesis rather than a proven diagnosis:
+
+```csharp
+while (!configLoader.IsConfigLoaded() && waitTime < 10f)
+{
+    yield return new WaitForSeconds(0.1f);   // SCALED time
+    waitTime += 0.1f;
+}
+```
+
+`GlobalClock` starts with `Time.timeScale = 0f` ("Game starts paused at Day 1") and
+`WaitForSeconds` respects timeScale, so the yield never returns and the loop never exits.
+Supporting evidence: the **unconditional** `Debug.LogWarning("Config load timeout")` on the far
+side of that loop never appears in any log, across every run in a 32-seed suite. Likely fix is
+`WaitForSecondsRealtime`. Same family as the sheet-vs-asset question (ledger D7/D20/D21).
+
+## E2 — `config.json` is inert in desktop builds
+
+`GameConfigLoader` reads it as `UnityWebRequest.Get(Application.streamingAssetsPath + "/config.json")`
+with **no `file://` scheme**, which fails on macOS standalone. The parameter CSV read beside it
+was fixed to use `file://`; this one was not. So map URL, ws URL and strictMap are silently
+ignored in any desktop build — it only works in WebGL. Both branches have this.
+
+## E3 — `Budget_Advisory` is a money pump
+
+`Budget_Advisory.asset` ("Storm Funding Advisory") grants **+100,000** and regenerates. A myopic
+greedy policy takes it every time, and budget goes **10,000 -> 930,000 in five days**. Any agent
+that notices has effectively unlimited budget, every cost term in the reward stops constraining
+anything, and cost-efficiency metrics measure nothing. This is the shape of reward hacking an RL
+run finds without being told to look.
+
+Our D6 external-relation cap currently contains it and upstream has no equivalent — so the
+mitigation is a side effect of a parameter reinterpretation rather than a decision. Worth
+deciding deliberately: should the task repeat, and should the grant be that large against a
+10,000 starting budget?
+
+## E4 — merge hazards that produced silently wrong code (both fixed, recorded as a pattern)
+
+Three successive upstream merges each produced text that compiled wrong or not at all, always
+the same way: **upstream edited inside a method this branch had restructured.**
+
+* `FoodDeliveryHandler` — upstream's new `requireFullQuantity` check referenced `totalEffective`,
+  defined in a region our B11/B12 flood-aware rewrite had replaced. Did not compile.
+* `TaskDetailUI` — upstream's `costPerUnit` pricing merged in cleanly but **its only caller did
+  not**, because that caller lived in a method we had rewritten. Every call site passed the
+  default `null`, so `resolvedDeliveryQuantity.HasValue` was always false and upstream's whole
+  "scale fast-food delivery by population" feature was **dead on arrival**. Compiled fine.
+* `ClientRelocationHandler` — upstream's `anyMoved` bookkeeping, for a bool-returning method,
+  merged into our int-returning `ExecuteImmediate` where it had no declaration.
+
+The middle one is the dangerous shape: a clean compile and a silently disabled upstream feature.
+Worth a deliberate check after every merge that touches a file we have restructured.
+
+## E5 — `v1_merge_test` HEAD did not compile (fixed)
+
+Missing closing brace in `ClientStayTracker.cs`, duplicate `OnDestroy` in `GameLogPanel.cs`.
+Both fixed; recorded because the branch tip was unbuildable for some period.
+
+## E6 — headless could not run without the AI teammates (fixed)
+
+`WebSocketManager.Start()` forced `enableWebSocket = true` in batch mode with no escape, so a
+headless run always attached the router. Now `-no-llm` / `ARC_NO_LLM` / `?llm=0`, checked in
+`Start()` and again in `ConnectToServer()`. Related: "AI off" used to imply "gym server on",
+because `GymServerManager` auto-enables when `enableWebSocket` is false — now guarded.
+
+## E7 — router: tool results could be delivered to the wrong officer (fixed)
+
+Not a game bug; a harness bug that matters for multi-agent work. The router correlates Unity
+action results **by timing** — one in-flight slot under `_unity_commit_lock`, no correlation id.
+That is sound until a send times out: the waiter is dropped, the lock is released, the next
+officer arms a fresh future, and the late reply to the FIRST action lands on the SECOND officer.
+Construction can exceed 10s on the Unity side, so the 30s window is reachable.
+
+Fixed by checking `action_id`, which already round-trips end to end (`action_enumerator` assigns
+it, `ActionExecutionResult` echoes it, the router already parsed it) and simply was not being
+compared. Residual: `action_id` values are not globally unique, so a unique envelope id is still
+needed before allowing more than one action in flight.

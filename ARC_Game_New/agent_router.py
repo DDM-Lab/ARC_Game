@@ -232,6 +232,11 @@ class Session:
         self._websocket: WebSocket = websocket
         self._pending_choice: Optional[asyncio.Future] = None
         self._pending_action: Optional[asyncio.Future] = None
+        # The action_id the armed future is waiting for, or None when the in-flight frame
+        # carries no action_id (select_task_choice). See _handle_action_result: without this,
+        # a result that arrives AFTER its sender timed out is handed to whichever officer is
+        # waiting next, because results correlate by timing alone.
+        self._pending_action_key: Optional[str] = None
         # Correlated response slot for an on-demand get_game_state pull (see
         # _fetch_fresh_state). Unity only pushes state on begin_round + execute
         # results, so we pull to see changes the router didn't cause.
@@ -798,6 +803,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         async with self._unity_commit_lock:
             loop = asyncio.get_event_loop()
             self._pending_action = loop.create_future()
+            self._pending_action_key = action.get("action_id")
 
             # Send execute_action to Unity
             await self._send({
@@ -812,6 +818,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 result_msg = None
             finally:
                 self._pending_action = None
+                self._pending_action_key = None
 
         if result_msg is not None:
             result = {
@@ -939,6 +946,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             async with self._unity_commit_lock:
                 loop = asyncio.get_event_loop()
                 self._pending_action = loop.create_future()
+                self._pending_action_key = None   # this frame carries no action_id
                 await self._send({
                     "type": "select_task_choice",
                     "taskId": int(tid),
@@ -952,6 +960,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                     return None
                 finally:
                     self._pending_action = None
+                    self._pending_action_key = None
 
         def _is_not_found(m):
             return (m is not None and not m.get("success")
@@ -1484,13 +1493,18 @@ Respond with ONLY the package index number (0, 1, or 2).
         opening_mode = getattr(agent, "opening_mode", "emergent")
         # THREE activation shapes now, not two:
         #   director-triggered -> may act, converses freely
-        #   peer-triggered     -> may NOT act, but converses freely (a colleague wrote to it)
+        #   peer-triggered     -> may act, converses freely (a colleague wrote to it)
         #   unprompted tick    -> may NOT act, and briefs only
-        # `may_act` and `brief_only` used to be the same boolean. Splitting them is what lets a
-        # peer message wake an officer WITHOUT handing it action tools: only the Director
-        # authorises action, which is the rule the prompt states and this is the harness half
-        # that actually enforces it.
-        may_act = (opening_mode != "reactive") or triggered_by_director
+        # `may_act` and `brief_only` used to be the same boolean; splitting them is what lets an
+        # unprompted tick brief without acting.
+        #
+        # A PEER-TRIGGERED OFFICER KEEPS ITS NORMAL TOOLS. It used to lose them, on the reasoning
+        # that only the Director authorises action. That conflated AUTHORITY with CAPABILITY: an
+        # officer woken by a colleague is still the same officer at the same desk, and stripping
+        # its tools means it cannot even look something up before answering. The "confirm with
+        # the Director before acting on a peer's suggestion" rule belongs in the prompt, where it
+        # is a judgement the officer makes, not in the harness as a capability it lacks.
+        may_act = (opening_mode != "reactive") or triggered_by_director or triggered_by_peer
         brief_only = ((opening_mode == "reactive")
                       and not triggered_by_director and not triggered_by_peer)
         # build_tools only knows built-ins; keep plugin names out of its allowlist (they're
@@ -3219,10 +3233,28 @@ Respond with ONLY the package index number (0, 1, or 2).
             print(f"[router]    ⚠️  WARNING: No pending choice to fulfill!")
 
     async def _handle_action_result(self, msg: dict):
-        """Handle action execution result from Unity."""
-        if self._pending_action and not self._pending_action.done():
-            self._pending_action.set_result(msg)
-        # else: silently ignore - may be stray message
+        """Handle action execution result from Unity, for the officer that asked for it.
+
+        CORRELATE BY ID, NOT BY TIMING. There is one in-flight slot, held under
+        _unity_commit_lock, so under normal operation exactly one officer is waiting and
+        timing is enough. It stops being enough when a send TIMES OUT: the waiter is
+        dropped, the lock is released, the next officer arms a fresh future, and Unity's
+        late reply to the FIRST action then lands on the SECOND officer, which reads
+        another officer's tool result as its own. Construction can take >10s on the Unity
+        side, so the 30s window is not unreachable.
+
+        ActionExecutionResult already carries action_id and the enumerator already assigns
+        one, so the key round-trips today -- it simply was not being checked.
+        """
+        if not (self._pending_action and not self._pending_action.done()):
+            return                                    # nothing waiting; genuinely stray
+        expected = self._pending_action_key
+        if expected is not None and msg.get("action_id") not in (None, expected):
+            print(f"[router]    ⚠️  Dropping stray action result "
+                  f"{msg.get('action_id')!r}; the waiter expects {expected!r} "
+                  f"(a previous action almost certainly timed out).")
+            return
+        self._pending_action.set_result(msg)
 
     def _handle_round_end(self, msg: dict):
         print(f"[router] Round {self.round_num} ended.")
@@ -3774,6 +3806,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         async with self._unity_commit_lock:
             loop = asyncio.get_event_loop()
             self._pending_action = loop.create_future()
+            self._pending_action_key = action.get("action_id")
             await self._send({
                 "type": "execute_action",
                 "agent_name": agent_name,
@@ -3791,6 +3824,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 return {"success": False, "error_message": "Timeout"}, {}
             finally:
                 self._pending_action = None
+                self._pending_action_key = None
 
         game_state = result.get("game_state", {})
         # Freshest authoritative global state — publish so concurrent officers and
