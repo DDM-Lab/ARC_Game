@@ -701,7 +701,7 @@ public class DailyReportData : MonoBehaviour
     {
         var d = this;
         int needed = d.GetCumulativeFoodPacksNeededByClients();
-        if (needed <= 0) return 1f;
+        if (needed <= 0) return 0f;
         return Mathf.Clamp01((float)d.GetCumulativeFoodPacksConsumedByClients() / needed);
     }
 
@@ -709,7 +709,7 @@ public class DailyReportData : MonoBehaviour
     {
         var d = this;
         int needed = d.GetCumulativeLodgingNightsNeeded();
-        if (needed <= 0) return 1f;
+        if (needed <= 0) return 0f;
         return Mathf.Clamp01((float)d.GetCumulativeLodgingNightsConsumed() / needed);
     }
 
@@ -739,7 +739,9 @@ public class DailyReportData : MonoBehaviour
         // a sliver of their range and above it they exceed 1 -- our fix is right, and it is also
         // why this build reports no "Worker use progress" delta at all on day 1 where upstream
         // reports +63.3.
+        //float denom = d.GetCumulativeWorkerPoolRounds();
         float denom = assumedTotalWorkerPoolSize * roundsElapsed;
+        if (denom <= 0) return 0f;
 
         float idleRatio = Mathf.Clamp01(d.GetCumulativeIdleWorkerRounds() / denom);
         float workingRatio = Mathf.Clamp01(d.GetCumulativeWorkingWorkerRounds() / denom);
@@ -802,7 +804,7 @@ public class DailyReportData : MonoBehaviour
         int wasted = d.GetCumulativeFoodPacksWasted();
         int requested = used + wasted;
 
-        if (requested <= 0) return 1f;
+        if (requested <= 0) return 0f;
         return (float)wasted / requested;
     }
 
@@ -810,7 +812,7 @@ public class DailyReportData : MonoBehaviour
     {
         var d = this;
         int requested = d.GetCumulativeClientsRequestedCasework();
-        if (requested <= 0 || GameDataManager.Instance == null) return 1f;
+        if (requested <= 0 || GameDataManager.Instance == null) return 0f;
         int denom = GameDataManager.Instance.InitialGameDays * GameDataManager.Instance.InitialRoundsPerDay * requested;
         if (denom <= 0) return 1f;
 
