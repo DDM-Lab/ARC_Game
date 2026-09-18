@@ -50,7 +50,48 @@ public class PlayerSession : MonoBehaviour
                 nameInputField.text = savedName;
         }
 
+        // Read the participant ID straight from this page's own URL, rather than relying only on
+        // the wrapper HTML's unityInstance.SendMessage("PlayerSession", "SetParticipantIdFromUrl", uid)
+        // call arriving at the right moment. That call fires the instant the Unity WebGL loader
+        // resolves — which happens while the FIRST loaded scene (TitleScene) is showing, not this
+        // one (TutorialScene, where this GameObject actually lives). Since the target doesn't exist
+        // yet, Unity silently drops the message, and by the time this scene loads the uid is
+        // already lost. Application.absoluteURL is empty in Editor/Standalone, so this still falls
+        // through to the manual-entry panel exactly as before for local testing. The JS SendMessage
+        // path is left in place as a harmless no-op/backup — if it ever does land after this
+        // GameObject exists, it just re-sets the same value.
+        string urlUid = GetQueryParam(Application.absoluteURL, "uid");
+        if (!string.IsNullOrEmpty(urlUid))
+        {
+            SetParticipantIdFromUrl(urlUid);
+            return;
+        }
+
         ShowPanel();
+    }
+
+    /// <summary>Minimal query-string reader (avoids relying on System.Web, which Unity's WebGL
+    /// runtime doesn't include). Returns null if the key isn't present.</summary>
+    static string GetQueryParam(string url, string key)
+    {
+        if (string.IsNullOrEmpty(url)) return null;
+
+        int queryStart = url.IndexOf('?');
+        if (queryStart < 0) return null;
+        string query = url.Substring(queryStart + 1);
+
+        int fragmentStart = query.IndexOf('#');
+        if (fragmentStart >= 0) query = query.Substring(0, fragmentStart);
+
+        foreach (string pair in query.Split('&'))
+        {
+            int eq = pair.IndexOf('=');
+            string k = eq >= 0 ? pair.Substring(0, eq) : pair;
+            if (k != key) continue;
+            string v = eq >= 0 ? pair.Substring(eq + 1) : "";
+            return Uri.UnescapeDataString(v);
+        }
+        return null;
     }
 
     void ShowPanel()
