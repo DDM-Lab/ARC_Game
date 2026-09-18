@@ -1117,7 +1117,7 @@ public class TaskDetailUI : MonoBehaviour
             return false;
 
         if (choice != null && (choice.triggersDelivery || choice.immediateDelivery || choice.enableMultipleDeliveries))
-            ToastManager.ShowToast($"Delivery for task '{task.taskTitle}' is added to queue.", ToastType.Info, true);
+            ToastManager.ShowToast($"Delivery for task '{task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true)}' is added to queue.", ToastType.Info, true);
         return CompleteTaskAction(out errorMessage);
     }
 
@@ -1164,7 +1164,7 @@ public class TaskDetailUI : MonoBehaviour
 
         // Validate selected choice if it involves any type of delivery
         if (selectedChoice != null && (selectedChoice.triggersDelivery || selectedChoice.immediateDelivery || selectedChoice.enableMultipleDeliveries))
-            ToastManager.ShowToast($"Delivery for '{currentTask.taskTitle}' queued.", ToastType.Info, true);
+            ToastManager.ShowToast($"Delivery for '{currentTask.ResolvePlaceholders(currentTask.taskTitle, plainFacilityName: true)}' queued.", ToastType.Info, true);
 
         // Check if this is the first time confirming a task
         /*if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstTaskConfirm())
@@ -3136,6 +3136,13 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
 
     void ApplyChoiceImpacts(AgentChoice choice, int? resolvedDeliveryQuantity = null)
     {
+        // taskTitle is the raw authored template (e.g. "[facility_name_plain] Flood Damage
+        // Relocation") — resolve it once here so every toast/description built from it below
+        // shows the actual facility name instead of the literal placeholder text.
+        // plainFacilityName: true since none of these destinations (toasts, budget/satisfaction
+        // reason strings) render TextMeshPro rich text links.
+        string resolvedTaskTitle = currentTask.ResolvePlaceholders(currentTask.taskTitle, plainFacilityName: true);
+
         foreach (TaskImpact impact in choice.choiceImpacts)
         {
             switch (impact.impactType)
@@ -3145,13 +3152,13 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                     {
                         if (impact.value > 0)
                         {
-                            SatisfactionAndBudget.Instance.AddSatisfaction(impact.value, $"Task [{currentTask.taskTitle}] satisfaction impact");
-                            ToastManager.ShowToast($"Satisfaction increased by {impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
+                            SatisfactionAndBudget.Instance.AddSatisfaction(impact.value, $"Task [{resolvedTaskTitle}] satisfaction impact");
+                            ToastManager.ShowToast($"Satisfaction increased by {impact.value} due to task completion of [{resolvedTaskTitle}]", ToastType.Info, true);
                         }
                         else
                         {
-                            SatisfactionAndBudget.Instance.RemoveSatisfaction(-impact.value, $"Task [{currentTask.taskTitle}] satisfaction impact");
-                            ToastManager.ShowToast($"Satisfaction decreased by {-impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
+                            SatisfactionAndBudget.Instance.RemoveSatisfaction(-impact.value, $"Task [{resolvedTaskTitle}] satisfaction impact");
+                            ToastManager.ShowToast($"Satisfaction decreased by {-impact.value} due to task completion of [{resolvedTaskTitle}]", ToastType.Info, true);
                         }
                     }
                     break;
@@ -3177,7 +3184,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                             BudgetAllocationManager.Instance?.ScheduleAllocation(
                                 (int)impactValue,
                                 delayRounds,
-                                $"Task: {currentTask.taskTitle}");
+                                $"Task: {resolvedTaskTitle}");
                             // rounds delayed
                             if (delayRounds > 0){
                                 ToastManager.ShowToast(
@@ -3194,7 +3201,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                                           : SatisfactionAndBudget.SpendCategory.Other;
                             SatisfactionAndBudget.Instance.RemoveBudget(
                                 -(int)impactValue,
-                                $"Task [{currentTask.taskTitle}] cost");
+                                $"Task [{resolvedTaskTitle}] cost");
                             if (DailyReportData.Instance != null)
                             {
                                 float costToday = -impactValue;

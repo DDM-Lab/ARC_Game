@@ -1856,6 +1856,11 @@ public class TaskSystem : MonoBehaviour
 
     void ApplyTaskPenalties(GameTask task)
     {
+        // Resolve once — task.taskTitle is the raw authored template (e.g.
+        // "[facility_name_plain] Flood Damage Relocation"); every message built from it below
+        // should show the actual facility name, not the literal placeholder text.
+        string resolvedTaskTitle = task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true);
+
         // Apply penalties based on task impacts
         foreach (TaskImpact impact in task.impacts)
         {
@@ -1863,15 +1868,15 @@ public class TaskSystem : MonoBehaviour
             {
                 case ImpactType.Satisfaction:
                     if (SatisfactionAndBudget.Instance != null)
-                        SatisfactionAndBudget.Instance.RemoveSatisfaction(impact.value, $"Task Incomplete Penalty from [{task.taskTitle}]");
-                    ToastManager.ShowToast($"Removed satisfaction: {impact.value} from task: {task.taskTitle} due to incomplete task", ToastType.Warning, true);
-                    GameLogPanel.Instance.LogTaskEvent($"Removed satisfaction: {impact.value} from task: {task.taskTitle} due to incomplete task");
+                        SatisfactionAndBudget.Instance.RemoveSatisfaction(impact.value, $"Task Incomplete Penalty from [{resolvedTaskTitle}]");
+                    ToastManager.ShowToast($"Removed satisfaction: {impact.value} from task: {resolvedTaskTitle} due to incomplete task", ToastType.Warning, true);
+                    GameLogPanel.Instance.LogTaskEvent($"Removed satisfaction: {impact.value} from task: {resolvedTaskTitle} due to incomplete task");
                     break;
                 case ImpactType.Budget:
                     if (SatisfactionAndBudget.Instance != null)
-                        SatisfactionAndBudget.Instance.RemoveBudget(impact.value, $"Task Incomplete Penalty from [{task.taskTitle}]");
-                    ToastManager.ShowToast($"Removed budget: {impact.value} from task: {task.taskTitle} due to incomplete task", ToastType.Warning, true);
-                    GameLogPanel.Instance.LogTaskEvent($"Removed budget: {impact.value} from task: {task.taskTitle} due to incomplete task");
+                        SatisfactionAndBudget.Instance.RemoveBudget(impact.value, $"Task Incomplete Penalty from [{resolvedTaskTitle}]");
+                    ToastManager.ShowToast($"Removed budget: {impact.value} from task: {resolvedTaskTitle} due to incomplete task", ToastType.Warning, true);
+                    GameLogPanel.Instance.LogTaskEvent($"Removed budget: {impact.value} from task: {resolvedTaskTitle} due to incomplete task");
                     break;
             }
         }
