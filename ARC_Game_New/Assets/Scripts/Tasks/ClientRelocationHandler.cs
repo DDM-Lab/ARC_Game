@@ -539,7 +539,11 @@ public class ClientRelocationHandler : MonoBehaviour
 
             if (delivered > 0)
             {
-                anyMoved = true;
+                // MERGE 76857e88: upstream sets its `anyMoved` flag here, for a bool-returning
+                // method. This branch's ExecuteImmediate returns an int count instead, so the
+                // flag has no declaration and no consumer -- the enclosing `delivered > 0`
+                // already carries the same signal. Upstream's two Record*Today calls below are
+                // the actual new behaviour and are kept.
                 Building destBuilding2 = dest.GetComponent<Building>();
                 if (destBuilding2 != null && destBuilding2.GetBuildingType() == BuildingType.CaseworkSite)
                     //Debug.Log("placehold casework recording");
