@@ -129,7 +129,15 @@ public class DailyReportMetrics
     [Header("Bottom Panel - What We Did Today")]
     public int newWorkersHired;
     public int workersInTraining;
-    
+
+
+    [Header("Today's Status Panel - Casework")]
+    public int caseworkRequestedTodayNew;
+    public int caseworkSatisfiedToday;
+
+    [Header("Today's Status Panel - Workers")]
+    public int workersUnassignedToday;
+
     [Header("Bottom Panel - Today's Data")]
     /// <summary>
     /// Count of Emergency+Demand tasks that ended as Incomplete or Expired.

@@ -52,6 +52,8 @@ public class DailyReportData : MonoBehaviour
 
     private int todayLodgingRequested = 0;
     private int todayLodgingSatisfied = 0;
+    private int todayCaseworkRequestedNew = 0;
+    private int todayCaseworkSatisfied = 0;
 
     [Header("Score Assumptions")]
     public int assumedTotalWorkerPoolSize = 40;
@@ -328,6 +330,9 @@ public class DailyReportData : MonoBehaviour
 
         todayLodgingRequested = 0;
         todayLodgingSatisfied = 0;
+
+        todayCaseworkRequestedNew = 0;
+        todayCaseworkSatisfied = 0;
     }
 
     //NEW
@@ -370,7 +375,8 @@ public class DailyReportData : MonoBehaviour
     void OnCaseworkRequested(ClientGroup group)
     {
         cumulativeClientsRequestedCasework += group.clientsWithCaseworkNeed;
-        RecalcCaseworkSatisfaction();   
+        todayCaseworkRequestedNew += group.clientsWithCaseworkNeed; // NEW
+        RecalcCaseworkSatisfaction();
     }
 
     void OnDayChangedForLodgingNights(int newDay)
@@ -452,6 +458,10 @@ public class DailyReportData : MonoBehaviour
     public int GetTodayLodgingRequested() => todayLodgingRequested;
     public int GetTodayLodgingSatisfied() => todayLodgingSatisfied;
 
+    public void RecordCaseworkSatisfiedToday(int amount) => todayCaseworkSatisfied += amount;
+    public int GetTodayCaseworkRequestedNew() => todayCaseworkRequestedNew;
+    public int GetTodayCaseworkSatisfied() => todayCaseworkSatisfied;
+
     public int GetTodayCommunityFoodDemand() => todayCommunityFoodDemand;
     public int GetCumulativeCommunityFoodDemand() => cumulativeCommunityFoodDemand;
 
@@ -511,6 +521,14 @@ public class DailyReportData : MonoBehaviour
         if (workerSystem == null) return 0;
         var stats = workerSystem.GetWorkerStatistics();
         return stats.trainedNotArrived + stats.untrainedNotArrived;
+    }
+
+    public int GetCurrentUnassignedWorkers()
+    {
+        if (workerSystem == null) workerSystem = FindObjectOfType<WorkerSystem>();
+        if (workerSystem == null) return 0;
+        var stats = workerSystem.GetWorkerStatistics();
+        return stats.trainedFree + stats.untrainedFree;
     }
 
     public int GetCurrentTrainingWorkers()
@@ -1066,6 +1084,9 @@ public class DailyReportData : MonoBehaviour
 
         metrics.lodgingRequestedToday = todayLodgingRequested;
         metrics.lodgingSatisfiedToday = todayLodgingSatisfied;
+        metrics.caseworkRequestedTodayNew = todayCaseworkRequestedNew;
+        metrics.caseworkSatisfiedToday = todayCaseworkSatisfied;
+        metrics.workersUnassignedToday = GetCurrentUnassignedWorkers();
         return metrics;
     }
     

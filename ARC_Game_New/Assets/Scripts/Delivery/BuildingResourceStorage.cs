@@ -57,7 +57,6 @@ public class BuildingResourceStorage : MonoBehaviour
 
     void SubscribeToEvents()
     {
-        // Subscribe to round changes for production and consumption
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
@@ -66,12 +65,27 @@ public class BuildingResourceStorage : MonoBehaviour
         }
     }
 
+    private bool wasteRecordedToday = false;
+
     void OnSimulationEndedCheckEndOfDayWaste()
     {
-        if (GlobalClock.Instance != null && GlobalClock.Instance.isWaitingForReport)
+        if (GlobalClock.Instance == null || !GlobalClock.Instance.isWaitingForReport) return;
+        if (wasteRecordedToday) return; 
+
+        bool isCommunity = GetComponent<PrebuiltBuilding>()?.GetPrebuiltType() == PrebuiltBuildingType.Community;
+        if (!enableFoodWaste || isCommunity) return;
+
+        int wastedFood = GetResourceAmount(ResourceType.FoodPacks);
+        if (wastedFood > 0)
         {
-            HandleEndOfDayWaste();
+            DailyReportData.Instance.RecordFoodWasted(wastedFood);
+            DailyReportData.Instance.RecordFoodWasteCumulative(wastedFood);
+
+            if (showDebugInfo)
+                Debug.Log($"{gameObject.name} logged {wastedFood} unused meals as today's waste (still shown in storage until day change)");
+            GameLogPanel.Instance.LogResourceChange($"{gameObject.name} logged {wastedFood} unused meals as today's waste");
         }
+        wasteRecordedToday = true;
     }
 
     void InitializeStorage()
@@ -249,12 +263,24 @@ public class BuildingResourceStorage : MonoBehaviour
             }
         }
     }
+
+
     void HandleDailyReset()
     {
         if (enableFoodWaste)
         {
             todayFoodPacksConsumed = 0;
+
+            bool isCommunity = GetComponent<PrebuiltBuilding>()?.GetPrebuiltType() == PrebuiltBuildingType.Community;
+            if (!isCommunity)
+            {
+                int leftover = GetResourceAmount(ResourceType.FoodPacks);
+                if (leftover > 0)
+                    RemoveResource(ResourceType.FoodPacks, leftover);
+            }
         }
+
+        wasteRecordedToday = false; 
 
         if (fillFoodToCapacityDaily)
         {

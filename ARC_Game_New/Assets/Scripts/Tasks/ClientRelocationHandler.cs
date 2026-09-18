@@ -287,8 +287,8 @@ public class ClientRelocationHandler : MonoBehaviour
         {
             Building destBuilding = r.destination.GetComponent<Building>();
             if (destBuilding != null && destBuilding.GetBuildingType() == BuildingType.CaseworkSite)
-                Debug.Log("placehold casework recording");
-            //DailyReportData.Instance?.RecordCaseworkSatisfiedToday(delivered);
+                //Debug.Log("placehold casework recording");
+                DailyReportData.Instance?.RecordCaseworkSatisfiedToday(delivered);
             else
                 DailyReportData.Instance?.RecordLodgingSatisfiedToday(delivered);
         }
@@ -377,8 +377,8 @@ public class ClientRelocationHandler : MonoBehaviour
                 anyMoved = true;
                 Building destBuilding2 = dest.GetComponent<Building>();
                 if (destBuilding2 != null && destBuilding2.GetBuildingType() == BuildingType.CaseworkSite)
-                    Debug.Log("placehold casework recording");
-                //DailyReportData.Instance?.RecordCaseworkSatisfiedToday(delivered);
+                    //Debug.Log("placehold casework recording");
+                    DailyReportData.Instance?.RecordCaseworkSatisfiedToday(delivered);
                 else
                     DailyReportData.Instance?.RecordLodgingSatisfiedToday(delivered);
             }

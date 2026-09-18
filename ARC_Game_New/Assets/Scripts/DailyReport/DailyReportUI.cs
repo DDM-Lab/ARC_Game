@@ -154,9 +154,11 @@ public class DailyReportUI : MonoBehaviour
     public SectionElement liveWorkersWaiting;
     public SectionElement liveWorkersTraining;
     public SectionElement liveWorkersReleasedToday;
+    public SectionElement liveWorkersUnassigned;
 
     [Header("Live Status - Casework")]
     public SectionElement liveNeedCasework;
+    public SectionElement liveCaseworkSatisfied;
     public SectionElement liveInTransitToCasework;
 
     private DailyReportMetrics currentMetrics;
@@ -244,7 +246,9 @@ public class DailyReportUI : MonoBehaviour
         InitializeSectionElement(liveWorkersWaiting);
         InitializeSectionElement(liveWorkersTraining);
         InitializeSectionElement(liveWorkersReleasedToday);
+        InitializeSectionElement(liveWorkersUnassigned);
         InitializeSectionElement(liveNeedCasework);
+        InitializeSectionElement(liveCaseworkSatisfied);
         InitializeSectionElement(liveInTransitToCasework);
     }
 
@@ -506,10 +510,12 @@ public class DailyReportUI : MonoBehaviour
         //Row("Food waste", Live(m.foodWasted));
         //Row("Need lodging", Live(d.GetCurrentPopulationNeedingLodging()));
         //Row("Working", Live(d.GetCurrentWorkingWorkers()));
-        Row("Waiting", Live(d.GetCurrentWaitingWorkers()));
+        Row("Requested", Live(d.GetCurrentWaitingWorkers()));
         Row("Training", Live(d.GetCurrentTrainingWorkers()));
         Row("Released today", Live(d.GetTodayWorkersReleased()));
+        Row("Unassigned", Live(m.workersUnassignedToday));
         Row("Need casework", Live(d.GetCurrentClientsNeedingCasework()));
+        Row("Casework Satisfied", Live(m.caseworkSatisfiedToday));
         Row("In transit to casework", Live(d.GetCurrentPeopleInTransitToCasework()));
 
         // --- Final Summary (order matches AnimateFinalSatisfactionChanges / AnimateFinalEfficiencyChanges) ---
@@ -765,8 +771,10 @@ public class DailyReportUI : MonoBehaviour
         yield return StartCoroutine(AnimateLiveElement(liveWorkersWaiting, d.GetCurrentWaitingWorkers(), "Requested"));
         yield return StartCoroutine(AnimateLiveElement(liveWorkersTraining, d.GetCurrentTrainingWorkers(), "Training"));
         yield return StartCoroutine(AnimateLiveElement(liveWorkersReleasedToday, d.GetTodayWorkersReleased(), "Released today"));
+        yield return StartCoroutine(AnimateLiveElement(liveWorkersUnassigned, d.GetCurrentUnassignedWorkers(), "Unassigned"));
 
-        yield return StartCoroutine(AnimateLiveElement(liveNeedCasework, d.GetCurrentClientsNeedingCasework(), "Need casework"));
+        yield return StartCoroutine(AnimateLiveElement(liveNeedCasework, d.GetCurrentClientsNeedingCasework(), "Casework Needed"));
+        yield return StartCoroutine(AnimateLiveElement(liveCaseworkSatisfied, currentMetrics.caseworkSatisfiedToday, "Casework Satisfied"));
         yield return StartCoroutine(AnimateLiveElement(liveInTransitToCasework, d.GetCurrentPeopleInTransitToCasework(), "In transit to casework"));
     }
 
@@ -1225,8 +1233,10 @@ public class DailyReportUI : MonoBehaviour
             SetSectionLiveFormatted(liveWorkersWaiting, d.GetCurrentWaitingWorkers());
             SetSectionLiveFormatted(liveWorkersTraining, d.GetCurrentTrainingWorkers());
             SetSectionLiveFormatted(liveWorkersReleasedToday, d.GetTodayWorkersReleased());
+            SetSectionLiveFormatted(liveWorkersUnassigned, metrics.workersUnassignedToday);
 
             SetSectionLiveFormatted(liveNeedCasework, d.GetCurrentClientsNeedingCasework());
+            SetSectionLiveFormatted(liveCaseworkSatisfied, metrics.caseworkSatisfiedToday);
             SetSectionLiveFormatted(liveInTransitToCasework, d.GetCurrentPeopleInTransitToCasework());
         }
 
@@ -1441,7 +1451,9 @@ public class DailyReportUI : MonoBehaviour
         ShowSectionElement(liveWorkersWaiting);
         ShowSectionElement(liveWorkersTraining);
         ShowSectionElement(liveWorkersReleasedToday);
+        ShowSectionElement(liveWorkersUnassigned);
         ShowSectionElement(liveNeedCasework);
+        ShowSectionElement(liveCaseworkSatisfied);
         ShowSectionElement(liveInTransitToCasework);
     }
 
@@ -1723,7 +1735,9 @@ public class DailyReportUI : MonoBehaviour
         ResetSectionElement(liveWorkersWaiting);
         ResetSectionElement(liveWorkersTraining);
         ResetSectionElement(liveWorkersReleasedToday);
+        ResetSectionElement(liveWorkersUnassigned);
         ResetSectionElement(liveNeedCasework);
+        ResetSectionElement(liveCaseworkSatisfied);
         ResetSectionElement(liveInTransitToCasework);
 
         if (satisfactionAnimationSection != null)
