@@ -6817,6 +6817,10 @@ PrefabInstance:
       propertyPath: m_AnchoredPosition.y
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 2123441672580554777, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
+      propertyPath: followUpSurveyUrlTemplate
+      value: https://cmu.ca1.qualtrics.com/jfe/form/SV_eCMkO3XayIH2LSS/?uid={uid}
+      objectReference: {fileID: 0}
     - target: {fileID: 2138904604366478315, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchorMax.y
       value: 0

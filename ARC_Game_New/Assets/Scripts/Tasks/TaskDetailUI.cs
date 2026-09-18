@@ -1337,6 +1337,17 @@ public class TaskDetailUI : MonoBehaviour
 
                 case ResourceType.Population:
                 {
+                    // Non-shelter SpecificBuilding (e.g. CaseworkSite): ExecuteClientRelocation
+                    // already routes this to the fallback delivery path (the same one queued
+                    // delivery uses) regardless of immediate/queued, so validation must match —
+                    // otherwise this would validate against Shelter/Motel capacity while execution
+                    // actually targets a completely different building.
+                    if (choice.destinationType == DeliveryDestinationType.SpecificBuilding
+                        && choice.destinationBuilding != BuildingType.Shelter)
+                    {
+                        return ValidateSpecificBuildingPopulationDestination(task, choice, out errorMessage);
+                    }
+
                     bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
                                 || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
                     bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
@@ -1361,53 +1372,17 @@ public class TaskDetailUI : MonoBehaviour
                     && FoodDeliveryHandler.Instance.CanExecute(task, choice, out errorMessage);
 
             case ResourceType.Population:
-                // Non-shelter SpecificBuilding (e.g. CaseworkSite): verify it exists on the map,
-                // that the requesting facility still has clients to send — building existence alone
-                // doesn't mean there's anyone left to relocate (e.g. already relocated elsewhere
-                // earlier in the round) — and that at least one candidate has available capacity.
-                // SpecificBuilding+Shelter falls through to ClientRelocationHandler validation below,
-                // which already checks all of this for Shelter/Motel destinations.
+                // Non-shelter SpecificBuilding (e.g. CaseworkSite) shares one validation helper
+                // with the immediate-delivery branch above, so the two paths can't drift apart —
+                // that's exactly what happened before this was factored out (immediate delivery
+                // had no CaseworkSite case at all and silently validated against Shelter/Motel
+                // capacity instead of the real target). SpecificBuilding+Shelter falls through to
+                // ClientRelocationHandler validation below, which already checks all of this for
+                // Shelter/Motel destinations.
                 if (choice.destinationType == DeliveryDestinationType.SpecificBuilding
                     && choice.destinationBuilding != BuildingType.Shelter)
                 {
-                    Building[] candidates = UnityEngine.Object.FindObjectsOfType<Building>()
-                        .Where(b => b.GetBuildingType() == choice.destinationBuilding && b.IsOperational())
-                        .ToArray();
-                    if (candidates.Length == 0)
-                    {
-                        errorMessage = $"There is no {choice.destinationBuilding} currently built on the map. Build one first to use this option.";
-                        return false;
-                    }
-
-                    MonoBehaviour source = TaskSystem.Instance?.FindTriggeringFacility(task);
-                    int available = source != null && ClientRelocationHandler.Instance != null
-                        ? ClientRelocationHandler.Instance.GetPopulation(source) : 0;
-                    if (available <= 0)
-                    {
-                        errorMessage = $"No clients at {(source != null ? source.name : task.affectedFacility)} to relocate";
-                        return false;
-                    }
-
-                    // How many clients this choice would actually try to send — mirrors
-                    // ClientRelocationHandler.ExecuteToSpecificDestination's own toSend
-                    // calculation exactly, so validation agrees with what execution will attempt.
-                    int requestedQuantity = choice.deliveryQuantity > 0
-                        ? Mathf.Min(choice.deliveryQuantity, available) : available;
-
-                    // Reuse the same effective-space accounting (capacity minus reserved-inbound
-                    // deliveries minus in-flight self-walk relocations) that Shelter/Motel
-                    // destinations already use via GetDestinationsSorted, just applied per candidate
-                    // building instead of via that method's type-based aggregate search. Must have
-                    // room for the FULL requested quantity — ExecuteToSpecificDestination sends to
-                    // only one destination with no splitting, so partial space isn't good enough.
-                    bool hasEnoughSpace = ClientRelocationHandler.Instance != null
-                        && candidates.Any(b => ClientRelocationHandler.Instance.GetEffectiveSpace(b) >= requestedQuantity);
-                    if (!hasEnoughSpace)
-                    {
-                        errorMessage = $"{choice.destinationBuilding} doesn't have enough available capacity to receive {requestedQuantity} clients.";
-                        return false;
-                    }
-                    return true;
+                    return ValidateSpecificBuildingPopulationDestination(task, choice, out errorMessage);
                 }
                 bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
                             || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
@@ -1425,6 +1400,58 @@ public class TaskDetailUI : MonoBehaviour
                 if (!hasVehicle) errorMessage = $"No undamaged vehicle for {choice.deliveryCargoType}";
                 return hasVehicle;
         }
+    }
+
+    /// <summary>
+    /// Validates a Population choice whose destination is a specific, non-Shelter building type
+    /// (currently only CaseworkSite) — used by both the immediate and queued branches of
+    /// ValidateChoiceDelivery above so they can't independently drift out of sync with each other
+    /// or with what ClientRelocationHandler.ExecuteToSpecificDestination actually does. Checks, in
+    /// order: at least one operational building of that type exists; the source facility still has
+    /// clients to send; and at least one candidate has enough effective capacity (accounting for
+    /// reserved-inbound deliveries and in-flight self-walk relocations, same as
+    /// TaskSystem.IsValidDeliveryDestination and Shelter/Motel's GetDestinationsSorted) for the
+    /// full quantity this choice would actually try to send.
+    /// </summary>
+    static bool ValidateSpecificBuildingPopulationDestination(GameTask task, AgentChoice choice, out string errorMessage)
+    {
+        errorMessage = "";
+
+        Building[] candidates = UnityEngine.Object.FindObjectsOfType<Building>()
+            .Where(b => b.GetBuildingType() == choice.destinationBuilding && b.IsOperational())
+            .ToArray();
+        if (candidates.Length == 0)
+        {
+            errorMessage = $"There is no {choice.destinationBuilding} currently built on the map. Build one first to use this option.";
+            return false;
+        }
+
+        MonoBehaviour source = TaskSystem.Instance?.FindTriggeringFacility(task);
+        int available = source != null && ClientRelocationHandler.Instance != null
+            ? ClientRelocationHandler.Instance.GetPopulation(source) : 0;
+        if (available <= 0)
+        {
+            errorMessage = $"No clients at {(source != null ? source.name : task.affectedFacility)} to relocate";
+            return false;
+        }
+
+        // How many clients this choice would actually try to send — mirrors
+        // ClientRelocationHandler.ExecuteToSpecificDestination's own toSend calculation exactly,
+        // so validation agrees with what execution will attempt.
+        int requestedQuantity = choice.deliveryQuantity > 0
+            ? Mathf.Min(choice.deliveryQuantity, available) : available;
+
+        // Must have room for the FULL requested quantity — ExecuteToSpecificDestination sends to
+        // only one destination with no splitting, so partial space isn't good enough.
+        bool hasEnoughSpace = ClientRelocationHandler.Instance != null
+            && candidates.Any(b => ClientRelocationHandler.Instance.GetEffectiveSpace(b) >= requestedQuantity);
+        if (!hasEnoughSpace)
+        {
+            errorMessage = $"{choice.destinationBuilding} doesn't have enough available capacity to receive {requestedQuantity} clients.";
+            return false;
+        }
+
+        return true;
     }
 
     // Helper — reads population from the task's triggering facility
