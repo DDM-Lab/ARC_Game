@@ -441,6 +441,16 @@ public class ClientRelocationHandler : MonoBehaviour
         if (delivered < r.quantity)
             AddPopulation(r.source, r.quantity - delivered);
 
+        if (delivered > 0)
+        {
+            Building destBuilding = r.destination.GetComponent<Building>();
+            if (destBuilding != null && destBuilding.GetBuildingType() == BuildingType.CaseworkSite)
+                //Debug.Log("placehold casework recording");
+                DailyReportData.Instance?.RecordCaseworkSatisfiedToday(delivered);
+            else
+                DailyReportData.Instance?.RecordLodgingSatisfiedToday(delivered);
+        }
+
         if (ClientStayTracker.Instance != null && delivered > 0)
             ClientStayTracker.Instance.HandleSelfWalkArrival(r.destination, delivered, r.groupName);
         SnapshotDebug.MarkContext("relocation:arrive", "{\"task\":" + (r.parentTask != null ? r.parentTask.taskId : -1)
@@ -517,6 +527,7 @@ public class ClientRelocationHandler : MonoBehaviour
 
 
 
+
             // Track client arrivals
             Building destBuilding = dest.GetComponent<Building>();
             //if (destBuilding != null && ClientStayTracker.Instance != null && delivered > 0)
@@ -527,6 +538,21 @@ public class ClientRelocationHandler : MonoBehaviour
             // Track client arrivals for both Shelters and Motels
              // Track arrivals at shelter OR motel for casework (centralized; fixes the
             // motel-not-tracked bug — motels now generate casework like shelters).
+
+            if (delivered > 0)
+            {
+                // MERGE 76857e88: upstream sets its `anyMoved` flag here, for a bool-returning
+                // method. This branch's ExecuteImmediate returns an int count, so the flag has
+                // no declaration and no consumer — the enclosing `delivered > 0` already carries
+                // the same signal. Upstream's Record*Today calls below are kept.
+                Building destBuilding2 = dest.GetComponent<Building>();
+                if (destBuilding2 != null && destBuilding2.GetBuildingType() == BuildingType.CaseworkSite)
+                    //Debug.Log("placehold casework recording");
+                    DailyReportData.Instance?.RecordCaseworkSatisfiedToday(delivered);
+                else
+                    DailyReportData.Instance?.RecordLodgingSatisfiedToday(delivered);
+            }
+
             if (ClientStayTracker.Instance != null && delivered > 0)
             {
                 string groupName = $"Relocate_{parentTask.taskId}_{source.name}_to_{dest.name}";
@@ -546,6 +572,11 @@ public class ClientRelocationHandler : MonoBehaviour
         if (parentTask != null) parentTask.deliveredQuantity += totalDelivered;
         return totalDelivered;
     }
+
+    // Population/food tasks stranded by an emptied facility are no longer resolved reactively
+    // here — TaskSystem runs a round-end sweep (SweepStalePopulationTasks) instead, since it
+    // catches every drain path (natural departure, flood, etc.), not just the ones that happen
+    // to go through this handler's own methods.
 
     // ─────────────────────────────────────────────────────────────────
     // PRIVATE HELPERS
@@ -656,8 +687,10 @@ public class ClientRelocationHandler : MonoBehaviour
 
     /// <summary>Population space still bookable at a destination: storage space minus reserved
     /// vehicle inbound minus clients already walking there. Works for shelters, casework sites
-    /// (Building + storage) and motels (PrebuiltBuilding).</summary>
-    int GetEffectiveSpace(MonoBehaviour destination)
+    /// (Building + storage) and motels (PrebuiltBuilding).
+    /// Public so callers outside this handler (TaskSystem's stale-task sweep, TaskDetailUI's
+    /// choice validation) can check bookable space without duplicating the logic.</summary>
+    public int GetEffectiveSpace(MonoBehaviour destination)
     {
         if (destination == null) return 0;
         DeliverySystem ds = DeliverySystem.Instance;
@@ -678,7 +711,9 @@ public class ClientRelocationHandler : MonoBehaviour
         return Mathf.Max(0, rawSpace - inbound - walking);
     }
 
-    int GetPopulation(MonoBehaviour building)
+    /// <summary>Public so callers outside this handler (TaskSystem's stale-task sweep, TaskDetailUI's
+    /// choice validation) can check a facility's current population without duplicating this logic.</summary>
+    public int GetPopulation(MonoBehaviour building)
     {
         PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
         if (pb != null) return pb.GetCurrentPopulation();

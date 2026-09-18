@@ -79,8 +79,32 @@ public class PlayerSession : MonoBehaviour
             return;
         }
 
-        PlayerName = inputName;
-        PlayerPrefs.SetString("PlayerName", inputName);
+        CompleteSession(inputName);
+    }
+
+    /// <summary>
+    /// Called from the browser wrapper's JS (via unityInstance.SendMessage("PlayerSession",
+    /// "SetParticipantIdFromUrl", uid)) when a participant ID was found in the page's URL query
+    /// string (Qualtrics redirect flow: ?uid=...). Skips the manual-entry panel entirely and
+    /// starts the session with that ID through the same completion path the manual Start button
+    /// uses. Ignored (leaving the manual-entry panel showing) if uid is missing/empty, so local
+    /// testing without a query string still works exactly as before.
+    /// </summary>
+    public void SetParticipantIdFromUrl(string uid)
+    {
+        if (string.IsNullOrEmpty(uid)) return;
+
+        if (nameInputField != null)
+            nameInputField.text = uid; // keep in sync in case anything else reads the field directly
+
+        GameLogPanel.Instance?.LogPlayerAction($"Participant ID captured from URL: {uid}");
+        CompleteSession(uid);
+    }
+
+    void CompleteSession(string id)
+    {
+        PlayerName = id;
+        PlayerPrefs.SetString("PlayerName", id);
         PlayerPrefs.Save();
         IsSessionActive = true;
 

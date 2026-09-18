@@ -95,35 +95,55 @@ public class Vehicle : MonoBehaviour
             CircleCollider2D collider = gameObject.AddComponent<CircleCollider2D>();
             collider.radius = 0.5f;
         }
-
         if (GlobalClock.Instance != null)
+        {
             GlobalClock.Instance.OnDayChanged += OnDayChanged;
+            GlobalClock.Instance.OnSimulationEnded += OnSimulationEndedCheckEndOfDayWaste; // NEW
+        }
     }
 
-    /// <summary>
-    /// Food must not carry over between days. A vehicle mid-delivery when the day rolls over
-    /// still has FoodPacks loaded — waste it here (Population cargo is unaffected; people don't
-    /// "expire"). The delivery itself is left alone: it will simply unload 0 food on arrival.
-    /// </summary>
+    private bool wasteRecordedToday = false;
+
+    void OnSimulationEndedCheckEndOfDayWaste()
+    {
+        if (GlobalClock.Instance == null || !GlobalClock.Instance.isWaitingForReport) return;
+        if (wasteRecordedToday) return;
+
+        int loadedFood = currentCargo.TryGetValue(ResourceType.FoodPacks, out int amount) ? amount : 0;
+        if (loadedFood > 0 && DailyReportData.Instance != null)
+        {
+            DailyReportData.Instance.RecordFoodWasted(loadedFood);
+            DailyReportData.Instance.RecordFoodWasteCumulative(loadedFood);
+
+            if (showDebugInfo)
+                Debug.Log($"Vehicle {vehicleName} logged {loadedFood} in-transit meals as today's waste (still shown loaded until day change)");
+            GameLogPanel.Instance?.LogResourceChange($"Vehicle {vehicleName} logged {loadedFood} in-transit meals as today's waste");
+        }
+        wasteRecordedToday = true;
+    }
+    ///// <summary>
+    ///// Food must not carry over between days. A vehicle mid-delivery when the day rolls over
+    ///// still has FoodPacks loaded — waste it here (Population cargo is unaffected; people don't
+    ///// "expire"). The delivery itself is left alone: it will simply unload 0 food on arrival.
+    ///// </summary>
     void OnDayChanged(int newDay)
     {
+        wasteRecordedToday = false; 
+
         int loadedFood = currentCargo.TryGetValue(ResourceType.FoodPacks, out int amount) ? amount : 0;
         if (loadedFood <= 0) return;
 
         currentCargo[ResourceType.FoodPacks] = 0;
 
-        if (DailyReportData.Instance != null)
-        {
-            DailyReportData.Instance.RecordFoodWasted(loadedFood);
-            DailyReportData.Instance.RecordFoodWasteCumulative(loadedFood);
-        }
-
         if (showDebugInfo)
-            Debug.Log($"Vehicle {vehicleName} wasted {loadedFood} in-transit meals at day change");
-        GameLogPanel.Instance?.LogResourceChange($"Vehicle {vehicleName} wasted {loadedFood} in-transit meals at day change");
+            Debug.Log($"Vehicle {vehicleName} cleared {loadedFood} wasted in-transit meals at day change");
+        GameLogPanel.Instance?.LogResourceChange($"Vehicle {vehicleName} cleared {loadedFood} wasted in-transit meals at day change");
 
         OnCargoChanged?.Invoke(this);
     }
+
+
+
 
     public ResourceType GetPrimaryCargoType()
     {
@@ -1088,7 +1108,10 @@ public class Vehicle : MonoBehaviour
         }
 
         if (GlobalClock.Instance != null)
+        {
             GlobalClock.Instance.OnDayChanged -= OnDayChanged;
+            GlobalClock.Instance.OnSimulationEnded -= OnSimulationEndedCheckEndOfDayWaste; // NEW
+        }
     }
 
     // Getters

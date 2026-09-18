@@ -203,6 +203,12 @@ public class Building : MonoBehaviour
         ReleaseAllWorkers();
         ReleaseClientGroups();
 
+        // originalSiteId gets reused by whatever new building is later constructed on this
+        // AbandonedSite — clear this site's worker-assignment state now so the new building
+        // doesn't inherit a stale "locked" record or a leftover pending management task.
+        WorkerAssignmentTracker.Instance?.ClearBuilding(originalSiteId);
+        WorkerAssignmentHandler.Instance?.ClearPendingTask(originalSiteId);
+
         DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
 
         currentStatus = BuildingStatus.Deconstructing;
