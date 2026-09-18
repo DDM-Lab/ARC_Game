@@ -159,6 +159,10 @@ public class DailyReportMetrics
     public float todayWorkerTrainingCost;
     public float todayOtherExpenses;
 
+    [Header("Today's Status Panel - Food")]
+    public int foodNeededToday;
+    public int foodConsumedTotalToday;
+
     [Header("Task Type Breakdown - Cases Resolved (Emergency+Demand only)")]
     /// <summary>
     /// Total Emergency+Demand tasks for the day. Used for "Cases Resolved" stat.

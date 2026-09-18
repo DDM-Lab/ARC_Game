@@ -143,6 +143,8 @@ public class DailyReportUI : MonoBehaviour
     [Header("Live Status - Food")]
     public SectionElement liveFoodInTransit;
     public SectionElement liveKitchenProduction;
+    public SectionElement liveFoodNeeded;
+    public SectionElement liveFoodConsumed;
     public SectionElement liveFoodWaste;
 
     [Header("Live Status - Lodging")]
@@ -239,6 +241,8 @@ public class DailyReportUI : MonoBehaviour
         // curr bottom stats
         //InitializeSectionElement(liveFoodInTransit);
         InitializeSectionElement(liveKitchenProduction);
+        InitializeSectionElement(liveFoodNeeded);
+        InitializeSectionElement(liveFoodConsumed);
         InitializeSectionElement(liveFoodWaste);
         InitializeSectionElement(liveNeedLodging);
         InitializeSectionElement(liveLodgingSatisfied);
@@ -499,6 +503,8 @@ public class DailyReportUI : MonoBehaviour
         int currentBudget = SatisfactionAndBudget.Instance != null ? SatisfactionAndBudget.Instance.GetCurrentBudget() : 0;
         Row("Current Budget", $"${currentBudget:N0}");
         Row("Kitchen production", Live(m.foodProduced));
+        Row("Food Needed", Live(m.foodNeededToday));
+        Row("Food Consumed", Live(m.foodConsumedTotalToday));
         Row("Food waste", Live(m.foodWasted));
         Row("Lodging Needed", Live(m.lodgingRequestedToday));
         Row("Lodging Satisfied", Live(m.lodgingSatisfiedToday));
@@ -761,6 +767,8 @@ public class DailyReportUI : MonoBehaviour
         if (d == null) yield break;
 
         yield return StartCoroutine(AnimateLiveElement(liveKitchenProduction, currentMetrics.foodProduced, "Kitchen production"));
+        yield return StartCoroutine(AnimateLiveElement(liveFoodNeeded, currentMetrics.foodNeededToday, "Food Needed"));
+        yield return StartCoroutine(AnimateLiveElement(liveFoodConsumed, currentMetrics.foodConsumedTotalToday, "Food Consumed"));
         yield return StartCoroutine(AnimateLiveElement(liveFoodWaste, currentMetrics.foodWasted, "Food waste"));
 
         yield return StartCoroutine(AnimateLiveElement(liveNeedLodging, currentMetrics.lodgingRequestedToday, "Lodging Needed"));
@@ -1224,6 +1232,8 @@ public class DailyReportUI : MonoBehaviour
 
             //SetSectionLiveFormatted(liveWorkersWorking, d.GetCurrentWorkingWorkers());
             SetSectionLiveFormatted(liveKitchenProduction, metrics.foodProduced);
+            SetSectionLiveFormatted(liveFoodNeeded, metrics.foodNeededToday);
+            SetSectionLiveFormatted(liveFoodConsumed, metrics.foodConsumedTotalToday);
             SetSectionLiveFormatted(liveFoodWaste, metrics.foodWasted);
 
             SetSectionLiveFormatted(liveNeedLodging, metrics.lodgingRequestedToday);
@@ -1444,6 +1454,8 @@ public class DailyReportUI : MonoBehaviour
         // curr status
         //ShowSectionElement(liveFoodInTransit);
         ShowSectionElement(liveKitchenProduction);
+        ShowSectionElement(liveFoodNeeded);
+        ShowSectionElement(liveFoodConsumed);
         ShowSectionElement(liveFoodWaste);
         ShowSectionElement(liveNeedLodging);
         ShowSectionElement(liveLodgingSatisfied);
@@ -1728,6 +1740,8 @@ public class DailyReportUI : MonoBehaviour
         // new curr status
         //ResetSectionElement(liveFoodInTransit);
         ResetSectionElement(liveKitchenProduction);
+        ResetSectionElement(liveFoodNeeded);
+        ResetSectionElement(liveFoodConsumed);
         ResetSectionElement(liveFoodWaste);
         ResetSectionElement(liveNeedLodging);
         ResetSectionElement(liveLodgingSatisfied);

@@ -544,6 +544,15 @@ public class DeliverySystem : MonoBehaviour
     void OnVehicleDeliveryCompleted(Vehicle vehicle, DeliveryTask completedTask)
     {
         Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
+
+        // NEW: record food actually delivered to a community, for Building Stats / Food Used.
+        if (completedTask.cargoType == ResourceType.FoodPacks)
+        {
+            var destCommunity = completedTask.destinationBuilding as PrebuiltBuilding;
+            if (destCommunity != null && destCommunity.GetPrebuiltType() == PrebuiltBuildingType.Community)
+                DailyReportData.Instance?.RecordCommunityFoodUsedToday(destCommunity.name, completedTask.quantity);
+        }
+
         if (completedTask.cargoType == ResourceType.Population && ClientStayTracker.Instance != null)
         {
             if (completedTask.destinationBuilding != null)

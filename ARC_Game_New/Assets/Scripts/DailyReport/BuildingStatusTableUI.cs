@@ -39,7 +39,7 @@ public class BuildingStatusTableUI : MonoBehaviour
         // Static map fixtures — assumed not to spawn/despawn at runtime
         foreach (PrebuiltBuilding pb in FindObjectsOfType<PrebuiltBuilding>())
         {
-            if (pb.GetPrebuiltType() == PrebuiltBuildingType.Motel) continue; 
+            //if (pb.GetPrebuiltType() == PrebuiltBuildingType.Motel) continue; 
             AddRow(pb);
         }
 
