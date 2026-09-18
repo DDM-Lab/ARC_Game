@@ -130,7 +130,10 @@ public class DeliveryQueuePanel : MonoBehaviour
         var requests = WorkerRequestSystem.Instance != null ? WorkerRequestSystem.Instance.GetActiveRequestTasks().FindAll(r => !r.isCompleted) : new List<WorkerRequestSystem.RequestTask>();
         var trainings = WorkerTrainingSystem.Instance != null ? WorkerTrainingSystem.Instance.GetActiveTrainingTasks().FindAll(t => !t.isCompleted) : new List<WorkerTrainingSystem.TrainingTask>();
 
-        bool any = pending.Count > 0 || active.Count > 0 || budgets.Count > 0 || relocations.Count > 0;
+        // Worker recruitment/training rows and self-walk relocations (spawned below) are pending
+        // actions too, so the empty-state label must account for them.
+        bool any = pending.Count > 0 || active.Count > 0 || budgets.Count > 0
+                   || requests.Count > 0 || trainings.Count > 0 || relocations.Count > 0;
 
         if (emptyLabel != null)
             emptyLabel.SetActive(!any);

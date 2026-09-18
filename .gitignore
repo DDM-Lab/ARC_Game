@@ -1,5 +1,11 @@
 Builds/
+
+
+# macOS
+.DS_Store
+
 /ARC_Game_New/builds722
+
 /[Ll]ibrary/
 /[Tt]emp/
 /[Oo]bj/

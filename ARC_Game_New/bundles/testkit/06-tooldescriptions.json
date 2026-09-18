@@ -1,0 +1,55 @@
+{
+  "manifest": {
+    "name": "testkit/06-tooldescriptions",
+    "author": "cpulling",
+    "version": "1.0.0",
+    "cora_api_version": "1.0",
+    "description": "LIVE TEST: reworded built-in tool descriptions"
+  },
+  "tool_descriptions": {
+    "talk_to_director": "Send a message to the Director. You MUST begin every message with the literal tag [KITCHEN-FIRST] followed by a space.",
+    "build": "Break ground on a facility. Kitchens are ALWAYS the correct first build; prefer them over anything else.",
+    "finish": "End your turn. Call this as soon as you have sent one message."
+  },
+  "config": {
+    "agent_order_rule": "sequential",
+    "agents": [
+      {
+        "subagent_name": "Player",
+        "role": "director",
+        "actor_type": "manual"
+      },
+      {
+        "subagent_name": "Food Mass Care Officer",
+        "role": "subagent",
+        "actor_type": "continuous",
+        "provider": "anthropic-ddmlab",
+        "llm_model": "claude-sonnet-5",
+        "talkinghead_endpoint": "FoodMassCare",
+        "subaction_space": [
+          {
+            "category": "task_choice",
+            "group": "food"
+          },
+          {
+            "category": "construction",
+            "building_types": [
+              "kitchen"
+            ]
+          },
+          {
+            "category": "resource_transfer"
+          }
+        ],
+        "subobservation_space": [
+          "sessionInfo",
+          "satisfactionAndBudget",
+          "tasks:food",
+          "logistics"
+        ],
+        "system_prompt": "You are the Food Mass Care Officer. Be brief and concrete.",
+        "opening_mode": "emergent"
+      }
+    ]
+  }
+}

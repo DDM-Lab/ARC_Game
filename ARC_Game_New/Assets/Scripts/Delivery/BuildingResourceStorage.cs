@@ -37,12 +37,121 @@ public class BuildingResourceStorage : MonoBehaviour
     private int roundsSinceLastConsumption = 0;
     private int lastConsumptionRoundKey = int.MinValue;
 
+    /// <summary>
+    /// Snapshot support. currentResources holds population and food packs -- the numbers
+    /// that decide whether a relocation or food Demand task gets generated. Leaving them
+    /// uncaptured let a restored game generate an EXTRA "Population Relocation From
+    /// Community" demand two rounds after load, while every other field matched.
+    /// roundsSinceLastConsumption is the food-consumption phase and is equally invisible.
+    /// maxCapacities is rebuilt from the prefab on scene load, so only the live amounts
+    /// and the phase counter are carried.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public List<string> resourceTypes = new List<string>();
+        public List<int> resourceAmounts = new List<int>();
+        public int roundsSinceLastConsumption;
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot { roundsSinceLastConsumption = roundsSinceLastConsumption };
+        foreach (var kv in currentResources) { s.resourceTypes.Add(kv.Key.ToString()); s.resourceAmounts.Add(kv.Value); }
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        currentResources.Clear();
+        int n = Mathf.Min(s.resourceTypes.Count, s.resourceAmounts.Count);
+        for (int i = 0; i < n; i++)
+            if (System.Enum.TryParse(s.resourceTypes[i], out ResourceType rt))
+                currentResources[rt] = s.resourceAmounts[i];
+        roundsSinceLastConsumption = s.roundsSinceLastConsumption;
+    }
+
     private int todayFoodPacksConsumed = 0;
     
     void Start()
     {
         InitializeStorage();
+        storageInitialized = true;
         SubscribeToEvents();
+        ApplyConfiguredCapacities();   // no-op until GameDataManager is ready; it calls back otherwise
+    }
+
+    bool storageInitialized = false;
+    bool configApplied = false;
+
+    /// <summary>
+    /// Sheet parameters -> this storage (BUG_REPORTS B35). Runs once: from Start when the config is
+    /// already loaded (buildings constructed during play) or from GameDataManager.ApplyConfigToScene
+    /// for objects that initialised first (communities, motel).
+    /// </summary>
+    public void ApplyConfiguredCapacities()
+    {
+        // PARITY BUILD (ledger D20): DISABLED. Upstream has no equivalent — every prebuilt keeps
+        // the capacity and starting amount its prefab was authored with. Ours applies the sheet
+        // over the top, and for communities that means population 40 instead of the prefab's 400.
+        // Community_TransportRequest requires Population > 200, so on our build that relocation
+        // task can never fire; upstream generates two of them on the first pass of day 2. That
+        // single number is what made the two builds' task sets differ from the very first
+        // generation pass (ledger D19) and, two days later, take a different number of draws.
+        //
+        // Note this is D7's consequence rather than an independent choice: upstream ignores the
+        // sheet entirely, so "apply the sheet" has no upstream counterpart to match.
+        return;
+#pragma warning disable 0162
+        if (!storageInitialized || configApplied) return;
+        var gdm = GameDataManager.Instance;
+        if (gdm == null || !gdm.IsDataReady) return;
+        configApplied = true;
+
+        var prebuilt = GetComponent<PrebuiltBuilding>();
+        if (prebuilt != null)
+        {
+            if (prebuilt.GetPrebuiltType() == PrebuiltBuildingType.Community && gdm.InitialResidentsPerCommunityNumber > 0)
+            {
+                int residents = gdm.InitialResidentsPerCommunityNumber;
+                SetCapacity(ResourceType.Population, Mathf.Max(GetResourceCapacity(ResourceType.Population), residents));
+                currentResources[ResourceType.Population] = residents;
+                Debug.Log($"{gameObject.name} population set to {residents} (initialCommunityResidentCount)");
+                GameLogPanel.Instance?.LogResourceChange($"{gameObject.name} population set to {residents} (initialCommunityResidentCount)");
+                OnStorageUpdated?.Invoke();
+            }
+            return;
+        }
+
+        var building = GetComponent<Building>();
+        if (building == null) return;
+        switch (building.GetBuildingType())
+        {
+            case BuildingType.Kitchen:
+                // Kitchens fill to capacity once per day (main-bugfixes), so the food capacity IS the
+                // daily throughput; initialKitchenCapacity no longer has a consumer.
+                SetCapacity(ResourceType.FoodPacks, gdm.InitialKitchenFoodCapacity);
+                break;
+            case BuildingType.Shelter:
+                SetCapacity(ResourceType.Population, gdm.InitialShelterCapacity);
+                SetCapacity(ResourceType.FoodPacks, gdm.InitialShelterFoodCapacity);
+                break;
+            case BuildingType.CaseworkSite:
+                SetCapacity(ResourceType.Population, gdm.InitialCaseworkCapacity);
+                break;
+        }
+        Debug.Log($"{gameObject.name} ({building.GetBuildingType()}) configured: foodCap={GetResourceCapacity(ResourceType.FoodPacks)} popCap={GetResourceCapacity(ResourceType.Population)}");
+        OnStorageUpdated?.Invoke();
+#pragma warning restore 0162
+    }
+
+    void SetCapacity(ResourceType type, int capacity)
+    {
+        if (capacity <= 0 || !maxCapacities.ContainsKey(type)) return;
+        maxCapacities[type] = capacity;
+        if (currentResources.TryGetValue(type, out int current) && current > capacity)
+            currentResources[type] = capacity;
     }
 
     //void SubscribeToEvents()
@@ -128,7 +237,7 @@ public class BuildingResourceStorage : MonoBehaviour
 
     void OnRoundChanged(int newRound)
     {
-        if (newRound <= 4) // round 5 is daily report stage
+        if (newRound <= (GlobalClock.Instance != null ? GlobalClock.Instance.roundsPerDay : 4)) // every real round, incl. the last of the day
         {
             HandlePopulationConsumptionCycle();
         }
@@ -230,7 +339,10 @@ public class BuildingResourceStorage : MonoBehaviour
             Building building = GetComponent<Building>();
             if (building != null)
             {
-                totalPeople += building.GetAssignedWorkforce();
+                // Mouths, not workforce points: a trained worker is one person (BUG_REPORTS B27).
+                totalPeople += WorkerSystem.Instance != null
+                    ? WorkerSystem.Instance.GetWorkersByBuildingId(building.GetOriginalSiteId()).Count
+                    : building.GetAssignedWorkforce();
             }
         }
         

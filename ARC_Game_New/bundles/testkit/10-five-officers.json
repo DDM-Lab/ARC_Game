@@ -1,0 +1,140 @@
+{
+  "manifest": {
+    "name": "testkit/10-five-officers",
+    "author": "cpulling",
+    "version": "1.0.0",
+    "cora_api_version": "1.0",
+    "description": "all 5 GUI slots occupied"
+  },
+  "config": {
+    "agent_order_rule": "sequential",
+    "agents": [
+      {
+        "subagent_name": "Player",
+        "role": "director",
+        "actor_type": "manual"
+      },
+      {
+        "subagent_name": "Disaster Operations Officer",
+        "role": "subagent",
+        "actor_type": "continuous",
+        "provider": "anthropic-ddmlab",
+        "llm_model": "claude-sonnet-5",
+        "talkinghead_endpoint": "DisasterOfficer",
+        "subaction_space": [
+          {
+            "category": "construction"
+          }
+        ],
+        "subobservation_space": [
+          "sessionInfo",
+          "satisfactionAndBudget",
+          "tasks:food",
+          "logistics"
+        ],
+        "system_prompt": "Disaster Operations. Say 'DISASTER HERE' in your first message.",
+        "opening_mode": "emergent"
+      },
+      {
+        "subagent_name": "Workforce Service Officer",
+        "role": "subagent",
+        "actor_type": "continuous",
+        "provider": "anthropic-ddmlab",
+        "llm_model": "claude-sonnet-5",
+        "talkinghead_endpoint": "WorkforceService",
+        "subaction_space": [
+          {
+            "category": "worker"
+          },
+          {
+            "category": "worker_assignment"
+          }
+        ],
+        "subobservation_space": [
+          "sessionInfo",
+          "satisfactionAndBudget",
+          "tasks:food",
+          "logistics"
+        ],
+        "system_prompt": "Workforce. Say 'WORKFORCE HERE' in your first message.",
+        "opening_mode": "emergent"
+      },
+      {
+        "subagent_name": "Lodging Mass Care Officer",
+        "role": "subagent",
+        "actor_type": "continuous",
+        "provider": "anthropic-ddmlab",
+        "llm_model": "claude-sonnet-5",
+        "talkinghead_endpoint": "LodgingMassCare",
+        "subaction_space": [
+          {
+            "category": "construction",
+            "building_types": [
+              "shelter"
+            ]
+          }
+        ],
+        "subobservation_space": [
+          "sessionInfo",
+          "satisfactionAndBudget",
+          "tasks:food",
+          "logistics"
+        ],
+        "system_prompt": "Lodging. Say 'LODGING HERE' in your first message.",
+        "opening_mode": "emergent"
+      },
+      {
+        "subagent_name": "Food Mass Care Officer",
+        "role": "subagent",
+        "actor_type": "continuous",
+        "provider": "anthropic-ddmlab",
+        "llm_model": "claude-sonnet-5",
+        "talkinghead_endpoint": "FoodMassCare",
+        "subaction_space": [
+          {
+            "category": "task_choice",
+            "group": "food"
+          },
+          {
+            "category": "construction",
+            "building_types": [
+              "kitchen"
+            ]
+          },
+          {
+            "category": "resource_transfer"
+          }
+        ],
+        "subobservation_space": [
+          "sessionInfo",
+          "satisfactionAndBudget",
+          "tasks:food",
+          "logistics"
+        ],
+        "system_prompt": "Food. Say 'FOOD HERE' in your first message.",
+        "opening_mode": "emergent"
+      },
+      {
+        "subagent_name": "External Relationship Officer",
+        "role": "subagent",
+        "actor_type": "continuous",
+        "provider": "anthropic-ddmlab",
+        "llm_model": "claude-sonnet-5",
+        "talkinghead_endpoint": "ExternalRelationship",
+        "subaction_space": [
+          {
+            "category": "resource_transfer"
+          }
+        ],
+        "subobservation_space": [
+          "sessionInfo",
+          "satisfactionAndBudget",
+          "tasks:food",
+          "logistics"
+        ],
+        "system_prompt": "External Relations. Say 'EXTERNAL HERE' in your first message.",
+        "opening_mode": "emergent"
+      }
+    ]
+  }
+}

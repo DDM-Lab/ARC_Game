@@ -221,7 +221,7 @@ public class MetricsHistoryManager : MonoBehaviour
         // Update tab colors
         UpdateTabColors();
 
-        GameLogPanel.Instance?.LogUIInteraction($"Metrics panel: switched to {tab} tab | day={currentDay}");
+        GameLogPanel.Instance?.LogUIInteraction("game_state", "metrics_tab", $"tab={tab} | day={currentDay}");
 
         // Open panel if not already open
         if (!isPanelExpanded)
@@ -286,7 +286,7 @@ public class MetricsHistoryManager : MonoBehaviour
             maskPanel.SetActive(false);
 
         ClearMetricItems();
-        GameLogPanel.Instance?.LogUIInteraction("Metrics panel closed");
+        GameLogPanel.Instance?.LogUIInteraction("game_state", "metrics_closed");
         if (showDebugInfo)
             Debug.Log("Metrics panel closed");
     }

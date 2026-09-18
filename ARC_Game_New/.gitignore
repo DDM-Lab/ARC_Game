@@ -46,6 +46,7 @@ ExportedObj/
 *.mdb
 *.opendb
 *.VC.db
+*.asset
 
 # Unity3D generated meta files
 *.pidb.meta
@@ -77,9 +78,59 @@ crashlytics-build.properties
 
 .vscode
 .idea
+.worktrees/
 
-# Python
+# Python cache
 __pycache__/
+
+*.pyc
+
+# Python virtualenvs
+.venv/
+
+# API keys and secrets
+.env
+llm.key
+*.key
+config/keys.json
+
+# Test and rollout data
+rollout_*/
+rollouts/
+*_test/
+*.log
+*.jsonl
+episode_*.json
+
+# Documentation (temporary)
+*_GUIDE.md
+*_README.md
+*_PLAN.md
+docs/plans/
+
+# Build scripts (temporary)
+build_headless.bat
+build_headless.sh
+
+# Environment files
+environment.yml
+
+# Benchmark run artifacts
+benchmark_results/
+bench_*/
+analysis_cora_components/
+bench_plots/
+render_frames*/
+# Generated render / state dumps (regenerable via the scripts)
+arc_dashboard.png
+arc_map_grid.json
+arc_midgame_state.json
+
+wandb/
+
+# Local Claude Code settings (from main-bugfixes)
+.claude/settings.local.json
+
 *.pyc.claude/settings.local.json
 
 # Virtual environment
@@ -87,3 +138,18 @@ __pycache__/
 
 # LLM API keys
 config/keys.json
+
+config/keys.json.bak*
+keys.json.bak*
+logs/sessions/
+router.log
+
+# Contributor bundle uploads (runtime state, per-user namespaced)
+config/_uploads/
+
+# Uploaded (staging) plugins, per-label
+plugins/*/
+
+# Plugin persist store (durable runtime state)
+data/
+rhea_pull_20260911/

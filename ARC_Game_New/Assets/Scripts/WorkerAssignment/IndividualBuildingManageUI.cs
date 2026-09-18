@@ -301,6 +301,10 @@ public class IndividualBuildingManageUI : MonoBehaviour
 
         if (success)
         {
+            // Human direct game action (worker assignment via the UI).
+            GameLogPanel.Instance?.LogUIInteraction("game_action", "worker_assignment",
+                $"building={currentBuilding.name} | trained={tempTrainedWorkers} untrained={tempUntrainedWorkers}");
+
             // Update original values to reflect new state
             originalTrainedWorkers = tempTrainedWorkers;
             originalUntrainedWorkers = tempUntrainedWorkers;

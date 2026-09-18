@@ -11,6 +11,10 @@ public class AppConfig
     public string wsUrl;
     public string mapConfigUrl;
     public string logServerUrl;
+    /// <summary>Study mode: if a mapConfigUrl is set but the map cannot be applied, refuse to
+    /// run instead of silently falling back to the default scene layout (which would quietly
+    /// change the experimental condition). Off by default for casual/dev play.</summary>
+    public bool strictMap;
 }
 
 public class WebSocketManager : MonoBehaviour
@@ -19,10 +23,17 @@ public class WebSocketManager : MonoBehaviour
     public static AppConfig LoadedConfig { get; private set; }
 
     [Header("Server Settings")]
-    public string serverUrl = "ws://localhost:8000/ws";
+    public string serverUrl = "ws://localhost:9876/ws";
     public bool enableWebSocket = true; // Master toggle - set to false to play without server
     public float reconnectDelay = 5f;
     public int maxReconnectAttempts = 3;
+
+    [Header("Session Identity")]
+    // The router validates this against its keys file / ARC_API_KEYS env.
+    // Defaults to the dev key the router uses when no keys file is supplied.
+    public string apiKey = "dev-local-key";
+    // Config name (without .json) the router should load for this session.
+    public string configName = "openai_multi_agent_config_local";
 
     [Header("Headless Mode (for RL training)")]
     public bool headlessMode = false; // Set true for gym environment mode
@@ -30,6 +41,12 @@ public class WebSocketManager : MonoBehaviour
 
     [Header("Status")]
     public bool isConnected = false;
+    // Flips to true after the first successful connect of this play session.
+    // Used to suppress re-sending game_start on transient reconnects.
+    private bool gameStartSentThisSession = false;
+    // Server-assigned session id from hello_ack. Empty until the handshake
+    // completes; reset on each fresh connection.
+    private string sessionId = "";
     public string connectionStatus = "Not Connected";
 
     private WebSocket websocket;
@@ -51,11 +68,44 @@ public class WebSocketManager : MonoBehaviour
         }
     }
 
+    /// <summary>Drop cached references to scene objects (e.g. after a gym in-process
+    /// reset reloads MainScene). This manager is DontDestroyOnLoad and survives the
+    /// reload, so its cached TaskDetailUI would otherwise dangle at the destroyed old
+    /// instance. Re-resolved lazily on next use / next Start.</summary>
+    public void ClearSceneRefs()
+    {
+        taskDetailUI = null;
+    }
+
     void Start()
     {
         taskDetailUI = FindObjectOfType<TaskDetailUI>();
 
-        if (Application.isBatchMode)
+        // Pull server URL, API key, and config name from PlayerPrefs if a
+        // previous launcher screen saved them. Inspector values act as
+        // defaults the first time a user runs the game.
+        if (PlayerPrefs.HasKey("arc_server_url"))
+            serverUrl = PlayerPrefs.GetString("arc_server_url");
+        if (PlayerPrefs.HasKey("arc_api_key"))
+            apiKey = PlayerPrefs.GetString("arc_api_key");
+        if (PlayerPrefs.HasKey("arc_config_name"))
+            configName = PlayerPrefs.GetString("arc_config_name");
+
+        if (LlmDisabled())
+        {
+            enableWebSocket = false;
+            headlessMode = false;
+            connectionStatus = "AI teammates disabled";
+            Debug.Log("[WS] AI teammates DISABLED for this run (-no-llm / ARC_NO_LLM / ?llm=0). "
+                    + "The game runs solo; no router connection is attempted.");
+            return;
+        }
+
+        // Headless / gym training mode: auto-connect immediately — UNLESS the run asked for the
+        // AI teammates to be off. Batchmode used to force enableWebSocket = true unconditionally,
+        // so a headless run had no way to play the game without the LLM path attached; the
+        // parity harness needs exactly that, and so does any no-AI control condition.
+        if (Application.isBatchMode && !LlmDisabled())
         {
             Debug.Log("Running in Unity headless mode (batchmode)");
             headlessMode = true;
@@ -65,13 +115,46 @@ public class WebSocketManager : MonoBehaviour
             return;
         }
 
+        // Editor / standalone: defer to the ServerLauncherUI. The launcher
+        // pulls the config catalog from the router, lets the user pick one,
+        // then invokes ConnectToServer() with the chosen settings.
         if (enableWebSocket)
-            StartCoroutine(LoadConfigThenConnect());
+        {
+            connectionStatus = "Awaiting launcher";
+            Debug.Log("[WS] Awaiting launcher to call ConnectToServer()…");
+        }
         else
         {
             connectionStatus = "WebSocket Disabled";
             Debug.Log("WebSocket is disabled. Game will run in offline mode.");
         }
+    }
+
+    /// <summary>
+    /// True when this run was explicitly started with the AI teammates OFF: `-no-llm` on the
+    /// command line, ARC_NO_LLM=1 in the environment, or ?llm=0 on a WebGL page URL.
+    ///
+    /// Evaluated fresh rather than cached, so a stale PlayerPrefs value or a leftover launcher
+    /// selection cannot flip it — "off" has to mean off for the whole process, or a control
+    /// condition silently becomes a treatment condition.
+    /// </summary>
+    public static bool LlmDisabled()
+    {
+        try
+        {
+            foreach (string a in Environment.GetCommandLineArgs())
+                if (a == "-no-llm" || a == "--no-llm") return true;
+            string env = Environment.GetEnvironmentVariable("ARC_NO_LLM");
+            if (!string.IsNullOrEmpty(env) && env != "0") return true;
+        }
+        catch (Exception) { }   // WebGL has neither, and asking can throw rather than return empty
+        try
+        {
+            string url = Application.absoluteURL;
+            if (!string.IsNullOrEmpty(url) && url.Contains("llm=0")) return true;
+        }
+        catch (Exception) { }
+        return false;
     }
 
     IEnumerator LoadConfigThenConnect()
@@ -120,6 +203,24 @@ public class WebSocketManager : MonoBehaviour
     public async void ConnectToServer()
     {
         if (!enableWebSocket) return;
+        // Belt and braces: checked here too, so no other caller (launcher UI, gym bootstrap, a
+        // reconnect timer) can quietly re-attach the LLM path to a run started with AI off.
+        if (LlmDisabled())
+        {
+            connectionStatus = "AI teammates disabled";
+            return;
+        }
+
+        // Study mode (config.json strictMap): the configured map could not be applied, so this
+        // run would silently use the DEFAULT layout — a different experimental condition than
+        // intended. Refuse to connect rather than quietly collect mislabeled data.
+        if (GameConfigLoader.MapFatal)
+        {
+            connectionStatus = "Map error — refusing to start (strictMap)";
+            Debug.LogError("[WS] Not connecting: strictMap is set and the configured map could "
+                + $"not be applied (status={GameConfigLoader.MapStatus}, url={GameConfigLoader.MapUrl}).");
+            return;
+        }
 
         try
         {
@@ -133,8 +234,28 @@ public class WebSocketManager : MonoBehaviour
             {
                 isConnected = true;
                 reconnectAttempts = 0;
-                connectionStatus = "Connected";
-                Debug.Log($"✅ Connected to vLLM server at {serverUrl}");
+                sessionId = "";
+                connectionStatus = "Authenticating...";
+                Debug.Log($"✅ Connected to router at {serverUrl}");
+
+                // Multi-tenant hello handshake. Router will reply with
+                // hello_ack (success) or hello_error (rejection) before any
+                // gameplay traffic flows.
+                // Map provenance rides along so the SESSION LOG records which map was actually
+                // in play. Maps are served outside the router by design, so without this a
+                // merged corpus (bulk export -> SFT) has no way to tell two map conditions
+                // apart — and a silent fallback to the default layout looks identical to a
+                // deliberate run. The router only RECORDS these; it never serves maps.
+                string hello = "{\"type\":\"hello\""
+                               + ",\"api_key\":\"" + EscapeJson(apiKey) + "\""
+                               + ",\"player_id\":\"" + EscapeJson(GetOrCreatePlayerId()) + "\""
+                               + ",\"config\":\"" + EscapeJson(configName) + "\""
+                               + ",\"map_url\":\"" + EscapeJson(GameConfigLoader.MapUrl ?? "") + "\""
+                               + ",\"map_hash\":\"" + EscapeJson(GameConfigLoader.MapHash ?? "") + "\""
+                               + ",\"map_status\":\"" + EscapeJson(GameConfigLoader.MapStatus ?? "") + "\"}";
+                SendRawMessage(hello);
+                Debug.Log($"[WS] hello sent (config={configName}, map={GameConfigLoader.MapStatus}"
+                          + $"{(string.IsNullOrEmpty(GameConfigLoader.MapHash) ? "" : " " + GameConfigLoader.MapHash)})");
             };
 
             // Event handler: Message received
@@ -277,8 +398,8 @@ public class WebSocketManager : MonoBehaviour
         TaskContext context = new TaskContext
         {
             taskId = task.taskId,
-            taskTitle = task.taskTitle,
-            taskDescription = task.description,
+            taskTitle = task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true),
+            taskDescription = task.ResolvePlaceholders(task.description, plainFacilityName: true),
             taskType = task.taskType.ToString(),
             affectedFacility = task.affectedFacility,
             roundsRemaining = task.roundsRemaining
@@ -303,6 +424,18 @@ public class WebSocketManager : MonoBehaviour
                 return;
             }
 
+            // Multi-tenant handshake — must run before any gameplay traffic.
+            if (data.Contains("\"hello_ack\""))
+            {
+                HandleHelloAck(data);
+                return;
+            }
+            if (data.Contains("\"hello_error\""))
+            {
+                HandleHelloError(data);
+                return;
+            }
+
             // Handle new multi-agent router message types
             if (data.Contains("\"choices_proposal\""))
             {
@@ -313,6 +446,20 @@ public class WebSocketManager : MonoBehaviour
             if (data.Contains("\"director_turn\""))
             {
                 HandleCommanderTurn(data);
+                return;
+            }
+
+            // Handle agent conversational messages with embedded choices
+            if (data.Contains("\"agent_message_with_choices\""))
+            {
+                HandleAgentMessageWithChoices(data);
+                return;
+            }
+
+            // Handle agent conversational messages
+            if (data.Contains("\"agent_message\""))
+            {
+                HandleAgentMessage(data);
                 return;
             }
 
@@ -350,6 +497,77 @@ public class WebSocketManager : MonoBehaviour
                 return;
             }
 
+            // On-demand state pull: the router asks for the authoritative current
+            // game_state at the start of each officer turn (and for the getter tools),
+            // so officers see changes the router didn't cause (human actions, sim ticks,
+            // deliveries, the daily budget allocation). Reply with a correlated
+            // "game_state_response" the router awaits.
+            if (actionMsg != null && actionMsg.type == "get_game_state")
+            {
+                if (TaskSystem.Instance != null)
+                {
+                    var stateResp = new GymResetResponse
+                    {
+                        type = "game_state_response",
+                        game_state = TaskSystem.Instance.GetCurrentGameState(),
+                        satisfaction = SatisfactionAndBudget.Instance != null
+                            ? (int)SatisfactionAndBudget.Instance.GetCurrentSatisfaction() : 0
+                    };
+                    SendRawMessage(JsonUtility.ToJson(stateResp, prettyPrint: false));
+                }
+                return;
+            }
+
+            // Check if this is a task-choice answer (a router officer selecting a
+            // choice on one of its jurisdiction's tasks). Mirrors the gym-TCP
+            // HandleSelectTaskChoice path: resolve to TaskDetailUI.SelectTaskChoiceHeadless
+            // and reply with an ActionExecutionResult (no `type`) so the router's
+            // action-result handler resolves the officer's pending choice future.
+            if (actionMsg != null && actionMsg.type == "select_task_choice")
+            {
+                TaskChoiceMessage choiceMsg = null;
+                try { choiceMsg = JsonUtility.FromJson<TaskChoiceMessage>(data); }
+                catch { }
+
+                var choiceResult = new ActionExecutionResult
+                {
+                    action_id = choiceMsg != null
+                        ? $"choice_{choiceMsg.taskId}_{choiceMsg.choiceId}" : "choice_unknown",
+                    timestamp = DateTime.UtcNow.ToString("o")
+                };
+
+                if (choiceMsg == null)
+                {
+                    choiceResult.success = false;
+                    choiceResult.error_message = "Malformed select_task_choice message";
+                }
+                else
+                {
+                    if (taskDetailUI == null)
+                        taskDetailUI = FindObjectOfType<TaskDetailUI>();
+
+                    if (taskDetailUI == null)
+                    {
+                        choiceResult.success = false;
+                        choiceResult.error_message = "TaskDetailUI not available";
+                    }
+                    else
+                    {
+                        string failReason;
+                        bool ok = taskDetailUI.SelectTaskChoiceHeadless(
+                            choiceMsg.taskId, choiceMsg.choiceId, choiceMsg.stableId, out failReason);
+                        choiceResult.success = ok;
+                        choiceResult.error_message = ok ? null : failReason;
+                        Debug.Log($"🗳️ select_task_choice task {choiceMsg.taskId} " +
+                                  $"choice {choiceMsg.choiceId}: " +
+                                  (ok ? "✅ Success" : "❌ " + failReason));
+                    }
+                }
+
+                SendRawMessage(JsonUtility.ToJson(choiceResult));
+                return;
+            }
+
             // Parse JSON response (existing handlers)
             var response = JsonUtility.FromJson<LLMResponse>(data);
 
@@ -383,6 +601,105 @@ public class WebSocketManager : MonoBehaviour
         {
             Debug.LogError($"Failed to parse message: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Minimal JSON string escaper for the hello frame. NativeWebSocket sends
+    /// raw text so we have to hand-build the payload here; bigger payloads
+    /// elsewhere already use a real serializer.
+    /// </summary>
+    private static string EscapeJson(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        return s.Replace("\\", "\\\\").Replace("\"", "\\\"")
+                .Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+    }
+
+    /// <summary>
+    /// Persistent per-browser player id. In WebGL, PlayerPrefs is backed by the
+    /// browser's IndexedDB (idbfs), so this UUID survives reloads and new game
+    /// sessions exactly like a localStorage id — it lets us differentiate
+    /// individual players who share one API key. Generated once, then reused.
+    /// </summary>
+    private string GetOrCreatePlayerId()
+    {
+        string id = PlayerPrefs.GetString("arc_player_id", "");
+        if (string.IsNullOrEmpty(id))
+        {
+            id = System.Guid.NewGuid().ToString();
+            PlayerPrefs.SetString("arc_player_id", id);
+            PlayerPrefs.Save();
+        }
+        return id;
+    }
+
+    /// <summary>
+    /// Handshake success. Stash the server-assigned session id and now
+    /// (and only now) send game_start so the router clears any leftover
+    /// in-memory state from a previous session.
+    /// </summary>
+    [System.Serializable] public class OfficerRosterEntry { public string name; public string endpoint; }
+    [System.Serializable] private class HelloAckRoster { public OfficerRosterEntry[] officers; }
+
+    /// <summary>Officer roster from the router's hello_ack: talkinghead_endpoint -> display name,
+    /// for the ACTUAL loaded config. The WebGL client has no local agents_config.json, so this is
+    /// the only source that lets the sidebar label its (fixed 5) slots by the config's real officer
+    /// names instead of the enum slot names. Populated on each hello_ack.</summary>
+    public static System.Collections.Generic.Dictionary<string, string> OfficerRoster =
+        new System.Collections.Generic.Dictionary<string, string>(
+            System.StringComparer.OrdinalIgnoreCase);   // tolerate endpoint case drift
+
+    private void HandleHelloAck(string data)
+    {
+        // Extract session_id without pulling in a JSON dependency — the
+        // payload is tiny and we only need one field.
+        int idx = data.IndexOf("\"session_id\"");
+        if (idx >= 0)
+        {
+            int colon = data.IndexOf(':', idx);
+            int firstQuote = data.IndexOf('"', colon + 1);
+            int secondQuote = data.IndexOf('"', firstQuote + 1);
+            if (firstQuote > 0 && secondQuote > firstQuote)
+                sessionId = data.Substring(firstQuote + 1, secondQuote - firstQuote - 1);
+        }
+
+        // Officer roster → so the sidebar can show the config's real officer names.
+        try
+        {
+            HelloAckRoster roster = JsonUtility.FromJson<HelloAckRoster>(data);
+            OfficerRoster.Clear();
+            if (roster != null && roster.officers != null)
+                foreach (var o in roster.officers)
+                    if (!string.IsNullOrEmpty(o.endpoint) && !string.IsNullOrEmpty(o.name))
+                        OfficerRoster[o.endpoint] = o.name;
+            Debug.Log($"[WS] officer roster received: {OfficerRoster.Count} officers");
+            var convUI = FindObjectOfType<AgentConversationUI>();
+            if (convUI != null) convUI.ApplyOfficerRoster();
+        }
+        catch (System.Exception ex) { Debug.LogWarning($"[WS] officer roster parse failed: {ex.Message}"); }
+
+        connectionStatus = "Connected";
+        Debug.Log($"[WS] hello_ack received (session={sessionId})");
+
+        if (!gameStartSentThisSession)
+        {
+            SendRawMessage("{\"type\":\"game_start\",\"timestamp\":\""
+                           + System.DateTime.UtcNow.ToString("o") + "\"}");
+            gameStartSentThisSession = true;
+            Debug.Log("[WS] game_start sent");
+        }
+    }
+
+    /// <summary>
+    /// Handshake rejection (bad key, unknown config, etc). Surface in the
+    /// status string and let the server close us; reconnect would just be
+    /// rejected again with the same credentials.
+    /// </summary>
+    private void HandleHelloError(string data)
+    {
+        connectionStatus = "Auth failed";
+        Debug.LogWarning($"[WS] hello_error: {data}");
+        enableWebSocket = false; // suppress auto-reconnect on credential errors
     }
 
     /// <summary>
@@ -527,14 +844,16 @@ public class WebSocketManager : MonoBehaviour
             {
                 foreach (var pkg in proposal.packages)
                 {
+                    // Friendly site names for the human-visible label; our detailed
+                    // description (package + action list) for the agent-facing reasoning.
                     string cleanLabel = TaskSystem.Instance.ConvertSiteNamesToFriendly(pkg.label);
-                    string cleanDescription = TaskSystem.Instance.ConvertSiteNamesToFriendly(pkg.description);
+                    string detailedDescription = FormatPackageDescription(pkg, proposal.available_actions);
 
                     llmContent.choices.Add(new LLMAgentChoice
                     {
                         choiceId = pkg.package_index,
                         choiceText = cleanLabel,
-                        agentReasoning = cleanDescription,
+                        agentReasoning = detailedDescription,
                         confidence = pkg.confidence,
                         impacts = new System.Collections.Generic.List<LLMImpact>()
                     });
@@ -549,6 +868,15 @@ public class WebSocketManager : MonoBehaviour
                 }
             }
 
+            // Before the existing multi-agent task gets cleared, snapshot its
+            // current reasoning + choices into the per-officer chat history so
+            // prior proposals stay visible across reproposals.
+            if (AgentConversationUI.Instance != null
+                && TryResolveOfficer(proposal.talkinghead, out TaskOfficer archiveOfficer))
+            {
+                AgentConversationUI.Instance.ArchiveExistingProposal(archiveOfficer);
+            }
+
             // Create or update a special multi-agent task for this officer
             GameTask multiAgentTask = TaskSystem.Instance.GetOrCreateMultiAgentTask(
                 proposal.talkinghead,
@@ -558,8 +886,31 @@ public class WebSocketManager : MonoBehaviour
             // Store proposal metadata on the task for later reference
             multiAgentTask.multiAgentProposal = proposal;
 
-            // Apply the LLM content to display in the UI
-            TaskSystem.Instance.ApplyLLMTaskContent(llmContent);
+            // Apply the LLM content to display in the UI. Pass the exact officer task
+            // (not by id): all officers' proposals share taskId == -1, so an id lookup
+            // would cross-wire proposals between officers in multi-agent scenarios.
+            TaskSystem.Instance.ApplyLLMTaskContent(multiAgentTask, llmContent);
+
+            // If the user is currently viewing this officer's tab, re-render so the
+            // newly proposed/reproposed choices appear immediately. Without this,
+            // the task data updates but the panel only refreshes on next tab switch.
+            if (AgentConversationUI.Instance != null
+                && TryResolveOfficer(proposal.talkinghead, out TaskOfficer officerEnum))
+            {
+                // Proposal arrived: this officer is done generating.
+                AgentConversationUI.Instance.SetOfficerGenerating(officerEnum, false);
+                AgentConversationUI.Instance.OnChoicesProposalApplied(officerEnum);
+            }
+
+            // The proposal also renders in the task-detail panel (opened from the Task
+            // Center). If that panel is currently showing this officer's proposal,
+            // re-render it in place so reproposed options appear immediately instead of
+            // only after close/reopen.
+            if (taskDetailUI != null
+                && TryResolveOfficer(proposal.talkinghead, out TaskOfficer detailOfficer))
+            {
+                taskDetailUI.RefreshProposalIfShowing(detailOfficer);
+            }
 
             Debug.Log($"✅ Displayed {proposal.packages.Length} choice packages in {proposal.talkinghead} tab");
         }
@@ -578,6 +929,10 @@ public class WebSocketManager : MonoBehaviour
         try
         {
             Debug.Log("[WS] director_turn received - unlocking player GUI.");
+            // Round over: every officer has finished, so clear any waiting bubbles
+            // (including officers that ended their turn without sending a frame).
+            if (AgentConversationUI.Instance != null)
+                AgentConversationUI.Instance.ClearAllGenerating();
             // TODO: notify UI layer that player's turn has started
         }
         catch (Exception ex)
@@ -586,13 +941,123 @@ public class WebSocketManager : MonoBehaviour
         }
     }
 
+    /// <summary>Resolve a talkinghead_endpoint string to a TaskOfficer slot, tolerantly:
+    /// trimmed and CASE-INSENSITIVE, and validated with IsDefined so a numeric string can't
+    /// slip through TryParse as a bogus enum value. Config endpoints are hand-authored (and
+    /// will be contributor-uploaded), so exact-case matching silently dropped every frame for
+    /// an officer whose spelling drifted (messaging-flow audit, config-robustness gap).</summary>
+    public static bool TryResolveOfficer(string endpoint, out TaskOfficer officer)
+    {
+        officer = TaskOfficer.DisasterOfficer;
+        if (string.IsNullOrWhiteSpace(endpoint)) return false;
+        return System.Enum.TryParse(endpoint.Trim(), true, out officer)
+               && System.Enum.IsDefined(typeof(TaskOfficer), officer);
+    }
+
+    void HandleAgentMessage(string data)
+    {
+        try
+        {
+            var msg = JsonUtility.FromJson<AgentConversationMessage>(data);
+            Debug.Log($"[WS] agent_message received from {msg.agent_name}: {msg.content}");
+
+            // Parse talkinghead_endpoint to TaskOfficer enum
+            TaskOfficer officer;
+            if (TryResolveOfficer(msg.talkinghead_endpoint, out officer))
+            {
+                // Forward to conversation UI
+                if (AgentConversationUI.Instance != null)
+                {
+                    // Response arrived: drop this officer's waiting bubble before
+                    // the message is appended so the message lands at the bottom.
+                    AgentConversationUI.Instance.SetOfficerGenerating(officer, false);
+                    AgentConversationUI.Instance.AddAgentMessage(officer, msg.content, msg.message_type);
+                }
+                else
+                {
+                    Debug.LogWarning("[WS] AgentConversationUI not found, cannot display message");
+                }
+            }
+            else
+            {
+                // Unroutable frame (config endpoint typo). Don't strand a spinner: the
+                // director is waiting on SOME officer, so clear all waiting bubbles.
+                Debug.LogError($"[WS] Invalid talkinghead_endpoint: '{msg.talkinghead_endpoint}' "
+                               + $"(from agent '{msg.agent_name}') — message not rendered. "
+                               + "Valid: DisasterOfficer, FoodMassCare, LodgingMassCare, "
+                               + "WorkforceService, ExternalRelationship.");
+                if (AgentConversationUI.Instance != null)
+                    AgentConversationUI.Instance.ClearAllGenerating();
+            }
+        }
+        catch (Exception ex)
+        {
+            // Malformed frame: msg is unusable, so clear all spinners rather than
+            // leaving one spinning until the 90s watchdog.
+            Debug.LogError($"[WS] Failed to handle agent_message: {ex.Message}");
+            if (AgentConversationUI.Instance != null)
+                AgentConversationUI.Instance.ClearAllGenerating();
+        }
+    }
+
+    void HandleAgentMessageWithChoices(string data)
+    {
+        try
+        {
+            var msg = JsonUtility.FromJson<AgentMessageWithChoices>(data);
+            Debug.Log($"[WS] agent_message_with_choices received from {msg.agent_name}: {msg.content}");
+
+            // Parse talkinghead_endpoint to TaskOfficer enum (tolerant: see TryResolveOfficer)
+            TaskOfficer officer;
+            if (TryResolveOfficer(msg.talkinghead_endpoint, out officer))
+            {
+                // Forward to conversation UI with embedded choices
+                if (AgentConversationUI.Instance != null)
+                {
+                    AgentConversationUI.Instance.SetOfficerGenerating(officer, false);
+                    AgentConversationUI.Instance.AddAgentMessageWithChoices(
+                        officer,
+                        msg.content,
+                        msg.message_type,
+                        msg.reasoning,
+                        msg.packages,
+                        msg.available_actions
+                    );
+                }
+                else
+                {
+                    Debug.LogWarning("[WS] AgentConversationUI not found, cannot display message with choices");
+                }
+            }
+            else
+            {
+                Debug.LogError($"[WS] Invalid talkinghead_endpoint: '{msg.talkinghead_endpoint}' "
+                               + $"(from agent '{msg.agent_name}') — choices not rendered.");
+                if (AgentConversationUI.Instance != null)
+                    AgentConversationUI.Instance.ClearAllGenerating();
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[WS] Failed to handle agent_message_with_choices: {ex.Message}");
+            if (AgentConversationUI.Instance != null)
+                AgentConversationUI.Instance.ClearAllGenerating();
+        }
+    }
+
     /// <summary>
     /// Send begin_round to the agent router with current game state.
     /// Call this when the game advances to a new time segment.
     /// </summary>
-    public void SendBeginRound(int round, int day, int segment)
+    /// <summary>
+    /// Send begin_round to the router. Returns true only if the frame was
+    /// actually sent (connected AND game state serializable). Callers that
+    /// retry until success (the human first-proposal one-shot) rely on this
+    /// bool so they don't flip their "done" flag before the state is ready.
+    /// </summary>
+    public bool SendBeginRound(int round, int day, int segment)
     {
-        if (!isConnected) return;
+        if (!isConnected) return false;
 
         GameStatePayload gameState = null;
         if (TaskSystem.Instance != null)
@@ -603,7 +1068,7 @@ public class WebSocketManager : MonoBehaviour
         if (gameState == null)
         {
             Debug.LogWarning("[WS] SendBeginRound: could not get game state.");
-            return;
+            return false;
         }
 
         var msg = new BeginRoundMessage
@@ -616,7 +1081,20 @@ public class WebSocketManager : MonoBehaviour
         };
         SendRawMessage(JsonUtility.ToJson(msg));
         Debug.Log($"[WS] begin_round sent (round={round}, day={day}, seg={segment})");
+        // All continuous officers are dispatched at once on begin_round; show a
+        // waiting bubble on each until its proposal/message arrives (or director_turn).
+        if (AgentConversationUI.Instance != null)
+            AgentConversationUI.Instance.MarkRoundGenerating();
+        return true;
     }
+
+    /// <summary>
+    /// True once the game_start frame has been sent for this session (right
+    /// after hello_ack). The router clears its queue and resets its round
+    /// counter on game_start, so a begin_round sent before it would be
+    /// discarded — the human first-proposal must wait for this.
+    /// </summary>
+    public bool HasSentGameStart() => gameStartSentThisSession;
 
     /// <summary>
     /// Send choice_made back to router after player selects a package.
@@ -637,9 +1115,114 @@ public class WebSocketManager : MonoBehaviour
                 + $"\"package_index\":{packageIndex},"
                 + $"\"execution_results\":{executionResultsJson},"
                 + $"\"game_state\":{gameStateJson},"
+                + $"\"click_seq\":{GuiInteractionRecorder.LastClickSeq},"
                 + $"\"timestamp\":\"{System.DateTime.UtcNow:o}\"}}";
         SendRawMessage(msg);
         Debug.Log($"[WS] choice_made sent (agent={agentName}, package={packageIndex})");
+    }
+
+    /// <summary>
+    /// Send director message to an agent.
+    /// Called when player sends a conversational message to an agent.
+    /// </summary>
+    /// <summary>Send a director message to an agent. Returns TRUE only if the frame was
+    /// actually handed to an open socket. The caller MUST gate the officer's "thinking"
+    /// bubble on this: a void send let a disconnected/reconnecting client render the
+    /// message, clear the input, and spin a spinner for ~90s while nothing was ever sent
+    /// (messaging-flow audit #2). Guards on the full triad via IsConnected() — the bare
+    /// `isConnected` bool lags the real socket state during the close/reconnect window.</summary>
+    public bool SendDirectorMessage(string toAgent, string content)
+    {
+        if (!IsConnected())
+        {
+            Debug.LogWarning("[WS] Cannot send director_message - not connected!");
+            return false;
+        }
+
+        var msg = new DirectorMessage
+        {
+            to_agent = toAgent,
+            content = content,
+            click_seq = GuiInteractionRecorder.LastClickSeq,
+            timestamp = (System.DateTime.UtcNow - new System.DateTime(1970, 1, 1)).TotalSeconds
+        };
+
+        SendRawMessage(JsonUtility.ToJson(msg));
+        Debug.Log($"[WS] director_message sent to {toAgent}: {content}");
+        return true;
+    }
+
+    // ── Action / interaction logging (per-actor unified log) ─────────
+    // These mirror human UI interactions to the router so they land, actor-tagged,
+    // in the per-session JSONL. Guarded by isConnected so the headless/gym build
+    // (which has no human UI) never emits them.
+
+    /// <summary>
+    /// Send a semantic human UI interaction (Tier-1 ui_interaction): opening an
+    /// agent's conversation, switching officers, selecting/switching a choice
+    /// package, clicking confirm, opening metrics, etc. The raw click coords are
+    /// sent separately by GuiInteractionRecorder; clickSeq joins the two.
+    /// </summary>
+    public void SendClientEvent(string category, string name, string detail, long clickSeq)
+    {
+        if (!isConnected) return;
+        string msg = "{\"type\":\"client_event\",\"actor_kind\":\"human\","
+            + $"\"category\":\"{EscapeJson(category)}\",\"name\":\"{EscapeJson(name)}\","
+            + $"\"payload\":{{\"detail\":\"{EscapeJson(detail ?? string.Empty)}\"}},"
+            + $"\"click_seq\":{clickSeq},"
+            + $"\"timestamp\":\"{System.DateTime.UtcNow:o}\"}}";
+        SendRawMessage(msg);
+    }
+
+    /// <summary>
+    /// Send one raw mouse click (Tier-2 every-click trace) with screen/normalized
+    /// coordinates and the UI element hit. hitName == null means the click landed
+    /// on no UI element (coords-only record).
+    /// </summary>
+    public void SendGuiEvent(long clickSeq, int button,
+        float sx, float sy, float sw, float sh, float nx, float ny,
+        string canvasName, float clx, float cly,
+        string hitName, string hitType, string hitPath)
+    {
+        if (!isConnected) return;
+        string hitJson = hitName == null ? "null"
+            : $"{{\"name\":\"{EscapeJson(hitName)}\",\"type\":\"{EscapeJson(hitType)}\",\"path\":\"{EscapeJson(hitPath)}\"}}";
+        string canvasJson = canvasName == null ? "null"
+            : $"{{\"name\":\"{EscapeJson(canvasName)}\",\"local_x\":{F(clx)},\"local_y\":{F(cly)}}}";
+        string payload = $"{{\"button\":{button},"
+            + $"\"screen\":{{\"x\":{F(sx)},\"y\":{F(sy)},\"w\":{F(sw)},\"h\":{F(sh)}}},"
+            + $"\"normalized\":{{\"x\":{F(nx)},\"y\":{F(ny)}}},"
+            + $"\"canvas\":{canvasJson},\"hit\":{hitJson}}}";
+        string msg = $"{{\"type\":\"gui_event\",\"click_seq\":{clickSeq},"
+            + $"\"payload\":{payload},"
+            + $"\"timestamp\":\"{System.DateTime.UtcNow:o}\"}}";
+        SendRawMessage(msg);
+    }
+
+    // Invariant-culture float formatting so coords never serialize with a comma
+    // decimal separator on non-US locales (which would corrupt the JSON).
+    // (EscapeJson already exists above and is reused here.)
+    private static string F(float v) =>
+        v.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Send request to agent to repropose choices with feedback.
+    /// Called when director wants agent to generate new choices.
+    /// </summary>
+    public void SendRequestReproposal(string agentName, string feedback)
+    {
+        if (!isConnected)
+        {
+            Debug.LogWarning("[WS] Cannot send request_reproposal - not connected!");
+            return;
+        }
+
+        var msg = $"{{\"type\":\"request_reproposal\",\"agent_name\":\"{agentName}\","
+                + $"\"feedback\":\"{feedback}\","
+                + $"\"timestamp\":{(System.DateTime.UtcNow - new System.DateTime(1970, 1, 1)).TotalSeconds}}}";
+
+        SendRawMessage(msg);
+        Debug.Log($"[WS] request_reproposal sent to {agentName}");
     }
 
     // ========================================================================
@@ -719,7 +1302,6 @@ public class WebSocketManager : MonoBehaviour
         }
 
         // Parse and execute actions
-        bool allSuccess = true;
         if (!string.IsNullOrEmpty(actionsJson))
         {
             try
@@ -733,7 +1315,6 @@ public class WebSocketManager : MonoBehaviour
                         var result = ActionExecutor.Instance.ExecuteAction(action);
                         if (!result.success)
                         {
-                            allSuccess = false;
                             Debug.LogWarning($"Action failed: {result.error_message}");
                         }
                     }
@@ -742,7 +1323,6 @@ public class WebSocketManager : MonoBehaviour
             catch (System.Exception ex)
             {
                 Debug.LogError($"Failed to execute actions: {ex.Message}");
-                allSuccess = false;
             }
         }
 
@@ -821,6 +1401,39 @@ public class WebSocketManager : MonoBehaviour
         SendRawMessage(json);
 
         Debug.Log($"📤 Sent step response: reward={reward}, terminated={terminated}, truncated={truncated}");
+    }
+
+    /// <summary>
+    /// Format package description combining LLM description + action list
+    /// </summary>
+    string FormatPackageDescription(ActionPackage package, GameAction[] availableActions)
+    {
+        // The grounded description already reads "$cost · <engine action summary>\nWhy: ..."
+        // — the action summary is built server-side from the engine's OWN action list, so we
+        // do NOT append a separate "Actions:" block here. It duplicated the summary and could
+        // show engine numbers that contradicted the model's prose. Use the description directly.
+        if (!string.IsNullOrEmpty(package.description))
+            return package.description.TrimEnd();
+
+        // Fallback only: no description was supplied — list the engine actions so the
+        // card is never blank.
+        System.Text.StringBuilder desc = new System.Text.StringBuilder();
+        if (package.action_indices != null && package.action_indices.Length > 0 && availableActions != null)
+        {
+            desc.AppendLine("Actions:");
+            foreach (int idx in package.action_indices)
+            {
+                if (idx >= 0 && idx < availableActions.Length)
+                {
+                    string actionName = availableActions[idx].description;
+                    if (string.IsNullOrEmpty(actionName))
+                        actionName = availableActions[idx].action_id;
+                    desc.AppendLine($"• {actionName}");
+                }
+            }
+        }
+
+        return desc.ToString().TrimEnd();
     }
 }
 
@@ -924,4 +1537,41 @@ public class ChoicesProposalMessage
     public string reasoning;
     public ActionPackage[] packages;
     public GameAction[] available_actions; // Full action objects from router
+}
+
+[System.Serializable]
+public class AgentConversationMessage
+{
+    public string type = "agent_message";
+    public string agent_name;
+    public string talkinghead_endpoint;
+    public string content;
+    public string message_type;
+    public int round;
+    public double timestamp;
+}
+
+[System.Serializable]
+public class AgentMessageWithChoices
+{
+    public string type = "agent_message_with_choices";
+    public string agent_name;
+    public string talkinghead_endpoint;
+    public string content;
+    public string message_type;
+    public int round;
+    public double timestamp;
+    public string reasoning;
+    public ActionPackage[] packages;
+    public GameAction[] available_actions;
+}
+
+[System.Serializable]
+public class DirectorMessage
+{
+    public string type = "director_message";
+    public string to_agent;
+    public string content;
+    public long click_seq = -1;
+    public double timestamp;
 }

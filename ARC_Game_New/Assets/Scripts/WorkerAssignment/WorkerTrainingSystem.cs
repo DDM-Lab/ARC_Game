@@ -69,7 +69,7 @@ public class WorkerTrainingSystem : MonoBehaviour
     }
     void OnTaskExpired(GameTask task)
     {
-        if (task.taskTitle == "Worker Training Program" && currentTrainingTask == task)
+        if (task.taskTitle == "Responder Training Program" && currentTrainingTask == task)
         {
             currentTrainingTask = null;
             if (showDebugInfo)
@@ -180,27 +180,33 @@ public class WorkerTrainingSystem : MonoBehaviour
         }
         
         int workersToTrain = task.numericalInputs[0].currentValue;
-        
         if (workersToTrain <= 0)
             return;
-        
-        int totalCost = workersToTrain * trainingCostPerWorker;
 
-        //if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.CanAfford(totalCost))
-        //{
-        //    GameLogPanel.Instance.LogError($"Cannot afford responder training: ${totalCost}");
-        //    return;
-        //}
+        // The free pool may have shrunk since the task was opened: clamp BEFORE charging, so
+        // money is never taken for training that then silently does not happen (BUG_REPORTS B17).
+        int freeUntrained = workerSystem.GetWorkersByType(WorkerType.Untrained)
+            .FindAll(w => w.GetCurrentStatus() == "Free").Count;
+        if (freeUntrained < workersToTrain)
+        {
+            ToastManager.ShowToast($"Only {freeUntrained} untrained workers are free to train (requested {workersToTrain})", ToastType.Warning, true);
+            workersToTrain = freeUntrained;
+            if (workersToTrain <= 0)
+                return;
+        }
+
+        int totalCost = workersToTrain * trainingCostPerWorker;
+        // if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
+        // {
+        //     GameLogPanel.Instance.LogError($"Cannot afford worker training: ${totalCost}");
+        //     return;
+        // }
         if (SatisfactionAndBudget.Instance == null)
         {
-            GameLogPanel.Instance.LogError($"Game error, unable to allocate: ${totalCost}");
             return;
         }
 
-        // SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Training {workersToTrain} workers");
-        // if (DailyReportData.Instance != null)
-        //     DailyReportData.Instance.RecordWorkerTrainingCostCumulative(totalCost);
-        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Training {workersToTrain} workers");
+        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $"Training {workersToTrain} workers");
         if (DailyReportData.Instance != null)
         {
             DailyReportData.Instance.RecordWorkerTrainingCostCumulative(totalCost);
@@ -209,7 +215,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         StartWorkerTraining(workersToTrain);
     }
     
-    void StartWorkerTraining(int workerCount)
+    public void StartWorkerTraining(int workerCount)
     {
         List<Worker> untrainedWorkers = workerSystem.GetWorkersByType(WorkerType.Untrained)
             .FindAll(w => w.GetCurrentStatus() == "Free");
@@ -244,7 +250,7 @@ public class WorkerTrainingSystem : MonoBehaviour
         FindObjectOfType<GlobalWorkerManagementUI>()?.RefreshCurrentTab();
 
         ToastManager.ShowToast($"Started training {workerCount} workers. Estimated Completion Date: Day {completionDay}", ToastType.Success, true);
-        GameLogPanel.Instance.LogWorkerAction($"Started training {workerCount} workers (completion Day {completionDay})");
+        GameLogPanel.Instance?.LogWorkerAction($"Started training {workerCount} workers (completion Day {completionDay})");
 
         if (showDebugInfo)
             Debug.Log($"Training started on Day {currentDay} for {workerCount} workers, completion day: {completionDay}");
@@ -291,7 +297,7 @@ public class WorkerTrainingSystem : MonoBehaviour
                 "Completed training " + successfullyTrained + " workers");
 
             ToastManager.ShowToast("Training complete! " + successfullyTrained + " workers are now trained and available. " + "Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion", ToastType.Info, true);
-            GameLogPanel.Instance.LogMetricsChange("Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion");
+            GameLogPanel.Instance?.LogMetricsChange("Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion");
         }
         else
         {

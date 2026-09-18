@@ -31,16 +31,11 @@ public class FoodDeliveryHandler : MonoBehaviour
     public bool CanExecute(GameTask parentTask, AgentChoice choice, out string errorMessage)
     {
         errorMessage = "";
-
         MonoBehaviour destination = TaskSystem.Instance.FindTriggeringFacility(parentTask);
-        if (destination == null)
-        {
-            errorMessage = $"Cannot find destination facility '{parentTask.affectedFacility}'";
-            return false;
-        }
+        if (destination == null) { errorMessage = "Destination not found"; return false; }
 
         DeliverySystem ds = DeliverySystem.Instance;
-        if (ds == null) { errorMessage = "DeliverySystem not found"; return false; }
+        if (ds == null) { errorMessage = "Delivery System missing"; return false; }
 
         int requestedQuantity = ResolveQuantity(choice, destination);
 
@@ -60,9 +55,25 @@ public class FoodDeliveryHandler : MonoBehaviour
         // the checks below only apply to the queued, vehicle-based path.
         if (!choice.immediateDelivery)
         {
-            // Is there at least enough food across all kitchens (minus already-outbound) to partially help?
-            int totalEffective = GetTotalEffectiveFood(ds);
-            if (totalEffective <= 0)
+            // Only kitchens a vehicle can actually reach count (flood-aware path), and only their
+            // unreserved stock (BUG_REPORTS B11/B12: the old check counted unreachable kitchens).
+            int totalReachableFood = 0;
+            bool atLeastOneKitchenReachable = false;
+            foreach (var k in FindObjectsOfType<Building>()
+                         .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational()))
+            {
+                if (!ds.CanCreateDeliveryWithEstimate(k, destination, out var estimate)) continue;
+                atLeastOneKitchenReachable = true;
+                int stock = k.GetComponent<BuildingResourceStorage>()?.GetResourceAmount(ResourceType.FoodPacks) ?? 0;
+                int reserved = ds.GetReservedOutgoingQuantity(k, ResourceType.FoodPacks);
+                totalReachableFood += Mathf.Max(0, stock - reserved);
+            }
+            if (!atLeastOneKitchenReachable)
+            {
+                errorMessage = "All routes from kitchens are blocked by flooding.";
+                return false;
+            }
+            if (totalReachableFood <= 0)
             {
                 int totalRawStock = GetTotalRawFood();
                 errorMessage = totalRawStock > 0
@@ -76,6 +87,11 @@ public class FoodDeliveryHandler : MonoBehaviour
             // player asked for. totalEffective already excludes meals reserved for other
             // deliveries, so a shortfall here can mean either not enough raw stock or enough
             // stock but most of it already scheduled elsewhere.
+            // MERGE FIX (74304870): upstream's new requireFullQuantity check reads `totalEffective`,
+            // which it defines earlier in a region our side had rewritten (BUG_REPORTS B11/B12
+            // made the reachability check flood-aware). Resolving to upstream's block left the
+            // name undefined; GetTotalEffectiveFood is the same helper upstream computes it from.
+            int totalEffective = GetTotalEffectiveFood(ds);
             if (choice.requireFullQuantity && totalEffective < effectiveNeed)
             {
                 errorMessage = $"Not enough food across all kitchens for this request (some meals may already be scheduled for other deliveries). Available: {totalEffective}, Required: {effectiveNeed}";
@@ -123,15 +139,26 @@ public class FoodDeliveryHandler : MonoBehaviour
 
         if (remaining <= 0)
         {
+            // EXIT A: destination already covered by inbound. CompleteTask -> resolved AND
+            // fulfilled, so Unity counts this exactly as a delivery even though none is made.
+            SnapshotDebug.MarkContext("food:exit", "{\"branch\":\"inbound-covered\",\"dst\":\""
+                + destination.name + "\",\"requested\":" + choice.deliveryQuantity
+                + ",\"inbound\":" + alreadyInbound + "}");
             if (showDebugInfo)
                 Debug.Log($"[FoodDeliveryTaskGenerator] Inbound deliveries already cover {alreadyInbound}/{requestedQuantity} for {destination.name}");
-            TaskSystem.Instance.CompleteTask(parentTask);
-            return true;
+            // Nothing to deliver. This is a refusal (the UI already refuses it), not a fulfilment:
+            // completing the task here credited a delivery that was never made (BUG_REPORTS C.3).
+            return false;
         }
 
         var kitchens = GetKitchensSorted(ds, destination.transform.position, choice.prioritizeNearestSource);
         if (kitchens.Count == 0)
         {
+            // EXIT B: no kitchen has effective stock. Returns false and completes NOTHING --
+            // the task stays on the board. Collapsing this with EXIT A is what made four
+            // traces read foodResolved 0 against Unity's 1.
+            SnapshotDebug.MarkContext("food:exit", "{\"branch\":\"no-kitchen-stock\",\"dst\":\""
+                + destination.name + "\",\"requested\":" + choice.deliveryQuantity + "}");
             Debug.LogWarning($"[FoodDeliveryTaskGenerator] No kitchens with available food for '{parentTask.taskTitle}'");
             return false;
         }
@@ -147,6 +174,9 @@ public class FoodDeliveryHandler : MonoBehaviour
 
             if (deliveries.Count > 0)
             {
+                SnapshotDebug.MarkContext("food:exit", "{\"branch\":\"created\",\"dst\":\""
+                    + destination.name + "\",\"kitchen\":\"" + kitchen.name
+                    + "\",\"send\":" + sendAmount + ",\"effective\":" + effectiveStock + "}");
                 TaskSystem.Instance.LinkDeliveriesToTask(parentTask, deliveries);
                 remaining -= sendAmount;
                 anyCreated = true;
@@ -175,21 +205,22 @@ public class FoodDeliveryHandler : MonoBehaviour
     /// Immediately transfers food from kitchens to destination (no vehicle needed).
     /// Used for "airdrop" / emergency-bypass choices.
     /// </summary>
-    public void ExecuteImmediate(GameTask parentTask, AgentChoice choice)
+    public int ExecuteImmediate(GameTask parentTask, AgentChoice choice)
     {
+        // External emergency supply: no kitchen is debited (design call), but the drop must have a
+        // destination and only what fits is credited (BUG_REPORTS B15).
         MonoBehaviour destination = TaskSystem.Instance.FindTriggeringFacility(parentTask);
-        if (destination == null) return;
-
+        if (destination == null) return 0;
         BuildingResourceStorage destStorage = GetStorage(destination);
-        if (destStorage == null) return;
+        if (destStorage == null) return 0;
 
         int requestedQuantity = ResolveQuantity(choice, destination);
         int amount = requestedQuantity > 0 ? requestedQuantity : destStorage.GetAvailableSpace(ResourceType.FoodPacks);
-        destStorage.AddResource(ResourceType.FoodPacks, amount);
-
+        int added = destStorage.AddResource(ResourceType.FoodPacks, amount);
         if (showDebugInfo)
-            Debug.Log($"[FoodDeliveryTaskGenerator] Immediate drop: added {amount} food to {destination.name}");
-        GameLogPanel.Instance?.LogTaskEvent($"Immediate food drop executed for '{parentTask.taskTitle}': delivered {amount} meals to {destination.name}");
+            Debug.Log($"[FoodDeliveryTaskGenerator] Immediate drop: added {added}/{amount} food to {destination.name}");
+        GameLogPanel.Instance?.LogTaskEvent($"Immediate food drop executed for '{parentTask.taskTitle}': delivered {added} meals to {destination.name}");
+        return added;
     }
 
     // ─────────────────────────────────────────────────────────────────

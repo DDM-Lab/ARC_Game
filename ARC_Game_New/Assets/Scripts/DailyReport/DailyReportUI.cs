@@ -284,6 +284,9 @@ public class DailyReportUI : MonoBehaviour
 
         if (DailyReportData.Instance != null)
         {
+            // PARITY BUILD (ledger D3): seeded RAW, as upstream does, without the `* 10f` that
+            // puts these on the report's 0-1000 scale. Upstream's reported day change is wrong
+            // by 10x (BUG_REPORTS B34); version 2 reproduces that on purpose.
             currentSatisfaction = DailyReportData.Instance.GetDayStartSatisfaction();
             currentEfficiency = DailyReportData.Instance.GetDayStartEfficiency();
         }

@@ -148,7 +148,7 @@ public class GameLogPanel : MonoBehaviour
     private Queue<string> displayQueue = new Queue<string>();
     private bool isDisplayingMessage = false;
 
-    private LogMessageType currentTypeFilter = LogMessageType.Normal;
+    // private LogMessageType currentTypeFilter = LogMessageType.Normal; // Reserved for future filtering
     private LogCategory currentCategoryFilter = LogCategory.All;
     private int currentTimePeriodFilter = 0;
 
@@ -282,6 +282,21 @@ public class GameLogPanel : MonoBehaviour
     public void LogError(string message) => AddLogMessage(message, LogMessageType.Error, LogCategory.Player);
     public void LogUIInteraction(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.UI);
 
+    /// <summary>
+    /// Structured UI interaction: logs locally AND forwards a semantic
+    /// ui_interaction event to the router (per-actor unified log), correlated to
+    /// the current click via GuiInteractionRecorder.LastClickSeq. Use this for
+    /// decision-support interactions (open agent conversation, switch officer,
+    /// select/switch a choice package, confirm, open metrics, inspect facility).
+    /// </summary>
+    public void LogUIInteraction(string category, string name, string detail = null)
+    {
+        AddLogMessage(detail != null ? $"{name} | {detail}" : name,
+                      LogMessageType.Normal, LogCategory.UI);
+        WebSocketManager.Instance?.SendClientEvent(
+            category, name, detail, GuiInteractionRecorder.LastClickSeq);
+    }
+
     #endregion
 
     void AddLogMessage(string content, LogMessageType type, LogCategory category)
@@ -389,11 +404,19 @@ public class GameLogPanel : MonoBehaviour
                 logText.text = string.Join("\n", lines.Skip(lines.Length - maxDisplayedMessages));
             }
 
-            logText.ForceMeshUpdate();
-
-            if (contentRect != null)
+            // Only update mesh if logText has valid font/material references
+            if (logText != null && logText.font != null)
             {
-                contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+                logText.ForceMeshUpdate();
+
+                if (contentRect != null)
+                {
+                    contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+                }
+            }
+            else if (logText != null)
+            {
+                Debug.LogWarning("[GameLogPanel] TextMeshPro component missing font asset. Skipping mesh update.");
             }
 
             if (autoScrollToBottom && scrollRect != null)
@@ -421,13 +444,14 @@ public class GameLogPanel : MonoBehaviour
 
     void OnMessageTypeFilterChanged(int value)
     {
-        switch (value)
-        {
-            case 0: currentTypeFilter = LogMessageType.Normal; break;
-            case 1: currentTypeFilter = LogMessageType.Normal; break;
-            case 2: currentTypeFilter = LogMessageType.Debug; break;
-            case 3: currentTypeFilter = LogMessageType.Error; break;
-        }
+        // Type filtering currently not implemented
+        // switch (value)
+        // {
+        //     case 0: currentTypeFilter = LogMessageType.Normal; break;
+        //     case 1: currentTypeFilter = LogMessageType.Normal; break;
+        //     case 2: currentTypeFilter = LogMessageType.Debug; break;
+        //     case 3: currentTypeFilter = LogMessageType.Error; break;
+        // }
         RefreshDisplay();
     }
 
@@ -458,11 +482,15 @@ public class GameLogPanel : MonoBehaviour
             logText.text += formattedMessage + "\n";
         }
 
-        logText.ForceMeshUpdate();
-
-        if (contentRect != null)
+        // Only update mesh if logText has valid font/material references
+        if (logText != null && logText.font != null)
         {
-            contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+            logText.ForceMeshUpdate();
+
+            if (contentRect != null)
+            {
+                contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+            }
         }
 
         if (autoScrollToBottom && scrollRect != null)

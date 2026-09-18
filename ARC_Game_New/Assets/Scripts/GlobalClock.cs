@@ -69,6 +69,49 @@ public class GlobalClock : MonoBehaviour
     public event Action<int> OnTimeSegmentChanged;
     public event Action<int> OnDayChanged;
 
+    /// <summary>The clock's subscribers, in invocation order, as JSON -- for the sim_constants
+    /// export. The surrogate reproduces the ORDER handlers run in on each clock event, and that
+    /// order is Start()/FindObjectsOfType order, written down nowhere else. Reading it off the
+    /// delegate lists turns "where does this phase go" from trace archaeology into a lookup.</summary>
+    public string DescribeSubscribersJson()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append('{');
+        AppendList(sb, "OnTimeSegmentChanged", OnTimeSegmentChanged);
+        sb.Append(',');
+        AppendList(sb, "OnDayChanged", OnDayChanged);
+        sb.Append(',');
+        AppendList(sb, "OnDayStarted", OnDayStarted);
+        sb.Append(',');
+        AppendList(sb, "OnRoundEnd", OnRoundEnd);
+        sb.Append(',');
+        AppendList(sb, "OnSimulationEnded", OnSimulationEnded);
+        sb.Append('}');
+        return sb.ToString();
+    }
+
+    static void AppendList(System.Text.StringBuilder sb, string name, Delegate evt)
+    {
+        sb.Append('"').Append(name).Append("\":[");
+        if (evt != null)
+        {
+            bool first = true;
+            foreach (var d in evt.GetInvocationList())
+            {
+                if (!first) sb.Append(',');
+                first = false;
+                string owner = d.Target != null ? d.Target.GetType().Name : d.Method.DeclaringType?.Name;
+                sb.Append('"').Append(owner).Append('.').Append(d.Method.Name).Append('"');
+            }
+        }
+        sb.Append(']');
+    }
+    /// <summary>Fires once per rollover, after every OnDayChanged handler, at the point where the
+    /// old segment-0 event used to fire. Start-of-day task generation hangs off this so that
+    /// database triggers written as "Round == 0" (Daily Budget Allocation, offboarding alerts)
+    /// keep firing now that the last round's tick happens before the rollover.</summary>
+    public event Action<int> OnDayStarted;
+
     public static event Action OnRoundEnd;
     // Singleton for easy access
     public static GlobalClock Instance { get; private set; }
@@ -88,6 +131,25 @@ public class GlobalClock : MonoBehaviour
         }
     }
 
+    // Human/router mode only: has the FIRST planning-phase proposal (Day 1,
+    // Round 1) been requested yet? The Update() one-shot below retries every
+    // frame until the router link is live and the game state is serializable,
+    // then flips this true and never fires again.
+    private bool initialProposalSent = false;
+
+    void Update()
+    {
+        // Kick off the very first agent proposal once everything is ready.
+        // RequestAgentProposal() is a no-op in gym mode and until game_start
+        // has been sent, so this is safe to poll every frame. It returns true
+        // only when begin_round was actually sent (game state ready).
+        if (!initialProposalSent)
+        {
+            if (RequestAgentProposal())
+                initialProposalSent = true;
+        }
+    }
+
     void Start()
     {
         StartCoroutine(InitializeWithCentralConfig());
@@ -98,7 +160,7 @@ public class GlobalClock : MonoBehaviour
         if (showDebugInfo)
             Debug.Log("Global Clock initialized - Game starts paused at Day 1, Time Segment 1");
             
-        GameLogPanel.Instance.LogMetricsChange($"Game started - Day {currentDay}, Round {currentTimeSegment + 1}");
+        GameLogPanel.Instance?.LogMetricsChange($"Game started - Day {currentDay}, Round {currentTimeSegment + 1}");
         
         // Update ActionTrackingManager at start
         if (ActionTrackingManager.Instance != null)
@@ -285,7 +347,7 @@ public class GlobalClock : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Time speed changed to {currentTimeSpeed}x");
-        GameLogPanel.Instance.LogMetricsChange($"Time speed set to {currentTimeSpeed}x");
+        GameLogPanel.Instance?.LogMetricsChange($"Time speed set to {currentTimeSpeed}x");
     }
     
     public bool IsSkippingSimulation { get; private set; }
@@ -294,12 +356,67 @@ public class GlobalClock : MonoBehaviour
     {
         if (isSimulationRunning) return;
 
+        // Request LLM agent decision before simulation starts (legacy path)
+        RequestLLMAgentDecision();
+
+        // Notify agent router of a new round. GYM ONLY: in gym mode this
+        // begin_round drives the agents each RL round, coupled to the sim step
+        // (GymAdvanceRound -> StartSimulation). In human/router play the
+        // proposal is fired separately at the START of each planning phase (see
+        // RequestAgentProposal(): Update() for round 1, EndSimulation() on
+        // segment advance, ProceedToNextDay() on day advance), so the Execute
+        // button here only runs the simulation on already-selected actions —
+        // no proposal/sim race. (Note: main-bugfixes re-fired begin_round here
+        // in the human path; deliberately dropped to preserve that design.)
+        if (gymInstantMode)
+        {
+            int roundNumber = (currentDay - 1) * roundsPerDay + currentTimeSegment + 1;
+            if (WebSocketManager.Instance != null && WebSocketManager.Instance.isConnected)
+            {
+                WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, currentTimeSegment);
+            }
+        }
+
         isSimulationRunning = true;
         currentState = TimeState.Simulating;
         DisablePlayerInteractions();
         OnSimulationStarted?.Invoke();
 
-        // Day 1 is construction/intro — step through all 4 rounds with animation
+        // GYM PATH: drive exactly one round per StartSimulation. The Day-1
+        // auto-step and the clock-animation / no-delivery skip below are GUI-only
+        // (main-bugfixes) and must NOT run in gym — Day1SkipCoroutine would
+        // auto-advance all 4 rounds, breaking the RL one-round-per-step contract.
+        if (gymInstantMode)
+        {
+            float gymWaitTime = simulationDuration / (int)currentTimeSpeed;
+            Time.timeScale = (int)currentTimeSpeed;
+
+            if (showDebugInfo)
+                Debug.Log($"[gym] Simulation started — waits {gymWaitTime}s at {currentTimeSpeed}x speed");
+            GameLogPanel.Instance?.LogMetricsChange($"Simulation started — Player waits {gymWaitTime}s at {currentTimeSpeed}x speed");
+
+            // The round's length in GAME SECONDS, dumped rather than trusted: everything a
+            // delivery does is timed against this, and simulationDuration is a serialized
+            // field whose .cs initialiser has been overridden by the scene seven times in
+            // this port already (moveSpeed 5->8 most recently). GYM_FIXED_DELTA is a const
+            // and cannot be, so frames = gymWaitTime / GYM_FIXED_DELTA exactly.
+            SnapshotDebug.MarkContext("round:length", "{\"seconds\":" + gymWaitTime
+                + ",\"simulationDuration\":" + simulationDuration
+                + ",\"timeSpeed\":" + (int)currentTimeSpeed
+                + ",\"fixedDelta\":" + GYM_FIXED_DELTA + "}");
+            StartCoroutine(SimulationCoroutine(gymWaitTime));
+            return;
+        }
+
+        // ---- Human / router GUI path (main-bugfixes game-logic) ----
+
+        // PARITY BUILD (ledger D16): upstream's day-1 skip is RESTORED. Our fix (BUG_REPORTS
+        // C.10) made day 1 a normal day for humans as it already was for the gym; upstream
+        // auto-steps all four rounds through a clock animation that sets currentTimeSegment
+        // directly and never raises OnTimeSegmentChanged. The consequence is total: upstream's
+        // day 1 runs NO generation, consumption, ageing or delivery ticks and takes NO draws,
+        // which is why its RNG cursor is frozen for the whole first day while ours advances.
+        // This is the single largest behavioural divergence found so far.
         if (currentDay == 1 && currentTimeSegment == 0)
         {
             Time.timeScale = 0f;
@@ -307,12 +424,6 @@ public class GlobalClock : MonoBehaviour
             StartCoroutine(Day1SkipCoroutine());
             return;
         }
-
-        RequestLLMAgentDecision();
-
-        int roundNumber = (currentDay - 1) * 4 + currentTimeSegment + 1;
-        if (WebSocketManager.Instance != null && WebSocketManager.Instance.isConnected)
-            WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, currentTimeSegment);
 
         if (!HasActiveDeliveries())
         {
@@ -395,6 +506,92 @@ public class GlobalClock : MonoBehaviour
         return DeliverySystem.Instance != null && DeliverySystem.Instance.HasPendingOrActiveDeliveries();
     }
 
+    /// <summary>
+    /// Human/router mode: request a fresh set of agent proposals for the
+    /// CURRENT planning phase WITHOUT running the simulation. Fired on entering
+    /// every planning phase (game start, each in-day segment advance, each day
+    /// advance) so the player always has up-to-date options to review before
+    /// clicking Execute. Returns true only if begin_round was actually sent.
+    ///
+    /// No-op in gym mode (gymInstantMode drives its own begin_round via
+    /// StartSimulation) and until game_start has been sent (the router resets
+    /// its round counter / clears its queue on game_start, so an earlier
+    /// begin_round would be discarded).
+    /// </summary>
+    bool RequestAgentProposal()
+    {
+        if (gymInstantMode) return false;
+        if (WebSocketManager.Instance == null || !WebSocketManager.Instance.isConnected) return false;
+        if (!WebSocketManager.Instance.HasSentGameStart()) return false;
+
+        int roundNumber = (currentDay - 1) * roundsPerDay + currentTimeSegment + 1;
+        return WebSocketManager.Instance.SendBeginRound(roundNumber, currentDay, currentTimeSegment);
+    }
+
+    // ── Headless / gym control ───────────────────────────────────
+    // (IsSimulationRunning() already exists below for querying round state.)
+
+    // When true, the gym driver runs simulation windows decoupled from real
+    // time via Time.captureDeltaTime, so a round completes as fast as the CPU
+    // can render frames (no wall-clock wait) while staying deterministic.
+    private bool gymInstantMode = false;
+    // Game-seconds advanced per frame during a gym round. A coarse step keeps rounds
+    // fast and cheap: a ~10s round needs ~33 frames at 0.3 vs ~200 at 0.05. The sim is
+    // deterministic and headless (no rendering/physics smoothness to preserve), and
+    // delivery WaitForSeconds etc. still resolve within a frame or two.
+    private const float GYM_FIXED_DELTA = 0.3f;
+    // Idle frame cap while paused between rounds (and at startup before the first
+    // round). Low enough that the headless loop sleeps (~1% CPU) instead of spinning,
+    // high enough that the gym main-thread action queue still drains promptly.
+    private const int GYM_IDLE_FPS = 10;
+
+    /// <summary>
+    /// Advance exactly one round for the gym/headless driver. Runs the real
+    /// simulation window (so construction completes and deliveries/demand/
+    /// satisfaction update via the normal deltaTime + end-of-round events),
+    /// rolling over to the next day when a day finishes. Bypasses the
+    /// player-facing confirmation popups. No-op if a round is already running.
+    /// </summary>
+    public void GymAdvanceRound()
+    {
+        if (isSimulationRunning) return;
+        // Run as fast as possible, decoupled from wall-clock: each frame advances
+        // GYM_FIXED_DELTA game-seconds and the engine doesn't wait for real time.
+        gymInstantMode = true;
+        Time.captureDeltaTime = GYM_FIXED_DELTA;
+        currentTimeSpeed = TimeSpeed.Normal; // captureDeltaTime drives speed now
+        // Remove any frame-rate cap / vsync so frames run as fast as the CPU allows.
+        QualitySettings.vSyncCount = 0;
+        Application.targetFrameRate = -1;
+        // If the previous round completed a day (segment hit 4), roll over first.
+        //
+        // ROBUSTNESS (headless Server subtarget): ProceedToNextDay() fans out
+        // OnDayChanged to ~8 subscribers and touches several UI-adjacent systems.
+        // In the -Server standalone build (rendering/UI modules stripped) one of
+        // those handlers can dereference a null singleton and throw. If that
+        // exception escaped, StartSimulation() below would never run, the sim
+        // state machine would never flip isSimulationRunning true→false, and the
+        // gym network thread in GymServerManager.HandleAdvanceTime() would spin
+        // its full 60 s safety cap every turn — collapsing rollout throughput to
+        // ~zero (observed on the cluster, futex_wait deadlock). Catch, log the
+        // FULL stack so the offending subscriber is identifiable from the Unity
+        // log, and fall through to StartSimulation() so the round still runs.
+        if (currentTimeSegment >= roundsPerDay)
+        {
+            try
+            {
+                ProceedToNextDay();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[GlobalClock] GymAdvanceRound: ProceedToNextDay() threw during day rollover " +
+                               $"(now Day {currentDay}, segment {currentTimeSegment}); starting the round anyway " +
+                               $"to keep the gym loop alive. Full exception:\n{e}");
+            }
+        }
+        StartSimulation();
+    }
+
     void RequestLLMAgentDecision()
     {
         // Check if WebSocket is connected
@@ -435,7 +632,7 @@ public class GlobalClock : MonoBehaviour
         }
 
         WebSocketManager.Instance.SendRawMessage(json);
-        GameLogPanel.Instance.LogMetricsChange($"Requested AI decision for Day {currentDay}, Round {currentTimeSegment + 1}");
+        GameLogPanel.Instance?.LogMetricsChange($"Requested AI decision for Day {currentDay}, Round {currentTimeSegment + 1}");
     }
     
     IEnumerator SimulationCoroutine(float playerWaitTime)
@@ -444,8 +641,22 @@ public class GlobalClock : MonoBehaviour
         
         while (elapsed < playerWaitTime)
         {
-            // Use unscaledDeltaTime when paused (timeScale = 0), use deltaTime when running
-            if (Time.timeScale > 0)
+            // Gym instant mode: count Time.deltaTime, which Time.captureDeltaTime
+            // overrides — so the window completes in playerWaitTime/captureDeltaTime
+            // frames that render back-to-back (no real-time wait). Normal play uses
+            // unscaledDeltaTime so the wait tracks wall-clock as before.
+            if (gymInstantMode)
+            {
+                // Re-assert the decoupled step every frame and advance the window timer
+                // by the SAME fixed amount, so a round always runs a bounded, fast
+                // number of frames (playerWaitTime / GYM_FIXED_DELTA) and the game
+                // advances 0.3 game-seconds/frame deterministically. Relying on
+                // Time.deltaTime here occasionally let the window fall back to real-time
+                // (~10 wall-seconds, ~14k frames), which blew the gym request timeout.
+                Time.captureDeltaTime = GYM_FIXED_DELTA;
+                elapsed += GYM_FIXED_DELTA;
+            }
+            else if (Time.timeScale > 0)
             {
                 elapsed += Time.unscaledDeltaTime;
             }
@@ -460,9 +671,27 @@ public class GlobalClock : MonoBehaviour
         isSimulationRunning = false;
         IsSkippingSimulation = false;
         currentState = TimeState.Paused;
-        
+
         // Pause Unity's time again for player interaction phase
         Time.timeScale = 0f;
+        // Gym instant mode: stop decoupled time so the paused phase between rounds
+        // doesn't keep advancing game-time. GymAdvanceRound() re-arms it next round.
+        if (gymInstantMode)
+        {
+            Time.captureDeltaTime = 0f;
+            // Re-cap the frame rate for the paused phase. GymAdvanceRound() uncaps it
+            // (targetFrameRate = -1) so the active sim window runs as fast as the CPU
+            // allows, but it is never restored — so between rounds (and during the
+            // multi-second LLM decision) the headless player loop would otherwise spin
+            // at thousands of idle fps, pinning a CPU core for nothing. A low cap frees
+            // the core while paused; Update() still drains the gym action queue.
+            Application.targetFrameRate = GYM_IDLE_FPS;
+        }
+
+        // Accumulate per-round reward metrics (worker allocation, rounds).
+        SnapshotDebug.Mark("endSim:enter");
+        RewardMetricsTracker.Instance?.OnRoundEnded();
+        SnapshotDebug.Mark("endSim:afterMetrics");
 
         // Finalize everything tied to the round that just ended (self-walk client arrivals,
         // construction/deconstruction progress, delayed budget, etc.) BEFORE advancing the
@@ -470,11 +699,17 @@ public class GlobalClock : MonoBehaviour
         // segment change right after this, so anything that lands here — e.g. clients who
         // self-walked in during this round — is now actually present in time to be picked up
         // by that same round's checks, instead of arriving one step too late to count.
-        //OnRoundEnd?.Invoke();
         SafeInvokeStatic(OnRoundEnd);
+        SnapshotDebug.Mark("endSim:afterOnRoundEnd");
 
-        // Advance to next time segment
+        // Advance to next time segment -- AFTER the round-end finalize above, per
+        // origin/main-bugfixes e85fe2c9. Ours used to advance first; upstream moved it so a
+        // client who self-walks in during the round is present before TaskSystem.OnRoundChanged
+        // reacts to the segment change. NOTE FOR THE SURROGATE: this reorders the endSim
+        // SnapshotDebug marks (afterOnRoundEnd now precedes afterAdvanceSegment), which is a
+        // real within-round sequencing change the lockstep port has to follow.
         AdvanceTimeSegment();
+        SnapshotDebug.Mark("endSim:afterAdvanceSegment");
 
         // Enable player interactions
         EnablePlayerInteractions();
@@ -505,7 +740,7 @@ public class GlobalClock : MonoBehaviour
 
             if (showDebugInfo)
             {
-                GameLogPanel.Instance.LogMetricsChange($"Day {currentDay} complete - Click 'End Today' when ready");
+                GameLogPanel.Instance?.LogMetricsChange($"Day {currentDay} complete - Click 'End Today' when ready");
                 Debug.Log($"Day {currentDay} complete - Click 'End Today' when ready");
             }
         }
@@ -513,11 +748,15 @@ public class GlobalClock : MonoBehaviour
         {
             if (showDebugInfo)
             {
-                GameLogPanel.Instance.LogMetricsChange($"Simulation ended - Now at Day {currentDay}, Round {currentTimeSegment + 1}");
+                GameLogPanel.Instance?.LogMetricsChange($"Simulation ended - Now at Day {currentDay}, Round {currentTimeSegment + 1}");
                 Debug.Log($"Simulation ended - Now at Day {currentDay}, Round {currentTimeSegment + 1}");
             }
+
+            // Entering the next in-day planning phase: request fresh agent
+            // proposals for the new segment. No-op in gym mode.
+            RequestAgentProposal();
         }
-        
+
         // Notify other systems
         OnSimulationEnded?.Invoke();
     }
@@ -529,6 +768,12 @@ public class GlobalClock : MonoBehaviour
         // Check if day is complete (4 rounds = end of day)
         if (currentTimeSegment >= roundsPerDay)
         {
+            // PARITY BUILD (ledger D15): NO tick here. Our A1 fix delivers the last round's tick
+            // as segment 4 before the daily report, so consumption, ageing, expiry and generation
+            // run before the rollover wastes what is left. Upstream returns early with no event
+            // at all and delivers that tick as segment 0 after OnDayChanged instead — i.e. after
+            // the day's food has already been thrown away. That is the bug; it is also what this
+            // build has to reproduce.
             // Don't trigger OnDayChanged here anymore - wait for button click
             return; // Exit early, don't update display yet
         }
@@ -556,6 +801,7 @@ public class GlobalClock : MonoBehaviour
         // Previously, this reset happened when OnDayChanged fired
         // (before the report was shown), causing zeroed data.
         // =====================================================
+        SnapshotDebug.Mark("day:enterProceedToNextDay");
         if (DailyReportData.Instance != null)
         {
             DailyReportData.Instance.PrepareForNewDay();
@@ -564,6 +810,11 @@ public class GlobalClock : MonoBehaviour
         // Actually advance to next day after report confirmation
         currentDay++;
         currentTimeSegment = 0; // Reset to first round (not 1)
+        // The "End Today" confirm button clears this before calling us; the gym / router day
+        // rollover does not go through the button, so clear it here too. Left true, every
+        // round end of the next day looked like end-of-day to TaskSystem and cancelled all
+        // in-flight food deliveries with a failure penalty (B37).
+        isWaitingForReport = false;
 
         // Update ActionTrackingManager for new day
         if (ActionTrackingManager.Instance != null)
@@ -588,17 +839,29 @@ public class GlobalClock : MonoBehaviour
         // listens to this event for resetting — it uses
         // PrepareForNewDay() instead (called above).
         // =====================================================
-        //OnDayChanged?.Invoke(currentDay);
+        SnapshotDebug.Mark("day:beforeOnDayChanged");
         SafeInvoke(OnDayChanged, currentDay);
-        //OnTimeSegmentChanged?.Invoke(currentTimeSegment);
+        SnapshotDebug.Mark("day:afterOnDayChanged");
+        // PARITY BUILD (ledger D15): the segment-0 tick at the rollover, as upstream raises it,
+        // instead of our OnDayStarted. This is the other half of the A1 fix and the half that
+        // actually moved the numbers: with OnDayStarted here, day 1 gets no start-of-day
+        // generation pass at all (the event fires only from day 2 onward), so upstream's first
+        // day produced a Budget_Allocation, two relocation requests and a workforce alert that
+        // ours never generated.
         SafeInvoke(OnTimeSegmentChanged, currentTimeSegment);
+        SnapshotDebug.Mark("day:afterOnTimeSegmentChanged");
 
         // Update display
         UpdateTimeDisplay();
 
         if (showDebugInfo)
             Debug.Log($"Advanced to Day {currentDay}, Round 1");
-        GameLogPanel.Instance.LogMetricsChange($"Advanced to Day {currentDay}, Round 1");
+        GameLogPanel.Instance?.LogMetricsChange($"Advanced to Day {currentDay}, Round 1");
+
+        // New day's first planning phase: request fresh agent proposals for
+        // Round 1. No-op in gym mode (GymAdvanceRound drives begin_round via
+        // StartSimulation instead).
+        RequestAgentProposal();
     }
 
     public void PauseSimulation()
@@ -613,7 +876,7 @@ public class GlobalClock : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log("Simulation paused by external system");
-        GameLogPanel.Instance.LogMetricsChange("Simulation paused by external system");
+        GameLogPanel.Instance?.LogMetricsChange("Simulation paused by external system");
     }
 
     public void ResumeSimulation()
@@ -624,7 +887,7 @@ public class GlobalClock : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log("Simulation resumed - ready for player interaction");
-        GameLogPanel.Instance.LogMetricsChange("Simulation resumed - ready for player interaction");
+        GameLogPanel.Instance?.LogMetricsChange("Simulation resumed - ready for player interaction");
     }
 
     void DisablePlayerInteractions()

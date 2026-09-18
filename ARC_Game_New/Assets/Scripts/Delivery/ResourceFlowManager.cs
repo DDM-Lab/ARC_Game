@@ -52,6 +52,29 @@ public class ResourceFlowManager : MonoBehaviour
         }
         
         Debug.Log("Resource Flow Manager initialized");
+
+        // THE SURROGATE DOES NOT MODEL THIS SYSTEM.
+        //
+        // cora_sim omits ResourceFlowManager on the measured basis that the scene ships
+        // enableAutomaticFlow = false, which makes AnalyzeAndManageResourceFlows dead code
+        // and lets the port skip an entire per-frame subsystem. That is a SCENE value; the
+        // `= false` initialiser above is NOT evidence of it. FloodParameters taught this
+        // the expensive way -- five of its scene values differ from their initialisers, and
+        // a port built on the source constants desynced the RNG stream.
+        //
+        // So check the value that is actually running. Headless is where surrogate
+        // equivalence is claimed, so headless refuses to continue; the GUI build only
+        // complains, since a human flipping this in the inspector is experimenting rather
+        // than invalidating a benchmark.
+        if (enableAutomaticFlow)
+        {
+            const string msg = "ResourceFlowManager.enableAutomaticFlow is TRUE. cora_sim " +
+                               "does not model automatic resource flow, so the surrogate and " +
+                               "this build are no longer equivalent. Either set it back to " +
+                               "false in the scene or port the system into cora_sim.";
+            Debug.LogError(msg);
+            if (Application.isBatchMode) throw new System.InvalidOperationException(msg);
+        }
     }
     
     void Update()

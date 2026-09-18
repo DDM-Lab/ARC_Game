@@ -1,0 +1,22 @@
+{
+  "_comment": "Human-only: one manual director (the player), NO sub-agents and NO LLM. The human makes every decision and selects every task choice; nothing is proposed or executed automatically. Use this to play/test the client without any AI in the loop.",
+  "agent_order_rule": "sequential",
+  "agents": [
+    {
+      "subagent_name": "Player",
+      "role": "director",
+      "actor_type": "manual",
+      "num_choices": null,
+      "max_actions_per_package": null,
+      "talkinghead_endpoint": null,
+      "subaction_space": [{ "category": "all" }],
+      "subobservation_space": ["all"],
+      "llm_provider": null,
+      "llm_model": null,
+      "turn_token_budget": null,
+      "use_global_prompt": false,
+      "system_prompt": null,
+      "can_address": []
+    }
+  ]
+}

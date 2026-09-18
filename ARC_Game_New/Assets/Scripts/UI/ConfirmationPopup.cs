@@ -76,6 +76,12 @@ public class ConfirmationPopup : MonoBehaviour
     /// <param name="title">Optional title for the popup</param>
     public void ShowPopup(string message, Action onConfirm, Action onCancel = null, string title = "Confirm Action")
     {
+        // PARITY BUILD (ledger D10): the batch-mode auto-accept is REMOVED, so this build shows
+        // the modal exactly as upstream does. It was there because an unattended headless run
+        // had no one to click "Confirm" and would stall -- ParityDriver now clicks the real
+        // button instead, which is both closer to what a player does and the same on all three
+        // builds. Without this revert the confirm callback fires at a different point in the
+        // frame here than upstream, for every construction, deconstruction and day boundary.
         // Store callbacks
         onConfirmCallback = onConfirm;
         onCancelCallback = onCancel;
