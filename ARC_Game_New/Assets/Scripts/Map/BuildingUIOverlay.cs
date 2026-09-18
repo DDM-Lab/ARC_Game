@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -536,6 +537,87 @@ public class BuildingUIOverlay : MonoBehaviour
 
         if (building != null && building.IsOperational())
         {
+            BuildingType type = building.GetBuildingType();
+            BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
+
+            // Shelter/CaseworkSite: block if anyone is currently there or scheduled to arrive
+            // (vehicle deliveries reserved via DeliverySystem, or self-walk relocations already
+            // in flight via ClientRelocationHandler — see PendingRelocation).
+            if (type == BuildingType.Shelter || type == BuildingType.CaseworkSite)
+            {
+                int currentPopulation = storage != null ? storage.GetResourceAmount(ResourceType.Population) : 0;
+                int incomingReserved = DeliverySystem.Instance != null
+                    ? DeliverySystem.Instance.GetReservedIncomingQuantity(building, ResourceType.Population) : 0;
+                bool incomingWalking = ClientRelocationHandler.Instance != null
+                    && ClientRelocationHandler.Instance.GetPendingRelocations().Any(r => r.destination == building);
+
+                if (currentPopulation > 0 || incomingReserved > 0 || incomingWalking)
+                {
+                    ToastManager.ShowToast("You cannot close a facility if it has scheduled arrivals, scheduled deliveries, or people currently present.", ToastType.Warning, true);
+                    GameLogPanel.Instance?.LogUIInteraction(
+                        $"Deconstruction blocked | facility={building.GetDisplayName()} | reason=people present or arriving");
+                    return;
+                }
+            }
+            // Kitchen: block if meals are currently scheduled for delivery; otherwise, if leftover
+            // food remains, confirm that it will be counted as waste before closing.
+            else if (type == BuildingType.Kitchen)
+            {
+                int outgoingReserved = DeliverySystem.Instance != null
+                    ? DeliverySystem.Instance.GetReservedOutgoingQuantity(building, ResourceType.FoodPacks) : 0;
+
+                if (outgoingReserved > 0)
+                {
+                    ToastManager.ShowToast("You cannot close this kitchen because meals are scheduled for delivery.", ToastType.Warning, true);
+                    GameLogPanel.Instance?.LogUIInteraction(
+                        $"Deconstruction blocked | facility={building.GetDisplayName()} | reason=meals scheduled for delivery");
+                    return;
+                }
+
+                int leftoverFood = storage != null ? storage.GetResourceAmount(ResourceType.FoodPacks) : 0;
+                if (leftoverFood > 0)
+                {
+                    if (ConfirmationPopup.Instance != null)
+                    {
+                        ConfirmationPopup.Instance.ShowPopup(
+                            message: $"This kitchen still has {leftoverFood} meals remaining. Closing it now will count them as food waste.\n",
+                            onConfirm: () => {
+                                DailyReportData.Instance?.RecordFoodWasted(leftoverFood);
+                                DailyReportData.Instance?.RecordFoodWasteCumulative(leftoverFood);
+                                if (BuildingSystem.Instance != null) BuildingSystem.Instance.RequestDeconstruction(building);
+                                else building.StartDeconstruction();
+                                Debug.Log($"User confirmed deconstruction of {building.name} — {leftoverFood} meals counted as waste");
+                                GameLogPanel.Instance?.LogUIInteraction(
+                                    $"Deconstruction confirmed | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()} | foodWasted={leftoverFood}");
+                                GameLogPanel.Instance?.LogResourceChange(
+                                    $"{leftoverFood} meals wasted — {building.GetDisplayName()} closed with food remaining");
+                            },
+                            onCancel: () => {
+                                Debug.Log($"User cancelled deconstruction of {building.name}");
+                                GameLogPanel.Instance?.LogUIInteraction(
+                                    $"Deconstruction cancelled | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()}");
+                            },
+                            title: "Close Kitchen?"
+                        );
+                    }
+                    else
+                    {
+                        Debug.LogError("ConfirmationPopup not found in scene!");
+                        // Fallback: same pattern as the generic path below — close immediately if
+                        // the popup system isn't available, still recording the waste correctly.
+                        DailyReportData.Instance?.RecordFoodWasted(leftoverFood);
+                        DailyReportData.Instance?.RecordFoodWasteCumulative(leftoverFood);
+                        if (BuildingSystem.Instance != null) BuildingSystem.Instance.RequestDeconstruction(building);
+                        else building.StartDeconstruction();
+                        GameLogPanel.Instance?.LogUIInteraction(
+                            $"Deconstruction auto-confirmed (no ConfirmationPopup in scene) | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()} | foodWasted={leftoverFood}");
+                        GameLogPanel.Instance?.LogResourceChange(
+                            $"{leftoverFood} meals wasted — {building.GetDisplayName()} closed with food remaining");
+                    }
+                    return;
+                }
+            }
+
             // Show confirmation popup instead of immediately deconstructing
             if (ConfirmationPopup.Instance != null)
             {
@@ -568,6 +650,8 @@ public class BuildingUIOverlay : MonoBehaviour
                 if (BuildingSystem.Instance != null) BuildingSystem.Instance.RequestDeconstruction(building);
                 else building.StartDeconstruction();
                 //building.StartDeconstruction();
+                GameLogPanel.Instance?.LogUIInteraction(
+                    $"Deconstruction auto-confirmed (no ConfirmationPopup in scene) | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()}");
             }
         }
     }
