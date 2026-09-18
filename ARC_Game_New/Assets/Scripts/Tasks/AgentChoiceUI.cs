@@ -240,7 +240,14 @@ public class AgentChoiceUI : MonoBehaviour
         {
             cursorY -= gap;
             AnchorTopY(previewRT);
-            previewRT.anchoredPosition = new Vector2(previewRT.anchoredPosition.x, cursorY);
+            // The prefab's raw X position (anchoredPosition.x=0, pivot.x=0.5) puts this
+            // button's LEFT edge 72px to the left of where every sibling (ChoiceDetails,
+            // ValidationText, both anchoredPosition.x = their own half-width) actually
+            // starts — statLayout's VerticalLayoutGroup never controlled width/X
+            // (childControlWidth is off), so nothing has ever corrected this; it's a
+            // static authoring bug, not a timing issue. Flush it left to match them.
+            float previewLeftFlushX = previewRT.rect.width * 0.5f;
+            previewRT.anchoredPosition = new Vector2(previewLeftFlushX, cursorY);
             cursorY -= previewH;
         }
         if (validationRT != null)

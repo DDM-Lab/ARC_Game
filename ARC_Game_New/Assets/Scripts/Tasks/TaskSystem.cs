@@ -1660,6 +1660,22 @@ public class TaskSystem : MonoBehaviour
     {
         if (task == null || !activeTasks.Contains(task) || task.agentChoices == null) return task != null;
 
+        // Once a choice has been confirmed and its delivery dispatched (status InProgress), the
+        // task is committed — this method's "is the need/population already gone" checks below are
+        // for a task still awaiting a choice (Active), where dropping to zero really does mean
+        // there's nothing left to act on. Applied to an already-dispatched delivery instead, they
+        // read the SAME live facility state a normal, on-time arrival is busy driving toward zero,
+        // and can auto-resolve the task via ResolveTaskClientsAlreadyRelocated ("need already met")
+        // while its delivery is still physically in transit — wrongly closing a food request whose
+        // vehicle just hasn't landed yet. Population relocation choices never hit this because
+        // ClientRelocationHandler.Execute/ExecuteImmediate already call CompleteTask at the moment
+        // they're queued, removing the task from activeTasks before the next sweep could see it;
+        // food's InProgress window has no such immunity, so give it the same guard explicitly. An
+        // in-flight delivery's own success/failure is already handled by OnDeliveryTaskCompleted,
+        // HandleDeliveryFailure and the end-of-day CancelIncompleteFoodDeliveries sweep — this
+        // method has nothing useful left to check once InProgress.
+        if (task.status != TaskStatus.Active) return true;
+
         MonoBehaviour facility = FindTriggeringFacility(task);
         if (facility == null) return true;
 
