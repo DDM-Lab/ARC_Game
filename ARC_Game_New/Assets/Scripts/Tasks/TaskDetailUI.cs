@@ -1165,7 +1165,11 @@ private bool CompleteTaskAction(out string failReason)
                         resolvedQuantity = FoodDeliveryHandler.Instance.ResolveQuantity(selectedChoice, dest);
                 }
 
-                bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: true);
+                // MERGE FIX (74304870): upstream's ExecuteGeneratorDelivery returns bool; ours
+                // returns int (0 = nothing queued or moved), because BUG_REPORTS B13 refuses to
+                // charge for a choice that does nothing. Mapped rather than reconciled — whether
+                // that difference actually matters is left for the parity suite to say.
+                bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: true) != 0;
                 if (success)
                 {
                     ApplyChoiceImpacts(selectedChoice, resolvedQuantity);
@@ -1174,7 +1178,7 @@ private bool CompleteTaskAction(out string failReason)
             }
             else if (selectedChoice.triggersDelivery)
             {
-                bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: false);
+                bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: false) != 0;
                 if (success)
                     ApplyChoiceImpacts(selectedChoice);
             }
