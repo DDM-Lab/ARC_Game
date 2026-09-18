@@ -965,8 +965,12 @@ public class AgentConversationUI : MonoBehaviour
             if (!hasDelivery) continue;
 
             string errorMessage = "";
-            bool isValid = !choice.triggersDelivery
-                || TaskDetailUI.ValidateChoiceDelivery(currentSelectedTask, choice, out errorMessage);
+            // Was "!choice.triggersDelivery || ValidateChoiceDelivery(...)" — that short-circuited
+            // to "always valid" for immediate-only deliveries (triggersDelivery=false), never
+            // actually calling ValidateChoiceDelivery for them. TaskDetailUI's own
+            // UpdateChoiceValidation has no such short-circuit; match it so immediate Population/
+            // FoodPacks deliveries get the same real capacity check queued ones do.
+            bool isValid = TaskDetailUI.ValidateChoiceDelivery(currentSelectedTask, choice, out errorMessage);
             choiceUI.SetValidationState(isValid, errorMessage);
             bool isImmediateFoodOrder = choice.immediateDelivery && choice.deliveryCargoType == ResourceType.FoodPacks;
 
@@ -975,6 +979,18 @@ public class AgentConversationUI : MonoBehaviour
             {
                 canPreview = isValid && FoodDeliveryHandler.Instance != null
                     && FoodDeliveryHandler.Instance.PlanSources(currentSelectedTask, choice).Count > 0;
+            }
+            else if (choice.deliveryCargoType == ResourceType.Population
+                && (choice.destinationType != DeliveryDestinationType.SpecificBuilding || choice.destinationBuilding == BuildingType.Shelter))
+            {
+                // Shelter/Motel relocation can succeed by splitting across several destinations
+                // (ClientRelocationHandler.Execute), so gating preview on a single destination
+                // holding the FULL amount — like the generic resolver in the else branch below
+                // does — would wrongly hide a valid, executable choice whenever no single shelter
+                // has room but several combined do. isValid already reflects the same
+                // aggregate-capacity check CanExecute/Execute use, so just reuse it.
+                canPreview = isValid && TaskSystem.Instance != null
+                    && TaskSystem.Instance.FindTriggeringFacility(currentSelectedTask) != null;
             }
             else
             {
@@ -1015,6 +1031,43 @@ public class AgentConversationUI : MonoBehaviour
 
             GameTask foodTaskToRestore = currentSelectedTask;
             StartCoroutine(PeekForMultiRoute(plan.Select(p => p.kitchen).ToList(), foodDest, foodTaskToRestore));
+            return;
+        }
+
+        // Population relocation to Shelter/Motel doesn't use DetermineChoiceDeliveryDestination at
+        // execution time — TaskDetailUI.ExecuteClientRelocation routes it through
+        // ClientRelocationHandler.Execute/ExecuteImmediate, which picks by shelter-preference then
+        // most available space (GetDestinationsSorted), not nearest distance. Ask
+        // ClientRelocationHandler what it would actually pick instead, same as the FoodPacks
+        // branch above does for kitchens, so preview matches delivery. Non-Shelter
+        // SpecificBuilding (e.g. CaseworkSite) is unaffected — execution already falls back to the
+        // generic resolver for that case too, so preview and execution already agree there.
+        if (choice.deliveryCargoType == ResourceType.Population
+            && (choice.destinationType != DeliveryDestinationType.SpecificBuilding || choice.destinationBuilding == BuildingType.Shelter)
+            && ClientRelocationHandler.Instance != null)
+        {
+            bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                        || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
+            bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                        && choice.destinationPrebuilt == PrebuiltBuildingType.Motel;
+            if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+
+            MonoBehaviour popSource = TaskSystem.Instance.FindTriggeringFacility(currentSelectedTask);
+            MonoBehaviour popDest = ClientRelocationHandler.Instance.PeekPrimaryDestination(
+                currentSelectedTask, toShelter, toMotel, filterByPath: !choice.immediateDelivery);
+
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Preview route clicked | agent={currentSelectedAgent} | task={currentSelectedTask.taskTitle} | choice={choice.choiceText} | " +
+                $"source={popSource?.name ?? "unresolved"} | destination={popDest?.name ?? "unresolved"}");
+
+            if (popSource == null || popDest == null)
+            {
+                Debug.LogWarning("[AgentConversationUI] Could not resolve population relocation destination.");
+                return;
+            }
+
+            GameTask popTaskToRestore = currentSelectedTask;
+            StartCoroutine(PeekForRoute(popSource, popDest, popTaskToRestore));
             return;
         }
 

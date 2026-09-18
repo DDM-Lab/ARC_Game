@@ -169,6 +169,15 @@ public class DailyReportUI : MonoBehaviour
     private float currentSatisfaction = 50f;
     private float currentEfficiency = 0f;
 
+    /// <summary>
+    /// True from the moment DisplayDailyReport() starts AnimateReportDisplay() until that
+    /// coroutine's very last step (revealing the building status table) has run. DailyReportManager
+    /// waits on this before enabling the history dayButtons — clicking one mid-animation calls
+    /// DisplayDailyReportImmediate(), which StopAllCoroutines()s this animation and overwrites the
+    /// same elements it's still mid-transition on, causing visual glitches.
+    /// </summary>
+    public bool IsAnimatingReport { get; private set; }
+
     void Start()
     {
         InitializeElements();
@@ -298,6 +307,7 @@ public class DailyReportUI : MonoBehaviour
         LogDailyReportScoreFormulas();
         BuildingStatusTableUI.Instance?.LogTableContents(GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1);
 
+        IsAnimatingReport = true;
         StartCoroutine(AnimateReportDisplay());
     }
 
@@ -308,7 +318,8 @@ public class DailyReportUI : MonoBehaviour
     {
         // Stop any running animations (safe - report was already saved at animation start)
         StopAllCoroutines();
-        
+        IsAnimatingReport = false;
+
         currentMetrics = metrics;
         
         // Set day display
@@ -409,6 +420,8 @@ public class DailyReportUI : MonoBehaviour
 
         // Reveal the building status table now that the report's own content is fully shown
         BuildingStatusTableUI.Instance?.ShowTable();
+
+        IsAnimatingReport = false;
     }
 
     // =========================================================================

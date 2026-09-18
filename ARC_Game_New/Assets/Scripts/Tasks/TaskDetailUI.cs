@@ -311,6 +311,46 @@ public class TaskDetailUI : MonoBehaviour
             return;
         }
 
+        // Population relocation to Shelter/Motel doesn't use DetermineChoiceDeliveryDestination at
+        // execution time at all — ExecuteClientRelocation routes it through
+        // ClientRelocationHandler.Execute/ExecuteImmediate, which picks by shelter-preference then
+        // most available space (GetDestinationsSorted), not nearest distance. Previewing via the
+        // generic resolver below could show a different building than delivery actually uses, so
+        // ask ClientRelocationHandler what it would actually pick instead — same as the FoodPacks
+        // branch above does for kitchens. Non-Shelter SpecificBuilding (e.g. CaseworkSite) is
+        // unaffected: ExecuteClientRelocation already falls back to the generic resolver for that
+        // case too, so preview and execution already agree there.
+        if (choice.deliveryCargoType == ResourceType.Population
+            && (choice.destinationType != DeliveryDestinationType.SpecificBuilding || choice.destinationBuilding == BuildingType.Shelter)
+            && ClientRelocationHandler.Instance != null)
+        {
+            bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                        || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
+            bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                        && choice.destinationPrebuilt == PrebuiltBuildingType.Motel;
+            if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+
+            MonoBehaviour popSource = TaskSystem.Instance.FindTriggeringFacility(currentTask);
+            MonoBehaviour popDest = ClientRelocationHandler.Instance.PeekPrimaryDestination(
+                currentTask, toShelter, toMotel, filterByPath: !choice.immediateDelivery);
+
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Preview route clicked | task={currentTask.taskTitle} | choice={choice.choiceText} | " +
+                $"source={popSource?.name ?? "unresolved"} | destination={popDest?.name ?? "unresolved"}");
+
+            if (popSource == null || popDest == null)
+            {
+                Debug.LogWarning("[PreviewChoiceRoute] Could not resolve population relocation destination.");
+                return;
+            }
+
+            StopAllCoroutines();
+            isTyping = false;
+            currentTypingMessage = null;
+            StartCoroutine(PeekForRoute(popSource, popDest, currentTask));
+            return;
+        }
+
         MonoBehaviour triggeringFacility = ResolveTriggeringFacility();
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
         MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
@@ -1056,8 +1096,6 @@ public class TaskDetailUI : MonoBehaviour
         foreach (var input in task.numericalInputs)
             numericalInputs[input.inputId] = input;
 
-        if (task.isExpired) { errorMessage = "This task has expired and can no longer be completed."; return false; }
-
         // Re-check live state right before acting, not just when the panel was opened — the
         // facility this task depends on may have been drained by a different task confirmed while
         // this panel sat open (see TaskSystem.RefreshTaskAgainstLiveState). If that auto-resolves
@@ -1068,14 +1106,15 @@ public class TaskDetailUI : MonoBehaviour
             return false;
         }
 
-        if (task.agentChoices != null && task.agentChoices.Count > 0 && choice == null)
-        {
-            errorMessage = "Please select a choice before confirming.";
+        // Same gate every other confirm path uses (expiry, numerical inputs, delivery
+        // feasibility, worker rules, budget) — this used to be reimplemented here as a partial
+        // subset that skipped delivery/worker/budget validation entirely, so an agent-conversation
+        // confirm (the only caller of TryConfirmTask) could queue a delivery — e.g. relocating a
+        // community to a Shelter with no capacity — that the UI's own validation text already
+        // correctly flagged as invalid. SelectTaskChoiceHeadless and OnConfirmButtonClicked already
+        // call ValidateBeforeConfirm for exactly this reason; this brings TryConfirmTask in line.
+        if (!ValidateBeforeConfirm(task, choice, out errorMessage))
             return false;
-        }
-
-        string numError;
-        if (!ValidateNumericalInputs(out numError)) { errorMessage = numError; return false; }
 
         if (choice != null && (choice.triggersDelivery || choice.immediateDelivery || choice.enableMultipleDeliveries))
             ToastManager.ShowToast($"Delivery for task '{task.taskTitle}' is added to queue.", ToastType.Info, true);
@@ -3386,6 +3425,18 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
             {
                 canPreview = isValid && FoodDeliveryHandler.Instance != null
                     && FoodDeliveryHandler.Instance.PlanSources(currentTask, choice).Count > 0;
+            }
+            else if (choice.deliveryCargoType == ResourceType.Population
+                && (choice.destinationType != DeliveryDestinationType.SpecificBuilding || choice.destinationBuilding == BuildingType.Shelter))
+            {
+                // Shelter/Motel relocation can succeed by splitting across several destinations
+                // (ClientRelocationHandler.Execute), so gating preview on a single destination
+                // holding the FULL amount — like the generic resolver in the else branch below
+                // does — would wrongly hide a valid, executable choice whenever no single shelter
+                // has room but several combined do. isValid already reflects the same
+                // aggregate-capacity check CanExecute/Execute use, so just reuse it.
+                canPreview = isValid && TaskSystem.Instance != null
+                    && TaskSystem.Instance.FindTriggeringFacility(currentTask) != null;
             }
             else
             {
