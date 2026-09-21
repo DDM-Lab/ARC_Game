@@ -302,7 +302,6 @@ class Session:
         # transcript. Re-entry injects only NEW director input — the agent's own
         # outputs are already present as assistant/tool turns, so re-pulling the
         # whole conversation would duplicate them.
-        self._director_injected_count: Dict[str, int] = {}
         # (name, partner) -> how many of that partner's messages this officer has already
         # seen. Replaces the director-only counter so peer threads are tracked too.
         self._msg_injected_count: dict = {}
@@ -946,7 +945,10 @@ Respond with ONLY the package index number (0, 1, or 2).
             async with self._unity_commit_lock:
                 loop = asyncio.get_event_loop()
                 self._pending_action = loop.create_future()
-                self._pending_action_key = None   # this frame carries no action_id
+                # WebSocketManager.cs replies with action_id = "choice_{taskId}_{choiceId}",
+                # so this frame DOES carry one. Correlating on it stops a stray result from a
+                # previously timed-out execute_action landing on this waiter.
+                self._pending_action_key = f"choice_{int(tid)}_{int(choice_id)}"
                 await self._send({
                     "type": "select_task_choice",
                     "taskId": int(tid),
@@ -1026,7 +1028,8 @@ Respond with ONLY the package index number (0, 1, or 2).
 
         # Manual director: the client executes; we await its choice_made frame.
         loop = asyncio.get_event_loop()
-        self._pending_choice = loop.create_future()
+        fut = loop.create_future()
+        self._pending_choice = fut
         print("[router]   ⏳ Awaiting director choice (5min timeout)...")
         try:
             choice_msg = await asyncio.wait_for(self._pending_choice, timeout=300.0)
@@ -1050,7 +1053,11 @@ Respond with ONLY the package index number (0, 1, or 2).
             print("[router]   ⚠️  Timeout (5min) waiting for choice_made.")
             return None, [], game_state, False
         finally:
-            self._pending_choice = None
+            # Clear the slot only if it is still OURS. A second proposer overwrites it, and an
+            # unconditional clear here nulls the other waiter's live future, stranding it for
+            # the full 300s timeout.
+            if self._pending_choice is fut:
+                self._pending_choice = None
 
     async def _run_choices(
         self,
@@ -1687,11 +1694,22 @@ Respond with ONLY the package index number (0, 1, or 2).
                 turn_attempts.append({"tool": tc["name"], "arguments": tc.get("arguments")})
                 if tc["name"] == "send_message":
                     talked = True
-                result_str, game_state, all_actions, filtered_actions, meta = \
-                    await self._dispatch_continuous_tool(
-                        agent, tc, game_state, all_actions, filtered_actions,
-                        brief_only=brief_only,
-                    )
+                # The assistant message carrying tc is already in the transcript, and that
+                # transcript persists for the whole game. An exception escaping the dispatcher
+                # would leave the tool_call permanently unanswered, so every later turn would
+                # re-send an unpaired tool call -> hard 400 from the provider -> that officer
+                # is bricked for the session. Catch here so a result ALWAYS follows.
+                try:
+                    result_str, game_state, all_actions, filtered_actions, meta = \
+                        await self._dispatch_continuous_tool(
+                            agent, tc, game_state, all_actions, filtered_actions,
+                            brief_only=brief_only,
+                        )
+                except Exception as _e:
+                    import traceback as _tb
+                    _tb.print_exc()
+                    result_str = f"ERROR: {type(_e).__name__}: {_e}"
+                    meta = {"executed": 0, "finish": False}
                 # Every tool_call id MUST get a matching tool result before the
                 # next assistant turn (OpenAI/Anthropic protocol requirement).
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
@@ -2213,13 +2231,17 @@ Respond with ONLY the package index number (0, 1, or 2).
     def _record_committed(self, action: dict) -> None:
         """Append a succeeded action to the planning-phase ledger (deduped), and add its
         cost to the phase's committed spend so the officer can reconcile a frozen budget."""
+        # Spend accumulates OUTSIDE the dedupe. The ledger key is "[type] description", so two
+        # legitimate repeats of a repeatable action (worker, resource_transfer — both
+        # deliberately excluded from _NON_REPEATABLE_TYPES) collapse onto one line. Counting
+        # their cost once understated the very figure this ledger exists to make truthful.
+        try:
+            self._committed_spend_this_phase += float(action.get("cost") or 0)
+        except (TypeError, ValueError):
+            pass
         line = self._action_ledger_key(action)
         if line not in self._committed_this_phase:
             self._committed_this_phase.append(line)
-            try:
-                self._committed_spend_this_phase += float(action.get("cost") or 0)
-            except (TypeError, ValueError):
-                pass
 
     def _render_action_list(self, filtered_actions: List[dict]) -> str:
         """Render the filtered actions as an indexed list (index == execute index).
@@ -2685,6 +2707,11 @@ Respond with ONLY the package index number (0, 1, or 2).
         # command tag and route through the SAME execute_commands path (ledger/block gate +
         # execute_resolved) — so the officer and the RL policy share the identical tool schema
         # AND execution semantics. A malformed typed call yields an empty tag (honest no-op).
+        # Defined before the _CORA_ACTION_TOOLS branch below, which returns `meta` on its
+        # translator-error path. Assigning it after that branch raised UnboundLocalError,
+        # which escaped the dispatcher and left a tool_calls message with no matching tool
+        # result in the officer's game-long transcript — bricking them for the session.
+        meta = {"executed": 0, "finish": False}
         if name in _CORA_ACTION_TOOLS:
             _tag, _tmeta = cora_tools.translate_tool_calls(
                 [(name, tool_call.get("arguments") or {})])
@@ -2698,7 +2725,6 @@ Respond with ONLY the package index number (0, 1, or 2).
             tool_call = dict(tool_call, name="execute_commands", arguments={"commands": _tag})
             name = "execute_commands"
         args = tool_call.get("arguments") or {}
-        meta = {"executed": 0, "finish": False}
 
         if brief_only and name in self._ACTING_TOOLS:
             return (
@@ -3310,8 +3336,14 @@ Respond with ONLY the package index number (0, 1, or 2).
         # A continuous agent's transcript spans a whole game; a fresh game must
         # start it clean (no stale trajectory bleeding across games).
         self._continuous_transcripts.clear()
-        self._director_injected_count.clear()
         self._msg_injected_count.clear()
+        # World state and the planning-phase ledger are per-GAME too. Leaving them behind let a
+        # director_message arriving between game_start and the first begin_round pass the
+        # `if self._latest_game_state:` gate and run a turn against the PREVIOUS game's state.
+        self._latest_game_state = None
+        self._latest_all_actions = []
+        self._committed_this_phase = []
+        self._committed_spend_this_phase = 0.0
         print("[router] 🆕 game_start received — message queue cleared, round counter reset.")
 
     async def _handle_director_message(self, msg: dict):
@@ -3915,10 +3947,15 @@ Respond with ONLY the package index number (0, 1, or 2).
                         'action_id': action.get('action_id')
                     })
 
-                    # Update running state
-                    current_state = new_state
-                    running_budget = _get_budget(new_state)
-                    free_workers = self._count_free_workers(new_state)
+                    # Update running state — but only if the result actually carried one.
+                    # Unity's ActionExecutionResult (Assets/Scripts/Actions/GameAction.cs) is
+                    # {success, action_id, error_message, timestamp}, with NO game_state, so
+                    # new_state is normally {}. Re-reading budget/workers from {} gave 0, and
+                    # every action after the first was rejected as unaffordable.
+                    if new_state:
+                        current_state = new_state
+                        running_budget = _get_budget(new_state)
+                        free_workers = self._count_free_workers(new_state)
 
                     print(f"[{agent_name}]      Budget: ${running_budget:,}, Free workers: {free_workers}")
                     self._log_action(actor, "game_action", "execute_action", {
