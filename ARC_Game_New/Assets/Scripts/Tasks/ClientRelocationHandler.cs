@@ -453,7 +453,20 @@ public class ClientRelocationHandler : MonoBehaviour
         int delivered = AddPopulation(r.destination, r.quantity);
         // People who actually arrived are what the lodging metric credits (RewardMetricsTracker
         // reads task.deliveredQuantity); a vehicle unload used to set this, a walk must too.
-        if (r.parentTask != null && delivered > 0) r.parentTask.deliveredQuantity += delivered;
+        //
+        // But writing deliveredQuantity is not enough on THIS path. Execute/
+        // ExecuteToSpecificDestination complete the parent task at DECISION time (see the
+        // comment there: a 2-round walk would otherwise race the task's own time limit), so
+        // RecordTaskResolution has already run — and it read deliveredQuantity == 0. It
+        // credited demand to lodgingResolved and nothing to lodgingFulfilled. Without the
+        // retroactive call below, every self-walk relocation scores zero fulfillment no matter
+        // how it goes, and the lodging term of the RL reward is pinned at 0.
+        // This mirrors what the vehicle path already does (TaskSystem.OnDeliveryTaskCompleted).
+        if (r.parentTask != null && delivered > 0)
+        {
+            r.parentTask.deliveredQuantity += delivered;
+            RewardMetricsTracker.Instance?.AddLateDelivery(r.parentTask, delivered);
+        }
 
         // Return overflow if the destination filled up while clients were en route.
         if (delivered < r.quantity)
