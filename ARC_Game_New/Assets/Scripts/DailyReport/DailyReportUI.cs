@@ -166,7 +166,7 @@ public class DailyReportUI : MonoBehaviour
     private DailyReportMetrics currentMetrics;
 
     // Default values
-    private float currentSatisfaction = 50f;
+    private float currentSatisfaction = 0f;
     private float currentEfficiency = 0f;
 
     /// <summary>

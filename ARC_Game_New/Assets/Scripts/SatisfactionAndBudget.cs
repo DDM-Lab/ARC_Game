@@ -8,7 +8,7 @@ public class SatisfactionAndBudget : MonoBehaviour
 {
     [Header("Satisfaction Settings")]
     [Range(0f, 100f)]
-    public float currentSatisfaction = 50f;
+    public float currentSatisfaction = 0f;
     public float maxSatisfaction = 1000f;
     public float minSatisfaction = 0f;
 
@@ -69,6 +69,7 @@ public class SatisfactionAndBudget : MonoBehaviour
     
     void Awake()
     {
+        Debug.Log($"[SAB] Awake on {gameObject.name}, instanceID={GetInstanceID()}, currentSatisfaction={currentSatisfaction}");
         // Singleton setup
         if (Instance == null)
         {
@@ -141,6 +142,7 @@ public class SatisfactionAndBudget : MonoBehaviour
         InitializeValues();
         SetupFeedbackEffects();
         UpdateUI();
+        StartCoroutine(LateRefreshUI());
 
         if (satisfactionSlider != null)
         {
@@ -150,6 +152,18 @@ public class SatisfactionAndBudget : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"SatisfactionAndBudget initialized from DataManager - Budget: {currentBudget}, Sat: {currentSatisfaction}");
         GameLogPanel.Instance.LogMetricsChange($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
+    }
+
+    IEnumerator LateRefreshUI()
+    {
+        float t = 0f;
+        while (t < 2f && (budgetText == null || satisfactionValueText == null || efficiencyValueText == null))
+        {
+            yield return null;
+            t += Time.unscaledDeltaTime;
+        }
+        yield return new WaitForEndOfFrame();
+        ForceRefreshUI();
     }
 
     /// <summary>
@@ -246,6 +260,10 @@ public class SatisfactionAndBudget : MonoBehaviour
         {
             budgetText.text = budgetPrefix + currentBudget.ToString("N0");
         }
+
+        OnSatisfactionChanged?.Invoke(currentSatisfaction);
+        OnBudgetChanged?.Invoke(currentBudget);
+        OnEfficiencyChanged?.Invoke(currentEfficiency);
 
         UpdateSatisfactionValueText();
         UpdateEfficiencyValueText();

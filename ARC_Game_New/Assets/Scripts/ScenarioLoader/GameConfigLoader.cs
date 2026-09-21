@@ -27,7 +27,7 @@ public class GameConfigLoader : MonoBehaviour
 
     // Loaded config 
     public int loadedInitialBudget=10000;
-    public int loadedInitialSatisfaction=50;
+    public int loadedInitialSatisfaction=0;
     public int loadedInitialCommunityNumber=3;
     public int loadedInitialCommunityResidents=40;
     public int loadedInitialGameDays=8;
