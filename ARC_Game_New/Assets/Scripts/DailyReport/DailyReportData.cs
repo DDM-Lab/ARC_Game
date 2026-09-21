@@ -181,9 +181,10 @@ public class DailyReportData : MonoBehaviour
         
         if (ClientStayTracker.Instance != null)
             ClientStayTracker.Instance.OnCaseworkRequested -= OnCaseworkRequested;
+        // OnRoundEnd is static — removing it must not depend on an instance still existing.
+        GlobalClock.OnRoundEnd -= AccumulateRoundMetrics;
         if (GlobalClock.Instance != null)
         {
-            GlobalClock.OnRoundEnd -= AccumulateRoundMetrics;
             GlobalClock.Instance.OnDayChanged -= OnDayChangedForLodgingNights;
             GlobalClock.Instance.OnTimeSegmentChanged -= CaptureRound3FoodNeed; // NEW
         }

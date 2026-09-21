@@ -226,7 +226,7 @@ public class Vehicle : MonoBehaviour
         deliveryCoroutine = StartCoroutine(ExecuteDeliveryTask());
 
         if (showDebugInfo)
-            Debug.Log($"Vehicle {vehicleName} assigned delivery task: {task.quantity} {task.cargoType} from {sourceBuilding.name} to {destinationBuilding.name}");
+            Debug.Log($"Vehicle {vehicleName} assigned delivery task: {task.quantity} {task.cargoType} from {(sourceBuilding != null ? sourceBuilding.name : "?")} to {(destinationBuilding != null ? destinationBuilding.name : "?")}");
 
         return true;
     }

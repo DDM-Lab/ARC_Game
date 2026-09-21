@@ -309,7 +309,9 @@ public class WebSocketManager : MonoBehaviour
     /// </summary>
     IEnumerator CheckConnectionTimeout()
     {
-        yield return new WaitForSeconds(5f);
+        // REALTIME: every planning phase — and the whole of day 1 — runs at Time.timeScale 0,
+        // where a scaled wait never advances and this timeout can never fire.
+        yield return new WaitForSecondsRealtime(5f);
 
         if (!isConnected && websocket != null && websocket.State == WebSocketState.Connecting)
         {
@@ -340,7 +342,11 @@ public class WebSocketManager : MonoBehaviour
 
         Debug.Log($"Attempting to reconnect to vLLM server in {delay} seconds (Attempt {reconnectAttempts}/{maxReconnectAttempts})");
 
-        yield return new WaitForSeconds(delay);
+        // REALTIME: this one is worse than a stall. isReconnecting is the guard that stops a
+        // second attempt, and it is already set — so blocking here at timeScale 0 means NO
+        // reconnect can ever be attempted. Dropping the router during a planning phase (exactly
+        // when the officers are needed) would leave it down until the next unpaused moment.
+        yield return new WaitForSecondsRealtime(delay);
 
         isReconnecting = false;
         ConnectToServer();

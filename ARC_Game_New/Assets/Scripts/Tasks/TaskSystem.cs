@@ -974,6 +974,21 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
+    void OnDestroy()
+    {
+        // OnRoundEnd is STATIC: it outlives this component, the scene, and GlobalClock itself.
+        // Without this, a destroyed TaskSystem keeps sweeping its OLD activeTasks every round —
+        // and because RewardMetricsTracker survives a gym reset, a task from the previous
+        // episode can credit reward to the current one. The NREs are swallowed by
+        // SafeInvokeStatic, so nothing surfaces.
+        GlobalClock.OnRoundEnd -= SweepStalePopulationTasks;
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
+            GlobalClock.Instance.OnSimulationEnded -= OnSimulationEndedCheckDayComplete;
+        }
+    }
+
     void OnRoundChanged(int newSegment)
     {
         Debug.Log($"OnRoundChanged called in Task System: segment {newSegment}, auto generation: {enableAutoTaskGeneration}. (We skip generation when newSegment == 3)");
