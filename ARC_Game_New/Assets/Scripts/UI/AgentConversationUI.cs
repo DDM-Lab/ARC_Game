@@ -909,7 +909,13 @@ public class AgentConversationUI : MonoBehaviour
             return;
         }
 
-        ClearConversation();
+        // NO unconditional ClearConversation() here. It used to sit on this line and ignored
+        // clearFirst, which defeated the whole point of the parameter: DisplayLatestConversation
+        // renders the officer's chat history and THEN calls this with clearFirst:false to append
+        // the current task below it — so this clear wiped every message bubble that had just been
+        // replayed. Reopening a talking-head chat showed only the task, and the conversation
+        // looked like it had been lost (it had not; conversationHistory still held it).
+        // The clearFirst:true path already cleared above, so both callers are correct without it.
         localSelectedChoice = null;
 
         GameLogPanel.Instance?.LogUIInteraction(
