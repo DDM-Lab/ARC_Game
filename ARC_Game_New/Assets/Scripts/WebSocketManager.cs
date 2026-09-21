@@ -15,6 +15,18 @@ public class AppConfig
     /// run instead of silently falling back to the default scene layout (which would quietly
     /// change the experimental condition). Off by default for casual/dev play.</summary>
     public bool strictMap;
+    /// <summary>Show the pre-game "Connect to ARC Server" panel (API key + config picker).
+    /// FALSE (the default, and what an absent field means) starts the game offline with no
+    /// LLM/agent features — the plain human-play build. TRUE is the agent/benchmark build:
+    /// the player enters an API key, picks an officer config, and the game connects to the
+    /// router. Deployment-level switch; ?launcher=1 / ?launcher=0 overrides it per session.</summary>
+    public bool showLauncher;
+    /// <summary>Overrides the scene-serialized googleSheetsCsvUrl — the parameter sheet.
+    /// ABSENT: keep whatever the scene baked in. A URL: fetch that sheet. "/sheet.csv": use
+    /// the deployment's same-origin mirror. PRESENT BUT EMPTY (""): ignore the sheet entirely
+    /// and fall through to StreamingAssets/game_param_config.csv. Absent and empty differ, so
+    /// GameConfigLoader tests for the key in the raw JSON, not just this value.</summary>
+    public string sheetUrl;
 }
 
 public class WebSocketManager : MonoBehaviour
@@ -160,7 +172,9 @@ public class WebSocketManager : MonoBehaviour
 
     IEnumerator LoadConfigThenConnect()
     {
-        string configPath = Application.streamingAssetsPath + "/config.json";
+        // file:// or this silently fails on desktop (same defect as GameConfigLoader, ledger E2).
+        string rawConfigPath = Application.streamingAssetsPath + "/config.json";
+        string configPath = rawConfigPath.Contains("://") ? rawConfigPath : "file://" + rawConfigPath;
         using (UnityWebRequest req = UnityWebRequest.Get(configPath))
         {
             yield return req.SendWebRequest();
