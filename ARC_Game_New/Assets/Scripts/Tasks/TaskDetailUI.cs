@@ -1096,9 +1096,6 @@ public class TaskDetailUI : MonoBehaviour
         foreach (var input in task.numericalInputs)
             numericalInputs[input.inputId] = input;
 
-        if (!ValidateBeforeConfirm(task, choice, out errorMessage)) return false;
-        if (task.isExpired) { errorMessage = "This task has expired and can no longer be completed."; return false; }
-
         // Re-check live state right before acting, not just when the panel was opened — the
         // facility this task depends on may have been drained by a different task confirmed while
         // this panel sat open (see TaskSystem.RefreshTaskAgainstLiveState). If that auto-resolves
@@ -1118,9 +1115,6 @@ public class TaskDetailUI : MonoBehaviour
         // call ValidateBeforeConfirm for exactly this reason; this brings TryConfirmTask in line.
         if (!ValidateBeforeConfirm(task, choice, out errorMessage))
             return false;
-
-        string numError;
-        if (!ValidateNumericalInputs(out numError)) { errorMessage = numError; return false; }
 
         if (choice != null && (choice.triggersDelivery || choice.immediateDelivery || choice.enableMultipleDeliveries))
             ToastManager.ShowToast($"Delivery for task '{task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true)}' is added to queue.", ToastType.Info, true);
@@ -1255,21 +1249,22 @@ private bool CompleteTaskAction(out string failReason)
                 if (dest != null)
                     resolvedQuantity = FoodDeliveryHandler.Instance.ResolveQuantity(selectedChoice, dest);
             }
-            ApplyChoiceImpacts(selectedChoice, resolvedQuantity);
-            TaskSystem.Instance.CompleteTask(currentTask);
+            // Execute FIRST, and charge only on success. Dropping this call (as an earlier
+            // resolution of this region did) completes the task and bills the player for a
+            // delivery that never moved — and, because ApplyChoiceImpacts then runs
+            // unconditionally, prices it differently from the queued path.
+            bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: true) != 0;
+            if (success)
+            {
+                ApplyChoiceImpacts(selectedChoice, resolvedQuantity);
+                TaskSystem.Instance.CompleteTask(currentTask);
+            }
         }
         else if (selectedChoice.triggersDelivery || selectedChoice.enableMultipleDeliveries)
         {
-            // QUEUE THE DELIVERY
-            int result = ExecuteGeneratorDelivery(selectedChoice, immediate: false);
-            if (result == 0)
-            {
-                failReason = "delivery could not be queued (no source with stock, no destination with space, no vehicle, or the need is already covered by inbound deliveries)";
-                return false;
-            }
-        }
-        else if (selectedChoice.triggersDelivery)
-        {
+            // QUEUE THE DELIVERY. enableMultipleDeliveries is folded in here because no shipped
+            // task asset sets it without triggersDelivery — so this covers the same choices, and
+            // removes a second `else if (triggersDelivery)` below that could never be reached.
             bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: false) != 0;
             if (success)
                 ApplyChoiceImpacts(selectedChoice);
