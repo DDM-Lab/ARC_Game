@@ -1,8 +1,8 @@
-# Bug-fix push — six fixes, branch `bugfixes-only`
+# Bug-fix push — five fixes, branch `bugfixes-only`
 
-Branch `bugfixes-only` branches from `main-bugfixes` and contains **only** these six
+Branch `bugfixes-only` branches from `main-bugfixes` and contains **only** these five
 fixes, one per commit, so each can be reviewed, reverted or held back on its own.
-V4 (`v1_merge_test`) contains the same six plus the LLM/agent work.
+V4 (`v1_merge_test`) contains the same five plus the LLM/agent work.
 
 Each entry below answers the same four questions: what the code does now, why that
 is a bug, what the player actually sees, and what changes if we fix it.
@@ -13,10 +13,9 @@ is a bug, what the player actually sees, and what changes if we fix it.
 
 | # | Area | Player-visible symptom | Changes a score? | Risk of merging |
 |---|------|------------------------|------------------|-----------------|
-| D1 | Casework generation | Tasks appear for buildings being torn down | no | low — re-baselines seeded replays |
 | D3 | Daily report | Day's satisfaction change is ~10x wrong, always positive | display only | none |
 | D24 | Flood + delivery | Same seed produces different games | no | low — re-baselines seeded replays |
-| E1 | Startup config | Sheet's budget/satisfaction silently ignored | **yes** | **check the sheet first** |
+| E1 | Startup config | Starting budget/satisfaction applied mid-game, wiping spending | **yes** | **check the sheet first** |
 | E2 | Startup config | Desktop builds load the wrong map | **yes** | **check config.json first** |
 | E3 | Task generation | Budget runs away to ~930k in five days | **yes** | low |
 
@@ -26,30 +25,6 @@ game logic — they change which inputs the game runs on.
 
 ---
 
-## D1 — Casework requests raised for facilities being deconstructed
-
-**Now.** `ClientStayTracker.CheckClientStayDurations()` rolls a per-round probability
-for every client group with an unmet casework need and, on success, generates a
-casework task naming that group's current facility. The roll is unconditional.
-
-**Why it's a bug.** Deconstruction is not instantaneous. While a facility is in
-`IsDeconstructing()` its clients are being moved out, but the tracker still counts
-them as resident and still rolls for them. The task it generates points at a
-building that is disappearing.
-
-**What happens.** Tear down an occupied shelter and, with probability that grows
-each round the group has been resident, a casework request appears for it. It sits
-in the queue until it expires, occupying a task slot.
-
-**If fixed.** Groups in a deconstructing facility are skipped. Fewer spurious tasks;
-nothing else reads this path.
-
-**Side effect, catalogued not accidental.** Skipping the group also skips its
-`Random` draw, and every stochastic system shares one global stream — so a skipped
-draw shifts every later flood, weather and trigger roll in that episode. Seeded
-episodes recorded before the fix will not replay identically after it.
-
----
 
 ## D3 — Daily report's satisfaction baseline is on the wrong scale
 
@@ -103,28 +78,40 @@ recorded seeds.
 
 ---
 
-## E1 — The config sheet's budget and satisfaction never reach the economy
+## E1 — The config sheet's starting budget and satisfaction are applied at the wrong time
 
-**Now.** `SatisfactionAndBudget.InitializeWithCentralConfig()` waits for
-`GameConfigLoader` to finish fetching the parameter sheet, then copies the sheet's
-starting budget and satisfaction into the live economy. It waits with
-`yield return new WaitForSeconds(0.1f)`.
+**Scope first, because this is narrower than it looks.** `GameDataManager.LoadAllData()` waits
+for the sheet with `yield return null` — a *frame* wait, which is unaffected by `timeScale` —
+and correctly picks up roughly forty sheet parameters: community count, residents per
+community, rounds per day, volunteer counts, daily budget addition, weather, every facility
+capacity, every flood expansion rate, food demand frequency, task frequencies. **All of that
+has always worked.** `SatisfactionAndBudget` is the only consumer that waits differently, and
+it reads exactly two values: `initialBudget` and `initialSatisfaction`.
 
-**Why it's a bug.** `WaitForSeconds` is scaled by `Time.timeScale`. `GlobalClock`
-holds `timeScale` at 0 while the game sits paused at startup — which is exactly when
-this coroutine runs. At `timeScale` 0 a scaled wait never advances, so the loop never
-steps, the 10-second guard never counts up, and the assignment is never reached.
+**Now.** `SatisfactionAndBudget.InitializeWithCentralConfig()` waits for the same sheet with
+`yield return new WaitForSeconds(0.1f)`, then calls `EnsureConfigApplied()` and sets
+`ConfigApplied = true`.
 
-**What happens.** The game silently starts on the hard-coded inspector defaults
-rather than the sheet. Every value tuned in the sheet's budget/satisfaction columns
-has no effect, and nothing reports a failure — the numbers just look like somebody
-else's. **This is why edits to the sheet "didn't take."**
+**Why it's a bug.** `WaitForSeconds` is scaled by `Time.timeScale`. `GlobalClock` holds
+`timeScale` at 0 while the game sits paused at startup — exactly when this coroutine runs. At
+zero the wait never advances, so the loop never steps, the 10-second guard never counts up,
+and the coroutine is parked.
 
-**If fixed.** `WaitForSecondsRealtime` is unaffected by `timeScale`, the wait
-completes, and the sheet is applied.
+**What happens.** Not simply "defaults are used" — it is worse than that. `ConfigApplied`
+stays `false`, so `InitializeValues()` and `UpdateUI()` never run and the game opens on the
+inspector defaults for those two values. Then the first time `timeScale` goes positive — the
+first Execute with active deliveries — the coroutine resumes, exits the loop and calls
+`EnsureConfigApplied()`, which **unconditionally overwrites `currentBudget` and
+`currentSatisfaction`** with the sheet's starting values. Mid-round. Every purchase the player
+has made until that moment is silently wiped. On day 1 this may not fire at all, because day 1
+runs entirely at `timeScale` 0.
 
-> **Merge note.** This changes starting values for anyone whose sheet differs from the
-> inspector defaults. Look at the sheet before merging — the fix is what makes it live.
+**If fixed.** `WaitForSecondsRealtime` ignores `timeScale`, so the wait completes during
+startup and the two values are applied once, before play, as intended.
+
+> **Merge note.** This changes starting budget and satisfaction for anyone whose sheet differs
+> from the inspector defaults. Look at the sheet before merging — the fix is what makes those
+> two values live at the right moment.
 
 ---
 
@@ -187,6 +174,29 @@ meaningful for the first time, and cost-bearing decisions remain decisions.
 > The cap's *value* (default 3) is a design choice, not part of this fix — it is
 > whatever `InitialExternalRelationFrequency` says. The commit only makes the game
 > obey it.
+
+---
+
+# Withdrawn before merging — D1
+
+D1 was originally part of this push: a guard stopping `ClientStayTracker` from raising a new
+casework request against a facility that is being torn down. It has been **dropped**, because
+reading the deconstruction path showed the state it guards against cannot occur.
+
+`Building.StartDeconstruction()` calls `ReleaseClientGroups()` *before* it sets the
+`Deconstructing` status, and that removes every client group whose `currentFacility` is the
+building. Every caller goes through `StartDeconstruction` — `BuildingUIOverlay`,
+`ActionExecutor`, `BuildingSystem`, the debug hook — and nothing else assigns that status. So
+by the time `IsDeconstructing()` is true, the groups the guard iterates are already gone. The
+guard would never fire, and it carried a real cost: skipping the group also skips its RNG
+draw, which shifts every later roll in the episode and invalidates previously recorded seeds.
+
+**The real question in this area is a different one, and it is a design question.**
+`ClientStayTracker.RemoveClientGroup()` *deletes* the group. It does not relocate anybody. So
+tearing down an occupied shelter makes its residents cease to exist rather than becoming a
+relocation problem the player has to solve. Whether that is acceptable is worth deciding
+before human testing — a player who discovers it has found a way to make a housing shortfall
+disappear by demolishing the housing.
 
 ---
 

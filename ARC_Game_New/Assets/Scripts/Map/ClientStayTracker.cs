@@ -387,13 +387,6 @@ public class ClientStayTracker : MonoBehaviour
             if (group.clientsWithCaseworkNeed > 0 && !group.caseworkRequestGenerated && enableCaseworkTaskGeneration)
             {
 
-                // BUG_REPORTS: a facility being deconstructed must not raise new casework
-                // requests — the clients are leaving. Note this also skips the draw, which
-                // shifts the shared RNG stream; that is intended and catalogued (ledger D1).
-                Building facilityBuilding = group.currentFacility != null
-                    ? group.currentFacility.GetComponent<Building>() : null;
-                if (facilityBuilding != null && facilityBuilding.IsDeconstructing()) continue;
-
                 int Y = Mathf.Max(1, roundsInFacility);
                 float currentProbability = baseCaseworkProbability * Mathf.Pow(probabilityGrowthFactor, Y - 1);
                 currentProbability = Mathf.Clamp(currentProbability, 0f, 100f);
