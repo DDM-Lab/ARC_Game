@@ -701,7 +701,7 @@ public class DailyReportData : MonoBehaviour
     {
         var d = this;
         int needed = d.GetCumulativeFoodPacksNeededByClients();
-        if (needed <= 0) return 1f;
+        if (needed <= 0) return 0f;
         return Mathf.Clamp01((float)d.GetCumulativeFoodPacksConsumedByClients() / needed);
     }
 
@@ -709,7 +709,7 @@ public class DailyReportData : MonoBehaviour
     {
         var d = this;
         int needed = d.GetCumulativeLodgingNightsNeeded();
-        if (needed <= 0) return 1f;
+        if (needed <= 0) return 0f;
         return Mathf.Clamp01((float)d.GetCumulativeLodgingNightsConsumed() / needed);
     }
 
@@ -719,33 +719,24 @@ public class DailyReportData : MonoBehaviour
     //    int roundsElapsed = d.GetCumulativeRoundsElapsed();
     //    if (roundsElapsed <= 0) return 0f;
 
-    //    float denom = assumedTotalWorkerPoolSize * roundsElapsed;
 
-    //    float idleRatio = d.GetCumulativeIdleWorkerRounds() / denom;
-    //    float workingRatio = d.GetCumulativeWorkingWorkerRounds() / denom;
-    //    float trainingRatio = d.GetCumulativeTrainingWorkerRounds() / denom;
+    //    float idleRatio = Mathf.Clamp01(d.GetCumulativeIdleWorkerRounds() / denom);
+    //    float workingRatio = Mathf.Clamp01(d.GetCumulativeWorkingWorkerRounds() / denom);
+    //    float trainingRatio = Mathf.Clamp01(d.GetCumulativeTrainingWorkerRounds() / denom);
 
     //    const float wIdle = 1f / 3f, wWorking = 1f / 3f, wTraining = 1f / 3f;
-    //    return (1f - idleRatio) * wIdle + (workingRatio * wWorking) + (trainingRatio * wTraining);
+    //    return Mathf.Clamp01((1f - idleRatio) * wIdle + (workingRatio * wWorking) + (trainingRatio * wTraining));
     //}
+
     public float S_WorkerUse()
     {
         var d = this;
-        int roundsElapsed = d.GetCumulativeRoundsElapsed();
-        if (roundsElapsed <= 0) return 0f;
+        int idleRounds = d.GetCumulativeIdleWorkerRounds();
+        int activatedRounds = idleRounds + d.GetCumulativeWorkingWorkerRounds() + d.GetCumulativeTrainingWorkerRounds();
 
-        // BUG_REPORTS B23: normalise by the LIVE pool-rounds, which this class already
-        // accumulates, not by a fixed assumed headcount. With a pool far below the assumed
-        // size the ratios span a sliver of their range (8 workers over 10 rounds moved the
-        // worker term ~2.7% across the entire behavioural range); above it they exceed 1.
-        float denom = Mathf.Max(1, d.GetCumulativeWorkerPoolRounds());
+        if (activatedRounds <= 0) return 0f;
 
-        float idleRatio = Mathf.Clamp01(d.GetCumulativeIdleWorkerRounds() / denom);
-        float workingRatio = Mathf.Clamp01(d.GetCumulativeWorkingWorkerRounds() / denom);
-        float trainingRatio = Mathf.Clamp01(d.GetCumulativeTrainingWorkerRounds() / denom);
-
-        const float wIdle = 1f / 3f, wWorking = 1f / 3f, wTraining = 1f / 3f;
-        return Mathf.Clamp01((1f - idleRatio) * wIdle + (workingRatio * wWorking) + (trainingRatio * wTraining));
+        return Mathf.Clamp01(1f - ((float)idleRounds / activatedRounds));
     }
 
     // Get worker satisfaction components (idle, working, training) for display in UI
@@ -769,29 +760,52 @@ public class DailyReportData : MonoBehaviour
 
     //    return (idleScore, workingScore, trainingScore);
     //}
+    //public (float idle, float working, float training) GetWorkerSatisfactionComponents()
+    //{
+    //    var d = this;
+    //    int roundsElapsed = d.GetCumulativeRoundsElapsed();
+    //    if (roundsElapsed <= 0) return (0f, 0f, 0f);
+
+    //    // Same denominator as S_WorkerUse (B23, live pool-rounds): this is the DISPLAYED
+    //    // breakdown of that term, so a different normaliser would make the three parts fail
+    //    // to add up to the worker score they are supposed to explain. The 1000 below is the
+    //    // report's display scale and is correct here, unlike in ApplyDelta.
+    //    float denom = Mathf.Max(1, d.GetCumulativeWorkerPoolRounds());
+    //    float idleRatio = Mathf.Clamp01(d.GetCumulativeIdleWorkerRounds() / denom);
+    //    float workingRatio = Mathf.Clamp01(d.GetCumulativeWorkingWorkerRounds() / denom);
+    //    float trainingRatio = Mathf.Clamp01(d.GetCumulativeTrainingWorkerRounds() / denom);
+
+    //    const float wIdle = 1f / 3f, wWorking = 1f / 3f, wTraining = 1f / 3f;
+    //    const float wSat = 0.2f;
+
+    //    float idleScore = (1f - idleRatio) * wIdle * wSat * 1000f;
+    //    float workingScore = workingRatio * wWorking * wSat * 1000f;
+    //    float trainingScore = trainingRatio * wTraining * wSat * 1000f;
+
+    //    return (idleScore, workingScore, trainingScore);
+    //}
     public (float idle, float working, float training) GetWorkerSatisfactionComponents()
     {
-        var d = this;
-        int roundsElapsed = d.GetCumulativeRoundsElapsed();
-        if (roundsElapsed <= 0) return (0f, 0f, 0f);
+        var total = S_WorkerUse() * SAT_W * 1000f; 
+        return (total, 0f, 0f);
+    }
 
-        // Same denominator as S_WorkerUse (B23, live pool-rounds): this is the DISPLAYED
-        // breakdown of that term, so a different normaliser would make the three parts fail
-        // to add up to the worker score they are supposed to explain. The 1000 below is the
-        // report's display scale and is correct here, unlike in ApplyDelta.
-        float denom = Mathf.Max(1, d.GetCumulativeWorkerPoolRounds());
-        float idleRatio = Mathf.Clamp01(d.GetCumulativeIdleWorkerRounds() / denom);
-        float workingRatio = Mathf.Clamp01(d.GetCumulativeWorkingWorkerRounds() / denom);
-        float trainingRatio = Mathf.Clamp01(d.GetCumulativeTrainingWorkerRounds() / denom);
+    [ContextMenu("Debug: Test S_WorkerUse Formula")]
+    public void DebugTestWorkerUseFormula()
+    {
+        void Check(int idle, int working, int training, float expected)
+        {
+            int activated = idle + working + training;
+            float result = activated <= 0 ? 0f : Mathf.Clamp01(1f - ((float)idle / activated));
+            string pass = Mathf.Approximately(result, expected) ? "PASS" : "FAIL";
+            Debug.Log($"[{pass}] idle={idle} working={working} training={training} => got={result:F4}, expected={expected:F4}");
+        }
 
-        const float wIdle = 1f / 3f, wWorking = 1f / 3f, wTraining = 1f / 3f;
-        const float wSat = 0.2f;
-
-        float idleScore = (1f - idleRatio) * wIdle * wSat * 1000f;
-        float workingScore = workingRatio * wWorking * wSat * 1000f;
-        float trainingScore = trainingRatio * wTraining * wSat * 1000f;
-
-        return (idleScore, workingScore, trainingScore);
+        Check(idle: 0, working: 100, training: 0, expected: 1.0f);   // no idling at all -> perfect score
+        Check(idle: 100, working: 0, training: 0, expected: 0.0f);   // all idle -> worst score
+        Check(idle: 50, working: 50, training: 0, expected: 0.5f);   // half idle -> midpoint
+        Check(idle: 25, working: 50, training: 25, expected: 0.75f); // idle is 25% of activated -> 0.75
+        Check(idle: 0, working: 0, training: 0, expected: 0.0f);     // nothing activated -> spec says 0, not divide-by-zero
     }
 
     public float S_Waste()
@@ -801,7 +815,7 @@ public class DailyReportData : MonoBehaviour
         int wasted = d.GetCumulativeFoodPacksWasted();
         int requested = used + wasted;
 
-        if (requested <= 0) return 1f;
+        if (requested <= 0) return 0f;
         return (float)wasted / requested;
     }
 
@@ -809,9 +823,9 @@ public class DailyReportData : MonoBehaviour
     {
         var d = this;
         int requested = d.GetCumulativeClientsRequestedCasework();
-        if (requested <= 0 || GameDataManager.Instance == null) return 1f;
+        if (requested <= 0 || GameDataManager.Instance == null) return 0f;
         int denom = GameDataManager.Instance.InitialGameDays * GameDataManager.Instance.InitialRoundsPerDay * requested;
-        if (denom <= 0) return 1f;
+        if (denom <= 0) return 0f;
 
         return Mathf.Clamp01(1f - ((float)d.GetCumulativeClientRoundsAwaitingCasework() / denom));
     }
@@ -1050,8 +1064,7 @@ public class DailyReportData : MonoBehaviour
     private float appliedFoodSat, appliedLodgingSat, appliedWorkerSat, appliedCaseworkSat;
     private float appliedFoodEff, appliedLodgingEff, appliedWorkerEff;
 
-    // The authoritative satisfaction/efficiency range. NOT the report's 0-1000 display scale.
-    const float SCORE_SCALE = 100f;
+    const float SCORE_SCALE = 1000f;
     const float SAT_W = 0.2f;
     const float EFF_W = 1f / 3f;
 

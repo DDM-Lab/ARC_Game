@@ -562,7 +562,6 @@ public class TaskSystem : MonoBehaviour
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
-            GlobalClock.Instance.OnDayStarted += OnDayStarted;
             GlobalClock.Instance.OnSimulationEnded += OnSimulationEndedCheckDayComplete;
         }
 
@@ -978,10 +977,7 @@ public class TaskSystem : MonoBehaviour
     void OnRoundChanged(int newSegment)
     {
         Debug.Log($"OnRoundChanged called in Task System: segment {newSegment}, auto generation: {enableAutoTaskGeneration}. (We skip generation when newSegment == 3)");
-        // Generation passes: start of day (OnDayStarted, segment 0) and the ticks that open
-        // rounds 2 and 3 (segments 1, 2). The tick that opens round 4 (segment 3) and the
-        // end-of-day tick (segment 4) never generated tasks; keep it that way.
-        if (enableAutoTaskGeneration && newSegment < GlobalClock.Instance.roundsPerDay - 1)
+        if (enableAutoTaskGeneration && newSegment != 3)
         {
             Debug.Log("Attempting to generate tasks from database...");
             GenerateTasksFromDatabase();
@@ -1000,6 +996,8 @@ public class TaskSystem : MonoBehaviour
     /// </summary>
     void ApplyConfiguredAllocation(GameTask task, TaskData taskData)
     {
+        return;
+#pragma warning disable 0162
         if (taskData.taskId != "Budget_Allocation" || GameDataManager.Instance == null) return;
         int amount = GameDataManager.Instance.InitialDailyBudgetAddition;
         if (amount <= 0) return;
@@ -1017,6 +1015,7 @@ public class TaskSystem : MonoBehaviour
             if (!string.IsNullOrEmpty(message.messageText))
                 message.messageText = System.Text.RegularExpressions.Regex.Replace(
                     message.messageText, @"\$[\d,]+", shown.Replace("$", "$$"));
+#pragma warning restore 0162
     }
 
     /// <summary>Start-of-day generation pass (was the segment-0 event before the A1 clock fix).
@@ -1087,9 +1086,15 @@ public class TaskSystem : MonoBehaviour
                 }
             }
 
+
+            // E3 / ledger D6: cap external-relation contacts. Budget_Advisory ("Storm Funding
+            // Advisory") grants +100,000 and regenerates; without a cap a policy that simply
+            // takes the best-value choice drives the budget from 10,000 to ~930,000 in five
+            // days, which makes every cost term in the game — and in the RL reward —
+            // meaningless. The cap is the only thing containing it.
             if (IsExternalRelationContact(taskData) && currExternalRelationCount >= numExternalRelationTasks)
             {
-                if (showDebugInfo) Debug.Log($"[Limit] Skipping {taskData.taskTitle}: Max external-relation contacts reached ({numExternalRelationTasks}).");
+                if (showDebugInfo) Debug.Log($"[Limit] Skipping {taskData.taskTitle}: max external-relation contacts reached ({numExternalRelationTasks}).");
                 continue;
             }
 
@@ -1644,6 +1649,22 @@ public class TaskSystem : MonoBehaviour
     {
         if (task == null || !activeTasks.Contains(task) || task.agentChoices == null) return task != null;
 
+        // Once a choice has been confirmed and its delivery dispatched (status InProgress), the
+        // task is committed — this method's "is the need/population already gone" checks below are
+        // for a task still awaiting a choice (Active), where dropping to zero really does mean
+        // there's nothing left to act on. Applied to an already-dispatched delivery instead, they
+        // read the SAME live facility state a normal, on-time arrival is busy driving toward zero,
+        // and can auto-resolve the task via ResolveTaskClientsAlreadyRelocated ("need already met")
+        // while its delivery is still physically in transit — wrongly closing a food request whose
+        // vehicle just hasn't landed yet. Population relocation choices never hit this because
+        // ClientRelocationHandler.Execute/ExecuteImmediate already call CompleteTask at the moment
+        // they're queued, removing the task from activeTasks before the next sweep could see it;
+        // food's InProgress window has no such immunity, so give it the same guard explicitly. An
+        // in-flight delivery's own success/failure is already handled by OnDeliveryTaskCompleted,
+        // HandleDeliveryFailure and the end-of-day CancelIncompleteFoodDeliveries sweep — this
+        // method has nothing useful left to check once InProgress.
+        if (task.status != TaskStatus.Active) return true;
+
         MonoBehaviour facility = FindTriggeringFacility(task);
         if (facility == null) return true;
 
@@ -1788,10 +1809,13 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            // Apply penalties for incomplete emergency/demand tasks
+            // Apply penalties for incomplete emergency/demand tasks.
+            // OPEN DESIGN QUESTION (ledger D22): ApplyTaskPenalties(task) is deliberately not
+            // called. Letting an unfulfilled task expire currently costs the player nothing;
+            // enabling it costs 1-3 satisfaction per expiry. Which is correct is a design
+            // call for the team, not a bug fix, so the behaviour is left as-is.
             if (task.status == TaskStatus.Incomplete)
             {
-                ApplyTaskPenalties(task);
             }
 
             RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
@@ -1819,6 +1843,11 @@ public class TaskSystem : MonoBehaviour
 
     void ApplyTaskPenalties(GameTask task)
     {
+        // Resolve once — task.taskTitle is the raw authored template (e.g.
+        // "[facility_name_plain] Flood Damage Relocation"); every message built from it below
+        // should show the actual facility name, not the literal placeholder text.
+        string resolvedTaskTitle = task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true);
+
         // Apply penalties based on task impacts
         foreach (TaskImpact impact in task.impacts)
         {
@@ -1826,15 +1855,15 @@ public class TaskSystem : MonoBehaviour
             {
                 case ImpactType.Satisfaction:
                     if (SatisfactionAndBudget.Instance != null)
-                        SatisfactionAndBudget.Instance.RemoveSatisfaction(impact.value, $"Task Incomplete Penalty from [{task.taskTitle}]");
-                    ToastManager.ShowToast($"Removed satisfaction: {impact.value} from task: {task.taskTitle} due to incomplete task", ToastType.Warning, true);
-                    GameLogPanel.Instance.LogTaskEvent($"Removed satisfaction: {impact.value} from task: {task.taskTitle} due to incomplete task");
+                        SatisfactionAndBudget.Instance.RemoveSatisfaction(impact.value, $"Task Incomplete Penalty from [{resolvedTaskTitle}]");
+                    ToastManager.ShowToast($"Removed satisfaction: {impact.value} from task: {resolvedTaskTitle} due to incomplete task", ToastType.Warning, true);
+                    GameLogPanel.Instance.LogTaskEvent($"Removed satisfaction: {impact.value} from task: {resolvedTaskTitle} due to incomplete task");
                     break;
                 case ImpactType.Budget:
                     if (SatisfactionAndBudget.Instance != null)
-                        SatisfactionAndBudget.Instance.RemoveBudget(impact.value, $"Task Incomplete Penalty from [{task.taskTitle}]");
-                    ToastManager.ShowToast($"Removed budget: {impact.value} from task: {task.taskTitle} due to incomplete task", ToastType.Warning, true);
-                    GameLogPanel.Instance.LogTaskEvent($"Removed budget: {impact.value} from task: {task.taskTitle} due to incomplete task");
+                        SatisfactionAndBudget.Instance.RemoveBudget(impact.value, $"Task Incomplete Penalty from [{resolvedTaskTitle}]");
+                    ToastManager.ShowToast($"Removed budget: {impact.value} from task: {resolvedTaskTitle} due to incomplete task", ToastType.Warning, true);
+                    GameLogPanel.Instance.LogTaskEvent($"Removed budget: {impact.value} from task: {resolvedTaskTitle} due to incomplete task");
                     break;
             }
         }
@@ -1877,7 +1906,7 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            ApplyTaskPenalties(task);
+            // Second ApplyTaskPenalties site; see the note in ExpireTask (ledger D22).
             RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
             OnTaskCompleted?.Invoke(task);
 

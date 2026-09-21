@@ -194,11 +194,29 @@ public class ClientRelocationHandler : MonoBehaviour
         int totalEffectiveSpace = GetDestinationsSorted(ds, includeShelters, includeMotels, source, filterByPath: requiresPathCheck)
             .Sum(d => d.effectiveSpace);
 
+        string destLabel = includeShelters && includeMotels ? "shelter/motel"
+                         : includeShelters ? "shelter" : "motel";
+
         if (totalEffectiveSpace <= 0)
         {
-            string destLabel = includeShelters && includeMotels ? "shelter/motel"
-                             : includeShelters ? "shelter" : "motel";
-            errorMessage = $"There's currently no accessible {destLabel} on the map.";
+            // Covers three different causes GetDestinationsSorted can't tell apart from a single
+            // count: no {destLabel} building exists at all, one exists but is completely full, or
+            // one exists with space but every route to it is blocked — "no accessible X" wrongly
+            // implied the third specifically. Naming the possibilities instead of asserting one.
+            errorMessage = $"No {destLabel} is reachable: either none exist on the map, every route is blocked, or none have space.";
+            return false;
+        }
+
+        // Must have room for the FULL requested amount across all eligible destinations combined
+        // (Execute() is allowed to split one request across several shelters/motels — see the
+        // class doc's example — so requiring a single destination to hold everyone would be wrong
+        // here). Without this, a request for more people than the map can currently take would
+        // silently pass validation and Execute() would relocate only as many as fit, completing
+        // the task and leaving the rest behind with no warning shown to the player.
+        int toSend = requestedQuantity > 0 ? Mathf.Min(requestedQuantity, available) : available;
+        if (totalEffectiveSpace < toSend)
+        {
+            errorMessage = $"Only {totalEffectiveSpace} of {toSend} clients could be placed: not enough accessible {destLabel} capacity on the map.";
             return false;
         }
 
@@ -690,6 +708,18 @@ public class ClientRelocationHandler : MonoBehaviour
     /// (Building + storage) and motels (PrebuiltBuilding).
     /// Public so callers outside this handler (TaskSystem's stale-task sweep, TaskDetailUI's
     /// choice validation) can check bookable space without duplicating the logic.</summary>
+    /// <summary>The destination this task's relocation would actually target, without
+    /// committing to it — used by the task card and the agent panel to show where clients
+    /// would go. Same ordering GetDestinationsSorted uses for the real move.</summary>
+    public MonoBehaviour PeekPrimaryDestination(GameTask parentTask, bool includeShelters, bool includeMotels, bool filterByPath)
+    {
+        MonoBehaviour source = TaskSystem.Instance.FindTriggeringFacility(parentTask);
+        if (source == null) return null;
+
+        var destinations = GetDestinationsSorted(DeliverySystem.Instance, includeShelters, includeMotels, source, filterByPath);
+        return destinations.Count > 0 ? destinations[0].dest : null;
+    }
+
     public int GetEffectiveSpace(MonoBehaviour destination)
     {
         if (destination == null) return 0;

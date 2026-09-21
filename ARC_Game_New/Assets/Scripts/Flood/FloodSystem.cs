@@ -556,11 +556,10 @@ public class FloodSystem : MonoBehaviour
 
         // Remove duplicates
         int candidatesBeforeDedup = expansionCandidates.Count;
-        // Dedup, then SORT. Round-tripping through a HashSet removes duplicates but leaves
-        // the surviving order dependent on the set's internal layout, and the loop below
-        // indexes into this list with Random.Range -- so an identical candidate SET could
-        // still expand different tiles. That is what made a restored game diverge from a
-        // replayed one even after the flood tile set itself was restored exactly.
+        // DETERMINISM: round-tripping through a HashSet removes duplicates but leaves the
+        // surviving order dependent on the set's internal layout, and the loop below indexes
+        // into this list with Random.Range — so an identical candidate SET can still expand
+        // DIFFERENT tiles. Sorting makes a seeded episode reproducible (ledger D24).
         expansionCandidates = new List<Vector3Int>(new HashSet<Vector3Int>(expansionCandidates));
         expansionCandidates.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x)
                                          : a.y != b.y ? a.y.CompareTo(b.y)

@@ -13,7 +13,7 @@ public class GameDataManager : MonoBehaviour
     [Header("Defaults")]
     public int defaultBudget = 10000; //initialBudget
     [Range(0f, 100f)]
-    public float defaultSatisfaction = 50f; // initialSatisfaction
+    public float defaultSatisfaction = 0f; // initialSatisfaction
     public int defaultCommunityNumber= 3; // numberOfCommunities
     public int defaultResidentsPerCommunity = 40; // done
     public int defaultGameDays = 8; // gameDurationDays
@@ -106,9 +106,6 @@ public class GameDataManager : MonoBehaviour
             return;
         }
         
-        // A scene whose GameDataManager has no loader wired (MainScene) used to fall straight to
-        // SetDefaults(); find the loader that is in the scene instead (BUG_REPORTS A9).
-        if (configLoader == null) configLoader = FindObjectOfType<GameConfigLoader>();
         StartCoroutine(LoadAllData());
     }
 
@@ -304,6 +301,6 @@ public class GameDataManager : MonoBehaviour
         InitialShelterFloodComparison = defaultShelterFloodComparison;
         InitialERVCount = defaultERVCount;
         InitialExternalRelationFrequency = defaultExternalRelationFrequency;
-        InitialEmergencyTaskFrequency = defaultEmergencyTaskFrequency;   // was assigned to the wrong field (BUG_REPORTS A9)
+        InitialExternalRelationFrequency = defaultEmergencyTaskFrequency;
     }
 }

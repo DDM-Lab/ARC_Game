@@ -551,6 +551,8 @@ MonoBehaviour:
   selectedColor: {r: 0, g: 1, b: 0, a: 1}
   invalidColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
   validationText: {fileID: 5800176560597183570}
+  minCardHeight: 90
+  maxCardHeight: 300
 --- !u!114 &3647307117108130020
 MonoBehaviour:
   m_ObjectHideFlags: 0

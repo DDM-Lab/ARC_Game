@@ -23822,6 +23822,20 @@ MonoBehaviour:
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 874011164217811039}
     progressBar: {fileID: 0}
+  liveFoodNeeded:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
+  liveFoodConsumed:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   liveFoodWaste:
     layoutObject: {fileID: 1497022639421360522}
     numberText: {fileID: 8287897744880022821}
@@ -23835,6 +23849,13 @@ MonoBehaviour:
     labelText: {fileID: 1834269875337971397}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 9001637878290433448}
+    progressBar: {fileID: 0}
+  liveLodgingSatisfied:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
     progressBar: {fileID: 0}
   liveWorkersWorking:
     layoutObject: {fileID: 3262885326060756380}
@@ -23864,12 +23885,26 @@ MonoBehaviour:
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 4581912598805998292}
     progressBar: {fileID: 0}
+  liveWorkersUnassigned:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   liveNeedCasework:
     layoutObject: {fileID: 9153564422057576582}
     numberText: {fileID: 7574407444519085184}
     labelText: {fileID: 5498845607076731453}
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 7870435945409272307}
+    progressBar: {fileID: 0}
+  liveCaseworkSatisfied:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
     progressBar: {fileID: 0}
   liveInTransitToCasework:
     layoutObject: {fileID: 5866705852625779294}
@@ -23905,6 +23940,7 @@ MonoBehaviour:
   panel: {fileID: 672746602581531575}
   closeButton: {fileID: 3821693911889930264}
   reminderText: {fileID: 8008729281893557113}
+  followUpSurveyUrlTemplate: https://cmu.ca1.qualtrics.com/jfe/form/SV_eCMkO3XayIH2LSS/?uid={uid}
 --- !u!1 &7953762950033356776
 GameObject:
   m_ObjectHideFlags: 0

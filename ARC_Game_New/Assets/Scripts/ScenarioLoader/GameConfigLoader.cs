@@ -27,7 +27,7 @@ public class GameConfigLoader : MonoBehaviour
 
     // Loaded config 
     public int loadedInitialBudget=10000;
-    public int loadedInitialSatisfaction=50;
+    public int loadedInitialSatisfaction=0;
     public int loadedInitialCommunityNumber=3;
     public int loadedInitialCommunityResidents=40;
     public int loadedInitialGameDays=8;
@@ -428,7 +428,10 @@ public class GameConfigLoader : MonoBehaviour
     {
         // Override mapConfigServerUrl from config.json if present
         bool strictMap = false;
-        string configPath = Application.streamingAssetsPath + "/config.json";
+        // file:// or this silently fails on desktop builds (the CSV read beside it already
+        // does this); without it config.json is inert outside WebGL.
+        string rawConfigPath = Application.streamingAssetsPath + "/config.json";
+        string configPath = rawConfigPath.Contains("://") ? rawConfigPath : "file://" + rawConfigPath;
         using (UnityWebRequest cfgReq = UnityWebRequest.Get(configPath))
         {
             cfgReq.timeout = 3;

@@ -166,8 +166,17 @@ public class DailyReportUI : MonoBehaviour
     private DailyReportMetrics currentMetrics;
 
     // Default values
-    private float currentSatisfaction = 50f;
+    private float currentSatisfaction = 0f;
     private float currentEfficiency = 0f;
+
+    /// <summary>
+    /// True from the moment DisplayDailyReport() starts AnimateReportDisplay() until that
+    /// coroutine's very last step (revealing the building status table) has run. DailyReportManager
+    /// waits on this before enabling the history dayButtons — clicking one mid-animation calls
+    /// DisplayDailyReportImmediate(), which StopAllCoroutines()s this animation and overwrites the
+    /// same elements it's still mid-transition on, causing visual glitches.
+    /// </summary>
+    public bool IsAnimatingReport { get; private set; }
 
     void Start()
     {
@@ -284,12 +293,10 @@ public class DailyReportUI : MonoBehaviour
 
         if (DailyReportData.Instance != null)
         {
-            // ON THE REPORT'S SCALE. The report reads 0-1000 (`{currentSatisfaction:F0}/1000`,
-            // bar = value/1000) while the authoritative field these come from is 0-100, so
-            // seeding them raw makes the day's reported change wrong by 10x -- BUG_REPORTS
-            // B34, which this merge would otherwise have reintroduced.
+            // The report reads 0-1000 while the authoritative field is 0-100, so seeding
+            // raw makes the day's reported change wrong by 10x (BUG_REPORTS B34).
             currentSatisfaction = DailyReportData.Instance.GetDayStartSatisfaction() * 10f;
-            currentEfficiency = DailyReportData.Instance.GetDayStartEfficiency() * 10f;
+            currentEfficiency = DailyReportData.Instance.GetDayStartEfficiency();
         }
 
         UpdateBottomPanels(metrics);
@@ -299,6 +306,7 @@ public class DailyReportUI : MonoBehaviour
         LogDailyReportScoreFormulas();
         BuildingStatusTableUI.Instance?.LogTableContents(GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1);
 
+        IsAnimatingReport = true;
         StartCoroutine(AnimateReportDisplay());
     }
 
@@ -309,7 +317,8 @@ public class DailyReportUI : MonoBehaviour
     {
         // Stop any running animations (safe - report was already saved at animation start)
         StopAllCoroutines();
-        
+        IsAnimatingReport = false;
+
         currentMetrics = metrics;
         
         // Set day display
@@ -410,6 +419,8 @@ public class DailyReportUI : MonoBehaviour
 
         // Reveal the building status table now that the report's own content is fully shown
         BuildingStatusTableUI.Instance?.ShowTable();
+
+        IsAnimatingReport = false;
     }
 
     // =========================================================================
@@ -567,9 +578,12 @@ public class DailyReportUI : MonoBehaviour
         int workingRounds = d.GetCumulativeWorkingWorkerRounds();
         int trainingRounds = d.GetCumulativeTrainingWorkerRounds();
         int roundsElapsed = d.GetCumulativeRoundsElapsed();
-        F($"Worker Use Satisfaction = (1-idle_ratio)/3 + working_ratio/3 + training_ratio/3, ratios vs {assumedTotalWorkerPoolSize} workers x {roundsElapsed} rounds elapsed, x 20% weight x 1000" +
-          $" | idle_rounds={idleRounds}, working_rounds={workingRounds}, training_rounds={trainingRounds}" +
-          $" => idle_sub={currentMetrics.workerIdleSatScore:F1}, working_sub={currentMetrics.workerWorkingSatScore:F1}, training_sub={currentMetrics.workerTrainingSatScore:F1}, total={currentMetrics.satWorkerScore:F1}");
+        //F($"Worker Use Satisfaction = (1-idle_ratio)/3 + working_ratio/3 + training_ratio/3, ratios vs {assumedTotalWorkerPoolSize} workers x {roundsElapsed} rounds elapsed, x 20% weight x 1000" +
+        //  $" | idle_rounds={idleRounds}, working_rounds={workingRounds}, training_rounds={trainingRounds}" +
+        //  $" => idle_sub={currentMetrics.workerIdleSatScore:F1}, working_sub={currentMetrics.workerWorkingSatScore:F1}, training_sub={currentMetrics.workerTrainingSatScore:F1}, total={currentMetrics.satWorkerScore:F1}");
+        int activatedRounds = idleRounds + workingRounds + trainingRounds;
+        F($"Worker Use Satisfaction = 1 - (idle worker-rounds / activated worker-rounds) x 20% weight x 1000" +
+          $" | idle_rounds={idleRounds}, activated_rounds={activatedRounds} => total={currentMetrics.satWorkerScore:F1}");
 
         int wasted = d.GetCumulativeFoodPacksWasted();
         F($"Food Waste Penalty = (food packs wasted / (consumed+wasted)) x 20% weight x 1000 | wasted={wasted}, consumed={foodConsumed} => score={currentMetrics.satWasteScore:F1}");

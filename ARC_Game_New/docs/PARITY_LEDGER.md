@@ -115,14 +115,37 @@ Recording the withdrawal rather than deleting the entry, because the mistake is 
 this was catalogued from a diff read at one commit and then treated as standing fact across a
 merge that resolved it.
 
-### D5 — confirm-time validation
+### D5 — confirm-time validation — **CONFIRMED, and it is the last divergence**
 
-`Tasks/TaskDetailUI.cs`, the largest single file divergence (87 modified hunks). Ours routes
-all three confirm paths through `ValidateBeforeConfirm`, which additionally checks delivery
-feasibility, worker assignment and budget (`WouldAllowSpend`). Upstream inlines a smaller set
-at two of the three call sites. Effect on parity depends on whether a rejected confirm is
-reachable in an unattended scripted episode — under the default `allowNegativeBudget = true`
-the budget arm is inert, so this may be benign in practice. **Needs the harness to settle.**
+`Tasks/TaskDetailUI.ValidateBeforeConfirm`. Ours routes all three confirm paths through one
+helper that additionally checks delivery feasibility (`ValidateChoiceDelivery`), worker
+assignment and budget (`WouldAllowSpend`). Upstream has **no such method at all** — 3 occurrences
+here, 0 at 76857e88 — and inlines a smaller set at two of its three call sites.
+
+This entry said "needs the harness to settle" from the day it was written, and stayed untestable
+for the whole investigation because the clock-only driver never confirmed anything. Once the
+greedy policy started confirming task choices, it surfaced on its own.
+
+**Seed 7 of 32, at day 2 segment 2, with the RNG cursor identical all episode:**
+
+```
+                budget    Community02 food
+upstream (V2)   13000     600      <- delivery accepted, 1000 spent, 100 food gained
+parity  (V3)    14000     500      <- delivery refused
+```
+
+Same draws, same everything else; one food request fulfilled on one build and refused on the
+other. Our stricter validation is the whole of the remaining 1-in-32 gap.
+
+Note it was never actually reverted — the only `ledger D5` marker in the tree is a comment in
+`ParityPolicy.cs`. So the honest statement of the parity result is: **31/32 seeds exact with
+nineteen divergences reverted; the 32nd is the one divergence still present.** Reverting it
+should take the suite to 32/32, which is the cheap confirmation that nothing else is hiding.
+
+**The design question is unchanged and now has a number on it:** should the game refuse an action
+whose delivery cannot actually be served? Ours refuses, upstream accepts and lets it fail later.
+Under the greedy baseline that changes one delivery in roughly thirty episodes — small, but it is
+a real difference in what a player is allowed to do.
 
 ### D6 — external-relation scheduling: ours caps, upstream does nothing
 

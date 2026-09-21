@@ -10,15 +10,22 @@ using TMPro;
 /// including the code itself, is authored directly in the scene — this script
 /// only controls visibility/timing). Purely a player-facing prompt on top of the
 /// report — does not touch report display, animation, or the data-collection/
-/// logging flow in DailyReportUI/DailyReportManager.
+/// logging flow in DailyReportUI/DailyReportManager. Gated by showQualtricsInfoPanel
+/// (default OFF) — see that field's tooltip for why.
 ///
 /// Also redirects the browser to the Qualtrics follow-up survey (carrying the
 /// same participant ID captured at session start — see PlayerSession) the
-/// instant the panel is shown, i.e. the moment the game is considered finished.
+/// instant the game is considered finished, regardless of the panel setting above.
 /// </summary>
 public class EndOfGamePanel : MonoBehaviour
 {
     [Header("UI References")]
+    [Tooltip("Whether to show the manual completion-code panel/reminder at all. Default OFF: now " +
+             "that the game auto-redirects to the follow-up survey (with the participant ID already " +
+             "attached), this manual code panel is no longer needed for that flow. The redirect below " +
+             "still fires regardless of this setting — this only controls the panel/reminder UI. Turn " +
+             "on to bring it back (e.g. as a visual fallback, or for a deployment without redirect).")]
+    public bool showQualtricsInfoPanel = false;
     [Tooltip("The panel GameObject to show/hide. Should NOT be a full-screen raycast blocker — the player must be able to keep reading the Daily Report underneath.")]
     public GameObject panel;
     public Button closeButton;
@@ -67,12 +74,13 @@ public class EndOfGamePanel : MonoBehaviour
     /// </summary>
     public void ShowPanel()
     {
-        if (panel == null) return;
+        if (showQualtricsInfoPanel && panel != null)
+        {
+            panel.SetActive(true);
 
-        panel.SetActive(true);
-
-        Debug.Log("[EndOfGamePanel] Shown");
-        GameLogPanel.Instance?.LogUIInteraction($"Qualtrics code panel shown | session_id={PlayerSession.SessionId}");
+            Debug.Log("[EndOfGamePanel] Shown");
+            GameLogPanel.Instance?.LogUIInteraction($"Qualtrics code panel shown | session_id={PlayerSession.SessionId}");
+        }
 
         RedirectToFollowUpSurvey();
     }

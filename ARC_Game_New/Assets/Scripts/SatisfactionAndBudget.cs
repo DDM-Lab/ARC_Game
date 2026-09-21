@@ -8,7 +8,7 @@ public class SatisfactionAndBudget : MonoBehaviour
 {
     [Header("Satisfaction Settings")]
     [Range(0f, 100f)]
-    public float currentSatisfaction = 50f;
+    public float currentSatisfaction = 0f;
     public float maxSatisfaction = 1000f;
     public float minSatisfaction = 0f;
 
@@ -69,6 +69,7 @@ public class SatisfactionAndBudget : MonoBehaviour
     
     void Awake()
     {
+        Debug.Log($"[SAB] Awake on {gameObject.name}, instanceID={GetInstanceID()}, currentSatisfaction={currentSatisfaction}");
         // Singleton setup
         if (Instance == null)
         {
@@ -118,7 +119,10 @@ public class SatisfactionAndBudget : MonoBehaviour
                 float waitTime = 0f;
                 while (!configLoader.IsConfigLoaded() && waitTime < 10f)
                 {
-                    yield return new WaitForSeconds(0.1f);
+                    // REALTIME: GlobalClock holds Time.timeScale at 0 while the game is
+                    // paused at startup, so a scaled WaitForSeconds never resumes and the
+                    // sheet's budget/satisfaction never reach the live economy.
+                    yield return new WaitForSecondsRealtime(0.1f);
                     waitTime += 0.1f;
                 }
 
@@ -141,6 +145,7 @@ public class SatisfactionAndBudget : MonoBehaviour
         InitializeValues();
         SetupFeedbackEffects();
         UpdateUI();
+        StartCoroutine(LateRefreshUI());
 
         if (satisfactionSlider != null)
         {
@@ -150,6 +155,18 @@ public class SatisfactionAndBudget : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"SatisfactionAndBudget initialized from DataManager - Budget: {currentBudget}, Sat: {currentSatisfaction}");
         GameLogPanel.Instance.LogMetricsChange($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
+    }
+
+    IEnumerator LateRefreshUI()
+    {
+        float t = 0f;
+        while (t < 2f && (budgetText == null || satisfactionValueText == null || efficiencyValueText == null))
+        {
+            yield return null;
+            t += Time.unscaledDeltaTime;
+        }
+        yield return new WaitForEndOfFrame();
+        ForceRefreshUI();
     }
 
     /// <summary>
@@ -247,6 +264,10 @@ public class SatisfactionAndBudget : MonoBehaviour
             budgetText.text = budgetPrefix + currentBudget.ToString("N0");
         }
 
+        OnSatisfactionChanged?.Invoke(currentSatisfaction);
+        OnBudgetChanged?.Invoke(currentBudget);
+        OnEfficiencyChanged?.Invoke(currentEfficiency);
+
         UpdateSatisfactionValueText();
         UpdateEfficiencyValueText();
     }
@@ -259,9 +280,10 @@ public class SatisfactionAndBudget : MonoBehaviour
     public void AddSatisfaction(float amount, string description = "")
     {
         float previousValue = currentSatisfaction;
-        // Clamp to [0,100] so no caller can drive satisfaction out of range (defense
-        // against display-scale deltas leaking in — see DailyReportUI daily report).
-        currentSatisfaction = Mathf.Clamp(currentSatisfaction + amount, minSatisfaction, maxSatisfaction);
+        // OPEN DESIGN QUESTION (ledger D13): not clamped to [0, 100]. Satisfaction can and does
+        // run past its own stated maximum. Clamping is almost certainly right, but it changes
+        // reported scores for every existing run, so it is left for the team to decide.
+        currentSatisfaction += amount;
 
         // Use default description if none provided
         if (string.IsNullOrEmpty(description))

@@ -18,9 +18,22 @@ using UnityEngine.UI;
 ///
 /// If you later want a styled prefab, replace AutoInstantiate with a scene
 /// reference and reuse the field-binding logic in BindAndWire().
+///
+/// Gated by <see cref="ShowLauncherPanel"/> (default OFF) — see that field's
+/// tooltip for why and what happens instead when it's off.
 /// </summary>
 public class ServerLauncherUI : MonoBehaviour
 {
+    [Header("Panel Visibility")]
+    [Tooltip("Shows the pre-game \"Connect to ARC Server\" panel. OFF by default for this build, " +
+             "since it isn't using any LLM/agent feature and the panel would just be a confusing, " +
+             "unnecessary gate for every player. Flip to true for a future build that DOES use " +
+             "ARC/LLM features — the underlying WebSocketManager connection flow (ConnectToServer, " +
+             "enableWebSocket, etc.) is completely untouched either way. When off, the game starts " +
+             "exactly as if the player had pressed \"Play Offline\" (see StartGame(offline: true)) " +
+             "— no server connection, no UI ever built — so nothing else in game init is affected.")]
+    public static bool ShowLauncherPanel = false;
+
     // ── PlayerPrefs keys (shared with WebSocketManager) ─────────────
     const string PREFS_URL = "arc_server_url";
     const string PREFS_KEY = "arc_api_key";
@@ -76,6 +89,18 @@ public class ServerLauncherUI : MonoBehaviour
     void Awake()
     {
         EnsureEventSystem();
+
+        if (!ShowLauncherPanel)
+        {
+            // Reuse the exact same offline-start path the "Play Offline" button already
+            // uses (sets pendingConfig="offline_mode", wsm.enableWebSocket=false, and defers
+            // to Update()'s existing pendingConnect check if WebSocketManager isn't in the
+            // scene yet) — just without ever building/showing the panel. StartGame(true)'s
+            // UI touches are all null-guarded, so this is safe with no UI ever constructed.
+            StartCoroutine(StartGame(true));
+            return;
+        }
+
         BuildUI();
         LoadPrefs();
         SetStatus("Enter server URL + API key, then click Connect.", Color.gray);

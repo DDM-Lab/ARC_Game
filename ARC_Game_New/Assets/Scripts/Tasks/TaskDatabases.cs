@@ -243,6 +243,9 @@ public class TaskDatabase : ScriptableObject
     /// <summary>
     /// NEW: Check if triggers are activated for a specific facility
     /// </summary>
+    static readonly bool TriggerTrace =
+        System.Environment.GetEnvironmentVariable("ARC_TRIGGER_TRACE") == "1";
+
     bool AreTriggersActivatedForFacility(TaskData taskData, MonoBehaviour facility)
     {
         List<bool> triggerResults = new List<bool>();
@@ -256,11 +259,36 @@ public class TaskDatabase : ScriptableObject
         
         // Per-facility resource triggers
         foreach (var trigger in taskData.resourceTriggers)
-            triggerResults.Add(CheckResourceTriggerForFacility(trigger, facility));
+        {
+            bool rres = CheckResourceTriggerForFacility(trigger, facility);
+            if (TriggerTrace && taskData.taskId == "Community_TransportRequest")
+            {
+                var stor = (facility as PrebuiltBuilding)?.GetResourceStorage();
+                Debug.Log($"[D19res] {facility?.name} type={trigger.resourceType} cond={trigger.condition} "
+                        + $"thr={trigger.resourceThreshold} -> {rres}  "
+                        + $"amount={(stor != null ? stor.GetResourceAmount(trigger.resourceType).ToString() : "no-storage")} "
+                        + $"cap={(stor != null ? stor.GetResourceCapacity(trigger.resourceType).ToString() : "-")}");
+            }
+            triggerResults.Add(rres);
+        }
         
         // Per-facility probability triggers (each facility rolls independently)
         foreach (var trigger in taskData.probabilityTriggers)
+        {
+            // TEMPORARY DIAGNOSTIC (ledger D19). Prints the roll and the threshold for one task
+            // so the per-facility outcome can be compared against upstream's log instead of
+            // inferred from a matching RNG cursor. Opt-in; remove once D19 is closed.
+            if (TriggerTrace && taskData.taskId == "Community_TransportRequest")
+            {
+                var st = UnityEngine.Random.state;
+                bool hit = CheckProbability(taskData, trigger);
+                Debug.Log($"[D19] {taskData.taskId} @ {facility?.name} prob={trigger.probability} "
+                        + $"-> {hit}  rngBefore={JsonUtility.ToJson(st)}");
+                triggerResults.Add(hit);
+                continue;
+            }
             triggerResults.Add(CheckProbability(taskData, trigger)); // Each call is independent random roll
+        }
         
         foreach (var trigger in taskData.floodTileTriggers)
             triggerResults.Add(trigger.CheckCondition()); // Global
@@ -285,6 +313,8 @@ public class TaskDatabase : ScriptableObject
         foreach (var trigger in taskData.weatherTriggers)
             triggerResults.Add(trigger.CheckCondition()); // Global
 
+        if (TriggerTrace && taskData.taskId == "Community_TransportRequest")
+            Debug.Log($"[D19] {taskData.taskId} @ {facility?.name} results=[{string.Join(",", triggerResults)}] requireAll={taskData.requireAllTriggers}");
         if (triggerResults.Count == 0) return false;
         
         if (taskData.requireAllTriggers)
@@ -303,12 +333,6 @@ public class TaskDatabase : ScriptableObject
     /// (Shelter_FoodRequest today; Community_FoodRequest has no probability trigger and is unaffected).</summary>
     bool CheckProbability(TaskData taskData, ProbabilityTrigger trigger)
     {
-        var gdm = GameDataManager.Instance;
-        if (gdm != null && gdm.IsDataReady && gdm.InitialFoodDemandFrequency >= 0f && taskData.taskId.Contains("FoodRequest"))
-        {
-            SnapshotDebug.Mark("draw:TaskTrigger.probability");
-            return UnityEngine.Random.Range(0f, 1f) < gdm.InitialFoodDemandFrequency;
-        }
         return trigger.CheckCondition();
     }
 

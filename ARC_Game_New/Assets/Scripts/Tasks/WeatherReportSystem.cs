@@ -24,7 +24,7 @@ public class WeatherReportSystem : MonoBehaviour
         // Subscribe to round changes
         if (GlobalClock.Instance != null)
         {
-            GlobalClock.Instance.OnDayChanged += OnDayChangedReport;   // the daily report opens each new day
+            GlobalClock.Instance.OnTimeSegmentChanged += OnTimeSegmentChanged;
         }
         
         // Find systems if not assigned
@@ -266,7 +266,7 @@ public class WeatherReportSystem : MonoBehaviour
     {
         if (GlobalClock.Instance != null)
         {
-            GlobalClock.Instance.OnDayChanged -= OnDayChangedReport;
+            GlobalClock.Instance.OnTimeSegmentChanged -= OnTimeSegmentChanged;
         }
     }
     

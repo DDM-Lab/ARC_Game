@@ -137,11 +137,17 @@ public class DailyReportManager : MonoBehaviour
     {
         Debug.Log($"[DailyReportManager] FadeInReportWithData started. reportUI={(reportUI == null ? "NULL" : "OK")}");
 
+        // Keep the history buttons non-interactable for the whole fade-in + report animation —
+        // UpdateDayButtonStates() below won't run (and re-enable the right ones) until reportUI's
+        // own animation finishes, and Button.interactable otherwise keeps whatever state (or
+        // Unity's default true) it was last left in, letting a click land mid-animation.
+        SetDayButtonsInteractable(false);
+
         if (reportUI != null)
         {
             reportUI.ResetAllElementsToHidden();
         }
-        
+
         // Do the existing fade in animation first
         yield return StartCoroutine(FadeInReport());
 
@@ -178,8 +184,28 @@ public class DailyReportManager : MonoBehaviour
             EndOfGamePanel.Instance?.ShowPanel();
         }
 
+        // DisplayDailyReport() above only started reportUI's own multi-section reveal animation
+        // (satisfaction/efficiency/receipt/live-status, then the building status table) — it
+        // hasn't finished yet. Wait for it before enabling the day buttons: clicking one early
+        // calls DisplayDailyReportImmediate(), which StopAllCoroutines()s that animation and
+        // overwrites the same elements mid-transition, which is the display glitch this avoids.
+        if (reportUI != null)
+            yield return new WaitUntil(() => !reportUI.IsAnimatingReport);
+
         // Update button states
         UpdateDayButtonStates(currentDay);
+    }
+
+    /// <summary>Force every history day button non-interactable, independent of whether it has
+    /// data for its day — UpdateDayButtonStates() (which knows that) re-enables the right ones
+    /// once it's safe to.</summary>
+    void SetDayButtonsInteractable(bool interactable)
+    {
+        foreach (Button btn in dayButtons)
+        {
+            if (btn != null)
+                btn.interactable = interactable;
+        }
     }
     
     IEnumerator FadeInReport()

@@ -18,3 +18,15 @@ Builds/
 /Assets/
 /Packages/
 /ProjectSettings/
+
+# Local scratch: worktrees, analysis output, surrogate, and Library backups.
+# These are developer-local and were swept into a merge commit once already.
+/_worktrees/
+/ARC_Game_New/Library.reimport_bak/
+/ARC_Game_New/cora_sim/
+/ARC_Game_New/analysis*/
+/ARC_Game_New/analyze/
+/ARC_Game_New/generated/
+/ARC_Game_New/prompt_dumps/
+/ARC_Game_New/plugins_staged/
+/ARC_Game_New/.scratch/

@@ -40,10 +40,7 @@ public class FloodTaskGenerator : MonoBehaviour
         }
 
         if (TaskSystem.Instance != null)
-        {
             TaskSystem.Instance.OnTaskCompleted += OnAnyTaskCompleted;
-            TaskSystem.Instance.OnTaskExpired += OnAnyTaskCompleted;   // an ignored blockage EXPIRES (BUG_REPORTS B8)
-        }
     }
 
     void OnFloodExpanded(Vector3Int floodPosition)
@@ -277,7 +274,6 @@ public class FloodTaskGenerator : MonoBehaviour
 
         if (TaskSystem.Instance != null)
             TaskSystem.Instance.OnTaskCompleted -= OnAnyTaskCompleted;
-            TaskSystem.Instance.OnTaskExpired -= OnAnyTaskCompleted;
     }
 
     void OnAnyTaskCompleted(GameTask task)

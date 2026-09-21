@@ -92,6 +92,8 @@ public class BuildingResourceStorage : MonoBehaviour
     /// </summary>
     public void ApplyConfiguredCapacities()
     {
+        return;
+#pragma warning disable 0162
         if (!storageInitialized || configApplied) return;
         var gdm = GameDataManager.Instance;
         if (gdm == null || !gdm.IsDataReady) return;
@@ -131,6 +133,7 @@ public class BuildingResourceStorage : MonoBehaviour
         }
         Debug.Log($"{gameObject.name} ({building.GetBuildingType()}) configured: foodCap={GetResourceCapacity(ResourceType.FoodPacks)} popCap={GetResourceCapacity(ResourceType.Population)}");
         OnStorageUpdated?.Invoke();
+#pragma warning restore 0162
     }
 
     void SetCapacity(ResourceType type, int capacity)

@@ -92,7 +92,13 @@ public class MetricsHistoryManager : MonoBehaviour
     private MetricsTab currentTab = MetricsTab.Satisfaction; // Track which tab is active
     
     // Current game state
-    private int currentRound = 1;
+    // currentRound mirrors GlobalClock.currentTimeSegment, which is 0-indexed (round 1 = 0) and
+    // only pushed here via OnRoundChanged on ROUND CHANGES — GlobalClock never fires
+    // OnTimeSegmentChanged for Day 1's own first round (it only fires on later round/day
+    // transitions), so this default must already be the 0-indexed value for round 1, not 1
+    // (which CreateMetricEntryItem's "+1" would then display as "Round 2"). currentDay stays
+    // 1-indexed to match GlobalClock.currentDay, which correctly starts at 1.
+    private int currentRound = 0;
     private int currentDay = 1;
     
     // UI item tracking

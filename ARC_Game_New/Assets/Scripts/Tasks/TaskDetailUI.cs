@@ -311,6 +311,46 @@ public class TaskDetailUI : MonoBehaviour
             return;
         }
 
+        // Population relocation to Shelter/Motel doesn't use DetermineChoiceDeliveryDestination at
+        // execution time at all — ExecuteClientRelocation routes it through
+        // ClientRelocationHandler.Execute/ExecuteImmediate, which picks by shelter-preference then
+        // most available space (GetDestinationsSorted), not nearest distance. Previewing via the
+        // generic resolver below could show a different building than delivery actually uses, so
+        // ask ClientRelocationHandler what it would actually pick instead — same as the FoodPacks
+        // branch above does for kitchens. Non-Shelter SpecificBuilding (e.g. CaseworkSite) is
+        // unaffected: ExecuteClientRelocation already falls back to the generic resolver for that
+        // case too, so preview and execution already agree there.
+        if (choice.deliveryCargoType == ResourceType.Population
+            && (choice.destinationType != DeliveryDestinationType.SpecificBuilding || choice.destinationBuilding == BuildingType.Shelter)
+            && ClientRelocationHandler.Instance != null)
+        {
+            bool toShelter = choice.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                        || choice.destinationPrebuilt != PrebuiltBuildingType.Motel;
+            bool toMotel   = choice.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                        && choice.destinationPrebuilt == PrebuiltBuildingType.Motel;
+            if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+
+            MonoBehaviour popSource = TaskSystem.Instance.FindTriggeringFacility(currentTask);
+            MonoBehaviour popDest = ClientRelocationHandler.Instance.PeekPrimaryDestination(
+                currentTask, toShelter, toMotel, filterByPath: !choice.immediateDelivery);
+
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Preview route clicked | task={currentTask.taskTitle} | choice={choice.choiceText} | " +
+                $"source={popSource?.name ?? "unresolved"} | destination={popDest?.name ?? "unresolved"}");
+
+            if (popSource == null || popDest == null)
+            {
+                Debug.LogWarning("[PreviewChoiceRoute] Could not resolve population relocation destination.");
+                return;
+            }
+
+            StopAllCoroutines();
+            isTyping = false;
+            currentTypingMessage = null;
+            StartCoroutine(PeekForRoute(popSource, popDest, currentTask));
+            return;
+        }
+
         MonoBehaviour triggeringFacility = ResolveTriggeringFacility();
         MonoBehaviour source = TaskSystem.Instance.DetermineChoiceDeliverySource(choice, triggeringFacility);
         MonoBehaviour destination = TaskSystem.Instance.DetermineChoiceDeliveryDestination(choice, triggeringFacility);
@@ -1069,17 +1109,21 @@ public class TaskDetailUI : MonoBehaviour
             return false;
         }
 
-        if (task.agentChoices != null && task.agentChoices.Count > 0 && choice == null)
-        {
-            errorMessage = "Please select a choice before confirming.";
+        // Same gate every other confirm path uses (expiry, numerical inputs, delivery
+        // feasibility, worker rules, budget) — this used to be reimplemented here as a partial
+        // subset that skipped delivery/worker/budget validation entirely, so an agent-conversation
+        // confirm (the only caller of TryConfirmTask) could queue a delivery — e.g. relocating a
+        // community to a Shelter with no capacity — that the UI's own validation text already
+        // correctly flagged as invalid. SelectTaskChoiceHeadless and OnConfirmButtonClicked already
+        // call ValidateBeforeConfirm for exactly this reason; this brings TryConfirmTask in line.
+        if (!ValidateBeforeConfirm(task, choice, out errorMessage))
             return false;
-        }
 
         string numError;
         if (!ValidateNumericalInputs(out numError)) { errorMessage = numError; return false; }
 
         if (choice != null && (choice.triggersDelivery || choice.immediateDelivery || choice.enableMultipleDeliveries))
-            ToastManager.ShowToast($"Delivery for task '{task.taskTitle}' is added to queue.", ToastType.Info, true);
+            ToastManager.ShowToast($"Delivery for task '{task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true)}' is added to queue.", ToastType.Info, true);
         return CompleteTaskAction(out errorMessage);
     }
 
@@ -1126,7 +1170,7 @@ public class TaskDetailUI : MonoBehaviour
 
         // Validate selected choice if it involves any type of delivery
         if (selectedChoice != null && (selectedChoice.triggersDelivery || selectedChoice.immediateDelivery || selectedChoice.enableMultipleDeliveries))
-            ToastManager.ShowToast($"Delivery for '{currentTask.taskTitle}' queued.", ToastType.Info, true);
+            ToastManager.ShowToast($"Delivery for '{currentTask.ResolvePlaceholders(currentTask.taskTitle, plainFacilityName: true)}' queued.", ToastType.Info, true);
 
         // Check if this is the first time confirming a task
         /*if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstTaskConfirm())
@@ -1199,12 +1243,10 @@ private bool CompleteTaskAction(out string failReason)
 
         if (selectedChoice.immediateDelivery)
         {
-            // MERGE 74304870: resolve the quantity BEFORE executing. ExecuteGeneratorDelivery
-            // mutates destination storage (FoodDeliveryHandler.ExecuteImmediate), which would
-            // change GetFoodNeed()'s answer if resolved afterwards; this snapshot is what
-            // costPerUnit pricing in ApplyChoiceImpacts scales by. Without it that pricing is
-            // dead code -- the merge dropped upstream's only caller, because it landed inside a
-            // method this branch had rewritten.
+            // Resolve the actual quantity BEFORE executing delivery — ExecuteGeneratorDelivery
+            // mutates destination storage (see FoodDeliveryHandler.ExecuteImmediate), which would
+            // change GetFoodNeed()'s result if resolved again afterward. This snapshot is what
+            // costPerUnit-based scaling below uses to price the delivery.
             int? resolvedQuantity = null;
             if (selectedChoice.costPerUnit > 0 && selectedChoice.deliveryCargoType == ResourceType.FoodPacks
                 && FoodDeliveryHandler.Instance != null)
@@ -1212,13 +1254,6 @@ private bool CompleteTaskAction(out string failReason)
                 MonoBehaviour dest = TaskSystem.Instance.FindTriggeringFacility(currentTask);
                 if (dest != null)
                     resolvedQuantity = FoodDeliveryHandler.Instance.ResolveQuantity(selectedChoice, dest);
-            }
-
-            int moved = ExecuteGeneratorDelivery(selectedChoice, immediate: true);
-            if (moved == 0)
-            {
-                failReason = "nothing could be moved (no source, no destination, or no space)";
-                return false;
             }
             ApplyChoiceImpacts(selectedChoice, resolvedQuantity);
             TaskSystem.Instance.CompleteTask(currentTask);
@@ -1232,13 +1267,15 @@ private bool CompleteTaskAction(out string failReason)
                 failReason = "delivery could not be queued (no source with stock, no destination with space, no vehicle, or the need is already covered by inbound deliveries)";
                 return false;
             }
-            ApplyChoiceImpacts(selectedChoice);
-            // CRITICAL: Set to InProgress so the task is tracked!
-            TaskSystem.Instance.SetTaskInProgress(currentTask);
+        }
+        else if (selectedChoice.triggersDelivery)
+        {
+            bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: false) != 0;
+            if (success)
+                ApplyChoiceImpacts(selectedChoice);
         }
         else
         {
-            // Standard choice (Budget/Advisory)
             ApplyChoiceImpacts(selectedChoice);
             TaskSystem.Instance.CompleteTask(currentTask);
         }
@@ -3103,6 +3140,13 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
 
     void ApplyChoiceImpacts(AgentChoice choice, int? resolvedDeliveryQuantity = null)
     {
+        // taskTitle is the raw authored template (e.g. "[facility_name_plain] Flood Damage
+        // Relocation") — resolve it once here so every toast/description built from it below
+        // shows the actual facility name instead of the literal placeholder text.
+        // plainFacilityName: true since none of these destinations (toasts, budget/satisfaction
+        // reason strings) render TextMeshPro rich text links.
+        string resolvedTaskTitle = currentTask.ResolvePlaceholders(currentTask.taskTitle, plainFacilityName: true);
+
         foreach (TaskImpact impact in choice.choiceImpacts)
         {
             switch (impact.impactType)
@@ -3112,13 +3156,13 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                     {
                         if (impact.value > 0)
                         {
-                            SatisfactionAndBudget.Instance.AddSatisfaction(impact.value, $"Task [{currentTask.taskTitle}] satisfaction impact");
-                            ToastManager.ShowToast($"Satisfaction increased by {impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
+                            SatisfactionAndBudget.Instance.AddSatisfaction(impact.value, $"Task [{resolvedTaskTitle}] satisfaction impact");
+                            ToastManager.ShowToast($"Satisfaction increased by {impact.value} due to task completion of [{resolvedTaskTitle}]", ToastType.Info, true);
                         }
                         else
                         {
-                            SatisfactionAndBudget.Instance.RemoveSatisfaction(-impact.value, $"Task [{currentTask.taskTitle}] satisfaction impact");
-                            ToastManager.ShowToast($"Satisfaction decreased by {-impact.value} due to task completion of [{currentTask.taskTitle}]", ToastType.Info, true);
+                            SatisfactionAndBudget.Instance.RemoveSatisfaction(-impact.value, $"Task [{resolvedTaskTitle}] satisfaction impact");
+                            ToastManager.ShowToast($"Satisfaction decreased by {-impact.value} due to task completion of [{resolvedTaskTitle}]", ToastType.Info, true);
                         }
                     }
                     break;
@@ -3144,7 +3188,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                             BudgetAllocationManager.Instance?.ScheduleAllocation(
                                 (int)impactValue,
                                 delayRounds,
-                                $"Task: {currentTask.taskTitle}");
+                                $"Task: {resolvedTaskTitle}");
                             // rounds delayed
                             if (delayRounds > 0){
                                 ToastManager.ShowToast(
@@ -3162,7 +3206,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                             SatisfactionAndBudget.Instance.RemoveBudget(
                                 -(int)impactValue,
                                 choiceCat,
-                                $"Task [{currentTask.taskTitle}] cost");
+                                $"Task [{resolvedTaskTitle}] cost");
                             if (DailyReportData.Instance != null)
                             {
                                 float costToday = -impactValue;
@@ -3393,6 +3437,18 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
             {
                 canPreview = isValid && FoodDeliveryHandler.Instance != null
                     && FoodDeliveryHandler.Instance.PlanSources(currentTask, choice).Count > 0;
+            }
+            else if (choice.deliveryCargoType == ResourceType.Population
+                && (choice.destinationType != DeliveryDestinationType.SpecificBuilding || choice.destinationBuilding == BuildingType.Shelter))
+            {
+                // Shelter/Motel relocation can succeed by splitting across several destinations
+                // (ClientRelocationHandler.Execute), so gating preview on a single destination
+                // holding the FULL amount — like the generic resolver in the else branch below
+                // does — would wrongly hide a valid, executable choice whenever no single shelter
+                // has room but several combined do. isValid already reflects the same
+                // aggregate-capacity check CanExecute/Execute use, so just reuse it.
+                canPreview = isValid && TaskSystem.Instance != null
+                    && TaskSystem.Instance.FindTriggeringFacility(currentTask) != null;
             }
             else
             {

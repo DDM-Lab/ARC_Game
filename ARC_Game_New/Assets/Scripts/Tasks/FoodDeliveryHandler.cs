@@ -70,7 +70,12 @@ public class FoodDeliveryHandler : MonoBehaviour
             }
             if (!atLeastOneKitchenReachable)
             {
-                errorMessage = "All routes from kitchens are blocked by flooding.";
+                // Covers both "no operational kitchen exists on the map at all" (the loop above
+                // never ran) and "kitchens exist but every route to them is flooded" — the loop
+                // can't tell those apart, so the wording names both possibilities instead of
+                // asserting either one specifically (a plain "no accessible kitchen" reads as if
+                // one exists but is merely unreachable, which is wrong when none exists at all).
+                errorMessage = "No kitchen is reachable: either none exist on the map, or every route to one is blocked.";
                 return false;
             }
             if (totalReachableFood <= 0)
