@@ -861,3 +861,48 @@ Upstreaming D2, D3 and D4 would shrink this ledger toward empty and make parity 
 invariant rather than a managed exception list — they are fixes upstream wants anyway. D1 is
 the one that must be handled carefully either way, because the RNG-ordering consequence is
 easy to reintroduce by accident and invisible in review.
+
+---
+
+## D25 — immediate deliveries billed and completed without executing (V4 only, fixed)
+
+**Found by the harness, not by review.** After merging `main-bugfixes` into V4, a 32-seed
+run against `bugfixes-only` came back RNG bit-exact on 32/32 — and budget-exact on **0/32**,
+worst absolute difference 22,000, median worst 7,000. Bit-exact RNG with divergent money is
+the useful signature: it rules out a different number of draws, so the cause has to be a
+deterministic difference in what an action costs or does.
+
+The per-round trace localised it immediately. Seed 1, day 2 segment 1:
+
+```
+BASE  Community02|Community|pop=600|food=500
+CAND  Community02|Community|pop=600|food=400
+```
+
+Budget was still equal at that round and diverged one segment later — the candidate's
+hungrier community resolved a larger quantity on the next food request.
+
+**Cause.** A merge resolution of `TaskDetailUI.CompleteTaskAction` took *ours* on the confirm
+region and reinstated an older shape:
+
+1. the `immediateDelivery` branch never called `ExecuteGeneratorDelivery`, so it resolved the
+   quantity for `costPerUnit` pricing and then ran `ApplyChoiceImpacts` + `CompleteTask`
+   unconditionally — the player paid, the task closed, nothing moved;
+2. the queued branch never called `ApplyChoiceImpacts`, so a queued delivery was never
+   charged and applied no satisfaction — the mirror image of (1);
+3. a second `else if (triggersDelivery)` sat below a condition that already covered it, and
+   could never be reached.
+
+**Resolution.** Restored to `main-bugfixes` semantics: execute first, charge on success.
+`enableMultipleDeliveries` is kept in the queue condition and the dead branch dropped — no
+shipped task asset sets that flag without `triggersDelivery`, so the two conditions select
+the same choices.
+
+**Left alone, report-only.** On a failed immediate delivery the block still falls through to
+`return true` and closes the panel. The manual path shows the user a message, but
+`TryConfirmTask`'s callers — the agent path — are handed a false success. That is upstream's
+behaviour; changing it is a separate decision.
+
+**Lesson worth keeping.** This is the second time a hand-resolved hunk in this one region has
+produced silently wrong economics, and neither time did it fail to compile. Reviewing the
+confirm block by eye is not sufficient; the seeded suite is what catches it.
