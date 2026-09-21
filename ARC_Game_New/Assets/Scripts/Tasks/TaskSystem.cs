@@ -2104,7 +2104,12 @@ public class TaskSystem : MonoBehaviour
                 int actualQuantity = CalculateDeliveryQuantity(choice, source);
                 if (actualQuantity <= 0)
                 {
-                    Debug.LogWarning($"No resources available for delivery from {source.name} for choice: {choice.choiceText}");
+                    // source is deliberately allowed to be null three lines up ("Don't return
+                    // null, continue creating the task"), and CalculateDeliveryQuantity returns
+                    // 0 for a null source on All/Percentage choices — so this branch is exactly
+                    // where source is null, and an unguarded .name threw an NRE that aborted
+                    // task generation for the whole round.
+                    Debug.LogWarning($"No resources available for delivery from {(source != null ? source.name : "<no triggering facility>")} for choice: {choice.choiceText}");
                     // Don't return null, but set a minimum delivery quantity
                     newChoice.deliveryQuantity = 1; // Or keep original quantity
                 }
