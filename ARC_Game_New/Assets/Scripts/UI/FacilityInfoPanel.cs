@@ -164,11 +164,12 @@ public class FacilityInfoPanel : MonoBehaviour
             HideField(foodPackNeedText);       // NEW
             HideField(foodPackConsumedText);   // NEW
             HideField(foodPackScheduledText);  // NEW
-            // TODO: currently unimplemented — will solve this later.
-            // ShowField(capacityText);
-            // SetTextSafe(capacityText, "Clients in casework will leave by themselves once their cases are resolved.");
-            // SetTextColor(capacityText, normalColor);
-            HideField(capacityText);
+
+            ShowField(capacityText);
+            SetTextSafe(capacityText, cs != null && cs.caseworkDeparturesPerRound > 0
+                ? $"Clients in casework leave on their own once their case is resolved ({cs.caseworkDeparturesPerRound} per round)"
+                : "Clients in casework will leave by themselves once their cases are resolved.");
+            SetTextColor(capacityText, normalColor);
             HideField(workersHeaderText);
             HideField(trainedWorkersText);
             HideField(untrainedWorkersText);

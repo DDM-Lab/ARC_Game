@@ -36,6 +36,7 @@ MonoBehaviour:
   facilityStatusTriggers: []
   weatherTriggers:
   - conditionType: 2
+  latestGenerationRound: 0
   requireAllTriggers: 1
   isGlobalTask: 1
   targetFacilityType: 1
@@ -50,14 +51,14 @@ MonoBehaviour:
     isCountdown: 0
     customLabel: 
   agentMessages:
-  - messageText: Meteorology reports intensifying storm conditions. This could overwhelm
+  - messageText: Meteorology reports worsening storm conditions that could overwhelm
       our current resources.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
-  - messageText: I strongly recommend securing additional funding now, before the
-      situation deteriorates further. But remember, higher the amount you request,
-      the longer the wait time.
+  - messageText: "I strongly recommend securing additional funding now, before things
+      get worse. Keep in mind, though: the more you request, the longer you\u2019ll
+      have to wait."
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
@@ -80,6 +81,8 @@ MonoBehaviour:
     deliveryQuantity: 0
     deliveryPercentage: 0
     deliverAll: 0
+    costPerUnit: 0
+    requireFullQuantity: 0
     sourceType: 1
     sourceBuilding: 0
     sourcePrebuilt: 0
@@ -109,6 +112,8 @@ MonoBehaviour:
     deliveryQuantity: 0
     deliveryPercentage: 0
     deliverAll: 0
+    costPerUnit: 0
+    requireFullQuantity: 0
     sourceType: 0
     sourceBuilding: 0
     sourcePrebuilt: 0
@@ -118,35 +123,6 @@ MonoBehaviour:
     destinationPrebuilt: 0
     specificDestinationName: 
     budgetDelayRounds: 4
-    prioritizeNearestSource: 0
-    prioritizeNearestDestination: 0
-  - choiceId: 2
-    choiceText: Wait and see - conserve current budget (add satisfaction)
-    agentReasoning: 
-    choiceImpacts:
-    - impactType: 0
-      value: 5
-      isCountdown: 0
-      customLabel: 
-    isSelected: 0
-    triggersDelivery: 0
-    immediateDelivery: 0
-    deliveryCargoType: 0
-    enableMultipleDeliveries: 0
-    multiDeliveryType: 0
-    quantityType: 0
-    deliveryQuantity: 0
-    deliveryPercentage: 0
-    deliverAll: 0
-    sourceType: 0
-    sourceBuilding: 0
-    sourcePrebuilt: 0
-    specificSourceName: 
-    destinationType: 0
-    destinationBuilding: 0
-    destinationPrebuilt: 0
-    specificDestinationName: 
-    budgetDelayRounds: 0
     prioritizeNearestSource: 0
     prioritizeNearestDestination: 0
   numericalInputs: []
