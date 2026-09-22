@@ -86,6 +86,8 @@ MonoBehaviour:
     deliveryQuantity: 0
     deliveryPercentage: 0
     deliverAll: 0
+    costPerUnit: 0
+    requireFullQuantity: 0
     sourceType: 0
     sourceBuilding: 0
     sourcePrebuilt: 0
@@ -115,6 +117,8 @@ MonoBehaviour:
     deliveryQuantity: 0
     deliveryPercentage: 0
     deliverAll: 0
+    costPerUnit: 0
+    requireFullQuantity: 0
     sourceType: 0
     sourceBuilding: 0
     sourcePrebuilt: 0
@@ -144,6 +148,8 @@ MonoBehaviour:
     deliveryQuantity: 0
     deliveryPercentage: 0
     deliverAll: 0
+    costPerUnit: 0
+    requireFullQuantity: 0
     sourceType: 0
     sourceBuilding: 0
     sourcePrebuilt: 0

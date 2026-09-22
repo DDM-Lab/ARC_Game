@@ -22,7 +22,11 @@ public class BuildingResourceStorage : MonoBehaviour
     public int consumptionRoundInterval = 2; // Consume food every N rounds
     public bool workersConsumeFoodToo = true;
 
-    
+    [Header("Casework Departures (CaseworkSite only)")]
+    [Tooltip("How many clients leave this CaseworkSite on their own each round, once their case is resolved — they are simply removed from the population count, with no destination. 0 disables this (default, so other building types are unaffected).")]
+    public int caseworkDeparturesPerRound = 0;
+
+
     [Header("Debug")]
     public bool showDebugInfo = true;
     
@@ -240,7 +244,30 @@ public class BuildingResourceStorage : MonoBehaviour
         if (newRound <= (GlobalClock.Instance != null ? GlobalClock.Instance.roundsPerDay : 4)) // every real round, incl. the last of the day
         {
             HandlePopulationConsumptionCycle();
+            HandleCaseworkDepartures();
         }
+    }
+
+    /// <summary>
+    /// Clients at a CaseworkSite leave on their own, a fixed number per round, once their case is
+    /// resolved — they are simply removed from the population count (out of the system), with no
+    /// destination or further tracking. Disabled by default (caseworkDeparturesPerRound = 0); set
+    /// it on the Casework prefab's BuildingResourceStorage to enable.
+    /// </summary>
+    void HandleCaseworkDepartures()
+    {
+        if (caseworkDeparturesPerRound <= 0) return;
+        if (GetComponent<Building>()?.GetBuildingType() != BuildingType.CaseworkSite) return;
+
+        int departed = RemoveResource(ResourceType.Population, caseworkDeparturesPerRound);
+        if (departed <= 0) return;
+
+        if (showDebugInfo)
+            Debug.Log($"{gameObject.name}: {departed} client(s) left casework on their own and exited the system.");
+        // LogBuildingStatus, not LogResourceChange (RemoveResource already logs the raw count
+        // change there) — matches ClientStayTracker.TriggerNonCaseworkDeparture's convention for
+        // "clients left a building on their own" events, so both read the same way in the log.
+        GameLogPanel.Instance.LogBuildingStatus($"{departed} client(s) left {gameObject.name} on their own (casework resolved) and exited the system.");
     }
 
     void OnDayChanged(int newDay)

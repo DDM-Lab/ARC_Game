@@ -787,6 +787,7 @@ MonoBehaviour:
   foodPerPersonPerNRounds: 1
   consumptionRoundInterval: 4
   workersConsumeFoodToo: 0
+  caseworkDeparturesPerRound: 10
   showDebugInfo: 1
 --- !u!114 &-9154909141191091179
 MonoBehaviour:
