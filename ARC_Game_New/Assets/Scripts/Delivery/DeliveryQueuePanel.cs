@@ -1,6 +1,8 @@
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
-using System.Collections.Generic;
 
 /// <summary>
 /// Manages the delivery queue panel that lists all pending and active deliveries.
@@ -12,6 +14,7 @@ public class DeliveryQueuePanel : MonoBehaviour
     [Header("Panel References")]
     public GameObject panel;
     public Button toggleButton;
+    [SerializeField] private float displayDuration = 2.5f; // how long panel stays open on row add
 
     [Header("List")]
     public Transform rowContainer;
@@ -23,6 +26,8 @@ public class DeliveryQueuePanel : MonoBehaviour
     public static DeliveryQueuePanel Instance { get; private set; }
 
     private List<GameObject> activeRows = new List<GameObject>();
+
+    private Coroutine autoCloseRoutine;
 
     void Awake()
     {
@@ -38,47 +43,170 @@ public class DeliveryQueuePanel : MonoBehaviour
         if (panel != null)
             panel.SetActive(false);
 
-        SubscribeToDeliveryEvents();
+        SubscribeToEvents();
     }
 
-    void SubscribeToDeliveryEvents()
+
+    void SubscribeToEvents()
     {
-        if (DeliverySystem.Instance == null) return;
-        DeliverySystem.Instance.OnTaskCreated  += _ => RefreshList();
-        DeliverySystem.Instance.OnTaskAssigned += (_, __) => RefreshList();
-        DeliverySystem.Instance.OnTaskCompleted += _ => RefreshList();
+        if (DeliverySystem.Instance != null)
+        {
+            DeliverySystem.Instance.OnTaskCreated += HandleTaskCreated;
+            DeliverySystem.Instance.OnTaskAssigned += HandleTaskAssigned;
+            DeliverySystem.Instance.OnTaskCompleted += HandleTaskCompleted;
+        }
+
+        if (ClientRelocationHandler.Instance != null)
+        {
+            ClientRelocationHandler.Instance.OnRelocationQueued += HandleRelocationQueued;
+            ClientRelocationHandler.Instance.OnRelocationArrived += HandleRelocationArrived;
+        }
+
+        if (DelayedBudgetManager.Instance != null)
+        {
+            DelayedBudgetManager.Instance.OnBudgetQueueChanged += HandleBudgetQueueChanged;
+        }
+
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnDayChanged += _ => HandleQueueChanged();
+        }
+
+        // Rounds are the unit self-walk relocations count down in — refresh every round so
+        // "arrives in N rounds" stays accurate while the panel is open.
+        GlobalClock.OnRoundEnd += HandleQueueChanged;
     }
 
+    private void HandleQueueChanged() => RefreshList();
+    private void HandleTaskCreated(DeliveryTask task) => RefreshList(task);
+    private void HandleTaskAssigned(DeliveryTask task, Vehicle vehicle) => RefreshList();
+    private void HandleTaskCompleted(DeliveryTask task) => RefreshList();
+    private void HandleRelocationQueued(ClientRelocationHandler.PendingRelocation relocation) => RefreshList(relocation);
+    private void HandleRelocationArrived(ClientRelocationHandler.PendingRelocation relocation) => RefreshList();
+    private void HandleBudgetQueueChanged() => RefreshList();
+
+    public void OnItemAdded(object newItem)
+    {
+        RefreshList(newItemToHighlight: newItem);
+    }
     public void TogglePanel()
     {
         if (panel == null) return;
         bool next = !panel.activeSelf;
         panel.SetActive(next);
-        if (next) RefreshList();
+
+        GameLogPanel.Instance?.LogUIInteraction($"Delivery queue panel {(next ? "expanded" : "collapsed")}");
+
+        //if (next) RefreshList();
+        if (next)
+        {
+            RefreshList();
+        }
+        else
+        {
+            DeliveryRouteVisualizer visualizer = FindObjectOfType<DeliveryRouteVisualizer>();
+            if (visualizer != null)
+            {
+                visualizer.HideRoute();
+            }
+        }
     }
 
-    public void RefreshList()
+    public void RefreshList(object newItemToHighlight = null)
     {
+        if (newItemToHighlight != null)
+        {
+            TriggerAutoOpenSequence();
+        }
         ClearRows();
 
         if (DeliverySystem.Instance == null) return;
 
         var pending = DeliverySystem.Instance.GetPendingTasks();
         var active  = DeliverySystem.Instance.GetActiveTasks();
+        var budgets = DelayedBudgetManager.Instance != null ? DelayedBudgetManager.Instance.activeDelayedBudgets : new List<DelayedBudgetItem>();
+        var relocations = ClientRelocationHandler.Instance != null ? ClientRelocationHandler.Instance.GetPendingRelocations() : new List<ClientRelocationHandler.PendingRelocation>();
 
-        bool any = pending.Count > 0 || active.Count > 0;
+        var requests = WorkerRequestSystem.Instance != null ? WorkerRequestSystem.Instance.GetActiveRequestTasks().FindAll(r => !r.isCompleted) : new List<WorkerRequestSystem.RequestTask>();
+        var trainings = WorkerTrainingSystem.Instance != null ? WorkerTrainingSystem.Instance.GetActiveTrainingTasks().FindAll(t => !t.isCompleted) : new List<WorkerTrainingSystem.TrainingTask>();
+
+        // Worker recruitment/training rows and self-walk relocations (spawned below) are pending
+        // actions too, so the empty-state label must account for them.
+        bool any = pending.Count > 0 || active.Count > 0 || budgets.Count > 0
+                   || requests.Count > 0 || trainings.Count > 0 || relocations.Count > 0;
 
         if (emptyLabel != null)
             emptyLabel.SetActive(!any);
 
         foreach (var delivery in active)
-            SpawnRow(delivery, isPending: false);
+        {
+            bool isNew = (newItemToHighlight is DeliveryTask t && t.taskId == delivery.taskId);
+            SpawnRow(delivery, isPending: false, shouldHighlight: isNew);
+        }
 
         foreach (var delivery in pending)
-            SpawnRow(delivery, isPending: true);
+        {
+            bool isNew = (newItemToHighlight is DeliveryTask t && t.taskId == delivery.taskId);
+            SpawnRow(delivery, isPending: true, shouldHighlight: isNew);
+        }
+
+        foreach (var budget in budgets)
+        {
+            bool isNew = (newItemToHighlight is DelayedBudgetItem b && b.id == budget.id);
+            SpawnBudgetRow(budget, shouldHighlight: isNew);
+        }
+
+        foreach (var relocation in relocations)
+        {
+            bool isNew = (newItemToHighlight is ClientRelocationHandler.PendingRelocation p && p == relocation);
+            SpawnClientRelocationRow(relocation, shouldHighlight: isNew);
+        }
+
+        foreach (var request in requests)
+        {
+            bool isNew = (newItemToHighlight is WorkerRequestSystem.RequestTask r && r == request);
+            SpawnWorkerRequestRow(request, shouldHighlight: isNew);
+        }
+
+        foreach (var training in trainings)
+        {
+            bool isNew = (newItemToHighlight is WorkerTrainingSystem.TrainingTask tr && tr == training);
+            SpawnWorkerTrainingRow(training, shouldHighlight: isNew);
+        }
+
+        if (panel != null && panel.activeSelf)
+        {
+            string activeSummary  = active.Count  > 0 ? string.Join(";", active.Select(d => $"{d.quantity}x{d.cargoType}:{d.sourceBuilding?.name}->{d.destinationBuilding?.name}"))  : "none";
+            string pendingSummary = pending.Count > 0 ? string.Join(";", pending.Select(d => $"{d.quantity}x{d.cargoType}:{d.sourceBuilding?.name}->{d.destinationBuilding?.name}")) : "none";
+            string budgetSummary  = budgets.Count > 0 ? string.Join(";", budgets.Select(b => $"{b.sourceTaskTitle}:{b.amount:+0;-0}in{b.roundsRemaining}rd")) : "none";
+            string relocationSummary = relocations.Count > 0 ? string.Join(";", relocations.Select(r => $"{r.quantity}xclients:{r.source?.name}->{r.destination?.name}in{r.roundsRemaining}rd")) : "none";
+
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Delivery queue displayed | active={active.Count} | pending={pending.Count} | " +
+                $"delayed_budgets={budgets.Count} | worker_requests={requests.Count} | worker_trainings={trainings.Count} | relocations={relocations.Count}" +
+                $" | active_deliveries=[{activeSummary}] | pending_deliveries=[{pendingSummary}] | budgets=[{budgetSummary}] | relocations=[{relocationSummary}]");
+        }
     }
 
-    void SpawnRow(DeliveryTask delivery, bool isPending)
+    void SpawnBudgetRow(DelayedBudgetItem budget, bool shouldHighlight)
+    {
+        if (rowPrefab == null || rowContainer == null) return;
+
+        GameObject rowObj = Instantiate(rowPrefab, rowContainer);
+        activeRows.Add(rowObj);
+
+        DeliveryQueueRow row = rowObj.GetComponent<DeliveryQueueRow>();
+        if (row != null)
+        {
+            row.InitializeDelayedBudget(budget);
+            if (shouldHighlight)
+            {
+                row.HighlightRow(displayDuration);
+            }
+        }
+    }
+
+    void SpawnRow(DeliveryTask delivery, bool isPending, bool shouldHighlight)
     {
         if (rowPrefab == null || rowContainer == null) return;
 
@@ -90,8 +218,80 @@ public class DeliveryQueuePanel : MonoBehaviour
 
         Vehicle vehicle = isPending ? null : DeliverySystem.Instance.GetVehicleForTask(delivery.taskId);
         row.Initialize(delivery, vehicle, isPending);
+
+        if (shouldHighlight)
+        {
+            row.HighlightRow(displayDuration);
+        }
     }
 
+    void SpawnClientRelocationRow(ClientRelocationHandler.PendingRelocation relocation, bool shouldHighlight)
+    {
+        if (rowPrefab == null || rowContainer == null) return;
+        GameObject rowObj = Instantiate(rowPrefab, rowContainer);
+        activeRows.Add(rowObj);
+
+        DeliveryQueueRow row = rowObj.GetComponent<DeliveryQueueRow>();
+        if (row != null)
+        {
+            row.InitializeClientRelocation(relocation);
+            if (shouldHighlight) row.HighlightRow(displayDuration);
+        }
+    }
+
+    void SpawnWorkerRequestRow(WorkerRequestSystem.RequestTask request, bool shouldHighlight)
+    {
+        if (rowPrefab == null || rowContainer == null) return;
+        GameObject rowObj = Instantiate(rowPrefab, rowContainer);
+        activeRows.Add(rowObj);
+
+        DeliveryQueueRow row = rowObj.GetComponent<DeliveryQueueRow>();
+        if (row != null)
+        {
+            row.InitializeWorkerRequest(request);
+            if (shouldHighlight) row.HighlightRow(displayDuration);
+        }
+    }
+
+    void SpawnWorkerTrainingRow(WorkerTrainingSystem.TrainingTask training, bool shouldHighlight)
+    {
+        if (rowPrefab == null || rowContainer == null) return;
+        GameObject rowObj = Instantiate(rowPrefab, rowContainer);
+        activeRows.Add(rowObj);
+
+        DeliveryQueueRow row = rowObj.GetComponent<DeliveryQueueRow>();
+        if (row != null)
+        {
+            row.InitializeWorkerTraining(training);
+            if (shouldHighlight) row.HighlightRow(displayDuration);
+        }
+    }
+
+    /// <summary>
+    /// Opens the panel when a row is spawned and automatically closes it after displayDuration seconds.
+    /// </summary>
+    private void TriggerAutoOpenSequence()
+    {
+        if (panel != null && !panel.activeSelf)
+        {
+            panel.SetActive(true);
+        }
+
+        if (autoCloseRoutine != null)
+            StopCoroutine(autoCloseRoutine);
+
+        autoCloseRoutine = StartCoroutine(AutoCloseSequence());
+    }
+
+    private IEnumerator AutoCloseSequence()
+    {
+        yield return new WaitForSecondsRealtime(displayDuration);
+
+        if (panel != null)
+            panel.SetActive(false);
+
+        autoCloseRoutine = null;
+    }
     void ClearRows()
     {
         foreach (var row in activeRows)
@@ -101,9 +301,24 @@ public class DeliveryQueuePanel : MonoBehaviour
 
     void OnDestroy()
     {
-        if (DeliverySystem.Instance == null) return;
-        DeliverySystem.Instance.OnTaskCreated  -= _ => RefreshList();
-        DeliverySystem.Instance.OnTaskAssigned -= (_, __) => RefreshList();
-        DeliverySystem.Instance.OnTaskCompleted -= _ => RefreshList();
+        GlobalClock.OnRoundEnd -= HandleQueueChanged;
+
+        if (DeliverySystem.Instance != null)
+        {
+            DeliverySystem.Instance.OnTaskCreated  -= HandleTaskCreated;
+            DeliverySystem.Instance.OnTaskAssigned -= HandleTaskAssigned;
+            DeliverySystem.Instance.OnTaskCompleted -= HandleTaskCompleted;
+        }
+
+        if (ClientRelocationHandler.Instance != null)
+        {
+            ClientRelocationHandler.Instance.OnRelocationQueued -= HandleRelocationQueued;
+            ClientRelocationHandler.Instance.OnRelocationArrived -= HandleRelocationArrived;
+        }
+
+        if (DelayedBudgetManager.Instance != null)
+        {
+            DelayedBudgetManager.Instance.OnBudgetQueueChanged -= HandleBudgetQueueChanged;
+        }
     }
 }

@@ -14,6 +14,7 @@ public class DailyReportData : MonoBehaviour
     [Header("Daily Tracking")]
     private float dayStartBudget;
     private float dayStartSatisfaction;
+    private float dayStartEfficiency;   
     private int dayStartPopulation;
     private int currentDayNumber = 1;
     private bool dayStartBudgetRecorded = false;
@@ -28,7 +29,7 @@ public class DailyReportData : MonoBehaviour
     private List<DeliveryTask> todayCompletedDeliveries = new List<DeliveryTask>();
     private int todayFoodProduced = 0;
     private int todayFoodDelivered = 0;
-    private int todayFoodConsumed = 0;
+    // private int todayFoodConsumed = 0; // Reserved for future use
     private int todayFoodWasted = 0;
     private int todayExpiredFood = 0;
     private int todayNewArrivals = 0;
@@ -36,10 +37,82 @@ public class DailyReportData : MonoBehaviour
     private int todayBuildingsConstructed = 0;
     private float todayTaskCosts = 0f;
     private float todayBudgetReceived = 0f;
-    
+
+    // receipt vars
+    private float todayKitchenOpenCost = 0f;
+    private float todayShelterOpenCost = 0f;
+    private float todayCaseworkOpenCost = 0f;
+    private float todayFastFoodCost = 0f;
+    private float todayTransportCost = 0f;
+    private float todayLodgingCost = 0f;
+    private float todayWorkerRequestCost = 0f;
+    private float todayWorkerTrainingCost = 0f;
+
+    private int todayWorkersReleased = 0;
+
+    private int todayLodgingRequested = 0;
+    private int todayLodgingSatisfied = 0;
+    private int todayCaseworkRequestedNew = 0;
+    private int todayCaseworkSatisfied = 0;
+
+    [Header("Score Assumptions")]
+    public int assumedTotalWorkerPoolSize = 40;
+    public float maxEmergencyFunding = 600000f;
+
     // Track what we've already processed
     private HashSet<int> processedTaskIds = new HashSet<int>();
+
+    //NEW
+    // =========================================================================
+    // Cummulative Tracked Vars
+    // =========================================================================
+
+    // Mainly Scores
+    [Header("Overall metrics")]
+    private int cumulativeRoundsElapsed = 0;  //here
+
+    [Header("Cumulative Food Satisfaction + Food Waste")]
+    private int cumulativeFoodPacksConsumedByClients = 0;  // record
+    private int cumulativeFoodPacksNeededByClients = 0;    // record
+    private int cumulativeFoodPacksWasted = 0;            // record
+
+    // Communities have no consumption rate — their demand is the sum of food-request task
+    // quantities generated for them, tracked separately from the consumption-rate "clients" above.
+    private int todayCommunityFoodDemand = 0;
+    private int cumulativeCommunityFoodDemand = 0;
+    private int todayCommunityFoodUsed = 0;
+    private Dictionary<string, int> todayCommunityFoodDemandByFacility = new Dictionary<string, int>();
+    private Dictionary<string, int> todayCommunityFoodUsedByFacility = new Dictionary<string, int>();
+
+    private int todayFoodNeedStartOfDay = 0;
+    private int todayFoodNeedRound3 = 0;
+
+
+
+    [Header("Cumulative Lodging")]
+    private int cumulativeLodgingNightsConsumed = 0; //here
+    private int cumulativeLodgingNightsNeeded = 0;  //here
+
+
+    [Header("Cumulative Worker Use")]
+    private int cumulativeIdleWorkerRounds = 0; //here
+    private int cumulativeWorkingWorkerRounds = 0; //here
+    private int cumulativeTrainingWorkerRounds = 0; //here
+    private int cumulativeWorkerPoolRounds = 0; 
     
+
+    [Header("Cumulative - Casework")]
+    private int cumulativeClientRoundsAwaitingCasework = 0; // here
+    private int cumulativeClientsRequestedCasework = 0; //here
+
+    // Mainly Cost-eff
+    [Header("Cumulative - Cost-Efficiency Spend")] //record all
+    private float cumulativeFoodSpend = 0f;
+    private float cumulativeLodgingSpend = 0f;
+    private float cumulativeWorkerRequestCost = 0f;
+    private float cumulativeWorkerTrainingCost = 0f;
+    //END NEW
+
     // Singleton
     public static DailyReportData Instance { get; private set; }
     
@@ -88,14 +161,37 @@ public class DailyReportData : MonoBehaviour
             taskSystem.OnTaskCreated += OnTaskCreated;
         }
         
-        // FIX: Only subscribe to OnSimulationStarted (for food production tracking).
-        // REMOVED OnDayChanged subscription — see PrepareForNewDay() comments.
+        //NEW
+        GlobalClock.OnRoundEnd += AccumulateRoundMetrics;
+
+        if (ClientStayTracker.Instance != null)
+            ClientStayTracker.Instance.OnCaseworkRequested += OnCaseworkRequested;
+
         if (GlobalClock.Instance != null)
         {
-            GlobalClock.Instance.OnSimulationStarted += OnRoundStarted;
+            GlobalClock.Instance.OnDayChanged += OnDayChangedForLodgingNights;
+            GlobalClock.Instance.OnTimeSegmentChanged += CaptureRound3FoodNeed; // NEW
         }
+        //END NEW
     }
-    
+
+    //NEW
+    void OnDestroy()
+    {
+        
+        if (ClientStayTracker.Instance != null)
+            ClientStayTracker.Instance.OnCaseworkRequested -= OnCaseworkRequested;
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.OnRoundEnd -= AccumulateRoundMetrics;
+            GlobalClock.Instance.OnDayChanged -= OnDayChangedForLodgingNights;
+            GlobalClock.Instance.OnTimeSegmentChanged -= CaptureRound3FoodNeed; // NEW
+        }
+
+    }
+    //END NEW
+
+
     void SyncWithExistingTasks()
     {
         if (taskSystem == null) return;
@@ -137,15 +233,35 @@ public class DailyReportData : MonoBehaviour
         
         Debug.Log($"After sync - Created: {todayCreatedTasks.Count}, Completed: {todayCompletedTasks.Count}, Expired: {todayExpiredTasks.Count}");
     }
-    
+
+    //void RecordDayStartMetrics()
+    //{
+    //    if (budgetSystem != null)
+    //    {
+    //        dayStartBudget = budgetSystem.GetCurrentBudget();
+    //        dayStartSatisfaction = budgetSystem.GetCurrentSatisfaction();
+    //        dayStartEfficiency = budgetSystem.GetCurrentEfficiency();   
+    //        dayStartBudgetRecorded = true;
+    //        Debug.Log($"Recorded day start budget: {dayStartBudget}, satisfaction: {dayStartSatisfaction}, efficiency: {dayStartEfficiency}");
+    //    }
+    //    else
+    //    {
+    //        dayStartBudgetRecorded = false;
+    //        Debug.LogWarning("budgetSystem null during RecordDayStartMetrics - will retry in GenerateDailyReport");
+    //    }
+    //    dayStartPopulation = CalculateTotalPopulation();
+    //    todayFoodProduced = CalculateKitchenProductionCapacity();
+    //}
+
     void RecordDayStartMetrics()
     {
         if (budgetSystem != null)
         {
             dayStartBudget = budgetSystem.GetCurrentBudget();
             dayStartSatisfaction = budgetSystem.GetCurrentSatisfaction();
+            dayStartEfficiency = budgetSystem.GetCurrentEfficiency();
             dayStartBudgetRecorded = true;
-            Debug.Log($"Recorded day start budget: {dayStartBudget}, satisfaction: {dayStartSatisfaction}");
+            Debug.Log($"Recorded day start budget: {dayStartBudget}, satisfaction: {dayStartSatisfaction}, efficiency: {dayStartEfficiency}");
         }
         else
         {
@@ -153,11 +269,52 @@ public class DailyReportData : MonoBehaviour
             Debug.LogWarning("budgetSystem null during RecordDayStartMetrics - will retry in GenerateDailyReport");
         }
         dayStartPopulation = CalculateTotalPopulation();
+        todayFoodProduced = CalculateKitchenProductionCapacity();
+        todayFoodNeedStartOfDay = SumShelterMotelFoodDemand(); // NEW
     }
-    
+
+    int SumShelterMotelFoodDemand()
+    {
+        int total = 0;
+        foreach (var b in FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Shelter))
+        {
+            var s = b.GetComponent<BuildingResourceStorage>();
+            if (s == null) continue;
+            int people = s.GetResourceAmount(ResourceType.Population) + (s.workersConsumeFoodToo ? b.GetAssignedWorkforce() : 0);
+            total += people * s.foodPerPersonPerNRounds;
+        }
+        foreach (var pb in FindObjectsOfType<PrebuiltBuilding>().Where(p => p.GetPrebuiltType() == PrebuiltBuildingType.Motel))
+        {
+            var s = pb.GetResourceStorage();
+            if (s == null) continue;
+            total += s.GetResourceAmount(ResourceType.Population) * s.foodPerPersonPerNRounds;
+        }
+        return total;
+    }
+
+    void CaptureRound3FoodNeed(int newSegment)
+    {
+        if (newSegment == 2) // 0 idx
+            todayFoodNeedRound3 = SumShelterMotelFoodDemand();
+    }
+
+    public int GetTodayFoodNeeded() => todayFoodNeedStartOfDay + todayFoodNeedRound3 + GetTodayCommunityFoodDemand();
+
+    public int GetTodayFoodConsumedTotal()
+    {
+        int total = GetTodayCommunityFoodUsed();
+        foreach (var s in FindObjectsOfType<BuildingResourceStorage>())
+            total += s.GetTodayFoodPacksConsumed();
+        return total;
+    }
+
+    public float GetDayStartSatisfaction() => dayStartSatisfaction;
+    public float GetDayStartEfficiency() => dayStartEfficiency;
+
+
+
     void OnTaskCompleted(GameTask task)
     {
-        // No processedTaskIds check here — a task can be both created and completed same day
         if (!todayCompletedTasks.Any(t => t.taskId == task.taskId))
         {
             todayCompletedTasks.Add(task);
@@ -182,11 +339,6 @@ public class DailyReportData : MonoBehaviour
             todayCreatedTasks.Add(task);
             processedTaskIds.Add(task.taskId);
         }
-    }
-    
-    void OnRoundStarted()
-    {
-        TrackFoodProduction();
     }
     
     public void PrepareForNewDay()
@@ -220,7 +372,7 @@ public class DailyReportData : MonoBehaviour
         processedTaskIds.Clear();
         todayFoodProduced = 0;
         todayFoodDelivered = 0;
-        todayFoodConsumed = 0;
+        // todayFoodConsumed = 0; // Reserved for future use
         todayFoodWasted = 0;
         todayExpiredFood = 0;
         todayNewArrivals = 0;
@@ -228,12 +380,786 @@ public class DailyReportData : MonoBehaviour
         todayBuildingsConstructed = 0;
         todayTaskCosts = 0f;
         todayBudgetReceived = 0f;
+
+        //receipt
+        todayKitchenOpenCost = 0f;
+        todayShelterOpenCost = 0f;
+        todayCaseworkOpenCost = 0f;
+        todayFastFoodCost = 0f;
+        todayTransportCost = 0f;
+        todayLodgingCost = 0f;
+        todayWorkerRequestCost = 0f;
+        todayWorkerTrainingCost = 0f;
+
+        todayWorkersReleased = 0;
+        //todayCommunityFoodDemand = 0;
+        todayCommunityFoodDemand = 0;
+        todayCommunityFoodUsed = 0;
+        todayCommunityFoodDemandByFacility.Clear();
+        todayCommunityFoodUsedByFacility.Clear();
+        todayFoodNeedRound3 = 0;
+
+        todayLodgingRequested = 0;
+        todayLodgingSatisfied = 0;
+
+        todayCaseworkRequestedNew = 0;
+        todayCaseworkSatisfied = 0;
     }
+
+    //NEW
+    // =========================================================================
+    // CUMULATIVE ROUND-LEVEL ACCUMULATION
+    // =========================================================================
+    void AccumulateRoundMetrics()
+    {
+        if (workerSystem == null) workerSystem = FindObjectOfType<WorkerSystem>();
+        if (workerSystem != null)
+        {
+            var stats = workerSystem.GetWorkerStatistics();
+            int idle = stats.trainedFree + stats.untrainedFree;
+            int working = stats.trainedWorking + stats.untrainedWorking;
+            int training = stats.untrainedTraining;
+            int total = stats.GetTotalWorkers();
+
+            cumulativeIdleWorkerRounds += idle;
+            cumulativeWorkingWorkerRounds += working;
+            cumulativeTrainingWorkerRounds += training;
+            cumulativeWorkerPoolRounds += total;
+        }
+
+        cumulativeRoundsElapsed++;
+
+        if (ClientStayTracker.Instance != null)
+        {
+            foreach (var group in ClientStayTracker.Instance.clientGroups)
+            {
+                if (group.clientsWithCaseworkNeed > 0 && !group.hasDeparted)
+                    cumulativeClientRoundsAwaitingCasework += group.clientsWithCaseworkNeed;
+            }
+        }
+
+        RecalcWorkerSatisfaction();
+        RecalcWorkerEfficiency();   
+        RecalcCaseworkSatisfaction();
+    }
+
+    void OnCaseworkRequested(ClientGroup group)
+    {
+        cumulativeClientsRequestedCasework += group.clientsWithCaseworkNeed;
+        todayCaseworkRequestedNew += group.clientsWithCaseworkNeed; // NEW
+        RecalcCaseworkSatisfaction();
+    }
+
+    void OnDayChangedForLodgingNights(int newDay)
+    {
+        int housedTonight = 0;
+        if (ClientStayTracker.Instance != null)
+        {
+            housedTonight = ClientStayTracker.Instance.clientGroups.Sum(g => g.clientCount);
+            cumulativeLodgingNightsConsumed += housedTonight;
+        }
+
+        if (taskSystem != null)
+        {
+            int neededTonight = taskSystem.activeTasks
+                .Where(t => t.taskTag == TaskTag.Lodging)
+                .SelectMany(t => t.impacts)
+                .Where(i => i.impactType == ImpactType.Clients)
+                .Sum(i => i.value);
+
+            cumulativeLodgingNightsNeeded += housedTonight + neededTonight;
+        }
+
+        RecalcLodgingSatisfaction();
+        RecalcLodgingEfficiency();
+    }
+
+    public void RecordFoodConsumptionCumulative(int consumed, int needed)
+    {
+        cumulativeFoodPacksConsumedByClients += consumed;
+        cumulativeFoodPacksNeededByClients += needed;
+        RecalcFoodSatisfaction();
+        RecalcFoodEfficiency();
+    }
+
+    public void RecordFoodWasteCumulative(int amount)
+    {
+        cumulativeFoodPacksWasted += amount;
+    }
+
+
+    public void RecordFoodSpendCumulative(float amount)
+    {
+        cumulativeFoodSpend += amount;
+        RecalcFoodEfficiency();
+    }
+
+    public void RecordLodgingSpendCumulative(float amount)
+    {
+        cumulativeLodgingSpend += amount;
+        RecalcLodgingEfficiency();
+
+    }
+
+    public void RecordWorkerRequestCostCumulative(float amount)
+    {
+        cumulativeWorkerRequestCost += amount;
+        RecalcWorkerEfficiency();
+    }
+
+    public void RecordWorkerTrainingCostCumulative(float amount)
+    {
+        cumulativeWorkerTrainingCost += amount;
+        RecalcWorkerEfficiency();
+    }
+
+
+    public void RecordCommunityFoodDemand(int amount)
+    {
+        todayCommunityFoodDemand += amount;
+        cumulativeCommunityFoodDemand += amount;
+    }
+
+    public void RecordCommunityFoodDemand(string facilityName, int amount)
+    {
+        RecordCommunityFoodDemand(amount); 
+        if (string.IsNullOrEmpty(facilityName)) return;
+        todayCommunityFoodDemandByFacility.TryGetValue(facilityName, out int existing);
+        todayCommunityFoodDemandByFacility[facilityName] = existing + amount;
+    }
+
+    public void RecordCommunityFoodUsedToday(string facilityName, int amount)
+    {
+        todayCommunityFoodUsed += amount;
+        if (string.IsNullOrEmpty(facilityName)) return;
+        todayCommunityFoodUsedByFacility.TryGetValue(facilityName, out int existing);
+        todayCommunityFoodUsedByFacility[facilityName] = existing + amount;
+    }
+
+    public int GetTodayCommunityFoodDemand() => todayCommunityFoodDemand;
+    public int GetCumulativeCommunityFoodDemand() => cumulativeCommunityFoodDemand;
+    public int GetTodayCommunityFoodUsed() => todayCommunityFoodUsed;
+
+    public int GetTodayCommunityFoodDemandForFacility(string facilityName) =>
+        todayCommunityFoodDemandByFacility.TryGetValue(facilityName, out int v) ? v : 0;
+
+    public int GetTodayCommunityFoodUsedForFacility(string facilityName) =>
+        todayCommunityFoodUsedByFacility.TryGetValue(facilityName, out int v) ? v : 0;
+
+    public void RecordLodgingRequestedToday(int amount) => todayLodgingRequested += amount;
+    public void RecordLodgingSatisfiedToday(int amount) => todayLodgingSatisfied += amount;
+    public int GetTodayLodgingRequested() => todayLodgingRequested;
+    public int GetTodayLodgingSatisfied() => todayLodgingSatisfied;
+
+    public void RecordCaseworkSatisfiedToday(int amount) => todayCaseworkSatisfied += amount;
+    public int GetTodayCaseworkRequestedNew() => todayCaseworkRequestedNew;
+    public int GetTodayCaseworkSatisfied() => todayCaseworkSatisfied;
+
     
+
+    public int GetCumulativeFoodPacksConsumedByClients() => cumulativeFoodPacksConsumedByClients;
+    public int GetCumulativeFoodPacksNeededByClients() => cumulativeFoodPacksNeededByClients;
+    public int GetCumulativeFoodPacksWasted() => cumulativeFoodPacksWasted;
+    public int GetCumulativeIdleWorkerRounds() => cumulativeIdleWorkerRounds;
+    public int GetCumulativeWorkingWorkerRounds() => cumulativeWorkingWorkerRounds;
+    public int GetCumulativeTrainingWorkerRounds() => cumulativeTrainingWorkerRounds;
+    public int GetCumulativeWorkerPoolRounds() => cumulativeWorkerPoolRounds;
+    public int GetCumulativeClientRoundsAwaitingCasework() => cumulativeClientRoundsAwaitingCasework;
+    public int GetCumulativeClientsRequestedCasework() => cumulativeClientsRequestedCasework;
+    public float GetCumulativeFoodSpend() => cumulativeFoodSpend;
+    public float GetCumulativeLodgingSpend() => cumulativeLodgingSpend;
+    public float GetCumulativeWorkerRequestCost() => cumulativeWorkerRequestCost;
+    public float GetCumulativeWorkerTrainingCost() => cumulativeWorkerTrainingCost;
+
+    public int GetCumulativeLodgingNightsConsumed() => cumulativeLodgingNightsConsumed;
+    public int GetCumulativeLodgingNightsNeeded() => cumulativeLodgingNightsNeeded;   
+    public int GetCumulativeRoundsElapsed() => cumulativeRoundsElapsed;
+
+    // receipt 
+    public void RecordKitchenOpenCostToday(float amt) => todayKitchenOpenCost += amt;
+    public void RecordShelterOpenCostToday(float amt) => todayShelterOpenCost += amt;
+    public void RecordCaseworkOpenCostToday(float amt) => todayCaseworkOpenCost += amt;
+    public void RecordFastFoodSpendToday(float amt) => todayFastFoodCost += amt;
+    public void RecordTransportCostToday(float amt) => todayTransportCost += amt;
+    public void RecordLodgingCostToday(float amt) => todayLodgingCost += amt;
+    public void RecordWorkerRequestCostToday(float amt) => todayWorkerRequestCost += amt;
+    public void RecordWorkerTrainingCostToday(float amt) => todayWorkerTrainingCost += amt;
+
+    public float GetTodayKitchenOpenCost() => todayKitchenOpenCost;
+    public float GetTodayShelterOpenCost() => todayShelterOpenCost;
+    public float GetTodayCaseworkOpenCost() => todayCaseworkOpenCost;
+    public float GetTodayFastFoodCost() => todayFastFoodCost;
+    public float GetTodayTransportCost() => todayTransportCost;
+    public float GetTodayLodgingCost() => todayLodgingCost;
+    public float GetTodayWorkerRequestCost() => todayWorkerRequestCost;
+    public float GetTodayWorkerTrainingCost() => todayWorkerTrainingCost;
+    //END NEW
+
+    // new 
+    public void RecordWorkersReleasedToday(int count) => todayWorkersReleased += count;
+    public int GetTodayWorkersReleased() => todayWorkersReleased;
+
+    public int GetCurrentWorkingWorkers()
+    {
+        if (workerSystem == null) workerSystem = FindObjectOfType<WorkerSystem>();
+        if (workerSystem == null) return 0;
+        var stats = workerSystem.GetWorkerStatistics();
+        return stats.trainedWorking + stats.untrainedWorking;
+    }
+
+    public int GetCurrentWaitingWorkers()
+    {
+        if (workerSystem == null) workerSystem = FindObjectOfType<WorkerSystem>();
+        if (workerSystem == null) return 0;
+        var stats = workerSystem.GetWorkerStatistics();
+        return stats.trainedNotArrived + stats.untrainedNotArrived;
+    }
+
+    public int GetCurrentUnassignedWorkers()
+    {
+        if (workerSystem == null) workerSystem = FindObjectOfType<WorkerSystem>();
+        if (workerSystem == null) return 0;
+        var stats = workerSystem.GetWorkerStatistics();
+        return stats.trainedFree + stats.untrainedFree;
+    }
+
+    public int GetCurrentTrainingWorkers()
+    {
+        if (workerSystem == null) workerSystem = FindObjectOfType<WorkerSystem>();
+        if (workerSystem == null) return 0;
+        var stats = workerSystem.GetWorkerStatistics();
+        return stats.untrainedTraining;
+    }
+
+    public int GetCurrentPopulationNeedingLodging()
+    {
+        int total = 0;
+        PrebuiltBuilding[] communities = FindObjectsOfType<PrebuiltBuilding>()
+            .Where(pb => pb.GetPrebuiltType() == PrebuiltBuildingType.Community).ToArray();
+        foreach (var c in communities)
+            total += c.GetCurrentPopulation();
+        return total;
+    }
+
+    public int GetCurrentClientsNeedingCasework()
+    {
+        if (ClientStayTracker.Instance == null) return 0;
+        return ClientStayTracker.Instance.clientGroups.Sum(g => g.clientsWithCaseworkNeed);
+    }
+
+    public int GetCurrentFoodPacksInTransit()
+    {
+        if (DeliverySystem.Instance == null) return 0;
+        return DeliverySystem.Instance.GetActiveTasks()
+            .Where(t => t.cargoType == ResourceType.FoodPacks)
+            .Sum(t => t.quantity);
+    }
+
+    public int GetCurrentPeopleInTransitToCasework()
+    {
+        // Clients walk to casework on their own (no Vehicle/DeliveryTask involved) — count them separately.
+        int walking = ClientRelocationHandler.Instance != null
+            ? ClientRelocationHandler.Instance.GetPendingQuantityToBuildingType(BuildingType.CaseworkSite)
+            : 0;
+
+        int vehicled = 0;
+        if (DeliverySystem.Instance != null)
+        {
+            vehicled = DeliverySystem.Instance.GetActiveTasks()
+                .Where(t => t.cargoType == ResourceType.Population)
+                .Where(t =>
+                {
+                    Building b = t.destinationBuilding as Building;
+                    return b != null && b.GetBuildingType() == BuildingType.CaseworkSite;
+                })
+                .Sum(t => t.quantity);
+        }
+
+        return walking + vehicled;
+    }
+
+    float GetMaxPossibleBudget()
+    {
+        var gdm = GameDataManager.Instance;
+        if (gdm == null)
+        {
+            return maxEmergencyFunding;
+        }
+        else
+        {
+            int days = gdm != null ? gdm.InitialGameDays : 1;
+            return gdm.InitialBudget + (gdm.InitialDailyBudgetAddition * (days-1)) + (maxEmergencyFunding*(days-1));
+        }
+            
+    }
+
+    // end new
+
+    // score move //
+
+    public float S_Food()
+    {
+        var d = this;
+        int needed = d.GetCumulativeFoodPacksNeededByClients();
+        if (needed <= 0) return 0f;
+        return Mathf.Clamp01((float)d.GetCumulativeFoodPacksConsumedByClients() / needed);
+    }
+
+    public float S_Lodging()
+    {
+        var d = this;
+        int needed = d.GetCumulativeLodgingNightsNeeded();
+        if (needed <= 0) return 0f;
+        return Mathf.Clamp01((float)d.GetCumulativeLodgingNightsConsumed() / needed);
+    }
+
+    //public float S_WorkerUse()
+    //{
+    //    var d = this;
+    //    int roundsElapsed = d.GetCumulativeRoundsElapsed();
+    //    if (roundsElapsed <= 0) return 0f;
+
+    //    // PARITY BUILD (ledger D17): upstream's fixed assumed headcount, not our live
+    //    // pool-rounds (BUG_REPORTS B23). With a pool far below the assumed size the ratios span
+    //    // a sliver of their range and above it they exceed 1 -- our fix is right, and it is also
+    //    // why this build reports no "Worker use progress" delta at all on day 1 where upstream
+    //    // reports +63.3.
+    //    //float denom = d.GetCumulativeWorkerPoolRounds();
+    //    float denom = assumedTotalWorkerPoolSize * roundsElapsed;
+    //    if (denom <= 0) return 0f;
+
+    //    float idleRatio = Mathf.Clamp01(d.GetCumulativeIdleWorkerRounds() / denom);
+    //    float workingRatio = Mathf.Clamp01(d.GetCumulativeWorkingWorkerRounds() / denom);
+    //    float trainingRatio = Mathf.Clamp01(d.GetCumulativeTrainingWorkerRounds() / denom);
+
+    //    const float wIdle = 1f / 3f, wWorking = 1f / 3f, wTraining = 1f / 3f;
+    //    return Mathf.Clamp01((1f - idleRatio) * wIdle + (workingRatio * wWorking) + (trainingRatio * wTraining));
+    //}
+
+    public float S_WorkerUse()
+    {
+        var d = this;
+        int idleRounds = d.GetCumulativeIdleWorkerRounds();
+        int activatedRounds = idleRounds + d.GetCumulativeWorkingWorkerRounds() + d.GetCumulativeTrainingWorkerRounds();
+
+        if (activatedRounds <= 0) return 0f;
+
+        return Mathf.Clamp01(1f - ((float)idleRounds / activatedRounds));
+    }
+
+    // Get worker satisfaction components (idle, working, training) for display in UI
+    //public (float idle, float working, float training) GetWorkerSatisfactionComponents()
+    //{
+    //    var d = this;
+    //    int roundsElapsed = d.GetCumulativeRoundsElapsed();
+    //    if (roundsElapsed <= 0) return (0f, 0f, 0f);
+
+    //    float denom = assumedTotalWorkerPoolSize * roundsElapsed;
+    //    float idleRatio = d.GetCumulativeIdleWorkerRounds() / denom;
+    //    float workingRatio = d.GetCumulativeWorkingWorkerRounds() / denom;
+    //    float trainingRatio = d.GetCumulativeTrainingWorkerRounds() / denom;
+
+    //    const float wIdle = 1f / 3f, wWorking = 1f / 3f, wTraining = 1f / 3f;
+    //    const float wSat = 0.2f;
+
+    //    float idleScore = (1f - idleRatio) * wIdle * wSat * 1000f;
+    //    float workingScore = workingRatio * wWorking * wSat * 1000f;
+    //    float trainingScore = trainingRatio * wTraining * wSat * 1000f;
+
+    //    return (idleScore, workingScore, trainingScore);
+    //}
+    //public (float idle, float working, float training) GetWorkerSatisfactionComponents()
+    //{
+    //    var d = this;
+    //    int roundsElapsed = d.GetCumulativeRoundsElapsed();
+    //    if (roundsElapsed <= 0) return (0f, 0f, 0f);
+
+    //    // Same denominator as S_WorkerUse (B23, live pool-rounds): this is the DISPLAYED
+    //    // breakdown of that term, so a different normaliser would make the three parts fail
+    //    // to add up to the worker score they are supposed to explain. The 1000 below is the
+    //    // report's display scale and is correct here, unlike in ApplyDelta.
+    //    float denom = Mathf.Max(1, d.GetCumulativeWorkerPoolRounds());
+    //    float idleRatio = Mathf.Clamp01(d.GetCumulativeIdleWorkerRounds() / denom);
+    //    float workingRatio = Mathf.Clamp01(d.GetCumulativeWorkingWorkerRounds() / denom);
+    //    float trainingRatio = Mathf.Clamp01(d.GetCumulativeTrainingWorkerRounds() / denom);
+
+    //    const float wIdle = 1f / 3f, wWorking = 1f / 3f, wTraining = 1f / 3f;
+    //    const float wSat = 0.2f;
+
+    //    float idleScore = (1f - idleRatio) * wIdle * wSat * 1000f;
+    //    float workingScore = workingRatio * wWorking * wSat * 1000f;
+    //    float trainingScore = trainingRatio * wTraining * wSat * 1000f;
+
+    //    return (idleScore, workingScore, trainingScore);
+    //}
+    public (float idle, float working, float training) GetWorkerSatisfactionComponents()
+    {
+        var total = S_WorkerUse() * SAT_W * 1000f; 
+        return (total, 0f, 0f);
+    }
+
+    [ContextMenu("Debug: Test S_WorkerUse Formula")]
+    public void DebugTestWorkerUseFormula()
+    {
+        void Check(int idle, int working, int training, float expected)
+        {
+            int activated = idle + working + training;
+            float result = activated <= 0 ? 0f : Mathf.Clamp01(1f - ((float)idle / activated));
+            string pass = Mathf.Approximately(result, expected) ? "PASS" : "FAIL";
+            Debug.Log($"[{pass}] idle={idle} working={working} training={training} => got={result:F4}, expected={expected:F4}");
+        }
+
+        Check(idle: 0, working: 100, training: 0, expected: 1.0f);   // no idling at all -> perfect score
+        Check(idle: 100, working: 0, training: 0, expected: 0.0f);   // all idle -> worst score
+        Check(idle: 50, working: 50, training: 0, expected: 0.5f);   // half idle -> midpoint
+        Check(idle: 25, working: 50, training: 25, expected: 0.75f); // idle is 25% of activated -> 0.75
+        Check(idle: 0, working: 0, training: 0, expected: 0.0f);     // nothing activated -> spec says 0, not divide-by-zero
+    }
+
+    public float S_Waste()
+    {
+        var d = this;
+        int used = d.GetCumulativeFoodPacksConsumedByClients();
+        int wasted = d.GetCumulativeFoodPacksWasted();
+        int requested = used + wasted;
+
+        if (requested <= 0) return 0f;
+        return (float)wasted / requested;
+    }
+
+    public float S_Casework()
+    {
+        var d = this;
+        int requested = d.GetCumulativeClientsRequestedCasework();
+        if (requested <= 0 || GameDataManager.Instance == null) return 0f;
+        int denom = GameDataManager.Instance.InitialGameDays * GameDataManager.Instance.InitialRoundsPerDay * requested;
+        if (denom <= 0) return 0f;
+
+        return Mathf.Clamp01(1f - ((float)d.GetCumulativeClientRoundsAwaitingCasework() / denom));
+    }
+
+    public float CalculateLiveSatisfactionScore()
+    {
+        const float wFood = 0.2f, wLodging = 0.2f, wWorker = 0.2f, wWaste = 0.2f, wCasework = 0.2f;
+        return S_Food() * wFood + S_Lodging() * wLodging + S_WorkerUse() * wWorker
+             + S_Waste() * wWaste + S_Casework() * wCasework;
+    }
+
+
+
+    // =========================================================================
+    // cost-eff new scores
+    // =========================================================================
+    public float C_Food()
+    {
+        var d = this;
+        int consumed = d.GetCumulativeFoodPacksConsumedByClients();
+        if (consumed <= 0) return 0f;
+
+        float raw = d.GetCumulativeFoodSpend() / consumed;
+
+        var gdm = GameDataManager.Instance;
+        var bs = FindObjectOfType<BuildingSystem>();
+        int days = gdm.InitialGameDays;
+
+        float min = (float)bs.kitchenConstructionCost / (gdm.InitialKitchenCapacity * days);
+        if (min <= 0f) return 1f; // avoid divide-by-zero if min is misconfigured
+
+        return Mathf.Clamp01(1f - (raw - min) / (49f * min));
+    }
+
+    public float C_Lodging()
+    {
+        var d = this;
+        var gdm = GameDataManager.Instance;
+
+        float nightsConsumed = d.GetCumulativeLodgingNightsConsumed();
+        if (nightsConsumed <= 0f) return 0f;
+
+        float raw = d.GetCumulativeLodgingSpend() / nightsConsumed;
+
+        var bs = FindObjectOfType<BuildingSystem>();
+        int days = gdm.InitialGameDays;
+
+        float min = (float)bs.shelterConstructionCost / (gdm.InitialShelterCapacity * days);
+        if (min <= 0f) return 1f;
+
+        return Mathf.Clamp01(1f - (raw - min) / (49f * min));
+    }
+
+    public float C_Worker()
+    {
+        var d = this;
+        int workingRounds = d.GetCumulativeWorkingWorkerRounds();
+        if (workingRounds <= 0) return 0f;
+
+        float raw = (d.GetCumulativeWorkerTrainingCost() + d.GetCumulativeWorkerRequestCost()) / workingRounds;
+
+        var wrs = FindObjectOfType<WorkerRequestSystem>();
+        float untrainedCost = wrs != null ? wrs.untrainedWorkerCost : 100f;
+
+        float min = untrainedCost;
+        if (min <= 0f) return 1f;
+
+        return Mathf.Clamp01(1f - (raw - min) / (49f * min));
+    }
+    //public float C_Food()
+    //{
+    //    var d = DailyReportData.Instance;
+    //    int consumed = d.GetCumulativeFoodPacksConsumedByClients();
+    //    if (consumed <= 0) return 0f;
+
+    //    float raw = d.GetCumulativeFoodSpend() / consumed;
+
+    //    var gdm = GameDataManager.Instance;
+    //    var bs = FindObjectOfType<BuildingSystem>();
+    //    int mapSpots = bs != null ? bs.RegisteredSites.Count : 0;
+    //    int days = gdm.InitialGameDays;
+    //    float totalBudget = GetMaxPossibleBudget();
+
+    //    float min = (float)bs.kitchenConstructionCost / (gdm.InitialKitchenCapacity * days);
+    //    float max = Mathf.Max(bs.kitchenConstructionCost * mapSpots * days, totalBudget);
+
+    //    return Mathf.Clamp01(1f - (raw - min) / (max - min));
+    //}
+
+    //public float C_Lodging()
+    //{
+    //    var d = DailyReportData.Instance;
+    //    var gdm = GameDataManager.Instance;
+
+    //    float nightsConsumed = d.GetCumulativeLodgingNightsConsumed();
+    //    if (nightsConsumed <= 0f) return 0f;
+
+    //    float raw = d.GetCumulativeLodgingSpend() / nightsConsumed;
+
+    //    var bs = FindObjectOfType<BuildingSystem>();
+    //    int mapSpots = bs != null ? bs.RegisteredSites.Count : 0;
+    //    int days = gdm.InitialGameDays;
+    //    float totalBudget = GetMaxPossibleBudget();
+
+    //    float min = (float)bs.shelterConstructionCost / (gdm.InitialShelterCapacity * days);
+    //    float max = Mathf.Max(bs.shelterConstructionCost * mapSpots * days, totalBudget);
+
+    //    return Mathf.Clamp01(1f - (raw - min) / (max - min));
+    //}
+
+    //public float C_Worker()
+    //{
+    //    var d = DailyReportData.Instance;
+    //    int workingRounds = d.GetCumulativeWorkingWorkerRounds();
+    //    if (workingRounds <= 0) return 0f;
+
+    //    float raw = (d.GetCumulativeWorkerTrainingCost() + d.GetCumulativeWorkerRequestCost()) / workingRounds;
+
+    //    var gdm = GameDataManager.Instance;
+    //    var wrs = FindObjectOfType<WorkerRequestSystem>();
+    //    var wts = FindObjectOfType<WorkerTrainingSystem>();
+    //    float untrainedCost = wrs != null ? wrs.untrainedWorkerCost : 100f;
+    //    float trainedCost = wrs != null ? wrs.trainedWorkerCost : 100f;
+    //    float trainingCost = wts != null ? wts.trainingCostPerWorker : 100f;
+    //    float min = untrainedCost;
+    //    float totalBudget = GetMaxPossibleBudget();
+    //    float maxCostWorkforceUnit = Mathf.Max(untrainedCost, Mathf.Max(trainedCost / 2f, (untrainedCost + trainingCost) / 2f));
+    //    float max = Mathf.Max(assumedTotalWorkerPoolSize * maxCostWorkforceUnit, totalBudget);
+
+    //    return Mathf.Clamp01(1f - (raw - min) / (max - min));
+    //}
+
+    public float CalculateLiveCostEfficiencyScore()
+    {
+        const float wFood = 1f / 3f, wLodging = 1f / 3f, wWorker = 1f / 3f;
+        return C_Food() * wFood + C_Lodging() * wLodging + C_Worker() * wWorker;
+    }
+
+
+    // How much of each component's score has already been pushed into
+    // SatisfactionAndBudget's running total. Waste is deliberately excluded —
+    // it's still applied once, at end of day, in DailyReportUI.
+    // ── save / restore ────────────────────────────────────────────────────────────────
+    //
+    // THESE ACCUMULATORS DECIDE SATISFACTION, so they must round-trip. Recalc*Satisfaction
+    // pushes the CHANGE in a component's score (newScore - applied) into the authoritative
+    // field. If `applied*` comes back as 0 after a restore, the next Recalc pushes the whole
+    // component score again as if it were new, and satisfaction jumps -- measured at 60
+    // against the oracle's 40 on the trajectory test before this existed.
+    //
+    // The cumulative* counters are the INPUTS to those scores, so they have to come back too
+    // or the scores themselves are computed from a blank history.
+    [System.Serializable]
+    public class Snapshot
+    {
+        public float dayStartBudget, dayStartSatisfaction, dayStartEfficiency;
+        public int dayStartPopulation;
+
+        public int roundsElapsed;
+        public int foodPacksConsumedByClients, foodPacksNeededByClients, foodPacksWasted;
+        public int communityFoodDemand;
+        public int lodgingNightsConsumed, lodgingNightsNeeded;
+        public int idleWorkerRounds, workingWorkerRounds, trainingWorkerRounds, workerPoolRounds;
+        public int clientRoundsAwaitingCasework, clientsRequestedCasework;
+        public float foodSpend, lodgingSpend, workerRequestCost, workerTrainingCost;
+
+        public float appliedFoodSat, appliedLodgingSat, appliedWorkerSat, appliedCaseworkSat;
+        public float appliedFoodEff, appliedLodgingEff, appliedWorkerEff;
+    }
+
+    public Snapshot CaptureState() => new Snapshot
+    {
+        dayStartBudget = dayStartBudget,
+        dayStartSatisfaction = dayStartSatisfaction,
+        dayStartEfficiency = dayStartEfficiency,
+        dayStartPopulation = dayStartPopulation,
+        roundsElapsed = cumulativeRoundsElapsed,
+        foodPacksConsumedByClients = cumulativeFoodPacksConsumedByClients,
+        foodPacksNeededByClients = cumulativeFoodPacksNeededByClients,
+        foodPacksWasted = cumulativeFoodPacksWasted,
+        communityFoodDemand = cumulativeCommunityFoodDemand,
+        lodgingNightsConsumed = cumulativeLodgingNightsConsumed,
+        lodgingNightsNeeded = cumulativeLodgingNightsNeeded,
+        idleWorkerRounds = cumulativeIdleWorkerRounds,
+        workingWorkerRounds = cumulativeWorkingWorkerRounds,
+        trainingWorkerRounds = cumulativeTrainingWorkerRounds,
+        workerPoolRounds = cumulativeWorkerPoolRounds,
+        clientRoundsAwaitingCasework = cumulativeClientRoundsAwaitingCasework,
+        clientsRequestedCasework = cumulativeClientsRequestedCasework,
+        foodSpend = cumulativeFoodSpend,
+        lodgingSpend = cumulativeLodgingSpend,
+        workerRequestCost = cumulativeWorkerRequestCost,
+        workerTrainingCost = cumulativeWorkerTrainingCost,
+        appliedFoodSat = appliedFoodSat,
+        appliedLodgingSat = appliedLodgingSat,
+        appliedWorkerSat = appliedWorkerSat,
+        appliedCaseworkSat = appliedCaseworkSat,
+        appliedFoodEff = appliedFoodEff,
+        appliedLodgingEff = appliedLodgingEff,
+        appliedWorkerEff = appliedWorkerEff,
+    };
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        dayStartBudget = s.dayStartBudget;
+        dayStartSatisfaction = s.dayStartSatisfaction;
+        dayStartEfficiency = s.dayStartEfficiency;
+        dayStartPopulation = s.dayStartPopulation;
+        cumulativeRoundsElapsed = s.roundsElapsed;
+        cumulativeFoodPacksConsumedByClients = s.foodPacksConsumedByClients;
+        cumulativeFoodPacksNeededByClients = s.foodPacksNeededByClients;
+        cumulativeFoodPacksWasted = s.foodPacksWasted;
+        cumulativeCommunityFoodDemand = s.communityFoodDemand;
+        cumulativeLodgingNightsConsumed = s.lodgingNightsConsumed;
+        cumulativeLodgingNightsNeeded = s.lodgingNightsNeeded;
+        cumulativeIdleWorkerRounds = s.idleWorkerRounds;
+        cumulativeWorkingWorkerRounds = s.workingWorkerRounds;
+        cumulativeTrainingWorkerRounds = s.trainingWorkerRounds;
+        cumulativeWorkerPoolRounds = s.workerPoolRounds;
+        cumulativeClientRoundsAwaitingCasework = s.clientRoundsAwaitingCasework;
+        cumulativeClientsRequestedCasework = s.clientsRequestedCasework;
+        cumulativeFoodSpend = s.foodSpend;
+        cumulativeLodgingSpend = s.lodgingSpend;
+        cumulativeWorkerRequestCost = s.workerRequestCost;
+        cumulativeWorkerTrainingCost = s.workerTrainingCost;
+        appliedFoodSat = s.appliedFoodSat;
+        appliedLodgingSat = s.appliedLodgingSat;
+        appliedWorkerSat = s.appliedWorkerSat;
+        appliedCaseworkSat = s.appliedCaseworkSat;
+        appliedFoodEff = s.appliedFoodEff;
+        appliedLodgingEff = s.appliedLodgingEff;
+        appliedWorkerEff = s.appliedWorkerEff;
+    }
+
+    private float appliedFoodSat, appliedLodgingSat, appliedWorkerSat, appliedCaseworkSat;
+    private float appliedFoodEff, appliedLodgingEff, appliedWorkerEff;
+
+    // PARITY BUILD (ledger D2): 1000f, matching upstream, NOT the correct 100f.
+    // Our fix is right and upstream's value is wrong -- the five satisfaction weights sum to 1,
+    // so components sum to SCORE_SCALE, and at 1000 one component's delta is ten times what it
+    // should be against a field AddSatisfaction clamps to [0,100]. Version 2 reproduces the bug
+    // deliberately: it exists to isolate "does the LLM code change the game", and carrying a
+    // score fix into it would answer a different question.
+    const float SCORE_SCALE = 1000f;
+    const float SAT_W = 0.2f;
+    const float EFF_W = 1f / 3f;
+
+    /// <summary>
+    /// Push the change in one component's score into the AUTHORITATIVE satisfaction/efficiency
+    /// field, which is 0-100 (the human slider and the officer game_state both read it).
+    ///
+    /// SCALE. The callers below compute `S_x() * WEIGHT * SCORE_SCALE`. That must be 100, not
+    /// the report's 1000: the five satisfaction weights sum to 1, so the components sum to
+    /// SCORE_SCALE, and at 1000 a single component's delta is ten times what it should be.
+    /// AddSatisfaction clamps to [0,100], so the symptom is not an absurd number but a metric
+    /// pinned at 100 that then collapses -- a 50% food shortfall would cost 100 points instead
+    /// of 10. The report's own 0-1000 display scaling is applied in DailyReportUI, separately.
+    /// </summary>
+    void ApplyDelta(ref float applied, float newScore, bool isEfficiency, string reason)
+    {
+        float delta = newScore - applied;
+        if (Mathf.Abs(delta) < 0.001f) return;
+        applied = newScore;
+        if (isEfficiency)
+            SatisfactionAndBudget.Instance?.AddEfficiency(delta, reason);
+        else
+            SatisfactionAndBudget.Instance?.AddSatisfaction(delta, reason);
+    }
+
+    public void RecalcFoodSatisfaction(string reason = "Food delivery progress")
+        => ApplyDelta(ref appliedFoodSat, S_Food() * SAT_W * SCORE_SCALE, false, reason);
+
+    public void RecalcLodgingSatisfaction(string reason = "Lodging progress")
+        => ApplyDelta(ref appliedLodgingSat, S_Lodging() * SAT_W * SCORE_SCALE, false, reason);
+
+    public void RecalcWorkerSatisfaction(string reason = "Worker use progress")
+        => ApplyDelta(ref appliedWorkerSat, S_WorkerUse() * SAT_W * SCORE_SCALE, false, reason);
+
+    public void RecalcCaseworkSatisfaction(string reason = "Casework progress")
+        => ApplyDelta(ref appliedCaseworkSat, S_Casework() * SAT_W * SCORE_SCALE, false, reason);
+
+    public void RecalcFoodEfficiency(string reason = "Food cost efficiency")
+        => ApplyDelta(ref appliedFoodEff, C_Food() * EFF_W * SCORE_SCALE, true, reason);
+
+    public void RecalcLodgingEfficiency(string reason = "Lodging cost efficiency")
+        => ApplyDelta(ref appliedLodgingEff, C_Lodging() * EFF_W * SCORE_SCALE, true, reason);
+
+    public void RecalcWorkerEfficiency(string reason = "Worker cost efficiency")
+        => ApplyDelta(ref appliedWorkerEff, C_Worker() * EFF_W * SCORE_SCALE, true, reason);
+
+
+    // Read what's already been applied, for DailyReportUI's end-of-day display
+    public float GetAppliedFoodSat() => appliedFoodSat;
+    public float GetAppliedLodgingSat() => appliedLodgingSat;
+    public float GetAppliedWorkerSat() => appliedWorkerSat;
+    public float GetAppliedCaseworkSat() => appliedCaseworkSat;
+    public float GetAppliedFoodEff() => appliedFoodEff;
+    public float GetAppliedLodgingEff() => appliedLodgingEff;
+    public float GetAppliedWorkerEff() => appliedWorkerEff;
+
+    public void SyncAppliedScoresToFresh()
+    {
+        appliedFoodSat = S_Food() * SAT_W * SCORE_SCALE;
+        appliedLodgingSat = S_Lodging() * SAT_W * SCORE_SCALE;
+        appliedWorkerSat = S_WorkerUse() * SAT_W * SCORE_SCALE;
+        appliedCaseworkSat = S_Casework() * SAT_W * SCORE_SCALE;
+
+        appliedFoodEff = C_Food() * EFF_W * SCORE_SCALE;
+        appliedLodgingEff = C_Lodging() * EFF_W * SCORE_SCALE;
+        appliedWorkerEff = C_Worker() * EFF_W * SCORE_SCALE;
+    }
+
+    public float ComputeFreshSatisfactionTotal()
+    => (S_Food() + S_Lodging() + S_WorkerUse() + S_Waste() + S_Casework()) * SAT_W * SCORE_SCALE;
+
+    public float ComputeFreshEfficiencyTotal()
+        => (C_Food() + C_Lodging() + C_Worker()) * EFF_W * SCORE_SCALE;
+    //END NEW
+
+    //score move end //
+
     // =========================================================================
     // GENERATE DAILY REPORT
     // =========================================================================
-    
+
     public DailyReportMetrics GenerateDailyReport()
     {
         FindSystemReferences();
@@ -242,6 +1168,7 @@ public class DailyReportData : MonoBehaviour
         {
             dayStartBudget = budgetSystem.GetCurrentBudget();
             dayStartSatisfaction = budgetSystem.GetCurrentSatisfaction();
+            dayStartEfficiency = budgetSystem.GetCurrentEfficiency();   // NEW0
             dayStartBudgetRecorded = true;
             Debug.Log($"Late-recorded day start budget: {dayStartBudget}");
         }
@@ -297,10 +1224,11 @@ public class DailyReportData : MonoBehaviour
         metrics.foodConsumed = CalculateFoodConsumed();
         metrics.foodWasted = todayFoodWasted;
         metrics.wastedFoodPacks = todayFoodWasted;
+        metrics.communityFoodDemand = todayCommunityFoodDemand;
         metrics.expiredFoodPacks = todayExpiredFood;
         metrics.currentFoodInStorage = CalculateCurrentFoodStorage();
         
-        // FIX: mealUsageRate now represents food packs in storage (upcoming waste).
+        // FIX: mealUsageRate now represents meals in storage (upcoming waste).
         // Store the raw count so DailyReportUI can display it directly.
         // The efficiency score calculation in DailyReportUI uses this value.
         metrics.mealUsageRate = metrics.currentFoodInStorage;
@@ -348,6 +1276,21 @@ public class DailyReportData : MonoBehaviour
         }
         
         metrics.buildingsConstructed = todayBuildingsConstructed;
+        //receipt
+        metrics.todayKitchenOpenCost = todayKitchenOpenCost;
+        metrics.todayShelterOpenCost = todayShelterOpenCost;
+        metrics.todayCaseworkOpenCost = todayCaseworkOpenCost;
+        metrics.todayFastFoodCost = todayFastFoodCost;
+        metrics.todayTransportCost = todayTransportCost;
+        metrics.todayLodgingCost = todayLodgingCost;
+        metrics.todayWorkerRequestCost = todayWorkerRequestCost;
+        metrics.todayWorkerTrainingCost = todayWorkerTrainingCost;
+
+        float trackedExpenseSum = metrics.todayKitchenOpenCost + metrics.todayShelterOpenCost
+                                + metrics.todayCaseworkOpenCost + metrics.todayFastFoodCost
+                                + metrics.todayTransportCost + metrics.todayLodgingCost
+                                + metrics.todayWorkerRequestCost + metrics.todayWorkerTrainingCost;
+        metrics.todayOtherExpenses = Mathf.Max(0f, metrics.budgetSpent - trackedExpenseSum);
         
         // =====================================================================
         // BOTTOM PANEL - "What We Did Today"
@@ -371,7 +1314,15 @@ public class DailyReportData : MonoBehaviour
             .Count();
         
         Debug.Log($"[DailyReport] Workers hired today: {metrics.newWorkersHired}, Workers in training: {metrics.workersInTraining}, Food in storage: {metrics.currentFoodInStorage}");
-        
+
+        metrics.lodgingRequestedToday = todayLodgingRequested;
+        metrics.lodgingSatisfiedToday = todayLodgingSatisfied;
+        metrics.caseworkRequestedTodayNew = todayCaseworkRequestedNew;
+        metrics.caseworkSatisfiedToday = todayCaseworkSatisfied;
+        metrics.workersUnassignedToday = GetCurrentUnassignedWorkers();
+        metrics.foodNeededToday = GetTodayFoodNeeded();
+        metrics.foodConsumedTotalToday = GetTodayFoodConsumedTotal();
+
         return metrics;
     }
     
@@ -578,16 +1529,18 @@ public class DailyReportData : MonoBehaviour
         return totalVacant;
     }
     
-    void TrackFoodProduction()
+    /// <summary>
+    /// Kitchens produce their full FoodPacks capacity exactly once, at the start of the day
+    /// (see BuildingResourceStorage.fillFoodToCapacityDaily). So "today's production" is simply
+    /// the capacity of every kitchen that was operational at that moment.
+    /// </summary>
+    int CalculateKitchenProductionCapacity()
     {
-        Building[] kitchens = FindObjectsOfType<Building>()
-            .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational()).ToArray();
-        foreach (var kitchen in kitchens)
-        {
-            todayFoodProduced += 10;
-        }
+        return FindObjectsOfType<Building>()
+            .Where(b => b.GetBuildingType() == BuildingType.Kitchen && b.IsOperational())
+            .Sum(b => b.GetComponent<BuildingResourceStorage>()?.GetResourceCapacity(ResourceType.FoodPacks) ?? 0);
     }
-    
+
     // =========================================================================
     // PUBLIC TRACKING METHODS
     // =========================================================================

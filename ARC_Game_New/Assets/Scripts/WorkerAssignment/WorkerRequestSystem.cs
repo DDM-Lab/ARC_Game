@@ -130,19 +130,29 @@ public class WorkerRequestSystem : MonoBehaviour
             taskSystem.workforceServiceSprite
         ));
 
-        AgentNumericalInput untrainedInput = new AgentNumericalInput(
-            1,
-            NumericalInputType.UntrainedWorkers,
-            0,
-            0,
-            20
-        );
-        untrainedInput.inputLabel = "Untrained Workers to Request";
-        untrainedInput.customDescription = $"${untrainedWorkerCost}/worker · arrives in {untrainedArrivalDays} {(untrainedArrivalDays == 1 ? "day" : "days")} · 1 workforce each";
-        requestTask.numericalInputs.Add(untrainedInput);
+        //AgentNumericalInput untrainedInput = new AgentNumericalInput(
+        //    1,
+        //    NumericalInputType.UntrainedWorkers,
+        //    0,
+        //    0,
+        //    20
+        //);
+        //untrainedInput.inputLabel = "Untrained Workers to Request";
+        //untrainedInput.customDescription = $"${untrainedWorkerCost}/worker · arrives in {untrainedArrivalDays} {(untrainedArrivalDays == 1 ? "day" : "days")} · 1 workforce each";
+        //requestTask.numericalInputs.Add(untrainedInput);
 
+        //AgentNumericalInput trainedInput = new AgentNumericalInput(
+        //    2,
+        //    NumericalInputType.TrainedWorkers,
+        //    0,
+        //    0,
+        //    20
+        //);
+        //trainedInput.inputLabel = "Trained Workers to Request";
+        //trainedInput.customDescription = $"${trainedWorkerCost}/worker · arrives in {trainedArrivalDays} {(trainedArrivalDays == 1 ? "day" : "days")} · 2 workforce each";
+        //requestTask.numericalInputs.Add(trainedInput);
         AgentNumericalInput trainedInput = new AgentNumericalInput(
-            2,
+            1, // Updated ID to 1
             NumericalInputType.TrainedWorkers,
             0,
             0,
@@ -151,6 +161,17 @@ public class WorkerRequestSystem : MonoBehaviour
         trainedInput.inputLabel = "Trained Workers to Request";
         trainedInput.customDescription = $"${trainedWorkerCost}/worker · arrives in {trainedArrivalDays} {(trainedArrivalDays == 1 ? "day" : "days")} · 2 workforce each";
         requestTask.numericalInputs.Add(trainedInput);
+
+        AgentNumericalInput untrainedInput = new AgentNumericalInput(
+            2, // Updated ID to 2
+            NumericalInputType.UntrainedWorkers,
+            0,
+            0,
+            20
+        );
+        untrainedInput.inputLabel = "Untrained Workers to Request";
+        untrainedInput.customDescription = $"${untrainedWorkerCost}/worker · arrives in {untrainedArrivalDays} {(untrainedArrivalDays == 1 ? "day" : "days")} · 1 workforce each";
+        requestTask.numericalInputs.Add(untrainedInput);
 
         currentRequestTask = requestTask;
 
@@ -175,29 +196,40 @@ public class WorkerRequestSystem : MonoBehaviour
             return;
         }
 
-        int untrainedToRequest = task.numericalInputs[0].currentValue;
-        int trainedToRequest = task.numericalInputs[1].currentValue;
+        //int untrainedToRequest = task.numericalInputs[0].currentValue;
+        //int trainedToRequest = task.numericalInputs[1].currentValue;
+        int trainedToRequest = task.numericalInputs[0].currentValue;
+        int untrainedToRequest = task.numericalInputs[1].currentValue;
 
         if (untrainedToRequest <= 0 && trainedToRequest <= 0)
             return;
 
         int totalCost = (untrainedToRequest * untrainedWorkerCost) + (trainedToRequest * trainedWorkerCost);
 
-        if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.CanAfford(totalCost))
+        // Check budget (honors the no-debt policy; allows overspend when allowNegativeBudget is on)
+        // if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
+        // {
+        //     GameLogPanel.Instance.LogError($"Cannot afford worker request: ${totalCost}");
+        //     return;
+        // }
+        if (SatisfactionAndBudget.Instance == null)
         {
-            GameLogPanel.Instance.LogError($"Cannot afford worker request: ${totalCost}");
             return;
         }
 
-        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, $"Requesting {untrainedToRequest} untrained and {trainedToRequest} trained workers");
-
+        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $"Requesting {untrainedToRequest} untrained and {trainedToRequest} trained workers");
+        if (DailyReportData.Instance != null)
+        {
+            DailyReportData.Instance.RecordWorkerRequestCostCumulative(totalCost);
+            DailyReportData.Instance.RecordWorkerRequestCostToday(totalCost);
+        }
         if (untrainedToRequest > 0)
             StartWorkerRequest(untrainedToRequest, WorkerType.Untrained);
         if (trainedToRequest > 0)
             StartWorkerRequest(trainedToRequest, WorkerType.Trained);
     }
 
-    void StartWorkerRequest(int workerCount, WorkerType workerType)
+    public void StartWorkerRequest(int workerCount, WorkerType workerType)
     {
         bool isUntrained = (workerType == WorkerType.Untrained);
         int arrivalDays = isUntrained ? untrainedArrivalDays : trainedArrivalDays;
@@ -229,10 +261,13 @@ public class WorkerRequestSystem : MonoBehaviour
 
         string label = isUntrained ? "untrained" : "trained";
         ToastManager.ShowToast($"Requested {workerCount} {label} workers. Estimated Arrival Date: Day {arrivalDay}", ToastType.Success, true);
-        GameLogPanel.Instance.LogWorkerAction($"Requested {workerCount} {label} workers (arrival Day {arrivalDay})");
+        GameLogPanel.Instance?.LogWorkerAction($"Requested {workerCount} {label} workers (arrival Day {arrivalDay})");
 
         if (showDebugInfo)
             Debug.Log($"Worker request started on Day {currentDay} for {workerCount} {label} workers, arrival day: {arrivalDay}");
+
+        RequestTask newTask = activeRequestTasks[activeRequestTasks.Count - 1];
+        DeliveryQueuePanel.Instance?.OnItemAdded(newTask);
     }
 
     void OnDayChanged(int newDay)
@@ -271,7 +306,7 @@ public class WorkerRequestSystem : MonoBehaviour
         Debug.Log($"Worker request completed: {workersArrived} {label} workers arrived");
 
         ToastManager.ShowToast($"{workersArrived} {label} workers have arrived and are ready to work!", ToastType.Success, true);
-        GameLogPanel.Instance.LogWorkerAction($"Worker request complete: {workersArrived} {label} workers arrived");
+        GameLogPanel.Instance?.LogWorkerAction($"Worker request complete: {workersArrived} {label} workers arrived");
     }
 
     void OnDestroy()

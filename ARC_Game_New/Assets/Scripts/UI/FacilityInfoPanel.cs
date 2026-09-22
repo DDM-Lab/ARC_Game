@@ -16,6 +16,10 @@ public class FacilityInfoPanel : MonoBehaviour
     public TextMeshProUGUI populationText;
     public TextMeshProUGUI foodPacksText;
     public TextMeshProUGUI capacityText;
+    public TextMeshProUGUI foodPackNeedText;       // NEW
+    public TextMeshProUGUI foodPackConsumedText;   // NEW
+    public TextMeshProUGUI foodPackScheduledText;  // NEW — meals already committed to an outgoing delivery
+
 
     [Header("Workers")]
     public TextMeshProUGUI workersHeaderText;
@@ -47,7 +51,8 @@ public class FacilityInfoPanel : MonoBehaviour
 
     [Header("Deliveries")]
     public TextMeshProUGUI expectedDeliveriesText;
-    public TextMeshProUGUI outgoingDeliveriesText;
+
+
 
     private List<GameObject> currentTaskItems = new List<GameObject>();
 
@@ -74,7 +79,6 @@ public class FacilityInfoPanel : MonoBehaviour
 
         UpdateTasksList(facility);
         UpdateExpectedDeliveries(facility);
-        UpdateOutgoingDeliveries(facility);
 
         // log all displayed info
         LogFacilityView(facility);
@@ -128,7 +132,6 @@ public class FacilityInfoPanel : MonoBehaviour
 
         // Deliveries
         sb.Append($" | incoming={expectedDeliveriesText?.text ?? "N/A"}");
-        sb.Append($" | outgoing={outgoingDeliveriesText?.text ?? "N/A"}");
 
         GameLogPanel.Instance?.LogUIInteraction(sb.ToString());
     }
@@ -158,9 +161,14 @@ public class FacilityInfoPanel : MonoBehaviour
             else { HideField(populationText); }
 
             HideField(foodPacksText);
-            ShowField(capacityText);
-            SetTextSafe(capacityText, "Clients in casework will leave by themselves once their cases are resolved.");
-            SetTextColor(capacityText, normalColor);
+            HideField(foodPackNeedText);       // NEW
+            HideField(foodPackConsumedText);   // NEW
+            HideField(foodPackScheduledText);  // NEW
+            // TODO: currently unimplemented — will solve this later.
+            // ShowField(capacityText);
+            // SetTextSafe(capacityText, "Clients in casework will leave by themselves once their cases are resolved.");
+            // SetTextColor(capacityText, normalColor);
+            HideField(capacityText);
             HideField(workersHeaderText);
             HideField(trainedWorkersText);
             HideField(untrainedWorkersText);
@@ -194,19 +202,8 @@ public class FacilityInfoPanel : MonoBehaviour
             HideField(populationText);
         }
 
-        // Meals — any building that has food storage capacity
-        if (storage != null && storage.GetResourceCapacity(ResourceType.FoodPacks) > 0)
-        {
-            int food = storage.GetResourceAmount(ResourceType.FoodPacks);
-            int foodCap = storage.GetResourceCapacity(ResourceType.FoodPacks);
-            ShowField(foodPacksText);
-            SetTextSafe(foodPacksText, $"Meals: {food}/{foodCap}");
-            SetTextColor(foodPacksText, GetResourceColor(food, foodCap));
-        }
-        else
-        {
-            HideField(foodPacksText);
-        }
+        UpdateFoodAvailability(storage, building);
+        UpdateFoodConsumptionInfo(storage);
 
         HideField(capacityText);
 
@@ -247,18 +244,8 @@ public class FacilityInfoPanel : MonoBehaviour
 
         // Meals — show for any prebuilt building with food storage
         var prebuiltStorage = prebuilt.GetResourceStorage();
-        if (prebuiltStorage != null && prebuiltStorage.GetResourceCapacity(ResourceType.FoodPacks) > 0)
-        {
-            int food = prebuiltStorage.GetResourceAmount(ResourceType.FoodPacks);
-            int foodCap = prebuiltStorage.GetResourceCapacity(ResourceType.FoodPacks);
-            ShowField(foodPacksText);
-            SetTextSafe(foodPacksText, $"Meals: {food}/{foodCap}");
-            SetTextColor(foodPacksText, GetResourceColor(food, foodCap));
-        }
-        else
-        {
-            HideField(foodPacksText);
-        }
+        UpdateFoodAvailability(prebuiltStorage, prebuilt);
+        UpdateFoodConsumptionInfo(prebuiltStorage);
 
         if (motelCostText != null)
         {
@@ -297,6 +284,88 @@ public class FacilityInfoPanel : MonoBehaviour
         ShowField(workersHeaderText);
         SetTextSafe(workersHeaderText, $"Workers: {assigned}/{required}");
         SetTextColor(workersHeaderText, assigned >= required ? goodColor : assigned > 0 ? warningColor : errorColor);
+    }
+
+    /// <summary>
+    /// Shows current meals. Kitchens additionally show — and deduct — meals already committed to
+    /// an outgoing delivery (queued or in transit): food that's spoken for isn't really "available"
+    /// anymore, since a kitchen mid-way through several requests is the main place this matters.
+    /// Other facilities (Shelter/Community/Motel) mainly receive food rather than send it out, so
+    /// they just show raw current stock with no "scheduled" line.
+    /// </summary>
+    void UpdateFoodAvailability(BuildingResourceStorage storage, MonoBehaviour facility)
+    {
+        if (storage == null || storage.GetResourceCapacity(ResourceType.FoodPacks) <= 0)
+        {
+            HideField(foodPacksText);
+            HideField(foodPackScheduledText);
+            return;
+        }
+
+        int food = storage.GetResourceAmount(ResourceType.FoodPacks);
+        int foodCap = storage.GetResourceCapacity(ResourceType.FoodPacks);
+
+        // Communities don't use population-based consumption (see CommunityFoodDepletionManager —
+        // they lose food to periodic depletion events instead, then request enough to refill to
+        // capacity). Showing raw "Meals: X/Y" there doesn't tell the player anything actionable;
+        // showing the same shortfall the depletion manager itself requests (capacity - current)
+        // does. GetAvailableSpace already computes exactly that, live off current storage.
+        bool isCommunity = facility.GetComponent<PrebuiltBuilding>()?.GetPrebuiltType() == PrebuiltBuildingType.Community;
+        if (isCommunity)
+        {
+            HideField(foodPackScheduledText);
+
+            int need = storage.GetAvailableSpace(ResourceType.FoodPacks);
+            ShowField(foodPacksText);
+            SetTextSafe(foodPacksText, $"Meal Need: {need}");
+            SetTextColor(foodPacksText, need > 0 ? warningColor : goodColor);
+            return;
+        }
+
+        bool isKitchen = facility.GetComponent<Building>()?.GetBuildingType() == BuildingType.Kitchen;
+        if (!isKitchen)
+        {
+            HideField(foodPackScheduledText);
+
+            ShowField(foodPacksText);
+            SetTextSafe(foodPacksText, $"Meals: {food}/{foodCap}");
+            SetTextColor(foodPacksText, GetResourceColor(food, foodCap));
+            return;
+        }
+
+        int scheduled = DeliverySystem.Instance != null
+            ? DeliverySystem.Instance.GetReservedOutgoingQuantity(facility, ResourceType.FoodPacks)
+            : 0;
+        int available = Mathf.Max(0, food - scheduled);
+
+        ShowField(foodPacksText);
+        SetTextSafe(foodPacksText, $"Available Meals: {available}/{foodCap}");
+        SetTextColor(foodPacksText, GetResourceColor(available, foodCap));
+
+        ShowField(foodPackScheduledText);
+        SetTextSafe(foodPackScheduledText, $"Meals scheduled for delivery: {scheduled}");
+        SetTextColor(foodPackScheduledText, scheduled > 0 ? warningColor : normalColor);
+    }
+
+    void UpdateFoodConsumptionInfo(BuildingResourceStorage storage)
+    {
+        if (storage == null || !storage.enablePopulationBasedConsumption)
+        {
+            HideField(foodPackNeedText);
+            HideField(foodPackConsumedText);
+            return;
+        }
+
+        int need = storage.GetFoodNeed();
+        int consumedToday = storage.GetTodayFoodPacksConsumed();
+
+        ShowField(foodPackNeedText);
+        SetTextSafe(foodPackNeedText, $"Meals Need: {need}");
+        SetTextColor(foodPackNeedText, need > 0 ? warningColor : goodColor);
+
+        ShowField(foodPackConsumedText);
+        SetTextSafe(foodPackConsumedText, $"Meals Consumed Today: {consumedToday}");
+        SetTextColor(foodPackConsumedText, normalColor);
     }
 
     void UpdateFloodStatus(GameObject facilityObj)
@@ -625,15 +694,28 @@ public class FacilityInfoPanel : MonoBehaviour
     }
     void UpdateExpectedDeliveries(MonoBehaviour facility)
     {
+        // Kitchens are a food SOURCE (they don't receive deliveries) and CaseworkSite's
+        // population departs by self-walk, not a tracked delivery — "expected deliveries" has
+        // nothing meaningful to show for either, so hide it instead of displaying "0 expected".
+        BuildingType? buildingType = facility.GetComponent<Building>()?.GetBuildingType();
+        if (buildingType == BuildingType.Kitchen || buildingType == BuildingType.CaseworkSite)
+        {
+            HideField(expectedDeliveriesText);
+            return;
+        }
+
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
         if (deliverySystem == null || expectedDeliveriesText == null)
             return;
-        
-        List<DeliveryTask> incoming = deliverySystem.GetIncomingDeliveries(facility);
-        
+
+        //List<DeliveryTask> incoming = deliverySystem.GetIncomingDeliveries(facility);
+        List<DeliveryTask> incoming = deliverySystem.GetIncomingDeliveries(facility)
+        .Concat(deliverySystem.GetPendingTasks().Where(t => t.destinationBuilding == facility))
+        .ToList();
+
         if (incoming.Count == 0)
         {
-            expectedDeliveriesText.text = "No deliveries expected";
+            expectedDeliveriesText.text = "No food deliveries expected";
             return;
         }
         
@@ -642,56 +724,10 @@ public class FacilityInfoPanel : MonoBehaviour
         int clients = incoming.Where(d => d.cargoType == ResourceType.Population).Sum(d => d.quantity);
         
         string message = "";
-        if (foodPacks > 0) message += $"{foodPacks} food packs on the way. ";
+        if (foodPacks > 0) message += $"{foodPacks} meals on the way. ";
         if (clients > 0) message += $"{clients} clients on the way.";
         
         expectedDeliveriesText.text = message.Trim();
     }
     
-    void UpdateOutgoingDeliveries(MonoBehaviour facility)
-    {
-        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
-        if (deliverySystem == null || outgoingDeliveriesText == null)
-            return;
-        
-        List<DeliveryTask> outgoing = deliverySystem.GetOutgoingDeliveries(facility);
-        
-        if (outgoing.Count == 0)
-        {
-            outgoingDeliveriesText.text = "No outgoing deliveries";
-            return;
-        }
-        
-        // Group by destination
-        var grouped = outgoing.GroupBy(d => d.destinationBuilding);
-        
-        string message = "";
-        foreach (var group in grouped)
-        {
-            int foodPacks = group.Where(d => d.cargoType == ResourceType.FoodPacks).Sum(d => d.quantity);
-            int clients = group.Where(d => d.cargoType == ResourceType.Population).Sum(d => d.quantity);
-            
-            string destName = GetBuildingDisplayName(group.Key);
-            
-            if (foodPacks > 0) message += $"{foodPacks} food packs leaving, going to {destName}. ";
-            if (clients > 0) message += $"{clients} clients leaving, going to {destName}. ";
-        }
-        
-        outgoingDeliveriesText.text = message.Trim();
-    }
-
-    string GetBuildingDisplayName(MonoBehaviour building)
-    {
-        if (building == null) return "Unknown";
-        
-        Building b = building.GetComponent<Building>();
-        if (b != null)
-            return b.GetDisplayName();
-        
-        PrebuiltBuilding pb = building.GetComponent<PrebuiltBuilding>();
-        if (pb != null)
-            return pb.GetBuildingName();
-        
-        return building.name;
-    }
 }

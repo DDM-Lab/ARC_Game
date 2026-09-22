@@ -34,6 +34,14 @@ public class WorkerAssignmentHandler : MonoBehaviour
             TaskSystem.Instance.OnTaskCompleted -= OnTaskCompleted;
     }
 
+    /// <summary>
+    /// Call when a building is deconstructed. Site IDs are reused by whatever new building gets
+    /// built on the same AbandonedSite afterward, so a pending "Other"-type task left over from
+    /// the old building (e.g. never closed via TaskDetailUI) must not be reopened for it — see the
+    /// matching WorkerAssignmentTracker.ClearBuilding for the sibling staleness this addresses.
+    /// </summary>
+    public void ClearPendingTask(int buildingId) => pendingTasks.Remove(buildingId);
+
     // ─────────────────────────────────────────────────────────────────
     // ENTRY POINT
     // ─────────────────────────────────────────────────────────────────
@@ -320,17 +328,29 @@ public class WorkerAssignmentHandler : MonoBehaviour
             && WorkerAssignmentTracker.Instance.IsLockedForRelease(buildingId);
         int currentHeadCount = ws.GetWorkersByBuildingId(buildingId).Count;
 
-        if (isLocked && newHeadCount < currentHeadCount)
+        //if (isLocked && newHeadCount < currentHeadCount)
+        //{
+        //    errorMessage = $"Workers committed previously cannot be released. " +
+        //                   $"You may only redistribute trained & untrained — keep the same total of {currentHeadCount} workers.";
+        //    return false;
+        //}
+
+        //if (isLocked && newHeadCount > currentHeadCount)
+        //{
+        //    errorMessage = $"You cannot add workers beyond the {currentHeadCount} already locked in. " +
+        //                   $"Only composition swaps are allowed.";
+        //    return false;
+        //}
+
+        if (isLocked && newHeadCount < currentHeadCount)   // heads vs heads (workforce POINTS let locked workers escape, BUG_REPORTS B19)
         {
-            errorMessage = $"Workers committed last round cannot be released. " +
-                           $"You may only swap trained ↔ untrained — keep the same total of {currentHeadCount} workers.";
+            errorMessage = $"Workers committed previously cannot be released.";
             return false;
         }
 
         if (isLocked && newHeadCount > currentHeadCount)
         {
-            errorMessage = $"You cannot add workers beyond the {currentHeadCount} already locked in. " +
-                           $"Only composition swaps are allowed.";
+            errorMessage = $"You cannot add workers beyond the {currentHeadCount} already locked in.";
             return false;
         }
 

@@ -1,0 +1,381 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+/// <summary>
+/// Serialisable capture of the authoritative game state, so any position can be saved to a
+/// JSON file and restored later -- on another machine, in another wing (RL / benchmark /
+/// GUI), or as a branch point for tree search.
+///
+/// WHY THIS EXISTS ALONGSIDE cora_search.py
+/// The Python side can already restore a position by REPLAY: reset to a seed and re-send
+/// the recorded actions. That is exact (verified: reload equivalence, branch isolation,
+/// JSON round-trip) but it is O(rounds) per restore and, more importantly, it can only
+/// express positions REACHED THROUGH recorded gym RPCs. A GUI-played game goes through
+/// WebSocketManager and produces no such journal, so it can never be handed to RL that way.
+/// A true snapshot is wing-agnostic: it describes where the pieces ARE, not how they got
+/// there, so any position round-trips regardless of who produced it.
+///
+/// RANDOM STATE IS PART OF THE STATE.
+/// UnityEngine.Random.state must be captured and restored or two branches taken from the
+/// same snapshot draw from a stream that has already been advanced by the other branch,
+/// and the search is silently contaminated. Random.State is a struct of four uints; it is
+/// stored here as those four ints so it survives JSON.
+/// </summary>
+[Serializable]
+public class GameSnapshot
+{
+    public const int FORMAT_VERSION = 1;
+
+    public int formatVersion = FORMAT_VERSION;
+    public string createdUtc;
+    public int seed = -1;                 // the seed the episode was started with, if any
+
+    public RngState rng = new RngState();
+    public ClockState clock = new ClockState();
+    public EconomyState economy = new EconomyState();
+
+    // Systems are appended here as their capture support lands. Keeping them as explicit
+    // typed sections (rather than a reflection dump) means a missing field is a visible
+    // gap in this file rather than a silent difference at restore time.
+    public List<Building.Snapshot> buildings = new List<Building.Snapshot>();
+
+    // Communities and the Motel are PrebuiltBuilding, NOT Building, so
+    // FindObjectsOfType<Building>() misses them entirely. They hold the population that
+    // decides whether a relocation Demand is generated, which is why omitting them let a
+    // restored game invent an extra "Population Relocation From Community" task.
+    public List<PrebuiltState> prebuilt = new List<PrebuiltState>();
+
+    [Serializable]
+    public class PrebuiltState
+    {
+        public string buildingName;
+        public BuildingResourceStorage.Snapshot storage;
+    }
+
+    // Cumulative accumulators. These are the ones most likely to be forgotten and the
+    // most damaging to miss: they are the numerator/denominator of every score component,
+    // they are private to their owning classes, and a gym reset zeroes them.
+    public WorkerSystem.Snapshot workforce;
+    public TaskSystem.Snapshot tasks;
+    public WeatherSystem.Snapshot weather;
+    public FloodSystem.Snapshot flood;
+    public DeliverySystem.Snapshot deliveries;
+    public ClientStayTracker.Snapshot clients;
+    public RewardMetricsTracker.Snapshot rewardMetrics;
+    public SatisfactionAndBudget.SpendSnapshot spend;
+
+    // The satisfaction/efficiency accumulators and their input counters. Since
+    // main-bugfixes 0868f3cf these DRIVE satisfaction during play (Recalc* pushes the change
+    // in each component), so a blank one on restore re-applies every component in full.
+    public DailyReportData.Snapshot dailyReport;
+
+    // Vehicles, including any mid-delivery. Their cargo and their position exist nowhere
+    // else, and a save is taken in the planning pause, when a leg spanning a round boundary
+    // is ordinary rather than exceptional.
+    public List<Vehicle.Snapshot> vehicles = new List<Vehicle.Snapshot>();
+
+    // Clients walking between facilities right now. QueueSelfWalk debits the source before
+    // the walk starts, so these people exist ONLY in this list -- omitting it deleted them.
+    public ClientRelocationHandler.Snapshot relocations;
+
+    // Funding approved but not yet paid (the real credit path; DelayedBudgetManager is
+    // display-only, BUG_REPORTS Part D).
+    public BudgetAllocationManager.Snapshot budgetAllocations;
+
+    [Serializable]
+    public class RngState
+    {
+        // UnityEngine.Random.State has no public fields; JsonUtility round-trips it, so it
+        // is carried as its JSON form rather than being picked apart.
+        public string unityRandomStateJson;
+        public bool captured;
+    }
+
+    [Serializable]
+    public class ClockState
+    {
+        public int currentDay;
+        public int currentTimeSegment;
+        public int lastDay;
+        public int roundsPerDay;
+        public bool isWaitingForReport;
+    }
+
+    [Serializable]
+    public class EconomyState
+    {
+        public float currentSatisfaction;
+        public float currentEfficiency;
+        public int currentBudget;
+    }
+
+}
+
+/// <summary>
+/// Captures and restores <see cref="GameSnapshot"/> against the live scene.
+///
+/// THREADING: every method here touches Unity objects and JsonUtility, so it must run on
+/// the main thread. GymServerManager queues these through mainThreadActions -- calling them
+/// from the TCP thread is a native-crash class in this project, not merely unsafe.
+/// </summary>
+public static class GameSnapshotManager
+{
+    public static GameSnapshot Capture()
+    {
+        var s = new GameSnapshot
+        {
+            createdUtc = DateTime.UtcNow.ToString("o"),
+            seed = GymServerManager.ActiveSeed,
+        };
+
+        // RNG first: everything below may allocate, and allocation must not perturb the
+        // stream between reading it and the caller acting on the snapshot.
+        s.rng.unityRandomStateJson = JsonUtility.ToJson(UnityEngine.Random.state);
+        s.rng.captured = true;
+
+        var clock = GlobalClock.Instance;
+        if (clock != null)
+        {
+            s.clock.currentDay = clock.currentDay;
+            s.clock.currentTimeSegment = clock.currentTimeSegment;
+            s.clock.lastDay = clock.lastDay;
+            s.clock.roundsPerDay = clock.roundsPerDay;
+            s.clock.isWaitingForReport = clock.isWaitingForReport;
+        }
+
+        var econ = SatisfactionAndBudget.Instance;
+        if (econ != null)
+        {
+            s.economy.currentSatisfaction = econ.currentSatisfaction;
+            s.economy.currentEfficiency = econ.currentEfficiency;
+            s.economy.currentBudget = econ.currentBudget;
+        }
+
+        foreach (var b in UnityEngine.Object.FindObjectsOfType<Building>())
+        {
+            if (b != null) s.buildings.Add(b.CaptureState());
+        }
+        foreach (var pb in UnityEngine.Object.FindObjectsOfType<PrebuiltBuilding>())
+        {
+            if (pb == null) continue;
+            s.prebuilt.Add(new GameSnapshot.PrebuiltState
+            {
+                buildingName = pb.GetBuildingName(),
+                storage = pb.GetResourceStorage() != null ? pb.GetResourceStorage().CaptureState() : null,
+            });
+        }
+
+        var ws = UnityEngine.Object.FindObjectOfType<WorkerSystem>();
+        if (ws != null) s.workforce = ws.CaptureState();
+
+        var ts = TaskSystem.Instance;
+        if (ts != null) s.tasks = ts.CaptureState();
+        var weather = WeatherSystem.Instance;
+        if (weather != null) s.weather = weather.CaptureState();
+        var flood = UnityEngine.Object.FindObjectOfType<FloodSystem>();
+        if (flood != null) s.flood = flood.CaptureState();
+        var deliv = UnityEngine.Object.FindObjectOfType<DeliverySystem>();
+        if (deliv != null) s.deliveries = deliv.CaptureState();
+        var clients = UnityEngine.Object.FindObjectOfType<ClientStayTracker>();
+        if (clients != null) s.clients = clients.CaptureState();
+        var reloc = ClientRelocationHandler.Instance;
+        if (reloc != null) s.relocations = reloc.CaptureState();
+        var alloc = BudgetAllocationManager.Instance;
+        if (alloc != null) s.budgetAllocations = alloc.CaptureState();
+        var drd = DailyReportData.Instance;
+        if (drd != null) s.dailyReport = drd.CaptureState();
+        foreach (var v in UnityEngine.Object.FindObjectsOfType<Vehicle>())
+            if (v != null) s.vehicles.Add(v.CaptureState());
+
+        var rmt = RewardMetricsTracker.Instance;
+        if (rmt != null) s.rewardMetrics = rmt.CaptureState();
+        if (econ != null) s.spend = econ.CaptureSpend();
+
+        return s;
+    }
+
+    /// <summary>
+    /// Write a snapshot back onto the live scene. Assumes the scene has already been
+    /// rebuilt (reset_game) so that singletons are fresh -- restoring onto a mid-game scene
+    /// would leave stale objects the snapshot does not mention.
+    /// </summary>
+    public static void Restore(GameSnapshot s)
+    {
+        if (s == null) throw new ArgumentNullException(nameof(s));
+        if (s.formatVersion != GameSnapshot.FORMAT_VERSION)
+            throw new InvalidOperationException(
+                $"snapshot formatVersion {s.formatVersion} != {GameSnapshot.FORMAT_VERSION}");
+
+        var clock = GlobalClock.Instance;
+        if (clock != null)
+        {
+            clock.currentDay = s.clock.currentDay;
+            clock.currentTimeSegment = s.clock.currentTimeSegment;
+            clock.lastDay = s.clock.lastDay;
+            clock.roundsPerDay = s.clock.roundsPerDay;
+            clock.isWaitingForReport = s.clock.isWaitingForReport;
+        }
+
+        // BUILDINGS BEFORE ECONOMY, DELIBERATELY. The scene rebuild leaves only the
+        // pre-existing fixtures, so player-built facilities have to be RE-CREATED via the
+        // same path a construction action uses -- and that path charges the budget. The
+        // economy restore below then overwrites those charges with the saved figures, so
+        // recreation cannot double-bill. Reversing this order silently corrupts the budget.
+        RestoreBuildings(s.buildings);
+
+        // Prebuilt fixtures survive a scene rebuild, so only their contents need writing
+        // back -- matched by name, which is stable across reloads.
+        if (s.prebuilt != null && s.prebuilt.Count > 0)
+        {
+            var byName = new Dictionary<string, PrebuiltBuilding>();
+            foreach (var pb in UnityEngine.Object.FindObjectsOfType<PrebuiltBuilding>())
+                if (pb != null) byName[pb.GetBuildingName()] = pb;
+            foreach (var ps in s.prebuilt)
+            {
+                if (ps == null || ps.storage == null) continue;
+                if (byName.TryGetValue(ps.buildingName, out PrebuiltBuilding target)
+                    && target.GetResourceStorage() != null)
+                    target.GetResourceStorage().RestoreState(ps.storage);
+            }
+        }
+
+        // After buildings: workers carry assignedBuildingId, so the buildings they point
+        // at must already exist or the roster restores into dangling references.
+        var ws = UnityEngine.Object.FindObjectOfType<WorkerSystem>();
+        if (ws != null && s.workforce != null) ws.RestoreState(s.workforce);
+
+        // Tasks reference facilities by name, so buildings must already be back.
+        var ts = TaskSystem.Instance;
+        if (ts != null && s.tasks != null) ts.RestoreState(s.tasks);
+        var weather = WeatherSystem.Instance;
+        if (weather != null && s.weather != null) weather.RestoreState(s.weather);
+        var flood = UnityEngine.Object.FindObjectOfType<FloodSystem>();
+        if (flood != null && s.flood != null) flood.RestoreState(s.flood);
+        // Last: delivery endpoints are resolved by GameObject name, so every building the
+        // deliveries reference must already have been recreated.
+        var deliv = UnityEngine.Object.FindObjectOfType<DeliverySystem>();
+        if (deliv != null && s.deliveries != null) deliv.RestoreState(s.deliveries);
+        var clients = UnityEngine.Object.FindObjectOfType<ClientStayTracker>();
+        if (clients != null && s.clients != null) clients.RestoreState(s.clients);
+        // AFTER tasks: an in-flight walk re-links to its parent BY ID, so the tasks must
+        // already be back. AFTER buildings: its endpoints resolve by GameObject name.
+        var reloc = ClientRelocationHandler.Instance;
+        if (reloc != null) reloc.RestoreState(s.relocations);
+        var alloc = BudgetAllocationManager.Instance;
+        if (alloc != null) alloc.RestoreState(s.budgetAllocations);
+        // BEFORE the economy is written below: restoring these does not itself move
+        // satisfaction, but leaving them blank makes the NEXT Recalc re-apply everything.
+        var drd = DailyReportData.Instance;
+        if (drd != null) drd.RestoreState(s.dailyReport);
+
+        // Vehicles LAST: each re-links to its delivery by id, so DeliverySystem must already
+        // hold the restored tasks. Matched by name -- vehicleId is not stable across a scene
+        // rebuild, but the names (Vehicle1..N) are.
+        if (s.vehicles != null && s.vehicles.Count > 0)
+        {
+            var byName = new Dictionary<string, Vehicle>();
+            foreach (var v in UnityEngine.Object.FindObjectsOfType<Vehicle>())
+                if (v != null) byName[v.GetVehicleName()] = v;
+
+            var tasksById = new Dictionary<int, DeliveryTask>();
+            if (deliv != null)
+            {
+                foreach (var t in deliv.GetActiveTasks()) if (t != null) tasksById[t.taskId] = t;
+                foreach (var t in deliv.GetPendingTasks()) if (t != null) tasksById[t.taskId] = t;
+            }
+
+            foreach (var vs in s.vehicles)
+            {
+                if (vs == null || !byName.TryGetValue(vs.vehicleName, out Vehicle v)) continue;
+                DeliveryTask task = null;
+                // Only re-link when the vehicle was genuinely mid-delivery; a completed
+                // vehicle keeps a stale currentTask whose id would otherwise match.
+                if (vs.onDelivery && vs.currentTaskId >= 0)
+                    tasksById.TryGetValue(vs.currentTaskId, out task);
+                v.RestoreState(vs, task);
+            }
+        }
+
+        var econ = SatisfactionAndBudget.Instance;
+        if (econ != null)
+        {
+            econ.currentSatisfaction = s.economy.currentSatisfaction;
+            econ.currentEfficiency = s.economy.currentEfficiency;
+            econ.currentBudget = s.economy.currentBudget;
+        }
+
+        // Accumulators are written back AFTER the reset path has already called
+        // ResetForNewEpisode()/rebuilt the scene, which is exactly why they are restored
+        // here rather than being left to the reset to preserve.
+        var rmt = RewardMetricsTracker.Instance;
+        if (rmt != null && s.rewardMetrics != null) rmt.RestoreState(s.rewardMetrics);
+        if (econ != null && s.spend != null) econ.RestoreSpend(s.spend);
+
+        // RNG LAST. The scene rebuild's Awake/Start chain consumes random numbers, so
+        // restoring the stream before that work would immediately be overwritten by it.
+        if (s.rng.captured && !string.IsNullOrEmpty(s.rng.unityRandomStateJson))
+        {
+            UnityEngine.Random.state =
+                JsonUtility.FromJson<UnityEngine.Random.State>(s.rng.unityRandomStateJson);
+        }
+    }
+
+    /// <summary>
+    /// Re-create the buildings a snapshot describes, then write their internal counters
+    /// back. Fixtures that survive a scene rebuild (Communities, Motel) are matched by
+    /// site id and only have their state applied; anything else is constructed first.
+    /// </summary>
+    static void RestoreBuildings(List<Building.Snapshot> snaps)
+    {
+        if (snaps == null || snaps.Count == 0) return;
+
+        var live = new Dictionary<int, Building>();
+        foreach (var b in UnityEngine.Object.FindObjectsOfType<Building>())
+        {
+            if (b != null) live[b.GetOriginalSiteId()] = b;
+        }
+
+        var system = UnityEngine.Object.FindObjectOfType<BuildingSystem>();
+        foreach (var snap in snaps)
+        {
+            if (live.TryGetValue(snap.originalSiteId, out Building existing))
+            {
+                existing.RestoreState(snap);
+                continue;
+            }
+            if (system == null)
+            {
+                Debug.LogWarning($"[Snapshot] no BuildingSystem; cannot recreate site {snap.originalSiteId}");
+                continue;
+            }
+            AbandonedSite site = null;
+            foreach (var candidate in system.RegisteredSites)
+            {
+                if (candidate != null && candidate.GetId() == snap.originalSiteId) { site = candidate; break; }
+            }
+            if (site == null)
+            {
+                Debug.LogWarning($"[Snapshot] site {snap.originalSiteId} not found; building not restored");
+                continue;
+            }
+            if (!Enum.TryParse(snap.buildingType, out BuildingType bt))
+            {
+                Debug.LogWarning($"[Snapshot] unknown building type '{snap.buildingType}'");
+                continue;
+            }
+            if (!system.CreateBuildingImmediately(site, bt))
+            {
+                Debug.LogWarning($"[Snapshot] failed to recreate {bt} at site {snap.originalSiteId}");
+                continue;
+            }
+            foreach (var b in UnityEngine.Object.FindObjectsOfType<Building>())
+            {
+                if (b != null && b.GetOriginalSiteId() == snap.originalSiteId) { b.RestoreState(snap); break; }
+            }
+        }
+    }
+
+    public static string ToJson(GameSnapshot s, bool pretty = true) => JsonUtility.ToJson(s, pretty);
+    public static GameSnapshot FromJson(string json) => JsonUtility.FromJson<GameSnapshot>(json);
+}

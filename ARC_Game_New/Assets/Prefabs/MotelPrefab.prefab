@@ -125,13 +125,15 @@ MonoBehaviour:
   resourceCapacities:
   - resourceType: 0
     maxCapacity: 3000
+  - resourceType: 1
+    maxCapacity: 6000
   startingResources: []
   startingFoodPacks: 0
   enableFoodWaste: 1
-  roundProduction: []
-  enablePopulationBasedConsumption: 0
+  fillFoodToCapacityDaily: 0
+  enablePopulationBasedConsumption: 1
   foodPerPersonPerNRounds: 1
-  consumptionRoundInterval: 4
+  consumptionRoundInterval: 2
   workersConsumeFoodToo: 0
   showDebugInfo: 1
 --- !u!114 &8654362891323091995

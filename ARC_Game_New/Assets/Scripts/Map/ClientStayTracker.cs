@@ -9,73 +9,104 @@ public class ClientGroup
     public int groupId;
     public string groupName;
     public int clientCount;
-    public MonoBehaviour currentShelter;
+    public int clientsWithCaseworkNeed; // Clients need casework
+    public int clientsWithoutCaseworkNeed; // Clients leave via timer
+    //public MonoBehaviour currentShelter;
+    public MonoBehaviour currentFacility; // Can be motel now
     public int arrivalRound;
     public float arrivalTime;
     public bool caseworkRequestGenerated = false;
     public bool isOverstaying = false;
     public int overstayRounds = 0;
-    
-    public ClientGroup(int id, string name, int count, MonoBehaviour shelter, int round)
+
+    // Caseworkless departure params
+    public int assignedDepartureRound;
+    public bool hasDeparted = false;
+
+    public ClientGroup(int id, string name, int count, MonoBehaviour facility, int round, float caseworkNeedProbabilityN, int minStayRounds, int maxStayRounds)
     {
         groupId = id;
         groupName = name;
         clientCount = count;
-        currentShelter = shelter;
+        //currentShelter = shelter;
+        currentFacility = facility;
         arrivalRound = round;
         arrivalTime = Time.time;
+
+        clientsWithCaseworkNeed = 0;
+        for (int i = 0; i < count; i++)
+        {
+            SnapshotDebug.Mark("draw:Client.caseworkNeed");
+            if (UnityEngine.Random.value < (caseworkNeedProbabilityN / 100f))
+            {
+                clientsWithCaseworkNeed++;
+            }
+        }
+        clientsWithoutCaseworkNeed = clientCount - clientsWithCaseworkNeed;
+
+        SnapshotDebug.Mark("draw:Client.stayDuration");
+        int stayDurationRounds = UnityEngine.Random.Range(minStayRounds, maxStayRounds + 1);
+        assignedDepartureRound = arrivalRound + stayDurationRounds;
     }
     
-    public int GetRoundsInShelter(int currentRound)
+    public int GetRoundsInFacility(int currentRound)
     {
         return currentRound - arrivalRound;
-    }
-    
-    public bool ShouldRequestCasework(int currentRound)
-    {
-        return GetRoundsInShelter(currentRound) >= 8 && !caseworkRequestGenerated;
-    }
-    
-    public bool IsOverstaying(int currentRound)
-    {
-        return GetRoundsInShelter(currentRound) > 8;
-    }
+    } 
 }
 
 [System.Serializable]
 public class OverstayRecord
 {
     public string clientGroupName;
-    public string shelterName;
+    public string facilityName;
     public int roundsOverstayed;
     public int clientCount;
     public float recordedTime;
     
-    public OverstayRecord(ClientGroup group, int currentRound)
+    public OverstayRecord(ClientGroup group, int currentRound, int threshold)
     {
         clientGroupName = group.groupName;
-        shelterName = group.currentShelter?.name ?? "Unknown Shelter";
-        roundsOverstayed = group.GetRoundsInShelter(currentRound) - 8; // Rounds beyond 10
-        clientCount = group.clientCount;
+        facilityName = ClientStayTracker.SafeFacilityName(group.currentFacility);
+        roundsOverstayed = group.GetRoundsInFacility(currentRound) - threshold; 
+        clientCount = group.clientsWithCaseworkNeed;
         recordedTime = Time.time;
     }
 }
 
 public class ClientStayTracker : MonoBehaviour
 {
+
+    [Header("Casework Config Params")]
+    [Tooltip("N%")]
+    [Range(0f, 100f)]
+    public float caseworkNeedProbability = 40f;
+
+    [Tooltip("Base X% for casework generation at round Y=1")]
+    [Range(0f, 100f)]
+    public float baseCaseworkProbability = 10f;
+
+    [Tooltip("Exponential growth factor G: P(Y) = X_0 * (G ^ (Y - 1))")]
+    public float probabilityGrowthFactor = 1.5f;
+
+    [Header("2. Caseworkless Departure Config Params")]
+    [Tooltip("Minimum rounds stayed before caseworkless clients leave")]
+    public int minStayRounds = 4;
+    [Tooltip("Maximum rounds stayed before caseworkless clients leave")]
+    public int maxStayRounds = 8;
+
     [Header("Client Tracking")]
     public List<ClientGroup> clientGroups = new List<ClientGroup>();
     public List<OverstayRecord> overstayRecords = new List<OverstayRecord>();
     
     [Header("Settings")]
-    public int caseworkRequestThreshold = 8; // Rounds
     public int overstayThreshold = 8; // Rounds
     
     [Header("Task Generation")]
     public bool enableCaseworkTaskGeneration = true;
     public string caseworkTaskTitle = "Casework Request";
-    public string caseworkTaskDescription = "Clients have been in shelter for {0} rounds and are requesting casework assistance.";
-    
+    public string caseworkTaskDescription = "Clients at {0} have been staying for {1} rounds and require casework assistance.";
+
     [Header("Debug")]
     public bool showDebugInfo = true;
     
@@ -86,8 +117,98 @@ public class ClientStayTracker : MonoBehaviour
     public event Action<ClientGroup> OnCaseworkRequested;
     public event Action<ClientGroup> OnClientOverstay;
     public event Action<OverstayRecord> OnOverstayRecorded;
-    
+    public event Action<ClientGroup> OnCaseworklessClientsDeparted;
+
     private int nextGroupId = 1;
+
+    /// <summary>
+    /// Snapshot support. Each ClientGroup carries a per-group departure round and a
+    /// casework-need count, BOTH ROLLED FROM Random AT CONSTRUCTION -- so these are
+    /// simulation state that cannot be recomputed, only carried. They decide when clients
+    /// leave a facility and whether a casework request is raised, which in turn drives
+    /// relocation and casework Demands.
+    ///
+    /// currentFacility is a MonoBehaviour reference and cannot serialise, so it is stored
+    /// by GameObject name and re-resolved on restore; a group whose facility is gone is
+    /// dropped rather than restored dangling.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        [System.Serializable]
+        public class GroupState
+        {
+            public int groupId;
+            public string groupName;
+            public int clientCount, clientsWithCaseworkNeed, clientsWithoutCaseworkNeed;
+            public string facilityName;
+            public int arrivalRound, assignedDepartureRound, overstayRounds;
+            public float arrivalTime;
+            public bool caseworkRequestGenerated, isOverstaying, hasDeparted;
+        }
+        public List<GroupState> groups = new List<GroupState>();
+        public int nextGroupId;
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot { nextGroupId = nextGroupId };
+        foreach (var g in clientGroups)
+        {
+            if (g == null) continue;
+            s.groups.Add(new Snapshot.GroupState
+            {
+                groupId = g.groupId, groupName = g.groupName,
+                clientCount = g.clientCount,
+                clientsWithCaseworkNeed = g.clientsWithCaseworkNeed,
+                clientsWithoutCaseworkNeed = g.clientsWithoutCaseworkNeed,
+                facilityName = g.currentFacility != null ? g.currentFacility.gameObject.name : null,
+                arrivalRound = g.arrivalRound, arrivalTime = g.arrivalTime,
+                assignedDepartureRound = g.assignedDepartureRound,
+                overstayRounds = g.overstayRounds,
+                caseworkRequestGenerated = g.caseworkRequestGenerated,
+                isOverstaying = g.isOverstaying, hasDeparted = g.hasDeparted,
+            });
+        }
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        clientGroups.Clear();
+        foreach (var gs in s.groups)
+        {
+            if (gs == null) continue;
+            MonoBehaviour fac = null;
+            if (!string.IsNullOrEmpty(gs.facilityName))
+            {
+                var go = GameObject.Find(gs.facilityName);
+                if (go != null)
+                {
+                    fac = go.GetComponent<Building>();
+                    if (fac == null) fac = go.GetComponent<PrebuiltBuilding>();
+                }
+            }
+            if (fac == null) continue;      // facility gone: drop rather than dangle
+
+            // Construct with 0 probability / 0 stay so the constructor consumes NO random
+            // draws -- it would otherwise advance the stream we are about to restore -- then
+            // overwrite every rolled field with the captured values.
+            var g = new ClientGroup(gs.groupId, gs.groupName, 0, fac, gs.arrivalRound, 0f, 0, 0);
+            g.clientCount = gs.clientCount;
+            g.clientsWithCaseworkNeed = gs.clientsWithCaseworkNeed;
+            g.clientsWithoutCaseworkNeed = gs.clientsWithoutCaseworkNeed;
+            g.arrivalTime = gs.arrivalTime;
+            g.assignedDepartureRound = gs.assignedDepartureRound;
+            g.overstayRounds = gs.overstayRounds;
+            g.caseworkRequestGenerated = gs.caseworkRequestGenerated;
+            g.isOverstaying = gs.isOverstaying;
+            g.hasDeparted = gs.hasDeparted;
+            clientGroups.Add(g);
+        }
+        nextGroupId = s.nextGroupId;
+    }
     private int currentRound = 0;
 
     void Awake()
@@ -136,13 +257,7 @@ public class ClientStayTracker : MonoBehaviour
     void OnCaseworkTaskFinished(GameTask task)
     {
         if (task.taskTag != TaskTag.BackToHome) return;
-
-        string desc = task.description ?? "";
-        const string marker = "|CLIENT_GROUP_ID:";
-        int idx = desc.IndexOf(marker);
-        if (idx < 0) return;
-
-        if (!int.TryParse(desc.Substring(idx + marker.Length), out int groupId)) return;
+        if (!TryParseClientGroupId(task, out int groupId)) return;
 
         ClientGroup group = clientGroups.FirstOrDefault(g => g.groupId == groupId);
         if (group != null)
@@ -153,9 +268,43 @@ public class ClientStayTracker : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Extracts the |CLIENT_GROUP_ID: marker GenerateCaseworkTask embeds in a casework task's
+    /// description. Shared by OnCaseworkTaskFinished above and GetClientsWithCaseworkNeedForTask
+    /// below so the marker format only lives in one place.
+    /// </summary>
+    static bool TryParseClientGroupId(GameTask task, out int groupId)
+    {
+        groupId = 0;
+        string desc = task.description ?? "";
+        const string marker = "|CLIENT_GROUP_ID:";
+        int idx = desc.IndexOf(marker);
+        if (idx < 0) return false;
+        return int.TryParse(desc.Substring(idx + marker.Length), out groupId);
+    }
+
+    /// <summary>
+    /// Live headcount of clients still requesting casework for the specific group a casework task
+    /// was generated for — NOT the facility's total population, which can include other residents
+    /// who were never part of this request. Used by TaskSystem.RefreshTaskAgainstLiveState to keep
+    /// a casework task's displayed/tracked quantity honest: if some of this group's clients get
+    /// relocated away by a different task, the count here drops even though the facility itself
+    /// may still hold plenty of other, unrelated people.
+    /// Returns null if the task has no group marker at all (it isn't a casework task — the caller
+    /// should fall back to whatever quantity logic applies to that task instead). Returns 0 if the
+    /// group no longer exists (e.g. every member of it already left/was relocated) — the caller
+    /// should treat that the same as "nobody left to act on."
+    /// </summary>
+    public int? GetClientsWithCaseworkNeedForTask(GameTask task)
+    {
+        if (!TryParseClientGroupId(task, out int groupId)) return null;
+        ClientGroup group = clientGroups.FirstOrDefault(g => g.groupId == groupId);
+        return group?.clientsWithCaseworkNeed ?? 0;
+    }
+
     void OnRoundChanged(int newRound)
     {
-        currentRound = GlobalClock.Instance.GetCurrentTimeSegment() + (GlobalClock.Instance.GetCurrentDay() - 1) * 4;
+        currentRound = GlobalClock.Instance.GetCurrentTimeSegment() + (GlobalClock.Instance.GetCurrentDay() - 1) * GlobalClock.Instance.roundsPerDay;
         CheckClientStayDurations();
         
         if (showDebugInfo)
@@ -165,19 +314,184 @@ public class ClientStayTracker : MonoBehaviour
     /// <summary>
     /// Register clients arriving at a shelter
     /// </summary>
-    public ClientGroup RegisterClientArrival(MonoBehaviour shelter, int clientCount, string customName = null)
+    /// 
+
+    public ClientGroup RegisterClientArrival(MonoBehaviour facility, int clientCount, string customName = null)
     {
+        // assertion: only want shelters and motels! 
+        Building building = facility.GetComponent<Building>();
+        if (building != null)
+        {
+            var type = building.GetBuildingType();
+            if (type != BuildingType.Shelter)
+            {
+                if (showDebugInfo)
+                    Debug.Log($"[ClientStayTracker] Ignoring arrival at {facility.name} ({type}) — only Shelters/Motels may generate casework.");
+                return null;
+            }
+        }
+        PrebuiltBuilding prebuilt = facility.GetComponent<PrebuiltBuilding>();
+        if (prebuilt != null && prebuilt.GetPrebuiltType() != PrebuiltBuildingType.Motel)
+        {
+            if (showDebugInfo)
+                Debug.Log($"[ClientStayTracker] Ignoring arrival at {facility.name} — only Shelters/Motels may generate casework.");
+            return null;
+        }
+
         string groupName = customName ?? $"Group_{nextGroupId}";
-        ClientGroup newGroup = new ClientGroup(nextGroupId++, groupName, clientCount, shelter, currentRound);
+        ClientGroup newGroup = new ClientGroup(
+            nextGroupId++, 
+            groupName, 
+            clientCount, 
+            facility, 
+            currentRound,
+            caseworkNeedProbability,
+            minStayRounds,
+            maxStayRounds);
         
         clientGroups.Add(newGroup);
         
         if (showDebugInfo)
-            Debug.Log($"Registered {clientCount} clients at {shelter.name} (Group: {groupName}, Round: {currentRound})");
+            Debug.Log($"Registered {clientCount} clients at {facility.name} (Group: {groupName}, Round: {currentRound})");
 
-        GameLogPanel.Instance.LogBuildingStatus($"Registered {clientCount} clients at {shelter.name} (Group: {groupName}, Round: {currentRound})");
+        GameLogPanel.Instance.LogBuildingStatus($"Registered {clientCount} clients at {facility.name} (Group: {groupName}, Round: {currentRound})");
+        DailyReportData.Instance?.RecordNewArrival(clientCount);
 
         return newGroup;
+    }
+
+    /// <summary>
+    /// Evaluates casework generation and natural departures for all active groups
+    /// </summary>
+    void CheckClientStayDurations()
+    {
+        List<ClientGroup> groupsToRemove = new List<ClientGroup>();
+
+        foreach (ClientGroup group in clientGroups.ToList())
+        {
+            if (group.currentFacility == null)
+            {
+                groupsToRemove.Add(group);
+                continue;
+            }
+            int roundsInFacility = group.GetRoundsInFacility(currentRound);
+
+            // Caseworkless Clients
+            if (!group.hasDeparted && group.clientsWithoutCaseworkNeed>0 && currentRound>=group.assignedDepartureRound)
+            {
+                group.hasDeparted = true;
+                TriggerNonCaseworkDeparture(group);
+            }
+
+            // Casework Clients
+            if (group.clientsWithCaseworkNeed > 0 && !group.caseworkRequestGenerated && enableCaseworkTaskGeneration)
+            {
+
+                // PARITY BUILD (ledger D1): the deconstruction guard is REMOVED here on purpose.
+                // Upstream rolls unconditionally, and because every stochastic system shares one
+                // global Random stream, a draw skipped on one build shifts every later flood,
+                // weather roll and task trigger on that build only. Keeping the fix would make
+                // this build diverge from upstream for a reason that has nothing to do with the
+                // LLM code — which is the one thing version 2 exists to measure.
+                int Y = Mathf.Max(1, roundsInFacility);
+                float currentProbability = baseCaseworkProbability * Mathf.Pow(probabilityGrowthFactor, Y - 1);
+                currentProbability = Mathf.Clamp(currentProbability, 0f, 100f);
+                SnapshotDebug.Mark("draw:Client.caseworkGen");
+                if (UnityEngine.Random.value < (currentProbability / 100f))
+                {
+                    GenerateCaseworkTask(group);
+                    group.caseworkRequestGenerated = true;
+                    OnCaseworkRequested?.Invoke(group);
+                }
+                // int Y = Mathf.Max(1, roundsInFacility); // rounds stayed 
+
+                // // X% = X_0 * (G ^ (Y - 1))
+                // float currentProbability = baseCaseworkProbability*Mathf.Pow(probabilityGrowthFactor, Y-1);
+                // currentProbability = Mathf.Clamp(currentProbability, 0f, 100f);
+                // if (UnityEngine.Random.value < (currentProbability/100f))
+                // {
+                //     GenerateCaseworkTask(group);
+                //     group.caseworkRequestGenerated = true;
+                //     OnCaseworkRequested?.Invoke(group);
+                // }
+            }
+
+            // Casework Clients Overstaying
+            if (roundsInFacility > overstayThreshold && !group.isOverstaying && group.clientsWithCaseworkNeed>0)
+            {
+                group.isOverstaying = true;
+                group.overstayRounds = roundsInFacility - overstayThreshold;
+                OverstayRecord record = new OverstayRecord(group, currentRound, overstayThreshold);
+                overstayRecords.Add(record);
+                OnClientOverstay?.Invoke(group);
+                OnOverstayRecorded?.Invoke(record);
+            }
+
+            if (group.clientCount <= 0 || (group.hasDeparted && group.clientsWithCaseworkNeed == 0))
+            {
+                groupsToRemove.Add(group);
+            }
+        }
+
+        foreach (var group in groupsToRemove)
+        {
+            clientGroups.Remove(group);
+        }
+    }
+
+    void TriggerNonCaseworkDeparture(ClientGroup group)
+    {
+        int departing = group.clientsWithoutCaseworkNeed;
+
+        if (showDebugInfo)
+            Debug.Log($"[ClientStayTracker] Group {group.groupName}: {departing} clients without casework departed at round {currentRound}.");
+
+        // Notify buildings to get rid of clients
+        OnCaseworklessClientsDeparted?.Invoke(group);
+
+        DailyReportData.Instance?.RecordDeparture(departing);
+
+        // Actually remove them from the facility's real population count. This bookkeeping
+        // (group.clientCount) only tracked casework stay-duration — nothing previously removed
+        // the departing clients from BuildingResourceStorage itself, so population (and anything
+        // derived from it, like food need) stayed stale after a natural departure.
+        if (departing > 0 && group.currentFacility != null)
+        {
+            group.currentFacility.GetComponent<BuildingResourceStorage>()?.RemoveResource(ResourceType.Population, departing);
+        }
+
+        if (departing > 0)
+        {
+            string facilityDisplayName = GetFacilityDisplayName(group.currentFacility);
+            GameLogPanel.Instance.LogBuildingStatus($"{departing} clients departed voluntarily from {facilityDisplayName} (no casework needed)");
+            ShowDepartureAlert(group, departing, facilityDisplayName);
+        }
+
+        group.clientCount -= departing;
+        group.clientsWithoutCaseworkNeed = 0;
+    }
+
+    /// <summary>
+    /// Simple, dismiss-only popup telling the player that clients left a shelter/motel on their
+    /// own (no casework needed, so nothing else would otherwise surface this). Reuses the same
+    /// Alert-task pipeline WeatherReportSystem uses for the daily weather report — no new UI.
+    /// </summary>
+    void ShowDepartureAlert(ClientGroup group, int departing, string facilityDisplayName)
+    {
+        if (TaskSystem.Instance == null || AlertUIController.Instance == null) return;
+
+        GameTask alert = TaskSystem.Instance.CreateTask(
+            "Clients Departed",
+            TaskType.Alert,
+            group.currentFacility?.name ?? "Unknown Facility",
+            $"{departing} clients left {facilityDisplayName} on their own.");
+
+        alert.taskOfficer = TaskOfficer.LodgingMassCare;
+        alert.agentMessages = new List<AgentMessage>();
+        alert.agentMessages.Add(new AgentMessage(
+            $"{departing} client(s) at {facilityDisplayName} have left on their own after finishing their stay. No casework was needed for this group."));
+
+        AlertUIController.Instance.ShowAlert(alert);
     }
 
     /// <summary>
@@ -191,9 +505,9 @@ public class ClientStayTracker : MonoBehaviour
             clientGroups.Remove(group);
             
             if (showDebugInfo)
-                Debug.Log($"Removed client group {group.groupName} from {group.currentShelter?.name}");
+                Debug.Log($"Removed client group {group.groupName} from {SafeFacilityName(group.currentFacility)}");
 
-            GameLogPanel.Instance.LogBuildingStatus($"Removed client group {group.groupName} from {group.currentShelter?.name}");
+            GameLogPanel.Instance.LogBuildingStatus($"Removed client group {group.groupName} from {SafeFacilityName(group.currentFacility)}");
 
             return true;
         }
@@ -204,87 +518,167 @@ public class ClientStayTracker : MonoBehaviour
     /// <summary>
     /// Remove clients by shelter and quantity (for casework departures)
     /// </summary>
-    public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity)
+    public int RemoveClientsByQuantity(MonoBehaviour shelter, int quantity, int preferredGroupId = -1, bool creditCasework = true)
     {
+        // People processed home at a casework site come out of the tracker in this order:
+        //   1. the group that raised the request, its casework-need members only;
+        //   2. anyone else still flagged for casework in the same facility;
+        //   3. only if the delivery carried more people than were flagged, people without a
+        //      casework need (they were physically moved, so the tracker must follow them).
+        // Casework throughput is credited for 1 and 2 only (BUG_REPORTS B25, A3).
         List<ClientGroup> shelterGroups = GetClientsInShelter(shelter);
         int remainingToRemove = quantity;
         int totalRemoved = 0;
-        
+        int caseworkRemoved = 0;
+
+        ClientGroup preferred = preferredGroupId >= 0
+            ? shelterGroups.FirstOrDefault(g => g.groupId == preferredGroupId) : null;
+
+        int TakeCasework(ClientGroup group)
+        {
+            int take = Mathf.Min(remainingToRemove, group.clientsWithCaseworkNeed);
+            if (take <= 0) return 0;
+            group.clientsWithCaseworkNeed -= take;
+            group.clientCount -= take;
+            remainingToRemove -= take;
+            totalRemoved += take;
+            caseworkRemoved += take;
+            GameLogPanel.Instance?.LogBuildingStatus($"Processed {take} clients home from group {group.groupName} (casework)");
+            if (group.clientCount <= 0) clientGroups.Remove(group);
+            return take;
+        }
+
+        if (preferred != null && remainingToRemove > 0)
+            TakeCasework(preferred);
+
         foreach (ClientGroup group in shelterGroups.ToList())
         {
             if (remainingToRemove <= 0) break;
-
-            if (group.clientCount <= remainingToRemove)
-            {
-                // Remove entire group
-                remainingToRemove -= group.clientCount;
-                totalRemoved += group.clientCount;
-                clientGroups.Remove(group);
-
-                if (showDebugInfo)
-                    Debug.Log($"Removed entire group {group.groupName} ({group.clientCount} clients) for casework");
-                GameLogPanel.Instance.LogBuildingStatus($"Removed entire group {group.groupName} ({group.clientCount} clients) for casework");
-            }
-            else
-            {
-                // Partial removal from group
-                group.clientCount -= remainingToRemove;
-                totalRemoved += remainingToRemove;
-
-                if (showDebugInfo)
-                    Debug.Log($"Partially removed {remainingToRemove} clients from group {group.groupName}");
-                GameLogPanel.Instance.LogBuildingStatus($"Partially removed {remainingToRemove} clients from group {group.groupName}");
-                remainingToRemove = 0;
-            }
+            if (group == preferred || !clientGroups.Contains(group)) continue;
+            TakeCasework(group);
         }
-        
+
+        foreach (ClientGroup group in shelterGroups.ToList())
+        {
+            if (remainingToRemove <= 0) break;
+            if (!clientGroups.Contains(group)) continue;
+            int take = Mathf.Min(remainingToRemove, group.clientsWithoutCaseworkNeed);
+            if (take <= 0) continue;
+            group.clientsWithoutCaseworkNeed -= take;
+            group.clientCount -= take;
+            remainingToRemove -= take;
+            totalRemoved += take;
+            GameLogPanel.Instance?.LogBuildingStatus($"Removed {take} clients (no casework need) from group {group.groupName} -- moved with the delivery");
+            if (group.clientCount <= 0) clientGroups.Remove(group);
+        }
+
+        if (creditCasework)
+            RewardMetricsTracker.Instance?.RecordCaseworkProcessed(caseworkRemoved);
         return totalRemoved;
     }
 
-
-    /// <summary>
-    /// Check all client groups for casework requests and overstays
-    /// </summary>
-    void CheckClientStayDurations()
+    /// <summary>A building whose displaced residents should be tracked for casework — a Shelter
+    /// OR the Motel. (Bug fix: motel residents were never tracked, so they never generated
+    /// casework requests and could never be processed home.)</summary>
+    public static bool IsLodgingBuilding(MonoBehaviour b)
     {
-        List<ClientGroup> groupsToRemove = new List<ClientGroup>();
-        
-        foreach (ClientGroup group in clientGroups.ToList()) // ToList to avoid modification during iteration
+        if (b == null) return false;
+        Building bld = b.GetComponent<Building>();
+        if (bld != null && bld.GetBuildingType() == BuildingType.Shelter) return true;
+        PrebuiltBuilding pb = b.GetComponent<PrebuiltBuilding>();
+        return pb != null && pb.GetPrebuiltType() == PrebuiltBuildingType.Motel;
+    }
+
+    /// <summary>Self-walk relocation (main-bugfixes): people leave the source's tracker when they set
+    /// off. A walk to a casework site is a processing-home event (credited here, the decision is
+    /// irrevocable); a walk between lodging buildings just moves the group.</summary>
+    public void HandleSelfWalkDeparture(MonoBehaviour source, MonoBehaviour dest, int count, GameTask parentTask)
+    {
+        if (count <= 0 || dest == null || source == null) return;
+        if (IsCaseworkSite(dest))
+            RemoveClientsByQuantity(source, count, GroupIdFromDescription(parentTask?.description));
+        else if (IsLodgingBuilding(dest) && IsLodgingBuilding(source))
+            RemoveClientsByQuantity(source, count, -1, creditCasework: false);
+    }
+
+    /// <summary>Self-walk arrival: only lodging buildings hold tracked groups.</summary>
+    public void HandleSelfWalkArrival(MonoBehaviour dest, int count, string groupName)
+    {
+        if (count <= 0 || dest == null || !IsLodgingBuilding(dest)) return;
+        RegisterClientArrival(dest, count, groupName);
+    }
+
+    /// <summary>Immediate (no-vehicle) population transfer: same tracking as a vehicle delivery.</summary>
+    public void HandleImmediateTransfer(MonoBehaviour source, MonoBehaviour dest, int count, GameTask parentTask)
+    {
+        if (count <= 0 || dest == null) return;
+        if (IsCaseworkSite(dest))
         {
-            // Check for casework request
-            if (group.ShouldRequestCasework(currentRound) && enableCaseworkTaskGeneration)
-            {
-                GenerateCaseworkTask(group);
-                group.caseworkRequestGenerated = true;
-                OnCaseworkRequested?.Invoke(group);
-            }
-
-            // Check for overstay
-            if (group.IsOverstaying(currentRound) && !group.isOverstaying)
-            {
-                group.isOverstaying = true;
-                group.overstayRounds = group.GetRoundsInShelter(currentRound) - overstayThreshold;
-
-                // Record overstay
-                OverstayRecord record = new OverstayRecord(group, currentRound);
-                overstayRecords.Add(record);
-
-                OnClientOverstay?.Invoke(group);
-                OnOverstayRecorded?.Invoke(record);
-
-                if (showDebugInfo)
-                    Debug.Log($"OVERSTAY: {group.groupName} at {group.currentShelter?.name} - {group.GetRoundsInShelter(currentRound)} rounds");
-                    
-                GameLogPanel.Instance.LogBuildingStatus($"client overstay: {group.groupName} at {group.currentShelter?.name} - {group.GetRoundsInShelter(currentRound)} rounds");
-            }
-            
-            // Update overstay rounds for already overstaying groups
-            if (group.isOverstaying)
-            {
-                group.overstayRounds = group.GetRoundsInShelter(currentRound) - overstayThreshold;
-            }
+            if (source != null) RemoveClientsByQuantity(source, count, GroupIdFromDescription(parentTask?.description));
+        }
+        else if (IsLodgingBuilding(dest))
+        {
+            if (source != null && IsLodgingBuilding(source))
+                RemoveClientsByQuantity(source, count, -1, creditCasework: false);
+            int id = parentTask != null ? parentTask.taskId : 0;
+            RegisterClientArrival(dest, count, $"Immediate_{id}_{(source != null ? source.name : "?")}_to_{dest.name}");
         }
     }
+
+    static int GroupIdFromDescription(string description)
+    {
+        if (string.IsNullOrEmpty(description)) return -1;
+        const string marker = "|CLIENT_GROUP_ID:";
+        int idx = description.IndexOf(marker);
+        if (idx < 0) return -1;
+        return int.TryParse(description.Substring(idx + marker.Length), out int id) ? id : -1;
+    }
+
+    /// <summary>The storage of a shelter (Building) or the motel (PrebuiltBuilding).</summary>
+    static BuildingResourceStorage GetFacilityStorage(MonoBehaviour facility)
+    {
+        if (facility == null) return null;
+        PrebuiltBuilding pb = facility.GetComponent<PrebuiltBuilding>();
+        if (pb != null) return pb.GetResourceStorage();
+        return facility.GetComponent<BuildingResourceStorage>();
+    }
+
+    /// <summary>The client group whose casework request this delivery answers (via the parent task's
+    /// CLIENT_GROUP_ID marker), or -1.</summary>
+    static int FindRequestingGroupId(int deliveryTaskId)
+    {
+        GameTask parent = TaskSystem.Instance?.FindTaskLinkedToDelivery(deliveryTaskId);
+        return GroupIdFromDescription(parent?.description);
+    }
+
+    public static bool IsCaseworkSite(MonoBehaviour b)
+    {
+        Building bld = b != null ? b.GetComponent<Building>() : null;
+        return bld != null && bld.GetBuildingType() == BuildingType.CaseworkSite;
+    }
+
+    /// <summary>Centralized population-delivery hook (replaces the scattered shelter-only
+    /// branches in Vehicle / TaskDetailUI / ClientRelocationHandler). A delivery to a shelter OR
+    /// motel registers a tracked client group; a delivery to a casework site processes that many
+    /// people home from the source lodging building.</summary>
+    public void HandlePopulationDelivery(MonoBehaviour source, MonoBehaviour dest, int count, int taskId)
+    {
+        if (count <= 0 || dest == null) return;
+        if (IsCaseworkSite(dest))
+        {
+            if (source != null) RemoveClientsByQuantity(source, count, FindRequestingGroupId(taskId));
+        }
+        else if (IsLodgingBuilding(dest))
+        {
+            // People moved out of a tracked lodging building (shelter/motel) are no longer that
+            // building's group; a community is not tracked, so nothing to remove there.
+            if (source != null && IsLodgingBuilding(source))
+                RemoveClientsByQuantity(source, count, -1, creditCasework: false);
+            string src = source != null ? source.name : "?";
+            RegisterClientArrival(dest, count, $"Relocate_{taskId}_{src}_to_{dest.name}");
+        }
+    }
+
 
     /// <summary>
     /// Generate casework request task
@@ -292,11 +686,21 @@ public class ClientStayTracker : MonoBehaviour
     void GenerateCaseworkTask(ClientGroup group)
     {
         if (TaskSystem.Instance == null) return;
+        if (group.currentFacility == null)
+        {
+            if (showDebugInfo)
+                Debug.LogWarning($"[ClientStayTracker] Skipping casework task for group {group.groupId} — facility was destroyed.");
+            return;
+        }
 
-        string shelterDisplayName = GetShelterDisplayName(group.currentShelter);
-        string facilityName = group.currentShelter?.name ?? "Unknown Shelter";
-        int roundsInShelter = group.GetRoundsInShelter(currentRound);
-        string description = string.Format(caseworkTaskDescription, roundsInShelter);
+
+        // Casework demand for the reward: these people now need processing home.
+        RewardMetricsTracker.Instance?.RecordCaseworkRequested(group.clientsWithCaseworkNeed);
+        string facilityDisplayName = GetFacilityDisplayName(group.currentFacility);
+        string facilityName = SafeFacilityName(group.currentFacility);
+        int roundsInFacility = group.GetRoundsInFacility(currentRound);
+        string description = string.Format(caseworkTaskDescription, facilityDisplayName, roundsInFacility);
+
 
         GameTask caseworkTask = TaskSystem.Instance.CreateTask(
             caseworkTaskTitle,
@@ -304,57 +708,65 @@ public class ClientStayTracker : MonoBehaviour
             facilityName,
             description);
 
-        caseworkTask.facilityDisplayName = shelterDisplayName;
+        caseworkTask.facilityDisplayName = facilityDisplayName;
         caseworkTask.taskOfficer = TaskOfficer.LodgingMassCare;
         caseworkTask.taskTag = TaskTag.BackToHome;
         caseworkTask.roundsRemaining = 3;
 
-        caseworkTask.impacts.Add(new TaskImpact(ImpactType.Clients, group.clientCount, false, "Clients Requesting Casework"));
-        caseworkTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, roundsInShelter, false, "Rounds in Shelter"));
+        // only for clients w/ casework needs
+        int caseworkClientCount = group.clientsWithCaseworkNeed;
+
+        // Initial value only — TaskSystem.RefreshTaskAgainstLiveState keeps this in sync with the
+        // facility's actual current population every time the task is opened, confirmed, or swept
+        // at round-end, so [population_amount] below can't drift from what execution actually sends
+        // (e.g. if some of these clients get relocated away by a different task first).
+        caseworkTask.populationAmount = caseworkClientCount;
+
+        caseworkTask.impacts.Add(new TaskImpact(ImpactType.Clients, caseworkClientCount, false, "Clients Requesting Casework"));
+        caseworkTask.impacts.Add(new TaskImpact(ImpactType.TotalTime, roundsInFacility, false, "Rounds in Facility"));
 
         caseworkTask.agentMessages.Add(new AgentMessage(
-            $"{group.clientCount} clients at [facility_name] have been in the shelter for {roundsInShelter} rounds and are requesting to return to their communities. Send them to a casework site to resolve their cases."));
+            $"[population_amount] clients at [facility_name] require casework assistance after {roundsInFacility} rounds."));
         caseworkTask.agentMessages.Add(new AgentMessage("How would you like to respond?"));
 
         AgentChoice sendToCasework = new AgentChoice(1,
-            $"Send {group.clientCount} clients to a casework site (+10 satisfaction)");
+            "Send [population_amount] clients to a casework site");
         sendToCasework.triggersDelivery = true;
         sendToCasework.enableMultipleDeliveries = true;
         sendToCasework.multiDeliveryType = AgentChoice.MultiDeliveryType.SingleSourceMultiDest;
         sendToCasework.deliveryCargoType = ResourceType.Population;
-        sendToCasework.deliveryQuantity = group.clientCount;
+        sendToCasework.deliveryQuantity = caseworkClientCount;
         sendToCasework.sourceType = DeliverySourceType.RequestingFacility;
         sendToCasework.destinationType = DeliveryDestinationType.SpecificBuilding;
         sendToCasework.destinationBuilding = BuildingType.CaseworkSite;
-        sendToCasework.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10));
         caseworkTask.agentChoices.Add(sendToCasework);
 
-        AgentChoice delay = new AgentChoice(2, "Ask them to wait longer (-10 satisfaction)");
-        delay.triggersDelivery = false;
-        delay.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -10));
-        caseworkTask.agentChoices.Add(delay);
-
+        // No "wait longer" fallback any more — a no-op choice masked the fact that this task
+        // becomes meaningless once the clients it refers to are gone (e.g. relocated elsewhere
+        // by a different task earlier in the round). That case is now handled by
+        // TaskSystem.RefreshTaskAgainstLiveState auto-resolving this task instead of leaving a
+        // choice that pretended waiting still made sense.
         caseworkTask.description += $"|CLIENT_GROUP_ID:{group.groupId}";
 
         if (showDebugInfo)
-            Debug.Log($"ClientStayTracker generated casework task for {group.clientCount} clients at {shelterDisplayName}");
-        GameLogPanel.Instance.LogTaskEvent($"ClientStayTracker generated casework task for {group.clientCount} clients at {shelterDisplayName}");
+            Debug.Log($"ClientStayTracker generated casework task for {caseworkClientCount} clients at {facilityDisplayName}");
+        GameLogPanel.Instance.LogTaskEvent($"ClientStayTracker generated casework task for {caseworkClientCount} clients at {facilityDisplayName}");
     }
 
-    string GetShelterDisplayName(MonoBehaviour shelter)
+    string GetFacilityDisplayName(MonoBehaviour facility)
     {
-        if (shelter == null) return "Unknown Shelter";
-        Building b = shelter.GetComponent<Building>();
+        if (facility == null) return "Unknown Facility";
+        Building b = facility.GetComponent<Building>();
         if (b != null) return b.GetDisplayName();
-        return shelter.name;
+        return facility.name;
     }
 
     /// <summary>
     /// Get all client groups currently in a specific shelter
     /// </summary>
-    public List<ClientGroup> GetClientsInShelter(MonoBehaviour shelter)
+    public List<ClientGroup> GetClientsInShelter(MonoBehaviour facility)
     {
-        return clientGroups.Where(g => g.currentShelter == shelter).ToList();
+        return clientGroups.Where(g => g.currentFacility == facility).ToList();
     }
 
     /// <summary>
@@ -370,9 +782,9 @@ public class ClientStayTracker : MonoBehaviour
         stats["AverageOverstayRounds"] = overstayRecords.Count > 0 ? overstayRecords.Average(r => r.roundsOverstayed) : 0;
         
         // Group by shelter
-        var shelterOverstays = overstayRecords.GroupBy(r => r.shelterName)
+        var facilityOverstays = overstayRecords.GroupBy(r => r.facilityName)
             .ToDictionary(g => g.Key, g => g.Sum(r => r.clientCount));
-        stats["OverstaysByShelter"] = shelterOverstays;
+        stats["OverstaysByFacility"] = facilityOverstays;
         
         return stats;
     }
@@ -407,12 +819,12 @@ public class ClientStayTracker : MonoBehaviour
         
         foreach (ClientGroup group in clientGroups)
         {
-            int roundsInShelter = group.GetRoundsInShelter(currentRound);
+            int roundsInShelter = group.GetRoundsInFacility(currentRound);
             string status = group.isOverstaying ? "OVERSTAYING" : 
                            group.caseworkRequestGenerated ? "CASEWORK REQUESTED" :
                            roundsInShelter >= 8 ? "READY FOR CASEWORK" : "NORMAL";
             
-            Debug.Log($"{group.groupName}: {group.clientCount} clients at {group.currentShelter?.name} " +
+            Debug.Log($"{group.groupName}: {group.clientCount} clients at {group.currentFacility?.name} " +
                      $"({roundsInShelter} rounds) - {status}");
         }
         
@@ -428,5 +840,60 @@ public class ClientStayTracker : MonoBehaviour
             RegisterClientArrival(shelters[0], 3, "Test Family");
             Debug.Log($"Added test clients to {shelters[0].name}");
         }
+    }
+
+    public static string SafeFacilityName(MonoBehaviour facility)
+    {
+        return facility == null ? "Unknown Facility" : facility.name;
+    }
+
+    /// <summary>
+    /// Called when a facility (Building/PrebuiltBuilding) is about to be destroyed.
+    /// Removes or relocates any client groups still tracked against it, so nothing
+    /// is left holding a dangling reference after Destroy().
+    /// </summary>
+    public void HandleFacilityDestroyed(MonoBehaviour facility)
+    {
+        if (facility == null) return;
+
+        List<ClientGroup> affected = clientGroups.Where(g => g.currentFacility == facility).ToList();
+        if (affected.Count == 0) return;
+
+        foreach (var group in affected)
+        {
+            if (showDebugInfo)
+                Debug.LogWarning($"[ClientStayTracker] Facility '{facility.name}' destroyed with {group.clientCount} clients still in group '{group.groupName}' — removing group.");
+
+            GameLogPanel.Instance?.LogError($"Facility '{facility.name}' was deconstructed while housing {group.clientCount} clients (group {group.groupName}) — clients removed from tracking.");
+
+            clientGroups.Remove(group);
+        }
+    }
+    /// <summary>
+    /// Fires TriggerNonCaseworkDeparture immediately on a synthetic 3-client group, bypassing the
+    /// normal 4-8 round wait, so the departure alert popup can be verified on demand instead of
+    /// waiting a day or two of real play. Does not touch clientGroups — no side effects on real
+    /// tracked groups.
+    /// </summary>
+    [ContextMenu("Test: Force Caseworkless Departure Alert")]
+    public void TestForceCaseworklessDeparture()
+    {
+        Building[] shelters = FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Shelter).ToArray();
+        if (shelters.Length == 0)
+        {
+            Debug.LogWarning("No shelters found to test departure");
+            return;
+        }
+
+        Building shelter = shelters[0];
+        BuildingResourceStorage storage = shelter.GetComponent<BuildingResourceStorage>();
+        storage?.AddResource(ResourceType.Population, 3); // so RemoveResource below has something real to remove
+
+        ClientGroup testGroup = new ClientGroup(nextGroupId++, "Test_Departure_Group", 3, shelter, currentRound, 0f, 0, 0);
+        testGroup.clientsWithCaseworkNeed = 0;
+        testGroup.clientsWithoutCaseworkNeed = 3;
+
+        TriggerNonCaseworkDeparture(testGroup);
+        Debug.Log($"Forced a caseworkless departure alert at {shelter.name} for testing");
     }
 }

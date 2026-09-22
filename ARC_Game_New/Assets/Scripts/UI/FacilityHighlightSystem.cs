@@ -35,6 +35,7 @@ public class FacilityHighlightSystem : MonoBehaviour
 
     public void HighlightFacility(string facilityObjectName)
     {
+        GameLogPanel.Instance?.LogUIInteraction($"Highlighted facility on map: {facilityObjectName}");
         StartCoroutine(RunHighlight(facilityObjectName));
     }
 
@@ -76,7 +77,77 @@ public class FacilityHighlightSystem : MonoBehaviour
 
     public void HighlightRoute(MonoBehaviour source, MonoBehaviour dest)
     {
+        GameLogPanel.Instance?.LogUIInteraction($"Highlighted delivery route on map: {source?.name} to {dest?.name}");
         StartCoroutine(RunRouteHighlight(source, dest));
+    }
+
+    public void HighlightMultiSourceRoute(System.Collections.Generic.List<MonoBehaviour> sources, MonoBehaviour dest, System.Action onComplete = null)
+    {
+        if (sources == null || sources.Count == 0)
+        {
+            onComplete?.Invoke();
+            return;
+        }
+        if (sources.Count == 1)
+        {
+            PreviewRouteAndCallback(sources[0], dest, onComplete);
+            return;
+        }
+
+        GameLogPanel.Instance?.LogUIInteraction($"Highlighted multi-source delivery route on map: {sources.Count} sources to {dest?.name}");
+        StartCoroutine(RunMultiSourceRouteHighlight(sources, dest, onComplete));
+    }
+
+    IEnumerator RunMultiSourceRouteHighlight(System.Collections.Generic.List<MonoBehaviour> sources, MonoBehaviour dest, System.Action onComplete)
+    {
+        UIToggleButton.Instance?.SetHidden(true);
+
+        Vector3 originalCameraPos = Vector3.zero;
+        bool movedCamera = false;
+        if (Camera.main != null && sources.Count > 0 && dest != null)
+        {
+            originalCameraPos = Camera.main.transform.position;
+            Vector3 sum = dest.transform.position;
+            foreach (var s in sources) sum += s.transform.position;
+            Vector3 midpoint = sum / (sources.Count + 1);
+            midpoint.z = originalCameraPos.z;
+            yield return StartCoroutine(PanCamera(originalCameraPos, midpoint));
+            movedCamera = true;
+        }
+        ShowMultiSourceRouteLine(sources, dest);
+
+        var srs = new System.Collections.Generic.List<SpriteRenderer>();
+        var originals = new System.Collections.Generic.List<Color>();
+        foreach (var s in sources)
+        {
+            var sr = s.GetComponentInChildren<SpriteRenderer>();
+            srs.Add(sr);
+            originals.Add(sr != null ? sr.color : Color.white);
+        }
+        SpriteRenderer dstSR = dest != null ? dest.GetComponentInChildren<SpriteRenderer>() : null;
+        Color dstOriginal = dstSR != null ? dstSR.color : Color.white;
+
+        float elapsed = 0f;
+        while (elapsed < highlightDuration)
+        {
+            float t = (Mathf.Sin(elapsed * pulseFrequency * Mathf.PI * 2f) + 1f) * 0.5f;
+            for (int i = 0; i < srs.Count; i++)
+                if (srs[i] != null) srs[i].color = Color.Lerp(originals[i], sourceHighlightColor, t);
+            if (dstSR != null) dstSR.color = Color.Lerp(dstOriginal, destHighlightColor, t);
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
+        for (int i = 0; i < srs.Count; i++)
+            if (srs[i] != null) srs[i].color = originals[i];
+        if (dstSR != null) dstSR.color = dstOriginal;
+
+        HideRouteLine();
+
+        if (movedCamera)
+            yield return StartCoroutine(PanCamera(Camera.main.transform.position, originalCameraPos));
+
+        UIToggleButton.Instance?.SetHidden(false);
+        onComplete?.Invoke();
     }
 
     IEnumerator RunRouteHighlight(MonoBehaviour source, MonoBehaviour dest)
@@ -149,6 +220,28 @@ public class FacilityHighlightSystem : MonoBehaviour
         routeLine.gameObject.SetActive(true);
     }
 
+    void ShowMultiSourceRouteLine(System.Collections.Generic.List<MonoBehaviour> sources, MonoBehaviour dest)
+    {
+        if (routeLine == null || dest == null || sources == null || sources.Count == 0) return;
+
+        var points = new System.Collections.Generic.List<Vector3>();
+        Vector3 destPos = new Vector3(dest.transform.position.x, dest.transform.position.y, 0f);
+
+        for (int i = 0; i < sources.Count; i++)
+        {
+            if (sources[i] == null) continue;
+            Vector3 srcPos = new Vector3(sources[i].transform.position.x, sources[i].transform.position.y, 0f);
+            points.Add(srcPos);
+            points.Add(destPos);
+        }
+
+        if (points.Count == 0) return;
+
+        routeLine.positionCount = points.Count;
+        routeLine.SetPositions(points.ToArray());
+        routeLine.gameObject.SetActive(true);
+    }
+
     void HideRouteLine()
     {
         if (routeLine != null)
@@ -177,5 +270,34 @@ public class FacilityHighlightSystem : MonoBehaviour
             if (pb.name == objectName) return pb;
 
         return null;
+    }
+
+    /// <summary>
+    /// Used to notify when done with route highlight, since Highlight hides all UI.
+    /// </summary>
+    public void PreviewRouteAndCallback(MonoBehaviour source, MonoBehaviour dest, System.Action onComplete)
+    {
+        StartCoroutine(RunRoutePreviewSequence(source, dest, onComplete));
+    }
+
+    private IEnumerator RunRoutePreviewSequence(MonoBehaviour source, MonoBehaviour dest, System.Action onComplete)
+    {
+        yield return StartCoroutine(RunRouteHighlight(source, dest));
+        onComplete?.Invoke();
+    }
+
+
+    /// <summary>
+    /// Used to notify when done with facility highlight, since Highlight hides all UI.
+    /// </summary>
+    public void HighlightFacilityWithCallback(string facilityObjectName, System.Action onComplete)
+    {
+        StartCoroutine(RunFacilityHighlightSequence(facilityObjectName, onComplete));
+    }
+
+    private IEnumerator RunFacilityHighlightSequence(string facilityObjectName, System.Action onComplete)
+    {
+        yield return StartCoroutine(RunHighlight(facilityObjectName));
+        onComplete?.Invoke();
     }
 }

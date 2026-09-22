@@ -9,10 +9,17 @@ public class PlayerMessageUI : MonoBehaviour
     [Header("UI Components")]
     public Image speechBubble;
     public TextMeshProUGUI messageText;
-    
+
     public void Initialize(PlayerMessage message)
     {
         if (messageText != null)
+        {
             messageText.text = message.messageText;
+        }
+
+        if (speechBubble != null)
+        {
+            LayoutRebuilder.ForceRebuildLayoutImmediate(speechBubble.rectTransform);
+        }
     }
 }

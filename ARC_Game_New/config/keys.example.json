@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy this file to config/keys.json (gitignored) and replace with real keys. Map each shared API key to a label (used in logs and /health). Optionally add a 'configs' allowlist to restrict which configs that key may see and use; omit it (or leave empty) to allow all configs. Clients pass the key in the WebSocket hello frame (and as 'Authorization: Bearer <key>' for GET /configs).",
+  "ck_replace_me_shared_demo_key": { "label": "public-demo", "configs": ["claude_multi_agent_config", "single_agent_config"] },
+  "ck_replace_me_lab_key": { "label": "cmu-lab" }
+}

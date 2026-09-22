@@ -56,10 +56,11 @@ public class Building : MonoBehaviour
     [Header("UI Components")]
     public SpriteWorkforceIndicator mapWorkforceIndicator;
 
+
     [Header("Deconstruction Settings")]
-    public float deconstructionTime = 3f;
+    public int deconstructionRoundsTotal = 4; 
+    private int deconstructionRoundsElapsed = 0;
     private float deconstructionProgress = 0f;
-    private Coroutine deconstructionCoroutine;
 
     private float constructionProgress = 0f;
     private int constructionRoundsTotal;
@@ -86,6 +87,7 @@ public class Building : MonoBehaviour
 
     void Start()
     {
+        ApplyConfiguredWorkforce();   // no-op until GameDataManager is ready; it calls back otherwise
         if (buildingRenderer == null)
             buildingRenderer = GetComponent<SpriteRenderer>();
 
@@ -191,62 +193,74 @@ public class Building : MonoBehaviour
     }
 
     // Start Deconstruction
-    public void StartDeconstruction()
+    public void StartDeconstruction(int rounds = 4)
     {
-        if (currentStatus != BuildingStatus.InUse)
+        if (currentStatus == BuildingStatus.Deconstructing || currentStatus == BuildingStatus.UnderConstruction)
         {
-            Debug.LogWarning($"Cannot deconstruct {buildingType}: building is not in use (current status: {currentStatus})");
             return;
         }
 
-        // Release all workers immediately
         ReleaseAllWorkers();
+        ReleaseClientGroups();
 
-        // Change status to deconstructing
+        // originalSiteId gets reused by whatever new building is later constructed on this
+        // AbandonedSite — clear this site's worker-assignment state now so the new building
+        // doesn't inherit a stale "locked" record or a leftover pending management task.
+        WorkerAssignmentTracker.Instance?.ClearBuilding(originalSiteId);
+        WorkerAssignmentHandler.Instance?.ClearPendingTask(originalSiteId);
+
+        DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
+
         currentStatus = BuildingStatus.Deconstructing;
+        deconstructionRoundsTotal = Mathf.Max(1, rounds);
+        deconstructionRoundsElapsed = 0;
         deconstructionProgress = 0f;
 
-        // Show progress bar
         if (constructionProgressBar != null)
             constructionProgressBar.SetActive(true);
 
-        // Hide workforce indicator
         if (mapWorkforceIndicator != null)
             mapWorkforceIndicator.gameObject.SetActive(false);
 
-        // Start deconstruction coroutine
-        if (deconstructionCoroutine != null)
-        {
-            StopCoroutine(deconstructionCoroutine);
-        }
-        deconstructionCoroutine = StartCoroutine(DeconstructionCoroutine());
+        GlobalClock.OnRoundEnd += OnDeconstructionRoundEnd;
 
+        UpdateDeconstructionProgress(0f);
         UpdateBuildingVisual();
 
-        Debug.Log($"{buildingType} at site {originalSiteId} deconstruction started");
+        Debug.Log($"{buildingType} at site {originalSiteId} deconstruction started ({deconstructionRoundsTotal} rounds)");
         GameLogPanel.Instance.LogBuildingStatus($"{buildingType} at site {originalSiteId} deconstruction started");
         ToastManager.ShowToast($"{buildingType} is now closing — workers released.", ToastType.Info, true);
     }
+    // public void StartDeconstruction()
+    // {
+    //     if (currentStatus == BuildingStatus.Deconstructing || currentStatus == BuildingStatus.UnderConstruction)
+    //     {
+    //         return;
+    //     }
 
-    // Deconstruction Coroutine
-    IEnumerator DeconstructionCoroutine()
+    void OnDeconstructionRoundEnd()
     {
-        float elapsedTime = 0f;
+        deconstructionRoundsElapsed++;
+        deconstructionProgress = (float)deconstructionRoundsElapsed / deconstructionRoundsTotal;
 
-        while (elapsedTime < deconstructionTime)
+        UpdateDeconstructionProgress(deconstructionProgress);
+        UpdateBuildingVisual();
+
+        if (deconstructionRoundsElapsed >= deconstructionRoundsTotal)
         {
-            elapsedTime += Time.deltaTime;
-            deconstructionProgress = elapsedTime / deconstructionTime;
-
-            // Update progress bar
-            UpdateDeconstructionProgress(deconstructionProgress);
-            UpdateBuildingVisual();
-
-            yield return null;
+            GlobalClock.OnRoundEnd -= OnDeconstructionRoundEnd;
+            CompleteDeconstruction();
         }
+    }
 
-        // Deconstruction completed
-        CompleteDeconstruction();
+    void ReleaseClientGroups()
+    {
+        if (ClientStayTracker.Instance == null) return;
+        var affected = ClientStayTracker.Instance.GetClientsInShelter(this);
+        foreach (var group in affected)
+        {
+            ClientStayTracker.Instance.RemoveClientGroup(group.groupId);
+        }
     }
 
     // Update Deconstruction Progress
@@ -291,14 +305,18 @@ public class Building : MonoBehaviour
 
         // Find the BuildingSystem to handle deconstruction properly
         BuildingSystem buildingSystem = FindObjectOfType<BuildingSystem>();
+        bool successfullyHandled = false;
         if (buildingSystem != null)
         {
             // Use BuildingSystem's existing deconstruction method
             // which knows how to find and restore the original AbandonedSite
-            buildingSystem.DeconstructBuilding(this);
-
-            Debug.Log("Deconstruction handled by BuildingSystem");
-            return; // BuildingSystem will handle destroying this building
+            successfullyHandled = buildingSystem.DeconstructBuilding(this);   // once (it used to run twice)
+            if (successfullyHandled)
+            {
+                Debug.Log("Deconstruction handled by BuildingSystem");
+                return; // BuildingSystem will handle destroying this building
+            }
+            Debug.LogWarning($"BuildingSystem could not deconstruct {name}; destroying it directly so it does not stay Deconstructing forever");
         }
         else
         {
@@ -319,6 +337,17 @@ public class Building : MonoBehaviour
             }
 
             Destroy(gameObject); // Destroy the entire building GameObject
+        }
+
+        if (!successfullyHandled)
+        {
+            Debug.LogWarning($"BuildingSystem could not restore site {originalSiteId}. Forcing destruction.");
+            
+            // Notify UI Overlay before disappearing
+            if (BuildingUIOverlay.Instance != null)
+                BuildingUIOverlay.Instance.OnBuildingDestroyed(this);
+
+            Destroy(gameObject);
         }
     }
 
@@ -454,11 +483,80 @@ public class Building : MonoBehaviour
     }
 
     // Getters
+    /// <summary>
+    /// Snapshot support. constructionRoundsElapsed / deconstructionRoundsElapsed are
+    /// PRIVATE and appear nowhere in the observation payload, so a restore that only
+    /// replays the visible fields leaves a building that looks right but finishes
+    /// construction on the wrong round. They are the reason a "state looks correct after
+    /// load" check is not sufficient evidence of a correct restore.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public int originalSiteId;
+        public string buildingType;
+        public string buildingName;
+        public string status;
+        public int constructionRoundsTotal, constructionRoundsElapsed;
+        public int deconstructionRoundsTotal, deconstructionRoundsElapsed;
+        public float constructionProgress, deconstructionProgress;
+        public int capacity, requiredWorkforce;
+        public float operationalEfficiency;
+        public BuildingResourceStorage.Snapshot storage;
+    }
+
+    public Snapshot CaptureState() => new Snapshot
+    {
+        originalSiteId = originalSiteId,
+        buildingType = buildingType.ToString(),
+        buildingName = buildingName,
+        status = currentStatus.ToString(),
+        constructionRoundsTotal = constructionRoundsTotal,
+        constructionRoundsElapsed = constructionRoundsElapsed,
+        deconstructionRoundsTotal = deconstructionRoundsTotal,
+        deconstructionRoundsElapsed = deconstructionRoundsElapsed,
+        constructionProgress = constructionProgress,
+        deconstructionProgress = deconstructionProgress,
+        capacity = capacity,
+        requiredWorkforce = requiredWorkforce,
+        operationalEfficiency = operationalEfficiency,
+        storage = GetComponent<BuildingResourceStorage>()?.CaptureState(),
+    };
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        buildingName = s.buildingName;
+        if (System.Enum.TryParse(s.status, out BuildingStatus st)) currentStatus = st;
+        constructionRoundsTotal = s.constructionRoundsTotal;
+        constructionRoundsElapsed = s.constructionRoundsElapsed;
+        deconstructionRoundsTotal = s.deconstructionRoundsTotal;
+        deconstructionRoundsElapsed = s.deconstructionRoundsElapsed;
+        constructionProgress = s.constructionProgress;
+        deconstructionProgress = s.deconstructionProgress;
+        capacity = s.capacity;
+        requiredWorkforce = s.requiredWorkforce;
+        operationalEfficiency = s.operationalEfficiency;
+        if (s.storage != null) GetComponent<BuildingResourceStorage>()?.RestoreState(s.storage);
+    }
+
     public BuildingType GetBuildingType() => buildingType;
     public int GetOriginalSiteId() => originalSiteId;
     public string GetDisplayName() => !string.IsNullOrEmpty(buildingName) ? buildingName : $"{buildingType} {originalSiteId}";
     public void SetBuildingName(string name) => buildingName = name;
     public BuildingStatus GetCurrentStatus() => currentStatus;
+    bool workforceConfigApplied = false;
+    /// <summary>initialWorkerUnitsNeededPerLocation -> requiredWorkforce (BUG_REPORTS B35).</summary>
+    public void ApplyConfiguredWorkforce()
+    {
+        if (workforceConfigApplied) return;
+        var gdm = GameDataManager.Instance;
+        if (gdm == null || !gdm.IsDataReady || gdm.InitialRequiredWorkersPerLoc <= 0) return;
+        workforceConfigApplied = true;
+        requiredWorkforce = gdm.InitialRequiredWorkersPerLoc;
+        Debug.Log($"{gameObject.name} requiredWorkforce={requiredWorkforce} (initialWorkerUnitsNeededPerLocation)");
+    }
+
     public bool IsOperational() => currentStatus == BuildingStatus.InUse;
     public bool IsUnderConstruction() => currentStatus == BuildingStatus.UnderConstruction;
     public bool NeedsWorker() => currentStatus == BuildingStatus.NeedWorker;
@@ -466,7 +564,8 @@ public class Building : MonoBehaviour
     public bool IsDeconstructing() => currentStatus == BuildingStatus.Deconstructing; // NEW
     public float GetConstructionProgress() => constructionProgress;
     public int   GetRoundsRemaining()      => Mathf.Max(0, constructionRoundsTotal - constructionRoundsElapsed);
-    public float GetDeconstructionProgress() => deconstructionProgress; // NEW
+    // public float GetDeconstructionProgress() => deconstructionProgress; // NEW
+    public float GetDeconstructionProgress() => deconstructionProgress;
     public int GetCapacity() => capacity;
     public float GetEfficiency() => operationalEfficiency;
     public int GetRequiredWorkforce() => requiredWorkforce;
@@ -492,14 +591,28 @@ public class Building : MonoBehaviour
         return GetAssignedWorkforce() >= requiredWorkforce;
     }
 
+    //void OnDestroy()
+    //{
+    //    GlobalClock.OnRoundEnd -= OnConstructionRoundEnd;
+
+
+    //    if (WorkerSystem.Instance != null)
+    //        WorkerSystem.Instance.OnWorkerStatsChanged -= UpdateWorkforceIndicator;
+    //    DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
+    //}
+
     void OnDestroy()
     {
         GlobalClock.OnRoundEnd -= OnConstructionRoundEnd;
+        GlobalClock.OnRoundEnd -= OnDeconstructionRoundEnd; // add this
 
         if (WorkerSystem.Instance != null)
             WorkerSystem.Instance.OnWorkerStatsChanged -= UpdateWorkforceIndicator;
+        DeliverySystem.Instance?.CancelAllDeliveriesInvolving(this);
+        ClientStayTracker.Instance?.HandleFacilityDestroyed(this); 
     }
-    
+
+
     [Header("Manual Task Debug")]
     public bool enableManualTasks = true;
 
@@ -532,9 +645,9 @@ public class Building : MonoBehaviour
         
         if (sourceKitchen != null)
         {
-            int requestAmount = 5; // Request 5 food packs
+            int requestAmount = 5; // Request 5 mealss
             deliverySystem.CreateDeliveryTask(sourceKitchen, this, ResourceType.FoodPacks, requestAmount, 5);
-            Debug.Log($"{name} requested {requestAmount} food packs from {sourceKitchen.name}");
+            Debug.Log($"{name} requested {requestAmount} mealss from {sourceKitchen.name}");
         }
         else
         {
@@ -575,7 +688,7 @@ public class Building : MonoBehaviour
         {
             int sendAmount = Mathf.Min(storage.GetResourceAmount(ResourceType.FoodPacks), 3);
             deliverySystem.CreateDeliveryTask(this, targetShelter, ResourceType.FoodPacks, sendAmount, 5);
-            Debug.Log($"{name} sending {sendAmount} food packs to {targetShelter.name}");
+            Debug.Log($"{name} sending {sendAmount} mealss to {targetShelter.name}");
         }
         else
         {
@@ -653,4 +766,5 @@ public class Building : MonoBehaviour
             StartDeconstruction();
         }
     }
+
 }

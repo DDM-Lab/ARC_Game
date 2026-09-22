@@ -50,7 +50,48 @@ public class PlayerSession : MonoBehaviour
                 nameInputField.text = savedName;
         }
 
+        // Read the participant ID straight from this page's own URL, rather than relying only on
+        // the wrapper HTML's unityInstance.SendMessage("PlayerSession", "SetParticipantIdFromUrl", uid)
+        // call arriving at the right moment. That call fires the instant the Unity WebGL loader
+        // resolves — which happens while the FIRST loaded scene (TitleScene) is showing, not this
+        // one (TutorialScene, where this GameObject actually lives). Since the target doesn't exist
+        // yet, Unity silently drops the message, and by the time this scene loads the uid is
+        // already lost. Application.absoluteURL is empty in Editor/Standalone, so this still falls
+        // through to the manual-entry panel exactly as before for local testing. The JS SendMessage
+        // path is left in place as a harmless no-op/backup — if it ever does land after this
+        // GameObject exists, it just re-sets the same value.
+        string urlUid = GetQueryParam(Application.absoluteURL, "uid");
+        if (!string.IsNullOrEmpty(urlUid))
+        {
+            SetParticipantIdFromUrl(urlUid);
+            return;
+        }
+
         ShowPanel();
+    }
+
+    /// <summary>Minimal query-string reader (avoids relying on System.Web, which Unity's WebGL
+    /// runtime doesn't include). Returns null if the key isn't present.</summary>
+    static string GetQueryParam(string url, string key)
+    {
+        if (string.IsNullOrEmpty(url)) return null;
+
+        int queryStart = url.IndexOf('?');
+        if (queryStart < 0) return null;
+        string query = url.Substring(queryStart + 1);
+
+        int fragmentStart = query.IndexOf('#');
+        if (fragmentStart >= 0) query = query.Substring(0, fragmentStart);
+
+        foreach (string pair in query.Split('&'))
+        {
+            int eq = pair.IndexOf('=');
+            string k = eq >= 0 ? pair.Substring(0, eq) : pair;
+            if (k != key) continue;
+            string v = eq >= 0 ? pair.Substring(eq + 1) : "";
+            return Uri.UnescapeDataString(v);
+        }
+        return null;
     }
 
     void ShowPanel()
@@ -59,6 +100,8 @@ public class PlayerSession : MonoBehaviour
             sessionPanel.SetActive(true);
 
         Time.timeScale = 0f;
+
+        GameLogPanel.Instance?.LogUIInteraction("Player session panel shown");
     }
 
     void OnStartButtonClicked()
@@ -77,12 +120,37 @@ public class PlayerSession : MonoBehaviour
             return;
         }
 
-        PlayerName = inputName;
-        PlayerPrefs.SetString("PlayerName", inputName);
+        CompleteSession(inputName);
+    }
+
+    /// <summary>
+    /// Called from the browser wrapper's JS (via unityInstance.SendMessage("PlayerSession",
+    /// "SetParticipantIdFromUrl", uid)) when a participant ID was found in the page's URL query
+    /// string (Qualtrics redirect flow: ?uid=...). Skips the manual-entry panel entirely and
+    /// starts the session with that ID through the same completion path the manual Start button
+    /// uses. Ignored (leaving the manual-entry panel showing) if uid is missing/empty, so local
+    /// testing without a query string still works exactly as before.
+    /// </summary>
+    public void SetParticipantIdFromUrl(string uid)
+    {
+        if (string.IsNullOrEmpty(uid)) return;
+
+        if (nameInputField != null)
+            nameInputField.text = uid; // keep in sync in case anything else reads the field directly
+
+        GameLogPanel.Instance?.LogPlayerAction($"Participant ID captured from URL: {uid}");
+        CompleteSession(uid);
+    }
+
+    void CompleteSession(string id)
+    {
+        PlayerName = id;
+        PlayerPrefs.SetString("PlayerName", id);
         PlayerPrefs.Save();
         IsSessionActive = true;
 
         Debug.Log($"[PlayerSession] Session started: {PlayerName} ({SessionId})");
+        GameLogPanel.Instance?.LogPlayerAction($"Session started: {PlayerName} ({SessionId})");
 
         if (sessionPanel != null)
             sessionPanel.SetActive(false);

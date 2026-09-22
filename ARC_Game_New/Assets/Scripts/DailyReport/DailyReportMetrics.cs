@@ -39,6 +39,9 @@ using UnityEngine;
 ///
 ///   Total Efficiency Change = sum of all four
 ///   Final Efficiency = previous + change (unclamped)
+///   
+/// ^^OLD------------------------------------------------------------------------------------------
+/// 
 /// ============================================================================
 
 [System.Serializable]
@@ -71,6 +74,9 @@ public class DailyReportMetrics
     public int expiredFoodPacks;    // Compatibility alias for expired food
     public int currentFoodInStorage;
     public float mealUsageRate;
+    // Communities have no consumption rate — this is the sum of food-request task quantities
+    // generated for communities today, tracked separately from consumption-rate facilities.
+    public int communityFoodDemand;
     
     [Header("Population Metrics")]
     public int totalPopulation;
@@ -123,13 +129,39 @@ public class DailyReportMetrics
     [Header("Bottom Panel - What We Did Today")]
     public int newWorkersHired;
     public int workersInTraining;
-    
+
+
+    [Header("Today's Status Panel - Casework")]
+    public int caseworkRequestedTodayNew;
+    public int caseworkSatisfiedToday;
+
+    [Header("Today's Status Panel - Workers")]
+    public int workersUnassignedToday;
+
     [Header("Bottom Panel - Today's Data")]
     /// <summary>
     /// Count of Emergency+Demand tasks that ended as Incomplete or Expired.
     /// Replaces old "totalInfluencedResidents" which was never populated correctly.
     /// </summary>
     public int incompleteExpiredTasks;
+
+    [Header("Today's Status Panel - Lodging")]
+    public int lodgingRequestedToday;
+    public int lodgingSatisfiedToday;
+    [Header("Today's Expenses (Receipt)")]
+    public float todayKitchenOpenCost;
+    public float todayShelterOpenCost;
+    public float todayCaseworkOpenCost;
+    public float todayFastFoodCost;
+    public float todayTransportCost;
+    public float todayLodgingCost;
+    public float todayWorkerRequestCost;
+    public float todayWorkerTrainingCost;
+    public float todayOtherExpenses;
+
+    [Header("Today's Status Panel - Food")]
+    public int foodNeededToday;
+    public int foodConsumedTotalToday;
 
     [Header("Task Type Breakdown - Cases Resolved (Emergency+Demand only)")]
     /// <summary>
@@ -166,5 +198,33 @@ public class DailyReportMetrics
     public float shelterEfficiencyScore;
     public float workerEfficiencyScore;
     public float budgetEfficiencyScore;
+
+    //NEW
+    [Header("Cumulative Satisfaction")]
+    public int cumFoodPacksConsumedByClients;
+    public int cumFoodPacksNeededByClients;
+    public int cumFoodPacksWasted;  
+    public int cumIdleWorkerRounds;
+    public int cumWorkingWorkerRounds;
+    public int cumTrainingWorkerRounds;
+    public int cumClientRoundsAwaitingCasework;
+    public int cumClientsRequestedCasework;
+    public int cumLodgingNightsConsumed;
+    public int cumLodgingNightsNeeded;
+
+    [Header("Cumulative Cost-Eff")]
+    public float cumFoodSpend;
+    public float cumLodgingSpend;
+    public float cumWorkerRequestCost;
+    public float cumWorkerTrainingCost;
+
+
+    [Header("Live Score (0-1, before ×10,000 scale)")]
+    public float liveSatisfactionScore;
+    public float liveCostEfficiencyScore;
+    public float satFoodScore, satLodgingScore, satWorkerScore, satWasteScore, satCaseworkScore;
+    public float workerIdleSatScore, workerTrainingSatScore, workerWorkingSatScore;
+    public float costFoodScore, costLodgingScore, costWorkerScore;
+    public float costEfficiencyChangeCalculated;
 
 } 

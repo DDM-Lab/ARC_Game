@@ -18,9 +18,10 @@ public class TaskDatabase : ScriptableObject
     public List<TaskData> CheckTriggeredTasks()
     {
         List<TaskData> triggeredTasks = new List<TaskData>();
-        
+
         foreach (TaskData taskData in allTasks)
-        {  
+        {
+            if (!IsWithinGenerationRoundLimit(taskData)) continue;
 
             if (AreTriggersActivated(taskData))
             {
@@ -34,6 +35,21 @@ public class TaskDatabase : ScriptableObject
         return triggeredTasks;
     }
     
+    /// <summary>
+    /// Hard cutoff on when a task may be generated, independent of (and checked before) the
+    /// AND/OR trigger combination below — so it applies unconditionally, including skipping the
+    /// probability roll entirely once past the limit. taskData.latestGenerationRound uses the
+    /// same 1-indexed "Round N" numbering shown to the player; 0 means no limit.
+    /// </summary>
+    bool IsWithinGenerationRoundLimit(TaskData taskData)
+    {
+        if (taskData.latestGenerationRound <= 0) return true;
+        if (GlobalClock.Instance == null) return true;
+
+        int currentRoundInDay = GlobalClock.Instance.GetCurrentTimeSegment() + 1;
+        return currentRoundInDay <= taskData.latestGenerationRound;
+    }
+
     /// <summary>
     /// Check if all trigger conditions are met for a task
     /// </summary>
@@ -52,13 +68,13 @@ public class TaskDatabase : ScriptableObject
             triggerResults.Add(trigger.CheckCondition());
         
         foreach (var trigger in taskData.probabilityTriggers)
-            triggerResults.Add(trigger.CheckCondition());
+            triggerResults.Add(CheckProbability(taskData, trigger));
 
         foreach (var trigger in taskData.floodTileTriggers)
             triggerResults.Add(trigger.CheckCondition());
 
         foreach (var trigger in taskData.floodedFacilityTriggers)
-            triggerResults.Add(trigger.CheckCondition());
+            triggerResults.Add(Configured(taskData, trigger).CheckCondition());
 
         foreach (var trigger in taskData.budgetTriggers)
             triggerResults.Add(trigger.CheckCondition());
@@ -192,7 +208,8 @@ public class TaskDatabase : ScriptableObject
         foreach (TaskData taskData in allTasks)
         {
             if (taskData == null) continue;
-            
+            if (!IsWithinGenerationRoundLimit(taskData)) continue;
+
             // For global tasks, check triggers once globally
             if (taskData.isGlobalTask)
             {
@@ -226,6 +243,9 @@ public class TaskDatabase : ScriptableObject
     /// <summary>
     /// NEW: Check if triggers are activated for a specific facility
     /// </summary>
+    static readonly bool TriggerTrace =
+        System.Environment.GetEnvironmentVariable("ARC_TRIGGER_TRACE") == "1";
+
     bool AreTriggersActivatedForFacility(TaskData taskData, MonoBehaviour facility)
     {
         List<bool> triggerResults = new List<bool>();
@@ -239,18 +259,43 @@ public class TaskDatabase : ScriptableObject
         
         // Per-facility resource triggers
         foreach (var trigger in taskData.resourceTriggers)
-            triggerResults.Add(CheckResourceTriggerForFacility(trigger, facility));
+        {
+            bool rres = CheckResourceTriggerForFacility(trigger, facility);
+            if (TriggerTrace && taskData.taskId == "Community_TransportRequest")
+            {
+                var stor = (facility as PrebuiltBuilding)?.GetResourceStorage();
+                Debug.Log($"[D19res] {facility?.name} type={trigger.resourceType} cond={trigger.condition} "
+                        + $"thr={trigger.resourceThreshold} -> {rres}  "
+                        + $"amount={(stor != null ? stor.GetResourceAmount(trigger.resourceType).ToString() : "no-storage")} "
+                        + $"cap={(stor != null ? stor.GetResourceCapacity(trigger.resourceType).ToString() : "-")}");
+            }
+            triggerResults.Add(rres);
+        }
         
         // Per-facility probability triggers (each facility rolls independently)
         foreach (var trigger in taskData.probabilityTriggers)
-            triggerResults.Add(trigger.CheckCondition()); // Each call is independent random roll
+        {
+            // TEMPORARY DIAGNOSTIC (ledger D19). Prints the roll and the threshold for one task
+            // so the per-facility outcome can be compared against upstream's log instead of
+            // inferred from a matching RNG cursor. Opt-in; remove once D19 is closed.
+            if (TriggerTrace && taskData.taskId == "Community_TransportRequest")
+            {
+                var st = UnityEngine.Random.state;
+                bool hit = CheckProbability(taskData, trigger);
+                Debug.Log($"[D19] {taskData.taskId} @ {facility?.name} prob={trigger.probability} "
+                        + $"-> {hit}  rngBefore={JsonUtility.ToJson(st)}");
+                triggerResults.Add(hit);
+                continue;
+            }
+            triggerResults.Add(CheckProbability(taskData, trigger)); // Each call is independent random roll
+        }
         
         foreach (var trigger in taskData.floodTileTriggers)
             triggerResults.Add(trigger.CheckCondition()); // Global
             
         // Per-facility flood triggers
         foreach (var trigger in taskData.floodedFacilityTriggers)
-            triggerResults.Add(CheckFloodedFacilityTriggerForFacility(trigger, facility));
+            triggerResults.Add(CheckFloodedFacilityTriggerForFacility(Configured(taskData, trigger), facility));
         
         foreach (var trigger in taskData.budgetTriggers)
             triggerResults.Add(trigger.CheckCondition()); // Global
@@ -268,6 +313,8 @@ public class TaskDatabase : ScriptableObject
         foreach (var trigger in taskData.weatherTriggers)
             triggerResults.Add(trigger.CheckCondition()); // Global
 
+        if (TriggerTrace && taskData.taskId == "Community_TransportRequest")
+            Debug.Log($"[D19] {taskData.taskId} @ {facility?.name} results=[{string.Join(",", triggerResults)}] requireAll={taskData.requireAllTriggers}");
         if (triggerResults.Count == 0) return false;
         
         if (taskData.requireAllTriggers)
@@ -278,6 +325,43 @@ public class TaskDatabase : ScriptableObject
         {
             return triggerResults.Any(result => result);
         }
+    }
+
+    // ── Sheet parameters applied at evaluation time (BUG_REPORTS B35); the ScriptableObjects are never mutated ──
+
+    /// <summary>initialFoodDemandFrequency replaces the asset probability of a food-request task that has one
+    /// (Shelter_FoodRequest today; Community_FoodRequest has no probability trigger and is unaffected).</summary>
+    bool CheckProbability(TaskData taskData, ProbabilityTrigger trigger)
+    {
+        // PARITY BUILD (ledger D14): the sheet-driven probability override is REMOVED and the
+        // asset's own trigger is used, as upstream does. Ours substitutes its own
+        // `Random.Range(0f, 1f)` roll for food-request tasks whenever the sheet supplies a
+        // frequency -- a different draw from a different distribution at the same point in the
+        // stream, so the two builds diverge from the first food-request evaluation onward.
+        //
+        // It is NOT the cause of the first RNG divergence seen between v2 and upstream, though
+        // it was briefly recorded as such. Those draws came from `TaskTrigger.CheckCondition()`,
+        // which both branches share; the override never fired here because SetDefaults leaves
+        // `InitialFoodDemandFrequency` negative. Reverted because it is a real divergence under
+        // any run that does read a sheet, not because it explained this one.
+        return trigger.CheckCondition();
+    }
+
+    /// <summary>initialShelterFloodDamage{Comparison,FloodTileThreshold,FloodDetectionRange} -> the
+    /// Shelter Flood Damage trigger.</summary>
+    FloodedFacilityTrigger Configured(TaskData taskData, FloodedFacilityTrigger trigger)
+    {
+        var gdm = GameDataManager.Instance;
+        if (gdm == null || !gdm.IsDataReady || taskData.taskId != "Shelter_Flood_Damage") return trigger;
+        return new FloodedFacilityTrigger
+        {
+            facilityType = trigger.facilityType,
+            specificBuildingType = trigger.specificBuildingType,
+            specificPrebuiltType = trigger.specificPrebuiltType,
+            comparison = gdm.InitialShelterFloodComparison,
+            floodTileThreshold = gdm.InitialShelterFloodThreshold,
+            detectionRadius = gdm.InitialShelterFloodRadius
+        };
     }
 
     /// <summary>
@@ -318,6 +402,8 @@ public class TaskDatabase : ScriptableObject
                 return currentResource < trigger.resourceThreshold;
             case ResourceTrigger.ResourceCondition.MoreThan:
                 return currentResource > trigger.resourceThreshold;
+            case ResourceTrigger.ResourceCondition.NeedsFood:
+                return storage.GetFoodNeed() > 0;
             default:
                 return false;
         }

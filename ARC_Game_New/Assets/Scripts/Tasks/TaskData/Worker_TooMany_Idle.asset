@@ -15,7 +15,8 @@ MonoBehaviour:
   taskId: Worker_TooMany_Idle
   taskTitle: Workforce Optimization Alert
   taskType: 3
-  description: High number of idle workers detected. Training recommendations available.
+  description: High number of idle untrained workers detected. Training recommendations
+    available.
   taskImage: {fileID: 21300000, guid: 7818154064cc5274d8c36500af7288dc, type: 3}
   taskOfficer: 1
   taskTag: 0
@@ -35,7 +36,7 @@ MonoBehaviour:
   budgetTriggers: []
   satisfactionTriggers: []
   workforceTriggers:
-  - conditionType: 2
+  - conditionType: 3
     comparison: 1
     targetValue: 20
   facilityStatusTriggers: []

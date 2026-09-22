@@ -30,6 +30,8 @@ public class UIToggleButton : MonoBehaviour
         foreach (GameObject target in targets)
             if (target != null)
                 target.SetActive(!hidden);
+
+        GameLogPanel.Instance?.LogUIInteraction(hidden ? "Player hid UI overlay" : "Player showed UI overlay");
     }
 
     public void SetHidden(bool hide)

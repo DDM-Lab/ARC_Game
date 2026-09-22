@@ -127,7 +127,7 @@ public class VehicleInfoPanel : MonoBehaviour
             {
                 string type = task.cargoType == ResourceType.Population ? "clients" : "meals";
                 string src  = GetBuildingName(currentVehicle.sourceBuilding);
-                missionText.text = $"Mission: {task.quantity}x {type} from {src}";
+                missionText.text = $"Mission: {task.quantity} {type} from {src}";
             }
             else
             {

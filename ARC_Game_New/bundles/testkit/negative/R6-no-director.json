@@ -1,0 +1,27 @@
+{
+  "manifest": {
+    "name": "testkit/R6",
+    "author": "cpulling",
+    "version": "1.0.0",
+    "cora_api_version": "1.0",
+    "description": "zero directors"
+  },
+  "config": {
+    "agent_order_rule": "sequential",
+    "agents": [
+      {
+        "subagent_name": "Food Mass Care Officer",
+        "role": "subagent",
+        "actor_type": "continuous",
+        "provider": "anthropic-ddmlab",
+        "llm_model": "claude-sonnet-5",
+        "talkinghead_endpoint": "FoodMassCare",
+        "subaction_space": [
+          {
+            "category": "construction"
+          }
+        ]
+      }
+    ]
+  }
+}

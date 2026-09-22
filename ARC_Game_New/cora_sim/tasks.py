@@ -1,0 +1,940 @@
+"""Tasks, deliveries and the six fulfilment counters.
+
+This is the half of the score the economy does not own: foodResolved/foodFulfilled,
+lodgingResolved/lodgingFulfilled, caseworkRequested/caseworkProcessed. Everything here
+funnels through RewardMetricsTracker.RecordTaskResolution and its two late-delivery
+variants, so those three methods ARE the specification.
+
+THE ASYMMETRY THAT DRIVES EVERYTHING. Food and lodging are scored on different units, and
+it is deliberate in the C#, not an accident to be smoothed over:
+
+    LODGING  demandQuantity = max(deliveryQuantity) over the choices that deliver, so
+             resolved and fulfilled are counted in PEOPLE. A relocation task credits 100
+             resolved whether or not anyone moves.
+    FOOD     demandQuantity stays 0 -- the comment in TaskSystem is explicit that food
+             delivered quantity is not tracked -- so it falls back to the LEGACY per-task
+             path: 1 resolved per task, 1 fulfilled if it completed.
+
+A port that treats them alike gets lodging off by ~100x or food off by ~1/100th, and
+because both feed clamped RATIOS the error hides inside a plausible-looking score.
+
+RESOLUTION IS NOT DISAPPEARANCE. Measured on captures: three food tasks left the active
+list in one round while foodResolved rose by 1, and in the next round no food task left
+while foodResolved rose by 2. Food resolves when its DELIVERY lands, not when the choice is
+made, which is why the delivery pipeline is part of this module rather than an optimisation
+on top of it.
+"""
+from __future__ import annotations
+
+FULFILMENT_COUNTERS = ("foodResolved", "foodFulfilled", "lodgingResolved",
+                       "lodgingFulfilled", "caseworkRequested", "caseworkProcessed")
+
+# DEFERRED DELIVERY LATENCY, BY TAG -- measured, not assumed, and the two genuinely differ.
+# Sweeping a single shared latency against captured counters makes one tag exact and the
+# other wrong, every time:
+#
+#   Lodging 1   lodgingFulfilled 600/600 exact on every trace
+#   Food    4    from the distribution comparison, and it is KEPT even though the exact
+#               replay wants 1-2. That contradiction is diagnostic, not a tuning problem:
+#               no single latency satisfies both because the real constraint is not a
+#               delay at all. Unity resolves exactly ONE food delivery per round even with
+#               three orders outstanding and a kitchen holding enough for two -- its
+#               delivery FLEET serialises them. A latency short enough to match the first
+#               resolution then lets all three land at once, and a latency long enough to
+#               spread them out delays the first. Modelling the fleet is the fix; picking
+#               a number between them is not.
+#
+# There is no single value that fits both, which is the evidence that they are separate
+# mechanics rather than one mechanic with a tuning constant. A relocation moves people by
+# vehicle to a destination that already exists; a food request has to be filled from a
+# kitchen's stock, and frequently is not filled before the task expires -- which is exactly
+# why Unity's foodFulfilled sits so far below foodResolved.
+from . import roads
+from .roads import Fleet, path_length
+
+DEFERRED_LATENCY = {"Lodging": 1, "Food": 4}
+
+# THE DELIVERY FLEET. DeliverySystem ships `ervCount` vehicles (3), CreateDeliveryTask
+# splits an order into trips of at most GetMaxVehicleCapacityForCargo (100), and trips wait
+# in pendingTasks until a vehicle is free. That queue is why Unity resolves exactly ONE
+# food delivery on the round three orders are outstanding against a kitchen holding enough
+# for two -- the fleet serialises them. Without it no single latency can fit: short enough
+# to match the first resolution lets all three land together, long enough to spread them
+# delays the first.
+VEHICLE_COUNT = 3
+VEHICLE_CAPACITY = 100
+DEFAULT_LATENCY = 2
+
+
+class Task:
+    """One live task instance."""
+
+    __slots__ = ("task_id", "tag", "demand", "delivered", "rounds_remaining",
+                 "resolved", "chosen", "destination", "source", "fresh", "chosen_id",
+                 "task_type")
+
+    def __init__(self, task_id, tag, demand=0, rounds_remaining=1, task_type="Demand"):
+        self.task_id = task_id
+        self.tag = tag                      # "Food" | "Lodging" | "None"
+        self.demand = demand                # people, for Lodging; 0 for Food (legacy path)
+        self.delivered = 0
+        self.rounds_remaining = rounds_remaining
+        self.resolved = False
+        self.chosen = None
+        self.destination = ""
+        self.source = ""            # facility the people or goods come FROM
+        self.fresh = True           # created this round; not aged until the next one
+        self.chosen_id = None       # which choice was answered, for arrival-time sourcing
+        # TaskType, because RecordTaskResolution returns early for Alert and Other however
+        # the task is tagged: Flood_Alert carries TaskTag.Lodging and must NOT move
+        # lodgingResolved (merge_v4 step 18: Unity +0, the port +1 for exactly that alert).
+        self.task_type = task_type
+
+    def clone(self):
+        t = Task.__new__(Task)
+        for f in Task.__slots__:
+            setattr(t, f, getattr(self, f))
+        return t
+
+
+def is_immediate(choice: dict) -> bool:
+    """Does this choice deliver in the SAME round, or queue a delivery that lands later?
+
+    Reads `immediateDelivery` when the capture carries it, and falls back to the choice
+    text for older captures. The flag now ships in the game_state export precisely because
+    the text heuristic was measurably wrong: inferring it from "(immediate)" / "Rapid
+    Response" is right for food and wrong for lodging, which sent lodgingFulfilled from
+    600/600 to 200/600 while fixing food. Two mechanics that look alike in prose are
+    distinct in the data, so the port reads the flag rather than the prose.
+    """
+    if "immediateDelivery" in choice:
+        return bool(choice["immediateDelivery"])
+    text = (choice.get("choiceText") or "").lower()
+    return "immediate" in text or "rapid response" in text
+
+
+def demand_of(task_state: dict, tag: str) -> int:
+    """TaskSystem's rule: Lodging demand is the largest delivering choice quantity.
+
+    Scoped to Lodging on purpose -- Food deliberately keeps demandQuantity 0 so the tracker
+    falls back to per-task counting."""
+    if tag != "Lodging":
+        return 0
+    best = 0
+    for c in task_state.get("choices") or []:
+        q = c.get("deliveryQuantity") or 0
+        if q > 0:
+            best = max(best, q)
+    return best
+
+
+class TaskBoard:
+    """Active tasks plus in-flight deliveries."""
+
+    __slots__ = ("_late_arrivals", "active", "deliveries", "next_id", "awaiting", "has_supplier",
+                 "_sources", "queue", "busy", "fleet", "cell_for", "repair_for", "on_blocked", "orphaned",
+                 "retry_if_unsourced", "pending", "pending_seq", "flooded")
+
+    def __init__(self, has_supplier=None, cell_for=None):
+        self.active = {}                    # task_id -> Task
+        self.deliveries = []                # [rounds_remaining, task_id, quantity]
+        self.awaiting = {}                  # answered, off the board, not yet resolved
+        self.next_id = 1
+        # Can a DEFERRED delivery actually be sourced? A "Request N meals from Kitchens"
+        # choice needs an operational kitchen holding stock; with none, the delivery never
+        # arrives and the task resolves unfulfilled. Measured, and it is the whole
+        # explanation for food's low fulfilment: across three 32-round captures
+        # foodFulfilled was 7, 5 and 7 -- exactly the number of IMMEDIATE (external,
+        # Rapid-Response) food choices, and never once a kitchen order. Not one kitchen was
+        # operational in any of those episodes.
+        self.has_supplier = has_supplier or (lambda tag: False)
+        self._sources = {}          # answered task -> facility its people leave from
+        self.queue = []             # trips waiting for a vehicle: [task_id, quantity]
+        self.busy = 0               # vehicles currently out
+        # THE REAL TRAVEL MODEL. DEFERRED_LATENCY below is a fitted constant and behaves
+        # like one -- every value that matched one metric broke another, because a delivery
+        # takes as long as the drive takes. Given a cell_for resolver the fleet replaces the
+        # constant with the measured drive: two legs of flood-aware A* on the road grid,
+        # from wherever the assigned vehicle last parked.
+        self.fleet = Fleet()
+        self.cell_for = cell_for
+        # task_id -> vehicle index, for the repair task a flood-damaged vehicle spawns.
+        # Without it a vehicle damaged once is out for the rest of the episode, the fleet
+        # drains to nothing, and every later delivery silently reverts to the fitted
+        # constant -- which is exactly what the port did before this: 87 of 168 fallbacks
+        # happened with all three vehicles damaged.
+        self.repair_for = {}
+        # Injected: how much of `quantity` the source can actually supply right now.
+        # None disables the check, which is what the pure-task suites want.
+        self.retry_if_unsourced = None
+        self.on_blocked = None      # World hook: a dropped delivery spawns a Road Blockage task
+        self.orphaned = set()       # task ids with a trip abandoned by an empty-source abort
+        # Orders waiting for a vehicle, exactly DeliverySystem.pendingTasks. Entries are
+        # [seq, (task_id, quantity, destination), src_cell, dst_cell, quantity], sorted by
+        # creation order -- both handlers use priority 3, so priority never breaks a tie.
+        self.pending = []
+        self._late_arrivals = []           # epilogue unloads parked until settle_late()
+        self.pending_seq = 0
+        self.flooded = frozenset()
+
+    def clone(self):
+        b = TaskBoard.__new__(TaskBoard)
+        b.active = {k: v.clone() for k, v in self.active.items()}
+        b.deliveries = [list(d) for d in self.deliveries]
+        b.awaiting = {k: v.clone() for k, v in self.awaiting.items()}
+        b.next_id = self.next_id
+        b.has_supplier = self.has_supplier
+        b._sources = dict(self._sources)
+        b.queue = [list(q) for q in self.queue]
+        b.busy = self.busy
+        b.fleet = self.fleet.clone()
+        b._late_arrivals = list(getattr(self, '_late_arrivals', []))
+        b.cell_for = self.cell_for
+        b.repair_for = dict(self.repair_for)
+        b.retry_if_unsourced = self.retry_if_unsourced
+        b.on_blocked = self.on_blocked
+        b.orphaned = set(self.orphaned)
+        b.pending = [list(x) for x in self.pending]
+        b.pending_seq = self.pending_seq
+        b.flooded = self.flooded
+        return b
+
+
+    def travel_rounds(self, source_name, dest_name, flooded=frozenset(),
+                      quantity=0, task_id=None, segment=None):
+        """Rounds for a delivery from `source_name` to `dest_name`, or None.
+
+        None means "no opinion" -- the caller falls back to DEFERRED_LATENCY -- EXCEPT when
+        the flood has cut the route, which returns False, because a cut route is not a slow
+        delivery but one that never arrives at all (Unity bails to StopVehicleDueToFlood).
+        """
+        if self.cell_for is None:
+            return None
+        src = self.cell_for(source_name)
+        dst = self.cell_for(dest_name)
+        if src is None or dst is None:
+            return None
+        # ROUTE FIRST, VEHICLE SECOND. CreateDeliveryTask calls GetDeliveryTimeEstimate and
+        # bails with "Cannot create delivery task - no route available" BEFORE any vehicle is
+        # involved, so an unroutable order simply never becomes a delivery -- nothing is
+        # dispatched and nothing is damaged. The port was assigning a vehicle first and
+        # damaging it on the failed path, which is StopVehicleDueToFlood's behaviour for a
+        # vehicle already EN ROUTE, not for an order that was never created.
+        #
+        # It wrecked the whole fleet. On staff_5701 round 5 the port issued three food
+        # orders from the kitchen, two of them across a corridor the flood had cut at
+        # (-5, 0); each "blocked" one damaged a vehicle, so all three were out and the two
+        # relocations that follow fell back to the fitted constant. Unity created one food
+        # delivery, refused the other two silently, and kept its fleet.
+        if path_length(src, dst, flooded) is None:
+            return False
+        v = self.fleet.best_vehicle(src, quantity)
+        wait = 0
+        if v is None:
+            # Nothing free RIGHT NOW is not the same as no opinion. pendingTasks holds the
+            # trip until a vehicle lands, so the cost is that wait plus the drive.
+            v, wait = self.fleet.soonest_free()
+            if v is None:
+                return None      # every vehicle damaged; caller falls back
+        if not self.fleet.dispatch(v, task_id, src, dst, flooded):
+            # StopVehicleDueToFlood spawns a repair task through
+            # FloodTaskGenerator.CreateVehicleRepairTask: Emergency, roundsRemaining 2, two
+            # choices -- repair now for $1200, or delay for -5 satisfaction. The vehicle
+            # stays out of service until choice 1 is answered.
+            self.open_repair_task(v)
+            return False         # route cut: order dropped, vehicle damaged
+        # The clock already includes everything queued ahead of this trip.
+        seconds = self.fleet.busy_seconds[v]
+        # Occupancy is REAL: the vehicle stays out for the whole drive and is not available
+        # for the next order. Zeroing it here (as the first cut of this did) made
+        # best_vehicle always return vehicle 0 and silently removed the fleet limit.
+        # Round UP: a trip needing any part of a round has not landed by the end of it.
+        # Rounds are SECONDS over seconds. A round simulates ROUND_SECONDS of game time, so
+        # a trip needing less than that lands inside the round it was ordered in, and one
+        # needing twice that takes two more rounds. No frame budget and no per-segment
+        # table: every round simulates the same duration.
+        from math import floor
+        return int(floor(seconds / roads.ROUND_SECONDS))
+
+
+    REPAIR_COST = 1200          # AgentChoice(1, "Repair immediately ($1200)")
+    REPAIR_DELAY_SATISFACTION = -5   # AgentChoice(2, "Delay repair ...")
+    REPAIR_ROUNDS = 2           # repairTask.roundsRemaining
+
+    def open_repair_task(self, vehicle):
+        """CreateVehicleRepairTask, including its de-duplication.
+
+        The C# refuses to create a second repair task for a vehicle that already has one,
+        matching on the vehicle name in the description; the port matches on the index.
+        """
+        if vehicle in self.repair_for.values():
+            return None
+        task = Task(self.next_id, "Repair", 0, self.REPAIR_ROUNDS)
+        self.next_id += 1
+        self.add(task)
+        self.repair_for[task.task_id] = vehicle
+        return task
+
+    def answer_repair(self, task_id, choice_id, counters=None):
+        """ApplyChoiceImpacts' repair branch, which the HEADLESS path also reaches.
+
+        Repair lives in TaskDetailUI, which reads like a GUI-only path, but
+        SelectTaskChoiceHeadless routes the gym through the same CompleteTaskAction ->
+        ApplyChoiceImpacts, so the headless server really does repair. Only choiceId 1
+        repairs; choice 2 leaves the vehicle damaged and costs satisfaction.
+        """
+        vehicle = self.repair_for.pop(task_id, None)
+        if vehicle is None:
+            return False
+        self.active.pop(task_id, None)
+        if choice_id == 1:
+            self.fleet.repair(vehicle)
+            return True
+        return False
+
+
+    def outbound_from_kitchens(self):
+        """Food already promised to orders that have not loaded yet.
+
+        GetKitchensSorted ranks kitchens by effectiveStock = actual stock MINUS what is
+        already outbound, and FoodDeliveryHandler sends min(remaining, effectiveStock) from
+        each. With nothing left it creates NO delivery at all. So a 200-pack kitchen backs
+        two 100-pack orders and the third becomes nothing -- which is why Unity issues one
+        food order where the port issued three.
+
+        I implemented this rule once before and reported it as correct-but-inert. It was
+        inert because I wired it to the MOTEL'S POPULATION CAPACITY instead of to inbound
+        food. Same rule, wrong quantity.
+        """
+        total = 0
+        for _seq, payload, _src, _dst, qty in self.pending:
+            if str(payload[2] or "").startswith("__food__"):
+                total += qty
+        for load in self.fleet.carrying:
+            if load is not None and str(load[2] or "").startswith("__food__"):
+                total += load[1]
+        return total
+
+    def outbound_by_kitchen(self):
+        """GetReservedOutgoingQuantity per SOURCE kitchen: {kitchen name -> packs promised}.
+
+        The scalar total above answers "is any food spoken for"; ranking kitchens needs it
+        per source, because effectiveStock is that kitchen's own stock minus its own
+        outbound. The source is carried in the payload tag ("__food__<dest>|<kitchen>")."""
+        out = {}
+        def add(tag, qty):
+            tag = str(tag or "")
+            if not tag.startswith("__food__") or "|" not in tag:
+                return
+            out[tag.split("|", 1)[1]] = out.get(tag.split("|", 1)[1], 0) + qty
+        for _seq, payload, _src, _dst, qty in self.pending:
+            add(payload[2], qty)
+        for load in self.fleet.carrying:
+            if load is not None:
+                add(load[2], load[1])
+        return out
+
+    def inbound_to(self, destination):
+        """DeliverySystem.GetReservedIncomingQuantity: population already en route.
+
+        A destination's usable space is rawSpace MINUS what is already on its way --
+        GetDestinationsSorted computes effectiveSpace that way for both shelters and the
+        motel. Two relocations aimed at the same motel therefore do not both see the full
+        capacity: the second sees it reduced by the first one's inbound, and when that
+        leaves nothing the order is never created and the task resolves UNFULFILLED.
+
+        That is how Unity gets lodgingResolved 200 against lodgingFulfilled 100 in a round
+        where only one relocation is actually delivered.
+        """
+        dest = str(destination or "")
+        named = "Shelter:" + dest
+        total = 0
+        for _seq, payload, _src, _dst, qty in self.pending:
+            if str(payload[2] or "") in (dest, named):
+                total += qty
+        for load in self.fleet.carrying:
+            if load is not None and str(load[2] or "") in (dest, named):
+                total += load[1]
+        return total
+
+    # ── lifecycle ───────────────────────────────────────────────────────────────────
+    def add(self, task: Task) -> Task:
+        self.active[task.task_id] = task
+        return task
+
+    def answer(self, task_id, quantity=0, immediate=True, latency=None, destination="",
+               counters=None, latency_measured=False, destination_facility=None,
+               credit_delivered=False):
+        """Answer a task: it leaves the board NOW and resolves when its delivery LANDS.
+
+        THE TWO ARE NOT THE SAME ROUND, and that is the whole point. Measured on captures:
+        three food tasks left the active list in one round while foodResolved rose by 0,
+        and the next round none left while it rose by 3. Answering removes the task from
+        the player's view; RecordTaskResolution fires later, from the delivery handler.
+
+        An immediate delivery collapses the two into one round, which is why lodging looked
+        like it resolved on disappearance and food did not. Same rule, different latency.
+
+        The consequence is real, not bookkeeping: tasks answered near the end of an episode
+        never resolve at all, so their demand is never credited. Over one 32-round capture
+        that is 21 food tasks answered and 19 resolved."""
+        task = self.active.pop(task_id, None)
+        if task is None:
+            return
+        task.chosen = quantity
+        task.destination = destination
+        self._sources = getattr(self, "_sources", {})
+        if task.source:
+            self._sources[task_id] = task.source
+        if quantity <= 0 and not immediate:
+            # Nothing could be sourced -- but the ORDER was still placed, and it fails on
+            # the round it was due rather than the instant it was made. Resolving inline
+            # credited foodResolved in the same round the choice was answered and put the
+            # port a round ahead of Unity on every capture (unity 0, port 3 at round 4).
+            # (An IMMEDIATE answer with nothing moved is the caller's business: a
+            # multi-delivery one completes now, a single one is rejected before we get here.)
+            latency = DEFERRED_LATENCY.get(task.tag, DEFAULT_LATENCY)
+            self.awaiting[task_id] = task
+            self.deliveries.append([latency, task_id, 0, True])
+            return
+        if immediate:
+            # The delivery itself is a teleport -- the goods or people arrive at once, and
+            # the caller applies that side effect immediately. RESOLUTION still happens on
+            # the next tick, because RecordTaskResolution fires from the delivery-completion
+            # path rather than from the click. Measured: Unity's foodResolved is still 0 on
+            # the round its first food task is answered and only moves the round after, so
+            # resolving inline put the port a full round ahead on every capture.
+            #
+            # THAT MEASUREMENT WAS OF DEFERRED CHOICES (the captures' policy always took
+            # choice 0). An IMMEDIATE choice completes in the choice frame:
+            # CompleteTaskAction -> ExecuteGeneratorDelivery(immediate) moved something
+            # -> ApplyChoiceImpacts -> CompleteTask. Three airlifts answered in one round
+            # were three "Completed" resolutions in consecutive frames on the 5901
+            # validation run, credited that same step; the port had them a round late.
+            # deliveredQuantity for an immediate relocation depends on the PATH:
+            #   ExecuteImmediate (single destination, motel choice 3) credits
+            #   parentTask.deliveredQuantity += moved -- 6001 r5: delivered 100, fulfilled.
+            #   ExecuteMultipleDeliveries (shelter choice 2) moves people, credits nothing,
+            #   completes regardless -- 7002 r6: "Immediate delivery: 100 Population ... to
+            #   Shelter_9" resolved with delivered 0; the second, with no space, moved nobody
+            #   and still resolved. The caller passes credit_delivered accordingly.
+            # Food has demand 0 and takes the fulfilled flag instead (+1 each, 5901 r25).
+            if task.demand <= 0 or credit_delivered:
+                task.delivered += max(0, quantity)
+            self.awaiting[task_id] = task
+            if counters is not None:
+                self.resolve(task, fulfilled=quantity > 0, counters=counters)
+                return
+            self.deliveries.append([1, task_id, 0, True])   # 0: already delivered, resolve only
+            return
+        # THE ORDER GOES INTO THE QUEUE, NOT ONTO A CLOCK. DeliverySystem creates the task
+        # into pendingTasks and ProcessPendingTasks assigns it during the simulated round,
+        # so a delivery has no latency of its own -- it has a place in a line and a drive.
+        # Costing it at answer time is what made the port land five orders in the round
+        # Unity landed two.
+        src = self.cell_for(getattr(task, "source", "") or "") if self.cell_for else None
+        dst = self.cell_for(destination_facility or "") if self.cell_for else None
+        if src is not None and dst is not None and quantity > 0:
+            # ROUTE CHECKED AT CREATION, not at dispatch. CreateDeliveryTask calls
+            # GetDeliveryTimeEstimate and returns an empty list -- "Cannot create delivery
+            # task - no route available" -- before anything is queued. So an unroutable
+            # order never competes for a vehicle at all.
+            #
+            # Measured on 5601: Unity answers three food requests and creates ONE delivery,
+            # because from the kitchen at (-8,-3) the flood cut at (-5,0) leaves only
+            # Community02 reachable. The port queued all three and discarded two later,
+            # inside the round -- the same endpoint, but two extra orders competing for
+            # three vehicles in between, which is what cascaded into round 6.
+            if path_length(src, dst, self.flooded) is None:
+                self.awaiting[task_id] = task
+                return
+            self.awaiting[task_id] = task
+            # CreateDeliveryTask splits an order into trips of at most VEHICLE_CAPACITY,
+            # each its own DeliveryTask on its own vehicle. A 200-pack shelter request is
+            # two trips: one landed and one was blocked on the 5901 validation run, and
+            # the parent went Incomplete unrecorded while the port, driving one 200-pack
+            # trip, had resolved it fulfilled.
+            trips = max(1, -(-quantity // VEHICLE_CAPACITY))
+            per = quantity // trips
+            for i in range(trips):
+                q = per if i < trips - 1 else quantity - per * (trips - 1)
+                self.pending.append([self.pending_seq, (task_id, q, destination), src, dst, q])
+                self.pending_seq += 1
+            return
+        if latency is None:
+            latency = DEFERRED_LATENCY.get(task.tag, DEFAULT_LATENCY)
+        self.awaiting[task_id] = task
+        # Split into vehicle-sized trips and queue them; dispatch happens in tick() as
+        # vehicles free up, exactly as pendingTasks drains in DeliverySystem.
+        #
+        # ONLY when the caller had no measured travel time. This queue was built BEFORE the
+        # road graph was ported, as a stand-in for the serialisation the fleet imposes, and
+        # its entries carry the fresh flag -- so a trip routed through it waits a round for
+        # dispatch ON TOP of its latency. Once travel_rounds supplies a real drive that
+        # double-counts: three food orders answered at round 5 with measured latencies of
+        # 1, 2 and 1 all landed a round late, which is precisely the round-5 foodResolved
+        # divergence (unity 1, port 0) that has stood since this suite was written.
+        # Fleet occupancy and queue wait are now modelled inside travel_rounds itself.
+        remaining = quantity if self.has_supplier(task.tag) else 0
+        if quantity > 0 and not latency_measured:
+            trips = max(1, -(-quantity // VEHICLE_CAPACITY))
+            per = quantity // trips
+            for i in range(trips):
+                q = per if i < trips - 1 else quantity - per * (trips - 1)
+                self.queue.append([task_id, q if remaining else 0, latency])
+            return
+        # A delivery that cannot be sourced still takes the same time to FAIL as a real one
+        # takes to arrive -- the request goes out, nothing comes back, and the task resolves
+        # unfulfilled on the round the delivery was due. Resolving it instantly instead
+        # over-counts resolved by whatever is still in flight when the episode ends: 21
+        # against Unity's 19, on a 32-round capture where the last three were answered in
+        # the final rounds.
+        self.deliveries.append([latency, task_id,
+                                quantity if self.has_supplier(task.tag) else 0])
+
+    def answer_multi(self, task_id, src_cell, legs):
+        """One answered task, several vehicle trips to DIFFERENT destinations (a
+        SingleSourceMultiDest choice). `legs` = [(quantity, dst_cell, destination_tag)].
+        The task waits in `awaiting` and resolves when the last trip lands, exactly as a
+        multi-trip single-destination order does."""
+        task = self.active.pop(task_id, None)
+        if task is None:
+            return
+        task.chosen = sum(q for q, _d, _t in legs)
+        task.destination = legs[0][2] if legs else ""
+        self._sources = getattr(self, "_sources", {})
+        if task.source:
+            self._sources[task_id] = task.source
+        self.awaiting[task_id] = task
+        for q, dst, tag in legs:
+            self.pending.append([self.pending_seq, (task_id, q, tag), src_cell, dst, q])
+            self.pending_seq += 1
+
+    def answer_legs(self, task_id, legs):
+        """One answered task, several trips with their OWN sources (a MultiSourceSingleDest
+        choice: one order per kitchen). `legs` = [(quantity, src_cell, dst_cell, tag)]."""
+        task = self.active.pop(task_id, None)
+        if task is None:
+            return
+        task.chosen = sum(q for q, _s, _d, _t in legs)
+        task.destination = legs[0][3] if legs else ""
+        self._sources = getattr(self, "_sources", {})
+        if task.source:
+            self._sources[task_id] = task.source
+        self.awaiting[task_id] = task
+        for q, src, dst, tag in legs:
+            self.pending.append([self.pending_seq, (task_id, q, tag), src, dst, q])
+            self.pending_seq += 1
+
+    def choose(self, task_id, quantity=0, immediate=True, latency=None, destination=""):
+        """Answer a task's choice.
+
+        `immediate` options deliver in the same round; deferred ones enter the delivery
+        queue and land `latency` rounds later. That distinction is the whole reason a
+        cheap deferred option can score worse than an expensive immediate one -- the
+        deferred delivery can arrive after the task has already resolved unfulfilled, at
+        which point it is credited by the LATE path with its own capping rules."""
+        task = self.active.get(task_id)
+        if task is None:
+            return
+        task.chosen = quantity
+        task.destination = destination
+        self._sources = getattr(self, "_sources", {})
+        if task.source:
+            self._sources[task_id] = task.source
+        if quantity <= 0:
+            return
+        if immediate:
+            task.delivered += quantity
+        else:
+            if latency is None:
+                latency = DEFERRED_LATENCY.get(task.tag, DEFAULT_LATENCY)
+            self.deliveries.append([latency, task_id, quantity])
+
+    def resolve(self, task: Task, fulfilled: bool, counters: dict) -> None:
+        """RewardMetricsTracker.RecordTaskResolution, transcribed.
+
+        Only Food and Lodging tasks touch the counters at all; advisories and worker
+        notices resolve silently."""
+        if (task.resolved or task.tag not in ("Food", "Lodging")
+                or getattr(task, "task_type", "Demand") in ("Alert", "Other")):
+            task.resolved = True
+            return
+        demand = task.demand
+        delivered = max(0, min(task.delivered, max(demand, task.delivered)))
+        resolved_add = demand if demand > 0 else 1
+        fulfilled_add = (min(delivered, demand) if demand > 0
+                         else (1 if fulfilled else 0))
+        if task.tag == "Food":
+            counters["foodResolved"] += resolved_add
+            counters["foodFulfilled"] += fulfilled_add
+        else:
+            counters["lodgingResolved"] += resolved_add
+            counters["lodgingFulfilled"] += fulfilled_add
+        task.resolved = True
+
+    def late_delivery(self, task: Task, quantity: int, counters: dict) -> None:
+        """AddLateDelivery / AddLateFoodTask -- a delivery that lands after resolution.
+
+        The two are NOT the same operation and the C# comment is emphatic about it: lodging
+        credits the PACK/PEOPLE count, food credits exactly +1 because food is on the
+        per-task metric and crediting its quantity would corrupt the rate. Both cap
+        fulfilled at resolved."""
+        if quantity <= 0:
+            return
+        if task.tag == "Food":
+            counters["foodFulfilled"] = min(counters["foodResolved"],
+                                            counters["foodFulfilled"] + 1)
+        elif task.tag == "Lodging":
+            counters["lodgingFulfilled"] = min(counters["lodgingResolved"],
+                                               counters["lodgingFulfilled"] + quantity)
+
+    def _trips_outstanding(self, task_id) -> bool:
+        """Sibling trips of a multi-trip order still queued, loading or driving -- or
+        ORPHANED: a trip whose vehicle found the source empty. LoadCargo's abort sets
+        currentTask = null and the DeliveryTask stays in activeTasks forever, so
+        AreAllLinkedDeliveriesComplete is never true and the parent can only close by
+        expiring (7002, task 72: Vehicle3's first Community03 trip)."""
+        if task_id in self.orphaned:
+            return True
+        if any(o[1][0] == task_id for o in self.pending):
+            return True
+        f = self.fleet
+        if any(c is not None and c[0] == task_id for c in f.carrying):
+            return True
+        return any(t is not None and "payload" in t and t["payload"][0] == task_id
+                   and t.get("phase") != "complete" for t in f.trip)
+
+    def settle_late(self, counters: dict) -> list:
+        """Settle the epilogue unloads parked by the last tick: resolution, counters, and
+        the landings to hand to step_round -- exactly the arrival processing, run late."""
+        entries, self._late_arrivals = self._late_arrivals, []
+        if not entries:
+            return []
+        return self.tick_deliveries_only(counters, _settling=entries)
+
+    def tick_epilogue(self, counters: dict) -> list:
+        """The fleet's two paused frames, after this round's invoke and flood update (see
+        Fleet.run_epilogue). Their unloads are 'late' and park for settle_late()."""
+        return self.tick_deliveries_only(counters, _epilogue=True)
+
+    def tick_deliveries_only(self, counters: dict, _settling=False, _epilogue=False) -> list:
+        """Land due deliveries without ageing tasks.
+
+        Used where task expiry is driven externally (the equivalence test replays Unity's
+        own resolution events) so that delivery latency is still modelled while timing is
+        not double-counted."""
+        # Dispatch queued trips to any free vehicle before ageing, so a trip that waited a
+        # round starts the moment one lands.
+        # ProcessPendingTasks for one round: orders leave the queue as vehicles free up,
+        # and whatever finishes inside the round's seconds lands now.
+        landed_now = []
+        def _load(payload, qty):
+            """LoadCargo at the moment the vehicle reaches the source."""
+            if self.retry_if_unsourced is None:
+                return qty
+            task = self.active.get(payload[0]) or self.awaiting.get(payload[0])
+            return qty if task is None else self.retry_if_unsourced(task, qty, payload)
+
+        if _settling:
+            arrived, dropped = list(_settling), []
+        elif _epilogue:
+            arrived, dropped = self.fleet.run_epilogue(self.flooded)
+        else:
+            arrived, self.pending, dropped = self.fleet.run_round(self.pending, self.flooded, _load)
+            for _p in self.fleet.aborted:
+                self.orphaned.add(_p[0])
+            self.fleet.aborted = []
+        # A vehicle stopped by flood spawns its repair task, which is why Unity answers
+        # "Vehicle Repair Required" at round 6 and the port did not. Without it the port's
+        # fleet never recovers on Unity's schedule.
+        for _payload, _loaded in dropped:
+            # StopVehicleDueToFlood, in its order: TriggerRoadBlockageTask (HandleDeliveryFailure
+            # on the parent, then the Road Blockage Emergency task), TriggerVehicleRepairTask,
+            # then RemoveActiveDeliveryTask -- which fires DeliverySystem.OnTaskCompleted, so
+            # TaskSystem.OnDeliveryTaskCompleted sees a delivery "completing" for a parent
+            # that HandleDeliveryFailure has just closed: wasAlreadyCompleted, deliveredQuantity
+            # += quantity, AddLateDelivery. A stranded relocation is therefore CREDITED as
+            # fulfilled (5503 validation, round 15: lodgingFulfilled 500 -> 600 with nobody
+            # housed). HandleDeliveryFailure itself records no resolution: the parent leaves
+            # the board Incomplete with its demand never counted, and costs
+            # deliveryFailureSatisfactionPenalty (10) if it was still InProgress.
+            _tid, _q = _payload[0], _payload[1]
+            task = self.active.pop(_tid, None) or self.awaiting.pop(_tid, None)
+            was_open = task is not None and not task.resolved
+            if task is not None:
+                task.resolved = True
+            if self.on_blocked is not None:
+                self.on_blocked(_payload, _loaded, task, was_open)
+            if task is not None and _q > 0:
+                task.delivered += _q
+                if task.tag == "Lodging":
+                    counters["lodgingFulfilled"] = min(counters["lodgingResolved"],
+                                                       counters["lodgingFulfilled"] + _q)
+            self._sources.pop(_tid, None)
+        for _v, _dam in enumerate(self.fleet.damaged):
+            if _dam and _v not in self.repair_for.values():
+                self.open_repair_task(_v)
+        # A SIBLING THAT LANDS ON THE LAST FRAME KEEPS THE PARENT OPEN. `arrived` is settled
+        # after run_round with the fleet as it stands at the END of the round, so an earlier
+        # trip's `_trips_outstanding` already sees a sibling that unloaded on frame 34 at
+        # "complete" and would pop and resolve the parent NOW -- before this round's tracker
+        # pass -- while Unity completes it on the sibling's completion frame (+36), after
+        # the pass: the casework group re-arms a round later. 5503 on the merged build,
+        # step 14: task 37's second trip unloaded on the last frame; the port re-armed the
+        # group in the same pass and requested 20 casework Unity only requested at step 15.
+        # Only split siblings matter: an ordinary later sibling resolves the parent in this
+        # same tick, before the pass, exactly as the earlier trip would have.
+        _split_later = {}
+        for _e in arrived:
+            if len(_e) > 3 and _e[3] == "split":
+                _split_later[_e[0]] = _split_later.get(_e[0], 0) + 1
+        for _entry in arrived:
+            task_id, quantity, destination = _entry[0], _entry[1], _entry[2]
+            if len(_entry) > 3 and _entry[3] == "split":
+                _split_later[task_id] -= 1
+            zombie = len(_entry) > 3 and _entry[3] == "zombie"
+            late = len(_entry) > 3 and _entry[3] == "late"
+            if late and not _settling:
+                # An epilogue unload resolves at +36, AFTER this round's invoke. Settling it
+                # here freed its facility slot before the generation pass: on 5601 the port
+                # re-generated a Trinity relocation at step 30 while Unity's task was still
+                # InProgress through the pass and completed afterwards. Parked; step_round
+                # settles it after the flood update through settle_late().
+                self._late_arrivals.append(_entry)
+                continue
+            split = len(_entry) > 3 and _entry[3] == "split"
+            if split and not _settling:
+                # Unloaded on the round's last movement frame: the people land NOW (before
+                # the segment advance) but CompleteTask runs on the completion frame, after
+                # the generation pass -- so the task stays InProgress through the pass and
+                # its facility slot stays taken. Resolution is parked for settle_late().
+                task = self.active.get(task_id) or self.awaiting.get(task_id)
+                if task is None:
+                    # The parent was popped by a sibling that landed earlier this round (the
+                    # fleet is read at the END of the round, so that sibling saw this trip
+                    # already "complete"). Unity still lands it: UnloadCargo deposits the
+                    # cargo and both tracker removals run whether or not the parent is open.
+                    # 5503 on the merged build, step 14: task 37's second casework trip
+                    # unloaded on the last frame and was dropped, 20 caseworkProcessed short.
+                    if quantity > 0:
+                        landed_now.append((task_id, quantity, destination, "split"))
+                    continue
+                if task.resolved:
+                    self.late_delivery(task, quantity, counters)
+                task.delivered += quantity
+                if quantity > 0:
+                    landed_now.append((task_id, quantity, destination, "split"))
+                self._late_arrivals.append((task_id, 0, destination, "split_resolve"))
+                continue
+            if len(_entry) > 3 and _entry[3] == "split_resolve":
+                # The completion of a split landing, after the flood: free the slot and
+                # credit the counters; the people already landed before the pass.
+                task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
+                if task is not None and task_id not in self.active and not task.resolved:
+                    self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+                continue
+            task = self.active.get(task_id) or (
+                self.awaiting.get(task_id) if (self._trips_outstanding(task_id) or _split_later.get(task_id, 0) > 0)
+                else self.awaiting.pop(task_id, None))
+            if task is None:
+                # The parent is gone (HandleDeliveryFailure on a sibling trip took it off
+                # the board, Incomplete, unrecorded) but this vehicle still unloads:
+                # OnDeliveryTaskCompleted finds the parent in completedTasks, sees it is
+                # no longer InProgress, and records nothing -- the cargo is deposited by
+                # UnloadCargo regardless (Shelter Alpha: 100 packs, foodFulfilled +0).
+                if quantity > 0 and not zombie:
+                    landed_now.append((task_id, quantity, destination))
+                continue
+            if task.resolved:
+                # A FLEET LANDING FOR AN ALREADY-RESOLVED TASK IS A LATE DELIVERY. The
+                # `arriving` (latency-queue) loop had this branch; this one, which handles
+                # actual fleet arrivals, did not -- so a delivery that landed after its task
+                # expired was found, recognised as resolved, and then silently dropped without
+                # crediting anything. That is Unity's AddLateDelivery
+                # (TaskSystem.cs:705-711): fulfilled only, capped at resolved, never
+                # re-crediting resolved.
+                # Credit the metric, then FALL THROUGH so the people still land. Unity's
+                # OnDeliveryTaskCompleted runs its normal delivery handling for an
+                # already-completed parent and only the METRIC call differs (TaskSystem.cs
+                # 683-711), so the population moves either way. `continue`-ing past this
+                # credited fulfilment while landing nobody, which cost 5501 a 20000-unit
+                # lodgingSpend error -- worse than the 100 it fixed. `resolve()` guards on
+                # `task.resolved`, so falling through cannot double-resolve.
+                self.late_delivery(task, quantity, counters)
+            # deliveredQuantity is credited from the delivery's NOMINAL quantity, so a
+            # zombie counts as fulfilled -- but it physically moved nobody, so it must not
+            # produce arrivals, casework or motel occupancy.
+            task.delivered += quantity
+            if quantity > 0 and not zombie:
+                # An epilogue unload keeps its tag: step_round lands it after the flood.
+                landed_now.append((task_id, quantity, destination, "late") if late
+                                  else (task_id, quantity, destination))
+            if (task_id not in self.active and not task.resolved
+                    and not self._trips_outstanding(task_id) and _split_later.get(task_id, 0) <= 0):
+                # AreAllLinkedDeliveriesComplete: the parent completes with its LAST trip.
+                self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+        while self.queue and self.busy < VEHICLE_COUNT:
+            task_id, qty, lat = self.queue.pop(0)
+            self.deliveries.append([lat, task_id, qty, True])
+            self.busy += 1
+
+        # A delivery queued during THIS round is not aged by it, exactly as a task created
+        # this round is not. step_round ticks the queue in the same round the choice was
+        # made, so without this a latency of 1 is consumed instantly and the task resolves
+        # inline -- which is what put lodgingResolved at 100 in round 4 where Unity had 0.
+        for entry in self.deliveries:
+            if len(entry) > 3 and entry[3]:
+                entry[3] = False
+                continue
+            entry[0] -= 1
+        arriving = [d for d in self.deliveries if d[0] <= 0]
+        self.deliveries = [d for d in self.deliveries if d[0] > 0]
+        self.busy = max(0, self.busy - len(arriving))     # vehicles return
+        landed = list(landed_now)
+        if _settling:
+            return landed
+        for _rounds, task_id, quantity, *_ in arriving:
+            task = self.active.get(task_id) or self.awaiting.pop(task_id, None)
+            if task is None:
+                continue
+            # LoadCargo ABORTS when the source building holds none of the cargo: it nulls
+            # currentTask, sets the vehicle Idle and returns, so RunDelivery never reaches
+            # the destination and OnVehicleDeliveryCompleted never fires. No completion
+            # means no RecordTaskResolution -- the task is NOT resolved-unfulfilled, it
+            # simply has not happened yet, and it goes again once the source restocks.
+            #
+            # This is the whole round-5 divergence. Unity's kitchen holds 200 and each
+            # order is 100, so exactly ONE of three orders loads: foodResolved 1 at round 5
+            # and 3 at round 6, with the kitchen dropping 200 -> 100 and restocking at the
+            # day reset. The port resolved all three at once because it treated an
+            # unsourceable delivery as a failed one. The comment above answer()'s
+            # cannot-be-sourced branch says the opposite; it was written from inference
+            # before LoadCargo was read, and it is wrong.
+            if self.retry_if_unsourced is not None and quantity > 0:
+                available = self.retry_if_unsourced(task, quantity)
+                if available <= 0:
+                    # It goes again next round -- but the TASK still ages, and when its
+                    # rounds run out it resolves UNFULFILLED like any other expiry. That
+                    # bound is what makes the counts come out: three 100-pack orders
+                    # against a 200-pack kitchen give two fulfilled deliveries and one
+                    # expiry, which is Unity's foodResolved 3 / foodFulfilled 2. Retrying
+                    # without the bound left the third order in flight forever and the port
+                    # under-resolved by up to 5 over an episode.
+                    task.rounds_remaining -= 1
+                    if task.rounds_remaining > 0:
+                        self.awaiting[task_id] = task
+                        self.deliveries.append([1, task_id, quantity])
+                        continue
+                    self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+                    continue
+            if task.resolved:
+                self.late_delivery(task, quantity, counters)
+            else:
+                task.delivered += quantity
+                if quantity > 0:
+                    landed.append((task_id, quantity, task.destination))
+                # The delivery becoming due is what resolves an ANSWERED task -- fulfilled
+                # if anything actually arrived, unfulfilled if the order could not be
+                # sourced.
+                if task_id not in self.active:
+                    # An immediate delivery was already credited to task.delivered when it
+                    # was answered, so fulfilment is judged on the TASK, not this entry.
+                    self.resolve(task, fulfilled=task.delivered > 0, counters=counters)
+        return landed
+
+    def tick(self, counters: dict) -> list:
+        """One round: land due deliveries, then age tasks and expire the exhausted ones.
+
+        Returns the landings as (task_id, quantity, destination) so the caller can turn
+        them into client arrivals. Delegates the landing half to tick_deliveries_only
+        rather than repeating it -- an earlier version had two copies of that logic and
+        they drifted: this one looked up only `active`, so a delivery for an ANSWERED task
+        (which lives in `awaiting`) was silently dropped, and it returned `expired` while
+        building an unused `landed`. Deliveries never reached the round loop, so the
+        surrogate could not generate its own client arrivals and looked as though the
+        pipeline simply did nothing.
+
+        Deliveries land BEFORE ageing so one arriving on the round its task expires counts
+        as fulfilment rather than being lost to the late-delivery path."""
+        landed = self.tick_deliveries_only(counters)
+
+        # AGEING IS NOT DONE HERE ANY MORE. It fires once per SEGMENT ADVANCE, driven from
+        # step_round, because a rollover advances twice inside one gym step.
+        return landed
+
+    def age(self) -> None:
+        """One SEGMENT ADVANCE worth of ageing -- the decrement ONLY, no resolution.
+
+        OnTimeSegmentAdvanced decrements roundsRemaining (TaskSystem.cs:616) on the advance.
+        The task that just hit zero is STILL in activeTasks while OnRoundChanged runs the
+        generation pass on that same frame; CheckExpiredTasks only resolves it on the next
+        Update (:559-581). So a community whose relocation dies this advance still holds
+        its slot during generation and is NOT re-offered a relocation until the following
+        advance. The port resolved first and regenerated: on 5901 it created a second
+        Community Trinity relocation at step 6 the moment Trinity's first one expired, where
+        Unity created none. Ageing and expiry are therefore two calls with generation in
+        between.
+        """
+        # NO FRESH SKIP. Creation now runs AFTER age() within an advance, so a task created
+        # this advance already misses it and the next advance is its first decrement -- which
+        # is Unity's cadence: the Flood Alert (rounds=1, created step 6) expires at step 7,
+        # and a rollover relocation (rounds=2, created in pass 0) is decremented by pass 1 and
+        # expires the following step. Skipping once more made every task one advance too
+        # young, which is the +1 at round 6 -- the zero-demand alert's resolvedAdd of 1 --
+        # on six of eleven traces.
+        for task in list(self.active.values()):
+            task.fresh = False
+            task.rounds_remaining -= 1
+        for task in list(self.awaiting.values()):
+            task.rounds_remaining -= 1
+
+    def expire(self, counters: dict) -> list:
+        """CheckExpiredTasks: resolve everything at or below zero, AFTER generation ran.
+        Returns (task_id, answered) for everything that expired now, for the caller's
+        incomplete-task penalties. `answered` distinguishes Unity's two routes:
+        CheckExpiredTasks sends an InProgress task to SetTaskIncomplete and everything else
+        to ExpireTask, and only ExpireTask filters the penalty to Emergency/Demand.
+
+        ONE LIST IN CREATION ORDER. CheckExpiredTasks walks `activeTasks`, and an ANSWERED
+        task stays in it (SetTaskInProgress does not remove it), so Unity expires an
+        InProgress relocation and a live blockage in the order they were CREATED. Doing all
+        the active ones and then all the awaiting ones reverses that whenever the two
+        interleave, which shows up whenever an effect clamps: seed 5504 step 10, Unity
+        applies -1 then +20 (85 -> 84 -> 100) where the port applied +20 then -1 (85 -> 100
+        -> 99).
+        """
+        due = [(tid, task, False) for tid, task in self.active.items()
+               if task.rounds_remaining <= 0]
+        due += [(tid, task, True) for tid, task in self.awaiting.items()
+                if task.rounds_remaining <= 0 and not task.resolved]
+        due.sort(key=lambda r: r[0])
+        expired = []
+        for task_id, task, answered in due:
+            if answered:
+                # KEEP THE TASK SO A LATE LANDING CAN FIND IT (see the fleet-arrival loop).
+                # SetTaskIncomplete / ExpireTask pass fulfilled: false. Only lodging still
+                # credits what landed (min(delivered, demand)); a food task that expires with
+                # one of two trips landed counts 0 -- the late-food credit, if any, comes when
+                # the OTHER trip completes (7002, task 72: one trip orphaned by an empty
+                # kitchen, so never).
+                self.resolve(task, fulfilled=(task.delivered > 0 and task.tag != "Food"),
+                             counters=counters)
+            else:
+                # An expired task resolves UNFULFILLED, but a lodging task still credits
+                # whatever actually got delivered -- resolved counts demand either way.
+                self.resolve(task, fulfilled=False, counters=counters)
+                del self.active[task_id]
+            expired.append((task_id, answered))
+        return expired
+
+    def age_and_expire(self, counters: dict) -> None:
+        """Both halves back to back -- only for callers that have no generation between."""
+        self.age()
+        self.expire(counters)
+
+    def complete(self, task_id, counters: dict) -> None:
+        """TaskSystem.CompleteTask -- resolution with fulfilled=True."""
+        task = self.active.pop(task_id, None)
+        if task is not None:
+            self.resolve(task, fulfilled=True, counters=counters)

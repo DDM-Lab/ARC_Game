@@ -23,14 +23,12 @@ public class DailyReportManager : MonoBehaviour
     private bool isWaitingForNextDay = false;
     private bool isTransitioning = false;
 
-    [Header("Day 1 Special")]
-    public GameObject day1MaskPanel;
     [Header("Game End Settings")]
     public int finalDay = 8; // Game ends after this day
     
     [Header("History Navigation")]
     public GameObject historyNavigationPanel;
-    public Button[] dayButtons = new Button[7]; // Day 2-8 buttons
+    public Button[] dayButtons = new Button[7]; // Day 2-8 buttons; append an 8th button for Day 1
     
     [Header("Button States")]
     public Sprite selectedButtonSprite;
@@ -62,6 +60,8 @@ public class DailyReportManager : MonoBehaviour
         // Find GlobalClock if not assigned
         if (globalClock == null)
             globalClock = FindObjectOfType<GlobalClock>();
+        if (globalClock != null)
+            finalDay = globalClock.lastDay;   // one horizon, from the configuration (BUG_REPORTS B33)
         
         // Setup next day button
         if (nextDayButton != null)
@@ -137,42 +137,75 @@ public class DailyReportManager : MonoBehaviour
     {
         Debug.Log($"[DailyReportManager] FadeInReportWithData started. reportUI={(reportUI == null ? "NULL" : "OK")}");
 
+        // Keep the history buttons non-interactable for the whole fade-in + report animation —
+        // UpdateDayButtonStates() below won't run (and re-enable the right ones) until reportUI's
+        // own animation finishes, and Button.interactable otherwise keeps whatever state (or
+        // Unity's default true) it was last left in, letting a click land mid-animation.
+        SetDayButtonsInteractable(false);
+
         if (reportUI != null)
         {
             reportUI.ResetAllElementsToHidden();
         }
-        
+
         // Do the existing fade in animation first
         yield return StartCoroutine(FadeInReport());
 
-        // Show mask for Day 1, hide for other days
         int currentDay = globalClock != null ? globalClock.GetCurrentDay() : 1;
-        if (day1MaskPanel != null)
-        {
-            day1MaskPanel.SetActive(currentDay == 1);
-        }
 
         // Hide next day button if game ended
         if (currentDay >= finalDay && nextDayButton != null)
         {
             nextDayButton.gameObject.SetActive(false);
         }
-        
-        // Only generate report data if NOT Day 1
-        if (currentDay > 1 && DailyReportData.Instance != null && reportUI != null)
+
+        if (DailyReportData.Instance != null && reportUI != null)
         {
             var metrics = DailyReportData.Instance.GenerateDailyReport();
+            // DisplayDailyReport() logs the full report + building status table
+            // SYNCHRONOUSLY before it returns (see LogDailyReportAsDisplayed() /
+            // LogDailyReportScoreFormulas() / BuildingStatusTableUI.LogTableContents()
+            // in DailyReportUI.cs) — only the visual animation continues afterward
+            // in the background. Do not move the TriggerEndGameLogSend() call below
+            // to before this line, and do not make DisplayDailyReport()'s logging
+            // depend on the animation coroutine again — LogSender.SendAllLogs()
+            // snapshots the log buffer synchronously the instant it's called, so
+            // anything logged after that point would silently be left out of the
+            // Day 8 server upload.
             reportUI.DisplayDailyReport(metrics);
         }
-        
+
         // Send logs to server if game ended
         if (currentDay >= finalDay)
         {
             GameLogPanel.Instance?.TriggerEndGameLogSend();
+
+            // Player-facing prompt only — does not affect report display or logging above.
+            EndOfGamePanel.Instance?.ShowPanel();
         }
+
+        // DisplayDailyReport() above only started reportUI's own multi-section reveal animation
+        // (satisfaction/efficiency/receipt/live-status, then the building status table) — it
+        // hasn't finished yet. Wait for it before enabling the day buttons: clicking one early
+        // calls DisplayDailyReportImmediate(), which StopAllCoroutines()s that animation and
+        // overwrites the same elements mid-transition, which is the display glitch this avoids.
+        if (reportUI != null)
+            yield return new WaitUntil(() => !reportUI.IsAnimatingReport);
 
         // Update button states
         UpdateDayButtonStates(currentDay);
+    }
+
+    /// <summary>Force every history day button non-interactable, independent of whether it has
+    /// data for its day — UpdateDayButtonStates() (which knows that) re-enables the right ones
+    /// once it's safe to.</summary>
+    void SetDayButtonsInteractable(bool interactable)
+    {
+        foreach (Button btn in dayButtons)
+        {
+            if (btn != null)
+                btn.interactable = interactable;
+        }
     }
     
     IEnumerator FadeInReport()
@@ -220,7 +253,10 @@ public class DailyReportManager : MonoBehaviour
     {
         isTransitioning = true;
         isWaitingForNextDay = false;
-        
+
+        // Hide the building status table alongside the report it was shown with
+        BuildingStatusTableUI.Instance?.HideTable();
+
         // Disable interactions immediately
         if (panelCanvasGroup != null)
         {
@@ -250,11 +286,6 @@ public class DailyReportManager : MonoBehaviour
             // Ensure final state
             panelCanvasGroup.alpha = 0f;
             panelCanvasGroup.blocksRaycasts = false;
-        }
-
-        if (day1MaskPanel != null)
-        {
-            day1MaskPanel.SetActive(false);
         }
 
         // Hide panel completely
@@ -332,15 +363,29 @@ public class DailyReportManager : MonoBehaviour
 
     void SetupHistoryNavigation()
     {
-        // Setup individual day buttons (Day 2-8)
+        // Setup individual day buttons (Day 2-8, plus an optional Day 1 button)
         for (int i = 0; i < dayButtons.Length; i++)
         {
-            int dayIndex = i + 2;
+            int dayIndex = GetDayForButtonIndex(i);
             if (dayButtons[i] != null)
             {
                 dayButtons[i].onClick.AddListener(() => OnDayButtonClicked(dayIndex));
             }
         }
+    }
+
+    /// <summary>
+    /// Maps a dayButtons array index to its day number. With the Day 1 button
+    /// inserted at the front, an 8-button array reads Day 1-8 in order.
+    /// Without it (legacy 7-button array), it reads Day 2-8.
+    /// </summary>
+    int GetDayForButtonIndex(int i)
+    {
+        if (dayButtons.Length == 8)
+        {
+            return i + 1;
+        }
+        return i + 2;
     }
 
     /// <summary>
@@ -388,7 +433,7 @@ public class DailyReportManager : MonoBehaviour
     {
         for (int i = 0; i < dayButtons.Length; i++)
         {
-            int dayIndex = i + 2; // Day 2-8
+            int dayIndex = GetDayForButtonIndex(i);
             Button btn = dayButtons[i];
             
             if (btn == null) continue;

@@ -48,7 +48,8 @@ public enum DeliveryQuantityType
 {
     Fixed,          // Use deliveryQuantity value
     Percentage,     // Use deliveryPercentage of available resources
-    All             // Move all available resources
+    All,            // Move all available resources
+    PopulationBased // Use the destination's current need (population x consumption rate, minus what it already has) — FoodPacks only
 }
 
 public enum DeliveryDestinationType
@@ -111,11 +112,16 @@ public class TaskImpact
 public class GameTask
 {
     public int taskId;
+    // Stable cross-regeneration id from TaskData.taskId; the transient int taskId is
+    // reassigned each round for recurring tasks (e.g. "Daily Budget Allocation").
+    public string stableTaskId;
     public string taskTitle;
     public TaskType taskType;
     public TaskStatus status;
     public string affectedFacility;      // GameObject name — used for delivery lookup
     public string facilityDisplayName;   // Human-readable name — used for UI display only
+    public int foodAmount;               // Facility's food need — for [food_amount] display only. Kept live by TaskSystem.RefreshTaskAgainstLiveState, not just a creation-time snapshot.
+    public int populationAmount;         // Facility's population — for [population_amount] display only. Same live refresh as foodAmount.
     public string description;
     public Sprite taskImage;
 
@@ -150,6 +156,14 @@ public class GameTask
     public float deliveryFailureSatisfactionPenalty = 10f;
     public List<int> linkedDeliveryTaskIds = new List<int>(); // support multiple linked delivery tasks
 
+    [Header("Demand / Fulfillment accounting (people-based)")]
+    // demandQuantity = number of people this Food/Lodging task needs served (set at creation).
+    // deliveredQuantity = number actually delivered/housed so far (accumulated by the immediate
+    // and deferred relocation/delivery paths). RewardMetricsTracker credits resolved/fulfilled
+    // by these counts so the metric reflects PEOPLE HOUSED, not choices clicked. See B1/B2.
+    public int demandQuantity = 0;
+    public int deliveredQuantity = 0;
+
     public float timeCreated;
     public bool isExpired 
     { 
@@ -179,13 +193,62 @@ public class GameTask
         timeCreated = Time.time;
     }
 
-    public string ResolveFacilityName(string text)
+    /// <summary>
+    /// Substitutes task-data placeholders — [facility_name], [facility_name_plain],
+    /// [relocation_rounds], [food_amount], and [population_amount] — with their live values. Use
+    /// this everywhere a task's title, description, or agent messages are displayed.
+    ///
+    /// [facility_name] renders as a clickable blue link that highlights the facility on the map.
+    /// [facility_name_plain] renders the same name as plain text, no link/color — use it wherever
+    /// the surrounding UI already applies its own text color (e.g. status-colored buttons/rows),
+    /// since a hardcoded link color would clash with it.
+    /// Pass plainFacilityName: true to render [facility_name] itself as plain for a given call,
+    /// without having to change the underlying task data.
+    /// [food_amount] and [population_amount] read foodAmount/populationAmount, which
+    /// TaskSystem.RefreshTaskAgainstLiveState keeps in sync with the facility's actual current
+    /// need/population — not frozen at whatever they were when the task was created.
+    /// </summary>
+    public string ResolvePlaceholders(string text, bool plainFacilityName = false)
     {
-        string name = !string.IsNullOrEmpty(facilityDisplayName) ? facilityDisplayName : affectedFacility;
-        if (string.IsNullOrEmpty(affectedFacility))
-            return text.Replace("[facility_name]", name);
-        string linked = $"<link=\"{affectedFacility}\"><u><color=#5B9BD5>{name}</color></u></link>";
-        return text.Replace("[facility_name]", linked);
+        if (string.IsNullOrEmpty(text)) return text;
+
+        string plainName = !string.IsNullOrEmpty(facilityDisplayName) ? facilityDisplayName : affectedFacility;
+
+        if (text.Contains("[facility_name]"))
+        {
+            if (plainFacilityName || string.IsNullOrEmpty(affectedFacility))
+            {
+                text = text.Replace("[facility_name]", plainName);
+            }
+            else
+            {
+                string linked = $"<link=\"{affectedFacility}\"><u><color=#5B9BD5>{plainName}</color></u></link>";
+                text = text.Replace("[facility_name]", linked);
+            }
+        }
+
+        if (text.Contains("[facility_name_plain]"))
+        {
+            text = text.Replace("[facility_name_plain]", plainName);
+        }
+
+        if (text.Contains("[relocation_rounds]"))
+        {
+            int rounds = ClientRelocationHandler.Instance != null ? ClientRelocationHandler.Instance.relocationDelayRounds : 0;
+            text = text.Replace("[relocation_rounds]", rounds.ToString());
+        }
+
+        if (text.Contains("[food_amount]"))
+        {
+            text = text.Replace("[food_amount]", foodAmount.ToString());
+        }
+
+        if (text.Contains("[population_amount]"))
+        {
+            text = text.Replace("[population_amount]", populationAmount.ToString());
+        }
+
+        return text;
     }
 }
 
@@ -234,6 +297,14 @@ public class AgentChoice
     public int deliveryQuantity = 5; // Keep existing field for fixed amounts
     public float deliveryPercentage = 100f; // For percentage-based
     public bool deliverAll = false; // For "all available" option
+
+    [Header("Dynamic Cost (optional)")]
+    [Tooltip("FoodPacks choices only. If > 0, this choice's Budget cost is computed as costPerUnit × the actual resolved delivery quantity (e.g. the population-based need, see quantityType) instead of using the fixed value authored in choiceImpacts. Lets a choice like an emergency fast-food delivery scale its cost with facility population instead of always charging for a flat 100 meals. Leave 0 to keep the fixed cost exactly as authored.")]
+    public float costPerUnit = 0f;
+
+    [Header("Validation")]
+    [Tooltip("Queued (non-immediate) FoodPacks choices only. If true, this choice is only selectable when the effective food across all kitchens (stock minus what's already reserved/outbound for other deliveries) can fully cover the resolved quantity — otherwise AgentChoiceUI's validationText shows why and the choice can't be confirmed. If false (default), the choice stays selectable as long as kitchens can at least partially help, same as before.")]
+    public bool requireFullQuantity = false;
 
     [Header("Delivery Source")]
     public DeliverySourceType sourceType = DeliverySourceType.RequestingFacility;
@@ -311,7 +382,7 @@ public class AgentNumericalInput
             case NumericalInputType.TrainedWorkers:
                 return "Trained Workers";
             case NumericalInputType.FoodPacks:
-                return "Food Packs";
+                return "mealss";
             default:
                 return "Value";
         }
@@ -377,9 +448,75 @@ public class TaskSystem : MonoBehaviour
     // Task ID counter
     private int nextTaskId = 1;
 
+    /// <summary>
+    /// Snapshot support. GameTask is [System.Serializable] with public fields and its one
+    /// unserialisable member (multiAgentProposal) is already [NonSerialized], so the task
+    /// lists round-trip through JsonUtility via a wrapper.
+    ///
+    /// CAVEAT: GameTask.taskImage is a Sprite, i.e. a UnityEngine.Object reference. It does
+    /// not survive serialisation across a scene reload and comes back null. That is
+    /// cosmetic (UI art only, never read by the gym or the scoring), but it is a real gap
+    /// rather than something the tests happen to miss.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public List<GameTask> activeTasks = new List<GameTask>();
+        public List<GameTask> completedTasks = new List<GameTask>();
+        public int nextTaskId;
+        public List<int> deliveryIds = new List<int>();
+        public List<int> deliveryTaskIds = new List<int>();
+
+        // GENERATION-GATING STATE. Not part of any task object, and reset by a scene
+        // rebuild, so without it a restored game re-fires Alerts that had already been
+        // shown and re-frontloads Emergencies. This is what made a restored game grow an
+        // extra "Workforce Optimization Alert" two rounds after load while every visible
+        // field matched.
+        public List<string> shownAlertIds = new List<string>();
+        public int currEmergencyTaskCount;
+        public int lastEmergencyTaskRound;
+        public int currExternalRelationCount;
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot
+        {
+            nextTaskId = nextTaskId,
+            currEmergencyTaskCount = currEmergencyTaskCount,
+            lastEmergencyTaskRound = lastEmergencyTaskRound,
+            currExternalRelationCount = currExternalRelationCount,
+        };
+        s.shownAlertIds.AddRange(shownAlertIds);
+        s.activeTasks.AddRange(activeTasks);
+        s.completedTasks.AddRange(completedTasks);
+        foreach (var kv in deliveryToTaskMap) { s.deliveryIds.Add(kv.Key); s.deliveryTaskIds.Add(kv.Value); }
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        activeTasks.Clear(); activeTasks.AddRange(s.activeTasks);
+        completedTasks.Clear(); completedTasks.AddRange(s.completedTasks);
+        nextTaskId = s.nextTaskId;
+        currEmergencyTaskCount = s.currEmergencyTaskCount;
+        lastEmergencyTaskRound = s.lastEmergencyTaskRound;
+        currExternalRelationCount = s.currExternalRelationCount;
+        shownAlertIds.Clear();
+        foreach (var id in s.shownAlertIds) shownAlertIds.Add(id);
+        deliveryToTaskMap.Clear();
+        for (int i = 0; i < s.deliveryIds.Count && i < s.deliveryTaskIds.Count; i++)
+            deliveryToTaskMap[s.deliveryIds[i]] = s.deliveryTaskIds[i];
+    }
+
     public int numEmergencyTasks = 4;
     public int currEmergencyTaskCount = 0;
     public int lastEmergencyTaskRound = 0;
+    // initialExternalRelationFrequency: total external-relation contacts per game (Storm Funding
+    // Advisory + Emergency Budget Crisis; the sheet's own text excludes the daily allocation). BUG_REPORTS B35.
+    public int numExternalRelationTasks = 3;
+    public int currExternalRelationCount = 0;
 
     // Events
     public event Action<GameTask> OnTaskCreated;
@@ -414,6 +551,7 @@ public class TaskSystem : MonoBehaviour
 
     void Start()
     {
+        
         StartCoroutine(InitializeWithCentralConfig());
         // Subscribe to global clock for round-based countdown
         if (GlobalClock.Instance != null)
@@ -424,13 +562,20 @@ public class TaskSystem : MonoBehaviour
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
+            // PARITY BUILD (ledger D15): NOT subscribed. Upstream has no start-of-day generation
+            // pass at all; it generates only from OnTimeSegmentChanged.
+            GlobalClock.Instance.OnSimulationEnded += OnSimulationEndedCheckDayComplete;
         }
+
+        // Round-end sweep for tasks stranded by an emptied facility (see SweepStalePopulationTasks)
+        GlobalClock.OnRoundEnd += SweepStalePopulationTasks;
 
         // Listen for delivery task completion events
         DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
         if (deliverySystem != null)
         {
             deliverySystem.OnTaskCompleted += OnDeliveryTaskCompleted;
+            deliverySystem.OnTaskCancelled += OnDeliveryTaskCancelled;
             Debug.Log("TaskSystem subscribed to DeliverySystem events");
         }
         else
@@ -442,6 +587,7 @@ public class TaskSystem : MonoBehaviour
         if (showDebugInfo)
             Debug.Log("Task System initialized");
     }
+    
 
     IEnumerator InitializeWithCentralConfig()
     {
@@ -450,6 +596,7 @@ public class TaskSystem : MonoBehaviour
             yield return null;
         }
         numEmergencyTasks = GameDataManager.Instance.InitialEmergencyTaskFrequency;
+        numExternalRelationTasks = GameDataManager.Instance.InitialExternalRelationFrequency;
     }
 
     private int CalculateEmergencyInterval()
@@ -628,6 +775,19 @@ public class TaskSystem : MonoBehaviour
             Debug.Log($"[TaskSystem] Delivery {deliveryTask.taskId} completed for task '{parentTask.taskTitle}'" +
                     (wasAlreadyCompleted ? " (task was already closed)" : ""));
 
+        // People-based fulfillment (B2/D4): a completed population delivery housed deliveryTask.quantity
+        // people — credit it to the parent task even if the task was already closed (late delivery still
+        // physically relocated people; RecordTaskResolution already ran, so also credit the tracker directly).
+        // Credit what LANDED (Vehicle.UnloadCargo sets deliveredQuantity), never the nominal load:
+        // cargo that did not fit went back to the source (BUG_REPORTS B1).
+        int landed = deliveryTask.deliveredQuantity;
+        if (deliveryTask.cargoType == ResourceType.Population && landed > 0)
+        {
+            parentTask.deliveredQuantity += landed;
+            if (wasAlreadyCompleted)
+                RewardMetricsTracker.Instance?.AddLateDelivery(parentTask, landed);
+        }
+
         // If the parent task is still in progress, check if all its deliveries are done
         if (!wasAlreadyCompleted && parentTask.status == TaskStatus.InProgress)
         {
@@ -643,6 +803,70 @@ public class TaskSystem : MonoBehaviour
         {
             GameLogPanel.Instance?.LogTaskEvent(
                 $"Late delivery {deliveryTask.taskId} arrived for closed task '{parentTask.taskTitle}'");
+
+            // Fix 2a: a food delivery that lands after its task closed UNFULFILLED still fed people —
+            // credit it retroactively. Population (lodging) already gets this via deliveredQuantity +
+            // AddLateDelivery above; food had no late-credit path, so a delivery completing after the
+            // task's short window expired was silently lost. Gate on: FoodPacks cargo, all linked
+            // deliveries now done (fires once, on the last one), and the task closed unfulfilled
+            // (Incomplete/Expired) — NOT Completed, so this can never double-credit a task that Fix 1
+            // already completed on time (which sets status Completed).
+            if (deliveryTask.cargoType == ResourceType.FoodPacks
+                && (parentTask.status == TaskStatus.Incomplete || parentTask.status == TaskStatus.Expired)
+                && AreAllLinkedDeliveriesComplete(parentTask))
+            {
+                RewardMetricsTracker.Instance?.AddLateFoodTask(parentTask);
+                if (showDebugInfo)
+                    Debug.Log($"[TaskSystem] Late food delivery credited for closed task '{parentTask.taskTitle}'");
+            }
+        }
+    }
+
+    /// <summary>
+    /// A lodging task replaced by an emergency task for the same facility. It is closed properly
+    /// (status, completedTasks, OnTaskExpired) so its linked deliveries and the UI see it end. Its
+    /// demand is not recorded -- the emergency task now carries this facility's demand -- and no
+    /// penalty applies (BUG_REPORTS A5).
+    /// </summary>
+    void SupersedeTask(GameTask stale)
+    {
+        stale.status = TaskStatus.Expired;
+        activeTasks.Remove(stale);
+        completedTasks.Add(stale);
+        OnTaskExpired?.Invoke(stale);
+    }
+
+    /// <summary>The active or closed task that owns this delivery, or null.</summary>
+    public GameTask FindTaskLinkedToDelivery(int deliveryTaskId)
+    {
+        return activeTasks.Concat(completedTasks).FirstOrDefault(t =>
+            t.linkedDeliveryTaskIds != null && t.linkedDeliveryTaskIds.Contains(deliveryTaskId));
+    }
+
+    /// <summary>
+    /// A linked delivery ended without landing cargo (empty source, cancel, flood). Unlink it; if
+    /// nothing else is in flight the parent either completes on what earlier trips landed or fails.
+    /// </summary>
+    void OnDeliveryTaskCancelled(DeliveryTask deliveryTask, string reason)
+    {
+        GameTask parentTask = activeTasks.FirstOrDefault(t =>
+            t.linkedDeliveryTaskIds != null &&
+            t.linkedDeliveryTaskIds.Contains(deliveryTask.taskId));
+        if (parentTask == null) return;
+        parentTask.linkedDeliveryTaskIds.Remove(deliveryTask.taskId);
+        if (showDebugInfo)
+            Debug.Log($"[TaskSystem] Delivery {deliveryTask.taskId} cancelled ({reason}) for task '{parentTask.taskTitle}'");
+        if (parentTask.status != TaskStatus.InProgress) return;
+        if (parentTask.linkedDeliveryTaskIds.Count == 0)
+        {
+            if (parentTask.deliveredQuantity > 0)
+                CompleteTask(parentTask);   // earlier trips landed people; resolution credits min(delivered, demand)
+            else
+                HandleDeliveryFailure(parentTask, $"Delivery cancelled: {reason}");
+        }
+        else if (AreAllLinkedDeliveriesComplete(parentTask))
+        {
+            CompleteTask(parentTask);
         }
     }
 
@@ -674,36 +898,148 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            // Apply penalties for delivery failure
-            if (SatisfactionAndBudget.Instance != null && task.deliveryFailureSatisfactionPenalty > 0)
-            {
-                SatisfactionAndBudget.Instance.RemoveSatisfaction(task.deliveryFailureSatisfactionPenalty, $"Delivery Failure Penalty from [{task.taskTitle}]");
-            }
+            // The demand this task carried is resolved (unfulfilled) -- it must be counted, not dropped.
+            RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
+
+            // Delivery-failure satisfaction penalty disabled game-wide (main-bugfixes
+            // aa423cad) -- this is the single shared path every delivery failure
+            // (flood-blocked vehicle, overnight food cancellation, ...) goes through, so
+            // disabling it here covers all of them. deliveryFailureSatisfactionPenalty is
+            // left intact on GameTask/TaskData so it can be restored by re-enabling this.
+            //
+            // if (SatisfactionAndBudget.Instance != null && task.deliveryFailureSatisfactionPenalty > 0)
+            // {
+            //     SatisfactionAndBudget.Instance.RemoveSatisfaction(task.deliveryFailureSatisfactionPenalty, $"Delivery Failure Penalty from [{task.taskTitle}]");
+            // }
 
             OnTaskCompleted?.Invoke(task);
 
             if (showDebugInfo)
-                Debug.Log($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
-            GameLogPanel.Instance.LogTaskEvent($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}");
-            //ToastManager.ShowToast($"Task marked incomplete due to delivery failure: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}", ToastType.Warning, true);
+                Debug.Log($"Task marked incomplete due to delivery failure: {task.taskTitle}");
+            GameLogPanel.Instance.LogTaskEvent($"Task marked incomplete due to delivery failure: {task.taskTitle}");
 
             // Show task result popup with delivery failure reason
             if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
             {
                 if (string.IsNullOrEmpty(reason))
-                    reason = $"Delivery failed for task: {task.taskTitle}. Satisfaction penalty: {task.deliveryFailureSatisfactionPenalty}.";
+                    reason = $"Delivery failed for task: {task.taskTitle}.";
                 TaskResultManager.Instance.ShowTaskResult(task, reason);
             }
+        }
+    }
+
+    /// <summary>
+    /// Fires after every round transition. Only acts when the round that just ended was the
+    /// last one of the day (GlobalClock.isWaitingForReport becomes true) — i.e. the moment the
+    /// "Proceed" button turns into "End Today". Food spoils overnight, so any delivery still
+    /// queued or in transit at that point can never arrive and is cancelled outright.
+    /// </summary>
+    void OnSimulationEndedCheckDayComplete()
+    {
+        if (GlobalClock.Instance != null && GlobalClock.Instance.isWaitingForReport)
+        {
+            CancelIncompleteFoodDeliveries();
+        }
+    }
+
+    void CancelIncompleteFoodDeliveries()
+    {
+        DeliverySystem ds = DeliverySystem.Instance;
+        if (ds == null) return;
+
+        // A delivery whose cargo has already landed (Vehicle.UnloadCargo sets deliveredQuantity
+        // before its unload wait finishes) is not "incomplete": the round can end inside that
+        // window, and cancelling it would fail the parent task for food that was delivered (B38).
+        var incompleteFoodDeliveries = ds.GetPendingTasks()
+            .Concat(ds.GetActiveTasks())
+            .Where(t => t.cargoType == ResourceType.FoodPacks && t.deliveredQuantity <= 0)
+            .ToList();
+
+        foreach (DeliveryTask delivery in incompleteFoodDeliveries)
+        {
+            ds.CancelDeliveryTask(delivery.taskId);
+
+            GameTask parentTask = activeTasks.FirstOrDefault(t =>
+                t.linkedDeliveryTaskIds != null && t.linkedDeliveryTaskIds.Contains(delivery.taskId));
+
+            if (parentTask != null)
+            {
+                string reason = $"The day ended before this delivery could arrive — {delivery.quantity} meals from " +
+                    $"{delivery.sourceBuilding?.name ?? "the source"} to {delivery.destinationBuilding?.name ?? "the destination"} " +
+                    "were not delivered in time and the request has failed. Food cannot be delivered overnight.";
+                HandleDeliveryFailure(parentTask, reason);
+            }
+
+            if (showDebugInfo)
+                Debug.Log($"[TaskSystem] Cancelled incomplete food delivery {delivery.taskId} at end of day ({delivery.quantity} meals {delivery.sourceBuilding?.name} -> {delivery.destinationBuilding?.name})");
+            GameLogPanel.Instance?.LogTaskEvent($"Cancelled incomplete food delivery {delivery.taskId} at end of day ({delivery.quantity} meals {delivery.sourceBuilding?.name} -> {delivery.destinationBuilding?.name})");
         }
     }
 
     void OnRoundChanged(int newSegment)
     {
         Debug.Log($"OnRoundChanged called in Task System: segment {newSegment}, auto generation: {enableAutoTaskGeneration}. (We skip generation when newSegment == 3)");
-        // Check for new tasks at the start of each round
+        // PARITY BUILD (ledger D15): upstream's gate, `newSegment != 3`, not ours. The two are
+        // not the same set: upstream generates on segments 0, 1, 2 AND 4, ours only on 0, 1, 2.
+        // Ours also moved the segment-0 pass onto OnDayStarted, which does not fire for day 1 --
+        // so on day 1 upstream ran a generation pass this build never ran, and upstream's first
+        // day produced a Budget_Allocation, two relocation requests and a workforce alert that
+        // ours did not. Different tasks means different trigger evaluations, which means a
+        // different number of draws off the shared Random stream.
         if (enableAutoTaskGeneration && newSegment != 3)
         {
             Debug.Log("Attempting to generate tasks from database...");
+            GenerateTasksFromDatabase();
+        }
+
+        // (Background auto-housing removed: the agent/player must make every relocation decision
+        // itself. GeneratePopulationTransportTasks is no longer invoked from the round loop.)
+    }
+
+    static bool IsExternalRelationContact(TaskData taskData) =>
+        taskData.taskOfficer == TaskOfficer.ExternalRelationship && taskData.taskId != "Budget_Allocation";
+
+    /// <summary>
+    /// initialDailyBudgetAdditions -> the Daily Budget Allocation task (BUG_REPORTS B35). Applied to the
+    /// task instance's own copies, never to the ScriptableObject.
+    /// </summary>
+    void ApplyConfiguredAllocation(GameTask task, TaskData taskData)
+    {
+        // PARITY BUILD (ledger D21): DISABLED. Upstream has no equivalent — the Daily Budget
+        // Allocation grants whatever the task ASSET says (5000), not the sheet's
+        // initialDailyBudgetAdditions (3000). Applied every day the funding task is confirmed,
+        // the 2000/day difference compounds into a median 292,000 gap across a 32-seed suite,
+        // against a starting budget of 10,000. Same family as D7 and D20: the sheet drives our
+        // build where an asset or prefab drives upstream's.
+        return;
+#pragma warning disable 0162
+        if (taskData.taskId != "Budget_Allocation" || GameDataManager.Instance == null) return;
+        int amount = GameDataManager.Instance.InitialDailyBudgetAddition;
+        if (amount <= 0) return;
+        string shown = "$" + amount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+        foreach (var impact in task.impacts)
+            if (impact.impactType == ImpactType.Budget) impact.value = amount;
+        foreach (var choice in task.agentChoices)
+        {
+            bool budgetChoice = false;
+            foreach (var impact in choice.choiceImpacts)
+                if (impact.impactType == ImpactType.Budget) { impact.value = amount; budgetChoice = true; }
+            if (budgetChoice) choice.choiceText = $"Receive {shown} Budget";
+        }
+        foreach (var message in task.agentMessages)
+            if (!string.IsNullOrEmpty(message.messageText))
+                message.messageText = System.Text.RegularExpressions.Regex.Replace(
+                    message.messageText, @"\$[\d,]+", shown.Replace("$", "$$"));
+#pragma warning restore 0162
+    }
+
+    /// <summary>Start-of-day generation pass (was the segment-0 event before the A1 clock fix).
+    /// Round triggers with targetRound 0 are evaluated here and only here.</summary>
+    void OnDayStarted(int day)
+    {
+        if (enableAutoTaskGeneration)
+        {
+            Debug.Log($"OnDayStarted called in Task System: day {day}; generating tasks from database...");
             GenerateTasksFromDatabase();
         }
     }
@@ -719,13 +1055,24 @@ public class TaskSystem : MonoBehaviour
 
         Debug.Log("Checking for triggered tasks per facility...");
 
+        // WHEN generation runs, relative to the round's deliveries. The port creates tasks
+        // before its delivery tick; Unity re-requests a relocation inside the round its
+        // predecessor delivered. Moving the port's creation after the tick took two exact
+        // traces to zero, so the ordering is not the simple one -- this makes Unity's
+        // actual position observable instead of inferred.
+        SnapshotDebug.MarkContext("gen:pass", "{\"active\":" + activeTasks.Count + "}");
+
         // Get tasks with their specific facilities
         List<(TaskData taskData, MonoBehaviour facility)> triggeredTasksWithFacilities =
             taskDatabase.CheckTriggeredTasksPerFacility();
 
         Debug.Log($"Found {triggeredTasksWithFacilities.Count} triggered task-facility combinations");
 
-        int currentRound = GlobalClock.Instance != null ? (GlobalClock.Instance.lastDay * GlobalClock.Instance.roundsPerDay) : 0;
+        // Elapsed rounds so far (the spacing gate below compares against this). It used to be
+        // lastDay * roundsPerDay, a constant, which let exactly one global emergency fire per game.
+        int currentRound = GlobalClock.Instance != null
+            ? (GlobalClock.Instance.GetCurrentDay() - 1) * GlobalClock.Instance.roundsPerDay + GlobalClock.Instance.GetCurrentTimeSegment()
+            : 0;
         int dynamicInterval = CalculateEmergencyInterval();
 
         foreach (var (taskData, facility) in triggeredTasksWithFacilities)
@@ -754,6 +1101,14 @@ public class TaskSystem : MonoBehaviour
                 }
             }
 
+            // PARITY BUILD (ledger D6): the external-relation CAP is removed. Upstream has no
+            // equivalent -- its own scheme (ApplyInitExternalRelationFrequency, which splits the
+            // frequency into two day-intervals) never runs, because budgetAdvisoryER and
+            // budgetEmergencyER are null in every scene that ships. So upstream places no limit
+            // on external-relation contacts at all, and a cap here would suppress task
+            // generation this build is supposed to match -- changing task counts, and with them
+            // the number of draws taken from the shared Random stream.
+
             // Handle alert tasks (global check for duplicates)
             if (taskData.taskType == TaskType.Alert)
             {
@@ -780,6 +1135,8 @@ public class TaskSystem : MonoBehaviour
 
                 Debug.Log($"Creating global task: {taskData.taskTitle}");
                 GameTask newTask = CreateTaskFromDatabase(taskData);
+                if (newTask != null && IsExternalRelationContact(taskData))
+                    currExternalRelationCount++;
                 if (newTask != null && newTask.taskType == TaskType.Emergency)
                 {
                     currEmergencyTaskCount++;
@@ -814,7 +1171,7 @@ public class TaskSystem : MonoBehaviour
                             // Evict non-emergency lodging tasks to make room for the emergency one
                             foreach (var stale in existingLodging.Where(t => t.taskType != TaskType.Emergency))
                             {
-                                activeTasks.Remove(stale);
+                                SupersedeTask(stale);
                                 Debug.Log($"Emergency lodging supersedes existing task for {facilityName} — removed '{stale.taskTitle}'");
                                 GameLogPanel.Instance.LogTaskEvent($"Emergency lodging supersedes '{stale.taskTitle}' for {facilityName}");
                             }
@@ -835,7 +1192,13 @@ public class TaskSystem : MonoBehaviour
                 }
 
                 Debug.Log($"Creating task: {taskData.taskTitle} for facility: {facilityName}");
-                CreateTaskFromDatabase(taskData, facility);
+                GameTask createdForFacility = CreateTaskFromDatabase(taskData, facility);
+                if (createdForFacility != null && createdForFacility.taskType == TaskType.Emergency)
+                {
+                    // Facility emergencies count toward the cap and the spacing like global ones.
+                    currEmergencyTaskCount++;
+                    lastEmergencyTaskRound = currentRound;
+                }
             }
         }
     }
@@ -1152,6 +1515,14 @@ public class TaskSystem : MonoBehaviour
                 break;
         }
 
+        // Paired with task:resolved. The port resolves one lodging task where Unity resolves
+        // two, and both agree on what was delivered -- so the difference is WHEN Unity gives
+        // up on a task, which is creation round plus roundsRemaining. This makes the
+        // lifetime readable instead of inferred.
+        SnapshotDebug.MarkContext("task:created", "{\"id\":" + newTask.taskId
+            + ",\"title\":\"" + newTask.taskTitle
+            + "\",\"rounds\":" + newTask.roundsRemaining
+            + ",\"type\":\"" + type + "\"}");
         activeTasks.Add(newTask);
         OnTaskCreated?.Invoke(newTask);
 
@@ -1171,6 +1542,7 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
+            RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: true);
             OnTaskCompleted?.Invoke(task);
 
             if (taskCenterUI != null && taskCenterUI.taskCenterPanel.activeInHierarchy)
@@ -1183,12 +1555,202 @@ public class TaskSystem : MonoBehaviour
             GameLogPanel.Instance.LogTaskEvent($"Completed task: {task.taskTitle}");
             // ToastManager.ShowToast($"Completed task: {task.taskTitle}", ToastType.Success, true);
 
-            // Show task result popup
-            if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other) )
+            // Show task result popup. Multi-agent recommendation tasks (those that
+            // carry a multiAgentProposal — the choices-agent flow) are silent on
+            // completion; the conversation panel is their UI surface.
+            if (TaskResultManager.Instance != null
+                && task.taskType != TaskType.Alert
+                && task.taskType != TaskType.Other
+                && task.multiAgentProposal == null)
             {
                 TaskResultManager.Instance.ShowTaskResult(task);
             }
+
+            // This decision may have just drained the facility another task depends on (e.g. a
+            // shelter relocation confirmed here can empty a shelter a food/casework request is
+            // still waiting on). Don't wait for the player to happen to open that other task, or
+            // for the next round-end sweep — check everyone else right now.
+            SweepStalePopulationTasks();
         }
+    }
+
+    /// <summary>
+    /// Auto-resolves an active task whose remaining choices depend on clients being present at a
+    /// facility that's now empty — relocated away or fed by a different task earlier in the same
+    /// round (e.g. a shelter relocation task moved the same clients away before a pending casework
+    /// task could act on them). Left alone, the task's choice would fail validation forever, or
+    /// worse, pass validation and only fail at execution with a misleading error — this resolves
+    /// it immediately as Completed with an explanatory reason instead, since there was nothing
+    /// left for the player to do and it isn't a result of anything they did wrong.
+    /// </summary>
+    public void ResolveTaskClientsAlreadyRelocated(GameTask task, string reason = null)
+    {
+        if (task == null || !activeTasks.Contains(task)) return;
+
+        task.status = TaskStatus.Completed;
+        activeTasks.Remove(task);
+        completedTasks.Add(task);
+
+        OnTaskCompleted?.Invoke(task);
+
+        if (taskCenterUI != null && taskCenterUI.taskCenterPanel.activeInHierarchy)
+        {
+            taskCenterUI.RefreshTaskList();
+        }
+
+        if (reason == null)
+        {
+            string facilityLabel = !string.IsNullOrEmpty(task.facilityDisplayName) ? task.facilityDisplayName : task.affectedFacility;
+            reason = $"This task has been automatically canceled — there are no longer any people at {facilityLabel} to act on. They were already relocated elsewhere before this task could be resolved.";
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"Auto-resolved task (clients already relocated): {task.taskTitle}");
+        GameLogPanel.Instance.LogTaskEvent($"Auto-resolved task '{task.taskTitle}': {reason}");
+
+        if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
+        {
+            TaskResultManager.Instance.ShowTaskResult(task, reason);
+        }
+    }
+
+    /// <summary>
+    /// Runs once per round (GlobalClock.OnRoundEnd) as a safety net over every active task — see
+    /// RefreshTaskAgainstLiveState for what it actually checks/fixes per task.
+    ///
+    /// The per-round cadence deliberately doesn't care HOW a facility emptied out — relocated by
+    /// another task, left naturally (ClientStayTracker.TriggerNonCaseworkDeparture removes
+    /// population directly, with no event this system could hook), flood damage, etc. An earlier
+    /// version tried hooking every population-draining code path individually and missed cases
+    /// like that; checking actual state instead can't miss a path that hasn't been found yet.
+    /// TaskDetailUI additionally calls RefreshTaskAgainstLiveState directly when a task is opened,
+    /// so staleness within the same round doesn't have to wait for the next sweep.
+    /// </summary>
+    void SweepStalePopulationTasks()
+    {
+        if (activeTasks.Count == 0) return;
+
+        foreach (GameTask task in activeTasks.ToList())
+            RefreshTaskAgainstLiveState(task);
+    }
+
+    /// <summary>
+    /// Re-validates one task's client/food-dependent choices against LIVE facility state. Called
+    /// both by the round-end sweep above and by TaskDetailUI.ShowTaskDetail right before a task is
+    /// displayed, since a task can go stale — or its displayed numbers can drift from what
+    /// execution will actually do — within the same round it's opened, before the next sweep runs.
+    ///
+    /// Two things can happen, per delivery choice on the task:
+    ///  - Population choices: if the facility's population has dropped to zero, there's nothing
+    ///    left to relocate — the whole task is auto-resolved via ResolveTaskClientsAlreadyRelocated
+    ///    and this returns false. The caller should treat that as "nothing to show." Otherwise,
+    ///    populationAmount (what [population_amount] placeholders render) is refreshed to the live
+    ///    count, so choice text like "Send N clients..." can't drift from how many will actually
+    ///    move once ClientRelocationHandler clamps the request to what's actually there.
+    ///  - PopulationBased FoodPacks choices: foodAmount (the [food_amount] placeholder) would
+    ///    otherwise stay frozen at whatever the facility needed at task creation, but
+    ///    FoodDeliveryHandler.ResolveQuantity always computes the LIVE need at cost/execution time —
+    ///    so if population dropped after creation (e.g. residents relocated away mid-round), the
+    ///    displayed meal count and the actual cost/delivery could silently disagree. This refreshes
+    ///    foodAmount to match, or auto-resolves the task if the live need has dropped to zero.
+    ///
+    /// Returns true if the task is still valid (whether or not anything needed refreshing).
+    /// </summary>
+    public bool RefreshTaskAgainstLiveState(GameTask task)
+    {
+        if (task == null || !activeTasks.Contains(task) || task.agentChoices == null) return task != null;
+
+        // Once a choice has been confirmed and its delivery dispatched (status InProgress), the
+        // task is committed — this method's "is the need/population already gone" checks below are
+        // for a task still awaiting a choice (Active), where dropping to zero really does mean
+        // there's nothing left to act on. Applied to an already-dispatched delivery instead, they
+        // read the SAME live facility state a normal, on-time arrival is busy driving toward zero,
+        // and can auto-resolve the task via ResolveTaskClientsAlreadyRelocated ("need already met")
+        // while its delivery is still physically in transit — wrongly closing a food request whose
+        // vehicle just hasn't landed yet. Population relocation choices never hit this because
+        // ClientRelocationHandler.Execute/ExecuteImmediate already call CompleteTask at the moment
+        // they're queued, removing the task from activeTasks before the next sweep could see it;
+        // food's InProgress window has no such immunity, so give it the same guard explicitly. An
+        // in-flight delivery's own success/failure is already handled by OnDeliveryTaskCompleted,
+        // HandleDeliveryFailure and the end-of-day CancelIncompleteFoodDeliveries sweep — this
+        // method has nothing useful left to check once InProgress.
+        if (task.status != TaskStatus.Active) return true;
+
+        MonoBehaviour facility = FindTriggeringFacility(task);
+        if (facility == null) return true;
+
+        foreach (AgentChoice choice in task.agentChoices)
+        {
+            if (!(choice.triggersDelivery || choice.immediateDelivery)) continue;
+
+            if (choice.deliveryCargoType == ResourceType.Population)
+            {
+                // Casework tasks are about a specific ClientGroup (a subset of the facility's
+                // residents — e.g. 100 people at a motel, only 30 of whom actually requested
+                // casework), not the facility's total occupancy. ClientStayTracker tracks that
+                // group's live headcount via the |CLIENT_GROUP_ID marker GenerateCaseworkTask
+                // embeds in the task description; only fall back to total facility population
+                // (correct for whole-population tasks like Community_TransportRequest or
+                // Shelter_Flood_Damage evacuation) when this task has no such marker at all.
+                int? caseworkNeed = ClientStayTracker.Instance?.GetClientsWithCaseworkNeedForTask(task);
+                int population = caseworkNeed
+                    ?? (ClientRelocationHandler.Instance != null ? ClientRelocationHandler.Instance.GetPopulation(facility) : 0);
+
+                if (population <= 0)
+                {
+                    // caseworkNeed.HasValue means the facility itself may still hold plenty of
+                    // other residents — it's specifically this task's clients who are gone, so say
+                    // that rather than the generic "no one left at this facility" wording.
+                    string reason = caseworkNeed.HasValue
+                        ? "This casework request has been automatically canceled — the clients it was for have already been relocated elsewhere."
+                        : null;
+                    ResolveTaskClientsAlreadyRelocated(task, reason);
+                    return false;
+                }
+
+                if (population != task.populationAmount)
+                {
+                    if (showDebugInfo)
+                        Debug.Log($"Refreshed live population for '{task.taskTitle}': {task.populationAmount} -> {population}");
+                    task.populationAmount = population;
+                }
+
+                // TaskItemUI's task-list "N people" line reads impact.value directly (not
+                // populationAmount/[population_amount]) — without this, it keeps showing the
+                // creation-time headcount forever, even though the actual relocation always uses
+                // live population and populationAmount above is already correct.
+                foreach (TaskImpact impact in task.impacts)
+                {
+                    if (impact.impactType == ImpactType.Clients && impact.value != population)
+                        impact.value = population;
+                }
+            }
+            else if (choice.deliveryCargoType == ResourceType.FoodPacks
+                     && choice.quantityType == DeliveryQuantityType.PopulationBased)
+            {
+                BuildingResourceStorage storage = facility.GetComponent<BuildingResourceStorage>()
+                    ?? facility.GetComponent<PrebuiltBuilding>()?.GetResourceStorage();
+                if (storage == null || !storage.enablePopulationBasedConsumption) continue;
+
+                int liveNeed = storage.GetFoodNeed();
+                if (liveNeed <= 0)
+                {
+                    string facilityLabel = !string.IsNullOrEmpty(task.facilityDisplayName) ? task.facilityDisplayName : task.affectedFacility;
+                    ResolveTaskClientsAlreadyRelocated(task,
+                        $"This request has been automatically canceled — {facilityLabel}'s food need has already been met and no longer applies.");
+                    return false;
+                }
+
+                if (liveNeed != task.foodAmount)
+                {
+                    if (showDebugInfo)
+                        Debug.Log($"Refreshed live food need for '{task.taskTitle}': {task.foodAmount} -> {liveNeed}");
+                    task.foodAmount = liveNeed;
+                }
+            }
+        }
+
+        return true;
     }
 
     // =========================================================================
@@ -1261,9 +1823,15 @@ public class TaskSystem : MonoBehaviour
             // Apply penalties for incomplete emergency/demand tasks
             if (task.status == TaskStatus.Incomplete)
             {
-                //ApplyTaskPenalties(task);
+                // PARITY BUILD (ledger D22): upstream has this call COMMENTED OUT
+                // (`//ApplyTaskPenalties(task);`), so an expired task costs it nothing. We
+                // re-enabled it, which is why this build loses 1-3 satisfaction during each day
+                // where upstream loses none. Whether an unfulfilled task should carry a penalty
+                // at all is a design question, not obviously a bug on either side.
+                // ApplyTaskPenalties(task);
             }
 
+            RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
             OnTaskExpired?.Invoke(task);
 
             if (showDebugInfo)
@@ -1288,6 +1856,11 @@ public class TaskSystem : MonoBehaviour
 
     void ApplyTaskPenalties(GameTask task)
     {
+        // Resolve once — task.taskTitle is the raw authored template (e.g.
+        // "[facility_name_plain] Flood Damage Relocation"); every message built from it below
+        // should show the actual facility name, not the literal placeholder text.
+        string resolvedTaskTitle = task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true);
+
         // Apply penalties based on task impacts
         foreach (TaskImpact impact in task.impacts)
         {
@@ -1295,15 +1868,15 @@ public class TaskSystem : MonoBehaviour
             {
                 case ImpactType.Satisfaction:
                     if (SatisfactionAndBudget.Instance != null)
-                        SatisfactionAndBudget.Instance.RemoveSatisfaction(impact.value, $"Task Incomplete Penalty from [{task.taskTitle}]");
-                    ToastManager.ShowToast($"Removed satisfaction: {impact.value} from task: {task.taskTitle} due to incomplete task", ToastType.Warning, true);
-                    GameLogPanel.Instance.LogTaskEvent($"Removed satisfaction: {impact.value} from task: {task.taskTitle} due to incomplete task");
+                        SatisfactionAndBudget.Instance.RemoveSatisfaction(impact.value, $"Task Incomplete Penalty from [{resolvedTaskTitle}]");
+                    ToastManager.ShowToast($"Removed satisfaction: {impact.value} from task: {resolvedTaskTitle} due to incomplete task", ToastType.Warning, true);
+                    GameLogPanel.Instance.LogTaskEvent($"Removed satisfaction: {impact.value} from task: {resolvedTaskTitle} due to incomplete task");
                     break;
                 case ImpactType.Budget:
                     if (SatisfactionAndBudget.Instance != null)
-                        SatisfactionAndBudget.Instance.RemoveBudget(impact.value, $"Task Incomplete Penalty from [{task.taskTitle}]");
-                    ToastManager.ShowToast($"Removed budget: {impact.value} from task: {task.taskTitle} due to incomplete task", ToastType.Warning, true);
-                    GameLogPanel.Instance.LogTaskEvent($"Removed budget: {impact.value} from task: {task.taskTitle} due to incomplete task");
+                        SatisfactionAndBudget.Instance.RemoveBudget(impact.value, $"Task Incomplete Penalty from [{resolvedTaskTitle}]");
+                    ToastManager.ShowToast($"Removed budget: {impact.value} from task: {resolvedTaskTitle} due to incomplete task", ToastType.Warning, true);
+                    GameLogPanel.Instance.LogTaskEvent($"Removed budget: {impact.value} from task: {resolvedTaskTitle} due to incomplete task");
                     break;
             }
         }
@@ -1346,7 +1919,9 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            //ApplyTaskPenalties(task);
+            // PARITY BUILD (ledger D22): the SECOND penalty site, also commented out upstream.
+            // ApplyTaskPenalties(task);
+            RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
             OnTaskCompleted?.Invoke(task);
 
             if (showDebugInfo)
@@ -1429,6 +2004,9 @@ public class TaskSystem : MonoBehaviour
         newTask.description = $"Action recommendations from {agentName}";
         newTask.isGlobalTask = true;
 
+        SnapshotDebug.MarkContext("task:created", "{\"id\":" + newTask.taskId
+            + ",\"title\":\"" + newTask.taskTitle
+            + "\",\"rounds\":" + newTask.roundsRemaining + "}");
         activeTasks.Add(newTask);
         return newTask;
     }
@@ -1458,11 +2036,16 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
-    public GameTask CreateTaskFromData(TaskData taskData)
+    public GameTask CreateTaskFromData(TaskData taskData, MonoBehaviour facility = null)
     {
         GameTask newTask = new GameTask(nextTaskId++, taskData.taskTitle, taskData.taskType, taskData.targetFacilityType.ToString());
+        // The facility that raised the task must be known BEFORE the choice loop below sizes the
+        // deliveries; with only the type string, FindTriggeringFacility matched the first building
+        // of that type (BUG_REPORTS B9).
+        if (facility != null) newTask.affectedFacility = facility.name;
 
         // Copy basic info
+        newTask.stableTaskId = taskData.taskId;
         newTask.description = taskData.description;
         newTask.taskImage = taskData.taskImage;
         newTask.taskOfficer = taskData.taskOfficer;
@@ -1537,6 +2120,7 @@ public class TaskSystem : MonoBehaviour
             newChoice.triggersDelivery = choice.triggersDelivery;
             newChoice.immediateDelivery = choice.immediateDelivery; // New
             newChoice.enableMultipleDeliveries = choice.enableMultipleDeliveries; // New
+            newChoice.multiDeliveryType = choice.multiDeliveryType; // ADDED
             newChoice.deliveryCargoType = choice.deliveryCargoType;
             newChoice.quantityType = choice.quantityType; // NEW: Copy quantity type
             newChoice.deliveryPercentage = choice.deliveryPercentage; // NEW: Copy percentage
@@ -1551,7 +2135,9 @@ public class TaskSystem : MonoBehaviour
             newChoice.prioritizeNearestSource = choice.prioritizeNearestSource;
             newChoice.prioritizeNearestDestination = choice.prioritizeNearestDestination;
             newChoice.budgetDelayRounds = choice.budgetDelayRounds;
-            
+            newChoice.costPerUnit = choice.costPerUnit;
+            newChoice.requireFullQuantity = choice.requireFullQuantity;
+
             newTask.agentChoices.Add(newChoice);
         }
 
@@ -1568,6 +2154,12 @@ public class TaskSystem : MonoBehaviour
         // Set delivery time limit from task data
         newTask.deliveryTimeLimit = taskData.deliveryTimeLimit;
         newTask.deliveryFailureSatisfactionPenalty = taskData.deliveryFailureSatisfactionPenalty;
+
+        if (newTask.taskTag == TaskTag.Lodging)
+        {
+            int clients = newTask.impacts.FirstOrDefault(i => i.impactType == ImpactType.Clients)?.value ?? 0;
+            DailyReportData.Instance?.RecordLodgingRequestedToday(clients);
+        }
 
         activeTasks.Add(newTask);
         OnTaskCreated?.Invoke(newTask);
@@ -1590,6 +2182,7 @@ public class TaskSystem : MonoBehaviour
         //     WebSocketManager.Instance.RequestTaskContent(newTask.taskId);
         // }
 
+        ApplyConfiguredAllocation(newTask, taskData);
         return newTask;
     }
 
@@ -1685,16 +2278,18 @@ public class TaskSystem : MonoBehaviour
                 Building[] buildings = FindObjectsOfType<Building>()
                     .Where(b => b.GetBuildingType() == choice.sourceBuilding)
                     .Where(b => b != triggeringFacility || choice.destinationType != DeliveryDestinationType.RequestingFacility) // Conditional exclude
+                    .Where(b => IsValidDeliverySource(b, choice.deliveryCargoType))
                     .ToArray();
 
                 if (buildings.Length == 0) return null;
 
                 if (choice.prioritizeNearestSource && triggeringFacility != null)
                 {
-                    return FindNearestBuilding(choice.sourceBuilding, triggeringFacility?.transform.position,
-                                        choice.deliveryCargoType, true);
+                    return buildings
+                    .OrderBy(b => Vector3.Distance(b.transform.position, triggeringFacility.transform.position))
+                    .FirstOrDefault();
                 }
-                return buildings[0];
+                return buildings.FirstOrDefault();
 
 
             case DeliverySourceType.SpecificPrebuilt:
@@ -1705,16 +2300,18 @@ public class TaskSystem : MonoBehaviour
                 PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>()
                 .Where(p => p.GetPrebuiltType() == choice.sourcePrebuilt)
                 .Where(p => p != triggeringFacility || choice.destinationType != DeliveryDestinationType.RequestingFacility)
+                .Where(b => IsValidDeliverySource(b, choice.deliveryCargoType))
                 .ToArray();
 
                 if (prebuilts.Length == 0) return null;
 
                 if (choice.prioritizeNearestSource && triggeringFacility != null)
                 {
-                    return FindNearestPrebuiltBuilding(choice.sourcePrebuilt, triggeringFacility?.transform.position,
-                                                choice.deliveryCargoType, true);
+                    return prebuilts
+                    .OrderBy(b => Vector3.Distance(b.transform.position, triggeringFacility.transform.position))
+                    .FirstOrDefault();
                 }
-                return prebuilts[0];
+                return prebuilts.FirstOrDefault();
 
 
             case DeliverySourceType.AutoFind:
@@ -1742,11 +2339,26 @@ public class TaskSystem : MonoBehaviour
                 return FindFacilityByName(choice.specificDestinationName);
 
             case DeliveryDestinationType.SpecificBuilding:
+                // For Population cargo, a destination must have room for the FULL amount this
+                // choice would actually send — not just some room — so this agrees with
+                // TaskDetailUI.ValidateChoiceDelivery's confirm-time check and with
+                // ClientRelocationHandler.ExecuteToSpecificDestination's own toSend calculation.
+                // Other cargo types are unaffected (defaults to requiring just 1, same as before).
+                int requiredQuantity = 1;
+                if (choice.deliveryCargoType == ResourceType.Population
+                    && triggeringFacility != null && ClientRelocationHandler.Instance != null)
+                {
+                    int sourcePopulation = ClientRelocationHandler.Instance.GetPopulation(triggeringFacility);
+                    requiredQuantity = choice.deliveryQuantity > 0
+                        ? Mathf.Min(choice.deliveryQuantity, sourcePopulation) : sourcePopulation;
+                }
+
                 // Exclude the triggering facility from destination search
                 Building[] buildings = FindObjectsOfType<Building>()
                 .Where(b => b.GetBuildingType() == choice.destinationBuilding)
                 .Where(b => b.IsOperational()) // Only operational buildings
                 .Where(b => b != triggeringFacility) // Exclude source facility
+                .Where(b => IsValidDeliveryDestination(b, choice.deliveryCargoType, requiredQuantity))
                 .ToArray();
 
                 if (buildings.Length == 0)
@@ -1758,10 +2370,14 @@ public class TaskSystem : MonoBehaviour
 
                 if (choice.prioritizeNearestDestination && triggeringFacility != null)
                 {
-                    return FindNearestBuilding(choice.destinationBuilding, triggeringFacility?.transform.position,
-                                        choice.deliveryCargoType, false);
+                    //return FindNearestBuilding(choice.destinationBuilding, triggeringFacility?.transform.position,
+                    //                    choice.deliveryCargoType, false);
+                    return buildings
+                    .OrderBy(b => Vector3.Distance(b.transform.position, triggeringFacility.transform.position))
+                    .FirstOrDefault();
                 }
-                return buildings[0];
+                //return buildings[0];
+                return buildings.FirstOrDefault();
 
 
 
@@ -1770,6 +2386,7 @@ public class TaskSystem : MonoBehaviour
                 PrebuiltBuilding[] prebuilts = FindObjectsOfType<PrebuiltBuilding>()
                     .Where(p => p.GetPrebuiltType() == choice.destinationPrebuilt)
                     .Where(p => p != triggeringFacility) // Exclude source facility
+                    .Where(p => IsValidDeliveryDestination(p, choice.deliveryCargoType))
                     .ToArray();
 
                 if (prebuilts.Length == 0)
@@ -1781,10 +2398,13 @@ public class TaskSystem : MonoBehaviour
 
                 if (choice.prioritizeNearestDestination && triggeringFacility != null)
                 {
-                    return FindNearestPrebuiltBuilding(choice.destinationPrebuilt, triggeringFacility?.transform.position,
-                                            choice.deliveryCargoType, false);
+                    //return FindNearestPrebuiltBuilding(choice.destinationPrebuilt, triggeringFacility?.transform.position,
+                    //                        choice.deliveryCargoType, false);
+                    return prebuilts
+                    .OrderBy(p => Vector3.Distance(p.transform.position, triggeringFacility.transform.position))
+                    .FirstOrDefault();
                 }
-                return prebuilts[0];
+                return prebuilts.FirstOrDefault();
 
 
             case DeliveryDestinationType.AutoFind:
@@ -1793,6 +2413,65 @@ public class TaskSystem : MonoBehaviour
                 return FindBestDeliveryDestination(choice.deliveryCargoType, triggeringFacility?.transform.position);
         }
     }
+
+    /// <summary>
+    /// Validates a facility as a source for a cargo type
+    /// </summary>
+    private bool IsValidDeliverySource(MonoBehaviour facility, ResourceType cargo)
+    {
+        if (facility == null) return false;
+        if (facility is Building building && !building.IsOperational()) return false;
+        BuildingResourceStorage storage = facility.GetComponent<BuildingResourceStorage>();
+        if (storage != null)
+        {
+            int availableStock = storage.GetResourceAmount(cargo);
+            int reservedOutbound = DeliverySystem.Instance != null
+                ? DeliverySystem.Instance.GetReservedOutgoingQuantity(facility, cargo) : 0;
+            if (availableStock - reservedOutbound <= 0) return false; // source must have cargo not already spoken for
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Validates a facility as a destination for a cargo type. requiredQuantity is how many units
+    /// must actually fit — default 1 preserves the original "not already totally full" behavior
+    /// for callers that don't know/care about an exact amount.
+    /// </summary>
+    private bool IsValidDeliveryDestination(MonoBehaviour facility, ResourceType cargo, int requiredQuantity = 1)
+    {
+        if (facility == null) return false;
+        if (facility is Building building && !building.IsOperational()) return false;
+
+        // Population destinations (e.g. CaseworkSite) can also be filled by in-flight self-walk
+        // relocations tracked in ClientRelocationHandler, which never show up as DeliverySystem
+        // reservations — the generic check below only sees currentAmount + reservedInbound, so a
+        // site with a full round's worth of people already walking toward it (but not yet arrived)
+        // still looks empty and keeps getting picked as a destination for round after round, until
+        // those arrivals finally land and currentAmount catches up. GetEffectiveSpace already
+        // accounts for that on top of reserved-inbound deliveries — reuse it here instead so this
+        // matches the same capacity accounting TaskDetailUI's validation and Shelter/Motel routing
+        // already use. Must fit the full requiredQuantity, not just be non-zero — otherwise a site
+        // with only a couple of slots left still passes here and gets chosen over a genuinely empty
+        // second site (whichever sorts first/nearest), silently sending far more people than it can
+        // actually hold instead of routing them to the site that actually has room.
+        if (cargo == ResourceType.Population && ClientRelocationHandler.Instance != null)
+            return ClientRelocationHandler.Instance.GetEffectiveSpace(facility) >= Mathf.Max(1, requiredQuantity);
+
+        BuildingResourceStorage storage = facility.GetComponent<BuildingResourceStorage>();
+        if (storage != null)
+        {
+            int currentAmount = storage.GetResourceAmount(cargo);
+            int capacity = storage.GetResourceCapacity(cargo);
+            int reservedInbound = DeliverySystem.Instance != null
+                ? DeliverySystem.Instance.GetReservedIncomingQuantity(facility, cargo) : 0;
+
+            if (currentAmount + reservedInbound >= capacity) return false; // no room left once inbound arrives
+        }
+
+        return true;
+    }
+
 
     public void CompleteAlertTask(GameTask alertTask)
     {
@@ -1820,7 +2499,7 @@ public class TaskSystem : MonoBehaviour
         {
             case ImpactType.Satisfaction: return "Satisfaction";
             case ImpactType.Budget: return "Budget";
-            case ImpactType.FoodPacks: return "Food Packs Amount";
+            case ImpactType.FoodPacks: return "mealss Amount";
             case ImpactType.Clients: return "Clients Amount";
             case ImpactType.Workforce: return "Workforce Required";
             case ImpactType.TotalTime: return "Estimated Time";
@@ -1847,7 +2526,7 @@ public class TaskSystem : MonoBehaviour
         string displayName = specificFacility is PrebuiltBuilding pb ? pb.GetBuildingName() :
                              specificFacility is Building bld ? bld.GetDisplayName() : facilityName;
 
-        GameTask newTask = CreateTaskFromData(taskData);
+        GameTask newTask = CreateTaskFromData(taskData, specificFacility);
         if (newTask == null)
         {
             if (showDebugInfo)
@@ -1858,10 +2537,41 @@ public class TaskSystem : MonoBehaviour
         newTask.affectedFacility = facilityName;
         newTask.facilityDisplayName = displayName;
 
+        BuildingResourceStorage destStorage = specificFacility?.GetComponent<BuildingResourceStorage>();
+        if (destStorage != null)
+        {
+            if (destStorage.enablePopulationBasedConsumption)
+            {
+                // Facility actually consumes food over time (Shelter, Motel) — need is derived
+                // from population x consumption rate, same as the normal per-round feeding.
+                newTask.foodAmount = destStorage.GetFoodNeed();
+            }
+            else
+            {
+                // No consumption rate (e.g. Community) — this facility is never fed by the
+                // per-round cycle, so its "need" is whatever this specific task's choices
+                // actually ask for, not a population formula. Recording this facility's food
+                // demand for the day is the caller's responsibility (see
+                // CommunityFoodDepletionManager), since only the caller knows whether this
+                // particular quantity is the definitive, final amount for the day.
+                newTask.foodAmount = GetPrimaryFoodRequestAmount(newTask);
+            }
+        }
+
         if (showDebugInfo)
             Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
         GameLogPanel.Instance.LogTaskEvent($"Generated task from database: {taskData.taskId} for facility {facilityName}");
         return newTask;
+    }
+
+    /// <summary>
+    /// The fixed/authored quantity this task's primary food-delivery choice asks for — used as
+    /// the "amount requested" for facilities with no consumption rate (see CreateTaskFromDatabase).
+    /// </summary>
+    int GetPrimaryFoodRequestAmount(GameTask task)
+    {
+        AgentChoice foodChoice = task.agentChoices.FirstOrDefault(c => c.deliveryCargoType == ResourceType.FoodPacks);
+        return foodChoice?.deliveryQuantity ?? 0;
     }
 
     [ContextMenu("Create Test Food Demand Task")]
@@ -1881,7 +2591,7 @@ public class TaskSystem : MonoBehaviour
         foodTask.agentMessages.Add(new AgentMessage("We need to decide how to respond quickly. What would you like to do?"));
 
         // Add agent choices with delivery options
-        AgentChoice choice1 = new AgentChoice(1, "Emergency food distribution from nearby kitchen (50 food packs, $2000)");
+        AgentChoice choice1 = new AgentChoice(1, "Emergency food distribution from nearby kitchen (50 meals, $2000)");
         choice1.triggersDelivery = true;
         choice1.deliveryCargoType = ResourceType.FoodPacks;
         choice1.deliveryQuantity = 50;
@@ -1890,10 +2600,9 @@ public class TaskSystem : MonoBehaviour
         choice1.destinationType = DeliveryDestinationType.AutoFind;
         choice1.choiceImpacts.Add(new TaskImpact(ImpactType.FoodPacks, -50));
         choice1.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -2000));
-        choice1.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 15));
         foodTask.agentChoices.Add(choice1);
 
-        AgentChoice choice2 = new AgentChoice(2, "Limited food distribution (10 food packs, $1000)");
+        AgentChoice choice2 = new AgentChoice(2, "Limited food distribution (10 meals, $1000)");
         choice2.triggersDelivery = true;
         choice2.deliveryCargoType = ResourceType.FoodPacks;
         choice2.deliveryQuantity = 10;
@@ -1902,12 +2611,10 @@ public class TaskSystem : MonoBehaviour
         choice2.destinationType = DeliveryDestinationType.RequestingFacility;
         choice2.choiceImpacts.Add(new TaskImpact(ImpactType.FoodPacks, -10));
         choice2.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1000));
-        choice2.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5));
         foodTask.agentChoices.Add(choice2);
 
         AgentChoice choice3 = new AgentChoice(3, "Delay until next shipment arrives (no delivery)");
         choice3.triggersDelivery = false;
-        choice3.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -20));
         foodTask.agentChoices.Add(choice3);
     }
 
@@ -1928,12 +2635,10 @@ public class TaskSystem : MonoBehaviour
         AgentChoice upgradeChoice = new AgentChoice(1, "Approve equipment upgrade ($5000)");
         upgradeChoice.triggersDelivery = false;
         upgradeChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -5000));
-        upgradeChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 25));
         advisoryTask.agentChoices.Add(upgradeChoice);
 
         AgentChoice delayChoice = new AgentChoice(2, "Delay upgrade for now");
         delayChoice.triggersDelivery = false;
-        delayChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5));
         advisoryTask.agentChoices.Add(delayChoice);
     }
 
@@ -1963,7 +2668,6 @@ public class TaskSystem : MonoBehaviour
         // Add simple confirmation choice
         AgentChoice confirmChoice = new AgentChoice(1, "Confirm worker assignment");
         confirmChoice.triggersDelivery = false;
-        confirmChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5));
         numericalTask.agentChoices.Add(confirmChoice);
     }
 
@@ -2030,7 +2734,6 @@ public class TaskSystem : MonoBehaviour
         shelterChoice.sourceType = DeliverySourceType.RequestingFacility;
         shelterChoice.destinationType = DeliveryDestinationType.SpecificBuilding;
         shelterChoice.destinationBuilding = BuildingType.Shelter;
-        shelterChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5, false, "Quick Response"));
         transportTask.agentChoices.Add(shelterChoice);
 
         AgentChoice motelChoice = new AgentChoice(2, "Send to Motel ($200, always available)");
@@ -2041,7 +2744,6 @@ public class TaskSystem : MonoBehaviour
         motelChoice.destinationType = DeliveryDestinationType.SpecificPrebuilt;
         motelChoice.destinationPrebuilt = PrebuiltBuildingType.Motel;
         motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -200));
-        motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10, false, "Premium Housing"));
         transportTask.agentChoices.Add(motelChoice);
 
         AgentChoice airDrop = new AgentChoice(2, "Emergency airdrop to Motel(instant)");
@@ -2052,12 +2754,10 @@ public class TaskSystem : MonoBehaviour
         airDrop.destinationType = DeliveryDestinationType.SpecificPrebuilt;
         airDrop.destinationPrebuilt = PrebuiltBuildingType.Motel;
         airDrop.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1000, false, "Airdrop Cost"));
-        airDrop.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 20, false, "Premium Housing"));
         transportTask.agentChoices.Add(airDrop);
 
-        AgentChoice delayChoice = new AgentChoice(3, "Wait for better options (Risk satisfaction loss)");
+        AgentChoice delayChoice = new AgentChoice(3, "Wait for better options");
         delayChoice.triggersDelivery = false;
-        delayChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -8, false, "Delayed Response"));
         transportTask.agentChoices.Add(delayChoice);
 
         if (showDebugInfo)
@@ -2089,7 +2789,6 @@ public class TaskSystem : MonoBehaviour
         shelterChoice.sourcePrebuilt = PrebuiltBuildingType.Community;
         shelterChoice.destinationType = DeliveryDestinationType.SpecificBuilding;
         shelterChoice.destinationBuilding = BuildingType.Shelter;
-        shelterChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5));
         choiceTask.agentChoices.Add(shelterChoice);
 
         // Choice 2: Send to Motel
@@ -2102,13 +2801,11 @@ public class TaskSystem : MonoBehaviour
         motelChoice.destinationType = DeliveryDestinationType.SpecificPrebuilt;
         motelChoice.destinationPrebuilt = PrebuiltBuildingType.Motel;
         motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -500));
-        motelChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10));
         choiceTask.agentChoices.Add(motelChoice);
 
         // Choice 3: Keep them (no delivery)
         AgentChoice keepChoice = new AgentChoice(3, "Keep them here for now (overcrowding risk)");
         keepChoice.triggersDelivery = false;
-        keepChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5));
         choiceTask.agentChoices.Add(keepChoice);
 
         if (showDebugInfo)
@@ -2241,6 +2938,8 @@ public class TaskSystem : MonoBehaviour
             foreach (PrebuiltBuilding community in communities)
             {
                 // Simulate 50% probability for each community independently
+                SnapshotDebug.Mark("draw:TaskSystem.coinflip");
+                SnapshotDebug.Mark("draw:Task.coinflip");
                 bool triggered = UnityEngine.Random.Range(0f, 1f) < 0.5f;
                 
                 if (triggered)
@@ -2313,8 +3012,17 @@ public class TaskSystem : MonoBehaviour
     {
         GameStatePayload state = new GameStatePayload();
 
+        // Backstop: get_game_state must never throw (a throw makes the gym return an
+        // error and abort the episode). If any sub-builder hits a stray NRE despite
+        // its own guards, return the partially-populated state instead.
+        try
+        {
+
         // Session Info
         state.sessionInfo = GetSessionInfo();
+
+        // Satisfaction and Budget
+        state.satisfactionAndBudget = GetSatisfactionAndBudgetState();
 
         // Task Context (if specific task requested)
         if (taskId >= 0)
@@ -2328,6 +3036,9 @@ public class TaskSystem : MonoBehaviour
 
         // All Active Tasks
         state.allActiveTasks = GetAllActiveTaskContexts();
+
+        // Reward metrics (raw cumulative quantities; Python computes the score)
+        state.rewardMetrics = RewardMetricsTracker.Instance?.BuildPayload();
 
         // Map State
         state.mapState = GetMapState();
@@ -2350,6 +3061,12 @@ public class TaskSystem : MonoBehaviour
         // Construction State
         state.constructionState = GetConstructionState();
 
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[TaskSystem] GetCurrentGameState hit an error; returning partial state: {e.Message}");
+        }
+
         return state;
     }
 
@@ -2365,21 +3082,115 @@ public class TaskSystem : MonoBehaviour
             info.currentGameTime = $"Day {info.currentDay}, Round {info.currentRound}";
             info.simulationSpeed = GlobalClock.Instance.IsSimulationRunning() ? 1.0f : 0.0f;
             info.isPaused = !GlobalClock.Instance.IsSimulationRunning();
+
+            // Finite-horizon terminal: game is over once the last round of finalDay
+            // has run (EndGamePanel condition is Day finalDay, segment >= 4) or the
+            // clock has already rolled past finalDay.
+            int finalDay = GlobalClock.Instance.lastDay;   // the configured horizon (BUG_REPORTS B33)
+            info.finalDay = finalDay;
+            info.isGameOver = info.currentDay > finalDay
+                              || (info.currentDay == finalDay && info.currentRound >= GlobalClock.Instance.roundsPerDay);
         }
 
         return info;
     }
 
+    
+
+    private SatisfactionAndBudgetState GetSatisfactionAndBudgetState()
+    {
+        SatisfactionAndBudgetState state = new SatisfactionAndBudgetState();
+
+        if (SatisfactionAndBudget.Instance != null)
+        {
+            state.satisfaction = (int)SatisfactionAndBudget.Instance.GetCurrentSatisfaction();
+            state.budget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+        }
+        else
+        {
+            // Default values if system not available
+            state.satisfaction = 5000;
+            state.budget = 8000;
+        }
+
+        return state;
+    }
+
     private TaskContext GetTaskContextFromTask(GameTask task)
     {
+        List<TaskChoiceBrief> choices = null;
+        if (task.agentChoices != null && task.agentChoices.Count > 0)
+        {
+            choices = new List<TaskChoiceBrief>();
+            foreach (AgentChoice c in task.agentChoices)
+            {
+                // B5/D5: don't offer a population-relocation choice whose destination(s) can't
+                // house anyone right now (no shelter/motel space). Same shelter/motel derivation
+                // as ExecuteClientRelocation. NOTE: this gate is only for shelter/motel relocation —
+                // a "send to casework site" choice (destination CaseworkSite) is return-home
+                // processing, NOT a shelter relocation, so it must NOT be gated on shelter space.
+                if (c.deliveryCargoType == ResourceType.Population && (c.triggersDelivery || c.immediateDelivery)
+                        && c.destinationBuilding != BuildingType.CaseworkSite
+                        && ClientRelocationHandler.Instance != null)
+                {
+                    bool toShelter = c.destinationType != DeliveryDestinationType.SpecificPrebuilt
+                                  || c.destinationPrebuilt != PrebuiltBuildingType.Motel;
+                    bool toMotel   = c.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                                  && c.destinationPrebuilt == PrebuiltBuildingType.Motel;
+                    if (!toShelter && !toMotel) { toShelter = true; toMotel = true; }
+                    if (!ClientRelocationHandler.Instance.HasDestinationSpace(task, toShelter, toMotel))
+                        continue;
+                }
+                var brief = new TaskChoiceBrief { choiceId = c.choiceId, choiceText = task.ResolvePlaceholders(c.choiceText, plainFacilityName: true) };
+                // Sparse impacts: expose only the choice's non-zero consequences so the
+                // agent can reason about budget/satisfaction tradeoffs (e.g. funding choices).
+                if (c.choiceImpacts != null && c.choiceImpacts.Count > 0)
+                {
+                    brief.impacts = new List<ChoiceImpactBrief>();
+                    foreach (TaskImpact imp in c.choiceImpacts)
+                        if (imp.value != 0)
+                            brief.impacts.Add(new ChoiceImpactBrief { type = imp.impactType.ToString(), value = imp.value });
+                }
+                // Forward structured destination so Python policies don't need to parse choiceText.
+                // CaseworkSite is checked first: a casework choice's name includes the client group
+                // name, which may contain "Motel" or "Shelter" (the group's origin) and would
+                // confuse any substring-based classification.
+                if (c.triggersDelivery || c.immediateDelivery)
+                {
+                    if (c.destinationBuilding == BuildingType.CaseworkSite)
+                        brief.destinationCategory = "CaseworkSite";
+                    else if (c.destinationType == DeliveryDestinationType.SpecificPrebuilt
+                             && c.destinationPrebuilt == PrebuiltBuildingType.Motel)
+                        brief.destinationCategory = "Motel";
+                    else
+                        brief.destinationCategory = c.destinationBuilding.ToString();
+                    // Population-based food choices author 0 and resolve against the destination's
+                    // need at execution; agents get the number a human reads in the button.
+                    brief.deliveryQuantity = c.deliveryQuantity;
+                    if (c.quantityType == DeliveryQuantityType.PopulationBased && FoodDeliveryHandler.Instance != null)
+                    {
+                        MonoBehaviour dest = FindTriggeringFacility(task);
+                        if (dest != null) brief.deliveryQuantity = FoodDeliveryHandler.Instance.ResolveQuantity(c, dest);
+                    }
+                    brief.immediateDelivery = c.immediateDelivery;
+                    brief.triggersDelivery = c.triggersDelivery;
+                }
+                choices.Add(brief);
+            }
+        }
+
         return new TaskContext
         {
             taskId = task.taskId,
-            taskTitle = task.taskTitle,
-            taskDescription = task.description,
+            stableTaskId = task.stableTaskId,
+            // Placeholders ([facility_name_plain], [food_amount], ...) are resolved for agents exactly
+            // as the UI resolves them for humans; the raw template never leaves the game.
+            taskTitle = task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true),
+            taskDescription = task.ResolvePlaceholders(task.description, plainFacilityName: true),
             taskType = task.taskType.ToString(),
             affectedFacility = task.affectedFacility,
-            roundsRemaining = task.roundsRemaining
+            roundsRemaining = task.roundsRemaining,
+            choices = choices
         };
     }
 
@@ -2389,12 +3200,20 @@ public class TaskSystem : MonoBehaviour
         mapState.facilities = new List<FacilityState>();
         mapState.vehicles = new List<VehicleState>();
 
+        // Defensive net: a stray destroyed-object deref must never fail the whole
+        // gym get_game_state. Collect what we can; return partial state on error.
+        try
+        {
         // Collect building states
         Building[] buildings = FindObjectsOfType<Building>();
         foreach (Building building in buildings)
         {
             FacilityState facilityState = new FacilityState();
-            facilityState.facilityName = building.name;
+            // Use the SAME human-facing display name the player sees in the UI
+            // (FacilityInfoPanel uses GetDisplayName()), so officers and the human
+            // refer to facilities by one shared name. FindBuildingByName still
+            // resolves either the display name or the raw GameObject name.
+            facilityState.facilityName = building.GetDisplayName();
             facilityState.facilityType = "Building";
             facilityState.buildingType = building.GetBuildingType().ToString();
             facilityState.isOperational = building.IsOperational();
@@ -2433,7 +3252,10 @@ public class TaskSystem : MonoBehaviour
         foreach (PrebuiltBuilding prebuilt in prebuilts)
         {
             FacilityState facilityState = new FacilityState();
-            facilityState.facilityName = prebuilt.name;
+            // Match the human-facing name (communities/motels/etc. are named via
+            // SetBuildingName); fall back to the GameObject name if unset.
+            facilityState.facilityName = !string.IsNullOrEmpty(prebuilt.GetBuildingName())
+                ? prebuilt.GetBuildingName() : prebuilt.name;
             facilityState.facilityType = "Prebuilt";
             facilityState.buildingType = prebuilt.GetPrebuiltType().ToString();
             facilityState.isOperational = true;
@@ -2481,7 +3303,13 @@ public class TaskSystem : MonoBehaviour
 
             if (vehicle.currentTask != null)
             {
-                vehicleState.currentTask = $"{vehicle.currentTask.cargoType} delivery: {vehicle.currentTask.GetSource()?.name} → {vehicle.currentTask.GetDestination()?.name}";
+                // Unity null-check (not ?.): a deconstructed source/destination is a
+                // fake-null destroyed object that passes ?. but throws on .name.
+                var src = vehicle.currentTask.GetSource();
+                var dst = vehicle.currentTask.GetDestination();
+                string srcName = src != null ? src.name : "Unknown";
+                string dstName = dst != null ? dst.name : "Unknown";
+                vehicleState.currentTask = $"{vehicle.currentTask.cargoType} delivery: {srcName} → {dstName}";
             }
             else
             {
@@ -2510,6 +3338,11 @@ public class TaskSystem : MonoBehaviour
                 };
                 mapState.abandonedSites.Add(siteState);
             }
+        }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[TaskSystem] GetMapState failed; returning partial map state: {e.Message}");
         }
 
         return mapState;
@@ -2588,32 +3421,57 @@ public class TaskSystem : MonoBehaviour
     {
         Logistics logistics = new Logistics();
         logistics.activeDeliveries = new List<ActiveDelivery>();
+        logistics.pendingRelocations = new List<PendingRelocation>();
+        if (ClientRelocationHandler.Instance != null)
+            foreach (var r in ClientRelocationHandler.Instance.GetPendingRelocations())
+                logistics.pendingRelocations.Add(new PendingRelocation
+                {
+                    taskId = r.parentTask != null ? r.parentTask.taskId : -1,
+                    source = r.source != null ? r.source.name : "?",
+                    destination = r.destination != null ? r.destination.name : "?",
+                    quantity = r.quantity,
+                    roundsRemaining = r.roundsRemaining
+                });
 
-        Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-        // VehicleStatus uses Idle, not Available
-        logistics.availableVehicles = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.Idle);
-        logistics.vehiclesInTransit = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.InTransit);
-        logistics.damagedVehicles = vehicles.Count(v => v.GetCurrentStatus() == VehicleStatus.Damaged);
-
-        // Collect active deliveries
-        DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
-        if (deliverySystem != null)
+        // Defensive throughout: this runs on every gym get_game_state. A null vehicle
+        // or dangling delivery task (e.g. left by an aborted delivery) must NOT throw,
+        // or the gym's state request never returns and the episode hangs.
+        try
         {
-            List<DeliveryTask> activeTasks = deliverySystem.GetActiveTasks();
-            foreach (DeliveryTask task in activeTasks)
-            {
-                ActiveDelivery delivery = new ActiveDelivery();
-                delivery.deliveryId = task.taskId;
-                delivery.cargoType = task.cargoType.ToString();
-                delivery.quantity = task.quantity;
-                // Use GetSource() and GetDestination() methods
-                delivery.source = task.GetSource()?.name ?? "Unknown";
-                delivery.destination = task.GetDestination()?.name ?? "Unknown";
-                delivery.status = "Active"; // DeliveryTask doesn't have status field
-                delivery.progress = 0.5f; // Could be calculated from vehicle position if needed
+            Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
+            // VehicleStatus uses Idle, not Available
+            logistics.availableVehicles = vehicles.Count(v => v != null && v.GetCurrentStatus() == VehicleStatus.Idle);
+            logistics.vehiclesInTransit = vehicles.Count(v => v != null && v.GetCurrentStatus() == VehicleStatus.InTransit);
+            logistics.damagedVehicles = vehicles.Count(v => v != null && v.GetCurrentStatus() == VehicleStatus.Damaged);
 
-                logistics.activeDeliveries.Add(delivery);
+            // Collect active deliveries
+            DeliverySystem deliverySystem = FindObjectOfType<DeliverySystem>();
+            if (deliverySystem != null)
+            {
+                List<DeliveryTask> activeTasks = deliverySystem.GetActiveTasks();
+                if (activeTasks != null)
+                {
+                    foreach (DeliveryTask task in activeTasks)
+                    {
+                        if (task == null) continue;
+                        ActiveDelivery delivery = new ActiveDelivery();
+                        delivery.deliveryId = task.taskId;
+                        delivery.cargoType = task.cargoType.ToString();
+                        delivery.quantity = task.quantity;
+                        // Use GetSource() and GetDestination() methods
+                        delivery.source = task.GetSource()?.name ?? "Unknown";
+                        delivery.destination = task.GetDestination()?.name ?? "Unknown";
+                        delivery.status = "Active"; // DeliveryTask doesn't have status field
+                        delivery.progress = 0.5f; // Could be calculated from vehicle position if needed
+
+                        logistics.activeDeliveries.Add(delivery);
+                    }
+                }
             }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[TaskSystem] GetLogisticsState failed; returning partial logistics: {e.Message}");
         }
 
         return logistics;
@@ -2643,7 +3501,10 @@ public class TaskSystem : MonoBehaviour
     {
         List<TaskContext> taskContexts = new List<TaskContext>();
 
-        foreach (GameTask task in activeTasks)
+        // Only surface tasks the human UI would show as open (Active). Resolved tasks left in
+        // activeTasks with status InProgress (SetTaskInProgress does NOT remove them) must drop
+        // out of the officer observation, mirroring CategoryTaskManager's Active-only filter.
+        foreach (GameTask task in activeTasks.Where(t => t.status == TaskStatus.Active))
         {
             taskContexts.Add(GetTaskContextFromTask(task));
         }
@@ -2778,6 +3639,26 @@ public class TaskSystem : MonoBehaviour
         if (task == null)
         {
             Debug.LogError($"Task with ID {llmContent.taskId} not found");
+            return;
+        }
+
+        ApplyLLMTaskContent(task, llmContent);
+    }
+
+    /// <summary>
+    /// Apply LLM content to a SPECIFIC task instance. Required for multi-agent
+    /// choice proposals: every officer's proposal shares taskId == -1, so resolving
+    /// the target by id (GetTaskById) would return whichever officer's -1 task is
+    /// first in the list, cross-wiring one officer's proposal onto another's task in
+    /// multi-officer scenarios. Callers that already hold the exact task (e.g.
+    /// WebSocketManager.HandleChoicesProposal via GetOrCreateMultiAgentTask) pass it
+    /// here directly.
+    /// </summary>
+    public void ApplyLLMTaskContent(GameTask task, LLMTaskContent llmContent)
+    {
+        if (task == null || llmContent == null)
+        {
+            Debug.LogError("ApplyLLMTaskContent(task, content) called with a null argument");
             return;
         }
 
@@ -2969,5 +3850,37 @@ public class TaskSystem : MonoBehaviour
             return NumericalInputType.Budget;
         }
     }
+
+public string ConvertSiteNamesToFriendly(string text)
+{
+    if (string.IsNullOrEmpty(text)) return text;
+
+    Building[] buildings = UnityEngine.Object.FindObjectsOfType<Building>();
+
+    var sortedBuildings = buildings.OrderByDescending(b => $"{b.GetBuildingType()}_{b.GetOriginalSiteId()}".Length);
+
+    foreach (Building building in sortedBuildings)
+    {
+        string rawLlmToken = $"{building.GetBuildingType()}_{building.GetOriginalSiteId()}";
+
+        string gameObjectName = building.name;
+
+        string friendlyDisplayName = building.GetDisplayName();
+
+        if (!string.IsNullOrEmpty(friendlyDisplayName))
+        {
+            if (text.Contains(rawLlmToken))
+            {
+                text = text.Replace(rawLlmToken, friendlyDisplayName);
+            }
+            if (text.Contains(gameObjectName))
+            {
+                text = text.Replace(gameObjectName, friendlyDisplayName);
+            }
+        }
+    }
+
+    return text;
+}
 
 }

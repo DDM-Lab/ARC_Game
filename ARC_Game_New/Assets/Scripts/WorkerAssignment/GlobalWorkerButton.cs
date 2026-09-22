@@ -70,6 +70,7 @@ public class GlobalWorkerButton : MonoBehaviour
         {
             globalWorkerUI.ToggleUI();
             Debug.Log("Global Worker Management UI toggled");
+            GameLogPanel.Instance?.LogUIInteraction("Global Worker Management UI toggled");
         }
         else
         {

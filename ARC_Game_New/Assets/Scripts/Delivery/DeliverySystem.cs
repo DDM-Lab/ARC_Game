@@ -16,6 +16,8 @@ public class DeliveryTask
     public bool isUrgent = false;
     public float timeCreated;
     public float estimatedTimeSeconds = 0f;
+    /// <summary>What the vehicle actually unloaded at the destination (set at unload; 0 until then).</summary>
+    public int deliveredQuantity = 0;
 
     public DeliveryTask(MonoBehaviour source, MonoBehaviour destination, ResourceType cargo, int qty, int taskId)
     {
@@ -29,29 +31,37 @@ public class DeliveryTask
 
     public override string ToString()
     {
-        return $"Task {taskId}: {quantity} {cargoType} from {sourceBuilding.name} to {destinationBuilding.name}";
+        // Unity null-check (not ?.): a deconstructed building is a fake-null
+        // destroyed object that passes ?. but throws on .name.
+        string src = sourceBuilding != null ? sourceBuilding.name : "Unknown";
+        string dst = destinationBuilding != null ? destinationBuilding.name : "Unknown";
+        return $"Task {taskId}: {quantity} {cargoType} from {src} to {dst}";
     }
 
     // Helper methods to get positions
+    // Unity null checks below (not ?.): a deconstructed building is a fake-null
+    // destroyed object that throws on .transform/.GetComponent.
     public Vector3 GetSourcePosition()
     {
-        return sourceBuilding.transform.position;
+        return sourceBuilding != null ? sourceBuilding.transform.position : Vector3.zero;
     }
 
     public Vector3 GetDestinationPosition()
     {
-        return destinationBuilding.transform.position;
+        return destinationBuilding != null ? destinationBuilding.transform.position : Vector3.zero;
     }
 
     // Helper methods to get road connection points
     public Vector3 GetSourceRoadConnection()
     {
+        if (sourceBuilding == null) return Vector3.zero;
         RoadConnection roadConnection = sourceBuilding.GetComponent<RoadConnection>();
         return roadConnection != null ? roadConnection.GetRoadConnectionPoint() : sourceBuilding.transform.position;
     }
 
     public Vector3 GetDestinationRoadConnection()
     {
+        if (destinationBuilding == null) return Vector3.zero;
         RoadConnection roadConnection = destinationBuilding.GetComponent<RoadConnection>();
         return roadConnection != null ? roadConnection.GetRoadConnectionPoint() : destinationBuilding.transform.position;
     }
@@ -81,6 +91,11 @@ public class DeliverySystem : MonoBehaviour
     public float taskAssignmentInterval = 1f; // Check for new assignments every second
 
     [Header("Auto-Task Generation")]
+    // DISABLED: the agent (RL, baseline, or human) must make relocation decisions itself — a
+    // background mover that auto-houses people pre-empts those choices (and, in the human client,
+    // silently resolved tasks before the player could act). RunBackgroundHousing is a no-op while
+    // this is false. Agent-driven relocation (task choices + transfer_population) still satisfies
+    // demand and still feeds casework.
     public bool enableAutoTasks = false;
     public float autoTaskInterval = 10f; // Generate tasks every 10 seconds
     public bool prioritizeFoodDelivery = true;
@@ -92,6 +107,109 @@ public class DeliverySystem : MonoBehaviour
     private Queue<DeliveryTask> pendingTasks = new Queue<DeliveryTask>();
     private List<DeliveryTask> activeTasks = new List<DeliveryTask>();
     private List<DeliveryTask> completedTasks = new List<DeliveryTask>();
+    private List<DeliveryTask> cancelledTasks = new List<DeliveryTask>();   // ended without landing cargo
+
+    /// <summary>
+    /// Snapshot support. In-flight deliveries decide whether a NEW demand gets generated:
+    /// a relocation already under way suppresses another one. Leaving them uncaptured let a
+    /// restored game invent an extra "Population Relocation From Community" two rounds
+    /// after load, while populations, tasks and every visible field matched exactly.
+    ///
+    /// DeliveryTask holds MonoBehaviour references to its source and destination, which
+    /// cannot be serialised, so they are stored BY GAMEOBJECT NAME and re-resolved on
+    /// restore. A delivery whose endpoints no longer exist is dropped rather than restored
+    /// with a dangling reference.
+    /// </summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        [System.Serializable]
+        public class TaskState
+        {
+            public int taskId;
+            public string sourceName, destinationName;
+            public string cargoType;
+            public int quantity, priority;
+            public bool isUrgent;
+            public float timeCreated, estimatedTimeSeconds;
+        }
+        public List<TaskState> active = new List<TaskState>();
+        public List<TaskState> completed = new List<TaskState>();
+
+        // ORDERS WAITING FOR A VEHICLE. CreateDeliveryTask enqueues here and
+        // AssignPendingTasks drains it as vehicles free up, so at any save taken during the
+        // planning pause this queue routinely holds real work. Omitting it silently dropped
+        // every unassigned order on restore.
+        public List<TaskState> pending = new List<TaskState>();
+
+        // The id counter. Without it a restored game restarts at 1 and immediately mints
+        // delivery ids that collide with the ones already carried in `active` -- and task
+        // linkage (GameTask.linkedDeliveryTaskIds, deliveryToTaskMap) is BY ID, so the
+        // collision attaches a new delivery's completion to an old parent.
+        public int nextTaskId = 1;
+    }
+
+    static Snapshot.TaskState Freeze(DeliveryTask t) => new Snapshot.TaskState
+    {
+        taskId = t.taskId,
+        sourceName = t.sourceBuilding != null ? t.sourceBuilding.gameObject.name : null,
+        destinationName = t.destinationBuilding != null ? t.destinationBuilding.gameObject.name : null,
+        cargoType = t.cargoType.ToString(),
+        quantity = t.quantity, priority = t.priority, isUrgent = t.isUrgent,
+        timeCreated = t.timeCreated, estimatedTimeSeconds = t.estimatedTimeSeconds,
+    };
+
+    static DeliveryTask Thaw(Snapshot.TaskState ts)
+    {
+        if (ts == null) return null;
+        MonoBehaviour src = FindEndpoint(ts.sourceName);
+        MonoBehaviour dst = FindEndpoint(ts.destinationName);
+        if (src == null || dst == null) return null;   // endpoints gone: drop, do not dangle
+        if (!System.Enum.TryParse(ts.cargoType, out ResourceType cargo)) return null;
+        var t = new DeliveryTask(src, dst, cargo, ts.quantity, ts.taskId)
+        {
+            priority = ts.priority, isUrgent = ts.isUrgent,
+            timeCreated = ts.timeCreated, estimatedTimeSeconds = ts.estimatedTimeSeconds,
+        };
+        return t;
+    }
+
+    static MonoBehaviour FindEndpoint(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        var go = GameObject.Find(name);
+        if (go == null) return null;
+        MonoBehaviour mb = go.GetComponent<Building>();
+        if (mb == null) mb = go.GetComponent<PrebuiltBuilding>();
+        return mb;
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot();
+        foreach (var t in activeTasks) if (t != null) s.active.Add(Freeze(t));
+        foreach (var t in completedTasks) if (t != null) s.completed.Add(Freeze(t));
+        foreach (var t in pendingTasks) if (t != null) s.pending.Add(Freeze(t));
+        s.nextTaskId = nextTaskId;
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        activeTasks.Clear();
+        completedTasks.Clear();
+        pendingTasks.Clear();
+        foreach (var ts in s.active) { var t = Thaw(ts); if (t != null) activeTasks.Add(t); }
+        foreach (var ts in s.completed) { var t = Thaw(ts); if (t != null) completedTasks.Add(t); }
+        if (s.pending != null)
+            foreach (var ts in s.pending) { var t = Thaw(ts); if (t != null) pendingTasks.Enqueue(t); }
+        // Never move the counter BACKWARDS: a snapshot written before this field existed
+        // carries 0, and rewinding the counter is the id-collision this exists to prevent.
+        nextTaskId = Mathf.Max(nextTaskId, Mathf.Max(1, s.nextTaskId));
+        foreach (var t in activeTasks) if (t != null) nextTaskId = Mathf.Max(nextTaskId, t.taskId + 1);
+        foreach (var t in pendingTasks) if (t != null) nextTaskId = Mathf.Max(nextTaskId, t.taskId + 1);
+    }
 
     private int nextTaskId = 1;
     private float lastTaskAssignment = 0f;
@@ -100,6 +218,8 @@ public class DeliverySystem : MonoBehaviour
     public event Action<DeliveryTask> OnTaskCreated;
     public event Action<DeliveryTask, Vehicle> OnTaskAssigned;
     public event Action<DeliveryTask> OnTaskCompleted;
+    /// <summary>A delivery ended without landing cargo (abort, cancel, flood). Never credited.</summary>
+    public event Action<DeliveryTask, string> OnTaskCancelled;
     public int ervCount = 3;
 
     public static DeliverySystem Instance { get; private set; }
@@ -113,31 +233,48 @@ public class DeliverySystem : MonoBehaviour
     void Start()
     {
         pendingTasks.Clear();
-        StartCoroutine(InitializeWithCentralConfig());
-    }
-
-    IEnumerator InitializeWithCentralConfig()
-    {
-        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
-        {
-            yield return null;
-        }
-
-        ervCount = GameDataManager.Instance.InitialERVCount;
-
-        AdjustSceneCount(ervCount);
-        availableVehicles.Clear();
-        availableVehicles.AddRange(FindObjectsOfType<Vehicle>());
+        //StartCoroutine(InitializeWithCentralConfig());
 
         foreach (Vehicle vehicle in availableVehicles)
         {
             vehicle.OnDeliveryCompleted += OnVehicleDeliveryCompleted;
+            vehicle.OnDeliveryCancelled += OnVehicleDeliveryCancelled;
             Debug.Log($"DeliverySystem: Finalized {vehicle.GetVehicleName()}");
         }
 
+        // Scene-serialized candidate #8: taskAssignmentInterval's .cs initialiser is 1f and
+        // has never been verified against the scene. It governs how often AssignPendingTasks
+        // runs, which is exactly the reassignment timing that decides which order a freed
+        // vehicle picks up.
+        SnapshotDebug.MarkContext("delivery:config", "{\"taskAssignmentInterval\":"
+            + taskAssignmentInterval + ",\"ervCount\":" + ervCount
+            + ",\"maxQueuedTasks\":" + maxQueuedTasks + "}");
         Debug.Log($"Delivery System initialized with {availableVehicles.Count} vehicles.");
         GameLogPanel.Instance.LogVehicleEvent($"Initialized with {availableVehicles.Count} vehicles (Config Target: {ervCount})");
     }
+
+    //IEnumerator InitializeWithCentralConfig()
+    //{
+    //    while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+    //    {
+    //        yield return null;
+    //    }
+
+    //    ervCount = GameDataManager.Instance.InitialERVCount;
+
+    //    AdjustSceneCount(ervCount);
+    //    availableVehicles.Clear();
+    //    availableVehicles.AddRange(FindObjectsOfType<Vehicle>());
+
+    //    foreach (Vehicle vehicle in availableVehicles)
+    //    {
+    //        vehicle.OnDeliveryCompleted += OnVehicleDeliveryCompleted;
+    //        Debug.Log($"DeliverySystem: Finalized {vehicle.GetVehicleName()}");
+    //    }
+
+    //    Debug.Log($"Delivery System initialized with {availableVehicles.Count} vehicles.");
+    //    GameLogPanel.Instance.LogVehicleEvent($"Initialized with {availableVehicles.Count} vehicles (Config Target: {ervCount})");
+    //}
 
     public void AdjustSceneCount(int targetCount)
     {
@@ -158,11 +295,16 @@ public class DeliverySystem : MonoBehaviour
 
             if (roadManager != null)
             {
+                // PARITY BUILD (ledger D24): unsorted, as upstream has it. The sort is the right
+                // fix -- GetAllRoadPositions() returns a HashSet and Random.Range indexes into
+                // whatever order ToList() inherits -- but upstream does not do it, so sorting
+                // picks a different vehicle spawn tile from the same draw.
                 List<Vector3Int> roadList = roadManager.GetAllRoadPositions().ToList();
                 if (roadList.Count > 0)
                 {
                     for (int i = 0; i < numberToAdd; i++)
                     {
+                        SnapshotDebug.Mark("draw:Delivery.roadTile");
                         Vector3Int randomTile = roadList[UnityEngine.Random.Range(0, roadList.Count)];
                         Vector3 spawnPos = roadManager.CellToWorld(randomTile);
 
@@ -171,6 +313,7 @@ public class DeliverySystem : MonoBehaviour
 
                         if (neighbors.Count > 0)
                         {
+                            SnapshotDebug.Mark("draw:Delivery.neighbor");
                             Vector3Int targetNeighbor = neighbors[UnityEngine.Random.Range(0, neighbors.Count)];
                             Vector3Int dir = targetNeighbor - randomTile;
                             float angle = 0;
@@ -233,7 +376,6 @@ public class DeliverySystem : MonoBehaviour
             {
                 Debug.Log($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
             }
-            GameLogPanel.Instance.LogVehicleEvent($"Delivery estimate from {source.name} to {destination.name}: {estimate.GetSummary()}");
         }
 
         return estimate.pathExists;
@@ -312,6 +454,15 @@ public class DeliverySystem : MonoBehaviour
             // Store time estimate in the task for reference
             newTask.estimatedTimeSeconds = estimate.estimatedTimeSeconds;
 
+            // Paired with delivery:dispatch and delivery:complete. Three marks turn the fleet
+            // from a thing I have to infer into a thing I can read off: queued -> assigned to a
+            // vehicle -> arrived. The round-gap between dispatch and complete IS the travel time,
+            // which is journeyLength/moveSpeed along the flood-aware A* path, and is the last
+            // quantity the port has no way to derive from constants.
+            SnapshotDebug.MarkContext("delivery:queue", "{\"cargo\":\"" + newTask.cargoType
+                + "\",\"qty\":" + newTask.quantity
+                + ",\"src\":\"" + (newTask.sourceBuilding != null ? newTask.sourceBuilding.name : "")
+                + "\",\"dst\":\"" + (newTask.destinationBuilding != null ? newTask.destinationBuilding.name : "") + "\"}");
             pendingTasks.Enqueue(newTask);
             createdTasks.Add(newTask);
             OnTaskCreated?.Invoke(newTask);
@@ -322,6 +473,7 @@ public class DeliverySystem : MonoBehaviour
             remainingQuantity -= currentTaskQuantity;
             taskNumber++;
         }
+
 
         return createdTasks;
     }
@@ -372,13 +524,17 @@ public class DeliverySystem : MonoBehaviour
 
             if (workingVehicle != null)
             {
-                workingVehicle.CancelCurrentTask();
+                workingVehicle.CancelCurrentTask();   // raises OnDeliveryCancelled -> cancelledTasks
+            }
+            else
+            {
+                OnVehicleDeliveryCancelled(null, activeTask, "cancelled");
             }
 
             cancelled = true;
             if (showDebugInfo)
                 Debug.Log($"Cancelled active delivery task: {activeTask}");
-            GameLogPanel.Instance.LogVehicleEvent($"Cancelled active delivery task: {activeTask}");
+            GameLogPanel.Instance?.LogVehicleEvent($"Cancelled active delivery task: {activeTask}");   // null during teardown (Building.OnDestroy)
         }
 
         return cancelled;
@@ -393,12 +549,34 @@ public class DeliverySystem : MonoBehaviour
         DeliveryTask activeTask = activeTasks.FirstOrDefault(t => t.taskId == taskId);
         if (activeTask != null)
         {
-            activeTasks.Remove(activeTask);
-            OnTaskCompleted?.Invoke(activeTask);
+            // A delivery that was stopped externally never landed cargo: it is CANCELLED, not
+            // completed (raising OnTaskCompleted here credited stranded cargo as a late delivery).
+            OnVehicleDeliveryCancelled(null, activeTask, "vehicle stopped externally");
             if (showDebugInfo)
                 Debug.Log($"Removed active delivery task {taskId} (vehicle stopped externally)");
         }
     }
+
+    /// <summary>The vehicle ended a delivery without landing cargo. Nothing is credited.</summary>
+    void OnVehicleDeliveryCancelled(Vehicle vehicle, DeliveryTask task, string reason)
+    {
+        if (task == null) return;
+        activeTasks.RemoveAll(t => t.taskId == task.taskId);
+        if (!cancelledTasks.Any(t => t.taskId == task.taskId))
+            cancelledTasks.Add(task);
+        SnapshotDebug.MarkContext("delivery:cancel", "{\"id\":" + task.taskId
+            + ",\"cargo\":\"" + task.cargoType + "\",\"qty\":" + task.quantity
+            + ",\"why\":\"" + reason + "\",\"veh\":\"" + (vehicle != null ? vehicle.GetVehicleName() : "") + "\"}");
+        Debug.Log($"DeliverySystem: Task {task.taskId} cancelled ({reason})");
+        GameLogPanel.Instance?.LogVehicleEvent($"Delivery {task.taskId} cancelled: {reason}");
+        OnTaskCancelled?.Invoke(task, reason);
+    }
+
+    public List<DeliveryTask> GetCancelledTasks()
+    {
+        return new List<DeliveryTask>(cancelledTasks);
+    }
+
 
     /// <summary>
     /// Get maximum vehicle capacity for specific cargo type
@@ -454,6 +632,16 @@ public class DeliverySystem : MonoBehaviour
         {
             if (availableVehicleList.Count == 0) break;
 
+            // Drop orphaned tasks whose source/destination building was deconstructed.
+            // They can never be assigned and would otherwise be retried (and NRE on the
+            // destroyed object) every frame for the rest of the episode.
+            if (task == null || task.GetSource() == null || task.GetDestination() == null)
+            {
+                pendingTasks = new Queue<DeliveryTask>(pendingTasks.Where(t => t != task));
+                Debug.LogWarning($"[DeliverySystem] Dropping delivery task with missing source/destination building");
+                continue;
+            }
+
             // Find suitable vehicle for this task
             Vehicle suitableVehicle = FindSuitableVehicle(task, availableVehicleList);
 
@@ -464,6 +652,13 @@ public class DeliverySystem : MonoBehaviour
                 {
                     pendingTasks = new Queue<DeliveryTask>(pendingTasks.Where(t => t != task));
                     activeTasks.Add(task);
+                    SnapshotDebug.MarkContext("delivery:dispatch", "{\"cargo\":\"" + task.cargoType
+                        + "\",\"qty\":" + task.quantity
+                        + ",\"src\":\"" + (task.sourceBuilding != null ? task.sourceBuilding.name : "")
+                        + "\",\"dst\":\"" + (task.destinationBuilding != null ? task.destinationBuilding.name : "")
+                        + "\",\"veh\":\"" + suitableVehicle.GetVehicleName()
+                        + "\",\"at\":\"" + suitableVehicle.transform.position.ToString("F1")
+                        + "\",\"srcpos\":\"" + task.GetSourceRoadConnection().ToString("F1") + "\"}");
                     availableVehicleList.Remove(suitableVehicle);
 
                     OnTaskAssigned?.Invoke(task, suitableVehicle);
@@ -535,16 +730,45 @@ public class DeliverySystem : MonoBehaviour
     {
         Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
 
+        // NEW: record food actually delivered to a community, for Building Stats / Food Used.
+        if (completedTask.cargoType == ResourceType.FoodPacks)
+        {
+            var destCommunity = completedTask.destinationBuilding as PrebuiltBuilding;
+            if (destCommunity != null && destCommunity.GetPrebuiltType() == PrebuiltBuildingType.Community)
+                DailyReportData.Instance?.RecordCommunityFoodUsedToday(destCommunity.name, completedTask.quantity);
+        }
+
+        if (completedTask.cargoType == ResourceType.Population && ClientStayTracker.Instance != null)
+        {
+            if (completedTask.destinationBuilding != null)
+            {
+                ClientStayTracker.Instance.RegisterClientArrival(
+                    completedTask.destinationBuilding,
+                    completedTask.quantity,
+                    $"VehicleDeliv_{completedTask.taskId}"
+                );
+            }
+            if (completedTask.sourceBuilding != null)
+            {
+                ClientStayTracker.Instance.RemoveClientsByQuantity(
+                    completedTask.sourceBuilding,
+                    completedTask.quantity
+                );
+            }
+        }
         // Report to daily tracking
         if (DailyReportData.Instance != null)
         {
             DailyReportData.Instance.RecordDeliveryCompleted(completedTask);
         }
 
-        activeTasks.Remove(completedTask);
+        //activeTasks.Remove(completedTask);
+        activeTasks.RemoveAll(t => t.taskId == completedTask.taskId);
         completedTasks.Add(completedTask);
         OnTaskCompleted?.Invoke(completedTask);
     }
+
+
 
     /// <summary>
     /// Generate automatic delivery tasks based on building needs
@@ -561,12 +785,23 @@ public class DeliverySystem : MonoBehaviour
         GeneratePopulationTransportTasks();
     }
 
+    /// <summary>B4: background population mover. Once per round, automatically relocate displaced
+    /// community residents into available shelters/motels (shelters preferred = cheaper). The
+    /// created transports are linked to the matching open lodging demand inside
+    /// GeneratePopulationTransportTasks so housing people also satisfies that demand (D4).
+    /// Gated by enableAutoTasks so it can be disabled per scenario.</summary>
+    public void RunBackgroundHousing()
+    {
+        if (!enableAutoTasks) return;
+        GeneratePopulationTransportTasks();
+    }
+
     /// <summary>
     /// Generate food delivery tasks from kitchens to shelters
     /// </summary>
     void GenerateFoodDeliveryTasks()
     {
-        // Find kitchens with food packs
+        // Find kitchens with meals
         Building[] kitchens = FindObjectsOfType<Building>().Where(b => b.GetBuildingType() == BuildingType.Kitchen).ToArray();
 
         // Find shelters that need food
@@ -627,6 +862,18 @@ public class DeliverySystem : MonoBehaviour
         {
             if (community.GetCurrentPopulation() <= 0) continue;
 
+            // B4: only auto-relocate communities that actually have an OPEN lodging demand. This
+            // makes the background mover a completion-assistant for genuine displacement, not a
+            // drain that empties healthy communities into the motel (and runs up the $200/day bill).
+            string communityName = ((MonoBehaviour)community).name;
+            GameTask demandTask = TaskSystem.Instance != null && TaskSystem.Instance.activeTasks != null
+                ? TaskSystem.Instance.activeTasks.FirstOrDefault(t =>
+                    t.taskTag == TaskTag.Lodging
+                    && t.status != TaskStatus.Completed
+                    && t.affectedFacility == communityName)
+                : null;
+            if (demandTask == null) continue;
+
             // Find best destination (prefer shelters over motels)
             MonoBehaviour bestDestination = null; // Changed from Building to MonoBehaviour
             int bestAvailableSpace = 0;
@@ -663,7 +910,15 @@ public class DeliverySystem : MonoBehaviour
             if (bestDestination != null && bestAvailableSpace > 0)
             {
                 int transportAmount = Mathf.Min(community.GetCurrentPopulation(), bestAvailableSpace, 3); // Limit to 3 people per trip
-                CreateDeliveryTask(community, bestDestination, ResourceType.Population, transportAmount, 3);
+                var created = CreateDeliveryTask(community, bestDestination, ResourceType.Population, transportAmount, 3);
+
+                // D4: link this auto-transport to the community's open lodging demand (resolved at the
+                // top of the loop) so housing the people also credits fulfillment.
+                if (created != null && created.Count > 0)
+                {
+                    TaskSystem.Instance.LinkDeliveriesToTask(demandTask, created);
+                    TaskSystem.Instance.SetTaskInProgress(demandTask);
+                }
             }
         }
     }
@@ -677,6 +932,7 @@ public class DeliverySystem : MonoBehaviour
         {
             availableVehicles.Add(vehicle);
             vehicle.OnDeliveryCompleted += OnVehicleDeliveryCompleted;
+            vehicle.OnDeliveryCancelled += OnVehicleDeliveryCancelled;
 
             if (showDebugInfo)
                 Debug.Log($"Added vehicle {vehicle.GetVehicleName()} to delivery fleet");
@@ -692,6 +948,7 @@ public class DeliverySystem : MonoBehaviour
         {
             availableVehicles.Remove(vehicle);
             vehicle.OnDeliveryCompleted -= OnVehicleDeliveryCompleted;
+            vehicle.OnDeliveryCancelled -= OnVehicleDeliveryCancelled;
 
             // Cancel current task if this vehicle was working
             if (!vehicle.IsAvailable())
@@ -877,85 +1134,33 @@ public class DeliverySystem : MonoBehaviour
             Debug.Log($"  Active: {task}");
         }
     }
-    
-    [ContextMenu("Test: Create Flood-Blocked Delivery")]
-    public void TestCreateFloodBlockedDelivery()
-    {
-        // Find kitchen and shelter
-        Building kitchen = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Kitchen);
-        Building shelter = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Shelter);
-        
-        if (kitchen == null || shelter == null)
-        {
-            Debug.LogWarning("Need kitchen and shelter for flood-blocked delivery test");
-            return;
-        }
-        
-        // First create flood between them
-        if (FloodSystem.Instance != null)
-        {
-            FloodSystem.Instance.TestCreateFloodPath();
-        }
-        
-        // Wait a frame for flood to be created
-        StartCoroutine(CreateBlockedDeliveryAfterFlood(kitchen, shelter));
-    }
 
-    System.Collections.IEnumerator CreateBlockedDeliveryAfterFlood(Building kitchen, Building shelter)
+    public void CancelAllDeliveriesInvolving(MonoBehaviour building)
     {
-        yield return new WaitForEndOfFrame();
-        
-        // Try to create delivery - should fail due to flood
-        List<DeliveryTask> tasks = CreateDeliveryTask(kitchen, shelter, ResourceType.FoodPacks, 5, 3);
-        
-        if (tasks.Count == 0)
-        {
-            Debug.Log("SUCCESS: Delivery creation blocked by flood as expected");
-        }
-        else
-        {
-            Debug.LogWarning("UNEXPECTED: Delivery was created despite flood blocking");
-        }
-    }
+        var toCancel = pendingTasks
+            .Where(t => t.sourceBuilding == building || t.destinationBuilding == building)
+            .Concat(activeTasks.Where(t => t.sourceBuilding == building || t.destinationBuilding == building))
+            .Select(t => t.taskId)
+            .Distinct()
+            .ToList();
 
-    [ContextMenu("Test: Create Delivery Then Add Flood")]
-    public void TestCreateDeliveryThenFlood()
-    {
-        // Create normal delivery first
-        Building kitchen = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Kitchen);
-        Building shelter = FindObjectsOfType<Building>().FirstOrDefault(b => b.GetBuildingType() == BuildingType.Shelter);
-        
-        if (kitchen == null || shelter == null)
-        {
-            Debug.LogWarning("Need kitchen and shelter for delivery-then-flood test");
-            return;
-        }
-        
-        // Create delivery
-        List<DeliveryTask> tasks = CreateDeliveryTask(kitchen, shelter, ResourceType.FoodPacks, 5, 3);
-        
-        if (tasks.Count > 0)
-        {
-            Debug.Log($"Created delivery task: {tasks[0]}");
-            
-            // Wait a few seconds then create flood
-            StartCoroutine(CreateFloodAfterDelay());
-        }
-    }
+        foreach (int id in toCancel)
+            CancelDeliveryTask(id);
 
-    System.Collections.IEnumerator CreateFloodAfterDelay()
-    {
-        yield return new WaitForSeconds(3f);
-        
-        if (FloodSystem.Instance != null)
+        if (showDebugInfo && toCancel.Count > 0)
+            Debug.Log($"Cancelled {toCancel.Count} deliveries involving destroyed building '{building.name}'");
+
+        if (toCancel.Count > 0)
         {
-            FloodSystem.Instance.TestCreateFloodAtVehicle();
-            Debug.Log("Added flood to block moving vehicle");
+            string label = building.name;
+            ToastManager.ShowToast(
+                $"{toCancel.Count} deliver {(toCancel.Count > 1 ? "ies" : "y")} to/from {label} cancelled",
+                ToastType.Warning, true);
         }
     }
 }
 
-[System.Serializable]
+    [System.Serializable]
 public class DeliveryStatistics
 {
     public int totalVehicles;

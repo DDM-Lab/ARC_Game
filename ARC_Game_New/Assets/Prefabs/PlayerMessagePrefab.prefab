@@ -11,8 +11,7 @@ GameObject:
   - component: {fileID: 2001169662077585625}
   - component: {fileID: 5917916083296038495}
   - component: {fileID: 8373650982231776236}
-  - component: {fileID: 4196181841483876521}
-  - component: {fileID: 6306924589100735128}
+  - component: {fileID: 3260399630782433041}
   m_Layer: 5
   m_Name: MessageText
   m_TagString: Untagged
@@ -34,10 +33,10 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 5268574545862614526}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 235, y: -30.835}
-  m_SizeDelta: {x: 450, y: 0}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &5917916083296038495
 CanvasRenderer:
@@ -67,8 +66,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: The ERV was damaged in transit, and now here are a couple ending scenarios
-    I've come up with
+  m_text: hi
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 9eb5f65f1ed54304f927d58539c83245, type: 2}
   m_sharedMaterial: {fileID: 8299410941356011029, guid: 9eb5f65f1ed54304f927d58539c83245, type: 2}
@@ -137,21 +135,7 @@ MonoBehaviour:
   m_hasFontAssetChanged: 0
   m_baseMaterial: {fileID: 0}
   m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
---- !u!114 &4196181841483876521
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6809129748209191515}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3245ec927659c4140ac4f8d17403cc18, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_HorizontalFit: 2
-  m_VerticalFit: 2
---- !u!114 &6306924589100735128
+--- !u!114 &3260399630782433041
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -207,7 +191,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 285, y: -30.83496}
+  m_AnchoredPosition: {x: 277, y: -30.83496}
   m_SizeDelta: {x: 550, y: 61.67}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &2720093407064011754
@@ -264,6 +248,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   speechBubble: {fileID: 591370994820670876}
   messageText: {fileID: 8373650982231776236}
+  maxWidth: 450
 --- !u!1 &8866010609293850820
 GameObject:
   m_ObjectHideFlags: 0
@@ -301,8 +286,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 315, y: -0}
-  m_SizeDelta: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 315, y: -20.42}
+  m_SizeDelta: {x: 470, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &1063249245410732362
 CanvasRenderer:

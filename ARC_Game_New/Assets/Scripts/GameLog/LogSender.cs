@@ -7,7 +7,9 @@ using UnityEngine.Networking;
 public class LogSender : MonoBehaviour
 {
     [Header("Server Settings")]
-    [SerializeField] private string serverUrl = "http://janus.hss.cmu.edu/cgi-bin/save_game_logs.py";
+    // janus is decommissioned; game logging is handled server-side by the router now.
+    // Leave empty (manual log upload disabled) unless a real endpoint is configured.
+    [SerializeField] private string serverUrl = "";
     [SerializeField] private float requestTimeout = 30f;
 
     public static LogSender Instance { get; private set; }
@@ -32,6 +34,12 @@ public class LogSender : MonoBehaviour
 
     public void SendAllLogs()
     {
+        if (!GameLogPanel.DataCollectionEnabled)
+        {
+            Debug.Log("[LogSender] Data collection disabled (config.json) - skipping send.");
+            return;
+        }
+
         if (GameLogPanel.Instance == null)
         {
             Debug.LogError("[LogSender] GameLogPanel not found.");
@@ -50,6 +58,12 @@ public class LogSender : MonoBehaviour
 
     public void SendCurrentRoundLogs()
     {
+        if (!GameLogPanel.DataCollectionEnabled)
+        {
+            Debug.Log("[LogSender] Data collection disabled (config.json) - skipping send.");
+            return;
+        }
+
         if (GameLogPanel.Instance == null)
         {
             Debug.LogError("[LogSender] GameLogPanel not found.");

@@ -1,0 +1,267 @@
+\documentclass[11pt]{article}
+
+% ---- packages ----
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage[htt]{hyphenat}
+\usepackage{seqsplit}
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+
+% ---- styling ----
+\definecolor{unityblue}{HTML}{2C5F9E}
+\definecolor{pyorange}{HTML}{C9560B}
+\definecolor{flagred}{HTML}{B3261E}
+\newcommand{\code}[1]{{\texttt{\small #1}}}
+\newcommand{\unity}[1]{{\color{unityblue}\texttt{\small #1}}}
+\newcommand{\py}[1]{{\color{pyorange}\texttt{\small #1}}}
+\setlength{\emergencystretch}{3em}  % avoid overfull boxes from long unbreakable mono tokens
+
+\title{\textbf{The Greedy and Rules-Based Reference Policies\\ in the ARC Disaster-Response Environment}}
+\author{ARC\_Game RL --- technical reference}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent This note documents the two non-learning, API-free reference policies used as baselines:
+the \emph{greedy} policy (\py{greedy\_decision}) and the \emph{rules-based} policy
+(\py{potential\_decision}), both in \py{benchmark\_models.py}. They are presented separately:
+greedy is a purely reactive policy that never invests capital; rules-based reuses greedy's reactive
+core and adds a thin capital-investment layer. A final section records their \textbf{known
+limitations} --- both are deliberately simple heuristics that under-use the action space and do no
+forward planning, which is precisely the headroom a learned policy is meant to exploit. Reward
+terms referenced below are defined in the companion document, \emph{Reward Scoring and Data
+Provenance}.
+\end{abstract}
+
+\tableofcontents
+\vspace{1em}
+
+\paragraph{How a turn is executed.} Both policies return, each round, (i)~a set of task-choice
+selections $\{(\text{taskId}, \text{choiceId})\}$ and (ii)~a list of game-action indices. The
+environment executes \emph{all} of them: \py{env.step()} takes a comma-separated list of action
+indices, so a turn may contain arbitrarily many actions of any mix (multiple builds, multiple
+hires, builds and hires together). Any per-turn limits below are \emph{self-imposed by the policy},
+not imposed by the environment.
+
+% =====================================================================
+\section{The Greedy Policy}
+% =====================================================================
+
+The greedy policy is purely \textbf{reactive and myopic}. Each round it does exactly two things:
+\begin{enumerate}[leftmargin=1.5em, itemsep=1pt]
+\item answers open tasks by selecting, for \emph{every} task, the single choice that maximizes an
+immediate value function (if any choice scores positively); and
+\item assigns idle workers (at zero cost) to buildings that are short-staffed.
+\end{enumerate}
+It \textbf{never builds and never hires} --- it performs no capital investment whatsoever. It
+simply spends the starting infrastructure and workforce as efficiently as the current tasks allow.
+
+\subsection{Task-choice value function}
+For an active task $t$, each available choice $c$ exposes a budget impact $b(c)$ (positive =
+funding gained, negative = a cost) and a satisfaction impact $s(c)$. With the demand indicator
+\[
+D(t) = \begin{cases}1 & \text{taskType} \in \{\text{Demand},\,\text{Emergency}\}\\ 0 & \text{otherwise,}\end{cases}
+\]
+the value of a choice is
+\begin{equation}
+v(c) =
+\begin{cases}
+\dfrac{b(c)}{10^4} + 10^{-2}\,s(c), & b(c) > 0 \quad\text{(funding choice)}\\[10pt]
+\mathbf{1}\!\big[\alpha(c)\wedge D(t)\big] + 10^{-2}\,s(c) - w_{c}\,\mathrm{cost}(c), & b(c) \le 0 \quad\text{(acting / waiting)}
+\end{cases}
+\label{eq:vfun}
+\end{equation}
+where $\mathrm{cost}(c) = -b(c) \ge 0$, $w_c = 0.0002$ (matching the reward's cost scale), and the
+\emph{acting} predicate is $\alpha(c) = [\mathrm{cost}(c) > 0] \vee [s(c) \ge 10]$. For each task
+the policy selects $c^\star = \arg\max_c v(c)$, but only records it if $v(c^\star) > 0$. The
+$+1$ term rewards actually fulfilling a genuine demand/emergency; funding offers are ranked by
+dollars; per-unit cost is subtracted. This favours the \emph{reliable, immediate} fulfilment
+options over ``free'' deferred ones that often fail to complete.
+
+\paragraph{Many tasks, many free answers --- in one turn.} The value function is evaluated
+\emph{independently for every open task}, and a selection is emitted for each task whose best choice
+clears $v>0$. There is no cap on how many tasks are answered per turn: if several relocation or food
+tasks are open --- including several that can be answered at no cost (a free choice carrying any
+positive satisfaction signal scores $v = 10^{-2}s > 0$) --- the policy answers \emph{all of them}
+in the same round.
+
+\subsection{Worker assignment}
+The greedy policy also issues zero-cost worker assignments: it groups the enumerated
+\unity{worker\_assignment} actions by target building and, preferring trained workers and larger
+batches, fills \emph{each} short-staffed building once from the free worker pool.
+
+\begin{algorithm}[h]
+\DontPrintSemicolon
+\SetKwInOut{Input}{input}\SetKwInOut{Output}{output}
+\Input{game state; enumerated valid actions $\mathcal{A}$}
+\Output{choices $C$; action indices $X$}
+$C \leftarrow \emptyset$;\quad $X \leftarrow \emptyset$\;
+\ForEach{active task $t$ with choices}{
+  $c^\star \leftarrow \arg\max_{c \in t}\, v(c)$ \tcp*{value function, Eq.~\eqref{eq:vfun}}
+  \If{$v(c^\star) > 0$}{ add $(t, c^\star)$ to $C$ \tcp*{every answerable task, no per-turn cap}}
+}
+$f_{\mathrm{tr}}, f_{\mathrm{un}} \leftarrow$ free trained, free untrained workers\;
+group \unity{worker\_assignment} actions by target building\;
+\ForEach{building $b$ that needs workers}{
+  \ForEach{candidate $a$ of $b$, ordered by (trained first, larger quantity)}{
+    \If{$0 < \mathrm{qty}(a) \le$ available workers of $a$'s type}{
+      add index of $a$ to $X$; decrement that worker pool; \textbf{break}\;
+    }
+  }
+}
+\Return $(C, X)$ \tcp*{note: no construction, no hiring --- ever}
+\caption{\textsc{GreedyPolicy} (\py{greedy\_decision})}
+\label{alg:greedy}
+\end{algorithm}
+
+% =====================================================================
+\section{The Rules-Based Policy}
+% =====================================================================
+
+The rules-based policy reuses the greedy policy verbatim as its \textbf{reactive core}, then
+\emph{appends} a small amount of capital investment --- the one thing greedy never does. The name
+mirrors potential-based shaping: it spends now against a hand-crafted \emph{state potential}
+(durable shelter / kitchen / casework capacity and staffed workers) expected to pay off later
+through the satisfaction and worker-use reward terms.
+
+\subsection{State statistics and the demand anchor}
+From the current facility list it computes
+\begin{align}
+P &= \textstyle\sum_{\text{Community }f} \text{currentPopulation}(f) \quad\text{(demand anchor; default 120 if unknown)}, \\
+\text{shelterCap} &= \textstyle\sum_{\text{Shelter }f} \text{populationCapacity}(f), \quad
+n_{\text{kit}} = \#\{\text{Kitchen}\}, \quad
+n_{\text{cw}} = \#\{\text{CaseworkSite}\}.
+\end{align}
+$P$ is the \emph{current} total displaced population --- a \textbf{static anchor, not a forecast}.
+The policy sizes shelter capacity toward $P$ so people can eventually be housed for free in
+shelters rather than in the recurring-cost motel; it does not anticipate the timing or size of
+future demand waves (see~\S\ref{sec:limits}).
+
+\subsection{Capital investment: build then hire}
+After taking greedy's $(C,X)$, the overlay appends \textbf{at most one construction} and
+\textbf{at most one hire}, both gated on horizon and a budget floor:
+
+\paragraph{Build (one building per turn).} If $\text{roundsLeft} \ge H_{\min}$ and
+$\text{budget} \ge B_{\mathrm{res}}$, choose a single target by strict priority and commit it only
+if it leaves the floor intact:
+\begin{equation}
+\text{target} =
+\begin{cases}
+\textsc{CaseworkSite}, & n_{\text{cw}} < 1 \ \wedge\ \text{round} \ge R_{\text{cw}}\\
+\textsc{Shelter}, & \text{else if } \text{shelterCap} < P\\
+\textsc{Kitchen}, & \text{else if } n_{\text{kit}} < K_{\text{tgt}}\\
+\text{none}, & \text{otherwise,}
+\end{cases}
+\end{equation}
+and the chosen target is committed only if $\mathrm{cost}(\text{target}) \le \text{budget} - B_{\mathrm{res}}$.
+The casework site is built first ($R_{\text{cw}}=0$): a site is staffed only if free workers exist
+when it is built, so claiming its workers early is the only way it stays operational. \emph{Site
+selection is geographically blind} --- among the available sites for the chosen type it takes the
+cheapest, but since every construction shares one fixed cost this reduces to the
+\emph{first-enumerated} available site (see~\S\ref{sec:limits}).
+
+\paragraph{Hire (one worker per turn).} Let the understaffing be
+\begin{equation}
+\text{need} = \sum_{f:\,\text{NeedWorker}} \max\big(0,\ \text{requiredWorkforce}(f) - \text{assignedWorkforce}(f)\big).
+\end{equation}
+A single \unity{hire\_untrained} action is appended when $\text{need} > f_{\mathrm{tr}} +
+f_{\mathrm{un}}$ and $\text{budget} \ge B_{\mathrm{res}}$.
+
+\begin{algorithm}[h]
+\DontPrintSemicolon
+\SetKwInOut{Input}{input}\SetKwInOut{Output}{output}
+\Input{game state; round $r$; total rounds $T$}
+\Output{choices $C$; action indices $X$}
+$(C, X) \leftarrow \textsc{GreedyPolicy}(\text{state})$ \tcp*{reactive core, Algorithm~\ref{alg:greedy}}
+compute $P,\ \text{shelterCap},\ n_{\text{kit}},\ n_{\text{cw}}$;\quad
+$\text{budget}$, $\text{roundsLeft} \leftarrow \max(0,T-r)$\;
+\BlankLine
+\If{$\mathrm{roundsLeft} \ge H_{\min}$ \textbf{and} $\mathrm{budget} \ge B_{\mathrm{res}}$}{
+  $\text{target} \leftarrow$ first applicable: \textsc{CaseworkSite} $(n_{\text{cw}}{<}1 \wedge r{\ge}R_{\text{cw}})$,
+  \textsc{Shelter} $(\text{shelterCap}{<}P)$, \textsc{Kitchen} $(n_{\text{kit}}{<}K_{\text{tgt}})$\;
+  \If{target exists \textbf{and} $\mathrm{cost}(\text{target}) \le \mathrm{budget} - B_{\mathrm{res}}$}{
+    append \emph{one} build action (first available site) to $X$;\quad $\text{budget} \mathrel{-}= \mathrm{cost}$\;
+  }
+}
+\If{$\mathrm{need} > f_{\mathrm{tr}} + f_{\mathrm{un}}$ \textbf{and} $\mathrm{budget} \ge B_{\mathrm{res}}$}{
+  append \emph{one} \unity{hire\_untrained} action to $X$\;
+}
+\Return $(C, X)$\;
+\caption{\textsc{RulesBasedPolicy} (\py{potential\_decision}, baseline mode)}
+\label{alg:rules}
+\end{algorithm}
+
+\begin{table}[h]
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.6cm} l >{\raggedright\arraybackslash}p{7.8cm}}
+\toprule
+\textbf{Constant} & \textbf{Default} & \textbf{Role} \\
+\midrule
+$H_{\min}$ (\py{\_POT\_MIN\_HORIZON}) & $4$ & Don't build with fewer rounds left --- can't amortize. \\
+$B_{\mathrm{res}}$ (\py{\_POT\_BUDGET\_RESERVE}) & $1500$ & Floor below which no discretionary build/hire occurs. \\
+$R_{\text{cw}}$ (\py{\_POT\_CASEWORK\_BUILD\_ROUND}) & $0$ & Earliest round to build the casework site (build-first). \\
+$K_{\text{tgt}}$ (\py{\_POT\_KITCHEN\_TARGET}) & $2$ & Operational kitchens to aim for (food + employment). \\
+$\theta$ (\py{\_POT\_SHELTER\_COVERAGE}) & $\infty$ & Free-shelter re-routing threshold; $\infty$ disables it. \\
+\py{\_POT\_MODE} & \code{baseline} & Selects this policy vs.\ the \code{demandsupply} variant. \\
+\bottomrule
+\end{tabular}
+\caption{Rules-based policy constants (\py{benchmark\_models.py}).}
+\label{tab:rbconst}
+\end{table}
+
+% =====================================================================
+\section{Known Limitations (Flaws of these Baselines)}
+\label{sec:limits}
+% =====================================================================
+
+Both policies are deliberately simple. The environment permits far richer behavior than either uses;
+the gaps below are recorded as \textcolor{flagred}{\textbf{flaws}}, not features, and are the headroom
+a learned policy should capture.
+
+\begin{enumerate}[leftmargin=1.6em, itemsep=4pt]
+\item \textcolor{flagred}{\textbf{Severe under-use of the multi-action turn.}} The environment
+executes a \emph{list} of actions per turn, so a policy may build several buildings, hire several
+workers, and do both at once. Greedy performs \emph{zero} capital actions; rules-based caps itself
+at \emph{one} build and \emph{one} hire per turn. Capital therefore ramps at roughly one building
+per round, which --- combined with the $\sim$1-day construction lag --- badly bottlenecks early
+capacity even when budget and multiple free sites are available. A sound policy should build and
+hire \emph{multiple} units in a single turn when warranted.
+
+\item \textcolor{flagred}{\textbf{No demand forecast / no forward capital investment.}} Demand
+arrives in waves over the episode, but neither policy models this. Greedy is purely reactive; the
+rules-based anchor $P$ is the \emph{current} population, used only to size shelter capacity. Neither
+invests \emph{ahead} of an expected future wave to capture later reward. A sound policy should
+forecast upcoming demand and pre-build/pre-staff capacity against it.
+
+\item \textcolor{flagred}{\textbf{Geographically blind site selection.}} Each candidate site
+carries a world \code{position}, communities have positions, and flooding can block relocation
+routes --- yet site selection ignores all of it. Because every construction shares one fixed cost,
+``cheapest site'' degenerates to the first-enumerated available site. The policy never prefers
+shelters near the communities they serve, never avoids flood-exposed or route-blockable sites, and
+the \code{position} field is in fact dropped by the action enumerator before the policy ever sees it.
+
+\item \textcolor{flagred}{\textbf{The budget reserve is dead capital.}} $B_{\mathrm{res}}=1500$ is a
+hard floor that discretionary build/hire can never cross, so it is hoarded and never deployed for
+the capacity it ostensibly protects. Worse, reactive task-choice spending is \emph{not} gated by it
+and can still drive the budget below the floor --- so the reserve neither funds infrastructure when
+needed nor guarantees solvency. A sound policy should be willing to deploy reserves when the
+expected return justifies it.
+\end{enumerate}
+
+\paragraph{Alternate mode.} Setting \py{\_POT\_MODE}\code{=demandsupply} swaps the overlay for a
+variant that routes each relocation into staffed shelter space via the reliable immediate
+evacuation while beds last, spilling to the motel only when shelters are full, and sizes shelter
+capacity to $P$ via a coverage fraction \py{\_POT\_DS\_COVERAGE}. It shares all four limitations
+above; the baseline mode is the default reference policy.
+
+\end{document}

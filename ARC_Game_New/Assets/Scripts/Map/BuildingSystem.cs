@@ -11,7 +11,8 @@ public class BuildingSystem : MonoBehaviour
     
     [Header("Construction Settings")]
     public int constructionRounds = 4;
-    
+    public int deconstructionRounds = 2;
+
     [Header("UI References")]
     public BuildingSelectionUI buildingSelectionUI;
     
@@ -31,12 +32,13 @@ public class BuildingSystem : MonoBehaviour
 
     private static readonly string[] greekNames =
     {
-        "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta",
-        "Iota", "Kappa", "Lambda", "Mu", "Nu", "Xi", "Omicron", "Pi",
-        "Rho", "Sigma", "Tau", "Upsilon", "Phi", "Chi", "Psi", "Omega"
+        "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel",
+        "India", "Juliet", "Kilo", "Lima", "Mike", "November", "Oscar", "Papa",
+        "Quebec", "Romeo", "Sierra", "Tango", "Uniform", "Victor", "Whiskey", "X-ray",
+        "Yankee", "Zulu"
     };
     private Dictionary<BuildingType, int> buildingNameCounters = new Dictionary<BuildingType, int>();
-
+    public IReadOnlyList<AbandonedSite> RegisteredSites => registeredSites;
     private string GenerateBuildingName(BuildingType type)
     {
         if (!buildingNameCounters.ContainsKey(type))
@@ -44,6 +46,21 @@ public class BuildingSystem : MonoBehaviour
         int index = buildingNameCounters[type]++;
         string typeName = type == BuildingType.CaseworkSite ? "Casework" : type.ToString();
         return $"{typeName} {greekNames[index % greekNames.Length]}";
+    }
+
+    public static BuildingSystem Instance { get; private set; }
+
+    void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+        else
+        {
+            Destroy(gameObject);
+            return;
+        }
     }
 
     void Start()
@@ -109,24 +126,46 @@ public class BuildingSystem : MonoBehaviour
     {
         if (selectedSite != null)
         {
+            string siteName = selectedSite.name;
             CreateBuildingImmediately(selectedSite, buildingType);
+            // Human direct game action (bypasses ActionExecutor / the agent path).
+            GameLogPanel.Instance?.LogUIInteraction("game_action", "construction",
+                $"building={buildingType} | site={siteName}");
             selectedSite.SetSelected(false); // Clear highlight
             selectedSite = null;
         }
     }
-    
-    public void CreateBuildingImmediately(AbandonedSite site, BuildingType buildingType)
+
+    // Use this to pass in parameter deconstruction roud number
+    public void RequestDeconstruction(Building building)
+    {
+        if (building == null) return;
+        building.StartDeconstruction(deconstructionRounds); 
+    }
+
+    /// <summary>Returns whether construction actually STARTED: a build at a site already
+    /// consumed is a silent no-op in the game, and ActionExecutor/GameSnapshot need to tell
+    /// the difference (v1_fixes). Upstream's signature is void; the bool is ours and both
+    /// callers depend on it.</summary>
+    public bool CreateBuildingImmediately(AbandonedSite site, BuildingType buildingType)
     {
         if (!site.IsAvailable())
         {
             Debug.LogWarning($"Site {site.GetId()} is not available for construction");
             GameLogPanel.Instance.LogError($"Site {site.GetId()} is not available for construction but was attempted to build {buildingType}");
-            return;
+            return false;
         }
 
         // Check if this is the first time constructing
         if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstConstruct())
         {
+            // Headless/gym: no popup to confirm — complete the tutorial gate and
+            // build synchronously so we can report a real success/failure.
+            if (Application.isBatchMode)
+            {
+                FirstTimeActionTracker.Instance.MarkConstructCompleted();
+                return PerformConstruction(site, buildingType);
+            }
             if (ConfirmationPopup.Instance != null)
             {
                 ConfirmationPopup.Instance.ShowPopup(
@@ -137,16 +176,32 @@ public class BuildingSystem : MonoBehaviour
                     },
                     title: $"Convert into {buildingType}?"
                 );
-                return;
+                return true; // interactive UI: construction proceeds on confirm
             }
         }
-        PerformConstruction(site, buildingType);
+        return PerformConstruction(site, buildingType);
     }
 
-    // Actual construction logic
-    private void PerformConstruction(AbandonedSite site, BuildingType buildingType)
+    // Actual construction logic. Returns true if the building was created.
+    private bool PerformConstruction(AbandonedSite site, BuildingType buildingType)
     {
-        
+        // No-debt gate (default): reject construction before anything is built or charged
+        // if the budget can't cover it. Honors allowNegativeBudget (RL) which permits overspend.
+        // This is the single chokepoint for GUI, batchmode-tutorial, and gym/agent construction.
+        int plannedCost = buildingType switch
+        {
+            BuildingType.Kitchen => kitchenConstructionCost,
+            BuildingType.Shelter => shelterConstructionCost,
+            BuildingType.CaseworkSite => caseworkSiteConstructionCost,
+            _ => 0,
+        };
+        if (SatisfactionAndBudget.Instance != null && plannedCost > 0 &&
+            !SatisfactionAndBudget.Instance.WouldAllowSpend(plannedCost))
+        {
+            GameLogPanel.Instance.LogError($"Cannot afford {buildingType} construction (${plannedCost}) at AbandonedSite_{site.GetId()} — budget ${SatisfactionAndBudget.Instance.GetCurrentBudget()}");
+            return false;
+        }
+
         // Get the prefab for the building type
         GameObject buildingPrefab = GetBuildingPrefab(buildingType);
 
@@ -177,9 +232,48 @@ public class BuildingSystem : MonoBehaviour
                 BuildingType.CaseworkSite => caseworkSiteConstructionCost,
                 _ => 0,
             };
+            // if (SatisfactionAndBudget.Instance != null && constructionCost > 0)
+            // {
+            //     SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
+            //     if (DailyReportData.Instance != null)
+            //         {
+            //             if (buildingType == BuildingType.Kitchen)
+            //                 DailyReportData.Instance.RecordFoodSpendCumulative(constructionCost);
+            //             else if (buildingType == BuildingType.Shelter)
+            //                 DailyReportData.Instance.RecordLodgingSpendCumulative(constructionCost);
+            //         }
+            //     ToastManager.ShowToast($"Opening cost of {constructionCost} deducted for {buildingType}", ToastType.Info, true);
+            //     GameLogPanel.Instance.LogPlayerAction($"Construction cost of {constructionCost} deducted for building {buildingType} at AbandonedSite_{site.GetId()}");
+            // }
             if (SatisfactionAndBudget.Instance != null && constructionCost > 0)
             {
-                SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
+
+                // Kitchens count as food-service spend, shelters as lodging spend.
+                var spendCat = buildingType == BuildingType.Kitchen ? SatisfactionAndBudget.SpendCategory.Food
+                             : buildingType == BuildingType.Shelter ? SatisfactionAndBudget.SpendCategory.Lodging
+                             : buildingType == BuildingType.CaseworkSite ? SatisfactionAndBudget.SpendCategory.Casework
+                             : SatisfactionAndBudget.SpendCategory.Other;
+                SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, spendCat, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
+
+                // SatisfactionAndBudget.Instance.RemoveBudget(constructionCost, $"Construction Cost for {buildingType} at AbandonedSite_{site.GetId()}");
+                if (DailyReportData.Instance != null)
+                    {
+                        if (buildingType == BuildingType.Kitchen)
+                        {
+                            DailyReportData.Instance.RecordFoodSpendCumulative(constructionCost);
+                            DailyReportData.Instance.RecordKitchenOpenCostToday(constructionCost);
+                        }
+                        else if (buildingType == BuildingType.Shelter)
+                        {
+                            DailyReportData.Instance.RecordLodgingSpendCumulative(constructionCost);
+                            DailyReportData.Instance.RecordShelterOpenCostToday(constructionCost);
+                        }
+                        else if (buildingType == BuildingType.CaseworkSite)
+                        {
+                            DailyReportData.Instance.RecordCaseworkOpenCostToday(constructionCost);
+                        }
+                    }
+
                 ToastManager.ShowToast($"Opening cost of {constructionCost} deducted for {buildingType}", ToastType.Info, true);
                 GameLogPanel.Instance.LogPlayerAction($"Construction cost of {constructionCost} deducted for building {buildingType} at AbandonedSite_{site.GetId()}");
             }
@@ -190,16 +284,23 @@ public class BuildingSystem : MonoBehaviour
                 BuildingUIOverlay.Instance.OnBuildingCreated(buildingComponent);
             }
 
+            if (BuildingStatusTableUI.Instance != null)
+            {
+                BuildingStatusTableUI.Instance.OnBuildingCreated(buildingComponent);
+            }
+
             // Convert abandoned site (disable it)
             site.ConvertToBuilding();
 
             Debug.Log($"You created {buildingType} at AbandonedSite_{site.GetId()} - construction started");
             GameLogPanel.Instance.LogPlayerAction($"You created {buildingType} at AbandonedSite_{site.GetId()} - construction started");
+            return true;
         }
         else
         {
             Debug.LogError($"No prefab found for building type: {buildingType}");
             GameLogPanel.Instance.LogError($"No prefab found for building type: {buildingType}");
+            return false;
         }
     }
 
@@ -334,18 +435,36 @@ public class BuildingSystem : MonoBehaviour
         
         int siteId = building.GetOriginalSiteId();
         Vector3 buildingPosition = building.transform.position;
-        
+        // === ADDED DEBUG BLOCK START ===
+        Debug.Log($"[DECONSTRUCT TRACE] Trying to find Site ID: {siteId} for building {building.name}");
+        registeredSites.RemoveAll(s => s == null);
+        Debug.Log($"[DECONSTRUCT TRACE] Total registered sites currently in list: {registeredSites.Count}");
+
+        foreach (var s in registeredSites)
+        {
+            if (s == null)
+            {
+                Debug.LogError("[DECONSTRUCT TRACE] Found a NULL reference inside your registeredSites list!");
+            }
+            else
+            {
+                Debug.Log($"[DECONSTRUCT TRACE] Valid site in list has ID: {s.GetId()}");
+            }
+        }
+
         // Find the corresponding abandoned site
-        AbandonedSite site = registeredSites.Find(s => s.GetId() == siteId);
-        
+        //AbandonedSite site = registeredSites.Find(s => s.GetId() == siteId);
+        AbandonedSite site = registeredSites.Find(s => s != null && s.gameObject != null && s.GetId() == siteId);
+
         if (site == null)
         {
             Debug.LogError($"Cannot deconstruct: AbandonedSite {siteId} not found");
             return false;
         }
         
-        // Return workers to pool if building has assigned workers
-        if (building.IsOperational() && workerSystem != null)
+        // Return workers to pool if building has assigned workers -- whatever its status: a
+        // partly staffed (NeedWorker) building also holds workers (BUG_REPORTS B20).
+        if (workerSystem != null)
         {
             int workforceToReturn = building.GetAssignedWorkforce();
             workerSystem.ReturnWorkersFromBuilding(siteId, workforceToReturn);
@@ -367,6 +486,11 @@ public class BuildingSystem : MonoBehaviour
         if (BuildingUIOverlay.Instance != null && building != null)
         {
             BuildingUIOverlay.Instance.OnBuildingDestroyed(building);
+        }
+
+        if (BuildingStatusTableUI.Instance != null && building != null)
+        {
+            BuildingStatusTableUI.Instance.OnBuildingDestroyed(building);
         }
         
         // Destroy the building

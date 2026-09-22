@@ -52,6 +52,29 @@ public class ResourceFlowManager : MonoBehaviour
         }
         
         Debug.Log("Resource Flow Manager initialized");
+
+        // THE SURROGATE DOES NOT MODEL THIS SYSTEM.
+        //
+        // cora_sim omits ResourceFlowManager on the measured basis that the scene ships
+        // enableAutomaticFlow = false, which makes AnalyzeAndManageResourceFlows dead code
+        // and lets the port skip an entire per-frame subsystem. That is a SCENE value; the
+        // `= false` initialiser above is NOT evidence of it. FloodParameters taught this
+        // the expensive way -- five of its scene values differ from their initialisers, and
+        // a port built on the source constants desynced the RNG stream.
+        //
+        // So check the value that is actually running. Headless is where surrogate
+        // equivalence is claimed, so headless refuses to continue; the GUI build only
+        // complains, since a human flipping this in the inspector is experimenting rather
+        // than invalidating a benchmark.
+        if (enableAutomaticFlow)
+        {
+            const string msg = "ResourceFlowManager.enableAutomaticFlow is TRUE. cora_sim " +
+                               "does not model automatic resource flow, so the surrogate and " +
+                               "this build are no longer equivalent. Either set it back to " +
+                               "false in the scene or port the system into cora_sim.";
+            Debug.LogError(msg);
+            if (Application.isBatchMode) throw new System.InvalidOperationException(msg);
+        }
     }
     
     void Update()
@@ -138,7 +161,7 @@ public class ResourceFlowManager : MonoBehaviour
                 emergencyTask.isUrgent = true;
                 
                 if (showDebugInfo)
-                    Debug.Log($"Emergency food delivery requested: {urgentAmount} food packs to {shelter.name}");
+                    Debug.Log($"Emergency food delivery requested: {urgentAmount} meals to {shelter.name}");
             }
         }
     }
@@ -467,7 +490,7 @@ public class ResourceFlowManager : MonoBehaviour
             totalPopulation += prebuilt.GetCurrentPopulation();
         }
         
-        Debug.Log($"Resource Flow Status - Population: {totalPopulation}, Food Packs: {totalFoodPacks}, Deliveries: {totalFoodDeliveries} food, {totalPopulationTransports} population");
+        Debug.Log($"Resource Flow Status - Population: {totalPopulation}, Meals: {totalFoodPacks}, Deliveries: {totalFoodDeliveries} food, {totalPopulationTransports} population");
     }
     
     /// <summary>
@@ -527,7 +550,7 @@ public class ResourceFlowManager : MonoBehaviour
         Debug.Log("=== RESOURCE FLOW STATISTICS ===");
         Debug.Log($"Total Deliveries - Food: {stats.totalFoodDeliveries}, Population: {stats.totalPopulationTransports}, Return Home: {stats.totalReturnHomeTransports}");
         Debug.Log($"Population Distribution - Communities: {stats.populationInCommunities}, Buildings: {stats.totalPopulationInBuildings}, Motels: {stats.populationInMotels}");
-        Debug.Log($"Food Packs in Buildings: {stats.totalFoodPacksInBuildings}");
+        Debug.Log($"meals in Buildings: {stats.totalFoodPacksInBuildings}");
     }
 }
 

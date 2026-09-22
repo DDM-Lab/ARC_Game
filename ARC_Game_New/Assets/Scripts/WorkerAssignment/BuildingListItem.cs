@@ -248,6 +248,7 @@ public class BuildingListItem : MonoBehaviour
         {
             AudioManager.Instance.PlayClickSFX();
             globalWorkerManagementUI.OnManageButtonClicked(assignedBuilding);
+            GameLogPanel.Instance?.LogUIInteraction($"Player clicked Manage on building list item: {assignedBuilding.GetDisplayName()}");
         }
         else
         {

@@ -5,7 +5,6 @@ using System.Linq;
 public class FloodTaskGenerator : MonoBehaviour
 {
     [Header("Emergency Task Configuration")]
-    public bool enableFloodTasks = true;
     public TaskDatabase emergencyTaskDatabase;
     public Sprite vehicleDamageImage;
 
@@ -35,7 +34,10 @@ public class FloodTaskGenerator : MonoBehaviour
     void Start()
     {
         if (FloodSystem.Instance != null)
+        {
             FloodSystem.Instance.OnFloodTileAdded += OnFloodExpanded;
+            FloodSystem.Instance.OnFloodTileRemoved += OnFloodTileRemoved;
+        }
 
         if (TaskSystem.Instance != null)
             TaskSystem.Instance.OnTaskCompleted += OnAnyTaskCompleted;
@@ -45,6 +47,30 @@ public class FloodTaskGenerator : MonoBehaviour
     {
         // Check if any vehicles are now blocked by this new flood tile
         CheckForBlockedVehicles();
+    }
+
+    void OnFloodTileRemoved(Vector3Int floodPosition)
+    {
+        // The paid Vehicle Repair task is permanently disabled (see CreateVehicleRepairTask
+        // below), so this is now the only way a flood-damaged vehicle becomes available again.
+        RestoreVehiclesClearOfFlood();
+    }
+
+    void RestoreVehiclesClearOfFlood()
+    {
+        if (FloodSystem.Instance == null) return;
+
+        foreach (Vehicle vehicle in FindObjectsOfType<Vehicle>())
+        {
+            if (vehicle.GetCurrentStatus() != VehicleStatus.Damaged) continue;
+            if (FloodSystem.Instance.IsFloodedAt(vehicle.transform.position)) continue;
+
+            vehicle.RepairVehicle();
+
+            if (showDebugInfo)
+                Debug.Log($"[FloodTaskGenerator] Auto-restored {vehicle.GetVehicleName()} — flood cleared");
+            GameLogPanel.Instance?.LogVehicleEvent($"{vehicle.GetVehicleName()} automatically restored after flood cleared");
+        }
     }
 
     void CheckForBlockedVehicles()
@@ -67,13 +93,6 @@ public class FloodTaskGenerator : MonoBehaviour
     /// </summary>
     public void CreateRoadBlockageTask(Vehicle blockedVehicle, DeliveryTask originalDelivery)
     {
-        if (!enableFloodTasks || TaskSystem.Instance == null)
-        {
-            if (showDebugInfo)
-                Debug.Log("Flood tasks disabled or TaskSystem not found");
-            return;
-        }
-
         if (blockedVehicle == null || originalDelivery == null)
         {
             if (showDebugInfo)
@@ -82,10 +101,34 @@ public class FloodTaskGenerator : MonoBehaviour
         }
 
         bool hasLoadedCargo = blockedVehicle.GetCargoAmount(originalDelivery.cargoType) > 0;
+
+        // Resolve the vehicle's in-progress cargo before building the task below.
+        if (originalDelivery.cargoType == ResourceType.FoodPacks)
+            DiscardVehicleCargo(blockedVehicle, originalDelivery);
+        else if (originalDelivery.cargoType == ResourceType.Population && hasLoadedCargo)
+            ReturnCargoToSource(blockedVehicle, originalDelivery);
+
+        if (TaskSystem.Instance == null)
+        {
+            if (showDebugInfo)
+                Debug.Log("TaskSystem not found - cannot create road blockage task");
+            return;
+        }
         string cargoLabel   = originalDelivery.cargoType == ResourceType.Population ? "clients" : "meals";
         string phase        = hasLoadedCargo ? "en route to drop-off" : "en route to pick-up";
         string srcName      = GetBuildingDisplayName(originalDelivery.sourceBuilding);
         string dstName      = GetBuildingDisplayName(originalDelivery.destinationBuilding);
+
+        // Food: there's no player action to offer any more (the emergency fast-food choice was
+        // removed) — the vehicle self-repairs once the flood clears, and the destination's normal
+        // food-request cycle will pick up the still-unmet need on its own next check, since
+        // StopVehicleDueToFlood already released the delivery's reservation on that destination.
+        // So this is purely informational: no task, no choices, just an Alert.
+        if (originalDelivery.cargoType == ResourceType.FoodPacks)
+        {
+            ShowFoodBlockageAlert(blockedVehicle, originalDelivery, hasLoadedCargo, phase, srcName, dstName);
+            return;
+        }
 
         GameTask roadBlockageTask = TaskSystem.Instance.CreateTask(
             "Road Blockage Emergency", TaskType.Emergency, "Emergency Response",
@@ -101,75 +144,64 @@ public class FloodTaskGenerator : MonoBehaviour
         Sprite icon = TaskSystem.Instance.foodMassCareSprite;
         roadBlockageTask.agentMessages.Add(new AgentMessage(
             $"Emergency! Vehicle {blockedVehicle.GetVehicleName()} is blocked by flooding while {phase}.", icon));
-        roadBlockageTask.agentMessages.Add(new AgentMessage(
-            $"It was carrying {originalDelivery.quantity} {cargoLabel} from {srcName} to {dstName}.", icon));
 
-        if (originalDelivery.cargoType == ResourceType.FoodPacks)
+        // Only true if the vehicle had actually picked the cargo up — while still en route to
+        // pick-up, it isn't "carrying" anything yet. The type-specific choice builders below
+        // already explain the not-yet-loaded case, so nothing is lost by omitting this line then.
+        if (hasLoadedCargo)
         {
-            CreateFoodBlockageChoices(roadBlockageTask, originalDelivery, blockedVehicle);
+            roadBlockageTask.agentMessages.Add(new AgentMessage(
+                $"It was carrying {originalDelivery.quantity} {cargoLabel} from {srcName} to {dstName}.", icon));
         }
-        else if (originalDelivery.cargoType == ResourceType.Population)
+
+        // Population only from here on — Food already returned as an Alert above.
+        if (hasLoadedCargo)
         {
-            if (hasLoadedCargo)
-            {
-                ReturnCargoToSource(blockedVehicle, originalDelivery);
-                roadBlockageTask.affectedFacility = originalDelivery.sourceBuilding.name;
-                CreatePopulationLoadedChoices(roadBlockageTask, originalDelivery, icon, srcName);
-            }
-            else
-            {
-                CreatePopulationUnloadedChoices(roadBlockageTask, originalDelivery, icon, srcName, dstName);
-            }
+            // ReturnCargoToSource already called unconditionally above.
+            roadBlockageTask.affectedFacility = originalDelivery.sourceBuilding.name;
+            CreatePopulationLoadedChoices(roadBlockageTask, originalDelivery, icon, srcName);
+        }
+        else
+        {
+            CreatePopulationUnloadedChoices(roadBlockageTask, originalDelivery, icon, srcName, dstName);
         }
 
         // Track loaded state so expiry handler can apply the correct penalty
-        if (originalDelivery.cargoType == ResourceType.Population)
-            blockageTaskLoadedState[roadBlockageTask.taskId] = hasLoadedCargo;
+        blockageTaskLoadedState[roadBlockageTask.taskId] = hasLoadedCargo;
 
         if (showDebugInfo)
             Debug.Log($"[FloodTaskGenerator] Road blockage task created for {blockedVehicle.GetVehicleName()} ({phase})");
         GameLogPanel.Instance?.LogTaskEvent($"Road blockage: {blockedVehicle.GetVehicleName()} ({phase})");
     }
 
-    void CreateFoodBlockageChoices(GameTask task, DeliveryTask originalDelivery, Vehicle blockedVehicle)
+    // Food already on the blocked vehicle (if any) is treated as spoiled/discarded — it cannot be
+    // recovered (see DiscardVehicleCargo, called unconditionally above). There's no player choice
+    // to offer here any more, so this just informs the player what happened and why.
+    void ShowFoodBlockageAlert(Vehicle blockedVehicle, DeliveryTask originalDelivery, bool hasLoadedCargo, string phase, string srcName, string dstName)
     {
-        // Choice 1: Find alternative route (if possible)
-        AgentChoice altRouteChoice = new AgentChoice(1, "Find alternative route (may take longer)");
-        altRouteChoice.triggersDelivery = true;
-        altRouteChoice.deliveryCargoType = originalDelivery.cargoType;
-        altRouteChoice.deliveryQuantity = originalDelivery.quantity;
-        altRouteChoice.sourceType = DeliverySourceType.ManualAssignment;
-        altRouteChoice.specificSourceName = originalDelivery.sourceBuilding.name;
-        altRouteChoice.destinationType = DeliveryDestinationType.ManualAssignment;
-        altRouteChoice.specificDestinationName = originalDelivery.destinationBuilding.name;
-        altRouteChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5, false, "Problem Solved"));
-        task.agentChoices.Add(altRouteChoice);
+        if (TaskSystem.Instance == null || AlertUIController.Instance == null) return;
 
-        // Choice 2: Send from different kitchen
-        AgentChoice altSourceChoice = new AgentChoice(2, "Send food from nearest available kitchen");
-        altSourceChoice.triggersDelivery = true;
-        altSourceChoice.deliveryCargoType = originalDelivery.cargoType;
-        altSourceChoice.deliveryQuantity = originalDelivery.quantity;
-        altSourceChoice.sourceType = DeliverySourceType.SpecificBuilding;
-        altSourceChoice.sourceBuilding = BuildingType.Kitchen;
-        altSourceChoice.destinationType = DeliveryDestinationType.ManualAssignment;
-        altSourceChoice.specificDestinationName = originalDelivery.destinationBuilding.name;
-        altSourceChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -200, false, "Extra Transport Cost"));
-        altSourceChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 8, false, "Quick Resolution"));
-        task.agentChoices.Add(altSourceChoice);
+        string wasteMessage = hasLoadedCargo
+            ? $"The {originalDelivery.quantity} meals already on board have gone to waste and cannot be recovered."
+            : $"The vehicle had not yet picked up the {originalDelivery.quantity} meals, so nothing was lost — but the delivery itself has failed.";
 
-        // Choice 3: Emergency fast food delivery (expensive)
-        AgentChoice fastDeliveryChoice = new AgentChoice(3, "Emergency fast food delivery ($1000)");
-        fastDeliveryChoice.triggersDelivery = false; // No vehicle needed
-        fastDeliveryChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1000, false, "Emergency Service"));
-        fastDeliveryChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 15, false, "Immediate Relief"));
-        task.agentChoices.Add(fastDeliveryChoice);
+        GameTask alert = TaskSystem.Instance.CreateTask(
+            "Delivery Blocked by Flood",
+            TaskType.Alert,
+            originalDelivery.destinationBuilding.name,
+            $"Vehicle {blockedVehicle.GetVehicleName()} was blocked by flooding while {phase} with {originalDelivery.quantity} meals from {srcName} to {dstName}.");
 
-        // Choice 4: Wait for flood to recede
-        AgentChoice waitChoice = new AgentChoice(4, "Wait for flood to recede (high dissatisfaction)");
-        waitChoice.triggersDelivery = false;
-        waitChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -30, false, "Delayed Response"));
-        task.agentChoices.Add(waitChoice);
+        alert.taskOfficer = TaskOfficer.FoodMassCare;
+        alert.agentMessages = new List<AgentMessage>();
+        alert.agentMessages.Add(new AgentMessage(
+            $"Vehicle {blockedVehicle.GetVehicleName()} was blocked by flooding while {phase} from {srcName} to {dstName}. {wasteMessage}",
+            TaskSystem.Instance.foodMassCareSprite));
+
+        AlertUIController.Instance.ShowAlert(alert);
+
+        if (showDebugInfo)
+            Debug.Log($"[FloodTaskGenerator] Food delivery blockage alert shown for {blockedVehicle.GetVehicleName()} ({phase})");
+        GameLogPanel.Instance?.LogTaskEvent($"Food delivery blocked by flood: {blockedVehicle.GetVehicleName()} ({phase}) — {srcName} to {dstName}");
     }
 
     // Situation 2: vehicle already loaded clients, now blocked.
@@ -179,9 +211,7 @@ public class FloodTaskGenerator : MonoBehaviour
     {
         task.agentMessages.Add(new AgentMessage(
             $"The clients were already on board when the vehicle was stopped. " +
-            $"They have been safely escorted back to {srcName} for now.\n\n" +
-            $"⚠ If no emergency transport is arranged in time, the clients will give up and remain at {srcName} — " +
-            $"this will severely impact satisfaction.",
+            $"They have been safely escorted back to {srcName} for now.\n\n",
             icon));
 
         AgentChoice emergencyChoice = new AgentChoice(1, "Arrange emergency transport ($1500) — clients reach shelter immediately");
@@ -191,7 +221,6 @@ public class FloodTaskGenerator : MonoBehaviour
         emergencyChoice.destinationType     = DeliveryDestinationType.SpecificBuilding;
         emergencyChoice.destinationBuilding = BuildingType.Shelter;
         emergencyChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1500, false, "Emergency Transport"));
-        emergencyChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 10, false, "Safe Arrival"));
         task.agentChoices.Add(emergencyChoice);
     }
 
@@ -212,74 +241,30 @@ public class FloodTaskGenerator : MonoBehaviour
         rerouteChoice.specificSourceName      = originalDelivery.sourceBuilding.name;
         rerouteChoice.destinationType         = DeliveryDestinationType.ManualAssignment;
         rerouteChoice.specificDestinationName = originalDelivery.destinationBuilding.name;
-        rerouteChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, 5, false, "Resolved"));
         task.agentChoices.Add(rerouteChoice);
     }
 
     /// <summary>
-    /// Create vehicle repair task
+    /// Vehicle Repair Required task — permanently disabled. Flood-damaged vehicles now
+    /// self-recover automatically once the flood clears (see RestoreVehiclesClearOfFlood),
+    /// so this paid repair task no longer gets created. Kept as a no-op stub (rather than
+    /// removed) so existing callers (Vehicle.TriggerVehicleRepairTask, debug context menus
+    /// below) don't need to change — restoring this would mean reinstating the task-building
+    /// logic that used to live here (title "Vehicle Repair Required", $1200 repair choice,
+    /// VEHICLE_ID-tagged description for TaskDetailUI.RepairVehicleById).
     /// </summary>
     public void CreateVehicleRepairTask(Vehicle damagedVehicle)
     {
-        if (!enableFloodTasks || TaskSystem.Instance == null) return;
-
-        // Check if repair task already exists for this vehicle (double-check)
-        var activeTasks = TaskSystem.Instance.GetAllActiveTasks();
-        bool repairTaskExists = activeTasks.Any(t =>
-            t.taskTitle.Contains("Vehicle Repair") &&
-            t.description.Contains(damagedVehicle.GetVehicleName()));
-
-        if (repairTaskExists)
-        {
-            if (showDebugInfo)
-                Debug.Log($"Repair task already exists for vehicle {damagedVehicle.GetVehicleName()}");
-            return;
-        }
-
-        string taskTitle = "Vehicle Repair Required";
-        string description = $"Vehicle {damagedVehicle.GetVehicleName()} has been damaged by flood and requires repair before it can operate again.";
-
-        GameTask repairTask = TaskSystem.Instance.CreateTask(
-            taskTitle, TaskType.Emergency, "Maintenance", description);
-
-        repairTask.taskImage = vehicleDamageImage;
-        repairTask.taskOfficer = TaskOfficer.LodgingMassCare;
-
-        // Longer time for repair tasks
-        repairTask.roundsRemaining = 2;
-        repairTask.hasRealTimeLimit = false;
-
-        // Add impacts
-        repairTask.impacts.Add(new TaskImpact(ImpactType.Budget, -800, false, "Repair Cost"));
-        repairTask.impacts.Add(new TaskImpact(ImpactType.Workforce, 2, false, "Repair Crew"));
-
-        // Add agent messages
-        repairTask.agentMessages.Add(new AgentMessage($"Vehicle {damagedVehicle.GetVehicleName()} needs repair after flood damage.", TaskSystem.Instance.foodMassCareSprite));
-        repairTask.agentMessages.Add(new AgentMessage("We can either repair it now or wait, but the vehicle won't be available until fixed.", TaskSystem.Instance.foodMassCareSprite));
-
-        // Add repair choices
-        AgentChoice immediateRepairChoice = new AgentChoice(1, "Repair immediately ($1200)");
-        immediateRepairChoice.triggersDelivery = false;
-        immediateRepairChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Budget, -1200, false, "Repair Cost"));
-        repairTask.agentChoices.Add(immediateRepairChoice);
-
-        AgentChoice delayRepairChoice = new AgentChoice(2, "Delay repair (vehicle remains unavailable, Satisfaction - 5)");
-        delayRepairChoice.triggersDelivery = false;
-        delayRepairChoice.choiceImpacts.Add(new TaskImpact(ImpactType.Satisfaction, -5, false, "Reduced Capacity"));
-        repairTask.agentChoices.Add(delayRepairChoice);
-
-        // Store vehicle reference for later repair
-        repairTask.description += $"|VEHICLE_ID:{damagedVehicle.GetVehicleId()}";
-
-        if (showDebugInfo)
-            Debug.Log($"Created vehicle repair task for {damagedVehicle.GetVehicleName()}");
-        GameLogPanel.Instance.LogTaskEvent($"Created vehicle repair task for {damagedVehicle.GetVehicleName()}");
+        // Intentionally does nothing.
     }
 
     void OnDestroy()
     {
         if (FloodSystem.Instance != null)
+        {
             FloodSystem.Instance.OnFloodTileAdded -= OnFloodExpanded;
+            FloodSystem.Instance.OnFloodTileRemoved -= OnFloodTileRemoved;
+        }
 
         if (TaskSystem.Instance != null)
             TaskSystem.Instance.OnTaskCompleted -= OnAnyTaskCompleted;
@@ -336,6 +321,30 @@ public class FloodTaskGenerator : MonoBehaviour
             Debug.Log($"[FloodTaskGenerator] Returned {amount} {delivery.cargoType} to {src.name}");
     }
 
+    /// <summary>
+    /// Food already loaded on a blocked vehicle can't be salvaged — it spoils. Clears the cargo
+    /// and records it as waste (same accounting as food lost to a day change or overnight cancel).
+    /// </summary>
+    void DiscardVehicleCargo(Vehicle vehicle, DeliveryTask delivery)
+    {
+        if (vehicle == null) return;
+
+        int amount = vehicle.GetCargoAmount(delivery.cargoType);
+        if (amount <= 0) return;
+
+        vehicle.ClearAllCargo();
+
+        if (delivery.cargoType == ResourceType.FoodPacks && DailyReportData.Instance != null)
+        {
+            DailyReportData.Instance.RecordFoodWasted(amount);
+            DailyReportData.Instance.RecordFoodWasteCumulative(amount);
+        }
+
+        if (showDebugInfo)
+            Debug.Log($"[FloodTaskGenerator] Discarded {amount} {delivery.cargoType} from blocked vehicle {vehicle.GetVehicleName()}");
+        GameLogPanel.Instance?.LogResourceChange($"[FloodTaskGenerator] Discarded {amount} {delivery.cargoType} from blocked vehicle {vehicle.GetVehicleName()}");
+    }
+
     static string GetBuildingDisplayName(MonoBehaviour building)
     {
         if (building == null) return "Unknown";
@@ -367,32 +376,17 @@ public class FloodTaskGenerator : MonoBehaviour
         Debug.Log("Force-created road blockage task");
     }
 
-    [ContextMenu("Test: Force Vehicle Repair")]
-    public void TestForceVehicleRepair()
-    {
-        Vehicle testVehicle = FindObjectOfType<Vehicle>();
-        if (testVehicle == null)
-        {
-            Debug.LogWarning("No vehicle found for repair test");
-            return;
-        }
-        
-        CreateVehicleRepairTask(testVehicle);
-        Debug.Log($"Force-created vehicle repair task for {testVehicle.GetVehicleName()}");
-    }
-
     [ContextMenu("Test: Damage All Vehicles")]
     public void TestDamageAllVehicles()
     {
         Vehicle[] vehicles = FindObjectsOfType<Vehicle>();
-        
+
         foreach (Vehicle vehicle in vehicles)
         {
             vehicle.isDamaged = true;
             vehicle.SetStatus(VehicleStatus.Damaged);
-            CreateVehicleRepairTask(vehicle);
         }
-        
-        Debug.Log($"Damaged {vehicles.Length} vehicles and created repair tasks");
+
+        Debug.Log($"Damaged {vehicles.Length} vehicles (Vehicle Repair task is disabled — use FloodSystem's 'Clear All Flood' or 'Debug: Flood Entire Map' + clear to test auto-recovery)");
     }
 }

@@ -243,6 +243,7 @@ public class CategoryTaskManager : MonoBehaviour
         isPanelOpen = true;
         
         Debug.Log($"Opened {currentCategory} task panel with {categoryTasks.Count} tasks");
+        GameLogPanel.Instance?.LogUIInteraction($"Opened {currentCategory} task panel with {categoryTasks.Count} tasks");
     }
     
     void PositionPanelAtButton()
@@ -281,8 +282,9 @@ public class CategoryTaskManager : MonoBehaviour
 
         isPanelOpen = false;
         ClearTaskList();
-        
+
         Debug.Log("Closed category task panel");
+        GameLogPanel.Instance?.LogUIInteraction("Closed category task panel");
     }
     
     List<GameTask> GetTasksByCategory(TaskCategory category)
@@ -401,7 +403,7 @@ public class CategoryTaskManager : MonoBehaviour
         
         if (taskTitle != null)
         {
-            taskTitle.text = task.taskTitle;
+            taskTitle.text = task.ResolvePlaceholders(task.taskTitle);
         }
         else
         {
@@ -464,6 +466,7 @@ public class CategoryTaskManager : MonoBehaviour
         {
             taskDetailUI.ShowTaskDetail(task);
             Debug.Log($"Opened task detail for: {task.taskTitle}");
+            GameLogPanel.Instance?.LogUIInteraction($"Opened task detail from category panel for: {task.taskTitle}");
         }
         else
         {
@@ -473,6 +476,7 @@ public class CategoryTaskManager : MonoBehaviour
             {
                 taskCenterUI.OpenTaskCenter();
                 Debug.Log($"Opened task center - locate task: {task.taskTitle}");
+                GameLogPanel.Instance?.LogUIInteraction($"Opened task center from category panel - locate task: {task.taskTitle}");
             }
         }
     }

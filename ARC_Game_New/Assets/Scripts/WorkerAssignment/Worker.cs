@@ -49,6 +49,39 @@ public class Worker
         }
     }
     
+    /// <summary>Snapshot support. Status is the whole story for a worker -- "NotArrived"
+    /// and "Training" are statuses rather than countdowns, so there is no separate timer
+    /// to carry, but assignedBuildingId must survive or restored workers detach from
+    /// their buildings.</summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public int workerId;
+        public string workerType;
+        public string trainedStatus;
+        public string untrainedStatus;
+        public int assignedBuildingId;
+    }
+
+    public Snapshot CaptureState() => new Snapshot
+    {
+        workerId = workerId,
+        workerType = workerType.ToString(),
+        trainedStatus = trainedStatus.ToString(),
+        untrainedStatus = untrainedStatus.ToString(),
+        assignedBuildingId = assignedBuildingId,
+    };
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        workerId = s.workerId;
+        if (System.Enum.TryParse(s.workerType, out WorkerType wt)) workerType = wt;
+        if (System.Enum.TryParse(s.trainedStatus, out TrainedWorkerStatus ts)) trainedStatus = ts;
+        if (System.Enum.TryParse(s.untrainedStatus, out UntrainedWorkerStatus us)) untrainedStatus = us;
+        assignedBuildingId = s.assignedBuildingId;
+    }
+
     // Properties
     public int WorkerId => workerId;
     public WorkerType Type => workerType;
@@ -117,6 +150,7 @@ public class Worker
         }
         
         Debug.Log($"Worker {workerId} ({workerType}) assigned to building {buildingId}");
+        GameLogPanel.Instance?.LogWorkerAction($"Worker {workerId} ({workerType}) assigned to building {buildingId}");
         return true;
     }
     
@@ -142,6 +176,7 @@ public class Worker
         }
         
         Debug.Log($"Worker {workerId} ({workerType}) released from building {previousBuildingId}");
+        GameLogPanel.Instance?.LogWorkerAction($"Worker {workerId} ({workerType}) released from building {previousBuildingId}");
     }
     
     // Special status transitions
@@ -151,6 +186,7 @@ public class Worker
         {
             SetUntrainedStatus(UntrainedWorkerStatus.Training);
             Debug.Log($"Untrained worker {workerId} started training");
+            GameLogPanel.Instance?.LogWorkerAction($"Untrained worker {workerId} started training");
         }
         else
         {
@@ -164,6 +200,7 @@ public class Worker
         {
             SetTrainedStatus(TrainedWorkerStatus.Free);
             Debug.Log($"Trained worker {workerId} has arrived and is now available");
+            GameLogPanel.Instance?.LogWorkerAction($"Trained worker {workerId} has arrived and is now available");
         }
         else
         {
@@ -181,6 +218,7 @@ public class Worker
             trainedWorker.SetTrainedStatus(TrainedWorkerStatus.Free);
             
             Debug.Log($"Untrained worker {workerId} has been converted to trained worker");
+            GameLogPanel.Instance?.LogWorkerAction($"Untrained worker {workerId} has been converted to trained worker");
             return trainedWorker;
         }
         else

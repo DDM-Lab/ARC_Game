@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System.Linq;
+using System.Collections;
 
 /// <summary>
 /// Populates a single row in the delivery queue panel.
@@ -9,10 +10,15 @@ using System.Linq;
 /// </summary>
 public class DeliveryQueueRow : MonoBehaviour
 {
+
+    [Header ("UI Highlight")]
+    [SerializeField] private Image rowBackgroundImage; 
+    [SerializeField] private Color highlightColor = new Color(1f, 0.85f, 0.4f, 1f); // new row notif highlight
+
     [Header("Text Fields")]
     public TextMeshProUGUI statusText;   // "Delivering" / "Picking up" / "Queued" / "Damaged"
-    public TextMeshProUGUI cargoText;    // "5x food packs"
-    public TextMeshProUGUI routeText;    // "Kitchen  →  Community 1"
+    public TextMeshProUGUI cargoText;    // "5x meals"
+    public TextMeshProUGUI routeText;    // "Kitchen -> Community 1"
     public TextMeshProUGUI etaText;      // "ETA: 00:42" or "Queued"
 
     [Header("Locate Button")]
@@ -36,7 +42,7 @@ public class DeliveryQueueRow : MonoBehaviour
         {
             string src = GetBuildingDisplayName(delivery.sourceBuilding);
             string dst = GetBuildingDisplayName(delivery.destinationBuilding);
-            routeText.text = $"{src}  →  {dst}";
+            routeText.text = $"{src} -> {dst}";
         }
 
         // Status
@@ -78,14 +84,19 @@ public class DeliveryQueueRow : MonoBehaviour
         // Locate button — only enabled when there is a live vehicle to focus on
         if (locateButton != null)
         {
+            locateButton.gameObject.SetActive(true);
             bool canLocate = vehicle != null && vehicle.currentStatus != VehicleStatus.Idle;
             locateButton.interactable = canLocate;
+            locateButton.onClick.RemoveAllListeners();
             locateButton.onClick.AddListener(OnLocateClicked);
         }
     }
 
     void OnLocateClicked()
     {
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Delivery queue: view route clicked | vehicle={associatedVehicle?.name ?? "none"} | route={routeText?.text ?? "unknown"} | cargo={cargoText?.text ?? "unknown"}");
+
         if (associatedVehicle == null) return;
 
         // Close the vehicle info panel if open — just show the route on the map.
@@ -113,5 +124,139 @@ public class DeliveryQueueRow : MonoBehaviour
         Building b = building.GetComponent<Building>();
         if (b != null) return b.GetDisplayName();
         return building.name;
+    }
+
+    public void InitializeDelayedBudget(DelayedBudgetItem budgetItem)
+    {
+        associatedVehicle = null;
+        if (cargoText != null)
+        {
+            string sign = budgetItem.amount >= 0 ? "+" : "";
+            cargoText.text = $"{sign}${budgetItem.amount:N0}";
+        }
+        if (routeText != null)
+        {
+            routeText.text = $"{budgetItem.sourceTaskTitle}";
+        }
+        if (statusText != null)
+        {
+            string roundsLabel = budgetItem.roundsRemaining == 1 ? "1 round" : $"{budgetItem.roundsRemaining} rounds";
+            statusText.text = "in " + roundsLabel;
+        }
+        if (locateButton != null)
+        {
+            locateButton.gameObject.SetActive(false);
+        }
+    }
+
+    // --- Add to DeliveryQueueRow.cs ---
+
+    public void InitializeWorkerRequest(WorkerRequestSystem.RequestTask request)
+    {
+        associatedVehicle = null;
+
+        string label = request.workerType == WorkerType.Untrained ? "Untrained" : "Trained";
+
+        if (cargoText != null)
+        {
+            cargoText.text = $"+{request.workerCount} {label}";
+        }
+
+        if (routeText != null)
+        {
+            routeText.text = "Worker Recruitment";
+        }
+
+        if (statusText != null)
+        {
+            int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
+            int daysLeft = Mathf.Max(0, request.arrivalDay - currentDay);
+            statusText.text = daysLeft == 1 ? "Arrive in 1 day" : $"Arrive in {daysLeft} days";
+        }
+
+        if (etaText != null) etaText.text = "";
+
+        if (locateButton != null) locateButton.gameObject.SetActive(false);
+    }
+
+    public void InitializeClientRelocation(ClientRelocationHandler.PendingRelocation relocation)
+    {
+        associatedVehicle = null;
+
+        if (cargoText != null)
+        {
+            cargoText.text = $"{relocation.quantity}x clients";
+        }
+
+        if (routeText != null)
+        {
+            string src = GetBuildingDisplayName(relocation.source);
+            string dst = GetBuildingDisplayName(relocation.destination);
+            routeText.text = $"{src} -> {dst}";
+        }
+
+        if (statusText != null)
+        {
+            statusText.text = relocation.roundsRemaining == 1
+                ? "1 round"
+                : $"{relocation.roundsRemaining} rounds";
+        }
+
+        if (etaText != null) etaText.text = "";
+
+        if (locateButton != null) locateButton.gameObject.SetActive(false);
+    }
+
+    public void InitializeWorkerTraining(WorkerTrainingSystem.TrainingTask training)
+    {
+        associatedVehicle = null;
+
+        if (cargoText != null)
+        {
+            cargoText.text = $"Training {training.workerCount}";
+        }
+
+        if (routeText != null)
+        {
+            routeText.text = "Responder Training";
+        }
+
+        if (statusText != null)
+        {
+            int currentDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 1;
+            int daysLeft = Mathf.Max(0, training.completionDay - currentDay);
+            statusText.text = daysLeft == 1 ? "Ready in 1 day" : $"Ready in {daysLeft} days";
+        }
+
+        if (etaText != null) etaText.text = "";
+
+        if (locateButton != null) locateButton.gameObject.SetActive(false);
+    }
+
+
+    /// <summary>
+    /// Highlights a row, used for showing new queued rows
+    /// </summary>
+    public void HighlightRow(float duration = 1.5f)
+    {
+        if (rowBackgroundImage != null)
+        {
+            StartCoroutine(FlashRoutine(duration));
+        }
+    }
+
+    private IEnumerator FlashRoutine(float duration)
+    {
+        Color originalColor = rowBackgroundImage.color;
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float pingPong = Mathf.PingPong(elapsed * 2f, 1f);
+            rowBackgroundImage.color = Color.Lerp(originalColor, highlightColor, pingPong);
+            yield return null;
+        }
+
+        rowBackgroundImage.color = originalColor;
     }
 }

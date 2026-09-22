@@ -386,7 +386,10 @@ public class GlobalWorkerManagementUI : MonoBehaviour
     {
         if (buildingSystem == null) return new List<Building>();
         List<Building> allBuildings = buildingSystem.GetAllBuildings();
-        return allBuildings.Where(b => b.GetBuildingType() == buildingType).ToList();
+        //return allBuildings.Where(b => b.GetBuildingType() == buildingType).ToList();
+        return allBuildings
+        .Where(b => b.GetBuildingType() == buildingType && b.GetCurrentStatus() != BuildingStatus.Disabled && b.GetCurrentStatus() != BuildingStatus.Deconstructing)
+        .ToList();
     }
 
     void CreateBuildingListItem(Building building)

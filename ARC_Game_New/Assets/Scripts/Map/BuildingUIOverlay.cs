@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -26,6 +27,11 @@ public class BuildingUIOverlay : MonoBehaviour
     
     // Dictionary to track building-to-UI mapping
     private Dictionary<Building, GameObject> buildingUIMap = new Dictionary<Building, GameObject>();
+
+    // Whether deconstruct buttons should currently be interactable — false while simulation is
+    // running (see SetDeconstructButtonsInteractable, called from GlobalClock). Applied both to
+    // existing buttons and to any newly-shown one (see "Show the deconstruct button" below).
+    private bool deconstructButtonsInteractable = true;
     
     // Singleton
     public static BuildingUIOverlay Instance { get; private set; }
@@ -368,8 +374,10 @@ public class BuildingUIOverlay : MonoBehaviour
             }
             StartCoroutine(ShowToastText(toastText.gameObject));
         }
-        
+
         Debug.Log($"Building {building.name} construction completed - UI updated");
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Building overlay UI changed | facility={building.GetDisplayName()} | display=\"Need Worker\" | WorkerButton shown");
     }
     
     private IEnumerator ShowToastText(GameObject toastTextObj)
@@ -446,9 +454,14 @@ public class BuildingUIOverlay : MonoBehaviour
         if (deconstructButton != null)
         {
             deconstructButton.gameObject.SetActive(true);
+            Button deconstructBtnComponent = deconstructButton.GetComponent<Button>();
+            if (deconstructBtnComponent != null)
+                deconstructBtnComponent.interactable = deconstructButtonsInteractable;
         }
 
         Debug.Log($"Building {building.name} workers assigned - UI updated");
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Building overlay UI changed | facility={building.GetDisplayName()} | WorkerButton text=\"Manage\" | DeconstructButton shown");
     }
     
     private void OnDeconstructionStarted(Building building)
@@ -492,12 +505,17 @@ public class BuildingUIOverlay : MonoBehaviour
         {
             deconstructButton.gameObject.SetActive(false);
         }
-        
+
         Debug.Log($"Building {building.name} deconstruction started - UI updated");
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"Building overlay UI changed | facility={building.GetDisplayName()} | display=\"Closing...\" | WorkerButton/DeconstructButton hidden");
     }
     
     private void OnAssignWorkerClicked(Building building)
     {
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"WorkerButton clicked | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()} | status={building.GetCurrentStatus()}");
+
         // Open worker assignment UI
         WorkerSystem workerSystem = FindObjectOfType<WorkerSystem>();
         if (workerSystem != null)
@@ -510,28 +528,117 @@ public class BuildingUIOverlay : MonoBehaviour
             }
         }
     }
-    
+
     private void OnDeconstructClicked(Building building)
     {
         Debug.Log($"Deconstruct button clicked for building {building.name}");
-        
+        GameLogPanel.Instance?.LogUIInteraction(
+            $"DeconstructButton clicked | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()} | status={building.GetCurrentStatus()}");
+
         if (building != null && building.IsOperational())
         {
+            BuildingType type = building.GetBuildingType();
+            BuildingResourceStorage storage = building.GetComponent<BuildingResourceStorage>();
+
+            // Shelter/CaseworkSite: block if anyone is currently there or scheduled to arrive
+            // (vehicle deliveries reserved via DeliverySystem, or self-walk relocations already
+            // in flight via ClientRelocationHandler — see PendingRelocation).
+            if (type == BuildingType.Shelter || type == BuildingType.CaseworkSite)
+            {
+                int currentPopulation = storage != null ? storage.GetResourceAmount(ResourceType.Population) : 0;
+                int incomingReserved = DeliverySystem.Instance != null
+                    ? DeliverySystem.Instance.GetReservedIncomingQuantity(building, ResourceType.Population) : 0;
+                bool incomingWalking = ClientRelocationHandler.Instance != null
+                    && ClientRelocationHandler.Instance.GetPendingRelocations().Any(r => r.destination == building);
+
+                if (currentPopulation > 0 || incomingReserved > 0 || incomingWalking)
+                {
+                    ToastManager.ShowToast("You cannot close a facility if it has scheduled arrivals, scheduled deliveries, or people currently present.", ToastType.Warning, true);
+                    GameLogPanel.Instance?.LogUIInteraction(
+                        $"Deconstruction blocked | facility={building.GetDisplayName()} | reason=people present or arriving");
+                    return;
+                }
+            }
+            // Kitchen: block if meals are currently scheduled for delivery; otherwise, if leftover
+            // food remains, confirm that it will be counted as waste before closing.
+            else if (type == BuildingType.Kitchen)
+            {
+                int outgoingReserved = DeliverySystem.Instance != null
+                    ? DeliverySystem.Instance.GetReservedOutgoingQuantity(building, ResourceType.FoodPacks) : 0;
+
+                if (outgoingReserved > 0)
+                {
+                    ToastManager.ShowToast("You cannot close this kitchen because meals are scheduled for delivery.", ToastType.Warning, true);
+                    GameLogPanel.Instance?.LogUIInteraction(
+                        $"Deconstruction blocked | facility={building.GetDisplayName()} | reason=meals scheduled for delivery");
+                    return;
+                }
+
+                int leftoverFood = storage != null ? storage.GetResourceAmount(ResourceType.FoodPacks) : 0;
+                if (leftoverFood > 0)
+                {
+                    if (ConfirmationPopup.Instance != null)
+                    {
+                        ConfirmationPopup.Instance.ShowPopup(
+                            message: $"This kitchen still has {leftoverFood} meals remaining. Closing it now will count them as food waste.\n",
+                            onConfirm: () => {
+                                DailyReportData.Instance?.RecordFoodWasted(leftoverFood);
+                                DailyReportData.Instance?.RecordFoodWasteCumulative(leftoverFood);
+                                if (BuildingSystem.Instance != null) BuildingSystem.Instance.RequestDeconstruction(building);
+                                else building.StartDeconstruction();
+                                Debug.Log($"User confirmed deconstruction of {building.name} — {leftoverFood} meals counted as waste");
+                                GameLogPanel.Instance?.LogUIInteraction(
+                                    $"Deconstruction confirmed | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()} | foodWasted={leftoverFood}");
+                                GameLogPanel.Instance?.LogResourceChange(
+                                    $"{leftoverFood} meals wasted — {building.GetDisplayName()} closed with food remaining");
+                            },
+                            onCancel: () => {
+                                Debug.Log($"User cancelled deconstruction of {building.name}");
+                                GameLogPanel.Instance?.LogUIInteraction(
+                                    $"Deconstruction cancelled | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()}");
+                            },
+                            title: "Close Kitchen?"
+                        );
+                    }
+                    else
+                    {
+                        Debug.LogError("ConfirmationPopup not found in scene!");
+                        // Fallback: same pattern as the generic path below — close immediately if
+                        // the popup system isn't available, still recording the waste correctly.
+                        DailyReportData.Instance?.RecordFoodWasted(leftoverFood);
+                        DailyReportData.Instance?.RecordFoodWasteCumulative(leftoverFood);
+                        if (BuildingSystem.Instance != null) BuildingSystem.Instance.RequestDeconstruction(building);
+                        else building.StartDeconstruction();
+                        GameLogPanel.Instance?.LogUIInteraction(
+                            $"Deconstruction auto-confirmed (no ConfirmationPopup in scene) | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()} | foodWasted={leftoverFood}");
+                        GameLogPanel.Instance?.LogResourceChange(
+                            $"{leftoverFood} meals wasted — {building.GetDisplayName()} closed with food remaining");
+                    }
+                    return;
+                }
+            }
+
             // Show confirmation popup instead of immediately deconstructing
             if (ConfirmationPopup.Instance != null)
             {
                 string message = $"Are you sure you want to close this {building.GetBuildingType()} at site {building.GetOriginalSiteId()}?\n";
-                
+
                 ConfirmationPopup.Instance.ShowPopup(
                     message: message,
                     onConfirm: () => {
                         // This executes when user clicks Confirm
-                        building.StartDeconstruction();
+                        if (BuildingSystem.Instance != null) BuildingSystem.Instance.RequestDeconstruction(building);
+                        else building.StartDeconstruction();
+                        //building.StartDeconstruction();
                         Debug.Log($"User confirmed deconstruction of {building.name}");
+                        GameLogPanel.Instance?.LogUIInteraction(
+                            $"Deconstruction confirmed | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()}");
                     },
                     onCancel: () => {
                         // This executes when user clicks Cancel (optional)
                         Debug.Log($"User cancelled deconstruction of {building.name}");
+                        GameLogPanel.Instance?.LogUIInteraction(
+                            $"Deconstruction cancelled | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()}");
                     },
                     title: "Close Facility"
                 );
@@ -540,7 +647,11 @@ public class BuildingUIOverlay : MonoBehaviour
             {
                 Debug.LogError("ConfirmationPopup not found in scene!");
                 // Fallback: deconstruct immediately if popup system not available
-                building.StartDeconstruction();
+                if (BuildingSystem.Instance != null) BuildingSystem.Instance.RequestDeconstruction(building);
+                else building.StartDeconstruction();
+                //building.StartDeconstruction();
+                GameLogPanel.Instance?.LogUIInteraction(
+                    $"Deconstruction auto-confirmed (no ConfirmationPopup in scene) | facility={building.GetDisplayName()} at site {building.GetOriginalSiteId()}");
             }
         }
     }
@@ -591,5 +702,26 @@ public class BuildingUIOverlay : MonoBehaviour
             return buildingUIMap[building];
         }
         return null;
+    }
+
+    /// <summary>
+    /// Called by GlobalClock to disable every building's deconstruct button while simulation is
+    /// running, and re-enable them once the round ends and the player can act again. Applies to
+    /// every overlay currently tracked, and is remembered so any deconstruct button shown later
+    /// (see "Show the deconstruct button" above) starts in the correct state too.
+    /// </summary>
+    public void SetDeconstructButtonsInteractable(bool interactable)
+    {
+        deconstructButtonsInteractable = interactable;
+
+        foreach (GameObject uiOverlay in buildingUIMap.Values)
+        {
+            if (uiOverlay == null) continue;
+
+            Transform deconstructButton = uiOverlay.transform.Find("DeconstructButton");
+            Button deconstructBtnComponent = deconstructButton?.GetComponent<Button>();
+            if (deconstructBtnComponent != null)
+                deconstructBtnComponent.interactable = interactable;
+        }
     }
 }

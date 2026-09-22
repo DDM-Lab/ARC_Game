@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Shelter_Flood_Damage
   m_EditorClassIdentifier: 
   taskId: Shelter_Flood_Damage
-  taskTitle: Shelter Flood Damage
+  taskTitle: '[facility_name_plain] Flood Damage Relocation'
   taskType: 0
   description: '[facility_name] has been severely damaged by flood water. We need
     to relocate the residents immediately.'
@@ -36,16 +36,17 @@ MonoBehaviour:
   floodTileTriggers: []
   floodedFacilityTriggers:
   - facilityType: 3
-    comparison: 1
-    floodTileThreshold: 2
+    comparison: 4
+    floodTileThreshold: 4
     specificBuildingType: 1
     specificPrebuiltType: 0
-    detectionRadius: 2
+    detectionRadius: 5
   budgetTriggers: []
   satisfactionTriggers: []
   workforceTriggers: []
   facilityStatusTriggers: []
   weatherTriggers: []
+  latestGenerationRound: 0
   requireAllTriggers: 1
   isGlobalTask: 0
   targetFacilityType: 1
@@ -65,25 +66,22 @@ MonoBehaviour:
     customLabel: 
   agentMessages:
   - messageText: We have a critical situation. [facility_name] has been severely
-      damaged by flood water. The building is no longer safe for habitation. Water
-      has compromised the structure and electrical systems.
+      damaged by flood water. 100 clients need immediate relocation. Choose from
+      the available options.
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
-  - messageText: They need immediate relocation. I've identified several options
-      for emergency housing. We need to act quickly.
+  - messageText: Once relocated, they will travel to the selected location on their
+      own and arrive in [relocation_rounds] rounds. Where would you like to send
+      them?
     agentAvatar: {fileID: 0}
     useTypingEffect: 1
     typingSpeed: 0.05
   agentChoices:
   - choiceId: 0
-    choiceText: Evacuate all residents to other shelters (Satisfaction + 10)
+    choiceText: Evacuate all to other shelters
     agentReasoning: 
-    choiceImpacts:
-    - impactType: 0
-      value: 10
-      isCountdown: 0
-      customLabel: 
+    choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
     immediateDelivery: 0
@@ -106,50 +104,12 @@ MonoBehaviour:
     prioritizeNearestSource: 1
     prioritizeNearestDestination: 0
   - choiceId: 1
-    choiceText: Evacuate all residents to Motel (Satisfaction + 10)
+    choiceText: Evacuate all to Motel
     agentReasoning: 
-    choiceImpacts:
-    - impactType: 0
-      value: 10
-      isCountdown: 0
-      customLabel: 
+    choiceImpacts: []
     isSelected: 0
     triggersDelivery: 1
     immediateDelivery: 0
-    deliveryCargoType: 0
-    enableMultipleDeliveries: 0
-    multiDeliveryType: 0
-    quantityType: 2
-    deliveryQuantity: 0
-    deliveryPercentage: 0
-    deliverAll: 1
-    sourceType: 3
-    sourceBuilding: 1
-    sourcePrebuilt: 0
-    specificSourceName: 
-    destinationType: 2
-    destinationBuilding: 0
-    destinationPrebuilt: 1
-    specificDestinationName: 
-    budgetDelayRounds: 0
-    prioritizeNearestSource: 0
-    prioritizeNearestDestination: 1
-  - choiceId: 2
-    choiceText: Helicopter evacuation to Motel (Immediate, $5000, Satisfaction +
-      10)
-    agentReasoning: 
-    choiceImpacts:
-    - impactType: 1
-      value: -5000
-      isCountdown: 0
-      customLabel: 
-    - impactType: 0
-      value: 10
-      isCountdown: 0
-      customLabel: 
-    isSelected: 0
-    triggersDelivery: 1
-    immediateDelivery: 1
     deliveryCargoType: 0
     enableMultipleDeliveries: 0
     multiDeliveryType: 0

@@ -210,6 +210,62 @@ public class WorkerSystem : MonoBehaviour
         return true;
     }
 
+    // Replace-semantics assignment by WORKER COUNT (used by the agent action path so it
+    // matches the human "set staffing" flow): release the building's current workers, then
+    // assign exactly `workerCount` from the free pool (trained first, for max workforce).
+    // Feasibility is checked BEFORE releasing, so a request we can't fulfill leaves the
+    // building's existing staff untouched instead of stranding it empty.
+    /// <summary>
+    /// Release the building's workers and assign exactly trainedCount trained + untrainedCount
+    /// untrained from the pool (feasibility checked before anything is released). This is the
+    /// agent-side twin of the human staffing panel's exact composition.
+    /// </summary>
+    public bool TryStaffBuildingWithComposition(int buildingId, int trainedCount, int untrainedCount)
+    {
+        if (trainedCount < 0 || untrainedCount < 0) return false;
+        List<Worker> current = GetWorkersByBuildingId(buildingId);
+        List<Worker> free = GetAvailableWorkers();
+        int reachableTrained = free.Count(w => w.Type == WorkerType.Trained) + current.Count(w => w.Type == WorkerType.Trained);
+        int reachableUntrained = free.Count(w => w.Type == WorkerType.Untrained) + current.Count(w => w.Type == WorkerType.Untrained);
+        if (reachableTrained < trainedCount || reachableUntrained < untrainedCount) return false;
+        ReleaseWorkersFromBuilding(buildingId);
+        List<Worker> pool = GetAvailableWorkers();
+        foreach (Worker w in pool.Where(w => w.Type == WorkerType.Trained).Take(trainedCount)) w.TryAssignToBuilding(buildingId);
+        foreach (Worker w in pool.Where(w => w.Type == WorkerType.Untrained).Take(untrainedCount)) w.TryAssignToBuilding(buildingId);
+        return true;
+    }
+
+    public bool TryReassignWorkerCountToBuilding(int buildingId, int workerCount)
+    {
+        if (workerCount < 0) return false;
+
+        List<Worker> currentWorkers = GetWorkersByBuildingId(buildingId);
+        List<Worker> availableWorkers = GetAvailableWorkers();
+
+        // After releasing this building's workers they rejoin the free pool, so the
+        // reachable pool is (currently free) + (currently on this building).
+        if (availableWorkers.Count + currentWorkers.Count < workerCount)
+        {
+            Debug.LogWarning($"Not enough workers to staff building {buildingId} with {workerCount}. Reachable: {availableWorkers.Count + currentWorkers.Count}");
+            return false;
+        }
+
+        ReleaseWorkersFromBuilding(buildingId);
+
+        List<Worker> pool = GetAvailableWorkers();
+        List<Worker> ordered = pool.Where(w => w.Type == WorkerType.Trained)
+            .Concat(pool.Where(w => w.Type == WorkerType.Untrained))
+            .ToList();
+
+        for (int i = 0; i < workerCount && i < ordered.Count; i++)
+        {
+            ordered[i].TryAssignToBuilding(buildingId);
+        }
+
+        Debug.Log($"Reassigned {Mathf.Min(workerCount, ordered.Count)} workers to building {buildingId}");
+        return true;
+    }
+
     public void ReleaseWorkersFromBuilding(int buildingId)
     {
         List<Worker> buildingWorkers = GetWorkersByBuildingId(buildingId);
@@ -218,8 +274,12 @@ public class WorkerSystem : MonoBehaviour
         {
             worker.ReleaseFromBuilding();
         }
-        GameLogPanel.Instance.LogWorkerAction($"Released {buildingWorkers.Count} workers from building {buildingId}");
-        Debug.Log($"Released {buildingWorkers.Count} workers from building {buildingId}");
+
+        if (buildingWorkers.Count > 0)
+        {
+            GameLogPanel.Instance.LogWorkerAction($"Released {buildingWorkers.Count} workers from building {buildingId}");
+            Debug.Log($"Released {buildingWorkers.Count} workers from building {buildingId}");
+        }
     }
     
     // Worker retrieval methods
@@ -230,6 +290,46 @@ public class WorkerSystem : MonoBehaviour
     public List<Worker> GetWorkersByBuildingId(int buildingId) { return allWorkers.Where(w => w.AssignedBuildingId == buildingId).ToList(); }
     
     // Statistics methods
+    /// <summary>Snapshot support: the roster plus the id counter and the per-day hire
+    /// tallies. Rebuilding the roster wholesale (rather than diffing) keeps ids stable,
+    /// which matters because buildings reference workers by assignedBuildingId.</summary>
+    [System.Serializable]
+    public class Snapshot
+    {
+        public List<Worker.Snapshot> workers = new List<Worker.Snapshot>();
+        public int nextWorkerId;
+        public int newWorkersHiredToday;
+        public List<int> hiredDays = new List<int>();
+        public List<int> hiredCounts = new List<int>();
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot { nextWorkerId = nextWorkerId, newWorkersHiredToday = newWorkersHiredToday };
+        foreach (var w in allWorkers) if (w != null) s.workers.Add(w.CaptureState());
+        foreach (var kv in newWorkersHiredEachDay) { s.hiredDays.Add(kv.Key); s.hiredCounts.Add(kv.Value); }
+        return s;
+    }
+
+    public void RestoreState(Snapshot s)
+    {
+        if (s == null) return;
+        allWorkers.Clear();
+        foreach (var ws in s.workers)
+        {
+            if (ws == null) continue;
+            var type = ws.workerType == "Trained" ? WorkerType.Trained : WorkerType.Untrained;
+            var w = new Worker(ws.workerId, type);
+            w.RestoreState(ws);
+            allWorkers.Add(w);
+        }
+        nextWorkerId = s.nextWorkerId;
+        newWorkersHiredToday = s.newWorkersHiredToday;
+        newWorkersHiredEachDay.Clear();
+        for (int i = 0; i < s.hiredDays.Count && i < s.hiredCounts.Count; i++)
+            newWorkersHiredEachDay[s.hiredDays[i]] = s.hiredCounts[i];
+    }
+
     public WorkerStatistics GetWorkerStatistics()
     {
         WorkerStatistics stats = new WorkerStatistics();
@@ -271,6 +371,13 @@ public class WorkerSystem : MonoBehaviour
     {
         int totalWorkers = allWorkers.Count;
         int idleWorkers = allWorkers.Count(w => w.IsAvailable);
+        return totalWorkers > 0 ? (float)idleWorkers / totalWorkers * 100 : 0;
+    }
+
+    public float GetIdleUntrainedWorkerPercentage()
+    {
+        int totalWorkers = GetUntrainedWorkersCount();
+        int idleWorkers = GetAvailableUntrainedWorkers();
         return totalWorkers > 0 ? (float)idleWorkers / totalWorkers * 100 : 0;
     }
 
@@ -374,7 +481,7 @@ public class WorkerStatistics
     public int untrainedNotArrived = 0;
     
     public int GetTotalTrained() { return trainedWorking + trainedFree + trainedNotArrived; }
-    public int GetTotalUntrained() { return untrainedWorking + untrainedFree + untrainedTraining; }
+    public int GetTotalUntrained() { return untrainedWorking + untrainedFree + untrainedTraining + untrainedNotArrived; }
     public int GetTotalWorkers() { return GetTotalTrained() + GetTotalUntrained(); }
     public int GetAvailableWorkforce() { return (trainedFree * 2) + untrainedFree; }
 }

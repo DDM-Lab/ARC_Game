@@ -1,0 +1,28 @@
+{
+  "manifest": {
+    "name": "testkit/W3",
+    "author": "cpulling",
+    "version": "1.0.0",
+    "cora_api_version": "1.0",
+    "description": "empty subaction_space => can never act"
+  },
+  "config": {
+    "agent_order_rule": "sequential",
+    "agents": [
+      {
+        "subagent_name": "Player",
+        "role": "director",
+        "actor_type": "manual"
+      },
+      {
+        "subagent_name": "Food Mass Care Officer",
+        "role": "subagent",
+        "actor_type": "continuous",
+        "provider": "anthropic-ddmlab",
+        "llm_model": "claude-sonnet-5",
+        "talkinghead_endpoint": "FoodMassCare",
+        "subaction_space": []
+      }
+    ]
+  }
+}

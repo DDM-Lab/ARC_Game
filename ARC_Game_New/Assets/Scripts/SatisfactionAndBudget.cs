@@ -8,18 +8,29 @@ public class SatisfactionAndBudget : MonoBehaviour
 {
     [Header("Satisfaction Settings")]
     [Range(0f, 100f)]
-    public float currentSatisfaction = 50f;
-    public float maxSatisfaction = 100f;
+    public float currentSatisfaction = 0f;
+    public float maxSatisfaction = 1000f;
     public float minSatisfaction = 0f;
-    
+
     [Header("Efficiency Settings")]
     public float currentEfficiency = 0f;
+    public float minEfficiency = 0f;
+    public float maxEfficiency = 1000f;   
 
     [Header("Budget Settings")]
     public int currentBudget = 10000;
     public int maxBudget = 999999;
     public int minBudget = -999999;
-    
+
+    [Tooltip("When true (default, game-wide rule), discretionary spending — construction, hiring, training, and costly task choices — is ALLOWED to drive the budget negative: overspending is not blocked, it is penalized in the reward (cost-efficiency score component). When false, discretionary spending is rejected before it executes if the budget can't cover it (the old no-debt policy). Passive charges (motel upkeep, task-failure penalties) always apply either way. Overridable at runtime via the ARC_ALLOW_NEGATIVE_BUDGET env var (0/false/no to restore no-debt).")]
+    public bool allowNegativeBudget = true;
+
+    // True once the initial budget/satisfaction from config (or the fallback) has been
+    // applied to the live fields. Until then, currentBudget/currentSatisfaction still hold
+    // the inspector defaults. Observers (e.g. the gym) should call EnsureConfigApplied()
+    // before reading, so the first observation never reports the stale default.
+    public bool ConfigApplied { get; private set; } = false;
+
     [Header("Amount Presets")]
     public float satisfactionSmallAmount = 5f;
     public float satisfactionMediumAmount = 15f;
@@ -46,8 +57,9 @@ public class SatisfactionAndBudget : MonoBehaviour
     [Header("Config Loading")]
     public bool useExternalConfig = true;
     public GameConfigLoader configLoader;
+ 
 
-    
+
     // Events for other systems to listen to
     public event Action<float> OnSatisfactionChanged;
     public event Action<int> OnBudgetChanged;
@@ -57,11 +69,26 @@ public class SatisfactionAndBudget : MonoBehaviour
     
     void Awake()
     {
+        Debug.Log($"[SAB] Awake on {gameObject.name}, instanceID={GetInstanceID()}, currentSatisfaction={currentSatisfaction}");
         // Singleton setup
         if (Instance == null)
         {
             Instance = this;
             DontDestroyOnLoad(gameObject);
+
+            // Runtime override of the no-debt policy (e.g. RL training). The serialized
+            // field is the default; the env var, if set, wins. Accepts 1/true/yes (on)
+            // and 0/false/no (off).
+            string envNeg = System.Environment.GetEnvironmentVariable("ARC_ALLOW_NEGATIVE_BUDGET");
+            if (!string.IsNullOrEmpty(envNeg))
+            {
+                string v = envNeg.Trim().ToLowerInvariant();
+                if (v == "1" || v == "true" || v == "yes")
+                    allowNegativeBudget = true;
+                else if (v == "0" || v == "false" || v == "no")
+                    allowNegativeBudget = false;
+                Debug.Log($"[Budget] allowNegativeBudget overridden by ARC_ALLOW_NEGATIVE_BUDGET='{envNeg}' -> {allowNegativeBudget}");
+            }
         }
         else
         {
@@ -77,17 +104,45 @@ public class SatisfactionAndBudget : MonoBehaviour
 
     IEnumerator InitializeWithCentralConfig()
     {
-        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+        // Wait for config to load if using external config (GameConfigLoader is the
+        // source of truth for the gym / benchmark / RL stack; falls back to inspector
+        // values when absent). Deliberately kept over main-bugfixes' GameDataManager
+        // path so headless config parity holds.
+        if (useExternalConfig)
         {
-            yield return null;
+            if (configLoader == null)
+                configLoader = GameConfigLoader.Instance;
+
+            if (configLoader != null)
+            {
+                // Wait for config to load (max 10 seconds)
+                float waitTime = 0f;
+                while (!configLoader.IsConfigLoaded() && waitTime < 10f)
+                {
+                    yield return new WaitForSeconds(0.1f);
+                    waitTime += 0.1f;
+                }
+
+                // Apply loaded config (idempotent; shared with EnsureConfigApplied)
+                EnsureConfigApplied();
+                if (!ConfigApplied)
+                    Debug.LogWarning("SatisfactionAndBudget: Config load timeout. Using inspector value.");
+            }
+            else
+            {
+                Debug.LogWarning("SatisfactionAndBudget: GameConfigLoader not found. Using inspector value.");
+            }
         }
 
-        currentBudget = GameDataManager.Instance.InitialBudget;
-        currentSatisfaction = GameDataManager.Instance.InitialSatisfaction;
+        // Mark applied regardless (no external config, missing loader, or load timeout all
+        // fall back to the inspector values) so observers never wait forever.
+        ConfigApplied = true;
 
+        // Original Start() code continues here:
         InitializeValues();
         SetupFeedbackEffects();
         UpdateUI();
+        StartCoroutine(LateRefreshUI());
 
         if (satisfactionSlider != null)
         {
@@ -97,6 +152,50 @@ public class SatisfactionAndBudget : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"SatisfactionAndBudget initialized from DataManager - Budget: {currentBudget}, Sat: {currentSatisfaction}");
         GameLogPanel.Instance.LogMetricsChange($"Global Variables initialized - Satisfaction: {currentSatisfaction:F1}, Budget: {budgetPrefix}{currentBudget}");
+    }
+
+    IEnumerator LateRefreshUI()
+    {
+        float t = 0f;
+        while (t < 2f && (budgetText == null || satisfactionValueText == null || efficiencyValueText == null))
+        {
+            yield return null;
+            t += Time.unscaledDeltaTime;
+        }
+        yield return new WaitForEndOfFrame();
+        ForceRefreshUI();
+    }
+
+    /// <summary>
+    /// Apply the initial budget/satisfaction from config to the live fields if it hasn't
+    /// happened yet. Idempotent and safe to call from anywhere (e.g. the gym before building
+    /// its first observation), so the first reported budget reflects the configured value
+    /// rather than the stale inspector default. No-op once ConfigApplied is true. If external
+    /// config is requested but not yet loaded, this leaves the fields untouched (the Start
+    /// coroutine applies them once the load completes / times out).
+    /// </summary>
+    public void EnsureConfigApplied()
+    {
+        if (ConfigApplied) return;
+
+        if (!useExternalConfig)
+        {
+            ConfigApplied = true;
+            return;
+        }
+
+        if (configLoader == null)
+            configLoader = GameConfigLoader.Instance;
+
+        if (configLoader != null && configLoader.IsConfigLoaded())
+        {
+            currentBudget       = configLoader.GetInitialBudget();
+            currentSatisfaction = configLoader.GetInitialSatisfaction();
+            ConfigApplied       = true;
+            if (showDebugInfo)
+                Debug.Log($"SatisfactionAndBudget: Using config initialBudget = {currentBudget}; initialSatisfaction = {currentSatisfaction}");
+        }
+        // else: external config not ready yet — leave fields as-is; the coroutine will apply.
     }
 
     void SetupFeedbackEffects()
@@ -162,6 +261,10 @@ public class SatisfactionAndBudget : MonoBehaviour
             budgetText.text = budgetPrefix + currentBudget.ToString("N0");
         }
 
+        OnSatisfactionChanged?.Invoke(currentSatisfaction);
+        OnBudgetChanged?.Invoke(currentBudget);
+        OnEfficiencyChanged?.Invoke(currentEfficiency);
+
         UpdateSatisfactionValueText();
         UpdateEfficiencyValueText();
     }
@@ -174,6 +277,11 @@ public class SatisfactionAndBudget : MonoBehaviour
     public void AddSatisfaction(float amount, string description = "")
     {
         float previousValue = currentSatisfaction;
+        // PARITY BUILD (ledger D13): UNCLAMPED, as upstream is. Our clamp to [0,100] is the
+        // right behaviour and it is what stops a 1000-scale delta from wrecking the metric, but
+        // upstream lets satisfaction run past its own maximum — a seeded upstream episode reads
+        // 313.33 on a 0-100 field by the first round. Version 2 has to reproduce that to be
+        // comparable at all.
         currentSatisfaction += amount;
 
         // Use default description if none provided
@@ -315,32 +423,61 @@ public class SatisfactionAndBudget : MonoBehaviour
     }
 
     // ===== EFFICIENCY METHODS =====
-
+    public event Action<float> OnEfficiencyChanged;
     /// <summary>
     /// Add resource allocation efficiency score (called by DailyReportUI at end of day).
     /// </summary>
     public void AddEfficiency(float amount, string description = "")
     {
         float previousValue = currentEfficiency;
-        currentEfficiency += amount;
+        currentEfficiency = Mathf.Clamp(currentEfficiency + amount, minEfficiency, maxEfficiency); // was: currentEfficiency += amount;
 
-        // Show feedback effects
+        if (string.IsNullOrEmpty(description))
+            description = GetDefaultEfficiencyDescription(amount);
+
+        if (MetricsHistoryManager.Instance != null)
+            MetricsHistoryManager.Instance.RecordResourceEfficiencyChange(amount, description);
+
         if (feedbackEffects != null && Mathf.Abs(amount) > 0.01f)
-        {
             feedbackEffects.ShowEfficiencyChange(previousValue, currentEfficiency);
-        }
 
-        // Update text directly; slider is animated by feedback effects
         UpdateEfficiencyValueText();
         if (feedbackEffects == null && efficiencySlider != null)
             efficiencySlider.value = currentEfficiency;
+
+        OnEfficiencyChanged?.Invoke(currentEfficiency);   // NEW
 
         if (showDebugInfo)
             Debug.Log($"Efficiency: {previousValue:F1} → {currentEfficiency:F1} ({amount:+0.0;-0.0}) - {description}");
         GameLogPanel.Instance?.LogMetricsChange($"Efficiency: {previousValue:F1} → {currentEfficiency:F1} ({amount:+0.0;-0.0}) - {description}");
     }
 
+    private string GetDefaultEfficiencyDescription(float amount)
+    {
+        int currentRound = (GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentTimeSegment() : 1) + 1;
+        if (amount > 0) return $"Round {currentRound} - Efficiency gain";
+        if (amount < 0) return $"Round {currentRound} - Efficiency loss";
+        return $"Round {currentRound}";
+    }
+
     public float GetCurrentEfficiency() => currentEfficiency;
+
+    /// <summary>
+    /// Set efficiency to an absolute 0-100 value (clamped). Mirrors SetSatisfaction —
+    /// used by the daily report to write the live cost-efficiency score on its native
+    /// scale instead of pushing a display-scale delta through AddEfficiency.
+    /// </summary>
+    public void SetEfficiency(float value)
+    {
+        float previousValue = currentEfficiency;
+        currentEfficiency = Mathf.Clamp(value, 0f, 100f);
+        UpdateEfficiencyValueText();
+        if (feedbackEffects == null && efficiencySlider != null)
+            efficiencySlider.value = currentEfficiency;
+        if (showDebugInfo)
+            Debug.Log($"Efficiency: {previousValue:F1} → {currentEfficiency:F1} (set)");
+        GameLogPanel.Instance?.LogMetricsChange($"Efficiency: {previousValue:F1} → {currentEfficiency:F1} (set)");
+    }
 
     // ===== BUDGET METHODS =====
 
@@ -403,6 +540,53 @@ public class SatisfactionAndBudget : MonoBehaviour
     /// </summary>
     public void RemoveBudget(int amount, string description = "")
     {
+        AddBudget(-amount, description);
+    }
+
+    // ── Cumulative spend by category (for the cost-efficiency reward metric) ──
+    public enum SpendCategory { Other, Food, Lodging, Worker, Casework }
+    private int cumFoodSpend = 0, cumLodgingSpend = 0, cumWorkerSpend = 0, cumCaseworkSpend = 0;
+    public int CumulativeFoodSpend => cumFoodSpend;
+    public int CumulativeLodgingSpend => cumLodgingSpend;
+    public int CumulativeWorkerSpend => cumWorkerSpend;
+    public int CumulativeCaseworkSpend => cumCaseworkSpend;
+
+    /// <summary>Snapshot support: the cumulative spend accumulators are private and are
+    /// the denominator of every cost-efficiency term, so a restore must put them back.</summary>
+    [System.Serializable]
+    public class SpendSnapshot
+    {
+        public int food, lodging, worker, casework;
+    }
+
+    public SpendSnapshot CaptureSpend() => new SpendSnapshot
+    {
+        food = cumFoodSpend, lodging = cumLodgingSpend,
+        worker = cumWorkerSpend, casework = cumCaseworkSpend,
+    };
+
+    public void RestoreSpend(SpendSnapshot s)
+    {
+        if (s == null) return;
+        cumFoodSpend = s.food; cumLodgingSpend = s.lodging;
+        cumWorkerSpend = s.worker; cumCaseworkSpend = s.casework;
+    }
+
+    /// <summary>
+    /// Spend attributed to a service category so Python can compute cost
+    /// efficiency. Food = kitchen construction + food-choice costs; Lodging =
+    /// shelter construction + motel charges + lodging-choice costs; Worker =
+    /// request + training costs. Everything else stays Other (excluded).
+    /// </summary>
+    public void RemoveBudget(int amount, SpendCategory category, string description = "")
+    {
+        if (amount > 0)
+        {
+            if (category == SpendCategory.Food) cumFoodSpend += amount;
+            else if (category == SpendCategory.Lodging) cumLodgingSpend += amount;
+            else if (category == SpendCategory.Worker) cumWorkerSpend += amount;
+            else if (category == SpendCategory.Casework) cumCaseworkSpend += amount;
+        }
         AddBudget(-amount, description);
     }
     
@@ -477,7 +661,21 @@ public class SatisfactionAndBudget : MonoBehaviour
     {
         return currentBudget >= cost;
     }
-    
+
+    /// <summary>
+    /// Whether a discretionary spend of <paramref name="cost"/> is permitted right now.
+    /// Honors the no-debt policy: when allowNegativeBudget is false, the spend is only
+    /// permitted if the budget can cover it (CanAfford); when true, it is always permitted
+    /// (the budget is allowed to go negative, e.g. for RL). This is the single gate that
+    /// all discretionary spend sites (construction, hiring, training, costly task choices)
+    /// should consult before charging. Passive charges (motel upkeep, task-failure
+    /// penalties) must NOT use this gate — they always apply.
+    /// </summary>
+    public bool WouldAllowSpend(int cost)
+    {
+        return allowNegativeBudget || CanAfford(cost);
+    }
+
     /// <summary>
     /// Try to spend budget (returns true if successful)
     /// </summary>
@@ -494,6 +692,8 @@ public class SatisfactionAndBudget : MonoBehaviour
         GameLogPanel.Instance.LogDebug($"Cannot afford {budgetPrefix}{cost:N0} - Current budget: {budgetPrefix}{currentBudget:N0}");
         return false;
     }
+
+    //=
     
     // ===== GETTER METHODS =====
     

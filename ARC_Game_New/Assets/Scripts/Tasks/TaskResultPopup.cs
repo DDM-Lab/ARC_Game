@@ -64,7 +64,7 @@ public class TaskResultPopup : MonoBehaviour
         }
         
         if (taskTitleText != null)
-            taskTitleText.text = task.taskTitle;
+            taskTitleText.text = task.ResolvePlaceholders(task.taskTitle);
         
         if (facilityText != null)
         {
@@ -233,6 +233,7 @@ public class TaskResultPopup : MonoBehaviour
         if (taskDetailUI != null)
         {
             taskDetailUI.ShowTaskDetail(currentTask);
+            GameLogPanel.Instance?.LogUIInteraction($"Player opened task detail from result popup for '{currentTask.taskTitle}'");
         }
         else
         {

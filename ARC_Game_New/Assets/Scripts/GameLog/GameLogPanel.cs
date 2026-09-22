@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Networking;
 using TMPro;
 using System.Linq;
 using System;
@@ -71,9 +72,38 @@ public class LogExportData
     public string exportTime;
     public int totalMessages;
 
+    // ── Episode reproduction ──
+    // The random state the episode started from (see EpisodeReproLog). With the build id
+    // and the parameters below, this is everything needed to reproduce the scenario.
+    public string rngState;
+    public string buildGuid;
+
     // ── Environment Config ──
+    // The full parameter set, not just budget/satisfaction: a replay under a different sheet
+    // silently produces a different game, and the difference is invisible after the fact.
     public int initialBudget;
     public int initialSatisfaction;
+    public int initialCommunityCount;
+    public int initialResidentsPerCommunity;
+    public int initialNumDays;
+    public int initialRoundsPerDay;
+    public int initialTrainedVolunteers;
+    public int initialUntrainedVolunteers;
+    public int initialBudgetDailyAdditions;
+    public string initialWeather;
+    public int initialKitchenCapacity;
+    public int initialShelterCapacity;
+    public int initialCaseworkCapacity;
+    public int initialNeededWorkersPerLoc;
+    public float initialFoodDemandFrequency;
+    public int initialERVCount;
+    public int initialExternalRelationFrequency;
+    public int initialEmergencyTaskFrequency;
+    public int initialShelterFloodThreshold;
+    public int initialShelterFloodRadius;
+    public string initialShelterFloodComparison;
+    public float[] floodExpansionRates;      // sunny, smallRain, mediumRain, heavyRain, storm
+    public float[] floodSpreadMultipliers;   // same order
 
     public List<LogMessage> messages;
 
@@ -118,12 +148,33 @@ public class GameLogPanel : MonoBehaviour
     private Queue<string> displayQueue = new Queue<string>();
     private bool isDisplayingMessage = false;
 
-    private LogMessageType currentTypeFilter = LogMessageType.Normal;
+    // private LogMessageType currentTypeFilter = LogMessageType.Normal; // Reserved for future filtering
     private LogCategory currentCategoryFilter = LogCategory.All;
     private int currentTimePeriodFilter = 0;
 
     public static GameLogPanel Instance { get; private set; }
     public static bool IsDisplayingText { get; private set; } = false;
+
+    // Standalone on/off switch for the log pipeline (collection + sending), read
+    // directly from config.json's "dataCollectionEnabled" field. Deliberately
+    // independent of WebSocketManager/config loading, since that's toggled on/off
+    // for the LLM connection and shouldn't control whether we collect game logs.
+    // Defaults to true (collect) until the config finishes loading, and stays true
+    // if config.json is missing the field or fails to load.
+    public static bool DataCollectionEnabled { get; private set; } = true;
+
+    [System.Serializable]
+    private class DataCollectionConfig
+    {
+        public bool dataCollectionEnabled = true;
+    }
+
+    // Set on OnApplicationQuit (fires before the object-teardown cascade begins, both on a
+    // real quit and when stopping Play mode in the Editor). Guards AddLogMessage so nothing
+    // tries StartCoroutine on a component that's mid-destruction — Instance?.LogXxx(...) call
+    // sites elsewhere don't reliably short-circuit on a destroyed-but-not-yet-null Unity Object
+    // via the ?. operator, so the guard has to live here rather than at each call site.
+    private static bool isQuitting = false;
 
     private void Awake()
     {
@@ -137,11 +188,23 @@ public class GameLogPanel : MonoBehaviour
         }
     }
 
+    private void OnApplicationQuit()
+    {
+        isQuitting = true;
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+            Instance = null;
+    }
+
     private void Start()
     {
         InitializeUI();
         SetupDropdowns();
         RefreshDisplay();
+        StartCoroutine(LoadDataCollectionSetting());
         LogPlayerAction("Game started");
     }
 
@@ -182,6 +245,29 @@ public class GameLogPanel : MonoBehaviour
         }
     }
 
+    IEnumerator LoadDataCollectionSetting()
+    {
+        string configPath = Application.streamingAssetsPath + "/config.json";
+        using (UnityWebRequest req = UnityWebRequest.Get(configPath))
+        {
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                var config = JsonUtility.FromJson<DataCollectionConfig>(req.downloadHandler.text);
+                if (config != null)
+                {
+                    DataCollectionEnabled = config.dataCollectionEnabled;
+                    Debug.Log($"[GameLogPanel] Data collection {(DataCollectionEnabled ? "enabled" : "disabled")} (from config.json)");
+                }
+            }
+            else
+            {
+                Debug.Log("[GameLogPanel] config.json not found - data collection stays enabled by default.");
+            }
+        }
+    }
+
     #region Public Logging Methods
 
     public void LogBuildingStatus(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.Buildings);
@@ -196,10 +282,31 @@ public class GameLogPanel : MonoBehaviour
     public void LogError(string message) => AddLogMessage(message, LogMessageType.Error, LogCategory.Player);
     public void LogUIInteraction(string message) => AddLogMessage(message, LogMessageType.Normal, LogCategory.UI);
 
+    /// <summary>
+    /// Structured UI interaction: logs locally AND forwards a semantic
+    /// ui_interaction event to the router (per-actor unified log), correlated to
+    /// the current click via GuiInteractionRecorder.LastClickSeq. Use this for
+    /// decision-support interactions (open agent conversation, switch officer,
+    /// select/switch a choice package, confirm, open metrics, inspect facility).
+    /// </summary>
+    public void LogUIInteraction(string category, string name, string detail = null)
+    {
+        AddLogMessage(detail != null ? $"{name} | {detail}" : name,
+                      LogMessageType.Normal, LogCategory.UI);
+        WebSocketManager.Instance?.SendClientEvent(
+            category, name, detail, GuiInteractionRecorder.LastClickSeq);
+    }
+
     #endregion
 
     void AddLogMessage(string content, LogMessageType type, LogCategory category)
     {
+        if (isQuitting)
+            return;
+
+        if (!DataCollectionEnabled)
+            return;
+
         if (type == LogMessageType.Debug && !enableDebugMessages)
             return;
 
@@ -297,11 +404,19 @@ public class GameLogPanel : MonoBehaviour
                 logText.text = string.Join("\n", lines.Skip(lines.Length - maxDisplayedMessages));
             }
 
-            logText.ForceMeshUpdate();
-
-            if (contentRect != null)
+            // Only update mesh if logText has valid font/material references
+            if (logText != null && logText.font != null)
             {
-                contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+                logText.ForceMeshUpdate();
+
+                if (contentRect != null)
+                {
+                    contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+                }
+            }
+            else if (logText != null)
+            {
+                Debug.LogWarning("[GameLogPanel] TextMeshPro component missing font asset. Skipping mesh update.");
             }
 
             if (autoScrollToBottom && scrollRect != null)
@@ -329,13 +444,14 @@ public class GameLogPanel : MonoBehaviour
 
     void OnMessageTypeFilterChanged(int value)
     {
-        switch (value)
-        {
-            case 0: currentTypeFilter = LogMessageType.Normal; break;
-            case 1: currentTypeFilter = LogMessageType.Normal; break;
-            case 2: currentTypeFilter = LogMessageType.Debug; break;
-            case 3: currentTypeFilter = LogMessageType.Error; break;
-        }
+        // Type filtering currently not implemented
+        // switch (value)
+        // {
+        //     case 0: currentTypeFilter = LogMessageType.Normal; break;
+        //     case 1: currentTypeFilter = LogMessageType.Normal; break;
+        //     case 2: currentTypeFilter = LogMessageType.Debug; break;
+        //     case 3: currentTypeFilter = LogMessageType.Error; break;
+        // }
         RefreshDisplay();
     }
 
@@ -366,11 +482,15 @@ public class GameLogPanel : MonoBehaviour
             logText.text += formattedMessage + "\n";
         }
 
-        logText.ForceMeshUpdate();
-
-        if (contentRect != null)
+        // Only update mesh if logText has valid font/material references
+        if (logText != null && logText.font != null)
         {
-            contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+            logText.ForceMeshUpdate();
+
+            if (contentRect != null)
+            {
+                contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, logText.preferredHeight + 20);
+            }
         }
 
         if (autoScrollToBottom && scrollRect != null)
@@ -425,11 +545,49 @@ public class GameLogPanel : MonoBehaviour
 
         LogExportData exportData = new LogExportData(messagesToExport);
 
+        // Inject the episode's random state (captured before the scene loaded)
+        exportData.rngState  = EpisodeReproLog.RngStateJson;
+        exportData.buildGuid = EpisodeReproLog.BuildGuid;
+
         // Inject environment config
         if (GameConfigLoader.Instance != null)
         {
-            exportData.initialBudget      = GameConfigLoader.Instance.GetInitialBudget();
-            exportData.initialSatisfaction = GameConfigLoader.Instance.GetInitialSatisfaction();
+            GameConfigLoader c = GameConfigLoader.Instance;
+            exportData.initialBudget      = c.GetInitialBudget();
+            exportData.initialSatisfaction = c.GetInitialSatisfaction();
+            exportData.initialCommunityCount        = c.GetInitialCommunityCount();
+            exportData.initialResidentsPerCommunity = c.GetInitialResidentCountPerCommunity();
+            exportData.initialNumDays               = c.GetInitialNumDays();
+            exportData.initialRoundsPerDay          = c.GetInitialNumRoundsPerGame();
+            exportData.initialTrainedVolunteers     = c.GetInitialTrainedVolunteerCount();
+            exportData.initialUntrainedVolunteers   = c.GetInitialUntrainedVolunteerCount();
+            exportData.initialBudgetDailyAdditions  = c.GetInitialBudgetDailyAdditions();
+            exportData.initialWeather               = c.GetInitialWeather().ToString();
+            exportData.initialKitchenCapacity       = c.GetInitialKitchenCapacity();
+            exportData.initialShelterCapacity       = c.GetInitialShelterCapacity();
+            exportData.initialCaseworkCapacity      = c.GetInitialCaseworkCapacity();
+            exportData.initialNeededWorkersPerLoc   = c.GetInitialNeededWorkersPerLoc();
+            exportData.initialFoodDemandFrequency   = c.GetInitialFoodDemandFrequency();
+            exportData.initialERVCount              = c.GetInitialERVCount();
+            exportData.initialExternalRelationFrequency = c.GetInitialExternalRelationFrequency();
+            exportData.initialEmergencyTaskFrequency    = c.GetInitialEmergencyTaskFrequency();
+            exportData.initialShelterFloodThreshold  = c.GetInitialShelterFloodThreshold();
+            exportData.initialShelterFloodRadius     = c.GetInitialShelterFloodRadius();
+            exportData.initialShelterFloodComparison = c.GetInitialShelterFloodComparison().ToString();
+            exportData.floodExpansionRates = new[] {
+                c.GetInitialSunnyFloodExpansionRate(),
+                c.GetInitialSmallRainFloodExpansionRate(),
+                c.GetInitialMediumRainFloodExpansionRate(),
+                c.GetInitialHeavyRainFloodExpansionRate(),
+                c.GetInitialStormFloodExpansionRate(),
+            };
+            exportData.floodSpreadMultipliers = new[] {
+                c.GetInitialSunnyFloodSpreadChanceMultiplier(),
+                c.GetInitialSmallRainFloodSpreadChanceMultiplier(),
+                c.GetInitialMediumRainFloodSpreadChanceMultiplier(),
+                c.GetInitialHeavyRainFloodSpreadChanceMultiplier(),
+                c.GetInitialStormFloodSpreadChanceMultiplier(),
+            };
         }
 
         return JsonUtility.ToJson(exportData, true);
@@ -550,8 +708,8 @@ public class GameLogPanel : MonoBehaviour
     {
         LogBuildingStatus("Kitchen started food production");
         LogBuildingStatus("Shelter damaged by flood");
-        LogResourceChange("Produced 10 food packs");
-        LogResourceChange("Consumed 5 food packs");
+        LogResourceChange("Produced 10 meals");
+        LogResourceChange("Consumed 5 meals");
         LogWorkerAction("Assigned 2 trained workers to Kitchen");
         LogWorkerAction("Worker training completed");
         LogTaskEvent("Emergency food task completed");

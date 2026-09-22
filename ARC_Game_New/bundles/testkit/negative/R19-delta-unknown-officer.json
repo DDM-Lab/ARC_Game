@@ -1,0 +1,17 @@
+{
+  "manifest": {
+    "name": "testkit/R19",
+    "author": "cpulling",
+    "version": "1.0.0",
+    "cora_api_version": "1.0",
+    "description": "delta targets a non-existent officer"
+  },
+  "delta": {
+    "agents": [
+      {
+        "subagent_name": "Ghost Officer",
+        "system_prompt": "x"
+      }
+    ]
+  }
+}

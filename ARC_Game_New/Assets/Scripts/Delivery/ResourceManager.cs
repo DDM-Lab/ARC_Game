@@ -288,7 +288,7 @@ public class ResourceManager : MonoBehaviour
             case ResourceType.Population:
                 return "People";
             case ResourceType.FoodPacks:
-                return "Food Packs";
+                return "Meals";
             default:
                 return type.ToString();
         }

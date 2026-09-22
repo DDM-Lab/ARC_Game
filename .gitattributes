@@ -15,6 +15,15 @@
 *.RTF	 diff=astextplain
 
 # ------------------------
+# Unity smart merge (each teammate must also run:
+# git config merge.unityyamlmerge.driver "'<path-to-UnityYAMLMerge.exe>' merge -p %O %B %A %A"
+# — the driver path is machine-specific and isn't stored in this file)
+#-------------------------
+*.unity merge=unityyamlmerge -text
+*.prefab merge=unityyamlmerge -text
+*.asset merge=unityyamlmerge -text
+
+# ------------------------
 # LFS
 #-------------------------
 # libraries and packages

@@ -93,8 +93,28 @@ public class RoadConnection : MonoBehaviour
             return transform.position;
         }
         
+        // Dumped once per building so the port can resolve facility -> grid cell without
+        // replicating collider geometry. A building placed mid-episode gets its cell the
+        // first time a vehicle is routed to it, which is exactly when the port needs it.
+        if (!_dumpedConnection)
+        {
+            _dumpedConnection = true;
+            // The TRANSFORM position as well as the road cell. CalculateVehicleSuitability
+            // scores against task.GetSourcePosition(), which is sourceBuilding.transform
+            // .position -- NOT this road connection point. The two differ by the
+            // building-to-road offset, and that offset is what decides which vehicle wins a
+            // dispatch when two are a similar distance out. The port had only the cell, so it
+            // scored against the wrong point and picked the wrong vehicle.
+            Vector3 bp = transform.position;
+            SnapshotDebug.MarkContext("road:connection", "{\"building\":\"" + gameObject.name
+                + "\",\"cell\":[" + nearestRoadPosition.x + "," + nearestRoadPosition.y + "]"
+                + ",\"pos\":[" + bp.x.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)
+                + "," + bp.y.ToString("F4", System.Globalization.CultureInfo.InvariantCulture) + "]}");
+        }
         return roadManager.CellToWorld(nearestRoadPosition);
     }
+
+    private bool _dumpedConnection = false;
     
     /// <summary>
     /// Check if building can be used for operations (requires road connection)

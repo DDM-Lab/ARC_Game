@@ -27,6 +27,12 @@ public class Vehicle : MonoBehaviour
     [Header("Visual Components")]
     public SpriteRenderer vehicleRenderer;
     public GameObject cargoIndicator; // Visual indicator of cargo
+    public SpriteRenderer glowIndicator; // color coded status
+
+    [Header("Glow State Colors")]
+    public Color availableGlowColor = new Color(0f, 1f, 0.2f, 1f);   // Green
+    public Color activeGlowColor = new Color(1f, 0.8f, 0f, 1f);      // Yellow
+    public Color damagedGlowColor = new Color(1f, 0.1f, 0.1f, 1f);   // Red
 
     [Header("Vehicle Direction")]
     public bool enableDirectionRotation = true;
@@ -63,9 +69,13 @@ public class Vehicle : MonoBehaviour
 
     // Movement
     private Coroutine movementCoroutine;
+    private Coroutine deliveryCoroutine;   // the one ExecuteDeliveryTask alive on this vehicle
+    private bool loadAborted = false;      // set by LoadCargo when the source had nothing; unwound by ExecuteDeliveryTask
 
     // Events
     public event Action<Vehicle, DeliveryTask> OnDeliveryCompleted;
+    /// <summary>Raised when a delivery ends WITHOUT landing cargo (abort, cancel, flood). Nothing is credited.</summary>
+    public event Action<Vehicle, DeliveryTask, string> OnDeliveryCancelled;
     public event Action<Vehicle, VehicleStatus> OnStatusChanged;
     public event Action<Vehicle> OnCargoChanged;
 
@@ -78,15 +88,62 @@ public class Vehicle : MonoBehaviour
         {
             VehicleUIOverlay.Instance.RegisterVehicle(this);
         }
-        
+
         // Ensure collider exists for click detection
         if (GetComponent<Collider2D>() == null)
         {
             CircleCollider2D collider = gameObject.AddComponent<CircleCollider2D>();
             collider.radius = 0.5f;
         }
-
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnDayChanged += OnDayChanged;
+            GlobalClock.Instance.OnSimulationEnded += OnSimulationEndedCheckEndOfDayWaste; // NEW
+        }
     }
+
+    private bool wasteRecordedToday = false;
+
+    void OnSimulationEndedCheckEndOfDayWaste()
+    {
+        if (GlobalClock.Instance == null || !GlobalClock.Instance.isWaitingForReport) return;
+        if (wasteRecordedToday) return;
+
+        int loadedFood = currentCargo.TryGetValue(ResourceType.FoodPacks, out int amount) ? amount : 0;
+        if (loadedFood > 0 && DailyReportData.Instance != null)
+        {
+            DailyReportData.Instance.RecordFoodWasted(loadedFood);
+            DailyReportData.Instance.RecordFoodWasteCumulative(loadedFood);
+
+            if (showDebugInfo)
+                Debug.Log($"Vehicle {vehicleName} logged {loadedFood} in-transit meals as today's waste (still shown loaded until day change)");
+            GameLogPanel.Instance?.LogResourceChange($"Vehicle {vehicleName} logged {loadedFood} in-transit meals as today's waste");
+        }
+        wasteRecordedToday = true;
+    }
+    ///// <summary>
+    ///// Food must not carry over between days. A vehicle mid-delivery when the day rolls over
+    ///// still has FoodPacks loaded — waste it here (Population cargo is unaffected; people don't
+    ///// "expire"). The delivery itself is left alone: it will simply unload 0 food on arrival.
+    ///// </summary>
+    void OnDayChanged(int newDay)
+    {
+        wasteRecordedToday = false; 
+
+        int loadedFood = currentCargo.TryGetValue(ResourceType.FoodPacks, out int amount) ? amount : 0;
+        if (loadedFood <= 0) return;
+
+        currentCargo[ResourceType.FoodPacks] = 0;
+
+        if (showDebugInfo)
+            Debug.Log($"Vehicle {vehicleName} cleared {loadedFood} wasted in-transit meals at day change");
+        GameLogPanel.Instance?.LogResourceChange($"Vehicle {vehicleName} cleared {loadedFood} wasted in-transit meals at day change");
+
+        OnCargoChanged?.Invoke(this);
+    }
+
+
+
 
     public ResourceType GetPrimaryCargoType()
     {
@@ -161,8 +218,12 @@ public class Vehicle : MonoBehaviour
         sourceBuilding = task.sourceBuilding;
         destinationBuilding = task.destinationBuilding;
 
-        // Start the delivery process
-        StartCoroutine(ExecuteDeliveryTask());
+        // Start the delivery process. Exactly one ExecuteDeliveryTask may be alive per vehicle:
+        // a previous run that is still suspended would otherwise resume against THIS task and
+        // race it down the same path (two coroutines advancing one currentPathIndex).
+        if (deliveryCoroutine != null) StopCoroutine(deliveryCoroutine);
+        loadAborted = false;
+        deliveryCoroutine = StartCoroutine(ExecuteDeliveryTask());
 
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} assigned delivery task: {task.quantity} {task.cargoType} from {sourceBuilding.name} to {destinationBuilding.name}");
@@ -170,34 +231,173 @@ public class Vehicle : MonoBehaviour
         return true;
     }
 
+    // ── save / restore ────────────────────────────────────────────────────────────────
+    //
+    // A vehicle mid-leg is the NORMAL case for a save, not an edge one: a save is taken in
+    // the planning pause and legs routinely span round boundaries. Without this, a restored
+    // game silently idles every vehicle, its cargo evaporates, and the parent task waits
+    // forever for a delivery that will never land.
+    [System.Serializable]
+    public class Snapshot
+    {
+        public string vehicleName;
+        public Vector3 position;
+        public string status;                 // VehicleStatus
+        public bool isDamaged;
+        public int currentTaskId = -1;        // DeliveryTask.taskId, re-linked on restore
+        // WHETHER THE VEHICLE IS ACTUALLY MID-DELIVERY. `currentTask` is NOT cleared when a
+        // delivery completes -- an Idle vehicle with nothing aboard still reports a stale
+        // task (observed: status Idle, currentTaskId 0, no cargo) -- so the id alone cannot
+        // distinguish "carrying delivery 0" from "finished long ago". Status is what decides.
+        public bool onDelivery;
+        public int step = 1;                  // where ExecuteDeliveryTask resumes
+        public List<string> cargoTypes = new List<string>();
+        public List<int> cargoAmounts = new List<int>();
+    }
+
+    public Snapshot CaptureState()
+    {
+        var s = new Snapshot
+        {
+            vehicleName   = vehicleName,
+            position      = transform.position,
+            status        = currentStatus.ToString(),
+            isDamaged     = isDamaged,
+            currentTaskId = currentTask != null ? currentTask.taskId : -1,
+            onDelivery    = currentTask != null && IsDeliveringStatus(currentStatus),
+            step          = CurrentStep(),
+        };
+        foreach (var kv in currentCargo)
+        {
+            if (kv.Value <= 0) continue;
+            s.cargoTypes.Add(kv.Key.ToString());
+            s.cargoAmounts.Add(kv.Value);
+        }
+        return s;
+    }
+
+    /// <summary>Which ExecuteDeliveryTask step this vehicle is inside, from the state that
+    /// is actually observable. Cargo aboard is what separates "driving to the source" from
+    /// "driving to the destination" -- both are InTransit.</summary>
+    static bool IsDeliveringStatus(VehicleStatus st) =>
+        st == VehicleStatus.InTransit || st == VehicleStatus.Loading || st == VehicleStatus.Unloading;
+
+    int CurrentStep()
+    {
+        if (currentTask == null) return 1;
+        bool loaded = false;
+        foreach (var kv in currentCargo) if (kv.Value > 0) { loaded = true; break; }
+        switch (currentStatus)
+        {
+            case VehicleStatus.Loading:   return 2;
+            case VehicleStatus.Unloading: return 4;
+            case VehicleStatus.InTransit: return loaded ? 3 : 1;
+            default:                      return loaded ? 3 : 1;
+        }
+    }
+
+    /// <summary>
+    /// Put the vehicle back where it was and, if it was mid-delivery, resume that delivery
+    /// at the step it had reached. `task` is the already-restored DeliveryTask this vehicle
+    /// was carrying, or null.
+    /// </summary>
+    public void RestoreState(Snapshot s, DeliveryTask task)
+    {
+        if (s == null) return;
+        transform.position = s.position;
+        isDamaged = s.isDamaged;
+
+        currentCargo.Clear();
+        int n = Mathf.Min(s.cargoTypes.Count, s.cargoAmounts.Count);
+        for (int i = 0; i < n; i++)
+            if (System.Enum.TryParse(s.cargoTypes[i], out ResourceType rt))
+                currentCargo[rt] = s.cargoAmounts[i];
+
+        if (movementCoroutine != null) { StopCoroutine(movementCoroutine); movementCoroutine = null; }
+        if (deliveryCoroutine != null) { StopCoroutine(deliveryCoroutine); deliveryCoroutine = null; }
+        currentPath.Clear();
+        loadAborted = false;
+
+        if (task == null || isDamaged || !s.onDelivery)
+        {
+            // No task to resume. A damaged vehicle stays damaged and out of the fleet --
+            // its repair task is part of the task snapshot and drives it back.
+            currentTask = null;
+            sourceBuilding = null;
+            destinationBuilding = null;
+            SetStatus(isDamaged ? VehicleStatus.Damaged : VehicleStatus.Idle);
+            OnCargoChanged?.Invoke(this);
+            return;
+        }
+
+        currentTask = task;
+        sourceBuilding = task.sourceBuilding;
+        destinationBuilding = task.destinationBuilding;
+        OnCargoChanged?.Invoke(this);
+        deliveryCoroutine = StartCoroutine(ExecuteDeliveryTask(Mathf.Clamp(s.step, 1, 4)));
+    }
+
     /// <summary>
     /// Execute the complete delivery task
     /// </summary>
-    IEnumerator ExecuteDeliveryTask()
+    /// <param name="startStep">
+    /// Where to resume. 1 = drive to the source (a fresh assignment), 2 = load, 3 = drive to
+    /// the destination, 4 = unload. Only a snapshot restore passes anything but 1.
+    ///
+    /// RESUMING AT 3 MUST NOT RE-RUN LoadCargo: the cargo is already aboard and the source
+    /// was already debited, so loading again would take the goods twice. That is the whole
+    /// reason this takes a step rather than always starting from the top.
+    ///
+    /// A vehicle that was part-way along a leg re-paths from where it now stands rather than
+    /// resuming at an exact path index. Exact frame resume is not meaningful here anyway --
+    /// the dispatch cadence depends on real-time pause length, which no save can carry.
+    /// </param>
+    IEnumerator ExecuteDeliveryTask(int startStep = 1)
     {
-        Debug.Log($"Vehicle {vehicleName} starting delivery task");
+        Debug.Log($"Vehicle {vehicleName} starting delivery task (step {startStep})");
 
-        // Step 1: Move to source building
-        SetStatus(VehicleStatus.InTransit);
-        Vector3 sourcePos = currentTask.GetSourceRoadConnection();
-        Debug.Log($"Vehicle {vehicleName} moving to source: {sourcePos}");
-        yield return StartCoroutine(MoveToPosition(sourcePos));
+        if (startStep <= 1)
+        {
+            // Step 1: Move to source building
+            SetStatus(VehicleStatus.InTransit);
+            Vector3 sourcePos = currentTask.GetSourceRoadConnection();
+            Debug.Log($"Vehicle {vehicleName} moving to source: {sourcePos}");
+            yield return StartCoroutine(MoveToPosition(sourcePos));
+            if (currentTask == null) yield break;
+        }
 
-        // Step 2: Load cargo
-        SetStatus(VehicleStatus.Loading);
-        Debug.Log($"Vehicle {vehicleName} loading cargo");
-        yield return StartCoroutine(LoadCargo());
+        if (startStep <= 2)
+        {
+            // Step 2: Load cargo
+            SetStatus(VehicleStatus.Loading);
+            Debug.Log($"Vehicle {vehicleName} loading cargo");
+            yield return StartCoroutine(LoadCargo());
+            if (currentTask == null) yield break;
+        }
+        if (loadAborted)
+        {
+            // The source had nothing to load. Unwind HERE, on the outer coroutine, so the
+            // vehicle only becomes Idle once no suspended run remains that could resume
+            // against a newly assigned task.
+            AbortDelivery("source empty");
+            yield break;
+        }
 
-        // Step 3: Move to destination building
-        SetStatus(VehicleStatus.InTransit);
-        Vector3 destPos = currentTask.GetDestinationRoadConnection();
-        Debug.Log($"Vehicle {vehicleName} moving to destination: {destPos}");
-        yield return StartCoroutine(MoveToPosition(destPos));
+        if (startStep <= 3)
+        {
+            // Step 3: Move to destination building
+            SetStatus(VehicleStatus.InTransit);
+            Vector3 destPos = currentTask.GetDestinationRoadConnection();
+            Debug.Log($"Vehicle {vehicleName} moving to destination: {destPos}");
+            yield return StartCoroutine(MoveToPosition(destPos));
+            if (currentTask == null) yield break;
+        }
 
         // Step 4: Unload cargo
         SetStatus(VehicleStatus.Unloading);
         Debug.Log($"Vehicle {vehicleName} unloading cargo");
         yield return StartCoroutine(UnloadCargo());
+        if (currentTask == null) yield break;
 
         // Step 5: Complete delivery
         Debug.Log($"Vehicle {vehicleName} completing delivery");
@@ -207,6 +407,42 @@ public class Vehicle : MonoBehaviour
     /// <summary>
     /// Move vehicle to target position using pathfinding
     /// </summary>
+    /// <summary>
+    /// The flooded ROAD cells the pathfinder is about to see. Only road cells matter to A*,
+    /// so this stays small. Emitted with every leg so the port's pathfinder can be checked
+    /// against the SAME obstacle set the game used -- otherwise a length mismatch cannot be
+    /// attributed to the pathfinder rather than to the port's flood prediction, which is two
+    /// unknowns in one equation.
+    /// </summary>
+    string FloodedRoadCellsForDump()
+    {
+        var rm = FindObjectOfType<RoadTilemapManager>();
+        if (rm == null || FloodSystem.Instance == null) return "[]";
+        var sb = new System.Text.StringBuilder("[");
+        bool first = true;
+        foreach (Vector3Int c in rm.GetAllRoadPositions())
+        {
+            if (!FloodSystem.Instance.IsFloodedAt(c)) continue;
+            if (!first) sb.Append(",");
+            sb.Append("[").Append(c.x).Append(",").Append(c.y).Append("]");
+            first = false;
+        }
+        return sb.Append("]").ToString();
+    }
+
+    /// <summary>
+    /// How much this vehicle is CARRYING as a leg begins. Two marks disagree about the
+    /// reassigned vehicle: it reaches the Motel without a source pickup, yet unloads a full
+    /// load. This distinguishes "drove empty" from "was already loaded" without inferring
+    /// anything -- which is what building a story from the C# got wrong once already.
+    /// </summary>
+    int CarriedNowForDump()
+    {
+        int total = 0;
+        foreach (var kv in currentCargo) total += kv.Value;
+        return total;
+    }
+
     IEnumerator MoveToPosition(Vector3 targetPos)
     {
         // Existing pathfinding code...
@@ -221,10 +457,36 @@ public class Vehicle : MonoBehaviour
             currentPath = new List<Vector3> { transform.position, targetPos };
         }
 
+        // A trip is two legs (drive to source, then to destination), so duration depends on
+        // where this vehicle last parked -- not on the src->dst pair alone. Emitting the A*
+        // length per leg makes the travel model checkable arithmetic against the observed
+        // arrival rounds BEFORE any of the road graph is ported.
+        {
+            float _len = 0f;
+            for (int _i = 0; _i + 1 < currentPath.Count; _i++)
+                _len += Vector3.Distance(currentPath[_i], currentPath[_i + 1]);
+            SnapshotDebug.MarkContext("delivery:leg", "{\"veh\":\"" + vehicleName
+                + "\",\"len\":" + _len.ToString("F2")
+                + ",\"nodes\":" + currentPath.Count
+                + ",\"speed\":" + moveSpeed.ToString("F2")
+                + ",\"from\":\"" + transform.position.ToString("F1")
+                + "\",\"to\":\"" + targetPos.ToString("F1")
+                + "\",\"idx\":" + currentPathIndex
+                + ",\"pathlen\":" + currentPath.Count
+                + ",\"cargo\":" + CarriedNowForDump()
+                + ",\"task\":\"" + (currentTask != null
+                        ? currentTask.cargoType + ":" + currentTask.quantity + ":"
+                          + (currentTask.sourceBuilding != null ? currentTask.sourceBuilding.name : "?")
+                          + ">" + (currentTask.destinationBuilding != null ? currentTask.destinationBuilding.name : "?")
+                        : "none")
+                + "\",\"flood\":" + FloodedRoadCellsForDump() + "}");
+        }
+
         if (currentPath.Count == 0)
         {
             if (showDebugInfo)
                 Debug.LogWarning($"Vehicle {vehicleName} could not find flood-free path to {targetPos} — treating as flood blockage");
+            SnapshotDebug.MarkContext("delivery:blocked", "{\"veh\":\"" + vehicleName + "\",\"why\":\"nopath\"}");
             StopVehicleDueToFlood();
             yield break;
         }
@@ -254,11 +516,22 @@ public class Vehicle : MonoBehaviour
                 // Check for flood collision during movement
                 if (CheckForFloodCollision())
                 {
+                    SnapshotDebug.MarkContext("delivery:blocked", "{\"veh\":\"" + vehicleName + "\",\"why\":\"collision\"}");
                     StopVehicleDueToFlood();
                     yield break; // Stop movement immediately
                 }
 
                 pathProgress = (currentPathIndex + fractionOfJourney) / (currentPath.Count - 1);
+                // currentPathIndex is shared by every coroutine alive on this vehicle. If a
+                // second one is advancing it, this sample jumps by more than one per frame
+                // -- which distinguishes "this trip was raced" from "trips are simply
+                // faster than one frame per step", the two readings my measurements cannot
+                // currently tell apart.
+                SnapshotDebug.MarkContext("leg:tick", "{\"veh\":\"" + vehicleName
+                    + "\",\"idx\":" + currentPathIndex + ",\"n\":" + currentPath.Count
+                    + ",\"status\":\"" + currentStatus
+                    + "\",\"damaged\":" + (isDamaged ? "true" : "false")
+                    + ",\"cargo\":" + CarriedNowForDump() + "}");
                 yield return null;
             }
 
@@ -285,19 +558,33 @@ public class Vehicle : MonoBehaviour
 
         // Stop all movement
         StopAllCoroutines();
+        deliveryCoroutine = null;
 
-        // Trigger road blockage task
+        // Trigger road blockage task (reads the cargo state; returns loaded clients itself)
         TriggerRoadBlockageTask();
 
         // Trigger vehicle repair task
         TriggerVehicleRepairTask();
 
-        // Remove the delivery from DeliverySystem's active list so it doesn't hang in the queue
+        // The delivery is over. Whatever is still aboard (food; clients were returned by the
+        // blockage task) goes back to its source instead of being erased by the next load,
+        // and DeliverySystem is told it was CANCELLED, not completed.
         if (currentTask != null)
         {
-            DeliverySystem.Instance?.RemoveActiveDeliveryTask(currentTask.taskId);
+            DeliveryTask stopped = currentTask;
+            ReturnAllCargoToSource("stopped by flood");
             currentTask = null;
+            sourceBuilding = null;
+            destinationBuilding = null;
+            currentPath.Clear();
+            OnDeliveryCancelled?.Invoke(this, stopped, "stopped by flood");
         }
+
+        // Clear mission/destination state (mirrors CompleteDelivery) so info panels don't keep
+        // showing a stale destination/source after the vehicle is later repaired.
+        sourceBuilding = null;
+        destinationBuilding = null;
+        currentPath.Clear();
 
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} stopped due to flood at position {transform.position}");
@@ -319,8 +606,7 @@ public class Vehicle : MonoBehaviour
                 string dst = GetBuildingDisplayName(currentTask.destinationBuilding);
                 string reason =
                     $"Vehicle \"{vehicleName}\" was {phase} ({currentTask.quantity} {cargoLabel} from {src} to {dst}) " +
-                    $"when it was stopped by flooding. The delivery has been halted. " +
-                    $"Satisfaction penalty: {relatedTask.deliveryFailureSatisfactionPenalty}.";
+                    $"when it was stopped by flooding. The delivery has been halted.";
 
                 TaskSystem.Instance?.HandleDeliveryFailure(relatedTask, reason);
             }
@@ -361,11 +647,50 @@ public class Vehicle : MonoBehaviour
             t.linkedDeliveryTaskIds.Contains(currentTask.taskId));
     }
 
+    /// <summary>
+    /// A repaired vehicle still standing in the flood would fail again on its next assignment
+    /// (BUG_REPORTS B5): tow it to the nearest road tile that is not flooded. Ties break on the
+    /// lower (x, y) cell so the choice does not depend on hash-set iteration order.
+    /// </summary>
+    void RelocateToDryRoadIfFlooded()
+    {
+        if (FloodSystem.Instance == null || !FloodSystem.Instance.IsFloodedAt(transform.position)) return;
+        var roads = FindObjectOfType<RoadTilemapManager>();
+        if (roads == null) return;
+        Vector3 from = transform.position;
+        bool found = false;
+        Vector3Int bestCell = default;
+        Vector3 best = from;
+        float bestDist = float.MaxValue;
+        foreach (Vector3Int cell in roads.GetAllRoadPositions())
+        {
+            Vector3 world = roads.CellToWorld(cell);
+            if (FloodSystem.Instance.IsFloodedAt(world)) continue;
+            float d = (world - from).sqrMagnitude;
+            bool closer = d < bestDist - 1e-4f;
+            bool tie = !closer && Mathf.Abs(d - bestDist) <= 1e-4f
+                       && (cell.x < bestCell.x || (cell.x == bestCell.x && cell.y < bestCell.y));
+            if (closer || tie) { bestDist = d; best = world; bestCell = cell; found = true; }
+        }
+        if (!found)
+        {
+            Debug.LogWarning($"Vehicle {vehicleName}: repaired inside the flood and no dry road tile exists; staying put.");
+            return;
+        }
+        transform.position = best;
+        currentPath.Clear();
+        currentPathIndex = 0;
+        SnapshotDebug.MarkContext("vehicle:towed", "{\"veh\":\"" + vehicleName + "\",\"from\":\"" + from.ToString("F1")
+            + "\",\"to\":\"" + best.ToString("F1") + "\"}");
+        GameLogPanel.Instance?.LogVehicleEvent($"{vehicleName} towed to the nearest dry road at {best:F1} after repair");
+    }
+
     // Add repair method
     public void RepairVehicle()
     {
         isDamaged = false;
         SetStatus(VehicleStatus.Idle);
+        RelocateToDryRoadIfFlooded();
 
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} has been repaired");
@@ -376,23 +701,48 @@ public class Vehicle : MonoBehaviour
     {
         if (vehicleRenderer == null) return;
 
+        //switch (currentStatus)
+        //{
+        //    case VehicleStatus.Idle:
+        //        vehicleRenderer.color = idleColor;
+        //        break;
+        //    case VehicleStatus.Loading:
+        //        vehicleRenderer.color = loadingColor;
+        //        break;
+        //    case VehicleStatus.InTransit:
+        //        vehicleRenderer.color = inTransitColor;
+        //        break;
+        //    case VehicleStatus.Unloading:
+        //        vehicleRenderer.color = unloadingColor;
+        //        break;
+
+        //    case VehicleStatus.Damaged:
+        //        vehicleRenderer.color = damagedColor;
+        //        break;
+        //}
+
+        //color coded version
         switch (currentStatus)
         {
             case VehicleStatus.Idle:
                 vehicleRenderer.color = idleColor;
+                if (glowIndicator != null) glowIndicator.color = availableGlowColor; 
                 break;
             case VehicleStatus.Loading:
                 vehicleRenderer.color = loadingColor;
+                if (glowIndicator != null) glowIndicator.color = activeGlowColor;    
                 break;
             case VehicleStatus.InTransit:
                 vehicleRenderer.color = inTransitColor;
+                if (glowIndicator != null) glowIndicator.color = activeGlowColor;    
                 break;
             case VehicleStatus.Unloading:
                 vehicleRenderer.color = unloadingColor;
+                if (glowIndicator != null) glowIndicator.color = activeGlowColor;    
                 break;
-
             case VehicleStatus.Damaged:
                 vehicleRenderer.color = damagedColor;
+                if (glowIndicator != null) glowIndicator.color = damagedGlowColor;   
                 break;
         }
 
@@ -448,10 +798,7 @@ public class Vehicle : MonoBehaviour
             {
                 Debug.LogWarning($"Vehicle {vehicleName}: source {sourceBuilding.name} had no " +
                                 $"{currentTask.cargoType} — aborting delivery");
-                currentTask        = null;
-                sourceBuilding     = null;
-                destinationBuilding = null;
-                SetStatus(VehicleStatus.Idle);
+                loadAborted = true;   // ExecuteDeliveryTask unwinds the run
                 yield break;
             }
             // ─────────────────────────────────────────────────────────────
@@ -488,40 +835,32 @@ public class Vehicle : MonoBehaviour
             int cargoAmount = currentCargo[currentTask.cargoType];
             int actualDelivered = destStorage.AddResource(currentTask.cargoType, cargoAmount);
             currentCargo[currentTask.cargoType] = 0;
+            currentTask.deliveredQuantity = actualDelivered;
+            // What did not fit is not destroyed: it goes back to the source.
+            int remainder = cargoAmount - actualDelivered;
+            if (remainder > 0)
+                ReturnCargoToSource(currentTask.cargoType, remainder, "destination full");
 
-            // NEW: Track client arrivals at shelters
+            // Track population movement for casework: register arrivals at shelters OR motels,
+            // and process people home on delivery to a casework site (centralized — fixes the
+            // motel-not-tracked bug).
             if (currentTask.cargoType == ResourceType.Population && ClientStayTracker.Instance != null && actualDelivered > 0)
             {
-                Building sourceBuilding = currentTask.sourceBuilding.GetComponent<Building>();
-                Building destBuilding = currentTask.destinationBuilding.GetComponent<Building>();
-                PrebuiltBuilding sourcePrebuilt = currentTask.sourceBuilding.GetComponent<PrebuiltBuilding>();
-                PrebuiltBuilding destPrebuilt = currentTask.destinationBuilding.GetComponent<PrebuiltBuilding>();
-                
-                // Case 1: Community to Shelter - Register new clients
-                if (sourcePrebuilt != null && sourcePrebuilt.GetPrebuiltType() == PrebuiltBuildingType.Community &&
-                    destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
-                {
-                    string groupName = $"Vehicle_{currentTask.taskId}_{sourcePrebuilt.name}_to_{destBuilding.name}";
-                    ClientStayTracker.Instance.RegisterClientArrival(destBuilding, actualDelivered, groupName);
-                }
-                // Case 2: Shelter to Shelter - Move existing clients (implementation needed)
-                else if (sourceBuilding != null && sourceBuilding.GetBuildingType() == BuildingType.Shelter &&
-                        destBuilding != null && destBuilding.GetBuildingType() == BuildingType.Shelter)
-                {
-                    // For now, register as new arrivals (continue their stay duration)
-                    string groupName = $"Vehicle_{currentTask.taskId}_{sourceBuilding.name}_to_{destBuilding.name}";
-                    ClientStayTracker.Instance.RegisterClientArrival(destBuilding, actualDelivered, groupName);
-                }
-                // Case 3: Shelter to Casework - Remove clients
-                else if (sourceBuilding != null && sourceBuilding.GetBuildingType() == BuildingType.Shelter &&
-                        destBuilding != null && destBuilding.GetBuildingType() == BuildingType.CaseworkSite)
-                {
-                    int removed = ClientStayTracker.Instance.RemoveClientsByQuantity(sourceBuilding, actualDelivered);
-                    if (showDebugInfo)
-                        Debug.Log($"Removed {removed} clients from {sourceBuilding.name} for casework");
-                }
+                ClientStayTracker.Instance.HandlePopulationDelivery(
+                    currentTask.sourceBuilding, currentTask.destinationBuilding, actualDelivered, currentTask.taskId);
             }
 
+            // actualDelivered is computed and then discarded, but it is the ONLY thing that
+            // distinguishes a real completion from a zombie one: a zombie arrives carrying
+            // nothing, delivers 0, and is still credited the nominal quantity. Emitting it
+            // labels the zombie from the game's own mouth, which is the observable needed to
+            // decide WHICH order the freed vehicle took.
+            SnapshotDebug.MarkContext("delivery:unload", "{\"veh\":\"" + vehicleName
+                + "\",\"cargo\":\"" + currentTask.cargoType
+                + "\",\"nominal\":" + currentTask.quantity
+                + ",\"actual\":" + actualDelivered
+                + ",\"src\":\"" + (currentTask.sourceBuilding != null ? currentTask.sourceBuilding.name : "")
+                + "\",\"dst\":\"" + (currentTask.destinationBuilding != null ? currentTask.destinationBuilding.name : "") + "\"}");
             if (showDebugInfo)
                 Debug.Log($"Vehicle {vehicleName} delivered {actualDelivered} {currentTask.cargoType}");
         }
@@ -558,6 +897,51 @@ public class Vehicle : MonoBehaviour
         return building.GetComponent<BuildingResourceStorage>();
     }
 
+    /// <summary>Put cargo back into the source building's storage; log what could not be taken back.</summary>
+    void ReturnCargoToSource(ResourceType type, int amount, string why)
+    {
+        if (amount <= 0) return;
+        BuildingResourceStorage src = sourceBuilding != null ? GetBuildingResourceStorage(sourceBuilding) : null;
+        int returned = src != null ? src.AddResource(type, amount) : 0;
+        string srcName = sourceBuilding != null ? sourceBuilding.name : "none";
+        if (returned < amount)
+            Debug.LogWarning($"Vehicle {vehicleName}: {amount - returned} {type} lost ({why}; {srcName} could not take it back)");
+        GameLogPanel.Instance?.LogVehicleEvent($"{vehicleName}: {returned} {type} returned to {srcName} ({why})");
+    }
+
+    void ReturnAllCargoToSource(string why)
+    {
+        foreach (ResourceType type in new List<ResourceType>(currentCargo.Keys))
+        {
+            int amount = currentCargo[type];
+            if (amount <= 0) continue;
+            currentCargo[type] = 0;
+            ReturnCargoToSource(type, amount, why);
+        }
+    }
+
+    /// <summary>
+    /// End the current delivery WITHOUT crediting it: cargo returns to the source, the vehicle
+    /// goes Idle, and DeliverySystem hears OnDeliveryCancelled (never OnDeliveryCompleted).
+    /// </summary>
+    void AbortDelivery(string reason)
+    {
+        DeliveryTask task = currentTask;
+        ReturnAllCargoToSource(reason);
+        currentTask = null;
+        sourceBuilding = null;
+        destinationBuilding = null;
+        currentPath.Clear();
+        loadAborted = false;
+        deliveryCoroutine = null;
+        SetStatus(VehicleStatus.Idle);
+        UpdateVisualState();
+        OnCargoChanged?.Invoke(this);
+        if (showDebugInfo)
+            Debug.Log($"Vehicle {vehicleName} delivery aborted ({reason})");
+        if (task != null) OnDeliveryCancelled?.Invoke(this, task, reason);
+    }
+
     /// <summary>
     /// Complete the delivery and return to idle
     /// </summary>
@@ -569,6 +953,8 @@ public class Vehicle : MonoBehaviour
         sourceBuilding = null;
         destinationBuilding = null;
         currentPath.Clear();
+        loadAborted = false;
+        deliveryCoroutine = null;
 
         SetStatus(VehicleStatus.Idle);
         OnDeliveryCompleted?.Invoke(this, taskToComplete); // pass completed task to event directly
@@ -640,7 +1026,16 @@ public class Vehicle : MonoBehaviour
         }
 
         StopAllCoroutines();
-        CompleteDelivery();
+        deliveryCoroutine = null;
+        if (currentTask == null)
+        {
+            // Nothing in flight (e.g. a flood-damaged vehicle whose delivery already ended).
+            currentPath.Clear();
+            if (!isDamaged) SetStatus(VehicleStatus.Idle);
+            return;
+        }
+        // A cancellation is NOT a completion: nothing is credited, cargo goes back.
+        AbortDelivery("cancelled");
 
         if (showDebugInfo)
             Debug.Log($"Vehicle {vehicleName} task cancelled");
@@ -671,35 +1066,56 @@ public class Vehicle : MonoBehaviour
     {
         if (Time.timeScale != 0f) return; // Only when paused
         transform.localScale = Vector3.one * 1.1f;
+        //show status text on hover
+        if (VehicleUIOverlay.Instance != null)
+        {
+            VehicleUIOverlay.Instance.SetOverlayVisibility(this, true);
+        }
     }
 
     void OnMouseExit()
     {
         transform.localScale = Vector3.one;
+        //hide status text leaving hover
+        if (VehicleUIOverlay.Instance != null)
+        {
+            VehicleUIOverlay.Instance.SetOverlayVisibility(this, false);
+        }
     }
 
     void OnMouseDown()
     {
-        // Only allow clicks when game is paused
         if (Time.timeScale != 0f)
             return;
-        
+        if (UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject())
+        {
+            return;
+        }
+
         if (VehicleInfoPanel.Instance != null)
         {
             VehicleInfoPanel.Instance.OnVehicleClicked(transform.position);
         }
+
     }
-    
+
+
     void OnDestroy()
     {
         if (VehicleUIOverlay.Instance != null)
         {
             VehicleUIOverlay.Instance.UnregisterVehicle(this);
         }
+
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnDayChanged -= OnDayChanged;
+            GlobalClock.Instance.OnSimulationEnded -= OnSimulationEndedCheckEndOfDayWaste; // NEW
+        }
     }
 
     // Getters
-    public int GetVehicleId() => vehicleId;
+    public int GetVehicleId() => vehicleId; 
     public string GetVehicleName() => vehicleName;
     public VehicleStatus GetCurrentStatus() => currentStatus;
     public int GetMaxCapacity() => maxCargoCapacity;
@@ -707,7 +1123,7 @@ public class Vehicle : MonoBehaviour
     public ResourceType GetCurrentCargoType() => GetPrimaryCargoType();
     public List<ResourceType> GetAllowedCargoTypes() => new List<ResourceType>(allowedCargoTypes);
     public DeliveryTask GetCurrentTask() => currentTask;
-
+     
     [ContextMenu("Print Vehicle Status")]
     public void DebugPrintStatus()
     {

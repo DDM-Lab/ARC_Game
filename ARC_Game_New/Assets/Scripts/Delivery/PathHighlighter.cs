@@ -83,6 +83,7 @@ public class PathHighlighter : MonoBehaviour
         
         if (showDebugInfo)
             Debug.Log($"PathHighlighter: Highlighted {currentHighlightedTiles.Count} tiles from {worldPath.Count} waypoints");
+        GameLogPanel.Instance?.LogUIInteraction($"Highlighted delivery path on road tilemap ({currentHighlightedTiles.Count} tiles)");
     }
     
     /// <summary>
