@@ -1929,6 +1929,9 @@ public class AgentConversationUI : MonoBehaviour
                     + "connection is back.", "system_error");
             }
 
+            GameLogPanel.Instance?.LogUIInteraction(
+                $"Player message sent | agent={agentName} | message={message}");
+
             if (showDebugInfo)
                 Debug.Log($"Player sent message to {currentSelectedAgent} ({agentName}): {message} (sent={sent})");
         }

@@ -182,6 +182,7 @@ public class TutorialManager : MonoBehaviour
         }
         else
         {
+            GameLogPanel.Instance?.LogUIInteraction("Tutorial completed (Next clicked on last page)");
             StartGame();
         }
     }

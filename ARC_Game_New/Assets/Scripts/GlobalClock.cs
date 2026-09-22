@@ -295,7 +295,7 @@ public class GlobalClock : MonoBehaviour
             if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstExecute())
             {
                 ConfirmationPopup.Instance.ShowPopup(
-                    message: $"Opening a facility takes {FindObjectOfType<BuildingSystem>()?.constructionRounds ?? 4} rounds. Only for today, the remaining rounds will be skipped automatically — you won’t be able to make any decisions during this time.\n\nFrom Day 2 onward, each click of this button advances time by 1 round.\n\nDo you want to proceed?",
+                    message: $"Opening a facility takes {FindObjectOfType<BuildingSystem>()?.constructionRounds ?? 4} rounds. Today, the remaining rounds will be skipped automatically, and you won’t be able to make decisions.\n\nFrom Day 2 onward, each click advances time by 1 round.\n\nProceed?",
                     onConfirm: () => {
                         FirstTimeActionTracker.Instance.MarkExecuteCompleted();
                         StartSimulation();

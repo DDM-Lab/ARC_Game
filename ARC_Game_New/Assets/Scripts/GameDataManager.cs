@@ -176,7 +176,7 @@ public class GameDataManager : MonoBehaviour
 
                 InitialBudget = p.initialBudget;
                 InitialDailyBudgetAddition = (int)p.dailyBudgetAllocation;
-                InitialSatisfaction = (float)p.initialSatisfaction;
+                // Initial satisfaction is never overridden from instructor config — always 0.
                 InitialCommunityNumber = p.numberOfCommunities;
                 InitialGameDays = p.gameDurationDays;
                 InitialResidentsPerCommunityNumber = p.residentsPerCommunity;
@@ -275,7 +275,8 @@ public class GameDataManager : MonoBehaviour
     void SetDefaults()
     {
         InitialBudget = defaultBudget;
-        InitialSatisfaction = defaultSatisfaction;
+        // Initial satisfaction always starts at 0 — defaultSatisfaction is intentionally unused here.
+        InitialSatisfaction = 0f;
         InitialCommunityNumber =defaultCommunityNumber;
         InitialResidentsPerCommunityNumber =defaultResidentsPerCommunity;
         InitialGameDays =defaultGameDays;

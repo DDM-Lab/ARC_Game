@@ -76,6 +76,11 @@ public class SatisfactionAndBudget : MonoBehaviour
             Instance = this;
             DontDestroyOnLoad(gameObject);
 
+            // Initial satisfaction always starts at 0, no matter what the scene's serialized
+            // field value is. Nothing past this point (config load, instructor config) is
+            // allowed to change it before gameplay begins.
+            currentSatisfaction = 0f;
+
             // Runtime override of the no-debt policy (e.g. RL training). The serialized
             // field is the default; the env var, if set, wins. Accepts 1/true/yes (on)
             // and 0/false/no (off).
@@ -167,12 +172,13 @@ public class SatisfactionAndBudget : MonoBehaviour
     }
 
     /// <summary>
-    /// Apply the initial budget/satisfaction from config to the live fields if it hasn't
-    /// happened yet. Idempotent and safe to call from anywhere (e.g. the gym before building
-    /// its first observation), so the first reported budget reflects the configured value
-    /// rather than the stale inspector default. No-op once ConfigApplied is true. If external
-    /// config is requested but not yet loaded, this leaves the fields untouched (the Start
-    /// coroutine applies them once the load completes / times out).
+    /// Apply the initial budget from config to the live field if it hasn't happened yet
+    /// (satisfaction is never loaded from config — it always starts at 0). Idempotent and
+    /// safe to call from anywhere (e.g. the gym before building its first observation), so
+    /// the first reported budget reflects the configured value rather than the stale
+    /// inspector default. No-op once ConfigApplied is true. If external config is requested
+    /// but not yet loaded, this leaves the fields untouched (the Start coroutine applies
+    /// them once the load completes / times out).
     /// </summary>
     public void EnsureConfigApplied()
     {
@@ -189,11 +195,12 @@ public class SatisfactionAndBudget : MonoBehaviour
 
         if (configLoader != null && configLoader.IsConfigLoaded())
         {
-            currentBudget       = configLoader.GetInitialBudget();
-            currentSatisfaction = configLoader.GetInitialSatisfaction();
-            ConfigApplied       = true;
+            currentBudget = configLoader.GetInitialBudget();
+            // Initial satisfaction is never loaded from config — it always starts at 0
+            // (the inspector/compiled default) and is never overwritten here.
+            ConfigApplied = true;
             if (showDebugInfo)
-                Debug.Log($"SatisfactionAndBudget: Using config initialBudget = {currentBudget}; initialSatisfaction = {currentSatisfaction}");
+                Debug.Log($"SatisfactionAndBudget: Using config initialBudget = {currentBudget}; initialSatisfaction locked at {currentSatisfaction}");
         }
         // else: external config not ready yet — leave fields as-is; the coroutine will apply.
     }
