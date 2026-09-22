@@ -536,7 +536,7 @@ public class DailyReportUI : MonoBehaviour
         Row("Training", Live(d.GetCurrentTrainingWorkers()));
         Row("Released today", Live(d.GetTodayWorkersReleased()));
         Row("Unassigned", Live(m.workersUnassignedToday));
-        Row("Need casework", Live(d.GetCurrentClientsNeedingCasework()));
+        Row("Casework Needed", Live(m.caseworkRequestedTodayNew));
         Row("Casework Satisfied", Live(m.caseworkSatisfiedToday));
         Row("In transit to casework", Live(d.GetCurrentPeopleInTransitToCasework()));
 
@@ -800,7 +800,7 @@ public class DailyReportUI : MonoBehaviour
         yield return StartCoroutine(AnimateLiveElement(liveWorkersReleasedToday, d.GetTodayWorkersReleased(), "Released today"));
         yield return StartCoroutine(AnimateLiveElement(liveWorkersUnassigned, d.GetCurrentUnassignedWorkers(), "Unassigned"));
 
-        yield return StartCoroutine(AnimateLiveElement(liveNeedCasework, d.GetCurrentClientsNeedingCasework(), "Casework Needed"));
+        yield return StartCoroutine(AnimateLiveElement(liveNeedCasework, currentMetrics.caseworkRequestedTodayNew, "Casework Needed"));
         yield return StartCoroutine(AnimateLiveElement(liveCaseworkSatisfied, currentMetrics.caseworkSatisfiedToday, "Casework Satisfied"));
         yield return StartCoroutine(AnimateLiveElement(liveInTransitToCasework, d.GetCurrentPeopleInTransitToCasework(), "In transit to casework"));
     }
@@ -1264,7 +1264,7 @@ public class DailyReportUI : MonoBehaviour
             SetSectionLiveFormatted(liveWorkersReleasedToday, d.GetTodayWorkersReleased());
             SetSectionLiveFormatted(liveWorkersUnassigned, metrics.workersUnassignedToday);
 
-            SetSectionLiveFormatted(liveNeedCasework, d.GetCurrentClientsNeedingCasework());
+            SetSectionLiveFormatted(liveNeedCasework, metrics.caseworkRequestedTodayNew);
             SetSectionLiveFormatted(liveCaseworkSatisfied, metrics.caseworkSatisfiedToday);
             SetSectionLiveFormatted(liveInTransitToCasework, d.GetCurrentPeopleInTransitToCasework());
         }
