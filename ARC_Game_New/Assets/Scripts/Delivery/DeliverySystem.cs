@@ -729,6 +729,7 @@ public class DeliverySystem : MonoBehaviour
     void OnVehicleDeliveryCompleted(Vehicle vehicle, DeliveryTask completedTask)
     {
         Debug.Log($"DeliverySystem: Task {completedTask.taskId} completed by {vehicle.GetVehicleName()}");
+        GameLogPanel.Instance?.LogVehicleEvent($"Completed {completedTask} via {vehicle.GetVehicleName()}");
 
         // NEW: record food actually delivered to a community, for Building Stats / Food Used.
         if (completedTask.cargoType == ResourceType.FoodPacks)

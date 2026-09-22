@@ -423,7 +423,11 @@ public class AlertUIController : MonoBehaviour
         }
         
         AgentMessage currentMessage = alertMessages[currentMessageIndex];
-        
+
+        // Disable Next immediately so a click landing before StartTyping
+        // actually runs (~0.1s later) can't double-advance the message index.
+        nextButton.interactable = false;
+
         // Update agent icon for this message
         SetupAgentIcon(currentMessage);
         
@@ -576,6 +580,12 @@ public class AlertUIController : MonoBehaviour
         }
         else
         {
+            // Guard against stray clicks landing after the alert has already
+            // completed (alertMessages is nulled out in CompleteAlert) or
+            // past the last message.
+            if (alertMessages == null || currentMessageIndex >= alertMessages.Count)
+                return;
+
             GameLogPanel.Instance?.LogUIInteraction(
                 $"Alert advanced — message {currentMessageIndex + 1}/{alertMessages.Count}" +
                 $": \"{alertMessages[currentMessageIndex].messageText}\"");
@@ -673,6 +683,11 @@ public class AlertUIController : MonoBehaviour
     /// </summary>
     void CompleteAlert()
     {
+        // Disable buttons immediately so a stray click during the fade-out
+        // can't reach OnNextButtonClicked while alertMessages is null.
+        nextButton.interactable = false;
+        skipTypingButton.interactable = false;
+
         // Mark task as completed (alerts don't require choices)
         if (currentAlert != null && TaskSystem.Instance != null)
         {

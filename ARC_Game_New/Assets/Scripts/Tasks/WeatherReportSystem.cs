@@ -77,7 +77,7 @@ public class WeatherReportSystem : MonoBehaviour
     
     GameTask CreateDailyReportAlert()
     {
-        GameTask report = TaskSystem.Instance.CreateTask($"Day {GlobalClock.Instance.GetCurrentDay()} Start of Day Report", TaskType.Alert, "Daily Report", "Daily weather and disaster situation report");
+        GameTask report = TaskSystem.Instance.CreateTask($"Day {GlobalClock.Instance.GetCurrentDay()} Morning Report", TaskType.Alert, "Weather Report", "Today's weather and flood outlook");
 
         report.taskImage = reportTaskImage;
         report.agentMessages = new List<AgentMessage>();
@@ -90,7 +90,7 @@ public class WeatherReportSystem : MonoBehaviour
 
     string GenerateSituationSummary()
     {
-        string summary = "Good morning. Here's the situation:\n";
+        string summary = "Morning. ";
 
         // Weather
         if (weatherSystem != null)
@@ -98,23 +98,23 @@ public class WeatherReportSystem : MonoBehaviour
             switch (weatherSystem.GetCurrentWeather())
             {
                 case WeatherType.Sunny:
-                    summary += "☀️ Weather: Clear — no rain expected today.\n";
+                    summary += "☀️ Skies are clear, no rain expected today.\n";
                     FloodingExpansionText.text = "None";
                     break;
                 case WeatherType.SmallRain:
-                    summary += "🌦️ Weather: Light rain — minor flooding possible in low areas.\n";
+                    summary += "🌦️ Light rain today. A few low areas may flood.\n";
                     FloodingExpansionText.text = "Low";
                     break;
                 case WeatherType.MediumRain:
-                    summary += "🌧️ Weather: Steady rain — flooding likely to spread.\n";
+                    summary += "🌧️ Steady rain today. Flooding is likely to spread.\n";
                     FloodingExpansionText.text = "Medium";
                     break;
                 case WeatherType.HeavyRain:
-                    summary += "🌧️ Weather: Heavy rain — flooding will worsen today.\n";
+                    summary += "🌧️ Heavy rain today. Flooding will get worse.\n";
                     FloodingExpansionText.text = "High";
                     break;
                 case WeatherType.Storm:
-                    summary += "⛈️ Weather: Storm — severe flooding expected. High risk of new emergencies.\n";
+                    summary += "⛈️ A storm is moving in. Expect severe flooding and new emergencies.\n";
                     FloodingExpansionText.text = "High";
                     break;
             }
@@ -125,24 +125,25 @@ public class WeatherReportSystem : MonoBehaviour
         {
             int floodTiles = floodSystem.GetFloodTileCount();
             int affectedFacilities = CountFloodAffectedFacilities();
+            string shelterWord = affectedFacilities == 1 ? "shelter" : "shelters";
 
             if (floodTiles == 0)
             {
-                summary += "✅ Flooding: None — all areas are clear.\n";
+                summary += "✅ All areas are clear.\n";
                 LodgingDemandText.text = "Normal";
                 EmergencyPossibilityText.text = "Low";
             }
             else if (floodTiles <= 10)
             {
-                summary += "⚠️ Flooding: Limited to a small area.";
+                summary += "⚠️ Flooding is limited to a small area.";
                 if (affectedFacilities > 0)
                 {
-                    summary += $" {affectedFacilities} shelter(s) affected — capacity reduced.";
+                    summary += $" {affectedFacilities} {shelterWord} have less capacity.";
                     LodgingDemandText.text = "High";
                 }
                 else
                 {
-                    summary += " No shelters directly affected.";
+                    summary += " No shelters are affected.";
                     LodgingDemandText.text = "Normal";
                 }
                 summary += "\n";
@@ -150,10 +151,10 @@ public class WeatherReportSystem : MonoBehaviour
             }
             else if (floodTiles <= 20)
             {
-                summary += $"⚠️ Flooding: Spreading across several neighborhoods.";
+                summary += "⚠️ Flooding is spreading through several neighborhoods.";
                 if (affectedFacilities > 0)
                 {
-                    summary += $" {affectedFacilities} shelter(s) flooded — displaced residents need housing.";
+                    summary += $" {affectedFacilities} {shelterWord} flooded, displaced residents need housing.";
                     LodgingDemandText.text = "High";
                 }
                 else
@@ -165,10 +166,10 @@ public class WeatherReportSystem : MonoBehaviour
             }
             else
             {
-                summary += $"🚨 Flooding: Large parts of the city are underwater.";
+                summary += "🚨 Much of the city is underwater.";
                 if (affectedFacilities > 0)
                 {
-                    summary += $" {affectedFacilities} shelter(s) are flooded — many residents need immediate housing.";
+                    summary += $" {affectedFacilities} {shelterWord} flooded, many residents need housing now.";
                     LodgingDemandText.text = "High";
                 }
                 else
@@ -197,28 +198,24 @@ public class WeatherReportSystem : MonoBehaviour
     {
         if (weatherSystem == null) return "No forecast available.";
 
-        string outlook = "What to focus on today:\n";
+        string outlook = "Today's focus:\n";
         float rain = weatherSystem.GetRainIntensity();
         bool flooding = floodSystem != null && floodSystem.GetFloodTileCount() > 0;
-        int affectedFacilities = flooding ? CountFloodAffectedFacilities() : 0;
 
         if (rain > 0.6f || (floodSystem != null && floodSystem.GetFloodTileCount() > 20))
         {
-            outlook += "• Expect rescue and evacuation requests\n";
-            outlook += "• Shelters may fill up quickly. Open additional capacity if you can.\n";
+            outlook += "• Expect rescue and evacuation calls.\n";
+            outlook += "• Open extra capacity if you can.\n";
         }
         else if (rain > 0.3f || flooding)
         {
-            outlook += "• Monitor shelter availability — demand may rise.\n";
-            if (flooding) outlook += "• Some roads may be blocked. Plan deliveries around flood areas.\n";
+            outlook += "• Watch shelter capacity closely.\n";
+            if (flooding) outlook += "• Some roads may be blocked, plan deliveries around flooded areas.\n";
         }
         else
         {
-            outlook += "• Conditions are stable — good time to train staff or restock supplies.\n";
+            outlook += "• Conditions are calm. Good day to train staff or restock supplies.\n";
         }
-
-        if (affectedFacilities > 0)
-            outlook += $"• {affectedFacilities} shelter(s) are out of action due to flooding. Relocate residents as soon as possible.\n";
 
         return outlook;
     }

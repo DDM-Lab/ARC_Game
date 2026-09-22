@@ -318,6 +318,12 @@ public class TutorialMessageUI : MonoBehaviour
         }
         else
         {
+            // Guard against stray clicks landing after messages have already
+            // completed (currentMessages is nulled out in CompleteMessages)
+            // or past the last message.
+            if (currentMessages == null || currentMessageIndex >= currentMessages.Count)
+                return;
+
             GameLogPanel.Instance?.LogUIInteraction(
                 $"Tutorial advanced — message {currentMessageIndex + 1}/{currentMessages.Count} " +
                 $"({GetAgentName(currentMessages[currentMessageIndex].agent)}): " +
@@ -372,10 +378,17 @@ public class TutorialMessageUI : MonoBehaviour
     
     void CompleteMessages()
     {
+        // Disable buttons immediately so a stray click during the fade-out
+        // can't reach OnNextButtonClicked while currentMessages is null.
+        if (nextButton != null)
+            nextButton.interactable = false;
+        if (skipTypingButton != null)
+            skipTypingButton.interactable = false;
+
         messagesActive = false;
         currentMessages = null;
         currentMessageIndex = 0;
-        
+
         StartCoroutine(HideMessagesSmooth());
     }
     

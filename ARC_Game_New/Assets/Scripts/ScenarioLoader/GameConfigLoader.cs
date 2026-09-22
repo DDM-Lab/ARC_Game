@@ -218,8 +218,8 @@ public class GameConfigLoader : MonoBehaviour
             }
             else if (parameter.Equals("initialSatisfaction", System.StringComparison.OrdinalIgnoreCase))
             {
-                if (int.TryParse(value, out int satisfaction))
-                    loadedInitialSatisfaction = satisfaction;
+                // Intentionally ignored: initial satisfaction always starts at 0, never
+                // loaded from the sheet. loadedInitialSatisfaction stays at its 0 default.
             }
             else if (parameter.Equals("initialCommunityCount", System.StringComparison.OrdinalIgnoreCase))
             {
@@ -549,7 +549,9 @@ public class GameConfigLoader : MonoBehaviour
 
     public int GetInitialSatisfaction()
     {
-        return loadedInitialSatisfaction;
+        // Initial satisfaction is locked to 0 at game start, regardless of what the
+        // sheet/instructor config loaded into loadedInitialSatisfaction above.
+        return 0;
     }
      public int GetInitialCommunityCount()
     {
