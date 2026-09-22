@@ -375,7 +375,8 @@ public class MapConfigApplier : MonoBehaviour
         if (loader == null) return;
 
         loader.loadedInitialBudget       = cfg.parameters.initialBudget;
-        loader.loadedInitialSatisfaction = cfg.parameters.initialSatisfaction;
+        // Initial satisfaction is intentionally never applied from instructor config —
+        // it always starts at 0 (see GameConfigLoader.GetInitialSatisfaction).
     }
 
     void CreateLabel(Transform buildingTransform, string text)
