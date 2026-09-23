@@ -204,29 +204,47 @@ public class WorkerRequestSystem : MonoBehaviour
         if (untrainedToRequest <= 0 && trainedToRequest <= 0)
             return;
 
-        int totalCost = (untrainedToRequest * untrainedWorkerCost) + (trainedToRequest * trainedWorkerCost);
+        // Price, budget gate, charge and request all live in TryRequestWorkers, which the agent
+        // path (ActionExecutor.ExecuteWorker) calls too. They used to be duplicated here, with
+        // the gate commented out on THIS side only -- so the no-debt policy was enforced for
+        // agents and silently absent for humans. Invisible while allowNegativeBudget is true,
+        // and an immediate divergence the moment a study condition turns it off.
+        string failReason;
+        if (!TryRequestWorkers(untrainedToRequest, trainedToRequest, out failReason))
+            GameLogPanel.Instance?.LogError(failReason);
+    }
 
-        // Check budget (honors the no-debt policy; allows overspend when allowNegativeBudget is on)
-        // if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
-        // {
-        //     GameLogPanel.Instance.LogError($"Cannot afford worker request: ${totalCost}");
-        //     return;
-        // }
+    /// <summary>Single entry point for hiring workers: prices the request, applies the no-debt
+    /// gate, charges, records the spend, and starts the delayed arrival. Both the human task
+    /// path and the agent action path go through here so neither can acquire workers on terms
+    /// the other could not.</summary>
+    public bool TryRequestWorkers(int untrainedCount, int trainedCount, out string failReason)
+    {
+        failReason = null;
+        if (untrainedCount <= 0 && trainedCount <= 0) return true;
+
         if (SatisfactionAndBudget.Instance == null)
         {
-            return;
+            failReason = "Budget system unavailable.";
+            return false;
         }
 
-        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $"Requesting {untrainedToRequest} untrained and {trainedToRequest} trained workers");
+        int totalCost = (untrainedCount * untrainedWorkerCost) + (trainedCount * trainedWorkerCost);
+        if (!SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
+        {
+            failReason = $"Cannot afford worker request: ${totalCost} (budget ${SatisfactionAndBudget.Instance.GetCurrentBudget()}).";
+            return false;
+        }
+
+        SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $"Requesting {untrainedCount} untrained and {trainedCount} trained workers");
         if (DailyReportData.Instance != null)
         {
             DailyReportData.Instance.RecordWorkerRequestCostCumulative(totalCost);
             DailyReportData.Instance.RecordWorkerRequestCostToday(totalCost);
         }
-        if (untrainedToRequest > 0)
-            StartWorkerRequest(untrainedToRequest, WorkerType.Untrained);
-        if (trainedToRequest > 0)
-            StartWorkerRequest(trainedToRequest, WorkerType.Trained);
+        if (untrainedCount > 0) StartWorkerRequest(untrainedCount, WorkerType.Untrained);
+        if (trainedCount > 0) StartWorkerRequest(trainedCount, WorkerType.Trained);
+        return true;
     }
 
     public void StartWorkerRequest(int workerCount, WorkerType workerType)

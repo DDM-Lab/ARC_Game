@@ -1365,6 +1365,17 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                          $"[ids: {string.Join(",", TaskSystem.Instance.activeTasks.Select(t => t.taskId))}]";
             return false;
         }
+        // Re-check live state before acting, exactly as OnConfirmButtonClicked (the human GUI)
+        // and TryConfirmTask (the agent conversation) both do. Without it THIS path — the gym and
+        // benchmark one — could confirm a task whose facility had already been drained by an
+        // earlier confirm, i.e. act on state the human interface would have refused. Both wings
+        // have to see the same world for their scores to be comparable.
+        if (TaskSystem.Instance != null && !TaskSystem.Instance.RefreshTaskAgainstLiveState(task))
+        {
+            failReason = "This task is no longer needed and has been automatically closed.";
+            return false;
+        }
+
         AgentChoice choice = task.agentChoices != null
             ? task.agentChoices.FirstOrDefault(c => c.choiceId == choiceId)
             : null;

@@ -189,18 +189,14 @@ public class ActionExecutor : MonoBehaviour
                 // Route through the SAME delayed request pathway the human player uses:
                 // workers arrive as NotArrived, land in the "Pending Actions" queue, and
                 // become assignable only after untrainedArrivalDays (see WorkerRequestSystem).
-                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Hired {p.quantity} untrained workers");
-
-                if (DailyReportData.Instance != null)
-                {
-                    DailyReportData.Instance.RecordWorkerRequestCostCumulative(action.cost);
-                    DailyReportData.Instance.RecordWorkerRequestCostToday(action.cost);
-                }
-
+                // SHARED PATH: TryRequestWorkers prices, gates, charges, records and requests —
+                // the same call the human task path makes. Charging here independently is what
+                // let the two interfaces diverge on the no-debt policy.
                 if (WorkerRequestSystem.Instance != null)
                 {
-                    // Emits its own "Requested … arrival Day X" toast + Pending Actions entry.
-                    WorkerRequestSystem.Instance.StartWorkerRequest(p.quantity, WorkerType.Untrained);
+                    string hireFail;
+                    if (!WorkerRequestSystem.Instance.TryRequestWorkers(p.quantity, 0, out hireFail))
+                        return Failure(action.action_id, hireFail);
                 }
                 else
                 {
@@ -218,17 +214,12 @@ public class ActionExecutor : MonoBehaviour
                 break;
 
             case "hire_trained":
-                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Hired {p.quantity} trained workers");
-
-                if (DailyReportData.Instance != null)
-                {
-                    DailyReportData.Instance.RecordWorkerRequestCostCumulative(action.cost);
-                    DailyReportData.Instance.RecordWorkerRequestCostToday(action.cost);
-                }
-
+                // SHARED PATH — see hire_untrained above.
                 if (WorkerRequestSystem.Instance != null)
                 {
-                    WorkerRequestSystem.Instance.StartWorkerRequest(p.quantity, WorkerType.Trained);
+                    string hireTFail;
+                    if (!WorkerRequestSystem.Instance.TryRequestWorkers(0, p.quantity, out hireTFail))
+                        return Failure(action.action_id, hireTFail);
                 }
                 else
                 {
@@ -255,20 +246,16 @@ public class ActionExecutor : MonoBehaviour
                     return Failure(action.action_id, $"Insufficient untrained workers (need {p.quantity}, have {freeUntrained.Count})");
                 }
 
-                SatisfactionAndBudget.Instance.RemoveBudget(action.cost, SatisfactionAndBudget.SpendCategory.Worker, $"Trained {p.quantity} workers");
-
-                if (DailyReportData.Instance != null)
-                {
-                    DailyReportData.Instance.RecordWorkerTrainingCostCumulative(action.cost);
-                    DailyReportData.Instance.RecordWorkerTrainingCostToday(action.cost);
-                }
-
-                // Route through the SAME delayed training pathway the human uses: selected
-                // workers flip to Training, land in the "Pending Actions" queue, and convert
-                // to trained (plus the satisfaction bonus) after trainingDurationDays.
+                // SHARED PATH: TryTrainWorkers prices, gates, charges, records and starts the
+                // delayed training the human uses — selected workers flip to Training, land in
+                // "Pending Actions", and convert (plus the satisfaction bonus) after
+                // trainingDurationDays. Charging here independently is what let the two
+                // interfaces diverge on the no-debt policy.
                 if (WorkerTrainingSystem.Instance != null)
                 {
-                    WorkerTrainingSystem.Instance.StartWorkerTraining(p.quantity);
+                    string trainFail;
+                    if (!WorkerTrainingSystem.Instance.TryTrainWorkers(p.quantity, out trainFail))
+                        return Failure(action.action_id, trainFail);
                 }
                 else
                 {

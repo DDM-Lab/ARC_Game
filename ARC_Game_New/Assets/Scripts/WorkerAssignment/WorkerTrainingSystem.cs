@@ -195,15 +195,32 @@ public class WorkerTrainingSystem : MonoBehaviour
                 return;
         }
 
-        int totalCost = workersToTrain * trainingCostPerWorker;
-        // if (SatisfactionAndBudget.Instance == null || !SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
-        // {
-        //     GameLogPanel.Instance.LogError($"Cannot afford worker training: ${totalCost}");
-        //     return;
-        // }
+        // Price, gate, charge and start all live in TryTrainWorkers, shared with the agent path
+        // (ActionExecutor.ExecuteWorker). The gate used to be commented out here only.
+        string failReason;
+        if (!TryTrainWorkers(workersToTrain, out failReason))
+            GameLogPanel.Instance?.LogError(failReason);
+    }
+
+    /// <summary>Single entry point for training workers: prices it, applies the no-debt gate,
+    /// charges, records the spend and starts training. Both the human task path and the agent
+    /// action path go through here so neither trains on terms the other could not.</summary>
+    public bool TryTrainWorkers(int workersToTrain, out string failReason)
+    {
+        failReason = null;
+        if (workersToTrain <= 0) return true;
+
         if (SatisfactionAndBudget.Instance == null)
         {
-            return;
+            failReason = "Budget system unavailable.";
+            return false;
+        }
+
+        int totalCost = workersToTrain * trainingCostPerWorker;
+        if (!SatisfactionAndBudget.Instance.WouldAllowSpend(totalCost))
+        {
+            failReason = $"Cannot afford worker training: ${totalCost} (budget ${SatisfactionAndBudget.Instance.GetCurrentBudget()}).";
+            return false;
         }
 
         SatisfactionAndBudget.Instance.RemoveBudget(totalCost, SatisfactionAndBudget.SpendCategory.Worker, $"Training {workersToTrain} workers");
@@ -213,6 +230,7 @@ public class WorkerTrainingSystem : MonoBehaviour
             DailyReportData.Instance.RecordWorkerTrainingCostToday(totalCost);
         }
         StartWorkerTraining(workersToTrain);
+        return true;
     }
     
     public void StartWorkerTraining(int workerCount)
