@@ -1,6 +1,7 @@
 {
   "wsUrl": "wss://cora_game_llm.dev.ddmlab.com/ws",
   "mapConfigUrl": "",
-  "logServerUrl": "",
+  "logServerUrl": "https://cora_game.dev.ddmlab.com/cgi-bin/save_game_logs.py",
+  "followUpSurveyUrl": "https://cmu.ca1.qualtrics.com/jfe/form/SV_37V90liCPHEBYkC/?uid={uid}",
   "dataCollectionEnabled": true
 }

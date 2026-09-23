@@ -183,6 +183,14 @@ public class DailyReportManager : MonoBehaviour
             // Player-facing prompt only — does not affect report display or logging above.
             EndOfGamePanel.Instance?.ShowPanel();
         }
+        else
+        {
+            // Every earlier day: upload a cumulative checkpoint (same ordering rule as above —
+            // after DisplayDailyReport(), so the day's report is in the snapshot). Insurance: the
+            // whole log otherwise lives only in browser memory until the Day 8 upload, so a
+            // participant who quits or crashes before then would leave no data at all.
+            GameLogPanel.Instance?.TriggerDayCheckpointSend(currentDay);
+        }
 
         // DisplayDailyReport() above only started reportUI's own multi-section reveal animation
         // (satisfaction/efficiency/receipt/live-status, then the building status table) — it

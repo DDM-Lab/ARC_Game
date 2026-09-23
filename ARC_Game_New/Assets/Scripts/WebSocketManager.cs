@@ -11,6 +11,10 @@ public class AppConfig
     public string wsUrl;
     public string mapConfigUrl;
     public string logServerUrl;
+    /// <summary>Post-game Qualtrics survey link, with {uid} standing in for the participant id
+    /// (read by EndOfGamePanel). Overrides the link set in the scene, so it can be changed on the
+    /// server without rebuilding. Empty/absent/invalid = use the scene's link.</summary>
+    public string followUpSurveyUrl;
     /// <summary>Study mode: if a mapConfigUrl is set but the map cannot be applied, refuse to
     /// run instead of silently falling back to the default scene layout (which would quietly
     /// change the experimental condition). Off by default for casual/dev play.</summary>

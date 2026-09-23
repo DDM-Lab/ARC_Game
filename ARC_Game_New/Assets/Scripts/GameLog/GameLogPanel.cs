@@ -72,6 +72,11 @@ public class LogExportData
     public string exportTime;
     public int totalMessages;
 
+    // "final" = the end-of-game upload; "checkpoint" = a cumulative snapshot taken at the end of an
+    // earlier day (checkpointDay says which). Tells save_game_logs.py where to file it — see that script.
+    public string uploadKind = "final";
+    public int checkpointDay;
+
     // ── Episode reproduction ──
     // The random state the episode started from (see EpisodeReproLog). With the build id
     // and the parameters below, this is everything needed to reproduce the scenario.
@@ -206,6 +211,38 @@ public class GameLogPanel : MonoBehaviour
         RefreshDisplay();
         StartCoroutine(LoadDataCollectionSetting());
         LogPlayerAction("Game started");
+        LogClientTimeZone();
+    }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+    // See Assets/Plugins/WebGL/BrowserRedirect.jslib
+    [System.Runtime.InteropServices.DllImport("__Internal")]
+    static extern string GetBrowserTimeInfo();
+#endif
+
+    // Every message's realTime is DateTime.Now with no zone attached, so on its own it can't be
+    // lined up across participants. Record the participant's time zone once, at the start: the
+    // browser's own answer (authoritative — .NET's TimeZoneInfo.Local is unreliable in WebGL) next
+    // to what .NET thinks, which also shows whether realTime is really local time or UTC.
+    void LogClientTimeZone()
+    {
+        try
+        {
+            TimeSpan offset = DateTimeOffset.Now.Offset;
+            string offsetText = (offset < TimeSpan.Zero ? "-" : "+") + offset.Duration().ToString("hh\\:mm");
+            string dotNetView = $"dotnet: zone={TimeZoneInfo.Local.Id}, utcOffset={offsetText}, " +
+                                $"DateTime.Now={DateTime.Now:yyyy-MM-dd HH:mm:ss}, DateTime.UtcNow={DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}";
+#if UNITY_WEBGL && !UNITY_EDITOR
+            LogPlayerAction($"Client time zone | browser: {GetBrowserTimeInfo()} | {dotNetView}");
+#else
+            LogPlayerAction($"Client time zone | {dotNetView}");
+#endif
+        }
+        catch (Exception e)
+        {
+            // Never let a diagnostic line break game start.
+            LogPlayerAction($"Client time zone unavailable: {e.GetType().Name}");
+        }
     }
 
     void InitializeUI()
@@ -440,6 +477,16 @@ public class GameLogPanel : MonoBehaviour
             LogSender.Instance.SendAllLogs();
     }
 
+    // Called from DailyReportManager when a day's report is shown (every day except the last, which
+    // uses TriggerEndGameLogSend). Uploads the whole log so far as a cumulative checkpoint, so a
+    // participant who drops out or whose final upload fails still leaves data up to their last day.
+    public void TriggerDayCheckpointSend(int day)
+    {
+        LogPlayerAction($"Day {day} report reached — uploading checkpoint");
+        if (LogSender.Instance != null)
+            LogSender.Instance.SendDayCheckpoint(day);
+    }
+
     #region Filter Event Handlers
 
     void OnMessageTypeFilterChanged(int value)
@@ -535,7 +582,7 @@ public class GameLogPanel : MonoBehaviour
         LogPlayerAction($"Exported {messagesToExport.Count} log messages");
     }
 
-    public string GetMessagesAsJson(bool exportAll = false)
+    public string GetMessagesAsJson(bool exportAll = false, string uploadKind = "final", int checkpointDay = 0)
     {
         List<LogMessage> messagesToExport = exportAll ?
             allMessages.ToList() :
@@ -544,6 +591,8 @@ public class GameLogPanel : MonoBehaviour
                 m.round == GlobalClock.Instance.GetCurrentTimeSegment() + 1).ToList();
 
         LogExportData exportData = new LogExportData(messagesToExport);
+        exportData.uploadKind = uploadKind;
+        exportData.checkpointDay = checkpointDay;
 
         // Inject the episode's random state (captured before the scene loaded)
         exportData.rngState  = EpisodeReproLog.RngStateJson;
