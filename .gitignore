@@ -24,8 +24,15 @@ Builds/
 /_worktrees/
 /ARC_Game_New/Library.reimport_bak/
 /ARC_Game_New/cora_sim/
-/ARC_Game_New/analysis*/
-/ARC_Game_New/analyze/
+# Generated analysis OUTPUT only. The scripts that produce it (analysis/*.py, analyze/*.py)
+# are source and must stay tracked: analyze/ was once ignored wholesale here, which hid the
+# benchmark figure pipeline from git entirely.
+/ARC_Game_New/analysis/figs*/
+/ARC_Game_New/analysis/tables*/
+/ARC_Game_New/analysis_assets*/
+/ARC_Game_New/analysis_four_panel*/
+/ARC_Game_New/analyze/out/
+__pycache__/
 /ARC_Game_New/generated/
 /ARC_Game_New/prompt_dumps/
 /ARC_Game_New/plugins_staged/
