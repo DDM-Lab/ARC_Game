@@ -14,7 +14,7 @@ Architecture:
 Observation: Full game state dict (GameStatePayload from Unity)
 Action: CSV string of action indexes (e.g., "5,12,3") or single int
 Reward: Satisfaction delta from previous step
-Termination: satisfaction <= 0 OR max_episode_steps reached
+Termination: game over (finalDay complete) OR max_episode_steps reached
 
 Requirements:
     pip install gymnasium numpy
@@ -574,7 +574,7 @@ class ARCGameGymEnv(gym.Env):
         Returns:
             observation: New game state from Unity
             reward: Satisfaction delta
-            terminated: Whether episode ended (satisfaction <= 0)
+            terminated: Whether the game is over (finalDay complete)
             truncated: Whether episode was cut short (max steps)
             info: Additional information
         """
@@ -676,12 +676,19 @@ class ARCGameGymEnv(gym.Env):
 
         # Check termination conditions. The game is a finite-horizon MDP that ends
         # after finalDay's last round; Unity surfaces that via sessionInfo.isGameOver.
-        # Treat it (and satisfaction bottoming out) as a genuine terminal state so the
-        # RL loop resets instead of advancing into meaningless post-finalDay rounds
-        # (which is what previously froze recycled processes past finalDay).
+        # Treat it as a genuine terminal state so the RL loop resets instead of advancing
+        # into meaningless post-finalDay rounds (which is what previously froze recycled
+        # processes past finalDay).
+        #
+        # Satisfaction is NOT a terminal condition any more. It used to start at 50 and
+        # "satisfaction <= 0" meant the player had run it into the ground. Since
+        # main-bugfixes 6a8bef2e ("sat to 0 on start") it is an accumulated score that
+        # STARTS at 0 and builds from the components — so the old rule ended every episode
+        # after its first round, and every RL rollout and benchmark episode on that build
+        # was one step long.
         session = self.game_state.get("sessionInfo", {})
         game_over = bool(session.get("isGameOver", False))
-        terminated = current_satisfaction <= 0 or game_over
+        terminated = game_over
         truncated = self.current_step >= self.max_episode_steps
 
         # Build info
