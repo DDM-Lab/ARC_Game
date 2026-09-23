@@ -904,9 +904,17 @@ public class DailyReportData : MonoBehaviour
         float raw = (d.GetCumulativeWorkerTrainingCost() + d.GetCumulativeWorkerRequestCost()) / workingRounds;
 
         var wrs = FindObjectOfType<WorkerRequestSystem>();
-        float untrainedCost = wrs != null ? wrs.untrainedWorkerCost : 100f;
+        var gdm = GameDataManager.Instance;
+        if (wrs == null || gdm == null) return 1f; // can't define a minimum without the live price/schedule
 
-        float min = untrainedCost;
+        // Best-case cost per worker-ROUND: the untrained hire price spread over every round a
+        // worker could work. raw above is dollars per worker-round, so min must be too — it used to
+        // be the bare hire price ($300 per WORKER), ~30x too high, so raw always fell below min and
+        // the score was clamped to its maximum for nearly everyone. Day 1 has no worker service, so
+        // a worker only works the remaining days. The price is read live from the request system
+        // (the same value hires are charged at), not hard-coded.
+        int productiveRounds = Mathf.Max(1, (gdm.InitialGameDays - 1) * gdm.InitialRoundsPerDay);
+        float min = (float)wrs.untrainedWorkerCost / productiveRounds;
         if (min <= 0f) return 1f;
 
         return Mathf.Clamp01(1f - (raw - min) / (49f * min));
