@@ -187,7 +187,7 @@ public class RewardMetricsTracker : MonoBehaviour
                            + s.untrainedTraining + s.trainedFree + s.untrainedFree;
         }
         var sb = SatisfactionAndBudget.Instance;
-        return new RewardMetrics
+        var payload = new RewardMetrics
         {
             foodResolved = foodResolved,
             foodFulfilled = foodFulfilled,
@@ -206,5 +206,41 @@ public class RewardMetricsTracker : MonoBehaviour
             workerSpend = sb != null ? sb.CumulativeWorkerSpend : 0,
             caseworkSpend = sb != null ? sb.CumulativeCaseworkSpend : 0,
         };
+        FillUnityScore(payload, sb);
+        return payload;
+    }
+
+    /// <summary>Copy DailyReportData's own S_*/C_* values into the payload. Any failure leaves
+    /// scoreAvailable false rather than throwing — C_Food/C_Lodging touch GameDataManager and
+    /// BuildingSystem, which are absent for a frame or two at startup and during a gym reset.</summary>
+    static void FillUnityScore(RewardMetrics p, SatisfactionAndBudget sb)
+    {
+        if (sb != null)
+        {
+            p.liveSatisfaction = sb.GetCurrentSatisfaction();
+            p.liveEfficiency = sb.GetCurrentEfficiency();
+        }
+        var d = DailyReportData.Instance;
+        if (d == null) return;
+        try
+        {
+            p.sFood = d.S_Food(); p.sLodging = d.S_Lodging(); p.sWorkerUse = d.S_WorkerUse();
+            p.sWaste = d.S_Waste(); p.sCasework = d.S_Casework();
+            p.cFood = d.C_Food(); p.cLodging = d.C_Lodging(); p.cWorker = d.C_Worker();
+            p.satisfactionComponentsTotal = d.ComputeFreshSatisfactionTotal();
+            p.efficiencyComponentsTotal = d.ComputeFreshEfficiencyTotal();
+            p.foodPacksConsumed = d.GetCumulativeFoodPacksConsumedByClients();
+            p.foodPacksNeeded = d.GetCumulativeFoodPacksNeededByClients();
+            p.foodPacksWasted = d.GetCumulativeFoodPacksWasted();
+            p.lodgingNightsConsumed = d.GetCumulativeLodgingNightsConsumed();
+            p.lodgingNightsNeeded = d.GetCumulativeLodgingNightsNeeded();
+            p.clientRoundsAwaitingCasework = d.GetCumulativeClientRoundsAwaitingCasework();
+            p.clientsRequestedCasework = d.GetCumulativeClientsRequestedCasework();
+            p.idleWorkerRounds = d.GetCumulativeIdleWorkerRounds();
+            p.workingWorkerRounds = d.GetCumulativeWorkingWorkerRounds();
+            p.trainingWorkerRounds = d.GetCumulativeTrainingWorkerRounds();
+            p.scoreAvailable = true;
+        }
+        catch (System.Exception) { p.scoreAvailable = false; }
     }
 }

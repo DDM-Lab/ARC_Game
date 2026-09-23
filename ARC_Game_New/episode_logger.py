@@ -49,6 +49,8 @@ class EpisodeLogger:
         tokens_used: int,
         game_state_after: dict = None,
         session_id: str = "",
+        trigger: str = None,
+        tools_called: list = None,
     ) -> None:
         """Append one agent turn record to the JSONL log.
 
@@ -145,6 +147,8 @@ class EpisodeLogger:
             "attempted_cost": attempted_cost,
             "reward": reward,
             "reward_components": reward_components,
+            "trigger": trigger,            # director | peer | round | None (non-continuous)
+            "tools_called": tools_called,
             "total_actions_attempted": total_actions_attempted,
             "successful_actions": successful_actions,
             "failed_actions": failed_actions,

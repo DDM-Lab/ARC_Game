@@ -3128,6 +3128,7 @@ public class TaskSystem : MonoBehaviour
         {
             state.satisfaction = (int)SatisfactionAndBudget.Instance.GetCurrentSatisfaction();
             state.budget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+            state.efficiency = SatisfactionAndBudget.Instance.GetCurrentEfficiency();
         }
         else
         {

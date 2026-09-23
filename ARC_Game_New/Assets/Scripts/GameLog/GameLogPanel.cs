@@ -436,6 +436,8 @@ public class GameLogPanel : MonoBehaviour
     public void TriggerEndGameLogSend()
     {
         LogPlayerAction("Day 8 report reached — auto-sending all logs");
+        // Final state to the router session log (the only channel that is live on Talos).
+        WebSocketManager.Instance?.SendGameEnd(GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 0);
         if (LogSender.Instance != null)
             LogSender.Instance.SendAllLogs();
     }

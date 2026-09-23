@@ -11,6 +11,14 @@ and live games agree on the objective.
 # All scoring lives here in Python so it can be retuned without a Unity rebuild.
 # Satisfaction is higher-better; Cost-Efficiency is lower-better and is SUBTRACTED.
 REWARD_WEIGHTS = {
+    # ── Unity formula (DEFAULT, 2026-09-23) ────────────────────────────────────────
+    # score = w_sat * satisfaction + w_eff * efficiency, each on 0..1 (Unity's 0..1000 / 1000).
+    # These are the two numbers the daily report shows a human, so the RL reward, the
+    # benchmark and the router all optimise what a person playing the game sees. Unity has
+    # no single combined score; equal weights are the one choice made here.
+    "w_sat": 1.0,
+    "w_eff": 1.0,
+    # ── Legacy formula (only for episodes recorded before Unity exported its score) ──
     # Satisfaction (needs-met ratios are clamped to [0,1])
     "w_food": 1.0,
     "w_lodging": 1.0,
@@ -34,8 +42,14 @@ def _clamp01(x: float) -> float:
     return 0.0 if x < 0 else (1.0 if x > 1.0 else x)
 
 
-def compute_score_components(rm: dict, w: dict = REWARD_WEIGHTS) -> dict:
-    """Full breakdown of the composite reward from Unity's rewardMetrics.
+def compute_legacy_score_components(rm: dict, w: dict = REWARD_WEIGHTS) -> dict:
+    """LEGACY (pre-2026-09-23) composite reward, re-derived in Python from rewardMetrics.
+
+    Kept so episodes recorded before Unity exported its own score can still be scored. It is
+    NOT the formula humans see: 4 components not 5, task-based rather than pack/night-based
+    ratios, a different worker-use term, no waste term, and a subtracted cost.
+
+    Original description:
 
     Returns every term so each can be logged/graphed independently:
       satisfaction sub-terms: sat_food, sat_lodging, sat_worker_use
@@ -99,6 +113,73 @@ def compute_score_components(rm: dict, w: dict = REWARD_WEIGHTS) -> dict:
 
 
 def compute_score(rm: dict, w: dict = REWARD_WEIGHTS):
-    """Backward-compatible: (satisfaction, cost_efficiency, score)."""
+    """Backward-compatible triple: (satisfaction, second term, score).
+
+    The second element is `efficiency` under the Unity formula (higher is better) and
+    `cost_efficiency` under the legacy one (lower is better). Prefer
+    compute_score_components and read the keys you mean."""
     c = compute_score_components(rm, w)
-    return c["satisfaction"], c["cost_efficiency"], c["score"]
+    second = c["efficiency"] if c.get("formula") == "unity" else c["cost_efficiency"]
+    return c["satisfaction"], second, c["score"]
+
+
+# Every key any consumer may read, so gym metrics / loggers never KeyError whichever
+# formula produced the dict. Terms that do not apply to a formula are 0.0.
+_ALL_KEYS = [
+    # unity formula
+    "sat_food", "sat_lodging", "sat_worker_use", "sat_waste", "sat_casework",
+    "eff_food", "eff_lodging", "eff_worker", "efficiency",
+    # legacy formula
+    "casework_processing_sat", "cost_food", "cost_lodging", "cost_worker",
+    "casework_efficiency", "cost_efficiency",
+    # shared
+    "satisfaction", "score",
+]
+
+
+def compute_score_components(rm: dict, w: dict = REWARD_WEIGHTS) -> dict:
+    """Composite reward — Unity's formula, read from Unity rather than re-implemented.
+
+    Unity exports DailyReportData's own S_*/C_* ratios and the live satisfaction/efficiency
+    inside rewardMetrics (RewardMetricsTracker.FillUnityScore). Reading them — instead of
+    porting the math — means there is exactly ONE implementation of the score: fix it in
+    DailyReportData and the RL reward, the benchmark and the router follow with no Python
+    change.
+
+      satisfaction = liveSatisfaction / 1000   (what the human sees, incl. choice impacts)
+      efficiency   = liveEfficiency   / 1000
+      score        = w_sat * satisfaction + w_eff * efficiency       (higher is better)
+
+    sat_* / eff_* are each component's contribution on the same 0..1 scale (ratio x its
+    Unity weight: 0.2 for the five satisfaction terms, 1/3 for the three efficiency terms).
+
+    KNOWN ISSUE, deliberately NOT corrected here: sat_waste is wasted/(consumed+wasted) and
+    Unity ADDS it, although the daily report labels it "Food Waste Penalty" — more waste
+    raises satisfaction. That is a game-design bug to fix in DailyReportData, not here.
+
+    Falls back to the legacy formula when rewardMetrics predates the export
+    (scoreAvailable absent/false), and says which it used under "formula".
+    """
+    out = {k: 0.0 for k in _ALL_KEYS}
+    if not rm:
+        out["formula"] = "none"
+        return out
+    if not rm.get("scoreAvailable"):
+        out.update(compute_legacy_score_components(rm, w))
+        out["formula"] = "legacy"
+        return out
+
+    SAT_W, EFF_W = 0.2, 1.0 / 3.0   # DailyReportData.SAT_W / EFF_W
+    out["sat_food"] = rm.get("sFood", 0.0) * SAT_W
+    out["sat_lodging"] = rm.get("sLodging", 0.0) * SAT_W
+    out["sat_worker_use"] = rm.get("sWorkerUse", 0.0) * SAT_W
+    out["sat_waste"] = rm.get("sWaste", 0.0) * SAT_W
+    out["sat_casework"] = rm.get("sCasework", 0.0) * SAT_W
+    out["eff_food"] = rm.get("cFood", 0.0) * EFF_W
+    out["eff_lodging"] = rm.get("cLodging", 0.0) * EFF_W
+    out["eff_worker"] = rm.get("cWorker", 0.0) * EFF_W
+    out["satisfaction"] = rm.get("liveSatisfaction", 0.0) / 1000.0
+    out["efficiency"] = rm.get("liveEfficiency", 0.0) / 1000.0
+    out["score"] = w["w_sat"] * out["satisfaction"] + w["w_eff"] * out["efficiency"]
+    out["formula"] = "unity"
+    return out

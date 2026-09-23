@@ -240,9 +240,10 @@ async def test_telemetry_wired():
         captured = {}
         orig_log = sess._log_turn
 
-        def spy_log_turn(agent, fs, fa, packages, sel, results, sat_b, gs, bud_b, raw, tokens):
-            captured.update(packages=packages, results=results, raw=raw, tokens=tokens)
-            return orig_log(agent, fs, fa, packages, sel, results, sat_b, gs, bud_b, raw, tokens)
+        def spy_log_turn(agent, fs, fa, packages, sel, results, sat_b, gs, bud_b, raw, tokens, **kw):
+            captured.update(packages=packages, results=results, raw=raw, tokens=tokens,
+                            trigger=kw.get("trigger"), tools_called=kw.get("tools_called"))
+            return orig_log(agent, fs, fa, packages, sel, results, sat_b, gs, bud_b, raw, tokens, **kw)
         sess._log_turn = spy_log_turn
 
         step = {}
@@ -262,6 +263,9 @@ async def test_telemetry_wired():
         await sess._run_continuous_for_message(food_officer(cfg))
 
         assert captured["tokens"] == 200, f"tokens not summed across steps: {captured['tokens']}"
+        # Turn provenance: why the turn ran and which tools it called, in order.
+        assert captured["trigger"] in ("director", "peer", "round"), captured["trigger"]
+        assert captured["tools_called"] == [a.get("tool") for a in captured["packages"]], captured["tools_called"]
         res = captured["results"]
         assert any(r.get("action_id") == "build_Kitchen_1" and r.get("success")
                    for r in res), f"execution_results missing the build: {res}"

@@ -56,6 +56,11 @@ public class WebSocketManager : MonoBehaviour
     // Flips to true after the first successful connect of this play session.
     // Used to suppress re-sending game_start on transient reconnects.
     private bool gameStartSentThisSession = false;
+    // Provenance (seed, RNG state, build, parameters in effect) is sent once per session, but
+    // only after GameDataManager has finished loading — parameters arrive asynchronously, so
+    // at hello time they are often not there yet. Without this the session log could not say
+    // which scenario a participant actually played.
+    private bool provenanceSentThisSession = false;
     // Server-assigned session id from hello_ack. Empty until the handshake
     // completes; reset on each fresh connection.
     private string sessionId = "";
@@ -203,6 +208,13 @@ public class WebSocketManager : MonoBehaviour
 
     void Update()
     {
+        if (gameStartSentThisSession && !provenanceSentThisSession && isConnected
+            && GameDataManager.Instance != null && GameDataManager.Instance.IsDataReady)
+        {
+            SendProvenance();
+            provenanceSentThisSession = true;
+        }
+
         #if !UNITY_WEBGL || UNITY_EDITOR
         // Dispatch WebSocket messages (required for NativeWebSocket)
         if (websocket != null)
@@ -1122,6 +1134,23 @@ public class WebSocketManager : MonoBehaviour
     /// retry until success (the human first-proposal one-shot) rely on this
     /// bool so they don't flip their "done" flag before the state is ready.
     /// </summary>
+    /// <summary>Send the FINAL game state at the Day-N report. begin_round stops at the last
+    /// round and the client never sends round_end, so without this the router's session log has
+    /// no end-of-game state at all — not the final score, budget, or reward metrics.</summary>
+    public void SendGameEnd(int day)
+    {
+        if (!isConnected || TaskSystem.Instance == null) return;
+        GameStatePayload gameState = TaskSystem.Instance.GetCurrentGameState();
+        if (gameState == null) return;
+        SendRawMessage(JsonUtility.ToJson(new GameEndMessage
+        {
+            game_state = gameState,
+            day = day,
+            timestamp = System.DateTime.UtcNow.ToString("o"),
+        }));
+        Debug.Log($"[WS] game_end sent (day={day})");
+    }
+
     public bool SendBeginRound(int round, int day, int segment)
     {
         if (!isConnected) return false;
@@ -1162,6 +1191,23 @@ public class WebSocketManager : MonoBehaviour
     /// discarded — the human first-proposal must wait for this.
     /// </summary>
     public bool HasSentGameStart() => gameStartSentThisSession;
+
+    void SendProvenance()
+    {
+        string msg = "{\"type\":\"provenance\""
+            + ",\"seed\":" + EpisodeSeed.Seed
+            + ",\"seed_source\":\"" + EscapeJson(EpisodeSeed.Source ?? "") + "\""
+            + ",\"rng_state\":\"" + EscapeJson(EpisodeReproLog.RngStateJson ?? "") + "\""
+            + ",\"build_guid\":\"" + EscapeJson(EpisodeReproLog.BuildGuid ?? "") + "\""
+            + ",\"game_version\":\"" + EscapeJson(Application.version ?? "") + "\""
+            + ",\"platform\":\"" + EscapeJson(Application.platform.ToString()) + "\""
+            + ",\"param_source\":\"" + EscapeJson(GameConfigLoader.Instance != null ? GameConfigLoader.Instance.ConfigSource ?? "" : "") + "\""
+            + ",\"parameters\":\"" + EscapeJson(GameDataManager.ParametersInEffectJson ?? "") + "\""
+            + ",\"map_hash\":\"" + EscapeJson(GameConfigLoader.MapHash ?? "") + "\""
+            + ",\"map_status\":\"" + EscapeJson(GameConfigLoader.MapStatus ?? "") + "\"}";
+        SendRawMessage(msg);
+        Debug.Log("[WS] provenance sent");
+    }
 
     /// <summary>
     /// Send choice_made back to router after player selects a package.
@@ -1575,6 +1621,14 @@ public class GymStepResponse
 // -- Multi-Agent Router message classes --------------------------------------
 
 [System.Serializable]
+public class GameEndMessage
+{
+    public string type = "game_end";
+    public GameStatePayload game_state;
+    public int day;
+    public string timestamp;
+}
+
 public class BeginRoundMessage
 {
     public string type = "begin_round";

@@ -705,6 +705,8 @@ class ARCGameGymEnv(gym.Env):
             "score": score,
             "satisfaction_score": satisfaction_score,
             "cost_efficiency": cost_efficiency,
+            "efficiency": comps["efficiency"],
+            "score_formula": comps.get("formula"),
             "score_components": comps,   # sat_food/sat_lodging/sat_worker_use/cost_food/cost_lodging/cost_worker
             # Flat scalar metrics for WandB. Verlog's _env_metrics collects info["metrics"]
             # per step and logs each key (np.mean over the rollout); the LLM benchmark logs
@@ -726,6 +728,14 @@ class ARCGameGymEnv(gym.Env):
                 "game/cost_lodging": comps["cost_lodging"],
                 "game/cost_worker": comps["cost_worker"],
                 "game/casework_efficiency": comps["casework_efficiency"],
+                # Unity formula (reward_scoring.compute_score_components, formula="unity").
+                # Legacy keys above read 0.0 under it; these read 0.0 under legacy.
+                "game/efficiency": comps["efficiency"],
+                "game/sat_waste": comps["sat_waste"],
+                "game/sat_casework": comps["sat_casework"],
+                "game/eff_food": comps["eff_food"],
+                "game/eff_lodging": comps["eff_lodging"],
+                "game/eff_worker": comps["eff_worker"],
             },
             "reward_metrics": self.game_state.get("rewardMetrics"),
             "executed_actions": [a.get("description", "") for a in executed_actions],

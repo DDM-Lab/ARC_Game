@@ -490,7 +490,11 @@ class Session:
             return
         print(f"[router] Received message type: {msg_type}")
 
-        if msg_type == "begin_round":
+        if msg_type == "game_end":
+            self._emit_round_state(msg.get("game_state") or {}, phase="game_end")
+        elif msg_type == "provenance":
+            self._handle_provenance(msg)
+        elif msg_type == "begin_round":
             # Run as background task so receive loop stays active for choice_made messages
             _t = asyncio.create_task(self._handle_begin_round(msg))
             _t.add_done_callback(self._on_round_task_done)
@@ -554,6 +558,10 @@ class Session:
 
         # Validate game state has required fields
         self._validate_game_state(game_state)
+        # Per-round state record. Written for EVERY session, LLM or not: before this, a
+        # human-only game logged clicks and nothing about how the game was going round by
+        # round, so it could not be compared with a benchmark episode at all.
+        self._emit_round_state(game_state, phase="round_start")
 
         # Enumerate full action space from current state
         all_actions = _enumerate_actions(game_state)
@@ -1788,7 +1796,10 @@ Respond with ONLY the package index number (0, 1, or 2).
         raw = last_text or f"[continuous] {executed_total} action(s) executed"
         self._log_turn(agent, filtered_state, filtered_actions, turn_attempts, None,
                        turn_results, sat_before, game_state, budget_before,
-                       raw, tokens_total)
+                       raw, tokens_total,
+                       trigger=("director" if triggered_by_director
+                                else "peer" if triggered_by_peer else "round"),
+                       tools_called=[a.get("tool") for a in turn_attempts])
         print(f"[router]   ✓ Continuous agent {agent.subagent_name}: "
               f"{executed_total} action(s) executed this turn.")
         return game_state, all_actions
@@ -3281,6 +3292,50 @@ Respond with ONLY the package index number (0, 1, or 2).
                   f"(a previous action almost certainly timed out).")
             return
         self._pending_action.set_result(msg)
+
+    def _emit_round_state(self, game_state: dict, phase: str) -> None:
+        """One `round_state` event: the game's own score (Unity's formula, via
+        reward_scoring), budget, efficiency, the full rewardMetrics counters, and the
+        active-task count. Same fields the gym and the benchmark record per round, so a
+        human session, an LLM session and a benchmark episode line up column for column."""
+        try:
+            sab = game_state.get("satisfactionAndBudget") or {}
+            rm = game_state.get("rewardMetrics") or {}
+            comps = _score_components(rm) if _score_components else None
+            self._emit("round_state", {
+                "phase": phase,
+                "budget": sab.get("budget"),
+                "satisfaction": sab.get("satisfaction"),
+                "efficiency": sab.get("efficiency"),
+                "active_tasks": len(game_state.get("allActiveTasks") or []),
+                "score": comps.get("score") if comps else None,
+                "score_formula": comps.get("formula") if comps else None,
+                "score_components": comps,
+                "reward_metrics": rm,
+            })
+        except Exception as e:   # logging must never break a live session
+            print(f"[router] round_state logging failed: {e}")
+
+    def _handle_provenance(self, msg: dict) -> None:
+        """Which scenario this session actually played: seed, RNG state, build, and every
+        parameter in effect. Arrives once, after the client's parameters finish loading."""
+        params = msg.get("parameters") or ""
+        try:
+            params = json.loads(params) if params else {}
+        except (TypeError, ValueError):
+            pass   # keep the raw string rather than drop it
+        self._emit("provenance", {
+            "seed": msg.get("seed"),
+            "seed_source": msg.get("seed_source"),
+            "rng_state": msg.get("rng_state"),
+            "build_guid": msg.get("build_guid"),
+            "game_version": msg.get("game_version"),
+            "platform": msg.get("platform"),
+            "param_source": msg.get("param_source"),
+            "parameters": params,
+            "map_hash": msg.get("map_hash"),
+            "map_status": msg.get("map_status"),
+        })
 
     def _handle_round_end(self, msg: dict):
         print(f"[router] Round {self.round_num} ended.")
@@ -4806,6 +4861,8 @@ Respond with ONLY the package index number (0, 1, or 2).
         budget_before: float,
         raw: str,
         tokens: int,
+        trigger: Optional[str] = None,
+        tools_called: Optional[list] = None,
     ):
         self.logger.log_turn(
             episode_id=self.episode_id,
@@ -4832,6 +4889,11 @@ Respond with ONLY the package index number (0, 1, or 2).
             game_state_after=game_state_after,
             # Keeps the turn record attributable in a MERGED corpus (bulk export → SFT).
             session_id=self.session_id,
+            # WHY this turn ran (director addressed it / a peer officer messaged it / the
+            # round started) and WHICH tools it called, in order. This is the hook for
+            # logging sub-agent use: a delegated turn is one more trigger value.
+            trigger=trigger,
+            tools_called=tools_called,
         )
 
 
@@ -4856,8 +4918,10 @@ def _get_budget(state: dict) -> float:
 # dev: safe-by-default, since production is the case you can forget to harden.
 try:
     from reward_scoring import REWARD_WEIGHTS as _REWARD_WEIGHTS_STAMP
+    from reward_scoring import compute_score_components as _score_components
 except ImportError:
     _REWARD_WEIGHTS_STAMP = None
+    _score_components = None
 
 _DEV_DOCS = os.environ.get("CORA_DEV_DOCS", "").strip().lower() in ("1", "true", "yes")
 _DOCS_KW = {} if _DEV_DOCS else {"docs_url": None, "redoc_url": None, "openapi_url": None}
