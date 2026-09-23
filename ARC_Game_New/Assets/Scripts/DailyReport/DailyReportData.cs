@@ -860,9 +860,17 @@ public class DailyReportData : MonoBehaviour
 
         var gdm = GameDataManager.Instance;
         var bs = FindObjectOfType<BuildingSystem>();
-        int days = gdm.InitialGameDays;
 
-        float min = (float)bs.kitchenConstructionCost / (gdm.InitialKitchenCapacity * days);
+        // Best-case cost per pack: one kitchen's construction cost spread over every pack it can
+        // produce. A kitchen produces InitialKitchenFoodCapacity packs a day (it refills to
+        // capacity daily) — NOT InitialKitchenCapacity, a retired setting that is no longer in the
+        // parameter sheet and silently fell back to 10, which made this minimum ~17x too high.
+        // Day 1 has no food service, so a kitchen only produces on the remaining days.
+        int productiveDays = Mathf.Max(1, gdm.InitialGameDays - 1);
+        int kitchenPacksPerDay = gdm.InitialKitchenFoodCapacity;
+        if (kitchenPacksPerDay <= 0) return 1f; // avoid divide-by-zero if capacity is misconfigured
+
+        float min = (float)bs.kitchenConstructionCost / (kitchenPacksPerDay * productiveDays);
         if (min <= 0f) return 1f; // avoid divide-by-zero if min is misconfigured
 
         return Mathf.Clamp01(1f - (raw - min) / (49f * min));
