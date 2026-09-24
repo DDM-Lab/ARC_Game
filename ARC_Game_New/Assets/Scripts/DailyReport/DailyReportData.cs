@@ -113,6 +113,10 @@ public class DailyReportData : MonoBehaviour
     private float cumulativeWorkerTrainingCost = 0f;
     //END NEW
 
+    // Guards RecordInitialWorkerImputedCost() to once per game (see that method) — not part of
+    // Snapshot, since a restore overwrites cumulativeWorkerRequestCost directly regardless of it.
+    private bool initialWorkerCostImputed = false;
+
     // Singleton
     public static DailyReportData Instance { get; private set; }
     
@@ -134,7 +138,78 @@ public class DailyReportData : MonoBehaviour
         FindSystemReferences();
         SubscribeToEvents();
         RecordDayStartMetrics();
+        RecordInitialWorkerImputedCost();
+        LogCostEfficiencyMinimums();
         SyncWithExistingTasks();
+    }
+
+    /// <summary>
+    /// Logs the cost-per-unit minimums C_Food/C_Lodging/C_Worker will score against this session,
+    /// once at game start, so a session's log documents which formula/parameters produced its
+    /// scores — without this, only the resulting score was visible (via
+    /// DailyReportUI.LogDailyReportScoreFormulas' per-day lines), not what it was scored against.
+    /// Reads GetFoodCostMin/GetLodgingCostMin/GetWorkerCostMin — the exact values the scores use —
+    /// so this can never drift out of sync with the formulas themselves.
+    /// </summary>
+    void LogCostEfficiencyMinimums()
+    {
+        float? foodMin = GetFoodCostMin();
+        float? lodgingMin = GetLodgingCostMin();
+        float? workerMin = GetWorkerCostMin();
+
+        static string Fmt(float? m) => m.HasValue ? $"${m.Value:F3}" : "undefined (missing config — that score returns max)";
+
+        string message = $"Cost efficiency minimums for this session: food={Fmt(foodMin)}/pack, " +
+                         $"lodging={Fmt(lodgingMin)}/night, worker={Fmt(workerMin)}/worker-round " +
+                         $"(score = 0 at 50x minimum, 1.0 at or below minimum).";
+        GameLogPanel.Instance?.LogMetricsChange(message);
+        Debug.Log($"[DailyReportData] {message}");
+    }
+
+    /// <summary>
+    /// C_Worker()'s cost-efficiency score charges every worker against the price of requesting
+    /// one — but the free starting volunteers (GameDataManager.InitialTrainedVolunteerCount /
+    /// InitialUntrainedVolunteerCount) were never charged at all, so a participant who never
+    /// requests more workers works entirely on "free" labor and the score sits at its maximum for
+    /// the whole game regardless of how those workers are used.
+    ///
+    /// Fix: treat the starting roster as if it had been requested at game start, at the same
+    /// per-worker prices a real request would pay (trained x trainedWorkerCost + untrained x
+    /// untrainedWorkerCost), added once to the SAME cumulative figure C_Worker() already reads
+    /// (GetCumulativeWorkerRequestCost()) — no new formula field, no change to C_Worker() itself.
+    /// Runs once per game (not once per scene load): a snapshot restore overwrites
+    /// cumulativeWorkerRequestCost with the real saved value afterward, so this can't double-count.
+    /// </summary>
+    void RecordInitialWorkerImputedCost()
+    {
+        if (initialWorkerCostImputed) return;
+        initialWorkerCostImputed = true;
+
+        var gdm = GameDataManager.Instance;
+        var wrs = FindObjectOfType<WorkerRequestSystem>();
+        if (gdm == null || wrs == null)
+        {
+            Debug.LogWarning("[DailyReportData] Could not impute initial worker cost — GameDataManager or WorkerRequestSystem missing. Worker Cost Efficiency will under-count the starting roster.");
+            return;
+        }
+
+        int trained = gdm.InitialTrainedVolunteerCount;
+        int untrained = gdm.InitialUntrainedVolunteerCount;
+        float imputedCost = trained * wrs.trainedWorkerCost + untrained * wrs.untrainedWorkerCost;
+        if (imputedCost <= 0f) return;
+
+        RecordWorkerRequestCostCumulative(imputedCost);
+        // Deliberately NOT RecordWorkerRequestCostToday: that feeds the Day 1 spend receipt shown
+        // to the player, and this isn't real money spent — only the score-facing cumulative figure
+        // should see it.
+
+        string reason = $"Score formula update: starting roster ({trained} trained, {untrained} untrained) " +
+                        $"now charged as if requested at game start (${wrs.trainedWorkerCost}/trained, " +
+                        $"${wrs.untrainedWorkerCost}/untrained) = ${imputedCost:F0}, added to cumulative worker " +
+                        $"request cost so Worker Cost Efficiency no longer starts — and stays, if no more " +
+                        $"workers are ever requested — pinned at its maximum for working the free roster.";
+        GameLogPanel.Instance?.LogMetricsChange(reason);
+        Debug.Log($"[DailyReportData] {reason}");
     }
     
     void FindSystemReferences()
@@ -858,41 +933,62 @@ public class DailyReportData : MonoBehaviour
 
         float raw = d.GetCumulativeFoodSpend() / consumed;
 
+        float? min = GetFoodCostMin();
+        if (min == null) return 1f; // avoid divide-by-zero if capacity/min is misconfigured
+
+        return Mathf.Clamp01(1f - (raw - min.Value) / (49f * min.Value));
+    }
+
+    /// <summary>
+    /// Best-case cost per pack: one kitchen's construction cost spread over every pack it can
+    /// produce. A kitchen produces InitialKitchenFoodCapacity packs a day (it refills to capacity
+    /// daily) — NOT InitialKitchenCapacity, a retired setting that is no longer in the parameter
+    /// sheet and silently fell back to 10, which made this minimum ~17x too high. Day 1 has no food
+    /// service, so a kitchen only produces on the remaining days. Extracted from C_Food() so
+    /// LogCostEfficiencyMinimums() logs the exact value the score uses — never a second copy that
+    /// could drift from it.
+    /// </summary>
+    float? GetFoodCostMin()
+    {
         var gdm = GameDataManager.Instance;
         var bs = FindObjectOfType<BuildingSystem>();
+        if (gdm == null || bs == null) return null;
 
-        // Best-case cost per pack: one kitchen's construction cost spread over every pack it can
-        // produce. A kitchen produces InitialKitchenFoodCapacity packs a day (it refills to
-        // capacity daily) — NOT InitialKitchenCapacity, a retired setting that is no longer in the
-        // parameter sheet and silently fell back to 10, which made this minimum ~17x too high.
-        // Day 1 has no food service, so a kitchen only produces on the remaining days.
         int productiveDays = Mathf.Max(1, gdm.InitialGameDays - 1);
         int kitchenPacksPerDay = gdm.InitialKitchenFoodCapacity;
-        if (kitchenPacksPerDay <= 0) return 1f; // avoid divide-by-zero if capacity is misconfigured
+        if (kitchenPacksPerDay <= 0) return null;
 
         float min = (float)bs.kitchenConstructionCost / (kitchenPacksPerDay * productiveDays);
-        if (min <= 0f) return 1f; // avoid divide-by-zero if min is misconfigured
-
-        return Mathf.Clamp01(1f - (raw - min) / (49f * min));
+        return min > 0f ? min : (float?)null;
     }
 
     public float C_Lodging()
     {
         var d = this;
-        var gdm = GameDataManager.Instance;
-
         float nightsConsumed = d.GetCumulativeLodgingNightsConsumed();
         if (nightsConsumed <= 0f) return 0f;
 
         float raw = d.GetCumulativeLodgingSpend() / nightsConsumed;
 
+        float? min = GetLodgingCostMin();
+        if (min == null) return 1f;
+
+        return Mathf.Clamp01(1f - (raw - min.Value) / (49f * min.Value));
+    }
+
+    /// <summary>Best-case cost per night: one shelter's construction cost spread over every bed-night
+    /// it can provide over the full game. See GetFoodCostMin() for why this is extracted.</summary>
+    float? GetLodgingCostMin()
+    {
+        var gdm = GameDataManager.Instance;
         var bs = FindObjectOfType<BuildingSystem>();
+        if (gdm == null || bs == null) return null;
+
         int days = gdm.InitialGameDays;
+        if (gdm.InitialShelterCapacity <= 0 || days <= 0) return null;
 
         float min = (float)bs.shelterConstructionCost / (gdm.InitialShelterCapacity * days);
-        if (min <= 0f) return 1f;
-
-        return Mathf.Clamp01(1f - (raw - min) / (49f * min));
+        return min > 0f ? min : (float?)null;
     }
 
     public float C_Worker()
@@ -903,21 +999,30 @@ public class DailyReportData : MonoBehaviour
 
         float raw = (d.GetCumulativeWorkerTrainingCost() + d.GetCumulativeWorkerRequestCost()) / workingRounds;
 
+        float? min = GetWorkerCostMin();
+        if (min == null) return 1f; // can't define a minimum without the live price/schedule
+
+        return Mathf.Clamp01(1f - (raw - min.Value) / (49f * min.Value));
+    }
+
+    /// <summary>
+    /// Best-case cost per worker-ROUND: the untrained hire price spread over every round a worker
+    /// could work. raw in C_Worker() is dollars per worker-round, so min must be too — it used to be
+    /// the bare hire price ($300 per WORKER), ~30x too high, so raw always fell below min and the
+    /// score was clamped to its maximum for nearly everyone. Day 1 has no worker service, so a
+    /// worker only works the remaining days. The price is read live from the request system (the
+    /// same value hires are charged at), not hard-coded. See GetFoodCostMin() for why this is
+    /// extracted.
+    /// </summary>
+    float? GetWorkerCostMin()
+    {
         var wrs = FindObjectOfType<WorkerRequestSystem>();
         var gdm = GameDataManager.Instance;
-        if (wrs == null || gdm == null) return 1f; // can't define a minimum without the live price/schedule
+        if (wrs == null || gdm == null) return null;
 
-        // Best-case cost per worker-ROUND: the untrained hire price spread over every round a
-        // worker could work. raw above is dollars per worker-round, so min must be too — it used to
-        // be the bare hire price ($300 per WORKER), ~30x too high, so raw always fell below min and
-        // the score was clamped to its maximum for nearly everyone. Day 1 has no worker service, so
-        // a worker only works the remaining days. The price is read live from the request system
-        // (the same value hires are charged at), not hard-coded.
         int productiveRounds = Mathf.Max(1, (gdm.InitialGameDays - 1) * gdm.InitialRoundsPerDay);
         float min = (float)wrs.untrainedWorkerCost / productiveRounds;
-        if (min <= 0f) return 1f;
-
-        return Mathf.Clamp01(1f - (raw - min) / (49f * min));
+        return min > 0f ? min : (float?)null;
     }
     //public float C_Food()
     //{
