@@ -107,8 +107,9 @@ public class WebSocketManager : MonoBehaviour
 
         // Headless / gym training mode: auto-connect immediately — UNLESS the run asked for the
         // AI teammates to be off. Batchmode used to force enableWebSocket = true unconditionally,
-        // so a headless run had no way to play the game without the LLM path attached; the
-        // parity harness needs exactly that, and so does any no-AI control condition.
+        // which meant a headless run had no way to play the game without the LLM path attached;
+        // the parity harness needs exactly that ("does this build still play like upstream with
+        // the teammates off?"), and so does anyone collecting a no-AI control condition.
         if (Application.isBatchMode && !LlmDisabled())
         {
             Debug.Log("Running in Unity headless mode (batchmode)");
@@ -138,9 +139,9 @@ public class WebSocketManager : MonoBehaviour
     /// True when this run was explicitly started with the AI teammates OFF: `-no-llm` on the
     /// command line, ARC_NO_LLM=1 in the environment, or ?llm=0 on a WebGL page URL.
     ///
-    /// Evaluated fresh rather than cached, so a stale PlayerPrefs value or a leftover launcher
-    /// selection cannot flip it — "off" has to mean off for the whole process, or a control
-    /// condition silently becomes a treatment condition.
+    /// Evaluated fresh rather than cached in a field so it cannot be flipped by a PlayerPrefs
+    /// value or a launcher screen left over from a previous run — "off" has to mean off for the
+    /// whole process, or a control condition silently becomes a treatment condition.
     /// </summary>
     public static bool LlmDisabled()
     {
@@ -207,8 +208,9 @@ public class WebSocketManager : MonoBehaviour
     public async void ConnectToServer()
     {
         if (!enableWebSocket) return;
-        // Belt and braces: checked here too, so no other caller (launcher UI, gym bootstrap, a
-        // reconnect timer) can quietly re-attach the LLM path to a run started with AI off.
+        // Belt and braces: the switch is checked here too, so no other caller (launcher UI,
+        // gym bootstrap, a reconnect timer) can quietly re-attach the LLM path to a run that
+        // was started with the teammates off.
         if (LlmDisabled())
         {
             connectionStatus = "AI teammates disabled";

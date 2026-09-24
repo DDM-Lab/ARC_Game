@@ -106,11 +106,6 @@ public class GameDataManager : MonoBehaviour
             return;
         }
         
-        // PARITY BUILD (ledger D7): the auto-find is REMOVED. MainScene does not wire
-        // configLoader, so this build -- like upstream -- ignores the parameter sheet entirely
-        // and runs on SetDefaults(). That is upstream's behaviour and it is what makes the two
-        // builds comparable at all; D7 is the single largest divergence in the ledger, because
-        // with it every number in the game comes from a different place.
         StartCoroutine(LoadAllData());
     }
 
@@ -288,12 +283,6 @@ public class GameDataManager : MonoBehaviour
         InitialKitchenCapacity = defaultKitchenCapacity;
         InitialShelterCapacity = defaultShelterCapacity;
         InitialCaseworkCapacity = defaultCaseworkCapacity;
-        // PARITY BUILD (ledger D11): these two ARE still set, unlike the rest of D11. Upstream
-        // has no such properties at all and its kitchens and shelters take their food capacity
-        // from the PREFAB; `defaultKitchenFoodCapacity = 200` / `defaultShelterFoodCapacity = 100`
-        // are those same prefab values. Removing the assignments does not reproduce upstream, it
-        // leaves BuildingResourceStorage setting a capacity of ZERO — a divergence introduced by
-        // the revert itself. Keeping them is what matches upstream's behaviour.
         InitialKitchenFoodCapacity = defaultKitchenFoodCapacity;
         InitialShelterFoodCapacity = defaultShelterFoodCapacity;
         InitialRequiredWorkersPerLoc = defaultRequiredWorkersPerLoc;
@@ -313,11 +302,6 @@ public class GameDataManager : MonoBehaviour
         InitialShelterFloodComparison = defaultShelterFloodComparison;
         InitialERVCount = defaultERVCount;
         InitialExternalRelationFrequency = defaultExternalRelationFrequency;
-        // PARITY BUILD (ledger D11): upstream assigns the emergency frequency to the EXTERNAL
-        // RELATION field and never sets InitialEmergencyTaskFrequency. Reproduced deliberately.
-        // This one is not cosmetic: because of D7 these defaults are the parameters upstream
-        // actually plays on, and a wrong task frequency changes how many tasks generate, how
-        // many draws are taken, and therefore the whole RNG stream.
         InitialExternalRelationFrequency = defaultEmergencyTaskFrequency;
     }
 }

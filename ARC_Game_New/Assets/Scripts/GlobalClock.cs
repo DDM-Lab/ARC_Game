@@ -410,13 +410,6 @@ public class GlobalClock : MonoBehaviour
 
         // ---- Human / router GUI path (main-bugfixes game-logic) ----
 
-        // PARITY BUILD (ledger D16): upstream's day-1 skip is RESTORED. Our fix (BUG_REPORTS
-        // C.10) made day 1 a normal day for humans as it already was for the gym; upstream
-        // auto-steps all four rounds through a clock animation that sets currentTimeSegment
-        // directly and never raises OnTimeSegmentChanged. The consequence is total: upstream's
-        // day 1 runs NO generation, consumption, ageing or delivery ticks and takes NO draws,
-        // which is why its RNG cursor is frozen for the whole first day while ours advances.
-        // This is the single largest behavioural divergence found so far.
         if (currentDay == 1 && currentTimeSegment == 0)
         {
             Time.timeScale = 0f;
@@ -768,13 +761,6 @@ public class GlobalClock : MonoBehaviour
         // Check if day is complete (4 rounds = end of day)
         if (currentTimeSegment >= roundsPerDay)
         {
-            // PARITY BUILD (ledger D15): NO tick here. Our A1 fix delivers the last round's tick
-            // as segment 4 before the daily report, so consumption, ageing, expiry and generation
-            // run before the rollover wastes what is left. Upstream returns early with no event
-            // at all and delivers that tick as segment 0 after OnDayChanged instead — i.e. after
-            // the day's food has already been thrown away. That is the bug; it is also what this
-            // build has to reproduce.
-            // Don't trigger OnDayChanged here anymore - wait for button click
             return; // Exit early, don't update display yet
         }
 
@@ -842,12 +828,6 @@ public class GlobalClock : MonoBehaviour
         SnapshotDebug.Mark("day:beforeOnDayChanged");
         SafeInvoke(OnDayChanged, currentDay);
         SnapshotDebug.Mark("day:afterOnDayChanged");
-        // PARITY BUILD (ledger D15): the segment-0 tick at the rollover, as upstream raises it,
-        // instead of our OnDayStarted. This is the other half of the A1 fix and the half that
-        // actually moved the numbers: with OnDayStarted here, day 1 gets no start-of-day
-        // generation pass at all (the event fires only from day 2 onward), so upstream's first
-        // day produced a Budget_Allocation, two relocation requests and a workforce alert that
-        // ours never generated.
         SafeInvoke(OnTimeSegmentChanged, currentTimeSegment);
         SnapshotDebug.Mark("day:afterOnTimeSegmentChanged");
 

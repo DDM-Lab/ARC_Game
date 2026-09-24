@@ -820,14 +820,6 @@ public class DailyReportData : MonoBehaviour
     //    int roundsElapsed = d.GetCumulativeRoundsElapsed();
     //    if (roundsElapsed <= 0) return 0f;
 
-    //    // PARITY BUILD (ledger D17): upstream's fixed assumed headcount, not our live
-    //    // pool-rounds (BUG_REPORTS B23). With a pool far below the assumed size the ratios span
-    //    // a sliver of their range and above it they exceed 1 -- our fix is right, and it is also
-    //    // why this build reports no "Worker use progress" delta at all on day 1 where upstream
-    //    // reports +63.3.
-    //    //float denom = d.GetCumulativeWorkerPoolRounds();
-    //    float denom = assumedTotalWorkerPoolSize * roundsElapsed;
-    //    if (denom <= 0) return 0f;
 
     //    float idleRatio = Mathf.Clamp01(d.GetCumulativeIdleWorkerRounds() / denom);
     //    float workingRatio = Mathf.Clamp01(d.GetCumulativeWorkingWorkerRounds() / denom);
@@ -1238,12 +1230,6 @@ public class DailyReportData : MonoBehaviour
     private float appliedFoodSat, appliedLodgingSat, appliedWorkerSat, appliedCaseworkSat;
     private float appliedFoodEff, appliedLodgingEff, appliedWorkerEff;
 
-    // PARITY BUILD (ledger D2): 1000f, matching upstream, NOT the correct 100f.
-    // Our fix is right and upstream's value is wrong -- the five satisfaction weights sum to 1,
-    // so components sum to SCORE_SCALE, and at 1000 one component's delta is ten times what it
-    // should be against a field AddSatisfaction clamps to [0,100]. Version 2 reproduces the bug
-    // deliberately: it exists to isolate "does the LLM code change the game", and carrying a
-    // score fix into it would answer a different question.
     const float SCORE_SCALE = 1000f;
     const float SAT_W = 0.2f;
     const float EFF_W = 1f / 3f;

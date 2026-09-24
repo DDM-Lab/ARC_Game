@@ -333,17 +333,6 @@ public class TaskDatabase : ScriptableObject
     /// (Shelter_FoodRequest today; Community_FoodRequest has no probability trigger and is unaffected).</summary>
     bool CheckProbability(TaskData taskData, ProbabilityTrigger trigger)
     {
-        // PARITY BUILD (ledger D14): the sheet-driven probability override is REMOVED and the
-        // asset's own trigger is used, as upstream does. Ours substitutes its own
-        // `Random.Range(0f, 1f)` roll for food-request tasks whenever the sheet supplies a
-        // frequency -- a different draw from a different distribution at the same point in the
-        // stream, so the two builds diverge from the first food-request evaluation onward.
-        //
-        // It is NOT the cause of the first RNG divergence seen between v2 and upstream, though
-        // it was briefly recorded as such. Those draws came from `TaskTrigger.CheckCondition()`,
-        // which both branches share; the override never fired here because SetDefaults leaves
-        // `InitialFoodDemandFrequency` negative. Reverted because it is a real divergence under
-        // any run that does read a sheet, not because it explained this one.
         return trigger.CheckCondition();
     }
 

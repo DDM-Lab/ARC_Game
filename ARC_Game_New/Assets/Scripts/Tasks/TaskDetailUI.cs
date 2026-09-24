@@ -1235,13 +1235,6 @@ private bool CompleteTaskAction(out string failReason)
             }
         }
 
-        // PARITY BUILD: upstream's confirm block verbatim, with the single adaptation that
-        // ExecuteGeneratorDelivery returns int here and bool upstream (`!= 0`). The previous
-        // resolution of this region interleaved both sides and produced code that called
-        // ExecuteGeneratorDelivery up to THREE times, applied ApplyChoiceImpacts TWICE, and ran
-        // the costPerUnit pricing only when the delivery had FAILED — which is why food requests
-        // cost 1 here against upstream's 1000 (the asset now carries value:1 and gets its real
-        // price from costPerUnit x resolved quantity).
         if (selectedChoice.immediateDelivery)
         {
             // Resolve the actual quantity BEFORE executing delivery — ExecuteGeneratorDelivery
@@ -1256,7 +1249,10 @@ private bool CompleteTaskAction(out string failReason)
                 if (dest != null)
                     resolvedQuantity = FoodDeliveryHandler.Instance.ResolveQuantity(selectedChoice, dest);
             }
-
+            // Execute FIRST, and charge only on success. Dropping this call (as an earlier
+            // resolution of this region did) completes the task and bills the player for a
+            // delivery that never moved — and, because ApplyChoiceImpacts then runs
+            // unconditionally, prices it differently from the queued path.
             bool success = ExecuteGeneratorDelivery(selectedChoice, immediate: true) != 0;
             if (success)
             {

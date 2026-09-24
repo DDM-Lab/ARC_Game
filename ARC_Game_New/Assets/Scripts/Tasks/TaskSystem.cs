@@ -562,8 +562,6 @@ public class TaskSystem : MonoBehaviour
         if (GlobalClock.Instance != null)
         {
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
-            // PARITY BUILD (ledger D15): NOT subscribed. Upstream has no start-of-day generation
-            // pass at all; it generates only from OnTimeSegmentChanged.
             GlobalClock.Instance.OnSimulationEnded += OnSimulationEndedCheckDayComplete;
         }
 
@@ -1005,12 +1003,6 @@ public class TaskSystem : MonoBehaviour
     /// </summary>
     void ApplyConfiguredAllocation(GameTask task, TaskData taskData)
     {
-        // PARITY BUILD (ledger D21): DISABLED. Upstream has no equivalent — the Daily Budget
-        // Allocation grants whatever the task ASSET says (5000), not the sheet's
-        // initialDailyBudgetAdditions (3000). Applied every day the funding task is confirmed,
-        // the 2000/day difference compounds into a median 292,000 gap across a 32-seed suite,
-        // against a starting budget of 10,000. Same family as D7 and D20: the sheet drives our
-        // build where an asset or prefab drives upstream's.
         return;
 #pragma warning disable 0162
         if (taskData.taskId != "Budget_Allocation" || GameDataManager.Instance == null) return;
@@ -1820,15 +1812,13 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            // Apply penalties for incomplete emergency/demand tasks
+            // Apply penalties for incomplete emergency/demand tasks.
+            // OPEN DESIGN QUESTION (ledger D22): ApplyTaskPenalties(task) is deliberately not
+            // called. Letting an unfulfilled task expire currently costs the player nothing;
+            // enabling it costs 1-3 satisfaction per expiry. Which is correct is a design
+            // call for the team, not a bug fix, so the behaviour is left as-is.
             if (task.status == TaskStatus.Incomplete)
             {
-                // PARITY BUILD (ledger D22): upstream has this call COMMENTED OUT
-                // (`//ApplyTaskPenalties(task);`), so an expired task costs it nothing. We
-                // re-enabled it, which is why this build loses 1-3 satisfaction during each day
-                // where upstream loses none. Whether an unfulfilled task should carry a penalty
-                // at all is a design question, not obviously a bug on either side.
-                // ApplyTaskPenalties(task);
             }
 
             RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
@@ -1919,8 +1909,7 @@ public class TaskSystem : MonoBehaviour
             activeTasks.Remove(task);
             completedTasks.Add(task);
 
-            // PARITY BUILD (ledger D22): the SECOND penalty site, also commented out upstream.
-            // ApplyTaskPenalties(task);
+            // Second ApplyTaskPenalties site; see the note in ExpireTask (ledger D22).
             RewardMetricsTracker.Instance?.RecordTaskResolution(task, fulfilled: false);
             OnTaskCompleted?.Invoke(task);
 

@@ -24,10 +24,6 @@ public class WeatherReportSystem : MonoBehaviour
         // Subscribe to round changes
         if (GlobalClock.Instance != null)
         {
-            // PARITY BUILD (ledger D23): upstream subscribes to OnTimeSegmentChanged and generates
-            // the report from segment 0, not from OnDayChanged. OnDayChanged fires FIRST at the
-            // rollover, so ours opens the daily report BEFORE the segment-0 tick and upstream
-            // opens it AFTER — the same work either side of a round boundary.
             GlobalClock.Instance.OnTimeSegmentChanged += OnTimeSegmentChanged;
         }
         

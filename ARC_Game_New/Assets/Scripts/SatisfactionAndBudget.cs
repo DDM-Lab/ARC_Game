@@ -284,11 +284,9 @@ public class SatisfactionAndBudget : MonoBehaviour
     public void AddSatisfaction(float amount, string description = "")
     {
         float previousValue = currentSatisfaction;
-        // PARITY BUILD (ledger D13): UNCLAMPED, as upstream is. Our clamp to [0,100] is the
-        // right behaviour and it is what stops a 1000-scale delta from wrecking the metric, but
-        // upstream lets satisfaction run past its own maximum — a seeded upstream episode reads
-        // 313.33 on a 0-100 field by the first round. Version 2 has to reproduce that to be
-        // comparable at all.
+        // OPEN DESIGN QUESTION (ledger D13): not clamped to [0, 100]. Satisfaction can and does
+        // run past its own stated maximum. Clamping is almost certainly right, but it changes
+        // reported scores for every existing run, so it is left for the team to decide.
         currentSatisfaction += amount;
 
         // Use default description if none provided

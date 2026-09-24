@@ -96,16 +96,6 @@ public class BuildingResourceStorage : MonoBehaviour
     /// </summary>
     public void ApplyConfiguredCapacities()
     {
-        // PARITY BUILD (ledger D20): DISABLED. Upstream has no equivalent — every prebuilt keeps
-        // the capacity and starting amount its prefab was authored with. Ours applies the sheet
-        // over the top, and for communities that means population 40 instead of the prefab's 400.
-        // Community_TransportRequest requires Population > 200, so on our build that relocation
-        // task can never fire; upstream generates two of them on the first pass of day 2. That
-        // single number is what made the two builds' task sets differ from the very first
-        // generation pass (ledger D19) and, two days later, take a different number of draws.
-        //
-        // Note this is D7's consequence rather than an independent choice: upstream ignores the
-        // sheet entirely, so "apply the sheet" has no upstream counterpart to match.
         return;
 #pragma warning disable 0162
         if (!storageInitialized || configApplied) return;

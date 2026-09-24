@@ -293,9 +293,11 @@ public class DailyReportUI : MonoBehaviour
 
         if (DailyReportData.Instance != null)
         {
-            // PARITY BUILD (ledger D3): seeded RAW, as upstream does, without the `* 10f` that
-            // puts these on the report's 0-1000 scale. Upstream's reported day change is wrong
-            // by 10x (BUG_REPORTS B34); version 2 reproduces that on purpose.
+            // Seed RAW. GetDayStartSatisfaction() records GetCurrentSatisfaction(), which is
+            // already on the report's 0..1000 scale. (A "* 10f" once lived here, from when the
+            // stored field was 0..100 — "ledger D3". Since satisfaction became a native 0..1000
+            // score it made the baseline 10x too large: day 2 read about -5,800 instead of -221,
+            // and the satisfaction bar animated from 6x full.)
             currentSatisfaction = DailyReportData.Instance.GetDayStartSatisfaction();
             currentEfficiency = DailyReportData.Instance.GetDayStartEfficiency();
         }

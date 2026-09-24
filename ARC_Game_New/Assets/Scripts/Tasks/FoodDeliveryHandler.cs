@@ -92,10 +92,10 @@ public class FoodDeliveryHandler : MonoBehaviour
             // player asked for. totalEffective already excludes meals reserved for other
             // deliveries, so a shortfall here can mean either not enough raw stock or enough
             // stock but most of it already scheduled elsewhere.
-            // MERGE FIX (74304870): upstream's new requireFullQuantity check reads `totalEffective`,
-            // which it defines earlier in a region our side had rewritten (BUG_REPORTS B11/B12
-            // made the reachability check flood-aware). Resolving to upstream's block left the
-            // name undefined; GetTotalEffectiveFood is the same helper upstream computes it from.
+            // MERGE 74304870: upstream's new requireFullQuantity check reads `totalEffective`,
+            // which it defines in a region this branch had rewritten (BUG_REPORTS B11/B12 made
+            // the reachability check flood-aware). GetTotalEffectiveFood is the same helper
+            // upstream computes it from.
             int totalEffective = GetTotalEffectiveFood(ds);
             if (choice.requireFullQuantity && totalEffective < effectiveNeed)
             {
