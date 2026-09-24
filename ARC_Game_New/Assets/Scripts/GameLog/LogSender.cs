@@ -56,6 +56,16 @@ public class LogSender : MonoBehaviour
 
     void StartUpload(string uploadKind, int checkpointDay)
     {
+        // Headless runs (gym, benchmark, parity harness) must never upload into the human-study
+        // log store: they are machine episodes, and 32-round benchmarks reach the day-8 report
+        // that auto-sends. Opt in explicitly with ARC_UPLOAD_LOGS=1 if a headless run should
+        // upload. Human play (WebGL / desktop player) is never batch mode, so it is unaffected.
+        if (Application.isBatchMode && System.Environment.GetEnvironmentVariable("ARC_UPLOAD_LOGS") != "1")
+        {
+            Debug.Log("[LogSender] Batch mode — not uploading (set ARC_UPLOAD_LOGS=1 to override).");
+            return;
+        }
+
         if (!GameLogPanel.DataCollectionEnabled)
         {
             Debug.Log("[LogSender] Data collection disabled (config.json) - skipping send.");

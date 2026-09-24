@@ -646,6 +646,18 @@ public class WebSocketManager : MonoBehaviour
     /// </summary>
     [System.Serializable] public class OfficerRosterEntry { public string name; public string endpoint; }
     [System.Serializable] private class HelloAckRoster { public OfficerRosterEntry[] officers; }
+    [System.Serializable] private class HelloAckCaps { public string[] capabilities; }
+
+    /// <summary>Capabilities of the API key this session connected with, from hello_ack.
+    /// Drives which OPTIONAL controls the client reveals — today `play_tester`, which shows
+    /// Load .cora and Flag Interaction. This is a UI gate, not a security boundary: the
+    /// router enforces anything that matters on the request that does the work. Empty until
+    /// the handshake completes, so callers must treat "no caps yet" as "not allowed".</summary>
+    public static readonly System.Collections.Generic.HashSet<string> Capabilities =
+        new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>True once hello_ack has arrived AND granted the capability.</summary>
+    public static bool HasCapability(string cap) => Capabilities.Contains(cap);
 
     /// <summary>Officer roster from the router's hello_ack: talkinghead_endpoint -> display name,
     /// for the ACTUAL loaded config. The WebGL client has no local agents_config.json, so this is

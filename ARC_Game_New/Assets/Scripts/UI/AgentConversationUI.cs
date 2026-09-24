@@ -81,6 +81,21 @@ public class AgentConversationUI : MonoBehaviour
     public bool showDebugInfo = true;
 
     private TaskOfficer currentSelectedAgent = TaskOfficer.DisasterOfficer;
+
+    /// <summary>Display name of the officer whose conversation is open, resolved through the
+    /// router's roster so it matches what the player is actually reading (the enum slot name
+    /// is often not the config's officer name). Used by the play-tester Flag Interaction
+    /// control to record WHO the tester was talking to when the exchange went badly.</summary>
+    public string CurrentOfficerName()
+    {
+        string slot = currentSelectedAgent.ToString();
+        string name;
+        if (WebSocketManager.OfficerRoster != null
+            && WebSocketManager.OfficerRoster.TryGetValue(slot, out name)
+            && !string.IsNullOrEmpty(name))
+            return name;
+        return slot;
+    }
     private bool isExpanded = false;
     private bool isAnimating = false;
     private int newMessageCount = 0;

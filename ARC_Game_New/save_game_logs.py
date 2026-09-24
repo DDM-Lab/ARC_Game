@@ -179,6 +179,29 @@ def atomic_write(path, data):
         raise IOError("Saved file is {} bytes, expected {}".format(saved, len(data)))
 
 
+def build_meta(payload, csv_filename):
+    """Everything the game sent EXCEPT the message list: seed, start RNG state, build GUID,
+    every parameter in effect, the game's final/at-upload satisfaction, efficiency and budget,
+    and a full game-state snapshot (stateCheckpoint — the same JSON "Save JSON Checkpoint"
+    produces). The CSV keeps none of this, so without it a saved session cannot say which
+    scenario was played, be replayed, or be resumed from a checkpoint day.
+
+    JSON strings the game embeds (stateCheckpoint, parametersInEffect, rngState) are decoded
+    where possible so the file reads as one document; a string that will not decode is kept
+    as-is rather than dropped."""
+    meta = {k: v for k, v in payload.items() if k != "messages"}
+    for key in ("stateCheckpoint", "parametersInEffect", "rngState"):
+        val = meta.get(key)
+        if isinstance(val, str) and val.strip().startswith(("{", "[")):
+            try:
+                meta[key] = json.loads(val)
+            except ValueError:
+                pass
+    meta["csvFile"] = csv_filename
+    meta["receivedAt"] = datetime.now().isoformat()
+    return (json.dumps(meta, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+
 def main():
     method = os.environ.get("REQUEST_METHOD", "GET")
 
@@ -224,6 +247,18 @@ def main():
         data = build_csv(payload, messages)
         atomic_write(filepath, data)
 
+        # Sidecar: <same name>.meta.json beside the CSV (checkpoint uploads beside theirs).
+        # Written AFTER the CSV and never allowed to fail the request: the CSV is the record
+        # the study depends on, and the client's ack is about the upload, not the sidecar.
+        meta_file, meta_error = None, None
+        try:
+            meta_path = filepath[:-len(".csv")] + ".meta.json"
+            atomic_write(meta_path, build_meta(payload, filename))
+            meta_file = os.path.basename(meta_path)
+        except Exception as e:
+            traceback.print_exc(file=sys.stderr)
+            meta_error = type(e).__name__
+
         send_response(
             200,
             "Saved {} messages ({} upload) to {}".format(len(messages), kind, filename),
@@ -232,6 +267,8 @@ def main():
             saved_bytes=len(data),
             kind=kind,
             file=filename,
+            meta_file=meta_file,
+            meta_error=meta_error,
         )
 
     except OSError as e:

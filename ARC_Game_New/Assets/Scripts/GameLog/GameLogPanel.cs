@@ -107,6 +107,22 @@ public class LogExportData
     public int initialShelterFloodThreshold;
     public int initialShelterFloodRadius;
     public string initialShelterFloodComparison;
+
+    // ── Provenance + game state (filled for every full upload: each day's checkpoint and the final one) ─
+    // The receiver writes these to a sidecar <name>.meta.json next to the CSV, so a session
+    // can be reproduced (seed, RNG, build, the parameter set actually applied) and scored
+    // (final values + the full end-of-game checkpoint) without re-parsing the message log.
+    public int seed;
+    public string seedSource;
+    public string paramSource;
+    public string parametersInEffect;   // GameDataManager.ParametersInEffectJson — what was APPLIED
+    public string mapHash;
+    public string mapStatus;
+    public float finalSatisfaction;
+    public float finalEfficiency;
+    public int finalBudget;
+    public int finalDay;
+    public string stateCheckpoint;      // the same JSON "Save JSON Checkpoint" produces, at upload time
     public float[] floodExpansionRates;      // sunny, smallRain, mediumRain, heavyRain, storm
     public float[] floodSpreadMultipliers;   // same order
 
@@ -582,6 +598,31 @@ public class GameLogPanel : MonoBehaviour
         LogPlayerAction($"Exported {messagesToExport.Count} log messages");
     }
 
+    /// <summary>Provenance and the game state at upload time, for every full upload — each earlier
+    /// day's checkpoint and the final one — so even a session abandoned mid-game records which
+    /// scenario it was and where it stood. Every step is guarded: the upload must still happen if
+    /// one of these fails.</summary>
+    static void FillEndOfGame(LogExportData e)
+    {
+        e.seed = EpisodeSeed.Seed;
+        e.seedSource = EpisodeSeed.Source;
+        e.parametersInEffect = GameDataManager.ParametersInEffectJson ?? "";
+        e.paramSource = GameConfigLoader.Instance != null ? GameConfigLoader.Instance.ConfigSource : "";
+        e.mapHash = GameConfigLoader.MapHash ?? "";
+        e.mapStatus = GameConfigLoader.MapStatus ?? "";
+        var sb = SatisfactionAndBudget.Instance;
+        if (sb != null)
+        {
+            e.finalSatisfaction = sb.GetCurrentSatisfaction();
+            e.finalEfficiency = sb.GetCurrentEfficiency();
+            e.finalBudget = sb.GetCurrentBudget();
+        }
+        e.finalDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 0;
+        string label = e.uploadKind == "checkpoint" ? $"day {e.checkpointDay} checkpoint (auto)" : "end of game (auto)";
+        try { e.stateCheckpoint = CoraFileIO.ToJson(CoraFileIO.Capture(label)); }
+        catch (System.Exception ex) { Debug.LogWarning($"[GameLogPanel] state checkpoint failed: {ex.Message}"); }
+    }
+
     public string GetMessagesAsJson(bool exportAll = false, string uploadKind = "final", int checkpointDay = 0)
     {
         List<LogMessage> messagesToExport = exportAll ?
@@ -597,6 +638,7 @@ public class GameLogPanel : MonoBehaviour
         // Inject the episode's random state (captured before the scene loaded)
         exportData.rngState  = EpisodeReproLog.RngStateJson;
         exportData.buildGuid = EpisodeReproLog.BuildGuid;
+        if (exportAll) FillEndOfGame(exportData);
 
         // Inject environment config
         if (GameConfigLoader.Instance != null)
