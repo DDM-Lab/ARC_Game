@@ -976,16 +976,24 @@ public class DailyReportData : MonoBehaviour
         return Mathf.Clamp01(1f - (raw - min.Value) / (49f * min.Value));
     }
 
-    /// <summary>Best-case cost per night: one shelter's construction cost spread over every bed-night
-    /// it can provide over the full game. See GetFoodCostMin() for why this is extracted.</summary>
+    /// <summary>
+    /// Best-case cost per night: one shelter's construction cost spread over every bed-night it can
+    /// provide over the full game. Uses InitialGameDays - 1, not InitialGameDays: nightsConsumed
+    /// (raw's denominator in C_Lodging(), incremented once per GlobalClock.OnDayChanged) can only
+    /// ever register one sample per day BOUNDARY crossed — 1->2, 2->3, ... (days-1)->days — never a
+    /// boundary before Day 1 or after the last day, so an 8-day game can produce at most 7 samples.
+    /// Dividing by the full day count computed a minimum lower than shelters could actually reach,
+    /// which unfairly lowered every lodging cost-efficiency score (a smaller min makes the same raw
+    /// cost score worse, not better). See GetFoodCostMin() for why this is extracted.
+    /// </summary>
     float? GetLodgingCostMin()
     {
         var gdm = GameDataManager.Instance;
         var bs = FindObjectOfType<BuildingSystem>();
         if (gdm == null || bs == null) return null;
 
-        int days = gdm.InitialGameDays;
-        if (gdm.InitialShelterCapacity <= 0 || days <= 0) return null;
+        int days = Mathf.Max(1, gdm.InitialGameDays - 1);
+        if (gdm.InitialShelterCapacity <= 0) return null;
 
         float min = (float)bs.shelterConstructionCost / (gdm.InitialShelterCapacity * days);
         return min > 0f ? min : (float?)null;
