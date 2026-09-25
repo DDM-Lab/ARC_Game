@@ -5,8 +5,8 @@ using System.Linq;
 /// Communities have no food consumption rate (see BuildingResourceStorage.enablePopulationBasedConsumption
 /// on CommunityPrefab — they're treated as always having enough food internally). Instead, each round
 /// there's a chance a community loses a chunk of its food to an unforeseen event, and that directly spawns
-/// an emergency request to replace exactly what was lost — that request IS the community's food demand for
-/// the day; there is no separate population x rate calculation.
+/// an emergency request to replace what was lost. The depletion amount recorded at each successful roll IS
+/// the community's food demand for the day; there is no separate population x rate calculation.
 ///
 /// This intentionally bypasses TaskDatabase's normal trigger evaluation (round/day/resource/probability) —
 /// Community_FoodRequest's own trigger lists are left empty so the generic per-round generation pass never
@@ -127,7 +127,35 @@ public class CommunityFoodDepletionManager : MonoBehaviour
             .Where(p => p.GetPrebuiltType() == PrebuiltBuildingType.Community))
         {
             TryDeplete(community);
+            TopUpShortfall(community);
         }
+    }
+
+    /// <summary>
+    /// A request is only ever created by a successful roll (TryDeplete) or by a failed request's
+    /// follow-up, and it is sized once, at creation. A loss that lands while a request is pending
+    /// (deduped in TryDeplete), or a request that completes short of the full shortfall, would
+    /// otherwise be left uncovered until some later roll happens to succeed. So at the start of every
+    /// eligible round (same day/round window as the rolls), any community that is short of food and has
+    /// nothing already covering it gets a request for the current shortfall. "Covering it" means a
+    /// pending or in-progress request, or food already queued/in transit to it — requesting again then
+    /// would double-book the same shortfall.
+    /// </summary>
+    void TopUpShortfall(PrebuiltBuilding community)
+    {
+        if (HasPendingRequest(community)) return; // pending or in progress (both stay in the active list)
+
+        BuildingResourceStorage storage = community.GetResourceStorage();
+        if (storage == null) return;
+
+        int requestAmount = storage.GetAvailableSpace(ResourceType.FoodPacks);
+        if (requestAmount <= 0) return; // not short
+
+        if (DeliverySystem.Instance != null
+            && DeliverySystem.Instance.GetReservedIncomingQuantity(community, ResourceType.FoodPacks) > 0)
+            return; // food is already on its way
+
+        SpawnRequestTask(community, lostAmount: 0, requestAmount: requestAmount);
     }
 
     [ContextMenu("Debug: Force Depletion On All Communities")]
@@ -157,6 +185,11 @@ public class CommunityFoodDepletionManager : MonoBehaviour
             GameLogPanel.Instance?.LogError($"{community.name} has no BuildingResourceStorage — depletion event skipped.");
             return;
         }
+
+        // A successful roll IS the community's food demand: record the full depletionAmount here, once,
+        // whatever happens next (stock already empty, a request already pending, a request expiring and
+        // being re-raised). Requests and follow-ups never record demand themselves — see SpawnRequestTask.
+        DailyReportData.Instance?.RecordCommunityFoodDemand(community.name, depletionAmount);
 
         int available = storage.GetResourceAmount(ResourceType.FoodPacks);
         if (available <= 0)
@@ -200,9 +233,10 @@ public class CommunityFoodDepletionManager : MonoBehaviour
 
     void SpawnRequestTask(PrebuiltBuilding community, int lostAmount, int requestAmount)
     {
-        // lostAmount == 0 means this is an immediate follow-up after a prior request failed —
-        // no new food was lost, we're just re-asking for whatever's still missing.
-        string causeText = lostAmount > 0 ? $"lost {lostAmount} food packs" : "a previous request failed";
+        // lostAmount == 0 means no new food was lost: this is either an immediate follow-up after a
+        // prior request failed, or a top-up of a shortfall left over from earlier losses
+        // (TopUpShortfall) — either way we're just asking for whatever's still missing.
+        string causeText = lostAmount > 0 ? $"lost {lostAmount} food packs" : "is still short of food";
 
         GameTask task = TaskSystem.Instance.CreateTaskFromDatabase(communityFoodRequestTask, community);
         if (task == null)
@@ -221,10 +255,9 @@ public class CommunityFoodDepletionManager : MonoBehaviour
         }
         task.foodAmount = requestAmount;
 
-        // This request IS the community's entire food demand for today — recorded exactly once,
-        // here, at the moment the request is created (not on fulfillment/completion).
-        //DailyReportData.Instance?.RecordCommunityFoodDemand(requestAmount);
-        DailyReportData.Instance?.RecordCommunityFoodDemand(community.name, requestAmount);
+        // Demand is NOT recorded here: it is recorded once per successful roll in TryDeplete, so a
+        // follow-up after an expired request (or a request sized to a larger shortfall) can't count
+        // the same food twice.
 
         if (showDebugInfo)
             Debug.Log($"[CommunityFoodDepletionManager] {community.name} {causeText} — requesting {requestAmount} to refill to capacity.");

@@ -117,7 +117,12 @@ public class FacilityInfoPanel : MonoBehaviour
 
             sb.Append($"FACILITY_VIEW | name={pb.GetBuildingName()} | type={pb.GetPrebuiltType()} | id={pb.GetBuildingId()}");
             sb.Append($" | status={status}");
-            sb.Append($" | population={pop}/{popCap} | food={food}/{foodCap}");
+            // Communities show only "Unmet Meal Need" (capacity - stock) in the panel, never the raw stock/capacity
+            // (see UpdateFoodAvailability), so log what the player actually saw.
+            string foodView = pb.GetPrebuiltType() == PrebuiltBuildingType.Community
+                ? $"mealNeed={Mathf.Max(0, foodCap - food)}"
+                : $"food={food}/{foodCap}";
+            sb.Append($" | population={pop}/{popCap} | {foodView}");
             sb.Append($" | flooded={IsAffectedByFlood(pb.gameObject)}");
         }
 
@@ -318,7 +323,7 @@ public class FacilityInfoPanel : MonoBehaviour
 
             int need = storage.GetAvailableSpace(ResourceType.FoodPacks);
             ShowField(foodPacksText);
-            SetTextSafe(foodPacksText, $"Meal Need: {need}");
+            SetTextSafe(foodPacksText, $"Unmet Meal Need: {need}");
             SetTextColor(foodPacksText, need > 0 ? warningColor : goodColor);
             return;
         }

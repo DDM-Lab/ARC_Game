@@ -76,10 +76,14 @@ public class DailyReportData : MonoBehaviour
     private int cumulativeFoodPacksNeededByClients = 0;    // record
     private int cumulativeFoodPacksWasted = 0;            // record
 
-    // Communities have no consumption rate — their demand is the sum of food-request task
-    // quantities generated for them, tracked separately from the consumption-rate "clients" above.
+    // Communities have no consumption rate — their demand is the depletionAmount recorded at each
+    // successful depletion roll (CommunityFoodDepletionManager), tracked separately from the
+    // consumption-rate "clients" above for the per-facility/daily display. It ALSO feeds the cumulative
+    // "needed"/"consumed by clients" counters above (see RecordCommunityFoodDemand /
+    // RecordCommunityFoodUsedToday), so food satisfaction and food cost efficiency include it.
     private int todayCommunityFoodDemand = 0;
     private int cumulativeCommunityFoodDemand = 0;
+    private int cumulativeCommunityFoodUsed = 0;   // actual packs delivered to communities (log breakdown only)
     private int todayCommunityFoodUsed = 0;
     private Dictionary<string, int> todayCommunityFoodDemandByFacility = new Dictionary<string, int>();
     private Dictionary<string, int> todayCommunityFoodUsedByFacility = new Dictionary<string, int>();
@@ -603,6 +607,10 @@ public class DailyReportData : MonoBehaviour
     {
         todayCommunityFoodDemand += amount;
         cumulativeCommunityFoodDemand += amount;
+
+        // Community demand counts as food NEEDED in the cumulative ratio behind food satisfaction
+        // (S_Food) — nothing consumed yet, so only the denominator grows until it is delivered.
+        RecordFoodConsumptionCumulative(0, amount);
     }
 
     public void RecordCommunityFoodDemand(string facilityName, int amount)
@@ -616,6 +624,12 @@ public class DailyReportData : MonoBehaviour
     public void RecordCommunityFoodUsedToday(string facilityName, int amount)
     {
         todayCommunityFoodUsed += amount;
+        cumulativeCommunityFoodUsed += amount;
+
+        // Packs actually delivered to a community count as food CONSUMED in the same cumulative
+        // counters shelters/motels feed (S_Food, C_Food's pack count, S_Waste's "used").
+        RecordFoodConsumptionCumulative(amount, 0);
+
         if (string.IsNullOrEmpty(facilityName)) return;
         todayCommunityFoodUsedByFacility.TryGetValue(facilityName, out int existing);
         todayCommunityFoodUsedByFacility[facilityName] = existing + amount;
@@ -623,6 +637,7 @@ public class DailyReportData : MonoBehaviour
 
     public int GetTodayCommunityFoodDemand() => todayCommunityFoodDemand;
     public int GetCumulativeCommunityFoodDemand() => cumulativeCommunityFoodDemand;
+    public int GetCumulativeCommunityFoodUsed() => cumulativeCommunityFoodUsed;
     public int GetTodayCommunityFoodUsed() => todayCommunityFoodUsed;
 
     public int GetTodayCommunityFoodDemandForFacility(string facilityName) =>
@@ -1141,7 +1156,7 @@ public class DailyReportData : MonoBehaviour
 
         public int roundsElapsed;
         public int foodPacksConsumedByClients, foodPacksNeededByClients, foodPacksWasted;
-        public int communityFoodDemand;
+        public int communityFoodDemand, communityFoodUsed;
         public int lodgingNightsConsumed, lodgingNightsNeeded;
         public int idleWorkerRounds, workingWorkerRounds, trainingWorkerRounds, workerPoolRounds;
         public int clientRoundsAwaitingCasework, clientsRequestedCasework, caseworkAvailableRounds;
@@ -1162,6 +1177,7 @@ public class DailyReportData : MonoBehaviour
         foodPacksNeededByClients = cumulativeFoodPacksNeededByClients,
         foodPacksWasted = cumulativeFoodPacksWasted,
         communityFoodDemand = cumulativeCommunityFoodDemand,
+        communityFoodUsed = cumulativeCommunityFoodUsed,
         lodgingNightsConsumed = cumulativeLodgingNightsConsumed,
         lodgingNightsNeeded = cumulativeLodgingNightsNeeded,
         idleWorkerRounds = cumulativeIdleWorkerRounds,
@@ -1196,6 +1212,7 @@ public class DailyReportData : MonoBehaviour
         cumulativeFoodPacksNeededByClients = s.foodPacksNeededByClients;
         cumulativeFoodPacksWasted = s.foodPacksWasted;
         cumulativeCommunityFoodDemand = s.communityFoodDemand;
+        cumulativeCommunityFoodUsed = s.communityFoodUsed;
         cumulativeLodgingNightsConsumed = s.lodgingNightsConsumed;
         cumulativeLodgingNightsNeeded = s.lodgingNightsNeeded;
         cumulativeIdleWorkerRounds = s.idleWorkerRounds;

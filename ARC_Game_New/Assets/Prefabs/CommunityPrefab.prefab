@@ -126,12 +126,12 @@ MonoBehaviour:
   - resourceType: 0
     maxCapacity: 600
   - resourceType: 1
-    maxCapacity: 600
+    maxCapacity: 3000
   startingResources:
   - type: 0
     amount: 600
   - type: 1
-    amount: 600
+    amount: 3000
   startingFoodPacks: 0
   enableFoodWaste: 0
   fillFoodToCapacityDaily: 0

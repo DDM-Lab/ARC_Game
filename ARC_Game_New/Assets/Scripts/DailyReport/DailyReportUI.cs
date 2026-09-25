@@ -569,7 +569,11 @@ public class DailyReportUI : MonoBehaviour
         // ── Satisfaction subscores (cumulative ratios, each weighted 20% of 1000) ──
         int foodConsumed = d.GetCumulativeFoodPacksConsumedByClients();
         int foodNeeded = d.GetCumulativeFoodPacksNeededByClients();
-        F($"Food Satisfaction = (food packs consumed / needed) x 20% weight x 1000 | consumed={foodConsumed}, needed={foodNeeded} => score={currentMetrics.satFoodScore:F1}");
+        // consumed/needed include community food: needed += depletionAmount per successful community roll,
+        // consumed += packs actually delivered to communities (vehicle + immediate).
+        int communityFoodUsed = d.GetCumulativeCommunityFoodUsed();
+        int communityFoodDemand = d.GetCumulativeCommunityFoodDemand();
+        F($"Food Satisfaction = (food packs consumed / needed) x 20% weight x 1000 | consumed={foodConsumed}, needed={foodNeeded} (of which community: delivered={communityFoodUsed}, needed={communityFoodDemand}) => score={currentMetrics.satFoodScore:F1}");
 
         int lodgingConsumed = d.GetCumulativeLodgingNightsConsumed();
         int lodgingNeeded = d.GetCumulativeLodgingNightsNeeded();
@@ -603,7 +607,7 @@ public class DailyReportUI : MonoBehaviour
 
         // ── Cost-efficiency subscores (cumulative $/unit, each weighted 1/3 of 1000) ──
         float foodSpend = d.GetCumulativeFoodSpend();
-        F($"Food Cost Efficiency = normalized($ spent / packs consumed) x 1/3 weight x 1000 | spent=${foodSpend:F0}, consumed={foodConsumed} => score={currentMetrics.costFoodScore:F1}");
+        F($"Food Cost Efficiency = normalized($ spent / packs consumed) x 1/3 weight x 1000 | spent=${foodSpend:F0}, consumed={foodConsumed} (of which community delivered={communityFoodUsed}) => score={currentMetrics.costFoodScore:F1}");
 
         float lodgingSpend = d.GetCumulativeLodgingSpend();
         F($"Lodging Cost Efficiency = normalized($ spent / nights consumed) x 1/3 weight x 1000 | spent=${lodgingSpend:F0}, nights consumed={lodgingConsumed} => score={currentMetrics.costLodgingScore:F1}");
