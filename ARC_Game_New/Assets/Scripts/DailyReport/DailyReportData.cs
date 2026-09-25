@@ -104,6 +104,8 @@ public class DailyReportData : MonoBehaviour
     [Header("Cumulative - Casework")]
     private int cumulativeClientRoundsAwaitingCasework = 0; // here
     private int cumulativeClientsRequestedCasework = 0; //here
+    private int cumulativeCaseworkAvailableRounds = 0;
+    private HashSet<ClientGroup> caseworkRequestedGroups = new HashSet<ClientGroup>();
 
     // Mainly Cost-eff
     [Header("Cumulative - Cost-Efficiency Spend")] //record all
@@ -508,7 +510,7 @@ public class DailyReportData : MonoBehaviour
         {
             foreach (var group in ClientStayTracker.Instance.clientGroups)
             {
-                if (group.clientsWithCaseworkNeed > 0 && !group.hasDeparted)
+                if (group.clientsWithCaseworkNeed > 0 && !group.hasDeparted && caseworkRequestedGroups.Contains(group))
                     cumulativeClientRoundsAwaitingCasework += group.clientsWithCaseworkNeed;
             }
         }
@@ -522,6 +524,14 @@ public class DailyReportData : MonoBehaviour
     {
         cumulativeClientsRequestedCasework += group.clientsWithCaseworkNeed;
         todayCaseworkRequestedNew += group.clientsWithCaseworkNeed; // NEW
+        caseworkRequestedGroups.Add(group);
+        var gdm = GameDataManager.Instance;
+        if (gdm != null)
+        {
+            int totalRounds = gdm.InitialGameDays * gdm.InitialRoundsPerDay;
+            int remainingRounds = Mathf.Max(0, totalRounds - cumulativeRoundsElapsed);
+            cumulativeCaseworkAvailableRounds += remainingRounds * group.clientsWithCaseworkNeed;
+        }
         RecalcCaseworkSatisfaction();
     }
 
@@ -641,6 +651,7 @@ public class DailyReportData : MonoBehaviour
     public int GetCumulativeWorkerPoolRounds() => cumulativeWorkerPoolRounds;
     public int GetCumulativeClientRoundsAwaitingCasework() => cumulativeClientRoundsAwaitingCasework;
     public int GetCumulativeClientsRequestedCasework() => cumulativeClientsRequestedCasework;
+    public int GetCumulativeCaseworkAvailableRounds() => cumulativeCaseworkAvailableRounds;
     public float GetCumulativeFoodSpend() => cumulativeFoodSpend;
     public float GetCumulativeLodgingSpend() => cumulativeLodgingSpend;
     public float GetCumulativeWorkerRequestCost() => cumulativeWorkerRequestCost;
@@ -899,18 +910,25 @@ public class DailyReportData : MonoBehaviour
         int requested = used + wasted;
 
         if (requested <= 0) return 0f;
-        return (float)wasted / requested;
+        return 1f-(float)wasted / requested;
     }
+
+    //public float S_Casework()
+    //{
+    //    var d = this;
+    //    int requested = d.GetCumulativeClientsRequestedCasework();
+    //    if (requested <= 0 || GameDataManager.Instance == null) return 0f;
+    //    int denom = GameDataManager.Instance.InitialGameDays * GameDataManager.Instance.InitialRoundsPerDay * requested;
+    //    if (denom <= 0) return 0f;
+
+    //    return Mathf.Clamp01(1f - ((float)d.GetCumulativeClientRoundsAwaitingCasework() / denom));
+    //}
 
     public float S_Casework()
     {
         var d = this;
-        int requested = d.GetCumulativeClientsRequestedCasework();
-        if (requested <= 0 || GameDataManager.Instance == null) return 0f;
-        int denom = GameDataManager.Instance.InitialGameDays * GameDataManager.Instance.InitialRoundsPerDay * requested;
-        if (denom <= 0) return 0f;
-
-        return Mathf.Clamp01(1f - ((float)d.GetCumulativeClientRoundsAwaitingCasework() / denom));
+        if (d.cumulativeCaseworkAvailableRounds <= 0) return 0f;
+        return Mathf.Clamp01(1f - ((float)d.GetCumulativeClientRoundsAwaitingCasework() / d.cumulativeCaseworkAvailableRounds));
     }
 
     public float CalculateLiveSatisfactionScore()
@@ -1126,7 +1144,7 @@ public class DailyReportData : MonoBehaviour
         public int communityFoodDemand;
         public int lodgingNightsConsumed, lodgingNightsNeeded;
         public int idleWorkerRounds, workingWorkerRounds, trainingWorkerRounds, workerPoolRounds;
-        public int clientRoundsAwaitingCasework, clientsRequestedCasework;
+        public int clientRoundsAwaitingCasework, clientsRequestedCasework, caseworkAvailableRounds;
         public float foodSpend, lodgingSpend, workerRequestCost, workerTrainingCost;
 
         public float appliedFoodSat, appliedLodgingSat, appliedWorkerSat, appliedCaseworkSat;
@@ -1152,6 +1170,7 @@ public class DailyReportData : MonoBehaviour
         workerPoolRounds = cumulativeWorkerPoolRounds,
         clientRoundsAwaitingCasework = cumulativeClientRoundsAwaitingCasework,
         clientsRequestedCasework = cumulativeClientsRequestedCasework,
+        caseworkAvailableRounds = cumulativeCaseworkAvailableRounds,
         foodSpend = cumulativeFoodSpend,
         lodgingSpend = cumulativeLodgingSpend,
         workerRequestCost = cumulativeWorkerRequestCost,
@@ -1185,6 +1204,7 @@ public class DailyReportData : MonoBehaviour
         cumulativeWorkerPoolRounds = s.workerPoolRounds;
         cumulativeClientRoundsAwaitingCasework = s.clientRoundsAwaitingCasework;
         cumulativeClientsRequestedCasework = s.clientsRequestedCasework;
+        cumulativeCaseworkAvailableRounds = s.caseworkAvailableRounds;
         cumulativeFoodSpend = s.foodSpend;
         cumulativeLodgingSpend = s.lodgingSpend;
         cumulativeWorkerRequestCost = s.workerRequestCost;

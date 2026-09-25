@@ -489,7 +489,7 @@ public class DailyReportUI : MonoBehaviour
         Row("Idle", Score(m.workerIdleSatScore));
         Row("Working", Score(m.workerWorkingSatScore));
         Row("Training", Score(m.workerTrainingSatScore));
-        Row("Food Waste Penalty", Score(m.satWasteScore));
+        Row("Food Waste Satisfaction", Score(m.satWasteScore));
         Row("Waste Status", $"{m.cumFoodPacksWasted} of {m.cumFoodPacksConsumedByClients + m.cumFoodPacksWasted} food packs requested went to waste (cumulative).");
         Row("Casework Satisfaction", Score(m.satCaseworkScore));
         Row("Casework Status", $"{m.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework, out of {m.cumClientsRequestedCasework} clients who requested it.");
@@ -587,11 +587,16 @@ public class DailyReportUI : MonoBehaviour
           $" | idle_rounds={idleRounds}, activated_rounds={activatedRounds} => total={currentMetrics.satWorkerScore:F1}");
 
         int wasted = d.GetCumulativeFoodPacksWasted();
-        F($"Food Waste Penalty = (food packs wasted / (consumed+wasted)) x 20% weight x 1000 | wasted={wasted}, consumed={foodConsumed} => score={currentMetrics.satWasteScore:F1}");
+        //F($"Food Waste Penalty = (food packs wasted / (consumed+wasted)) x 20% weight x 1000 | wasted={wasted}, consumed={foodConsumed} => score={currentMetrics.satWasteScore:F1}");
+        F($"Food Waste Satisfaction = (1 - food packs wasted / (consumed+wasted)) x 20% weight x 1000 | wasted={wasted}, consumed={foodConsumed} => score={currentMetrics.satWasteScore:F1}");
 
+        //int caseworkAwaiting = d.GetCumulativeClientRoundsAwaitingCasework();
+        //int caseworkRequested = d.GetCumulativeClientsRequestedCasework();
+        //F($"Casework Satisfaction = (1 - client-rounds awaiting / total possible rounds) x 20% weight x 1000 | awaiting={caseworkAwaiting}, requested={caseworkRequested} => score={currentMetrics.satCaseworkScore:F1}");
         int caseworkAwaiting = d.GetCumulativeClientRoundsAwaitingCasework();
         int caseworkRequested = d.GetCumulativeClientsRequestedCasework();
-        F($"Casework Satisfaction = (1 - client-rounds awaiting / total possible rounds) x 20% weight x 1000 | awaiting={caseworkAwaiting}, requested={caseworkRequested} => score={currentMetrics.satCaseworkScore:F1}");
+        int caseworkAvailableRounds = d.GetCumulativeCaseworkAvailableRounds();
+        F($"Casework Satisfaction = (1 - client-rounds awaiting / rounds remaining at each request's request-time, summed) x 20% weight x 1000 | awaiting={caseworkAwaiting}, requested={caseworkRequested}, available_rounds={caseworkAvailableRounds} => score={currentMetrics.satCaseworkScore:F1}");
 
         float satTotal = currentMetrics.satFoodScore + currentMetrics.satLodgingScore + currentMetrics.satWorkerScore + currentMetrics.satWasteScore + currentMetrics.satCaseworkScore;
         F($"Satisfaction Total (this calculation) = Food+Lodging+Worker+Waste+Casework = {currentMetrics.satFoodScore:F1}+{currentMetrics.satLodgingScore:F1}+{currentMetrics.satWorkerScore:F1}+{currentMetrics.satWasteScore:F1}+{currentMetrics.satCaseworkScore:F1} = {satTotal:F1}");
@@ -669,7 +674,7 @@ public class DailyReportUI : MonoBehaviour
         yield return StartCoroutine(AnimateSectionElement(workerWorkingElement, currentMetrics.workerWorkingSatScore, "Working", 200f / 3f));
         yield return StartCoroutine(AnimateSectionElement(workerTrainingBonusElement, currentMetrics.workerTrainingSatScore, "Training", 200f / 3f));
 
-        yield return StartCoroutine(AnimateSectionElement(wasteTotal, currentMetrics.satWasteScore, "Food Waste Penalty", 200f));
+        yield return StartCoroutine(AnimateSectionElement(wasteTotal, currentMetrics.satWasteScore, "Food Waste Satisfaction", 200f));
         yield return StartCoroutine(AnimateSectionElement(wasteStatus,
             $"{currentMetrics.cumFoodPacksWasted} of {currentMetrics.cumFoodPacksConsumedByClients + currentMetrics.cumFoodPacksWasted} food packs requested went to waste (cumulative)."));
 
