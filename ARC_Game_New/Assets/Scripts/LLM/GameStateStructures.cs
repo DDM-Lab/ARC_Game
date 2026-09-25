@@ -95,6 +95,24 @@ public class RewardMetrics
     public int lodgingSpend;
     public int workerSpend;
     public int caseworkSpend;
+
+    // ── Unity's own score, exported verbatim (the formula humans see) ─────────────────
+    // reward_scoring.py reads these instead of re-implementing DailyReportData's math, so
+    // the RL reward, the benchmark and the router all score exactly what the daily report
+    // shows a human — and follow automatically if that formula changes. Component ratios
+    // are the raw 0..1 S_*/C_* values; the totals are Unity's 0..1000 scale.
+    public bool scoreAvailable;          // false before DailyReportData exists
+    public float liveSatisfaction;       // SatisfactionAndBudget.currentSatisfaction (0..1000 scale)
+    public float liveEfficiency;         // SatisfactionAndBudget.currentEfficiency   (0..1000 scale)
+    public float sFood, sLodging, sWorkerUse, sWaste, sCasework;   // DailyReportData.S_*()
+    public float cFood, cLodging, cWorker;                         // DailyReportData.C_*()  (higher = better)
+    public float satisfactionComponentsTotal;   // ComputeFreshSatisfactionTotal()
+    public float efficiencyComponentsTotal;     // ComputeFreshEfficiencyTotal()
+    // The raw counters behind the ratios, so a run can be re-scored offline.
+    public int foodPacksConsumed, foodPacksNeeded, foodPacksWasted;
+    public int lodgingNightsConsumed, lodgingNightsNeeded;
+    public int clientRoundsAwaitingCasework, clientsRequestedCasework;
+    public int idleWorkerRounds, workingWorkerRounds, trainingWorkerRounds;
 }
 
 [System.Serializable]
@@ -115,6 +133,7 @@ public class SessionInfo
 [System.Serializable]
 public class SatisfactionAndBudgetState
 {
+    public float efficiency;   // live efficiency (0..1000) — was absent, so no consumer could see it
     public int satisfaction;
     public int budget;
 }

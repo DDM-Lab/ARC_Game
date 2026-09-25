@@ -3197,6 +3197,7 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                                           : SatisfactionAndBudget.SpendCategory.Other;
                             SatisfactionAndBudget.Instance.RemoveBudget(
                                 -(int)impactValue,
+                                choiceCat,
                                 $"Task [{resolvedTaskTitle}] cost");
                             if (DailyReportData.Instance != null)
                             {

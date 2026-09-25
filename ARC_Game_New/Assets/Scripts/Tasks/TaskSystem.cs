@@ -974,16 +974,24 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
+    void OnDestroy()
+    {
+        // OnRoundEnd is STATIC: it outlives this component, the scene, and GlobalClock itself.
+        // Without this, a destroyed TaskSystem keeps sweeping its OLD activeTasks every round —
+        // and because RewardMetricsTracker survives a gym reset, a task from the previous
+        // episode can credit reward to the current one. The NREs are swallowed by
+        // SafeInvokeStatic, so nothing surfaces.
+        GlobalClock.OnRoundEnd -= SweepStalePopulationTasks;
+        if (GlobalClock.Instance != null)
+        {
+            GlobalClock.Instance.OnTimeSegmentChanged -= OnRoundChanged;
+            GlobalClock.Instance.OnSimulationEnded -= OnSimulationEndedCheckDayComplete;
+        }
+    }
+
     void OnRoundChanged(int newSegment)
     {
         Debug.Log($"OnRoundChanged called in Task System: segment {newSegment}, auto generation: {enableAutoTaskGeneration}. (We skip generation when newSegment == 3)");
-        // PARITY BUILD (ledger D15): upstream's gate, `newSegment != 3`, not ours. The two are
-        // not the same set: upstream generates on segments 0, 1, 2 AND 4, ours only on 0, 1, 2.
-        // Ours also moved the segment-0 pass onto OnDayStarted, which does not fire for day 1 --
-        // so on day 1 upstream ran a generation pass this build never ran, and upstream's first
-        // day produced a Budget_Allocation, two relocation requests and a workforce alert that
-        // ours did not. Different tasks means different trigger evaluations, which means a
-        // different number of draws off the shared Random stream.
         if (enableAutoTaskGeneration && newSegment != 3)
         {
             Debug.Log("Attempting to generate tasks from database...");
@@ -2144,6 +2152,23 @@ public class TaskSystem : MonoBehaviour
         newTask.deliveryTimeLimit = taskData.deliveryTimeLimit;
         newTask.deliveryFailureSatisfactionPenalty = taskData.deliveryFailureSatisfactionPenalty;
 
+        // Demand quantity for people-based fulfillment (B2). Scoped to LODGING (relocation): demand =
+        // the largest delivery quantity among its delivery choices = the people to be housed.
+        // RewardMetricsTracker then credits resolved/fulfilled by PEOPLE for lodging. Food is left on
+        // the legacy per-task path (we don't track food delivered quantity, and food fulfillment
+        // already works), so demandQuantity stays 0 for food and the tracker falls back accordingly.
+        if (newTask.taskTag == TaskTag.Lodging)
+        {
+            int demand = 0;
+            foreach (AgentChoice c in newTask.agentChoices)
+                if (c.triggersDelivery || c.immediateDelivery)
+                    demand = Mathf.Max(demand, c.deliveryQuantity);
+            newTask.demandQuantity = demand;
+        }
+
+        SnapshotDebug.MarkContext("task:created", "{\"id\":" + newTask.taskId
+            + ",\"title\":\"" + newTask.taskTitle
+            + "\",\"rounds\":" + newTask.roundsRemaining + "}");
         if (newTask.taskTag == TaskTag.Lodging)
         {
             int clients = newTask.impacts.FirstOrDefault(i => i.impactType == ImpactType.Clients)?.value ?? 0;
@@ -3094,6 +3119,7 @@ public class TaskSystem : MonoBehaviour
         {
             state.satisfaction = (int)SatisfactionAndBudget.Instance.GetCurrentSatisfaction();
             state.budget = SatisfactionAndBudget.Instance.GetCurrentBudget();
+            state.efficiency = SatisfactionAndBudget.Instance.GetCurrentEfficiency();
         }
         else
         {

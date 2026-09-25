@@ -1366,9 +1366,13 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                 "r": rnd, "reward": round(reward, 4), "sumR": round(total, 4),
                 "sat": info["satisfaction"], "budget": info["budget"],
                 "satScore": round(info["satisfaction_score"], 4),
-                "costEff": round(info["cost_efficiency"], 4),
-                # full reward breakdown (cumulative-to-date) for per-component graphing
-                "comps": {k: round(v, 4) for k, v in (info.get("score_components") or {}).items()},
+                "costEff": round(info["cost_efficiency"], 4),   # legacy formula only (0.0 under unity)
+                "eff": round(info.get("efficiency", 0.0), 4),   # unity formula: live efficiency / 1000
+                "formula": info.get("score_formula"),
+                # full reward breakdown (cumulative-to-date) for per-component graphing.
+                # Numeric terms only: the dict also carries "formula" (a string).
+                "comps": {k: round(v, 4) for k, v in (info.get("score_components") or {}).items()
+                          if isinstance(v, (int, float))},
                 "foodFul": rm.get("foodFulfilled"), "foodRes": rm.get("foodResolved"),
                 "lodgFul": rm.get("lodgingFulfilled"), "lodgRes": rm.get("lodgingResolved"),
                 "nSel": nsel, "nReq": len(req), "nFail": sum(1 for r in exres if not r.get("success")),
@@ -1399,6 +1403,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
         rec["summary"] = {
             "totalReward": round(total, 4),
             "finalSat": last.get("sat"), "finalBudget": last.get("budget"),
+            "finalEff": last.get("eff"), "scoreFormula": last.get("formula"),
             "finalScore": round(last.get("sumR", 0.0), 4),
             "foodFulfillRate": round(ff / fr, 3) if fr else None,
             "lodgingFulfillRate": round(lf / lr, 3) if lr else None,

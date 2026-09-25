@@ -90,8 +90,10 @@ public class BuildingStatusTableUI : MonoBehaviour
 
     void OnDestroy()
     {
-        if (GlobalClock.Instance != null)
-            GlobalClock.OnRoundEnd -= RefreshAllRows;
+        // OnRoundEnd is static. Guarding its removal on GlobalClock.Instance made this fail on
+        // EVERY gym reset, because the DDOL roots (GlobalClock included) are destroyed a frame
+        // before this scene-local panel is.
+        GlobalClock.OnRoundEnd -= RefreshAllRows;
     }
 
     public void OnBuildingCreated(Building building)
