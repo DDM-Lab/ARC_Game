@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import argparse
+import difflib
 import hashlib
 import os
 import re
@@ -314,6 +315,15 @@ class Session:
         # Per-agent turns are serialized by _agent_lock, so one slot per name is exact.
         # Messages sent mid-turn read it to record which turn (and which message) caused them.
         self._turn_ctx: Dict[str, dict] = {}
+        # Developer-panel prompt edits for THIS session only (never written into the shared
+        # config objects, which other sessions may hold). None = use the config / default.
+        # Read by _resolve_global_prompt and _continuous_system_message; an officer picks a
+        # change up at the start of its next turn, keeping its conversation history.
+        self._prompt_overrides: dict = {"global_behavior": None, "global_manual": None,
+                                        "tool_policy": None, "agents": {}}
+        # agent name -> {state: idle|queued|thinking|acting, since, turn_id, trigger, ...}
+        # for the developer panel's live view. Purely observational.
+        self._agent_status: Dict[str, dict] = {}
         self._director_agent: Optional[AgentConfig] = self._find_director()
 
     def _find_director(self) -> Optional[AgentConfig]:
@@ -1254,12 +1264,27 @@ Respond with ONLY the package index number (0, 1, or 2).
         receive-loop path (director_message) must invoke this from a background task
         so awaiting the lock never blocks the loop (else choice_made could deadlock).
         """
-        async with self._agent_lock(agent.subagent_name):
-            return await self._run_continuous_inner(
-                agent, filtered_state, filtered_actions, game_state, all_actions,
-                triggered_by_director, triggered_by_peer,
-                caused_by_message_id=caused_by_message_id,
-            )
+        trigger = ("director" if triggered_by_director
+                   else "peer" if triggered_by_peer else "round")
+        self._set_agent_status(agent.subagent_name, "queued", trigger=trigger)
+        try:
+            async with self._agent_lock(agent.subagent_name):
+                return await self._run_continuous_inner(
+                    agent, filtered_state, filtered_actions, game_state, all_actions,
+                    triggered_by_director, triggered_by_peer,
+                    caused_by_message_id=caused_by_message_id,
+                )
+        finally:
+            self._set_agent_status(agent.subagent_name, "idle")
+
+    def _set_agent_status(self, name: str, state: str, **fields) -> None:
+        """Record what an officer is doing now, for the developer panel. Keeps the previous
+        entry's turn_id/trigger unless overridden, so 'idle' still shows the last turn."""
+        prev = self._agent_status.get(name, {})
+        entry = {k: prev.get(k) for k in ("turn_id", "trigger", "step", "last_outcome")}
+        entry.update(fields)
+        entry.update({"state": state, "since": _now()})
+        self._agent_status[name] = entry
 
     async def _run_continuous_concurrent(self, agent: AgentConfig) -> None:
         """Drive one continuous officer's turn for a begin_round, reading the
@@ -1576,9 +1601,19 @@ Respond with ONLY the package index number (0, 1, or 2).
         obs_state_version = self._state_version
         self._turn_ctx[name] = {"turn_id": turn_id,
                                 "caused_by_message_id": caused_by_message_id}
+        self._set_agent_status(name, "thinking", turn_id=turn_id, step=0)
         messages = self._continuous_transcripts.setdefault(name, [])
+        # The system message is rebuilt every turn and swapped in only if it changed, which
+        # today means a developer-panel edit. The rest of the transcript is kept, so the
+        # officer continues the same conversation under the new prompt. When nothing changed
+        # the message is byte-identical and the provider's prefix cache is unaffected.
+        system_msg = self._continuous_system_message(agent)
         if not messages:
-            messages.append(self._continuous_system_message(agent))
+            messages.append(system_msg)
+        elif messages[0].get("content") != system_msg["content"]:
+            messages[0] = system_msg
+            print(f"[router]   ✎ {name}: system prompt updated (developer panel) — "
+                  f"history kept ({len(messages) - 1} messages).")
         director_entries = [
             e for e in self.message_queue.get_conversation(name, "Director")
             if e.get("from") == "Director"
@@ -1678,9 +1713,11 @@ Respond with ONLY the package index number (0, 1, or 2).
               f"tools={[t['function']['name'] for t in tools]}")
 
         for step in range(max_steps):
+            self._set_agent_status(name, "thinking", step=step)
             resp = await asyncio.to_thread(
                 run_tool_step, messages, tools, agent_cfg, agent.tool_mode
             )
+            self._set_agent_status(name, "acting", step=step)
             if resp.get("error"):
                 print(f"[router]   ⚠️  Continuous step {step} error: {resp['error']}")
                 errored = True
@@ -1863,6 +1900,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                                system_text.encode("utf-8")).hexdigest()[:16],
                        })
         self._turn_ctx.pop(name, None)
+        self._set_agent_status(name, "acting", last_outcome=turn_outcome)
         print(f"[router]   ✓ Continuous agent {agent.subagent_name}: "
               f"{executed_total} action(s) executed this turn.")
         return game_state, all_actions
@@ -1953,13 +1991,13 @@ Respond with ONLY the package index number (0, 1, or 2).
         return got_peer
 
     def _continuous_system_message(self, agent: AgentConfig) -> dict:
-        """The system message (role + global prompt + tool policy). Built ONCE per
-        game — it seeds the persistent transcript and never changes mid-game."""
+        """The system message (role + global prompt + tool policy). Seeds the persistent
+        transcript; it only changes mid-game through a developer-panel override."""
         use_global = agent.use_global_prompt
         global_prompt = self._resolve_global_prompt() if use_global else ""
-        agent_prompt = agent.system_prompt or (
-            "You are an officer in a disaster-relief operation."
-        )
+        agent_prompt = (self._prompt_overrides["agents"].get(agent.subagent_name)
+                        or agent.system_prompt
+                        or "You are an officer in a disaster-relief operation.")
         if global_prompt:
             system = f"{global_prompt}\n\n---\n\nAGENT ROLE: {agent_prompt}"
         else:
@@ -1969,7 +2007,9 @@ Respond with ONLY the package index number (0, 1, or 2).
         # informed collaborators can prompt-engineer the whole surface — but the upload
         # endpoint warns when an override drops the contract's key clauses, since a bad
         # rewrite yields officers that mis-call tools or claim actions they never took.
-        policy = getattr(self.config, "tool_policy", None) or self._CONTINUOUS_TOOL_POLICY
+        policy = (self._prompt_overrides["tool_policy"]
+                  or getattr(self.config, "tool_policy", None)
+                  or self._CONTINUOUS_TOOL_POLICY)
         system = f"{system}\n\n---\n\n{policy}"
         return {"role": "system", "content": system}
 
@@ -1983,11 +2023,20 @@ Respond with ONLY the package index number (0, 1, or 2).
         """Compose this session's shared prompt: per-config halves where supplied, server
         defaults otherwise. A legacy whole-blob override short-circuits both halves."""
         cfg = self.config
+        ov = self._prompt_overrides
         whole = getattr(cfg, "global_prompt", None)
-        if whole:
+        if whole and not (ov["global_behavior"] or ov["global_manual"]):
             return whole                      # explicit whole-blob replace
-        behavior = getattr(cfg, "global_prompt_behavior", None)
-        manual = getattr(cfg, "global_prompt_manual", None)
+        if whole:
+            # A developer edit to one half of a config that ships a whole-blob prompt: split
+            # the blob so the untouched half keeps the config's text.
+            parts = whole.split(self._PROMPT_SPLIT, 1)
+            behavior = ov["global_behavior"] or parts[0]
+            manual = ov["global_manual"] or (parts[1] if len(parts) > 1 else "")
+            return behavior if not manual.strip() else \
+                f"{behavior}\n\n{self._PROMPT_SPLIT}\n{manual}"
+        behavior = ov["global_behavior"] or getattr(cfg, "global_prompt_behavior", None)
+        manual = ov["global_manual"] or getattr(cfg, "global_prompt_manual", None)
         if not behavior and not manual:
             return load_global_prompt()       # nothing overridden — server default verbatim
 
@@ -2000,6 +2049,111 @@ Respond with ONLY the package index number (0, 1, or 2).
         if not manual.strip():
             return behavior
         return f"{behavior}\n\n{self._PROMPT_SPLIT}\n{manual}"
+
+    # ── Developer panel: live prompt editing ────────────────────────
+    # Scopes a developer may edit. "agent" is per officer; the other three are session-wide
+    # and affect every officer that uses them.
+    DEV_PROMPT_SCOPES = ("agent", "global_behavior", "global_manual", "tool_policy")
+
+    def _dev_base_layers(self) -> dict:
+        """The session-wide layers WITHOUT developer overrides, with where each came from."""
+        cfg = self.config
+        default = load_global_prompt() or ""
+        d_parts = default.split(self._PROMPT_SPLIT, 1)
+        whole = getattr(cfg, "global_prompt", None)
+        if whole:
+            w_parts = whole.split(self._PROMPT_SPLIT, 1)
+            behavior = (w_parts[0], "config")
+            manual = (w_parts[1] if len(w_parts) > 1 else "", "config")
+        else:
+            b = getattr(cfg, "global_prompt_behavior", None)
+            m = getattr(cfg, "global_prompt_manual", None)
+            behavior = (b, "config") if b else (d_parts[0], "default")
+            manual = (m, "config") if m else (d_parts[1] if len(d_parts) > 1 else "", "default")
+        pol = getattr(cfg, "tool_policy", None)
+        policy = (pol, "config") if pol else (self._CONTINUOUS_TOOL_POLICY, "default")
+        return {"global_behavior": behavior, "global_manual": manual, "tool_policy": policy}
+
+    def dev_prompt_view(self) -> dict:
+        """Everything the developer panel shows for this session: the session-wide layers,
+        each continuous officer's own prompt, the exact assembled system prompt it will run
+        under on its next turn, and what it is doing right now."""
+        base = self._dev_base_layers()
+        ov = self._prompt_overrides
+        layers = {}
+        for scope, (text, source) in base.items():
+            if ov[scope]:
+                text, source = ov[scope], "override"
+            layers[scope] = {"text": text, "source": source}
+        officers = []
+        for a in self.config.agents:
+            if a.actor_type != "continuous":
+                continue
+            own = ov["agents"].get(a.subagent_name)
+            assembled = self._continuous_system_message(a)["content"]
+            transcript = self._continuous_transcripts.get(a.subagent_name) or []
+            running = (transcript[0].get("content") if transcript else None)
+            officers.append({
+                "name": a.subagent_name,
+                "provider": getattr(a, "provider", None),
+                "llm_model": getattr(a, "llm_model", None),
+                "uses_global_prompt": bool(a.use_global_prompt),
+                "system_prompt": {"text": own or a.system_prompt or "",
+                                  "source": "override" if own else "config"},
+                "assembled_prompt": assembled,
+                "assembled_sha": hashlib.sha256(assembled.encode("utf-8")).hexdigest()[:16],
+                # True when an edit is waiting for this officer's next turn to take effect.
+                "pending_change": running is not None and running != assembled,
+                "transcript_messages": len(transcript),
+                "status": self._agent_status.get(a.subagent_name, {"state": "idle"}),
+            })
+        return {"session_id": self.session_id, "round": self.round_num, "day": self.day,
+                "layers": layers, "officers": officers}
+
+    def dev_set_prompt(self, scope: str, text: Optional[str], editor: str,
+                       agent_name: Optional[str] = None) -> dict:
+        """Apply (text) or reset (text=None) one prompt layer for this session. Takes effect
+        at each affected officer's next turn. Logged as a prompt_change event with a diff."""
+        if scope not in self.DEV_PROMPT_SCOPES:
+            raise ValueError(f"unknown scope {scope!r}; expected one of {self.DEV_PROMPT_SCOPES}")
+        if text is not None and not text.strip():
+            raise ValueError("empty prompt text; use reset to go back to the config's text")
+        if scope == "agent":
+            agent = self._get_agent_by_name(agent_name or "")
+            if agent is None or agent.actor_type != "continuous":
+                raise ValueError(f"no continuous officer named {agent_name!r} in this session")
+            name = agent.subagent_name
+            old = self._prompt_overrides["agents"].get(name) or agent.system_prompt or ""
+            if text is None:
+                self._prompt_overrides["agents"].pop(name, None)
+            else:
+                self._prompt_overrides["agents"][name] = text
+            new = self._prompt_overrides["agents"].get(name) or agent.system_prompt or ""
+            affected = [name]
+        else:
+            base_text = self._dev_base_layers()[scope][0] or ""
+            old = self._prompt_overrides[scope] or base_text
+            self._prompt_overrides[scope] = text
+            new = text or base_text
+            affected = [a.subagent_name for a in self.config.agents
+                        if a.actor_type == "continuous"
+                        and (scope == "tool_policy" or a.use_global_prompt)]
+        sha = lambda s: hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
+        diff = "".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True),
+                                            "before", "after", n=2))
+        record = {"scope": scope, "agent": agent_name if scope == "agent" else None,
+                  "action": "reset" if text is None else "set",
+                  "editor": editor, "affected_agents": affected,
+                  "old_sha": sha(old), "new_sha": sha(new),
+                  "diff": diff[:20000], "diff_truncated": len(diff) > 20000,
+                  "round_applied_from": self.round_num}
+        self._emit("prompt_change", record,
+                   actor={"kind": "developer", "name": editor, "role": "developer",
+                          "actor_type": "developer_panel"})
+        print(f"[router] ✎ prompt_change by {editor}: {scope}"
+              f"{' / ' + agent_name if scope == 'agent' else ''} "
+              f"({record['action']}, affects {len(affected)} officer(s) from their next turn)")
+        return record
 
     def _continuous_turn_message(
         self,
@@ -5275,7 +5429,8 @@ def _load_keys(path: Optional[Path]) -> Dict[str, dict]:
     # Local dev key is an admin: it can mint cohort keys and upload plugin code.
     # `play_tester` is included so the unrestricted dev key exercises the play-tester
     # controls locally; a real cohort key only gets it if minted with it.
-    return {dev_key: {"label": "dev", "caps": ["mint", "upload_code", "play_tester"]}}
+    return {dev_key: {"label": "dev",
+                      "caps": ["mint", "upload_code", "play_tester", "dev_panel"]}}
 
 
 def _bearer_to_key(auth: Optional[str]) -> Optional[str]:
@@ -5436,6 +5591,7 @@ async def whoami(authorization: Optional[str] = Header(default=None)):
         "can_upload_configs": True,
         "can_upload_code": "upload_code" in (info.get("caps") or ()),
         "can_mint_keys": "mint" in (info.get("caps") or ()),
+        "can_use_dev_panel": "dev_panel" in (info.get("caps") or ()),
     }
 
 
@@ -5955,6 +6111,8 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
         websocket=websocket,
     )
     session.player_id = player_id
+    session.config_name = config_name      # for the developer panel's session list
+    session.started_at = _now()
     service.sessions[session_id] = session
 
     # Catalogue this game under the user (per-key index) and stamp a
@@ -6023,6 +6181,90 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
     print(f"[router] hello_ack -> {key_label} (session {session_id[:8]}, "
           f"config={config_name}, agents={len(cfg.agents)})")
     return session
+
+
+# ── Developer panel ──────────────────────────────────────────────
+# A plain web page (devpanel/index.html) plus a small JSON API for editing officers' prompts
+# in a LIVE game. Every API call needs a key with the `dev_panel` capability; study
+# participants' keys never have it. The page itself is static and holds no data.
+_DEVPANEL_DIR = Path(__file__).parent / "devpanel"
+
+
+def _require_dev_panel(authorization: Optional[str]) -> dict:
+    if service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    info = service.resolve_key(_bearer_to_key(authorization))
+    if info is None:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    if "dev_panel" not in (info.get("caps") or ()):
+        raise HTTPException(status_code=403,
+                            detail="This key lacks the 'dev_panel' capability")
+    return info
+
+
+def _dev_session(session_id: str) -> "Session":
+    s = service.sessions.get(session_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="No live session with that id")
+    return s
+
+
+@app.get("/dev")
+async def dev_panel_page():
+    page = _DEVPANEL_DIR / "index.html"
+    if not page.is_file():
+        raise HTTPException(status_code=404, detail="devpanel/index.html not found")
+    return Response(content=page.read_text(encoding="utf-8"), media_type="text/html")
+
+
+@app.get("/dev/api/sessions")
+async def dev_list_sessions(authorization: Optional[str] = Header(default=None)):
+    """Live games on this router, newest first."""
+    _require_dev_panel(authorization)
+    rows = [{
+        "session_id": s.session_id,
+        "config": getattr(s, "config_name", None),
+        "key_label": s.api_key_label,
+        "started_at": getattr(s, "started_at", None),
+        "round": s.round_num, "day": s.day,
+        "officers": [a.subagent_name for a in s.config.agents
+                     if a.actor_type == "continuous"],
+    } for s in service.sessions.values()]
+    rows.sort(key=lambda r: r["started_at"] or "", reverse=True)
+    return {"sessions": rows}
+
+
+@app.get("/dev/api/sessions/{session_id}")
+async def dev_session_view(session_id: str,
+                           authorization: Optional[str] = Header(default=None)):
+    """Prompt layers, each officer's assembled prompt, and live officer status."""
+    _require_dev_panel(authorization)
+    return _dev_session(session_id).dev_prompt_view()
+
+
+@app.post("/dev/api/sessions/{session_id}/prompt")
+async def dev_set_prompt(session_id: str, request: Request,
+                         authorization: Optional[str] = Header(default=None)):
+    """Body: {"scope": "agent"|"global_behavior"|"global_manual"|"tool_policy",
+              "agent": "<officer name, for scope=agent>", "text": "<new prompt>"}.
+    Omit "text" (or send null) to reset that layer to the config's text."""
+    info = _require_dev_panel(authorization)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Body must be JSON")
+    text = body.get("text")
+    if text is not None and not isinstance(text, str):
+        raise HTTPException(status_code=400, detail="'text' must be a string or null")
+    if text is not None and len(text) > 200_000:
+        raise HTTPException(status_code=413, detail="Prompt text over 200,000 characters")
+    try:
+        change = _dev_session(session_id).dev_set_prompt(
+            body.get("scope"), text, editor=info.get("label") or "unknown",
+            agent_name=body.get("agent"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "change": change}
 
 
 @app.websocket("/ws")

@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CORA Developer Panel</title>
+<!--
+  Developer panel v1: deliberately plain. All behaviour goes through the router's JSON API,
+  so the page can be restyled or rebuilt freely:
+
+    GET  /dev/api/sessions                      live games
+    GET  /dev/api/sessions/{id}                 prompt layers + officers + live status
+    POST /dev/api/sessions/{id}/prompt          {scope, agent?, text}   (text=null resets)
+
+  scope: "agent" (one officer's own prompt) | "global_behavior" | "global_manual" |
+         "tool_policy" (the last three are session-wide).
+  Every call sends "Authorization: Bearer <key>"; the key needs the dev_panel capability.
+  Edits apply at each affected officer's NEXT turn and keep its conversation history.
+-->
+<style>
+  :root { --bg: #fafafa; --fg: #1d1d1f; --muted: #6b6b70; --line: #d8d8dc; --accent: #2f5fd0;
+          --ok: #2e7d32; --warn: #b26a00; --bad: #c62828; --panel: #ffffff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #17171a; --fg: #ececf0; --muted: #9a9aa2; --line: #34343a; --accent: #7fa2ff;
+            --ok: #6fcf73; --warn: #f0b24a; --bad: #ff7b7b; --panel: #202024; }
+  }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
+         font: 14px/1.45 system-ui, -apple-system, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  h2 { font-size: 15px; margin: 20px 0 8px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  input, select, button, textarea { font: inherit; color: inherit; background: var(--panel);
+         border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; }
+  button { cursor: pointer; } button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  textarea { width: 100%; box-sizing: border-box; min-height: 140px;
+             font: 12px/1.4 ui-monospace, Menlo, monospace; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line);
+           font-variant-numeric: tabular-nums; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+          padding: 10px 12px; margin-bottom: 10px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+  .muted { color: var(--muted); } .tag { font-size: 12px; padding: 1px 6px; border-radius: 3px;
+          border: 1px solid var(--line); }
+  .s-idle { color: var(--muted); } .s-queued { color: var(--warn); }
+  .s-thinking, .s-acting { color: var(--accent); font-weight: 600; }
+  .override { color: var(--warn); } .pending { color: var(--warn); font-weight: 600; }
+  #msg { min-height: 1.4em; } .err { color: var(--bad); } .ok { color: var(--ok); }
+  pre { white-space: pre-wrap; font: 12px/1.4 ui-monospace, Menlo, monospace; max-height: 320px;
+        overflow: auto; background: var(--bg); padding: 8px; border-radius: 4px; }
+  details summary { cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>CORA Developer Panel</h1>
+
+<div class="bar">
+  <label for="key">Key</label>
+  <input id="key" type="password" size="24" placeholder="developer key">
+  <label for="session">Game</label>
+  <select id="session"><option value="">(no live games)</option></select>
+  <button id="refresh">Refresh</button>
+  <label><input id="auto" type="checkbox" checked> live status</label>
+</div>
+<div id="msg" class="muted"></div>
+
+<h2>Officers</h2>
+<table id="status"><thead><tr><th>Officer</th><th>Status</th><th>Step</th><th>Last turn</th>
+  <th>Model</th><th>Prompt</th></tr></thead><tbody></tbody></table>
+
+<h2>Officer prompts</h2>
+<p class="muted">Each officer's own role prompt. Changes apply from that officer's next turn;
+  its conversation so far is kept.</p>
+<div id="officers"></div>
+
+<h2>Shared prompt layers</h2>
+<p class="muted">Used by every officer (behavior and manual only for officers that use the
+  global prompt). Changes apply from each officer's next turn.</p>
+<div id="layers"></div>
+
+<h2>Changes this page made</h2>
+<div id="log" class="muted">None yet.</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const LAYER_LABELS = {global_behavior: "Global behavior rules", global_manual: "Game manual",
+                      tool_policy: "Tool policy"};
+let view = null;           // last GET /dev/api/sessions/{id}
+let dirty = new Set();     // textareas the user has edited and not applied
+
+try { $("key").value = localStorage.getItem("cora-dev-key") || ""; } catch (e) {}
+$("key").addEventListener("change", () => {
+  try { localStorage.setItem("cora-dev-key", $("key").value); } catch (e) {}
+  loadSessions();
+});
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {...opts, headers: {"Authorization": "Bearer " + $("key").value,
+                                                   "Content-Type": "application/json"}});
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail || ("HTTP " + r.status));
+  return body;
+}
+function say(text, cls) { $("msg").textContent = text; $("msg").className = cls || "muted"; }
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g,
+  c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])); }
+
+async function loadSessions() {
+  if (!$("key").value) { say("Enter a developer key."); return; }
+  try {
+    const {sessions} = await api("/dev/api/sessions");
+    const cur = $("session").value;
+    $("session").innerHTML = sessions.length ? sessions.map(s =>
+      `<option value="${esc(s.session_id)}">${esc(s.config)} · ${esc(s.key_label)} · day ${s.day} round ${s.round} · ${esc(s.session_id.slice(0, 8))}</option>`
+    ).join("") : '<option value="">(no live games)</option>';
+    if (sessions.some(s => s.session_id === cur)) $("session").value = cur;
+    say(sessions.length ? "" : "No live games. Start one in the game, then Refresh.");
+    await loadView(true);
+  } catch (e) { say(e.message, "err"); }
+}
+
+async function loadView(rebuild) {
+  const sid = $("session").value;
+  if (!sid) { view = null; render(true); return; }
+  try { view = await api("/dev/api/sessions/" + sid); render(rebuild); }
+  catch (e) { say(e.message, "err"); }
+}
+
+function render(rebuild) {
+  const tbody = $("status").querySelector("tbody");
+  if (!view) { tbody.innerHTML = ""; $("officers").innerHTML = ""; $("layers").innerHTML = ""; return; }
+  tbody.innerHTML = view.officers.map(o => {
+    const st = o.status || {};
+    return `<tr><td>${esc(o.name)}</td><td class="s-${esc(st.state || "idle")}">${esc(st.state || "idle")}${st.trigger ? " (" + esc(st.trigger) + ")" : ""}</td>
+      <td>${st.step ?? ""}</td><td>${esc(st.last_outcome || "")}</td>
+      <td class="muted">${esc(o.llm_model || "")}</td>
+      <td>${o.pending_change ? '<span class="pending">edit pending next turn</span>'
+           : '<span class="muted">' + esc(o.assembled_sha) + "</span>"}</td></tr>`;
+  }).join("");
+  if (!rebuild) return;      // keep textareas stable during live polling
+  dirty.clear();
+  $("officers").innerHTML = view.officers.map((o, i) => `
+    <div class="card">
+      <div class="row"><strong>${esc(o.name)}</strong>
+        <span class="tag ${o.system_prompt.source === "override" ? "override" : ""}">${esc(o.system_prompt.source)}</span>
+        ${o.uses_global_prompt ? "" : '<span class="tag">no global prompt</span>'}</div>
+      <textarea id="agent-${i}" data-agent="${esc(o.name)}">${esc(o.system_prompt.text)}</textarea>
+      <div class="row"><button class="primary" onclick="apply('agent', ${i})">Apply</button>
+        <button onclick="reset('agent', ${i})">Reset to config</button></div>
+      <details><summary class="muted">Full prompt this officer will run under</summary>
+        <pre>${esc(o.assembled_prompt)}</pre></details>
+    </div>`).join("");
+  $("layers").innerHTML = Object.entries(view.layers).map(([scope, l]) => `
+    <div class="card">
+      <div class="row"><strong>${esc(LAYER_LABELS[scope] || scope)}</strong>
+        <span class="tag ${l.source === "override" ? "override" : ""}">${esc(l.source)}</span></div>
+      <textarea id="layer-${scope}">${esc(l.text)}</textarea>
+      <div class="row"><button class="primary" onclick="apply('${scope}')">Apply</button>
+        <button onclick="reset('${scope}')">Reset to config</button></div>
+    </div>`).join("");
+  document.querySelectorAll("textarea").forEach(t =>
+    t.addEventListener("input", () => dirty.add(t.id)));
+}
+
+async function send(scope, idx, text) {
+  const body = {scope, text};
+  let id = "layer-" + scope;
+  if (scope === "agent") { id = "agent-" + idx; body.agent = $(id).dataset.agent; }
+  try {
+    const {change} = await api(`/dev/api/sessions/${$("session").value}/prompt`,
+                               {method: "POST", body: JSON.stringify(body)});
+    dirty.delete(id);
+    const who = change.agent ? " / " + change.agent : "";
+    say(`${change.action === "reset" ? "Reset" : "Applied"} ${change.scope}${who}. Takes effect at the next turn of: ${change.affected_agents.join(", ") || "no officers"}.`, "ok");
+    const entry = document.createElement("details");
+    entry.innerHTML = `<summary>${new Date().toLocaleTimeString()} — ${esc(change.action)} ${esc(change.scope)}${esc(who)} (${esc(change.old_sha)} → ${esc(change.new_sha)})</summary><pre>${esc(change.diff || "(no textual change)")}</pre>`;
+    if ($("log").textContent === "None yet.") $("log").textContent = "";
+    $("log").prepend(entry);
+    await loadView(true);
+  } catch (e) { say(e.message, "err"); }
+}
+function apply(scope, idx) {
+  const id = scope === "agent" ? "agent-" + idx : "layer-" + scope;
+  send(scope, idx, $(id).value);
+}
+function reset(scope, idx) { send(scope, idx, null); }
+
+$("refresh").onclick = loadSessions;
+$("session").onchange = () => loadView(true);
+setInterval(() => { if ($("auto").checked && view) loadView(false); }, 2000);
+loadSessions();
+</script>
+</body>
+</html>
