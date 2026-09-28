@@ -860,14 +860,32 @@ public class ServerLauncherUI : MonoBehaviour
             string preferred = !string.IsNullOrEmpty(desiredConfig)
                 ? desiredConfig : PlayerPrefs.GetString(PREFS_CFG, "");
             selectedConfigIndex = 0;
+            bool linkConfigFound = false;
             for (int i = 0; i < fetchedConfigs.Count; i++)
-                if (fetchedConfigs[i].name == preferred) { selectedConfigIndex = i; break; }
+                if (fetchedConfigs[i].name == preferred)
+                {
+                    selectedConfigIndex = i;
+                    linkConfigFound = !string.IsNullOrEmpty(desiredConfig);
+                    break;
+                }
             RefreshConfigLabel();
             if (configSelectorButton != null) configSelectorButton.interactable = true;
 
             SetStatus($"Loaded {fetchedConfigs.Count} configs. Click the box to choose.",
                       new Color(0.55f, 0.85f, 0.6f));
             SetStartEnabled(true);
+
+            // Developer quick start: the link named a config and it exists, so start without
+            // a click. A missing config leaves the launcher up with the list, never guesses.
+            if (DevQuickStart.Active && linkConfigFound)
+            {
+                fetching = false;
+                StartCoroutine(StartGame(false));
+                yield break;
+            }
+            if (DevQuickStart.Active && !string.IsNullOrEmpty(desiredConfig))
+                SetStatus($"Config '{desiredConfig}' not offered to this key — pick one.",
+                          new Color(0.95f, 0.55f, 0.35f));
         }
 
         fetching = false;
@@ -994,7 +1012,7 @@ public class ServerLauncherUI : MonoBehaviour
     // Read a query-string parameter from the hosting page URL (WebGL only).
     // Lets a personalized link supply the API key / config, e.g.
     //   https://arc.example.edu/?key=ck_alice...&config=openai_multi_agent_config_local
-    static string UrlParam(string name)
+    public static string UrlParam(string name)
     {
 #if UNITY_WEBGL && !UNITY_EDITOR
         string url = Application.absoluteURL;

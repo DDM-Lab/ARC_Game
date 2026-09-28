@@ -474,6 +474,12 @@ public class WebSocketManager : MonoBehaviour
                 return;
             }
 
+            // Developer panel: load a JSON checkpoint into this running game. Checked BEFORE
+            // the substring dispatch below, because the embedded checkpoint is a large blob
+            // that could contain any of those type names; the parsed `type` is then confirmed.
+            if (data.Contains("\"load_checkpoint\"") && HandleLoadCheckpoint(data))
+                return;
+
             // Handle new multi-agent router message types
             if (data.Contains("\"choices_proposal\""))
             {
@@ -759,6 +765,45 @@ public class WebSocketManager : MonoBehaviour
     /// status string and let the server close us; reconnect would just be
     /// rejected again with the same credentials.
     /// </summary>
+    [Serializable]
+    class LoadCheckpointMessage { public string type; public string request_id; public string checkpoint; }
+
+    [Serializable]
+    class LoadCheckpointResult
+    {
+        public string type = "checkpoint_load_result";
+        public string request_id;
+        public bool accepted;
+        public string error;
+    }
+
+    /// <summary>Router → client: load a `.cora` JSON checkpoint (developer panel). Replies
+    /// accepted/refused at once; the load itself is a scene rebuild that finishes a few frames
+    /// later, keeping this manager and its connection alive (CoraSaveLoad keeps it across the
+    /// reload). Returns false if the message was not actually a load_checkpoint.</summary>
+    bool HandleLoadCheckpoint(string data)
+    {
+        LoadCheckpointMessage msg = null;
+        try { msg = JsonUtility.FromJson<LoadCheckpointMessage>(data); }
+        catch { return false; }
+        if (msg == null || msg.type != "load_checkpoint") return false;
+
+        var result = new LoadCheckpointResult { request_id = msg.request_id };
+        if (string.IsNullOrEmpty(msg.checkpoint))
+            result.error = "empty checkpoint";
+        else if (CoraSaveLoad.Instance == null)
+            result.error = "checkpoint loading is not available in this build/mode";
+        else
+        {
+            result.accepted = CoraSaveLoad.Instance.LoadFromJson(msg.checkpoint);
+            if (!result.accepted) result.error = "checkpoint refused (see the game's console)";
+        }
+        Debug.Log($"[WebSocketManager] load_checkpoint {msg.request_id}: "
+                  + (result.accepted ? "accepted" : "refused — " + result.error));
+        SendRawMessage(JsonUtility.ToJson(result));
+        return true;
+    }
+
     private void HandleHelloError(string data)
     {
         connectionStatus = "Auth failed";

@@ -324,6 +324,8 @@ class Session:
         # agent name -> {state: idle|queued|thinking|acting, since, turn_id, trigger, ...}
         # for the developer panel's live view. Purely observational.
         self._agent_status: Dict[str, dict] = {}
+        # request_id -> future resolved by the client's checkpoint_load_result.
+        self._pending_checkpoint_loads: Dict[str, asyncio.Future] = {}
         self._director_agent: Optional[AgentConfig] = self._find_director()
 
     def _find_director(self) -> Optional[AgentConfig]:
@@ -506,6 +508,12 @@ class Session:
             # Correlated reply to a get_game_state pull (see _fetch_fresh_state).
             if self._pending_state is not None and not self._pending_state.done():
                 self._pending_state.set_result(msg)
+            return
+        if msg_type == "checkpoint_load_result":
+            # Correlated reply to a developer-panel load_checkpoint (see dev_load_checkpoint).
+            fut = self._pending_checkpoint_loads.pop(msg.get("request_id"), None)
+            if fut is not None and not fut.done():
+                fut.set_result(msg)
             return
         print(f"[router] Received message type: {msg_type}")
 
@@ -2153,6 +2161,66 @@ Respond with ONLY the package index number (0, 1, or 2).
         print(f"[router] ✎ prompt_change by {editor}: {scope}"
               f"{' / ' + agent_name if scope == 'agent' else ''} "
               f"({record['action']}, affects {len(affected)} officer(s) from their next turn)")
+        return record
+
+    # ── Developer panel: load a checkpoint into the live game ───────
+    DEV_OFFICER_MEMORY = ("fresh", "keep")
+
+    def _dev_reset_officers(self) -> None:
+        """Start every officer fresh: drop its transcript and mark every message already in
+        the queue as seen, so the old game's conversation is not re-delivered afterwards."""
+        self._continuous_transcripts.clear()
+        for a in self.config.agents:
+            if a.actor_type != "continuous":
+                continue
+            for partner in self._recipients_for(a):
+                entries = [e for e in self.message_queue.get_conversation(a.subagent_name, partner)
+                           if e.get("from") == partner]
+                self._msg_injected_count[(a.subagent_name, partner)] = len(entries)
+
+    async def dev_load_checkpoint(self, checkpoint_text: str, officer_memory: str,
+                                  editor: str, timeout: float = 15.0) -> dict:
+        """Ask the connected game to load a `.cora` checkpoint, then (officer_memory="fresh")
+        start the officers with empty transcripts. Logged as a checkpoint_load event carrying
+        the checkpoint's hash, so a moment replayed from a file stays traceable to it."""
+        if officer_memory not in self.DEV_OFFICER_MEMORY:
+            raise ValueError(f"officer_memory must be one of {self.DEV_OFFICER_MEMORY}")
+        label = None
+        try:
+            parsed = json.loads(checkpoint_text)
+            label = parsed.get("label") or parsed.get("note")
+        except (ValueError, AttributeError):
+            raise ValueError("checkpoint is not valid JSON")
+        request_id = str(uuid.uuid4())
+        fut = asyncio.get_event_loop().create_future()
+        self._pending_checkpoint_loads[request_id] = fut
+        await self._send({"type": "load_checkpoint", "request_id": request_id,
+                          "checkpoint": checkpoint_text})
+        try:
+            reply = await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            reply = {"accepted": False, "error": f"no reply from the game within {timeout:.0f}s"}
+        finally:
+            self._pending_checkpoint_loads.pop(request_id, None)
+        accepted = bool(reply.get("accepted"))
+        if accepted:
+            self._supersede_pending_choice("developer loaded a checkpoint")
+            if officer_memory == "fresh":
+                self._dev_reset_officers()
+            # Game state now comes from the checkpoint; the next begin_round / state pull
+            # refreshes the router's snapshot.
+            self._peer_triggers_left = int(getattr(self.config, "peer_trigger_budget", None)
+                                           or PEER_TRIGGER_BUDGET_PER_ROUND)
+        record = {"request_id": request_id, "accepted": accepted, "error": reply.get("error"),
+                  "officer_memory": officer_memory, "editor": editor, "label": label,
+                  "checkpoint_sha": hashlib.sha256(checkpoint_text.encode("utf-8")).hexdigest()[:16],
+                  "checkpoint_bytes": len(checkpoint_text)}
+        self._emit("checkpoint_load", record,
+                   actor={"kind": "developer", "name": editor, "role": "developer",
+                          "actor_type": "developer_panel"})
+        print(f"[router] ⤓ checkpoint_load by {editor}: "
+              f"{'accepted' if accepted else 'refused — ' + str(reply.get('error'))} "
+              f"(officers: {officer_memory})")
         return record
 
     def _continuous_turn_message(
@@ -6265,6 +6333,37 @@ async def dev_set_prompt(session_id: str, request: Request,
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True, "change": change}
+
+
+_MAX_CHECKPOINT_BYTES = 8 * 1024 * 1024
+
+
+@app.post("/dev/api/sessions/{session_id}/load_checkpoint")
+async def dev_load_checkpoint(session_id: str, request: Request,
+                              authorization: Optional[str] = Header(default=None)):
+    """Body: {"checkpoint": <the .cora JSON, as an object or a string>,
+              "officer_memory": "fresh" (default) | "keep"}.
+    Loads the checkpoint into the live game; "fresh" also clears the officers' transcripts."""
+    info = _require_dev_panel(authorization)
+    raw = await request.body()
+    if len(raw) > _MAX_CHECKPOINT_BYTES:
+        raise HTTPException(status_code=413, detail="Checkpoint over 8 MB")
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Body must be JSON")
+    cp = body.get("checkpoint")
+    if isinstance(cp, dict):
+        cp = json.dumps(cp)
+    if not isinstance(cp, str) or not cp.strip():
+        raise HTTPException(status_code=400, detail="'checkpoint' is required")
+    session = _dev_session(session_id)
+    try:
+        result = await session.dev_load_checkpoint(
+            cp, body.get("officer_memory") or "fresh", editor=info.get("label") or "unknown")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": result["accepted"], "load": result}
 
 
 @app.websocket("/ws")

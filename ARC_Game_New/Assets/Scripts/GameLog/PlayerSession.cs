@@ -160,6 +160,20 @@ public class PlayerSession : MonoBehaviour
         OnSessionStarted?.Invoke();
     }
 
+    /// <summary>Start a session without the TutorialScene panel, for the developer quick start
+    /// (?quickstart=1), which jumps from the title screen straight to MainScene. This component
+    /// lives in TutorialScene, so on that path Awake never runs and SessionId would stay empty,
+    /// leaving every game-log line and upload unattributed. Same end state as CompleteSession.</summary>
+    public static void StartDevSession(string id)
+    {
+        if (string.IsNullOrEmpty(SessionId))
+            SessionId = Guid.NewGuid().ToString().Substring(0, 8);
+        PlayerName = string.IsNullOrEmpty(id) ? "dev" : id;
+        IsSessionActive = true;
+        Debug.Log($"[PlayerSession] Developer quick-start session: {PlayerName} ({SessionId})");
+        OnSessionStarted?.Invoke();
+    }
+
     public static string GetSessionFileName()
     {
         string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");

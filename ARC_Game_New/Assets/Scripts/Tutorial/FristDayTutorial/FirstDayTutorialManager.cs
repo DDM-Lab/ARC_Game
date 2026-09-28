@@ -76,6 +76,14 @@ public class FirstDayTutorialManager : MonoBehaviour
             globalClock.OnSimulationEnded    += OnSimulationEnded;
         }
         
+        // Developer quick start (?quickstart=1) skips the day-1 tutorial and its end-of-day
+        // feedback. Never set on a study link.
+        if (DevQuickStart.Active)
+        {
+            tutorialComplete = true;
+            return;
+        }
+
         // Start tutorial immediately on Day 1
         if (globalClock != null && globalClock.GetCurrentDay() == 1 && globalClock.GetCurrentTimeSegment() == 0)
         {

@@ -11,6 +11,7 @@
     GET  /dev/api/sessions                      live games
     GET  /dev/api/sessions/{id}                 prompt layers + officers + live status
     POST /dev/api/sessions/{id}/prompt          {scope, agent?, text}   (text=null resets)
+    POST /dev/api/sessions/{id}/load_checkpoint {checkpoint, officer_memory: "fresh"|"keep"}
 
   scope: "agent" (one officer's own prompt) | "global_behavior" | "global_manual" |
          "tool_policy" (the last three are session-wide).
@@ -68,6 +69,32 @@
 <h2>Officers</h2>
 <table id="status"><thead><tr><th>Officer</th><th>Status</th><th>Step</th><th>Last turn</th>
   <th>Model</th><th>Prompt</th></tr></thead><tbody></tbody></table>
+
+<h2>Load a checkpoint</h2>
+<div class="card">
+  <p class="muted">Loads a saved JSON checkpoint (.cora) into the selected live game. "Fresh"
+    clears the officers' conversations so they start at this moment with no memory of the old
+    game; "keep" leaves their conversations as they are.</p>
+  <div class="row">
+    <input id="cpfile" type="file" accept=".cora,.json,application/json">
+    <label for="cpmem">Officers</label>
+    <select id="cpmem"><option value="fresh">fresh</option><option value="keep">keep memory</option></select>
+    <button class="primary" id="cpload">Load into game</button>
+  </div>
+</div>
+
+<h2>Quick-start link</h2>
+<div class="card">
+  <p class="muted">Opens the game straight into play (no title, info or tutorial screens) and
+    connects with the chosen config. For testing only; never send this to study participants.</p>
+  <div class="row">
+    <label for="qsgame">Game URL</label><input id="qsgame" size="28" value="http://localhost:8000/">
+    <label for="qscfg">Config</label><input id="qscfg" size="26" placeholder="playtest_interagent_qwen">
+    <label for="qsuid">Player</label><input id="qsuid" size="10" value="dev">
+    <button id="qsmake">Make link</button>
+  </div>
+  <div class="row"><a id="qslink" href="#" target="_blank" rel="noopener"></a></div>
+</div>
 
 <h2>Officer prompts</h2>
 <p class="muted">Each officer's own role prompt. Changes apply from that officer's next turn;
@@ -185,6 +212,28 @@ function apply(scope, idx) {
   send(scope, idx, $(id).value);
 }
 function reset(scope, idx) { send(scope, idx, null); }
+
+$("cpload").onclick = async () => {
+  const f = $("cpfile").files[0];
+  if (!f) { say("Choose a checkpoint file first.", "err"); return; }
+  if (!$("session").value) { say("Pick a live game first.", "err"); return; }
+  say("Loading checkpoint…");
+  try {
+    const text = await f.text();
+    const {ok, load} = await api(`/dev/api/sessions/${$("session").value}/load_checkpoint`,
+      {method: "POST", body: JSON.stringify({checkpoint: text, officer_memory: $("cpmem").value})});
+    say(ok ? `Loaded ${f.name} (${load.checkpoint_sha}); officers: ${load.officer_memory}.`
+           : `Game refused the checkpoint: ${load.error}`, ok ? "ok" : "err");
+    await loadView(true);
+  } catch (e) { say(e.message, "err"); }
+};
+
+$("qsmake").onclick = () => {
+  const p = new URLSearchParams({quickstart: "1", launcher: "1", key: $("key").value,
+                                 config: $("qscfg").value, uid: $("qsuid").value});
+  const url = $("qsgame").value.replace(/[?#].*$/, "") + "?" + p.toString();
+  $("qslink").href = url; $("qslink").textContent = url;
+};
 
 $("refresh").onclick = loadSessions;
 $("session").onchange = () => loadView(true);
