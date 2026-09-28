@@ -51,6 +51,7 @@ class EpisodeLogger:
         session_id: str = "",
         trigger: str = None,
         tools_called: list = None,
+        extra: dict = None,
     ) -> None:
         """Append one agent turn record to the JSONL log.
 
@@ -160,6 +161,10 @@ class EpisodeLogger:
             "tokens_used": tokens_used,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+        # Caller-supplied provenance (turn_id, causal message ids, state versions, model).
+        # Additive only: a key already set above is never overwritten.
+        for k, v in (extra or {}).items():
+            record.setdefault(k, v)
         with open(self.log_path, "a") as f:
             f.write(json.dumps(record) + "\n")
 

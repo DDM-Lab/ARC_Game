@@ -305,6 +305,15 @@ class Session:
         # (name, partner) -> how many of that partner's messages this officer has already
         # seen. Replaces the director-only counter so peer threads are tracked too.
         self._msg_injected_count: dict = {}
+        # Monotonic count of game-state snapshots the router has adopted. An officer's turn
+        # records the version it observed; each action it executes records the version live
+        # at dispatch. The gap is how stale the decision was -- a bad decision and an
+        # out-of-date one look identical in the log without it.
+        self._state_version: int = 0
+        # agent name -> provenance of the turn it is running now ({turn_id, caused_by}).
+        # Per-agent turns are serialized by _agent_lock, so one slot per name is exact.
+        # Messages sent mid-turn read it to record which turn (and which message) caused them.
+        self._turn_ctx: Dict[str, dict] = {}
         self._director_agent: Optional[AgentConfig] = self._find_director()
 
     def _find_director(self) -> Optional[AgentConfig]:
@@ -580,6 +589,7 @@ class Session:
         # and so the concurrent officers below read a consistent starting snapshot.
         self._latest_game_state = game_state
         self._latest_all_actions = all_actions
+        self._state_version += 1
 
         # Split by actor_type. Non-continuous actors (auto/choices/coach) keep the
         # sequential, state-threading semantics they were designed around — they run
@@ -595,6 +605,7 @@ class Session:
             )
             self._latest_game_state = game_state
             self._latest_all_actions = all_actions
+            self._state_version += 1
 
         if continuous:
             print(f"[router] Running {len(continuous)} continuous officer(s) "
@@ -1225,6 +1236,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         all_actions: List[dict],
         triggered_by_director: bool = False,
         triggered_by_peer: bool = False,
+        caused_by_message_id: Optional[str] = None,
     ) -> Tuple[dict, List[dict]]:
         """Serialize turns FOR THIS OFFICER, then drive one turn.
 
@@ -1246,6 +1258,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             return await self._run_continuous_inner(
                 agent, filtered_state, filtered_actions, game_state, all_actions,
                 triggered_by_director, triggered_by_peer,
+                caused_by_message_id=caused_by_message_id,
             )
 
     async def _run_continuous_concurrent(self, agent: AgentConfig) -> None:
@@ -1289,6 +1302,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         if game_state:
             self._latest_game_state = game_state
             self._latest_all_actions = _enumerate_actions(game_state)
+            self._state_version += 1
 
     async def _fetch_fresh_state(self) -> dict:
         """Pull Unity's authoritative CURRENT game_state on demand.
@@ -1317,7 +1331,8 @@ Respond with ONLY the package index number (0, 1, or 2).
         return self._latest_game_state
 
     async def _run_continuous_for_message(self, agent: AgentConfig,
-                                          by_peer: bool = False) -> None:
+                                          by_peer: bool = False,
+                                          cause_message_id: Optional[str] = None) -> None:
         """Drive a continuous turn triggered by a mid-round director_message.
 
         Recomputes the filtered state/actions from the FRESHEST session snapshot
@@ -1344,6 +1359,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 agent, filtered_state, filtered_actions, gs, all_actions,
                 triggered_by_director=not by_peer,
                 triggered_by_peer=by_peer,
+                caused_by_message_id=cause_message_id,
             )
         except Exception as e:
             # A director explicitly addressed this officer; an uncaught error must not
@@ -1498,6 +1514,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         all_actions: List[dict],
         triggered_by_director: bool = False,
         triggered_by_peer: bool = False,
+        caused_by_message_id: Optional[str] = None,
     ) -> Tuple[dict, List[dict]]:
         """Drive one turn of the continuous (tool-using) agent."""
         # Reactive autonomy ("activate when spoken to"): on an UNPROMPTED turn a
@@ -1552,6 +1569,13 @@ Respond with ONLY the package index number (0, 1, or 2).
         # The tool loop below appends its assistant/tool turns to this same list,
         # so every prior step stays visible across activations and rounds.
         name = agent.subagent_name
+        # Turn provenance. obs_state_version is the snapshot this turn's observation was
+        # filtered from (the caller computes filtered_state from _latest_game_state just
+        # before entering here).
+        turn_id = str(uuid.uuid4())
+        obs_state_version = self._state_version
+        self._turn_ctx[name] = {"turn_id": turn_id,
+                                "caused_by_message_id": caused_by_message_id}
         messages = self._continuous_transcripts.setdefault(name, [])
         if not messages:
             messages.append(self._continuous_system_message(agent))
@@ -1561,7 +1585,11 @@ Respond with ONLY the package index number (0, 1, or 2).
         ]
         director_has_spoken = len(director_entries) > 0
         # Folds in the Director AND any peer officers this agent can be addressed by.
-        heard_from_peer = self._inject_unseen_messages(agent, messages)
+        # Ids of the messages newly folded into context this turn: what the officer had
+        # read when it acted (earlier ones were delivered on its earlier turns).
+        seen_message_ids: List[str] = []
+        heard_from_peer = self._inject_unseen_messages(agent, messages,
+                                                       seen_ids=seen_message_ids)
         messages.append(self._continuous_turn_message(
             agent, filtered_state, filtered_actions, director_has_spoken,
             brief_only=brief_only, triggered_by_director=triggered_by_director,
@@ -1707,6 +1735,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 # would leave the tool_call permanently unanswered, so every later turn would
                 # re-send an unpaired tool call -> hard 400 from the provider -> that officer
                 # is bricked for the session. Catch here so a result ALWAYS follows.
+                exec_state_version = self._state_version
                 try:
                     result_str, game_state, all_actions, filtered_actions, meta = \
                         await self._dispatch_continuous_tool(
@@ -1723,6 +1752,12 @@ Respond with ONLY the package index number (0, 1, or 2).
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
                 executed_total += meta.get("executed", 0)
                 spoke = spoke or bool(meta.get("spoke"))
+                # Staleness: how many state snapshots landed between what the officer
+                # observed and the moment this action was dispatched (0 = acted on current).
+                for r in meta.get("results") or []:
+                    if isinstance(r, dict):
+                        r.setdefault("obs_state_version", obs_state_version)
+                        r.setdefault("exec_state_version", exec_state_version)
                 turn_results.extend(meta.get("results") or [])
                 # Record a hard failure: nothing executed AND at least one result row
                 # reports failure. Read-only tools (read_state/get_*/list_actions)
@@ -1794,12 +1829,40 @@ Respond with ONLY the package index number (0, 1, or 2).
                 print(f"[router]   ⚠️  fallback director reply failed: {_e}")
 
         raw = last_text or f"[continuous] {executed_total} action(s) executed"
+        tools_called = [a.get("tool") for a in turn_attempts]
+        # What the officer itself chose on this wake-up. Silence is a decision too: a
+        # when-to-speak policy cannot be learned from a log that only records messages sent.
+        # A harness fallback reply (director-triggered turn that sent nothing) is flagged
+        # separately so it is never mistaken for the officer choosing to speak.
+        if any(t in self._ACTING_TOOLS for t in tools_called):
+            turn_outcome = "act"
+        elif talked:
+            turn_outcome = "speak"
+        else:
+            turn_outcome = "pass"
+        system_text = (messages[0].get("content") or "") if messages else ""
         self._log_turn(agent, filtered_state, filtered_actions, turn_attempts, None,
                        turn_results, sat_before, game_state, budget_before,
                        raw, tokens_total,
                        trigger=("director" if triggered_by_director
                                 else "peer" if triggered_by_peer else "round"),
-                       tools_called=[a.get("tool") for a in turn_attempts])
+                       tools_called=tools_called,
+                       extra={
+                           "turn_id": turn_id,
+                           "caused_by_message_id": caused_by_message_id,
+                           "seen_message_ids": seen_message_ids,
+                           "obs_state_version": obs_state_version,
+                           "end_state_version": self._state_version,
+                           "turn_outcome": turn_outcome,
+                           "harness_fallback_reply": bool(triggered_by_director and not spoke),
+                           "brief_only": brief_only,
+                           # Which model produced this turn, and under which system prompt.
+                           "provider": getattr(agent, "provider", None),
+                           "llm_model": getattr(agent, "llm_model", None),
+                           "system_prompt_sha": hashlib.sha256(
+                               system_text.encode("utf-8")).hexdigest()[:16],
+                       })
+        self._turn_ctx.pop(name, None)
         print(f"[router]   ✓ Continuous agent {agent.subagent_name}: "
               f"{executed_total} action(s) executed this turn.")
         return game_state, all_actions
@@ -1858,20 +1921,19 @@ Respond with ONLY the package index number (0, 1, or 2).
                  if n in roster and n != agent.subagent_name]
         return ["Director"] + peers
 
-    def _inject_unseen_messages(self, agent: AgentConfig, messages: List[dict]) -> bool:
+    def _inject_unseen_messages(self, agent: AgentConfig, messages: List[dict],
+                                seen_ids: Optional[List[str]] = None) -> bool:
         """Fold every message this officer has not yet seen into its transcript.
 
         Covers the Director AND peer officers with one mechanism. Returns True if any PEER
         message was newly injected, which the caller uses to tell the officer it has something
         from a colleague waiting -- a *potential* response, not an obligation.
 
-        DELIBERATELY NOT AN ACTIVATION TRIGGER. A peer message never wakes an officer up: it
-        waits in the queue until the officer's next ordinary turn (a round tick, or the
-        director addressing it). That keeps the loop exactly as it was and makes an A->B->A
-        ping-pong impossible -- with immediate activation, two officers could message each
-        other indefinitely, burning budget and drowning the director. It also sidesteps a
-        deadlock: _agent_lock is per-agent, so an officer's turn that synchronously drove a
-        peer's turn could end up awaiting a lock it already holds.
+        This function only DELIVERS; it does not wake anyone. Waking is _send_agent_response's
+        job: a peer message spawns the recipient's turn as a background task, capped per round
+        by peer_trigger_budget so an A->B->A ping-pong ends the round rather than the session.
+        A message whose wake-up was skipped (budget spent) still arrives here, on the
+        recipient's next ordinary turn. `seen_ids`, if given, collects the ids delivered.
         """
         name = agent.subagent_name
         got_peer = False
@@ -1883,6 +1945,8 @@ Respond with ONLY the package index number (0, 1, or 2).
             for e in entries[already:]:
                 tag = "[Director]" if partner == "Director" else f"[From: {partner}]"
                 messages.append({"role": "user", "content": f"{tag} {e.get('content', '')}"})
+                if seen_ids is not None:
+                    seen_ids.append(e.get("id"))
                 if partner != "Director":
                     got_peer = True
             self._msg_injected_count[key] = len(entries)
@@ -3468,7 +3532,8 @@ Respond with ONLY the package index number (0, 1, or 2).
                 # The task re-reads _latest_game_state at run time (after the lock
                 # frees), so a turn that follows a build observes the post-build
                 # world instead of the stale pre-build snapshot.
-                _t = asyncio.create_task(self._run_continuous_for_message(agent))
+                _t = asyncio.create_task(self._run_continuous_for_message(
+                    agent, cause_message_id=message["id"]))
                 _t.add_done_callback(self._on_round_task_done)
                 return
             # No state yet (message before any begin_round): fall through to chat.
@@ -3523,12 +3588,18 @@ Respond with ONLY the package index number (0, 1, or 2).
             msg_type=msg_type,
             round_num=self.round_num,
         )
+        # Causal links: the officer turn that produced this message, and the message that
+        # woke that turn. Chained with agent_turn.caused_by_message_id these rebuild the
+        # whole conversation graph (msg -> turn -> msg ...). None outside a continuous turn.
+        _ctx = self._turn_ctx.get(agent.subagent_name) or {}
         self._emit("conversation_message", {
             "from": agent.subagent_name,
             "to": to,
             "content": response_text,
             "message_type": msg_type,
             "message_id": response_message["id"],
+            "turn_id": _ctx.get("turn_id"),
+            "caused_by_message_id": _ctx.get("caused_by_message_id"),
         }, agent=agent, client_ts=response_message["timestamp"])
         await self._send({
             "type": "agent_message",
@@ -3559,16 +3630,28 @@ Respond with ONLY the package index number (0, 1, or 2).
             if recipient is not None and recipient.actor_type == "continuous":
                 if getattr(self, "_peer_triggers_left", 0) > 0 and self._latest_game_state:
                     self._peer_triggers_left -= 1
+                    status = "woken"
                     print(f"[router]   ✉ peer trigger: {agent.subagent_name} → {to} "
                           f"({self._peer_triggers_left} left this round)")
-                    _t = asyncio.create_task(
-                        self._run_continuous_for_message(recipient, by_peer=True))
+                    _t = asyncio.create_task(self._run_continuous_for_message(
+                        recipient, by_peer=True, cause_message_id=response_message["id"]))
                     _t.add_done_callback(self._on_round_task_done)
                 else:
                     # Not dropped -- _inject_unseen_messages still delivers it on the
                     # recipient's next ordinary turn. Only the immediate wake-up is skipped.
+                    status = ("budget_exhausted" if self._latest_game_state
+                              else "no_game_state")
                     print(f"[router]   ✉ peer message queued (no trigger budget left this "
                           f"round): {agent.subagent_name} → {to}")
+                # Logged either way: when the per-round cap skips a wake-up, the cap -- not the
+                # officer -- decided who got to answer, and that must be visible in the data.
+                self._emit("peer_wake", {
+                    "from": agent.subagent_name,
+                    "to": to,
+                    "message_id": response_message["id"],
+                    "status": status,
+                    "budget_left": getattr(self, "_peer_triggers_left", 0),
+                }, agent=agent)
 
     def _build_observation_snapshot(self, agent: AgentConfig) -> str:
         """Compact factual ground-truth snapshot for the CLARIFY branch.
@@ -4863,7 +4946,15 @@ Respond with ONLY the package index number (0, 1, or 2).
         tokens: int,
         trigger: Optional[str] = None,
         tools_called: Optional[list] = None,
+        extra: Optional[dict] = None,
     ):
+        # Continuous officers keep their history in _continuous_transcripts, not
+        # agent.conversation_history (which only the auto/choices path appends to), so the
+        # old count was structurally 0 for every officer turn.
+        if agent.actor_type == "continuous":
+            history_len = len(self._continuous_transcripts.get(agent.subagent_name, []))
+        else:
+            history_len = len(agent.conversation_history)
         self.logger.log_turn(
             episode_id=self.episode_id,
             round_num=self.round_num,
@@ -4882,7 +4973,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             budget_before=budget_before,
             budget_after=_get_budget(game_state_after),
             llm_raw_response=raw,
-            conv_history_length=len(agent.conversation_history),
+            conv_history_length=history_len,
             tokens_used=tokens,
             # Pass the post-execution state so the logger can route reward through
             # the shared gym scorer (game_state_after["rewardMetrics"]).
@@ -4894,6 +4985,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             # logging sub-agent use: a delegated turn is one more trigger value.
             trigger=trigger,
             tools_called=tools_called,
+            extra=extra,
         )
 
 
@@ -5876,6 +5968,20 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
         "player_id": player_id,
         "config": config_name,
         "agents": [a.subagent_name for a in cfg.agents],
+        # Per-agent specs: which model and messaging rules each seat ran under. The name
+        # list above is kept as-is for existing readers; this is the self-describing form.
+        "agent_specs": [{
+            "name": a.subagent_name,
+            "role": a.role,
+            "actor_type": a.actor_type,
+            "provider": getattr(a, "provider", None),
+            "llm_model": getattr(a, "llm_model", None),
+            "opening_mode": getattr(a, "opening_mode", None),
+            "can_address": list(getattr(a, "can_address", None) or []),
+            "max_steps": getattr(a, "max_steps", None),
+        } for a in cfg.agents],
+        "peer_trigger_budget": int(getattr(cfg, "peer_trigger_budget", None)
+                                   or PEER_TRIGGER_BUDGET_PER_ROUND),
         # Map PROVENANCE, reported by the client. Maps are deliberately served outside the
         # router (a partner can expose a map derived from private data), so this is the only
         # record of which map a session actually ran on. Stamping it here keeps a merged
