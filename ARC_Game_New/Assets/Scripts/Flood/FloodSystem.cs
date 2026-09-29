@@ -80,14 +80,18 @@ public class FloodSystem : MonoBehaviour
     List<Vector3Int> RiverTilesInOrder()
     {
         var ordered = new List<Vector3Int>(riverTiles);
-        // PARITY BUILD (ledger D24): no sort — upstream enumerates the HashSet raw.
+        ordered.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x)
+                             : a.y != b.y ? a.y.CompareTo(b.y)
+                             : a.z.CompareTo(b.z));
         return ordered;
     }
 
     List<Vector3Int> FloodTilesInOrder()
     {
         var ordered = new List<Vector3Int>(currentFloodTiles);
-        // PARITY BUILD (ledger D24): no sort — upstream enumerates the HashSet raw.
+        ordered.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x)
+                             : a.y != b.y ? a.y.CompareTo(b.y)
+                             : a.z.CompareTo(b.z));
         return ordered;
     }
 
@@ -552,12 +556,14 @@ public class FloodSystem : MonoBehaviour
 
         // Remove duplicates
         int candidatesBeforeDedup = expansionCandidates.Count;
-        // PARITY BUILD (ledger D24): dedup only, NO sort — upstream's exact line. Our sort is a
-        // real determinism fix (HashSet order is not guaranteed, and the loop below indexes into
-        // this list with Random.Range, so an identical candidate SET can still expand different
-        // tiles). But upstream does not sort, so with the sort in place the two builds pick
-        // different tiles from the same draw, and every later flood decision diverges from there.
+        // DETERMINISM: round-tripping through a HashSet removes duplicates but leaves the
+        // surviving order dependent on the set's internal layout, and the loop below indexes
+        // into this list with Random.Range — so an identical candidate SET can still expand
+        // DIFFERENT tiles. Sorting makes a seeded episode reproducible (ledger D24).
         expansionCandidates = new List<Vector3Int>(new HashSet<Vector3Int>(expansionCandidates));
+        expansionCandidates.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x)
+                                         : a.y != b.y ? a.y.CompareTo(b.y)
+                                         : a.z.CompareTo(b.z));
         Debug.Log($"Expansion candidates: {candidatesBeforeDedup} -> {expansionCandidates.Count} (after dedup)");
 
         // Expand flood to random candidates

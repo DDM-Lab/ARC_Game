@@ -51,6 +51,10 @@ public class CommunityFoodDepletionManager : MonoBehaviour
             float configured = GameConfigLoader.Instance.GetInitialFoodDemandFrequency();
             if (configured >= 0f) depletionChancePerRound = configured;
         }
+        // The sheet is loaded asynchronously; re-read initialFoodDemandFrequency once
+        // GameDataManager has the value in effect (the loader's own field is only the fallback
+        // at Start). Kept across the 74304870 merge, which rewrote this file around it.
+        StartCoroutine(ApplyConfiguredChance());
 
         if (GlobalClock.Instance != null)
             GlobalClock.Instance.OnTimeSegmentChanged += OnRoundChanged;
@@ -60,6 +64,16 @@ public class CommunityFoodDepletionManager : MonoBehaviour
             TaskSystem.Instance.OnTaskCompleted += HandleCommunityFoodRequestEnded;
             TaskSystem.Instance.OnTaskExpired += HandleCommunityFoodRequestEnded;
         }
+    }
+
+    System.Collections.IEnumerator ApplyConfiguredChance()
+    {
+        while (GameDataManager.Instance == null || !GameDataManager.Instance.IsDataReady)
+            yield return null;
+        float configured = GameDataManager.Instance.InitialFoodDemandFrequency;
+        if (configured >= 0f) depletionChancePerRound = configured;
+        if (showDebugInfo)
+            Debug.Log($"[CommunityFoodDepletionManager] depletion chance per community per round = {depletionChancePerRound}");
     }
 
     void OnDestroy()

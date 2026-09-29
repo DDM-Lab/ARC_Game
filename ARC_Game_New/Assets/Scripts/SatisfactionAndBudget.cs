@@ -124,7 +124,10 @@ public class SatisfactionAndBudget : MonoBehaviour
                 float waitTime = 0f;
                 while (!configLoader.IsConfigLoaded() && waitTime < 10f)
                 {
-                    yield return new WaitForSeconds(0.1f);
+                    // REALTIME: GlobalClock holds Time.timeScale at 0 while the game is
+                    // paused at startup, so a scaled WaitForSeconds never resumes and the
+                    // sheet's budget/satisfaction never reach the live economy.
+                    yield return new WaitForSecondsRealtime(0.1f);
                     waitTime += 0.1f;
                 }
 
