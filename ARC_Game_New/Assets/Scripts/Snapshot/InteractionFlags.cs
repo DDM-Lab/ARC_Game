@@ -28,6 +28,7 @@ using UnityEngine;
 public static class InteractionFlags
 {
     static readonly List<InteractionFlag> flags = new List<InteractionFlag>();
+    static readonly System.Random IdRandom = new System.Random();
 
     /// <summary>Flags recorded so far this session, oldest first.</summary>
     public static IReadOnlyList<InteractionFlag> All => flags;
@@ -46,8 +47,11 @@ public static class InteractionFlags
         {
             // Short, unique, and readable in a log line. Not a GUID: a tester may end up
             // reading this id aloud or pasting it into a bug report.
+            // Its OWN generator, never UnityEngine.Random: a draw from the game stream would
+            // shift every later flood/task/client roll, so flagging a moment would change the
+            // rest of the game and break replay from the recorded seed.
             id = "flag-" + DateTime.UtcNow.ToString("HHmmss") + "-" +
-                 UnityEngine.Random.Range(0x1000, 0xFFFF).ToString("x4"),
+                 IdRandom.Next(0x1000, 0xFFFF).ToString("x4"),
             utc = DateTime.UtcNow.ToString("o"),
             day = CurrentDay(),
             round = CurrentRound(),

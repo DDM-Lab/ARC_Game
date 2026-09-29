@@ -526,7 +526,17 @@ public class SatisfactionAndBudget : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Budget: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0} (+{budgetPrefix}{amount:N0}) - {description}");
         GameLogPanel.Instance.LogMetricsChange($"Budget: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0} (+{budgetPrefix}{amount:N0}) - {description}");
+        // Every income and expense passes through here, so this one record gives the full,
+        // machine-readable money trail of a run. spend_category is set only by the
+        // categorized RemoveBudget overload (the cost-efficiency denominators).
+        GameLogPanel.Instance?.LogData("budget_change", GameLogPanel.Json(
+            "delta", currentBudget - previousValue, "requested", amount,
+            "before", previousValue, "after", currentBudget,
+            "spend_category", pendingSpendCategory, "description", description));
     }
+
+    // Set by RemoveBudget(amount, category, ...) for the duration of its AddBudget call.
+    private string pendingSpendCategory;
 
     /// <summary>
     /// Get default description for budget changes - EASY TO CUSTOMIZE
@@ -595,7 +605,9 @@ public class SatisfactionAndBudget : MonoBehaviour
             else if (category == SpendCategory.Worker) cumWorkerSpend += amount;
             else if (category == SpendCategory.Casework) cumCaseworkSpend += amount;
         }
-        AddBudget(-amount, description);
+        pendingSpendCategory = category.ToString();
+        try { AddBudget(-amount, description); }
+        finally { pendingSpendCategory = null; }
     }
     
     /// <summary>
@@ -656,6 +668,9 @@ public class SatisfactionAndBudget : MonoBehaviour
 
         UpdateUI();
         OnBudgetChanged?.Invoke(currentBudget);
+        GameLogPanel.Instance?.LogData("budget_change", GameLogPanel.Json(
+            "delta", currentBudget - previousValue, "before", previousValue,
+            "after", currentBudget, "set", true));
 
         if (showDebugInfo)
             Debug.Log($"Budget set: {budgetPrefix}{previousValue:N0} → {budgetPrefix}{currentBudget:N0}");

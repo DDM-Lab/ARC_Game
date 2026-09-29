@@ -126,7 +126,9 @@ public static class GameSnapshotManager
         var s = new GameSnapshot
         {
             createdUtc = DateTime.UtcNow.ToString("o"),
-            seed = GymServerManager.ActiveSeed,
+            // The gym's per-episode seed when the gym is driving; otherwise the episode seed every
+            // run now has (EpisodeSeed), so a human run's checkpoints name their seed too.
+            seed = GymServerManager.ActiveSeed >= 0 ? GymServerManager.ActiveSeed : EpisodeSeed.Seed,
         };
 
         // RNG first: everything below may allocate, and allocation must not perturb the

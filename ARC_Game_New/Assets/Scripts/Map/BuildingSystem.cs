@@ -294,6 +294,10 @@ public class BuildingSystem : MonoBehaviour
 
             Debug.Log($"You created {buildingType} at AbandonedSite_{site.GetId()} - construction started");
             GameLogPanel.Instance.LogPlayerAction($"You created {buildingType} at AbandonedSite_{site.GetId()} - construction started");
+            GameLogPanel.Instance?.LogData("action_result", GameLogPanel.Json(
+                "action", "construction", "success", true,
+                "building", buildingType.ToString(), "site", site.GetId(),
+                "cost", constructionCost, "construction_rounds", constructionRounds));
             return true;
         }
         else
@@ -499,7 +503,9 @@ public class BuildingSystem : MonoBehaviour
         
         Debug.Log($"Deconstructed {buildingName} at site {siteId}");
         GameLogPanel.Instance.LogPlayerAction($"Deconstructed {buildingName}, site restored");
-        
+        GameLogPanel.Instance?.LogData("action_result", GameLogPanel.Json(
+            "action", "deconstruction", "success", true, "building", buildingName, "site", siteId));
+
         return true;
     }
 

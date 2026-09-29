@@ -28,7 +28,11 @@ public enum LogCategory
     Vehicles,
     Metrics,
     Player,
-    UI
+    UI,
+    // Machine-readable records (structured actions, per-round state, clicks) for training data.
+    // Uploaded with everything else but NEVER shown in the player's log panel or its filter.
+    // Must stay LAST: categories are stored by name but the filter dropdown maps by index.
+    Data
 }
 
 [System.Serializable]
@@ -41,6 +45,12 @@ public class LogMessage
     public int round;
     public float timestamp;
     public string realTime;
+    // `timestamp` is scaled game time, which stops whenever the game is paused (the whole
+    // planning phase), so it cannot measure how long a player took to decide. These two can:
+    // seconds since the app started (monotonic, unaffected by pause or speed) and UTC wall
+    // time to the millisecond.
+    public double elapsed;
+    public string utc;
 
     public LogMessage(string content, LogMessageType type, LogCategory category)
     {
@@ -49,6 +59,8 @@ public class LogMessage
         this.category = category.ToString();
         this.timestamp = Time.time;
         this.realTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        this.elapsed = Math.Round(Time.realtimeSinceStartupAsDouble, 3);
+        this.utc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
         if (GlobalClock.Instance != null)
         {
@@ -76,6 +88,9 @@ public class LogExportData
     // earlier day (checkpointDay says which). Tells save_game_logs.py where to file it — see that script.
     public string uploadKind = "final";
     public int checkpointDay;
+    // Per-round checkpoints (LogSender.SendRoundCheckpoint): the round within checkpointDay.
+    // 0 = a whole-day checkpoint, filed the old way.
+    public int checkpointRound;
 
     // ── Episode reproduction ──
     // The random state the episode started from (see EpisodeReproLog). With the build id
@@ -285,7 +300,10 @@ public class GameLogPanel : MonoBehaviour
         if (categoryDropdown != null)
         {
             categoryDropdown.ClearOptions();
-            var categoryNames = System.Enum.GetNames(typeof(LogCategory)).ToList();
+            // Data is never displayed, so it is not offered as a filter. It is the last enum
+            // value, so dropping it keeps every other option's index equal to its enum value.
+            var categoryNames = System.Enum.GetNames(typeof(LogCategory))
+                .Where(n => n != nameof(LogCategory.Data)).ToList();
             categoryDropdown.AddOptions(categoryNames);
             categoryDropdown.onValueChanged.AddListener(OnCategoryFilterChanged);
         }
@@ -346,8 +364,93 @@ public class GameLogPanel : MonoBehaviour
     {
         AddLogMessage(detail != null ? $"{name} | {detail}" : name,
                       LogMessageType.Normal, LogCategory.UI);
+        // The same event as a Data record, so the plain human build (no router) keeps it in
+        // machine-readable form. "k=v | k=v" details are also split into a fields object.
+        LogData("ui_interaction", Json("category", category, "name", name, "detail", detail,
+                                       "fields", new RawJson(DetailFields(detail))));
         WebSocketManager.Instance?.SendClientEvent(
             category, name, detail, GuiInteractionRecorder.LastClickSeq);
+    }
+
+    /// <summary>"building=Kitchen | site=3" -> {"building":"Kitchen","site":"3"}. Parts without
+    /// '=' are skipped; values stay strings (the raw detail is kept alongside).</summary>
+    static string DetailFields(string detail)
+    {
+        if (string.IsNullOrEmpty(detail)) return "{}";
+        var kv = new List<object>();
+        foreach (string part in detail.Split('|'))
+        {
+            int eq = part.IndexOf('=');
+            if (eq <= 0) continue;
+            kv.Add(part.Substring(0, eq).Trim());
+            kv.Add(part.Substring(eq + 1).Trim());
+        }
+        return Json(kv.ToArray());
+    }
+
+    /// <summary>
+    /// One machine-readable record for training data: content is
+    /// {"kind":"&lt;kind&gt;","click_seq":&lt;n&gt;,"data":&lt;dataJson&gt;}. Uploaded with the rest of the
+    /// log but never displayed. <paramref name="dataJson"/> must already be valid JSON
+    /// (an object, from JsonUtility.ToJson or <see cref="Json"/>). click_seq ties the record to
+    /// the click that caused it (-1 when none).
+    /// </summary>
+    public void LogData(string kind, string dataJson)
+    {
+        AddLogMessage("{\"kind\":\"" + JsonEscape(kind) + "\",\"click_seq\":"
+                      + GuiInteractionRecorder.LastClickSeq + ",\"data\":"
+                      + (string.IsNullOrEmpty(dataJson) ? "{}" : dataJson) + "}",
+                      LogMessageType.Normal, LogCategory.Data);
+    }
+
+    /// <summary>Build a flat JSON object from key/value pairs (strings are escaped; numbers
+    /// and bools are written as JSON literals; null becomes null). For call sites that have no
+    /// serializable class to hand to JsonUtility.</summary>
+    public static string Json(params object[] kv)
+    {
+        var sb = new StringBuilder("{");
+        for (int i = 0; i + 1 < kv.Length; i += 2)
+        {
+            if (i > 0) sb.Append(',');
+            sb.Append('"').Append(JsonEscape(kv[i]?.ToString() ?? "")).Append("\":");
+            object v = kv[i + 1];
+            switch (v)
+            {
+                case null: sb.Append("null"); break;
+                case bool b: sb.Append(b ? "true" : "false"); break;
+                case int or long or short: sb.Append(v); break;
+                case float f: sb.Append(f.ToString("R", System.Globalization.CultureInfo.InvariantCulture)); break;
+                case double d: sb.Append(d.ToString("R", System.Globalization.CultureInfo.InvariantCulture)); break;
+                case RawJson r: sb.Append(string.IsNullOrEmpty(r.json) ? "null" : r.json); break;
+                default: sb.Append('"').Append(JsonEscape(v.ToString())).Append('"'); break;
+            }
+        }
+        return sb.Append('}').ToString();
+    }
+
+    /// <summary>Wrap already-serialized JSON so <see cref="Json"/> embeds it as-is.</summary>
+    public readonly struct RawJson { public readonly string json; public RawJson(string j) { json = j; } }
+
+    static string JsonEscape(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        var sb = new StringBuilder(s.Length + 8);
+        foreach (char c in s)
+        {
+            switch (c)
+            {
+                case '"': sb.Append("\\\""); break;
+                case '\\': sb.Append("\\\\"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                default:
+                    if (c < 0x20) sb.Append("\\u").Append(((int)c).ToString("x4"));
+                    else sb.Append(c);
+                    break;
+            }
+        }
+        return sb.ToString();
     }
 
     #endregion
@@ -394,6 +497,9 @@ public class GameLogPanel : MonoBehaviour
             LogMessageType msgType = (LogMessageType)System.Enum.Parse(typeof(LogMessageType), message.messageType);
             if (msgType != expectedType) return false;
         }
+
+        // Machine-readable records are for the upload only; the player never sees them.
+        if (message.category == nameof(LogCategory.Data)) return false;
 
         LogCategory msgCategory = (LogCategory)System.Enum.Parse(typeof(LogCategory), message.category);
         if (currentCategoryFilter != LogCategory.All && msgCategory != currentCategoryFilter)
@@ -620,12 +726,15 @@ public class GameLogPanel : MonoBehaviour
             e.finalBudget = sb.GetCurrentBudget();
         }
         e.finalDay = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 0;
-        string label = e.uploadKind == "checkpoint" ? $"day {e.checkpointDay} checkpoint (auto)" : "end of game (auto)";
+        string label = e.uploadKind != "checkpoint" ? "end of game (auto)"
+            : e.checkpointRound > 0 ? $"day {e.checkpointDay} round {e.checkpointRound} checkpoint (auto)"
+            : $"day {e.checkpointDay} checkpoint (auto)";
         try { e.stateCheckpoint = CoraFileIO.ToJson(CoraFileIO.Capture(label)); }
         catch (System.Exception ex) { Debug.LogWarning($"[GameLogPanel] state checkpoint failed: {ex.Message}"); }
     }
 
-    public string GetMessagesAsJson(bool exportAll = false, string uploadKind = "final", int checkpointDay = 0)
+    public string GetMessagesAsJson(bool exportAll = false, string uploadKind = "final", int checkpointDay = 0,
+                                    int checkpointRound = 0)
     {
         List<LogMessage> messagesToExport = exportAll ?
             allMessages.ToList() :
@@ -636,6 +745,7 @@ public class GameLogPanel : MonoBehaviour
         LogExportData exportData = new LogExportData(messagesToExport);
         exportData.uploadKind = uploadKind;
         exportData.checkpointDay = checkpointDay;
+        exportData.checkpointRound = checkpointRound;
 
         // Inject the episode's random state (captured before the scene loaded)
         exportData.rngState  = EpisodeReproLog.RngStateJson;

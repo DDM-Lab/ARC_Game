@@ -659,6 +659,33 @@ public class GlobalClock : MonoBehaviour
         EndSimulation();
     }
     
+    /// <summary>One "round_state" Data record per round, for training: the round that just
+    /// ended (before the segment advances), budget, satisfaction, efficiency and the full reward
+    /// metrics including Unity's score components -- the same fields the router's round_state
+    /// event carries in LLM mode, now also in every plain human run's upload. Read-only, and
+    /// guarded so logging can never break the round transition.</summary>
+    void LogRoundState()
+    {
+        var log = GameLogPanel.Instance;
+        if (log == null) return;
+        try
+        {
+            var sb = SatisfactionAndBudget.Instance;
+            var rm = RewardMetricsTracker.Instance?.BuildPayload();
+            log.LogData("round_state", GameLogPanel.Json(
+                "day", currentDay,
+                "round", currentTimeSegment + 1,
+                "budget", sb != null ? sb.GetCurrentBudget() : 0,
+                "satisfaction", sb != null ? sb.GetCurrentSatisfaction() : 0f,
+                "efficiency", sb != null ? sb.GetCurrentEfficiency() : 0f,
+                "reward_metrics", new GameLogPanel.RawJson(rm != null ? JsonUtility.ToJson(rm) : null)));
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[GlobalClock] round_state record failed: {e.Message}");
+        }
+    }
+
     void EndSimulation()
     {
         isSimulationRunning = false;
@@ -694,6 +721,10 @@ public class GlobalClock : MonoBehaviour
         // by that same round's checks, instead of arriving one step too late to count.
         SafeInvokeStatic(OnRoundEnd);
         SnapshotDebug.Mark("endSim:afterOnRoundEnd");
+        LogRoundState();
+        // Per-round checkpoint upload (whole log + full state). Batch mode never uploads (see
+        // LogSender), so the gym and benchmarks are unaffected; nothing here touches game state.
+        LogSender.Instance?.SendRoundCheckpoint(currentDay, currentTimeSegment + 1);
 
         // Advance to next time segment -- AFTER the round-end finalize above, per
         // origin/main-bugfixes e85fe2c9. Ours used to advance first; upstream moved it so a

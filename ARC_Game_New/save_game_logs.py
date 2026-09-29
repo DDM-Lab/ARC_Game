@@ -7,11 +7,16 @@ Two kinds of upload, chosen by the payload's "uploadKind" field:
               <PlayerName>_<SessionId>_<Timestamp>_<MessageCount>.csv, exactly as before.
               A payload with no uploadKind (older clients) is treated as "final".
 
-  checkpoint  A cumulative snapshot uploaded at the end of each earlier day, as insurance against
-              a participant dropping out or the final upload failing. Saved in
-              LOG_DIR/checkpoints/ as <PlayerName>_<SessionId>_checkpoint_day<N>.csv - one file per
-              (session, day), overwritten if the same day is uploaded again (a retry), so
-              retries never pile up. Later days are supersets of earlier ones.
+  checkpoint  A cumulative snapshot, as insurance against a participant dropping out or the final
+              upload failing. Newer clients upload one at the end of every ROUND, saved in
+              LOG_DIR/checkpoints/ as <PlayerName>_<SessionId>_checkpoint_day<N>_round<R>.csv, and
+              one at each end-of-day report, saved as ..._checkpoint_day<N>.csv (the only kind older
+              clients send). One file per (session, day[, round]), overwritten if the same one is
+              uploaded again (a retry), so retries never pile up. Later ones are supersets of
+              earlier ones.
+
+Beside every CSV: <name>.meta.json (the sidecar: seed, parameters, scores, full state) and
+<name>.state.json (the full game state alone, loadable back into the game).
 
 Every save is atomic (temp file + rename), so a failed or interrupted write can never leave a
 half-written file or destroy an earlier good one, and is verified before answering. The response
@@ -138,7 +143,11 @@ def build_csv(payload, messages):
     writer.writerow([
         "SessionId", "PlayerName", "GameVersion",
         "Timestamp", "RealTime", "Day", "Round",
-        "Category", "MessageType", "Content"
+        "Category", "MessageType", "Content",
+        # Appended, not inserted, so readers that index columns by position keep working.
+        # Elapsed = seconds since the app started (does not stop while paused, unlike
+        # Timestamp); UtcTime = wall clock in UTC to the millisecond. Blank from older clients.
+        "Elapsed", "UtcTime"
     ])
     for msg in messages:
         writer.writerow([
@@ -151,7 +160,9 @@ def build_csv(payload, messages):
             msg.get("round", ""),
             msg.get("category", ""),
             msg.get("messageType", ""),
-            msg.get("content", "")
+            msg.get("content", ""),
+            msg.get("elapsed", ""),
+            msg.get("utc", "")
         ])
     return output.getvalue().encode("utf-8")
 
@@ -236,7 +247,17 @@ def main():
             if day < 1:
                 send_response(400, "A checkpoint upload needs checkpointDay >= 1")
                 return
-            filename = "{}_{}_checkpoint_day{}.csv".format(safe_name, safe_session, day)
+            # Per-round checkpoints (newer clients send checkpointRound >= 1) get their own file per
+            # round, so every round's full state is kept; older clients' day checkpoints keep the
+            # day-only name.
+            try:
+                rnd = int(payload.get("checkpointRound", 0) or 0)
+            except (TypeError, ValueError):
+                rnd = 0
+            if rnd >= 1:
+                filename = "{}_{}_checkpoint_day{}_round{}.csv".format(safe_name, safe_session, day, rnd)
+            else:
+                filename = "{}_{}_checkpoint_day{}.csv".format(safe_name, safe_session, day)
             filepath = os.path.join(CHECKPOINT_DIR, filename)
         else:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -259,6 +280,22 @@ def main():
             traceback.print_exc(file=sys.stderr)
             meta_error = type(e).__name__
 
+        # Loadable checkpoint: <same name>.state.json, the game's stateCheckpoint exactly as the
+        # game produced it (the same JSON "Save JSON Checkpoint" writes), so any upload can be
+        # loaded straight back into the game (F10 picker or the developer panel) without
+        # digging it out of the sidecar. Same rule as the sidecar: never fails the request.
+        state_file, state_error = None, None
+        state = payload.get("stateCheckpoint")
+        if isinstance(state, str) and state.strip():
+            try:
+                json.loads(state)  # only write it if it is real JSON
+                state_path = filepath[:-len(".csv")] + ".state.json"
+                atomic_write(state_path, state.encode("utf-8"))
+                state_file = os.path.basename(state_path)
+            except Exception as e:
+                traceback.print_exc(file=sys.stderr)
+                state_error = type(e).__name__
+
         send_response(
             200,
             "Saved {} messages ({} upload) to {}".format(len(messages), kind, filename),
@@ -269,6 +306,8 @@ def main():
             file=filename,
             meta_file=meta_file,
             meta_error=meta_error,
+            state_file=state_file,
+            state_error=state_error,
         )
 
     except OSError as e:

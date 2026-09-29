@@ -46,15 +46,32 @@ public class LogSender : MonoBehaviour
     }
 
     /// <summary>The end-of-game upload: the whole log, filed by the server as the session's final data.</summary>
-    public void SendAllLogs() => StartUpload("final", 0);
+    public void SendAllLogs() => StartUpload("final", 0, 0);
 
     /// <summary>
     /// End-of-day insurance: the whole log so far, filed by the server as that day's checkpoint.
     /// Each checkpoint is cumulative, so if one fails the next day's covers it — no retry needed.
     /// </summary>
-    public void SendDayCheckpoint(int day) => StartUpload("checkpoint", day);
+    public void SendDayCheckpoint(int day) => StartUpload("checkpoint", day, 0);
 
-    void StartUpload(string uploadKind, int checkpointDay)
+    /// <summary>
+    /// End-of-ROUND checkpoint: the whole log so far plus a full state checkpoint, filed by the
+    /// server per day and round. Makes a participant who closes the tab mid-game lose at most
+    /// part of one round (the plain build has no live channel, and nothing uploads on page
+    /// close), and gives training a full game state at every round. Its status lines go to the
+    /// hidden Data stream so 32 uploads a game do not fill the player's log.
+    /// </summary>
+    public void SendRoundCheckpoint(int day, int round) => StartUpload("checkpoint", day, round);
+
+    // One upload at a time. A request that arrives while one is in flight is QUEUED (only the
+    // newest is kept, and a final upload is never displaced by a checkpoint) and started the
+    // moment the current one finishes. Dropping it, as this used to, was harmless with one
+    // checkpoint a day but not with one per round: the last round's checkpoint is still in
+    // flight when day 8 ends, so the FINAL upload would have been silently skipped.
+    string pendingKind; int pendingDay, pendingRound; bool hasPending;
+    bool currentIsRoundCheckpoint;
+
+    void StartUpload(string uploadKind, int checkpointDay, int checkpointRound)
     {
         // Headless runs (gym, benchmark, parity harness) must never upload into the human-study
         // log store: they are machine episodes, and 32-round benchmarks reach the day-8 report
@@ -80,12 +97,44 @@ public class LogSender : MonoBehaviour
 
         if (CurrentStatus == SendStatus.Sending)
         {
-            Debug.LogWarning("[LogSender] Already sending logs, please wait.");
+            if (!(hasPending && pendingKind == "final" && uploadKind != "final"))
+            {
+                pendingKind = uploadKind; pendingDay = checkpointDay; pendingRound = checkpointRound;
+                hasPending = true;
+            }
+            Debug.Log($"[LogSender] upload in flight; queued {uploadKind} (day {checkpointDay}, round {checkpointRound}).");
             return;
         }
 
-        string json = GameLogPanel.Instance.GetMessagesAsJson(true, uploadKind, checkpointDay);
+        // The payload is built NOW, not when queued, so a delayed upload still carries the
+        // whole log up to the moment it is sent.
+        currentIsRoundCheckpoint = uploadKind == "checkpoint" && checkpointRound > 0;
+        string json = GameLogPanel.Instance.GetMessagesAsJson(true, uploadKind, checkpointDay, checkpointRound);
         StartCoroutine(PostLogs(json));
+    }
+
+    /// <summary>Start the queued upload, if any. Called in the same frame the previous upload
+    /// finishes, so a caller polling CurrentStatus (EndOfGamePanel) never sees a checkpoint's
+    /// Success in between and mistakes it for the final upload's.</summary>
+    void StartPending()
+    {
+        if (!hasPending) return;
+        hasPending = false;
+        StartUpload(pendingKind, pendingDay, pendingRound);
+    }
+
+    /// <summary>Status line for the game log: visible for day and final uploads, hidden (Data)
+    /// for the per-round checkpoints.</summary>
+    void LogUploadStatus(bool ok, string text)
+    {
+        var log = GameLogPanel.Instance;
+        if (log == null) return;
+        if (currentIsRoundCheckpoint)
+            log.LogData("upload_status", GameLogPanel.Json("ok", ok, "message", text));
+        else if (ok)
+            log.LogPlayerAction(text);
+        else
+            log.LogError(text);
     }
 
     public void SendCurrentRoundLogs()
@@ -117,9 +166,14 @@ public class LogSender : MonoBehaviour
         CurrentStatus = SendStatus.Sending;
         LastStatusMessage = "Sending logs...";
 
-        string url = !string.IsNullOrEmpty(WebSocketManager.LoadedConfig?.logServerUrl)
-            ? WebSocketManager.LoadedConfig.logServerUrl
-            : serverUrl;
+        // config.json's logServerUrl wins, so a deployment can point uploads at its own receiver
+        // without a rebuild. RuntimeConfig is what makes that work in the plain human build:
+        // WebSocketManager.LoadedConfig is only filled on the LLM connect path, so before this
+        // the key was silently ignored offline and uploads always went to the scene's URL.
+        string url = RuntimeConfig.LogServerUrl
+            ?? (!string.IsNullOrEmpty(WebSocketManager.LoadedConfig?.logServerUrl)
+                ? WebSocketManager.LoadedConfig.logServerUrl
+                : serverUrl);
 
         byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
 
@@ -144,8 +198,7 @@ public class LogSender : MonoBehaviour
                 LastStatusMessage = $"Logs sent successfully. Server: {request.downloadHandler.text}";
                 Debug.Log($"[LogSender] {LastStatusMessage}");
 
-                if (GameLogPanel.Instance != null)
-                    GameLogPanel.Instance.LogPlayerAction("Logs sent to server successfully");
+                LogUploadStatus(true, "Logs sent to server successfully");
             }
             else if (ackProblem != null)
             {
@@ -154,8 +207,7 @@ public class LogSender : MonoBehaviour
                 LastStatusMessage = $"Failed: server did not confirm the save — {ackProblem}";
                 Debug.LogError($"[LogSender] {LastStatusMessage}");
 
-                if (GameLogPanel.Instance != null)
-                    GameLogPanel.Instance.LogError($"Log send not confirmed by server: {ackProblem}");
+                LogUploadStatus(false, $"Log send not confirmed by server: {ackProblem}");
             }
             else
             {
@@ -163,11 +215,11 @@ public class LogSender : MonoBehaviour
                 LastStatusMessage = $"Failed: {request.error} (HTTP {request.responseCode})";
                 Debug.LogError($"[LogSender] {LastStatusMessage}");
 
-                if (GameLogPanel.Instance != null)
-                    GameLogPanel.Instance.LogError($"Log send failed: {request.error}");
+                LogUploadStatus(false, $"Log send failed: {request.error}");
             }
 
             OnSendComplete?.Invoke(CurrentStatus, LastStatusMessage);
+            StartPending();
         }
     }
 

@@ -5,10 +5,13 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 /// <summary>
-/// Captures EVERY human mouse click and forwards it to the router as a raw
-/// gui_event (screen + normalized coords, plus the UGUI element hit). This is the
-/// every-click stream behind GUI-agent training and the "unproductive click"
-/// confusion signal.
+/// Captures EVERY human mouse click: screen + normalized coords, plus the UGUI element hit
+/// (or, when no UI element was hit, the world object under the cursor). Each click is written
+/// to the game log as a "click" Data record, which the upload carries to the lab in every
+/// build, LLM or not; when connected it is also sent to the router as a raw gui_event. This is
+/// the every-click stream behind GUI-agent training and the "unproductive click" confusion
+/// signal. (It used to record only when connected to the router, so the plain human build lost
+/// every click.)
 ///
 /// It also owns <see cref="LastClickSeq"/>, a monotonic per-click id. Because this
 /// component's Update() runs before UGUI dispatches the click to a button handler
@@ -42,9 +45,6 @@ public class GuiInteractionRecorder : MonoBehaviour
 
     void Update()
     {
-        var ws = WebSocketManager.Instance;
-        if (ws == null || !ws.isConnected) return;           // nothing to log when offline
-
         for (int button = 0; button <= 1; button++)          // 0 = left, 1 = right
         {
             if (!Input.GetMouseButtonDown(button)) continue;
@@ -101,11 +101,40 @@ public class GuiInteractionRecorder : MonoBehaviour
             }
         }
 
-        WebSocketManager.Instance.SendGuiEvent(
-            LastClickSeq, button,
-            screenPos.x, screenPos.y, sw, sh, nx, ny,
-            canvasName, clx, cly,
-            hitName, hitType, hitPath);
+        // Map objects (sites, buildings, vehicles) are not UI, so a click on one hits no UGUI
+        // element. Name the world object under the cursor instead, so the click is not blank.
+        string worldName = null, worldPath = null;
+        if (hitName == null) WorldHit(screenPos, out worldName, out worldPath);
+
+        GameLogPanel.Instance?.LogData("click", GameLogPanel.Json(
+            "button", button,
+            "x", screenPos.x, "y", screenPos.y, "screen_w", sw, "screen_h", sh,
+            "nx", nx, "ny", ny,
+            "canvas", canvasName, "canvas_x", clx, "canvas_y", cly,
+            "ui_name", hitName, "ui_type", hitType, "ui_path", hitPath,
+            "world_name", worldName, "world_path", worldPath));
+
+        var ws = WebSocketManager.Instance;
+        if (ws != null && ws.isConnected)
+            ws.SendGuiEvent(
+                LastClickSeq, button,
+                screenPos.x, screenPos.y, sw, sh, nx, ny,
+                canvasName, clx, cly,
+                hitName, hitType, hitPath);
+    }
+
+    static void WorldHit(Vector3 screenPos, out string name, out string path)
+    {
+        name = path = null;
+        Camera cam = Camera.main;
+        if (cam == null) return;
+        Ray ray = cam.ScreenPointToRay(screenPos);
+        RaycastHit2D h2 = Physics2D.GetRayIntersection(ray);
+        Transform t = h2.collider != null ? h2.collider.transform : null;
+        if (t == null && Physics.Raycast(ray, out RaycastHit h3)) t = h3.collider.transform;
+        if (t == null) return;
+        name = t.name;
+        path = HierarchyPath(t);
     }
 
     static string ComponentTypeName(GameObject go)

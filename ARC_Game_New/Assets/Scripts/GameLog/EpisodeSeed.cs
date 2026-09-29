@@ -2,14 +2,22 @@ using System;
 using UnityEngine;
 
 /// <summary>
-/// Optional, opt-in control of the random seed an episode starts from — the companion to
-/// <see cref="EpisodeReproLog"/>, which records the seed but deliberately never sets it.
-/// Together they close the loop: the log tells you which episode a tester played, this lets
-/// you play it again.
+/// The random seed every episode starts from — the companion to <see cref="EpisodeReproLog"/>,
+/// which records the resulting RNG state. Together they close the loop: the log tells you which
+/// episode a player had, and the seed lets you set it up again.
 ///
-/// DOES NOTHING UNLESS A SEED IS GIVEN. With no seed supplied, not one line below runs and
-/// the build behaves exactly as it did before — same unseeded startup, same draws. That is
-/// the whole design constraint: a reproducibility tool must not change the thing it measures.
+/// EVERY RUN IS SEEDED. A seed passed in (-seed, ARC_SEED, ?seed=) is used as given. Otherwise
+/// one is GENERATED at startup and recorded with source "auto". This used to leave unseeded
+/// runs alone (seed -1, source "none"), which meant a human study run could never be tied to a
+/// seed. Generating one does not change what players experience: Unity already seeds its
+/// generator unpredictably at startup, so the scenario is just as random. The difference is that
+/// the seed is now known and logged.
+///
+/// testMode (config.json) IGNORES ?seed=, so a participant cannot pick their scenario by editing
+/// the link. config.json can only be read asynchronously, after this runs, so the URL seed is
+/// applied first and then replaced with a fresh auto seed as soon as the file says testMode.
+/// That happens on the title screen, before any scene that draws from the generator, and the
+/// recorded start state is re-captured to match.
 ///
 /// TIMING IS THE SUBSTANCE, AND IT IS WHY THIS IS NOT INSIDE EpisodeReproLog.
 /// The flood layout and the opening task roll are decided in MainScene's Awake/Start chain, so
@@ -30,13 +38,14 @@ using UnityEngine;
 /// </summary>
 public static class EpisodeSeed
 {
-    /// <summary>The seed in effect, or -1 when none was supplied and startup was left alone.</summary>
+    /// <summary>The seed in effect (-1 only before startup has run).</summary>
     public static int Seed { get; private set; } = -1;
 
-    /// <summary>True when this episode was started from an explicit seed.</summary>
+    /// <summary>True once a seed has been applied (always, after startup).</summary>
     public static bool IsSeeded => Seed >= 0;
 
-    /// <summary>How the seed arrived, for the log ("-seed", "ARC_SEED", "url", "none").</summary>
+    /// <summary>How the seed arrived, for the log: "-seed", "ARC_SEED", "url", "auto", or
+    /// "auto (url seed ignored: testMode)".</summary>
     public static string Source { get; private set; } = "none";
 
     static int systemRandomCounter;
@@ -45,20 +54,37 @@ public static class EpisodeSeed
     static void Apply()
     {
         int seed = Resolve(out string source);
-        if (seed < 0) return;                 // no seed given -> behave exactly as before
+        if (seed < 0) { seed = NewAutoSeed(); source = "auto"; }
+        Use(seed, source);
 
+        // testMode forbids choosing the scenario from the URL. Only decidable once config.json
+        // has loaded (asynchronously, on the title screen, before any scene draws randomness).
+        if (source == "url")
+            RuntimeConfig.WhenLoaded(() =>
+            {
+                if (!RuntimeConfig.TestMode) return;
+                Use(NewAutoSeed(), "auto (url seed ignored: testMode)");
+                EpisodeReproLog.Recapture();
+            });
+    }
+
+    static void Use(int seed, string source)
+    {
         Seed = seed;
         Source = source;
+        systemRandomCounter = 0;
         UnityEngine.Random.InitState(seed);
-        Debug.Log($"[EpisodeSeed] seeded UnityEngine.Random with {seed} (from {source}). "
-                + "Episode should replay identically on this build and parameter sheet.");
+        Debug.Log($"[EpisodeSeed] seeded UnityEngine.Random with {seed} (from {source}).");
     }
+
+    /// <summary>A fresh non-negative seed that does not draw from UnityEngine.Random.</summary>
+    static int NewAutoSeed() => Guid.NewGuid().GetHashCode() & 0x7FFFFFFF;
 
     /// <summary>
     /// A System.Random for code that needs one (GameConfigLoader's advisory/emergency split).
-    /// Deterministic when the episode is seeded, clock-seeded otherwise — so unseeded runs keep
-    /// today's behaviour exactly. Each call gets a distinct stream, so two call sites cannot
-    /// accidentally share a sequence.
+    /// Derived from the episode seed, so it is deterministic for every run (the clock-seeded
+    /// fallback remains only for code that runs before startup seeding). Each call gets a
+    /// distinct stream, so two call sites cannot accidentally share a sequence.
     /// </summary>
     public static System.Random NextSystemRandom()
     {

@@ -368,6 +368,11 @@ public class IndividualBuildingManageUI : MonoBehaviour
                 worker.TryAssignToBuilding(currentBuilding.GetOriginalSiteId());
             }
             GameLogPanel.Instance.LogPlayerAction($"Assigned {actualTrained} trained and {actualUntrained} untrained workers to building {currentBuilding.GetBuildingType()} at site {currentBuilding.GetOriginalSiteId()}");
+            GameLogPanel.Instance?.LogData("action_result", GameLogPanel.Json(
+                "action", "worker_assignment", "success", true,
+                "building", currentBuilding.GetBuildingType().ToString(),
+                "site", currentBuilding.GetOriginalSiteId(),
+                "trained", actualTrained, "untrained", actualUntrained));
             Debug.Log($"Successfully assigned {actualTrained} trained and {actualUntrained} untrained workers to building {currentBuilding.GetOriginalSiteId()}");
             return true;
         }

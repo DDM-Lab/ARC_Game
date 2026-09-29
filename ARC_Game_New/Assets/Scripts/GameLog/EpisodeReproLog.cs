@@ -48,6 +48,14 @@ public static class EpisodeReproLog
         Debug.Log($"[EpisodeRepro] rngState={RngStateJson} build={BuildGuid} version={Application.version}");
     }
 
+    /// <summary>Re-read the start state after EpisodeSeed replaced a URL seed (testMode). Runs
+    /// on the title screen, before any scene draws randomness, so the state still describes the
+    /// episode's start. The one-line report is written later, once MainScene's log exists.</summary>
+    internal static void Recapture()
+    {
+        Capture();
+    }
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void InstallReporter()
     {
@@ -69,13 +77,22 @@ public static class EpisodeReproLog
         {
             if (reported) { enabled = false; return; }
 
+            // The log only exists in MainScene, and a human reaches it after the title, info and
+            // tutorial screens -- often minutes. The old 30 s limit gave up long before that, so
+            // human runs never got this line. Wait up to an hour (a null check per frame).
             elapsed += Time.unscaledDeltaTime;
-            if (elapsed > 30f) { enabled = false; return; }   // give up quietly
+            if (elapsed > 3600f) { enabled = false; return; }
 
             if (GameLogPanel.Instance == null) return;
 
             GameLogPanel.Instance.LogPlayerAction(
                 $"Episode repro: rngState={RngStateJson} build={BuildGuid}");
+            // The same facts as one machine-readable record, first in the Data stream.
+            GameLogPanel.Instance.LogData("episode_start", GameLogPanel.Json(
+                "seed", EpisodeSeed.Seed, "seed_source", EpisodeSeed.Source,
+                "rng_state", new GameLogPanel.RawJson(RngStateJson),
+                "build_guid", BuildGuid, "game_version", Application.version,
+                "platform", Application.platform.ToString()));
             reported = true;
             enabled = false;
         }
