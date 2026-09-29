@@ -107,6 +107,34 @@ public class GameConfigLoader : MonoBehaviour
     /// headless, any offline build) -> the serialized fallback fields. One source wins; ConfigSource
     /// names it and GameDataManager logs every value in effect.
     /// </summary>
+    /// <summary>Apply config.json's sheetUrl to googleSheetsCsvUrl, if the key is present.
+    /// Any failure (missing file, unreadable, malformed) leaves the scene value untouched.</summary>
+    IEnumerator ApplySheetUrlOverride()
+    {
+        string rawPath = Application.streamingAssetsPath + "/config.json";
+        string path = rawPath.Contains("://") ? rawPath : "file://" + rawPath;   // ledger E2
+        using (UnityWebRequest req = UnityWebRequest.Get(path))
+        {
+            req.timeout = 3;
+            yield return req.SendWebRequest();
+            if (req.result != UnityWebRequest.Result.Success) yield break;
+
+            string body = req.downloadHandler.text;
+            if (body == null || body.IndexOf("\"sheetUrl\"", System.StringComparison.Ordinal) < 0)
+                yield break;   // key absent -> keep the scene value
+
+            AppConfig cfg = null;
+            try { cfg = JsonUtility.FromJson<AppConfig>(body); }
+            catch (System.Exception e) { Debug.LogWarning($"[GameConfigLoader] config.json malformed ({e.Message}); keeping scene sheet URL."); }
+            if (cfg == null) yield break;
+
+            googleSheetsCsvUrl = cfg.sheetUrl ?? "";
+            Debug.Log(string.IsNullOrEmpty(googleSheetsCsvUrl)
+                ? "[GameConfigLoader] config.json sets sheetUrl=\"\" - ignoring the parameter sheet, using the bundled CSV."
+                : $"[GameConfigLoader] parameter sheet from config.json: {googleSheetsCsvUrl}");
+        }
+    }
+
     IEnumerator LoadConfigFromSheet()
     {
         string envPath = System.Environment.GetEnvironmentVariable("ARC_PARAM_CONFIG");
@@ -125,6 +153,16 @@ public class GameConfigLoader : MonoBehaviour
                 yield break;
             }
         }
+
+        // Let config.json redirect (or disable) the parameter sheet, the same way it can already
+        // redirect the map via mapConfigUrl. Without this the sheet URL is whatever MainScene
+        // serialized, compiled into the build — so changing parameter SOURCES meant editing the
+        // scene and rebuilding, and a deployment had no way to opt out of a sheet at all.
+        //
+        // Absent vs empty matters and JsonUtility cannot tell them apart (both give ""), so the
+        // raw JSON is tested for the key: absent keeps the scene value (no behaviour change for
+        // existing deployments), present-and-empty disables the sheet deliberately.
+        yield return StartCoroutine(ApplySheetUrlOverride());
 
         bool rootRelative = !string.IsNullOrEmpty(googleSheetsCsvUrl) && googleSheetsCsvUrl.StartsWith("/");
         bool inBrowser = !string.IsNullOrEmpty(Application.absoluteURL);

@@ -154,7 +154,65 @@ def build_observation(game_state, actions=None, *, new=True, v2=True,
                         if "motel" in (str(f.get("type", "")) + str(f.get("name", ""))).lower())
         if motel_pop > 0:
             obs["motelDailyCost"] = motel_pop * MOTEL_COST_PER_PERSON_PER_DAY
+
+    # PRICE LIST AND VEHICLE LOAD — in the BASE observation so all three wings see the same
+    # world: the router's read_state, the gym/benchmark menu arm (obs_adapters.summarize)
+    # and the command arm (summarize_commands). They used to disagree: `costs` existed only
+    # in the command arm, so a router officer asked "what does a shelter cost?" had nothing
+    # to read and answered from the system prompt -- which was wrong for a while ($1,000
+    # stated against an engine charging $2,000) and got repeated confidently. vehicleLoad
+    # existed nowhere, so no wing could tell whether a transfer fits in one trip.
+    #
+    # THIS CHANGES THE BENCHMARK/GYM OBSERVATION and therefore breaks strict comparability
+    # with runs captured before 2026-09-12 (the v6 ablation set, the 32-seed benchmark).
+    # Done deliberately: human play and LLM benchmark episodes must see an identical world
+    # for their scores to be comparable, and that outranks preserving an old baseline.
+    obs["costs"] = _costs_block(game_state)
+    _vcap = _vehicle_capacity(game_state)
+    if _vcap:
+        obs.setdefault("logistics", {})["vehicleCapacity"] = _vcap
     return obs
+
+
+
+def _costs_block(game_state) -> dict:
+    """The fixed price list: build / hireUntrained / hireTrained / train.
+
+    Extracted so BOTH observation paths can carry it. It used to live only inside
+    ``build_observation_commands``, which meant the router's ``read_state`` (which goes
+    through the bare ``build_observation``) never showed a price at all -- so an officer
+    asked "what does a shelter cost?" had nothing to read and answered from whatever the
+    system prompt happened to say. That prompt was wrong for a while (it claimed $1,000
+    against an engine that charges $2,000) and officers repeated it confidently, in the
+    same turn the ledger printed the real figure. A rendered price cannot go stale.
+
+    No numeric fallbacks: a stale literal here is invisible, whereas a missing key is
+    loud. An ABSENT key omits the entry entirely rather than inventing a price.
+    """
+    cs = game_state.get("constructionState") or {}
+    wf = game_state.get("workforceState") or {}
+    _c = {"build": cs.get("buildingConstructionCost"),
+          "hireUntrained": wf.get("untrainedWorkerCost"),
+          "hireTrained": wf.get("trainedWorkerCost"),
+          "train": wf.get("trainingCostPerWorker")}
+    return {k: v for k, v in _c.items() if v is not None}
+
+
+def _vehicle_capacity(game_state):
+    """Load one vehicle carries, in the SAME unit the observation reports food in.
+
+    Rendered because a transfer larger than one load is split across several vehicles
+    (DeliverySystem.CreateDeliveryTask loops `Mathf.Min(remaining, maxCapacity)`), so
+    "can we move this in one go?" is unanswerable without it. Measured gap: an officer
+    told to move 400 food committed the transfer and reported it on its way, with three
+    vehicles free; asked directly how many vehicles it needed, it correctly refused to
+    guess -- "the state in front of me doesn't list a per-vehicle load". It had the rule
+    and not the number. Returns None if the fleet is empty, so the field is omitted
+    rather than guessed.
+    """
+    vs = (game_state.get("mapState") or {}).get("vehicles") or []
+    caps = [v.get("maxCapacity") for v in vs if v.get("maxCapacity")]
+    return max(caps) if caps else None
 
 
 def build_observation_commands(game_state, actions, *, new=True, v2=True,
@@ -181,11 +239,7 @@ def build_observation_commands(game_state, actions, *, new=True, v2=True,
     # No numeric fallbacks: a stale literal here is invisible, whereas a missing key is
     # loud. `_num0` maps present-but-null to 0, and an ABSENT key omits the entry entirely
     # rather than inventing a price.
-    _costs = {"build": cs.get("buildingConstructionCost"),
-              "hireUntrained": wf.get("untrainedWorkerCost"),
-              "hireTrained": wf.get("trainedWorkerCost"),
-              "train": wf.get("trainingCostPerWorker")}
-    obs["costs"] = {k: v for k, v in _costs.items() if v is not None}
+    # `costs` is already populated by build_observation above (same helper, same values).
     # AFFORDANCE BLOCK — what is actually executable THIS round, derived from the same
     # valid-action set the parser/menu use (so it can never contradict them). This is the
     # compact replacement for the dropped idx menu: it tells the model which commands will
@@ -279,7 +333,10 @@ def _render_scalars(obs):
     w = obs.get("workers", {})
     L.append(f"workers: freeTrained {_num0(w,'freeTrained')} freeUntrained {_num0(w,'freeUntrained')} "
              f"working {_num0(w,'working')} inTraining {_num0(w,'inTraining')}")
-    L.append(f"logistics: vehiclesFree {_num0(obs.get('logistics',{}),'vehiclesFree')}")
+    _lg = obs.get('logistics', {}) or {}
+    _cap = _lg.get('vehicleCapacity')
+    L.append(f"logistics: vehiclesFree {_num0(_lg,'vehiclesFree')}"
+             + (f" vehicleLoad {_cap}" if _cap else ""))
     walking = obs.get("walking") or []
     if walking:
         L.append("walking: " + "; ".join(f"{w.get('n')} {w.get('from')}->{w.get('to')} in {w.get('rounds')}r" for w in walking))
@@ -577,8 +634,18 @@ def _router_obs(game_state, *, new=True, v2=True):
     """Build the canonical observation dict for a router game_state, deriving
     roundsLeft from the session horizon. Shared by render_state_text and the
     granular section getters so all of them see one identical observation."""
-    return build_observation(game_state, None, new=new, v2=v2,
-                             rounds_left=_rounds_left(game_state))
+    obs = build_observation(game_state, None, new=new, v2=v2,
+                            rounds_left=_rounds_left(game_state))
+    # The router's read_state goes through the BARE builder, which carries no price list
+    # and no vehicle load. Add them here rather than in build_observation(), because that
+    # one also feeds obs_adapters.summarize() -> the benchmark/gym observation, and adding
+    # a key there would change an arm's observation and break comparability with runs
+    # already captured.
+    obs["costs"] = _costs_block(game_state)
+    _vcap = _vehicle_capacity(game_state)
+    if _vcap:
+        obs.setdefault("logistics", {})["vehicleCapacity"] = _vcap
+    return obs
 
 
 def render_state_text(game_state, *, new=True, v2=True):

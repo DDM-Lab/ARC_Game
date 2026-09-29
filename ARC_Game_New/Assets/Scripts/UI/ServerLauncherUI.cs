@@ -89,8 +89,38 @@ public class ServerLauncherUI : MonoBehaviour
     void Awake()
     {
         EnsureEventSystem();
+        StartCoroutine(ResolveVisibilityThenStart());
+    }
 
-        if (!ShowLauncherPanel)
+    /// <summary>Decide whether to show the launcher, THEN act on it.
+    ///
+    /// Precedence: ?launcher= on the page URL, else config.json's showLauncher, else the
+    /// compiled default (false = the plain human-play build, no LLM/agent features).
+    ///
+    /// This has to be a coroutine. The decision used to be made inline in Awake(), which is
+    /// strictly earlier than any config.json read can finish — so a flag read from the file
+    /// would have arrived after the choice it was meant to gate (the startup-ordering trap
+    /// that also produced ledger E1). The URL override is checked first precisely because it
+    /// IS available synchronously, so ?launcher=1 costs no startup delay.</summary>
+    IEnumerator ResolveVisibilityThenStart()
+    {
+        bool show = ShowLauncherPanel;
+
+        string urlOverride = UrlParam("launcher");
+        if (!string.IsNullOrEmpty(urlOverride))
+        {
+            show = urlOverride != "0" && !urlOverride.Equals("false", System.StringComparison.OrdinalIgnoreCase);
+            Debug.Log($"[Launcher] showLauncher={show} (from ?launcher={urlOverride})");
+        }
+        else
+        {
+            // Deliberately a second read of config.json (FetchConfigs reads it again later for
+            // wsUrl). It is a local StreamingAssets file and this happens once at startup; the
+            // duplicate read is cheaper than threading a cache through the two call paths.
+            yield return StartCoroutine(LoadShowLauncherFromConfig(v => show = v));
+        }
+
+        if (!show)
         {
             // Reuse the exact same offline-start path the "Play Offline" button already
             // uses (sets pendingConfig="offline_mode", wsm.enableWebSocket=false, and defers
@@ -98,9 +128,41 @@ public class ServerLauncherUI : MonoBehaviour
             // scene yet) — just without ever building/showing the panel. StartGame(true)'s
             // UI touches are all null-guarded, so this is safe with no UI ever constructed.
             StartCoroutine(StartGame(true));
-            return;
+            yield break;
         }
 
+        ShowLauncher();
+    }
+
+    /// <summary>Read showLauncher from StreamingAssets/config.json. Leaves the value untouched
+    /// on any failure (missing file, unreadable, malformed), so a broken config falls back to
+    /// the compiled default rather than hanging startup or guessing.</summary>
+    IEnumerator LoadShowLauncherFromConfig(System.Action<bool> onResolved)
+    {
+        string rawPath = Application.streamingAssetsPath + "/config.json";
+        string path = rawPath.Contains("://") ? rawPath : "file://" + rawPath;
+        using (UnityWebRequest req = UnityWebRequest.Get(path))
+        {
+            req.timeout = 5;
+            yield return req.SendWebRequest();
+            if (req.result != UnityWebRequest.Result.Success)
+            {
+                Debug.Log($"[Launcher] config.json unreadable ({req.error}); showLauncher stays {ShowLauncherPanel}.");
+                yield break;
+            }
+            AppConfig cfg = null;
+            try { cfg = JsonUtility.FromJson<AppConfig>(req.downloadHandler.text); }
+            catch (Exception e) { Debug.LogWarning($"[Launcher] config.json is malformed ({e.Message}); showLauncher stays {ShowLauncherPanel}."); }
+            if (cfg != null)
+            {
+                onResolved(cfg.showLauncher);
+                Debug.Log($"[Launcher] showLauncher={cfg.showLauncher} (from config.json)");
+            }
+        }
+    }
+
+    void ShowLauncher()
+    {
         BuildUI();
         LoadPrefs();
         SetStatus("Enter server URL + API key, then click Connect.", Color.gray);
@@ -706,7 +768,10 @@ public class ServerLauncherUI : MonoBehaviour
     // manual edit and no same-origin trick.
     IEnumerator ApplyConfigJsonUrl()
     {
-        string path = Application.streamingAssetsPath + "/config.json";
+        // file:// or this silently fails on desktop, so a desktop build never adopts the
+        // deployment's wsUrl (same defect as GameConfigLoader, ledger E2).
+        string rawPath = Application.streamingAssetsPath + "/config.json";
+        string path = rawPath.Contains("://") ? rawPath : "file://" + rawPath;
         using (UnityWebRequest req = UnityWebRequest.Get(path))
         {
             req.timeout = 5;

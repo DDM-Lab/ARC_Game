@@ -207,8 +207,8 @@ def config_warnings(cfg: dict) -> list[str]:
         if "finish" not in low:
             out.append("tool_policy override never mentions `finish` — officers may run to "
                        "max_steps every turn instead of ending cleanly.")
-        if "talk_to_director" not in low:
-            out.append("tool_policy override never mentions `talk_to_director` — officers "
+        if "send_message" not in low:
+            out.append("tool_policy override never mentions `send_message` — officers "
                        "may stop replying to the human.")
         if not any(k in low for k in ("never claim", "unless you actually", "did not happen",
                                       "do not pretend")):

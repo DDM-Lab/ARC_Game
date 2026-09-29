@@ -714,13 +714,18 @@ public class AgentConversationUI : MonoBehaviour
         generatingWatchdog = null;
     }
 
-    void RecordAgentMessage(TaskOfficer officer, string content)
+    /// <summary>Record a message into `officer`'s thread. `badgeOfficer` is normally the same
+    /// officer, but for an INTER-OFFICER message it is the SENDER: the message is filed under
+    /// the recipient's tab (that is whose conversation it belongs to) while showing the
+    /// sender's avatar, so a peer message reads as arriving from someone rather than as the
+    /// tab's own officer talking to themselves.</summary>
+    void RecordAgentMessage(TaskOfficer officer, string content, TaskOfficer? badgeOfficer = null)
     {
         AppendHistory(officer, new ConversationEntry
         {
             kind = EntryKind.AgentMessage,
             content = content,
-            avatar = GetOfficerAvatar(officer),
+            avatar = GetOfficerAvatar(badgeOfficer ?? officer),
         });
     }
 
@@ -890,6 +895,7 @@ public class AgentConversationUI : MonoBehaviour
     void DisplayTaskConversation(GameTask task, bool clearFirst = true)
     {
         if (task == null) return;
+        if (clearFirst) ClearConversation();
 
         // Re-check live state before rendering — mirrors TaskDetailUI.ShowTaskDetail's guard. This
         // panel has its own independent rendering path (doesn't go through ShowTaskDetail), so
@@ -903,7 +909,13 @@ public class AgentConversationUI : MonoBehaviour
             return;
         }
 
-        ClearConversation();
+        // NO unconditional ClearConversation() here. It used to sit on this line and ignored
+        // clearFirst, which defeated the whole point of the parameter: DisplayLatestConversation
+        // renders the officer's chat history and THEN calls this with clearFirst:false to append
+        // the current task below it — so this clear wiped every message bubble that had just been
+        // replayed. Reopening a talking-head chat showed only the task, and the conversation
+        // looked like it had been lost (it had not; conversationHistory still held it).
+        // The clearFirst:true path already cleared above, so both callers are correct without it.
         localSelectedChoice = null;
 
         GameLogPanel.Instance?.LogUIInteraction(
@@ -1451,10 +1463,23 @@ public class AgentConversationUI : MonoBehaviour
     /// Add agent conversational message to UI.
     /// Called by WebSocketManager when agent_message is received.
     /// </summary>
-    public void AddAgentMessage(TaskOfficer officer, string content, string messageType)
+    public void AddAgentMessage(TaskOfficer officer, string content, string messageType,
+                                TaskOfficer? fromOfficer = null, string fromName = null)
     {
+        // INTER-OFFICER MESSAGE. `officer` is the RECIPIENT (whose tab this belongs in) and
+        // `fromOfficer` the sender. Label it so the director can tell at a glance that this
+        // is officers talking to each other rather than an officer addressing them -- that
+        // distinction is the whole point of showing these at all.
+        if (fromOfficer.HasValue)
+        {
+            string who = string.IsNullOrEmpty(fromName)
+                       ? fromOfficer.Value.ToString()
+                       : fromName;
+            content = $"<b>From: {who}</b>\n{content}";
+        }
+
         // Persist to per-officer history first so tab switches can replay it.
-        RecordAgentMessage(officer, content);
+        RecordAgentMessage(officer, content, fromOfficer);
 
         // Only display now if this is the currently selected agent
         if (officer != currentSelectedAgent || !isExpanded)
@@ -1473,8 +1498,9 @@ public class AgentConversationUI : MonoBehaviour
 
             if (messageUI != null)
             {
-                // Use the correct officer avatar so the live render matches the replay.
-                var agentMsg = new AgentMessage(content, GetOfficerAvatar(officer));
+                // Use the correct officer avatar so the live render matches the replay --
+                // the SENDER's for a peer message, this tab's officer otherwise.
+                var agentMsg = new AgentMessage(content, GetOfficerAvatar(fromOfficer ?? officer));
                 messageUI.Initialize(agentMsg);
                 StartCoroutine(messageUI.PlayTypingEffect(0.02f));
             }

@@ -19,6 +19,18 @@ public class AppConfig
     /// run instead of silently falling back to the default scene layout (which would quietly
     /// change the experimental condition). Off by default for casual/dev play.</summary>
     public bool strictMap;
+    /// <summary>Show the pre-game "Connect to ARC Server" panel (API key + config picker).
+    /// FALSE (the default, and what an absent field means) starts the game offline with no
+    /// LLM/agent features — the plain human-play build. TRUE is the agent/benchmark build:
+    /// the player enters an API key, picks an officer config, and the game connects to the
+    /// router. Deployment-level switch; ?launcher=1 / ?launcher=0 overrides it per session.</summary>
+    public bool showLauncher;
+    /// <summary>Overrides the scene-serialized googleSheetsCsvUrl — the parameter sheet.
+    /// ABSENT: keep whatever the scene baked in. A URL: fetch that sheet. "/sheet.csv": use
+    /// the deployment's same-origin mirror. PRESENT BUT EMPTY (""): ignore the sheet entirely
+    /// and fall through to StreamingAssets/game_param_config.csv. Absent and empty differ, so
+    /// GameConfigLoader tests for the key in the raw JSON, not just this value.</summary>
+    public string sheetUrl;
 }
 
 public class WebSocketManager : MonoBehaviour
@@ -48,6 +60,11 @@ public class WebSocketManager : MonoBehaviour
     // Flips to true after the first successful connect of this play session.
     // Used to suppress re-sending game_start on transient reconnects.
     private bool gameStartSentThisSession = false;
+    // Provenance (seed, RNG state, build, parameters in effect) is sent once per session, but
+    // only after GameDataManager has finished loading — parameters arrive asynchronously, so
+    // at hello time they are often not there yet. Without this the session log could not say
+    // which scenario a participant actually played.
+    private bool provenanceSentThisSession = false;
     // Server-assigned session id from hello_ack. Empty until the handshake
     // completes; reset on each fresh connection.
     private string sessionId = "";
@@ -164,7 +181,9 @@ public class WebSocketManager : MonoBehaviour
 
     IEnumerator LoadConfigThenConnect()
     {
-        string configPath = Application.streamingAssetsPath + "/config.json";
+        // file:// or this silently fails on desktop (same defect as GameConfigLoader, ledger E2).
+        string rawConfigPath = Application.streamingAssetsPath + "/config.json";
+        string configPath = rawConfigPath.Contains("://") ? rawConfigPath : "file://" + rawConfigPath;
         using (UnityWebRequest req = UnityWebRequest.Get(configPath))
         {
             yield return req.SendWebRequest();
@@ -193,6 +212,13 @@ public class WebSocketManager : MonoBehaviour
 
     void Update()
     {
+        if (gameStartSentThisSession && !provenanceSentThisSession && isConnected
+            && GameDataManager.Instance != null && GameDataManager.Instance.IsDataReady)
+        {
+            SendProvenance();
+            provenanceSentThisSession = true;
+        }
+
         #if !UNITY_WEBGL || UNITY_EDITOR
         // Dispatch WebSocket messages (required for NativeWebSocket)
         if (websocket != null)
@@ -313,7 +339,9 @@ public class WebSocketManager : MonoBehaviour
     /// </summary>
     IEnumerator CheckConnectionTimeout()
     {
-        yield return new WaitForSeconds(5f);
+        // REALTIME: every planning phase — and the whole of day 1 — runs at Time.timeScale 0,
+        // where a scaled wait never advances and this timeout can never fire.
+        yield return new WaitForSecondsRealtime(5f);
 
         if (!isConnected && websocket != null && websocket.State == WebSocketState.Connecting)
         {
@@ -344,7 +372,11 @@ public class WebSocketManager : MonoBehaviour
 
         Debug.Log($"Attempting to reconnect to vLLM server in {delay} seconds (Attempt {reconnectAttempts}/{maxReconnectAttempts})");
 
-        yield return new WaitForSeconds(delay);
+        // REALTIME: this one is worse than a stall. isReconnecting is the guard that stops a
+        // second attempt, and it is already set — so blocking here at timeScale 0 means NO
+        // reconnect can ever be attempted. Dropping the router during a planning phase (exactly
+        // when the officers are needed) would leave it down until the next unpaused moment.
+        yield return new WaitForSecondsRealtime(delay);
 
         isReconnecting = false;
         ConnectToServer();
@@ -696,6 +728,20 @@ public class WebSocketManager : MonoBehaviour
         }
         catch (System.Exception ex) { Debug.LogWarning($"[WS] officer roster parse failed: {ex.Message}"); }
 
+        // Key capabilities -> optional client controls (play_tester). Parsed defensively and
+        // separately from the roster: a failure here must not cost us the roster or the
+        // handshake, it just means no optional controls appear.
+        try
+        {
+            HelloAckCaps caps = JsonUtility.FromJson<HelloAckCaps>(data);
+            Capabilities.Clear();
+            if (caps != null && caps.capabilities != null)
+                foreach (var c in caps.capabilities)
+                    if (!string.IsNullOrEmpty(c)) Capabilities.Add(c);
+            Debug.Log($"[WS] capabilities: {(Capabilities.Count == 0 ? "(none)" : string.Join(",", Capabilities))}");
+        }
+        catch (System.Exception ex) { Debug.LogWarning($"[WS] capabilities parse failed: {ex.Message}"); }
+
         connectionStatus = "Connected";
         Debug.Log($"[WS] hello_ack received (session={sessionId})");
 
@@ -977,19 +1023,38 @@ public class WebSocketManager : MonoBehaviour
         try
         {
             var msg = JsonUtility.FromJson<AgentConversationMessage>(data);
-            Debug.Log($"[WS] agent_message received from {msg.agent_name}: {msg.content}");
+            Debug.Log($"[WS] agent_message from {msg.agent_name} to {(string.IsNullOrEmpty(msg.to) ? "Director" : msg.to)}: {msg.content}");
 
             // Parse talkinghead_endpoint to TaskOfficer enum
             TaskOfficer officer;
             if (TryResolveOfficer(msg.talkinghead_endpoint, out officer))
             {
+                // INTER-OFFICER MESSAGE. `officer` above is the SENDER; when `to` names another
+                // officer the message belongs in the RECIPIENT's tab, badged with the sender.
+                // Filing it under the sender would read as that officer talking to the
+                // director, which is precisely the confusion this routing avoids.
+                // Initialised to the sender so it is definitely assigned on every path: C#
+                // cannot prove assignment through the && short-circuit below, since
+                // TryResolveOfficer may never run.
+                TaskOfficer recipient = officer;
+                bool toPeer = !string.IsNullOrEmpty(msg.to)
+                              && msg.to != "Director"
+                              && TryResolveOfficer(msg.to_endpoint, out recipient);
+
                 // Forward to conversation UI
                 if (AgentConversationUI.Instance != null)
                 {
                     // Response arrived: drop this officer's waiting bubble before
                     // the message is appended so the message lands at the bottom.
+                    // Clear the SENDER's spinner either way — they are the one who was
+                    // thinking, regardless of who the message was addressed to.
                     AgentConversationUI.Instance.SetOfficerGenerating(officer, false);
-                    AgentConversationUI.Instance.AddAgentMessage(officer, msg.content, msg.message_type);
+                    if (toPeer)
+                        AgentConversationUI.Instance.AddAgentMessage(
+                            recipient, msg.content, msg.message_type, officer, msg.agent_name);
+                    else
+                        AgentConversationUI.Instance.AddAgentMessage(
+                            officer, msg.content, msg.message_type);
                 }
                 else
                 {
@@ -1073,6 +1138,23 @@ public class WebSocketManager : MonoBehaviour
     /// retry until success (the human first-proposal one-shot) rely on this
     /// bool so they don't flip their "done" flag before the state is ready.
     /// </summary>
+    /// <summary>Send the FINAL game state at the Day-N report. begin_round stops at the last
+    /// round and the client never sends round_end, so without this the router's session log has
+    /// no end-of-game state at all — not the final score, budget, or reward metrics.</summary>
+    public void SendGameEnd(int day)
+    {
+        if (!isConnected || TaskSystem.Instance == null) return;
+        GameStatePayload gameState = TaskSystem.Instance.GetCurrentGameState();
+        if (gameState == null) return;
+        SendRawMessage(JsonUtility.ToJson(new GameEndMessage
+        {
+            game_state = gameState,
+            day = day,
+            timestamp = System.DateTime.UtcNow.ToString("o"),
+        }));
+        Debug.Log($"[WS] game_end sent (day={day})");
+    }
+
     public bool SendBeginRound(int round, int day, int segment)
     {
         if (!isConnected) return false;
@@ -1113,6 +1195,23 @@ public class WebSocketManager : MonoBehaviour
     /// discarded — the human first-proposal must wait for this.
     /// </summary>
     public bool HasSentGameStart() => gameStartSentThisSession;
+
+    void SendProvenance()
+    {
+        string msg = "{\"type\":\"provenance\""
+            + ",\"seed\":" + EpisodeSeed.Seed
+            + ",\"seed_source\":\"" + EscapeJson(EpisodeSeed.Source ?? "") + "\""
+            + ",\"rng_state\":\"" + EscapeJson(EpisodeReproLog.RngStateJson ?? "") + "\""
+            + ",\"build_guid\":\"" + EscapeJson(EpisodeReproLog.BuildGuid ?? "") + "\""
+            + ",\"game_version\":\"" + EscapeJson(Application.version ?? "") + "\""
+            + ",\"platform\":\"" + EscapeJson(Application.platform.ToString()) + "\""
+            + ",\"param_source\":\"" + EscapeJson(GameConfigLoader.Instance != null ? GameConfigLoader.Instance.ConfigSource ?? "" : "") + "\""
+            + ",\"parameters\":\"" + EscapeJson(GameDataManager.ParametersInEffectJson ?? "") + "\""
+            + ",\"map_hash\":\"" + EscapeJson(GameConfigLoader.MapHash ?? "") + "\""
+            + ",\"map_status\":\"" + EscapeJson(GameConfigLoader.MapStatus ?? "") + "\"}";
+        SendRawMessage(msg);
+        Debug.Log("[WS] provenance sent");
+    }
 
     /// <summary>
     /// Send choice_made back to router after player selects a package.
@@ -1526,6 +1625,14 @@ public class GymStepResponse
 // -- Multi-Agent Router message classes --------------------------------------
 
 [System.Serializable]
+public class GameEndMessage
+{
+    public string type = "game_end";
+    public GameStatePayload game_state;
+    public int day;
+    public string timestamp;
+}
+
 public class BeginRoundMessage
 {
     public string type = "begin_round";
@@ -1567,6 +1674,12 @@ public class AgentConversationMessage
     public string message_type;
     public int round;
     public double timestamp;
+    /// <summary>Recipient name. "Director" (or empty) for the normal case; another officer's
+    /// name when officers message each other.</summary>
+    public string to;
+    /// <summary>Recipient's talkinghead endpoint, so the client can pick the tab without
+    /// inverting OfficerRoster (which maps endpoint -> name, not the other way).</summary>
+    public string to_endpoint;
 }
 
 [System.Serializable]

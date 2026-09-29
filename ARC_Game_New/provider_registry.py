@@ -30,6 +30,9 @@ class Provider(str, Enum):
     openai = "openai"
     ollama_local = "ollama-local"
     qwen_local = "qwen-local"
+    qwen_auton = "qwen-auton"
+    qwen3_4b_auton = "qwen3-4b-auton"
+    minicpm5_2b_auton = "minicpm5-2b-auton"
 
 
 @dataclass(frozen=True)
@@ -57,7 +60,17 @@ PROVIDER_REGISTRY: dict[Provider, ProviderSpec] = {
     # drives it -- NOT the `ollama` backend, which talks to :11434. Loopback and keyless: it
     # is a process on this machine, so there is no secret to name. Verified to return real
     # tool_calls (finish_reason="tool_calls"), which is what the continuous officers need.
-    Provider.qwen_local:       ProviderSpec("openai", "http://127.0.0.1:8090/v1", None),
+    Provider.qwen_local:       ProviderSpec("openai", "http://127.0.0.1:8081/v1", None),
+    # vLLM on Auton (gpu1), reached through an SSH tunnel on 8095. Keyless like the other
+    # loopback entries: the tunnel is local, and vLLM ignores the key anyway (the OpenAI
+    # client just refuses to construct without a non-empty string -- see _resolve_api_key).
+    Provider.qwen_auton:       ProviderSpec("openai", "http://127.0.0.1:8095/v1", None),
+    # Two smaller Auton models on their own tunnels, for the size-ladder comparison against
+    # the 27B. Both verified 2026-09-14: real tool_calls (finish_reason="tool_calls"), and
+    # both accept chat_template_kwargs {"enable_thinking": false} without a 400. Each
+    # advertises max_model_len 32768, so known_ctx_limit picks the window up automatically.
+    Provider.qwen3_4b_auton:   ProviderSpec("openai", "http://127.0.0.1:8096/v1", None),
+    Provider.minicpm5_2b_auton: ProviderSpec("openai", "http://127.0.0.1:8097/v1", None),
 }
 
 
