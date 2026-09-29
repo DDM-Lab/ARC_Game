@@ -211,7 +211,7 @@ class RouterConfig:
         # name — it cannot see the collision — so reject it here, loudly, at config load.
         # Scope: only actors that actually emit agent_message/choices frames to a tab.
         # "coach" is excluded — it emits a `coach_report` frame instead, so it never
-        # occupies a tab and can legitimately share an endpoint (see coach_agent_example).
+        # occupies a tab and can legitimately share an endpoint.
         seen: dict[str, str] = {}
         for a in self.agents:
             ep = a.talkinghead_endpoint
