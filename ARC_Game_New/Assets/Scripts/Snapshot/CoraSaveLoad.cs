@@ -56,7 +56,7 @@ public class CoraSaveLoad : MonoBehaviour
 
     void OnGUI()
     {
-        if (!showButtons) return;
+        if (!showButtons || RuntimeConfig.TestMode) return;
         // Nothing to save outside a running game. The build boots into TitleScene and passes
         // through Info/Tutorial before MainScene, and this component is DontDestroyOnLoad, so
         // without this the fallback buttons sit in the corner of the title and tutorial
@@ -84,7 +84,9 @@ public class CoraSaveLoad : MonoBehaviour
 
     void Update()
     {
-        if (!hotkeysEnabled) return;
+        // testMode (participant deployments): F9/F10 and Ctrl/Cmd+S/O do nothing. Loading
+        // rebuilds the scene mid-session, which a participant must never trigger by accident.
+        if (!hotkeysEnabled || RuntimeConfig.TestMode) return;
         CheckFunctionKeys();
         if (busy) return;
         bool mod = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)

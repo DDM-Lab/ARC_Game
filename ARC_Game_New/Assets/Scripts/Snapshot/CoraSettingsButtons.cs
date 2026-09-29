@@ -113,6 +113,14 @@ public class CoraSettingsButtons : MonoBehaviour
         TMP_FontAsset font = panel.sfxVolumeText != null ? panel.sfxVolumeText.font : null;
 
         // ── base: Save, for everyone, no capability required ──────────────────────────
+        // testMode (participant deployments): no checkpoint controls at all. The per-day state
+        // checkpoints still reach the lab through the upload; the player just cannot save/load.
+        if (!baseInstalled && RuntimeConfig.TestMode)
+        {
+            baseInstalled = true;
+            if (CoraSaveLoad.Instance != null) CoraSaveLoad.Instance.showButtons = false;
+            Debug.Log("[CoraSettingsButtons] testMode: Save JSON Checkpoint not installed.");
+        }
         if (!baseInstalled)
         {
             if (parent.Find(SAVE_NAME) == null)

@@ -31,6 +31,11 @@ public class AppConfig
     /// and fall through to StreamingAssets/game_param_config.csv. Absent and empty differ, so
     /// GameConfigLoader tests for the key in the raw JSON, not just this value.</summary>
     public string sheetUrl;
+    /// <summary>Human-testing lockdown for participant-facing deployments. TRUE: the page URL
+    /// cannot change the session (?launcher, ?quickstart, ?seed and ?parity are ignored), the
+    /// checkpoint save/load hotkeys are off and the "Save JSON Checkpoint" button is hidden.
+    /// FALSE/absent: the developer and LLM conveniences stay available. See RuntimeConfig.</summary>
+    public bool testMode;
 }
 
 public class WebSocketManager : MonoBehaviour

@@ -4,5 +4,6 @@
   "logServerUrl": "https://cora_game.dev.ddmlab.com/cgi-bin/save_game_logs.py",
   "followUpSurveyUrl": "https://cmu.ca1.qualtrics.com/jfe/form/SV_37V90liCPHEBYkC/?uid={uid}",
   "dataCollectionEnabled": true,
-  "showLauncher": false
+  "showLauncher": false,
+  "testMode": true
 }

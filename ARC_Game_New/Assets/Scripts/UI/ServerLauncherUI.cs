@@ -95,29 +95,39 @@ public class ServerLauncherUI : MonoBehaviour
     /// <summary>Decide whether to show the launcher, THEN act on it.
     ///
     /// Precedence: ?launcher= on the page URL, else config.json's showLauncher, else the
-    /// compiled default (false = the plain human-play build, no LLM/agent features).
+    /// compiled default (false = the plain human-play build, no LLM/agent features). With
+    /// config.json testMode on, the URL override is IGNORED: a participant must not be able to
+    /// open the LLM launcher by editing the link.
     ///
     /// This has to be a coroutine. The decision used to be made inline in Awake(), which is
     /// strictly earlier than any config.json read can finish — so a flag read from the file
     /// would have arrived after the choice it was meant to gate (the startup-ordering trap
-    /// that also produced ledger E1). The URL override is checked first precisely because it
-    /// IS available synchronously, so ?launcher=1 costs no startup delay.</summary>
+    /// that also produced ledger E1). It waits for RuntimeConfig, which reads the file once at
+    /// startup; that also decides whether the URL may override.</summary>
     IEnumerator ResolveVisibilityThenStart()
     {
         bool show = ShowLauncherPanel;
+        yield return RuntimeConfig.Wait();
 
         string urlOverride = UrlParam("launcher");
+        if (RuntimeConfig.TestMode && !string.IsNullOrEmpty(urlOverride))
+        {
+            Debug.Log($"[Launcher] ?launcher={urlOverride} ignored (testMode)");
+            urlOverride = null;
+        }
         if (!string.IsNullOrEmpty(urlOverride))
         {
             show = urlOverride != "0" && !urlOverride.Equals("false", System.StringComparison.OrdinalIgnoreCase);
             Debug.Log($"[Launcher] showLauncher={show} (from ?launcher={urlOverride})");
         }
+        else if (RuntimeConfig.Config != null)
+        {
+            show = RuntimeConfig.Config.showLauncher;
+            Debug.Log($"[Launcher] showLauncher={show} (from config.json)");
+        }
         else
         {
-            // Deliberately a second read of config.json (FetchConfigs reads it again later for
-            // wsUrl). It is a local StreamingAssets file and this happens once at startup; the
-            // duplicate read is cheaper than threading a cache through the two call paths.
-            yield return StartCoroutine(LoadShowLauncherFromConfig(v => show = v));
+            Debug.Log($"[Launcher] config.json unreadable; showLauncher stays {ShowLauncherPanel}.");
         }
 
         if (!show)
@@ -132,33 +142,6 @@ public class ServerLauncherUI : MonoBehaviour
         }
 
         ShowLauncher();
-    }
-
-    /// <summary>Read showLauncher from StreamingAssets/config.json. Leaves the value untouched
-    /// on any failure (missing file, unreadable, malformed), so a broken config falls back to
-    /// the compiled default rather than hanging startup or guessing.</summary>
-    IEnumerator LoadShowLauncherFromConfig(System.Action<bool> onResolved)
-    {
-        string rawPath = Application.streamingAssetsPath + "/config.json";
-        string path = rawPath.Contains("://") ? rawPath : "file://" + rawPath;
-        using (UnityWebRequest req = UnityWebRequest.Get(path))
-        {
-            req.timeout = 5;
-            yield return req.SendWebRequest();
-            if (req.result != UnityWebRequest.Result.Success)
-            {
-                Debug.Log($"[Launcher] config.json unreadable ({req.error}); showLauncher stays {ShowLauncherPanel}.");
-                yield break;
-            }
-            AppConfig cfg = null;
-            try { cfg = JsonUtility.FromJson<AppConfig>(req.downloadHandler.text); }
-            catch (Exception e) { Debug.LogWarning($"[Launcher] config.json is malformed ({e.Message}); showLauncher stays {ShowLauncherPanel}."); }
-            if (cfg != null)
-            {
-                onResolved(cfg.showLauncher);
-                Debug.Log($"[Launcher] showLauncher={cfg.showLauncher} (from config.json)");
-            }
-        }
     }
 
     void ShowLauncher()

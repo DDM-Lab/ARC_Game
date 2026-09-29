@@ -43,14 +43,27 @@ public class ParityProbe : MonoBehaviour
     static void Install()
     {
         if (instance != null) return;
-        if (!Wanted()) return;
+        if (WantedByHost()) { Arm(); return; }
+        if (!WantedByUrl()) return;
+        // A URL switch is subject to testMode (participant deployments): wait for config.json.
+        RuntimeConfig.WhenLoaded(() =>
+        {
+            if (RuntimeConfig.TestMode) { Debug.Log("[ParityProbe] ?parity=1 ignored (testMode)"); return; }
+            Arm();
+        });
+    }
+
+    static void Arm()
+    {
+        if (instance != null) return;
         var go = new GameObject("[ParityProbe]");
         DontDestroyOnLoad(go);
         instance = go.AddComponent<ParityProbe>();
         Debug.Log("[ParityProbe] armed — one fingerprint per round.");
     }
 
-    static bool Wanted()
+    /// <summary>Command line or environment: the headless harness. Never subject to testMode.</summary>
+    static bool WantedByHost()
     {
         try
         {
@@ -60,13 +73,17 @@ public class ParityProbe : MonoBehaviour
             if (!string.IsNullOrEmpty(env) && env != "0") return true;
         }
         catch (Exception) { }
+        return false;
+    }
+
+    static bool WantedByUrl()
+    {
         try
         {
             string url = Application.absoluteURL;
-            if (!string.IsNullOrEmpty(url) && url.Contains("parity=1")) return true;
+            return !string.IsNullOrEmpty(url) && url.Contains("parity=1");
         }
-        catch (Exception) { }
-        return false;
+        catch (Exception) { return false; }
     }
 
     void Start()
