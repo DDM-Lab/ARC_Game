@@ -39,18 +39,6 @@ cd "$ARC"
 CONDA_ENV=${CONDA_ENV-/zfsauton/scratch/$USER/conda_envs/vllm027}
 if [ -n "$CONDA_ENV" ] && [ -x "$CONDA_ENV/bin/python" ]; then
   export PATH="$CONDA_ENV/bin:$PATH"
-  # pip-installed CUDA toolkit only as a last resort (cu13 headers mismatch flashinfer's
-  # CUDA-12 cccl), exactly as run_ablation_sweep_local.sbatch does.
-  if [ ! -d /usr/local/cuda ]; then
-    for CANDIDATE in "$CONDA_ENV/lib/python3.10/site-packages/nvidia/cuda_runtime" \
-                     "$CONDA_ENV/lib/python3.12/site-packages/nvidia/cu13"; do
-      if [ -x "$CANDIDATE/bin/nvcc" ]; then
-        export CUDA_HOME="$CANDIDATE" PATH="$CANDIDATE/bin:$PATH"
-        export LD_LIBRARY_PATH="$CANDIDATE/lib:${LD_LIBRARY_PATH:-}"
-        echo "[cuda] using CUDA_HOME=$CUDA_HOME"; break
-      fi
-    done
-  fi
   PY=${PY:-$CONDA_ENV/bin/python}
 fi
 PY=${PY:-./.venv/bin/python}
@@ -115,9 +103,23 @@ if [ "$MODE" = "local" ]; then
   # VLLM_EXTRA passes serve-time tuning through unquoted (word-split on purpose), e.g.
   #   VLLM_EXTRA='--max-num-batched-tokens 16384'
   #   VLLM_EXTRA='--speculative-config {"method":"ngram","num_speculative_tokens":5,"prompt_lookup_max":4}'
+  # Auton GPU nodes have no CUDA toolkit. FlashInfer JIT-compiles its sampler (and is the default
+  # attention backend), and the pip cu13 nvcc does not match its CUDA-12 headers: startup died with
+  # "CUDA compiler and CUDA toolkit headers are incompatible" after the model loaded (job 69407).
+  # vLLM's native sampler + Triton attention need no nvcc -- the settings serve/qwen27b_debug.sbatch
+  # has used all along.
+  export VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_WORKER_MULTIPROC_METHOD=spawn
+  # Tool-call parser by family: Qwen2.5/Qwen3 emit JSON-in-<tool_call> (hermes); Qwen3.5 and later
+  # emit the XML form (qwen3_xml), and hermes silently parses nothing. Those also need the qwen3
+  # reasoning parser, or </think> leaks into content.
+  case "$MODEL" in
+    *Qwen3.[5-9]*|*Qwen3.[1-9][0-9]*) : "${TOOL_PARSER:=qwen3_xml}"; REASONING=(--reasoning-parser qwen3) ;;
+    *) : "${TOOL_PARSER:=hermes}"; REASONING=() ;;
+  esac
   vllm serve "$MODEL" --port "$PORT" --max-model-len ${MAX_MODEL_LEN:-12288} \
        --gpu-memory-utilization ${GPU_UTIL:-0.85} \
-       --enable-auto-tool-choice --tool-call-parser ${TOOL_PARSER:-hermes} \
+       --tensor-parallel-size ${TP:-1} --attention-backend TRITON_ATTN \
+       --enable-auto-tool-choice --tool-call-parser "$TOOL_PARSER" "${REASONING[@]}" \
        ${VLLM_EXTRA:-} \
        > "$OUT/vllm.log" 2>&1 &
   VLLM_PID=$!
