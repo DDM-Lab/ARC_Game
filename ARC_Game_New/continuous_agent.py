@@ -331,6 +331,66 @@ TOOL_SCHEMAS: Dict[str, dict] = {
             },
         },
     },
+    # Standing orders. An officer normally cannot act on a round-start turn nobody asked it to
+    # take; an accepted rule lets it use ONE action tool on those turns, under the condition
+    # the Director approved. The Director sees the tool and the condition on a card and can
+    # allow, deny, or reword the condition (never the tool). The `tool` enum is narrowed per
+    # officer to the action tools in its own palette (see agent_router._autonomy_tool_schema).
+    "add_to_autonomy_list": {
+        "type": "function",
+        "function": {
+            "name": "add_to_autonomy_list",
+            "description": (
+                "Ask the Director for a standing order: permission to use ONE action tool on "
+                "your own at the start of later rounds, whenever a stated condition holds. "
+                "Call it when the Director gives you a standing instruction (\"whenever...\", "
+                "\"from now on...\", \"every round...\", \"keep ... staffed\"). The Director "
+                "sees the tool and the condition and can allow it, deny it, or reword the "
+                "condition. Waits for their decision and tells you the outcome."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tool": {"type": "string", "enum": ["staff"],
+                             "description": "The one action tool this order lets you use."},
+                    "context": {
+                        "type": "string",
+                        "description": (
+                            "When you would use it, in one plain sentence the Director can "
+                            "check, e.g. 'When a shelter finishes construction and has no "
+                            "workers, staff it fully from free workers.'"),
+                    },
+                    "args": {
+                        "type": "object",
+                        "description": (
+                            "Optional fixed arguments that limit the order, using the tool's "
+                            "own parameter names, e.g. {\"type\": \"kitchen\"} for build. "
+                            "Leave it out to allow any arguments."),
+                    },
+                    "reason": {"type": "string",
+                               "description": "Optional: one short line on why this helps."},
+                },
+                "required": ["tool", "context"],
+            },
+        },
+    },
+    "remove_autonomy_rule": {
+        "type": "function",
+        "function": {
+            "name": "remove_autonomy_rule",
+            "description": (
+                "Cancel one of your standing orders, by its id (R1, R2, ...). Do this when "
+                "the Director tells you to stop, or when the order no longer makes sense."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "rule_id": {"type": "string", "description": "The standing order's id, e.g. R2."},
+                },
+                "required": ["rule_id"],
+            },
+        },
+    },
 }
 
 # Default palette when a config sets no `tools` allowlist: everything.

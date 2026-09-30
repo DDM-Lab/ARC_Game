@@ -315,6 +315,17 @@ class Session:
         # Per-agent turns are serialized by _agent_lock, so one slot per name is exact.
         # Messages sent mid-turn read it to record which turn (and which message) caused them.
         self._turn_ctx: Dict[str, dict] = {}
+        # Standing orders (add_to_autonomy_list). officer name -> accepted rules, each
+        # {rule_id, tool, args, context, original_context, edited, round, proposal_id}.
+        # Ids are session-wide (R1, R2, ...) so the Director can name one unambiguously.
+        # Held for the life of this session only; a checkpoint does not carry them.
+        self._autonomy_rules: Dict[str, List[dict]] = {}
+        self._autonomy_seq: int = 0
+        # proposal_id of the standing-order card on screen now. It shares _pending_choice
+        # (and _director_attention_lock) with propose_choices, so one card at a time, and
+        # every existing supersede path (new round, new instruction, checkpoint load) also
+        # withdraws a pending standing-order card.
+        self._pending_autonomy_id: Optional[str] = None
         # Developer-panel prompt edits for THIS session only (never written into the shared
         # config objects, which other sessions may hold). None = use the config / default.
         # Read by _resolve_global_prompt and _continuous_system_message; an officer picks a
@@ -533,6 +544,8 @@ class Session:
             self._handle_game_start(msg)
         elif msg_type == "choice_made":
             await self._handle_choice_made(msg)
+        elif msg_type == "autonomy_decision":
+            self._handle_autonomy_decision(msg)
         elif msg_type == "director_message":
             await self._handle_director_message(msg)
         elif msg_type == "request_reproposal":
@@ -1551,7 +1564,10 @@ Respond with ONLY the package index number (0, 1, or 2).
     # unprompted "reactive" turn so an officer physically cannot act unbidden.
     # The typed action tools count as "acting" (build/hire/…) alongside execute_commands and
     # propose_choices, so the reactive-autonomy guard strips ALL of them on an unprompted turn.
-    _ACTING_TOOLS = frozenset({"execute_commands", "propose_choices"} | _CORA_ACTION_TOOLS)
+    # add_to_autonomy_list counts too: an officer asks for a standing order only when the
+    # Director has spoken to it, never on an unprompted turn.
+    _ACTING_TOOLS = frozenset({"execute_commands", "propose_choices", "add_to_autonomy_list"}
+                              | _CORA_ACTION_TOOLS)
 
     async def _run_continuous_inner(
         self,
@@ -1593,8 +1609,12 @@ Respond with ONLY the package index number (0, 1, or 2).
         _tdesc = getattr(self.config, "tool_descriptions", None)
         if not may_act:
             base = list(agent.tools) if agent.tools else list(DEFAULT_TOOLS)
+            # Standing orders put their own tools back (and only those): the dispatcher
+            # still refuses any call outside an order's limits.
+            ordered = {r["tool"] for r in self._autonomy_rules.get(agent.subagent_name, [])}
             tools = build_tools([t for t in base
-                                 if t not in self._ACTING_TOOLS and cora_ext.get_tool(t) is None],
+                                 if (t not in self._ACTING_TOOLS or t in ordered)
+                                 and cora_ext.get_tool(t) is None],
                                 descriptions=_tdesc,
                                 recipients=self._recipients_for(agent))
         else:
@@ -1608,6 +1628,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         _plug = _plugin_tool_schemas_for(agent, brief_only, tools)
         if _plug:
             tools = tools + _plug
+        tools = self._autonomy_tool_schema(tools)
         agent_cfg = vars(agent)  # run_tool_step reads provider/model/endpoint/key/budget
         max_steps = agent.max_steps or 8
 
@@ -1623,7 +1644,10 @@ Respond with ONLY the package index number (0, 1, or 2).
         turn_id = str(uuid.uuid4())
         obs_state_version = self._state_version
         self._turn_ctx[name] = {"turn_id": turn_id,
-                                "caused_by_message_id": caused_by_message_id}
+                                "caused_by_message_id": caused_by_message_id,
+                                # add_to_autonomy_list is accepted only on a turn the
+                                # Director started (not a colleague's message).
+                                "triggered_by_director": triggered_by_director}
         self._set_agent_status(name, "thinking", turn_id=turn_id, step=0)
         messages = self._continuous_transcripts.setdefault(name, [])
         # The system message is rebuilt every turn and swapped in only if it changed, which
@@ -2132,8 +2156,9 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "transcript_messages": len(transcript),
                 "status": self._agent_status.get(a.subagent_name, {"state": "idle"}),
             })
+        rules = [dict(r, officer=o) for o, rs in self._autonomy_rules.items() for r in rs]
         return {"session_id": self.session_id, "round": self.round_num, "day": self.day,
-                "layers": layers, "officers": officers}
+                "layers": layers, "officers": officers, "autonomy_rules": rules}
 
     def dev_set_prompt(self, scope: str, text: Optional[str], editor: str,
                        agent_name: Optional[str] = None) -> dict:
@@ -2358,6 +2383,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "Director — only the Director can tell you to do it. Send at most one message, "
                 "then call finish.")
         closing = self._turn_instruction(which, closing, title=title, capabilities=capabilities)
+        closing += self._standing_orders_text(title, brief_only)
         # A colleague wrote to this officer since it last ran. Surfaced as an OPTION, not an
         # instruction: the officer decides whether the message is worth answering. It also
         # restates the non-negotiable part -- a peer's suggestion is not authority to act --
@@ -3041,6 +3067,9 @@ Respond with ONLY the package index number (0, 1, or 2).
         # which escaped the dispatcher and left a tool_calls message with no matching tool
         # result in the officer's game-long transcript — bricking them for the session.
         meta = {"executed": 0, "finish": False}
+        # The call as the officer made it, before a typed tool is rewritten to
+        # execute_commands below: standing orders are granted per typed tool + arguments.
+        orig_name, orig_args = name, (tool_call.get("arguments") or {})
         if name in _CORA_ACTION_TOOLS:
             _tag, _tmeta = cora_tools.translate_tool_calls(
                 [(name, tool_call.get("arguments") or {})])
@@ -3056,12 +3085,24 @@ Respond with ONLY the package index number (0, 1, or 2).
         args = tool_call.get("arguments") or {}
 
         if brief_only and name in self._ACTING_TOOLS:
-            return (
-                "REFUSED: you have not been directly addressed this turn, so you "
-                "cannot take actions or send proposals. Brief the director via "
-                "send_message to the Director (or call finish); they will tell you what to do.",
-                game_state, all_actions, filtered_actions, meta,
-            )
+            # A standing order the Director approved is the one thing an officer may do on
+            # a turn nobody asked it to take: that typed tool, within the order's argument
+            # limits. It then runs through the normal (non-brief) path, tagged with the rule.
+            rule = (self._autonomy_rule_for(agent, orig_name, orig_args)
+                    if orig_name in _CORA_ACTION_TOOLS else None)
+            if rule is not None:
+                return await self._run_under_standing_order(
+                    agent, rule, tool_call, game_state, all_actions, filtered_actions,
+                    _skip_registry)
+            refusal = ("REFUSED: you have not been directly addressed this turn, so you "
+                       "cannot take actions or send proposals. Brief the director via "
+                       "send_message to the Director (or call finish); they will tell you "
+                       "what to do.")
+            if self._autonomy_rules.get(agent.subagent_name):
+                refusal = ("REFUSED: this call is not covered by any of your standing orders "
+                           "(same tool, within its limits). Unprompted, you may only carry out "
+                           "a standing order; for anything else, ask the Director.")
+            return (refusal, game_state, all_actions, filtered_actions, meta)
 
         # Plugin tools (cora_ext registry) take precedence — a contributor tool, or one that
         # overrides a built-in by name, dispatches here. Inert when no plugins are loaded.
@@ -3383,6 +3424,18 @@ Respond with ONLY the package index number (0, 1, or 2).
             return f"Message delivered to {to}.", \
                 game_state, all_actions, filtered_actions, meta
 
+        if name == "add_to_autonomy_list":
+            text, shown, superseded = await self._continuous_autonomy_propose(agent, args)
+            if superseded:
+                meta["finish"] = True
+            elif shown:
+                meta["spoke"] = True      # the card is director-facing, like a proposal
+            return text, game_state, all_actions, filtered_actions, meta
+
+        if name == "remove_autonomy_rule":
+            return (await self._remove_autonomy_rule(agent, args.get("rule_id"), by="officer"),
+                    game_state, all_actions, filtered_actions, meta)
+
         if name == "finish":
             note = str(args.get("note") or "").strip()
             if note:
@@ -3534,6 +3587,277 @@ Respond with ONLY the package index number (0, 1, or 2).
         body += "\n\nUpdated actions:\n" + self._render_options_compact(filtered_actions, game_state)
         return body, game_state, all_actions, filtered_actions, executed, superseded, result_rows
 
+    # ── Standing orders (add_to_autonomy_list) ───────────────────
+    # An accepted order lets one officer use one typed action tool on its own at round
+    # start, when the condition the Director approved holds. The officer judges the
+    # condition; the router enforces the tool and its argument limits.
+    _AUTONOMY_MAX_RULES = 5
+
+    def _autonomy_allowed_tools(self, tools: List[dict]) -> List[str]:
+        """The typed action tools in a palette, in palette order."""
+        return [t["function"]["name"] for t in tools
+                if t.get("function", {}).get("name") in _CORA_ACTION_TOOLS]
+
+    def _autonomy_tool_schema(self, tools: List[dict]) -> List[dict]:
+        """Narrow add_to_autonomy_list's `tool` enum to this palette's action tools, or drop
+        the tool when there are none (an officer can only delegate what it can already do).
+        Rewritten on a copy: TOOL_SCHEMAS is shared by every session on the server."""
+        allowed = self._autonomy_allowed_tools(tools)
+        out = []
+        for t in tools:
+            if t.get("function", {}).get("name") != "add_to_autonomy_list":
+                out.append(t)
+                continue
+            if not allowed:
+                continue
+            fn = t["function"]
+            props = dict(fn["parameters"]["properties"])
+            props["tool"] = {**props["tool"], "enum": allowed}
+            out.append({**t, "function": {**fn, "parameters": {**fn["parameters"],
+                                                               "properties": props}}})
+        return out
+
+    @staticmethod
+    def _autonomy_args_display(tool: str, args: dict) -> str:
+        """'(any site)' or '(type kitchen)': the order's limits, as the card and prompt show them."""
+        if not args:
+            params = [n for n, _ in (cora_tools._TOOL_BY_NAME.get(tool, {}).get("params") or [])]
+            what = params[0].replace("_id", "").replace("_", " ") if params else "arguments"
+            return f"(any {what})"
+        return "(" + ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in args.items()) + ")"
+
+    @staticmethod
+    def _autonomy_args_match(limits: dict, call: dict) -> bool:
+        """Every limit must hold. Numbers compare exactly; text compares case-insensitively,
+        and a facility name may be a substring (a limit 'Shelter' covers 'Shelter Bravo'),
+        the same looseness the staff/deconstruct site lookup already has."""
+        for k, v in (limits or {}).items():
+            got = call.get(k)
+            if got is None:
+                return False
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                try:
+                    if float(got) != float(v):
+                        return False
+                except (TypeError, ValueError):
+                    return False
+                continue
+            want, have = str(v).strip().lower(), str(got).strip().lower()
+            if want != have and not (k in ("site", "source", "dest") and want in have):
+                return False
+        return True
+
+    def _autonomy_rule_for(self, agent: AgentConfig, tool: str, args: dict) -> Optional[dict]:
+        for r in self._autonomy_rules.get(agent.subagent_name, []):
+            if r["tool"] == tool and self._autonomy_args_match(r["args"], args or {}):
+                return r
+        return None
+
+    async def _run_under_standing_order(self, agent, rule, tool_call, game_state,
+                                        all_actions, filtered_actions, _skip_registry):
+        """Carry out one call an order covers, through the ordinary (non-brief) path, with
+        the order's id on its receipts, its result rows and the log."""
+        name = agent.subagent_name
+        ctx = self._turn_ctx.setdefault(name, {})
+        ctx["autonomy_rule"] = rule["rule_id"]
+        try:
+            text, game_state, all_actions, filtered_actions, meta = \
+                await self._dispatch_continuous_tool(
+                    agent, tool_call, game_state, all_actions, filtered_actions,
+                    brief_only=False, _skip_registry=_skip_registry)
+        finally:
+            ctx.pop("autonomy_rule", None)
+        for row in meta.get("results") or []:
+            if isinstance(row, dict):
+                row["autonomy_rule"] = rule["rule_id"]
+        meta["autonomy_rule"] = rule["rule_id"]
+        self._log_action(self._actor_for(agent), "autonomy", "autonomy_rule_used", {
+            "rule_id": rule["rule_id"], "tool": rule["tool"],
+            "arguments": (tool_call.get("arguments") or {}),
+            "executed": meta.get("executed", 0), "round": self.round_num})
+        print(f"[router]   ⚙ {name}: standing order {rule['rule_id']} used "
+              f"({meta.get('executed', 0)} action(s)).")
+        return (f"[Standing order {rule['rule_id']}] " + text,
+                game_state, all_actions, filtered_actions, meta)
+
+    def _standing_orders_text(self, officer: str, brief_only: bool) -> str:
+        """The officer's accepted orders, appended to its turn message ('' when none)."""
+        rules = self._autonomy_rules.get(officer) or []
+        if not rules:
+            return ""
+        lines = "\n".join(
+            f"  {r['rule_id']}: {r['tool']} {self._autonomy_args_display(r['tool'], r['args'])}"
+            f" — when: {r['context']}" for r in rules)
+        if brief_only:
+            return ("\n\nSTANDING ORDERS the Director approved — the one exception to the above:\n"
+                    f"{lines}\n"
+                    "For each order whose condition holds right now, carry it out with its tool, "
+                    "within its limits. The chat shows the result automatically, so you do not "
+                    "need to announce it. If no condition holds, leave the orders alone. Never "
+                    "use these tools for anything else on this turn.")
+        return ("\n\nYour standing orders (they run at the start of rounds):\n"
+                f"{lines}\n"
+                "If the Director tells you to stop one, cancel it with remove_autonomy_rule.")
+
+    async def _continuous_autonomy_propose(self, agent: AgentConfig,
+                                           args: dict) -> Tuple[str, bool, bool]:
+        """Put a standing-order card to the Director and wait for Allow / Deny / Modify.
+
+        Returns (result_text, card_shown, superseded)."""
+        name = agent.subagent_name
+        if not (self._turn_ctx.get(name) or {}).get("triggered_by_director"):
+            return ("REFUSED: ask for a standing order only when the Director has asked you "
+                    "for one (\"whenever...\", \"from now on...\"). You can suggest it to them "
+                    "with send_message instead.", False, False)
+        palette = self._autonomy_allowed_tools(build_tools(
+            [t for t in (agent.tools or DEFAULT_TOOLS) if cora_ext.get_tool(t) is None]))
+        tool = str(args.get("tool") or "").strip().lower()
+        if tool not in palette:
+            return (f"ERROR: {tool or '(none)'!r} is not one of your action tools. Choose one "
+                    f"of: {', '.join(palette)}.", False, False)
+        context = " ".join(str(args.get("context") or "").split())
+        if not context:
+            return ("ERROR: say when you would use it (`context`), in one plain sentence.",
+                    False, False)
+        if len(context) > 400:
+            return ("ERROR: keep the condition to one or two sentences (under 400 characters).",
+                    False, False)
+        limits = args.get("args") or {}
+        if isinstance(limits, str):
+            try:
+                limits = json.loads(limits) if limits.strip() else {}
+            except ValueError:
+                limits = None
+        if not isinstance(limits, dict):
+            return ("ERROR: `args` must be an object of the tool's parameters, e.g. "
+                    "{\"type\": \"kitchen\"}, or left out.", False, False)
+        params = [n for n, _ in cora_tools._TOOL_BY_NAME[tool]["params"]]
+        unknown = [k for k in limits if k not in params]
+        if unknown:
+            return (f"ERROR: {tool} has no parameter {', '.join(map(repr, unknown))}. Its "
+                    f"parameters are: {', '.join(params)}.", False, False)
+        limits = {k: v for k, v in limits.items() if v not in (None, "")}
+        rules = self._autonomy_rules.get(name, [])
+        if len(rules) >= self._AUTONOMY_MAX_RULES:
+            return (f"ERROR: you already have {len(rules)} standing orders "
+                    f"({', '.join(r['rule_id'] for r in rules)}); cancel one with "
+                    "remove_autonomy_rule first.", False, False)
+        for r in rules:
+            if r["tool"] == tool and r["args"] == limits and r["context"].lower() == context.lower():
+                return (f"You already have this standing order ({r['rule_id']}).", False, False)
+
+        reason = " ".join(str(args.get("reason") or "").split())[:300]
+        proposal_id = uuid.uuid4().hex[:12]
+        shown_args = self._autonomy_args_display(tool, limits)
+        self._log_action(self._actor_for(agent), "autonomy", "autonomy_proposed", {
+            "proposal_id": proposal_id, "tool": tool, "args": limits,
+            "context": context, "reason": reason, "round": self.round_num})
+        async with self._director_attention_lock:
+            await self._send({
+                "type": "autonomy_proposal",
+                "proposal_id": proposal_id,
+                "agent_name": name,
+                "talkinghead_endpoint": agent.talkinghead_endpoint,
+                "tool": tool,
+                "args_display": shown_args,
+                "context": context,
+                "reason": reason,
+                "round": self.round_num,
+                "timestamp": _now(),
+            })
+            decision = await self._await_autonomy_decision(proposal_id)
+
+        if decision.get("superseded") or decision.get("timeout"):
+            await self._send({"type": "autonomy_update", "proposal_id": proposal_id,
+                              "status": "withdrawn"})
+            why = ("the Director moved on (new round or a new instruction)"
+                   if decision.get("superseded") else "no answer within 5 minutes")
+            return (f"No standing order was added: {why}. Don't act on it unprompted.",
+                    True, bool(decision.get("superseded")))
+        if str(decision.get("decision") or "").lower() != "accept":
+            note = (" (no human Director to approve it)" if decision.get("auto") else "")
+            return ("DENIED: the Director declined this standing order" + note + ". Don't do "
+                    "it unprompted; carry on as before.", True, False)
+
+        final = " ".join(str(decision.get("context") or "").split()) or context
+        edited = final != context
+        self._autonomy_seq += 1
+        rule = {"rule_id": f"R{self._autonomy_seq}", "tool": tool, "args": limits,
+                "context": final, "original_context": context, "edited": edited,
+                "round": self.round_num, "proposal_id": proposal_id}
+        self._autonomy_rules.setdefault(name, []).append(rule)
+        self._log_action(self._actor_for(agent), "autonomy", "autonomy_rule_added", dict(rule))
+        await self._send({"type": "autonomy_update", "proposal_id": proposal_id,
+                          "status": "edited" if edited else "accepted",
+                          "rule_id": rule["rule_id"], "context": final})
+        print(f"[router]   ⚙ {name}: standing order {rule['rule_id']} added "
+              f"({tool} {shown_args}{', edited' if edited else ''}).")
+        text = (f"ALLOWED: standing order {rule['rule_id']} — {tool} {shown_args}, when: {final}")
+        if edited:
+            text += (f"\nThe Director reworded your condition (you proposed: \"{context}\"). "
+                     "Follow THEIR wording.")
+        return (text + "\nFrom now on, at the start of each round, you may use this tool on "
+                "your own, but only when that condition holds.", True, False)
+
+    async def _await_autonomy_decision(self, proposal_id: str) -> dict:
+        """Wait for autonomy_decision on the shared pending slot (5 min). An autonomous
+        director cannot judge a standing order, so it is declined without a card wait."""
+        if self._director_agent and self._director_agent.actor_type == "auto":
+            return {"decision": "deny", "auto": True}
+        fut = asyncio.get_event_loop().create_future()
+        self._pending_choice = fut
+        self._pending_autonomy_id = proposal_id
+        try:
+            msg = await asyncio.wait_for(fut, timeout=300.0)
+            if msg.get("superseded"):
+                return {"superseded": True}
+            return msg
+        except asyncio.TimeoutError:
+            return {"timeout": True}
+        finally:
+            if self._pending_choice is fut:
+                self._pending_choice = None
+            if self._pending_autonomy_id == proposal_id:
+                self._pending_autonomy_id = None
+
+    def _handle_autonomy_decision(self, msg: dict) -> None:
+        """The Director clicked Allow, Deny, or submitted a Modify edit on a card."""
+        pid = msg.get("proposal_id")
+        self._log_action(HUMAN_DIRECTOR_ACTOR, "autonomy", "autonomy_decision", {
+            "proposal_id": pid, "agent_name": msg.get("agent_name"),
+            "decision": msg.get("decision"), "context": msg.get("context"),
+            "edited": bool(msg.get("edited"))},
+            click_seq=msg.get("click_seq"), client_ts=msg.get("timestamp"))
+        fut = self._pending_choice
+        if pid and pid == self._pending_autonomy_id and fut is not None and not fut.done():
+            fut.set_result(msg)
+        else:
+            print(f"[router]   ⚠️  autonomy_decision for {pid!r} with no matching card pending.")
+
+    async def _remove_autonomy_rule(self, agent: Optional[AgentConfig], rule_id,
+                                    by: str) -> str:
+        """Cancel a standing order. `agent` None = search every officer (developer panel)."""
+        rid = str(rule_id or "").strip().upper()
+        owners = ([agent.subagent_name] if agent is not None else list(self._autonomy_rules))
+        for owner in owners:
+            rules = self._autonomy_rules.get(owner, [])
+            for r in rules:
+                if r["rule_id"] == rid:
+                    rules.remove(r)
+                    officer = agent or self._get_agent_by_name(owner)
+                    self._log_action(self._actor_for(officer) if by == "officer" else
+                                     HUMAN_DIRECTOR_ACTOR if by == "director" else SYSTEM_ACTOR,
+                                     "autonomy", "autonomy_rule_removed",
+                                     {"rule_id": rid, "officer": owner, "by": by, "rule": r})
+                    if officer is not None:
+                        await self._send_agent_response(
+                            officer, f"Standing order {rid} cancelled ({r['tool']} — when: "
+                            f"{r['context']}).", "agent_response", origin="router_template")
+                    return f"Cancelled standing order {rid}."
+        have = ", ".join(r["rule_id"] for o in owners for r in self._autonomy_rules.get(o, []))
+        return f"ERROR: no standing order {rid or '(none)'}. " + (
+            f"Current ones: {have}." if have else "There are none.")
+
     def _supersede_pending_choice(self, reason: str) -> None:
         """Release a continuous turn parked at propose_choices awaiting the human.
 
@@ -3581,7 +3905,11 @@ Respond with ONLY the package index number (0, 1, or 2).
             await self._fire_hooks("on_action_executed", {
                 "actor": HUMAN_DIRECTOR_ACTOR, "source": "director", "is_human": True,
                 "action": _res}, agent=None)
-        if self._pending_choice and not self._pending_choice.done():
+        if self._pending_autonomy_id is not None:
+            # The pending slot holds a standing-order card, not a package proposal; a stale
+            # choice card clicked now must not be read as the Director's answer to it.
+            print("[router]    ⚠️  choice_made while a standing-order card is pending — ignored.")
+        elif self._pending_choice and not self._pending_choice.done():
             print(f"[router]    ✅ Setting result on pending Future")
             self._pending_choice.set_result(msg)
         else:
@@ -3837,6 +4165,12 @@ Respond with ONLY the package index number (0, 1, or 2).
         # who's speaking); the prompt asks officers to introduce themselves once, not
         # on every message. See _strip_self_label.
         response_text = _strip_self_label(response_text)
+        # An action carried out under a standing order: say which order, in the chat and
+        # the log, so the Director (and the corpus) can tell it from an asked-for action.
+        _rule = (self._turn_ctx.get(agent.subagent_name) or {}).get("autonomy_rule")
+        if _rule and origin == "router_action_receipt":
+            origin = "autonomy_rule"
+            response_text = f"Standing order {_rule} · {response_text}"
         response_message = self.message_queue.send_message(
             from_agent=agent.subagent_name,
             to_agent=to,
@@ -6373,6 +6707,17 @@ async def dev_set_prompt(session_id: str, request: Request,
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True, "change": change}
+
+
+@app.delete("/dev/api/sessions/{session_id}/autonomy/{rule_id}")
+async def dev_remove_autonomy_rule(session_id: str, rule_id: str,
+                                   authorization: Optional[str] = Header(default=None)):
+    """Cancel a standing order from the developer panel. The officer's chat shows it."""
+    _require_dev_panel(authorization)
+    text = await _dev_session(session_id)._remove_autonomy_rule(None, rule_id, by="developer")
+    if text.startswith("ERROR"):
+        raise HTTPException(status_code=404, detail=text)
+    return {"ok": True, "detail": text}
 
 
 _MAX_CHECKPOINT_BYTES = 8 * 1024 * 1024

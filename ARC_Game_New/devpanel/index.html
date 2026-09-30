@@ -101,6 +101,10 @@
   its conversation so far is kept.</p>
 <div id="officers"></div>
 
+<h2>Standing orders</h2>
+<p class="muted">Rules officers may act on unprompted at round start, as the Director approved them.</p>
+<div id="rules" class="muted">None.</div>
+
 <h2>Shared prompt layers</h2>
 <p class="muted">Used by every officer (behavior and manual only for officers that use the
   global prompt). Changes apply from each officer's next turn.</p>
@@ -165,6 +169,14 @@ function render(rebuild) {
       <td>${o.pending_change ? '<span class="pending">edit pending next turn</span>'
            : '<span class="muted">' + esc(o.assembled_sha) + "</span>"}</td></tr>`;
   }).join("");
+  const rules = view.autonomy_rules || [];
+  $("rules").innerHTML = rules.length ? `<table><thead><tr><th>Id</th><th>Officer</th><th>Tool</th>
+    <th>Limits</th><th>When</th><th>Since round</th><th></th></tr></thead><tbody>` + rules.map(r =>
+    `<tr><td>${esc(r.rule_id)}</td><td>${esc(r.officer)}</td><td>${esc(r.tool)}</td>
+      <td>${esc(Object.entries(r.args || {}).map(([k, v]) => k + "=" + v).join(", ") || "any")}</td>
+      <td>${esc(r.context)}${r.edited ? ' <span class="tag override">edited</span>' : ""}</td>
+      <td>${r.round}</td><td><button onclick="removeRule('${esc(r.rule_id)}')">Remove</button></td></tr>`
+    ).join("") + "</tbody></table>" : "None.";
   if (!rebuild) return;      // keep textareas stable during live polling
   dirty.clear();
   $("officers").innerHTML = view.officers.map((o, i) => `
@@ -212,6 +224,14 @@ function apply(scope, idx) {
   send(scope, idx, $(id).value);
 }
 function reset(scope, idx) { send(scope, idx, null); }
+async function removeRule(id) {
+  try {
+    const {detail} = await api(`/dev/api/sessions/${$("session").value}/autonomy/${id}`,
+                               {method: "DELETE"});
+    say(detail, "ok");
+    await loadView(false);
+  } catch (e) { say(e.message, "err"); }
+}
 
 $("cpload").onclick = async () => {
   const f = $("cpfile").files[0];
