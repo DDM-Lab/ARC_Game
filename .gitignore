@@ -18,3 +18,10 @@ Builds/
 /Assets/
 /Packages/
 /ProjectSettings/
+
+# Local dev scratch — manual probes and one-off scripts, not part of the platform.
+ARC_Game_New/scratch/
+# Benchmark outputs (large; regenerate with benchmark_cluster.sbatch)
+ARC_Game_New/benchmark_results/
+ARC_Game_New/__pycache__/
+**/__pycache__/

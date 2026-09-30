@@ -22,14 +22,13 @@ from cmd_parser import (  # noqa: F401
 )
 # SHARED system prompts (source of truth: cora_prompts).
 from cora_prompts import (  # noqa: F401
-    OLD_SYSTEM_PROMPT, NEW_SYSTEM_PROMPT, SYSTEM_PROMPT, MINIMAL_SYSTEM_PROMPT, idx_system_prompt,
     CMD_SYSTEM_PROMPT, CMD_TRANSFER_DOC, CMD_MINIMAL_SYSTEM_PROMPT, CMD_MINIMAL_V2_SYSTEM_PROMPT,
     tool_system_prompt,
     cmd_system_prompt,
 )
 # SHARED observation adapters (env -> obs_encoder + A/B toggles; source of truth: obs_adapters).
 from obs_adapters import (  # noqa: F401
-    PROMPT_VERSION, MOTEL_COST_PER_PERSON_PER_DAY, _set_v2,
+    PROMPT_VERSION, MOTEL_COST_PER_PERSON_PER_DAY, _set_v2, _set_v3,
     compact_action, summarize, summarize_commands, render_state_compact, render_state_delta,
 )
 # SHARED gateway config (source of truth: llm_gateway).

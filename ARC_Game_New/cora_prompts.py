@@ -13,127 +13,14 @@ RL tool-mode "HOW TO ACT" fragment) — only the mechanics preamble is forced id
 Prompt strings here are byte-identical to the pre-move definitions (guarded by an
 equivalence check), so prompt_hash / benchmark A-B comparability is unaffected.
 """
-import os
-
-# idx-format prompt version toggle (A/B). =new (default) enriched; =old lean.
-# Resolved at import (same as the pre-move behavior in llm_smoke_test).
-_NEW = os.environ.get("ARC_PROMPT_VERSION", "new").strip().lower() != "old"
 
 
-# ── idx-format prompts (enumerated action menu, JSON I/O) ───────────────────
 
-# Original ("before") prompt — mechanics only, no objective/horizon/lodging-economics/casework.
-OLD_SYSTEM_PROMPT = """You are the director in a turn-based disaster-response resource game.
-
-ENTITIES & RULES (mechanics only — no strategy is given):
-- Satisfaction (0-100) and Budget ($) are your tracked metrics.
-- Tasks: each active task may carry numbered choices. Selecting a choice commits that
-  option. A task has `roundsLeft`; if not resolved by then it expires. Demand/Emergency
-  tasks represent community needs (food, or population relocation/lodging).
-- Buildings have `status`: UnderConstruction -> NeedWorker -> InUse. A building becomes
-  InUse only when `workers >= needWorkers`. Kitchens hold/produce food (foodPacks);
-  Shelters hold population (capacity).
-- Workers: trained (2 workforce, $500) or untrained (1 workforce, $100). State is free,
-  working (assigned to a building), in-training, or not-yet-arrived. You may hire, train
-  (untrained->trained), and assign workers to buildings.
-- Actions (provided each round with cost & params): construction, worker (hire/train),
-  worker_assignment, resource_transfer, deconstruction.
-- Each round you submit actions + choices; then time advances one round.
-
-RESPOND ONLY with JSON:
-{"reasoning":"<your step-by-step rationale for THIS round's decision>",
- "choices":[{"taskId":<int>,"choiceId":<int>}...], "actions":[<action_index>...], "note":"<=20 words"}
-"""
-
-# Enriched ("after") prompt — rules + objective/horizon/lodging-economics/casework.
-NEW_SYSTEM_PROMPT = """You are the director in a turn-based disaster-response resource game.
-
-OBJECTIVE: maximize cumulative score over the WHOLE game (a fixed number of rounds; each
-observation gives `roundsLeft`). Score each round rewards meeting community needs — food,
-lodging, and casework (return-home) — and subtracts cost-inefficiency (spending a lot per unit
-of need served). Budget is finite and may go negative; sustained overspending and large negative
-budgets are heavily penalized. Plan across the full horizon, not just the current round.
-
-ENTITIES & RULES (mechanics; the strategy is up to you):
-- Satisfaction (0-100) and Budget ($) are tracked metrics. Each observation also gives a
-  cumulative `spend` breakdown (food/lodging/worker/casework) and `roundsLeft`.
-- Tasks carry numbered choices; selecting one commits it. A task has `roundsLeft`; if unresolved
-  by then it expires. Demand/Emergency tasks are community needs (food, or population
-  relocation/lodging); Advisory tasks include "Casework Request" (see CASEWORK).
-- LODGING — two ways to house relocated population, with very different economics:
-    * Shelters: one-time build (cost in `state.costs.build`) + workers to staff. Once InUse
-      they cost $0/day.
-    * Motel (prebuilt, large capacity): $0 to build, BUT charges ~$200 per resident per day,
-      every day they remain — a recurring drain that is NOT shown on the choice and compounds
-      over all remaining rounds. The observation reports current `motelDailyCost`.
-  Over many rounds the motel is far more expensive than building shelters.
-- CASEWORK / return-home: clients housed for many rounds raise an Advisory "Casework Request".
-  Resolving it ("send to casework site") frees their lodging and is scored — but it ONLY works
-  if you have already BUILT and STAFFED a CaseworkSite. Build one early if you expect this.
-- Buildings have `status`: UnderConstruction -> NeedWorker -> InUse (InUse only when
-  `workers >= needWorkers`). Construction takes ~1 day (~4 ROUNDS); staff() works only once status is NeedWorker.
-  Kitchens hold/produce food (foodPacks); Shelters/Motel hold population (capacity).
-- Workers: trained (2 workforce, $500) or untrained (1 workforce, $100): free, working, in-
-  training, or not-yet-arrived. Hire/train/assign them. Free (unassigned) workers do no work and
-  are wasted, but hiring beyond need wastes budget. Worker demand shifts as you build/operate.
-- Actions (provided each round with cost & params): construction, worker (hire/train),
-  worker_assignment, resource_transfer, deconstruction. Reference game actions by their index `i`
-  (valid for THIS round only — the list is re-enumerated every round); task choices by
-  {taskId, choiceId}. Each round you submit actions + choices, then time advances one round.
-
-RESPOND ONLY with JSON:
-{"reasoning":"<your step-by-step rationale for THIS round's decision>",
- "choices":[{"taskId":<int>,"choiceId":<int>}...], "actions":[<action_index>...], "note":"<=20 words"}
-"""
-
-SYSTEM_PROMPT = NEW_SYSTEM_PROMPT if _NEW else OLD_SYSTEM_PROMPT
-
-# PIMMUR minimal-control variant (idx). Same factual mechanics + neutral OBJECTIVE as the original
-# prompt, but every line of *strategy* is removed: no lodging-economics ranking (motel-vs-shelter),
-# no "build casework early" prescription, no horizon nudge, and no "negative budget heavily
-# penalized" claim (which also misstated the reward). It discloses the WHAT (objective + action
-# surface) but never the HOW. This is the minimal-control / unawareness arm (arXiv 2509.18052).
-MINIMAL_SYSTEM_PROMPT = """You are the director in a turn-based disaster-response resource game.
-
-OBJECTIVE: maximize cumulative score over the WHOLE game (a fixed number of rounds; each
-observation gives `roundsLeft`). Each round the score rewards meeting community needs — food,
-lodging, and casework (return-home) — and subtracts cost-inefficiency (spend per unit of need
-served). Budget ($) is finite and may go negative.
-
-ENTITIES & RULES (mechanics only — no strategy is given):
-- Satisfaction (0-100) and Budget ($) are tracked metrics. Each observation also gives a
-  cumulative `spend` breakdown (food/lodging/worker/casework) and `roundsLeft`.
-- Tasks carry numbered choices; selecting one commits it. A task has `roundsLeft`; if unresolved
-  by then it expires. Demand/Emergency tasks are community needs (food, or population
-  relocation/lodging); Advisory tasks include "Casework Request".
-- LODGING: relocated population can be housed in Shelters or in the prebuilt Motel. A Shelter must
-  be built (cost in `state.costs.build`) and staffed before it is InUse. The Motel needs no
-  construction; it charges a per-resident daily cost reported as `motelDailyCost`.
-- CASEWORK / return-home: a "Casework Request" can be resolved only if a CaseworkSite has already
-  been built and staffed.
-- Buildings have `status`: UnderConstruction -> NeedWorker -> InUse (InUse only when
-  `workers >= needWorkers`). Construction takes ~1 day (~4 ROUNDS); staff() works only once status is NeedWorker. Kitchens hold/produce food (foodPacks);
-  Shelters/Motel hold population (capacity).
-- Workers: trained (2 workforce, $500) or untrained (1 workforce, $100): free, working, in-
-  training, or not-yet-arrived. You may hire, train (untrained->trained), and assign workers to
-  buildings.
-- Actions (provided each round with cost & params): construction, worker (hire/train),
-  worker_assignment, resource_transfer, deconstruction. Reference game actions by their index `i`
-  (valid for THIS round only — the list is re-enumerated every round); task choices by
-  {taskId, choiceId}. Each round you submit actions + choices, then time advances one round.
-
-RESPOND ONLY with JSON:
-{"reasoning":"<your step-by-step rationale for THIS round's decision>",
- "choices":[{"taskId":<int>,"choiceId":<int>}...], "actions":[<action_index>...], "note":"<=20 words"}
-"""
-
-
-def idx_system_prompt(variant="original"):
-    """idx-format system prompt by ablation variant: 'original' = the strategy-laden default
-    (SYSTEM_PROMPT); 'minimal' = the PIMMUR minimal-control prompt (mechanics + objective, no
-    strategy)."""
-    return MINIMAL_SYSTEM_PROMPT if variant == "minimal" else SYSTEM_PROMPT
-
+# ── idx-format prompts: RETIRED 2026-08-21 ─────────────────────────────────
+# The numbered-action-menu ("idx") surface, its three prompts (OLD/NEW/MINIMAL_SYSTEM_PROMPT),
+# idx_system_prompt(), and the ARC_PROMPT_VERSION toggle were removed. The dispatch in
+# benchmark_models had no idx branch, so `--action_format idx` (the former CLI default) was
+# unreachable code. cmd and tools are the supported surfaces.
 
 # ── cmd-format prompts (state-only obs, command-tag grammar) ────────────────
 
@@ -233,7 +120,8 @@ ENTITIES & RULES (mechanics only — no strategy is given):
   Advisory tasks include "Casework Request".
 - LODGING: relocated population can be housed in Shelters or the prebuilt Motel. A Shelter must be
   built (cost in `state.costs.build`) and staffed before InUse. The Motel needs no construction; it
-  charges a per-resident daily cost reported as `motelDailyCost`.
+  charges a per-resident cost that repeats EVERY DAY the resident stays, reported as
+  `motelDailyCost`. A Shelter, once InUse, costs nothing per day.
 - CASEWORK / return-home: a "Casework Request" can be resolved only if a CaseworkSite has already been
   built and staffed.
 - Buildings have `status`: UnderConstruction -> NeedWorker -> InUse (InUse only when workers >=
@@ -308,6 +196,118 @@ CMD_MINIMAL_V2_SYSTEM_PROMPT = (
 )
 
 
+
+# ── minimal_v3: rewritten from scratch, not layered ─────────────────────────
+# minimal_v2 was minimal + a chain of .replace() patches, each added to fix one observed failure.
+# The result described the ACTION GRAMMAR in detail while barely describing the GAME: a model was
+# told how to call build() but never what a shelter holds, what a kitchen makes, what a worker
+# costs, or that vehicles gate every delivery. v3 states the mechanics plainly and drops the
+# accumulated scaffolding. Every quantity below is read from the live engine, not from the old
+# prompt text -- the v2 line "untrained (1 workforce, $100) or trained (2 workforce, $300)"
+# disagreed with state.costs, which reports hireUntrained=200 / hireTrained=1000 / train=300.
+# Capacities verified from observed facilities: Shelter cap 100, CaseworkSite cap 400,
+# Community cap 400, Motel cap 3000, Kitchen food peaks at 200; needWorkers=4 for all three
+# buildable types; logistics.vehiclesFree observed in 0..3.
+# STRATEGY REMAINS OUT: capacities/costs/timings are rules, but nothing here ranks an option,
+# suggests an ordering, or tells the model what to prioritize.
+CMD_MINIMAL_V3_SYSTEM_PROMPT = """You are the director of a flood disaster response, played as a turn-based resource game.
+
+SCENARIO: a flood has struck. People must be evacuated from nearby communities into shelters or the
+motel, fed with food produced in kitchens, and ultimately processed at casework sites so they can
+return home.
+
+OBJECTIVE: maximize cumulative score over the WHOLE game (`roundsLeft` rounds remain). Each round the
+score rewards meeting community needs — food, lodging, and casework — and subtracts cost-inefficiency
+(spend per unit of need served). Budget is finite and may go negative.
+
+THE MAP
+- Communities — where residents start; each holds up to 400 people.
+- Motel — prebuilt lodging, capacity 3000. It charges a per-resident cost that repeats EVERY DAY the
+  resident stays, reported as `motelDailyCost`.
+- Build sites — empty lots listed in `available.buildSites`, one building each.
+Communities and the Motel show `status: Passive`: they are prebuilt fixtures, cannot be built or
+deconstructed, and need no staffing. They exist only to hold population and food.
+
+BUILDINGS — each costs `state.costs.build` ($2000) and needs 4 workforce units to operate.
+- shelter    houses up to 100 residents. Once InUse it costs nothing per day.
+- kitchen    produces and holds food, up to 200 meals; stock replenishes over time and is drawn down
+             as deliveries leave.
+- casework   processes residents so they can return home; capacity 400. A "Casework Request" can be
+             resolved only once a casework site is built and staffed.
+A new building is UnderConstruction for ~1 day (~4 rounds), then NeedWorker, then InUse once staffed
+to its `needWorkers`. A building you build THIS turn is still UnderConstruction and cannot be staffed
+until it finishes.
+
+WORKFORCE
+- hire untrained — `state.costs.hireUntrained` ($200) each, worth 1 workforce unit.
+- hire trained — `state.costs.hireTrained` ($1000) each, worth 2 workforce units.
+- train — promotes an untrained worker to trained for `state.costs.train` ($300).
+- Workers do nothing until staffed to a building. Staffing is counted in WORKFORCE UNITS, so a
+  building needing 4 takes 4 untrained, or 2 trained, or one of each plus 1.
+
+LOGISTICS
+- Three delivery vehicles serve the whole map; `logistics.vehiclesFree` is how many are idle now.
+- Every delivery — food to a facility, people into lodging — occupies one free vehicle for roughly a
+  round and costs no budget. A delivery requested with no idle vehicle does not happen.
+
+TASKS — the community's incoming requests.
+- Demand and Emergency tasks are needs (food, or relocating people into lodging). Advisory tasks
+  include "Casework Request".
+- Each task carries numbered choices; committing to one resolves it. A task has `roundsLeft`, and
+  expires unresolved if you let it run out.
+- CHOICE IDS are the numbers printed before each colon under a task. They are NOT 0-based and NOT
+  contiguous — a task may offer only {1,2} or {2,3,4}. Use exactly the ids printed for that task on
+  this turn, and re-read them every turn: options are removed as they become infeasible. A task shown
+  with NO choice lines is informational; there is nothing to call for it.
+"""
+
+
+# ── minimal_v4: v3 + the delivery/logistics mechanics ───────────────────────
+# Everything here was read out of the Unity source, not inferred from play:
+#   * Vehicle.cs:25 and Prefabs/Vehicle.prefab:104 -- maxCargoCapacity = 10 food packs. The
+#     encoder renders packs x10, so ONE vehicle-load == the "100 meals" choice exactly.
+#   * DeliverySystem.cs:235-249 -- a request is chopped into ceil(qty / maxCapacity) delivery
+#     tasks, each needing its own vehicle; DeliverySystem.cs:429 refuses any vehicle whose
+#     capacity is below a task's quantity, which is why the split has to happen first. So
+#     "200 meals" costs TWO of the three vehicles, and v3's "occupies one free vehicle" was
+#     simply wrong for that option.
+#   * Community_FoodRequest.asset choiceId 2 -- immediateDelivery: 1, enableMultipleDeliveries: 0.
+#     The paid option bypasses the fleet entirely.
+#   * TaskSystem.cs:647-666 + Vehicle.cs:317 -- if a vehicle carrying a delivery for a task you
+#     COMMITTED to is stopped (road blockage / flood), the task is marked Incomplete and
+#     deliveryFailureSatisfactionPenalty is subtracted: 15 on the two FoodRequest assets, 10 on
+#     every other task asset. NOTE: this is an event, not a deadline -- deliveryTimeLimit (300)
+#     is declared in TaskData.cs:62 and copied in TaskSystem.cs:1497 but never compared against
+#     anything, so there is NO delivery timeout in this build and the prompt must not imply one.
+# Measured motivation: Sonnet 5 picked the 2-vehicle option in 78% of its food answers, sat at
+# zero free vehicles 27.3% of rounds, and delivered less than half the food of Haiku (which
+# picked it 5% of the time) despite running MORE kitchens.
+# STILL NO STRATEGY: this states load size, vehicle cost, and the failure penalty. It does not
+# say which option to pick, when to pay, or how many kitchens to run.
+_V4_LOGISTICS = """LOGISTICS
+- Three delivery vehicles serve the whole map; `logistics.vehiclesFree` is how many are idle now.
+- One vehicle carries one load of 100 meals. A request larger than that is split into several
+  loads, each needing its OWN free vehicle — so a 200-meal request occupies two vehicles, and a
+  request is not satisfied until every load has arrived.
+- A delivery costs no budget and occupies its vehicle for roughly a round. A delivery requested
+  with no idle vehicle does not happen.
+- Choices marked immediate (Helicopter / Rapid Response Vehicle) arrive at once and use NO
+  vehicle from the fleet; their budget cost is shown in the choice.
+- Roads can be blocked and vehicles can be stopped by flooding. If that happens to a delivery
+  for a task you already committed to, the task is marked incomplete and satisfaction is
+  reduced — by 15 for a food request, 10 for other tasks."""
+
+
+# v4 = v3 with its LOGISTICS section replaced wholesale. Anchored on the exact v3 text so a
+# future edit to v3's logistics wording fails loudly here instead of silently producing a v4
+# that still carries the old, wrong "occupies one free vehicle" claim.
+_V3_LOGISTICS = """LOGISTICS
+- Three delivery vehicles serve the whole map; `logistics.vehiclesFree` is how many are idle now.
+- Every delivery — food to a facility, people into lodging — occupies one free vehicle for roughly a
+  round and costs no budget. A delivery requested with no idle vehicle does not happen."""
+assert _V3_LOGISTICS in CMD_MINIMAL_V3_SYSTEM_PROMPT, "v3 LOGISTICS anchor changed; update v4"
+CMD_MINIMAL_V4_SYSTEM_PROMPT = CMD_MINIMAL_V3_SYSTEM_PROMPT.replace(_V3_LOGISTICS, _V4_LOGISTICS, 1)
+
 # ── Tool-mode prompt (Phase B) — typed tools instead of the cmd-tag grammar ──────
 # The tool-using wings (live officer, RL policy, benchmark tool mode) share the SAME
 # mechanics preamble as the cmd prompt, but swap the "HOW TO ACT — emit COMMAND TAGS"
@@ -338,17 +338,389 @@ STAFF ONLY buildings listed in `available.needStaff`, passing the EXACT name sho
 building not in `needStaff` is either already fully staffed or not yet built, and staffing it is
 rejected. `staff` counts are in WORKFORCE UNITS (untrained = 1, trained = 2).
 
-Prefer the stable task tokens (BUDGET_DAILY, FOOD_C01, ...) shown in each task's id when calling
-`task`; a raw integer taskId also works but is less stable across turns.
+{TASK_ID_LINE}
+
+CHOICE IDS are the numbers printed before each colon under a task. They are NOT 0-based and NOT
+contiguous — a task may offer only {1,2} or {2,3,4}. Use exactly the ids printed for that task on
+this turn, and re-read them every turn: options are removed from the list as they become infeasible.
+A task shown with NO choice lines is informational; there is nothing to call for it.
 
 The `available` block tells you exactly what is executable this turn. A spend larger than your
 budget is ALLOWED — the budget may go negative (it is penalized in your score, not blocked). Calls
 that are genuinely invalid (unknown building, nonexistent choice, or staffing a building still
-UnderConstruction) are reported back to you as failures — a failure is honest signal, never
-something to hide.
+UnderConstruction) are silently dropped — you get NO error and NO confirmation. Verify what
+happened by comparing the next observation's budget, facilities and available blocks.
 
 Taking NO action is a valid turn: if nothing improves the situation, call no tools rather than
 acting for its own sake.
+
+RESPOND with one short line of reasoning, then your tool calls."""
+
+
+
+# v3 tool section. Differences from _TOOL_HOW_TO_ACT, all of them removals of scaffolding that the
+# v3 mechanics sections now cover properly:
+#   * EXECUTION ORDER loses its own heading -- the fixed resolution order and the "cannot staff what
+#     you built this turn" consequence are real mechanics, so they are KEPT, just stated inline.
+#   * the STAFF ONLY paragraph is gone: `available.needStaff` is named once, in the staff() signature,
+#     so there is a single source of truth for what is staffable.
+#   * the CHOICE IDS paragraph moves to the TASKS section, where the rest of task mechanics live.
+_TOOL_HOW_TO_ACT_V3 = """HOW TO ACT — call the typed action tools. You are given tools; call them
+to act. Each call is one action, resolved against the live state:
+  build(type, site_id)        type = kitchen | shelter | casework; site_id from `available.buildSites`.
+  hire(kind, count)           kind = untrained | trained.
+  train(count)                promote untrained workers to trained.
+  staff(site, count)          assign free workforce, counted in WORKFORCE UNITS, to a building listed
+                              in `available.needStaff`, passing the EXACT name shown there.
+  deconstruct(site)           tear down a building, freeing its site.
+  task(task_id, choice_id)    answer an active task with one of its offered choices.
+  transfer(resource, source, dest, qty)  move food/people between facilities via a free vehicle.
+You may make several calls in one step. They resolve in a fixed order —
+deconstruct, build, hire, train, staff, transfer — not the order you wrote them in, so hiring and
+staffing in the same turn works; but a building you build this turn is still UnderConstruction when
+staff resolves, so it cannot be staffed until a later turn.
+
+{TASK_ID_LINE}
+
+`available` is the single source of truth for what is executable this turn. A spend larger than your
+budget is ALLOWED — the budget may go negative (it is penalized in your score, not blocked). Calls
+that are genuinely invalid are silently dropped — you get NO error and NO confirmation. Verify what
+happened by comparing the next observation's budget, facilities and available blocks.
+
+Taking NO action is a valid turn: if nothing improves the situation, call no tools rather than
+acting for its own sake.
+
+RESPOND with one short line of reasoning, then your tool calls."""
+
+
+# ── minimal_v6 ablation table ──────────────────────────────────────────────
+# For leave-one-out prompt ablation, each key maps to a byte-exact substring
+# of the minimal_v6 rendered prompt (either preamble or HOW-TO-ACT), removed
+# by tool_system_prompt when ARC_ABLATE_RULE=<key> is set. Rows correspond to
+# analysis/ablation/rule_inventory.csv. Any drift between these strings and
+# the actual v6 constants will raise at import; the smoke test at the bottom
+# of this file (run under __main__) verifies each key still substrings.
+_ABLATION_RULE_TEXT: dict[str, str] = {
+    "R01": (
+        "- Motel — prebuilt lodging, capacity 3000. Charges a per-resident cost that repeats EVERY DAY the\n"
+        "  resident stays, reported as `motelDailyCost`.\n"
+    ),
+    "R02": (
+        "Communities and the Motel show `status: Passive`: they are prebuilt fixtures, cannot be built or\n"
+        "deconstructed, and need no staffing. They hold population and food.\n"
+    ),
+    "R03": (
+        "A building you build THIS turn is still UnderConstruction and cannot be staffed\n"
+        "until it finishes.\n"
+    ),
+    "R04": (
+        " A \"Casework Request\" can be\n"
+        "             resolved only once a casework site is built and staffed."
+    ),
+    "R05": (
+        "- Workers contribute nothing until staffed to a building. Staffing is counted in WORKFORCE UNITS, so a\n"
+        "  building needing 4 accepts 4 untrained, or 2 trained, or one of each plus 1.\n"
+    ),
+    "R06": (
+        "- Every delivery — food to a facility, people into lodging — occupies one free vehicle for roughly a\n"
+        "  round and adds nothing to spend. A delivery requested with no idle vehicle does not happen.\n"
+    ),
+    "R07": (
+        "- Each task carries numbered choices; committing to one resolves it. A task has `roundsLeft`, and\n"
+        "  expires unresolved if you let it run out.\n"
+    ),
+    "R08": (
+        "- CHOICE IDS are the numbers printed before each colon under a task. They are NOT 0-based and NOT\n"
+        "  contiguous — a task may offer only {1,2} or {2,3,4}. Use exactly the ids printed for that task on\n"
+        "  this turn, and re-read them every turn: options are removed as they become infeasible."
+    ),
+    "R09": (
+        " A task shown\n"
+        "  with NO choice lines is informational; there is nothing to call for it.\n"
+    ),
+    "R10": (
+        # NOTE: manual_transfers=False strips ", transfer" from the resolve-order
+        # enumeration in tool_system_prompt, so this string matches the RENDERED
+        # (post-strip) form. If manual_transfers=True is ever used, this key needs
+        # a second variant with ", transfer" present.
+        "You may make several calls in one step. They resolve in a fixed order —\n"
+        "deconstruct, build, hire, train, staff — not the order you wrote them in, so hiring and\n"
+        "staffing in the same turn works; but a building you build this turn is still UnderConstruction when\n"
+        "staff resolves, so it cannot be staffed until a later turn.\n"
+    ),
+    "R11": (
+        "`available` is the single source of truth for what is executable this turn. "
+    ),
+    "R12": (
+        "A spend larger than your\n"
+        "budget is ALLOWED — the budget may go negative (it is included in the score, not blocked). "
+    ),
+    "R13": (
+        "Calls\n"
+        "that are genuinely invalid are silently dropped — you get NO error and NO confirmation. Verify what\n"
+        "happened by comparing the next observation's budget, facilities and available blocks.\n"
+    ),
+    # ── R14–R25: content chunks that remain in v6 after R01–R13 are stripped.
+    # Purpose: probe how far the prompt can be gutted before behaviour breaks.
+    # Do NOT touch the tool signatures themselves — those are structural (parser
+    # + arg types); removing them breaks tool-use.
+    "R14": (
+        "SCENARIO: a flood has struck. Residents live in communities. Shelters and the Motel hold people;\n"
+        "kitchens produce food; casework sites process residents so they can return home.\n\n"
+    ),
+    "R15": (
+        "SCORE (per round; cumulative across the game): score = satisfaction_terms − cost_efficiency_terms.\n"
+        "The satisfaction terms credit met community needs (food, lodging, casework). The cost-efficiency\n"
+        "terms subtract based on spend per unit of need served. `roundsLeft` is the number of rounds\n"
+        "remaining. Budget is finite and may go negative.\n\n"
+    ),
+    "R16": (
+        "THE MAP\n"
+        "- Communities — each holds up to 400 people; residents start here.\n"
+    ),
+    "R17": (
+        "- Build sites — empty lots listed in `available.buildSites`, one building each.\n"
+    ),
+    "R18": (
+        "BUILDINGS — each costs `state.costs.build` ($2000) and needs 4 workforce units to operate.\n"
+    ),
+    "R19": (
+        "- shelter    houses up to 100 residents. Once InUse it costs nothing per day.\n"
+    ),
+    "R20": (
+        "- kitchen    produces and holds food, up to 200 meals; stock replenishes over time and is drawn down\n"
+        "             as deliveries leave.\n"
+    ),
+    "R21": (
+        "- casework   processes residents so they can return home; capacity 400."
+    ),
+    "R22": (
+        "A new building is UnderConstruction for ~1 day (~4 rounds), then NeedWorker, then InUse once staffed\n"
+        "to its `needWorkers`. "
+    ),
+    "R23": (
+        "WORKFORCE\n"
+        "- hire untrained — `state.costs.hireUntrained` ($200) each, contributes 1 workforce unit.\n"
+        "- hire trained — `state.costs.hireTrained` ($1000) each, contributes 2 workforce units.\n"
+        "- train — promotes an untrained worker to trained for `state.costs.train` ($300).\n"
+    ),
+    "R24": (
+        "LOGISTICS\n"
+        "- Three delivery vehicles serve the whole map; `logistics.vehiclesFree` is how many are idle now.\n"
+    ),
+    "R25": (
+        "TASKS — the community's incoming requests.\n"
+        "- Demand and Emergency tasks are needs (food, or relocating people into lodging). Advisory tasks\n"
+        "  include \"Casework Request\".\n"
+    ),
+    # ── R26–R34: tool-call prose that remains after R01–R25 stripped.
+    # These strip the redundant prose signatures + wire-format banner. The
+    # actual tool schemas continue to reach the model via the chat template's
+    # <tools>...</tools> block (see arc_tools.yaml), so removing the prose
+    # tests whether the schema alone is sufficient.
+    "R26": (
+        "  build(type, site_id)        type = kitchen | shelter | casework; site_id from `available.buildSites`.\n"
+    ),
+    "R27": (
+        "  hire(kind, count)           kind = untrained | trained.\n"
+    ),
+    "R28": (
+        "  train(count)                promote untrained workers to trained.\n"
+    ),
+    "R29": (
+        "  staff(site, count)          assign free workforce, counted in WORKFORCE UNITS, to a building listed\n"
+        "                              in `available.needStaff`, passing the EXACT name shown there.\n"
+    ),
+    "R30": (
+        "  deconstruct(site)           tear down a building, freeing its site.\n"
+        "  task(task_id, choice_id)    answer an active task with one of its offered choices.\n"
+    ),
+    "R31": (
+        "\nCall `task` with the id string printed for that task, exactly as shown (e.g. BUDGET_DAILY). Ids are stable across turns.\n\n"
+    ),
+    "R32": (
+        "\n\nEmit your tool calls. Optionally include any reasoning before them."
+    ),
+    "R33": (
+        "HOW TO ACT — call the provided FUNCTIONS. Each turn you may emit any number\n"
+        "of `<tool_call>{\"name\": \"...\", \"arguments\": {...}}</tool_call>` blocks; their argument schemas are\n"
+        "listed above. Each call is one action, resolved against the live state:\n"
+    ),
+    "R34": (
+        "You are a participant in a turn-based resource game modeling flood disaster response.\n"
+    ),
+}
+
+
+# ── minimal_v5: rewritten from scratch, not layered ─────────────────────────
+# v3's `_TOOL_HOW_TO_ACT_V3` closed with "Taking NO action is a valid turn: if nothing
+# improves the situation, call no tools rather than acting for its own sake." Measured on
+# the current benchmark set, `rounds doing nothing` correlates −0.663 with final score;
+# the two worst-scoring runs left 44% / 47% of rounds empty, and the top scorer (Haiku 4.5)
+# left 7.5%. The permission-to-noop line was cargo-culted, not used sparingly.
+#
+# v5 doesn't monkey-patch v3 — it re-articulates the whole HOW-TO-ACT section around
+# the game's actual cost of idleness (unresolved tasks accrue penalty and expire; undelivered
+# lodging/food shows up as a satisfaction drop next round), while keeping the SAME action
+# grammar, SAME resolve order, and SAME available-is-truth rule that v3 landed on.
+#
+# What is NEW here:
+#   * The section opens with a play-to-win framing before the tool list, so the tool list is
+#     read as "here are the levers you WILL pull," not "here is a menu you may sample."
+#   * The idleness clause is inverted: skipping a round is bounded to concrete cases
+#     (no budget, no idle workers, no vehicles, no answerable task), not "if nothing improves."
+#     Empirically "nothing improves the situation" was the weasel phrase; a concrete predicate
+#     is harder to over-apply.
+#   * The satisfaction-decay mechanic is spelled out so the model can reason about the cost
+#     of a passive round instead of guessing.
+# What is UNCHANGED and kept verbatim from v3 (so the two versions are directly comparable):
+#   * Tool signatures and their argument grammar.
+#   * Resolve order (deconstruct, build, hire, train, staff, transfer) and the "build-then-
+#     staff" gotcha.
+#   * {TASK_ID_LINE} interpolation for stable-vs-drifting task ids.
+#   * "spend larger than budget is allowed, negative budget is penalised" wording.
+#   * "invalid calls are silently dropped, verify by re-reading the next observation."
+#   * Response format: one line of reasoning, then tool calls.
+# The mechanics preamble is still CMD_MINIMAL_V3_SYSTEM_PROMPT — its content is verified
+# against Unity source and rewriting it here would risk introducing factual drift.
+# ── minimal_v6: pure rules + action grammar, ZERO strategic guidance ──────────
+# v3 already scrubbed the mechanics preamble of prioritization hints, but three
+# strategic surfaces remained:
+#   1. the word "maximize" in OBJECTIVE (a directive, not a rule)
+#   2. the "Taking NO action is a valid turn" paragraph in _TOOL_HOW_TO_ACT_V3
+#   3. the "PLAY TO WIN" paragraph added in _TOOL_HOW_TO_ACT_V5
+#
+# v5 empirically confirmed that action-bias in the HOW-TO-ACT section changes
+# play in ways that are model-specific (Haiku 4.5: +9% score, 35% → 6.6% empty
+# rounds; Sonnet 5: −22% score, lodging fulfillment 0.837 → 0.591 because it
+# started routing to the paid Motel to satisfy the "no skips" pressure).
+# The two directions cancel — the prompt was steering, not neutral.
+#
+# v6 makes the steering explicit: the model gets the WORLD MODEL (mechanics,
+# quantities, action grammar, scoring formula, task lifecycle) and NOTHING
+# ELSE. No claims about what is "good" play, when to act, when to skip, what
+# to prefer, what is "efficient". The score formula is stated as a definition,
+# not a goal. Any pacing or prioritization strategy the model uses is its own.
+#
+# What is kept vs removed:
+#   * KEPT: tool signatures, resolve order, task-id rule, available-block
+#     authority rule, factual descriptions of every action's effect.
+#   * REMOVED: "Taking NO action is a valid turn ..."  (v3/v5-typed)
+#   * REMOVED: "PLAY TO WIN. You are the operator ..."  (v5)
+#   * REMOVED: "maximize cumulative score ..."  (v3 preamble; replaced with a
+#              declarative "Score per round = ... . Score is computed and
+#              logged; the game does not stop on any score threshold.")
+#   * REMOVED: "RESPOND with one short line of reasoning" — "short" is a hint
+#     about response length. Replaced with a neutral response-format line.
+CMD_MINIMAL_V6_SYSTEM_PROMPT = """You are a participant in a turn-based resource game modeling flood disaster response.
+
+SCENARIO: a flood has struck. Residents live in communities. Shelters and the Motel hold people;
+kitchens produce food; casework sites process residents so they can return home.
+
+SCORE (per round; cumulative across the game): score = satisfaction_terms − cost_efficiency_terms.
+The satisfaction terms credit met community needs (food, lodging, casework). The cost-efficiency
+terms subtract based on spend per unit of need served. `roundsLeft` is the number of rounds
+remaining. Budget is finite and may go negative.
+
+THE MAP
+- Communities — each holds up to 400 people; residents start here.
+- Motel — prebuilt lodging, capacity 3000. Charges a per-resident cost that repeats EVERY DAY the
+  resident stays, reported as `motelDailyCost`.
+- Build sites — empty lots listed in `available.buildSites`, one building each.
+Communities and the Motel show `status: Passive`: they are prebuilt fixtures, cannot be built or
+deconstructed, and need no staffing. They hold population and food.
+
+BUILDINGS — each costs `state.costs.build` ($2000) and needs 4 workforce units to operate.
+- shelter    houses up to 100 residents. Once InUse it costs nothing per day.
+- kitchen    produces and holds food, up to 200 meals; stock replenishes over time and is drawn down
+             as deliveries leave.
+- casework   processes residents so they can return home; capacity 400. A "Casework Request" can be
+             resolved only once a casework site is built and staffed.
+A new building is UnderConstruction for ~1 day (~4 rounds), then NeedWorker, then InUse once staffed
+to its `needWorkers`. A building you build THIS turn is still UnderConstruction and cannot be staffed
+until it finishes.
+
+WORKFORCE
+- hire untrained — `state.costs.hireUntrained` ($200) each, contributes 1 workforce unit.
+- hire trained — `state.costs.hireTrained` ($1000) each, contributes 2 workforce units.
+- train — promotes an untrained worker to trained for `state.costs.train` ($300).
+- Workers contribute nothing until staffed to a building. Staffing is counted in WORKFORCE UNITS, so a
+  building needing 4 accepts 4 untrained, or 2 trained, or one of each plus 1.
+
+LOGISTICS
+- Three delivery vehicles serve the whole map; `logistics.vehiclesFree` is how many are idle now.
+- Every delivery — food to a facility, people into lodging — occupies one free vehicle for roughly a
+  round and adds nothing to spend. A delivery requested with no idle vehicle does not happen.
+
+TASKS — the community's incoming requests.
+- Demand and Emergency tasks are needs (food, or relocating people into lodging). Advisory tasks
+  include "Casework Request".
+- Each task carries numbered choices; committing to one resolves it. A task has `roundsLeft`, and
+  expires unresolved if you let it run out.
+- CHOICE IDS are the numbers printed before each colon under a task. They are NOT 0-based and NOT
+  contiguous — a task may offer only {1,2} or {2,3,4}. Use exactly the ids printed for that task on
+  this turn, and re-read them every turn: options are removed as they become infeasible. A task shown
+  with NO choice lines is informational; there is nothing to call for it.
+"""
+
+
+# minimal_v6 HOW-TO-ACT: tool grammar + resolve rules + task-id + available-block authority.
+# No pacing paragraph, no directive framing, no length hint on the response.
+_TOOL_HOW_TO_ACT_V6 = """HOW TO ACT — call the typed action tools. Each call is one action,
+resolved against the live state:
+  build(type, site_id)        type = kitchen | shelter | casework; site_id from `available.buildSites`.
+  hire(kind, count)           kind = untrained | trained.
+  train(count)                promote untrained workers to trained.
+  staff(site, count)          assign free workforce, counted in WORKFORCE UNITS, to a building listed
+                              in `available.needStaff`, passing the EXACT name shown there.
+  deconstruct(site)           tear down a building, freeing its site.
+  task(task_id, choice_id)    answer an active task with one of its offered choices.
+  transfer(resource, source, dest, qty)  move food/people between facilities via a free vehicle.
+You may make several calls in one step. They resolve in a fixed order —
+deconstruct, build, hire, train, staff, transfer — not the order you wrote them in, so hiring and
+staffing in the same turn works; but a building you build this turn is still UnderConstruction when
+staff resolves, so it cannot be staffed until a later turn.
+
+{TASK_ID_LINE}
+
+`available` is the single source of truth for what is executable this turn. A spend larger than your
+budget is ALLOWED — the budget may go negative (it is included in the score, not blocked). Calls
+that are genuinely invalid are silently dropped — you get NO error and NO confirmation. Verify what
+happened by comparing the next observation's budget, facilities and available blocks.
+
+Emit your tool calls. Optionally include any reasoning before them."""
+
+
+_TOOL_HOW_TO_ACT_V5 = """HOW TO ACT — call the typed action tools. You are given tools; call
+them to act. Each call is one action, resolved against the live state:
+  build(type, site_id)        type = kitchen | shelter | casework; site_id from `available.buildSites`.
+  hire(kind, count)           kind = untrained | trained.
+  train(count)                promote untrained workers to trained.
+  staff(site, count)          assign free workforce, counted in WORKFORCE UNITS, to a building listed
+                              in `available.needStaff`, passing the EXACT name shown there.
+  deconstruct(site)           tear down a building, freeing its site.
+  task(task_id, choice_id)    answer an active task with one of its offered choices.
+  transfer(resource, source, dest, qty)  move food/people between facilities via a free vehicle.
+You may make several calls in one step. They resolve in a fixed order —
+deconstruct, build, hire, train, staff, transfer — not the order you wrote them in, so hiring and
+staffing in the same turn works; but a building you build this turn is still UnderConstruction when
+staff resolves, so it cannot be staffed until a later turn.
+
+PLAY TO WIN. You are the operator, not an observer. Each round: read the state, pick the
+highest-value action(s) available, and call the tools for them. An action IS the turn — a
+round without calls is a lost round, because unresolved tasks accrue their satisfaction
+penalty and expire against you, and unmet food/lodging need shows up as a satisfaction
+drop in the next observation. Skip a round only when EVERY affordance is genuinely
+unavailable — no budget for hires or builds, no idle workers to staff, no free vehicle for
+a transfer, and no active task with an answerable choice. That combination is rare; in a
+normal round there is always something to do.
+
+{TASK_ID_LINE}
+
+`available` is the single source of truth for what is executable this turn. A spend larger than your
+budget is ALLOWED — the budget may go negative (it is penalized in your score, not blocked). Calls
+that are genuinely invalid are silently dropped — you get NO error and NO confirmation. Verify what
+happened by comparing the next observation's budget, facilities and available blocks.
 
 RESPOND with one short line of reasoning, then your tool calls."""
 
@@ -370,14 +742,37 @@ listed above. Each call is one action, resolved against the live state:"""
 _TOOL_TYPED_HEADER_END = "resolved against the live state:"
 
 
+# The `task` id format the model is TOLD to use must match what obs_encoder actually RENDERS.
+# obs_encoder line 441 keys off ARC_STABLE_TASK_TOKENS: =1 renders the stable token, =0 renders
+# the raw integer taskId. This prompt used to hardcode "prefer the stable tokens (BUDGET_DAILY,
+# FOOD_C01, ...)" while the benchmark launcher ran with =0, so the tokens were never on screen.
+# Models copied the two literal examples or invented same-shaped names (CASWORK_REQUEST,
+# DAILY_BUDGET_ALLOCATION) and cmd_parser dropped every one BEFORE execution -- silently, since a
+# parser-rejected command never reaches env.step and so never counts in nFail. Measured on the
+# n=32 canonical cell: 1.90 rejections/round for Qwen3-4B, hitting 69.1% of its rounds, vs 0.03
+# for Qwen3.5-4B. Deriving the sentence from the same env var keeps the two from drifting again.
+def _task_id_line() -> str:
+    import os
+    if os.environ.get("ARC_STABLE_TASK_TOKENS", "1").strip() == "1":
+        return ("Call `task` with the id string printed for that task, exactly as shown (e.g. "
+                "BUDGET_DAILY). Ids are stable across turns.")
+    return ("Call `task` with the integer id printed for that task, exactly as shown. Unity "
+            "reassigns these each turn, so re-read the id from the CURRENT observation rather "
+            "than reusing one from an earlier turn. Only tasks listed this turn can be answered.")
+
+
 def tool_system_prompt(manual_transfers=False, variant="minimal", wire_format="typed"):
     """Tool-mode system prompt: the cmd prompt's mechanics preamble + the typed-tool directive.
 
     Shared by the live officer, the RL policy, and the benchmark tool mode so all three present
     the model the SAME world description and the SAME action semantics — only the action FORMAT
     (typed tool calls) differs from the cmd arm. `variant` selects the mechanics preamble
-    (minimal/minimal_v2/original); manual_transfers is accepted for signature parity (transfer is
-    a tool, gated by the schema, so the cmd transfer-doc is not appended)."""
+    (minimal/minimal_v2/original). manual_transfers must ALSO strip the transfer line from the
+    tool directive: gating the schema alone is not enough, because the prose still advertises an
+    action the model cannot take. Measured on the 32-round benchmark, models that read the prose
+    burned up to 6.9% of rounds attempting rejected transfers (Qwen3.6-27B 71/1024 rounds), and
+    the effect was WORST on the strongest models -- a systematic bias against the capability the
+    benchmark measures."""
     if wire_format not in ("typed", "hermes"):
         raise ValueError(f"wire_format must be 'typed' or 'hermes', got {wire_format!r}")
     base = cmd_system_prompt(manual_transfers=False, variant=variant)
@@ -385,14 +780,100 @@ def tool_system_prompt(manual_transfers=False, variant="minimal", wire_format="t
         preamble = base.split(_TOOL_ANCHOR, 1)[0]
     else:
         preamble = base
-    how = _TOOL_HOW_TO_ACT
+    if variant == "minimal_v6":
+        how = _TOOL_HOW_TO_ACT_V6
+        # Ablation hook: ARC_ABLATE_RULE=Rxx removes the exact text of rule Rxx.
+        # Multi-rule ablation: ARC_ABLATE_RULE=R07,R09,R10 removes ALL listed rules
+        # atomically — used by Plackett-Burman and cumulative strip-K sweeps.
+        # Paraphrase hook: ARC_ABLATE_RULE=Rxx_Ppid_name REPLACES the exact text
+        # of rule Rxx with the paraphrase text (single-rule only; paraphrases and
+        # multi-rule cannot mix).
+        # Set ARC_ABLATE_RULE=NONE or unset for the full v6 baseline.
+        import os as _os
+        _rule = _os.environ.get("ARC_ABLATE_RULE", "").strip()
+        _pending_preamble_strips: list[tuple[str, str]] = []  # (find, replace) pairs
+        if _rule and _rule.upper() != "NONE":
+            _rule_upper = _rule.upper()
+            if "," in _rule_upper:
+                # Multi-rule removal. Paraphrase syntax not allowed here.
+                if "_P" in _rule_upper:
+                    raise ValueError(
+                        f"ARC_ABLATE_RULE={_rule!r}: cannot combine paraphrase (_P) "
+                        "with comma-separated multi-rule removal"
+                    )
+                _rule_ids = [r.strip().upper() for r in _rule.split(",") if r.strip()]
+                for _rid in _rule_ids:
+                    _drop = _ABLATION_RULE_TEXT.get(_rid)
+                    if _drop is None:
+                        raise ValueError(
+                            f"ARC_ABLATE_RULE={_rule!r}: rule {_rid!r} not in "
+                            f"_ABLATION_RULE_TEXT keys: {sorted(_ABLATION_RULE_TEXT)}"
+                        )
+                    if _drop in how:
+                        how = how.replace(_drop, "", 1)
+                        while "\n\n\n" in how:
+                            how = how.replace("\n\n\n", "\n\n")
+                    _pending_preamble_strips.append((_drop, ""))
+            else:
+                _replace_with: str | None = None
+                if "_P" in _rule_upper:
+                    # Paraphrase arm: look up in analysis/ablation/paraphrases.py.
+                    import importlib.util as _iu
+                    _para_path = "/zfsauton/scratch/cpulling/CORA/analysis/ablation/paraphrases.py"
+                    _spec = _iu.spec_from_file_location("_paraphrases", _para_path)
+                    _mod = _iu.module_from_spec(_spec)
+                    _spec.loader.exec_module(_mod)  # type: ignore
+                    if _rule not in _mod.PARAPHRASE_ARMS:
+                        raise ValueError(
+                            f"ARC_ABLATE_RULE={_rule!r} not found in PARAPHRASE_ARMS: "
+                            f"{sorted(_mod.PARAPHRASE_ARMS)}"
+                        )
+                    _base_rid, _replace_with = _mod.PARAPHRASE_ARMS[_rule]
+                    _rule = _base_rid  # fall through to strip the original; then re-insert
+                _drop = _ABLATION_RULE_TEXT.get(_rule.upper())
+                if _drop is None:
+                    raise ValueError(
+                        f"ARC_ABLATE_RULE={_rule!r} not in _ABLATION_RULE_TEXT keys: "
+                        f"{sorted(_ABLATION_RULE_TEXT)}"
+                    )
+                if _drop in how:
+                    how = how.replace(_drop, _replace_with or "", 1)
+                    if _replace_with is None:
+                        while "\n\n\n" in how:
+                            how = how.replace("\n\n\n", "\n\n")
+                _pending_preamble_strips.append((_drop, _replace_with or ""))
+    elif variant == "minimal_v5":
+        how = _TOOL_HOW_TO_ACT_V5
+    elif variant in ("minimal_v3", "minimal_v4"):
+        how = _TOOL_HOW_TO_ACT_V3
+    else:
+        how = _TOOL_HOW_TO_ACT
+    if not manual_transfers:
+        # Drop the transfer affordance from the prose so it matches cora_tools.openai_tools(),
+        # which already omits the tool in task_only mode.
+        how = "\n".join(l for l in how.splitlines() if not l.lstrip().startswith("transfer(resource"))
+        how = how.replace("deconstruct, build, hire, train,\nstaff, transfer", "deconstruct, build, hire, train,\nstaff")
+        how = how.replace("deconstruct, build, hire, train, staff, transfer",
+                          "deconstruct, build, hire, train, staff")
     if wire_format == "hermes":
         # Swap ONLY the opening paragraph; every rule after the signature list is shared.
         head, sep, rest = how.partition(_TOOL_TYPED_HEADER_END)
         if not sep:                       # header text changed — fail loudly, never silently
             raise RuntimeError("tool prompt header anchor missing; hermes variant cannot be built")
         how = _TOOL_HERMES_HEADER + rest
-    return preamble.rstrip() + "\n\n" + how
+    out = preamble.rstrip() + "\n\n" + how
+    out = out.replace("{TASK_ID_LINE}", _task_id_line())
+    # Ablation: for minimal_v6 variant, apply every pending (find, replace) pair
+    # against the assembled prompt so rules whose text lives in the preamble get
+    # stripped/paraphrased as well. Multi-rule sweeps queue several strips here.
+    if variant == "minimal_v6" and locals().get("_pending_preamble_strips"):
+        for _drop, _repl in _pending_preamble_strips:
+            if _drop in out:
+                out = out.replace(_drop, _repl, 1)
+                if not _repl:
+                    while "\n\n\n" in out:
+                        out = out.replace("\n\n\n", "\n\n")
+    return out
 
 
 def cmd_system_prompt(manual_transfers=True, variant="original"):
@@ -400,10 +881,19 @@ def cmd_system_prompt(manual_transfers=True, variant="original"):
     minimal-control; 'minimal_v2' = minimal + the prompt-side fix layer, paired with the _V2
     encoding fixes), with the manual-transfer grammar appended only when transfers are enumerated
     (manual mode). Keeps the prompt faithful to the actual action surface."""
-    if variant == "minimal_v2":
+    if variant == "minimal_v6":
+        base = CMD_MINIMAL_V6_SYSTEM_PROMPT
+    elif variant == "minimal_v4":
+        base = CMD_MINIMAL_V4_SYSTEM_PROMPT
+    elif variant in ("minimal_v3", "minimal_v5"):
+        # v5 uses the v3 mechanics preamble; only the HOW-TO-ACT section differs (see
+        # _TOOL_HOW_TO_ACT_V5 for the deleted paragraph).
+        base = CMD_MINIMAL_V3_SYSTEM_PROMPT
+    elif variant == "minimal_v2":
         base = CMD_MINIMAL_V2_SYSTEM_PROMPT
     elif variant == "minimal":
         base = CMD_MINIMAL_SYSTEM_PROMPT
     else:
         base = CMD_SYSTEM_PROMPT
+    base = base.replace("{TASK_ID_LINE}", _task_id_line())
     return base + (CMD_TRANSFER_DOC if manual_transfers else "")

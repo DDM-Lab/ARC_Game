@@ -25,6 +25,18 @@ import json as _json
 from typing import Any, Iterable, Optional
 
 
+def _task_id_desc() -> str:
+    """Task-id description matching the live rendering (mirrors cora_prompts._task_id_line)."""
+    import os
+    if os.environ.get("ARC_STABLE_TASK_TOKENS", "1").strip() == "1":
+        return ("The task's id string, copied exactly as shown in this turn's observation (e.g. "
+                "BUDGET_DAILY). Must match a task actually offered this turn — ids not listed "
+                "this turn are dropped.")
+    return ("The task's integer id, copied exactly as shown in this turn's observation. Unity "
+            "reassigns these every turn, so read it from the CURRENT observation rather than "
+            "reusing one from an earlier turn. Ids not listed this turn are dropped.")
+
+
 # ── Canonical typed tool definitions ────────────────────────────────────────
 # Each tool: name (== cmd-tag name), description, and ORDERED params. `required`
 # defaults to all params. `manual_only` tools are omitted unless manual transfers
@@ -37,16 +49,23 @@ _TOOLS: list[dict] = [
             ("type", {"type": "string", "enum": ["kitchen", "shelter", "casework"],
                       "description": "The building type to construct."}),
             ("site_id", {"type": "integer",
-                         "description": "The integer site_id offered this turn under the construction action group."}),
+                         "description": "An integer site id from `available.buildSites` this turn."}),
         ],
     },
     {
         "name": "hire",
-        "description": ("Hire N workers of a given kind. Trained workers cost more but count as "
-                        "2 workforce units when assigned."),
+        # Pure-rules policy (see minimal_v6 block-comment in cora_prompts.py):
+        # description states what the action does, not tradeoffs. "cost more" and
+        # "cheap/expensive" are biasing framings and are omitted — the price and
+        # workforce-unit numbers already appear in the kind param description and
+        # in the WORKFORCE section of the system prompt, so redundant + biased
+        # phrasing is strictly worse than a neutral rule.
+        "description": "Hire N workers of the given kind.",
         "params": [
             ("kind", {"type": "string", "enum": ["untrained", "trained"],
-                      "description": "Whether to hire untrained (cheap, 1 workforce unit) or trained (expensive, 2 units) workers."}),
+                      "description": ("untrained: 1 workforce unit at `costs.hireUntrained`. "
+                                      "trained: 2 workforce units at `costs.hireTrained`. "
+                                      "Both prices print under `costs:` each turn.")}),
             ("count", {"type": "integer", "description": "Number of workers to hire, 1-127."}),
         ],
     },
@@ -70,9 +89,10 @@ _TOOLS: list[dict] = [
                         "this same turn IS available to staff."),
         "params": [
             ("site", {"type": "string",
-                      "description": ("Name of the facility to staff. Substring match, case-insensitive. Vocabulary: "
-                                      "Motel, Community01/02/03, Shelter/Shelter_0..4/Shelters, Kitchen/Kitchen_0..4/Kitchens, "
-                                      "Casework, CaseworkSite_0..4.")}),
+                      "description": ("The facility name, copied exactly as printed in `available.needStaff` this "
+                                      "turn (names look like 'Shelter Alpha', 'Kitchen Bravo', 'Casework Charlie'). "
+                                      "Matching is case-insensitive substring. A facility not listed in `needStaff` "
+                                      "is either fully staffed or not yet built, and the call is dropped.")}),
             ("count", {"type": "integer",
                        "description": ("Optional, in workforce UNITS (not workers): trained = 2 units, untrained = 1. "
                                        "Leave it out to staff fully. A count below the building's need is refused, "
@@ -85,7 +105,8 @@ _TOOLS: list[dict] = [
         "description": "Tear down an existing building. Frees the site and refunds nothing.",
         "params": [
             ("site", {"type": "string",
-                      "description": "Name of the facility to deconstruct. Substring match, case-insensitive. Same vocabulary as staff.site."}),
+                      "description": ("The facility name, copied exactly as printed in this turn's facilities "
+                                      "list (e.g. 'Shelter Alpha'). Matching is case-insensitive substring.")}),
         ],
     },
     {
@@ -93,11 +114,20 @@ _TOOLS: list[dict] = [
         "description": ("Respond to an active task by selecting one of its offered choices. Tasks and their "
                         "choices are enumerated at the top of each observation."),
         "params": [
-            ("task_id", {"type": "string",
-                         "description": ("Either the stable task token (BUDGET_DAILY, FOOD_C01, RELOC_C02, ...) shown in the "
-                                         "observation, or the raw integer taskId. Must match a task actually offered this turn — "
-                                         "hallucinated ids are dropped.")}),
-            ("choice_id", {"type": "integer", "description": "The integer choice_id from that task's choice list, 0-based."}),
+            # The id FORM must track what obs_encoder actually renders (ARC_STABLE_TASK_TOKENS), exactly
+            # as the system prompt's task line does. This description used to name three stable tokens
+            # while the benchmark ran with =0 and rendered integers -- and those three literals came
+            # back as the three most-rejected ids in the n=32 cell (RELOC_C02 299, FOOD_C01 287,
+            # BUDGET_DAILY 279). A tool schema conditions the model harder than prose, so a stale
+            # example here is worse than a stale sentence in the prompt.
+            ("task_id", {"type": "string", "description": _task_id_desc()}),
+            # NOT 0-based and NOT contiguous: choice ids are the ids Unity prints for that task this
+            # turn, and infeasible options are dropped from the list rather than renumbered, so a task
+            # routinely offers e.g. {1,3}. The old "0-based" claim contradicted the system prompt.
+            ("choice_id", {"type": "integer",
+                           "description": ("The integer choice_id printed for that choice in this turn's task list. "
+                                           "Ids are not 0-based and not contiguous — a task may offer only {1,3}. "
+                                           "Use exactly the ids shown for that task this turn.")}),
         ],
     },
     {

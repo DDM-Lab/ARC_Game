@@ -216,9 +216,13 @@ class ActionEnumerator:
         available_sites = construction_state.get('availableSites', [])
         construction_time = construction_state.get('constructionTimeDays', 1.0)
 
-        # Can only build if we have budget
-        if budget < self.BUILDING_CONSTRUCTION_COST:
-            return
+        # DEFICIT SPENDING ALLOWED (2026-08-21): the enumerator used to drop every build action
+        # when budget < cost, which silently removed build/hire/train for the REST of the game once
+        # a policy went negative (measured: 12,627/12,627 negative-budget rounds had build+hire+train
+        # all empty). That contradicted the system prompt ("a spend larger than your budget is
+        # ALLOWED ... penalized in your score, not blocked") and made the prompt's own claim false.
+        # Per design intent, spending into the negative is permitted on all actions; the score's
+        # cost-efficiency term is what penalizes it.
 
         # Generate action for each building type at each available site
         for site in available_sites:
@@ -269,11 +273,8 @@ class ActionEnumerator:
         MAX_HIRE_BUNDLE = 5
 
         # 1. Hire Untrained Workers (quantities: 1-MAX_HIRE_BUNDLE per action)
-        if budget >= self.UNTRAINED_WORKER_COST:
-            max_affordable = min(
-                budget // self.UNTRAINED_WORKER_COST,
-                MAX_HIRE_BUNDLE
-            )
+        if True:  # deficit spending allowed -- no affordability gate (see build note above)
+            max_affordable = MAX_HIRE_BUNDLE
 
             for quantity in range(1, max_affordable + 1):
                 action_id = f"hire_untrained_{quantity}"
@@ -298,11 +299,8 @@ class ActionEnumerator:
                 self.actions.append(action)
 
         # 2. Hire Trained Workers (quantities: 1-MAX_HIRE_BUNDLE per action)
-        if budget >= self.TRAINED_WORKER_COST:
-            max_affordable = min(
-                budget // self.TRAINED_WORKER_COST,
-                MAX_HIRE_BUNDLE
-            )
+        if True:  # deficit spending allowed -- no affordability gate
+            max_affordable = MAX_HIRE_BUNDLE
 
             for quantity in range(1, max_affordable + 1):
                 action_id = f"hire_trained_{quantity}"
@@ -327,11 +325,10 @@ class ActionEnumerator:
                 self.actions.append(action)
 
         # 3. Train Untrained Workers (quantities: 1-all available)
-        if untrained_workers > 0 and budget >= self.TRAINING_COST_PER_WORKER:
+        if untrained_workers > 0:  # deficit spending allowed -- no affordability gate
             max_trainable = min(
                 untrained_workers,
-                budget // self.TRAINING_COST_PER_WORKER,
-                10  # Maximum 10 at once
+                10  # Maximum 10 at once (no budget clamp -- deficit spending allowed)
             )
 
             for quantity in range(1, max_trainable + 1):
