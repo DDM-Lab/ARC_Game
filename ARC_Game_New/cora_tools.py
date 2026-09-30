@@ -59,17 +59,26 @@ _TOOLS: list[dict] = [
     },
     {
         "name": "staff",
-        "description": ("Assign N workforce units from the free pool to an already-built facility that "
-                        "still needs workers. A worker hired this same turn IS available to staff. "
-                        "Untrained=1 unit, trained=2 units."),
+        # Measured failure (Talos session 1bb785d1): officers read `count` as a number of
+        # WORKERS, sent count=2 meaning two trained workers (= 4 units, exactly the need), got it
+        # converted to one worker and rejected, concluded "partial staffing isn't allowed", and
+        # left three buildings unstaffed with the workers free. So `count` is now optional and
+        # omitting it staffs the building fully, which is the only staffing the game accepts.
+        "description": ("Staff an already-built facility from the free pool. A building only runs when "
+                        "FULLY staffed, so normally omit count and it is staffed with exactly the "
+                        "workforce it needs (trained workers count 2 units, untrained 1). A worker hired "
+                        "this same turn IS available to staff."),
         "params": [
             ("site", {"type": "string",
                       "description": ("Name of the facility to staff. Substring match, case-insensitive. Vocabulary: "
                                       "Motel, Community01/02/03, Shelter/Shelter_0..4/Shelters, Kitchen/Kitchen_0..4/Kitchens, "
                                       "Casework, CaseworkSite_0..4.")}),
             ("count", {"type": "integer",
-                       "description": "Workforce units to assign, 1-127. Actual amount is capped by free workforce and remaining building need."}),
+                       "description": ("Optional, in workforce UNITS (not workers): trained = 2 units, untrained = 1. "
+                                       "Leave it out to staff fully. A count below the building's need is refused, "
+                                       "because partial staffing is not allowed.")}),
         ],
+        "required": ["site"],
     },
     {
         "name": "deconstruct",
@@ -121,7 +130,8 @@ def _param_names(tool: dict) -> list[str]:
 def _json_schema(tool: dict) -> dict:
     """JSON-Schema object for a tool's arguments (shared by every provider shape)."""
     props = {name: dict(spec) for name, spec in tool["params"]}
-    return {"type": "object", "properties": props, "required": _param_names(tool)}
+    return {"type": "object", "properties": props,
+            "required": list(tool.get("required") or _param_names(tool))}
 
 
 # ── Generators: one schema → each wing's shape ──────────────────────────────

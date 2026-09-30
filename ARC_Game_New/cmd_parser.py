@@ -182,7 +182,8 @@ def parse_commands(text, env):
                     errors.append(f"staff: need BUILDING,N got '{body}'"); continue
                 # Defer: resolve after the whole text is scanned so workers hired THIS turn
                 # (in any textual order) are counted into sim_wf before we assign them.
-                staff_cmds.append((p[0], int(float(p[1]))))
+                # An empty count (the typed tool's count is optional) means "staff fully".
+                staff_cmds.append((p[0], int(float(p[1])) if p[1] else 0))
 
             elif cmd == "deconstruct":
                 bname = body.strip().lower()
@@ -254,6 +255,19 @@ def parse_commands(text, env):
         if match is None:
             errors.append(f"staff: '{raw_label}' is not staffable now "
                           f"(must be a built building still needing workers)")
+            continue
+        # Buildings only run fully staffed and the executor refuses anything else, so a
+        # partial request can never succeed. Say why here, with the fix, instead of converting
+        # it into a worker count the game then rejects with a message about worker counts
+        # (which officers misread as "partial staffing is impossible" and gave up).
+        if 0 < n < need[match]:
+            errors.append(f"staff: {match} needs {need[match]} workforce units (trained = 2, "
+                          f"untrained = 1) and only runs fully staffed; count={n} would be partial. "
+                          f"Leave count out to staff it fully.")
+            continue
+        if 0 < sim_wf < need[match]:
+            errors.append(f"staff: {match} needs {need[match]} workforce units but only {sim_wf} "
+                          f"are free; hire or finish training workers first.")
             continue
         want = min(n if n > 0 else need[match], need[match], sim_wf)
         if want <= 0:
