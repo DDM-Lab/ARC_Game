@@ -291,6 +291,39 @@ public class GlobalClock : MonoBehaviour
         }
         else
         {
+            // LLM mode: the officers write their round-start messages when a round opens. If the
+            // player tries to advance while some are still writing, ask first rather than block --
+            // a stuck button would be worse than an unread brief. Never shown in the plain game
+            // (no router connection) or once every officer has finished (router officer_status).
+            if (WebSocketManager.Instance != null && WebSocketManager.Instance.isConnected
+                && AgentConversationUI.Instance != null && AgentConversationUI.Instance.AnyOfficerGenerating
+                && ConfirmationPopup.Instance != null)
+            {
+                GameLogPanel.Instance?.LogUIInteraction("round", "advance_while_officers_writing_prompted");
+                ConfirmationPopup.Instance.ShowPopup(
+                    message: "Your officers are still writing their messages for this round. Proceed to the next round anyway?",
+                    onConfirm: () => {
+                        GameLogPanel.Instance?.LogUIInteraction("round", "advance_while_officers_writing_confirmed");
+                        // Next frame: the popup hides itself AFTER this callback, which would
+                        // hide the first-time explanation popup if it opened from here.
+                        StartCoroutine(RunNextFrame(ProceedToNextRound));
+                    },
+                    title: "Officers Still Writing");
+                return;
+            }
+            ProceedToNextRound();
+        }
+    }
+
+    static IEnumerator RunNextFrame(System.Action action)
+    {
+        yield return null;
+        action?.Invoke();
+    }
+
+    void ProceedToNextRound()
+    {
+        {
             // for the first time execution, show longer confirmation text
             if (FirstTimeActionTracker.Instance != null && FirstTimeActionTracker.Instance.IsFirstExecute())
             {
@@ -474,6 +507,13 @@ public class GlobalClock : MonoBehaviour
 
             //OnRoundEnd?.Invoke();
             SafeInvokeStatic(OnRoundEnd);
+
+            // Day 1 steps its rounds here instead of through EndSimulation, so the per-round
+            // record and checkpoint upload EndSimulation makes must be made here too (the first
+            // test-mode playthrough uploaded no round_state and no round checkpoints for day 1).
+            // Read-only; nothing about the day-1 flow changes.
+            LogRoundState();
+            LogSender.Instance?.SendRoundCheckpoint(currentDay, currentTimeSegment + 1);
         }
 
         clockAnimationUI?.Hide();
