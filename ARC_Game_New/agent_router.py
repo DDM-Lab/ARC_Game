@@ -1293,6 +1293,21 @@ Respond with ONLY the package index number (0, 1, or 2).
         entry.update(fields)
         entry.update({"state": state, "since": _now()})
         self._agent_status[name] = entry
+        # Tell the client when an officer starts or stops working, so its "writing…" indicator
+        # (and the round button's "officers still writing" check) clears even when the turn ends
+        # without a message -- round-start turns may now stay silent. Only busy/idle transitions
+        # are sent, not every step.
+        busy = state != "idle"
+        was_busy = prev.get("state") not in (None, "idle")
+        if busy != was_busy:
+            agent = self._get_agent_by_name(name)
+            frame = {"type": "officer_status", "agent_name": name,
+                     "talkinghead_endpoint": getattr(agent, "talkinghead_endpoint", "") or "",
+                     "busy": busy, "timestamp": _now()}
+            try:
+                asyncio.get_event_loop().create_task(self._send(frame))
+            except RuntimeError:
+                pass   # no running loop (offline tools/tests): nothing to notify
 
     async def _run_continuous_concurrent(self, agent: AgentConfig) -> None:
         """Drive one continuous officer's turn for a begin_round, reading the
@@ -1406,7 +1421,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             try:
                 await self._send_agent_response(
                     agent, "I hit an internal error handling that request and couldn't "
-                    "complete it — mind trying again?", "agent_response")
+                    "complete it — mind trying again?", "agent_response", origin="router_template")
             except Exception:
                 pass
 
@@ -1867,7 +1882,9 @@ Respond with ONLY the package index number (0, 1, or 2).
             else:
                 fallback = (last_text or "").strip() or "Acknowledged — nothing to add on that just now."
             try:
-                await self._send_agent_response(agent, fallback, "agent_response")
+                await self._send_agent_response(
+                    agent, fallback, "agent_response",
+                    origin="llm" if (not errored and (last_text or "").strip()) else "router_template")
                 print(f"[router]   ↩ Continuous agent {agent.subagent_name}: sent fallback "
                       f"director reply ({'error' if errored else 'silent turn'}).")
             except Exception as _e:
@@ -2250,23 +2267,38 @@ Respond with ONLY the package index number (0, 1, or 2).
         title = agent.subagent_name
         closing = "Decide what to do."
         if brief_only:
-            closing = (
-                "You have NOT been directly addressed this turn, and you act only "
-                "when the director speaks to you. You have NO action tools right now, "
-                "so do not attempt to build, hire, transfer, or propose. Send AT MOST "
-                f"ONE short send_message (to: Director) message that (1) opens by naming your "
-                f"office (you are the {title}), states your responsibility "
-                "in one line and what you can do for the director "
-                f"(you can {capabilities}), and (2) in at most 2 more sentences gives "
-                "the single biggest need in your domain, the budget remaining, and one "
-                "recommendation — then call finish. Ground any factual claim (building "
-                "counts, worker counts, shortfalls) in the situation above, the "
-                "'already committed' ledger, or a read tool (read_state, "
-                "get_facilities, get_workforce) — count anything you committed this "
-                "phase as pending, and never state a count from memory. If nothing "
-                "material has changed since your last brief, "
-                "just restate your remit in one line and call finish."
-            )
+            # Round-start turns used to ask every officer for a brief EVERY round, re-introducing
+            # its office each time: in Talos session 1bb785d1, 70 of 71 round-start turns sent a
+            # message (median 49 words against the Director's 8), which participants read as
+            # verbose and as talk that delayed action. Now: introduce yourself once, and after
+            # that speak at round start only when something needs the Director.
+            introduced = any(e.get("from") == title for e in
+                             self.message_queue.get_conversation(title, "Director"))
+            grounding = (
+                "Ground any factual claim (building counts, worker counts, shortfalls) in the "
+                "situation above, the 'already committed' ledger, or a read tool (read_state, "
+                "get_facilities, get_workforce) — count anything you committed this phase as "
+                "pending, and never state a count from memory.")
+            if not introduced:
+                closing = (
+                    "You have NOT been directly addressed this turn, and you act only when the "
+                    "director speaks to you. You have NO action tools right now, so do not attempt "
+                    "to build, hire, transfer, or propose. Send ONE short send_message (to: "
+                    f"Director) that names your office (you are the {title}), says in one line "
+                    f"what you can do for the director (you can {capabilities}), and gives the "
+                    "single most important need in your domain right now in one sentence — then "
+                    "call finish. " + grounding)
+            else:
+                closing = (
+                    "You have NOT been directly addressed this turn, and you act only when the "
+                    "director speaks to you. You have NO action tools right now, so do not attempt "
+                    "to build, hire, transfer, or propose. You have already introduced yourself. "
+                    "Message the director ONLY if something in your domain needs their attention "
+                    "now: a new task, a shortfall that is about to cost satisfaction, a decision "
+                    "that is due, or a real change since your last message. If so, send ONE "
+                    "send_message (to: Director) of one or two sentences, no introduction, then "
+                    "call finish. Otherwise call finish without sending anything — staying quiet "
+                    "when nothing needs the director is the right call. " + grounding)
         elif opening_mode == "reactive" and triggered_by_director:
             # Per-turn specifics only — the global prompt already owns tone,
             # answer-directly (rule 7), and act-only-on-instruction; don't restate them.
@@ -3177,7 +3209,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                     # above and surfaced to the MODEL in `lines` below.
                     await self._send_agent_response(
                         agent, "Action: " + self._humanize_committed_action(action),
-                        "agent_response")
+                        "agent_response", origin="router_action_receipt")
                     lines.append(f"  ✅ {desc}"
                                  + (self._transfer_trip_note(action, game_state)
                                     if action.get("action_type") == "resource_transfer" else ""))
@@ -3262,7 +3294,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                     choice_text = (choice_text or f"choice {cid}").strip()
                     await self._send_agent_response(
                         agent, f'Action: Chose "{choice_text}" for task "{title}"',
-                        "agent_response")
+                        "agent_response", origin="router_action_receipt")
                     choice_lines.append(f"  ✅ answered task {tid} with choice {cid}")
                 else:
                     choice_lines.append(
@@ -3492,7 +3524,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                             agent,
                             f"🔨 {committed.get('action_type', 'action')}: "
                             f"{committed.get('description', '(action)')}",
-                            "agent_response",
+                            "agent_response", origin="router_action_receipt",
                         )
             detail = "\n".join(lines) if lines else "  (engine reported no results)"
             body = (f"The director selected package {selected_idx} ({label}). "
@@ -3772,13 +3804,15 @@ Respond with ONLY the package index number (0, 1, or 2).
 
             if intent == "REPROPOSE":
                 ack = payload or "Generating new options based on your feedback."
-                await self._send_agent_response(agent, ack, "agent_response")
+                await self._send_agent_response(agent, ack, "agent_response",
+                                                origin="llm" if payload else "router_template")
                 await self._repropose_choices(agent)
                 return
 
             if intent == "CLARIFY":
                 question = payload or "Could you clarify what you'd like me to change about the options?"
-                await self._send_agent_response(agent, question, "agent_response")
+                await self._send_agent_response(agent, question, "agent_response",
+                                                origin="llm" if payload else "router_template")
                 return
 
             # CHAT: payload IS the reply when present.
@@ -3792,7 +3826,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         await self._send_agent_response(agent, response_text, "agent_response")
 
     async def _send_agent_response(self, agent: AgentConfig, response_text: str, msg_type: str,
-                                   to: str = "Director"):
+                                   to: str = "Director", origin: str = "llm"):
         """Persist + log + push an agent's conversational message to `to`.
 
         Peer messages ride the SAME path as director messages on purpose: they land in the
@@ -3822,6 +3856,12 @@ Respond with ONLY the package index number (0, 1, or 2).
             "message_id": response_message["id"],
             "turn_id": _ctx.get("turn_id"),
             "caused_by_message_id": _ctx.get("caused_by_message_id"),
+            # Who actually wrote the words: "llm" (the officer's model), "router_action_receipt"
+            # (the router's "Action: ..." line for a committed action) or "router_template"
+            # (a fixed fallback/acknowledgement). All three render identically in the chat, so
+            # without this the corpus could not tell model speech from harness text.
+            # Log-only: the frame sent to the client is unchanged.
+            "origin": origin,
         }, agent=agent, client_ts=response_message["timestamp"])
         await self._send({
             "type": "agent_message",
