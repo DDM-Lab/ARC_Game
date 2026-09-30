@@ -830,6 +830,20 @@ public class TaskSystem : MonoBehaviour
     /// </summary>
     void SupersedeTask(GameTask stale)
     {
+        // The stale task's "requested" count was already recorded permanently when IT was
+        // created (TaskSystem.CreateTaskFromData) — undo exactly that amount now, since the
+        // caller is about to create a replacement task for the same facility that will record
+        // its own, and the population being evacuated hasn't changed between the two (neither
+        // task has executed yet). Without this, one facility's demand would be counted twice for
+        // what only one relocation will ever satisfy. Read from the same choice the original
+        // recording used, not a fresh live re-resolve, so this always undoes the exact amount
+        // that was added, not whatever the population happens to be right now.
+        if (stale.taskTag == TaskTag.Lodging)
+        {
+            int requested = stale.agentChoices?.FirstOrDefault(c => c.deliveryCargoType == ResourceType.Population)?.deliveryQuantity ?? 0;
+            DailyReportData.Instance?.ReverseLodgingRequested(requested);
+        }
+
         stale.status = TaskStatus.Expired;
         activeTasks.Remove(stale);
         completedTasks.Add(stale);
@@ -2157,7 +2171,15 @@ public class TaskSystem : MonoBehaviour
 
         if (newTask.taskTag == TaskTag.Lodging)
         {
-            int clients = newTask.impacts.FirstOrDefault(i => i.impactType == ImpactType.Clients)?.value ?? 0;
+            // The task's own `impacts` Clients value is a static authored template (e.g.
+            // Community_TransportRequest's is 200) and is NOT adjusted to what this specific
+            // instance actually requests — the agent choices above already resolved that live,
+            // from the real source facility's population, moments ago (CalculateDeliveryQuantity).
+            // Reading the first Population-cargo choice gives the true, live requested count;
+            // every alternative choice on the same task (e.g. "Send to Shelters" vs "Send to
+            // Motel") resolves to the same quantity from the same source, so picking one is not
+            // a double count.
+            int clients = newTask.agentChoices.FirstOrDefault(c => c.deliveryCargoType == ResourceType.Population)?.deliveryQuantity ?? 0;
             DailyReportData.Instance?.RecordLodgingRequestedToday(clients);
         }
 

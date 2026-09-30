@@ -68,8 +68,10 @@ public class BuildingStatusRow : MonoBehaviour
             if (storage != null)
             {
                 int population = storage.GetResourceAmount(ResourceType.Population);
-                int foodOnHand = storage.GetResourceAmount(ResourceType.FoodPacks);
-                int foodNeed = Mathf.Max(0, population - foodOnHand);
+                // GetFoodNeed() reads the outstanding-need ledger (BuildingResourceStorage), not a
+                // population-minus-stock snapshot — it correctly reflects an earlier missed request
+                // that a delivery still sitting in storage hasn't been credited against yet.
+                int foodNeed = storage.GetFoodNeed();
                 int capacity = storage.GetResourceCapacity(ResourceType.Population);
 
                 SetText(foodPackNeedText, $"{foodNeed}");
@@ -112,8 +114,7 @@ public class BuildingStatusRow : MonoBehaviour
         else if (type == PrebuiltBuildingType.Motel && storage != null)
         {
             int population = storage.GetResourceAmount(ResourceType.Population);
-            int foodOnHand = storage.GetResourceAmount(ResourceType.FoodPacks);
-            int foodNeed = Mathf.Max(0, population - foodOnHand);
+            int foodNeed = storage.GetFoodNeed();
             int capacity = storage.GetResourceCapacity(ResourceType.Population);
 
             SetText(foodPackNeedText, $"{foodNeed}");
