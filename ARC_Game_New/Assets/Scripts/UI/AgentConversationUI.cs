@@ -42,6 +42,18 @@ public class AgentConversationUI : MonoBehaviour
     [Header("Agent Message Prefabs")]
     public GameObject agentMessagePrefab;
     public GameObject agentChoicePrefab;
+
+    [Header("Standing-order card (add_to_autonomy_list)")]
+    [Tooltip("Fallback card background, 9-sliced (GlobalUI/DialgoueBG). Normally the card uses the chat bubble's own sprite and color.")]
+    public Sprite autonomyCardSprite;
+    [Tooltip("Round allow button with its check (Volunteer/Confirm Button).")]
+    public Sprite autonomyAllowSprite;
+    [Tooltip("Round deny button with its cross (Volunteer/Cancel Button).")]
+    public Sprite autonomyDenySprite;
+    [Tooltip("Wide Modify button, 9-sliced (Tasks/TaskCenter/Buttontemplate).")]
+    public Sprite autonomyModifySprite;
+    [Tooltip("Display face for the card title and the Modify label (Rakkas).")]
+    public TMP_FontAsset autonomyTitleFont;
     public GameObject numericalInputPrefab;
     public GameObject playerMessagePrefab;
     
@@ -159,7 +171,7 @@ public class AgentConversationUI : MonoBehaviour
     // messages, and archived historical choice cards. These are not tied to
     // the currently active GameTask, so they must be replayed manually when
     // the user switches to a tab.
-    private enum EntryKind { AgentMessage, PlayerMessage, HistoricalChoice, InlineProposal }
+    private enum EntryKind { AgentMessage, PlayerMessage, HistoricalChoice, InlineProposal, AutonomyProposal }
     private class ConversationEntry
     {
         public EntryKind kind;
@@ -176,6 +188,16 @@ public class AgentConversationUI : MonoBehaviour
         public GameAction[] proposalActions;
         public string proposalAgentName;
         public bool proposalLive;
+
+        // Populated when kind == AutonomyProposal: an officer's standing-order request
+        // (add_to_autonomy_list). status: pending | accepted | edited | denied | withdrawn.
+        // `modifying` = the Director pressed Modify and the edit box is open.
+        public AutonomyProposalMessage autonomy;
+        public string autonomyStatus;
+        public string autonomyRuleId;
+        public string autonomyContext;
+        public bool autonomyModifying;
+        public string autonomyDraft;     // the edit box's text, kept across re-renders
     }
     private Dictionary<TaskOfficer, List<ConversationEntry>> conversationHistory = new Dictionary<TaskOfficer, List<ConversationEntry>>();
 
@@ -939,6 +961,9 @@ public class AgentConversationUI : MonoBehaviour
                     RenderInlineProposal(officer, entry.proposalPackages,
                         entry.proposalActions, entry.proposalAgentName, entry.proposalLive);
                     break;
+                case EntryKind.AutonomyProposal:
+                    RenderAutonomyProposal(officer, entry);
+                    break;
                 case EntryKind.AgentMessage:
                 default:
                     DisplayAgentMessage(new AgentMessage(entry.content, entry.avatar));
@@ -1663,6 +1688,391 @@ public class AgentConversationUI : MonoBehaviour
         }
     }
 
+    // ── Standing orders (add_to_autonomy_list) ──────────────────────────
+    // An officer asks to use one action tool on its own at round start, when a condition
+    // holds. The card shows the tool and the condition; the Director can Allow, Deny, or
+    // Modify (reword the condition only — the tool is fixed). The router waits for the
+    // answer (autonomy_decision) and later reports the outcome (autonomy_update).
+
+    /// <summary>Called by WebSocketManager for an autonomy_proposal frame.</summary>
+    public void AddAutonomyProposal(TaskOfficer officer, AutonomyProposalMessage msg)
+    {
+        if (msg == null) return;
+        AppendHistory(officer, new ConversationEntry
+        {
+            kind = EntryKind.AutonomyProposal,
+            autonomy = msg,
+            autonomyStatus = "pending",
+            autonomyContext = msg.context,
+            avatar = GetOfficerAvatar(officer),
+        });
+        GameLogPanel.Instance?.LogUIInteraction("agent_info", "autonomy_card_shown",
+            $"agent={msg.agent_name} | proposal={msg.proposal_id} | tool={msg.tool} {msg.args_display} | when={msg.context}");
+        if (officer != currentSelectedAgent || !isExpanded || !viewingChat)
+        {
+            MarkUnread(officer);
+            return;
+        }
+        DisplayLatestConversation();
+        StartCoroutine(ScrollToBottomCoroutine());
+    }
+
+    /// <summary>Called by WebSocketManager for an autonomy_update frame: the router's final
+    /// word on a card (accepted as R3, or withdrawn because the Director moved on).</summary>
+    public void ApplyAutonomyUpdate(AutonomyUpdateMessage msg)
+    {
+        if (msg == null || string.IsNullOrEmpty(msg.proposal_id)) return;
+        foreach (var kv in conversationHistory)
+        {
+            foreach (var e in kv.Value)
+            {
+                if (e.kind != EntryKind.AutonomyProposal || e.autonomy == null
+                    || e.autonomy.proposal_id != msg.proposal_id) continue;
+                if (!string.IsNullOrEmpty(msg.status)) e.autonomyStatus = msg.status;
+                if (!string.IsNullOrEmpty(msg.rule_id)) e.autonomyRuleId = msg.rule_id;
+                if (!string.IsNullOrEmpty(msg.context)) e.autonomyContext = msg.context;
+                e.autonomyModifying = false;
+                RefreshChatIfShowing(kv.Key);
+                return;
+            }
+        }
+    }
+
+    void RefreshChatIfShowing(TaskOfficer officer)
+    {
+        if (officer == currentSelectedAgent && isExpanded && viewingChat)
+            DisplayLatestConversation();
+    }
+
+    // The card is one self-contained box, built in code (no prefab): the request text, a row
+    // with a square ✓ (allow) and ✗ (deny), and a wide Modify under them. Modify opens an edit
+    // box inside the card for the condition; ✓ then allows it with the Director's wording.
+    // Once answered, the box keeps only the text and the outcome. Sizes are fixed here and the
+    // total height is set on its LayoutElement, the same way AgentMessageUI sizes a bubble.
+    const float AutonomyCardWidth = 480f;
+    const float AutonomyPad = 26f;   // clears the dialog art's rim
+    static readonly Color AutonomyCardColor = new Color(0.98f, 0.93f, 0.82f, 1f);
+    static readonly Color AutonomyBorderColor = new Color(0.69f, 0.49f, 0.35f, 1f);
+    static readonly Color AutonomyTextColor = new Color(0.24f, 0.18f, 0.18f, 1f);
+    static readonly Color AutonomyTitleColor = new Color(0.55f, 0.33f, 0.16f, 1f);
+    static readonly Color AutonomyAllowColor = new Color(0.27f, 0.62f, 0.36f, 1f);
+    static readonly Color AutonomyDenyColor = new Color(0.78f, 0.29f, 0.26f, 1f);
+    static readonly Color AutonomyModifyColor = new Color(0.93f, 0.63f, 0.09f, 1f);
+
+    void RenderAutonomyProposal(TaskOfficer officer, ConversationEntry entry)
+    {
+        var p = entry.autonomy;
+        if (p == null || conversationContent == null) return;
+        bool pending = entry.autonomyStatus == "pending";
+        string status;
+        switch (entry.autonomyStatus)
+        {
+            case "accepted": status = $"<color=#2f7a43><b>Allowed</b></color>{RuleSuffix(entry)}"; break;
+            case "edited": status = $"<color=#2f7a43><b>Allowed with your wording</b></color>{RuleSuffix(entry)}"; break;
+            case "denied": status = "<color=#a33a33><b>Denied</b></color>"; break;
+            case "withdrawn": status = "<i>Withdrawn — you moved on before answering.</i>"; break;
+            default: status = entry.autonomyModifying
+                ? "<i>Edit when it applies, then press the green check to allow it.</i>"
+                : "<i>Let this officer do this on its own at the start of each round?</i>"; break;
+        }
+        string officerName = string.IsNullOrEmpty(p.agent_name) ? officer.ToString() : p.agent_name;
+        string title = "Standing Order Request";
+        string text = $"<b>{officerName}</b> asks to do this on its own:\n"
+                    + $"<b>Action:</b> {p.tool} {p.args_display}\n"
+                    + $"<b>When:</b> {entry.autonomyContext}"
+                    + (string.IsNullOrEmpty(p.reason) ? "" : $"\n<i>Why: {p.reason}</i>")
+                    + "\n" + status;
+
+        float W = AutonomyCardWidth, inner = W - 2 * AutonomyPad;
+        // A full-width row (sized like a message bubble's root) holding the card, so the card
+        // can be slid to line up with the speech bubbles (see AlignAutonomyCard).
+        GameObject row = new GameObject("AutonomyCardRow", typeof(RectTransform));
+        row.transform.SetParent(conversationContent, false);
+        NormalizeBubbleRect(row);
+        GameObject card = new GameObject("AutonomyCard", typeof(RectTransform), typeof(Image));
+        card.transform.SetParent(row.transform, false);
+        var cardRT = (RectTransform)card.transform;
+        cardRT.anchorMin = cardRT.anchorMax = new Vector2(0f, 1f);
+        cardRT.pivot = new Vector2(0f, 1f);
+        cardRT.anchoredPosition = new Vector2(AutonomyBubbleInset, 0f);
+        var bg = card.GetComponent<Image>();
+        // Same look as an officer's chat bubble: its sprite and color are read from the message
+        // prefab, so the card follows any restyle of the bubbles. The dialog art is the fallback.
+        Image bubble = agentMessagePrefab != null
+            ? agentMessagePrefab.GetComponent<AgentMessageUI>()?.speechBubble : null;
+        if (bubble != null && bubble.sprite != null)
+        {
+            bg.sprite = bubble.sprite;
+            bg.type = bubble.type;
+            bg.color = bubble.color;
+            bg.pixelsPerUnitMultiplier = bubble.pixelsPerUnitMultiplier;
+        }
+        else if (autonomyCardSprite != null)
+        {
+            // The game's dialog panel (cream with a brown rim), as the other popups use.
+            bg.sprite = autonomyCardSprite;
+            bg.type = Image.Type.Sliced;
+            bg.pixelsPerUnitMultiplier = 2f;
+            bg.color = Color.white;
+        }
+        else
+        {
+            bg.color = AutonomyCardColor;
+            var outline = card.AddComponent<Outline>();
+            outline.effectColor = AutonomyBorderColor;
+            outline.effectDistance = new Vector2(2f, -2f);
+        }
+
+        float y = AutonomyPad;
+        var head = AutonomyText(card.transform, title, 24f, AutonomyTitleColor, TextAlignmentOptions.Center);
+        if (autonomyTitleFont != null) head.font = autonomyTitleFont;
+        float headH = Mathf.Ceil(head.GetPreferredValues(title, inner, 0f).y) + 2f;
+        Place(head.rectTransform, AutonomyPad, y, inner, headH);
+        y += headH + 6f;
+
+        var label = AutonomyText(card.transform, text, 17f, AutonomyTextColor, TextAlignmentOptions.TopLeft);
+        float textH = Mathf.Ceil(label.GetPreferredValues(text, inner, 0f).y) + 4f;
+        Place(label.rectTransform, AutonomyPad, y, inner, textH);
+        y += textH;
+
+        if (pending)
+        {
+            TMP_InputField editField = null;
+            if (entry.autonomyModifying)
+            {
+                y += 10f;
+                editField = AutonomyEditField(card.transform, entry, officer);
+                if (editField != null)
+                {
+                    Place((RectTransform)editField.transform, AutonomyPad, y, inner, 72f);
+                    y += 72f;
+                }
+            }
+            y += 14f;
+            bool art = autonomyAllowSprite != null && autonomyDenySprite != null;
+            float bw = art ? 76f : 56f, bh = art ? 64f : 56f;   // the art is 126x106
+            TMP_InputField fieldRef = editField;
+            var allow = AutonomyButton(card.transform, "Allow", AutonomyAllowColor, () =>
+            {
+                string ctx = fieldRef != null ? (fieldRef.text ?? "").Trim() : entry.autonomyContext;
+                if (ctx.Length == 0) return;
+                DecideAutonomy(officer, entry, "accept", ctx);
+            });
+            Place(allow, W * 0.30f - bw / 2f, y, bw, bh);
+            var deny = AutonomyButton(card.transform, "Deny", AutonomyDenyColor,
+                () => DecideAutonomy(officer, entry, "deny", entry.autonomyContext));
+            Place(deny, W * 0.70f - bw / 2f, y, bw, bh);
+            if (art)
+            {
+                SetButtonArt(allow, autonomyAllowSprite, Image.Type.Simple);
+                SetButtonArt(deny, autonomyDenySprite, Image.Type.Simple);
+            }
+            else
+            {
+                AutonomyCheckIcon(allow);
+                AutonomyCrossIcon(deny);
+            }
+            y += bh + 12f;
+            var modify = AutonomyButton(card.transform, "Modify", AutonomyModifyColor, () =>
+            {
+                entry.autonomyModifying = !entry.autonomyModifying;
+                if (entry.autonomyModifying) entry.autonomyDraft = entry.autonomyContext;
+                GameLogPanel.Instance?.LogUIInteraction("agent_info", "autonomy_modify_toggled",
+                    $"agent={p.agent_name} | proposal={p.proposal_id} | open={entry.autonomyModifying}");
+                RefreshChatIfShowing(officer);
+                if (entry.autonomyModifying) StartCoroutine(ScrollToBottomCoroutine());
+            });
+            const float mh = 46f;
+            Place(modify, AutonomyPad + inner * 0.15f, y, inner * 0.7f, mh);
+            if (autonomyModifySprite != null)
+                SetButtonArt(modify, autonomyModifySprite, Image.Type.Sliced);
+            var ml = AutonomyText(modify, entry.autonomyModifying ? "Cancel Edit" : "Modify", 22f,
+                                  Color.white, TextAlignmentOptions.Center);
+            if (autonomyTitleFont != null) ml.font = autonomyTitleFont;
+            Stretch(ml.rectTransform);
+            ml.rectTransform.offsetMax = new Vector2(0f, -4f);   // the art's shadow sits below the face
+            y += mh;
+        }
+        y += AutonomyPad;
+
+        cardRT.sizeDelta = new Vector2(W, y);
+        var rowRT = (RectTransform)row.transform;
+        rowRT.sizeDelta = new Vector2(rowRT.sizeDelta.x, y);
+        var le = row.AddComponent<LayoutElement>();
+        le.minHeight = le.preferredHeight = y;
+        currentConversationItems.Add(row);
+        StartCoroutine(AlignAutonomyCard(rowRT, cardRT));
+    }
+
+    // Where a speech bubble starts inside a message row: the avatar (77) plus the prefab's
+    // padding and spacing (10 + 10). Used until a live bubble can be measured.
+    const float AutonomyBubbleInset = 97f;
+
+    /// <summary>After layout, put the card's left edge exactly under the speech bubbles' left
+    /// edge, measured from a bubble on screen (their offset comes from nested layout groups in
+    /// the message prefab, so it is measured rather than hard-coded).</summary>
+    IEnumerator AlignAutonomyCard(RectTransform row, RectTransform card)
+    {
+        yield return new WaitForEndOfFrame();
+        if (row == null || card == null || conversationContent == null) yield break;
+        RectTransform bubble = null;
+        foreach (Transform child in conversationContent)
+        {
+            var ui = child.GetComponent<AgentMessageUI>();
+            if (ui != null && ui.enabled && ui.speechBubble != null
+                && ui.speechBubble.gameObject.activeInHierarchy)
+            { bubble = ui.speechBubble.rectTransform; break; }
+        }
+        if (bubble == null) yield break;
+        var corners = new Vector3[4];
+        bubble.GetWorldCorners(corners);
+        float left = row.InverseTransformPoint(corners[0]).x - row.rect.xMin;
+        if (left >= 0f && left < row.rect.width - 100f)
+            card.anchoredPosition = new Vector2(left, card.anchoredPosition.y);
+    }
+
+    static string RuleSuffix(ConversationEntry e) =>
+        string.IsNullOrEmpty(e.autonomyRuleId) ? "" : $" (standing order {e.autonomyRuleId})";
+
+    TMP_FontAsset ChatFont() =>
+        playerInputField != null && playerInputField.textComponent != null
+            ? playerInputField.textComponent.font : null;
+
+    TextMeshProUGUI AutonomyText(Transform parent, string text, float size, Color color,
+                                 TextAlignmentOptions align)
+    {
+        var go = new GameObject("Text", typeof(RectTransform));
+        go.transform.SetParent(parent, false);
+        var t = go.AddComponent<TextMeshProUGUI>();
+        var font = ChatFont();
+        if (font != null) t.font = font;
+        t.fontSize = size;
+        t.color = color;
+        t.alignment = align;
+        t.enableWordWrapping = true;
+        t.richText = true;
+        t.raycastTarget = false;
+        t.text = text;
+        return t;
+    }
+
+    RectTransform AutonomyButton(Transform parent, string name, Color color, System.Action onClick)
+    {
+        var go = new GameObject(name + "Button", typeof(RectTransform), typeof(Image), typeof(Button));
+        go.transform.SetParent(parent, false);
+        var img = go.GetComponent<Image>();
+        img.color = color;
+        var btn = go.GetComponent<Button>();
+        btn.targetGraphic = img;
+        var colors = btn.colors;
+        colors.highlightedColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+        colors.pressedColor = new Color(0.75f, 0.75f, 0.75f, 1f);
+        btn.colors = colors;
+        btn.onClick.AddListener(() => onClick());
+        return (RectTransform)go.transform;
+    }
+
+    static void SetButtonArt(RectTransform button, Sprite sprite, Image.Type type)
+    {
+        var img = button.GetComponent<Image>();
+        img.sprite = sprite;
+        img.type = type;
+        img.color = Color.white;
+        img.preserveAspect = type == Image.Type.Simple;
+        if (type == Image.Type.Sliced) img.pixelsPerUnitMultiplier = 2f;
+    }
+
+    // Fallback when the art is not assigned: ✓ and ✗ drawn from bars, so they do not depend on the font having those glyphs.
+    static void AutonomyBar(RectTransform parent, float cx, float cy, float len, float angle)
+    {
+        var go = new GameObject("Bar", typeof(RectTransform), typeof(Image));
+        go.transform.SetParent(parent, false);
+        var rt = (RectTransform)go.transform;
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.sizeDelta = new Vector2(len, 6f);
+        rt.anchoredPosition = new Vector2(cx, cy);
+        rt.localRotation = Quaternion.Euler(0f, 0f, angle);
+        var img = go.GetComponent<Image>();
+        img.color = Color.white;
+        img.raycastTarget = false;
+    }
+
+    static void AutonomyCheckIcon(RectTransform b)
+    {
+        AutonomyBar(b, -9f, -1f, 16f, -45f);   // short stroke, down to the bottom point
+        AutonomyBar(b, 5f, 5f, 28f, 45f);      // long stroke, up to the right
+    }
+
+    static void AutonomyCrossIcon(RectTransform b)
+    {
+        AutonomyBar(b, 0f, 0f, 34f, 45f);
+        AutonomyBar(b, 0f, 0f, 34f, -45f);
+    }
+
+    TMP_InputField AutonomyEditField(Transform parent, ConversationEntry entry, TaskOfficer officer)
+    {
+        if (playerInputField == null) return null;
+        // A clone of the chat input, so it keeps the project's input styling.
+        GameObject panel = Instantiate(playerInputField.gameObject);
+        panel.name = "AutonomyEdit";
+        panel.transform.SetParent(parent, false);
+        panel.transform.localScale = Vector3.one;
+        panel.SetActive(true);
+        var field = panel.GetComponent<TMP_InputField>();
+        if (field == null) return null;
+        field.onSubmit.RemoveAllListeners();
+        field.onValueChanged.RemoveAllListeners();
+        field.onEndEdit.RemoveAllListeners();
+        field.lineType = TMP_InputField.LineType.MultiLineSubmit;
+        field.interactable = true;
+        field.text = entry.autonomyDraft ?? entry.autonomyContext ?? "";
+        if (field.placeholder is TMP_Text ph) ph.text = "When should the officer do this?";
+        field.onValueChanged.AddListener(v => entry.autonomyDraft = v);
+        field.onSubmit.AddListener(v =>
+        {
+            string ctx = (v ?? "").Trim();
+            if (ctx.Length > 0) DecideAutonomy(officer, entry, "accept", ctx);
+        });
+        return field;
+    }
+
+    static void Place(RectTransform rt, float x, float yDown, float w, float h)
+    {
+        rt.anchorMin = rt.anchorMax = new Vector2(0f, 1f);
+        rt.pivot = new Vector2(0f, 1f);
+        rt.anchoredPosition = new Vector2(x, -yDown);
+        rt.sizeDelta = new Vector2(w, h);
+    }
+
+    static void Stretch(RectTransform rt)
+    {
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = rt.offsetMax = Vector2.zero;
+    }
+
+    void DecideAutonomy(TaskOfficer officer, ConversationEntry entry, string decision, string context)
+    {
+        if (entry.autonomyStatus != "pending" || entry.autonomy == null) return;
+        bool edited = decision == "accept" && context != entry.autonomy.context;
+        bool sent = WebSocketManager.Instance != null
+                    && WebSocketManager.Instance.SendAutonomyDecision(
+                        entry.autonomy.proposal_id, entry.autonomy.agent_name, decision, context, edited);
+        GameLogPanel.Instance?.LogUIInteraction("agent_info", "autonomy_decision",
+            $"agent={entry.autonomy.agent_name} | proposal={entry.autonomy.proposal_id} | "
+            + $"decision={decision} | edited={edited} | sent={sent} | when={context}");
+        if (!sent)
+        {
+            AddAgentMessage(officer, "⚠️ Not connected — your answer wasn't delivered. Try again "
+                            + "once the connection is back.", "system_error");
+            return;
+        }
+        entry.autonomyStatus = decision == "accept" ? (edited ? "edited" : "accepted") : "denied";
+        entry.autonomyContext = context;
+        entry.autonomyModifying = false;
+        RefreshChatIfShowing(officer);
+    }
+
     public void AddAgentMessageWithChoices(
         TaskOfficer officer,
         string content,
@@ -2130,10 +2540,21 @@ public class AgentConversationUI : MonoBehaviour
     // project's TMP_InputField styling — no editor wiring or new prefab required.
     void AddFreeTextChoiceCard(TaskOfficer officer)
     {
+        TaskOfficer captured = officer;
+        AddInlineInputCard("Type anything here — ask me to repropose or clarify…", "",
+                           (field, msg) => OnFreeTextCardSubmit(captured, field, msg));
+    }
+
+    /// <summary>An inline text-entry card in the chat, styled like a choice card (see
+    /// AddFreeTextChoiceCard). Enter or the checkbox calls onSubmit(field, text). Also used by
+    /// the standing-order card's Modify.</summary>
+    TMP_InputField AddInlineInputCard(string placeholder, string initialText,
+                                      System.Action<TMP_InputField, string> onSubmit)
+    {
         if (playerInputField == null || conversationContent == null)
         {
             Debug.LogWarning($"[FreeTextCard] skipped — playerInputField null? {playerInputField == null}, content null? {conversationContent == null}");
-            return;
+            return null;
         }
 
         // Build a row that mirrors a choice card's three-column layout so it lines up
@@ -2178,14 +2599,13 @@ public class AgentConversationUI : MonoBehaviour
         Color textColor = new Color(0.239f, 0.184f, 0.176f, 1f); // descriptionText baked color
 
         TMP_InputField field = panel.GetComponent<TMP_InputField>();
-        TaskOfficer captured = officer;
         if (field != null)
         {
-            field.text = "";
+            field.text = initialText ?? "";
             field.interactable = true;
             if (field.placeholder is TMP_Text ph)
             {
-                ph.text = "Type anything here — ask me to repropose or clarify…";
+                ph.text = placeholder;
                 ph.color = new Color(textColor.r, textColor.g, textColor.b, 0.55f);
                 ph.enabled = true;
             }
@@ -2193,7 +2613,7 @@ public class AgentConversationUI : MonoBehaviour
                 field.textComponent.color = textColor;
 
             field.onSubmit.RemoveAllListeners();
-            field.onSubmit.AddListener((string msg) => OnFreeTextCardSubmit(captured, field, msg));
+            field.onSubmit.AddListener((string msg) => onSubmit(field, msg));
         }
 
         // Checkbox column — sits where the choice cards' checkbox is (far right). Clicking it
@@ -2210,16 +2630,17 @@ public class AgentConversationUI : MonoBehaviour
         Image checkImg = check.GetComponent<Image>();
         Button checkBtn = check.AddComponent<Button>();
         checkBtn.onClick.RemoveAllListeners();
-        checkBtn.onClick.AddListener(() => { if (field != null) OnFreeTextCardSubmit(captured, field, field.text); });
+        checkBtn.onClick.AddListener(() => { if (field != null) onSubmit(field, field.text); });
 
         // Copy the exact ChoiceSection / checkbox styling + X positions from a live choice
         // card once layout has run, so the panel and checkbox share the cards' columns.
         StartCoroutine(AlignFreeTextCard(card, panel, bg, check, checkImg, field));
 
-        Debug.Log($"[FreeTextCard] added for {officer}; field null? {field == null}; "
+        Debug.Log($"[FreeTextCard] added; field null? {field == null}; "
                   + $"sibling#{card.transform.GetSiblingIndex()}");
 
         currentConversationItems.Add(card);
+        return field;
     }
 
     // Align the free-text card's input panel and checkbox to a live choice card's columns.

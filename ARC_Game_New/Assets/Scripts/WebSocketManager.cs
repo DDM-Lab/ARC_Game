@@ -492,6 +492,15 @@ public class WebSocketManager : MonoBehaviour
             if (data.Contains("\"officer_status\"") && HandleOfficerStatus(data))
                 return;
 
+            // Router → client: an officer asks for a standing order (add_to_autonomy_list), or
+            // a card's outcome is known (accepted as R3 / withdrawn). Checked before the
+            // substring dispatch below: the officer's condition text is free text that could
+            // contain any of those type names, so the parsed `type` is what decides.
+            if (data.Contains("\"autonomy_proposal\"") && HandleAutonomyProposal(data))
+                return;
+            if (data.Contains("\"autonomy_update\"") && HandleAutonomyUpdate(data))
+                return;
+
             // Handle new multi-agent router message types
             if (data.Contains("\"choices_proposal\""))
             {
@@ -790,6 +799,61 @@ public class WebSocketManager : MonoBehaviour
         if (msg == null || msg.type != "officer_status") return false;
         if (AgentConversationUI.Instance != null && TryResolveOfficer(msg.talkinghead_endpoint, out TaskOfficer officer))
             AgentConversationUI.Instance.SetOfficerGenerating(officer, msg.busy);
+        return true;
+    }
+
+    /// <summary>Router → client: a standing-order card. Returns false if not one.</summary>
+    bool HandleAutonomyProposal(string data)
+    {
+        AutonomyProposalMessage msg = null;
+        try { msg = JsonUtility.FromJson<AutonomyProposalMessage>(data); }
+        catch { return false; }
+        if (msg == null || msg.type != "autonomy_proposal") return false;
+        if (AgentConversationUI.Instance == null) return true;
+        if (TryResolveOfficer(msg.talkinghead_endpoint, out TaskOfficer officer))
+        {
+            AgentConversationUI.Instance.SetOfficerGenerating(officer, false);
+            AgentConversationUI.Instance.AddAutonomyProposal(officer, msg);
+        }
+        else
+        {
+            Debug.LogError($"[WS] autonomy_proposal: unknown talkinghead_endpoint "
+                           + $"'{msg.talkinghead_endpoint}' (agent '{msg.agent_name}').");
+        }
+        return true;
+    }
+
+    /// <summary>Router → client: a standing-order card's outcome. Returns false if not one.</summary>
+    bool HandleAutonomyUpdate(string data)
+    {
+        AutonomyUpdateMessage msg = null;
+        try { msg = JsonUtility.FromJson<AutonomyUpdateMessage>(data); }
+        catch { return false; }
+        if (msg == null || msg.type != "autonomy_update") return false;
+        AgentConversationUI.Instance?.ApplyAutonomyUpdate(msg);
+        return true;
+    }
+
+    /// <summary>Send the Director's answer to a standing-order card. `decision` is "accept" or
+    /// "deny"; `context` is the (possibly reworded) condition. Serialized with JsonUtility so
+    /// the Director's own text is escaped properly.</summary>
+    public bool SendAutonomyDecision(string proposalId, string agentName, string decision,
+                                     string context, bool edited)
+    {
+        if (!isConnected)
+        {
+            Debug.LogWarning("[WS] Cannot send autonomy_decision - not connected!");
+            return false;
+        }
+        var msg = new AutonomyDecisionMessage
+        {
+            proposal_id = proposalId, agent_name = agentName, decision = decision,
+            context = context ?? "", edited = edited,
+            click_seq = GuiInteractionRecorder.LastClickSeq,
+            timestamp = System.DateTime.UtcNow.ToString("o"),
+        };
+        SendRawMessage(JsonUtility.ToJson(msg));
+        Debug.Log($"[WS] autonomy_decision sent ({proposalId}: {decision}{(edited ? ", edited" : "")})");
         return true;
     }
 
@@ -1768,6 +1832,46 @@ public class AgentMessageWithChoices
     public string reasoning;
     public ActionPackage[] packages;
     public GameAction[] available_actions;
+}
+
+/// <summary>Router → client: an officer asks for a standing order (add_to_autonomy_list).</summary>
+[System.Serializable]
+public class AutonomyProposalMessage
+{
+    public string type;
+    public string proposal_id;
+    public string agent_name;
+    public string talkinghead_endpoint;
+    public string tool;
+    public string args_display;   // "(any site)", "(type kitchen)"
+    public string context;        // when the officer would use it
+    public string reason;
+    public int round;
+}
+
+/// <summary>Router → client: a standing-order card's outcome. status: accepted | edited |
+/// withdrawn (the Director moved on before answering).</summary>
+[System.Serializable]
+public class AutonomyUpdateMessage
+{
+    public string type;
+    public string proposal_id;
+    public string status;
+    public string rule_id;
+    public string context;
+}
+
+[System.Serializable]
+public class AutonomyDecisionMessage
+{
+    public string type = "autonomy_decision";
+    public string proposal_id;
+    public string agent_name;
+    public string decision;       // "accept" | "deny"
+    public string context;
+    public bool edited;
+    public long click_seq = -1;
+    public string timestamp;
 }
 
 [System.Serializable]

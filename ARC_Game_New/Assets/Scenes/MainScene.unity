@@ -1908,6 +1908,11 @@ MonoBehaviour:
   conversationContent: {fileID: 1917468029}
   agentMessagePrefab: {fileID: 7763281807692673508, guid: d6f24b31012ba124eafa91c295c65c08, type: 3}
   agentChoicePrefab: {fileID: 3689961598307848804, guid: 72a3ad1c507ebe74f9aab817763efaa6, type: 3}
+  autonomyCardSprite: {fileID: 21300000, guid: 81f272d7f27c93c44adc8f35863b4bb4, type: 3}
+  autonomyAllowSprite: {fileID: 21300000, guid: ce3e909345f6554439fc799429a8830e, type: 3}
+  autonomyDenySprite: {fileID: 21300000, guid: ca70dff2d1e0259419ebb3f7f00d4a2e, type: 3}
+  autonomyModifySprite: {fileID: 21300000, guid: 50dd07a14a41668459b00d10292b41bd, type: 3}
+  autonomyTitleFont: {fileID: 11400000, guid: ad881f4c28b597942977dda570c5317c, type: 2}
   numericalInputPrefab: {fileID: 7478889527933163167, guid: 6669ca8554c6ce54da83cf31b79e81d7, type: 3}
   playerMessagePrefab: {fileID: 8827655810818551537, guid: 4316cf8f54d537a4b9ce187419922f47, type: 3}
   disasterOfficerDot: {fileID: 1456756075}
