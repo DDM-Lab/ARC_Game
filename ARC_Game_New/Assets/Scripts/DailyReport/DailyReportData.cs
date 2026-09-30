@@ -94,13 +94,14 @@ public class DailyReportData : MonoBehaviour
 
 
     [Header("Cumulative Lodging")]
-    // Cost-efficiency's own measure (C_Lodging: $ spent per bed-night) — an end-of-day occupancy
-    // snapshot, re-summed every day via OnDayChangedForLodgingNights. Deliberately NOT used for
-    // S_Lodging: a client housed for 5 days would otherwise count as "5 satisfied nights" purely
-    // from staying put, and overpreparation (idle capacity) would need to stay invisible here
-    // anyway — that is exactly what a cost metric should reflect, so this pair is left as-is.
-    private int cumulativeLodgingNightsConsumed = 0; //here
-    private int cumulativeLodgingNightsNeeded = 0;  //here
+    // Cost-efficiency's own measure (C_Lodging: $ spent per bed-round) — an occupancy snapshot,
+    // re-summed once per ROUND in AccumulateRoundMetrics. Deliberately NOT used for S_Lodging: a
+    // client housed for 5 days would otherwise count as many times over just from staying put, and
+    // overpreparation (idle capacity) would need to stay invisible here anyway — that is exactly
+    // what a cost metric should reflect, so this pair is left as-is. Named "Rounds," not "Nights"
+    // (an earlier name from when this was sampled once per day) — see GetLodgingCostMin.
+    private int cumulativeLodgingRoundsConsumed = 0; //here
+    private int cumulativeLodgingRoundsNeeded = 0;  //here
 
     // S_Lodging's actual inputs: a one-time-per-task request ledger, not a repeating occupancy
     // count. "Requested" is added exactly once, when a Lodging-tagged task is generated
@@ -202,8 +203,11 @@ public class DailyReportData : MonoBehaviour
     ///
     /// Fix: treat the starting roster as if it had been requested at game start, at the same
     /// per-worker prices a real request would pay (trained x trainedWorkerCost + untrained x
-    /// untrainedWorkerCost), added once to the SAME cumulative figure C_Worker() already reads
-    /// (GetCumulativeWorkerRequestCost()) — no new formula field, no change to C_Worker() itself.
+    /// untrainedWorkerCost). This is real spending now, not score-only: it's deducted from the
+    /// actual Day 1 budget (SatisfactionAndBudget.RemoveBudget) and recorded as a real Day 1
+    /// expense (RecordWorkerRequestCostToday), so it shows up in the budget history panel and the
+    /// Day 1 report's worker-cost line — on top of feeding the SAME cumulative figure C_Worker()
+    /// already reads (GetCumulativeWorkerRequestCost()), unchanged from before.
     /// Runs once per game (not once per scene load): a snapshot restore overwrites
     /// cumulativeWorkerRequestCost with the real saved value afterward, so this can't double-count.
     /// </summary>
@@ -226,15 +230,10 @@ public class DailyReportData : MonoBehaviour
         if (imputedCost <= 0f) return;
 
         RecordWorkerRequestCostCumulative(imputedCost);
-        // Deliberately NOT RecordWorkerRequestCostToday: that feeds the Day 1 spend receipt shown
-        // to the player, and this isn't real money spent — only the score-facing cumulative figure
-        // should see it.
+        RecordWorkerRequestCostToday(imputedCost);
 
-        string reason = $"Score formula update: starting roster ({trained} trained, {untrained} untrained) " +
-                        $"now charged as if requested at game start (${wrs.trainedWorkerCost}/trained, " +
-                        $"${wrs.untrainedWorkerCost}/untrained) = ${imputedCost:F0}, added to cumulative worker " +
-                        $"request cost so Worker Cost Efficiency no longer starts — and stays, if no more " +
-                        $"workers are ever requested — pinned at its maximum for working the free roster.";
+        string reason = $"Initial worker costs: ({trained} trained workers x ${wrs.trainedWorkerCost} + {untrained} untrained workers x ${wrs.untrainedWorkerCost}) = ${imputedCost:F0}";
+        SatisfactionAndBudget.Instance?.RemoveBudget((int)imputedCost, SatisfactionAndBudget.SpendCategory.Worker, reason);
         GameLogPanel.Instance?.LogMetricsChange(reason);
         Debug.Log($"[DailyReportData] {reason}");
     }
@@ -271,7 +270,6 @@ public class DailyReportData : MonoBehaviour
 
         if (GlobalClock.Instance != null)
         {
-            GlobalClock.Instance.OnDayChanged += OnDayChangedForLodgingNights;
             GlobalClock.Instance.OnTimeSegmentChanged += CaptureRound3FoodNeed; // NEW
         }
         //END NEW
@@ -280,13 +278,12 @@ public class DailyReportData : MonoBehaviour
     //NEW
     void OnDestroy()
     {
-        
+
         if (ClientStayTracker.Instance != null)
             ClientStayTracker.Instance.OnCaseworkRequested -= OnCaseworkRequested;
         if (GlobalClock.Instance != null)
         {
             GlobalClock.OnRoundEnd -= AccumulateRoundMetrics;
-            GlobalClock.Instance.OnDayChanged -= OnDayChangedForLodgingNights;
             GlobalClock.Instance.OnTimeSegmentChanged -= CaptureRound3FoodNeed; // NEW
         }
 
@@ -558,9 +555,31 @@ public class DailyReportData : MonoBehaviour
         foreach (var requestedSize in caseworkRequestedGroups.Values)
             cumulativeCaseworkAvailableRounds += requestedSize;
 
+        // Lodging occupancy for cost efficiency (C_Lodging: $ spent per bed-round), sampled once
+        // per ROUND here rather than once per day — same reasoning as the casework fix above: a
+        // once-per-day snapshot can miss or misrepresent occupancy that only existed for part of a
+        // day. This pair feeds ONLY C_Lodging, never S_Lodging (see the field comment).
+        if (ClientStayTracker.Instance != null)
+        {
+            int housedThisRound = ClientStayTracker.Instance.clientGroups.Sum(g => g.clientCount);
+            cumulativeLodgingRoundsConsumed += housedThisRound;
+
+            if (taskSystem != null)
+            {
+                int neededThisRound = taskSystem.activeTasks
+                    .Where(t => t.taskTag == TaskTag.Lodging)
+                    .SelectMany(t => t.impacts)
+                    .Where(i => i.impactType == ImpactType.Clients)
+                    .Sum(i => i.value);
+
+                cumulativeLodgingRoundsNeeded += housedThisRound + neededThisRound;
+            }
+        }
+
         RecalcWorkerSatisfaction();
-        RecalcWorkerEfficiency();   
+        RecalcWorkerEfficiency();
         RecalcCaseworkSatisfaction();
+        RecalcLodgingEfficiency();
     }
 
     void OnCaseworkRequested(ClientGroup group)
@@ -579,33 +598,6 @@ public class DailyReportData : MonoBehaviour
         // No longer credits cumulativeCaseworkAvailableRounds here — see AccumulateRoundMetrics,
         // which now paces that same total out one round at a time instead of all at once.
         RecalcCaseworkSatisfaction();
-    }
-
-    void OnDayChangedForLodgingNights(int newDay)
-    {
-        int housedTonight = 0;
-        if (ClientStayTracker.Instance != null)
-        {
-            housedTonight = ClientStayTracker.Instance.clientGroups.Sum(g => g.clientCount);
-            cumulativeLodgingNightsConsumed += housedTonight;
-        }
-
-        if (taskSystem != null)
-        {
-            int neededTonight = taskSystem.activeTasks
-                .Where(t => t.taskTag == TaskTag.Lodging)
-                .SelectMany(t => t.impacts)
-                .Where(i => i.impactType == ImpactType.Clients)
-                .Sum(i => i.value);
-
-            cumulativeLodgingNightsNeeded += housedTonight + neededTonight;
-        }
-
-        // NOT RecalcLodgingSatisfaction() here — this pair now feeds only C_Lodging (cost per
-        // bed-night). S_Lodging is request-based (see RecordLodgingRequestedToday/SatisfiedToday)
-        // and already keeps itself live from those events; recalculating it here would just be a
-        // same-value no-op push, since nothing this function touches changes it anymore.
-        RecalcLodgingEfficiency();
     }
 
     public void RecordFoodConsumptionCumulative(int consumed, int needed)
@@ -751,8 +743,8 @@ public class DailyReportData : MonoBehaviour
     public float GetCumulativeWorkerRequestCost() => cumulativeWorkerRequestCost;
     public float GetCumulativeWorkerTrainingCost() => cumulativeWorkerTrainingCost;
 
-    public int GetCumulativeLodgingNightsConsumed() => cumulativeLodgingNightsConsumed;
-    public int GetCumulativeLodgingNightsNeeded() => cumulativeLodgingNightsNeeded;   
+    public int GetCumulativeLodgingRoundsConsumed() => cumulativeLodgingRoundsConsumed;
+    public int GetCumulativeLodgingRoundsNeeded() => cumulativeLodgingRoundsNeeded;
     public int GetCumulativeRoundsElapsed() => cumulativeRoundsElapsed;
 
     // receipt 
@@ -889,8 +881,8 @@ public class DailyReportData : MonoBehaviour
     // Lodging-tagged tasks, divided by cumulative clients those tasks ever requested. Each
     // request is counted exactly once, at generation (permanent from then on, win or lose);
     // each satisfied count is exactly how many people that task's own delivery actually landed.
-    // Deliberately NOT derived from GetCumulativeLodgingNightsConsumed/Needed — see the comment
-    // on those fields for why a daily occupancy snapshot is the wrong shape for this score.
+    // Deliberately NOT derived from GetCumulativeLodgingRoundsConsumed/Needed — see the comment
+    // on those fields for why an occupancy snapshot is the wrong shape for this score.
     public float S_Lodging()
     {
         var d = this;
@@ -1083,10 +1075,10 @@ public class DailyReportData : MonoBehaviour
     public float C_Lodging()
     {
         var d = this;
-        float nightsConsumed = d.GetCumulativeLodgingNightsConsumed();
-        if (nightsConsumed <= 0f) return 0f;
+        float roundsConsumed = d.GetCumulativeLodgingRoundsConsumed();
+        if (roundsConsumed <= 0f) return 0f;
 
-        float raw = d.GetCumulativeLodgingSpend() / nightsConsumed;
+        float raw = d.GetCumulativeLodgingSpend() / roundsConsumed;
 
         float? min = GetLodgingCostMin();
         if (min == null) return 1f;
@@ -1095,14 +1087,16 @@ public class DailyReportData : MonoBehaviour
     }
 
     /// <summary>
-    /// Best-case cost per night: one shelter's construction cost spread over every bed-night it can
-    /// provide over the full game. Uses InitialGameDays - 1, not InitialGameDays: nightsConsumed
-    /// (raw's denominator in C_Lodging(), incremented once per GlobalClock.OnDayChanged) can only
-    /// ever register one sample per day BOUNDARY crossed — 1->2, 2->3, ... (days-1)->days — never a
-    /// boundary before Day 1 or after the last day, so an 8-day game can produce at most 7 samples.
-    /// Dividing by the full day count computed a minimum lower than shelters could actually reach,
-    /// which unfairly lowered every lodging cost-efficiency score (a smaller min makes the same raw
-    /// cost score worse, not better). See GetFoodCostMin() for why this is extracted.
+    /// Best-case cost per bed-round: one shelter's construction cost spread over every occupancy
+    /// sample it can provide over the full game. roundsConsumed (raw's denominator in C_Lodging())
+    /// is sampled once per ROUND (AccumulateRoundMetrics), not once per day — a day-boundary
+    /// snapshot could miss or misrepresent occupancy that only existed for part of a day, the same
+    /// reasoning behind the casework denominator fix. Uses (InitialGameDays - 1) * InitialRoundsPerDay,
+    /// not the full game length: Day 1 is construction/setup, produces zero occupancy, and its
+    /// rounds (which DO still run AccumulateRoundMetrics, via Day1SkipCoroutine's OnRoundEnd calls)
+    /// can never contribute a real sample. Dividing by more samples than the game can actually
+    /// produce would compute a minimum lower than shelters could ever reach, unfairly lowering every
+    /// lodging cost-efficiency score. See GetFoodCostMin() for why this is extracted.
     /// </summary>
     float? GetLodgingCostMin()
     {
@@ -1110,10 +1104,10 @@ public class DailyReportData : MonoBehaviour
         var bs = FindObjectOfType<BuildingSystem>();
         if (gdm == null || bs == null) return null;
 
-        int days = Mathf.Max(1, gdm.InitialGameDays - 1);
+        int productiveRounds = Mathf.Max(1, gdm.InitialGameDays - 1) * Mathf.Max(1, gdm.InitialRoundsPerDay);
         if (gdm.InitialShelterCapacity <= 0) return null;
 
-        float min = (float)bs.shelterConstructionCost / (gdm.InitialShelterCapacity * days);
+        float min = (float)bs.shelterConstructionCost / (gdm.InitialShelterCapacity * productiveRounds);
         return min > 0f ? min : (float?)null;
     }
 
@@ -1242,7 +1236,7 @@ public class DailyReportData : MonoBehaviour
         public int roundsElapsed;
         public int foodPacksConsumedByClients, foodPacksNeededByClients, foodPacksWasted;
         public int communityFoodDemand, communityFoodUsed;
-        public int lodgingNightsConsumed, lodgingNightsNeeded;
+        public int lodgingRoundsConsumed, lodgingRoundsNeeded;
         public int lodgingRequested, lodgingSatisfied;
         public int idleWorkerRounds, workingWorkerRounds, trainingWorkerRounds, workerPoolRounds;
         public int clientRoundsAwaitingCasework, clientsRequestedCasework, caseworkAvailableRounds;
@@ -1264,8 +1258,8 @@ public class DailyReportData : MonoBehaviour
         foodPacksWasted = cumulativeFoodPacksWasted,
         communityFoodDemand = cumulativeCommunityFoodDemand,
         communityFoodUsed = cumulativeCommunityFoodUsed,
-        lodgingNightsConsumed = cumulativeLodgingNightsConsumed,
-        lodgingNightsNeeded = cumulativeLodgingNightsNeeded,
+        lodgingRoundsConsumed = cumulativeLodgingRoundsConsumed,
+        lodgingRoundsNeeded = cumulativeLodgingRoundsNeeded,
         lodgingRequested = cumulativeLodgingRequested,
         lodgingSatisfied = cumulativeLodgingSatisfied,
         idleWorkerRounds = cumulativeIdleWorkerRounds,
@@ -1301,8 +1295,8 @@ public class DailyReportData : MonoBehaviour
         cumulativeFoodPacksWasted = s.foodPacksWasted;
         cumulativeCommunityFoodDemand = s.communityFoodDemand;
         cumulativeCommunityFoodUsed = s.communityFoodUsed;
-        cumulativeLodgingNightsConsumed = s.lodgingNightsConsumed;
-        cumulativeLodgingNightsNeeded = s.lodgingNightsNeeded;
+        cumulativeLodgingRoundsConsumed = s.lodgingRoundsConsumed;
+        cumulativeLodgingRoundsNeeded = s.lodgingRoundsNeeded;
         cumulativeLodgingRequested = s.lodgingRequested;
         cumulativeLodgingSatisfied = s.lodgingSatisfied;
         cumulativeIdleWorkerRounds = s.idleWorkerRounds;

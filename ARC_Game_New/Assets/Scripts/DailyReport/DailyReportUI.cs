@@ -483,7 +483,7 @@ public class DailyReportUI : MonoBehaviour
         Row("Food Satisfaction", Score(m.satFoodScore));
         Row("Food Delivery Status", $"{m.cumFoodPacksConsumedByClients}/{m.cumFoodPacksNeededByClients} food packs consumed by clients (cumulative).");
         Row("Lodging Satisfaction", Score(m.satLodgingScore));
-        Row("Lodging Status", $"{m.cumLodgingNightsConsumed}/{m.cumLodgingNightsNeeded} lodging-nights consumed by clients (cumulative).");
+        Row("Lodging Status", $"{m.cumLodgingRoundsConsumed}/{m.cumLodgingRoundsNeeded} lodging-rounds consumed by clients (cumulative).");
         Row("Worker Use Satisfaction", Score(m.satWorkerScore));
         Row("Worker Status", $"Idle: {m.cumIdleWorkerRounds} | Working: {m.cumWorkingWorkerRounds} | Training: {m.cumTrainingWorkerRounds}");
         Row("Idle", Score(m.workerIdleSatScore));
@@ -498,7 +498,7 @@ public class DailyReportUI : MonoBehaviour
         Row("Food Cost Efficiency", Score(m.costFoodScore));
         Row("Food Usage Summary", $"${m.cumFoodSpend:F0} spent, {m.cumFoodPacksConsumedByClients} packs consumed (cumulative).");
         Row("Lodging Cost Efficiency", Score(m.costLodgingScore));
-        Row("Lodging Usage Summary", $"${m.cumLodgingSpend:F0} spent, {m.cumLodgingNightsConsumed} nights used (cumulative).");
+        Row("Lodging Usage Summary", $"${m.cumLodgingSpend:F0} spent, {m.cumLodgingRoundsConsumed} bed-rounds used (cumulative).");
         Row("Worker Cost Efficiency", Score(m.costWorkerScore));
         Row("Worker Usage Summary", $"${(m.cumWorkerRequestCost + m.cumWorkerTrainingCost):F0} spent over {m.cumWorkingWorkerRounds} working-rounds.");
 
@@ -575,14 +575,14 @@ public class DailyReportUI : MonoBehaviour
         int communityFoodDemand = d.GetCumulativeCommunityFoodDemand();
         F($"Food Satisfaction = (food packs consumed / needed) x 20% weight x 1000 | consumed={foodConsumed}, needed={foodNeeded} (of which community: delivered={communityFoodUsed}, needed={communityFoodDemand}) => score={currentMetrics.satFoodScore:F1}");
 
-        // Request-based, not the nights-based pair cost efficiency uses below: cumulative clients
+        // Request-based, not the bed-rounds pair cost efficiency uses below: cumulative clients
         // actually relocated by Lodging tasks / cumulative clients those tasks ever requested.
         int lodgingRequested = d.GetCumulativeLodgingRequested();
         int lodgingSatisfied = d.GetCumulativeLodgingSatisfied();
         F($"Lodging Satisfaction = (clients relocated / clients requested via lodging tasks) x 20% weight x 1000 | satisfied={lodgingSatisfied}, requested={lodgingRequested} => score={currentMetrics.satLodgingScore:F1}");
 
-        int lodgingConsumed = d.GetCumulativeLodgingNightsConsumed();
-        int lodgingNeeded = d.GetCumulativeLodgingNightsNeeded();
+        int lodgingConsumed = d.GetCumulativeLodgingRoundsConsumed();
+        int lodgingNeeded = d.GetCumulativeLodgingRoundsNeeded();
 
         int idleRounds = d.GetCumulativeIdleWorkerRounds();
         int workingRounds = d.GetCumulativeWorkingWorkerRounds();
@@ -615,7 +615,7 @@ public class DailyReportUI : MonoBehaviour
         F($"Food Cost Efficiency = normalized($ spent / packs consumed) x 1/3 weight x 1000 | spent=${foodSpend:F0}, consumed={foodConsumed} (of which community delivered={communityFoodUsed}) => score={currentMetrics.costFoodScore:F1}");
 
         float lodgingSpend = d.GetCumulativeLodgingSpend();
-        F($"Lodging Cost Efficiency = normalized($ spent / nights consumed) x 1/3 weight x 1000 | spent=${lodgingSpend:F0}, nights consumed={lodgingConsumed} => score={currentMetrics.costLodgingScore:F1}");
+        F($"Lodging Cost Efficiency = normalized($ spent / bed-rounds consumed) x 1/3 weight x 1000 | spent=${lodgingSpend:F0}, bed-rounds consumed={lodgingConsumed} => score={currentMetrics.costLodgingScore:F1}");
 
         float workerReqCost = d.GetCumulativeWorkerRequestCost();
         float workerTrainCost = d.GetCumulativeWorkerTrainingCost();
@@ -674,7 +674,7 @@ public class DailyReportUI : MonoBehaviour
 
         yield return StartCoroutine(AnimateSectionElement(lodgingTotal, currentMetrics.satLodgingScore, "Lodging Satisfaction", 200f));
         yield return StartCoroutine(AnimateSectionElement(lodgingStatus,
-            $"{currentMetrics.cumLodgingNightsConsumed}/{currentMetrics.cumLodgingNightsNeeded} lodging-nights consumed by clients (cumulative)."));
+            $"{currentMetrics.cumLodgingRoundsConsumed}/{currentMetrics.cumLodgingRoundsNeeded} lodging-rounds consumed by clients (cumulative)."));
 
         yield return StartCoroutine(AnimateSectionElement(workerTotal, currentMetrics.satWorkerScore, "Worker Use Satisfaction", 200f));
         yield return StartCoroutine(AnimateSectionElement(workerStatus,
@@ -700,7 +700,7 @@ public class DailyReportUI : MonoBehaviour
 
         yield return StartCoroutine(AnimateSectionElement(shelterUtilizationTotal, currentMetrics.costLodgingScore, "Lodging Cost Efficiency", 1000f / 3f));
         yield return StartCoroutine(AnimateSectionElement(shelterUsageSummary,
-            $"${currentMetrics.cumLodgingSpend:F0} spent, {currentMetrics.cumLodgingNightsConsumed} nights used (cumulative)."));
+            $"${currentMetrics.cumLodgingSpend:F0} spent, {currentMetrics.cumLodgingRoundsConsumed} bed-rounds used (cumulative)."));
 
         yield return StartCoroutine(AnimateSectionElement(workerUtilizationTotal, currentMetrics.costWorkerScore, "Worker Cost Efficiency", 1000f / 3f));
         yield return StartCoroutine(AnimateSectionElement(workerUsageSummary,
@@ -1169,8 +1169,8 @@ public class DailyReportUI : MonoBehaviour
         currentMetrics.cumTrainingWorkerRounds = d.GetCumulativeTrainingWorkerRounds();
         currentMetrics.cumClientRoundsAwaitingCasework = d.GetCumulativeClientRoundsAwaitingCasework();
         currentMetrics.cumClientsRequestedCasework = d.GetCumulativeClientsRequestedCasework();
-        currentMetrics.cumLodgingNightsConsumed = d.GetCumulativeLodgingNightsConsumed();
-        currentMetrics.cumLodgingNightsNeeded = d.GetCumulativeLodgingNightsNeeded();
+        currentMetrics.cumLodgingRoundsConsumed = d.GetCumulativeLodgingRoundsConsumed();
+        currentMetrics.cumLodgingRoundsNeeded = d.GetCumulativeLodgingRoundsNeeded();
         currentMetrics.cumFoodSpend = d.GetCumulativeFoodSpend();
         currentMetrics.cumLodgingSpend = d.GetCumulativeLodgingSpend();
         currentMetrics.cumWorkerRequestCost = d.GetCumulativeWorkerRequestCost();
@@ -1205,8 +1205,8 @@ public class DailyReportUI : MonoBehaviour
         SetSectionSentence(foodDeliveryStatus, $"{metrics.cumFoodPacksConsumedByClients}/{metrics.cumFoodPacksNeededByClients} food packs consumed by clients (cumulative).");
 
         SetSectionValueFormatted(lodgingTotal, metrics.satLodgingScore, 200);
-        // SetSectionSentence(lodgingStatus, $"{metrics.cumLodgingNightsConsumed}/{metrics.cumLodgingNightsNeeded} lodging-nights provided (cumulative).");
-        SetSectionSentence(lodgingStatus, $"{metrics.cumLodgingNightsConsumed}/{metrics.cumLodgingNightsNeeded} lodging-nights consumed by clients (cumulative).");
+        // SetSectionSentence(lodgingStatus, $"{metrics.cumLodgingRoundsConsumed}/{metrics.cumLodgingRoundsNeeded} lodging-rounds provided (cumulative).");
+        SetSectionSentence(lodgingStatus, $"{metrics.cumLodgingRoundsConsumed}/{metrics.cumLodgingRoundsNeeded} lodging-rounds consumed by clients (cumulative).");
 
         SetSectionValueFormatted(workerTotal, metrics.satWorkerScore, 200);
         // worker subscores
@@ -1227,7 +1227,7 @@ public class DailyReportUI : MonoBehaviour
         SetSectionValueFormatted(kitchenEfficiencyScore, metrics.costFoodScore, 333);
 
         SetSectionValueFormatted(shelterUtilizationTotal, metrics.costLodgingScore);
-        SetSectionSentence(shelterUsageSummary, $"${metrics.cumLodgingSpend:F0} spent, {metrics.cumLodgingNightsConsumed} nights used.");
+        SetSectionSentence(shelterUsageSummary, $"${metrics.cumLodgingSpend:F0} spent, {metrics.cumLodgingRoundsConsumed} bed-rounds used.");
         SetSectionValueFormatted(shelterEfficiencyScore, metrics.costLodgingScore, 333);
 
         SetSectionValueFormatted(workerUtilizationTotal, metrics.costWorkerScore, 333);
