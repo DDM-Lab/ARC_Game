@@ -448,7 +448,19 @@ def _render_tasks(obs):
     return L
 
 
-def _render_sites(obs):
+def _render_sites(obs, *, v3=False):
+    """Top-level free-site id list.
+
+    Dropped under v3: it duplicates `available.buildSites`. The two used to differ -- the old
+    affordability gate in action_enumerator emptied buildSites while sites stayed full (3136 of
+    12887 recorded rounds, all in pre-fix v027_* runs, and buildSites was ALWAYS empty in them,
+    never a partial subset). Since that gate was removed the two lists are identical in every
+    recorded round (6348/6348 across the v2_/v2h4_/v3_/tokfix_ runs), so printing both just gives
+    the model two names for one thing while the prompt claims `available` is the single source of
+    truth. Kept for minimal/original so their rendering -- and the completed A/B runs -- is unchanged.
+    """
+    if v3:
+        return []
     sites = obs.get("sites", [])
     if not sites:
         return []
@@ -463,7 +475,10 @@ def _render_available(obs, *, v2):
     if av.get("hire"):
         L.append(f"  hire: {','.join(av['hire'])} | trainUntrainedMax {av.get('trainUntrainedMax',0)}")
     else:
-        L.append(f"  hire: none | trainUntrainedMax {av.get('trainUntrainedMax',0)}")
+        # "none" was read as "no restriction on hiring" as often as "cannot hire" (observed
+        # verbatim: "hire: none might just mean there's no restriction, not that hiring is
+        # unavailable"). Say which it is.
+        L.append(f"  hire: UNAVAILABLE | trainUntrainedMax {av.get('trainUntrainedMax',0)}")
     ns = av.get("needStaff")
     if ns is not None:
         L.append("  needStaff: " + (" ".join(f"{k}:{v}" for k, v in ns.items()) or "(none)"))
@@ -488,7 +503,7 @@ def _render_available(obs, *, v2):
     return L
 
 
-def render_state_compact(obs, *, v2=True):
+def render_state_compact(obs, *, v2=True, v3=False):
     """Render the cmd observation dict as a COMPACT TEXT block instead of json.dumps(obs).
     Same information the policy acts on, but with the structural bloat removed (the four
     culprits found in the token breakdown), per the representation research:
@@ -500,10 +515,10 @@ def render_state_compact(obs, *, v2=True):
     Lossless w.r.t. what's actionable; only prose and enumerated redundancy are dropped.
     Returns a string ready to drop into the user message in place of json.dumps(obs)."""
     return "\n".join(_render_scalars(obs) + _render_facilities(obs, v2=v2) + _render_tasks(obs)
-                     + _render_sites(obs) + _render_available(obs, v2=v2))
+                     + _render_sites(obs, v3=v3) + _render_available(obs, v2=v2))
 
 
-def render_state_delta(obs, prev_obs, *, v2=True):
+def render_state_delta(obs, prev_obs, *, v2=True, v3=False):
     """History-carrying DELTA rendering: identical to render_state_compact EXCEPT the facilities
     block is diffed against the previous turn (unchanged rows omitted; +new / ~changed shown in
     FULL, -removed by name). Everything actionable — scalars, tasks, the whole `available` block
@@ -532,7 +547,7 @@ def render_state_delta(obs, prev_obs, *, v2=True):
                  "[name type status workers/need food pop/cap site]:"]
     fac_block += rows if rows else ["  (no change)"]
     return "\n".join(_render_scalars(obs) + fac_block + _render_tasks(obs)
-                     + _render_sites(obs) + _render_available(obs, v2=v2))
+                     + _render_sites(obs, v3=v3) + _render_available(obs, v2=v2))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -593,7 +608,7 @@ def render_tasks_text(game_state, *, new=True, v2=True):
         or "(no active tasks)"
 
 
-def render_logistics_text(game_state, actions, *, new=True, v2=True):
+def render_logistics_text(game_state, actions, *, new=True, v2=True, v3=False):
     """Sites + the `available` affordance block (hire/needStaff/staffNow/
     buildSites/transfers) — what the officer can act on right now. Derived from
     the enumerated ``actions`` (the same valid-action set the parser/menu use, so
@@ -601,5 +616,5 @@ def render_logistics_text(game_state, actions, *, new=True, v2=True):
     block empty, which is why this getter takes the actions explicitly."""
     obs = build_observation_commands(game_state, actions or [], new=new, v2=v2,
                                      rounds_left=_rounds_left(game_state))
-    return "\n".join(_render_sites(obs) + _render_available(obs, v2=v2)) \
+    return "\n".join(_render_sites(obs, v3=v3) + _render_available(obs, v2=v2)) \
         or "(no logistics/affordances available)"

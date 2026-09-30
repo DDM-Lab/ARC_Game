@@ -76,7 +76,7 @@ DEFAULT_MODELS = [
 # starves the JSON decision. Measured reasoning_tokens on a small planning prompt:
 #   gpt-5-mini  low=256  medium=1152 high=3840   |  gemini-2.5-flash low=802 medium=1360 high=1478
 # Real game prompts are larger, so we pad generously; the actual spend is logged per round.
-_EFFORT_BUDGET = {"none": 2000, "low": 6000, "medium": 12000, "high": 20000, "xhigh": 24000}
+_EFFORT_BUDGET = {"none": 2000, "low": 6000, "medium": 12000, "high": 20000}
 
 # Set in main() when --base-url points at a local OpenAI-compatible server (Ollama). Ollama
 # AUTO-ENABLES thinking on reasoning-capable models (qwen3, qwen3.5, gpt-oss) unless the request
@@ -312,8 +312,20 @@ def _user_msg(text, image_b64=None):
         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}}]}
 
 
-# ask() (idx-format decision) removed 2026-08-21 with the idx surface — it was unreachable:
-# the episode dispatch only branches on tools_fmt / cmd_fmt.
+def ask(client, model, state, image_b64=None, image_mode="none", reasoning_effort="low",
+        system_variant="original", temperature=None, prompt_pack=None):
+    """Return (decision_dict, raw_content, reasoning_trace, reasoning_tokens, parsed_ok). raw_content
+    is the full visible response (kept verbatim so we can inspect any prose/think emitted).
+    prompt_pack (a loaded pack dict) overrides the built-in idx system prompt when supplied."""
+    _base = (prompt_packs.render(prompt_pack, has_image=False)
+             if prompt_pack else smoke.idx_system_prompt(system_variant))
+    content, rtrace, rtok = chat(client, model, [
+        {"role": "system", "content": _system_content(_base, image_b64, image_mode)},
+        _user_msg("State:\n" + json.dumps(state) + "\n\nJSON decision:", image_b64)],
+        reasoning_effort=reasoning_effort, temperature=temperature)
+    dec, ok = _parse_decision(content)
+    return dec, content, rtrace, rtok, ok
+
 
 def ask_cmd(client, model, state, env, image_b64=None, image_mode="none", reasoning_effort="low",
             system_variant="original", temperature=None, obs_encoding="json", history=None,
@@ -436,29 +448,7 @@ def ask_tools(client, model, state, env, image_b64=None, image_mode="none", reas
     tags, tmeta = cora_tools.translate_tool_calls(tcs)
     if history is not None:
         history.append(_user_msg(user_text, None))
-        # HISTORY SERIALIZATION BUG (fixed): this used to append
-        #     {"role": "assistant", "content": content or tags}
-        # so a pure tool-call turn (content == "") was recorded as if the assistant had SPOKEN
-        # the command-tag text. The model then few-shot-imitated its own apparent output format
-        # and emitted "<staff>Kitchen_0,4</staff>" as plain text -- which the executor never
-        # reads (it only looks at message.tool_calls), so the action was silently dropped with
-        # no error and no state change. Self-reinforcing: once it emits text, content is
-        # non-empty, so history keeps teaching text-mode. Measured on 32-episode runs:
-        # Qwen3-4B h=4 937/1024 rounds (91.5%) corrupted, Qwen3-14B 397 (38.8%),
-        # Qwen3.5-27B 153 (14.9%), and 0/1024 at history=1 -- median onset round 2, the first
-        # round in which a prior assistant turn exists. 3,738 well-formed actions destroyed in
-        # the 4B run alone. Record the real tool_calls instead, so the replayed history shows
-        # the model the channel it must actually use.
-        if raw_tcs:
-            history.append({"role": "assistant", "content": content or None,
-                            "tool_calls": [{"id": tc.id, "type": "function",
-                                            "function": {"name": tc.function.name,
-                                                         "arguments": tc.function.arguments}}
-                                           for tc in raw_tcs]})
-            for tc in raw_tcs:
-                history.append({"role": "tool", "tool_call_id": tc.id, "content": "ok"})
-        else:
-            history.append({"role": "assistant", "content": content})
+        history.append({"role": "assistant", "content": content or tags})
     pc = smoke.parse_commands(tags, env)
     reason = ""
     mr = re.search(r"REASONING:\s*(.+)", content or "")
@@ -608,15 +598,15 @@ def greedy_decision(env, w=REWARD_WEIGHTS):
 # to claim worker_use, and fulfills via the cheapest *effective* option.
 _POT_MODE = os.environ.get("POT_MODE", "baseline")     # "baseline" | "demandsupply"
 _POT_DS_COVERAGE = float(os.environ.get("POT_DS_COVERAGE", "1.0"))  # shelter-cap target as fraction of P
-_POT_MIN_HORIZON = int(os.environ.get("POT_MIN_HORIZON", "4"))   # don't build with fewer rounds left
-_POT_KITCHEN_TARGET = int(os.environ.get("POT_KITCHEN_TARGET", "2"))  # operational kitchens to aim for
+_POT_MIN_HORIZON = 4        # don't build with fewer rounds left — can't amortize
+_POT_KITCHEN_TARGET = 2     # operational kitchens to aim for (food + worker employment)
 _POT_CASEWORK_BUILD_ROUND = 0  # build the casework site EARLY. The workforce is capped (~3-4 operational
                                # buildings), and a building only gets staffed if free workers exist when it's
                                # built — deferring the casework build to ~round 8 left it permanently
                                # NeedWorker (workers already committed to shelters) → 0 processed. Building it
                                # first claims its 4 workers up front, which is the only way it stays operational.
                                # The cost (~one shelter's staffing → lower lodging) is inherent to the worker cap.
-_POT_BUDGET_RESERVE = float(os.environ.get("POT_BUDGET_RESERVE", "1500"))  # reserve before discretionary building
+_POT_BUDGET_RESERVE = 1500  # keep this much budget before discretionary building
 _POT_SHELTER_COVERAGE = 1e9  # θ: route lodging to free shelter only when space >= θ×need.
                              # Set huge = OFF: deferred shelter relocations are unreliable
                              # (travel/expiry) and cost lodging fulfillment vs the reliable
@@ -1125,613 +1115,6 @@ def combined_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
             "reasoning": "lt-value choices + potential building + shelter transfers"}
 
 
-
-
-# ── demand-NPV policy ───────────────────────────────────────────────────────────────────────
-# Provision infrastructure by comparing the discounted savings of OWNING capacity against the
-# price of paying per incident. Every constant below is READ FROM THE LIVE STATE, so the policy
-# transfers to a different map (more/fewer vehicles, different bed counts, retuned prices)
-# without edits. Nothing is hardcoded except the fallbacks used before a quantity is observable.
-#
-# Mechanics verified in the Unity source (not inferred from play):
-#   Kitchen.prefab roundProduction  -> 10 food packs PER ROUND, requiredResources: [], and
-#     BuildingResourceStorage.ProduceResources() gates on Building.IsOperational(), so a kitchen
-#     pays out only once STAFFED. resourceCapacities.maxCapacity = 20 packs, and production is
-#     skipped when CanAddResource fails -> a kitchen that nobody draws from fills in 2 rounds and
-#     STALLS. Kitchen throughput is therefore bounded by how fast vehicles haul food away.
-#   Vehicle.maxCargoCapacity = 10 packs = exactly one "100 meals" choice; DeliverySystem splits a
-#     larger request into ceil(qty/capacity) loads, each needing its own vehicle.
-#   MotelCostManager.costPerPersonPerDay = 200, charged EVERY day a resident stays; a staffed
-#     shelter costs nothing per day once built.
-# Consequence: one kitchen ~ one vehicle's haul rate, so the kitchen target is derived from the
-# FLEET SIZE, and the shelter target from the population still exposed to the motel meter.
-_DNPV_COVER      = float(os.environ.get("DNPV_COVER", "1.0"))    # shelter beds per unhoused person
-_DNPV_KITCHEN_PER_VEH = float(os.environ.get("DNPV_KITCHEN_PER_VEH", "1.0"))
-_DNPV_MAX_PAY    = float(os.environ.get("DNPV_MAX_PAY", "3000")) # per-incident cash ceiling
-_DNPV_PAY_IF_NO_VEH = os.environ.get("DNPV_PAY_IF_NO_VEH", "1") == "1"
-
-
-def _dnpv_map_constants(env, gs, facs):
-    """Derive this MAP's constants from observed state; no map-specific literals."""
-    c = getattr(env, "_dnpv_cache", None)
-    if c is None:
-        c = env._dnpv_cache = {"fleet": 0, "bed": 0, "kcap": 0, "motel_rate": 0.0,
-                               "day": None, "lodge": 0.0, "pop": 0,
-                               "n_reloc": 0, "n_food": 0, "packs": 0, "people": 0, "rounds": 0}
-    log = (gs.get("logistics") or {})
-    # fleet size: the most vehicles ever simultaneously idle is a lower bound on the fleet
-    c["fleet"] = max(c["fleet"], int(log.get("availableVehicles") or 0),
-                     int(log.get("totalVehicles") or 0))
-    for f in facs:
-        if f.get("buildingType") == "Shelter":
-            c["bed"] = max(c["bed"], int(f.get("populationCapacity") or 0))
-        if f.get("buildingType") == "Kitchen":
-            c["kcap"] = max(c["kcap"], int((f.get("resources") or {}).get("foodPacksCapacity") or 0))
-    # Bootstrap: with no shelter standing there is nothing to read a bed count from, and any
-    # sizing rule that needs `bed` then never authorises the first build -- a deadlock that held
-    # shelters at 0/0 for entire episodes in the smoke. Take the capacity off the enumerated
-    # build action if it carries one; otherwise mark bed UNKNOWN so the policy builds a single
-    # probe shelter to learn the number rather than stalling forever.
-    for a in (getattr(env, "valid_actions", None) or []):
-        if a.get("action_type") == "construction":
-            con = a.get("construction") or {}
-            if str(con.get("building_type")).lower().startswith("shelter"):
-                for k in ("population_capacity", "populationCapacity", "capacity"):
-                    if con.get(k):
-                        c["bed"] = max(c["bed"], int(con[k]))
-    c["bed_known"] = c["bed"] > 0
-    # Prices come from the RAW state's own fields (same source obs_encoder reads), never literals.
-    cs = gs.get("constructionState") or {}
-    wf = gs.get("workforceState") or {}
-    costs = {}
-    for v, k in ((cs.get("buildingConstructionCost"), "build"),
-                 (wf.get("untrainedWorkerCost"), "hire")):
-        if v: costs[k] = float(v)
-
-    # MOTEL RATE: the raw state exposes no per-person-per-day price (obs_encoder synthesises
-    # motelDailyCost from a mirrored constant), so INFER it from what the map actually charges:
-    #   d(lodgingSpend) / motel_population, sampled on day boundaries.
-    # That makes the policy correct on a map with a different price without touching the code.
-    rm = gs.get("rewardMetrics") or {}
-    lodging = float(rm.get("lodgingSpend") or 0.0)
-    motel = next((f for f in facs if f.get("buildingType") == "Motel"), None)
-    pop = int((motel or {}).get("currentPopulation") or 0)
-    day = int((gs.get("sessionInfo") or {}).get("currentDay") or 0)
-    prev_day, prev_lodge, prev_pop = c.get("day"), c.get("lodge", 0.0), c.get("pop", 0)
-    if prev_day is not None and day > prev_day and prev_pop > 0:
-        rate = (lodging - prev_lodge) / prev_pop      # $ per resident per day, observed
-        if rate > 0:
-            obs = c.setdefault("rate_obs", [])
-            obs.append(rate)
-            # lodgingSpend also absorbs one-off paid evacuations, so a single day can read high
-            # (measured 430 against a true 200). The median rejects those spikes.
-            c["motel_rate"] = sorted(obs)[len(obs) // 2]
-    if day != prev_day:
-        c["day"], c["lodge"], c["pop"] = day, lodging, pop
-    return c, costs
-
-
-def demand_npv_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
-    """Demand-driven provisioning + per-incident build-vs-pay arbitration (map-agnostic)."""
-    gs = env.game_state or {}
-    va = env.valid_actions or []
-    facs = gs.get("mapState", {}).get("facilities", []) or []
-    rounds_left = max(0, rounds_total - rnd)
-    K, costs = _dnpv_map_constants(env, gs, facs)
-
-    rounds_per_day = 4.0
-    days_left  = max(0.0, rounds_left / rounds_per_day)
-    fleet      = K["fleet"] or 1
-    bed        = K["bed"] or 0
-    motel_rate = K["motel_rate"] or 0.0
-    build_cost = costs.get("build", 0.0)
-    hire_cost  = costs.get("hire", 0.0)
-    free_veh   = int((gs.get("logistics") or {}).get("availableVehicles") or 0)
-
-    base = greedy_decision(env, w)
-    choices, actions = base["choices"], list(base["actions"])
-    tasks_by_id = {t["taskId"]: t for t in (gs.get("allActiveTasks") or [])}
-
-    def _txt(c):  return (c.get("choiceText") or "").lower()
-    def _cost(c): return abs(float(_impacts_dict(c).get("Budget", 0) or 0))
-    def _qty(c):
-        q = c.get("deliveryQuantity")
-        if q: return int(q)
-        m = re.search(r"(\d+)", _txt(c))          # rendered text is packs x10
-        return int(m.group(1)) // 10 if m else 1
-
-    unhoused = sum((f.get("currentPopulation") or 0) for f in facs
-                   if f.get("buildingType") == "Community")
-    beds_free = sum(max(0, (f.get("populationCapacity") or 0) - (f.get("currentPopulation") or 0))
-                    for f in facs if f.get("buildingType") == "Shelter"
-                    and f.get("buildingStatus") == "InUse")
-    n_shelter = sum(1 for f in facs if f.get("buildingType") == "Shelter")
-    n_kitchen = sum(1 for f in facs if f.get("buildingType") == "Kitchen")
-    # one vehicle hauls one load per trip, and a kitchen refills ~one load per round, so the
-    # fleet is what decides how many kitchens can actually be drained.
-    kitchen_target = max(1, int(round(_DNPV_KITCHEN_PER_VEH * fleet)))
-
-    for ch in choices:
-        t = tasks_by_id.get(ch["taskId"])
-        if not t:
-            continue
-        cs, title = (t.get("choices") or []), (t.get("taskTitle") or "")
-
-        if "Relocation" in title or "Population" in title:
-            opt = next((c for c in cs if "shelter" in _txt(c)), None)
-            if opt is not None and beds_free > 0:
-                ch["choiceId"] = opt["choiceId"]
-                beds_free = max(0, beds_free - min(beds_free, bed or beds_free))
-
-        elif "Food Request" in title:
-            # rank the free (vehicle-hauled) options by how many vehicle-loads they need
-            hauled = sorted([(c, max(1, _qty(c))) for c in cs if _cost(c) == 0],
-                            key=lambda x: -x[1])
-            instant = next((c for c in cs if _cost(c) > 0), None)
-            pick, used = None, 0
-            for c, q in hauled:                       # take the largest that FITS the free fleet
-                loads = max(1, -(-q // 10)) if q > 10 else 1
-                if loads <= free_veh:
-                    pick, used = c, loads
-                    break
-            if pick is None and _DNPV_PAY_IF_NO_VEH and instant is not None \
-                    and _cost(instant) <= _DNPV_MAX_PAY:
-                pick, used = instant, 0               # fleet saturated: cash is the only clearer
-            if pick is not None:
-                ch["choiceId"] = pick["choiceId"]
-                free_veh = max(0, free_veh - used)
-
-    def find_build(btype):
-        cands = [(i, a) for i, a in enumerate(va) if a.get("action_type") == "construction"
-                 and (a.get("construction") or {}).get("building_type") == btype]
-        return min(cands, key=lambda x: x[1].get("cost") or 0) if cands else None
-
-    target = None
-    if rounds_left >= rounds_per_day:
-        need_workers = 0
-        for f in facs:
-            if f.get("buildingType") in ("Shelter", "Kitchen"):
-                need_workers = max(need_workers, int(f.get("requiredWorkforce") or 0))
-        staff_cost = need_workers * hire_cost
-        # SHELTER: savings = taking a shelter-load off the $/person/day meter for the rest of the run
-        if bed and motel_rate and (n_shelter * bed) < _DNPV_COVER * unhoused:
-            cand = find_build("Shelter")
-            if cand:
-                people = min(bed, max(0, unhoused))
-                if people * motel_rate * days_left > (cand[1].get("cost") or build_cost) + staff_cost:
-                    target = cand
-        # KITCHEN: savings = the paid deliveries its per-round output displaces, while the fleet
-        # still has slack to haul that output away.
-        if target is None and n_kitchen < kitchen_target:
-            cand = find_build("Kitchen")
-            if cand:
-                target = cand
-    if target is not None:
-        actions.append(target[0])
-
-    wf = gs.get("workforceState", {}) or {}
-    free_w = int(wf.get("freeTrainedWorkers", 0) or 0) + int(wf.get("freeUntrainedWorkers", 0) or 0)
-    need_w = sum(max(0, (f.get("requiredWorkforce") or 0) - (f.get("assignedWorkforce") or 0))
-                 for f in facs if f.get("buildingStatus") in ("NeedWorker", "UnderConstruction"))
-    hires = 0
-    while need_w > free_w + hires and hires < 8:
-        idx = next((i for i, a in enumerate(va)
-                    if a.get("action_type") == "worker"
-                    and (a.get("worker") or {}).get("worker_action_type") == "hire_untrained"
-                    and i not in actions), None)
-        if idx is None:
-            break
-        actions.append(idx); hires += 1
-    _fill_shelters_from_costly_sources(env, actions)
-    return {"choices": choices, "actions": actions, "note": "demand-npv",
-            "reasoning": f"fleet={fleet} bed={bed} motel_rate={motel_rate:.0f} unhoused={unhoused} "
-                         f"beds_free={beds_free} kitchens={n_kitchen}/{kitchen_target} veh={free_veh}"}
-
-
-
-# ── demand-FORECAST policy ──────────────────────────────────────────────────────────────────
-# demand-npv provisions against demand that has ALREADY arrived. This one estimates the arrival
-# PROCESS online and provisions against the demand still to come, which is what actually closes
-# the headroom: capacity only pays if it exists BEFORE the demand shows up, and construction has
-# a ~1-day (~4-round) lead time plus a staffing step, so reacting is structurally too late.
-#
-# Online estimates (all per-map, nothing hardcoded):
-#   lam_reloc, lam_food  — task arrivals per round, counted from tasks actually seen so far
-#   ppl_per_reloc        — mean people moved per relocation, from the affected facility
-#   packs_per_food       — mean packs requested, from choice deliveryQuantity
-# Forecast over the remaining horizon, net of build lead time:
-#   future_people = lam_reloc * usable_rounds * ppl_per_reloc
-#   future_packs  = lam_food  * usable_rounds * packs_per_food
-#
-# Sizing:
-#   shelters = ceil(future_people / beds_per_shelter), each justified only if the motel meter it
-#     switches off over the REMAINING days exceeds build + staffing:
-#         people_served * motel_rate * days_left_after_ready  >  build + workers*hire
-#   kitchens = ceil(future_packs / packs_a_kitchen_can_deliver_over_horizon), capped by FLEET,
-#     because a kitchen that nobody hauls from fills its store and stalls (CanAddResource gate).
-#     Justified if the paid deliveries it displaces exceed build + staffing.
-# Every price, capacity and rate is read from live state via _dnpv_map_constants.
-_DFC_LEAD_ROUNDS = float(os.environ.get("DFC_LEAD_ROUNDS", "5"))   # construct + staff before useful
-_DFC_SAFETY      = float(os.environ.get("DFC_SAFETY", "1.0"))      # over/under-provision knob
-_DFC_MAX_PAY     = float(os.environ.get("DFC_MAX_PAY", "3000"))
-# Shelters look like the obvious win on cash ($200/person/day avoided) but the SCORE disagrees:
-# score = satisfaction - cost_efficiency, satisfaction terms are clamp01(fulfilled/resolved)
-# QUANTITY ratios, and ExpireTask still books an ignored task's demand into the denominator with
-# a zero numerator -- so unfulfilled demand is unavoidable damage. A shelter holds `bed` people
-# and partially fulfils anything larger; the motel is effectively unbounded and always completes.
-# Measured: routing to shelters put sat_lodging at 0.78-0.81 against build-potential's 0.998,
-# while cost_lodging moved 0.122 -> 0.120, i.e. the cash saving was worth ~nothing. Meanwhile
-# casework_processing_sat (= caseworkProcessed/caseworkRequested, denominator NOT dodgeable) sat
-# at 0.53 with casework_efficiency 0.001 -- nearly free score left on the table. So the build
-# budget belongs in CASEWORK, not shelters.
-_DFC_USE_SHELTER = os.environ.get("DFC_USE_SHELTER", "1") == "1"
-_DFC_CW_PER      = float(os.environ.get("DFC_CW_PER", "4"))   # open casework requests per site
-_DFC_CW_MIN      = int(os.environ.get("DFC_CW_MIN", "1"))     # floor once any casework is requested
-
-
-def _dfc_observe(env, gs, K):
-    """Update the online arrival-rate estimates from THIS round's task list."""
-    seen = getattr(env, "_dfc_seen", None)
-    if seen is None:
-        seen = env._dfc_seen = set()
-    K["rounds"] = K.get("rounds", 0) + 1
-    facs = gs.get("mapState", {}).get("facilities", []) or []
-    pop_by = {f.get("facilityName"): (f.get("currentPopulation") or 0) for f in facs}
-    # Group size, learned from what actually LEAVES the communities each round. The task's
-    # affectedFacility never matched a facilityName, so the per-task lookup below silently
-    # yielded 0 and the forecast ran on the unhoused count alone.
-    cur_comm = sum(v for k, v in pop_by.items() if "community" in str(k).lower())
-    prev = K.get("comm_pop")
-    if prev is not None and prev > cur_comm:
-        moved = prev - cur_comm
-        K["grp_max"] = max(K.get("grp_max", 0), moved)
-        K["grp_sum"] = K.get("grp_sum", 0) + moved
-        K["grp_n"] = K.get("grp_n", 0) + 1
-    K["comm_pop"] = cur_comm
-    for t in (gs.get("allActiveTasks") or []):
-        tid = t.get("taskId"); title = (t.get("taskTitle") or "")
-        key = (title, t.get("affectedFacility"), tid)
-        if key in seen:
-            continue                      # count each arrival once, not once per round it lingers
-        seen.add(key)
-        if "Relocation" in title or "Population" in title:
-            K["n_reloc"] += 1
-            K["people"] += pop_by.get(t.get("affectedFacility")) or 0
-        elif "Food Request" in title:
-            K["n_food"] += 1
-            qs = [int(c.get("deliveryQuantity") or 0) for c in (t.get("choices") or [])]
-            qs = [q for q in qs if q > 0]
-            K["packs"] += (sum(qs) / len(qs)) if qs else 0
-
-
-def demand_forecast_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
-    """Forecast future demand and pre-build shelters/kitchens to meet it (map-agnostic)."""
-    gs = env.game_state or {}
-    va = env.valid_actions or []
-    facs = gs.get("mapState", {}).get("facilities", []) or []
-    K, costs = _dnpv_map_constants(env, gs, facs)
-    _dfc_observe(env, gs, K)
-
-    rounds_left = max(0, rounds_total - rnd)
-    usable = max(0.0, rounds_left - _DFC_LEAD_ROUNDS)          # capacity only helps after it exists
-    days_after_ready = usable / 4.0
-    fleet      = K["fleet"] or 1
-    bed        = K["bed"] or 0
-    motel_rate = K.get("motel_rate", 0.0)
-    build_cost = costs.get("build", 0.0)
-    hire_cost  = costs.get("hire", 0.0)
-    obs_rounds = max(1, K.get("rounds", 1))
-    free_veh   = int((gs.get("logistics") or {}).get("availableVehicles") or 0)
-
-    # ---- forecast ------------------------------------------------------------------------
-    lam_reloc = K["n_reloc"] / obs_rounds
-    lam_food  = K["n_food"]  / obs_rounds
-    ppl_per   = (K["people"] / K["n_reloc"]) if K["n_reloc"] else 0.0
-    packs_per = (K["packs"]  / K["n_food"])  if K["n_food"]  else 0.0
-    future_people = _DFC_SAFETY * lam_reloc * usable * ppl_per
-    future_packs  = _DFC_SAFETY * lam_food  * usable * packs_per
-    # anyone still sitting in a Community is demand we KNOW about, on top of the forecast
-    unhoused = sum((f.get("currentPopulation") or 0) for f in facs
-                   if f.get("buildingType") == "Community")
-    people_target = max(future_people, min(unhoused, future_people + unhoused))
-
-    n_shelter = sum(1 for f in facs if f.get("buildingType") == "Shelter")
-    n_kitchen = sum(1 for f in facs if f.get("buildingType") == "Kitchen")
-    beds_free = sum(max(0, (f.get("populationCapacity") or 0) - (f.get("currentPopulation") or 0))
-                    for f in facs if f.get("buildingType") == "Shelter"
-                    and f.get("buildingStatus") == "InUse")
-
-    need_workers = max([int(f.get("requiredWorkforce") or 0) for f in facs
-                        if f.get("buildingType") in ("Shelter", "Kitchen")] or [0])
-    staff_cost = need_workers * hire_cost
-
-    shelters_needed = int(-(-people_target // bed)) if bed else (1 if people_target > 0 else 0)
-    # a kitchen delivers at most one vehicle-load per round, so over `usable` rounds it can move
-    # at most that; and the fleet caps how many kitchens can be drained at once.
-    per_kitchen_packs = 10.0 * usable          # 10 packs/round production (Kitchen.roundProduction)
-    kitchens_needed = int(-(-future_packs // per_kitchen_packs)) if per_kitchen_packs > 0 else 0
-    kitchens_needed = max(0, min(kitchens_needed, int(fleet)))
-
-    base = greedy_decision(env, w)
-    choices, actions = base["choices"], list(base["actions"])
-    tasks_by_id = {t["taskId"]: t for t in (gs.get("allActiveTasks") or [])}
-
-    def _txt(c):  return (c.get("choiceText") or "").lower()
-    def _cost(c): return abs(float(_impacts_dict(c).get("Budget", 0) or 0))
-
-    for ch in choices:
-        t = tasks_by_id.get(ch["taskId"])
-        if not t:
-            continue
-        cs, title = (t.get("choices") or []), (t.get("taskTitle") or "")
-        if "Relocation" in title or "Population" in title:
-            # A shelter holds `bed` people; the motel is effectively unbounded. Routing a group
-            # into a shelter with too few free beds PARTIALLY fulfils it, and the score pays for
-            # fulfilment, not for where people sleep. Measured: gating on `beds_free > 0` drove
-            # lodgingFulfilled to 512/676 (76%) against build-potential's 600/601 (99.8%) and cost
-            # 0.234 of sat_lodging -- while the cost terms were IDENTICAL (cost_lodging 0.120 vs
-            # 0.122), i.e. the motel savings this was chasing were already priced in. So require
-            # room for the whole group, sized from what relocations have actually moved so far.
-            group = K.get("grp_max") or bed or 0
-            opt = next((c for c in cs if "shelter" in _txt(c)), None) if _DFC_USE_SHELTER else None
-            if opt is not None and bed and beds_free >= max(group, bed):
-                ch["choiceId"] = opt["choiceId"]
-                beds_free = max(0, beds_free - group)
-        elif "Food Request" in title:
-            hauled = sorted([(c, int(c.get("deliveryQuantity") or 1)) for c in cs if _cost(c) == 0],
-                            key=lambda x: -x[1])
-            instant = next((c for c in cs if _cost(c) > 0), None)
-            pick, used = None, 0
-            for c, q in hauled:
-                loads = max(1, int(-(-q // 10)))
-                if loads <= free_veh:
-                    pick, used = c, loads
-                    break
-            if pick is None and instant is not None and _cost(instant) <= _DFC_MAX_PAY:
-                pick, used = instant, 0
-            if pick is not None:
-                ch["choiceId"] = pick["choiceId"]
-                free_veh = max(0, free_veh - used)
-
-    def find_build(btype):
-        cands = [(i, a) for i, a in enumerate(va) if a.get("action_type") == "construction"
-                 and (a.get("construction") or {}).get("building_type") == btype]
-        return min(cands, key=lambda x: x[1].get("cost") or 0) if cands else None
-
-    target = None
-    if usable > 0:
-        # CASEWORK FIRST: largest untapped satisfaction term, and its cost term is ~0.001.
-        n_casework0 = sum(1 for f in facs if f.get("buildingType") == "CaseworkSite")
-        cw_open0 = sum(1 for t in (gs.get("allActiveTasks") or [])
-                       if "Casework" in (t.get("taskTitle") or ""))
-        cw_target = max(_DFC_CW_MIN, int(-(-cw_open0 // _DFC_CW_PER))) if cw_open0 else 0
-        if n_casework0 < cw_target:
-            cand = find_build("CaseworkSite")
-            if cand:
-                target = cand
-        probe = (_DFC_USE_SHELTER and (not K.get("bed_known"))
-                 and n_shelter == 0 and unhoused > 0)
-        if target is None and _DFC_USE_SHELTER and (
-                probe or (n_shelter < shelters_needed and bed and motel_rate)):
-            cand = find_build("Shelter")
-            if cand:
-                if probe:
-                    target = cand          # one probe build to LEARN beds/shelter and the rate
-                else:
-                    saved = min(bed, people_target) * motel_rate * days_after_ready
-                    if saved > (cand[1].get("cost") or build_cost) + staff_cost:
-                        target = cand
-        # CASEWORK: a "Casework Request" can only be resolved once a casework site is built and
-        # staffed, and casework_processing_sat is a first-class reward term. Omitting it cost
-        # 0.368 of score against build-potential (0.173 vs 0.541) -- the largest single gap.
-        # Size it off the casework demand actually arriving, not a fixed count.
-        n_casework = sum(1 for f in facs if f.get("buildingType") == "CaseworkSite")
-        cw_open = sum(1 for t in (gs.get("allActiveTasks") or [])
-                      if "Casework" in (t.get("taskTitle") or ""))
-        if target is None and cw_open > 0 and n_casework < max(1, int(-(-cw_open // 4))):
-            cand = find_build("Casework") or find_build("CaseworkSite")
-            if cand:
-                target = cand
-        if target is None and n_kitchen < kitchens_needed:
-            cand = find_build("Kitchen")
-            if cand:
-                # each pack this kitchen delivers displaces a paid pack; price it off the cheapest
-                # paid food choice currently on offer rather than a literal.
-                paid = [(_cost(c) / max(1, int(c.get("deliveryQuantity") or 1)))
-                        for t in (gs.get("allActiveTasks") or [])
-                        if "Food Request" in (t.get("taskTitle") or "")
-                        for c in (t.get("choices") or []) if _cost(c) > 0]
-                per_pack = min(paid) if paid else 0.0
-                movable = min(per_kitchen_packs, future_packs)
-                if per_pack and movable * per_pack > (cand[1].get("cost") or build_cost) + staff_cost:
-                    target = cand
-    if target is not None:
-        actions.append(target[0])
-
-    wf = gs.get("workforceState", {}) or {}
-    free_w = int(wf.get("freeTrainedWorkers", 0) or 0) + int(wf.get("freeUntrainedWorkers", 0) or 0)
-    need_w = sum(max(0, (f.get("requiredWorkforce") or 0) - (f.get("assignedWorkforce") or 0))
-                 for f in facs if f.get("buildingStatus") in ("NeedWorker", "UnderConstruction"))
-    hires = 0
-    while need_w > free_w + hires and hires < 8:
-        idx = next((i for i, a in enumerate(va)
-                    if a.get("action_type") == "worker"
-                    and (a.get("worker") or {}).get("worker_action_type") == "hire_untrained"
-                    and i not in actions), None)
-        if idx is None:
-            break
-        actions.append(idx); hires += 1
-    _fill_shelters_from_costly_sources(env, actions)
-    return {"choices": choices, "actions": actions, "note": "demand-forecast",
-            "reasoning": (f"lam_reloc={lam_reloc:.2f} lam_food={lam_food:.2f} ppl/rel={ppl_per:.0f} "
-                          f"packs/food={packs_per:.0f} -> people={people_target:.0f} packs={future_packs:.0f} "
-                          f"| shelters {n_shelter}/{shelters_needed} kitchens {n_kitchen}/{kitchens_needed} "
-                          f"fleet={fleet} bed={bed} motel={motel_rate:.0f}")}
-
-
-
-# ── pareto policy ───────────────────────────────────────────────────────────────────────────
-# The strategy the calibrated surrogate's Pareto frontier converges on. Every one of the nine
-# non-dominated policies shares these invariants (the rest -- kitchen count, casework count, food
-# rule -- only trade score against banked budget):
-#     6 shelters · build from round 0 · one building per round · relocations to SHELTERS
-#     · answer every casework request
-# Build ORDER is casework -> shelters -> kitchens, because casework has the longest chain to payoff
-# (build ~4 rounds, then staff, and requests only mature once residents have been housed a while),
-# while paid food covers the gap cheaply until the kitchens come online.
-# Sizing rationale, all derived rather than assumed:
-#   shelters  ~ relocated population / beds-per-shelter. Swept 4..12 on the surrogate: score peaks
-#               at 5-6 (3.876/3.877) and falls away after -- extra shelters eat the sites and cash
-#               that casework and kitchens need. 6 is a real optimum, not the sweep's cap.
-#   kitchens  ~ fleet haul capacity: a kitchen refills ~1 vehicle-load per round, so more kitchens
-#               than the fleet can drain just stall on their 20-pack store.
-#   casework  ~ sized to the request backlog; its cost term is ~0.001, so it is nearly free score.
-# ---------------------------------------------------------------------------------------------
-# The POLICY FAMILY shared with the surrogate (oracle/pareto_sweep.py:make_plan).
-#
-# Both engines must run the SAME policy or an engine-vs-engine comparison measures the two
-# implementations rather than the two engines. So the nine knobs live in one place, are read from
-# ARC_FAMILY_CFG (JSON), and mean exactly what make_plan() means by them:
-#   n_shelter/n_kitchen/n_casework  how many of each to build
-#   start, spacing                  first build round, and rounds between builds
-#   food    "kitchen10" haul from a kitchen | "paid" buy the immediate option
-#   reloc   "shelter" route to shelters     | "motel" route to the motel
-#   answer_cw                       take offered casework actions (0/1)
-#   switch                          round at which food and reloc both flip to the other rule
-# Defaults reproduce the frontier plan already measured on Unity (job 36031, +2.600).
-# ---------------------------------------------------------------------------------------------
-_FAMILY_DEFAULT = dict(n_shelter=6, n_kitchen=2, n_casework=3, start=0, spacing=1,
-                       food="kitchen10", reloc="shelter", answer_cw=1, switch=None)
-
-
-def _family_cfg():
-    cfg = dict(_FAMILY_DEFAULT)
-    raw = os.environ.get("ARC_FAMILY_CFG", "").strip()
-    if raw:
-        cfg.update(json.loads(raw))
-    # legacy single-knob env vars still honoured so old sbatch wrappers keep working
-    for k, ev in (("n_shelter", "PARETO_SHELTERS"), ("n_kitchen", "PARETO_KITCHENS"),
-                  ("n_casework", "PARETO_CASEWORK")):
-        if os.environ.get(ev):
-            cfg[k] = int(os.environ[ev])
-    return cfg
-
-
-def _family_rules(cfg, rnd):
-    """food/reloc rule in force at `rnd`, applying `switch`. Mirrors make_plan.macro exactly."""
-    food, reloc = cfg["food"], cfg["reloc"]
-    if cfg.get("switch") is not None and rnd >= cfg["switch"]:
-        food = "paid" if food == "kitchen10" else "kitchen10"
-        reloc = "motel" if reloc == "shelter" else "shelter"
-    return food, reloc
-
-
-def _family_build_schedule(cfg):
-    """round -> buildingType. Same order (casework, shelter, kitchen) and cadence as make_plan."""
-    order = (["CaseworkSite"] * cfg["n_casework"] + ["Shelter"] * cfg["n_shelter"]
-             + ["Kitchen"] * cfg["n_kitchen"])
-    return {cfg["start"] + i * cfg["spacing"]: b for i, b in enumerate(order)}
-
-
-def pareto_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS, cfg=None):
-    """Frontier strategy, parameterised by the shared policy family (see _family_cfg)."""
-    cfg = cfg or _family_cfg()
-    food_rule, reloc_rule = _family_rules(cfg, rnd)
-    gs = env.game_state or {}
-    va = env.valid_actions or []
-    facs = gs.get("mapState", {}).get("facilities", []) or []
-    have = {k: sum(1 for f in facs if f.get("buildingType") == k)
-            for k in ("Shelter", "Kitchen", "CaseworkSite")}
-    want = [("CaseworkSite", cfg["n_casework"]), ("Shelter", cfg["n_shelter"]),
-            ("Kitchen", cfg["n_kitchen"])]
-
-    base = greedy_decision(env, w)
-    choices, actions = base["choices"], list(base["actions"])
-    tasks_by_id = {t["taskId"]: t for t in (gs.get("allActiveTasks") or [])}
-
-    def _txt(c):  return (c.get("choiceText") or "").lower()
-    def _cost(c): return abs(float(_impacts_dict(c).get("Budget", 0) or 0))
-    free_veh = int((gs.get("logistics") or {}).get("availableVehicles") or 0)
-    shelter_beds_free = sum(max(0, (f.get("populationCapacity") or 0) - (f.get("currentPopulation") or 0))
-                            for f in facs if f.get("buildingType") == "Shelter"
-                            and f.get("buildingStatus") == "InUse")
-    kitchen_stock = sum(((f.get("resources") or {}).get("foodPacks") or 0)
-                        for f in facs if f.get("buildingType") == "Kitchen"
-                        and f.get("buildingStatus") == "InUse")
-
-    for ch in choices:
-        t = tasks_by_id.get(ch["taskId"])
-        if not t:
-            continue
-        cs, title = (t.get("choices") or []), (t.get("taskTitle") or "")
-        if "Relocation" in title or "Population" in title:
-            # Route to a shelter ONLY when one is actually InUse with free beds. The surrogate
-            # silently falls back to the motel when beds are short; Unity does not -- picking
-            # "Send to Shelters" before any shelter is operational simply fails. Because this
-            # policy front-loads construction, the first ~10 rounds have no beds at all, and the
-            # unguarded version dropped sat_lodging to 0.803 (against 0.998 for build-potential).
-            opt = (next((c for c in cs if "shelter" in _txt(c) and _cost(c) == 0), None)
-                   if (reloc_rule == "shelter" and shelter_beds_free > 0) else None)
-            if opt is None:
-                opt = next((c for c in cs if "motel" in _txt(c) and _cost(c) == 0), None)
-            if opt is not None:
-                ch["choiceId"] = opt["choiceId"]
-                shelter_beds_free = max(0, shelter_beds_free - 100)
-        elif "Food Request" in title:
-            # Kitchen haul needs BOTH a free vehicle and a kitchen holding stock; otherwise buy the
-            # immediate option. Same failure mode as above: ordering from kitchens that are still
-            # under construction cost sat_food 0.226.
-            hauled = sorted([c for c in cs if _cost(c) == 0],
-                            key=lambda c: int(c.get("deliveryQuantity") or 1))
-            instant = next((c for c in cs if _cost(c) > 0), None)
-            can_haul = (food_rule == "kitchen10" and hauled and free_veh > 0
-                        and kitchen_stock > 0)
-            pick = hauled[0] if can_haul else (instant or (hauled[0] if hauled else None))
-            if pick is not None:
-                ch["choiceId"] = pick["choiceId"]
-                if pick is not instant:
-                    free_veh = max(0, free_veh - 1)
-                    kitchen_stock = max(0, kitchen_stock - 10)
-        elif "Casework" in title and cfg["answer_cw"]:
-            # casework_processing_sat is the largest untapped term and casework_efficiency ~0.001,
-            # so always take an offered casework action.
-            opt = next((c for c in cs if _cost(c) == 0), None) or (cs[0] if cs else None)
-            if opt is not None:
-                ch["choiceId"] = opt["choiceId"]
-
-    # ONE building per round, in priority order, until each target is met -- but only on the
-    # rounds the schedule names, so `start` and `spacing` mean the same thing in both engines.
-    sched = _family_build_schedule(cfg)
-    for btype, target in (want if rnd in sched else []):
-        if have.get(btype, 0) >= target:
-            continue
-        cand = [(i, a) for i, a in enumerate(va)
-                if a.get("action_type") == "construction"
-                and (a.get("construction") or {}).get("building_type") == btype]
-        if cand:
-            actions.append(min(cand, key=lambda x: x[1].get("cost") or 0)[0])
-        break                                   # at most one build per round
-
-    # hire enough untrained bodies to staff what is standing or rising
-    wf = gs.get("workforceState", {}) or {}
-    free_w = int(wf.get("freeTrainedWorkers", 0) or 0) + int(wf.get("freeUntrainedWorkers", 0) or 0)
-    need_w = sum(max(0, (f.get("requiredWorkforce") or 0) - (f.get("assignedWorkforce") or 0))
-                 for f in facs if f.get("buildingStatus") in ("NeedWorker", "UnderConstruction"))
-    hires = 0
-    while need_w > free_w + hires and hires < 8:
-        idx = next((i for i, a in enumerate(va)
-                    if a.get("action_type") == "worker"
-                    and (a.get("worker") or {}).get("worker_action_type") == "hire_untrained"
-                    and i not in actions), None)
-        if idx is None:
-            break
-        actions.append(idx); hires += 1
-    _fill_shelters_from_costly_sources(env, actions)
-    return {"choices": choices, "actions": actions, "note": "pareto",
-            "reasoning": f"r{rnd} have={have} want={[(b, t) for b, t in want]} "
-                         f"food={food_rule} reloc={reloc_rule} veh={free_veh}"}
-
-
 def random_decision(env, rng_seed=0):
     """Random valid actions + one random choice per task (lower-bound baseline).
     Deterministic-ish per call via a simple LCG over valid_action count (no global RNG)."""
@@ -1778,7 +1161,7 @@ def _decision_image(image_mode, env, grid, tmp_png):
 
 # ── One episode ─────────────────────────────────────────────────────────────
 def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=None, log_dir=None,
-                show_impacts=True, policy="llm", action_format="tools", image_mode="none",
+                show_impacts=True, policy="llm", action_format="idx", image_mode="none",
                 reasoning_effort="low", manual_transfers=True, system_variant="original",
                 temperature=None, obs_encoding="json", history=1, prompt_pack=None,
                 base_seed=None):
@@ -1795,10 +1178,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
     # Turn the minimal_v2 encoding fixes (Passive label, un-truncated choices, transfers/affects
     # cleanup) ON for the minimal_v2 arm and OFF otherwise, so it pairs with the v2 system prompt.
     # Constant per run; set before any obs is built (summarize()/render read this flag).
-    # v3 inherits the v2 ENCODING fixes (Passive label, un-truncated choice text, dead-transfer
-    # line dropped, dangling `affects` hidden); only the prompt text differs between v2 and v3.
-    smoke._set_v2(system_variant in ("minimal_v2", "minimal_v3", "minimal_v4", "minimal_v5", "minimal_v6"))
-    smoke._set_v3(system_variant in ("minimal_v3", "minimal_v4", "minimal_v5", "minimal_v6"))
+    smoke._set_v2(system_variant == "minimal_v2")
     # Anthropic caps temperature at 1.0; clamp per-model so a shared sweep invocation (e.g. temp=1.5
     # for gemini) doesn't 400 Claude. eff_temp is what's actually sent + logged; temperature is the
     # requested experimental level.
@@ -1842,12 +1222,8 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
         import cora_prompts as _cp
         _base = _cp.tool_system_prompt(manual_transfers=manual_transfers, variant=system_variant)
     else:
-        # Non-LLM policies take this branch (cmd_fmt and tools_fmt are both gated on
-        # policy == "llm"). It used to fall through to smoke.idx_system_prompt, which the idx
-        # retirement deleted -- so EVERY --policy run died with AttributeError before its first
-        # episode. The prompt is only recorded for provenance here, never sent to a model, so
-        # fall back to the cmd prompt for the same variant.
-        _base = smoke.cmd_system_prompt(manual_transfers, system_variant)
+        _base = (smoke.cmd_system_prompt(manual_transfers, system_variant) if cmd_fmt
+                 else smoke.idx_system_prompt(system_variant))
     _sys_text = _system_content(_base, "x" if use_image else None, image_mode)
     rec = {
         # Recorded so the analysis can pair episode i of one variant against episode i
@@ -1855,7 +1231,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
         "seed": (int(base_seed) + int(ep_idx)) if base_seed is not None else None,
         "model": model, "episode": ep_idx, "rounds": [], "error": None,
         "show_impacts": show_impacts,
-           "action_format": action_format,
+           "action_format": action_format if state_only else "idx",
            "obs_encoding": (obs_encoding if state_only else "json"),
            # K = number of turns the policy sees INCLUDING the current one. K=1 is the legacy
            # stateless path; K>1 carries an append-only window of prior (state, action) turns.
@@ -1914,12 +1290,6 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                 dec = improved_rules_based_decision(env, rnd, rounds); raw = json.dumps(dec)
             elif policy == "combined":
                 dec = combined_decision(env, rnd, rounds); raw = json.dumps(dec)
-            elif policy == "pareto":
-                dec = pareto_decision(env, rnd, rounds); raw = json.dumps(dec)
-            elif policy == "demand-forecast":
-                dec = demand_forecast_decision(env, rnd, rounds); raw = json.dumps(dec)
-            elif policy == "demand-npv":
-                dec = demand_npv_decision(env, rnd, rounds); raw = json.dumps(dec)
             elif policy == "random":
                 dec = random_decision(env); raw = json.dumps(dec)
             else:                                               # llm
@@ -1946,22 +1316,8 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                             system_variant, eff_temp, prompt_pack=prompt_pack)
                     # Slide the window: ask_cmd just appended this turn's pair; keep only the last
                     # K-1 prior turns so the cached prefix stays bounded (K=32 keeps the whole episode).
-                    # Trim on TURN boundaries, not raw message count. Since the tool-call
-                    # serialization fix a turn is no longer a fixed 2 messages -- it is
-                    # user + assistant(tool_calls) + one `tool` reply PER call -- so cutting a
-                    # fixed number of messages off the front lands mid-group and leaves `tool`
-                    # messages whose tool_call_id has no matching assistant tool_calls. vLLM does
-                    # not validate that pairing; Anthropic does, and rejected every h=4 episode
-                    # with 400 "'tool_call_id' ... not found in 'tool_calls' of previous message"
-                    # (32/32 episodes dead by round 2-3). Cut only at a `user` message so each
-                    # assistant+tool group stays intact.
-                    if cmd_history is not None and max_pairs:
-                        starts = [i for i, m in enumerate(cmd_history) if m.get("role") == "user"]
-                        keep = max_pairs // 2          # max_pairs counts 2 msgs per legacy turn
-                        if len(starts) > keep:
-                            del cmd_history[:starts[len(starts) - keep]]
-                    elif cmd_history is not None:
-                        cmd_history.clear()
+                    if cmd_history is not None and len(cmd_history) > max_pairs:
+                        del cmd_history[:len(cmd_history) - max_pairs]
                     prev_state = state   # next round's delta diffs against this turn's state
                     if not parsed_ok:
                         # one unparseable response -> no-op this round, keep playing
@@ -1984,10 +1340,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
             # (the model's intended strategy: game-action types + task-choice by task type)
             req = [int(a) for a in dec.get("actions", []) if str(a).lstrip("-").isdigit()]
             actions_requested += len(req)
-            # Counted against the live (post-synth) menu for the same reason as actCats above --
-            # the pre-parse n_valid made every resolved <staff> action look like an invalid index.
-            invalid_idx += sum(1 for a in req
-                               if a < 0 or a >= len(getattr(env, "valid_actions", None) or acts_enum))
+            invalid_idx += sum(1 for a in req if a < 0 or a >= n_valid)
             act_cats = {}
             tmap = {t["taskId"]: t.get("type", "?") for t in state.get("tasks", [])}
             for c in dec.get("choices", []):
@@ -1996,20 +1349,9 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                 except Exception:
                     cat = "choice:?"
                 act_cats[cat] = act_cats.get(cat, 0) + 1
-            # Categorize against the POST-PARSE menu. `acts_enum`/`n_valid` were snapshotted before
-            # the model was called, but cmd_parser RESOLVES <staff> by SYNTHESIZING a
-            # worker_assignment action and APPENDING it to env.valid_actions (see cmd_parser's
-            # ParserEnv contract). That synth action therefore sits at an index >= n_valid, so the
-            # old `if 0 <= a < n_valid` test dropped every staff action out of actCats AND counted
-            # it in invalid_idx. Effect: actCats reported worker_assignment == 0 for EVERY model on
-            # EVERY run, while meanInvalidIdx sat at 18-37 per episode -- and the actions had in
-            # fact executed (meanActionFailures 0.56-0.91). Measured: Qwen3.8-27B parsed a staff
-            # command in 651/1024 rounds, Haiku in 580/965. Read the live list instead.
-            acts_live = getattr(env, "valid_actions", None) or acts_enum
-            n_live = len(acts_live)
             for a in req:
-                if 0 <= a < n_live:
-                    at = acts_live[a].get("action_type") or "?"
+                if 0 <= a < n_valid:
+                    at = acts_enum[a].get("action_type") or "?"
                     act_cats[at] = act_cats.get(at, 0) + 1
                     if at == "construction": built = True
                     if at == "worker": hired = True
@@ -2237,7 +1579,7 @@ def main():
                          "(previous behaviour). Two runs with the same --seed play "
                          "identical scenarios, which makes A/B comparisons paired.")
     ap.add_argument("--policy", choices=["llm", "greedy", "build-potential", "choice-lookahead",
-                                        "combined", "pareto", "demand-npv", "demand-forecast", "random", "noop",
+                                        "combined", "random", "noop",
                                         "rules-based", "rules-based-v2"], default="llm",
                     help="llm = benchmark the --models. Non-learning baselines (no API): greedy; "
                          "build-potential (adds infrastructure building); choice-lookahead (picks "
@@ -2245,7 +1587,7 @@ def main():
                          "rules-based / rules-based-v2 are deprecated aliases for build-potential "
                          "/ choice-lookahead — the old names implied a version ordering that does "
                          "not exist: they are different algorithms improving opposite halves.")
-    ap.add_argument("--action_format", choices=["cmd", "tools"], default="tools",
+    ap.add_argument("--action_format", choices=["idx", "cmd", "tools"], default="idx",
                     help="LLM action interface: idx = enumerated action menu + JSON index list (default); "
                          "cmd = state-only obs + command tags (<build>/<hire>/<staff>/<task>/...). "
                          "Switches both the system prompt and the response parser. Ignored for non-llm policies.")
@@ -2276,7 +1618,7 @@ def main():
                          "visible content (measured on qwen3:4b: 16k chars -> ~0). It does NOT "
                          "make the model generate fewer tokens -- ~3-5k either way. Ignored by "
                          "templates that do not declare the variable, and dropped on rejection.")
-    ap.add_argument("--reasoning_effort", choices=["none", "low", "medium", "high", "xhigh"], default="low",
+    ap.add_argument("--reasoning_effort", choices=["none", "low", "medium", "high"], default="low",
                     help="hidden-thinking budget for reasoning models (gpt-5*, gemini 2.5/3.x, and "
                          "local Ollama reasoning models via --base-url: qwen3, qwen3.5, gpt-oss). "
                          "'none' disables thinking entirely (local only; gateway gpt-5*/gemini keep a "
@@ -2287,7 +1629,7 @@ def main():
                          "food/people transfers (idx menu + <transfer> cmd tag) — LLMs coordinate "
                          "micro-logistics directly; task_only suppresses them so transfers happen "
                          "ONLY via task choices, matching the human GUI. LLM-only knob.")
-    ap.add_argument("--system_prompt", choices=["original", "minimal", "minimal_v2", "minimal_v3", "minimal_v4", "minimal_v5", "minimal_v6"], default="original",
+    ap.add_argument("--system_prompt", choices=["original", "minimal", "minimal_v2"], default="original",
                     help="system-prompt ablation: original (default) = strategy-laden prompt; "
                          "minimal = PIMMUR minimal-control prompt (mechanics + objective only, no "
                          "strategy hints); minimal_v2 = minimal + the prompt/encoding fix layer "
@@ -2345,20 +1687,8 @@ def main():
     else:
         models = [m.strip() for m in args.models.split(",") if m.strip()]
         base_url = args.base_url or smoke.GATEWAY_BASE
-        # ARC_API_KEY lets a non-gateway endpoint (e.g. Anthropic's OpenAI-compatible base URL)
-        # supply its key through the environment instead of --api-key. A command-line key is
-        # visible in `ps` to every user on a shared node; /proc/<pid>/environ is owner-only.
-        api_key = (args.api_key or os.environ.get("ARC_API_KEY")
-                   or (smoke.load_env_key() if args.base_url is None else "local"))
-        # ARC_ANTHROPIC_NATIVE=1 swaps in the native Anthropic SDK for claude-* models. The
-        # OpenAI compat layer documents "Prompt caching is not supported", and this workload
-        # re-sends ~1,708 tok of system+tools every round (~70% of input); caching needs the
-        # native path. Duck-typed, so every call site below is unchanged.
-        if os.environ.get("ARC_ANTHROPIC_NATIVE") == "1":
-            import anthropic_native
-            client = anthropic_native.Client(api_key=api_key)
-        else:
-            client = openai.OpenAI(api_key=api_key, base_url=base_url)
+        api_key = args.api_key or (smoke.load_env_key() if args.base_url is None else "local")
+        client = openai.OpenAI(api_key=api_key, base_url=base_url)
         if args.base_url:
             # Local OpenAI-compat server (Ollama): forward --reasoning_effort so chat() can cap or
             # disable thinking on reasoning models (Ollama auto-enables it otherwise). Not set for

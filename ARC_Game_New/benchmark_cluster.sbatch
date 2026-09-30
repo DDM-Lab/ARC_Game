@@ -49,19 +49,37 @@ OUT=${OUT:-benchmark_results/cluster_${MODE}_${TAG}}
 mkdir -p "$OUT"
 
 # Format knobs held to what the local sweep used, so cluster and laptop numbers are comparable.
-FMT=(--action_format tools --obs_encoding compact --system_prompt minimal
-     --image_mode none --transfers task_only --history 1)
+# HISTORY: turns of prior conversation replayed. Each turn adds ~950 prompt tokens, so
+#   h=1 ~3.6k, h=4 ~6.4k, h=16 ~18k, h=32 ~33k -> raise MAX_MODEL_LEN past h=4.
+# TRANSFERS: task_only suppresses standalone transfers (human-faithful); manual enumerates them.
+# SYSTEM_PROMPT: original | minimal | minimal_v2. minimal_v2 = minimal + the FACTUAL fix layer
+#   (un-truncated choice text, `Passive` status defined, dead transfers line dropped). No strategy.
+FMT=(--action_format tools --obs_encoding compact --system_prompt "${SYSTEM_PROMPT:-minimal_v2}"
+     --image_mode none --transfers "${TRANSFERS:-task_only}" --history "${HISTORY:-1}")
 
 echo "=== CORA benchmark  mode=$MODE  job=${SLURM_JOB_ID:-local}  node=$(hostname)  $(date)"
 echo "    ARC_GAME_PATH=$ARC"
 echo "    episodes=$EPISODES rounds=$ROUNDS workers=$WORKERS base_port=$BASE_PORT"
 [ -x "$ARC_HEADLESS_EXE" ] || { echo "FATAL: headless binary not executable at $ARC_HEADLESS_EXE"; exit 1; }
 
+# Kill ONLY this job's Unity processes. `pkill -f "$ARC_HEADLESS_EXE"` matches the exe path,
+# which is identical for every bench job, so on a shared node one job's cleanup/watchdog killed
+# a concurrently running job's Unity (observed: 33214's exit trap took down 33215, whose five
+# episodes all reported "Unity closed connection"). Each Unity is launched with `-gym-port N`,
+# and this job owns BASE_PORT..BASE_PORT+WORKERS, so match on those instead.
+kill_our_unity() {
+  local p
+  for p in $(seq "$BASE_PORT" $((BASE_PORT + WORKERS))); do
+    pkill -f -- "-gym-port $p" 2>/dev/null
+  done
+  return 0
+}
+
 VLLM_PID=""
 cleanup() {
   echo "[cleanup] $(date +%H:%M:%S)"
   [ -n "$VLLM_PID" ] && kill "$VLLM_PID" 2>/dev/null
-  pkill -f "$ARC_HEADLESS_EXE" 2>/dev/null || true
+  kill_our_unity
 }
 trap cleanup EXIT INT TERM
 
@@ -71,8 +89,18 @@ if [ "$MODE" = "local" ]; then
   PORT=${VLLM_PORT:-$(( BASE_PORT + 900 ))}
   # 12288 mirrors the local ctx12k variants: prompt ~2k + generation 6k, with headroom. A larger
   # window only inflates the KV reservation, which is what drove this machine into swap locally.
+  # --action_format tools sends tool_choice=auto, which vLLM rejects with a 400 unless the
+  # server is started with a tool parser ("auto" tool choice requires --enable-auto-tool-choice
+  # and --tool-call-parser to be set). Ollama parses tool calls natively, so the local sweep
+  # never needed this. hermes is the Qwen2.5/Qwen3 parser in vLLM (qwen3coder is Coder-only).
+  # VLLM_EXTRA passes serve-time tuning through unquoted (word-split on purpose), e.g.
+  #   VLLM_EXTRA='--max-num-batched-tokens 16384'
+  #   VLLM_EXTRA='--speculative-config {"method":"ngram","num_speculative_tokens":5,"prompt_lookup_max":4}'
   vllm serve "$MODEL" --port "$PORT" --max-model-len ${MAX_MODEL_LEN:-12288} \
-       --gpu-memory-utilization ${GPU_UTIL:-0.85} > "$OUT/vllm.log" 2>&1 &
+       --gpu-memory-utilization ${GPU_UTIL:-0.85} \
+       --enable-auto-tool-choice --tool-call-parser ${TOOL_PARSER:-hermes} \
+       ${VLLM_EXTRA:-} \
+       > "$OUT/vllm.log" 2>&1 &
   VLLM_PID=$!
   echo "    vllm serve $MODEL -> :$PORT (pid $VLLM_PID), waiting for /health"
   for i in $(seq 1 120); do
@@ -86,10 +114,21 @@ if [ "$MODE" = "local" ]; then
   # Qwen3/3.5 emit chain-of-thought into the CONTENT channel unless the template flag is set.
   # It does NOT reduce generation (~3-5k tokens either way) but keeps content clean. Must not be
   # combined with --reasoning_effort: sending both defeats it (measured, median 16.6k chars back).
-  case "$MODEL" in *[Qq]wen3*) EXTRA+=(--no-thinking) ;; esac
+  # NOTHINK=0 turns the thinking-off default OFF, so a run can be done WITH thinking and a
+  # chosen effort (REASONING_EFFORT=low|medium|high). The two are mutually exclusive: sending
+  # reasoning_effort alongside enable_thinking=false defeats the flag (measured), so never both.
+  if [ "${NOTHINK:-1}" = "1" ]; then
+    case "$MODEL" in *[Qq]wen3*) EXTRA+=(--no-thinking) ;; esac
+  else
+    EXTRA+=(--reasoning_effort "${REASONING_EFFORT:-low}")
+  fi
 else
   MODELS=${MODELS:?MODE=api requires MODELS="a,b,c"}
   # Gateway key comes from the environment / .env; never echoed.
+  # API_BASE points the harness at a non-gateway OpenAI-compatible endpoint, e.g.
+  #   API_BASE=https://api.anthropic.com/v1/  with the key in ARC_API_KEY (never on argv).
+  [ -n "${API_BASE:-}" ] && EXTRA+=(--base-url "$API_BASE")
+  EXTRA+=(--max_tokens ${MAX_TOKENS:-4096})
 fi
 
 # ── stall watchdog ───────────────────────────────────────────────────────────────────────────
@@ -106,7 +145,7 @@ STALL_MIN=${STALL_MIN:-30}
     if [ "$age" -ge "$STALL_MIN" ]; then
       echo "[watchdog] no episode written for ${age}m (>= ${STALL_MIN}m) — killing $pid"
       kill "$pid" 2>/dev/null; sleep 5; kill -9 "$pid" 2>/dev/null
-      pkill -f "$ARC_HEADLESS_EXE" 2>/dev/null
+      kill_our_unity
     fi
   done ) &
 WATCHDOG=$!

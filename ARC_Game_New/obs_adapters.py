@@ -19,8 +19,11 @@ import obs_encoder
 # ARC_PROMPT_VERSION=old -> the original mechanics-only prompt + lean obs. =new (default) ->
 # the enriched prompt + obs. Both arms otherwise share identical code so the only variable
 # is what the model is shown.
-PROMPT_VERSION = os.environ.get("ARC_PROMPT_VERSION", "new").strip().lower()
-_NEW = PROMPT_VERSION != "old"
+# ARC_PROMPT_VERSION retired with the idx surface (2026-08-21). This flag also gates the
+# OBSERVATION encoding (choice-text length, compact_action shape), so it is pinned to the
+# "new" encoding every benchmark has used rather than deleted.
+PROMPT_VERSION = "new"
+_NEW = True
 
 # ── minimal_v2 fix layer (A/B against plain `minimal`) ──────────────────────
 # When ON, the encoding carries the round of prompt/observation fixes that go WITH the
@@ -37,6 +40,17 @@ def _set_v2(on):
     """Toggle the minimal_v2 fix layer (encoding side). Set once per run before obs is built."""
     global _V2
     _V2 = bool(on)
+
+
+# v3 keeps the whole v2 fix layer and adds one more encoding change: the duplicate top-level
+# `sites (ids)` line is dropped in favour of `available.buildSites` (see obs_encoder._render_sites).
+_V3 = False
+
+
+def _set_v3(on):
+    """Toggle the minimal_v3 encoding delta. Set once per run before obs is built."""
+    global _V3
+    _V3 = bool(on)
 
 
 MOTEL_COST_PER_PERSON_PER_DAY = obs_encoder.MOTEL_COST_PER_PERSON_PER_DAY  # re-export (back-compat)
@@ -78,10 +92,10 @@ def summarize_commands(env, show_impacts=True, rounds_left=None):
 def render_state_compact(obs):
     """Render the cmd observation dict as a COMPACT TEXT block instead of json.dumps(obs).
     (Delegates to obs_encoder; forwards the minimal_v2 fix-layer toggle.)"""
-    return obs_encoder.render_state_compact(obs, v2=_V2)
+    return obs_encoder.render_state_compact(obs, v2=_V2, v3=_V3)
 
 
 def render_state_delta(obs, prev_obs):
     """History-carrying DELTA rendering (facilities block diffed vs the previous turn; everything
     actionable stays full). Delegates to obs_encoder; forwards the minimal_v2 toggle."""
-    return obs_encoder.render_state_delta(obs, prev_obs, v2=_V2)
+    return obs_encoder.render_state_delta(obs, prev_obs, v2=_V2, v3=_V3)
