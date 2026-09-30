@@ -485,6 +485,13 @@ public class WebSocketManager : MonoBehaviour
             if (data.Contains("\"load_checkpoint\"") && HandleLoadCheckpoint(data))
                 return;
 
+            // Router → client: an officer started or finished a turn. Drives the "writing…"
+            // indicator, which otherwise only cleared when a message arrived (so an officer that
+            // chose to stay silent left it spinning until the timeout). Checked before the
+            // substring dispatch below; the type name contains none of those names.
+            if (data.Contains("\"officer_status\"") && HandleOfficerStatus(data))
+                return;
+
             // Handle new multi-agent router message types
             if (data.Contains("\"choices_proposal\""))
             {
@@ -770,6 +777,22 @@ public class WebSocketManager : MonoBehaviour
     /// status string and let the server close us; reconnect would just be
     /// rejected again with the same credentials.
     /// </summary>
+    [Serializable]
+    class OfficerStatusMessage { public string type; public string agent_name; public string talkinghead_endpoint; public bool busy; }
+
+    /// <summary>Router → client officer busy/idle notice (see OnMessageReceived). Returns false if
+    /// the message was not actually an officer_status.</summary>
+    bool HandleOfficerStatus(string data)
+    {
+        OfficerStatusMessage msg = null;
+        try { msg = JsonUtility.FromJson<OfficerStatusMessage>(data); }
+        catch { return false; }
+        if (msg == null || msg.type != "officer_status") return false;
+        if (AgentConversationUI.Instance != null && TryResolveOfficer(msg.talkinghead_endpoint, out TaskOfficer officer))
+            AgentConversationUI.Instance.SetOfficerGenerating(officer, msg.busy);
+        return true;
+    }
+
     [Serializable]
     class LoadCheckpointMessage { public string type; public string request_id; public string checkpoint; }
 

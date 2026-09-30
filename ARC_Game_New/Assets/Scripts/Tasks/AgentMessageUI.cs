@@ -68,10 +68,14 @@ public class AgentMessageUI : MonoBehaviour
         }
     }
 
+    /// <summary>True while PlayTypingEffect is still revealing characters.</summary>
+    public bool IsTyping { get; private set; }
+
     public IEnumerator PlayTypingEffect(float typingSpeed)
     {
         if (messageText == null || string.IsNullOrEmpty(fullMessage))
             yield break;
+        IsTyping = true;
 
         // Lock in the full text and box height once, then reveal characters
         // via TMP's maxVisibleCharacters. Mutating .text every frame would
@@ -89,6 +93,7 @@ public class AgentMessageUI : MonoBehaviour
             if (isSkipped)
             {
                 messageText.maxVisibleCharacters = totalChars;
+                IsTyping = false;
                 yield break;
             }
             messageText.maxVisibleCharacters = i;
@@ -96,6 +101,7 @@ public class AgentMessageUI : MonoBehaviour
         }
 
         messageText.maxVisibleCharacters = int.MaxValue;
+        IsTyping = false;
     }
 
     public void ShowFullMessage()

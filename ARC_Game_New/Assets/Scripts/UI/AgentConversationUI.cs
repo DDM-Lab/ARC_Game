@@ -116,6 +116,25 @@ public class AgentConversationUI : MonoBehaviour
     // officer is still generating. Cleared when the officer's response frame
     // arrives, on director_turn (round end), or by a timeout backstop.
     private readonly HashSet<TaskOfficer> generatingOfficers = new HashSet<TaskOfficer>();
+
+    /// <summary>True while any officer has a turn in flight (router officer_status / begin_round).
+    /// GlobalClock asks before advancing the round, so the player can wait for round-start
+    /// messages instead of racing past them.</summary>
+    public bool AnyOfficerGenerating => generatingOfficers.Count > 0;
+
+    // ── Chat view vs task view ───────────────────────────────────────────
+    // Each officer's panel has a pinned "General Chat" entry at the top of its task list. The chat view
+    // shows ONLY the officer conversation (messages, proposals); a task view shows only that
+    // task. Previously the chat and the latest task shared one view, so the chat vanished when
+    // the player clicked a task and the view jumped whenever a task completed.
+    private bool viewingChat = true;
+    private GameObject chatEntryButton;
+    // Officers with messages the player has not seen in the chat view; shown as a dot on the
+    // officer's tab and as "(new)" on the General Chat entry.
+    private readonly HashSet<TaskOfficer> unreadChat = new HashSet<TaskOfficer>();
+    private readonly Dictionary<TaskOfficer, GameObject> unreadDots = new Dictionary<TaskOfficer, GameObject>();
+    // Live messages still typing out; a click inside the conversation finishes them.
+    private readonly List<AgentMessageUI> typingMessages = new List<AgentMessageUI>();
     private readonly Dictionary<TaskOfficer, float> generatingDeadline = new Dictionary<TaskOfficer, float>();
     private GameObject typingIndicatorItem;
     private Coroutine generatingWatchdog;
@@ -219,6 +238,11 @@ public class AgentConversationUI : MonoBehaviour
         if (Time.frameCount % 30 == 0)
             UpdateAgentNotifications();
 
+        // Click inside the conversation finishes any message still typing, as the task and
+        // tutorial panels already do.
+        if (typingMessages.Count > 0 && Input.GetMouseButtonDown(0) && ClickInsideConversation())
+            SkipAllTyping();
+
         if (isExpanded && currentSelectedTask != null && currentSelectedTask.status == TaskStatus.Active)
             UpdateChoiceValidation();
     }
@@ -244,8 +268,11 @@ public class AgentConversationUI : MonoBehaviour
         bool wasAtBottom = IsAtScrollBottom();
         int prevCount = currentConversationItems.Count;
 
+        // Task changes never touch the chat view (the task list refreshed above is enough), and a
+        // task view keeps showing its task even once it completes or expires, instead of jumping.
+        if (viewingChat) return;
         suppressScrollToBottom = !wasAtBottom;
-        if (currentSelectedTask != null && currentSelectedTask.status == TaskStatus.Active)
+        if (currentSelectedTask != null)
             DisplayTaskConversation(currentSelectedTask);
         else
             DisplayLatestConversation();
@@ -394,6 +421,8 @@ public class AgentConversationUI : MonoBehaviour
         }
 
         currentSelectedAgent = agent;
+        viewingChat = true;            // an officer always opens on its chat
+        currentSelectedTask = null;
         HideNewMessagePopup();
 
         if (!isExpanded)
@@ -452,6 +481,7 @@ public class AgentConversationUI : MonoBehaviour
     {
         if (TaskSystem.Instance == null) return;
         ClearHistoricalTaskButtons();
+        CreateChatEntryButton();
         currentAgentTasks = GetTasksForAgent(currentSelectedAgent);
         
         foreach (GameTask task in currentAgentTasks)
@@ -539,6 +569,13 @@ public class AgentConversationUI : MonoBehaviour
 
     void UpdateSelectedTaskHighlight()
     {
+        if (chatEntryButton != null)
+        {
+            Image img = chatEntryButton.GetComponent<Image>();
+            TextMeshProUGUI txt = chatEntryButton.GetComponentInChildren<TextMeshProUGUI>();
+            if (img != null) img.color = viewingChat ? selectedTaskColor : inactiveAgentColor;
+            if (txt != null) txt.color = viewingChat ? Color.white : Color.black;
+        }
         foreach (var kvp in taskButtonMap)
         {
             GameTask task = kvp.Key;
@@ -571,6 +608,7 @@ public class AgentConversationUI : MonoBehaviour
     
     void SelectHistoricalTask(GameTask task)
     {
+        viewingChat = false;
         currentSelectedTask = task;
         UpdateSelectedTaskHighlight();
         DisplayTaskConversation(task);
@@ -580,29 +618,128 @@ public class AgentConversationUI : MonoBehaviour
             $"agent={currentSelectedAgent} | task=[{task.taskType}] {task.taskTitle} | status={task.status}");
     }
     
+    /// <summary>Render the current view: the selected task if the player chose one, otherwise
+    /// the officer's chat (conversation only; tasks live in their own entries).</summary>
     void DisplayLatestConversation()
     {
-        ClearConversation();
-
-        // Render free-form chat history first (player messages, auto summaries,
-        // classifier acks). The current task — which holds the latest choice
-        // cards — renders below, keeping the active click target at the bottom.
-        DisplayConversationHistory(currentSelectedAgent);
-
-        if (currentAgentTasks.Count > 0)
+        if (!viewingChat && currentSelectedTask != null)
         {
-            GameTask latestTask = currentAgentTasks[0];
-            currentSelectedTask = latestTask;
             UpdateSelectedTaskHighlight();
-            DisplayTaskConversation(latestTask, clearFirst: false);
+            DisplayTaskConversation(currentSelectedTask);
+            return;
         }
-        else if (!HasConversationHistory(currentSelectedAgent))
-        {
-            DisplayNoTasksMessage();
-        }
+        viewingChat = true;
+        currentSelectedTask = null;
+        UpdateSelectedTaskHighlight();
+
+        ClearConversation();
+        DisplayConversationHistory(currentSelectedAgent);
+        if (!HasConversationHistory(currentSelectedAgent))
+            DisplaySystemMessage("No messages yet. Your officer's messages and proposals appear here; "
+                                 + "tasks are listed on the left.");
+        MarkChatRead(currentSelectedAgent);
 
         // Re-add the waiting bubble last if this officer is still generating.
         RefreshTypingIndicator();
+    }
+
+    void SelectChat()
+    {
+        viewingChat = true;
+        currentSelectedTask = null;
+        DisplayLatestConversation();
+        GameLogPanel.Instance?.LogUIInteraction("agent_info", "chat_viewed", $"agent={currentSelectedAgent}");
+    }
+
+    void CreateChatEntryButton()
+    {
+        chatEntryButton = null;
+        if (historicalTaskButtonPrefab == null || historicalTasksContent == null) return;
+        GameObject buttonObj = Instantiate(historicalTaskButtonPrefab, historicalTasksContent);
+        buttonObj.name = "GeneralChatEntry";
+        buttonObj.transform.SetAsFirstSibling();
+        TextMeshProUGUI label = buttonObj.GetComponentInChildren<TextMeshProUGUI>();
+        if (label != null)
+            label.text = unreadChat.Contains(currentSelectedAgent) ? "<b>General Chat (new)</b>" : "<b>General Chat</b>";
+        Button b = buttonObj.GetComponent<Button>();
+        if (b != null) b.onClick.AddListener(SelectChat);
+        currentHistoricalTaskButtons.Add(buttonObj);
+        chatEntryButton = buttonObj;
+    }
+
+    // ── unread-message dots ──────────────────────────────────────────────
+
+    void MarkUnread(TaskOfficer officer)
+    {
+        if (isExpanded && viewingChat && officer == currentSelectedAgent) return;   // being read now
+        if (unreadChat.Add(officer)) UpdateUnreadDot(officer);
+        if (officer == currentSelectedAgent && chatEntryButton != null)
+        {
+            var label = chatEntryButton.GetComponentInChildren<TextMeshProUGUI>();
+            if (label != null) label.text = "<b>General Chat (new)</b>";
+        }
+    }
+
+    void MarkChatRead(TaskOfficer officer)
+    {
+        if (unreadChat.Remove(officer)) UpdateUnreadDot(officer);
+    }
+
+    /// <summary>A small dot on the officer's tab, top-left (the existing top-right dot counts
+    /// active tasks). Built at runtime from the existing task dot so it matches the art without
+    /// a scene edit.</summary>
+    void UpdateUnreadDot(TaskOfficer officer)
+    {
+        if (!unreadDots.TryGetValue(officer, out GameObject dot) || dot == null)
+        {
+            Button tab = OfficerTabButton(officer);
+            GameObject template = disasterOfficerDot != null ? disasterOfficerDot
+                : foodMassCaresDot != null ? foodMassCaresDot : lodgingMassCaresDot;
+            if (tab == null || template == null) return;
+            dot = Instantiate(template, tab.transform);
+            dot.name = "UnreadMessageDot";
+            foreach (var t in dot.GetComponentsInChildren<TextMeshProUGUI>(true)) Destroy(t.gameObject);
+            if (dot.transform is RectTransform rt)
+            {
+                rt.anchorMin = rt.anchorMax = new Vector2(0f, 1f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.anchoredPosition = new Vector2(8f, -8f);
+                rt.sizeDelta = new Vector2(14f, 14f);
+            }
+            unreadDots[officer] = dot;
+        }
+        dot.SetActive(unreadChat.Contains(officer));
+    }
+
+    Button OfficerTabButton(TaskOfficer officer)
+    {
+        switch (officer)
+        {
+            case TaskOfficer.DisasterOfficer:      return disasterOfficerButton;
+            case TaskOfficer.FoodMassCare:         return foodMassCareButton;
+            case TaskOfficer.LodgingMassCare:      return lodgingMassCareButton;
+            case TaskOfficer.WorkforceService:     return workforceServiceButton;
+            case TaskOfficer.ExternalRelationship: return externalRelationshipButton;
+            default:                               return null;
+        }
+    }
+
+    // ── click-to-skip typing ─────────────────────────────────────────────
+
+    bool ClickInsideConversation()
+    {
+        if (conversationScrollView == null || !isExpanded) return false;
+        var rt = conversationScrollView.transform as RectTransform;
+        Canvas canvas = conversationScrollView.GetComponentInParent<Canvas>();
+        Camera cam = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
+        return rt != null && RectTransformUtility.RectangleContainsScreenPoint(rt, Input.mousePosition, cam);
+    }
+
+    void SkipAllTyping()
+    {
+        foreach (var m in typingMessages)
+            if (m != null && m.IsTyping) m.SkipTyping();
+        typingMessages.Clear();
     }
 
     // ── waiting-indicator API (called by WebSocketManager) ───────────────
@@ -657,7 +794,7 @@ public class AgentConversationUI : MonoBehaviour
             Destroy(typingIndicatorItem);
             typingIndicatorItem = null;
         }
-        if (!isExpanded || !generatingOfficers.Contains(currentSelectedAgent)) return;
+        if (!isExpanded || !viewingChat || !generatingOfficers.Contains(currentSelectedAgent)) return;
 
         typingIndicatorItem = CreateTypingIndicator(currentSelectedAgent);
         StartCoroutine(ScrollToBottomCoroutine());
@@ -904,6 +1041,10 @@ public class AgentConversationUI : MonoBehaviour
         // going stale. If this auto-resolves the task, fall back to whatever's next for this agent.
         if (TaskSystem.Instance != null && !TaskSystem.Instance.RefreshTaskAgainstLiveState(task))
         {
+            // The task resolved itself on refresh: go back to the chat view (re-displaying the
+            // same task here would loop).
+            viewingChat = true;
+            currentSelectedTask = null;
             RefreshHistoricalTasks();
             DisplayLatestConversation();
             return;
@@ -1392,6 +1533,7 @@ public class AgentConversationUI : MonoBehaviour
     
     void ClearConversation()
     {
+        typingMessages.Clear();
         foreach (GameObject item in currentConversationItems)
             if (item != null) Destroy(item);
         currentConversationItems.Clear();
@@ -1481,9 +1623,10 @@ public class AgentConversationUI : MonoBehaviour
         // Persist to per-officer history first so tab switches can replay it.
         RecordAgentMessage(officer, content, fromOfficer);
 
-        // Only display now if this is the currently selected agent
-        if (officer != currentSelectedAgent || !isExpanded)
+        // Only display now if this officer's CHAT is on screen (never into a task view).
+        if (officer != currentSelectedAgent || !isExpanded || !viewingChat)
         {
+            MarkUnread(officer);
             if (showDebugInfo)
                 Debug.Log($"Message from {officer} stored (not currently displayed)");
             return;
@@ -1503,6 +1646,7 @@ public class AgentConversationUI : MonoBehaviour
                 var agentMsg = new AgentMessage(content, GetOfficerAvatar(fromOfficer ?? officer));
                 messageUI.Initialize(agentMsg);
                 StartCoroutine(messageUI.PlayTypingEffect(0.02f));
+                typingMessages.Add(messageUI);
             }
             else
             {
@@ -1538,9 +1682,10 @@ public class AgentConversationUI : MonoBehaviour
         if (hasPackages)
             RecordInlineProposal(officer, packages, availableActions, agentName);
 
-        // Only display now if this is the currently selected agent
-        if (officer != currentSelectedAgent || !isExpanded)
+        // Only display now if this officer's CHAT is on screen (never into a task view).
+        if (officer != currentSelectedAgent || !isExpanded || !viewingChat)
         {
+            MarkUnread(officer);
             if (showDebugInfo)
                 Debug.Log($"Message with choices from {officer} stored (not currently displayed)");
             return;
@@ -1559,6 +1704,7 @@ public class AgentConversationUI : MonoBehaviour
                 var agentMsg = new AgentMessage(content, GetOfficerAvatar(officer));
                 messageUI.Initialize(agentMsg);
                 StartCoroutine(messageUI.PlayTypingEffect(0.02f));
+                typingMessages.Add(messageUI);
             }
             else
             {
