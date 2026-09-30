@@ -577,9 +577,14 @@ public class DailyReportUI : MonoBehaviour
         int communityFoodDemand = d.GetCumulativeCommunityFoodDemand();
         F($"Food Satisfaction = (food packs consumed / needed) x 20% weight x 1000 | consumed={foodConsumed}, needed={foodNeeded} (of which community: delivered={communityFoodUsed}, needed={communityFoodDemand}) => score={currentMetrics.satFoodScore:F1}");
 
+        // Request-based, not the nights-based pair cost efficiency uses below: cumulative clients
+        // actually relocated by Lodging tasks / cumulative clients those tasks ever requested.
+        int lodgingRequested = d.GetCumulativeLodgingRequested();
+        int lodgingSatisfied = d.GetCumulativeLodgingSatisfied();
+        F($"Lodging Satisfaction = (clients relocated / clients requested via lodging tasks) x 20% weight x 1000 | satisfied={lodgingSatisfied}, requested={lodgingRequested} => score={currentMetrics.satLodgingScore:F1}");
+
         int lodgingConsumed = d.GetCumulativeLodgingNightsConsumed();
         int lodgingNeeded = d.GetCumulativeLodgingNightsNeeded();
-        F($"Lodging Satisfaction = (lodging-nights consumed / needed) x 20% weight x 1000 | consumed={lodgingConsumed}, needed={lodgingNeeded} => score={currentMetrics.satLodgingScore:F1}");
 
         int idleRounds = d.GetCumulativeIdleWorkerRounds();
         int workingRounds = d.GetCumulativeWorkingWorkerRounds();

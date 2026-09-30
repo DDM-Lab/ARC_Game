@@ -2,6 +2,21 @@ using UnityEngine;
 using System.Collections.Generic;
 using System;
 
+// Must run its Start() (and therefore subscribe to GlobalClock.OnTimeSegmentChanged) before
+// TaskSystem does, which uses Unity's default order (0) and has no execution-order attribute of
+// its own. Both react to the SAME event on Round 1 / Round 3: this component's OnRoundChanged
+// (via GenerateFoodNeedIfDue) is what SETS the outstandingFoodNeed ledger for the new cycle and
+// immediately reconciles it against whatever's already in storage; TaskSystem's own OnRoundChanged
+// (GenerateTasksFromDatabase) then evaluates the NeedsFood resource trigger and sizes the
+// Shelter/Motel Follow-up request's initial amount by reading GetFoodNeed() — i.e. that ledger.
+// Subscription order determines multicast invocation order for the same event, so this MUST
+// subscribe first, or the Follow-up request could be generated (and sized) off last round's
+// stale need instead of this round's freshly-set one. Without an explicit order here, that
+// ordering is whatever Unity happens to pick for two scripts with no attribute, which is not
+// something to rely on. (The confirm-time live-resize in TaskSystem.ValidateBeforeConfirm reads
+// the ledger again right before delivery and is unaffected either way — this only matters for
+// the number shown/authored at the moment the task is first created.)
+[DefaultExecutionOrder(-50)]
 public class BuildingResourceStorage : MonoBehaviour
 {
     [Header("Storage Configuration")]
@@ -19,7 +34,9 @@ public class BuildingResourceStorage : MonoBehaviour
     [Header("Population-Based Consumption")]
     public bool enablePopulationBasedConsumption = true;
     public int foodPerPersonPerNRounds  = 1;
-    public int consumptionRoundInterval = 2; // Consume food every N rounds
+    // No longer drives scheduling (see GenerateFoodNeedIfDue, fixed to Round 1 / Round 3) — kept
+    // only because GymServerManager still exports it for the surrogate/parity JSON.
+    public int consumptionRoundInterval = 2;
     public bool workersConsumeFoodToo = true;
 
     [Header("Casework Departures (CaseworkSite only)")]
@@ -38,29 +55,47 @@ public class BuildingResourceStorage : MonoBehaviour
     public event Action<ResourceType, int, int> OnResourceChanged; // type, newAmount, capacity
     public event Action OnStorageUpdated;
 
-    private int roundsSinceLastConsumption = 0;
-    private int lastConsumptionRoundKey = int.MinValue;
+    // How many food packs are CURRENTLY creditable — i.e. still owed for the most recently
+    // generated feeding cycle. This is the single source of truth for "current need": the ONLY
+    // thing GetFoodNeed() reads, the ONLY thing a delivery is ever credited against, and what
+    // decides whether an arriving pack is consumed or left untouched in storage.
+    //
+    // It is SET (not added to) at each of GenerateFoodNeedIfDue's two fixed, player-visible
+    // generation points (Round 1 and Round 3 — the same rounds the Food Request tasks use),
+    // and only shrinks via ReconcileFoodAgainstOutstandingNeed crediting an actual delivery.
+    // Whatever is still unpaid from an OLDER cycle when a newer one is generated is simply no
+    // longer creditable from that point on — it was already recorded permanently in the
+    // cumulative NEEDED counter (RecordFoodConsumptionCumulative) the moment it was generated,
+    // so the score keeps it forever; this ledger only tracks what a delivery landing THIS
+    // moment could still be credited for. That is what makes "the follow-up already satisfied
+    // the demand, so the original late delivery becomes waste" (and its mirror image) come out
+    // right regardless of delivery order — see ReconcileFoodAgainstOutstandingNeed.
+    //
+    // Nothing else touches this field, so "was this already fed" is never a question of which
+    // round a delivery happens to land in (the previous mechanism blocked/over-credited late
+    // food purely based on round-number dedup — see the fix this replaces).
+    private int outstandingFoodNeed = 0;
 
     /// <summary>
     /// Snapshot support. currentResources holds population and food packs -- the numbers
     /// that decide whether a relocation or food Demand task gets generated. Leaving them
     /// uncaptured let a restored game generate an EXTRA "Population Relocation From
     /// Community" demand two rounds after load, while every other field matched.
-    /// roundsSinceLastConsumption is the food-consumption phase and is equally invisible.
+    /// outstandingFoodNeed is the food-consumption ledger and is equally invisible.
     /// maxCapacities is rebuilt from the prefab on scene load, so only the live amounts
-    /// and the phase counter are carried.
+    /// and the ledger are carried.
     /// </summary>
     [System.Serializable]
     public class Snapshot
     {
         public List<string> resourceTypes = new List<string>();
         public List<int> resourceAmounts = new List<int>();
-        public int roundsSinceLastConsumption;
+        public int outstandingFoodNeed;
     }
 
     public Snapshot CaptureState()
     {
-        var s = new Snapshot { roundsSinceLastConsumption = roundsSinceLastConsumption };
+        var s = new Snapshot { outstandingFoodNeed = outstandingFoodNeed };
         foreach (var kv in currentResources) { s.resourceTypes.Add(kv.Key.ToString()); s.resourceAmounts.Add(kv.Value); }
         return s;
     }
@@ -73,7 +108,7 @@ public class BuildingResourceStorage : MonoBehaviour
         for (int i = 0; i < n; i++)
             if (System.Enum.TryParse(s.resourceTypes[i], out ResourceType rt))
                 currentResources[rt] = s.resourceAmounts[i];
-        roundsSinceLastConsumption = s.roundsSinceLastConsumption;
+        outstandingFoodNeed = s.outstandingFoodNeed;
     }
 
     private int todayFoodPacksConsumed = 0;
@@ -233,7 +268,7 @@ public class BuildingResourceStorage : MonoBehaviour
     {
         if (newRound <= (GlobalClock.Instance != null ? GlobalClock.Instance.roundsPerDay : 4)) // every real round, incl. the last of the day
         {
-            HandlePopulationConsumptionCycle();
+            GenerateFoodNeedIfDue(newRound);
             HandleCaseworkDepartures();
         }
     }
@@ -265,81 +300,70 @@ public class BuildingResourceStorage : MonoBehaviour
         HandleDailyReset();
     }
 
-    void HandlePopulationConsumptionCycle()
+    /// <summary>
+    /// Starts a fresh feeding cycle: SETS outstandingFoodNeed to this cycle's need (population ×
+    /// foodPerPersonPerNRounds) — replacing, not adding to, whatever was still unpaid from the
+    /// previous cycle — at the SAME two rounds the Food Request tasks generate on (Round 1 and
+    /// Round 3 — see Shelter_FoodRequest_First/_Second's roundTriggers), so the player-visible
+    /// request schedule and the score's need ledger are driven by one and the same clock instead
+    /// of two separate ones drifting apart.
+    ///
+    /// The new need is recorded as "needed" immediately and permanently
+    /// (RecordFoodConsumptionCumulative(0, newNeed)) — that record is never touched again,
+    /// whatever happens afterward, which is what keeps an old miss visible in the score forever
+    /// even though it stops being creditable the moment this runs. Then makes one immediate
+    /// attempt to pay the new need down from whatever's already sitting in storage (covers food
+    /// that arrived earlier and had nothing to be credited against yet — see the spec's "food
+    /// stays in storage until there's a need to satisfy" case).
+    /// </summary>
+    void GenerateFoodNeedIfDue(int newRound)
     {
         if (!enablePopulationBasedConsumption) return;
+        if (newRound != 0 && newRound != 2) return; // Round 1 and Round 3 only
+        if (GlobalClock.Instance != null && GlobalClock.Instance.GetCurrentDay() < 2) return;
 
-        roundsSinceLastConsumption++;
+        int newNeed = GetTotalPeopleCount() * foodPerPersonPerNRounds;
+        if (newNeed <= 0) return;
 
-        // Only consume food every N rounds
-        if (roundsSinceLastConsumption >= consumptionRoundInterval)
-        {
-            if (ConsumeFoodForPopulationOncePerRound($"after {consumptionRoundInterval} rounds"))
-                roundsSinceLastConsumption = 0;
-        }
-        else
-        {
-            if (showDebugInfo)
-                Debug.Log($"{gameObject.name} consumption cycle: {roundsSinceLastConsumption}/{consumptionRoundInterval} rounds");
-            GameLogPanel.Instance.LogResourceChange($"{gameObject.name} consumption cycle: {roundsSinceLastConsumption}/{consumptionRoundInterval} rounds");
-        }
-    }
-
-    /// <summary>
-    /// Runs ConsumeFoodForPopulation at most once per round, no matter how many times it's
-    /// requested — a single "deliver enough for two rounds" request can arrive as several
-    /// separate vehicle drop-offs (destination stock split across kitchens/vehicle capacity),
-    /// and each one calls AddResource. Without this guard every one of those arrivals would
-    /// independently re-feed the whole population, consuming far more than one round's need.
-    /// Returns true if consumption actually ran (so callers know whether to reset their own
-    /// round-interval counters).
-    /// </summary>
-    bool ConsumeFoodForPopulationOncePerRound(string reasonSuffix)
-    {
-        if (GlobalClock.Instance == null)
-        {
-            ConsumeFoodForPopulation(reasonSuffix);
-            return true;
-        }
-
-        int roundKey = GlobalClock.Instance.GetCurrentDay() * 100 + GlobalClock.Instance.GetCurrentTimeSegment();
-        if (roundKey == lastConsumptionRoundKey) return false;
-
-        lastConsumptionRoundKey = roundKey;
-        ConsumeFoodForPopulation(reasonSuffix);
-        return true;
-    }
-
-    /// <summary>
-    /// Feeds everyone currently at this facility one consumption cycle's worth of food
-    /// (population count × foodPerPersonPerNRounds), deducting from storage. This is the single
-    /// place food is ever consumed — called both by the round-based timer above and immediately
-    /// when a food delivery arrives (see AddResource), so there is exactly one consumption path.
-    /// Go through ConsumeFoodForPopulationOncePerRound rather than calling this directly.
-    /// </summary>
-    void ConsumeFoodForPopulation(string reasonSuffix)
-    {
-        int totalPeopleToFeed = GetTotalPeopleCount();
-        int foodNeeded = totalPeopleToFeed * foodPerPersonPerNRounds;
-
-        if (foodNeeded <= 0) return;
-
-        int foodConsumed = RemoveResource(ResourceType.FoodPacks, foodNeeded);
-        if (DailyReportData.Instance != null)
-            DailyReportData.Instance.RecordFoodConsumptionCumulative(foodConsumed, foodNeeded);
-        todayFoodPacksConsumed += foodConsumed;
+        outstandingFoodNeed = newNeed;
+        DailyReportData.Instance?.RecordFoodConsumptionCumulative(0, newNeed);
 
         if (showDebugInfo)
-        {
-            Debug.Log($"{gameObject.name} fed {totalPeopleToFeed} people {reasonSuffix}, consumed {foodConsumed}/{foodNeeded} meals");
+            Debug.Log($"{gameObject.name}: new feeding cycle needs {newNeed} meals (round {newRound + 1}); {outstandingFoodNeed} currently creditable");
+        GameLogPanel.Instance?.LogResourceChange($"{gameObject.name}: new feeding cycle needs {newNeed} meals (round {newRound + 1}); {outstandingFoodNeed} currently creditable");
 
-            if (foodConsumed < foodNeeded)
-                Debug.Log($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
-        }
+        ReconcileFoodAgainstOutstandingNeed();
+    }
 
-        GameLogPanel.Instance.LogResourceChange($"{gameObject.name} fed {totalPeopleToFeed} people {reasonSuffix}, consumed {foodConsumed}/{foodNeeded} meals");
-        if (foodConsumed < foodNeeded)
-            GameLogPanel.Instance.LogResourceChange($"{gameObject.name} FOOD SHORTAGE: Need {foodNeeded}, only had {foodConsumed}");
+    /// <summary>
+    /// Credits whatever's currently in storage against outstandingFoodNeed, capped at exactly
+    /// what's still owed — never a fresh full recompute. Called both here (right after new need
+    /// is generated, in case food was already banked) and from AddResource on every arrival (see
+    /// below), so the outcome depends only on how much food has actually arrived and how much is
+    /// actually still owed, never on which round happens to be current. If nothing is owed right
+    /// now, the food is left untouched in storage — NOT wasted, NOT credited — exactly as the
+    /// spec asks: it is available to satisfy the next cycle's need (Round 3, or the next day's),
+    /// and only becomes real waste if it is still sitting there, unconsumed, at end of day
+    /// (OnSimulationEndedCheckEndOfDayWaste already sweeps that case, unchanged).
+    /// </summary>
+    void ReconcileFoodAgainstOutstandingNeed()
+    {
+        if (outstandingFoodNeed <= 0) return;
+
+        int stock = GetResourceAmount(ResourceType.FoodPacks);
+        if (stock <= 0) return;
+
+        int credit = Mathf.Min(outstandingFoodNeed, stock);
+        if (credit <= 0) return;
+
+        RemoveResource(ResourceType.FoodPacks, credit);
+        outstandingFoodNeed -= credit;
+        todayFoodPacksConsumed += credit;
+        DailyReportData.Instance?.RecordFoodConsumptionCumulative(credit, 0);
+
+        if (showDebugInfo)
+            Debug.Log($"{gameObject.name}: {credit} meals consumed against outstanding need ({outstandingFoodNeed} still outstanding)");
+        GameLogPanel.Instance?.LogResourceChange($"{gameObject.name}: {credit} meals consumed against outstanding need ({outstandingFoodNeed} still outstanding)");
     }
 
 
@@ -366,12 +390,14 @@ public class BuildingResourceStorage : MonoBehaviour
         return totalPeople;
     }
 
-    public int GetFoodNeed()
-    {
-        int required = GetTotalPeopleCount() * foodPerPersonPerNRounds;
-        int inStorage = GetResourceAmount(ResourceType.FoodPacks);
-        return Mathf.Max(0, required - inStorage);
-    }
+    /// <summary>
+    /// How much food is currently owed to this facility — i.e. outstandingFoodNeed, the same
+    /// ledger the score is built from. Callers (request sizing, the live-resize-at-confirm
+    /// check, the NeedsFood trigger, the facility panel) already treat the return value as "how
+    /// much is currently needed," which this still is — it is just no longer a same-instant
+    /// population-minus-stock snapshot that forgets about any earlier missed cycle.
+    /// </summary>
+    public int GetFoodNeed() => outstandingFoodNeed;
 
     void HandleEndOfDayWaste()
     {
@@ -409,7 +435,17 @@ public class BuildingResourceStorage : MonoBehaviour
             }
         }
 
-        wasteRecordedToday = false; 
+        wasteRecordedToday = false;
+
+        // A day's unpaid food debt cannot carry a physical delivery into the next day — any
+        // vehicle still in flight at day-end is cancelled outright (TaskSystem.CancelIncompleteFoodDeliveries,
+        // "food spoils overnight"), and any banked-but-uncredited stock was just swept above.
+        // So there is nothing left that a surviving outstandingFoodNeed balance could still be
+        // paid against; carrying it forward would only make tomorrow's request balloon by every
+        // day's unanswered need compounding forever. The cumulative NEEDED counter already
+        // recorded each day's misses permanently (see GenerateFoodNeedIfDue) — resetting THIS
+        // ledger only affects what a future delivery can still be credited for, not the score.
+        outstandingFoodNeed = 0;
 
         if (fillFoodToCapacityDaily)
         {
@@ -513,14 +549,14 @@ public class BuildingResourceStorage : MonoBehaviour
             Debug.Log($"{gameObject.name} received {actualAdded} {type} ({currentResources[type]}/{capacity})");
         GameLogPanel.Instance.LogResourceChange($"{gameObject.name} received {actualAdded} {type} ({currentResources[type]}/{capacity})");
 
-        // Clients eat as soon as food arrives, rather than waiting for the next round-based
-        // consumption tick. Guarded to once per round (see ConsumeFoodForPopulationOncePerRound)
-        // so a single request fulfilled via several separate vehicle drop-offs in the same round
-        // doesn't feed everyone once per drop-off.
+        // Clients eat as soon as food arrives. ReconcileFoodAgainstOutstandingNeed is safe to call
+        // any number of times per round (from several drop-offs of the same request, or from
+        // unrelated deliveries landing close together) — it only ever credits up to whatever's
+        // still actually owed, so it can never double-feed the way a naive "recompute need fresh
+        // every time" call would.
         if (type == ResourceType.FoodPacks && actualAdded > 0 && enablePopulationBasedConsumption)
         {
-            if (ConsumeFoodForPopulationOncePerRound("immediately after delivery"))
-                roundsSinceLastConsumption = 0;
+            ReconcileFoodAgainstOutstandingNeed();
         }
 
         return actualAdded;

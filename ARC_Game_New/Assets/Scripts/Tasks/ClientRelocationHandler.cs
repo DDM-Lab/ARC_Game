@@ -586,8 +586,13 @@ public class ClientRelocationHandler : MonoBehaviour
 
             if (ClientStayTracker.Instance != null && delivered > 0)
             {
-                string groupName = $"Relocate_{parentTask.taskId}_{source.name}_to_{dest.name}";
-                ClientStayTracker.Instance.RegisterClientArrival(dest, delivered, groupName);
+                // HandlePopulationDelivery already registers the arrival internally for a
+                // Shelter/Motel destination (and handles removing the source-side group if
+                // relocating between two lodging buildings) — a direct RegisterClientArrival call
+                // here as well double-registered every self-walk arrival: two ClientGroup entries
+                // for one physical move, each independently rolling its own random casework-need
+                // subset, doubling that delivery's contribution to occupancy tracking, new-arrival
+                // counts, and potential casework generation.
                 ClientStayTracker.Instance.HandlePopulationDelivery(source, dest, delivered, parentTask.taskId);
             }
 

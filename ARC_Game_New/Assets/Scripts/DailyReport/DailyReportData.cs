@@ -94,8 +94,22 @@ public class DailyReportData : MonoBehaviour
 
 
     [Header("Cumulative Lodging")]
+    // Cost-efficiency's own measure (C_Lodging: $ spent per bed-night) — an end-of-day occupancy
+    // snapshot, re-summed every day via OnDayChangedForLodgingNights. Deliberately NOT used for
+    // S_Lodging: a client housed for 5 days would otherwise count as "5 satisfied nights" purely
+    // from staying put, and overpreparation (idle capacity) would need to stay invisible here
+    // anyway — that is exactly what a cost metric should reflect, so this pair is left as-is.
     private int cumulativeLodgingNightsConsumed = 0; //here
     private int cumulativeLodgingNightsNeeded = 0;  //here
+
+    // S_Lodging's actual inputs: a one-time-per-task request ledger, not a repeating occupancy
+    // count. "Requested" is added exactly once, when a Lodging-tagged task is generated
+    // (TaskSystem.CreateTaskFromData) — permanent from that moment, whatever happens to the task
+    // afterward. "Satisfied" is added only for clients a lodging task actually delivered
+    // (RecordLodgingSatisfiedToday, called from ClientRelocationHandler at the moment people
+    // physically arrive — immediate teleport, or self-walk arrival after relocationDelayRounds).
+    private int cumulativeLodgingRequested = 0;
+    private int cumulativeLodgingSatisfied = 0;
 
 
     [Header("Cumulative Worker Use")]
@@ -109,7 +123,14 @@ public class DailyReportData : MonoBehaviour
     private int cumulativeClientRoundsAwaitingCasework = 0; // here
     private int cumulativeClientsRequestedCasework = 0; //here
     private int cumulativeCaseworkAvailableRounds = 0;
-    private HashSet<ClientGroup> caseworkRequestedGroups = new HashSet<ClientGroup>();
+    // Maps each requested group to a FROZEN snapshot of its requested size at request time — not
+    // group.clientsWithCaseworkNeed itself, which is a LIVE counter that ClientStayTracker
+    // decrements as people are actually processed home (RemoveClientsByQuantity). The per-round
+    // denominator accrual below must keep using the original size after resolution, or it freezes
+    // in lockstep with the numerator the instant the group is resolved and the score can never
+    // recover — the entire point of pacing the denominator out is that it keeps growing for the
+    // rest of the game after resolution while the numerator stays frozen.
+    private Dictionary<ClientGroup, int> caseworkRequestedGroups = new Dictionary<ClientGroup, int>();
 
     // Mainly Cost-eff
     [Header("Cumulative - Cost-Efficiency Spend")] //record all
@@ -515,10 +536,28 @@ public class DailyReportData : MonoBehaviour
         {
             foreach (var group in ClientStayTracker.Instance.clientGroups)
             {
-                if (group.clientsWithCaseworkNeed > 0 && !group.hasDeparted && caseworkRequestedGroups.Contains(group))
+                if (group.clientsWithCaseworkNeed > 0 && !group.hasDeparted && caseworkRequestedGroups.ContainsKey(group))
                     cumulativeClientRoundsAwaitingCasework += group.clientsWithCaseworkNeed;
             }
         }
+
+        // Paces the casework denominator out one round at a time, the same cadence the numerator
+        // above already uses — instead of OnCaseworkRequested crediting a whole game's worth of
+        // future "available" time the instant a request is made (which let a brand-new, completely
+        // unaddressed request instantly raise the score, since the denominator jumped before the
+        // numerator had any chance to catch up). Every group that has EVER requested casework
+        // contributes its FROZEN requested size (caseworkRequestedGroups' value — never the live,
+        // decrementing group.clientsWithCaseworkNeed — see OnCaseworkRequested and the field
+        // comment) once per round, resolved or not, for the rest of the game: a request made on day X
+        // naturally accrues for exactly (totalRounds - roundsElapsedAtRequestTime) rounds, because
+        // every group's accrual ends at the same final round regardless of when it started — so the
+        // game-end total is identical to the old lump sum, only the timing changes. A still-open
+        // request now adds to both awaiting and available every round (net-neutral, pinned at its
+        // worst ratio, never inflating the score) instead of just available; a resolved request's
+        // awaiting side freezes while available keeps accruing, so its score improves gradually as
+        // the rest of the game plays out, instead of being credited all at once up front.
+        foreach (var requestedSize in caseworkRequestedGroups.Values)
+            cumulativeCaseworkAvailableRounds += requestedSize;
 
         RecalcWorkerSatisfaction();
         RecalcWorkerEfficiency();   
@@ -529,14 +568,17 @@ public class DailyReportData : MonoBehaviour
     {
         cumulativeClientsRequestedCasework += group.clientsWithCaseworkNeed;
         todayCaseworkRequestedNew += group.clientsWithCaseworkNeed; // NEW
-        caseworkRequestedGroups.Add(group);
-        var gdm = GameDataManager.Instance;
-        if (gdm != null)
-        {
-            int totalRounds = gdm.InitialGameDays * gdm.InitialRoundsPerDay;
-            int remainingRounds = Mathf.Max(0, totalRounds - cumulativeRoundsElapsed);
-            cumulativeCaseworkAvailableRounds += remainingRounds * group.clientsWithCaseworkNeed;
-        }
+        // Freeze this request's size now, before RemoveClientsByQuantity can start decrementing
+        // group.clientsWithCaseworkNeed as it's resolved — see the field comment. A group can
+        // re-request (its own flag resets on expiry), in which case this adds to its existing
+        // frozen total rather than overwriting it, matching cumulativeClientsRequestedCasework's
+        // own additive handling of re-requests above.
+        if (caseworkRequestedGroups.ContainsKey(group))
+            caseworkRequestedGroups[group] += group.clientsWithCaseworkNeed;
+        else
+            caseworkRequestedGroups[group] = group.clientsWithCaseworkNeed;
+        // No longer credits cumulativeCaseworkAvailableRounds here — see AccumulateRoundMetrics,
+        // which now paces that same total out one round at a time instead of all at once.
         RecalcCaseworkSatisfaction();
     }
 
@@ -560,7 +602,10 @@ public class DailyReportData : MonoBehaviour
             cumulativeLodgingNightsNeeded += housedTonight + neededTonight;
         }
 
-        RecalcLodgingSatisfaction();
+        // NOT RecalcLodgingSatisfaction() here — this pair now feeds only C_Lodging (cost per
+        // bed-night). S_Lodging is request-based (see RecordLodgingRequestedToday/SatisfiedToday)
+        // and already keeps itself live from those events; recalculating it here would just be a
+        // same-value no-op push, since nothing this function touches changes it anymore.
         RecalcLodgingEfficiency();
     }
 
@@ -647,10 +692,44 @@ public class DailyReportData : MonoBehaviour
     public int GetTodayCommunityFoodUsedForFacility(string facilityName) =>
         todayCommunityFoodUsedByFacility.TryGetValue(facilityName, out int v) ? v : 0;
 
-    public void RecordLodgingRequestedToday(int amount) => todayLodgingRequested += amount;
-    public void RecordLodgingSatisfiedToday(int amount) => todayLodgingSatisfied += amount;
+    // "Today" counters are display-only; the cumulative pair below is what S_Lodging actually
+    // reads. Both are bumped from the same call so there is exactly one call site per event.
+    public void RecordLodgingRequestedToday(int amount)
+    {
+        todayLodgingRequested += amount;
+        cumulativeLodgingRequested += amount;
+        RecalcLodgingSatisfaction("Lodging request generated");
+    }
+
+    public void RecordLodgingSatisfiedToday(int amount)
+    {
+        todayLodgingSatisfied += amount;
+        cumulativeLodgingSatisfied += amount;
+        RecalcLodgingSatisfaction("Lodging task resolved");
+    }
+
+    /// <summary>
+    /// Undoes a RecordLodgingRequestedToday call for a task that is being superseded, not
+    /// resolved (TaskSystem.SupersedeTask: an emergency lodging task evicting an existing
+    /// non-emergency one for the same facility). Without this, the evicted task's demand — already
+    /// recorded permanently the moment it was created — would double up with the replacement
+    /// task's own recording for what is really the same underlying population, since neither task
+    /// changed the facility's population before the swap. Clamped at 0: todayLodgingRequested
+    /// resets every day, so a task superseded on a later day than it was created must not be
+    /// allowed to drive it negative.
+    /// </summary>
+    public void ReverseLodgingRequested(int amount)
+    {
+        if (amount <= 0) return;
+        todayLodgingRequested = Mathf.Max(0, todayLodgingRequested - amount);
+        cumulativeLodgingRequested = Mathf.Max(0, cumulativeLodgingRequested - amount);
+        RecalcLodgingSatisfaction("Lodging request superseded");
+    }
+
     public int GetTodayLodgingRequested() => todayLodgingRequested;
     public int GetTodayLodgingSatisfied() => todayLodgingSatisfied;
+    public int GetCumulativeLodgingRequested() => cumulativeLodgingRequested;
+    public int GetCumulativeLodgingSatisfied() => cumulativeLodgingSatisfied;
 
     public void RecordCaseworkSatisfiedToday(int amount) => todayCaseworkSatisfied += amount;
     public int GetTodayCaseworkRequestedNew() => todayCaseworkRequestedNew;
@@ -807,12 +886,18 @@ public class DailyReportData : MonoBehaviour
         return Mathf.Clamp01((float)d.GetCumulativeFoodPacksConsumedByClients() / needed);
     }
 
+    // Request-based, not occupancy-based: cumulative clients successfully relocated through
+    // Lodging-tagged tasks, divided by cumulative clients those tasks ever requested. Each
+    // request is counted exactly once, at generation (permanent from then on, win or lose);
+    // each satisfied count is exactly how many people that task's own delivery actually landed.
+    // Deliberately NOT derived from GetCumulativeLodgingNightsConsumed/Needed — see the comment
+    // on those fields for why a daily occupancy snapshot is the wrong shape for this score.
     public float S_Lodging()
     {
         var d = this;
-        int needed = d.GetCumulativeLodgingNightsNeeded();
-        if (needed <= 0) return 0f;
-        return Mathf.Clamp01((float)d.GetCumulativeLodgingNightsConsumed() / needed);
+        int requested = d.GetCumulativeLodgingRequested();
+        if (requested <= 0) return 0f;
+        return Mathf.Clamp01((float)d.GetCumulativeLodgingSatisfied() / requested);
     }
 
     //public float S_WorkerUse()
@@ -1151,6 +1236,7 @@ public class DailyReportData : MonoBehaviour
         public int foodPacksConsumedByClients, foodPacksNeededByClients, foodPacksWasted;
         public int communityFoodDemand, communityFoodUsed;
         public int lodgingNightsConsumed, lodgingNightsNeeded;
+        public int lodgingRequested, lodgingSatisfied;
         public int idleWorkerRounds, workingWorkerRounds, trainingWorkerRounds, workerPoolRounds;
         public int clientRoundsAwaitingCasework, clientsRequestedCasework, caseworkAvailableRounds;
         public float foodSpend, lodgingSpend, workerRequestCost, workerTrainingCost;
@@ -1173,6 +1259,8 @@ public class DailyReportData : MonoBehaviour
         communityFoodUsed = cumulativeCommunityFoodUsed,
         lodgingNightsConsumed = cumulativeLodgingNightsConsumed,
         lodgingNightsNeeded = cumulativeLodgingNightsNeeded,
+        lodgingRequested = cumulativeLodgingRequested,
+        lodgingSatisfied = cumulativeLodgingSatisfied,
         idleWorkerRounds = cumulativeIdleWorkerRounds,
         workingWorkerRounds = cumulativeWorkingWorkerRounds,
         trainingWorkerRounds = cumulativeTrainingWorkerRounds,
@@ -1208,6 +1296,8 @@ public class DailyReportData : MonoBehaviour
         cumulativeCommunityFoodUsed = s.communityFoodUsed;
         cumulativeLodgingNightsConsumed = s.lodgingNightsConsumed;
         cumulativeLodgingNightsNeeded = s.lodgingNightsNeeded;
+        cumulativeLodgingRequested = s.lodgingRequested;
+        cumulativeLodgingSatisfied = s.lodgingSatisfied;
         cumulativeIdleWorkerRounds = s.idleWorkerRounds;
         cumulativeWorkingWorkerRounds = s.workingWorkerRounds;
         cumulativeTrainingWorkerRounds = s.trainingWorkerRounds;
