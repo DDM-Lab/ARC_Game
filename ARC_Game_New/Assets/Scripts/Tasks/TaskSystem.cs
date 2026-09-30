@@ -3066,6 +3066,12 @@ public class TaskSystem : MonoBehaviour
         // Logistics
         state.logistics = GetLogisticsState();
 
+        // Pending effects, finished-day summaries and the motel rate (LLM observation; read-only).
+        state.pendingEffects = GetPendingEffects();
+        state.dailyReports = GetDailyReportSummaries();
+        var motelCost = FindObjectOfType<MotelCostManager>();
+        state.motelCostPerPersonPerDay = motelCost != null ? motelCost.costPerPersonPerDay : 0f;
+
         // Daily Metrics
         state.dailyMetrics = GetDailyMetrics();
 
@@ -3258,6 +3264,7 @@ public class TaskSystem : MonoBehaviour
             facilityState.assignedWorkforce = building.GetAssignedWorkforce();
             facilityState.requiredWorkforce = building.GetRequiredWorkforce();
             facilityState.originalSiteId = building.GetOriginalSiteId();
+            facilityState.incomingPopulation = IncomingPopulation(building);
 
             mapState.facilities.Add(facilityState);
         }
@@ -3299,6 +3306,7 @@ public class TaskSystem : MonoBehaviour
                 };
             }
 
+            facilityState.incomingPopulation = IncomingPopulation(prebuilt);
             mapState.facilities.Add(facilityState);
         }
 
@@ -3430,6 +3438,80 @@ public class TaskSystem : MonoBehaviour
         }
 
         return resources;
+    }
+
+    /// <summary>People already on their way to <paramref name="target"/>: vehicle deliveries
+    /// reserved for it plus clients walking in. The same two figures the game subtracts from free
+    /// space when it decides whether a shelter or motel choice can be offered.</summary>
+    static int IncomingPopulation(MonoBehaviour target)
+    {
+        if (target == null) return 0;
+        int reserved = DeliverySystem.Instance != null
+            ? DeliverySystem.Instance.GetReservedIncomingQuantity(target, ResourceType.Population) : 0;
+        int walking = ClientRelocationHandler.Instance != null
+            ? ClientRelocationHandler.Instance.GetPendingIncomingQuantity(target) : 0;
+        return reserved + walking;
+    }
+
+    /// <summary>Time-delayed effects with their timing (see GameStatePayload.pendingEffects).
+    /// Read-only: nothing here advances or consumes anything.</summary>
+    List<PendingEffect> GetPendingEffects()
+    {
+        var list = new List<PendingEffect>();
+        int today = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 0;
+
+        if (BudgetAllocationManager.Instance != null)
+            foreach (var p in BudgetAllocationManager.Instance.PendingAllocations)
+                if (p != null)
+                    list.Add(new PendingEffect { kind = "funding", description = p.label, amount = p.amount,
+                                                 roundsRemaining = p.roundsRemaining, daysRemaining = -1 });
+        if (DelayedBudgetManager.Instance != null)
+            foreach (var d in DelayedBudgetManager.Instance.activeDelayedBudgets)
+                if (d != null)
+                    list.Add(new PendingEffect { kind = "funding", description = d.sourceTaskTitle, amount = d.amount,
+                                                 roundsRemaining = d.roundsRemaining, daysRemaining = -1 });
+        if (WorkerRequestSystem.Instance != null)
+            foreach (var r in WorkerRequestSystem.Instance.GetActiveRequestTasks())
+                if (r != null && !r.isCompleted)
+                    list.Add(new PendingEffect { kind = "workers_arriving", description = r.workerType.ToString(),
+                                                 quantity = r.workerCount, roundsRemaining = -1,
+                                                 daysRemaining = Mathf.Max(0, r.arrivalDay - today) });
+        if (WorkerTrainingSystem.Instance != null)
+            foreach (var t in WorkerTrainingSystem.Instance.GetActiveTrainingTasks())
+                if (t != null && !t.isCompleted)
+                    list.Add(new PendingEffect { kind = "training", description = "untrained to trained",
+                                                 quantity = t.workerCount, roundsRemaining = -1,
+                                                 daysRemaining = Mathf.Max(0, t.completionDay - today) });
+        foreach (Building b in FindObjectsOfType<Building>())
+            if (b != null && b.GetCurrentStatus() == BuildingStatus.UnderConstruction)
+                list.Add(new PendingEffect { kind = "construction", description = b.GetBuildingType().ToString(),
+                                             target = b.GetDisplayName(),
+                                             roundsRemaining = b.GetConstructionRoundsRemaining(), daysRemaining = -1 });
+        return list;
+    }
+
+    /// <summary>Compact per-day summaries of every finished day's report.</summary>
+    List<DailyReportSummary> GetDailyReportSummaries()
+    {
+        var list = new List<DailyReportSummary>();
+        var drd = DailyReportData.Instance;
+        int today = GlobalClock.Instance != null ? GlobalClock.Instance.GetCurrentDay() : 0;
+        if (drd == null) return list;
+        for (int day = 1; day < today; day++)
+        {
+            if (!drd.TryGetHistoricalReport(day, out DailyReportMetrics m) || m == null) continue;
+            list.Add(new DailyReportSummary
+            {
+                day = day,
+                completedTasks = m.completedTasks, totalTasks = m.totalTasks, expiredTasks = m.expiredTasks,
+                foodProduced = m.foodProduced, foodDelivered = m.foodDelivered, foodWasted = m.foodWasted,
+                shelterOccupancyRate = m.shelterOccupancyRate, idleWorkers = m.idleWorkers,
+                startingBudget = m.startingBudget, budgetSpent = m.budgetSpent,
+                budgetReceived = m.budgetReceived, endingBudget = m.endingBudget,
+                satisfactionChange = m.satisfactionChange,
+            });
+        }
+        return list;
     }
 
     private Logistics GetLogisticsState()

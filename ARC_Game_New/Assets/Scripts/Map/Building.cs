@@ -542,6 +542,12 @@ public class Building : MonoBehaviour
 
     public BuildingType GetBuildingType() => buildingType;
     public int GetOriginalSiteId() => originalSiteId;
+
+    /// <summary>Rounds of construction left (0 once built). Read-only, for the LLM state's
+    /// pending effects.</summary>
+    public int GetConstructionRoundsRemaining() =>
+        currentStatus == BuildingStatus.UnderConstruction
+            ? Mathf.Max(0, constructionRoundsTotal - constructionRoundsElapsed) : 0;
     public string GetDisplayName() => !string.IsNullOrEmpty(buildingName) ? buildingName : $"{buildingType} {originalSiteId}";
     public void SetBuildingName(string name) => buildingName = name;
     public BuildingStatus GetCurrentStatus() => currentStatus;

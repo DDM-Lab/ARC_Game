@@ -1723,6 +1723,11 @@ public class DailyReportData : MonoBehaviour
         Debug.Log($"Saved report for Day {day} to history");
     }
 
+    /// <summary>Quiet lookup (no warning when the day has no report), for the LLM state export,
+    /// which asks for every past day on every state pull.</summary>
+    public bool TryGetHistoricalReport(int day, out DailyReportMetrics metrics) =>
+        historicalReports.TryGetValue(day, out metrics);
+
     public DailyReportMetrics GetHistoricalReport(int day)
     {
         if (historicalReports.ContainsKey(day))

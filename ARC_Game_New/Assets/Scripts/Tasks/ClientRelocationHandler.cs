@@ -680,8 +680,9 @@ public class ClientRelocationHandler : MonoBehaviour
     /// <summary>
     /// Clients already walking toward this destination (departed but not yet arrived).
     /// Prevents over-booking a shelter/motel while multiple self-walk relocations are in flight.
+    /// Public for the LLM state export (FacilityState.incomingPopulation).
     /// </summary>
-    int GetPendingIncomingQuantity(MonoBehaviour destination)
+    public int GetPendingIncomingQuantity(MonoBehaviour destination)
     {
         int total = 0;
         foreach (var r in pendingRelocations)

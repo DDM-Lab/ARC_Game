@@ -68,6 +68,40 @@ public class GameStatePayload
     public WorkforceState workforceState;
     public ConstructionState constructionState;
     public RewardMetrics rewardMetrics;
+    // Time-delayed effects the player sees in the Pending Actions panel (and a little more):
+    // approved funding not yet paid, workers arriving or finishing training, construction still
+    // under way. Without it an officer could see "2 in training" but never "ready in 1 day",
+    // or approve funding and then lose track of it.
+    public List<PendingEffect> pendingEffects;
+    // A compact summary of each finished day's report, so an officer can explain what moved
+    // the score instead of saying it cannot see the daily report.
+    public List<DailyReportSummary> dailyReports;
+    // The motel's per-person daily rate (MotelCostManager), so "cost per bed" is not a guess.
+    public float motelCostPerPersonPerDay;
+}
+
+[System.Serializable]
+public class PendingEffect
+{
+    public string kind;          // funding | workers_arriving | training | construction
+    public string description;   // human-readable label (funding source, worker type, building)
+    public int amount;           // money, for funding
+    public int quantity;         // workers, for workers_arriving / training
+    public string target;        // building name, for construction
+    public int roundsRemaining;  // -1 when the effect is scheduled by day instead
+    public int daysRemaining;    // -1 when the effect is scheduled by round instead
+}
+
+[System.Serializable]
+public class DailyReportSummary
+{
+    public int day;
+    public int completedTasks, totalTasks, expiredTasks;
+    public int foodProduced, foodDelivered, foodWasted;
+    public float shelterOccupancyRate;
+    public int idleWorkers;
+    public float startingBudget, budgetSpent, budgetReceived, endingBudget;
+    public float satisfactionChange;
 }
 
 // Raw cumulative quantities for the (Python-side) reward function. Unity reports
@@ -163,6 +197,10 @@ public class FacilityState
     public int assignedWorkforce; // Current workforce assigned
     public int requiredWorkforce; // Usually 4
     public int originalSiteId; // ID of the abandoned site this building was built on
+    // People already on their way here (vehicle deliveries reserved + clients walking in). The
+    // game counts these against free space when it decides whether to offer a shelter choice,
+    // so a shelter can read 0/100 and still be full. Same functions the game uses.
+    public int incomingPopulation;
 }
 
 [System.Serializable]

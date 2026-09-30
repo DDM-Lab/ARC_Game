@@ -623,6 +623,162 @@ def render_state_delta(obs, prev_obs, *, v2=True):
 # scalar line shows a real number rather than "roundsLeft None".
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# OFFICER EXTRAS — router-only additions (never in build_observation, which also feeds the
+# benchmark/gym arms; see _router_obs). Added after Talos session 1bb785d1, where the
+# officers' rendered state explained most of their mistakes:
+#   * relocations in flight named the destination by its GameObject name ("Shelter_1") while
+#     the facility table said "Shelter Bravo ... site 1" at 0/100 -- so an officer insisted a
+#     shelter with 100 people already walking in was empty;
+#   * no timing for anything pending (funding, arrivals, training, construction);
+#   * no locations, so "which open site is nearest Community X" was unanswerable;
+#   * the motel's daily total but not its per-person rate; no daily report.
+# Every line renders only when its data is present, so an older game build that does not
+# export pendingEffects / incomingPopulation / dailyReports simply gets fewer lines.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _display_names(game_state):
+    """GameObject name ("Shelter_1", "CaseworkSite_5") -> display name ("Shelter Bravo").
+    BuildingSystem names a built facility "{buildingType}_{siteId}"."""
+    out = {}
+    for f in (game_state.get("mapState") or {}).get("facilities") or []:
+        bt, sid, nm = f.get("buildingType"), f.get("originalSiteId"), f.get("facilityName")
+        if f.get("facilityType") == "Building" and bt and sid is not None and nm:
+            out[f"{bt}_{sid}"] = nm
+    return out
+
+
+def _pos(p):
+    try:
+        return float(p["x"]), float(p["y"])
+    except (TypeError, KeyError, ValueError):
+        return None
+
+
+def _add_officer_extras(obs, game_state):
+    gs = game_state or {}
+    names = _display_names(gs)
+    # 1. Relocations in flight, under display names (rendered by the shared formatter).
+    for w in obs.get("walking") or []:
+        for k in ("to", "from"):
+            if w.get(k) in names:
+                w[k] = names[w[k]]
+    facs = (gs.get("mapState") or {}).get("facilities") or []
+    # 2. People already on their way to each facility. Prefer the game's own figure (reserved
+    #    deliveries + walking); fall back to summing the walking list on older builds.
+    incoming = {}
+    if any("incomingPopulation" in f for f in facs):
+        for f in facs:
+            if (f.get("incomingPopulation") or 0) > 0:
+                incoming[f.get("facilityName")] = f["incomingPopulation"]
+    else:
+        for w in obs.get("walking") or []:
+            incoming[w.get("to")] = incoming.get(w.get("to"), 0) + (w.get("n") or 0)
+    if incoming:
+        pop = {f.get("facilityName"): (f.get("currentPopulation"), f.get("populationCapacity"))
+               for f in facs}
+        walks = {}
+        for w in obs.get("walking") or []:
+            walks.setdefault(w.get("to"), []).append(w)
+        obs["incoming"] = [{"name": n, "n": q, "pop": pop.get(n, (None, None))[0],
+                            "cap": pop.get(n, (None, None))[1], "walks": walks.get(n, [])}
+                           for n, q in incoming.items()]
+        # The walking list is folded into "incoming" (same people, one line) -- router-only obs,
+        # so the shared formatter's "walking:" line is dropped only for live officers.
+        obs.pop("walking", None)
+    # 3. Pending effects with timing.
+    if gs.get("pendingEffects"):
+        obs["pending"] = gs["pendingEffects"]
+    # 4. Locations. Every open site gets its distance to EVERY landmark (each community and the
+    #    motel), not just the nearest community: in session 1eeb4b8f the Director asked for "the
+    #    spot closest to the Motel" and the officer, given only nearest-community figures,
+    #    correctly said it could not tell.
+    landmarks = [(f.get("facilityName"), _pos(f.get("position"))) for f in facs
+                 if str(f.get("buildingType", "")).lower() in ("community", "motel")
+                 and _pos(f.get("position"))]
+    if landmarks:
+        dist = lambda a, b: round(((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5, 1)
+        rows = []
+        for s_ in (gs.get("constructionState") or {}).get("availableSites") or []:
+            p = _pos(s_.get("position"))
+            if p and s_.get("isAvailable", True):
+                rows.append((s_.get("siteId"), [(n, dist(p, q)) for n, q in landmarks]))
+        if rows:
+            obs["siteDistances"] = sorted(rows, key=lambda t: (t[0] is None, t[0]))
+    # 5. Motel per-person rate (the game's own value when exported).
+    if any("motel" in str(f.get("buildingType", "")).lower() for f in facs):
+        obs["motelPerPersonPerDay"] = int(gs.get("motelCostPerPersonPerDay")
+                                          or MOTEL_COST_PER_PERSON_PER_DAY)
+    # 6. Finished-day summaries.
+    if gs.get("dailyReports"):
+        obs["dailyReports"] = gs["dailyReports"]
+
+
+def _render_officer_extras(obs):
+    L = []
+    if obs.get("incoming"):
+        parts = []
+        for i in obs["incoming"]:
+            src = ", ".join(f"{w.get('n')} walking from {w.get('from')} in {w.get('rounds')}r"
+                            for w in i.get("walks") or [])
+            walked = sum((w.get("n") or 0) for w in i.get("walks") or [])
+            if i["n"] > walked:
+                src = (src + ", " if src else "") + f"{i['n'] - walked} by vehicle"
+            room = (f"; now {i['pop']}/{i['cap']}, {max(0, i['cap'] - i['pop'] - i['n'])} free"
+                    if i.get("pop") is not None and i.get("cap") else "")
+            parts.append(f"{i['name']} +{i['n']} ({src}{room})")
+        L.append("incoming (counted against free space): " + "; ".join(parts))
+    if obs.get("pending"):
+        parts = []
+        # Group identical effects (same kind and timing) so five shelters started together read
+        # as one line, not five.
+        grouped, order = {}, []
+        for p in obs["pending"]:
+            key = (p.get("kind"), p.get("roundsRemaining"), p.get("daysRemaining"),
+                   p.get("description") if p.get("kind") != "construction" else None)
+            if key not in grouped:
+                grouped[key] = dict(p, _targets=[]); order.append(key)
+            elif p.get("kind") in ("workers_arriving", "training"):
+                grouped[key]["quantity"] = (grouped[key].get("quantity") or 0) + (p.get("quantity") or 0)
+            elif p.get("kind") == "funding":
+                grouped[key]["amount"] = (grouped[key].get("amount") or 0) + (p.get("amount") or 0)
+            grouped[key]["_targets"].append(p.get("target"))
+        for p in (grouped[k] for k in order):
+            r, d = p.get("roundsRemaining", -1), p.get("daysRemaining", -1)
+            when = ("this round" if r == 0 else f"in {r}r") if r is not None and r >= 0 else \
+                   ("later today" if d == 0 else f"in {d}d") if d is not None and d >= 0 else ""
+            k = p.get("kind")
+            if k == "funding":
+                parts.append(f"+${p.get('amount', 0):,} funding {when} ({p.get('description') or 'approved'})")
+            elif k == "workers_arriving":
+                parts.append(f"{p.get('quantity')} {str(p.get('description') or '').lower()} workers arrive {when}")
+            elif k == "training":
+                parts.append(f"{p.get('quantity')} workers finish training {when}")
+            elif k == "construction":
+                names = [t for t in p.get("_targets") or [p.get("target")] if t]
+                parts.append(f"{', '.join(names)} finish{'es' if len(names) == 1 else ''} construction {when}")
+        if parts:
+            L.append("pending: " + "; ".join(parts))
+    if obs.get("siteDistances"):
+        L.append("open sites by map distance (closest first): " + "; ".join(
+            f"{sid}: " + " ".join(f"{n.replace('Community ', '')} {round(d)}"
+                                  for n, d in sorted(ds, key=lambda x: x[1]))
+            for sid, ds in obs["siteDistances"]))
+    if obs.get("motelPerPersonPerDay"):
+        L.append(f"motel: ${obs['motelPerPersonPerDay']} per person per day")
+    for r in (obs.get("dailyReports") or [])[-2:]:      # last two finished days, to stay compact
+        sc = r.get("satisfactionChange") or 0
+        L.append(
+            f"day {r.get('day')} report: tasks {r.get('completedTasks')}/{r.get('totalTasks')} done, "
+            f"{r.get('expiredTasks')} expired; food made {r.get('foodProduced')} delivered "
+            f"{r.get('foodDelivered')} wasted {r.get('foodWasted')}; shelter occupancy "
+            f"{round((r.get('shelterOccupancyRate') or 0) * 100)}%; idle workers {r.get('idleWorkers')}; "
+            f"budget {int(r.get('startingBudget') or 0)} -> {int(r.get('endingBudget') or 0)} "
+            f"(spent {int(r.get('budgetSpent') or 0)}, received {int(r.get('budgetReceived') or 0)}); "
+            f"satisfaction {'+' if sc >= 0 else ''}{round(sc, 1)}")
+    return L
+
+
 def _rounds_left(game_state):
     """roundsLeft derived from the session horizon (None if unknown)."""
     si = (game_state or {}).get("sessionInfo", {})
@@ -645,6 +801,7 @@ def _router_obs(game_state, *, new=True, v2=True):
     _vcap = _vehicle_capacity(game_state)
     if _vcap:
         obs.setdefault("logistics", {})["vehicleCapacity"] = _vcap
+    _add_officer_extras(obs, game_state)
     return obs
 
 
@@ -654,8 +811,12 @@ def render_state_text(game_state, *, new=True, v2=True):
     Drop-in replacement for the old threadbare ``state_text`` in
     ``llm_query._build_prompt``, now producing the exact same rendering the
     benchmark policy sees (``render_state_compact``)."""
-    return render_state_compact(_router_obs(game_state, new=new, v2=v2), v2=v2) \
-        or "(no observation available)"
+    obs = _router_obs(game_state, new=new, v2=v2)
+    text = render_state_compact(obs, v2=v2)
+    extras = _render_officer_extras(obs)
+    if text and extras:
+        text = text + "\n" + "\n".join(extras)
+    return text or "(no observation available)"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
