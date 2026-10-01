@@ -4,17 +4,19 @@ import pytest
 from cora.prompt_ablation import ablate, paraphrase_arms, rule_ids
 from cora.prompts import list_packs, load_pack, prompt_sha, system_prompt
 
-# Fingerprints of every rendering in use. minimal_v6 task_only/typed is the Sep 2026 cluster
-# benchmark prompt (09b23ffd5e31); changing any of these changes what models were shown.
+# Fingerprints of every rendering in use; changing any of these changes what models are shown.
+# 2026-10: the execution-order rule now says hired workers arrive a few rounds later (it used to
+# claim same-turn hire+staff works). The Sep 2026 cluster benchmark ran minimal_v6 task_only/typed
+# as 09b23ffd5e31 (and minimal_v6_1 as 7ac0b7045b0f); git tag pre-cleanup-2026-10 has that text.
 PINNED = {
-    ("minimal_v6", False, "typed"): "09b23ffd5e31",
-    ("minimal_v6", False, "hermes"): "b4ff3b2cf458",
-    ("minimal_v6", True, "typed"): "78d175df9843",
-    ("minimal_v6", True, "hermes"): "e007d2daa5e9",
-    ("minimal_v6_1", False, "typed"): "7ac0b7045b0f",
-    ("minimal_v6_1", False, "hermes"): "684f01573802",
-    ("minimal_v6_1", True, "typed"): "3e5a00d77d4c",
-    ("minimal_v6_1", True, "hermes"): "f7fc46e7fdf0",
+    ("minimal_v6", False, "typed"): "0ec3d3cd3386",
+    ("minimal_v6", False, "hermes"): "735473498175",
+    ("minimal_v6", True, "typed"): "e991502de489",
+    ("minimal_v6", True, "hermes"): "d25328d58492",
+    ("minimal_v6_1", False, "typed"): "f25fab57715f",
+    ("minimal_v6_1", False, "hermes"): "f21e32411c65",
+    ("minimal_v6_1", True, "typed"): "75d19adf7b8a",
+    ("minimal_v6_1", True, "hermes"): "6952078619b6",
 }
 
 

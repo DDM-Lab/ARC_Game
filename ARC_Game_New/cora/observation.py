@@ -57,6 +57,9 @@ def observe(game_state: dict, actions: list | None = None, config: ObsConfig = O
         "day": gs.get("sessionInfo", {}).get("currentDay"),
         "budget": sb.get("budget"), "satisfaction": sb.get("satisfaction"),
         "workers": {"freeTrained": wf.get("freeTrainedWorkers"), "freeUntrained": wf.get("freeUntrainedWorkers"),
+                    # Hired but not here yet: workers arrive a few rounds after the hire.
+                    "arrivingTrained": wf.get("trainedWorkersNotArrived"),
+                    "arrivingUntrained": wf.get("untrainedWorkersNotArrived"),
                     "working": wf.get("workingTrainedWorkers", 0) + wf.get("workingUntrainedWorkers", 0),
                     "inTraining": wf.get("untrainedWorkersInTraining")},
         "logistics": {"vehiclesFree": gs.get("logistics", {}).get("availableVehicles")},
@@ -302,6 +305,7 @@ def _scalar_lines(obs):
          + (f" | motelDailyCost {obs['motelDailyCost']}" if obs.get("motelDailyCost") else "")]
     w = obs.get("workers", {})
     L.append(f"workers: freeTrained {_num0(w, 'freeTrained')} freeUntrained {_num0(w, 'freeUntrained')} "
+             f"arrivingTrained {_num0(w, 'arrivingTrained')} arrivingUntrained {_num0(w, 'arrivingUntrained')} "
              f"working {_num0(w, 'working')} inTraining {_num0(w, 'inTraining')}")
     lg = obs.get("logistics", {}) or {}
     cap = lg.get("vehicleCapacity")

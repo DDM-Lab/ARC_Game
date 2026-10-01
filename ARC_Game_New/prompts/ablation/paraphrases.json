@@ -27,15 +27,15 @@
     },
     "R10_P1_explicit_order": {
       "rule": "R10",
-      "text": "You may emit several tool calls in a single turn. The engine executes them in a fixed\norder — deconstruct first, then build, then hire, then train, then staff — regardless of the\norder you wrote them. Because hire runs before staff, hiring and staffing in the same turn\ndoes work; but a building you started with build this turn is still UnderConstruction by the\ntime staff runs, so it can only be staffed on a later turn.\n"
+      "text": "You may emit several tool calls in a single turn. The engine executes them in a fixed\norder — deconstruct first, then build, then hire, then train, then staff — regardless of the\norder you wrote them. Workers you hire are not free when staff runs: they arrive a few rounds\nlater (listed as arriving under workers). Likewise a building you started with build this turn is\nstill UnderConstruction by the time staff runs, so both can only be staffed on a later turn.\n"
     },
     "R10_P2_declarative": {
       "rule": "R10",
-      "text": "Multiple tool calls per turn are allowed. Resolution order is fixed:\ndeconstruct → build → hire → train → staff (independent of the order you wrote them). Hire\nresolves before staff, so hiring and staffing in the same turn works. Build does not become\nInUse in the same turn — a facility built this turn is not staffable until the next turn.\n"
+      "text": "Multiple tool calls per turn are allowed. Resolution order is fixed:\ndeconstruct → build → hire → train → staff (independent of the order you wrote them). Hired\nworkers arrive a few rounds later (listed as arriving under workers), so they cannot be staffed in\nthe same turn. Build does not become InUse in the same turn — a facility built this turn is not\nstaffable until a later turn.\n"
     },
     "R10_P3_procedural": {
       "rule": "R10",
-      "text": "Within one turn you can send several tool calls. Resolution is fixed to deconstruct,\nbuild, hire, train, staff — always in that order, no matter how you wrote them. Because staff\nruns after hire, you can hire and staff in the same turn. Because staff runs before a build\nfinishes construction, a same-turn build is not yet staffable.\n"
+      "text": "Within one turn you can send several tool calls. Resolution is fixed to deconstruct,\nbuild, hire, train, staff — always in that order, no matter how you wrote them. Hired workers\nonly arrive a few rounds later (listed as arriving under workers), so you cannot hire and staff them\nin the same turn. Because staff runs before a build finishes construction, a same-turn build is\nnot yet staffable.\n"
     }
   }
 }

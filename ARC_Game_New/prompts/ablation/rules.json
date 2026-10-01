@@ -10,7 +10,7 @@
     "R07": "- Each task carries numbered choices; committing to one resolves it. A task has `roundsLeft`, and\n  expires unresolved if you let it run out.\n",
     "R08": "- CHOICE IDS are the numbers printed before each colon under a task. They are NOT 0-based and NOT\n  contiguous — a task may offer only {1,2} or {2,3,4}. Use exactly the ids printed for that task on\n  this turn, and re-read them every turn: options are removed as they become infeasible.",
     "R09": " A task shown\n  with NO choice lines is informational; there is nothing to call for it.\n",
-    "R10": "You may make several calls in one step. They resolve in a fixed order —\ndeconstruct, build, hire, train, staff — not the order you wrote them in, so hiring and\nstaffing in the same turn works; but a building you build this turn is still UnderConstruction when\nstaff resolves, so it cannot be staffed until a later turn.\n",
+    "R10": "You may make several calls in one step. They resolve in a fixed order —\ndeconstruct, build, hire, train, staff — not the order you wrote them in. Hired workers are not\nfree yet when staff resolves: they arrive a few rounds later (listed as arriving under workers), and a\nbuilding you build this turn is still UnderConstruction, so neither can be staffed until a later turn.\n",
     "R11": "`available` is the single source of truth for what is executable this turn. ",
     "R12": "A spend larger than your\nbudget is ALLOWED — the budget may go negative (it is included in the score, not blocked). ",
     "R13": "Calls\nthat are genuinely invalid are silently dropped — you get NO error and NO confirmation. Verify what\nhappened by comparing the next observation's budget, facilities and available blocks.\n",

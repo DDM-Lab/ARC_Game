@@ -60,8 +60,8 @@ TOOLS: list[dict] = [
         # omitting it staffs the building fully, which is the only staffing the game accepts.
         "description": ("Staff an already-built facility from the free pool. A building only runs when "
                         "FULLY staffed, so normally omit count and it is staffed with exactly the "
-                        "workforce it needs (trained workers count 2 units, untrained 1). A worker hired "
-                        "this same turn IS available to staff."),
+                        "workforce it needs (trained workers count 2 units, untrained 1). Workers hired "
+                        "this turn are not free yet: they arrive a few rounds later (listed as arriving)."),
         "params": [
             ("site", {"type": "string",
                       "description": ("The facility name, copied exactly as printed in `available.needStaff` this "
