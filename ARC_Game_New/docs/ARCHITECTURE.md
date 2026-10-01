@@ -88,8 +88,11 @@ and every benchmark/RL record stores it.
 - **The map** comes from `StreamingAssets/map_config.json` (or `ARC_MAP_CONFIG`; `none` = the
   scene's built-in layout). It supplies layout only.
 - **The seed** seeds Unity's global RNG before the scene loads.
-- **Rounds:** Day 1 is one decision followed by the GUI's frozen four-round setup step; every
-  later day has four decisions. All front ends follow this, so a full game is 29 decisions.
+- **Decision points:** a step ends wherever a human could next act. Day 1 is one decision, then
+  the GUI's frozen four-round setup step, then the "End Today" decision. Every later day has a
+  decision at the start of each of its four rounds (Round 1 shows the new day's tasks before it
+  simulates) and one at "End Today"; the day rollover is its own step with no simulation. A full
+  game is 36 decisions and 29 simulated rounds, in the GUI and in the gym alike.
 
 Parity is checked with `analysis/diag_action_coverage.py`: a scripted, seeded game that uses
 every tool; `--compare a.json b.json` checks two runs round by round.
@@ -113,7 +116,7 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 |---|---|
 | Tool-call executor | done in the benchmark (`tool_executor.py`); router and RL pending |
 | Headless parameters, pinned map, scenario block | done |
-| Day-1 routine identical in gym and GUI | done |
+| Gym steps = human decision points (Day 1 setup, rollover step) | done |
 | `cora/` package (observation, tools, prompts, scoring, llm, logging, env) | pending |
 | `bench/` split | pending |
 | `router/` split, legacy actors retired | pending |
