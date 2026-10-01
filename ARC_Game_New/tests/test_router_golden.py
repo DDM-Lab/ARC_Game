@@ -33,6 +33,11 @@ with gzip.open(os.path.join(HERE, "fixtures", "game_states.jsonl.gz"), "rt") as 
 
 FAIL = {"build_Shelter_9"}                      # Unity refuses these action ids
 
+# Other router tests replace module functions with fakes and do not restore them; captured at
+# collection (before any test runs) and pinned for each recording.
+_REAL = {name: getattr(agent_router, name)
+         for name in ("_enumerate_actions", "run_tool_step", "filter_actions", "officer_text")}
+
 
 def _clean(o):
     """Drop run-specific values (timestamps, random proposal ids)."""
@@ -177,6 +182,8 @@ SCENARIOS = [("build_and_staff", 1, DOMAIN, s_build_and_staff), ("workforce", 2,
 
 
 async def _record(step, config, fn):
+    for name, real in _REAL.items():
+        setattr(agent_router, name, real)
     with tempfile.TemporaryDirectory() as td:
         h = Harness(td, step, config)
         await fn(h)
