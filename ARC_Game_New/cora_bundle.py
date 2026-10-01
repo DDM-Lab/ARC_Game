@@ -30,7 +30,7 @@ import urllib.parse
 
 from bundle import BundleError, config_warnings, load_bundle
 from cora_schema import CORA_API_VERSION, Bundle
-from provider_registry import valid_names
+from cora.llm.providers import valid_names
 
 
 def _tls_safe(url: str) -> tuple[str, dict]:

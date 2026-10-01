@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """One-shot migration: replace raw llm_provider/llm_endpoint/api_key_env in config/*.json with a
-single `provider` enum (provider_registry). Dry-run by default — prints a unified diff per file and
+single `provider` enum (cora.llm.providers). Dry-run by default — prints a unified diff per file and
 writes NOTHING until `--apply`.
 
 Mapping is derived from PROVIDER_REGISTRY, so it can never disagree with the runtime resolution.
@@ -20,7 +20,7 @@ import re
 import sys
 from pathlib import Path
 
-from provider_registry import PROVIDER_REGISTRY
+from cora.llm.providers import PROVIDER_REGISTRY
 
 # Default key env per backend, matching the code's os.environ.get fallbacks, so a config that omits
 # api_key_env still maps to the right provider.

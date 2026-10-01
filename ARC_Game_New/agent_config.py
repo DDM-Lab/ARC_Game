@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional
 
-from provider_registry import (
+from cora.llm.providers import (
     resolve as _resolve_provider,
     is_valid as _provider_ok,
     valid_names as _provider_names,
@@ -57,7 +57,7 @@ class AgentConfig:
     system_prompt: Optional[str]
     use_global_prompt: bool = True         # Prepend global prompt before system_prompt
     can_address: list[str] = field(default_factory=list)
-    # Provider enum (provider_registry). Preferred over the raw llm_provider/llm_endpoint/
+    # Provider enum (cora.llm.providers). Preferred over the raw llm_provider/llm_endpoint/
     # api_key_env trio: it names a server-side provider that resolves to those fields in
     # __post_init__, so an uploaded config can never carry an endpoint or a secret env var.
     # Mutually exclusive with the raw fields. (Kept in the defaults section for dataclass

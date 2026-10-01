@@ -118,7 +118,7 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 | Tool-call executor | done in the benchmark (`cora/executor.py`); router and RL pending |
 | Headless parameters, pinned map, scenario block | done |
 | Gym steps = human decision points (Day 1 setup, rollover step) | done |
-| `cora/` package | done: observation, prompts, tools, actions, executor, scoring; pending: llm, env |
+| `cora/` package | done: observation, prompts, tools, actions, executor, scoring, llm; pending: env |
 | `bench/` split | pending |
 | `router/` split, legacy actors retired | pending |
 | `CoraEnv` for RL; thin Verlog adapter | pending |

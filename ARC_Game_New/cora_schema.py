@@ -13,7 +13,7 @@ See docs/CORA_API_v1.md and docs/contributor-platform-design.md.
 
 The officer field set mirrors `AgentConfig`'s accepted keys, EXCEPT the three raw provider fields
 `llm_provider` / `llm_endpoint` / `api_key_env` (and legacy `llm_port`) are REPLACED by a single
-`provider: Provider` enum resolved server-side by provider_registry. An uploaded config therefore
+`provider: Provider` enum resolved server-side by cora.llm.providers. An uploaded config therefore
 cannot name an endpoint or a secret env var.
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from provider_registry import Provider
+from cora.llm.providers import Provider
 
 CORA_API_VERSION = "1.0"
 

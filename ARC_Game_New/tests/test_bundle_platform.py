@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from provider_registry import Provider, resolve, is_valid, valid_names
+from cora.llm.providers import Provider, resolve, is_valid, valid_names
 from cora_schema import CoraConfig, Bundle, BundleManifest
 from bundle import load_bundle, BundleError
 from agent_config import AgentConfig, load_config

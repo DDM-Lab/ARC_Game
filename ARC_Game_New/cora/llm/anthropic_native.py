@@ -18,7 +18,6 @@ why cache hits could not be confirmed there at all).
 """
 import json
 import os
-import json as _json
 
 import anthropic
 
@@ -133,7 +132,7 @@ class _Completions:
                     name = fn["name"] if isinstance(fn, dict) else fn.name
                     raw = fn["arguments"] if isinstance(fn, dict) else fn.arguments
                     try:
-                        args = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+                        args = json.loads(raw) if isinstance(raw, str) else (raw or {})
                     except Exception:
                         args = {}
                     blocks.append({"type": "tool_use",

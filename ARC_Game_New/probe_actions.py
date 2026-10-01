@@ -59,7 +59,7 @@ import sys
 import time
 from pathlib import Path
 
-import openai
+from cora.llm import ProviderSpec, client_for
 
 import benchmark_models as bm
 from cora import executor
@@ -135,7 +135,7 @@ def main():
     # before it ever emits a tool call.
     bm._set_local_reasoning_effort(a.reasoning_effort)
     bm._set_local_max_tokens(a.max_tokens)
-    client = openai.OpenAI(api_key=a.api_key, base_url=a.base_url)
+    client = client_for(ProviderSpec("openai", a.base_url, None), a.api_key)
 
     manual_transfers = (a.transfers == "manual")
     system_text = prompts.render(prompts.load_pack(a.prompt), manual_transfers=manual_transfers)

@@ -23,17 +23,16 @@ Usage:
   --validate runs ONE 2-round no-LLM (no-op) episode to confirm the fresh-process
   lifecycle works before spending any API budget.
 """
-import os, sys, json, argparse, traceback, queue, base64, hashlib
+import os, re, sys, json, argparse, traceback, queue, base64, hashlib
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, str(Path(__file__).parent))
 from arc_game_gym_env_tcp import ARCGameGymEnv
-from llm_gateway import GATEWAY_BASE, load_env_key
+from cora.llm import Provider, ProviderSpec, client_for, reasoning_of
 from cora import prompts as cora_prompts  # prompt packs (prompts/*.json), the single prompt source
 from cora.observation import ObsConfig, observe, render as render_obs
 from cora import executor               # typed tool calls -> game actions
-import openai
 
 # Platform-aware headless executable paths. Default to the macOS .app on darwin; on the
 # GPU cluster the Linux Dedicated Server build (HeadlessBuildScript.BuildLinux) is used.
@@ -201,20 +200,7 @@ def chat(client, model, messages, max_tokens=2000, reasoning_effort="low", tempe
             else:
                 raise
     m = r.choices[0].message
-    return (m.content or ""), *_reasoning_of(r)
-
-
-def _reasoning_of(r):
-    """(reasoning_trace, reasoning_tokens) from a chat completion. Providers put hidden thinking in
-    non-standard fields (vLLM's reasoning parser: reasoning_content; some gateways: reasoning);
-    the token count comes from usage. Both None when the provider exposes neither."""
-    m = r.choices[0].message
-    extra = getattr(m, "model_extra", None) or {}
-    rtrace = (getattr(m, "reasoning_content", None) or getattr(m, "reasoning", None)
-              or extra.get("reasoning_content") or extra.get("reasoning"))
-    det = getattr(getattr(r, "usage", None), "completion_tokens_details", None)
-    rtok = getattr(det, "reasoning_tokens", None) if det else None
-    return (rtrace if isinstance(rtrace, str) else None), rtok
+    return (m.content or ""), *reasoning_of(r)
 
 
 def _user_msg(text, image_b64=None):
@@ -234,7 +220,6 @@ def ask_tools(client, model, state, env, system_text, image_b64=None, reasoning_
     the calls themselves go to cora.executor in the round loop, which also decides parsed_ok
     (whether every call was well-formed). The tool schema is cora.tools' — the same one the RL
     policy trains on and the officer router offers."""
-    import re
     from cora.tools import openai_tools
     _mt = getattr(env, "manual_transfers", True)
     if obs_encoding == "delta":
@@ -320,7 +305,7 @@ def ask_tools(client, model, state, env, system_text, image_b64=None, reasoning_
     # Run by executor.execute_turn in the round loop; nothing is returned to the model.
     # Zero calls is a deliberate no-op, not a failure.
     dec = {"tool_calls": list(raw_tcs), "reasoning": reason}
-    rtrace, rtok = _reasoning_of(r)
+    rtrace, rtok = reasoning_of(r)
     return dec, content, rtrace, rtok, None
 
 
@@ -2150,21 +2135,18 @@ def main():
         client = None
     else:
         models = [m.strip() for m in args.models.split(",") if m.strip()]
-        base_url = args.base_url or GATEWAY_BASE
-        # ARC_API_KEY lets a non-gateway endpoint (e.g. Anthropic's OpenAI-compatible base URL)
-        # supply its key through the environment instead of --api-key. A command-line key is
-        # visible in `ps` to every user on a shared node; /proc/<pid>/environ is owner-only.
-        api_key = (args.api_key or os.environ.get("ARC_API_KEY")
-                   or (load_env_key() if args.base_url is None else "local"))
-        # ARC_ANTHROPIC_NATIVE=1 swaps in the native Anthropic SDK for claude-* models. The
-        # OpenAI compat layer documents "Prompt caching is not supported", and this workload
-        # re-sends ~1,708 tok of system+tools every round (~70% of input); caching needs the
-        # native path. Duck-typed, so every call site below is unchanged.
+        # ARC_API_KEY lets an endpoint take its key from the environment instead of --api-key: a
+        # command-line key is visible in `ps` to every user on a shared node.
+        api_key = args.api_key or os.environ.get("ARC_API_KEY")
+        # ARC_ANTHROPIC_NATIVE=1 uses the native Anthropic SDK (prompt caching; the OpenAI-compat
+        # layer has none). --base-url points at any OpenAI-compatible server (vLLM, Ollama);
+        # the default is the CMU gateway.
         if os.environ.get("ARC_ANTHROPIC_NATIVE") == "1":
-            import anthropic_native
-            client = anthropic_native.Client(api_key=api_key)
+            client = client_for(Provider.anthropic, api_key)
+        elif args.base_url:
+            client = client_for(ProviderSpec("openai", args.base_url, None), api_key)
         else:
-            client = openai.OpenAI(api_key=api_key, base_url=base_url)
+            client = client_for(Provider.cmu_gateway, api_key)
         if args.base_url:
             # Local OpenAI-compat server (Ollama): forward --reasoning_effort so chat() can cap or
             # disable thinking on reasoning models (Ollama auto-enables it otherwise). Not set for
@@ -2173,7 +2155,7 @@ def main():
             _set_local_max_tokens(args.max_tokens)
             if args.no_thinking:
                 _set_local_chat_template_kwargs({"enable_thinking": False})
-            print(f"    endpoint:      {base_url} (local/override)")
+            print(f"    endpoint:      {args.base_url} (local/override)")
             print(f"    local thinking: reasoning_effort={args.reasoning_effort}"
                   f"{' (thinking OFF)' if args.reasoning_effort == 'none' else ''}"
                   f"{f', max_tokens={args.max_tokens}' if args.max_tokens else ''}"

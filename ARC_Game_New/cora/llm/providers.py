@@ -11,7 +11,7 @@ raw endpoint or secret. The router resolves the enum here to a concrete
 * **One place to add/audit a provider.** Adding an endpoint is a reviewed edit to this file,
   not a field an uploader controls (the Hydra ``_target_`` / ``trust_remote_code`` anti-pattern).
 
-See docs/CORA_API_v1.md §4. Enum values below are derived from the endpoint/key combos that
+Front ends build clients from a resolved spec with cora.llm.client_for. See docs/CORA_API_v1.md §4. Enum values below are derived from the endpoint/key combos that
 existed across config/*.json at migration time.
 """
 from __future__ import annotations
@@ -35,11 +35,14 @@ class Provider(str, Enum):
     minicpm5_2b_auton = "minicpm5-2b-auton"
 
 
+GATEWAY_BASE = "https://ai-gateway.andrew.cmu.edu/v1"     # CMU AI gateway (OpenAI-compatible)
+
+
 @dataclass(frozen=True)
 class ProviderSpec:
-    """How to construct a client for a provider. `backend` is the value the router's
-    client-construction switch keys on today ("anthropic" | "openai" | "ollama"); `base_url`
-    and `key_env` replace the old per-config ``llm_endpoint`` / ``api_key_env`` fields.
+    """How to construct a client for a provider. `backend` is "anthropic" | "openai" | "ollama"
+    (ollama and every local server speak the OpenAI wire format); `base_url` and `key_env`
+    replace the old per-config ``llm_endpoint`` / ``api_key_env`` fields.
 
     `key_env` names an environment variable — never the secret itself.
     """
@@ -51,7 +54,7 @@ class ProviderSpec:
 PROVIDER_REGISTRY: dict[Provider, ProviderSpec] = {
     Provider.anthropic:        ProviderSpec("anthropic", None, "ANTHROPIC_API_KEY"),
     Provider.anthropic_ddmlab: ProviderSpec("anthropic", None, "DDMLAB_ANTHROPIC_API_KEY"),
-    Provider.cmu_gateway:      ProviderSpec("openai", "https://ai-gateway.andrew.cmu.edu/v1", "OPENAI_API_KEY"),
+    Provider.cmu_gateway:      ProviderSpec("openai", GATEWAY_BASE, "OPENAI_API_KEY"),
     Provider.openai:           ProviderSpec("openai", None, "OPENAI_API_KEY"),
     # ollama runs OpenAI-compatible on localhost; no key. base_url explicit so the resolved
     # triple is self-contained regardless of any caller-side default.
@@ -63,7 +66,7 @@ PROVIDER_REGISTRY: dict[Provider, ProviderSpec] = {
     Provider.qwen_local:       ProviderSpec("openai", "http://127.0.0.1:8081/v1", None),
     # vLLM on Auton (gpu1), reached through an SSH tunnel on 8095. Keyless like the other
     # loopback entries: the tunnel is local, and vLLM ignores the key anyway (the OpenAI
-    # client just refuses to construct without a non-empty string -- see _resolve_api_key).
+    # client just refuses to construct without a non-empty string -- see resolve_api_key).
     Provider.qwen_auton:       ProviderSpec("openai", "http://127.0.0.1:8095/v1", None),
     # Two smaller Auton models on their own tunnels, for the size-ladder comparison against
     # the 27B. Both verified 2026-09-14: real tool_calls (finish_reason="tool_calls"), and

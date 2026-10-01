@@ -403,6 +403,7 @@ DEFAULT_TOOLS: List[str] = list(TOOL_SCHEMAS.keys())
 # explicit-allowlist use) but drops OUT of the default palette — typed calls are translated back
 # to command tags and routed through that same execute path in
 # agent_router._dispatch_continuous_tool (ledger/block gate + execute_resolved unchanged).
+from cora.llm import accepts_temperature, resolve_api_key  # noqa: E402
 from cora.tools import openai_tools  # noqa: E402
 for _t in openai_tools(manual_transfers=True):  # include transfer in the officer palette
     TOOL_SCHEMAS[_t["function"]["name"]] = _t
@@ -411,25 +412,9 @@ DEFAULT_TOOLS = [n for n in TOOL_SCHEMAS if n != "execute_commands"]
 
 
 def _resolve_api_key(agent_cfg: dict, default_env: str) -> str:
-    """The API key for this agent, or a placeholder for a keyless local provider.
+    """The agent's API key (cora.llm.resolve_api_key: keyless loopback servers get a placeholder)."""
+    return resolve_api_key(agent_cfg.get("api_key_env"), agent_cfg.get("llm_endpoint"), default_env)
 
-    TWO TRAPS HERE.
-
-    1. `agent_cfg.get("api_key_env", DEFAULT)` returns the STORED value when the key is
-       present and null -- which is exactly what a keyless provider (ollama-local,
-       qwen-local) resolves to -- so the default never applies and `os.environ.get(None)`
-       raises `TypeError: str expected, not NoneType`. `or` is required, not `get`'s default.
-    2. Falling back to OPENAI_API_KEY for a keyless provider would send a real hosted
-       credential to a process on loopback. There is no secret to present to a local server,
-       so send a placeholder: the OpenAI client only requires a non-empty string.
-    """
-    key_env = agent_cfg.get("api_key_env") or None
-    if key_env:
-        return os.environ.get(key_env) or ""
-    base = (agent_cfg.get("llm_endpoint") or "")
-    if "127.0.0.1" in base or "localhost" in base:
-        return "local"                      # keyless loopback server
-    return os.environ.get(default_env) or ""
 
 def build_tools(allowlist: Optional[List[str]] = None,
                 descriptions: Optional[dict] = None,
@@ -725,17 +710,6 @@ def _ctx_overflow_prompt_tokens(err: Exception) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
-# Sonnet 5 and other next-gen models reject the `temperature` param
-# (400: "`temperature` is deprecated for this model."). Older 4.x models still
-# accept it. Only send temperature to models that support it.
-def _accepts_temperature(model: str) -> bool:
-    m = (model or "").lower()
-    for tok in ("sonnet-5", "opus-5", "haiku-5", "fable-5", "mythos-5"):
-        if tok in m:
-            return False
-    return True
-
-
 def _usage_dict(input_tokens=0, output_tokens=0) -> Dict[str, int]:
     """Normalized token-usage record returned by every step (zeros when the
     provider doesn't report usage, e.g. the text/Ollama path). The router sums
@@ -756,7 +730,7 @@ def _openai_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
                 "error": f"missing API key ({agent_cfg.get('api_key_env') or 'OPENAI_API_KEY'})"}
 
     base_url = agent_cfg.get("llm_endpoint")
-    client = openai.OpenAI(api_key=api_key, base_url=base_url) if base_url else openai.OpenAI(api_key=api_key)
+    client = openai.OpenAI(api_key=api_key, base_url=base_url)
 
     # Self-heal truncation: if the model runs out of completion tokens mid tool
     # call (finish_reason == "length"), its arguments JSON is cut off and would
@@ -790,7 +764,7 @@ def _openai_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
     budget = _fit_budget(budget, messages, tools, ctx, name)
 
     for attempt in range(_CTX_RETRIES):
-        _kw = {"temperature": 0.3} if _accepts_temperature(model) else {}
+        _kw = {"temperature": 0.3} if accepts_temperature(model) else {}
         try:
             resp = client.chat.completions.create(
                 model=model,
@@ -868,7 +842,7 @@ def _anthropic_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
                 "error": f"missing API key ({agent_cfg.get('api_key_env') or 'ANTHROPIC_API_KEY'})"}
 
     base_url = agent_cfg.get("llm_endpoint")
-    client = anthropic.Anthropic(api_key=api_key, base_url=base_url) if base_url else anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key, base_url=base_url)
 
     system_prompt, conversation = _to_anthropic_messages(messages)
     anth_tools = [
@@ -912,7 +886,7 @@ def _anthropic_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
             system=system_param,
             messages=conversation,
             tools=anth_tools,
-            temperature=0.3 if _accepts_temperature(model) else anthropic.NOT_GIVEN,
+            temperature=0.3 if accepts_temperature(model) else anthropic.NOT_GIVEN,
             max_tokens=budget,
         )
         if resp.stop_reason != "max_tokens":
@@ -1105,8 +1079,8 @@ def _plain_completion(prompt: str, agent_cfg: dict, provider: str) -> str:
         # OpenAI-compatible fallback (also lets us force text mode on a gateway).
         api_key = _resolve_api_key(agent_cfg, "OPENAI_API_KEY")
         base_url = agent_cfg.get("llm_endpoint")
-        client = openai.OpenAI(api_key=api_key, base_url=base_url) if base_url else openai.OpenAI(api_key=api_key)
-        _kw = {"temperature": 0.3} if _accepts_temperature(model) else {}
+        client = openai.OpenAI(api_key=api_key, base_url=base_url)
+        _kw = {"temperature": 0.3} if accepts_temperature(model) else {}
         resp = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
