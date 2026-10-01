@@ -14,7 +14,7 @@ concurrently across workers (each worker owns one port + one Unity process).
 
 This is an EVAL harness: it reuses ARCGameGymEnv.reset()/step() and the smoke-test's
 summarize()/ask()/prompt verbatim — it is not a new rollout engine and does not patch
-the env. All reward scoring stays in arc_game_gym_env_tcp.compute_score.
+the env. The score is cora.scoring's (the gym reports it per round).
 
 Usage:
   python benchmark_models.py [--episodes N] [--rounds R] [--workers K]
@@ -325,7 +325,10 @@ def ask_tools(client, model, state, env, system_text, image_b64=None, reasoning_
 
 
 # ── Non-learning baseline policies (operate on the full env, not the prompt) ──
-from arc_game_gym_env_tcp import REWARD_WEIGHTS
+from cora.scoring import REWARD_WEIGHTS
+
+# $ -> value in the baselines' task-choice heuristic (spend is weighed against acting on demand).
+_CHOICE_COST_WEIGHT = 0.0002
 
 
 def _impacts_dict(choice):
@@ -389,7 +392,7 @@ def _debug_choice_pipeline(gs, rnd):
           f"cats={cats} qtys={qtys}")
 
 
-def greedy_decision(env, w=REWARD_WEIGHTS):
+def greedy_decision(env):
     """Myopic, reward-mirrored greedy baseline (no learning, no API).
 
     Choices: per task pick the choice maximizing a reward-mirrored value built from
@@ -418,7 +421,7 @@ def greedy_decision(env, w=REWARD_WEIGHTS):
             else:                                       # acting / waiting
                 cost = -b
                 acting = (cost > 0) or (s >= 10)
-                v = (1.0 if (acting and demand) else 0.0) + 0.01 * s - w["w_food_cost"] * cost
+                v = (1.0 if (acting and demand) else 0.0) + 0.01 * s - _CHOICE_COST_WEIGHT * cost
             if v > best_v:
                 best_v, best = v, c
         if best is not None:
@@ -532,7 +535,7 @@ def _fill_shelters_from_costly_sources(env, actions, max_transfers=4):
         used += 1
 
 
-def potential_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
+def potential_decision(env, rnd=0, rounds_total=32):
     gs = env.game_state or {}
     va = env.valid_actions or []
     facs = gs.get("mapState", {}).get("facilities", []) or []
@@ -543,7 +546,7 @@ def potential_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
     # immediate options that actually fulfill). Potential adds *building* on top — the
     # free/deferred options fail until infrastructure is stocked, so don't switch to
     # them; keep reliable fulfillment and let building pay off via worker_use + capacity.
-    base = greedy_decision(env, w)
+    base = greedy_decision(env)
     choices = base["choices"]
     actions = list(base["actions"])  # already includes worker assignments
 
@@ -745,7 +748,7 @@ def _vec_dist(a, b):
 _ROUNDS_PER_DAY = 4  # the motel bills per DAY; ~4 rounds per in-game day
 
 
-def _lt_choice_value(c, demand, rounds_left, w):
+def _lt_choice_value(c, demand, rounds_left):
     """Greedy choice value with LONG-TERM cost built in.
 
     Identical to the myopic greedy value, EXCEPT the motel's recurring $200/person/day is
@@ -778,11 +781,11 @@ def _lt_choice_value(c, demand, rounds_left, w):
         people = float(c.get("deliveryQuantity") or 20)
         days_left = max(1.0, rounds_left / _ROUNDS_PER_DAY)
         recurring = 200.0 * people * days_left
-    v = (1.0 if (acting and demand) else 0.0) + 0.01 * s - w["w_food_cost"] * (cost + recurring)
+    v = (1.0 if (acting and demand) else 0.0) + 0.01 * s - _CHOICE_COST_WEIGHT * (cost + recurring)
     return (v, acting and demand, is_shelter)
 
 
-def improved_rules_based_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
+def improved_rules_based_decision(env, rnd=0, rounds_total=32):
     gs = env.game_state or {}
     va = env.valid_actions or []
     ms = gs.get("mapState", {}) or {}
@@ -793,7 +796,7 @@ def improved_rules_based_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS)
     # reactive core: keep greedy's free worker assignments, but REPLACE its myopic choices
     # with long-term-aware ones (the motel's recurring cost is priced in by _lt_choice_value,
     # so relocations route into free shelters automatically — when those shelters have space).
-    base = greedy_decision(env, w)
+    base = greedy_decision(env)
     actions = list(base["actions"])
 
     pop_by_fac = {f.get("facilityName"): (f.get("currentPopulation") or 0) for f in facs}
@@ -809,7 +812,7 @@ def improved_rules_based_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS)
         people = float(pop_by_fac.get(t.get("affectedFacility")) or 20)
         best = None  # (choiceId, value, is_shelter, fulfils)
         for c in cs:
-            v, fdem, is_shel = _lt_choice_value(c, demand, rounds_left, w)
+            v, fdem, is_shel = _lt_choice_value(c, demand, rounds_left)
             # don't route into a shelter that lacks space for this relocation (it would
             # defer/fail and lose fulfilment) — push it below the motel fallback instead.
             if is_shel and free_shelter_space < people:
@@ -945,7 +948,7 @@ def improved_rules_based_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS)
                           f"unstaffed={unstaffed} opBuf={int(op_buffer)} rl={rounds_left}")}
 
 
-def combined_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
+def combined_decision(env, rnd=0, rounds_total=32):
     """Both hand-written strategies at once.
 
     The two rules-based policies improve OPPOSITE halves of a turn and neither touches the
@@ -964,8 +967,8 @@ def combined_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
     Both sub-policies already append shelter-filling transfers, so the union inherits those
     too; dedup keeps a transfer from being issued twice.
     """
-    lt = improved_rules_based_decision(env, rnd, rounds_total, w)
-    pot = potential_decision(env, rnd, rounds_total, w)
+    lt = improved_rules_based_decision(env, rnd, rounds_total)
+    pot = potential_decision(env, rnd, rounds_total)
 
     seen, actions = set(), []
     for i in list(pot.get("actions") or []) + list(lt.get("actions") or []):
@@ -1061,7 +1064,7 @@ def _dnpv_map_constants(env, gs, facs):
     return c, costs
 
 
-def demand_npv_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
+def demand_npv_decision(env, rnd=0, rounds_total=32):
     """Demand-driven provisioning + per-incident build-vs-pay arbitration (map-agnostic)."""
     gs = env.game_state or {}
     va = env.valid_actions or []
@@ -1078,7 +1081,7 @@ def demand_npv_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
     hire_cost  = costs.get("hire", 0.0)
     free_veh   = int((gs.get("logistics") or {}).get("availableVehicles") or 0)
 
-    base = greedy_decision(env, w)
+    base = greedy_decision(env)
     choices, actions = base["choices"], list(base["actions"])
     tasks_by_id = {t["taskId"]: t for t in (gs.get("allActiveTasks") or [])}
 
@@ -1254,7 +1257,7 @@ def _dfc_observe(env, gs, K):
             K["packs"] += (sum(qs) / len(qs)) if qs else 0
 
 
-def demand_forecast_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
+def demand_forecast_decision(env, rnd=0, rounds_total=32):
     """Forecast future demand and pre-build shelters/kitchens to meet it (map-agnostic)."""
     gs = env.game_state or {}
     va = env.valid_actions or []
@@ -1302,7 +1305,7 @@ def demand_forecast_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS):
     kitchens_needed = int(-(-future_packs // per_kitchen_packs)) if per_kitchen_packs > 0 else 0
     kitchens_needed = max(0, min(kitchens_needed, int(fleet)))
 
-    base = greedy_decision(env, w)
+    base = greedy_decision(env)
     choices, actions = base["choices"], list(base["actions"])
     tasks_by_id = {t["taskId"]: t for t in (gs.get("allActiveTasks") or [])}
 
@@ -1483,7 +1486,7 @@ def _family_build_schedule(cfg):
     return {cfg["start"] + i * cfg["spacing"]: b for i, b in enumerate(order)}
 
 
-def pareto_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS, cfg=None):
+def pareto_decision(env, rnd=0, rounds_total=32, cfg=None):
     """Frontier strategy, parameterised by the shared policy family (see _family_cfg)."""
     cfg = cfg or _family_cfg()
     food_rule, reloc_rule = _family_rules(cfg, rnd)
@@ -1495,7 +1498,7 @@ def pareto_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS, cfg=None):
     want = [("CaseworkSite", cfg["n_casework"]), ("Shelter", cfg["n_shelter"]),
             ("Kitchen", cfg["n_kitchen"])]
 
-    base = greedy_decision(env, w)
+    base = greedy_decision(env)
     choices, actions = base["choices"], list(base["actions"])
     tasks_by_id = {t["taskId"]: t for t in (gs.get("allActiveTasks") or [])}
 
@@ -1650,9 +1653,7 @@ def _round_record(rnd, reward, total, info, call_results, state, raw, dec, parse
         "r": rnd, "reward": round(reward, 4), "sumR": round(total, 4),
         "sat": info["satisfaction"], "budget": info["budget"],
         "satScore": round(info["satisfaction_score"], 4),
-        "costEff": round(info["cost_efficiency"], 4),   # legacy formula only (0.0 under unity)
-        "eff": round(info.get("efficiency", 0.0), 4),   # unity formula: live efficiency / 1000
-        "formula": info.get("score_formula"),
+        "eff": round(info.get("efficiency", 0.0), 4),   # live efficiency / 1000
         # Cumulative-to-date score breakdown, numeric terms only.
         "comps": {k: round(v, 4) for k, v in (info.get("score_components") or {}).items()
                   if isinstance(v, (int, float))},
@@ -1877,7 +1878,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
         rec["summary"] = {
             "totalReward": round(total, 4),
             "finalSat": last.get("sat"), "finalBudget": last.get("budget"),
-            "finalEff": last.get("eff"), "scoreFormula": last.get("formula"),
+            "finalEff": last.get("eff"),
             "finalScore": round(last.get("sumR", 0.0), 4),
             "foodFulfillRate": round(ff / fr, 3) if fr else None,
             "lodgingFulfillRate": round(lf / lr, 3) if lr else None,
@@ -1889,8 +1890,8 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
             "everBuilt": built, "everHired": hired,
             "terminated": rec.get("terminated", False),
             "roundsPlayed": len(rec["rounds"]),
-            # Scores are comparable across wings (live/RL/benchmark all share
-            # reward_scoring.compute_score_components) but only under the SAME weights.
+            # Scores are comparable across front ends (all use cora.scoring) only under the
+            # SAME weights.
             # Stamp them so a later retune can't silently make old and new runs
             # incomparable — and so a corpus can be re-scored under new weights.
             "rewardWeights": dict(REWARD_WEIGHTS),
@@ -1949,7 +1950,8 @@ def print_table(agg):
         print("".join(str(c).ljust(w) for c, (_, w) in zip(row, cols)))
 
 
-_WB_COMP = ["sat_food", "sat_lodging", "sat_worker_use", "cost_food", "cost_lodging", "cost_worker"]
+_WB_COMP = ["sat_food", "sat_lodging", "sat_worker_use", "sat_waste", "sat_casework",
+            "eff_food", "eff_lodging", "eff_worker"]
 
 
 def log_wandb(records, project, condition, episodes, rounds):
@@ -1999,7 +2001,7 @@ def log_wandb(records, project, condition, episodes, rounds):
                    "step/game/satisfaction": avg([rd.get("sat") for rd in at]),
                    "step/game/budget": avg([rd.get("budget") for rd in at]),
                    "step/game/satisfaction_score": avg([rd.get("satScore") for rd in at]),
-                   "step/game/cost_efficiency": avg([rd.get("costEff") for rd in at]),
+                   "step/game/efficiency": avg([rd.get("eff") for rd in at]),
                    "step/game/reward": avg([rd.get("reward") for rd in at]),
                    "step/game/score": avg([rd.get("sumR") for rd in at])}
             for c in _WB_COMP:

@@ -13,7 +13,8 @@ import tempfile
 import agent_router
 from agent_router import Session
 from agent_config import load_config
-from episode_logger import EpisodeLogger, compute_score_components
+from cora.scoring import score_components
+from episode_logger import EpisodeLogger
 
 
 def _base_state(v=0):
@@ -36,14 +37,12 @@ def _last_record(path):
 
 
 def test_reward_via_gym_scorer():
-    """#5.3 — with rewardMetrics present, reward == gym scorer's `score`."""
-    assert compute_score_components is not None, "gym scorer should import"
+    """With rewardMetrics present, reward == cora.scoring's `score`; without, None."""
     with tempfile.TemporaryDirectory() as td:
         path = os.path.join(td, "log.jsonl")
         logger = EpisodeLogger(path)
-        rm = {"foodFulfilled": 8, "foodResolved": 10,
-              "lodgingFulfilled": 6, "lodgingResolved": 10,
-              "daysCompleted": 1, "totalWorkers": 4, "cumWorkingWorkers": 2}
+        rm = {"scoreAvailable": True, "liveSatisfaction": 420.0, "liveEfficiency": 610.0,
+              "sFood": 0.8, "cFood": 0.5}
         gs_after = {"sessionInfo": {}, "rewardMetrics": rm}
         kw = dict(
             episode_id="ep", round_num=1, day=1, segment=0, agent_name="A", role="r",
@@ -55,18 +54,12 @@ def test_reward_via_gym_scorer():
         )
         logger.log_turn(game_state_after=gs_after, **kw)
         rec = _last_record(path)
-        expected = compute_score_components(rm)["score"]
-        assert rec["reward_components"] is not None, "components should be logged"
-        assert abs(rec["reward"] - expected) < 1e-9, (rec["reward"], expected)
-        # It must NOT be the legacy ad-hoc formula (0.7*10 + 0.0003*100 = 7.03).
-        assert abs(rec["reward"] - 7.03) > 1e-6, "should not use legacy formula"
+        assert rec["reward_components"] == score_components(rm)
+        assert abs(rec["reward"] - 1.03) < 1e-9, rec["reward"]
 
-        # Fallback: no rewardMetrics -> legacy formula, components None.
         logger.log_turn(game_state_after={"sessionInfo": {}}, **kw)
         rec2 = _last_record(path)
-        assert rec2["reward_components"] is None
-        assert abs(rec2["reward"] - 7.03) < 1e-6, rec2["reward"]
-    print("[A] REWARD-VIA-GYM-SCORER ok (score routed; legacy fallback intact)")
+        assert rec2["reward_components"] is None and rec2["reward"] is None
 
 
 def test_propose_not_counted_failed():

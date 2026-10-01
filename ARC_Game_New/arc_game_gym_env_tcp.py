@@ -142,10 +142,7 @@ def _sweep_registry() -> None:
 atexit.register(_sweep_registry)
 
 
-# Reward scoring lives in reward_scoring.py (dependency-free) so the router and
-# episode_logger can score identically WITHOUT importing this heavy gym module
-# (gymnasium/numpy). Re-exported here for backward compatibility with callers.
-from reward_scoring import REWARD_WEIGHTS, _clamp01, compute_score_components, compute_score
+from cora.scoring import COMPONENTS, score_components
 
 
 class ARCGameGymEnv(gym.Env):
@@ -542,8 +539,8 @@ class ARCGameGymEnv(gym.Env):
         sat_budget = self.game_state.get("satisfactionAndBudget", {})
         self.previous_satisfaction = float(sat_budget.get("satisfaction", 50.0))
 
-        # Composite reward baseline (Satisfaction - CostEfficiency); reward is its delta.
-        _, _, self.previous_score = compute_score(self.game_state.get("rewardMetrics") or {})
+        # The reward is the per-round change in score (cora.scoring).
+        self.previous_score = score_components(self.game_state.get("rewardMetrics"))["score"]
 
         # Enumerate valid actions
         self._enumerate_valid_actions()
@@ -631,16 +628,15 @@ class ARCGameGymEnv(gym.Env):
         self.game_state = json.loads(game_state_json)
         self.current_round += 1
 
-        # Composite reward: per-step delta of (Satisfaction - CostEfficiency),
-        # computed in Python from Unity's raw rewardMetrics (telescopes to the
-        # final score over the episode). Raw satisfaction delta kept in info.
+        # Reward: the per-round change in score (cora.scoring), so it sums to the final score.
+        # The raw satisfaction delta is kept in info.
         sat_budget = self.game_state.get("satisfactionAndBudget", {})
         current_satisfaction = float(sat_budget.get("satisfaction", 0.0))
         satisfaction_delta = current_satisfaction - self.previous_satisfaction
         self.previous_satisfaction = current_satisfaction
 
-        comps = compute_score_components(self.game_state.get("rewardMetrics") or {})
-        satisfaction_score, cost_efficiency, score = comps["satisfaction"], comps["cost_efficiency"], comps["score"]
+        comps = score_components(self.game_state.get("rewardMetrics"))
+        score = comps["score"]
         reward = score - getattr(self, "previous_score", 0.0)
         self.previous_score = score
 
@@ -676,11 +672,9 @@ class ARCGameGymEnv(gym.Env):
             "satisfaction_delta": satisfaction_delta,
             "reward": reward,
             "score": score,
-            "satisfaction_score": satisfaction_score,
-            "cost_efficiency": cost_efficiency,
+            "satisfaction_score": comps["satisfaction"],
             "efficiency": comps["efficiency"],
-            "score_formula": comps.get("formula"),
-            "score_components": comps,   # sat_food/sat_lodging/sat_worker_use/cost_food/cost_lodging/cost_worker
+            "score_components": comps,
             # Flat scalar metrics for WandB. Verlog's _env_metrics collects info["metrics"]
             # per step and logs each key (np.mean over the rollout); the LLM benchmark logs
             # the SAME keys, so RL runs and benchmark runs are directly comparable. Keep
@@ -690,25 +684,8 @@ class ARCGameGymEnv(gym.Env):
                 "game/budget": float(sat_budget.get("budget", 0.0)),
                 "game/satisfaction_delta": satisfaction_delta,
                 "game/reward": reward,
-                "game/score": score,
-                "game/satisfaction_score": satisfaction_score,
-                "game/cost_efficiency": cost_efficiency,
-                "game/sat_food": comps["sat_food"],
-                "game/sat_lodging": comps["sat_lodging"],
-                "game/sat_worker_use": comps["sat_worker_use"],
-                "game/casework_processing_sat": comps["casework_processing_sat"],
-                "game/cost_food": comps["cost_food"],
-                "game/cost_lodging": comps["cost_lodging"],
-                "game/cost_worker": comps["cost_worker"],
-                "game/casework_efficiency": comps["casework_efficiency"],
-                # Unity formula (reward_scoring.compute_score_components, formula="unity").
-                # Legacy keys above read 0.0 under it; these read 0.0 under legacy.
-                "game/efficiency": comps["efficiency"],
-                "game/sat_waste": comps["sat_waste"],
-                "game/sat_casework": comps["sat_casework"],
-                "game/eff_food": comps["eff_food"],
-                "game/eff_lodging": comps["eff_lodging"],
-                "game/eff_worker": comps["eff_worker"],
+                "game/satisfaction_score": comps["satisfaction"],
+                **{f"game/{k}": comps[k] for k in COMPONENTS if k != "satisfaction"},
             },
             "reward_metrics": self.game_state.get("rewardMetrics"),
             "executed_actions": [a.get("description", "") for a in executed_actions],

@@ -59,6 +59,7 @@ import cora_ext
 import plugin_store
 import key_store
 from cmd_parser import parse_commands, translate_tool_calls, ParserEnv  # router-only tag adapter
+from cora.scoring import REWARD_WEIGHTS, score_components
 from cora.observation import officer_text, task_officer, task_group, task_token, vehicle_capacity
 
 
@@ -3932,22 +3933,20 @@ Respond with ONLY the package index number (0, 1, or 2).
         self._pending_action.set_result(msg)
 
     def _emit_round_state(self, game_state: dict, phase: str) -> None:
-        """One `round_state` event: the game's own score (Unity's formula, via
-        reward_scoring), budget, efficiency, the full rewardMetrics counters, and the
+        """One `round_state` event: the game's own score (cora.scoring), budget, efficiency, the full rewardMetrics counters, and the
         active-task count. Same fields the gym and the benchmark record per round, so a
         human session, an LLM session and a benchmark episode line up column for column."""
         try:
             sab = game_state.get("satisfactionAndBudget") or {}
             rm = game_state.get("rewardMetrics") or {}
-            comps = _score_components(rm) if _score_components else None
+            comps = score_components(rm)
             self._emit("round_state", {
                 "phase": phase,
                 "budget": sab.get("budget"),
                 "satisfaction": sab.get("satisfaction"),
                 "efficiency": sab.get("efficiency"),
                 "active_tasks": len(game_state.get("allActiveTasks") or []),
-                "score": comps.get("score") if comps else None,
-                "score_formula": comps.get("formula") if comps else None,
+                "score": comps["score"],
                 "score_components": comps,
                 "reward_metrics": rm,
             })
@@ -5596,13 +5595,6 @@ def _get_budget(state: dict) -> float:
 # Interactive API docs enumerate EVERY route and its schema — a free map of the attack
 # surface (including which capabilities exist). Off unless explicitly opted in for local
 # dev: safe-by-default, since production is the case you can forget to harden.
-try:
-    from reward_scoring import REWARD_WEIGHTS as _REWARD_WEIGHTS_STAMP
-    from reward_scoring import compute_score_components as _score_components
-except ImportError:
-    _REWARD_WEIGHTS_STAMP = None
-    _score_components = None
-
 _DEV_DOCS = os.environ.get("CORA_DEV_DOCS", "").strip().lower() in ("1", "true", "yes")
 _DOCS_KW = {} if _DEV_DOCS else {"docs_url": None, "redoc_url": None, "openapi_url": None}
 
@@ -6581,13 +6573,13 @@ async def _handshake(websocket: WebSocket) -> Optional[Session]:
         # silent fallback to the default layout (map_status != "loaded") is visible after the
         # fact. The router RECORDS these; it never serves or validates map content.
         "map": {"url": map_url, "hash": map_hash, "status": map_status},
-        # The weights that turn Unity's rewardMetrics into `score`. Every wing (live, RL,
-        # benchmark) shares reward_scoring.compute_score_components, so scores ARE directly
+        # The weights that turn Unity's rewardMetrics into `score`. Every front end (live, RL,
+        # benchmark) uses cora.scoring, so scores ARE directly
         # comparable — but only under the SAME weights. Without this stamp, retuning a weight
         # silently makes old and new runs incomparable: the numbers still merge and parse,
         # they just quietly mean something different. Raw rewardMetrics are preserved per
         # turn regardless, so a corpus can always be re-scored under new weights.
-        "reward_weights": _REWARD_WEIGHTS_STAMP,
+        "reward_weights": REWARD_WEIGHTS,
     })
 
     await websocket.send_text(json.dumps({

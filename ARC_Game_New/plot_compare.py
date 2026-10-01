@@ -90,8 +90,8 @@ def main():
     # ── Fig 3: reward components (one panel per component, models overlaid) ──
     COMPS = [("sat_food", "Satisfaction: food"), ("sat_lodging", "Satisfaction: lodging"),
              ("sat_worker_use", "Satisfaction: worker-use"),
-             ("cost_food", "Cost: food"), ("cost_lodging", "Cost: lodging"),
-             ("cost_worker", "Cost: worker")]
+             ("eff_food", "Efficiency: food"), ("eff_lodging", "Efficiency: lodging"),
+             ("eff_worker", "Efficiency: worker")]
     if any((rd.get("comps") for recs in by.values() for r in recs for rd in r["rounds"])):
         fig, axs = plt.subplots(2, 3, figsize=(18, 9))
         for (key, title), a in zip(COMPS, axs.flat):

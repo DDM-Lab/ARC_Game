@@ -6,16 +6,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-# Route reward through the SHARED scorer so offline RL and the live router agree on
-# the objective. Import from reward_scoring (dependency-free) — NOT arc_game_gym_env_tcp,
-# whose top-level gymnasium/numpy imports fail in the router env, which silently nulled
-# the scorer and forced the legacy fallback (reward=0, reward_components=None) on every
-# record. Keep the guard purely defensive.
-try:
-    from reward_scoring import compute_score_components, REWARD_WEIGHTS
-except ImportError:
-    compute_score_components = None
-    REWARD_WEIGHTS = None
+from cora.scoring import score_components
 
 
 class EpisodeLogger:
@@ -64,20 +55,11 @@ class EpisodeLogger:
         satisfaction_delta = satisfaction_after - satisfaction_before
         budget_delta = budget_after - budget_before
 
-        # Reward: route through the shared gym scorer for parity with the RL env.
-        # `compute_score_components(rewardMetrics)` returns the composite `score`
-        # (satisfaction - cost_efficiency). We record the components alongside the
-        # scalar. Fall back to the legacy ad-hoc formula only when rewardMetrics is
-        # absent or the gym module could not be imported (so tests without a real
-        # game_state still work).
-        reward_components = None
+        # The game's score after this turn (cora.scoring, the same score the gym and the
+        # benchmark record); None when the state carries no rewardMetrics.
         reward_metrics = (game_state_after or {}).get("rewardMetrics")
-        if compute_score_components is not None and reward_metrics:
-            reward_components = compute_score_components(reward_metrics)
-            reward = reward_components.get("score", 0.0)
-        else:
-            # Legacy fallback: satisfaction-weighted, budget stability secondary.
-            reward = (satisfaction_delta * 0.7) + (budget_delta * 0.0003)
+        reward_components = score_components(reward_metrics) if reward_metrics else None
+        reward = reward_components["score"] if reward_components else None
 
         # Calculate action success metrics. Exclude non-execution summary rows
         # (e.g. a propose_choices summary that carries no `success` key) so

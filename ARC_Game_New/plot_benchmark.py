@@ -158,15 +158,14 @@ def main():
               "satisfaction_trajectories.png", hline=50)
 
     # ── 4. Reward components over rounds (per model) ────────────────────────
-    # Each component is cumulative-to-date; satisfaction terms are positive, cost
-    # terms subtract (plotted negative), and `score` is the net. Only runs produced
-    # after component logging was added carry rd["comps"]; skip otherwise.
+    # Each component is its cumulative-to-date contribution to the score (cora.scoring).
+    # Only runs that logged rd["comps"] are plotted.
     COMP = [("sat_food", "food (sat)", "tab:green", +1),
             ("sat_lodging", "lodging (sat)", "tab:olive", +1),
             ("sat_worker_use", "worker-use (sat)", "tab:blue", +1),
-            ("cost_food", "food cost", "tab:red", -1),
-            ("cost_lodging", "lodging cost", "tab:orange", -1),
-            ("cost_worker", "worker cost", "tab:brown", -1)]
+            ("eff_food", "food (eff)", "tab:red", +1),
+            ("eff_lodging", "lodging (eff)", "tab:orange", +1),
+            ("eff_worker", "worker (eff)", "tab:brown", +1)]
     has_comps = any(rd.get("comps") for _, recs in conds for r in recs for rd in r["rounds"])
     if has_comps and len(conds) >= 1:
         # one row per condition, one column per model
