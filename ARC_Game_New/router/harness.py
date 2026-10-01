@@ -26,6 +26,7 @@ Run (clear proxies, venv python; network → unsandboxed):
 """
 import argparse
 import asyncio
+import contextvars
 import json
 import os
 import sys
@@ -38,7 +39,7 @@ CONFIG = os.environ.get("ARC_AGENT_CONFIG", "config/continuous_agents_domain.jso
 
 def load_env_file(path=".env"):
     """Minimal .env loader (no python-dotenv dependency). The router reads the LLM
-    key from os.environ[api_key_env]; run_router.sh sources .env in prod."""
+    key from os.environ[api_key_env]; ops/run_router.sh sources .env in prod."""
     if not os.path.exists(path):
         return
     with open(path) as f:
@@ -89,6 +90,20 @@ async def run(rounds, exe, unity_port):
                    "logs/sessions/headless_multiagent.jsonl", websocket=None,
                    director_policy=lambda packages, game_state, reasoning: 0)
 
+    # The execute_action frame (the Unity contract) does not name the officer, so the scope
+    # audit tags each officer's calls on the way into the executor; the context follows the
+    # await chain down to the frame the bridge receives.
+    acting = contextvars.ContextVar("acting_officer", default="?")
+    execute_calls = sess._execute_calls
+
+    async def tagged_execute_calls(agent, *args, **kwargs):
+        token = acting.set(agent.subagent_name)
+        try:
+            return await execute_calls(agent, *args, **kwargs)
+        finally:
+            acting.reset(token)
+    sess._execute_calls = tagged_execute_calls
+
     gym_lock = asyncio.Lock()          # single TCP socket ⇒ serialize all gym I/O
     executed = {}                       # agent_name -> [action dicts] (for scope audit)
     frames = {"execute_action": 0, "director_turn": 0, "other": 0}
@@ -103,7 +118,7 @@ async def run(rounds, exe, unity_port):
         if t == "execute_action":
             frames["execute_action"] += 1
             action = payload["action"]
-            agent_name = payload.get("agent_name", "?")
+            agent_name = acting.get()
             executed.setdefault(agent_name, []).append(action)
             try:
                 # gym encodes `action` as a JSON string (proven headless path).
@@ -173,13 +188,12 @@ async def run(rounds, exe, unity_port):
             "segment": sess_info.get("currentTimeSegment", 0),
             "game_state": gs,
         })
-        # Stub director ends its turn → advance the world's dynamics.
-        adv = await gym_call({"type": "advance_time"})
-        if adv.get("type") == "game_over":
+        # Stub director ends its turn → advance the world's dynamics (no actions of its own).
+        async with gym_lock:
+            _, _, game_over, _, _ = await asyncio.to_thread(env.step, [])
+        if game_over:
             print("[harness] game over — stopping.")
             break
-        env.game_state = json.loads(adv.get("game_state", "{}"))
-        env._enumerate_valid_actions()
 
     # ── Scope audit: every officer must have executed ONLY in-scope actions.
     print("\n[harness] ===== SCOPE AUDIT =====")
