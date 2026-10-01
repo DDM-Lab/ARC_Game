@@ -3129,14 +3129,8 @@ Respond with ONLY the package index number (0, 1, or 2).
         # is derived from them); the others are pure state slices.
         if name in ("get_facilities", "get_workforce", "get_tasks", "get_logistics"):
             fs = self._filter_state(self._latest_game_state or game_state, agent)
-            if name == "get_logistics":
-                text = officer_text(fs, "logistics", filtered_actions)
-            else:
-                text = {
-                    "get_facilities": render_facilities_text,
-                    "get_workforce": render_workforce_text,
-                    "get_tasks": render_tasks_text,
-                }[name](fs)
+            section = name[len("get_"):]
+            text = officer_text(fs, section, filtered_actions if section == "logistics" else None)
             return text, game_state, all_actions, filtered_actions, meta
 
         if name == "list_actions":
