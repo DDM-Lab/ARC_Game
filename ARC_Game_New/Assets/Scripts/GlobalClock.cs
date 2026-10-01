@@ -394,7 +394,7 @@ public class GlobalClock : MonoBehaviour
 
         // Notify agent router of a new round. GYM ONLY: in gym mode this
         // begin_round drives the agents each RL round, coupled to the sim step
-        // (GymAdvanceRound -> StartSimulation). In human/router play the
+        // (GymAdvanceToNextDecision -> StartSimulation). In human/router play the
         // proposal is fired separately at the START of each planning phase (see
         // RequestAgentProposal(): Update() for round 1, EndSimulation() on
         // segment advance, ProceedToNextDay() on day advance), so the Execute
@@ -415,10 +415,20 @@ public class GlobalClock : MonoBehaviour
         DisablePlayerInteractions();
         OnSimulationStarted?.Invoke();
 
-        // GYM PATH: drive exactly one round per StartSimulation. The Day-1
-        // auto-step and the clock-animation / no-delivery skip below are GUI-only
-        // (main-bugfixes) and must NOT run in gym — Day1SkipCoroutine would
-        // auto-advance all 4 rounds, breaking the RL one-round-per-step contract.
+        // GYM PATH. Day 1 runs the SAME routine as the GUI: the player makes one decision, then
+        // Day1SkipCoroutine steps the day's four rounds with time frozen (only OnRoundEnd fires; no
+        // segment-change systems, no per-round score accrual) and ends the day. Giving agents four
+        // Day-1 decisions with live simulation made their game differ from the human one: 32
+        // decisions instead of 29, flood/weather/tasks advancing during setup, and score accrued
+        // over 32 rounds instead of 28. One gym step covers the whole of Day 1.
+        if (gymInstantMode && currentDay == 1 && currentTimeSegment == 0)
+        {
+            Time.timeScale = 0f;
+            StartCoroutine(Day1SkipCoroutine());
+            return;
+        }
+        // Every other gym round: exactly one round per StartSimulation, always simulated (the
+        // GUI's no-delivery clock-animation skip below is not used here).
         if (gymInstantMode)
         {
             float gymWaitTime = simulationDuration / (int)currentTimeSpeed;
@@ -500,7 +510,9 @@ public class GlobalClock : MonoBehaviour
             if (round == 3 && hasFacilities)
                 clockAnimationUI?.SetMessage(completeMsg);
 
-            if (clockAnimationUI != null)
+            if (gymInstantMode)
+                yield return null;                  // no clock animation for the gym
+            else if (clockAnimationUI != null)
                 yield return clockAnimationUI.PlayRoundLoops();
             else
                 yield return new WaitForSecondsRealtime(0.1f);
@@ -528,6 +540,7 @@ public class GlobalClock : MonoBehaviour
         executeButton?.GetComponentInChildren<TextMeshProUGUI>()?.SetText("End Today");
         EnablePlayerInteractions();
         OnSimulationEnded?.Invoke();
+        if (gymInstantMode) gymStepsCompleted++;
 
         if (showDebugInfo)
             Debug.Log("Day 1 complete — all 4 rounds stepped through.");
@@ -568,6 +581,13 @@ public class GlobalClock : MonoBehaviour
     // time via Time.captureDeltaTime, so a round completes as fast as the CPU
     // can render frames (no wall-clock wait) while staying deterministic.
     private bool gymInstantMode = false;
+    // Completed gym steps. A step ends where a human would next be able to act: after a
+    // simulated round, after the Day-1 setup step, or after a day rollover (which simulates
+    // nothing). GymServerManager waits for this to change instead of watching the simulation
+    // start and stop, which a rollover-only step never does. Written on the main thread, read
+    // by the gym network thread.
+    private volatile int gymStepsCompleted = 0;
+    public int GymStepsCompleted => gymStepsCompleted;
     // Game-seconds advanced per frame during a gym round. A coarse step keeps rounds
     // fast and cheap: a ~10s round needs ~33 frames at 0.3 vs ~200 at 0.05. The sim is
     // deterministic and headless (no rendering/physics smoothness to preserve), and
@@ -585,7 +605,7 @@ public class GlobalClock : MonoBehaviour
     /// rolling over to the next day when a day finishes. Bypasses the
     /// player-facing confirmation popups. No-op if a round is already running.
     /// </summary>
-    public void GymAdvanceRound()
+    public void GymAdvanceToNextDecision()
     {
         if (isSimulationRunning) return;
         // Run as fast as possible, decoupled from wall-clock: each frame advances
@@ -596,19 +616,15 @@ public class GlobalClock : MonoBehaviour
         // Remove any frame-rate cap / vsync so frames run as fast as the CPU allows.
         QualitySettings.vSyncCount = 0;
         Application.targetFrameRate = -1;
-        // If the previous round completed a day (segment hit 4), roll over first.
+        // At the "End Today" point (the day's four rounds are done) the step is the day rollover
+        // and nothing else: the next point a human can act is the new day's Round 1, with its tasks
+        // and funding already visible, BEFORE that round simulates. Rolling over and simulating
+        // Round 1 in one step (the old behaviour) meant an agent never saw a new day's tasks until a
+        // round had already run on them.
         //
-        // ROBUSTNESS (headless Server subtarget): ProceedToNextDay() fans out
-        // OnDayChanged to ~8 subscribers and touches several UI-adjacent systems.
-        // In the -Server standalone build (rendering/UI modules stripped) one of
-        // those handlers can dereference a null singleton and throw. If that
-        // exception escaped, StartSimulation() below would never run, the sim
-        // state machine would never flip isSimulationRunning true→false, and the
-        // gym network thread in GymServerManager.HandleAdvanceTime() would spin
-        // its full 60 s safety cap every turn — collapsing rollout throughput to
-        // ~zero (observed on the cluster, futex_wait deadlock). Catch, log the
-        // FULL stack so the offending subscriber is identifiable from the Unity
-        // log, and fall through to StartSimulation() so the round still runs.
+        // A subscriber throwing during the rollover is logged with its full stack and the step still
+        // completes; in the -Server build some UI singletons are null, and an escaped exception
+        // used to stall the gym for its whole timeout every day.
         if (currentTimeSegment >= roundsPerDay)
         {
             try
@@ -617,10 +633,11 @@ public class GlobalClock : MonoBehaviour
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"[GlobalClock] GymAdvanceRound: ProceedToNextDay() threw during day rollover " +
-                               $"(now Day {currentDay}, segment {currentTimeSegment}); starting the round anyway " +
-                               $"to keep the gym loop alive. Full exception:\n{e}");
+                Debug.LogError($"[GlobalClock] gym day rollover threw (now Day {currentDay}, segment " +
+                               $"{currentTimeSegment}); the step completes anyway. Full exception:\n{e}");
             }
+            gymStepsCompleted++;
+            return;
         }
         StartSimulation();
     }
@@ -735,11 +752,11 @@ public class GlobalClock : MonoBehaviour
         // Pause Unity's time again for player interaction phase
         Time.timeScale = 0f;
         // Gym instant mode: stop decoupled time so the paused phase between rounds
-        // doesn't keep advancing game-time. GymAdvanceRound() re-arms it next round.
+        // doesn't keep advancing game-time. GymAdvanceToNextDecision() re-arms it next round.
         if (gymInstantMode)
         {
             Time.captureDeltaTime = 0f;
-            // Re-cap the frame rate for the paused phase. GymAdvanceRound() uncaps it
+            // Re-cap the frame rate for the paused phase. GymAdvanceToNextDecision() uncaps it
             // (targetFrameRate = -1) so the active sim window runs as fast as the CPU
             // allows, but it is never restored — so between rounds (and during the
             // multi-second LLM decision) the headless player loop would otherwise spin
@@ -823,6 +840,7 @@ public class GlobalClock : MonoBehaviour
 
         // Notify other systems
         OnSimulationEnded?.Invoke();
+        if (gymInstantMode) gymStepsCompleted++;
     }
     
     void AdvanceTimeSegment()
@@ -910,7 +928,7 @@ public class GlobalClock : MonoBehaviour
         GameLogPanel.Instance?.LogMetricsChange($"Advanced to Day {currentDay}, Round 1");
 
         // New day's first planning phase: request fresh agent proposals for
-        // Round 1. No-op in gym mode (GymAdvanceRound drives begin_round via
+        // Round 1. No-op in gym mode (GymAdvanceToNextDecision drives begin_round via
         // StartSimulation instead).
         RequestAgentProposal();
     }

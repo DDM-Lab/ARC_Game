@@ -228,7 +228,7 @@ public class GymServerManager : MonoBehaviour
 
             // Cap the frame rate up front so the headless loop sleeps (~1% CPU) instead
             // of busy-spinning at ~50-67% of a core before the first round runs. The
-            // gym round itself (GlobalClock.GymAdvanceRound) uncaps for speed and
+            // gym round itself (GlobalClock.GymAdvanceToNextDecision) uncaps for speed and
             // EndSimulation restores this cap afterwards.
             QualitySettings.vSyncCount = 0;
             Application.targetFrameRate = 10;
@@ -1665,7 +1665,7 @@ public class GymServerManager : MonoBehaviour
     }
 
     // Advance the simulation by exactly one round (time segment), running the
-    // real dynamics decoupled from wall-clock (see GlobalClock.GymAdvanceRound).
+    // real dynamics decoupled from wall-clock (see GlobalClock.GymAdvanceToNextDecision).
     // Blocks until the round completes, then returns the updated game state.
     string HandleAdvanceTime()
     {
@@ -1675,7 +1675,7 @@ public class GymServerManager : MonoBehaviour
         }
 
         // Finite-horizon guard. Once the last round of finalDay has run, the episode is
-        // over. GlobalClock.GymAdvanceRound()/StartSimulation() have NO day cap, so a
+        // over. GlobalClock.GymAdvanceToNextDecision()/StartSimulation() have NO day cap, so a
         // wrapper that keeps calling advance_time past the terminal marches the game into
         // "overtime" (Day finalDay+1, +2, ...) indefinitely. Each overtime round is a
         // clean Start/Stop, so Unity never deadlocks — but a wrapper whose terminal check
@@ -1696,6 +1696,11 @@ public class GymServerManager : MonoBehaviour
             return GameOverJson();
         }
 
+        // A step ends at the next point a human could act (after a simulated round, the Day-1
+        // setup step, or a day rollover). GlobalClock counts completed steps; wait for the count
+        // to move. (Watching the simulation start and stop does not work for a rollover-only
+        // step, which runs no simulation.)
+        int stepsBefore = GlobalClock.Instance.GymStepsCompleted;
         lock (actionQueueLock)
         {
             mainThreadActions.Enqueue(() =>
@@ -1706,23 +1711,18 @@ public class GymServerManager : MonoBehaviour
                 // wrong.
                 SnapshotDebug.GymStep++;      // this advance_time call is a new gym step
                 SnapshotDebug.MarkContext("round:advance", "{}");
-                GlobalClock.Instance.GymAdvanceRound();
+                GlobalClock.Instance.GymAdvanceToNextDecision();
             });
         }
 
-        // Wait for the round to actually start, then finish. With captureDeltaTime
-        // the window runs as fast as the CPU renders frames (sub-second), but allow
-        // generous headroom in case of slow hardware.
-        bool sawRunning = false;
         int ticks = 0;
-        while (ticks < 6000) // up to 60s safety cap
+        while (GlobalClock.Instance.GymStepsCompleted == stepsBefore && ticks < 6000)   // 60 s cap
         {
-            bool running = GlobalClock.Instance.IsSimulationRunning();
-            if (running) sawRunning = true;
-            else if (sawRunning) break; // started then ended -> round complete
             Thread.Sleep(10);
             ticks++;
         }
+        if (ticks >= 6000)
+            Debug.LogError("[GymServer] advance_time: the step did not complete within 60 s.");
 
         // Capture a frame (no-op unless render capture was enabled) and return the
         // post-advance state. Falls through to a plain game_state when capture is Off.

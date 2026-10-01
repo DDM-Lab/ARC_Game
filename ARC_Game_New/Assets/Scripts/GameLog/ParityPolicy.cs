@@ -22,7 +22,7 @@ using UnityEngine;
 ///
 /// WHY IT IS NOT JUST DRIVEN BY THE GYM. `greedy_decision` acts through ARCGameGymEnv over TCP
 /// to GymServerManager — and GymServerManager does not exist on main-bugfixes. Grafting it
-/// there is not possible without editing GlobalClock (it needs `GymAdvanceRound` and
+/// there is not possible without editing GlobalClock (it needs `GymAdvanceToNextDecision` and
 /// `gymInstantMode`, neither of which upstream has), which would mean modifying a mechanic file
 /// on the reference build. Worse, `gymInstantMode` is a DIFFERENT clock path from the one a
 /// human plays, so a gym-driven comparison would not be testing the game people actually play.
