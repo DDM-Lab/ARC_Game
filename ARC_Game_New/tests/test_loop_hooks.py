@@ -47,8 +47,8 @@ async def _run_turn(sess, agent, steps_script):
 
 def _talk(step_id):
     return {"content": None,
-            "tool_calls": [{"id": f"t{step_id}", "name": "talk_to_director",
-                            "arguments": {"message": f"step {step_id}"}}]}
+            "tool_calls": [{"id": f"t{step_id}", "name": "send_message",
+                            "arguments": {"to": "Director", "message": f"step {step_id}"}}]}
 
 
 async def test_on_turn_start_injects():

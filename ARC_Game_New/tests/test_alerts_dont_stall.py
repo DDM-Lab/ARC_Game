@@ -18,6 +18,9 @@ Usage:
     ARC_GAME_BUILD=/zfsauton/scratch/cpulling/CORA/ARC_Game/ARC_Game_New/Build/Headless/Linux/ARC_Headless.x86_64 \
     python3 test_alerts_dont_stall.py
 """
+import pytest
+pytestmark = pytest.mark.needs_unity
+
 import os
 import sys
 import time

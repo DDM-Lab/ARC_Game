@@ -4,6 +4,9 @@ Simple connection test for Unity GymServer.
 Tests TCP connection and get_game_state request.
 """
 
+import pytest
+pytestmark = pytest.mark.needs_unity
+
 import socket
 import json
 import sys

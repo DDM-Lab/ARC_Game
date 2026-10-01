@@ -1,0 +1,8 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "needs_unity: needs a headless Unity build (set ARC_HEADLESS_EXE)",
+    "needs_router: needs a running agent_router",
+]
+addopts = "-m 'not needs_unity and not needs_router'"

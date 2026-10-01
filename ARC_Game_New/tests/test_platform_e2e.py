@@ -17,6 +17,9 @@ Covers:
   F. namespacing          uploads land under the KEY's label, not the manifest's
 """
 from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.needs_router
+
 
 import json
 import sys

@@ -115,6 +115,7 @@ class TurnResolver:
         wf = self.gs.get("workforceState", {}) or {}
         self.free_tr = wf.get("freeTrainedWorkers", 0) or 0
         self.free_un = wf.get("freeUntrainedWorkers", 0) or 0
+        self.sites_taken = set()            # build sites claimed by earlier calls this turn
         self.need = {}
         for f in (self.gs.get("mapState", {}) or {}).get("facilities", []) or []:
             if f.get("buildingStatus") in ("NeedWorker", "InUse"):
@@ -137,6 +138,9 @@ class TurnResolver:
                     and int(a["construction"]["site_id"]) == site), None)
         if hit is None:
             raise ValueError(f"site {site} is not available to build a {btype} this turn")
+        if site in self.sites_taken:
+            raise ValueError(f"site {site} is already being built on by an earlier call this turn")
+        self.sites_taken.add(site)
         r.action_indices = [hit]; r.summary = f"build {btype} at site {site}"
 
     def hire(self, r, kind, count):

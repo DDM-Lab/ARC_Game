@@ -42,9 +42,10 @@ def menu():
         {"action_id": "hire_untrained_1", "action_type": "worker", "cost": 100,
          "description": "Hire 1 untrained worker",
          "worker": {"worker_action_type": "hire_untrained", "quantity": 1}},
-        {"action_id": "assign_Kitchen Alpha_1", "action_type": "worker_assignment", "cost": 0,
-         "description": "Assign 1 trained worker to Kitchen Alpha",
-         "assignment": {"building_name": "Kitchen Alpha", "worker_type": "trained", "quantity": 1}},
+        # Full staffing of a 4-unit building = 2 trained workers (buildings only run fully staffed).
+        {"action_id": "assign_Kitchen Alpha_2", "action_type": "worker_assignment", "cost": 0,
+         "description": "Assign 2 trained workers to Kitchen Alpha",
+         "assignment": {"building_name": "Kitchen Alpha", "worker_type": "trained", "quantity": 2}},
         {"action_id": "assign_Shelter Beta_1", "action_type": "worker_assignment", "cost": 0,
          "description": "Assign 1 trained worker to Shelter Beta",
          "assignment": {"building_name": "Shelter Beta", "worker_type": "trained", "quantity": 1}},
@@ -96,10 +97,10 @@ def test_tags_to_indices():
         assert idx == [5], f"transfer -> {idx} (reasons={r})"
 
         # <staff> synth structurally matches the enumerated (building,qty) assignment
-        idx, r = sess._tags_to_indices("<staff>Kitchen Alpha,1</staff>", fa, gs)
+        idx, r = sess._tags_to_indices("<staff>Kitchen Alpha,</staff>", fa, gs)
         assert idx == [3], f"staff -> {idx} (reasons={r})"
 
-        # combined multi-tag package, deduped + order-preserving
+        # combined package: a second build on the same site is dropped (the site is taken)
         idx, r = sess._tags_to_indices(
             "<build>Kitchen,1</build>\n<hire>untrained,1</hire>\n<build>Kitchen,1</build>",
             fa, gs)
@@ -109,10 +110,10 @@ def test_tags_to_indices():
         idx, r = sess._tags_to_indices("<build>Kitchen,99</build>", fa, gs)
         assert idx == [] and r, f"bad-site should drop with reason; got {idx}, {r}"
 
-        # staffing more than any offered quantity -> honest drop
+        # a partial staffing count is refused with the reason (buildings only run fully staffed)
         idx, r = sess._tags_to_indices("<staff>Kitchen Alpha,3</staff>", fa, gs)
-        assert idx == [] and any("not offered at that quantity" in x for x in r), \
-            f"over-staff should drop with reason; got {idx}, {r}"
+        assert idx == [] and any("would be partial" in x for x in r), \
+            f"partial staffing should drop with reason; got {idx}, {r}"
 
         print("[1] _tags_to_indices ok: build=0 hire=2 transfer=5 staff=3, "
               "dedupe+order kept, unresolved dropped-with-reason")
@@ -153,14 +154,14 @@ async def test_outbound_parity():
             "reasoning": "Two ways to spend today.",
             "packages": [
                 {"label": "Feed", "description": "Build a kitchen and staff it",
-                 "commands": "<build>Kitchen,1</build>\n<staff>Kitchen Alpha,1</staff>"},
+                 "commands": "<build>Kitchen,1</build>\n<staff>Kitchen Alpha,</staff>"},
                 {"label": "Grow", "description": "Hire and move food",
                  "commands": "<hire>untrained,1</hire>\n"
                              "<transfer>food,Kitchen Alpha,Shelter Beta,5</transfer>"},
                 {"label": "Junk", "description": "unresolvable", "commands": "<build>Kitchen,99</build>"},
             ],
         }
-        body, gs2, all2, fa2, executed, superseded = await sess._continuous_propose(
+        body, gs2, all2, fa2, executed, superseded, _rows = await sess._continuous_propose(
             agent, args, gs, menu(), fa)
 
         # outbound frame parity: exactly one inline-proposal frame, available_actions IS fa
@@ -177,7 +178,7 @@ async def test_outbound_parity():
         # autonomous resolution: filtered_actions[i] for each action_index == tagged set
         feed_ids = [fa[i]["action_id"] for i in pkgs[0]["action_indices"]]
         grow_ids = [fa[i]["action_id"] for i in pkgs[1]["action_indices"]]
-        assert feed_ids == ["build_Kitchen_1", "assign_Kitchen Alpha_1"], feed_ids
+        assert feed_ids == ["build_Kitchen_1", "assign_Kitchen Alpha_2"], feed_ids
         assert grow_ids == ["hire_untrained_1", "xfer_food_1"], grow_ids
 
         assert not superseded and executed == 2, f"executed={executed} superseded={superseded}"
