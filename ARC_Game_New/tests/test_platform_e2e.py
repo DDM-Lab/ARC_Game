@@ -28,8 +28,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-URL = "http://127.0.0.1:9876"
-ADMIN = "http://127.0.0.1:9877"
+import os
+URL = os.environ.get("CORA_ROUTER_URL", "http://127.0.0.1:9876")
+ADMIN = os.environ.get("CORA_ADMIN_URL", "http://127.0.0.1:9877")
 KEY = "dev-local-key"
 KIT = Path("bundles/testkit")
 
