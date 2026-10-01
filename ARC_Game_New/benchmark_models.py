@@ -30,7 +30,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, str(Path(__file__).parent))
 from arc_game_gym_env_tcp import ARCGameGymEnv
 import llm_smoke_test as smoke
-import prompt_packs                     # declarative JSON prompt packs (opt-in via --prompt-pack)
+from cora import prompts as cora_prompts  # prompt packs (prompts/*.json), the single prompt source
 import obs_encoder                      # minimal_v6_1 observation toggle (set_v61)
 import tool_executor                    # typed tool calls -> game actions (no tag round-trip)
 import openai
@@ -217,24 +217,6 @@ def _reasoning_of(r):
     return (rtrace if isinstance(rtrace, str) else None), rtok
 
 
-# Appended to the system prompt ONLY in the image arms, so the model knows the
-# attached image is a current-state view to reason over (not decoration). Kept out
-# of the text-only arms so those prompts stay byte-identical to the original benchmark.
-IMAGE_PREAMBLE = {
-    "synthetic": ("\n\nYou are ALSO given a rendered top-down map of the CURRENT state: tile terrain "
-                  "(grass/road/river/forest), build-sites (gold stars, #id), built facilities, and "
-                  "communities colored by food deficit, plus food/lodging/budget panels. Use it for "
-                  "spatial + resource reasoning."),
-    "real": ("\n\nYou are ALSO given a live top-down screenshot of the current game UI (map + any "
-             "open panels). Use it to read the spatial layout and on-screen state."),
-}
-
-
-def _system_content(base, image_b64, image_mode):
-    """Base system prompt, plus the mode-specific image line when an image is attached."""
-    return base + (IMAGE_PREAMBLE.get(image_mode, "") if image_b64 else "")
-
-
 def _user_msg(text, image_b64=None):
     """Build a user message, multimodal when an image is supplied. The image is a
     decision-time view of the same state (synthetic dashboard or real game frame)."""
@@ -245,9 +227,8 @@ def _user_msg(text, image_b64=None):
         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}}]}
 
 
-def ask_tools(client, model, state, env, image_b64=None, image_mode="none", reasoning_effort="low",
-              system_variant="minimal", temperature=None, obs_encoding="json", history=None,
-              prev_state=None, prompt_pack=None):
+def ask_tools(client, model, state, env, system_text, image_b64=None, reasoning_effort="low",
+              temperature=None, obs_encoding="json", history=None, prev_state=None):
     """One model call: system prompt + tool schema + the current observation; the model may reason,
     then emits tool calls. Returns (decision, raw_content, reasoning_trace, reasoning_tokens, None):
     the calls themselves go to tool_executor in the round loop, which also decides parsed_ok
@@ -255,10 +236,7 @@ def ask_tools(client, model, state, env, image_b64=None, image_mode="none", reas
     policy trains on and the officer router offers."""
     import re
     import cora_tools
-    import cora_prompts
     _mt = getattr(env, "manual_transfers", True)
-    sys_prompt = (prompt_packs.render(prompt_pack, manual_transfers=_mt, has_image=False)
-                  if prompt_pack else cora_prompts.tool_system_prompt(manual_transfers=_mt, variant=system_variant))
     if obs_encoding == "delta":
         rendered = smoke.render_state_delta(state, prev_state)
     elif obs_encoding == "compact":
@@ -266,7 +244,7 @@ def ask_tools(client, model, state, env, image_b64=None, image_mode="none", reas
     else:
         rendered = json.dumps(state)
     user_text = "State:\n" + rendered + "\n\nAct by calling the tools."
-    msgs = [{"role": "system", "content": _system_content(sys_prompt, image_b64, image_mode)}]
+    msgs = [{"role": "system", "content": system_text}]
     if history:
         msgs.extend(history)
     msgs.append(_user_msg(user_text, image_b64))
@@ -1698,8 +1676,8 @@ def _round_record(rnd, reward, total, info, call_results, state, raw, dec, parse
 
 def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=None, log_dir=None,
                 show_impacts=True, policy="llm", image_mode="none",
-                reasoning_effort="low", manual_transfers=True, system_variant="original",
-                temperature=None, obs_encoding="json", history=1, prompt_pack=None,
+                reasoning_effort="low", manual_transfers=True, prompt="minimal_v6_1",
+                temperature=None, obs_encoding="json", history=1, ablation="",
                 base_seed=None):
     """Fresh Unity process -> play `rounds` -> structured per-episode record.
 
@@ -1716,12 +1694,11 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
     # Constant per run; set before any obs is built (summarize()/render read this flag).
     # v3 inherits the v2 ENCODING fixes (Passive label, un-truncated choice text, dead-transfer
     # line dropped, dangling `affects` hidden); only the prompt text differs between v2 and v3.
-    smoke._set_v2(system_variant in ("minimal_v2", "minimal_v3", "minimal_v4", "minimal_v5", "minimal_v6",
-                                     "minimal_v6_1"))
-    smoke._set_v3(system_variant in ("minimal_v3", "minimal_v4", "minimal_v5", "minimal_v6", "minimal_v6_1"))
-    # v6_1: unavailable choices marked + last turn's refusals shown (see obs_encoder.set_v61).
-    v61 = system_variant == "minimal_v6_1"
-    obs_encoder.set_v61(v61)
+    pack = cora_prompts.load_pack(prompt)
+    smoke._set_v2(True)
+    smoke._set_v3(True)
+    # The pack declares the observation features its text relies on (minimal_v6_1: marked choices).
+    obs_encoder.set_v61(bool(pack.observation.get("mark_unavailable_choices")))
     # Anthropic caps temperature at 1.0; clamp per-model so a shared sweep invocation (e.g. temp=1.5
     # for gemini) doesn't 400 Claude. eff_temp is what's actually sent + logged; temperature is the
     # requested experimental level.
@@ -1759,15 +1736,12 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
     # The LLM acts through typed tool calls on a state-only observation; the non-learning baselines
     # emit action indices directly and read the enumerated observation.
     tools_fmt = state_only = (policy == "llm")
-    if prompt_pack:
-        _base = prompt_packs.render(prompt_pack, manual_transfers=manual_transfers, has_image=False)
-    elif tools_fmt:
-        import cora_prompts as _cp
-        _base = _cp.tool_system_prompt(manual_transfers=manual_transfers, variant=system_variant)
-    else:
-        # Non-LLM policies: the prompt is only recorded for provenance, never sent to a model.
-        _base = smoke.cmd_system_prompt(manual_transfers, system_variant)
-    _sys_text = _system_content(_base, "x" if use_image else None, image_mode)
+    # Rendered once per episode. Non-LLM policies only record it for provenance.
+    _sys_text = cora_prompts.render(pack, manual_transfers=manual_transfers,
+                                    image_mode=image_mode if use_image else "none")
+    if ablation:
+        from cora.prompt_ablation import ablate
+        _sys_text = ablate(_sys_text, ablation)
     rec = {
         # Recorded so the analysis can pair episode i of one variant against episode i
         # of another; None when the run was unseeded.
@@ -1784,9 +1758,9 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
            # prompt identity is logged per episode so every record is attributable to an exact
            # system prompt (PIMMUR replicability): the variant label, a content hash, the exploration
            # knob actually used, and the full prompt text (a self-contained finetuning corpus).
-           "system_variant": system_variant,
-           "prompt_pack": (prompt_pack.get("name") if prompt_pack else None),
-           "prompt_sha": hashlib.sha1(_sys_text.encode("utf-8")).hexdigest()[:12],
+           "system_variant": pack.name,
+           "prompt_ablation": ablation or None,
+           "prompt_sha": cora_prompts.prompt_sha(_sys_text),
            "reasoning_effort": reasoning_effort,
            # Total-generation cap actually in force on the LOCAL path (None = gateway path, or
            # the _EFFORT_BUDGET floor applied). Worth stamping: a reasoning-capable local model
@@ -1852,10 +1826,9 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                         rec.get("images_attached" if img_b64 else "images_missing", 0) + 1
                 try:
                     dec, raw, rtrace, rtok, parsed_ok = ask_tools(
-                        client, model, state, env, img_b64, image_mode, reasoning_effort,
-                        system_variant, eff_temp, obs_encoding, cmd_history,
-                        prev_state if cmd_history is not None else None,
-                        prompt_pack=prompt_pack)
+                        client, model, state, env, _sys_text, img_b64, reasoning_effort,
+                        eff_temp, obs_encoding, cmd_history,
+                        prev_state if cmd_history is not None else None)
                     # Slide the window: ask_tools just appended this turn's messages; keep only the last
                     # K-1 prior turns so the cached prefix stays bounded (K=32 keeps the whole episode).
                     # Trim on TURN boundaries, not raw message count. Since the tool-call
@@ -2139,19 +2112,12 @@ def main():
     ap.add_argument("--map-config", default=None,
                     help="map JSON for every episode, or 'none' for the scene's built-in layout "
                          "(default: the build's config.json / bundled map_config.json)")
-    ap.add_argument("--system_prompt", choices=["original", "minimal", "minimal_v2", "minimal_v3", "minimal_v4", "minimal_v5", "minimal_v6", "minimal_v6_1"], default="original",
-                    help="system-prompt ablation: original (default) = strategy-laden prompt; "
-                         "minimal = PIMMUR minimal-control prompt (mechanics + objective only, no "
-                         "strategy hints); minimal_v2 = minimal + the prompt/encoding fix layer "
-                         "(Passive-fixtures note, sharpened build-then-staff rule, un-truncated choice "
-                         "text, transfers/affects cleanup) for A/B vs minimal. "
-                         "Logged per episode (system_variant + prompt_sha). LLM-only.")
-    ap.add_argument("--prompt-pack", dest="prompt_pack", default=None,
-                    help="load the director system prompt from a declarative JSON pack in prompts/ "
-                         "(bare name or a path to a .json). Overrides --system_prompt from the "
-                         "pack's variant, so a "
-                         "low-code collaborator can A/B a prompt by editing JSON — no Python. "
-                         "prompt_sha + the pack name are logged per episode. See prompts/README.md.")
+    ap.add_argument("--prompt", default=cora_prompts.DEFAULT_PACK,
+                    help="prompt pack: a name in prompts/ (" + ", ".join(cora_prompts.list_packs()) +
+                         ") or a path to a pack JSON. Recorded per episode with its prompt_sha.")
+    ap.add_argument("--ablate", default="",
+                    help="rule ablation applied to the rendered prompt: R07 | R07,R09 | R07_P1_direct "
+                         "(see cora/prompt_ablation.py)")
     ap.add_argument("--temperature", type=float, default=None,
                     help="sampling temperature; sent ONLY to models that accept it (Gemini 2.5/3.x). "
                          "gpt-5* reasoning models reject it and use --reasoning_effort instead. "
@@ -2168,18 +2134,6 @@ def main():
     args = ap.parse_args()
     if args.map_config:
         globals()["MAP_CONFIG"] = args.map_config
-
-    # Opt-in declarative prompt pack: load once, and let the pack drive format/variant so the
-    # per-episode records stay attributable. Absent --prompt-pack, the built-in path is unchanged.
-    args._loaded_pack = None
-    if args.prompt_pack:
-        args._loaded_pack = prompt_packs.load_pack(args.prompt_pack)
-        if args._loaded_pack.get("format", "tools") != "tools":
-            ap.error(f"prompt pack {args._loaded_pack['name']!r} is for the retired "
-                     f"{args._loaded_pack['format']!r} format; the benchmark acts through tool calls only")
-        args.system_prompt = args._loaded_pack.get("variant", args.system_prompt)
-        print(f"    prompt-pack:   {args._loaded_pack['name']}  "
-              f"(variant={args.system_prompt}, from {args._loaded_pack['_path']})")
 
     need_render = (args.image_mode == "real" and args.policy == "llm")
     if not Path(RENDER_EXE if need_render else HEADLESS_EXE).exists():
@@ -2243,8 +2197,7 @@ def main():
               f"(budget {_EFFORT_BUDGET[args.reasoning_effort]} tok; reasoning_tokens logged/round)")
         print(f"    transfers:     {args.transfers} "
               f"({'standalone food/people transfers exposed to the LLM' if args.transfers == 'manual' else 'human-faithful — transfers only via task choices'})")
-        print(f"    system prompt: {args.system_prompt} "
-              f"({'strategy-laden (original)' if args.system_prompt == 'original' else 'PIMMUR minimal-control (mechanics + objective only)'})")
+        print(f"    prompt:        {args.prompt}{' (ablation ' + args.ablate + ')' if args.ablate else ''}")
         print(f"    temperature:   {args.temperature if args.temperature is not None else 'vendor default'} "
               f"(Gemini only; gpt-5* use reasoning_effort)")
 
@@ -2261,9 +2214,9 @@ def main():
             futs[ex.submit(run_episode, model, ep, args.rounds, None, client,
                            False, port_pool, str(ulog_dir), args.impacts, args.policy,
                            args.image_mode, args.reasoning_effort,
-                           args.transfers == "manual", args.system_prompt,
+                           args.transfers == "manual", args.prompt,
                            args.temperature, args.obs_encoding, args.history,
-                           args._loaded_pack, args.seed)] = (model, ep)
+                           args.ablate, args.seed)] = (model, ep)
         for fut in as_completed(futs):
             model, ep = futs[fut]
             rec = fut.result()
@@ -2285,7 +2238,8 @@ def main():
                 + ("" if args.impacts else "_noimpacts")
                 + ("" if args.reasoning_effort == "low" else f"_eff-{args.reasoning_effort}")
                 + ("" if args.transfers == "manual" else "_xfer-task_only")
-                + ("" if args.system_prompt == "original" else f"_sys-{args.system_prompt}")
+                + f"_prompt-{os.path.splitext(os.path.basename(args.prompt))[0]}"
+                + (f"_ablate-{args.ablate}" if args.ablate else "")
                 + ("" if args.obs_encoding == "json" else f"_obs-{args.obs_encoding}")
                 + ("" if args.history == 1 else f"_k{args.history}")
                 + ("" if args.temperature is None else f"_temp-{args.temperature}"))

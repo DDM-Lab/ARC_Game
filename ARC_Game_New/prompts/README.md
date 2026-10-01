@@ -1,102 +1,48 @@
-# CORA prompt packs — swap prompts, get benchmark numbers (low-code)
+# Prompt packs
 
-A **prompt pack** is a single JSON file that holds the director's system prompt as named,
-editable text *sections* plus a `template` that composes them. Edit the JSON, run one command,
-read the scores and transcripts — no Python required.
-
-## TL;DR
+Every system prompt a model is given comes from a JSON file in this folder. To try a new prompt,
+copy a pack, edit its text, and run the benchmark with it — no Python needed:
 
 ```bash
-# 1. see what's installed
-.venv/bin/python prompt_packs.py
-
-# 2. copy a built-in pack and edit the prose
-cp prompts/cmd_minimal.json prompts/my_prompt.json
-$EDITOR prompts/my_prompt.json          # change the text inside "sections"
-
-# 3. preview EXACTLY what the model will receive
-.venv/bin/python prompt_packs.py my_prompt
-
-# 4. benchmark it (spawns the game for you) and get numbers + transcripts
+cp prompts/minimal_v6_1.json prompts/my_prompt.json      # then edit the "sections"
 ./run_benchmark.sh my_prompt gpt-5-mini 5
+python -m cora.prompts my_prompt                          # print it exactly as the model sees it
 ```
 
-Results land in `bench_packs/my_prompt__gpt-5-mini/`:
-`episodes.jsonl` (full per-round transcripts) and `summary.json` (aggregate scores).
+| Pack | What it is |
+|---|---|
+| `minimal_v6_1` | default. Game rules and the action grammar, no strategy; numbers come from the observation; unavailable choices are marked |
+| `minimal_v6` | the Sep 2026 benchmark prompt (`prompt_sha 09b23ffd5e31`), kept to reproduce those runs |
 
-## What a pack looks like
+## Format (schema_version 2)
 
-```jsonc
+```json
 {
-  "name": "cmd_minimal",
-  "description": "one-line summary",
-  "format": "cmd",                 // "cmd" (command tags) or "idx" (numbered menu + JSON)
-  "variant": "minimal",            // free-text label, logged with every episode
-  "sections": {                    // <-- EDIT THESE. Each is a plain block of prompt text.
-    "intro":      "You are the director ...",
-    "objective":  "OBJECTIVE: ...",
-    "entities":   "ENTITIES & RULES ...",
-    "how_to_act": "HOW TO ACT ...",
-    "response":   "RESPOND with ...",
-    "transfer_doc": "...",                  // only shown when transfers are enabled
-    "image_preamble_synthetic": "...",      // only shown in image runs
-    "image_preamble_real": "..."
-  },
-  "template": "{intro}{objective}{entities}{how_to_act}{response}{transfer_doc}{image_preamble}",
-  "gates": { "transfer_doc": "manual_transfers", "image_preamble": "image" }
+  "schema_version": 2,
+  "name": "my_prompt",
+  "description": "one line",
+  "sections": {"preamble": "...", "how_header_typed": "...", "how_header_hermes": "...", "...": "..."},
+  "template": "{preamble}{how_header}{tool_signatures}{transfer_signature}{order_head}{order_transfer}{order_tail}{image_preamble}",
+  "gates": {"how_header": "wire_format", "transfer_signature": "manual_transfers",
+            "order_transfer": "manual_transfers", "image_preamble": "image"},
+  "observation": {"mark_unavailable_choices": true}
 }
 ```
 
-### The `template` is where you "present the information as you like"
-It's just the section names in `{braces}`, concatenated in order. Reorder them, drop one,
-or split a section into two (add a new key to `sections` and a matching `{key}` to the
-template). Whatever text ends up between the braces is exactly what the model sees.
+- `template` joins the `sections` in order; edit, add or reorder sections freely.
+- `gates` switch a placeholder on the run's settings:
+  - `wire_format`: filled from `<name>_typed` or `<name>_hermes` (the RL trainer uses hermes);
+  - `manual_transfers`: included only when standalone transfers are offered;
+  - `image`: filled from `<name>_synthetic` / `<name>_real` when the model is shown an image.
+- `observation` (optional) lists observation features the text relies on; `mark_unavailable_choices`
+  marks the choices the game would grey out for a player.
 
-### Gates (leave these alone unless you know you want them)
-A section named in `gates` only appears when its condition holds:
-- `transfer_doc` → only when the run enables manual resource transfers (`--transfers manual`).
-- `image_preamble` → only in image runs; filled from `image_preamble_<mode>`.
+Every episode records the pack name and `prompt_sha` (sha1 of the exact text sent), so results stay
+attributable when a pack is edited.
 
-You almost always benchmark in `task_only` (no transfers) + text-only, so those two collapse
-to nothing and you're just editing the five base sections.
+## Rule ablation
 
-## Built-in packs
-
-| pack | format | notes |
-|------|--------|-------|
-| `cmd_original` | cmd | strategy-laden default (lodging economics, casework timing, horizon) |
-| `cmd_minimal` | cmd | PIMMUR minimal-control: mechanics + objective only, no strategy |
-| `cmd_minimal_v2` | cmd | minimal + fix layer (Passive-fixtures note; build-then-staff rule) |
-| `idx_original` | idx | strategy-laden, numbered-menu + JSON output |
-| `idx_minimal` | idx | minimal-control, numbered-menu + JSON output |
-| `cmd_minimal_flagship_v0` | cmd | **historical** exact prompt behind the published flagship numbers (`prompt_sha cce393cd9095`), pinned for reproducibility |
-
-Every built-in renders **byte-identically** to the original hardcoded prompt, so the
-`prompt_sha` logged per episode is preserved and old runs stay reproducible.
-
-## Reproducibility
-
-Each episode record logs `prompt_pack` (the name), `system_variant`, and `prompt_sha`
-(a sha1 fingerprint of the exact system text sent). Two runs with the same pack + model +
-settings produce the same `prompt_sha`. To recover the exact text of any past run, read the
-`system_prompt` field stored in its `episodes.jsonl`.
-
-## Running against a self-hosted / local model
-
-`run_benchmark.sh` passes extra args straight through. Point it at any OpenAI-compatible
-endpoint:
-
-```bash
-./run_benchmark.sh my_prompt Qwen3-4B 5 -- \
-  --base-url http://localhost:8080/v1 --api-key placeholder
-```
-
-## Notes / current limits
-
-- The benchmark **spawns its own headless game per episode**, so you need the local
-  `Build/Headless/<platform>/…` build present. (Connecting to a *shared, already-running*
-  game server — the "upload your pack and hit an API key" flow — is a planned extension; the
-  gym env already supports attach mode, it just isn't wired into this wrapper yet.)
-- Only the **prose** (system-prompt sections, transfer doc, image preambles) is pack-editable.
-  How the game *state* is serialized (the observation encoders) stays in Python by design —
-  it's logic, not prompt text.
+`ablation/rules.json` maps rule ids (R01–R34) to passages of `minimal_v6`;
+`ablation/paraphrases.json` holds reworded variants of individual rules. Use them with
+`--ablate R07`, `--ablate R07,R09,R10` or `--ablate R07_P1_direct`
+(see `cora/prompt_ablation.py`).

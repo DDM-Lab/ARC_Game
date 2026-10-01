@@ -7,7 +7,7 @@ re-exports those names so existing callers keep working:
   * the Verlog RL fork     — `from llm_smoke_test import cmd_system_prompt, ...`
 
 Real homes:
-  * system prompts      -> cora_prompts
+  * system prompts      -> cora.prompts (packs in prompts/)
   * tool execution      -> tool_executor
   * observation adapters-> obs_adapters
   * gateway config      -> llm_gateway
@@ -16,12 +16,6 @@ Real homes:
 Delete this shim once `benchmark_models.py` and the Verlog fork import from the real
 modules directly. It holds NO logic of its own.
 """
-# SHARED system prompts (source of truth: cora_prompts).
-from cora_prompts import (  # noqa: F401
-    CMD_SYSTEM_PROMPT, CMD_TRANSFER_DOC, CMD_MINIMAL_SYSTEM_PROMPT, CMD_MINIMAL_V2_SYSTEM_PROMPT,
-    tool_system_prompt,
-    cmd_system_prompt,
-)
 # SHARED observation adapters (env -> obs_encoder + A/B toggles; source of truth: obs_adapters).
 from obs_adapters import (  # noqa: F401
     PROMPT_VERSION, MOTEL_COST_PER_PERSON_PER_DAY, _set_v2, _set_v3,

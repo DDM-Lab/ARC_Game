@@ -5,14 +5,13 @@
 #   ./run_benchmark.sh <prompt-pack> <model> [episodes] [-- extra benchmark_models.py args]
 #
 # Examples
-#   ./run_benchmark.sh cmd_minimal gpt-5-mini 5
-#   ./run_benchmark.sh my_prompt   gpt-5-mini 5 -- --base-url http://localhost:8080/v1 --api-key x
-#   ./run_benchmark.sh cmd_minimal_flagship_v0 gpt-5.5 10        # reproduce the flagship prompt
+#   ./run_benchmark.sh minimal_v6_1 gpt-5-mini 5
+#   ./run_benchmark.sh my_prompt    gpt-5-mini 5 -- --base-url http://localhost:8080/v1 --api-key x
+#   ./run_benchmark.sh minimal_v6   gpt-5.5 10                  # reproduce the Sep 2026 prompt
 #
 # Outputs (under bench_packs/<pack>__<model>/):
-#   episodes.jsonl   full per-round transcripts (obs, raw model text, reasoning, parsed actions)
+#   episodes.jsonl   full per-decision transcripts (obs, model text, reasoning, each tool call's outcome)
 #   summary.json     aggregate scores + mistake profile
-#   components.*     normalized per-mechanic graphs (if analyze script present)
 #
 # The harness spawns its own headless CORA game per episode, so you only need the local build
 # (Build/Headless/<platform>/...) and an OpenAI-compatible model endpoint (--base-url for a
@@ -37,18 +36,19 @@ OUT="bench_packs/${PACK}__${SAFE_MODEL}"
 echo "=== CORA prompt-pack benchmark ==="
 echo "  pack:     $PACK"
 echo "  model:    $MODEL"
-echo "  episodes: $EPISODES (32 rounds each)"
+echo "  episodes: $EPISODES (full games: 36 decisions each)"
 echo "  out:      $OUT"
 echo "  extra:    ${EXTRA[*]:-(none)}"
 echo
 
-# task_only + K=1 matches the flagship k1_auto protocol; the pack drives format/variant.
+# The protocol the cluster benchmark uses: task-only transfers, compact observation, no history.
 "$PY" benchmark_models.py \
-  --prompt-pack "$PACK" \
+  --prompt "$PACK" \
   --models "$MODEL" \
   --episodes "$EPISODES" \
-  --rounds 32 \
+  --rounds 40 \
   --transfers task_only \
+  --obs_encoding compact \
   --history 1 \
   --reasoning_effort low \
   --out "$OUT" \
@@ -57,4 +57,4 @@ echo
 echo
 echo "Transcripts: $OUT/episodes.jsonl"
 echo "Scores:      $OUT/summary.json"
-echo "Inspect one prompt exactly as sent:  $PY prompt_packs.py $PACK"
+echo "Inspect the prompt exactly as sent:  $PY -m cora.prompts $PACK"

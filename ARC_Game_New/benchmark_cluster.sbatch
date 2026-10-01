@@ -5,7 +5,7 @@
 # veRL's rollout is vLLM serving local HF weights; it has no API-model path, so it cannot
 # benchmark Claude/GPT/Gemini at all. benchmark_models.py speaks OpenAI-compatible HTTP, so
 # pointing it at a local `vllm serve` covers open weights AND the CMU gateway covers frontier
-# models — same prompt (cora_prompts), same obs encoder, same tool schema, same episode loop.
+# models — same prompt (cora.prompts packs), same obs encoder, same tool schema, same episode loop.
 # veRL stays for RL TRAINING, where its loop earns its keep.
 #
 # MODES
@@ -59,11 +59,11 @@ mkdir -p "$OUT"
 # HISTORY: turns of prior conversation replayed. Each turn adds ~950 prompt tokens, so
 #   h=1 ~3.6k, h=4 ~6.4k, h=16 ~18k, h=32 ~33k -> raise MAX_MODEL_LEN past h=4.
 # TRANSFERS: task_only suppresses standalone transfers (human-faithful); manual enumerates them.
-# SYSTEM_PROMPT: minimal_v6_1 (default: v6 with live numbers + unavailable choices marked) | minimal_v6 | minimal_v2..v5 |
-#   minimal | original. SEED: base seed; episode i uses SEED+i, so arms see identical scenarios.
+# PROMPT: prompt pack name or path (default minimal_v6_1; see prompts/). ABLATE: rule ablation spec.
+# SEED: base seed; episode i uses SEED+i, so arms see identical scenarios.
 # MAP_CONFIG: map JSON path for every episode, or "none" for the built-in layout (default: the
 #   build's bundled map_config.json). Each episode record carries the map fingerprint it ran.
-FMT=(--obs_encoding compact --system_prompt "${SYSTEM_PROMPT:-minimal_v6_1}"
+FMT=(--obs_encoding compact --prompt "${PROMPT:-minimal_v6_1}" ${ABLATE:+--ablate "$ABLATE"}
      --image_mode none --transfers "${TRANSFERS:-task_only}" --history "${HISTORY:-1}")
 
 echo "=== CORA benchmark  mode=$MODE  job=${SLURM_JOB_ID:-local}  node=$(hostname)  $(date)"
