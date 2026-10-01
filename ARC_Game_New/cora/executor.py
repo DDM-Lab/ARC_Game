@@ -7,7 +7,7 @@ round). The tools are the game actions only, and they return NOTHING to the mode
 turn's observation is the only feedback. The harness still records, per call, what happened —
 for logs, metrics and later feedback variants — as a CallResult.
 
-TOOLS (the canonical schema lives in cora_tools; this module resolves and runs them)
+TOOLS (defined in cora.tools; this module resolves and runs them against cora.actions' menu)
   build(type, site_id)    type kitchen|shelter|casework; site_id must be a free site offered for
                           that type this turn.                       -> one construction action
   hire(kind, count)       kind trained|untrained; count is covered with the hire bundles the game
@@ -42,6 +42,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
+
+from cora.actions import assignment_action, staffing_need
+from cora.observation import task_token
 
 ORDER = {"task": 0, "deconstruct": 1, "build": 2, "hire": 3, "train": 4, "staff": 5, "transfer": 6}
 
@@ -116,12 +119,9 @@ class TurnResolver:
         self.free_tr = wf.get("freeTrainedWorkers", 0) or 0
         self.free_un = wf.get("freeUntrainedWorkers", 0) or 0
         self.sites_taken = set()            # build sites claimed by earlier calls this turn
-        self.need = {}
-        for f in (self.gs.get("mapState", {}) or {}).get("facilities", []) or []:
-            if f.get("buildingStatus") in ("NeedWorker", "InUse"):
-                rem = (f.get("requiredWorkforce", 4) or 0) - (f.get("assignedWorkforce", 0) or 0)
-                if rem > 0 and f.get("facilityName"):
-                    self.need[f["facilityName"]] = rem
+        self.need = {f["facilityName"]: staffing_need(f)
+                     for f in (self.gs.get("mapState", {}) or {}).get("facilities", []) or []
+                     if f.get("facilityName") and staffing_need(f) > 0}
 
     @property
     def free_units(self):
@@ -194,9 +194,7 @@ class TurnResolver:
             raise ValueError(f"{match} needs {need} workforce units; {self.free_tr} trained and "
                              f"{self.free_un} untrained free cannot make that up")
         qty = use_tr + use_un
-        self.actions.append({"action_id": f"assign_{match}_{qty}", "action_type": "worker_assignment",
-                             "description": f"Assign {qty} worker(s) ({need} workforce) to {match}",
-                             "cost": 0, "assignment": {"building_name": match, "quantity": qty}})
+        self.actions.append(assignment_action(match, qty, need=need))
         self.free_tr -= use_tr; self.free_un -= use_un; self.need[match] = 0
         r.action_indices = [len(self.actions) - 1]; r.summary = f"staff {match} ({need} units)"
 
@@ -215,7 +213,6 @@ class TurnResolver:
         try:
             tid = int(float(raw))
         except ValueError:
-            from cora.observation import task_token
             for t in tasks:
                 if task_token(t) == raw:
                     tid = int(t["taskId"]); break

@@ -48,16 +48,17 @@ from episode_logger import EpisodeLogger
 from llm_query import query_llm, load_global_prompt
 from continuous_agent import (build_tools, run_tool_step, DEFAULT_TOOLS, TOOL_SCHEMAS,
                               known_ctx_limit, _est_prompt_tokens)
-import cora_tools
+from cora.actions import enumerate_actions
+from cora.tools import TOOLS, TOOL_BY_NAME
 # The typed action tools (build/hire/train/staff/deconstruct/task/transfer) the officer emits.
 # Each is translated to its command tag and routed through the execute_commands path.
-_CORA_ACTION_TOOLS = {t["name"] for t in cora_tools._TOOLS}
+_CORA_ACTION_TOOLS = {t["name"] for t in TOOLS}
 import bundle as bundle_mod
 from bundle import load_bundle, BundleError
 import cora_ext
 import plugin_store
 import key_store
-from cmd_parser import parse_commands, ParserEnv  # SHARED parser + env shim (benchmark + router + gym)
+from cmd_parser import parse_commands, translate_tool_calls, ParserEnv  # router-only tag adapter
 from cora.observation import officer_text, task_officer, task_group, task_token, vehicle_capacity
 
 
@@ -90,21 +91,11 @@ _CmdParseShim = ParserEnv
 
 
 def _enumerate_actions(game_state: dict) -> list[dict]:
-    """
-    Enumerate available actions from game state.
-    If action_enumerator.py is available uses it; otherwise returns empty list.
-    The router can still be tested without an enumerator.
-    """
+    """The round's action menu (cora.actions) plus the task_choice pseudo-actions below."""
     try:
-        from action_enumerator import ActionEnumerator
-        enumerator = ActionEnumerator(game_state)
-        # enumerate_all_actions() already returns list of dicts
-        actions = enumerator.enumerate_all_actions()
-    except ImportError:
-        print("[router] action_enumerator not available — action list empty.")
-        actions = []
+        actions = enumerate_actions(game_state)
     except Exception as e:
-        print(f"[router] action_enumerator error: {e}")
+        print(f"[router] action enumeration error: {e}")
         actions = []
     # Choice-tasks become first-class 'task_choice' pseudo-actions so officers can
     # answer them through the same index-based menu (execute_game_action) and the
@@ -2674,7 +2665,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 elif wat == "train_untrained":
                     train = max(train, q)
             elif t == "worker_assignment":
-                # action_enumerator nests these fields under "assignment" (see
+                # cora.actions nests these fields under "assignment" (see
                 # WorkerAssignmentAction.to_dict), NOT "worker_assignment".
                 wa = a.get("assignment", {})
                 bn, q = wa.get("building_name"), (wa.get("quantity") or 0)
@@ -3072,7 +3063,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         # execute_commands below: standing orders are granted per typed tool + arguments.
         orig_name, orig_args = name, (tool_call.get("arguments") or {})
         if name in _CORA_ACTION_TOOLS:
-            _tag, _tmeta = cora_tools.translate_tool_calls(
+            _tag, _tmeta = translate_tool_calls(
                 [(name, tool_call.get("arguments") or {})])
             # A call the translator refused (delimiter in an argument, unreadable args) would
             # otherwise arrive as an empty tag and come back as the opaque "empty commands"
@@ -3622,7 +3613,7 @@ Respond with ONLY the package index number (0, 1, or 2).
     def _autonomy_args_display(tool: str, args: dict) -> str:
         """'(any site)' or '(type kitchen)': the order's limits, as the card and prompt show them."""
         if not args:
-            params = [n for n, _ in (cora_tools._TOOL_BY_NAME.get(tool, {}).get("params") or [])]
+            params = [n for n, _ in (TOOL_BY_NAME.get(tool, {}).get("params") or [])]
             what = params[0].replace("_id", "").replace("_", " ") if params else "arguments"
             return f"(any {what})"
         return "(" + ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in args.items()) + ")"
@@ -3732,7 +3723,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         if not isinstance(limits, dict):
             return ("ERROR: `args` must be an object of the tool's parameters, e.g. "
                     "{\"type\": \"kitchen\"}, or left out.", False, False)
-        params = [n for n, _ in cora_tools._TOOL_BY_NAME[tool]["params"]]
+        params = [n for n, _ in TOOL_BY_NAME[tool]["params"]]
         unknown = [k for k in limits if k not in params]
         if unknown:
             return (f"ERROR: {tool} has no parameter {', '.join(map(repr, unknown))}. Its "

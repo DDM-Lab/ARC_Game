@@ -158,7 +158,7 @@ def _build_prompt(
     state_text = officer_text(game_state)
 
     # Action list. NOTE: action dicts use snake_case `action_type` (from
-    # ActionEnumerator.to_dict), not `actionType`; the old camelCase read always
+    # cora.actions), not `actionType`; the old camelCase read always
     # rendered "[?]". Cost is real engine data — surface it as ground truth.
     action_lines = [
         f"{i}. [{a.get('action_type','?')}] {a.get('description','?')} (cost: ${_num(a.get('cost')):,})"

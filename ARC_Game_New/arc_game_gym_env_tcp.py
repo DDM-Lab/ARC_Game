@@ -46,7 +46,7 @@ import string
 # Import action enumerator + the SHARED command-grammar parser (same one the
 # router and benchmark use), so the RL policy writes command tags, not integer CSV.
 sys.path.append(str(Path(__file__).parent))
-from action_enumerator import ActionEnumerator
+from cora.actions import enumerate_actions
 
 
 # ── Orphan-Unity registry ─────────────────────────────────────────────────────
@@ -241,7 +241,6 @@ class ARCGameGymEnv(gym.Env):
         self.previous_satisfaction = 50.0  # Default starting satisfaction
         self.game_state = None
         self.valid_actions = []
-        self.action_enumerator = None
         self.current_step = 0
         self.current_round = 0
         # Number of reset() calls so far. The first reset runs against a freshly
@@ -573,7 +572,7 @@ class ARCGameGymEnv(gym.Env):
             action: indices into self.valid_actions, as a sequence of ints or a comma-separated
                 string ("5,12,3"); empty = do nothing this round. Resolving a model's tool calls
                 into indices (and answering tasks, which are not game actions) is
-                tool_executor's job; it sets self.valid_actions to its resolved list first.
+                cora.executor's job; it sets self.valid_actions to its resolved list first.
                 Actions run in the given order and stop at the first one the game refuses.
 
         Returns:
@@ -752,8 +751,7 @@ class ARCGameGymEnv(gym.Env):
         matching the human GUI. Default True keeps the full action surface. Indices into
         self.valid_actions stay consistent across the menu, parser, and execute paths because
         every consumer reads this single (already-filtered) list."""
-        self.action_enumerator = ActionEnumerator(self.game_state)
-        actions = self.action_enumerator.enumerate_all_actions()
+        actions = enumerate_actions(self.game_state)
         if not self.manual_transfers:
             actions = [a for a in actions if a.get("action_type") != "resource_transfer"]
         self.valid_actions = actions

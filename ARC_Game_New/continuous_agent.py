@@ -398,13 +398,13 @@ DEFAULT_TOOLS: List[str] = list(TOOL_SCHEMAS.keys())
 
 # ── Phase B: typed action tools (canonical schema) become the officer's action surface ──
 # The model now acts via individual TYPED tools (build/hire/train/staff/deconstruct/task),
-# generated from the shared `cora_tools` schema so the live officer and the RL policy serve/
+# generated from the shared `cora.tools` schema so the live officer and the RL policy serve/
 # train on an IDENTICAL tool surface. `execute_commands` stays defined (its dispatch handler +
 # explicit-allowlist use) but drops OUT of the default palette — typed calls are translated back
 # to command tags and routed through that same execute path in
 # agent_router._dispatch_continuous_tool (ledger/block gate + execute_resolved unchanged).
-import cora_tools as _cora_tools  # noqa: E402
-for _t in _cora_tools.openai_tools(manual_transfers=True):  # include transfer in the officer palette
+from cora.tools import openai_tools  # noqa: E402
+for _t in openai_tools(manual_transfers=True):  # include transfer in the officer palette
     TOOL_SCHEMAS[_t["function"]["name"]] = _t
 DEFAULT_TOOLS = [n for n in TOOL_SCHEMAS if n != "execute_commands"]
 
@@ -443,7 +443,7 @@ def build_tools(allowlist: Optional[List[str]] = None,
     `descriptions` (bundle `tool_descriptions`) rewords a built-in's description — the last
     model-visible string that was not config-overridable, since a tool's description travels
     in the API `tools` argument rather than the prompt. PARAMETERS are deliberately NOT
-    overridable: they feed cora_tools.tag_for directly, so a renamed param or a widened enum
+    overridable: they feed cmd_parser.tag_for directly, so a renamed param or a widened enum
     emits tags cmd_parser cannot resolve — silently broken actions across all three wings.
     Descriptions are inert to that machinery, so they are safe to expose.
 

@@ -23,12 +23,13 @@ episode loop, a trainer adapter, the officer conversation).
 Assets/                  Unity game (C#). The gym server and websocket client live here.
 cora/                    SHARED CORE — the only place game-facing Python logic lives
   observation.py         game state -> observation dict -> compact text (one ObsConfig, no globals)
-  tools.py               the typed action-tool schema (OpenAI / Anthropic / verl YAML shapes)
+  tools.py               the typed action-tool schema (OpenAI shape; verl arc_tools.yaml)
+  actions.py             the action menu: every game action available in a state, Unity's shape
   executor.py            tool calls -> resolved game actions -> committed; per-call outcomes
   prompts.py             system prompts (minimal_v6_1, minimal_v6)
   scoring.py             the score (Unity's rewardMetrics) and its components
   llm/                   one LLM client factory (providers, gateway, keys, reasoning capture)
-  logging.py             one turn / provenance record used by every front end
+  episode_log.py         one turn / provenance record used by every front end
   env/                   the TCP gym env + Unity process management; CoraEnv for RL
 bench/                   benchmark: CLI, episode loop, baselines, results/plots, SFT export
 router/                  GUI officers: service, session, officer loop, officer tools, proposals,
@@ -114,10 +115,10 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 
 | Area | Status |
 |---|---|
-| Tool-call executor | done in the benchmark (`tool_executor.py`); router and RL pending |
+| Tool-call executor | done in the benchmark (`cora/executor.py`); router and RL pending |
 | Headless parameters, pinned map, scenario block | done |
 | Gym steps = human decision points (Day 1 setup, rollover step) | done |
-| `cora/` package (observation, tools, prompts, scoring, llm, logging, env) | pending |
+| `cora/` package | done: observation, prompts, tools, actions, executor; pending: scoring, llm, episode_log, env |
 | `bench/` split | pending |
 | `router/` split, legacy actors retired | pending |
 | `CoraEnv` for RL; thin Verlog adapter | pending |

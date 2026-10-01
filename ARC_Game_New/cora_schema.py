@@ -242,7 +242,7 @@ class Bundle(BaseModel):
     # Per-config rewording of BUILT-IN tool descriptions: {"build": "...", "task": "..."}.
     # A tool's description reaches the model through the API `tools` argument, not the prompt,
     # so it was the last model-visible string no prompt override could touch. Parameters and
-    # enums stay harness-owned — they feed cora_tools.tag_for, so changing them emits tags
+    # enums stay harness-owned — they feed cmd_parser.tag_for, so changing them emits tags
     # cmd_parser cannot resolve. An unknown tool name is a WARNING at upload (the override is
     # inert), matching how an unknown name in the `tools` allowlist is handled.
     tool_descriptions: Optional[dict] = None

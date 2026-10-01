@@ -32,7 +32,7 @@ from arc_game_gym_env_tcp import ARCGameGymEnv
 from llm_gateway import GATEWAY_BASE, load_env_key
 from cora import prompts as cora_prompts  # prompt packs (prompts/*.json), the single prompt source
 from cora.observation import ObsConfig, observe, render as render_obs
-import tool_executor                    # typed tool calls -> game actions (no tag round-trip)
+from cora import executor               # typed tool calls -> game actions
 import openai
 
 # Platform-aware headless executable paths. Default to the macOS .app on darwin; on the
@@ -231,11 +231,11 @@ def ask_tools(client, model, state, env, system_text, image_b64=None, reasoning_
               temperature=None, obs_encoding="json", history=None, prev_state=None):
     """One model call: system prompt + tool schema + the current observation; the model may reason,
     then emits tool calls. Returns (decision, raw_content, reasoning_trace, reasoning_tokens, None):
-    the calls themselves go to tool_executor in the round loop, which also decides parsed_ok
-    (whether every call was well-formed). The tool schema is cora_tools' — the same one the RL
+    the calls themselves go to cora.executor in the round loop, which also decides parsed_ok
+    (whether every call was well-formed). The tool schema is cora.tools' — the same one the RL
     policy trains on and the officer router offers."""
     import re
-    import cora_tools
+    from cora.tools import openai_tools
     _mt = getattr(env, "manual_transfers", True)
     if obs_encoding == "delta":
         rendered = render_obs(state, prev=prev_state)
@@ -248,7 +248,7 @@ def ask_tools(client, model, state, env, system_text, image_b64=None, reasoning_
     if history:
         msgs.extend(history)
     msgs.append(_user_msg(user_text, image_b64))
-    tools = cora_tools.openai_tools(manual_transfers=_mt)
+    tools = openai_tools(manual_transfers=_mt)
     kw = dict(model=model, messages=msgs, tools=tools, max_tokens=2000)
     # LOCAL path (Ollama) parity with chat(): a reasoning-capable local model auto-enables
     # thinking unless reasoning_effort is sent, and several of them emit a long prose preamble
@@ -317,7 +317,7 @@ def ask_tools(client, model, state, env, system_text, image_b64=None, reasoning_
     mr = re.search(r"REASONING:\s*(.+)", content or "")
     if mr:
         reason = mr.group(1).splitlines()[0].strip()
-    # Run by tool_executor.execute_turn in the round loop; nothing is returned to the model.
+    # Run by executor.execute_turn in the round loop; nothing is returned to the model.
     # Zero calls is a deliberate no-op, not a failure.
     dec = {"tool_calls": list(raw_tcs), "reasoning": reason}
     rtrace, rtok = _reasoning_of(r)
@@ -894,7 +894,7 @@ def improved_rules_based_decision(env, rnd=0, rounds_total=32, w=REWARD_WEIGHTS)
                 used.add(sid)
 
     # (1): hire enough UNTRAINED workers to staff current NeedWorker buildings + the ones queued
-    # this turn. The game has NO per-day hiring ceiling (action_enumerator: hiring is budget-limited;
+    # this turn. The game has NO per-day hiring ceiling (cora.actions: hiring is budget-limited;
     # each hire action bundles up to 5), so we append AS MANY hire actions as needed to close the gap,
     # each bounded by the cash above the operating buffer. The env executes cached action indices in
     # order and re-checks budget live per action, so reusing the largest affordable bundle hires
@@ -1849,12 +1849,12 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                     break
             # ── execute: the model's tool calls, or a baseline's (task choices, action indices) ──
             if dec.get("tool_calls") is not None:
-                call_results, step = tool_executor.execute_turn(env, dec["tool_calls"])
+                call_results, step = executor.execute_turn(env, dec["tool_calls"])
                 parsed_ok = not any(cr.malformed for cr in call_results)
                 if not parsed_ok:
                     rec["parse_failures"] = rec.get("parse_failures", 0) + 1
             else:
-                call_results, step = tool_executor.execute_indices(env, dec.get("choices"), dec.get("actions"))
+                call_results, step = executor.execute_indices(env, dec.get("choices"), dec.get("actions"))
             obs, reward, term, trunc, info = step
             total += reward
             exres = info.get("execution_results") or []

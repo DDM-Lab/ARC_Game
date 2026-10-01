@@ -29,7 +29,7 @@ WHAT IT MEASURES, per turn
   llm            the shadow's action set, sampled N times to expose sampling variance
   resolvable     did the shadow's tool calls resolve to executable actions (indices in
                  range / valid task+choice ids). This is the ACTION-VALIDITY signal and
-                 needs no execution -- tool_executor.plan_turn resolves against the live env.
+                 needs no execution -- cora.executor.plan_turn resolves against the live env.
   agreement      exact (same action types AND targets) / category (same action types)
 
 THE DISCRIMINATOR
@@ -62,7 +62,7 @@ from pathlib import Path
 import openai
 
 import benchmark_models as bm
-import tool_executor
+from cora import executor
 from arc_game_gym_env_tcp import ARCGameGymEnv
 from cora import prompts
 from cora.observation import observe
@@ -172,7 +172,7 @@ def main():
                             client, a.model, state, env, system_text, None, a.reasoning_effort,
                             None, enc, None, None)
                         # Resolve the calls against the live state without executing them.
-                        results, resolver = tool_executor.plan_turn(dec["tool_calls"], env)
+                        results, resolver = executor.plan_turn(dec["tool_calls"], env)
                         parsed_ok = not any(r.malformed for r in results)
                         dec = {"actions": [i for r in results if r.status == "resolved" for i in r.action_indices],
                                "choices": [r.choice for r in results if r.status == "resolved" and r.choice],

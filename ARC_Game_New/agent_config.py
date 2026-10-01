@@ -193,7 +193,7 @@ class RouterConfig:
     #   tool_descriptions      : reword built-in tool descriptions, {tool_name: text}. These
     #                            ride the API `tools` argument rather than the prompt, so this
     #                            is the one model-visible surface no prompt override reaches.
-    #                            Parameters/enums stay harness-owned (they feed cora_tools).
+    #                            Parameters/enums stay harness-owned (they feed cora.tools).
     tool_descriptions: Optional[dict] = None
 
     def __post_init__(self):

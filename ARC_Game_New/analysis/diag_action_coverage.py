@@ -4,7 +4,7 @@
 Plays one seeded episode with a FIXED script that exercises every action surface the LLM
 benchmark exposes, going through exactly the benchmark's path:
 
-    typed tool calls -> tool_executor.execute_turn (resolve, answer tasks, run actions, advance)
+    typed tool calls -> cora.executor.execute_turn (resolve, answer tasks, run actions, advance)
 
 Per round it records every call (tags, parse errors, resolved?, engine result) and a canonical
 state snapshot. Run it with the same --seed on different builds (Mac headless, Mac render,
@@ -70,7 +70,7 @@ def snapshot(obs, info):
 
 
 def run(args):
-    import tool_executor
+    from cora import executor
     from arc_game_gym_env_tcp import ARCGameGymEnv
     from cora.observation import ObsConfig, observe
     # Unavailable choices are marked so refusals can be checked against the marks.
@@ -89,7 +89,7 @@ def run(args):
                 out["first_task_example"] = obs["tasks"][0]
             calls = script_calls(rnd, obs, built, deconstructed)
             rec = {"r": rnd, "pre": snapshot(obs, info)}
-            results, (obs2, reward, term, trunc, info) = tool_executor.execute_turn(
+            results, (obs2, reward, term, trunc, info) = executor.execute_turn(
                 env, [(n, a) for n, a in calls])
             unavail = {(str(t.get("taskId")), str(c.get("choiceId"))): c.get("unavailable")
                        for t in obs.get("tasks") or [] for c in t.get("choices") or []}

@@ -72,7 +72,7 @@ else
 fi
 
 say "4. sanity-check the new code BEFORE swapping the process"
-run "$PY -c 'import agent_router, cora_tools, bundle, agent_config; print(\"  imports OK\")'"
+run "$PY -c 'import agent_router, cora.tools, bundle, agent_config; print(\"  imports OK\")'"
 for t in test_tag_translation.py test_cost_attribution.py; do
   [ -f "$t" ] && run "$PY '$t' >/dev/null && echo '  $t OK'"
 done

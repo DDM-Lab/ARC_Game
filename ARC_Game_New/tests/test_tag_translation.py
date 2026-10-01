@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hermetic tests for the typed-tool -> cmd-tag bridge (cora_tools.tag_for / translate_tool_calls).
+"""Hermetic tests for the typed-tool -> cmd-tag bridge (cmd_parser.tag_for / translate_tool_calls).
 
 Regression guard for the delimiter-corruption class: the tag body is comma-joined and the tag
 is angle-bracket delimited, neither escaped, so an argument value carrying one of those
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import sys
 
-import cora_tools as ct
+import cmd_parser as ct
 
 FAILS: list[str] = []
 
@@ -108,7 +108,7 @@ def test_none_still_means_unknown_name() -> None:
 
 def main() -> int:
     print("=" * 72)
-    print("cora_tools: typed tool_call -> cmd-tag translation")
+    print("cmd_parser: typed tool_call -> cmd-tag translation")
     print("=" * 72)
     test_wellformed_roundtrip()
     test_comma_rejected()
