@@ -1,7 +1,7 @@
 """UCT search over the surrogate to estimate an oracle upper bound and extract strategies.
 
-The environment is STOCHASTIC and offers no seed or snapshot, so a plan is only meaningful as an
-expectation. Two consequences shape this driver:
+The game is STOCHASTIC, so a plan is only meaningful as an expectation over seeds. Two
+consequences shape this driver:
   * Common random numbers -- every candidate is scored on the SAME fixed seed ensemble, so
     differences between plans are signal rather than seed luck.
   * Open-loop macro plan -- a node is a per-round macro (build, hire, food rule, reloc rule) rather
@@ -12,9 +12,16 @@ expectation. Two consequences shape this driver:
 Reported bound is an estimate of E[score] for the best plan found, NOT a proof of optimality.
 """
 from __future__ import annotations
-import sys, os, math, json, random, argparse
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from arc_surrogate import ArcSurrogate, ROUNDS
+
+import argparse
+import json
+import math
+import os
+import random
+
+from oracle import RESULTS_ROOT
+from oracle.arc_surrogate import ROUNDS, ArcSurrogate
+from oracle.plans import apply, pareto_front, play
 
 BUILDS = (None, "Kitchen", "Shelter", "CaseworkSite")
 HIRES = (0, 4)
@@ -25,49 +32,32 @@ ACTIONS = [(b, h, f, r, c) for b in BUILDS for h in HIRES for f in FOOD_RULES
            for r in RELOC_RULES for c in CASEWORK]
 
 
-def apply(sim, macro):
-    """Expand a macro into the concrete per-round action the surrogate consumes."""
-    b, h, food_rule, reloc_rule, cw = macro
-    answer = []
-    for i, t in enumerate(sim.tasks):
-        if t.answered or t.resolved:
-            continue
-        if t.kind == "food":
-            answer.append((i, food_rule))
-        else:
-            answer.append((i, reloc_rule))
-    return {"build": b, "hire": h, "answer": answer, "casework": cw}
-
-
 # Solvency constraint. The reward prices spend only as spend-per-unit-FULFILLED, and deficit
 # spending is unblocked, so an unconstrained optimum happily ends deeply negative -- the budget is
 # nearly free. MIN_BUDGET lets the search ask the separate question "what is the best plan that
 # stays solvent?", which is the operationally meaningful one.
 def rollout(plan, seeds, tail_random=True, rng=None, min_budget=None, ret_budget=False):
     """Score a macro plan on the seed ensemble; unspecified rounds are filled randomly."""
+    def policy(r, sim):
+        if r < len(plan):
+            return plan[r]
+        if tail_random and min_budget is None:
+            return (rng or random).choice(ACTIONS)
+        if tail_random:
+            # Under a budget constraint the RANDOM tail is what makes every rollout look
+            # infeasible: it keeps picking paid deliveries and rapid evacuations, so a prefix
+            # can never demonstrate solvency and the feasible set looks empty. Use the cheap
+            # deterministic tail instead -- free kitchen food, shelter routing, no building.
+            return (None, 0, "kitchen10", "shelter", 1)
+        # The DETERMINISTIC tail must match the one the search assumed, or a plan that is
+        # feasible during search is scored against a different (expensive) continuation at
+        # evaluation time -- which reported a "feasible" plan ending at -262,700.
+        return ((None, 0, "kitchen10", "shelter", 1) if min_budget is not None
+                else (None, 0, "kitchen10", "motel", 1))
+
     total = 0.0; budgets = []
     for sd in seeds:
-        sim = ArcSurrogate(sd)
-        r = 0
-        while not sim.done():
-            if r < len(plan):
-                macro = plan[r]
-            elif tail_random and min_budget is None:
-                macro = (rng or random).choice(ACTIONS)
-            elif tail_random:
-                # Under a budget constraint the RANDOM tail is what makes every rollout look
-                # infeasible: it keeps picking paid deliveries and rapid evacuations, so a prefix
-                # can never demonstrate solvency and the feasible set looks empty. Use the cheap
-                # deterministic tail instead -- free kitchen food, shelter routing, no building.
-                macro = (None, 0, "kitchen10", "shelter", 1)
-            else:
-                # The DETERMINISTIC tail must match the one the search assumed, or a plan that is
-                # feasible during search is scored against a different (expensive) continuation at
-                # evaluation time -- which reported a "feasible" plan ending at -262,700.
-                macro = ((None, 0, "kitchen10", "shelter", 1) if min_budget is not None
-                         else (None, 0, "kitchen10", "motel", 1))
-            sim.step(apply(sim, macro))
-            r += 1
+        sim = play(policy, sd)
         sc = sim.score()
         if min_budget is not None and sim.budget < min_budget:
             # hard-infeasible: rank strictly below any solvent plan, scaled by how far under.
@@ -80,7 +70,7 @@ def rollout(plan, seeds, tail_random=True, rng=None, min_budget=None, ret_budget
 
 class Node:
     __slots__ = ("plan", "kids", "untried", "n", "w")
-    def __init__(self, plan, rng=None):
+    def __init__(self, plan):
         self.plan, self.kids, self.n, self.w = plan, {}, 0, 0.0
         self.untried = None          # lazily filled with a shuffled action list
 
@@ -149,22 +139,6 @@ def search(iters=4000, seeds=8, depth=ROUNDS, c=1.2, seed0=0, log_every=500, min
 
 
 
-def pareto_front(points):
-    """Non-dominated set maximising BOTH score and final budget.
-
-    A plan is on the frontier when nothing else is at least as good on both axes and strictly
-    better on one. This is the interesting object: the two searches only find the endpoints, and
-    the shape between them says how much score a solvency requirement actually costs.
-    """
-    pts = sorted(points, key=lambda t: (-t[0], -t[1]))     # best score first
-    front, best_bud = [], float("-inf")
-    for sc, bud, plan in pts:
-        if bud > best_bud:                                  # strictly better budget at lower score
-            front.append((sc, bud, plan))
-            best_bud = bud
-    return front
-
-
 def greedy_extract(root, depth=ROUNDS):
     """Most-visited path = the strategy the search actually converged on."""
     plan, node = [], root
@@ -179,7 +153,7 @@ def main():
     ap.add_argument("--iters", type=int, default=4000)
     ap.add_argument("--seeds", type=int, default=8)
     ap.add_argument("--eval-seeds", type=int, default=200)
-    ap.add_argument("--out", default="/zfsauton/scratch/cpulling/arc_benchmarks/oracle")
+    ap.add_argument("--out", default=os.path.join(RESULTS_ROOT, "oracle"))
     ap.add_argument("--min-budget", type=float, default=None,
                     help="require final budget >= this (e.g. 0 for a solvent plan)")
     a = ap.parse_args()

@@ -13,31 +13,39 @@ BELOW build-potential (2.561 vs 3.196) on a similar build mix -- the gap is its 
 Exit code is non-zero if any tolerance is exceeded, so this can gate a commit.
 """
 from __future__ import annotations
-import sys, os, json, statistics as st
-from collections import defaultdict
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from arc_surrogate import ArcSurrogate
-from mcts_oracle import apply
 
-UNITY = "/zfsauton/scratch/cpulling/arc_benchmarks/polsearch_35482"
+import os
+import statistics as st
+import sys
+from collections import defaultdict
+
+from cora import policy_family
+from cora.records import load_episodes
+from oracle import RESULTS_ROOT
+from oracle import arc_surrogate as A
+from oracle.plans import play
+
+# The recorded Unity runs the calibration compares against (August 2026 build, 32 rounds).
+UNITY = os.path.join(RESULTS_ROOT, "polsearch_35482")
+PARETO_PATH = os.path.join(RESULTS_ROOT, "pareto2_36031", "pareto_guarded")
 BUILD = {0: "CaseworkSite", 2: "Shelter", 4: "Shelter", 6: "Shelter", 8: "Shelter", 10: "Kitchen"}
 
-# The pareto strategy, replicating the guards the real policy uses: shelter only when an
-# operational shelter has a full group's worth of free beds, kitchen food only when a kitchen holds
-# stock. This case was NOT used to fit any constant -- it is the held-out check that the surrogate
-# predicts a policy it never saw.
-PARETO = {i: b for i, b in enumerate(["CaseworkSite"] * 3 + ["Shelter"] * 6 + ["Kitchen"] * 2)}
+# The pareto strategy (cora.policy_family.DEFAULT) with the same guards the Unity baseline applies
+# (policy_family.route_to_shelter / haul_from_kitchen): shelter only when operational shelters have
+# beds for the whole group, kitchen food only when kitchens hold a load. This case was NOT used to
+# fit any constant -- it is the held-out check that the surrogate predicts a policy it never saw.
+PARETO = policy_family.DEFAULT
 
 
 def _pareto(rnd, sim):
-    import arc_surrogate as _A
-    beds = sum(_A.SHELTER_BEDS - b.pop for b in sim.buildings
+    beds = sum(A.SHELTER_BEDS - b.pop for b in sim.buildings
                if b.kind == "Shelter" and b.operational(rnd))
     stock = sum(b.stock for b in sim.buildings if b.kind == "Kitchen" and b.operational(rnd))
-    b = PARETO.get(rnd)
-    return (b, 4 if b else 0,
-            "kitchen10" if stock >= 10 else "paid",
-            "shelter" if beds >= 100 else "motel", 1)
+    b = policy_family.build_schedule(PARETO).get(rnd)
+    haul = policy_family.haul_from_kitchen(PARETO, rnd, 1, stock, A.VEH_CAPACITY)
+    shelter = policy_family.route_to_shelter(PARETO, rnd, beds, A.PEOPLE_PER_RELOC)
+    return (b, 4 if b else 0, "kitchen10" if haul else "paid", "shelter" if shelter else "motel",
+            PARETO["answer_cw"])
 
 
 CASES = [
@@ -68,11 +76,7 @@ ASSERT_COMPONENTS = {"greedy", "build-potential"}
 def surrogate(fn, seeds):
     agg, ex = defaultdict(list), defaultdict(list)
     for sd in range(seeds):
-        s = ArcSurrogate(sd); r = 0
-        while not s.done():
-            a = fn(r, s)
-            s.step(apply(s, a) if a else {})
-            r += 1
+        s = play(fn, sd)
         for k, v in s.components().items():
             agg[k].append(v)
         ex["budget"].append(s.budget)
@@ -81,13 +85,9 @@ def surrogate(fn, seeds):
     return {k: st.mean(v) for k, v in agg.items()}, {k: st.mean(v) for k, v in ex.items()}
 
 
-PARETO_PATH = "/zfsauton/scratch/cpulling/arc_benchmarks/pareto2_36031/pareto_guarded/episodes.jsonl"
-
-
 def unity(name):
-    path = (PARETO_PATH if name == "PARETO_UNITY"
-            else os.path.join(UNITY, name, "episodes.jsonl"))
-    eps = [e for e in (json.loads(l) for l in open(path)) if len(e.get("rounds") or []) == 32]
+    path = PARETO_PATH if name == "PARETO_UNITY" else os.path.join(UNITY, name)
+    eps = [e for e in load_episodes(path) if e.get("terminated")]
     agg, ex = defaultdict(list), defaultdict(list)
     for e in eps:
         last = e["rounds"][-1]

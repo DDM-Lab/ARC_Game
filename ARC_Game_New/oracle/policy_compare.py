@@ -10,9 +10,9 @@ trustworthy; if it degrades in a particular corner, that corner is where the fro
 us, and the residual pattern names the missing mechanic.
 
 WHAT "AGREEMENT" MEANS HERE
-Unity has no set_seed (see UNITY_SEED_SNAPSHOT.md), so a policy's Unity result and its surrogate
-result are two samples of two different random processes; per-episode identity is impossible and
-not the target. The target is that the two engines induce the same ORDERING and the same LEVELS
+The two engines draw from different random streams, so even with both seeded a policy's Unity
+result and its surrogate result are two samples of two different random processes; per-episode
+identity is impossible and not the target. The target is that the two engines induce the same ORDERING and the same LEVELS
 over the policy family, because that is all a search actually consumes. So we report:
   * bias and MAE on the mean score -- are the levels right?
   * Pearson/Spearman across policies -- is the ranking right? (the sweep only needs the ranking)
@@ -20,21 +20,20 @@ over the policy family, because that is all a search actually consumes. So we re
 The last is the decision-relevant one and the only one the frontier's validity rests on.
 """
 from __future__ import annotations
-import sys, os, json, argparse, random, itertools
-import statistics as st
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-GRID = dict(
-    n_shelter=[0, 1, 2, 3, 4, 5, 6, 7, 8],
-    n_kitchen=[0, 1, 2, 3, 4, 5],
-    n_casework=[0, 1, 2, 3],
-    start=[0, 2],
-    spacing=[1, 2],
-    food=["kitchen10", "paid"],
-    reloc=["motel", "shelter"],
-    answer_cw=[0, 1],
-    switch=[None, 6, 10, 14, 18, 22],
-)
+import argparse
+import itertools
+import json
+import os
+import random
+import statistics as st
+
+from cora import policy_family
+from cora.records import load_episodes
+from oracle import RESULTS_ROOT
+from oracle.plans import play
+
+GRID = policy_family.GRID
 
 
 def sample_policies(n, seed=1234):
@@ -59,7 +58,7 @@ def sample_policies(n, seed=1234):
                        spacing=rng.choice(GRID["spacing"]),
                        food=rng.choice(GRID["food"]),
                        switch=rng.choice(GRID["switch"]))
-            if cfg["n_shelter"] + cfg["n_kitchen"] + cfg["n_casework"] > 15:
+            if cfg["n_shelter"] + cfg["n_kitchen"] + cfg["n_casework"] > policy_family.MAX_SITES:
                 continue
             key = json.dumps(cfg, sort_keys=True)
             if key in seen:
@@ -69,15 +68,10 @@ def sample_policies(n, seed=1234):
 
 
 def eval_surrogate(cfg, seeds):
-    from arc_surrogate import ArcSurrogate
-    from mcts_oracle import apply
-    from pareto_sweep import make_plan
-    macro = make_plan(**cfg)
+    macro = policy_family.macro(cfg)
     sc, bud, comps = [], [], []
     for sd in seeds:
-        s = ArcSurrogate(sd); r = 0
-        while not s.done():
-            s.step(apply(s, macro(r))); r += 1
+        s = play(lambda rnd, sim: macro(rnd), sd)
         sc.append(s.score()); bud.append(s.budget); comps.append(s.components())
     keys = set().union(*[set(c) for c in comps])
     return dict(score=st.mean(sc), budget=st.mean(bud),
@@ -86,15 +80,15 @@ def eval_surrogate(cfg, seeds):
 
 
 def read_unity(path):
-    """Aggregate one Unity run dir (episodes.jsonl). Episodes short of 32 rounds are dropped: a
-    crashed episode is not a low score, and averaging it in would be a fabricated data point."""
-    eps = [e for e in (json.loads(l) for l in open(path)) if len(e.get("rounds") or []) == 32]
+    """Aggregate one Unity run (episodes.jsonl). Only games played to the end count: a crashed or
+    truncated episode is not a low score, and averaging it in would be a fabricated data point."""
+    eps = [e for e in load_episodes(path) if e.get("terminated")]
     if not eps:
         return None
     sc, bud, comps = [], [], []
     for e in eps:
         last = e["rounds"][-1]
-        sc.append(last.get("score", e["summary"]["totalReward"]))
+        sc.append(e["summary"].get("finalScore", e["summary"]["totalReward"]))
         bud.append(last["budget"]); comps.append(last.get("comps") or {})
     keys = set().union(*[set(c) for c in comps]) if comps else set()
     return dict(score=st.mean(sc), budget=st.mean(bud), n=len(eps),
@@ -123,10 +117,11 @@ def main():
     ap.add_argument("mode", choices=["sample", "surrogate", "collect"])
     ap.add_argument("--n", type=int, default=100)
     ap.add_argument("--seeds", type=int, default=200)
-    ap.add_argument("--dir", default="/zfsauton/scratch/cpulling/arc_benchmarks/agree100")
-    ap.add_argument("--unity-root", default="/zfsauton/scratch/cpulling/arc_benchmarks/agree100/unity")
+    ap.add_argument("--dir", default=os.path.join(RESULTS_ROOT, "agree100"))
+    ap.add_argument("--unity-root", default=None, help="default: <dir>/unity")
     a = ap.parse_args()
     os.makedirs(a.dir, exist_ok=True)
+    a.unity_root = a.unity_root or os.path.join(a.dir, "unity")
     pf = os.path.join(a.dir, "policies.json")
 
     if a.mode == "sample":

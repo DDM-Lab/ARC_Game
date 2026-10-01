@@ -1,11 +1,18 @@
-"""Fast seeded surrogate of the ARC_Game 32-round scenario, for offline search.
+"""Fast seeded surrogate of the ARC_Game scenario, for offline search.
+
+STATUS: calibrated on the August 2026 build (32 rounds, $3,000 start, 3 vehicles, 20-pack
+kitchens). The game's rules have changed since (parameter sheet: $8,000 start, $2,000 daily grant,
+5 vehicles, 200-pack kitchens, 15 starting workforce units; 36 decisions; probabilistic food
+requests; Unity's own satisfaction/efficiency score). Until it is ported and re-validated
+(docs/ARCHITECTURE.md, migration status) its numbers describe the old game.
 
 WHY THIS EXISTS
-Unity is the ground truth but cannot support tree search: the gym protocol has no state
-snapshot/restore and no seed, and the scenario is stochastic (27 distinct task streams across 30
-noop episodes, diverging by round 5). So "the same node" visited twice is two different worlds and
-MCTS statistics are meaningless. This surrogate is seeded and runs ~1e4 rollouts/sec, so the search
-happens here and the winning plans are then REPLAYED against Unity to measure the gap.
+Unity is the ground truth, and it can now be seeded (-seed, reset_game) and snapshotted
+(save_state / load_state), but a Unity round costs ~1000x a surrogate round. Wide searches (the
+Pareto sweep evaluates ~40k policies x 60 seeds; MCTS needs ~1e5 rollouts) run here at ~1e4
+rollouts/sec, and the winning plans are then REPLAYED against Unity to measure the gap. The
+per-round dynamics below deliberately re-implement the game in flat, fast Python rather than
+sharing the dict-based core in cora/.
 
 EVERY CONSTANT IS SOURCED, NOT GUESSED
   reward             oracle/legacy_score.py: the pre-export Python score (the surrogate's metrics
@@ -68,11 +75,11 @@ KNOWN DIVERGENCES (why the bound is indicative, not exact)
 Validate with oracle/validate_surrogate.py before trusting any number.
 """
 from __future__ import annotations
-import random, sys, os
-from dataclasses import dataclass, field
+import os
+import random
+from dataclasses import dataclass
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from legacy_score import compute_legacy_score_components as compute_score_components
+from oracle.legacy_score import compute_legacy_score_components as compute_score_components
 
 ROUNDS, ROUNDS_PER_DAY = 32, 4
 FLEET = 3
@@ -86,7 +93,6 @@ SHELTER_BEDS, CASEWORK_CAP = 100, 4    # CASEWORK_CAP = people processed per ROU
 MAX_SITES = 15
 MOTEL_PER_DAY = 200
 PAID_FOOD_COST, PAID_FOOD_PACKS = 1000, 10
-PAID_RELOC_COST = 3000
 FOOD_DAYS = (2, 3, 4, 5, 6, 7, 8)
 FOOD_PER_DAY = 3
 # ── ALL OF THE BELOW MEASURED ON THE CURRENT (Aug-14) BINARY ────────────────────────────────
@@ -126,7 +132,7 @@ STORM_PROB = 4.3 / 6.0
 # Measured on build-potential: requests begin ~1 round after housing starts, cluster in rounds
 # 6-15, and processing visibly DRAINS housed population (472 -> 173 over an episode).
 CASEWORK_DELAY = 2   # rounds before a housed cohort's casework request appears
-                     # 6 fits the observables -- score, casework rate and final budget -- best)
+                     # (2 fits the observables -- score, casework rate and final budget -- best)
 # Every housed resident eventually requests casework (fraction 1.0); throughput is what limits the
 # term. CASEWORK_CAP is people processed per staffed site per answered round -- FITTED, because
 # ClientStayTracker.RemoveClientsByQuantity takes its quantity from the task's choice and the task
@@ -135,7 +141,6 @@ CASEWORK_DELAY = 2   # rounds before a housed cohort's casework request appears
 # casework_processing_sat 0.587 vs 0.541 and cost_lodging 0.180 vs 0.122 -- they partially cancel,
 # so the AGGREGATE matches better than the individual terms. Treat per-component surrogate numbers
 # as indicative and the score as calibrated.
-CASEWORK_FRACTION = 1.0
 # Casework requests come predominantly from SHELTER residents; the motel contributes a much smaller
 # base rate. ClientStayTracker.RegisterClientArrival is driven by shelter arrivals (its motel
 # support was a later fix). Measured across Unity policies, request COUNT tracks shelter population
@@ -207,6 +212,9 @@ class Task:
     deadline: int
     answered: bool = False
     resolved: bool = False
+    delivered: int = 0      # people (or 1 for food) delivered so far
+    shipped: int = 0        # relocation people dispatched so far
+    reissues: int = 0       # times this relocation has been re-issued after resolving short
 
 
 @dataclass
@@ -299,11 +307,8 @@ class ArcSurrogate:
     # {"build": None|'Kitchen'|'Shelter'|'CaseworkSite',
     #  "hire": int,
     #  "answer": [(task_index, option)] where option in
-    #            food : 'kitchen10' | 'kitchen20' | 'paid'
-    #            reloc: 'motel' | 'shelter' | 'paid_motel'}
-    def legal_actions(self):
-        acts = [None, "Kitchen", "Shelter", "CaseworkSite"]
-        return acts
+    #            food : 'kitchen10' | 'paid'
+    #            reloc: 'motel' | 'shelter'}
 
     def step(self, action):
         self._spawn()
@@ -364,7 +369,7 @@ class ArcSurrogate:
                 # fired and the frontier saw shelter-heavy play as costless.
                 ppl -= left
             if ppl > 0:
-                task.delivered = getattr(task, "delivered", 0) + ppl
+                task.delivered += ppl
                 self._queue_casework(ppl, dest)
 
         # sheltered residents (and their workers) eat; the motel does not feed anyone
@@ -401,8 +406,7 @@ class ArcSurrogate:
                     self.budget -= PAID_FOOD_COST
                     t.answered = True; self._resolve(t, delivered=1)
                 else:
-                    loads = 2 if opt == "kitchen20" else 1
-                    need = loads * VEH_CAPACITY
+                    loads, need = 1, VEH_CAPACITY      # one vehicle load per food request
                     # A delivery draws from ONE source building (DeliverySystem picks a single
                     # source), so the order needs `need` packs in a SINGLE kitchen -- pooling stock
                     # across kitchens made kitchen food far too available. Measured: Unity's pareto
@@ -420,32 +424,25 @@ class ArcSurrogate:
             else:
                 beds = sum(SHELTER_BEDS - b.pop for b in self.buildings
                            if b.kind == "Shelter" and b.operational(self.rnd))
-                if opt == "paid_motel":
-                    # immediate: uses NO vehicle, so it is never fleet-limited
-                    self.budget -= PAID_RELOC_COST
-                    self.m.lodgingSpend += PAID_RELOC_COST
-                    self.motel_pop += t.people
-                    t.answered = True; self._resolve(t, delivered=t.people)
-                    self._queue_casework(t.people, 'motel')
-                elif opt in ("shelter", "motel"):
+                if opt in ("shelter", "motel"):
                     # DeliverySystem splits into ceil(people / capacity) loads, each needing its
                     # own free vehicle. Loads that cannot be dispatched this round wait; the task
                     # is credited for what actually ships.
                     dest = opt if not (opt == "shelter" and beds <= 0) else "motel"
-                    remaining = min(t.people - getattr(t, "shipped", 0), self.relocatable)
+                    remaining = min(t.people - t.shipped, self.relocatable)
                     unit = SHELTER_LOAD_COST if dest == "shelter" else 1.0
                     loads = min(-(-remaining // PEOPLE_PER_LOAD), int(free_veh / unit))
                     if loads > 0:
                         free_veh -= int(round(loads * unit))
                         shipped = min(remaining, loads * PEOPLE_PER_LOAD)
                         self.inflight.append((self.rnd + 1, dest, shipped, t))
-                        t.shipped = getattr(t, "shipped", 0) + shipped
+                        t.shipped += shipped
                         self.relocatable = max(0, self.relocatable - shipped)
 
         # expiry: books demand into the denominator with zero numerator (ExpireTask semantics)
         for t in self.tasks:
             if not t.resolved and self.rnd >= t.deadline:
-                self._resolve(t, delivered=getattr(t, "delivered", 0))
+                self._resolve(t, delivered=t.delivered)
 
         # Casework REQUESTS surface as tasks. Processing happens only when the agent ANSWERS one
         # and a staffed CaseworkSite exists -- RewardMetricsTracker.RecordCaseworkProcessed is
@@ -519,7 +516,7 @@ class ArcSurrogate:
     def _queue_casework(self, people, dest="shelter"):
         # Only a share of a cohort requests casework, and it arrives ~2 rounds after housing --
         # measured: requests begin the round after housing starts and cluster in rounds 6-15.
-        w = CASEWORK_FRACTION * (MOTEL_CASEWORK_WEIGHT if dest == "motel" else 1.0)
+        w = MOTEL_CASEWORK_WEIGHT if dest == "motel" else 1.0
         self.pending_casework.append((self.rnd + CASEWORK_DELAY, int(people * w)))
         self.pending_depart.append((self.rnd + DEPART_DELAY, people))
 
@@ -540,7 +537,7 @@ class ArcSurrogate:
         # under-counts it (the held-out pareto case then reads +0.211 instead of -0.009). Unity sits
         # between: ~10.3 relocation tasks/episode against 6.1 originals, i.e. roughly one re-issue
         # per failed task.
-        chain = getattr(t, "reissues", 0)
+        chain = t.reissues
         if (t.kind == "reloc" and delivered < t.people and self.rnd + 4 < ROUNDS
                 and chain < RELOC_MAX_REISSUES):
             short = t.people - delivered
@@ -560,7 +557,7 @@ class ArcSurrogate:
             # what the agent does. Anything still open at the horizon resolves unfulfilled.
             for t in self.tasks:
                 if not t.resolved:
-                    self._resolve(t, delivered=getattr(t, 'delivered', 0))
+                    self._resolve(t, delivered=t.delivered)
             return True
         return False
 

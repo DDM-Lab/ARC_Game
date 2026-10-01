@@ -128,7 +128,7 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 | One turn record for every front end (now: router `episode_logger.py`, benchmark round record) | pending, with the router migration |
 | `bench/` split | done |
 | Baselines act through tool calls (`execute_indices` retired) | done |
-| Search wing: `oracle/` as a package on `cora/` (policy family, records) | pending |
+| Search wing: `oracle/` as a package on `cora/` (policy family, records) | done |
 | Surrogate on the new rules (`cora/params`, Unity's score), parity restored | pending |
 | `router/` split, legacy actors retired | pending |
 | `CoraEnv` for RL; thin Verlog adapter | pending |

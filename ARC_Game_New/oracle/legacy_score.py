@@ -5,14 +5,7 @@ decided; nothing outside oracle/ may import it — the platform's score is cora.
 """
 
 REWARD_WEIGHTS = {
-    # ── Unity formula (DEFAULT, 2026-09-23) ────────────────────────────────────────
-    # score = w_sat * satisfaction + w_eff * efficiency, each on 0..1 (Unity's 0..1000 / 1000).
-    # These are the two numbers the daily report shows a human, so the RL reward, the
-    # benchmark and the router all optimise what a person playing the game sees. Unity has
-    # no single combined score; equal weights are the one choice made here.
-    "w_sat": 1.0,
-    "w_eff": 1.0,
-    # ── Legacy formula (only for episodes recorded before Unity exported its score) ──
+    # (the platform's score is cora.scoring; these weights only drive the formula below)
     # Satisfaction (needs-met ratios are clamped to [0,1])
     "w_food": 1.0,
     "w_lodging": 1.0,
