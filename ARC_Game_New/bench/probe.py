@@ -44,26 +44,26 @@ Run the SAME states under both encodings to make that an ablation rather than an
 anecdote. `--encodings compact,json` re-queries every state once per encoding.
 
 USAGE
-  ./.venv/bin/python probe_actions.py --model qwen3:4b --rounds 6 --samples 1 \
+  python -m bench.probe --model qwen3:4b --rounds 6 --samples 1 \
       --encodings compact --out probe_smoke            # harness smoke test (~7 min)
 
-  ./.venv/bin/python probe_actions.py --model qwen3:4b --rounds 16 --samples 3 \
+  python -m bench.probe --model qwen3:4b --rounds 16 --samples 3 \
       --encodings compact,json --out probe_full        # the experiment
 
 Emits <out>/turns.jsonl (one record per turn) and prints a per-action-type summary.
 """
 import argparse
 import json
-import os
-import sys
 import time
 from pathlib import Path
 
 from cora.llm import ProviderSpec, client_for
 
-import benchmark_models as bm
+from bench.baselines import POLICIES
+from bench.llm import LocalOptions, ask_tools
 from cora import executor
 from cora.env import GameEnv
+from cora.env.unity_process import default_exe
 from cora import prompts
 from cora.observation import observe
 
@@ -115,7 +115,7 @@ def main():
     ap.add_argument("--samples", type=int, default=1, help="LLM queries per state per encoding")
     ap.add_argument("--encodings", default="compact", help="comma list: compact,json,delta")
     ap.add_argument("--reference", default="combined",
-                    choices=["combined", "greedy", "build-potential", "choice-lookahead"])
+                    choices=list(POLICIES))
     ap.add_argument("--base-url", default="http://localhost:11434/v1")
     ap.add_argument("--api-key", default="ollama")
     ap.add_argument("--max-tokens", type=int, default=6000)
@@ -133,22 +133,18 @@ def main():
     # Local-server knobs: without these the tools path silently uses its own 2000-token
     # cap and lets Ollama auto-enable thinking, which truncates this model mid-prose
     # before it ever emits a tool call.
-    bm._set_local_reasoning_effort(a.reasoning_effort)
-    bm._set_local_max_tokens(a.max_tokens)
+    local = LocalOptions(reasoning_effort=a.reasoning_effort, max_tokens=a.max_tokens)
     client = client_for(ProviderSpec("openai", a.base_url, None), a.api_key)
 
     manual_transfers = (a.transfers == "manual")
     system_text = prompts.render(prompts.load_pack(a.prompt), manual_transfers=manual_transfers)
-    env = GameEnv(unity_exe_path=bm.HEADLESS_EXE, unity_port=a.port,
+    env = GameEnv(unity_exe_path=default_exe(), unity_port=a.port,
                         auto_start_unity=True, max_episode_steps=a.rounds + 5,
                         unity_log_path=str(outdir / "unity.log"),
                         manual_transfers=manual_transfers)
-    # Exact function names as dispatched in benchmark_models.run_episode, so the reference
-    # here is the same policy the episode benchmark scores.
-    ref_fn = {"combined": lambda e, r: bm.combined_decision(e, r, a.rounds),
-              "greedy": lambda e, r: bm.greedy_decision(e),
-              "build-potential": lambda e, r: bm.potential_decision(e, r, a.rounds),
-              "choice-lookahead": lambda e, r: bm.improved_rules_based_decision(e, r, a.rounds)}[a.reference]
+    # The same policy the episode benchmark scores under that name.
+    policy = POLICIES[a.reference]
+    ref_fn = lambda e, r: policy(e, r, a.rounds)
 
     turns_path = outdir / "turns.jsonl"
     fout = open(turns_path, "w")
@@ -168,9 +164,8 @@ def main():
                 for s in range(a.samples):
                     t1 = time.time()
                     try:
-                        dec, raw, _, _, _ = bm.ask_tools(
-                            client, a.model, state, env, system_text, None, a.reasoning_effort,
-                            None, enc, None, None)
+                        dec, raw, _, _, _ = ask_tools(
+                            client, a.model, state, env, system_text, None, None, enc, None, None, local)
                         # Resolve the calls against the live state without executing them.
                         results, resolver = executor.plan_turn(dec["tool_calls"], env)
                         parsed_ok = not any(r.malformed for r in results)

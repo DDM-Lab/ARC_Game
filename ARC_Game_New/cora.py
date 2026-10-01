@@ -13,7 +13,7 @@ Run it bare for a guided menu, or use a subcommand directly:
 
 This is a THIN front-end. Validation is bundle.load_bundle + bundle.config_warnings, the same
 functions the upload endpoint runs; plugin checks shell out to cora_plugin.py; SFT conversion
-to export_sft.py. Nothing here reimplements a rule, so the CLI and the server can never
+to bench/export_sft.py. Nothing here reimplements a rule, so the CLI and the server can never
 disagree about whether a bundle is acceptable.
 
 Config comes from the environment (or the flags):
@@ -257,7 +257,7 @@ def cmd_data(args) -> int:
 
 
 def cmd_sft(args) -> int:
-    argv = [sys.executable, "export_sft.py", "--from-sessions", args.corpus, "--out", args.out]
+    argv = [sys.executable, "-m", "bench.export_sft", "--from-sessions", args.corpus, "--out", args.out]
     if args.agent:
         argv += ["--agent", args.agent]
     if args.min_reward is not None:

@@ -1,32 +1,97 @@
-"""
-Export benchmark episodes to chat-format JSONL for offline finetuning / SFT.
+"""Export episodes to chat-format JSONL for finetuning (SFT / behavior cloning).
 
-Each saved round is a complete (prompt -> completion) example: the system prompt,
-the exact user observation the model saw, and the model's full response. This
-reconstructs them into OpenAI-style chat messages, one line per step.
+Benchmark episodes (python -m bench): one line per decision, in the OpenAI fine-tuning format with
+tools — the system prompt, the exact user message the policy saw (rebuilt with the same function
+the benchmark uses), the assistant's tool calls, and the tool schema:
+
+    {"messages": [system, user, assistant{content, tool_calls}], "tools": [...], "meta": {...}}
+
+Only typed tool calls are exported (LLM episodes, and baselines once they act through tools);
+records whose calls are menu indices are skipped. Multi-turn history (--history > 1) is exported
+one decision at a time.
 
 Usage:
-  python export_sft.py <results_dir> [--out FILE] [--only-parsed] [--min-reward X]
-                       [--min-episode-reward X]
+  python -m bench.export_sft <results_dir> [--out FILE] [--only-parsed] [--min-reward X]
+                             [--min-episode-score X] [--with-reasoning]
 
-  --only-parsed         keep only steps whose response parsed as valid JSON
-  --min-reward X        keep only steps with per-step reward >= X
-  --min-episode-reward  keep only steps from episodes whose total reward >= X
-                        (behavior-cloning on the better trajectories)
+  --only-parsed          keep only decisions whose calls were all well-formed
+  --min-reward X         keep only decisions whose round reward >= X
+  --min-episode-score X  keep only decisions from episodes whose final score >= X
+  --with-reasoning       include the captured reasoning trace as reasoning_content
 
-Output line: {"messages":[{role,content}x3], "meta":{model,episode,round,reward,...}}
+Live router sessions (--from-sessions) export the officers' turns instead.
 """
-import json, argparse
+import argparse
+import json
 from pathlib import Path
 
+from bench.llm import user_message_text
+from cora.records import iter_episodes
+from cora.tools import openai_tools
 
-def user_content(obs):
-    # must match benchmark_models.ask(): "State:\n" + json(state) + "\n\nJSON decision:"
-    return "State:\n" + json.dumps(obs) + "\n\nJSON decision:"
+
+def _menu_decision(call):
+    """A decision recorded as a menu index or a raw task/choice pair, not a tool call."""
+    args = call.get("args") or {}
+    return "index" in args or "taskId" in args
+
+
+def _assistant_message(rd, with_reasoning):
+    calls = rd.get("calls") or []
+    msg = {"role": "assistant", "content": rd.get("raw") or None,
+           "tool_calls": [{"id": c.get("id") or f"call_{i}", "type": "function",
+                           "function": {"name": c["tool"], "arguments": json.dumps(c.get("args") or {})}}
+                          for i, c in enumerate(calls)]}
+    if with_reasoning and rd.get("reasoningTrace"):
+        msg["reasoning_content"] = rd["reasoningTrace"]
+    return msg
+
+
+def export_episodes(args):
+    out = Path(args.out) if args.out else Path(args.results_dir) / "sft.jsonl"
+    n_ep = n_steps = n_kept = 0
+    with open(out, "w") as ofh:
+        for r in iter_episodes(args.results_dir):
+            rounds = r.get("rounds") or []
+            if r.get("error") or not rounds:
+                continue
+            n_ep += 1
+            score = (r.get("summary") or {}).get("finalScore")
+            if args.min_episode_score is not None and (score is None or score < args.min_episode_score):
+                continue
+            tools = openai_tools(manual_transfers=r.get("transfers") == "manual")
+            encoding = r.get("obs_encoding") or "compact"
+            prev = None
+            for rd in rounds:
+                n_steps += 1
+                obs, prev_obs = rd.get("obs"), prev
+                prev = obs
+                if obs is None or any(_menu_decision(c) for c in rd.get("calls") or []):
+                    continue                    # no observation, or menu decisions (not tool calls)
+                if args.only_parsed and rd.get("parsed_ok") is False:
+                    continue
+                if args.min_reward is not None and (rd.get("reward") is None or rd["reward"] < args.min_reward):
+                    continue
+                ofh.write(json.dumps({
+                    "messages": [
+                        {"role": "system", "content": r.get("system_prompt", "")},
+                        {"role": "user", "content": user_message_text(obs, encoding, prev_obs)},
+                        _assistant_message(rd, args.with_reasoning),
+                    ],
+                    "tools": tools,
+                    "meta": {"model": r["model"], "policy": r.get("policy"), "episode": r["episode"],
+                             "seed": r.get("seed"), "round": rd["r"], "reward": rd.get("reward"),
+                             "parsed_ok": rd.get("parsed_ok"), "episode_score": score,
+                             "prompt_sha": r.get("prompt_sha"),
+                             "calls": [{"tool": c.get("tool"), "status": c.get("status")}
+                                       for c in rd.get("calls") or []]},
+                }) + "\n")
+                n_kept += 1
+    print(f"{n_ep} episodes, {n_steps} decisions seen, {n_kept} written -> {out}")
 
 
 # ── Live-session (router) corpus ─────────────────────────────────────────────
-# The benchmark path above consumes benchmark_models' episodes.jsonl. LIVE games played
+# The benchmark path above consumes the benchmark's episodes.jsonl. LIVE games played
 # through the router produce a different artifact: per-session JSONL event logs, pulled
 # with `GET /my/sessions/export` (ndjson or tar.gz). Their training-relevant records are
 # `agent_turn` rows — one per officer turn, carrying the officer's own filtered
@@ -118,9 +183,9 @@ def export_sessions(args):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Export CORA rollouts to chat-format JSONL for SFT. Two sources: a "
-                    "benchmark results dir (default), or live router session logs "
-                    "(--from-sessions), i.e. what GET /my/sessions/export returns.")
+        description="Export CORA episodes to chat-format JSONL for SFT. Two sources: a benchmark "
+                    "results dir (default), or live router session logs (--from-sessions), i.e. "
+                    "what GET /my/sessions/export returns.")
     ap.add_argument("results_dir", nargs="?", default=None,
                     help="benchmark results dir containing episodes.jsonl")
     ap.add_argument("--from-sessions", dest="source", default=None,
@@ -131,49 +196,15 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--only-parsed", action="store_true")
     ap.add_argument("--min-reward", type=float, default=None)
-    ap.add_argument("--min-episode-reward", type=float, default=None)
+    ap.add_argument("--min-episode-score", type=float, default=None)
+    ap.add_argument("--with-reasoning", action="store_true")
     args = ap.parse_args()
-
     if args.source:
         export_sessions(args)
-        return
-    if not args.results_dir:
+    elif args.results_dir:
+        export_episodes(args)
+    else:
         ap.error("give a benchmark results_dir, or --from-sessions <file|dir|tar.gz>")
-
-    src = Path(args.results_dir) / "episodes.jsonl"
-    out = Path(args.out) if args.out else Path(args.results_dir) / "sft.jsonl"
-    n_steps = n_kept = n_ep = 0
-    with open(src) as fh, open(out, "w") as ofh:
-        for line in fh:
-            r = json.loads(line)
-            rounds = r.get("rounds") or []
-            if not rounds:
-                continue
-            n_ep += 1
-            sys_prompt = r.get("system_prompt", "")
-            ep_reward = (r.get("summary") or {}).get("totalReward")
-            if args.min_episode_reward is not None and (ep_reward is None or ep_reward < args.min_episode_reward):
-                continue
-            for rd in rounds:
-                n_steps += 1
-                if "obs" not in rd or not rd.get("raw"):
-                    continue  # pre-finetuning-logging records lack obs/full raw
-                if args.only_parsed and not rd.get("parsed_ok"):
-                    continue
-                if args.min_reward is not None and (rd.get("reward") is None or rd["reward"] < args.min_reward):
-                    continue
-                ofh.write(json.dumps({
-                    "messages": [
-                        {"role": "system", "content": sys_prompt},
-                        {"role": "user", "content": user_content(rd["obs"])},
-                        {"role": "assistant", "content": rd["raw"]},
-                    ],
-                    "meta": {"model": r["model"], "episode": r["episode"], "round": rd["r"],
-                             "reward": rd.get("reward"), "parsed_ok": rd.get("parsed_ok"),
-                             "episode_reward": ep_reward, "condition": "impacts" if r.get("show_impacts") else "no_impacts"},
-                }) + "\n")
-                n_kept += 1
-    print(f"{n_ep} episodes, {n_steps} steps seen, {n_kept} steps written -> {out}")
 
 
 if __name__ == "__main__":

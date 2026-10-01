@@ -4,16 +4,18 @@ them on SHARED axes (one line/bar per model) so tiers/models compare directly.
 Deliberately compact — two figures, no per-model subplot explosion.
 
 Usage:
-  python plot_compare.py <dir> [<dir> ...] --out DIR [--title T]
+  python -m bench.compare <dir> [<dir> ...] --out DIR [--title T]
 
   compare_summary.png       per-model bars: reward, final satisfaction, food%/lodging%
   compare_trajectories.png  budget / satisfaction / cumulative-score, one mean line per model
 """
-import sys, json, argparse, statistics as st
+import argparse, statistics as st
 from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+from cora.records import load_episodes
 
 
 def short(m):
@@ -36,10 +38,8 @@ def main():
     # pool ok episodes by model across all dirs
     by = {}
     for d in args.dirs:
-        for line in open(Path(d) / "episodes.jsonl"):
-            r = json.loads(line)
-            if r.get("summary") and r.get("rounds") and not r.get("error"):
-                by.setdefault(r["model"], []).append(r)
+        for r in load_episodes(d):
+            by.setdefault(r["model"], []).append(r)
     # order by mean reward (best first)
     models = sorted(by, key=lambda m: -(mean([r["summary"]["totalReward"] for r in by[m]]) or -9e9))
     labels = [short(m) for m in models]

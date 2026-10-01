@@ -3,7 +3,7 @@
 #
 # WHY NOT veRL FOR THIS
 # veRL's rollout is vLLM serving local HF weights; it has no API-model path, so it cannot
-# benchmark Claude/GPT/Gemini at all. benchmark_models.py speaks OpenAI-compatible HTTP, so
+# benchmark Claude/GPT/Gemini at all. The benchmark (python -m bench) speaks OpenAI-compatible HTTP, so
 # pointing it at a local `vllm serve` covers open weights AND the CMU gateway covers frontier
 # models — same prompt (cora.prompts packs), same obs encoder, same tool schema, same episode loop.
 # veRL stays for RL TRAINING, where its loop earns its keep.
@@ -45,7 +45,7 @@ PY=${PY:-./.venv/bin/python}
 [ -x "$PY" ] || PY=python3
 
 EPISODES=${EPISODES:-5}
-ROUNDS=${ROUNDS:-16}
+ROUNDS=${ROUNDS:-40}   # decision cap; a full game is 36 decisions and ends itself
 # One Unity headless process per worker, each on its own TCP port (see run_episode's port_pool).
 # Unity is the CPU bottleneck for API models, so WORKERS ~ cpus-per-task is the right scale.
 WORKERS=${WORKERS:-8}
@@ -161,7 +161,7 @@ fi
 # rather than burn its whole wall-clock.
 STALL_MIN=${STALL_MIN:-30}
 ( while sleep 120; do
-    pid=$(pgrep -f "benchmark_models.py" | head -1); [ -z "$pid" ] && exit 0
+    pid=$(pgrep -f "python -u -m bench" | head -1); [ -z "$pid" ] && exit 0
     newest=$(ls -t "$OUT"/*/episodes.jsonl "$OUT"/episodes.jsonl 2>/dev/null | head -1)
     [ -z "$newest" ] && continue
     age=$(( ( $(date +%s) - $(stat -c %Y "$newest" 2>/dev/null || echo 0) ) / 60 ))
@@ -174,7 +174,7 @@ STALL_MIN=${STALL_MIN:-30}
 WATCHDOG=$!
 
 echo "=== models: $MODELS"
-$PY -u benchmark_models.py --models "$MODELS" \
+$PY -u -m bench --models "$MODELS" \
     --episodes "$EPISODES" --rounds "$ROUNDS" --workers "$WORKERS" \
     "${FMT[@]}" "${EXTRA[@]}" \
     --out "$OUT" --base-port "$BASE_PORT" ${SEED:+--seed "$SEED"} ${MAP_CONFIG:+--map-config "$MAP_CONFIG"}

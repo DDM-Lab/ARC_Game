@@ -2,34 +2,26 @@
 Visualize ARC gym benchmark results.
 
 Usage:
-  python plot_benchmark.py <results_dir> [<results_dir2> ...] [--out DIR] [--label A,B]
+  python -m bench.plots <results_dir> [<results_dir2> ...] [--out DIR] [--label A,B]
 
-Each results_dir holds an episodes.jsonl from benchmark_models.py. Passing more than
+Each results_dir holds an episodes.jsonl from python -m bench. Passing more than
 one dir overlays them as conditions (e.g. no-impacts vs impacts ablation). Produces:
   - summary.png            per-model bars: reward, satisfaction, food%/lodging%, mistakes
   - budget_trajectories.png  per-model budget over rounds (the death-spiral)
   - satisfaction_trajectories.png
 """
-import sys, json, argparse, statistics as st
+import argparse, statistics as st
 from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from cora.records import load_episodes
+
 
 def short(m):
     return (m.split("/")[-1].replace("us.anthropic.", "").replace("-20251001-v1:0", "")
             .replace(":0", ""))
-
-
-def load(d):
-    recs = []
-    p = Path(d) / "episodes.jsonl"
-    for line in open(p):
-        r = json.loads(line)
-        if r.get("summary") and not r.get("error"):
-            recs.append(r)
-    return recs
 
 
 def mean(xs):
@@ -46,7 +38,7 @@ def main():
 
     labels = (args.labels.split(",") if args.labels
               else [Path(d).name.replace("cheap_20ep_", "").replace("cheap_20ep", "run") for d in args.dirs])
-    conds = [(labels[i], load(d)) for i, d in enumerate(args.dirs)]
+    conds = [(labels[i], load_episodes(d)) for i, d in enumerate(args.dirs)]
     outdir = Path(args.out or args.dirs[0]) / "plots"
     outdir.mkdir(parents=True, exist_ok=True)
 

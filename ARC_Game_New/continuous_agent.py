@@ -747,7 +747,7 @@ def _openai_tool_step(messages, tools, agent_cfg) -> Dict[str, Any]:
     #
     # Opt-in per agent, because it is not universally safe: a hosted provider that does not
     # know the field rejects the request outright, and on Ollama the same switch was measured
-    # to strip thinking from `content` WITHOUT reducing generation (benchmark_models.py) --
+    # to strip thinking from `content` WITHOUT reducing generation (bench/llm.py) --
     # i.e. it buys correctness there and speed here. Server-dependent, so the config decides.
     extra = {}
     ctk = agent_cfg.get("chat_template_kwargs")

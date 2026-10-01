@@ -10,11 +10,11 @@ The worldRect lets the renderer overlay world-space facilities on the same axes.
 import json, os, sys
 from cora.env import GameEnv
 
-RENDER_EXE = "Build/HeadlessRender/macOS/ARC_HeadlessRender.app/Contents/MacOS/ARC_DisasterSimulation"
+from cora.env.unity_process import default_exe
 
 
 def main():
-    env = GameEnv(unity_exe_path=RENDER_EXE, unity_port=10937,
+    env = GameEnv(unity_exe_path=default_exe(render=True), unity_port=10937,
                         auto_start_unity=True, max_episode_steps=4)
     env.reset()
     resp = env.request({"type": "map_grid"})

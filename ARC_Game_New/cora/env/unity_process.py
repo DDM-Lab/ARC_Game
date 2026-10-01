@@ -15,9 +15,30 @@ import os
 import signal
 import socket
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Optional
+
+_EXE_NAME = "Collaborative Operations And Resource Management with Agentic AI"   # Unity productName
+_BUILDS = {   # (headless server build, graphics-capable render build) per platform, from the repo root
+    "darwin": (f"Build/Headless/macOS/ARC_Headless.app/Contents/MacOS/{_EXE_NAME}",
+               f"Build/HeadlessRender/macOS/ARC_HeadlessRender.app/Contents/MacOS/{_EXE_NAME}"),
+    "linux": ("Build/Headless/Linux/ARC_Headless.x86_64", "Build/HeadlessRender/Linux/ARC_HeadlessRender.x86_64"),
+    "win": ("Build/Headless/Windows/ARC_Headless.exe", "Build/HeadlessRender/Windows/ARC_HeadlessRender.exe"),
+}
+
+
+def default_exe(render: bool = False) -> str:
+    """The headless build to launch: ARC_HEADLESS_EXE / ARC_RENDER_EXE if set, else this platform's
+    build under Build/ (HeadlessBuildScript.BuildMacOS / BuildLinux / BuildMacOSRender). The render
+    build keeps graphics, for camera frames; on Linux it needs a virtual display (xvfb-run)."""
+    env = os.environ.get("ARC_RENDER_EXE" if render else "ARC_HEADLESS_EXE")
+    if env:
+        return env
+    plat = "win" if sys.platform.startswith("win") else "linux" if sys.platform.startswith("linux") else "darwin"
+    return str(Path(__file__).resolve().parents[2] / _BUILDS[plat][render])
+
 
 _REGISTRY = Path(os.environ.get("ARC_GAME_UNITY_REGISTRY")
                  or f"/tmp/arc_game_unity_pgids_{os.getpid()}.txt")

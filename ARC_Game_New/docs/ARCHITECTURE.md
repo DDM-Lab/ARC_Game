@@ -1,6 +1,6 @@
 # CORA research platform — architecture
 
-CORA is a disaster-response game (Unity) plus a Python platform that lets three kinds of
+CORA is a disaster-response game (Unity) plus a Python platform that lets four kinds of
 player use the **same game through the same interface**:
 
 | Front end | Who plays | How it reaches the game |
@@ -8,8 +8,9 @@ player use the **same game through the same interface**:
 | **Benchmark** (`bench/`) | outside LLMs (API or self-hosted), baseline policies | headless Unity over TCP (the "gym") |
 | **RL** (`rl/` + a thin trainer adapter) | policies being trained | headless Unity over TCP |
 | **GUI with LLM officers** (`router/`) | a human Director plus LLM officers | the WebGL/desktop game over a websocket |
+| **Search** (`oracle/`) | traditional search over policies (Pareto sweep, MCTS) | a fast Python surrogate of the game, validated against seeded Unity runs |
 
-The point of the platform is that results from the three are comparable: same game rules,
+The point of the platform is that results from all of them are comparable: same game rules,
 same observation, same tools, same execution semantics, same logs. Anything game-facing is
 written **once**, in the shared core, and the front ends only add what is truly theirs (an
 episode loop, a trainer adapter, the officer conversation).
@@ -26,11 +27,16 @@ cora/                    SHARED CORE — the only place game-facing Python logic
   tools.py               the typed action-tool schema (OpenAI shape; verl arc_tools.yaml)
   actions.py             the action menu: every game action available in a state, Unity's shape
   executor.py            tool calls -> resolved game actions -> committed; per-call outcomes
-  prompts.py             system prompts (minimal_v6_1, minimal_v6)
+  prompts.py             system prompts, as JSON packs in prompts/ (minimal_v6_1, minimal_v6)
+  prompt_ablation.py     rule removal / paraphrase arms for prompt studies
   scoring.py             the score (Unity's rewardMetrics) and its components
   llm/                   one LLM client factory (providers, gateway, keys, reasoning capture)
   env/                   GameEnv (Gymnasium over the Unity gym server) + Unity process lifecycle
-bench/                   benchmark: CLI, episode loop, baselines, results/plots, SFT export
+  policy_family.py       the pareto policy family, shared by the surrogate search and the game
+  records.py             reading episode records (episodes.jsonl)
+bench/                   benchmark (python -m bench): CLI, episode loop, LLM policy, baselines,
+                         results, plots, SFT export, per-turn probe
+oracle/                  search: the surrogate, Pareto sweep, MCTS, surrogate validation
 router/                  GUI officers: service, session, officer loop, officer tools, proposals,
                          standing orders, developer panel API
 rl/                      trainer-facing glue that is not framework specific
@@ -119,7 +125,10 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 | Gym steps = human decision points (Day 1 setup, rollover step) | done |
 | `cora/` package | done |
 | One turn record for every front end (now: router `episode_logger.py`, benchmark round record) | pending, with the router migration |
-| `bench/` split | pending |
+| `bench/` split | done |
+| Baselines act through tool calls (`execute_indices` retired) | pending |
+| Search wing: `oracle/` as a package on `cora/` (policy family, records) | pending |
+| Surrogate on the new rules (`cora/params`, Unity's score), parity restored | pending |
 | `router/` split, legacy actors retired | pending |
 | `CoraEnv` for RL; thin Verlog adapter | pending |
 | Repo hygiene (scripts, docs, tests) | pending |

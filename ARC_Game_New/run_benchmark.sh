@@ -2,7 +2,7 @@
 # One-command CORA benchmark for prompt engineering — for collaborators who want to A/B a
 # prompt without touching Python. Edit a JSON prompt pack in prompts/, then:
 #
-#   ./run_benchmark.sh <prompt-pack> <model> [episodes] [-- extra benchmark_models.py args]
+#   ./run_benchmark.sh <prompt-pack> <model> [episodes] [-- extra python -m bench args]
 #
 # Examples
 #   ./run_benchmark.sh minimal_v6_1 gpt-5-mini 5
@@ -41,16 +41,12 @@ echo "  out:      $OUT"
 echo "  extra:    ${EXTRA[*]:-(none)}"
 echo
 
-# The protocol the cluster benchmark uses: task-only transfers, compact observation, no history.
-"$PY" benchmark_models.py \
+# The benchmark defaults are the cluster protocol: task-only transfers, compact observation,
+# no history, a full game per episode.
+"$PY" -m bench \
   --prompt "$PACK" \
   --models "$MODEL" \
   --episodes "$EPISODES" \
-  --rounds 40 \
-  --transfers task_only \
-  --obs_encoding compact \
-  --history 1 \
-  --reasoning_effort low \
   --out "$OUT" \
   "${EXTRA[@]}"
 

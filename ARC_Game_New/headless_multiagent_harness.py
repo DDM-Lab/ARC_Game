@@ -39,7 +39,7 @@ def _default_exe():
     """The macOS player is named after PlayerSettings.productName, which has changed once
     already (ARC_DisasterSimulation -> "Collaborative Operations..."), so take whatever is
     inside the bundle rather than a hardcoded name. ARC_HEADLESS_EXE overrides, exactly as
-    in benchmark_models.py."""
+    in bench/episode.py."""
     env = os.environ.get("ARC_HEADLESS_EXE")
     if env:
         return env
