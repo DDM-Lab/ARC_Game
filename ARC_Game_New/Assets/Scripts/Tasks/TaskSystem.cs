@@ -208,7 +208,9 @@ public class GameTask
     /// TaskSystem.RefreshTaskAgainstLiveState keeps in sync with the facility's actual current
     /// need/population — not frozen at whatever they were when the task was created.
     /// </summary>
-    public string ResolvePlaceholders(string text, bool plainFacilityName = false)
+    /// foodAmountOverride replaces foodAmount for [food_amount] (the agent export passes the live
+    /// need, since it cannot run RefreshTaskAgainstLiveState's auto-resolve side effects).
+    public string ResolvePlaceholders(string text, bool plainFacilityName = false, int? foodAmountOverride = null)
     {
         if (string.IsNullOrEmpty(text)) return text;
 
@@ -240,7 +242,7 @@ public class GameTask
 
         if (text.Contains("[food_amount]"))
         {
-            text = text.Replace("[food_amount]", foodAmount.ToString());
+            text = text.Replace("[food_amount]", (foodAmountOverride ?? foodAmount).ToString());
         }
 
         if (text.Contains("[population_amount]"))
@@ -301,6 +303,19 @@ public class AgentChoice
     [Header("Dynamic Cost (optional)")]
     [Tooltip("FoodPacks choices only. If > 0, this choice's Budget cost is computed as costPerUnit × the actual resolved delivery quantity (e.g. the population-based need, see quantityType) instead of using the fixed value authored in choiceImpacts. Lets a choice like an emergency fast-food delivery scale its cost with facility population instead of always charging for a flat 100 meals. Leave 0 to keep the fixed cost exactly as authored.")]
     public float costPerUnit = 0f;
+
+    /// <summary>
+    /// The Budget impact this choice actually charges: costPerUnit × the resolved delivery quantity
+    /// for a priced FoodPacks choice, otherwise the authored value. Only costs (negative values) are
+    /// rescaled. The GUI charges with this and the agent export reports it, so both show one price.
+    /// </summary>
+    public float ChargedBudget(float authoredValue, int? resolvedDeliveryQuantity)
+    {
+        if (costPerUnit > 0 && deliveryCargoType == ResourceType.FoodPacks
+            && resolvedDeliveryQuantity.HasValue && authoredValue < 0)
+            return -(costPerUnit * resolvedDeliveryQuantity.Value);
+        return authoredValue;
+    }
 
     [Header("Validation")]
     [Tooltip("Queued (non-immediate) FoodPacks choices only. If true, this choice is only selectable when the effective food across all kitchens (stock minus what's already reserved/outbound for other deliveries) can fully cover the resolved quantity — otherwise AgentChoiceUI's validationText shows why and the choice can't be confirmed. If false (default), the choice stays selectable as long as kitchens can at least partially help, same as before.")]
@@ -1742,9 +1757,8 @@ public class TaskSystem : MonoBehaviour
             else if (choice.deliveryCargoType == ResourceType.FoodPacks
                      && choice.quantityType == DeliveryQuantityType.PopulationBased)
             {
-                BuildingResourceStorage storage = facility.GetComponent<BuildingResourceStorage>()
-                    ?? facility.GetComponent<PrebuiltBuilding>()?.GetResourceStorage();
-                if (storage == null || !storage.enablePopulationBasedConsumption) continue;
+                BuildingResourceStorage storage = PopulationFoodStorage(facility);
+                if (storage == null) continue;
 
                 int liveNeed = storage.GetFoodNeed();
                 if (liveNeed <= 0)
@@ -1765,6 +1779,30 @@ public class TaskSystem : MonoBehaviour
         }
 
         return true;
+    }
+
+    /// The facility storage whose population-based food need drives [food_amount], or null.
+    static BuildingResourceStorage PopulationFoodStorage(MonoBehaviour facility)
+    {
+        BuildingResourceStorage storage = facility.GetComponent<BuildingResourceStorage>()
+            ?? facility.GetComponent<PrebuiltBuilding>()?.GetResourceStorage();
+        return storage != null && storage.enablePopulationBasedConsumption ? storage : null;
+    }
+
+    /// <summary>
+    /// The live food need behind a population-based food task's [food_amount] — what
+    /// RefreshTaskAgainstLiveState would set foodAmount to — without its side effects (it may
+    /// auto-resolve the task). Null when the task has no population-based food choice.
+    /// </summary>
+    public int? LiveFoodNeed(GameTask task)
+    {
+        if (task?.agentChoices == null) return null;
+        bool populationFood = task.agentChoices.Exists(c => c.deliveryCargoType == ResourceType.FoodPacks
+                                                           && c.quantityType == DeliveryQuantityType.PopulationBased);
+        if (!populationFood) return null;
+        MonoBehaviour facility = FindTriggeringFacility(task);
+        BuildingResourceStorage storage = facility != null ? PopulationFoodStorage(facility) : null;
+        return storage?.GetFoodNeed();
     }
 
     // =========================================================================
@@ -3170,6 +3208,8 @@ public class TaskSystem : MonoBehaviour
 
     private TaskContext GetTaskContextFromTask(GameTask task)
     {
+        // [food_amount] as the player sees it after the panel refreshes the task (live need).
+        int? liveFood = LiveFoodNeed(task);
         List<TaskChoiceBrief> choices = null;
         if (task.agentChoices != null && task.agentChoices.Count > 0)
         {
@@ -3193,16 +3233,8 @@ public class TaskSystem : MonoBehaviour
                     if (!ClientRelocationHandler.Instance.HasDestinationSpace(task, toShelter, toMotel))
                         continue;
                 }
-                var brief = new TaskChoiceBrief { choiceId = c.choiceId, choiceText = task.ResolvePlaceholders(c.choiceText, plainFacilityName: true) };
-                // Sparse impacts: expose only the choice's non-zero consequences so the
-                // agent can reason about budget/satisfaction tradeoffs (e.g. funding choices).
-                if (c.choiceImpacts != null && c.choiceImpacts.Count > 0)
-                {
-                    brief.impacts = new List<ChoiceImpactBrief>();
-                    foreach (TaskImpact imp in c.choiceImpacts)
-                        if (imp.value != 0)
-                            brief.impacts.Add(new ChoiceImpactBrief { type = imp.impactType.ToString(), value = imp.value });
-                }
+                var brief = new TaskChoiceBrief { choiceId = c.choiceId,
+                                                  choiceText = task.ResolvePlaceholders(c.choiceText, plainFacilityName: true, foodAmountOverride: liveFood) };
                 // Forward structured destination so Python policies don't need to parse choiceText.
                 // CaseworkSite is checked first: a casework choice's name includes the client group
                 // name, which may contain "Motel" or "Shelter" (the group's origin) and would
@@ -3227,6 +3259,21 @@ public class TaskSystem : MonoBehaviour
                     brief.immediateDelivery = c.immediateDelivery;
                     brief.triggersDelivery = c.triggersDelivery;
                 }
+                // Sparse impacts: the choice's non-zero consequences, so the agent can reason about
+                // budget/satisfaction tradeoffs. A priced delivery reports what it will actually
+                // charge (AgentChoice.ChargedBudget, as the GUI charges it), not its authored
+                // placeholder.
+                if (c.choiceImpacts != null && c.choiceImpacts.Count > 0)
+                {
+                    brief.impacts = new List<ChoiceImpactBrief>();
+                    foreach (TaskImpact imp in c.choiceImpacts)
+                    {
+                        float v = imp.impactType == ImpactType.Budget
+                            ? c.ChargedBudget(imp.value, brief.deliveryQuantity) : imp.value;
+                        if (v != 0)
+                            brief.impacts.Add(new ChoiceImpactBrief { type = imp.impactType.ToString(), value = Mathf.RoundToInt(v) });
+                    }
+                }
                 // The player's panel greys out a choice that cannot be carried out now; mark it the same way.
                 try
                 {
@@ -3247,8 +3294,8 @@ public class TaskSystem : MonoBehaviour
             stableTaskId = task.stableTaskId,
             // Placeholders ([facility_name_plain], [food_amount], ...) are resolved for agents exactly
             // as the UI resolves them for humans; the raw template never leaves the game.
-            taskTitle = task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true),
-            taskDescription = task.ResolvePlaceholders(task.description, plainFacilityName: true),
+            taskTitle = task.ResolvePlaceholders(task.taskTitle, plainFacilityName: true, foodAmountOverride: liveFood),
+            taskDescription = task.ResolvePlaceholders(task.description, plainFacilityName: true, foodAmountOverride: liveFood),
             taskType = task.taskType.ToString(),
             affectedFacility = task.affectedFacility,
             roundsRemaining = task.roundsRemaining,

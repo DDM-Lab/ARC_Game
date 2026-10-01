@@ -13,7 +13,7 @@ Linux server) and compare the JSON outputs with --compare to check game-state pa
   python analysis/diag_action_coverage.py --exe <unity exe> --seed 7000 --rounds 32 --out a.json
   python analysis/diag_action_coverage.py --compare a.json b.json [c.json]
 """
-import argparse, json, os, sys, hashlib
+import argparse, gzip, hashlib, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -80,6 +80,7 @@ def run(args):
                         unity_log_path=args.unity_log)
     out = {"exe": args.exe, "seed": args.seed, "rounds": [], "first_task_example": None}
     built, deconstructed = set(), False
+    states = gzip.open(args.states, "wt") if args.states else None
     try:
         env.reset()
         info = None
@@ -89,6 +90,9 @@ def run(args):
                 out["first_task_example"] = obs["tasks"][0]
             calls = script_calls(rnd, obs, built, deconstructed)
             rec = {"r": rnd, "pre": snapshot(obs, info)}
+            if states is not None:
+                states.write(json.dumps({"step": rnd, "game_state": env.game_state,
+                                         "actions": env.get_valid_actions()}) + "\n")
             results, (obs2, reward, term, trunc, info) = executor.execute_turn(
                 env, [(n, a) for n, a in calls])
             unavail = {(str(t.get("taskId")), str(c.get("choiceId"))): c.get("unavailable")
@@ -103,8 +107,13 @@ def run(args):
             if term or trunc:
                 break
         out["final"] = snapshot(observe(env.game_state, env.get_valid_actions(), obs_config), info)
+        if states is not None:
+            states.write(json.dumps({"step": len(out["rounds"]), "game_state": env.game_state,
+                                     "actions": env.get_valid_actions()}) + "\n")
     finally:
         env.close()
+        if states is not None:
+            states.close()
     json.dump(out, open(args.out, "w"), indent=1, default=str)
     report(out)
 
@@ -154,6 +163,9 @@ if __name__ == "__main__":
     ap.add_argument("--out", default="diag_coverage.json")
     ap.add_argument("--unity-log", default=None)
     ap.add_argument("--compare", nargs="+")
+    ap.add_argument("--states", default=None,
+                    help="also write every decision's full game state and action menu to this .jsonl.gz "
+                         "(how tests/fixtures/game_states.jsonl.gz is regenerated after a build)")
     a = ap.parse_args()
     if a.compare:
         compare(a.compare)

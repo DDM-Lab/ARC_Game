@@ -3183,15 +3183,9 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                     {
                         int delayRounds = choice.budgetDelayRounds;
 
-                        // costPerUnit scales this cost with the actual resolved delivery quantity
-                        // (e.g. population-based food need) instead of the fixed authored value.
-                        // Only overrides negative (cost) impacts — positive/incoming-funds impacts
-                        // are untouched, same as before.
-                        float impactValue = impact.value;
-                        if (choice.costPerUnit > 0 && resolvedDeliveryQuantity.HasValue && impactValue < 0)
-                        {
-                            impactValue = -(choice.costPerUnit * resolvedDeliveryQuantity.Value);
-                        }
+                        // costPerUnit scales a cost with the resolved delivery quantity (the same
+                        // rule the agent export reports; see AgentChoice.ChargedBudget).
+                        float impactValue = choice.ChargedBudget(impact.value, resolvedDeliveryQuantity);
 
                         if (impactValue > 0)
                         {
