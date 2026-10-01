@@ -6,7 +6,7 @@ continuous-agent action.
 Usage:
     ./.venv/bin/python analyze_session.py logs/sessions/<user>/<session>.jsonl
 
-Outcome taxonomy (engine truth, stamped in agent_router._outcome_fields):
+Outcome taxonomy (engine truth, stamped in router.session.Session._outcome_fields):
     invalid   never reached the engine (bad index / out-of-scope / no such task)
     rejected  reached the engine, engine refused (success=False)
     ok        engine accepted (success=True)

@@ -11,7 +11,7 @@ python -m cora.prompts my_prompt                          # print it exactly as 
 
 | Pack | What it is |
 |---|---|
-| `minimal_v6_1` | default. Game rules and the action grammar, no strategy; numbers come from the observation; unavailable choices are marked |
+| `minimal_v6_1` | default. Game rules and how to call the action tools, no strategy; numbers come from the observation; unavailable choices are marked |
 | `minimal_v6` | the Sep 2026 benchmark prompt, with the hiring rule corrected (2026-10: hired workers arrive a few rounds later). The exact Sep 2026 text (`prompt_sha 09b23ffd5e31`) is at git tag `pre-cleanup-2026-10` |
 
 ## Format (schema_version 2)

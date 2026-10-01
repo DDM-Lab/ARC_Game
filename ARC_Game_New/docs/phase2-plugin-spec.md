@@ -1,168 +1,167 @@
-# Phase 2 — Tool/loop extensibility + plugin dev workflow (spec)
+# Phase 2 — tool/hook plugins and the plugin dev workflow
 
-_Status: design, for review. No code yet. Builds on docs/contributor-platform-design.md and
-docs/CORA_API_v1.md. Acceptance test: the `bayesian_choices` plugin (§8)._
+_Status: implemented in `router/plugin_api.py` (registries, `ToolContext`, `MockToolContext`),
+`router/plugin_context.py` (the live `ToolContext`), `router/plugin_store.py` (durable store),
+`router/plugin_cli.py` (offline check) and the `/plugins` endpoints in `router/service.py`. Builds
+on docs/contributor-platform-design.md and docs/CORA_API_v1.md. Sections marked "not built" are
+still design._
 
-## 0. Goals & non-goals
+## 0. Goals and non-goals
 
-**Goal:** let trusted colleagues extend CORA with their own **tools** (LLM-callable) and **hooks**
-(event-driven) — e.g. a Bayesian preference elicitor — that can pull live game data, act on the
-game, import libraries, do math, keep persistent state, and write custom logs. Give them a **fast
-local test loop** and a **staging container** to run plugins against the real game, with promotion
-to production by git.
+**Goal:** let trusted colleagues extend the GUI officers with their own **tools** (LLM-callable)
+and **hooks** (event-driven), e.g. a Bayesian preference model, that read live game data, act on
+the game, import libraries, keep persistent state and write custom log events, with a fast offline
+check and a staged path onto a server.
 
-**Not a goal (yet):** sandboxing against *malicious* code. Threat model is *trusted colleagues who
-write bugs*, not attackers. Execution is in-process, gated by a per-key capability; the validation
-pipeline catches bugs, not malice. A real execution sandbox (gVisor/Firecracker) is deferred to a
-future "untrusted uploads" phase.
+**Not a goal (yet):** sandboxing against malicious code. The threat model is trusted colleagues
+who write bugs. Plugins run in-process; activation is an explicit admin action; validation catches
+bugs, not malice.
 
 ## 1. Two extension kinds
 
-- **Tool** — the officer LLM can call it. Handler signature `(ctx, args) -> ToolResult`.
-- **Hook** — fires on a game event, even when no tool was called. `(ctx, event) -> None`.
-  Event set (v1): `on_round_start`, `on_choice_resolved`, `on_action_executed`, `on_session_end`.
+- **Tool** — the officer can call it. Handler `(ctx, args) -> ToolResult` (sync or async).
+- **Hook** — fires on an event, even when no tool was called. Handler `(ctx, event)`.
 
-Both are registered against a stable module, `cora_ext`, and reach the game **only** through `ctx`.
+`plugin_api.HOOK_EVENTS`:
 
-## 2. `ToolContext` (`ctx`) — the host-owned handle
+| Event | Return value |
+|---|---|
+| `on_round_start`, `on_choice_resolved`, `on_action_executed`, `on_session_end` | ignored |
+| `on_turn_start` | `str` or `[{role, content}]` to add context before the officer's first step (user/system roles only); `None` for nothing |
+| `on_step_end` | `"stop"` or `True` ends the officer's turn early |
 
-`ctx` is NOT a library; it is an instance the host (`Session`) constructs per call and injects. It
-is a curated facade over the running `Session` (which owns the Unity socket, `_unity_commit_lock`,
-`_director_attention_lock`, `_latest_game_state`, the logger). Surface:
+The last two shape the officer loop (scratchpads, self-critique, custom stopping) without handing
+the loop itself to a plugin. The harness keeps tool-call pairing, action execution, the reply
+guarantee and turn logging. Example: `examples/plugins/loop_shaping.py` (its import still names
+the old module `cora_ext`; change it to `router.plugin_api`).
 
-**Read (instant; off the cached authoritative snapshot):**
-- `ctx.state` — raw latest `game_state` dict
-- `ctx.get_facilities()` / `get_workforce()` / `get_tasks()` / `get_logistics()`
-- `ctx.budget`, `ctx.satisfaction`
-- `ctx.enumerate_actions()` / `ctx.enumerate_choice_packages()` — current valid affordances
+## 2. `ToolContext` (`ctx`)
 
-**Fresh pull (async; wraps `{"type":"get_game_state"}` under the commit lock):**
-- `await ctx.refresh_state()` → `Session._fetch_fresh_state()`
+`ctx` is constructed by the host per call and injected; plugins never touch the router's
+internals. The live implementation is `router/plugin_context.py` `_SessionToolContext`; the
+offline one is `plugin_api.MockToolContext`.
 
-**Act (async; canonical actions only):**
-- `await ctx.emit_commands(tags)` → `cmd_parser.parse_commands` → `Session._execute_actions_via_unity`
-- `await ctx.propose_choices(packages)` → the existing propose/repropose path
+**Reads (instant, from the latest snapshot):**
+- `ctx.state` — the raw latest `game_state` dict
+- `ctx.get_facilities()`, `get_workforce()`, `get_tasks()`, `get_logistics()` — the officer's
+  filtered observation sections as text (the same text as the officer's getter tools)
+- `ctx.enumerate_actions()` — the officer's scoped action list;
+  `ctx.enumerate_choice_packages()` — its `task_choice` entries
 
-**Persistent state (three explicit scopes — see §4 for concurrency):**
-- `ctx.agent_store` — dict scoped to (session, this officer)
-- `ctx.session_store` — dict scoped to the whole game (all officers, one human)
-- `ctx.persist` — durable KV, keyed by participant, across games (SQLite-backed)
+**Fresh pull (async):** `await ctx.refresh_state()` → `Session._fetch_fresh_state()`.
+
+**Act (async; requires an officer context, not a session-level hook):**
+- `await ctx.execute(calls)` — `calls` is `[(tool, args), ...]` or `[{"tool": ..., "args": ...}]`
+  of the action tools in `cora/tools.py`, e.g. `[("hire", {"kind": "untrained", "count": 4})]`.
+  Runs through `Session._execute_calls`, the same path as the officer's own action calls
+  (`cora.executor`, scope, ledger, logging). Returns a `ToolResult` with the per-call outcomes as
+  text and the executed count.
+- `await ctx.propose_choices(packages)` — the same path as the `propose_choices` tool; packages are
+  `{label, calls: [{tool, args}], description?}`.
+
+**State, three scopes:**
+- `ctx.agent_store` — dict for (session, this officer)
+- `ctx.session_store` — dict for the whole game (in memory; lost on restart)
+- `ctx.persist` — durable KV (`get` / `set` / `setdefault`, JSON values), SQLite at
+  `data/plugin_store.db`, shared across games and restarts; prefix your keys
 - `async with ctx.session_lock:` — serialize shared-session writes
 
-**Misc:**
-- `ctx.log(event_type, payload)` → `episode_logger.log_event` (correct attribution/timestamp)
-- `await ctx.run_blocking(fn, *args)` → `loop.run_in_executor` (offload MCMC etc.)
-- `ctx.agent` (name/role, read-only), `ctx.participant_id`, `ctx.session_id`, `ctx.round`
+**Misc:** `ctx.log(event_type, payload)` (written to the session log with the payload nested under
+`payload`), `await ctx.run_blocking(fn, *args)` (run heavy work off the event loop), `ctx.agent`,
+`ctx.participant_id`, `ctx.session_id`, `ctx.round`.
 
-## 3. `cora_ext` — the stable plugin API (the only thing plugins import)
+## 3. The plugin API (`router.plugin_api`)
 
 ```python
-from cora_ext import register_tool, register_hook, ToolResult, ToolContext
+from router.plugin_api import register_tool, register_hook, ToolResult
 
-@register_tool("name", schema={...}, acting=False, override_of=None)
+@register_tool("mylab_tool", schema={...}, acting=False, override_of=None)
 async def handler(ctx, args) -> ToolResult: ...
 
 @register_hook("on_choice_resolved")
-def obs(ctx, event): ...
+def observe(ctx, event): ...
 ```
-- `register_tool(name, schema, *, acting, override_of)` — `override_of` replaces a built-in
-  (e.g. `propose_choices`). Collision without `override_of` → error. Namespaced names (`lab/tool`).
-- `register_hook(event)` — one of the §1 events.
-- `ToolResult(text, executed=0, finish=False)`.
-- `load_plugins(dirs)` — import every module under the plugin dirs + `entry_points("cora.plugins")`;
-  registration happens as a side effect of import. Called at router startup. **cmd_parser stays
-  harness-owned** — plugins act only via `ctx.emit_commands`, preserving the single action
-  representation (RL/SFT parity).
 
-Additive-only versioning (grow `ctx`/events by adding fields; never remove/reorder). `API_VERSION`
-in `cora_ext`.
+- `register_tool(name, schema, *, acting=False, override_of=None)` — `schema` is an OpenAI
+  function-format dict. `acting=True` marks a tool that changes the game; it is hidden and refused
+  on an unprompted turn of a `reactive` officer. Registering an existing name is an error unless
+  `override_of` is given.
+- `register_hook(event)` — one of `HOOK_EVENTS`.
+- `ToolResult(text, executed=0, finish=False)` — `text` goes to the officer; `finish=True` ends
+  its turn.
+- `load_plugins(dirs)` imports every `*.py` under the given dirs (files starting with `_` are
+  skipped) plus `entry_points(group="cora.plugins")`; registration happens on import. The router
+  calls it on `plugins/` at startup.
+- Plugins act only through `ctx.execute` / `ctx.propose_choices`, so every action goes through the
+  one tool-call executor and stays comparable with the benchmark and RL.
 
-## 4. Concurrency & multi-agent
+`plugin_api.API_VERSION` is `"0.1"`. Growth is additive: new `ctx` members and events, nothing
+removed or reordered.
 
-One session = one game, one human (director), N concurrent officers. Game reads/acts from a tool
-inherit the existing session locks (`_unity_commit_lock`, `_director_attention_lock`) — a tool is
-as safe as an officer. For **shared persistent state**: use `ctx.session_store`/`ctx.persist` (the
-human is one person regardless of which officer surfaced a choice), not `agent_store`. Choice
-resolutions are already serialized by the attention lock, so an `on_choice_resolved`-driven model
-is race-free; other shared writes use `ctx.session_lock`. Never use module globals for per-
-participant state (concurrent sessions/officers would collide).
+## 4. Concurrency and multi-agent
 
-## 5. Plugin delivery & lifecycle
+One session is one game, one human Director and N concurrent officers. Reads and acts from a tool
+go through the same session locks as the officers' own calls (the Unity commit lock, the Director
+attention lock for proposals). For state shared across officers use `ctx.session_store` or
+`ctx.persist`, not `agent_store`; choice resolutions are already serialized by the attention lock,
+other shared writes use `ctx.session_lock`. Never keep per-participant state in module globals.
 
-- Plugins live in **`plugins/<label>/<module>.py`** (per-uploader namespace).
-- **Capability-gated upload:** a key may carry `caps: ["upload_code"]`. Only such keys can POST a
-  plugin. Participant/cohort keys never get it.
-- **Config bundles reference tools by name** (bundle `tools` slot); the handler must already be
-  registered, else validation rejects it as an unknown tool.
+## 5. Delivery and lifecycle
 
-## 6. The three-tier test workflow (the point of this phase)
+- `plugins/*.py` in the repo are loaded at router startup (currently `example_tools.py` and
+  `preference_model.py`).
+- `POST /plugins?name=<slug>` (key with the `upload_code` capability; body = the Python source)
+  parses the file, runs an advisory AST scan and writes it to `plugins_staged/<label>__<slug>.py`.
+  It is **not** imported.
+- `POST /admin/plugins/reload` on the loopback admin app (`--admin-port`, default 9877) clears the
+  registry and re-imports `plugins/` and `plugins_staged/`. This is the activation step.
+- `GET /plugins` lists staged and active tools/hooks and load errors;
+  `GET /admin/plugins/errors` returns load failures and recent runtime tracebacks.
+- An officer's `tools` allowlist names plugin tools like built-ins. The bundle-level `tools` field
+  is reserved and must be empty.
 
-1. **Local (offline, instant)** — `cora-plugin check plugins/foo.py`:
-   - imports the module in a **subprocess** (syntax/import/dep crashes caught safely);
-   - asserts it registers well-formed tools/hooks (valid schema, namespaced, no collision);
-   - runs each tool/hook against a **mock `ctx`** (`MockToolContext` + recorded `get_game_state`
-     fixtures + recording `emit_commands`); asserts valid `ToolResult`, valid `cmd_parser` tags,
-     no exception, within a **time budget**.
-2. **Staging container** — a separate router instance (own port/subdomain, own non-prod keys,
-   headless test Unity). `cora-plugin push-plugin foo.py --url <staging> --key <cap-key>` →
-   server **canary-validates in a subprocess**, then loads into `plugins/<label>/`. Colleagues play
-   or benchmark against staging to catch integration bugs the mock can't. Bugs here never touch a
-   live study.
-3. **Production** — plugin graduates via **git/PR** (reviewed, versioned); production loads only
-   promoted plugins at startup and does **not** accept raw code uploads.
+## 6. Test workflow
 
-**Runtime guards (all tiers):** per-tool wall-clock timeout + exception isolation (a throwing/
-overrunning tool yields an error result to the officer, never a router crash); heavy compute via
-`ctx.run_blocking`. Per-label plugin namespacing so colleagues don't clobber each other on the
-shared staging box.
+1. **Offline** — `python -m router.plugin_cli check plugins/foo.py` (or
+   `python -m router.cli plugin plugins/foo.py [--upload]`): imports the module, checks it
+   registers well-formed tools/hooks, and smoke-runs each tool and the hook events from the
+   module's optional `check_fixtures()` against `MockToolContext`, with a per-call time budget
+   (`--timeout`, default 5 s). Note: as of 2026-10 the check crashes with `AttributeError: 'MockToolContext' object has no attribute 'emitted'` (a bug in `router/plugin_cli.py`) once it smoke-runs a tool, after the import and registration checks have passed.
+2. **Server** — upload to a non-production router, have an admin activate it, and play a game
+   against it.
+3. **Production** — plugins graduate via git review into `plugins/`.
 
-## 7. Scaling to tens/hundreds of users (design-for-now, build-later)
+Runtime guards on every tier: a per-call wall-clock timeout (10 s in the router) and exception
+isolation, so a failing tool returns an error result to the officer and a failing hook is logged;
+neither stops the game.
 
-- `ctx.persist` backed by **SQLite/DB**, not in-memory — survives restarts, shared across sessions.
-- **Unity backend pool:** one game = one Unity process; scaling users = a pool/allocator of headless
-  Unity instances (the real capacity bottleneck).
-- **Sessions are in-memory per worker** → if we ever run multiple router workers, use sticky routing
-  (or a shared session store). Plugin registries are per-worker (fine — code, not per-user data).
-- **Keys/quotas/metering:** Phase 4 (hashed keys + cohorts + `usage_events` + rate limits) is what
-  makes hundreds of participant keys safe and attributable.
-- Staging vs production isolation is itself a scaling best-practice (blast-radius containment).
+## 7. Scaling (design, not built)
 
-## 8. Acceptance test — `bayesian_choices`
+- One game is one Unity process; serving many users needs a pool of game backends.
+- Sessions are in memory per router process; multiple workers would need sticky routing.
+- Keys are hashed in SQLite (`router/key_store.py`, `data/keys.db`) with cohort, config allowlist,
+  capabilities, quota and expiry, plus a `usage_events` table; rate limiting is not built.
 
-A single plugin exercising every capability (see docs/contributor-platform-design.md discussion):
-`on_choice_resolved` hook updates a participant posterior in `ctx.session_store` seeded from a
-population prior in `ctx.persist`, logs it via `ctx.log`; the `bayesian_choices` tool pulls fresh
-state, ranks choice packages with `ctx.run_blocking(model.rank, …)`, and emits via
-`ctx.propose_choices`. Must pass `cora-plugin check` (mock ctx) then run on staging end-to-end.
+## 8. Reference plugin
 
-## 9. Staging page (dashboard) — later sub-phase
+`plugins/preference_model.py`: an `on_choice_resolved` hook updates a Dirichlet-categorical model
+of the human Director's picks in `ctx.persist` and logs it with `ctx.log`; the acting tool
+`preferred_choices` ranks the choice slots by that model and sends them through
+`ctx.propose_choices`. Its packages carry labels only, no `calls`, so they predate the current
+package shape.
 
-A web page on the staging URL: upload a config/plugin, run `check`, view its logs/transcripts,
-launch a test game against it. Reuses the same validation core + endpoints (CLI-first, page-later —
-the page is a front-end over the same APIs). This is the no-code surface for colleagues.
+## 9. Not built
 
-## 10. Build order within Phase 2
+- A staging dashboard page (upload, check, view logs, launch a test game).
+- A custom loop registry (`register_loop`); the loop-shaping hooks in §1 cover the intended uses.
+- Bundle-declared tools (the bundle `tools` field).
 
-1. `cora_ext.py`: registries (`register_tool`/`register_hook`/`ToolResult`) + `ToolContext` facade
-   over `Session` + `MockToolContext`.
-2. Mechanical refactor: `_dispatch_continuous_tool` → registry lookup; seed built-in tools; convert
-   `_run_subagent` loops. Behavior-preserving (verify with existing tests).
-3. Hooks: emit `on_round_start`/`on_choice_resolved`/`on_action_executed`/`on_session_end` from the
-   Session at the right points.
-4. Stores: `agent_store`/`session_store`/`persist`(SQLite)/`session_lock`.
-5. `cora-plugin check` + fixtures (recorded `get_game_state` snapshots).
-6. Staging upload: `POST /plugins` (capability-gated) + subprocess canary + per-label dirs +
-   runtime timeout/exception isolation.
-7. `bayesian_choices` reference plugin + end-to-end staging test.
-8. Staging page (dashboard).
+## 10. Limitations (tell contributors up front)
 
-## 11. Limitations & trust boundaries (tell contributors up front)
-
-- Tools act only via `cmd_parser` tags — can compose existing actions, **cannot invent a new game
-  mechanic** (needs Unity C# + rebuild).
-- Tools read only what's in the `get_game_state` snapshot — **new game facts need a Unity change**.
-- In-process, trusted execution — gated by `upload_code` capability; validation catches bugs, not
-  malice; real sandbox deferred.
-- A tool that changes officer behavior changes rollouts — for RL/fine-tune training data it must be
-  deterministic and present at train time, else it's inference-only.
-- `session_store` is in-memory (lost on restart); durability = `ctx.persist`.
+- Plugins act only through the action tools: they can compose existing actions but cannot invent
+  a game mechanic (that needs a Unity change and rebuild).
+- Plugins read only what is in the `get_game_state` snapshot; new game facts need a Unity change.
+- In-process, trusted execution; activation is manual; there is no sandbox.
+- A tool that changes officer behavior changes rollouts; for training data it must be
+  deterministic and present at train time.
+- `session_store` is lost on restart; use `ctx.persist` for durability.

@@ -18,11 +18,11 @@ if [ -z "$PLUGIN" ] && [ -f "${BUNDLE%.json}.py" ]; then PLUGIN="${BUNDLE%.json}
 cd "$REPO"
 
 echo "==> [1/4] validate bundle"
-cora_py cora_bundle.py validate "$BUNDLE"
+cora_py -m router.bundle_cli validate "$BUNDLE"
 
 if [ -n "$PLUGIN" ]; then
   echo "==> [2/4] companion plugin: $PLUGIN"
-  cora_py cora_plugin.py check "$PLUGIN"
+  cora_py -m router.plugin_cli check "$PLUGIN"
   if [ ! -f "$REPO/plugins/$(basename "$PLUGIN")" ]; then
     echo "    NOTE: to activate this plugin, copy it into plugins/ and restart the router:"
     echo "          cp '$PLUGIN' '$REPO/plugins/' && <restart router>"
@@ -33,10 +33,11 @@ fi
 
 echo "==> [3/4] check tool references have a provider"
 cora_py - "$BUNDLE" <<'PYEOF'
-import json, sys, cora_ext
-from continuous_agent import DEFAULT_TOOLS
-cora_ext.load_plugins(["plugins"])
-builtins, plugins = set(DEFAULT_TOOLS), set(cora_ext.all_tools())
+import json, sys
+from router import plugin_api
+from router.officer_llm import DEFAULT_TOOLS
+plugin_api.load_plugins(["plugins"])
+builtins, plugins = set(DEFAULT_TOOLS), set(plugin_api.all_tools())
 cfg = (json.load(open(sys.argv[1])).get("config") or {})
 missing = {t for a in cfg.get("agents", []) for t in (a.get("tools") or [])
            if t not in builtins and t not in plugins}
@@ -48,4 +49,4 @@ else:
 PYEOF
 
 echo "==> [4/4] push"
-cora_py cora_bundle.py push "$BUNDLE" --url "$CORA_URL" --key "$CORA_KEY"
+cora_py -m router.bundle_cli push "$BUNDLE" --url "$CORA_URL" --key "$CORA_KEY"

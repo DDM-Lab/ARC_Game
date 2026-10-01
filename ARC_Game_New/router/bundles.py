@@ -75,7 +75,7 @@ def _merge_agents(base_agents: list[dict], overrides: list[dict]) -> list[dict]:
 
 
 # Runtime-only officer fields that the UPLOAD schema deliberately does not know about
-# (they were replaced by the `provider` enum). See cora_schema's module docstring.
+# (they were replaced by the `provider` enum). See router.schema's module docstring.
 _LEGACY_PROVIDER_FIELDS = ("llm_provider", "llm_endpoint", "api_key_env", "llm_port")
 
 
@@ -167,7 +167,7 @@ def config_warnings(cfg: dict) -> list[str]:
     `no in-scope actions — skipping` before any LLM call. Warn, don't reject: a narrow scope
     can be deliberate, and only the uploader knows their intent.
 
-    Lives here, next to load_bundle, so the CLI (`cora-bundle validate`) and the upload
+    Lives here, next to load_bundle, so the CLI (`python -m router.bundle_cli validate`) and the upload
     endpoint report the SAME problems. Previously only the upload path ran these, so a
     contributor validating locally got a clean "OK" for a config that could not work.
     """

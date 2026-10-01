@@ -26,7 +26,7 @@ Two hooks, both optional:
 Copy this file, edit, and upload with:  POST /plugins?name=<slug>   (cap: upload_code)
 Then activate it:                       POST /admin/plugins/reload  (admin plane)
 """
-from cora_ext import register_hook
+from router.plugin_api import register_hook
 
 
 @register_hook("on_turn_start")

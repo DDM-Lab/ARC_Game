@@ -419,7 +419,7 @@ class OfficerLoopMixin:
                          if agent.tools else None)
             tools = build_tools(_builtins, descriptions=_tdesc,
                                 recipients=self._recipients_for(agent))
-        # Append registered plugin (cora_ext) tool schemas this agent may use. Inert when no
+        # Append registered plugin tool schemas this agent may use. Inert when no
         # plugins are loaded; respects the reactive acting-strip and the per-agent allowlist,
         # de-duped against built-ins by name.
         _plug = _plugin_tool_schemas_for(agent, brief_only, tools)
@@ -1138,7 +1138,7 @@ class OfficerLoopMixin:
 
     async def _fire_hooks(self, event: str, event_obj: dict,
                           agent: Optional[AgentConfig] = None) -> None:
-        """Fire cora_ext hooks for a game event. Inert (no ctx built) when nothing is registered.
+        """Fire plugin hooks for a game event. Inert (no ctx built) when nothing is registered.
         `agent` is None for session-level events (round start, human choice); the hook ctx then
         uses the shared session store and unfiltered state."""
         if not plugin_api.get_hooks(event):

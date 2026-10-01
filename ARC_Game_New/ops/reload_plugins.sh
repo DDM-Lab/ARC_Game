@@ -3,4 +3,4 @@
 #   ops/reload_plugins.sh
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"; . "$SCRIPT_DIR/env.sh"; cd "$REPO"
-cora_curl -X POST "$CORA_URL/admin/plugins/reload" -H "Authorization: Bearer $CORA_KEY" | cora_py -m json.tool
+cora_curl -X POST "$CORA_ADMIN_URL/admin/plugins/reload" -H "Authorization: Bearer $CORA_KEY" | cora_py -m json.tool

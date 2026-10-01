@@ -8,9 +8,9 @@ was rebuilt), then trust what you find on disk over this doc.
 
 A disaster-relief simulation game (Unity client + Python server) where **LLM "officers" advise a
 human "Director."** Research goals: benchmark LLMs as officers, train RL policies, and let
-collaborators contribute configs/prompts/tools. Three arms share ONE action representation (a
-text command-tag DSL parsed by `cmd_parser.py`): the live LLM officers, the RL gym, and the
-benchmark.
+collaborators contribute configs/prompts/tools. The live LLM officers, the RL environment and
+the benchmark share ONE action representation: the typed tool calls defined in `cora/tools.py`
+and executed by `cora/executor.py`. Layout and design: `docs/ARCHITECTURE.md`.
 
 ## Repo & environment
 
@@ -27,14 +27,16 @@ benchmark.
 
 - **Router** (FastAPI, serves the LLM officers over WebSocket):
   ```
-  ./.venv/bin/python agent_router.py --config-dir config --keys-file config/keys.json \
+  ./.venv/bin/python -m router --config-dir config --keys-file config/keys.json \
       --port 9876 --log-dir logs/sessions
   ```
-  Health: `GET /health`. List configs: `GET /configs` (Bearer key). Omit `--keys-file` for a dev
-  key (`dev-local-key`) in local testing only.
-- **Benchmark:** `benchmark_models.py` (model tiers, prompt packs via `--prompt-pack`,
-  `--base-url/--api-key` for local/OpenAI-compatible endpoints). Logs to W&B (`cpulling/CORA_RL`).
-- **RL gym:** `arc_game_gym_env_tcp.py` (text command-tag action space, same `cmd_parser`).
+  (`ops/run_router.sh` does the same; `ops/deploy_talos.sh` is the server deploy.) Health:
+  `GET /health`. List configs: `GET /configs` (Bearer key). Omit `--keys-file` for a dev key
+  (`dev-local-key`) in local testing only. The admin app (key minting, plugin activation) listens
+  on `127.0.0.1:9877` (`--admin-port`).
+- **Benchmark:** `python -m bench` (prompt packs via `--prompt`, `--base-url/--api-key` for
+  local/OpenAI-compatible endpoints, `--wandb` to log to W&B `cpulling/CORA_RL`).
+- **RL environment:** `rl/cora_env.py` (`CoraEnv`, the same tool-call surface).
 - **Unity build** (if needed): `ops/build_client.sh webgl` — must run **unsandboxed** with the Editor
   closed; a large merge can require wiping `Library/Bee` for a clean IL2CPP rebuild.
 
@@ -49,13 +51,15 @@ benchmark.
 ## Contributor platform (recent work — read the design docs)
 
 CORA now takes uploadable **bundles** (config + prompts, tools later):
-- `provider_registry.py` — LLM backends are named by a **`provider` enum** (`anthropic`,
-  `anthropic-ddmlab`, `cmu-gateway`, `openai`, `ollama-local`); configs NEVER carry raw
-  `llm_endpoint`/`api_key_env` (security boundary). All `config/*.json` migrated to `provider`.
-- `cora_schema.py` (Pydantic gate) + `bundle.py` (validate + base/delta compose).
-- `cora_bundle.py` — CLI: `new` / `validate` / `render` / `push`.
+- `cora/llm/providers.py` — LLM backends are named by a **`provider` enum** (`anthropic`,
+  `anthropic-ddmlab`, `cmu-gateway`, `openai`, `ollama-local`, `qwen-local`, `qwen-auton`,
+  `qwen3-4b-auton`, `minicpm5-2b-auton`); uploaded bundles can never carry raw
+  `llm_endpoint`/`api_key_env` (security boundary).
+- `router/schema.py` (Pydantic gate) + `router/bundles.py` (validate + base/delta compose).
+- `python -m router.cli` — collaborator CLI (`doctor` / `new` / `check` / `push` / `plugin` /
+  `data` / `sft`); `python -m router.bundle_cli` (`new` / `validate` / `render` / `push`).
 - `POST /bundles` — authenticated config upload (per-key namespace, `config/_uploads/`).
-- Phase 2 (planned): `cora_ext.py` tool/loop registries + `ctx` + a plugin dev workflow.
+- Tool/hook plugins: `router/plugin_api.py` + `ctx`; `POST /plugins` stages, admin reload activates.
 
 ## Conventions (how the maintainer wants work done)
 
@@ -69,8 +73,10 @@ CORA now takes uploadable **bundles** (config + prompts, tools later):
 
 ## Read next (in `docs/`)
 
-- `CORA_API_v1.md` — the frozen action grammar + observation schema (the core contract).
+- `ARCHITECTURE.md` — the platform layout and the turn/executor contract.
+- `CORA_API_v1.md` — the action tools + observation/scope/provider vocabularies (the core contract).
 - `contributor-platform-design.md` — the platform synthesis (Pydantic-not-Hydra, provider-enum
   security, bundle/plugin model).
 - `phase2-plugin-spec.md` — tool/hook extensibility + the `ctx` surface + staging dev workflow.
-- `CONTINUOUS_AGENT.md` / `CHOICES_AGENT.md` — officer agent internals (if present).
+- `../CONTINUOUS_AGENT.md`, `../AGENT_CONFIG_GUIDE.md` — officer loop internals and config fields.
+- `TALOS_DEPLOY_RUNBOOK.md` — deploying and operating the hosted router.

@@ -1,4 +1,4 @@
-"""cora_ext — the stable extension API for CORA tool/hook plugins.
+"""router.plugin_api — the stable extension API for CORA tool/hook plugins.
 
 A plugin module imports ONLY this module (never the router internals). It registers **tools**
 (LLM-callable, `(ctx, args) -> ToolResult`) and **hooks** (event-driven, `(ctx, event) -> None`)
@@ -215,8 +215,8 @@ class ToolContext:
 
 
 class MockToolContext(ToolContext):
-    """Fixture-backed ToolContext for offline plugin tests (`cora-plugin check`). Records what a
-    tool would emit/propose/log so a smoke test can assert on it, with no Unity/LLM/network."""
+    """Fixture-backed ToolContext for offline plugin tests (`python -m router.plugin_cli check`).
+    Records what a tool would execute/propose/log so a smoke test can assert on it, with no Unity/LLM/network."""
     def __init__(self, state: Optional[dict] = None, *, agent: Any = None,
                  actions: Optional[list] = None, participant_id: str = "test-participant",
                  session_id: str = "test-session", round: int = 0):
@@ -293,7 +293,7 @@ async def run_tool(spec: "ToolSpec | Callable", ctx: ToolContext, args: dict,
         return ToolResult(text=f"ERROR: tool {name!r} exceeded its {timeout}s time budget.")
     except Exception as e:  # exception isolation
         record_error("tool", name, e)
-        print(f"[cora_ext] tool {name!r} raised — full traceback:")
+        print(f"[plugin] tool {name!r} raised — full traceback:")
         traceback.print_exc()          # full stack to the router log for debugging
         return ToolResult(text=f"ERROR: tool {name!r} failed: {type(e).__name__}: {e}")
 
@@ -310,7 +310,7 @@ async def run_hooks(event: str, ctx: ToolContext, event_obj: Any) -> None:
             # Best-effort: capture + log full stack; never let a hook break the game loop.
             hook_name = getattr(fn, "__name__", "?")
             record_error("hook", f"{hook_name}@{event}", e)
-            print(f"[cora_ext] hook {hook_name} for {event} failed: "
+            print(f"[plugin] hook {hook_name} for {event} failed: "
                   f"{type(e).__name__}: {e} — full traceback:")
             traceback.print_exc()
 
@@ -332,7 +332,7 @@ async def run_hooks_collect(event: str, ctx: ToolContext, event_obj: Any) -> lis
         except Exception as e:
             hook_name = getattr(fn, "__name__", "?")
             record_error("hook", f"{hook_name}@{event}", e)
-            print(f"[cora_ext] hook {hook_name} for {event} failed: "
+            print(f"[plugin] hook {hook_name} for {event} failed: "
                   f"{type(e).__name__}: {e} — full traceback:")
             traceback.print_exc()
     return out
@@ -363,7 +363,7 @@ def load_plugins(dirs: "list[str | Path]", *, entry_point_group: str = "cora.plu
             except Exception as e:
                 _LOAD_ERRORS.append({"plugin": str(path), "error": f"{type(e).__name__}: {e}",
                                      "traceback": traceback.format_exc()})
-                print(f"[cora_ext] failed to load plugin {path}: {type(e).__name__}: {e}")
+                print(f"[plugin] failed to load plugin {path}: {type(e).__name__}: {e}")
     try:
         from importlib.metadata import entry_points
         for ep in entry_points(group=entry_point_group):
@@ -373,7 +373,7 @@ def load_plugins(dirs: "list[str | Path]", *, entry_point_group: str = "cora.plu
             except Exception as e:
                 _LOAD_ERRORS.append({"plugin": f"entry-point:{ep.name}",
                                      "error": f"{type(e).__name__}: {e}"})
-                print(f"[cora_ext] failed to load entry-point plugin {ep.name}: {e}")
+                print(f"[plugin] failed to load entry-point plugin {ep.name}: {e}")
     except Exception:
         pass
     return loaded

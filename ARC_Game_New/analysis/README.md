@@ -1,17 +1,11 @@
 # analysis/
 
-Post-hoc analysis of benchmark output. Nothing here runs the game; these read
-`benchmark_results/*/episodes.jsonl` and `arc_benchmarks/*/`.
+Maintained analysis and diagnostic scripts. Run them from the repo root with the project venv
+(`.venv/bin/python analysis/<script> ...`).
 
 | script | what it does |
 |---|---|
-| `view_transcript.py` | render one episode's rounds as readable text (`--prompt` shows the system prompt) |
-| `analyze_session.py` | per-session summary of a run |
-| `analyze_timing.py` | wall-clock / throughput breakdown |
-| `action_trajectories.py` | action mix over rounds |
-| `cluster_end_states.py` | end-of-episode state clustering across runs |
-| `compare_rb_vs_v2_trajectories.py` | rule-based vs v2 trajectory diff |
-| `_compare_agents.py`, `_rescore_convex.py` | ad-hoc comparisons (underscore = internal) |
-
-Run them with the benchmark env:
-`/zfsauton/scratch/cpulling/conda_envs/verlog/bin/python analysis/view_transcript.py ...`
+| `diag_action_coverage.py` | the parity check: a scripted, seeded headless game that uses every tool (`--exe`, `--seed`, `--rounds`, `--out`); `--compare a.json b.json` checks two runs round by round. See docs/ARCHITECTURE.md, "Scenario and parity" |
+| `view_transcript.py` | render a benchmark `episodes.jsonl` round by round (`--episode`, `--round`, `--errors`, `--obs`, `--prompt`) |
+| `analyze_session.py` | split a router session log (`logs/sessions/<label>/<session>.jsonl`) into can't-execute, inert and effective officer actions, from the `outcome` fields the router stamps |
+| `analyze_timing.py` | LLM and simulator timing per agent and turn, from a directory of `episode_*.jsonl` files; writes `timing_analysis.json` there |

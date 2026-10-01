@@ -8,10 +8,10 @@ Every benchmark run writes ONE episodes.jsonl per model, e.g.
 Each LINE is one episode (a JSON object). The per-round record lives in
 `rounds[]`, and the fields that matter when you're debugging a policy are:
 
-    raw          the model's full response text, verbatim  <- the transcript
+    raw          the model's response text (reasoning before its tool calls), verbatim
+    calls        every tool call and its outcome: executed / refused / invalid, with the reason
     obs          the state dict actually sent to the model that round
     actCats      action categories the engine accepted
-    cmdErrors    per-command rejection reasons
     reasoningTrace / reasoningTokens
                  hidden chain-of-thought, when the provider surfaces it
                  (local "thinking" models; None when thinking is off)
@@ -21,21 +21,14 @@ Usage
   python view_transcript.py <episodes.jsonl>                 # summary of all rounds
   python view_transcript.py <path> --round 4                 # full text of one round
   python view_transcript.py <path> --round 4 --episode 2
-  python view_transcript.py <path> --tags                    # where each command tag sits
-  python view_transcript.py <path> --errors                  # only rounds with rejections
+  python view_transcript.py <path> --calls                   # every tool call and its outcome
+  python view_transcript.py <path> --errors                  # only rounds with refused/invalid calls
   python view_transcript.py <path> --obs --round 4           # also dump the observation
 
---tags is the one to reach for when commands execute more times than expected:
-it prints each tag's position as a % through the response plus the text leading
-into it, which distinguishes a real emission from the model merely quoting a
-command mid-deliberation.
 """
 import argparse
 import json
-import re
 import sys
-
-TAG_RE = re.compile(r"<(\w+)>([^<]*)</\1>")
 
 
 def load(path):
@@ -66,7 +59,7 @@ def summary(eps):
         for r in e.get("rounds", []):
             raw = r.get("raw") or ""
             cats = r.get("actCats") or {}
-            errs = r.get("cmdErrors") or []
+            errs = _failed(r)
             print(f"{str(r.get('r')):>4} {len(raw):>7} {str(r.get('reasoningTokens') or '-'):>6}  "
                   f"{str(cats)[:34]:<34} {len(errs)}")
 
@@ -88,25 +81,31 @@ def one_round(eps, rnd, show_obs):
                 print(trace)
             print("\n--- RESPONSE ---")
             print(r.get("raw") or "(empty)")
-            print(f"\n--- ACCEPTED: {r.get('actCats')}")
-            for x in (r.get("cmdErrors") or []):
-                print(f"--- REJECTED: {x}")
+            print("\n--- CALLS ---")
+            for c in r.get("calls") or []:
+                print(f"  {_call_line(c)}")
 
 
-def tags(eps, rnd):
+def _call_line(c):
+    args = ", ".join(f"{k}={v}" for k, v in (c.get("args") or {}).items())
+    reason = f"  ({c['reason']})" if c.get("reason") else ""
+    return f"{c.get('status', '?'):<9} {c.get('tool')}({args}){reason}"
+
+
+def _failed(r):
+    return [c for c in r.get("calls") or [] if c.get("status") != "executed"]
+
+
+def calls(eps, rnd):
     for i, e in enumerate(eps):
         for r in e.get("rounds", []):
             if rnd is not None and r.get("r") != rnd:
                 continue
-            raw = r.get("raw") or ""
-            found = list(TAG_RE.finditer(raw))
-            if not found:
-                continue
-            print(f"\n--- episode {i} round {r.get('r')}  ({len(raw)} chars, {len(found)} tags)")
-            for m in found:
-                pct = 100 * m.start() / max(len(raw), 1)
-                lead = raw[max(0, m.start() - 55):m.start()].replace("\n", " ")
-                print(f"  {pct:5.1f}%  {m.group(0)[:36]:<38} ...{lead[-46:]!r}")
+            print(f"\n--- episode {i} round {r.get('r')}  reward {r.get('reward')}")
+            for c in r.get("calls") or []:
+                print(f"  {_call_line(c)}")
+            if not r.get("calls"):
+                print("  (no calls)")
 
 
 def show_prompt(eps):
@@ -145,12 +144,12 @@ def show_prompt(eps):
 def errors(eps):
     for i, e in enumerate(eps):
         for r in e.get("rounds", []):
-            errs = r.get("cmdErrors") or []
+            errs = _failed(r)
             if not errs:
                 continue
             print(f"\n--- episode {i} round {r.get('r')}  accepted={r.get('actCats')}")
-            for x in errs:
-                print(f"    {x[:160]}")
+            for c in errs:
+                print(f"    {_call_line(c)[:160]}")
 
 
 def main():
@@ -159,8 +158,8 @@ def main():
     ap.add_argument("path", help="path to an episodes.jsonl")
     ap.add_argument("--episode", type=int, default=None, help="0-indexed; default all")
     ap.add_argument("--round", type=int, default=None)
-    ap.add_argument("--tags", action="store_true", help="show each tag's position in the response")
-    ap.add_argument("--errors", action="store_true", help="only rounds with rejected commands")
+    ap.add_argument("--calls", action="store_true", help="every tool call and its outcome")
+    ap.add_argument("--errors", action="store_true", help="only rounds with refused/invalid calls")
     ap.add_argument("--obs", action="store_true", help="also print the observation sent")
     ap.add_argument("--prompt", action="store_true",
                     help="print the stored system prompt as TEXT, with newlines rendered and "
@@ -173,8 +172,8 @@ def main():
 
     if a.prompt:
         show_prompt(eps)
-    elif a.tags:
-        tags(eps, a.round)
+    elif a.calls:
+        calls(eps, a.round)
     elif a.errors:
         errors(eps)
     elif a.round is not None:

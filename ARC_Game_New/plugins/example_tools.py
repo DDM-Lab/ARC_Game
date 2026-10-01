@@ -6,7 +6,7 @@ Demonstrates the full pattern with NO heavy deps:
     shared session_store and writes a custom log entry,
   - an acting TOOL (`preference_choices`) that pulls fresh state and proposes via ctx.
 
-A tool/hook reaches the game ONLY through `ctx` — it never imports agent_router. Swap the toy
+A tool/hook reaches the game ONLY through `ctx` — it never imports the router's internals. Swap the toy
 counting model for a real Bayesian model (numpy/pymc) to get the elicitation use case.
 """
 from router.plugin_api import register_tool, register_hook, ToolResult
@@ -73,7 +73,7 @@ async def preference_choices(ctx, args):
 
 
 def check_fixtures():
-    """Representative inputs for `cora-plugin check`."""
+    """Representative inputs for `python -m router.plugin_cli check`."""
     return {
         "state": {"mapState": {"facilities": [
             {"name": "Kitchen Alpha", "needed": 10, "have": 3},

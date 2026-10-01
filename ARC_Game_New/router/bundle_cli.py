@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""cora-bundle — contributor CLI for CORA experiment bundles.
+"""python -m router.bundle_cli — contributor CLI for CORA experiment bundles.
 
-Front-end #1 over the shared validation core (cora_schema + bundle.py). The live upload endpoint
+Front-end #1 over the shared validation core (router.schema + router.bundles). The live upload endpoint
 and the eventual dashboard reuse the SAME core, so nothing here is throwaway.
 
 Subcommands:
@@ -228,7 +228,7 @@ def cmd_push(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="cora-bundle", description="CORA experiment-bundle CLI")
+    p = argparse.ArgumentParser(prog="python -m router.bundle_cli", description="CORA experiment-bundle CLI")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pn = sub.add_parser("new", help="scaffold a bundle skeleton")

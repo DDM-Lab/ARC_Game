@@ -3,6 +3,8 @@
 # Override the router/key from your shell:  export CORA_URL=…  CORA_KEY=…
 export CORA_URL="${CORA_URL:-http://localhost:9876}"
 export CORA_KEY="${CORA_KEY:-dev-local-key}"
+# Admin routes (/admin/*) live on the loopback admin port only (python -m router --admin-port).
+export CORA_ADMIN_URL="${CORA_ADMIN_URL:-http://127.0.0.1:9877}"
 
 # repo root = parent of this script's dir
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

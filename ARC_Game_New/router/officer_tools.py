@@ -399,7 +399,7 @@ class OfficerToolsMixin:
         building_type = str(args.get("building_type") or "").strip() or None
         probe = {"action_type": category}
         if building_type:
-            # flat fallback consumed by agent_filters._building_token_of
+            # flat fallback consumed by router.scope._building_token_of
             probe["building_type"] = building_type
         owners = self._owning_agents(probe)
         what = category + (f" of {building_type}" if building_type else "")
@@ -454,7 +454,7 @@ class OfficerToolsMixin:
             return await self._execute_calls(agent, [(name, args)], game_state, all_actions,
                                              filtered_actions, meta)
 
-        # Plugin tools (cora_ext registry) take precedence — a contributor tool, or one that
+        # Plugin tools (router.plugin_api registry) take precedence — a contributor tool, or one that
         # overrides a built-in by name, dispatches here. Inert when no plugins are loaded.
         # Acting plugin tools obey the same reactive brief-only gate as built-in acting tools.
         _plugin_spec = None if _skip_registry else plugin_api.get_tool(name)

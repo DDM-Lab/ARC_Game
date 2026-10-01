@@ -6,7 +6,7 @@ uploaded envelope against a schema we own (rejecting unknown keys, wrong types, 
 any raw endpoint/secret field), then emits a plain dict that flows into the *existing*
 `agent_config.load_config` / `AgentConfig.__post_init__`. Two layers, each with a job:
 
-  * `cora_schema`  — gate untrusted input (extra='forbid', strict, provider-by-enum-only).
+  * `router.schema` — gate untrusted input (extra='forbid', strict, provider-by-enum-only).
   * `AgentConfig`  — runtime invariants the engine relies on.
 
 See docs/CORA_API_v1.md and docs/contributor-platform-design.md.
@@ -33,7 +33,7 @@ ActorType = Literal["manual", "continuous"]
 Category = Literal["construction", "deconstruction", "worker",
                    "worker_assignment", "resource_transfer", "task_choice", "all"]
 TaskGroup = Literal["budget", "workforce", "food", "lodging", "disaster"]
-OrderRule = Literal["sequential", "random", "priority"]
+OrderRule = Literal["sequential", "random"]
 ToolMode = Literal["auto", "native", "text"]
 OpeningMode = Literal["emergent", "brief_first", "reactive"]
 LedgerMode = Literal["block", "annotate"]

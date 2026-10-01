@@ -3,6 +3,6 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
     "needs_unity: needs a headless Unity build (set ARC_HEADLESS_EXE)",
-    "needs_router: needs a running agent_router",
+    "needs_router: needs a running router (python -m router)",
 ]
 addopts = "-m 'not needs_unity and not needs_router'"

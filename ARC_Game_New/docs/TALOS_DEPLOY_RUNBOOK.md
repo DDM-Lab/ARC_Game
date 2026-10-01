@@ -5,7 +5,9 @@ participant keys, and pull transcripts for training. Every command below was ver
 local router before being written down.
 
 Companion docs: `TALOS_AGENT_QUICKSTART.md` (orientation), `contributor-platform-design.md`
-(design rationale), `CORA_API_v1.md` (action/observation contract).
+(design rationale), `CORA_API_v1.md` (action tools + observation/provider contract),
+`phase2-plugin-spec.md` (plugins). `ops/deploy_talos.sh` (run on the server) and
+`ops/verify_talos.sh` (run from a laptop) script the deploy and its checks.
 
 ---
 
@@ -26,7 +28,7 @@ longer reaches `/admin/*`.
 | `GET /configs` | config catalog (key-scoped) | ✅ already |
 | `POST /bundles` | config upload | ✅ already |
 | `WS /ws` | gameplay | ✅ already |
-| `GET /whoami` | key label + capabilities (`cora.py doctor`) | ✅ **add** — self-diagnosis |
+| `GET /whoami` | key label + capabilities (`python -m router.cli doctor`) | ✅ **add** — self-diagnosis |
 | `GET /my/sessions` | list own sessions | ✅ **add** — collaborators need it |
 | `GET /my/sessions/export` | bulk corpus download | ✅ **add** — the SFT path |
 | `GET /my/sessions/{id}` | single transcript | ✅ **add** |
@@ -59,7 +61,7 @@ ProxyPassReverse /plugins  http://127.0.0.1:9876/plugins
 Verify after reload, from your laptop:
 ```bash
 export CORA_URL=https://<host> CORA_KEY=<key>
-python cora.py doctor          # ✓ reachable, ✓ key valid, capabilities listed
+python -m router.cli doctor    # ✓ reachable, ✓ key valid, capabilities listed
 curl -s -o /dev/null -w '%{http_code}\n' "$CORA_URL/admin/keys"   # expect 404
 ```
 `doctor` exercises `/health`, `/whoami` and `/configs` in one shot, so a missing `ProxyPass`
@@ -85,17 +87,18 @@ gets **403** (verified).
 
 ```bash
 B=https://cora_game_llm.dev.ddmlab.com      # locally: http://localhost:9876
+A=http://127.0.0.1:9877                     # admin app, through: ssh -L 9877:127.0.0.1:9877 talos
 ADMIN=<root admin key>
 
 # (1) YOU mint a collaboration key (via the SSH tunnel — /admin is not public)
 COLLAB=$(curl -s -X POST -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
   -d '{"role":"cohort","cohort":"ddmlab-collab","count":1,
        "caps":["mint","upload_code"],"quota":200}' \
-  $B/admin/keys | python -c "import sys,json;print(json.load(sys.stdin)['keys'][0])")
+  $A/admin/keys | python -c "import sys,json;print(json.load(sys.stdin)['keys'][0])")
 # hand COLLAB to the collaborator — it is not retrievable later
 
 # (2) COLLABORATOR uploads a config bundle with their own key
-python cora_bundle.py push bundles/mylab/terse.json --url $B --key $COLLAB
+python -m router.cli push bundles/mylab/terse.json --url $B --key $COLLAB
 #   -> stored as 'ddmlab-collab__terse'  (namespace derives from the TOKEN, never the body)
 
 # (3) COLLABORATOR stages a plugin (optional; requires upload_code)
@@ -106,7 +109,8 @@ curl -X POST -H "Authorization: Bearer $COLLAB" --data-binary @my_tools.py \
 # (4) COLLABORATOR mints participant keys SCOPED TO THEIR CONFIG
 curl -X POST -H "Authorization: Bearer $COLLAB" -H 'Content-Type: application/json' \
   -d '{"role":"cohort","cohort":"study-A","count":30,"quota":20,
-       "configs":["ddmlab-collab__terse"]}' $B/admin/keys
+       "configs":["ddmlab-collab__terse"]}' $A/admin/keys
+# (the admin app is loopback-only, so a collaborator without shell access asks you to run this)
 ```
 
 **The `configs` scope in step 4 is required.** Participants do NOT inherit the minter's uploads;
@@ -115,7 +119,7 @@ without it they see an empty config list. With it, the config is both visible an
 ```bash
 # (5) COLLABORATOR pulls their corpus and builds an SFT set
 curl -H "Authorization: Bearer $COLLAB" "$B/my/sessions/export?format=tar" -o corpus.tar.gz
-python export_sft.py --from-sessions corpus.tar.gz --out sft.jsonl
+python -m bench.export_sft --from-sessions corpus.tar.gz --out sft.jsonl   # or: python -m router.cli sft corpus.tar.gz
 #   filters: --agent "<Officer>", --min-reward X
 #   export filters: ?config=<name>&limit=N&format=ndjson|tar
 ```
@@ -175,7 +179,7 @@ granting eventual code execution on the server, gated only by your review. For l
 
 ```bash
 env -u ALL_PROXY -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
-  ./.venv/bin/python -u agent_router.py \
+  ./.venv/bin/python -u -m router \
       --config-dir config --keys-file config/keys.json \
       --port 9876 --admin-port 9877 --log-dir logs/sessions
 ```
@@ -195,7 +199,7 @@ The harness still owns tool-protocol pairing, action execution, the reply guaran
 logging, so every variant produces identical action semantics and a comparable corpus.
 
 ```python
-from cora_ext import register_hook
+from router.plugin_api import register_hook
 
 @register_hook("on_turn_start")      # -> str | [{"role":"user"|"system","content":str}] | None
 def scratchpad(ctx, ev):
@@ -214,7 +218,8 @@ executed_total, spoke`.
 
 Covers ReAct-style scratchpads, self-critique, retrieval injection, step budgets, confidence
 gates, and control conditions. `assistant`/`tool` roles are refused on injection — they would
-break tool_call_id pairing. Working example: `examples/plugins/loop_shaping.py`. Tests:
+break tool_call_id pairing. Example: `examples/plugins/loop_shaping.py` (its import still names
+the old module `cora_ext`; change it to `router.plugin_api`). Tests:
 `test_loop_hooks.py`. A full custom loop (`register_loop`) is deliberately NOT implemented —
 these hooks cover the common cases; revisit if a collaborator genuinely needs to replace the
 loop itself.
@@ -235,18 +240,18 @@ loop itself.
       `framework.js` against a new `.wasm` throws `ASM_CONSTS[code].apply`).
 - [ ] Smoke test from a laptop (not the box), with `CORA_URL`/`CORA_KEY` set:
       ```bash
-      python cora.py doctor                      # reachability, key, capabilities
-      python cora.py new  smoke/probe            # scaffold
-      python cora.py check bundles/smoke/probe.json
-      python cora.py push  bundles/smoke/probe.json
+      python -m router.cli doctor                # reachability, key, capabilities
+      python -m router.cli new  smoke/probe      # scaffold
+      python -m router.cli check bundles/smoke/probe.json
+      python -m router.cli push  bundles/smoke/probe.json
       # play one round in the browser picking the uploaded config, then:
-      python cora.py data --export               # the round comes back
+      python -m router.cli data --export         # the round comes back
+      ops/verify_talos.sh                        # endpoint checks (CORA_KEY for authed ones)
       ```
       This is the same path a collaborator walks; if it works, onboarding works.
-- [ ] Hermetic tests green before shipping:
-      `test_tag_translation.py`, `test_reactive_officers.py`, `test_loop_hooks.py`,
-      `test_concurrent_officers.py`, `test_bundle_platform.py`, `test_gym_tags.py`,
-      `test_router_fixes.py`, `test_step7_polish.py`.
-      (`test_propose_tags.py` has a known pre-existing dedup failure — not a regression;
-      `test_alerts_dont_stall.py` needs `ARC_GAME_BUILD` and is not hermetic.)
+- [ ] Hermetic tests green before shipping: `pytest` (deselects `needs_unity` and
+      `needs_router` tests). Router-relevant files include `test_reactive_officers.py`,
+      `test_loop_hooks.py`, `test_concurrent_officers.py`, `test_bundle_platform.py`,
+      `test_propose_calls.py`, `test_router_fixes.py`, `test_step7_polish.py`.
+      (`test_alerts_dont_stall.py` needs `ARC_GAME_BUILD` and is not hermetic.)
 - [ ] Do **not** push to Talos without the maintainer's approval.

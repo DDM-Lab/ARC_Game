@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from router.config import AgentConfig, RouterConfig
-from router.scope import filter_observation, filter_actions
+from router.scope import filter_observation
 from router.ordering import get_agent_order
 from router.episode_log import EpisodeLogger
 from cora.tools import TOOLS
@@ -109,7 +109,7 @@ class Session(UnityIOMixin, OfficerLoopMixin, OfficerToolsMixin, ProposalsMixin,
         # scramble each other's results. Short-held: the slow LLM tool-loop thinking
         # runs OUTSIDE this lock, so officers still overlap where it matters.
         self._unity_commit_lock: asyncio.Lock = asyncio.Lock()
-        # --- Plugin (cora_ext) per-session state: three store scopes + a lock for shared
+        # --- Plugin per-session state: three store scopes + a lock for shared
         # writes. In-memory for now; ctx.persist becomes SQLite-backed in a later slice. ---
         self._plugin_session_store: dict = {}
         self._plugin_agent_stores: dict = {}          # subagent_name -> dict
@@ -461,21 +461,10 @@ class Session(UnityIOMixin, OfficerLoopMixin, OfficerToolsMixin, ProposalsMixin,
         self._latest_all_actions = all_actions
         self._state_version += 1
 
-        # Split by actor_type. Non-continuous actors (auto/choices/coach) keep the
-        # sequential, state-threading semantics they were designed around — they run
-        # first, one after another. Continuous officers then run their tool-loops
-        # CONCURRENTLY: each reads the freshest shared snapshot and publishes its
-        # result, while the Unity socket is arbitrated by the commit/attention locks.
+        # Continuous officers run their tool-loops CONCURRENTLY: each reads the freshest shared
+        # snapshot and publishes its result, while the Unity socket is arbitrated by the
+        # commit/attention locks. Manual actors are played by the human; nothing runs for them.
         continuous = [a for a in ordered if a.actor_type == "continuous"]
-        others = [a for a in ordered if a.actor_type != "continuous"]
-
-        for agent in others:
-            game_state, all_actions = await self._run_subagent(
-                agent, game_state, all_actions
-            )
-            self._latest_game_state = game_state
-            self._latest_all_actions = all_actions
-            self._state_version += 1
 
         if continuous:
             print(f"[router] Running {len(continuous)} continuous officer(s) "
@@ -514,29 +503,6 @@ class Session(UnityIOMixin, OfficerLoopMixin, OfficerToolsMixin, ProposalsMixin,
             import traceback
             print(f"[router] ❌ begin_round task FAILED: {type(exc).__name__}: {exc}")
             traceback.print_exception(type(exc), exc, exc.__traceback__)
-
-    async def _run_subagent(
-        self,
-        agent: AgentConfig,
-        game_state: dict,
-        all_actions: List[dict],
-    ) -> Tuple[dict, List[dict]]:
-        """Run one subagent turn. Returns updated (game_state, all_actions)."""
-        print(f"[router] Subagent: {agent.subagent_name} ({agent.actor_type})")
-
-        filtered_state = self._filter_state(game_state, agent)
-        filtered_actions = filter_actions(all_actions, agent.subaction_space)
-
-        if not filtered_actions:
-            print(f"[router]   No valid actions in subaction_space — skipping.")
-            return game_state, all_actions
-
-        if agent.actor_type == "continuous":
-            game_state, all_actions = await self._run_continuous(
-                agent, filtered_state, filtered_actions, game_state, all_actions
-            )
-
-        return game_state, all_actions
 
     def _emit_round_state(self, game_state: dict, phase: str) -> None:
         """One `round_state` event: the game's own score (cora.scoring), budget, efficiency, the full rewardMetrics counters, and the

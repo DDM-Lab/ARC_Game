@@ -135,7 +135,7 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 
 | Area | Status |
 |---|---|
-| Tool-call executor | done in the benchmark and the router (officers' action tools and `propose_choices` packages; command tags retired); RL pending |
+| Tool-call executor | done in the benchmark and the router (officers' action tools and `propose_choices` packages; command tags retired); RL through CoraEnv |
 | Headless parameters, pinned map, scenario block | done |
 | Gym steps = human decision points (Day 1 setup, rollover step) | done |
 | `cora/` package | done |
@@ -147,6 +147,6 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 | Legacy actors (auto / choices / coach) retired | done |
 | `router/` package (service, session, mixins) | done |
 | `CoraEnv` (rl/); the benchmark plays through it | done |
-| Thin Verlog adapter over CoraEnv | pending |
-| Repo hygiene (scripts, docs, tests) | pending |
+| Thin Verlog adapter over CoraEnv | done in the Verlog fork (branch rl_cora_env: arc_game/cora_adapter.py, captioner `cora`); not yet pushed |
+| Repo hygiene (scripts, docs, tests) | done: legacy scripts and docs deleted (tag pre-cleanup-2026-10), scripts in `ops/`, docs refreshed |
 | C# `GameApi` facade, task logic out of the UI | separate branch |

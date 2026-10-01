@@ -22,7 +22,7 @@ human director's turn would.
 
 Run (clear proxies, venv python; network → unsandboxed):
   env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY \
-      -u http_proxy ./.venv/bin/python headless_multiagent_harness.py --rounds 2
+      -u http_proxy ./.venv/bin/python -m router.harness --rounds 2
 """
 import argparse
 import asyncio

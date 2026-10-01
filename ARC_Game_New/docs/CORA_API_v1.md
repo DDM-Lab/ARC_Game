@@ -1,59 +1,73 @@
 # CORA API v1 — the core contributor contract
 
-`cora_api_version: "1.0"`
+`cora_api_version: "1.0"` (`router/schema.py` `CORA_API_VERSION`)
 
-This is the **stable contract** every uploaded bundle targets. Engine internals may change; this
-contract is a promise. A bundle's `manifest.cora_api_version` declares the version it was authored
-against; the loader **warns on minor drift and refuses on major drift** (SemVer). Changing anything
-in this document is a versioned event (bump `cora_api_version`), not a silent edit.
-
-Kept deliberately OUT of the plugin API surface: contributors' tools/loops (later phases) reach
-these only through harness-provided context, never by constructing them directly.
+This is the contract an uploaded bundle targets: the action tools, the observation and scope
+vocabularies, the provider names and the bundle manifest. A bundle's `manifest.cora_api_version`
+declares the version it was written against; the loader refuses a major mismatch and warns on a
+newer minor (`router/bundles.py` `_check_api_version`). Changing anything here is a versioned
+event, not a silent edit.
 
 ---
 
-## 1. Action grammar (the shared action representation)
+## 1. Action tools (the shared action representation)
 
-All arms — LLM officers, the RL policy, and the benchmark — serialize actions to ONE text
-command-tag DSL, parsed by `cmd_parser.parse_commands`. This is the single most important frozen
-surface (it's what makes frontier-officer rollouts, the RL policy, and the benchmark comparable —
-see `tool_schema_research.md`). The v1 grammar is exactly seven tags:
+Every front end acts through the same typed tool calls: the LLM officers in the GUI, the
+benchmark, the RL policy and the baseline policies. The schema is defined once in `cora/tools.py`
+(`TOOLS`, rendered by `openai_tools()` and, for Verlog, `arc_tools_yaml()`), and calls are resolved
+and executed by `cora/executor.py`. Tools return nothing to a benchmark or RL policy; the router
+reports each call's outcome to the officer.
 
-| Tag | Form | Meaning |
+| Tool | Arguments | Meaning |
 |---|---|---|
-| `build` | `<build>TYPE,SITE</build>` | construct a facility of TYPE at SITE |
-| `hire` | `<hire>untrained\|trained,N</hire>` | hire N workers |
-| `train` | `<train>N</train>` | train N untrained workers |
-| `staff` | `<staff>BUILDING,N</staff>` | assign N workers to BUILDING |
-| `deconstruct` | `<deconstruct>NAME</deconstruct>` | demolish facility NAME |
-| `transfer` | `<transfer>food\|people,SRC,DST,N</transfer>` | move N food/people SRC→DST |
-| `task` | `<task>TOKEN,CHOICE</task>` | answer task TOKEN with option CHOICE |
+| `build` | `type` (`kitchen` \| `shelter` \| `casework`), `site_id` (int) | construct at a free site offered this turn |
+| `hire` | `kind` (`untrained` \| `trained`), `count` (int) | hire workers; they arrive later, not this turn |
+| `train` | `count` (int) | train untrained workers |
+| `staff` | `site` (facility name), `count` (optional, workforce units) | staff a built facility; omit `count` to staff it fully (partial staffing is refused) |
+| `deconstruct` | `site` (facility name) | tear a facility down; no refund |
+| `task` | `task_id` (string), `choice_id` (int) | answer an active task with one of its offered choices |
+| `transfer` | `resource` (`food` \| `people`), `source`, `dest`, `qty` | move a resource with a free vehicle; manual-transfer mode only |
 
-`TOKEN` is the stable task token (`obs_encoder.stable_task_token`), not a turn-volatile integer.
-Regex authority: `cmd_parser._CMD_RE`.
+- Facility names match case-insensitively by substring.
+- `task_id` is the stable task token from `cora.observation.task_token` (e.g. `BUDGET_DAILY`), the
+  same across turns. `choice_id` is the id printed for that choice this turn; ids are neither
+  0-based nor contiguous.
+- `transfer` is `manual_only`. The benchmark and RL offer it only with manual transfers
+  (`--transfers manual`); router officers always have it.
+- Calls run in a fixed order whatever order they were written in: task answers, deconstruct,
+  build, hire, train, staff, transfer (`executor.ORDER`).
+- Each call ends `executed`, `refused` (the game said no, with its reason) or `invalid` (unknown
+  tool, bad arguments, nothing to apply it to, or outside the officer's scope).
 
-## 2. Observation schema
+Bundles cannot change tool parameters. `tool_descriptions` may reword a tool's description only.
 
-Officers/policies receive an observation assembled by `obs_encoder` and scoped per-agent. The v1
-observation vocabulary (`agent_config.VALID_OBS_KEYS` + aliases):
+## 2. Observation vocabulary (`subobservation_space`)
 
-- Section keys: `sessionInfo`, `satisfactionAndBudget`, `constructionState`, `logistics`, `tasks`,
-  `workers` (alias → `workforceState`), `buildings` (alias → `mapState`), `all`.
-- Task narrowing: `tasks:<group>` where group ∈ `{budget, workforce, food, lodging, disaster}`.
+Officers receive the observation built by `cora/observation.py`, filtered per officer by
+`router/scope.py` `filter_observation` and `Session._filter_state`. Keys (authority:
+`router/config.py` `VALID_OBS_KEYS`):
 
-## 3. Action scoping vocabulary (`subaction_space`)
+- Sections: `all`, `sessionInfo`, `satisfactionAndBudget`, `constructionState`, `logistics`,
+  `tasks`, `workers` (alias of `workforceState`), `buildings` (alias of `mapState`),
+  `workforceState`, `mapState`.
+- Task narrowing: `tasks:<group>`, group ∈ `{budget, workforce, food, lodging, disaster}`
+  (`cora.observation.task_group`).
+
+## 3. Action scope vocabulary (`subaction_space`)
 
 Category ∈ `{construction, deconstruction, worker, worker_assignment, resource_transfer,
-task_choice, all}`; `task_choice` takes an optional `{"group": <slug>}` sub-scope (same groups as
-above); construction/assignment/deconstruction take an optional `building_types` list (substring
-match). Authority: `agent_config.VALID_CATEGORIES`, `VALID_TASK_GROUPS`.
+task_choice, all}`. `task_choice` takes an optional `{"group": <slug>}` (same groups as above).
+Other categories take an optional `building_types` list (case-insensitive substring of the building
+type or name). Authority: `router/config.py` `VALID_CATEGORIES`, `VALID_TASK_GROUPS`; filtering:
+`router/scope.py` `filter_actions`.
 
 ## 4. Provider vocabulary (enum, not raw endpoints)
 
-A bundle names a provider by **enum**, never a raw endpoint or secret. The server-side
-`PROVIDER_REGISTRY` resolves the enum → `{provider, base_url, key_env}`. v1 providers:
-`anthropic`, `anthropic-ddmlab`, `cmu-gateway`, `openai`, `ollama-local`. Adding a provider is a
-server-side registry edit (auditable), not a bundle field.
+A bundle names its model backend by enum, never by endpoint or secret. The server-side
+`PROVIDER_REGISTRY` in `cora/llm/providers.py` resolves each name to `(backend, base_url,
+key_env)`. Current names: `anthropic`, `anthropic-ddmlab`, `cmu-gateway`, `openai`,
+`ollama-local`, `qwen-local`, `qwen-auton`, `qwen3-4b-auton`, `minicpm5-2b-auton`. Adding a
+provider is a reviewed edit to that file, not a bundle field.
 
 ## 5. Bundle manifest
 
@@ -64,13 +78,18 @@ server-side registry edit (auditable), not a bundle field.
   "version": "MAJOR.MINOR.PATCH",  // immutable SemVer once published
   "cora_api_version": "1.0",       // this contract
   "description": "<one line>",
-  "dependencies": []               // reserved: ["owner/other>=1.0.0"] style, Factorio ?/>=/! model
+  "dependencies": []               // reserved
 }
 ```
 
+The full bundle envelope (`router/schema.py` `Bundle`): `manifest`; exactly one of `config` (a
+full roster) or `delta` (overrides matched to a base config by `subagent_name`); optional
+`global_prompt`, `tool_policy`, `turn_instructions`, `tool_descriptions`; and `tools`, which must
+be empty in v1.0. Officer fields are listed in [AGENT_CONFIG_GUIDE.md](../AGENT_CONFIG_GUIDE.md).
+
 ## 6. Compatibility policy
 
-- `cora_api_version` MAJOR mismatch → loader refuses the bundle.
-- MINOR mismatch (bundle older than server) → loader warns, proceeds (additive-only within a major).
-- The action grammar (§1) and provider enum (§4) are the surfaces most likely to grow; growth is
-  additive within v1.x (new tags/providers), breaking changes bump to v2.
+- `cora_api_version` major mismatch → the loader refuses the bundle.
+- A bundle targeting a newer minor than the server → warning, then proceeds.
+- The tools (§1) and providers (§4) are the surfaces most likely to grow; growth within v1.x is
+  additive, and breaking changes bump to v2.

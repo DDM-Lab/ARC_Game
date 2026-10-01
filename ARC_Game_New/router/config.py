@@ -29,9 +29,9 @@ VALID_OBS_KEYS = {"sessionInfo", "satisfactionAndBudget", "workers",
                   "mapState", "logistics", "all",
                   # Raw game_state keys are also accepted (aliases map workers->
                   # workforceState, buildings->mapState; these let a config name the
-                  # raw key directly). See agent_filters._OBS_KEY_ALIASES.
+                  # raw key directly). See router.scope._OBS_KEY_ALIASES.
                   "workforceState"}
-VALID_ORDER_RULES = {"sequential", "random", "priority"}
+VALID_ORDER_RULES = {"sequential", "random"}       # = router.ordering._ORDER_RULES
 VALID_TALKINGHEADS = {
     "DisasterOfficer", "WorkforceService", "LodgingMassCare",
     "ExternalRelationship", "FoodMassCare", None
@@ -122,7 +122,7 @@ class AgentConfig:
                     raise ValueError(
                         f"Invalid task_choice group '{grp}' for agent "
                         f"'{self.subagent_name}'. Must be one of {VALID_TASK_GROUPS}.")
-            # Optional building-type sub-scope (see agent_filters.filter_actions).
+            # Optional building-type sub-scope (see router.scope.filter_actions).
             # Case-insensitive substring match against a construction building_type
             # ("Kitchen"/"Shelter"/"CaseworkSite") or an assignment/deconstruction
             # building_name ("Kitchen Alpha"). Must be a list of strings if present.
@@ -179,7 +179,7 @@ class RouterConfig:
     global_prompt_behavior: Optional[str] = None
     global_prompt_manual: Optional[str] = None
     tool_policy: Optional[str] = None
-    # Authored strings of the per-turn message (see cora_schema.Bundle.turn_instructions).
+    # Authored strings of the per-turn message (see router.schema.Bundle.turn_instructions).
     turn_instructions: Optional[dict] = None
     #   tool_descriptions      : reword built-in tool descriptions, {tool_name: text}. These
     #                            ride the API `tools` argument rather than the prompt, so this
@@ -234,7 +234,7 @@ def config_from_dict(data: dict) -> RouterConfig:
     """Build + validate a RouterConfig from an already-parsed config dict.
 
     Split out of load_config so the UPLOAD path can enforce the same RUNTIME invariants
-    without writing a file first. The Pydantic gate (cora_schema.CoraConfig) and these
+    without writing a file first. The Pydantic gate (router.schema.CoraConfig) and these
     invariants check different things: a config can pass the schema and still be unusable —
     e.g. two officers sharing one talkinghead slot passes CoraConfig but raises here, which
     meant such a bundle uploaded with HTTP 200 and then broke the session of whoever selected

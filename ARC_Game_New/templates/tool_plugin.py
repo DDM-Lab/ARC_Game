@@ -1,8 +1,8 @@
 """Template CORA plugin. Copy to plugins/<yourlab>_tools.py, edit, then validate:
-    python cora_plugin.py check plugins/<yourlab>_tools.py
+    python -m router.plugin_cli check plugins/<yourlab>_tools.py
 A tool/hook reaches the game ONLY through the injected `ctx`. Full surface: docs/phase2-plugin-spec.md.
 """
-from cora_ext import register_tool, register_hook, ToolResult
+from router.plugin_api import register_tool, register_hook, ToolResult
 
 _MY_TOOL_SCHEMA = {
     "type": "function",
@@ -14,10 +14,10 @@ _MY_TOOL_SCHEMA = {
 }
 
 
-@register_tool("my_tool", _MY_TOOL_SCHEMA)          # add acting=True if it calls emit/propose
+@register_tool("my_tool", _MY_TOOL_SCHEMA)          # add acting=True if it calls execute/propose
 def my_tool(ctx, args):
     # read facts:   ctx.state, ctx.get_facilities(), await ctx.refresh_state()
-    # act (only!):  await ctx.emit_commands("<hire>untrained,4</hire>") / ctx.propose_choices([...])
+    # act (only!):  await ctx.execute([("hire", {"kind": "untrained", "count": 4})]) / ctx.propose_choices([...])
     return ToolResult("hello from my_tool")
 
 
@@ -28,7 +28,7 @@ def on_choice(ctx, event):
 
 
 def check_fixtures():
-    """Sample inputs used by `cora-plugin check`."""
+    """Sample inputs used by `python -m router.plugin_cli check`."""
     return {
         "state": {"mapState": {"facilities": []}},
         "tool_args": {"my_tool": {}},

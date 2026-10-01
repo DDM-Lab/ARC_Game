@@ -2,14 +2,22 @@
 
 _Synthesis of four independent research passes (config management, AI/agentic-loop
 extensibility, game modding/extensibility, AI-platform collaboration + upload/key security),
-mapped onto CORA's current code. **Design memo — no code changed.**_
+mapped onto CORA's code at the time. Design memo; for what was built, see the status note below._
+
+> **Status (2026-10).** Built: the Pydantic bundle gate (`router/schema.py`), base + delta
+> composition (`router/bundles.py`), the provider enum (`cora/llm/providers.py`), live upload
+> (`POST /bundles`, `POST /plugins`), hashed cohort keys (`router/key_store.py`), and tool/hook
+> plugins with an injected `ctx` (`router/plugin_api.py`, see docs/phase2-plugin-spec.md). The
+> command-tag grammar this memo originally froze was retired: the shared action representation
+> is now the typed tool calls in `cora/tools.py`, executed by `cora/executor.py`. Not built: the
+> loop registry, bundle-declared tools, the worker-process sandbox.
 
 Goal (maintainer): let external collaborators **upload their own config/prompt bundles now**,
 **tools next** (requires code extensibility), and eventually **agentic-loop code**, and run
 benchmarks — accessible on `cora_game_llm.dev.ddmlab.com`, git-versioned now + live-upload later,
 **trusted lab collaborators** for now. Constant constraint from prior decisions: **one shared
 action representation** across officers (frontier rollouts → SFT), the RL policy, and the benchmark
-(`cmd_parser` DSL) — the plugin layer must never own it.
+(the typed tool calls of `cora/tools.py`) — the plugin layer must never own it.
 
 ---
 
@@ -33,16 +41,17 @@ action representation** across officers (frontier rollouts → SFT), the RL poli
    (a) a **bundle manifest** — `name`, `author`, **immutable SemVer `version`**, a
    **`cora_api_version`** the bundle targets, `description`, `dependencies` (Factorio's
    `?`/`>=`/`!` model); (b) a **named, versioned core action/observation contract** — our
-   officer↔director interface (the `cmd_parser` action grammar + the obs schema). Bundles declare
+   officer↔director interface (the action tool schema + the obs schema; docs/CORA_API_v1.md). Bundles declare
    the version; the loader warns/refuses on mismatch.
 5. **Override, don't fork; base + delta composition.** A contributor uploads a small *delta* that
    layers on a maintained base (RimWorld `PatchOperation`, Factorio `data.raw`). Pattern:
    validate base → validate delta (all-optional model, `extra='forbid'`) → deep-merge →
    **re-validate merged result**. Core updates then propagate instead of silently breaking stale copies.
 6. **Host-mediated boundary from day one.** Even in-process/trusted, route the first custom tool
-   through a harness-provided context (`ctx.emit_commands(...)`), never raw Python/parser access.
-   Then the jump to real sandboxing (subprocess → gVisor/Firecracker) is a substrate swap, not a
-   rewrite. The plugin does policy; the harness keeps orchestration, logging, and the DSL.
+   through a harness-provided context (`ctx.execute(calls)`), never raw access to the session or
+   the executor. Then the jump to real sandboxing (subprocess → gVisor/Firecracker) is a substrate
+   swap, not a rewrite. The plugin does policy; the harness keeps orchestration, logging, and
+   action execution.
 
 ---
 
@@ -60,40 +69,37 @@ Single JSON envelope (one uploadable artifact; future-proofs `tools`):
     "description": "terser food officer, higher hire caps",
     "dependencies": []
   },
-  "config": { /* CoraConfigDelta — roster/scopes/prompts/provider(enum). NO endpoint/secret */ },
+  "config": { /* CoraConfig (full roster), or "delta": CoraConfigDelta. NO endpoint/secret */ },
   "global_prompt": { /* optional override */ },
   "tools": []                            // RESERVED; validated-empty today
 }
 ```
 
-`config` uses a **`provider` enum** (`anthropic` | `openai-gateway` | `ollama-local` | …), NOT raw
+`config` uses a **`provider` enum** (`anthropic` | `cmu-gateway` | `ollama-local` | …), NOT raw
 `llm_endpoint`/`api_key_env`. A server-side `PROVIDER_REGISTRY` maps the enum → `{base_url, key_env}`.
 Maintainer owns the registry; contributors pick from it.
 
 ---
 
-## Extensibility seams (design now; tools/loops built later)
+## Extensibility seams
 
-One stable module `cora_ext.py` — the only thing plugins import (never `agent_router`):
+What was built (`router/plugin_api.py`; details in docs/phase2-plugin-spec.md):
 
-- **Tool registry** — `register_tool(ToolSpec(name, schema, handler, acting))` / `get_tool` /
-  `build_tools(allowlist)`. This *formalizes what already exists*: `TOOL_SCHEMAS` + `build_tools`
-  is already "schema-as-data joined by name"; we turn the `_dispatch_continuous_tool` if/elif
-  (`agent_router.py:~2020`) into `spec = get_tool(name); spec.handler(ctx, args)`. Bundle `tools`
-  may declare a schema mapping to an *already-registered* handler (no new code) — e.g. a typed
-  `build`/`hire` tool that serializes to the same `cmd_parser` tags (the adapter from
-  `tool_schema_research.md`). New handler *code* = the later trusted-in-process step.
-- **Loop registry** — `register_loop(actor_type, factory)` / `make_loop` (Gymnasium `id→factory`).
-  `_run_subagent`'s `actor_type` if/elif (`agent_router.py:523`) becomes
-  `await make_loop(agent.actor_type, ...).run(ctx)`; seed with today's auto/choices/coach/continuous.
-- **`ctx` injection** (DSPy `forward` style) — the loop gets observation in / tool-calls out and
-  calls harness-provided `call_llm` / `dispatch_tool` / `emit_commands` / `log`. **`cmd_parser`
-  stays harness-owned**; plugins emit intent through `ctx.emit_commands`, preserving the single
+- **Tool registry** — `register_tool(name, schema, *, acting, override_of)` / `get_tool`. The
+  officer's dispatch (`router/officer_tools.py` `_dispatch_continuous_tool`) runs the typed action
+  tools through `cora.executor`, then checks the plugin registry before the other built-ins, so a
+  plugin can add a tool or explicitly replace a built-in. Plugin schemas join the officer's palette
+  by name, filtered by its `tools` allowlist.
+- **Hooks** — `register_hook(event)` for game events plus two loop-shaping hooks
+  (`on_turn_start`, `on_step_end`). These stand in for the loop registry this memo proposed
+  (`register_loop` / `make_loop`), which was not built.
+- **`ctx` injection** — tools and hooks get a `ToolContext`: reads, `refresh_state`,
+  `execute(calls)` (typed action calls through the shared executor), `propose_choices`, three
+  state scopes, `log`, `run_blocking`. Action execution stays harness-owned, preserving the single
   shared action representation (the RL/SFT-parity constraint).
-- Discovery: a config `plugins:` list the harness imports, plus optional
-  `entry_points(group="cora.plugins")` for pip-installed collaborators. Skip `pluggy`
-  (one-impl-per-slot); borrow its contract-first, **additive-only** versioning (grow `ctx` by adding
-  fields, never remove/reorder; collision → error unless `override=True`).
+- **Discovery** — every `*.py` under `plugins/` plus `entry_points(group="cora.plugins")`.
+  Versioning is additive-only (grow `ctx` by adding members; collision → error unless
+  `override_of`).
 
 ---
 
@@ -127,16 +133,16 @@ regardless.
 ## Phased plan
 
 - **Phase 0 — freeze contracts (write-down, ~no code):** the bundle manifest schema + the versioned
-  core action/observation contract (`cora_api_version` 1.0 = current `cmd_parser` grammar + obs schema).
-- **Phase 1 — bundle core + git-native (build first):** `cora_schema.py` (Pydantic `CoraConfig` +
-  all-optional `CoraConfigDelta` + `BundleManifest`), `bundle.py` (validate → base+delta merge →
-  revalidate), `bundles/<owner>/<name>.json` in-repo, `--bundle` in router + benchmark. **Provider
-  enum registry** replacing raw `llm_endpoint`/`api_key_env` (the security fix; also unifies) —
-  flagged as a change to trusted configs the maintainer owns.
-- **Phase 2 — extensibility seams:** `cora_ext.py` two registries + `ctx` injection; convert the two
-  dispatch points; seed with today's tools/loops. Enables declarative contributor tools.
+  core action/observation contract (`cora_api_version` 1.0; now the typed tool schema + obs schema).
+- **Phase 1 — bundle core + git-native (build first):** `router/schema.py` (Pydantic `CoraConfig` +
+  all-optional `CoraConfigDelta` + `BundleManifest`), `router/bundles.py` (validate → base+delta
+  merge → revalidate), `bundles/<owner>/<name>.json` in-repo. **Provider enum registry**
+  (`cora/llm/providers.py`) replacing raw `llm_endpoint`/`api_key_env` (the security fix; also
+  unifies) — flagged as a change to trusted configs the maintainer owns.
+- **Phase 2 — extensibility seams:** `router/plugin_api.py` tool and hook registries + `ctx`
+  injection (docs/phase2-plugin-spec.md).
 - **Phase 3 — live upload endpoint:** `POST /bundles` per-key namespace + the security checklist;
-  `benchmark --upload`; Apache proxy passthrough (Talos change — maintainer-owned).
+  Apache proxy passthrough (Talos change — maintainer-owned).
 - **Phase 4 — multi-tenant keys:** hashed opaque keys + admin→cohort minting + SQLite usage metering.
 - **Later — untrusted code:** worker-process sandbox (gVisor/Firecracker).
 
@@ -144,7 +150,7 @@ regardless.
 1. Bundle manifest with immutable SemVer + `cora_api_version`.
 2. Versioned core action/observation contract, kept out of the plugin API.
 3. Provider **enum** (never raw endpoint/secret) from day one.
-4. `cmd_parser` DSL harness-owned; plugins emit via `ctx`.
+4. Action execution harness-owned (`cora.executor`); plugins act via `ctx.execute`.
 5. Every contributor artifact is namespaced (`labname/…`).
 
 ---

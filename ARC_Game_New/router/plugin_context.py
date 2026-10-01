@@ -48,8 +48,8 @@ class _SessionToolContext(plugin_api.ToolContext):
     """Live ToolContext backed by a Session — the concrete `ctx` handed to plugin tools/hooks.
 
     Reads route to the session's filtered latest snapshot; the three store scopes and the
-    session lock live on the Session. Acting (`execute`/`propose_choices`) is wired in a
-    follow-up slice (the built-in execute path is extracted into a reusable helper there).
+    session lock live on the Session. Acting (`execute`/`propose_choices`) goes through the same
+    Session paths as the built-in tools (Session._execute_calls / _continuous_propose).
     """
     def __init__(self, session: "Session", agent: AgentConfig,
                  game_state: dict, all_actions: List[dict], filtered_actions: List[dict]):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cora-plugin — local dev tooling for CORA tool/hook plugins (Phase 2).
+"""python -m router.plugin_cli — local dev tooling for CORA tool/hook plugins (Phase 2).
 
 `check` validates a plugin OFFLINE against MockToolContext before it ever reaches a router:
 imports it, confirms it registers well-formed tools/hooks, and smoke-runs each against a fixture
@@ -75,7 +75,7 @@ def cmd_check(args: argparse.Namespace) -> int:
             res = await run_tool(spec, ctx, tool_args.get(name, {}), timeout=args.timeout)
             errored = res.text.startswith("ERROR")
             print(f"  {'ERROR' if errored else 'ok   '} tool {name}() -> {res.text[:90]!r}"
-                  + (f"  (emitted={ctx.emitted} proposed={len(ctx.proposed)})" if (ctx.emitted or ctx.proposed) else ""))
+                  + (f"  (executed={ctx.executed} proposed={len(ctx.proposed)})" if (ctx.executed or ctx.proposed) else ""))
             if errored and callable(fx):
                 problems.append(f"tool {name!r} errored on its fixture: {res.text}")
         for ev in events:
@@ -96,7 +96,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="cora-plugin", description="CORA plugin dev tooling")
+    ap = argparse.ArgumentParser(prog="python -m router.plugin_cli", description="CORA plugin dev tooling")
     sub = ap.add_subparsers(dest="cmd", required=True)
     pc = sub.add_parser("check", help="validate a plugin offline against MockToolContext")
     pc.add_argument("plugin")

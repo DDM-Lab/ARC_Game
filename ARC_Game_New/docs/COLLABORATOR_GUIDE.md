@@ -95,16 +95,18 @@ It looks like:
        "subobservation_space": ["sessionInfo", "satisfactionAndBudget", "tasks:food"],
        "system_prompt": "You are the Food Officer. Answer the number first, one sentence.",
        "opening_mode": "emergent",                    // speaks from round 1
-       "tools": ["read_state","get_facilities","build","task","talk_to_director","finish"]
+       "tools": ["read_state","get_facilities","build","task","send_message","finish"]
       }
     ]
   }
 }
 ```
 Rules the validator enforces: `provider` is a fixed enum (`anthropic`, `anthropic-ddmlab`,
-`cmu-gateway`, `openai`, `ollama-local`) — you can never set a raw endpoint or secret; unknown
+`cmu-gateway`, `openai`, `ollama-local`, `qwen-local`, `qwen-auton`, `qwen3-4b-auton`,
+`minicpm5-2b-auton`) — you can never set a raw endpoint or secret; unknown
 keys are rejected; exactly one director. A **delta** bundle (override just a few fields of a base
-config) is also supported — see `docs/CORA_API_v1.md`.
+config) is also supported — see `docs/CORA_API_v1.md`. Every officer field is described in
+`AGENT_CONFIG_GUIDE.md`.
 
 > **Three fields decide whether your officer looks alive.** `router.cli check` warns about all
 > three, but they cause most first-run confusion:
@@ -120,9 +122,10 @@ config) is also supported — see `docs/CORA_API_v1.md`.
 
 ### B. (Optional) A plugin — new tools / hooks  ✅ code, trusted
 A Python file under `plugins/` (or delivered by git-PR). It reaches the game ONLY through the
-injected `ctx`; it never imports the router. Minimal example (`plugins/yourlab_tools.py`):
+injected `ctx`; it imports only `router.plugin_api`, never the router's internals. Minimal
+example (`plugins/yourlab_tools.py`):
 ```python
-from cora_ext import register_tool, register_hook, ToolResult
+from router.plugin_api import register_tool, register_hook, ToolResult
 
 @register_tool("unmet_needs", {"type":"function","function":{
     "name":"unmet_needs","description":"List facilities with the biggest gaps.",
@@ -142,7 +145,7 @@ def observe(ctx, ev):
 `ctx` gives you: reads (`ctx.state`, `get_facilities/...`, `await ctx.refresh_state()`), acting
 (`await ctx.execute([("hire", {"kind": "untrained", "count": 4})])`, `await ctx.propose_choices([...])`),
 three store scopes (`agent_store`, `session_store`, durable `persist`), `session_lock`, `log`,
-and `run_blocking` (offload heavy math). See `examples/plugins/example_tools.py` and
+and `run_blocking` (offload heavy math). See `plugins/example_tools.py` and
 `docs/phase2-plugin-spec.md`.
 
 ---
@@ -175,8 +178,11 @@ revision produced which session.
 
 ### Plugins (tools/hooks)
 ```bash
-python cora_plugin.py check plugins/yourlab_tools.py       # ✅ offline: import, schema,
-                                                           #    run vs MockToolContext
+python -m router.plugin_cli check plugins/yourlab_tools.py   # ✅ offline: import, schema,
+                                                               #    run vs MockToolContext
+# (or: python -m router.cli plugin plugins/yourlab_tools.py [--upload])
+# NOTE: as of 2026-10 the smoke-run step crashes with AttributeError 'emitted'
+#       (bug in router/plugin_cli.py); import + registration checks still run first.
 
 # UPLOAD (needs the 'upload_code' capability on your key):  ✅
 curl -X POST -H "Authorization: Bearer $CORA_KEY" \
@@ -197,7 +203,7 @@ Two independent knobs, both per-officer, no code required:
 
 ```jsonc
 // 1. `tools` — an ALLOWLIST. Omit it for the full palette; set it to narrow.
-"tools": ["read_state", "get_facilities", "task", "talk_to_director", "finish"],
+"tools": ["read_state", "get_facilities", "task", "send_message", "finish"],
 
 // 2. `subaction_space` — what those tools may TOUCH, regardless of the palette.
 "subaction_space": [{"category": "construction", "building_types": ["kitchen"]}]
@@ -205,8 +211,9 @@ Two independent knobs, both per-officer, no code required:
 
 The built-in palette is: `read_state`, `get_facilities`, `get_workforce`, `get_tasks`,
 `get_logistics`, `list_actions`, `responsibility_lookup`, `propose_choices`,
-`talk_to_director`, `finish`, and the typed action tools `build`, `hire`, `train`, `staff`,
-`deconstruct`, `task`, `transfer`.
+`send_message`, `finish`, `add_to_autonomy_list`, `remove_autonomy_rule`, and the typed action
+tools `build`, `hire`, `train`, `staff`, `deconstruct`, `task`, `transfer` (see
+`CONTINUOUS_AGENT.md`).
 
 The two compose: an officer given `build` but scoped to `{"category": "task_choice"}` is offered
 the tool and finds nothing to build. Scope is the load-bearing control — it is enforced at
@@ -219,7 +226,7 @@ The harness keeps action execution, the reply guarantee and turn logging identic
 variant stays comparable to every other run.
 
 ```python
-from cora_ext import register_hook
+from router.plugin_api import register_hook
 
 @register_hook("on_turn_start")     # -> str | [{"role":"user"|"system","content":str}] | None
 def scratchpad(ctx, ev):
@@ -235,7 +242,7 @@ def one_action_per_turn(ctx, ev):
 Use them for ReAct-style scratchpads, self-critique passes, retrieval injection, step budgets,
 confidence gates, or a "one action per turn" control condition. `assistant`/`tool` roles are
 refused on injection (they would break tool-call pairing). Full example:
-`examples/plugins/loop_shaping.py`.
+`examples/plugins/loop_shaping.py` (change its `cora_ext` import to `router.plugin_api`).
 
 ### Custom prompts — every layer is yours  ✅
 
@@ -276,7 +283,7 @@ to inherit the server default.
   // not the prompt, so nothing above can reach it).
   "tool_descriptions": {
     "build": "Break ground on a facility. Kitchens first — hunger compounds fastest.",
-    "talk_to_director": "Message the Director. Be terse: one sentence, no preamble."
+    "send_message": "Message the Director or a colleague. Be terse: one sentence, no preamble."
   }
 }
 ```
@@ -293,10 +300,11 @@ produces officers that narrate actions they never took or act outside their remi
 your runs non-comparable with other arms. `router.cli check` names the specific clause you dropped.
 
 **What you cannot change:** a tool's **parameters and enums**, and the generated observation
-text. Parameters feed the command grammar directly, so a renamed field or a widened enum emits
-actions the engine cannot resolve — silently broken, in every wing. Descriptions are inert to
-that machinery, which is why they *are* exposed. To change parameters or add a tool outright,
-ship a plugin (`register_tool(..., override_of="build")`).
+text. `cora.executor` resolves calls by their parameters, so a renamed field or a widened enum
+produces calls it cannot resolve, in every wing. Descriptions are inert to that machinery, which
+is why they *are* exposed. To add a tool, ship a plugin (`register_tool`); a plugin may replace a
+non-action built-in with `override_of=`, but the seven action tools always run through
+`cora.executor`.
 
 ---
 
@@ -350,7 +358,7 @@ curl -s "$CORA_URL/my/sessions/export?format=ndjson&config=yourlab__terse&limit=
 ### Turning your corpus into SFT data  ✅
 
 ```bash
-python export_sft.py --from-sessions corpus.tar.gz --out sft.jsonl
+python -m bench.export_sft --from-sessions corpus.tar.gz --out sft.jsonl   # or: python -m router.cli sft corpus.tar.gz
 #   --agent "Food Mass Care Officer"   only that officer's turns
 #   --min-reward 0.5                   only better-scoring turns
 ```
@@ -358,7 +366,7 @@ Reads the export directly (tar, directory, or a single `.jsonl`) and emits chat-
 `{messages, meta}` pairs from each officer turn's observation + response.
 
 **Comparability:** every wing (live games, RL, benchmark) scores through the same
-`reward_scoring.compute_score_components`, and each session stamps the `reward_weights` that
+`cora.scoring.score_components`, and each session stamps the `reward_weights` that
 produced its scores — so live and RL runs are directly comparable, and a corpus can be
 re-scored later under different weights (raw `rewardMetrics` are preserved per turn).
 
@@ -375,15 +383,15 @@ test game, browse/download logs).
 | Step | Status |
 |---|---|
 | One-script workflow + self-diagnosis (`router.cli`, `doctor`) | ✅ |
-| Config/prompt bundle upload (`/bundles`, `cora-bundle`) | ✅ |
+| Config/prompt bundle upload (`/bundles`, `router.bundle_cli`) | ✅ |
 | Full prompt override (behavior/manual, tool policy, turn text, tool descriptions) | ✅ |
 | Per-officer tool allowlist + action scoping | ✅ |
-| Plugin dev + offline check (`cora-plugin check`, `plugins/`) | ✅ |
+| Plugin dev + offline check (`router.plugin_cli check`, `plugins/`) | ✅ |
 | `ctx` acting/reads/hooks/stores + durable SQLite `persist` | ✅ |
 | Loop-shaping hooks (`on_turn_start`, `on_step_end`) | ✅ |
 | Staging `POST /plugins` (capability-gated), manual activation | ✅ |
 | View/download your own session data (`/my/sessions`) | ✅ |
-| Bulk cohort export + SFT conversion (`/my/sessions/export`, `export_sft.py`) | ✅ |
+| Bulk cohort export + SFT conversion (`/my/sessions/export`, `bench.export_sft`) | ✅ |
 | Self-serve participant-key minting (`/admin/keys`, hashed) | ✅ (admin port, maintainer-run) |
 | No-code dashboard | 🔜 |
 | Custom observation encoder as a plugin | 🔜 |

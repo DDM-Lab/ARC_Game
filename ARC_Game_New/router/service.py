@@ -407,7 +407,7 @@ async def upload_bundle(request: Request,
     """Upload a contributor config bundle. Auth via ``Authorization: Bearer <key>``.
 
     Security posture (see docs/contributor-platform-design.md): namespace is derived from the
-    TOKEN's label (never the body); body size is capped; the bundle is validated by cora_schema
+    TOKEN's label (never the body); body size is capped; the bundle is validated by router.schema
     (``extra='forbid'`` + provider-enum, so no endpoint/secret can be smuggled in); it is stored
     in the uploader's private namespace and granted only to the uploading key. No code executes.
 
@@ -467,7 +467,7 @@ async def upload_bundle(request: Request,
 
 def _bundle_warnings(cfg: dict) -> List[str]:
     """Authoring warnings for an uploaded bundle — delegates to the shared implementation in
-    bundle.py so the CLI (`cora-bundle validate`) and this endpoint report the SAME problems.
+    router/bundles.py so the CLI (`python -m router.bundle_cli validate`) and this endpoint report the SAME problems.
     Previously this logic lived only here, so validating locally gave a clean "OK" for a config
     that could not work in the UI."""
     return bundles.config_warnings(cfg)
@@ -543,7 +543,7 @@ _PLUGIN_AUDIT_CALLS = {"eval", "exec", "compile", "__import__", "open"}
 async def upload_plugin(request: Request,
                         name: Optional[str] = None,
                         authorization: Optional[str] = Header(default=None)):
-    """Stage a contributor plugin (a cora_ext tool/hook module) for review. Body is the raw
+    """Stage a contributor plugin (a router.plugin_api tool/hook module) for review. Body is the raw
     UTF-8 Python source; name it with ``?name=<slug>``. Requires the 'upload_code' capability.
 
     SECURITY POSTURE (deliberate, staged-manual): the module is validated and written to

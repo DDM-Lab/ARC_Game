@@ -16,12 +16,11 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _REPO)
 os.chdir(_REPO)
 
-import cora_ext
-import plugin_store
-from cora_ext import MockToolContext, get_tool, run_hooks, run_tool
+from router import plugin_api, plugin_store
+from router.plugin_api import MockToolContext, get_tool, run_hooks, run_tool
 
 # load the plugin fresh
-cora_ext.clear_registry()
+plugin_api.clear_registry()
 _spec = importlib.util.spec_from_file_location("pref_model", "plugins/preference_model.py")
 _m = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_m)
