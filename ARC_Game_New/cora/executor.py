@@ -27,9 +27,11 @@ TOOLS (defined in cora.tools; this module resolves and runs them against cora.ac
 
 ORDER
 Calls are resolved and run in a fixed order regardless of how the model wrote them — task answers,
-then deconstruct, build, hire, train, staff, transfer — so "hire, then staff those workers" works in
-one turn. (Task answers go first because that is what the benchmark has always done: they are
-committed before env.step advances time.) Within a kind, the model's order is kept.
+then deconstruct, build, hire, train, staff, transfer. (Task answers go first because that is what
+the benchmark has always done: they are committed before env.step advances time.) Within a kind,
+the model's order is kept. Hired workers are NOT free this turn: like a human's, a hire is a
+request and the workers arrive later (WorkerRequestSystem.untrainedArrivalDays / trainedArrivalDays,
+one game day), so staff only draws on workers already free.
 
 OUTCOMES (CallResult.status)
   executed  the game carried it out
@@ -93,6 +95,17 @@ def _bundle_indices(candidates, n):
     return out
 
 
+def _pick(label, names):
+    """The name `label` refers to: an exact (case-insensitive) match, else the first name that
+    contains it. Exact wins so "Shelter Alpha" never resolves to "Shelter Alpha 2"."""
+    label = str(label or "").strip().lower()
+    if not label:
+        return None
+    names = list(names)
+    return (next((n for n in names if n.lower() == label), None)
+            or next((n for n in names if label in n.lower()), None))
+
+
 def _int(v, what):
     try:
         return int(float(v))
@@ -102,7 +115,7 @@ def _int(v, what):
 
 class TurnResolver:
     """Resolves one turn's calls against a snapshot of the game, tracking what earlier calls this
-    turn will use up (workers hired, trained or assigned; workforce still needed per building).
+    turn will use up (workers trained or assigned; workforce still needed per building).
 
     `env` needs `game_state` and `get_valid_actions()`; resolving appends synthesized
     worker_assignment actions to `self.actions` (a private copy of the menu), so callers must run
@@ -154,11 +167,7 @@ class TurnResolver:
         got = _bundle_indices(cands, n)
         if not got:
             raise ValueError(f"no {wat.replace('_', ' ')} offers this turn")
-        hired = sum({i: q for q, i in cands}[i] for i in got)
-        if trained:
-            self.free_tr += hired
-        else:
-            self.free_un += hired
+        hired = sum({i: q for q, i in cands}[i] for i in got)     # they arrive later, not into the free pool
         r.action_indices = got; r.summary = f"{wat} {hired}"
 
     def train(self, r, count):
@@ -175,8 +184,7 @@ class TurnResolver:
         r.action_indices = got; r.summary = f"train {trainees}"
 
     def staff(self, r, site, count=None):
-        label = str(site or "").strip().lower()
-        match = next((nm for nm in self.need if self.need[nm] > 0 and label and label in nm.lower()), None)
+        match = _pick(site, (nm for nm in self.need if self.need[nm] > 0))
         if match is None:
             raise ValueError(f"{site!r} is not a built facility that still needs workers")
         need = self.need[match]
@@ -199,9 +207,9 @@ class TurnResolver:
         r.action_indices = [len(self.actions) - 1]; r.summary = f"staff {match} ({need} units)"
 
     def deconstruct(self, r, site):
-        label = str(site or "").strip().lower()
-        hit = next((i for i, a in self.by_type.get("deconstruction", [])
-                    if label and label in a["deconstruction"]["building_name"].lower()), None)
+        by_name = {a["deconstruction"]["building_name"]: i for i, a in self.by_type.get("deconstruction", [])}
+        name = _pick(site, by_name)
+        hit = by_name.get(name)
         if hit is None:
             raise ValueError(f"no built facility matching {site!r}")
         r.action_indices = [hit]; r.summary = f"deconstruct {self.actions[hit]['deconstruction']['building_name']}"
@@ -225,10 +233,13 @@ class TurnResolver:
         rtype = _TRANSFER_RESOURCE.get(str(resource).lower().replace(" ", ""))
         if not rtype:
             raise ValueError(f"unknown resource {resource!r} (food or people)")
-        src, dst, q = str(source).lower(), str(dest).lower(), _int(qty, "qty")
-        cands = [(t["transfer"]["quantity"], i) for i, t in self.by_type.get("resource_transfer", [])
-                 if t["transfer"]["resource_type"] == rtype and src in t["transfer"]["source_facility"].lower()
-                 and dst in t["transfer"]["destination_facility"].lower()]
+        q = _int(qty, "qty")
+        offers = [(i, t["transfer"]) for i, t in self.by_type.get("resource_transfer", [])
+                  if t["transfer"]["resource_type"] == rtype]
+        src = _pick(source, dict.fromkeys(t["source_facility"] for _, t in offers))          # menu order
+        dst = _pick(dest, dict.fromkeys(t["destination_facility"] for _, t in offers))
+        cands = [(t["quantity"], i) for i, t in offers
+                 if t["source_facility"] == src and t["destination_facility"] == dst]
         if not cands:
             raise ValueError(f"no {rtype} transfer {source}->{dest} this turn (needs a free vehicle)")
         hit = min(cands, key=lambda qi: (abs(qi[0] - q), -qi[0]))[1]
@@ -291,36 +302,6 @@ def execute_turn(env, calls):
     """
     results, tr = plan_turn(calls, env)
     return _run(env, results, tr.actions)
-
-
-# Action-list entries -> the tool that would have produced them (for a non-LLM policy's decision).
-def _tool_for(action):
-    t = action.get("action_type")
-    if t == "worker":
-        return "train" if (action.get("worker") or {}).get("worker_action_type") == "train_untrained" else "hire"
-    return {"construction": "build", "worker_assignment": "staff", "deconstruction": "deconstruct",
-            "resource_transfer": "transfer"}.get(t, t or "action")
-
-
-def execute_indices(env, choices, indices):
-    """Run a non-LLM policy's decision — task choices plus indices into env.get_valid_actions() —
-    through the same execution and bookkeeping as tool calls, so baselines and models are logged
-    and scored identically."""
-    actions = list(env.get_valid_actions() or [])
-    results = []
-    for k, c in enumerate(choices or []):
-        ch = {"taskId": int(c["taskId"]), "choiceId": int(c["choiceId"])}
-        results.append(CallResult(f"choice_{k}", "task", dict(ch), status="resolved", choice=ch,
-                                  summary=f"task {ch['taskId']} choice {ch['choiceId']}"))
-    for k, i in enumerate(indices or []):
-        i = int(i)
-        if not 0 <= i < len(actions):
-            results.append(CallResult(f"action_{k}", "action", {"index": i},
-                                      reason=f"action index {i} is out of range"))
-            continue
-        results.append(CallResult(f"action_{k}", _tool_for(actions[i]), {"index": i}, status="resolved",
-                                  action_indices=[i], summary=actions[i].get("description", "")))
-    return _run(env, results, actions)
 
 
 def _run(env, results, actions):

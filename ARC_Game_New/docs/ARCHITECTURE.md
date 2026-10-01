@@ -80,8 +80,9 @@ tool calls ──resolve──▶ CallResults (resolved | invalid) ──commit�
 - What a front end does with the outcomes is its own business: the benchmark logs them, RL may
   turn them into reward, the router tells the officer.
 
-Baseline policies, which pick action indices directly, go through `execute_indices`, so they
-are logged and scored exactly like models.
+Baseline policies pick from the action menu; `cora.actions.as_tool_call` turns each pick into
+the equivalent tool call, so baselines act through the executor and are logged, scored and
+exported (as behavior-cloning data) exactly like models.
 
 ## Scenario and parity
 
@@ -126,7 +127,7 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 | `cora/` package | done |
 | One turn record for every front end (now: router `episode_logger.py`, benchmark round record) | pending, with the router migration |
 | `bench/` split | done |
-| Baselines act through tool calls (`execute_indices` retired) | pending |
+| Baselines act through tool calls (`execute_indices` retired) | done |
 | Search wing: `oracle/` as a package on `cora/` (policy family, records) | pending |
 | Surrogate on the new rules (`cora/params`, Unity's score), parity restored | pending |
 | `router/` split, legacy actors retired | pending |

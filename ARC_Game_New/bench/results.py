@@ -25,7 +25,7 @@ def aggregate(records):
             "meanFoodFulfill": mean([x["foodFulfillRate"] for x in s]),
             "meanLodgingFulfill": mean([x["lodgingFulfillRate"] for x in s]),
             "meanActionFailures": mean([x["actionFailures"] for x in s]),
-            "meanInvalidIdx": mean([x["invalidIndices"] for x in s]),
+            "meanInvalidCalls": mean([x["invalidCalls"] for x in s]),
             "fracWentNegative": mean([1.0 if x["wentNegative"] else 0.0 for x in s]),
             "fracTerminated": mean([1.0 if x["terminated"] else 0.0 for x in s]),
             "fracNeverBuilt": mean([0.0 if x["everBuilt"] else 1.0 for x in s]),

@@ -3,7 +3,8 @@ with build_potential's building and staffing."""
 from __future__ import annotations
 
 from bench.baselines.build_potential import _POT_KITCHEN_TARGET, build_potential
-from bench.baselines.common import CHOICE_COST_WEIGHT, fill_shelters, impacts_dict
+from bench.baselines.common import (CHOICE_COST_WEIGHT, fill_shelters, impacts_dict, motel_rate,
+                                    rounds_per_day, shelter_beds, workforce_per_building)
 from bench.baselines.greedy import greedy
 
 
@@ -33,7 +34,6 @@ from bench.baselines.greedy import greedy
 # waves and starved shelter construction at the population peak), so the flat value is kept.
 _V2_BUILD_PER_TURN = 3      # income-paced: max buildings deployed per turn (see note above)
 _V2_OP_BUFFER = 3000        # flat cash reserve kept before discretionary building (see note above)
-_V2_SHELTER_BEDS = 10       # population capacity per shelter
 
 
 def _vec_dist(a, b):
@@ -45,13 +45,10 @@ def _vec_dist(a, b):
     return (dx * dx + dy * dy + dz * dz) ** 0.5
 
 
-_ROUNDS_PER_DAY = 4  # the motel bills per DAY; ~4 rounds per in-game day
-
-
-def _lt_choice_value(c, demand, rounds_left):
+def _lt_choice_value(c, demand, rounds_left, gs):
     """Greedy choice value with LONG-TERM cost built in.
 
-    Identical to the myopic greedy value, EXCEPT the motel's recurring $200/person/day is
+    Identical to the myopic greedy value, EXCEPT the motel's recurring per-person daily bill is
     charged over the remaining days of the episode and added to the choice's effective cost.
     Over a long horizon this makes the (one-time, then-free) shelter dominate the motel, so
     relocation routing into shelters emerges from the value function itself — no separate
@@ -78,8 +75,8 @@ def _lt_choice_value(c, demand, rounds_left):
     recurring = 0.0
     if is_motel:                                 # lifetime motel bill over the remaining days
         people = float(c.get("deliveryQuantity") or 20)
-        days_left = max(1.0, rounds_left / _ROUNDS_PER_DAY)
-        recurring = 200.0 * people * days_left
+        days_left = max(1.0, rounds_left / rounds_per_day(gs))
+        recurring = motel_rate(gs) * people * days_left
     v = (1.0 if (acting and demand) else 0.0) + 0.01 * s - CHOICE_COST_WEIGHT * (cost + recurring)
     return (v, acting and demand, is_shelter)
 
@@ -111,7 +108,7 @@ def choice_lookahead(env, rnd=0, rounds_total=32):
         people = float(pop_by_fac.get(t.get("affectedFacility")) or 20)
         best = None  # (choiceId, value, is_shelter, fulfils)
         for c in cs:
-            v, fdem, is_shel = _lt_choice_value(c, demand, rounds_left)
+            v, fdem, is_shel = _lt_choice_value(c, demand, rounds_left, gs)
             # don't route into a shelter that lacks space for this relocation (it would
             # defer/fail and lose fulfilment) — push it below the motel fallback instead.
             if is_shel and free_shelter_space < people:
@@ -139,14 +136,15 @@ def choice_lookahead(env, rnd=0, rounds_total=32):
     wf = gs.get("workforceState", {}) or {}
     total_workers = (int(wf.get("freeTrainedWorkers", 0) or 0) + int(wf.get("freeUntrainedWorkers", 0) or 0)
                      + int(wf.get("workingTrainedWorkers", 0) or 0) + int(wf.get("workingUntrainedWorkers", 0) or 0))
-    days_left = max(1, -(-rounds_left // _ROUNDS_PER_DAY))            # ceil(rounds_left/4)
+    days_left = max(1, -(-rounds_left // rounds_per_day(gs)))         # ceil(rounds_left / rounds per day)
     max_workers = total_workers + 5 * days_left                       # 5 hires/day cap
-    max_buildings = max_workers // 4                                  # ~4 workers per building
+    max_buildings = max_workers // workforce_per_building(gs)
     n_shelters = sum(1 for f in facs if f.get("buildingType") == "Shelter")
     existing_buildings = n_casework + n_kitchens + n_shelters
     budget_buildings = max(0, max_buildings - existing_buildings)     # how many MORE we can staff
 
-    shelters_needed = max(0, (max(0, P - shelter_cap) + _V2_SHELTER_BEDS - 1) // _V2_SHELTER_BEDS)
+    beds = shelter_beds(gs)
+    shelters_needed = max(0, (max(0, P - shelter_cap) + beds - 1) // beds)
     want = []
     if n_casework < 1:
         want.append("CaseworkSite")

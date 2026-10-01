@@ -86,3 +86,19 @@ def macro(cfg: dict):
         food, reloc = rules(cfg, rnd)
         return (b, 4 if b else 0, food, reloc, cfg["answer_cw"])
     return at
+
+
+# The two guards a member applies before acting on its rules, in both engines: a rule is only
+# followed when the game can carry it out this round; otherwise the member falls back to the
+# motel / the paid option (Unity refuses a shelter relocation without beds and a kitchen haul
+# without stock, while a naive surrogate would silently succeed).
+def route_to_shelter(cfg: dict, rnd: int, free_beds: int, group: int) -> bool:
+    """Send a relocation group to shelters: the rule says so and operational shelters have free
+    beds for the whole group."""
+    return rules(cfg, rnd)[1] == "shelter" and free_beds >= group
+
+
+def haul_from_kitchen(cfg: dict, rnd: int, free_vehicles: int, kitchen_stock: int, load: int) -> bool:
+    """Fill a food request from a kitchen: the rule says so, a vehicle is free and operational
+    kitchens hold at least one load."""
+    return rules(cfg, rnd)[0] == "kitchen10" and free_vehicles > 0 and kitchen_stock >= load

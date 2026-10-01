@@ -20,7 +20,7 @@ from cora import policy_family
 #               at 5-6 (3.876/3.877) and falls away after -- extra shelters eat the sites and cash
 #               that casework and kitchens need. 6 is a real optimum, not the sweep's cap.
 #   kitchens  ~ fleet haul capacity: a kitchen refills ~1 vehicle-load per round, so more kitchens
-#               than the fleet can drain just stall on their 20-pack store.
+#               than the fleet can drain just stall on a full store.
 #   casework  ~ sized to the request backlog; its cost term is ~0.001, so it is nearly free score.
 
 def pareto(env, rnd=0, rounds_total=32, cfg=None):
@@ -55,33 +55,34 @@ def pareto(env, rnd=0, rounds_total=32, cfg=None):
             continue
         cs, title = (t.get("choices") or []), (t.get("taskTitle") or "")
         if "Relocation" in title or "Population" in title:
-            # Route to a shelter ONLY when one is actually InUse with free beds. The surrogate
-            # silently falls back to the motel when beds are short; Unity does not -- picking
-            # "Send to Shelters" before any shelter is operational simply fails. Because this
-            # policy front-loads construction, the first ~10 rounds have no beds at all, and the
-            # unguarded version dropped sat_lodging to 0.803 (against 0.998 for build-potential).
-            opt = (next((c for c in cs if "shelter" in _txt(c) and _cost(c) == 0), None)
-                   if (reloc_rule == "shelter" and shelter_beds_free > 0) else None)
+            # Route to a shelter only when operational shelters can take the whole group: Unity
+            # refuses "Send to Shelters" without beds (the first rounds of this front-loaded build
+            # have none; unguarded, sat_lodging fell to 0.803 against build-potential's 0.998).
+            shelter = next((c for c in cs if "shelter" in _txt(c) and _cost(c) == 0), None)
+            group = int((shelter or {}).get("deliveryQuantity") or 0)
+            opt = (shelter if shelter is not None
+                   and policy_family.route_to_shelter(cfg, rnd, shelter_beds_free, group) else None)
             if opt is None:
                 opt = next((c for c in cs if "motel" in _txt(c) and _cost(c) == 0), None)
             if opt is not None:
                 ch["choiceId"] = opt["choiceId"]
-                shelter_beds_free = max(0, shelter_beds_free - 100)
+                if opt is shelter:
+                    shelter_beds_free -= group
         elif "Food Request" in title:
-            # Kitchen haul needs BOTH a free vehicle and a kitchen holding stock; otherwise buy the
-            # immediate option. Same failure mode as above: ordering from kitchens that are still
-            # under construction cost sat_food 0.226.
+            # Haul from a kitchen only with a free vehicle and the meals in stock; otherwise buy
+            # the immediate option (ordering from kitchens still under construction cost
+            # sat_food 0.226).
             hauled = sorted([c for c in cs if _cost(c) == 0],
                             key=lambda c: int(c.get("deliveryQuantity") or 1))
             instant = next((c for c in cs if _cost(c) > 0), None)
-            can_haul = (food_rule == "kitchen10" and hauled and free_veh > 0
-                        and kitchen_stock > 0)
+            load = int(hauled[0].get("deliveryQuantity") or 0) if hauled else 0
+            can_haul = bool(hauled) and policy_family.haul_from_kitchen(cfg, rnd, free_veh, kitchen_stock, load)
             pick = hauled[0] if can_haul else (instant or (hauled[0] if hauled else None))
             if pick is not None:
                 ch["choiceId"] = pick["choiceId"]
-                if pick is not instant:
-                    free_veh = max(0, free_veh - 1)
-                    kitchen_stock = max(0, kitchen_stock - 10)
+                if can_haul and pick is hauled[0]:
+                    free_veh -= 1
+                    kitchen_stock -= load
         elif "Casework" in title and cfg["answer_cw"]:
             # casework_processing_sat is the largest untapped term and casework_efficiency ~0.001,
             # so always take an offered casework action.

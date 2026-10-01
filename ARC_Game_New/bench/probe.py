@@ -60,6 +60,7 @@ from pathlib import Path
 from cora.llm import ProviderSpec, client_for
 
 from bench.baselines import POLICIES
+from bench.baselines.common import tool_calls
 from bench.llm import LocalOptions, ask_tools
 from cora import executor
 from cora.env import GameEnv
@@ -207,13 +208,7 @@ def main():
                   f"({time.time()-t0:.0f}s)", flush=True)
 
             # Execute the REFERENCE decision so the trajectory stays the reference policy's.
-            for c in ref_dec.get("choices", []) or []:
-                try:
-                    env.select_task_choice(int(c["taskId"]), int(c["choiceId"]))
-                except Exception:
-                    pass
-            req = [int(x) for x in (ref_dec.get("actions") or []) if str(x).lstrip("-").isdigit()]
-            _, _, term, trunc, _ = env.step(",".join(str(x) for x in req))
+            _, (_, _, term, trunc, _) = executor.execute_turn(env, tool_calls(env, ref_dec))
             if term or trunc:
                 print(f"episode ended at r{rnd}")
                 break

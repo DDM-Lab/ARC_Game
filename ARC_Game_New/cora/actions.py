@@ -149,3 +149,31 @@ def enumerate_actions(game_state: dict) -> list[dict]:
     """Every action available in `game_state`, in the game's fixed menu order."""
     gs = game_state or {}
     return [*_construction(gs), *_worker(gs), *_transfers(gs), *_assignments(gs), *_deconstructions(gs)]
+
+
+_TOOL_BUILDING = {"Kitchen": "kitchen", "Shelter": "shelter", "CaseworkSite": "casework"}
+_TOOL_RESOURCE = {"FoodPacks": "food", "Population": "people"}
+
+
+def as_tool_call(action: dict) -> tuple:
+    """A menu action as the equivalent typed tool call (name, args) of cora.tools, so a policy that
+    picks from the menu acts through cora.executor like a model does. A worker_assignment
+    becomes staff(site): the executor staffs a building fully, the only staffing the game runs."""
+    t = action["action_type"]
+    if t == "construction":
+        c = action["construction"]
+        return "build", {"type": _TOOL_BUILDING[c["building_type"]], "site_id": int(c["site_id"])}
+    if t == "worker":
+        w = action["worker"]
+        if w["worker_action_type"] == "train_untrained":
+            return "train", {"count": w["quantity"]}
+        return "hire", {"kind": w["worker_action_type"].split("_", 1)[1], "count": w["quantity"]}
+    if t == "worker_assignment":
+        return "staff", {"site": action["assignment"]["building_name"]}
+    if t == "deconstruction":
+        return "deconstruct", {"site": action["deconstruction"]["building_name"]}
+    if t == "resource_transfer":
+        tr = action["transfer"]
+        return "transfer", {"resource": _TOOL_RESOURCE[tr["resource_type"]], "source": tr["source_facility"],
+                            "dest": tr["destination_facility"], "qty": tr["quantity"]}
+    raise ValueError(f"no tool for action type {t!r}")

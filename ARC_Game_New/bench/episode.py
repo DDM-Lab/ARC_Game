@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from bench.baselines import POLICIES
+from bench.baselines.common import tool_calls
 from bench.images import MAP_GRID_JSON, decision_image
 from bench.llm import ANTHROPIC_TEMP_MAX, LocalOptions, ask_tools, is_anthropic
 from cora import executor
@@ -142,6 +143,9 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
         # Recorded so the analysis can pair episode i of one variant against episode i
         # of another; None when the run was unseeded.
         "seed": (int(base_seed) + int(ep_idx)) if base_seed is not None else None,
+        # 2: every policy acts through tool calls (baselines' menu picks are converted), so baseline
+        # records before this version are not comparable with later ones.
+        "record_version": 2,
         "model": model, "policy": policy, "episode": ep_idx, "rounds": [], "error": None,
         "show_impacts": show_impacts,
            "action_format": "tools",
@@ -173,7 +177,7 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
         # are never pooled by accident.
         rec["scenario"] = (env.game_state or {}).get("scenario")
         total = 0.0
-        actions_requested = actions_executed = action_failures = invalid_idx = 0
+        actions_requested = actions_executed = action_failures = invalid_calls = 0
         min_budget = float("inf")
         built = hired = False
         # Append-only context buffer for history-carrying play (K>1): holds prior (state, action)
@@ -193,9 +197,11 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
             state = observe(env.game_state, acts_enum, obs_config)
             raw = rtrace = None; rtok = None; parsed_ok = None
             if policy == "noop":
-                dec = {"choices": [], "actions": []}
+                dec = {"tool_calls": []}
             elif policy in POLICIES:
+                # A baseline picks from the menu; it acts through the same tool calls as a model.
                 dec = POLICIES[policy](env, rnd, rounds); raw = json.dumps(dec)
+                dec["tool_calls"] = tool_calls(env, dec)
             else:                                               # llm
                 img_b64 = decision_image(image_mode, env, grid, tmp_png) if use_image else None
                 if use_image:
@@ -228,21 +234,18 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
                     # hard API/network error: end the episode
                     rec["error"] = f"LLM error r{rnd}: {e}"
                     break
-            # ── execute: the model's tool calls, or a baseline's (task choices, action indices) ──
-            if dec.get("tool_calls") is not None:
-                call_results, step = executor.execute_turn(env, dec["tool_calls"])
-                parsed_ok = not any(cr.malformed for cr in call_results)
-                if not parsed_ok:
-                    rec["parse_failures"] = rec.get("parse_failures", 0) + 1
-            else:
-                call_results, step = executor.execute_indices(env, dec.get("choices"), dec.get("actions"))
+            # ── execute: every policy's tool calls go through the one executor ──
+            call_results, step = executor.execute_turn(env, dec["tool_calls"])
+            parsed_ok = not any(cr.malformed for cr in call_results)
+            if not parsed_ok:
+                rec["parse_failures"] = rec.get("parse_failures", 0) + 1
             obs, reward, term, trunc, info = step
             total += reward
             exres = info.get("execution_results") or []
             actions_requested += sum(len(cr.action_indices) for cr in call_results)
             actions_executed += sum(1 for r in exres if r.get("success"))
             action_failures += sum(1 for r in exres if not r.get("success"))
-            invalid_idx += sum(1 for cr in call_results if cr.tool == "action" and cr.status == "invalid")
+            invalid_calls += sum(1 for cr in call_results if cr.status == "invalid")
             built = built or any(cr.tool == "build" and cr.status == "executed" for cr in call_results)
             hired = hired or any(cr.tool == "hire" and cr.status == "executed" for cr in call_results)
             min_budget = min(min_budget, info.get("budget", 0.0))
@@ -264,7 +267,7 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
             "lodgingFulfillRate": round(lf / lr, 3) if lr else None,
             "foodResolved": fr, "lodgingResolved": lr,
             "actionsRequested": actions_requested, "actionsExecuted": actions_executed,
-            "actionFailures": action_failures, "invalidIndices": invalid_idx,
+            "actionFailures": action_failures, "invalidCalls": invalid_calls,
             "minBudget": None if min_budget == float("inf") else min_budget,
             "wentNegative": (min_budget < 0) if min_budget != float("inf") else None,
             "everBuilt": built, "everHired": hired,
