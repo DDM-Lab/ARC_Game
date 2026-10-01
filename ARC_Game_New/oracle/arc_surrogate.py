@@ -8,8 +8,8 @@ MCTS statistics are meaningless. This surrogate is seeded and runs ~1e4 rollouts
 happens here and the winning plans are then REPLAYED against Unity to measure the gap.
 
 EVERY CONSTANT IS SOURCED, NOT GUESSED
-  reward             reward_scoring.compute_score_components -- imported, not reimplemented, so the
-                     objective is identical by construction.
+  reward             oracle/legacy_score.py: the pre-export Python score (the surrogate's metrics
+                     carry no Unity score), imported rather than reimplemented.
   kitchen            Kitchen.prefab roundProduction: 10 packs/round, requiredResources [];
                      resourceCapacities.maxCapacity 20; BuildingResourceStorage.ProduceResources
                      gates on Building.IsOperational() and skips when storage is full.
@@ -71,8 +71,8 @@ from __future__ import annotations
 import random, sys, os
 from dataclasses import dataclass, field
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from reward_scoring import compute_score_components   # the REAL objective, imported
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from legacy_score import compute_legacy_score_components as compute_score_components
 
 ROUNDS, ROUNDS_PER_DAY = 32, 4
 FLEET = 3
