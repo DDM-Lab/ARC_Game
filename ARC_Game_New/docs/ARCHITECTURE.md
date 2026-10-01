@@ -52,7 +52,8 @@ router/                  GUI officers (python -m router):
   plugin_api.py, plugin_context.py, plugin_store.py   contributor tool/hook plugins
   cli.py, bundle_cli.py, plugin_cli.py   contributor CLIs (python -m router.cli)
   harness.py             officers on a headless Unity (no human Director)
-rl/                      trainer-facing glue that is not framework specific
+rl/                      CoraEnv: the turn contract as a tool-call environment (RL trainers and the
+                         benchmark's episode loop both play through it)
 ops/                     cluster launchers, Talos deploy, build scripts
 tests/                   all tests (pytest; markers: unit, needs_unity, needs_router)
 analysis/                analysis and diagnostic scripts that are still maintained
@@ -138,13 +139,14 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 | Headless parameters, pinned map, scenario block | done |
 | Gym steps = human decision points (Day 1 setup, rollover step) | done |
 | `cora/` package | done |
-| One turn record for every front end (now: router `episode_logger.py`, benchmark round record) | pending, with the router migration |
+| One turn record for every front end | benchmark and RL share CoraEnv's step info (calls with outcomes, game/* metrics); the router's turn log (router/episode_log.py) keeps its own shape, since an officer turn spans several tool steps and messages |
 | `bench/` split | done |
 | Baselines act through tool calls (`execute_indices` retired) | done |
 | Search wing: `oracle/` as a package on `cora/` (policy family, records) | done |
 | Surrogate on the new rules (`cora/params`, Unity's score), parity restored | pending |
 | Legacy actors (auto / choices / coach) retired | done |
 | `router/` package (service, session, mixins) | done |
-| `CoraEnv` for RL; thin Verlog adapter | pending |
+| `CoraEnv` (rl/); the benchmark plays through it | done |
+| Thin Verlog adapter over CoraEnv | pending |
 | Repo hygiene (scripts, docs, tests) | pending |
 | C# `GameApi` facade, task logic out of the UI | separate branch |

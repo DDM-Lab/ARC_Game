@@ -13,11 +13,8 @@ from bench.baselines import POLICIES
 from bench.baselines.common import tool_calls
 from bench.images import MAP_GRID_JSON, decision_image
 from bench.llm import ANTHROPIC_TEMP_MAX, LocalOptions, ask_tools, is_anthropic
-from cora import executor
+from rl.cora_env import CoraEnv, CoraEnvConfig
 from cora import prompts as cora_prompts
-from cora.env import GameEnv
-from cora.env.unity_process import default_exe
-from cora.observation import ObsConfig, observe
 from cora.scoring import REWARD_WEIGHTS
 
 
@@ -94,10 +91,6 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
     show_impacts, manual_transfers, obs_encoding, history = (cfg.show_impacts, cfg.manual_transfers,
                                                              cfg.obs_encoding, cfg.history)
     temperature, ablation, base_seed = cfg.temperature, cfg.ablation, cfg.base_seed
-    pack = cora_prompts.load_pack(cfg.prompt)
-    # The pack declares the observation features its text relies on (minimal_v6_1: marked choices).
-    obs_config = ObsConfig(show_impacts=show_impacts,
-                           mark_unavailable_choices=bool(pack.observation.get("mark_unavailable_choices")))
     # Anthropic caps temperature at 1.0; clamp per-model so a shared sweep invocation (e.g. temp=1.5
     # for gemini) doesn't 400 Claude. eff_temp is what's actually sent + logged; temperature is the
     # requested experimental level.
@@ -110,35 +103,25 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
         ulog = str((Path(cfg.log_dir) / f"unity_{safe}_ep{ep_idx}_{image_mode}_tools.log").resolve())
     use_image = (image_mode in ("synthetic", "real") and policy == "llm")
     real_img = (image_mode == "real" and policy == "llm")
-    env_kwargs = dict(unity_exe_path=default_exe(render=real_img),
-                      unity_port=port, auto_start_unity=True,
-                      max_episode_steps=rounds + 5, unity_log_path=ulog,
-                      manual_transfers=manual_transfers)
-    # base_seed + ep_idx: reproducible across runs, distinct within a run. Every
-    # prompt variant benchmarked with the same base_seed sees the SAME scenarios,
-    # which is what makes variant comparisons paired.
-    if base_seed is not None:
-        env_kwargs["seed"] = int(base_seed) + int(ep_idx)
-    if cfg.map_config:
-        env_kwargs["map_config"] = cfg.map_config
-    if real_img:
-        # Configure live capture so capture_frame works at decision time. PerStep also
-        # auto-captures on advance (we ignore those); base64 off there to save TCP bytes.
-        env_kwargs.update(frame_capture="step", frame_include_base64=False,
-                          frame_dir=os.environ.get("ARC_FRAME_DIR", "render_frames_bench"))
-    env = None
+    state_only = (policy == "llm")
+    # The game and the turn contract (prompt, observation, tools, executor) come from CoraEnv, the
+    # same environment RL trains in. base_seed + ep_idx: reproducible across runs, distinct within
+    # a run, so every prompt variant run with one base_seed plays the SAME scenarios (paired).
+    # Real-image arms capture the live frame at decision time (render build, step capture).
+    cenv = CoraEnv(CoraEnvConfig(
+        prompt=cfg.prompt, ablation=ablation, image_mode=image_mode if use_image else "none",
+        manual_transfers=manual_transfers, show_impacts=show_impacts, obs_encoding=obs_encoding,
+        history=history if state_only else 1, max_steps=rounds + 5,
+        seed=(int(base_seed) + int(ep_idx)) if base_seed is not None else None,
+        map_config=cfg.map_config, port=port, unity_log=ulog,
+        frame_capture="step" if real_img else "off",
+        frame_dir=os.environ.get("ARC_FRAME_DIR", "render_frames_bench") if real_img else None))
     # Static tile lattice for synthetic rendering (loaded once per episode).
     grid = MAP_GRID_JSON if (use_image and image_mode == "synthetic") else None
     tmp_png = None
     if use_image and image_mode == "synthetic":
         tmp_png = str((Path(cfg.log_dir or ".") / f".synth_{model.replace('/','_')}_ep{ep_idx}_tools.png").resolve())
-    state_only = (policy == "llm")
-    # Rendered once per episode. Non-LLM policies only record it for provenance.
-    _sys_text = cora_prompts.render(pack, manual_transfers=manual_transfers,
-                                    image_mode=image_mode if use_image else "none")
-    if ablation:
-        from cora.prompt_ablation import ablate
-        _sys_text = ablate(_sys_text, ablation)
+    _sys_text = cenv.system_prompt       # non-LLM policies only record it, for provenance
     rec = {
         # Recorded so the analysis can pair episode i of one variant against episode i
         # of another; None when the run was unseeded.
@@ -158,9 +141,9 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
            # prompt identity is logged per episode so every record is attributable to an exact
            # system prompt (PIMMUR replicability): the variant label, a content hash, the exploration
            # knob actually used, and the full prompt text (a self-contained finetuning corpus).
-           "system_variant": pack.name,
+           "system_variant": cenv.pack_name,
            "prompt_ablation": ablation or None,
-           "prompt_sha": cora_prompts.prompt_sha(_sys_text),
+           "prompt_sha": cenv.prompt_sha,
            "reasoning_effort": cfg.local.reasoning_effort if cfg.local else None,
            # Total-generation cap in force on a local server (None = hosted API default). Worth
            # stamping: a local model that reasons in the CONTENT channel (qwen3:4b does) is cut
@@ -170,8 +153,8 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
            "temperature_sent": eff_temp,         # actually sent (Anthropic clamped to <=1.0)
            "system_prompt": _sys_text}
     try:
-        env = GameEnv(**env_kwargs)
-        env.reset()
+        user_text, _ = cenv.reset()
+        env = cenv.game
         # Which scenario this episode actually ran: map fingerprint/source, parameter source and
         # seed as the GAME reports them (not as requested), so runs on different maps or sheets
         # are never pooled by accident.
@@ -185,14 +168,8 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
         # max_pairs caps it to the K-1 most-recent prior turns (ask_tools adds the current turn).
         cmd_history = [] if (state_only and history and history > 1) else None
         max_pairs = 2 * (history - 1) if (history and history > 1) else 0
-        # Previous round's structured state, fed to render_state_delta when obs_encoding=delta.
-        # Only meaningful in history mode (the prior turn is in the visible window); None => the
-        # delta renderer falls back to full compact, so delta+K=1 degrades gracefully to compact.
-        prev_state = None
         for rnd in range(rounds):
-            # The round's action menu: every policy's calls resolve to indices into it.
-            acts_enum = env.get_valid_actions()
-            state = observe(env.game_state, acts_enum, obs_config)
+            state = cenv.observation
             raw = rtrace = None; rtok = None; parsed_ok = None
             if policy == "noop":
                 dec = {"tool_calls": []}
@@ -207,8 +184,8 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
                         rec.get("images_attached" if img_b64 else "images_missing", 0) + 1
                 try:
                     dec, raw, rtrace, rtok, parsed_ok = ask_tools(
-                        client, model, state, env, _sys_text, img_b64, eff_temp, obs_encoding,
-                        cmd_history, prev_state if cmd_history is not None else None, cfg.local)
+                        client, model, cenv.system_prompt, cenv.tools, user_text, img_b64, eff_temp,
+                        cmd_history, cfg.local)
                     # Slide the window: ask_tools just appended this turn's messages; keep only the last
                     # K-1 prior turns so the cached prefix stays bounded (K=32 keeps the whole episode).
                     # Trim on TURN boundaries, not raw message count. Since the tool-call
@@ -227,17 +204,16 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
                             del cmd_history[:starts[len(starts) - keep]]
                     elif cmd_history is not None:
                         cmd_history.clear()
-                    prev_state = state   # next round's delta diffs against this turn's state
                 except Exception as e:
                     # hard API/network error: end the episode
                     rec["error"] = f"LLM error r{rnd}: {e}"
                     break
             # ── execute: every policy's tool calls go through the one executor ──
-            call_results, step = executor.execute_turn(env, dec["tool_calls"])
-            parsed_ok = not any(cr.malformed for cr in call_results)
+            user_text, reward, term, trunc, info = cenv.step(dec["tool_calls"])
+            call_results = info["call_results"]
+            parsed_ok = not info["malformed"]
             if not parsed_ok:
                 rec["parse_failures"] = rec.get("parse_failures", 0) + 1
-            obs, reward, term, trunc, info = step
             total += reward
             exres = info.get("execution_results") or []
             actions_requested += sum(len(cr.action_indices) for cr in call_results)
@@ -280,7 +256,6 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
     except Exception as e:
         rec["error"] = f"{e}\n{traceback.format_exc()}"
     finally:
-        if env is not None:
-            env.close()
+        cenv.close()
         port_pool.put(port)
     return rec

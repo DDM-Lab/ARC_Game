@@ -5,14 +5,11 @@ tools return nothing to the model. Reasoning traces are captured for the record.
 """
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from typing import Optional
 
 from cora.llm import reasoning_of
-from cora.observation import render as render_obs
-from cora.tools import openai_tools
 
 
 @dataclass(frozen=True)
@@ -41,18 +38,6 @@ def is_anthropic(model):
 ANTHROPIC_TEMP_MAX = 1.0   # Bedrock/Anthropic reject temperature > 1.0 (gpt-5* ignore temp; gemini allows >1)
 
 
-def user_message_text(state, obs_encoding="compact", prev_state=None) -> str:
-    """The user turn's text for an observation, exactly as the model receives it (the SFT export
-    rebuilds training examples with this same function)."""
-    if obs_encoding == "delta":
-        rendered = render_obs(state, prev=prev_state)
-    elif obs_encoding == "compact":
-        rendered = render_obs(state)
-    else:
-        rendered = json.dumps(state)
-    return "State:\n" + rendered + "\n\nAct by calling the tools."
-
-
 def _user_msg(text, image_b64=None):
     """Build a user message, multimodal when an image is supplied. The image is a
     decision-time view of the same state (synthetic dashboard or real game frame)."""
@@ -63,20 +48,16 @@ def _user_msg(text, image_b64=None):
         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}}]}
 
 
-def ask_tools(client, model, state, env, system_text, image_b64=None, temperature=None,
-              obs_encoding="json", history=None, prev_state=None, local: Optional[LocalOptions] = None):
-    """One model call: system prompt + tool schema + the current observation; the model may reason,
-    then emits tool calls. Returns (decision, raw_content, reasoning_trace, reasoning_tokens, None):
-    the calls themselves go to cora.executor in the round loop, which also decides parsed_ok
-    (whether every call was well-formed). The tool schema is cora.tools' — the same one the RL
-    policy trains on and the officer router offers."""
-    _mt = getattr(env, "manual_transfers", True)
-    user_text = user_message_text(state, obs_encoding, prev_state)
+def ask_tools(client, model, system_text, tools, user_text, image_b64=None, temperature=None,
+              history=None, local: Optional[LocalOptions] = None):
+    """One model call: system prompt + tool schema + the turn's user message (rl.CoraEnv builds
+    all three); the model may reason, then emits tool calls. Returns (decision, raw_content,
+    reasoning_trace, reasoning_tokens, None): the calls go to cora.executor in the round loop,
+    which also decides parsed_ok (whether every call was well-formed)."""
     msgs = [{"role": "system", "content": system_text}]
     if history:
         msgs.extend(history)
     msgs.append(_user_msg(user_text, image_b64))
-    tools = openai_tools(manual_transfers=_mt)
     kw = dict(model=model, messages=msgs, tools=tools, max_tokens=2000)
     # LOCAL path: a reasoning-capable local model auto-enables thinking unless reasoning_effort
     # is sent, and several emit a long prose preamble BEFORE the tool call — a hard 2000 cap

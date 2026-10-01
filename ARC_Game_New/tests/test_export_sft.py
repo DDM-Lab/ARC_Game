@@ -5,8 +5,7 @@ import os
 import subprocess
 import sys
 
-from bench.llm import user_message_text
-from cora.observation import observe
+from cora.observation import observe, user_message
 
 _FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "game_states.jsonl.gz")
 with gzip.open(_FIXTURE, "rt") as _f:
@@ -28,7 +27,7 @@ def test_export_reproduces_prompt_and_tool_calls(tmp_path):
     assert len(lines) == 1                               # the menu-index decision is not exported
     system, user, assistant = lines[0]["messages"]
     assert system["content"] == "SYS"
-    assert user["content"] == user_message_text(obs[0], "delta", None)
+    assert user["content"] == user_message(obs[0], "delta", None)
     assert assistant["tool_calls"][0]["function"] == {"name": "hire",
                                                       "arguments": json.dumps({"kind": "untrained", "count": 2})}
     assert {t["function"]["name"] for t in lines[0]["tools"]} >= {"build", "hire", "staff", "task"}

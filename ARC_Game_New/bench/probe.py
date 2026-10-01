@@ -66,7 +66,8 @@ from cora import executor
 from cora.env import GameEnv
 from cora.env.unity_process import default_exe
 from cora import prompts
-from cora.observation import observe
+from cora.observation import observe, user_message
+from cora.tools import openai_tools
 
 
 def action_types_available(acts_enum, state):
@@ -166,7 +167,8 @@ def main():
                     t1 = time.time()
                     try:
                         dec, raw, _, _, _ = ask_tools(
-                            client, a.model, state, env, system_text, None, None, enc, None, None, local)
+                            client, a.model, system_text, openai_tools(manual_transfers),
+                            user_message(state, enc), local=local)
                         # Resolve the calls against the live state without executing them.
                         results, resolver = executor.plan_turn(dec["tool_calls"], env)
                         parsed_ok = not any(r.malformed for r in results)

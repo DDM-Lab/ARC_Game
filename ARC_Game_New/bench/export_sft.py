@@ -25,7 +25,7 @@ import argparse
 import json
 from pathlib import Path
 
-from bench.llm import user_message_text
+from cora.observation import user_message
 from cora.records import iter_episodes
 from cora.tools import openai_tools
 
@@ -75,7 +75,7 @@ def export_episodes(args):
                 ofh.write(json.dumps({
                     "messages": [
                         {"role": "system", "content": r.get("system_prompt", "")},
-                        {"role": "user", "content": user_message_text(obs, encoding, prev_obs)},
+                        {"role": "user", "content": user_message(obs, encoding, prev_obs)},
                         _assistant_message(rd, args.with_reasoning),
                     ],
                     "tools": tools,

@@ -16,6 +16,7 @@ rounds left). Task ids are stable tokens (task_token) so a task keeps its name a
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 
@@ -562,3 +563,16 @@ _OFFICER_GROUP = {"ExternalRelationship": "budget", "WorkforceService": "workfor
 def task_group(t: dict) -> str:
     """Coarse task group (budget / workforce / food / lodging / disaster) for config gating."""
     return _OFFICER_GROUP.get(task_officer(t), "disaster")
+
+
+def user_message(obs, encoding="compact", prev=None) -> str:
+    """The turn's user message for an observation, exactly as a model receives it: compact text
+    (default), JSON, or delta (facilities diffed against `prev`). The benchmark, RL and the SFT
+    export all build the message with this function."""
+    if encoding == "delta":
+        rendered = render(obs, prev=prev)
+    elif encoding == "compact":
+        rendered = render(obs)
+    else:
+        rendered = json.dumps(obs)
+    return "State:\n" + rendered + "\n\nAct by calling the tools."
