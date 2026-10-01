@@ -4,7 +4,7 @@ mid-game state (some facilities built + staffed, partial fulfillment, budget
 spent, communities in varying deficit), then dump the full game_state JSON for
 the synthetic dashboard renderer."""
 import json, os
-from arc_game_gym_env_tcp import ARCGameGymEnv
+from cora.env import GameEnv
 
 EXE = "Build/HeadlessRender/macOS/ARC_HeadlessRender.app/Contents/MacOS/ARC_DisasterSimulation"
 
@@ -30,7 +30,7 @@ def pick(actions):
 
 
 def main():
-    env = ARCGameGymEnv(unity_exe_path=EXE, unity_port=10934,
+    env = GameEnv(unity_exe_path=EXE, unity_port=10934,
                         auto_start_unity=True, max_episode_steps=40)
     obs, info = env.reset()
     last = obs

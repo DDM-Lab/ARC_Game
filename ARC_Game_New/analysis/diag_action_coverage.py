@@ -71,11 +71,11 @@ def snapshot(obs, info):
 
 def run(args):
     from cora import executor
-    from arc_game_gym_env_tcp import ARCGameGymEnv
+    from cora.env import GameEnv
     from cora.observation import ObsConfig, observe
     # Unavailable choices are marked so refusals can be checked against the marks.
     obs_config = ObsConfig(mark_unavailable_choices=True)
-    env = ARCGameGymEnv(unity_exe_path=args.exe, unity_port=args.port, auto_start_unity=True,
+    env = GameEnv(unity_exe_path=args.exe, unity_port=args.port, auto_start_unity=True,
                         max_episode_steps=args.rounds + 5, manual_transfers=False, seed=args.seed,
                         unity_log_path=args.unity_log)
     out = {"exe": args.exe, "seed": args.seed, "rounds": [], "first_task_example": None}

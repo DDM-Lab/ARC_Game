@@ -12,7 +12,7 @@ Each episode gets a FRESH headless Unity process (clean game) — the gym server
 no in-place reset, so we relaunch per episode on a per-worker port. Episodes can run
 concurrently across workers (each worker owns one port + one Unity process).
 
-This is an EVAL harness: it reuses ARCGameGymEnv.reset()/step() and the smoke-test's
+This is an EVAL harness: it reuses GameEnv.reset()/step() and the smoke-test's
 summarize()/ask()/prompt verbatim — it is not a new rollout engine and does not patch
 the env. The score is cora.scoring's (the gym reports it per round).
 
@@ -28,7 +28,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, str(Path(__file__).parent))
-from arc_game_gym_env_tcp import ARCGameGymEnv
+from cora.env import GameEnv
 from cora.llm import Provider, ProviderSpec, client_for, reasoning_of
 from cora import prompts as cora_prompts  # prompt packs (prompts/*.json), the single prompt source
 from cora.observation import ObsConfig, observe, render as render_obs
@@ -1607,7 +1607,7 @@ def _decision_image(image_mode, env, grid, tmp_png):
             with open(tmp_png, "rb") as f:
                 return base64.b64encode(f.read()).decode()
         if image_mode == "real":
-            resp = env._send_request({"type": "capture_frame"})
+            resp = env.request({"type": "capture_frame"})
             return (resp or {}).get("frame_base64")
     except Exception as e:
         print(f"    [image:{image_mode}] capture failed: {type(e).__name__}: {str(e)[:80]}")
@@ -1711,7 +1711,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
         # auto-captures on advance (we ignore those); base64 off there to save TCP bytes.
         env_kwargs.update(frame_capture="step", frame_include_base64=False,
                           frame_dir=os.environ.get("ARC_FRAME_DIR", "render_frames_bench"))
-    env = ARCGameGymEnv(**env_kwargs)
+    env = GameEnv(**env_kwargs)
     # Static tile lattice for synthetic rendering (loaded once per episode).
     grid = MAP_GRID_JSON if (use_image and image_mode == "synthetic") else None
     tmp_png = None

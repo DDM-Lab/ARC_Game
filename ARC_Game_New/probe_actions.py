@@ -63,7 +63,7 @@ from cora.llm import ProviderSpec, client_for
 
 import benchmark_models as bm
 from cora import executor
-from arc_game_gym_env_tcp import ARCGameGymEnv
+from cora.env import GameEnv
 from cora import prompts
 from cora.observation import observe
 
@@ -139,7 +139,7 @@ def main():
 
     manual_transfers = (a.transfers == "manual")
     system_text = prompts.render(prompts.load_pack(a.prompt), manual_transfers=manual_transfers)
-    env = ARCGameGymEnv(unity_exe_path=bm.HEADLESS_EXE, unity_port=a.port,
+    env = GameEnv(unity_exe_path=bm.HEADLESS_EXE, unity_port=a.port,
                         auto_start_unity=True, max_episode_steps=a.rounds + 5,
                         unity_log_path=str(outdir / "unity.log"),
                         manual_transfers=manual_transfers)

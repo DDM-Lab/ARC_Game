@@ -29,7 +29,7 @@ from pathlib import Path
 
 # Make imports work when run from repo root
 sys.path.insert(0, str(Path(__file__).parent))
-from arc_game_gym_env_tcp import ARCGameGymEnv  # type: ignore
+from cora.env import GameEnv  # type: ignore
 from cora.observation import observe  # type: ignore
 
 
@@ -100,7 +100,7 @@ def main():
         sys.exit(2)
 
     # Slightly bigger max_episode_steps than we'll use so gym-side truncation doesn't hit
-    env = ARCGameGymEnv(
+    env = GameEnv(
         unity_exe_path=build,
         unity_port=int(os.environ.get("BASE_PORT", "9876")),
         auto_start_unity=True,

@@ -8,16 +8,16 @@ Output (arc_map_grid.json):
 The worldRect lets the renderer overlay world-space facilities on the same axes.
 """
 import json, os, sys
-from arc_game_gym_env_tcp import ARCGameGymEnv
+from cora.env import GameEnv
 
 RENDER_EXE = "Build/HeadlessRender/macOS/ARC_HeadlessRender.app/Contents/MacOS/ARC_DisasterSimulation"
 
 
 def main():
-    env = ARCGameGymEnv(unity_exe_path=RENDER_EXE, unity_port=10937,
+    env = GameEnv(unity_exe_path=RENDER_EXE, unity_port=10937,
                         auto_start_unity=True, max_episode_steps=4)
     env.reset()
-    resp = env._send_request({"type": "map_grid"})
+    resp = env.request({"type": "map_grid"})
     env.close()
 
     if resp.get("type") != "map_grid":

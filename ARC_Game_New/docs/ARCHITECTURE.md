@@ -29,8 +29,7 @@ cora/                    SHARED CORE — the only place game-facing Python logic
   prompts.py             system prompts (minimal_v6_1, minimal_v6)
   scoring.py             the score (Unity's rewardMetrics) and its components
   llm/                   one LLM client factory (providers, gateway, keys, reasoning capture)
-  episode_log.py         one turn / provenance record used by every front end
-  env/                   the TCP gym env + Unity process management; CoraEnv for RL
+  env/                   GameEnv (Gymnasium over the Unity gym server) + Unity process lifecycle
 bench/                   benchmark: CLI, episode loop, baselines, results/plots, SFT export
 router/                  GUI officers: service, session, officer loop, officer tools, proposals,
                          standing orders, developer panel API
@@ -118,7 +117,8 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 | Tool-call executor | done in the benchmark (`cora/executor.py`); router and RL pending |
 | Headless parameters, pinned map, scenario block | done |
 | Gym steps = human decision points (Day 1 setup, rollover step) | done |
-| `cora/` package | done: observation, prompts, tools, actions, executor, scoring, llm; pending: env |
+| `cora/` package | done |
+| One turn record for every front end (now: router `episode_logger.py`, benchmark round record) | pending, with the router migration |
 | `bench/` split | pending |
 | `router/` split, legacy actors retired | pending |
 | `CoraEnv` for RL; thin Verlog adapter | pending |

@@ -14,7 +14,7 @@ Engine constants (traced from code):
   => rounds   = ceil(sec / 10)     (vehicle moves 10 sim-sec per round, position persists)
 """
 import json, math, os, sys
-from arc_game_gym_env_tcp import ARCGameGymEnv
+from cora.env import GameEnv
 
 RENDER_EXE = "Build/HeadlessRender/macOS/ARC_HeadlessRender.app/Contents/MacOS/ARC_DisasterSimulation"
 SEC_PER_ROUND = 10.0
@@ -27,10 +27,10 @@ def rounds_for(sec):
 
 
 def main():
-    env = ARCGameGymEnv(unity_exe_path=RENDER_EXE, unity_port=10931,
+    env = GameEnv(unity_exe_path=RENDER_EXE, unity_port=10931,
                         auto_start_unity=True, max_episode_steps=4)
     env.reset()
-    resp = env._send_request({"type": "pathfind_matrix"})
+    resp = env.request({"type": "pathfind_matrix"})
     env.close()
 
     if resp.get("type") != "pathfind_matrix":

@@ -6,7 +6,7 @@ auto/stub director. This is the cheap shake-out pass for real-LLM / gateway /
 scoping / concurrency issues BEFORE the live interactive Unity pass.
 
 Why a bridge? The headless Unity build speaks the GYM's TCP protocol
-(arc_game_gym_env_tcp.ARCGameGymEnv ↔ GymServerManager), NOT the router's
+(cora.env.GameEnv ↔ GymServerManager), NOT the router's
 WebSocket. So we run a websocket-less router `Session` for the officers and route
 every `execute_action` frame it emits into the gym env's TCP execute. Both the gym
 and the router already speak the identical `{"type":"execute_action","action":...}`
@@ -75,7 +75,7 @@ import agent_router  # noqa: E402
 from agent_router import Session  # noqa: E402
 from agent_config import load_config  # noqa: E402
 from agent_filters import _action_matches_entry  # noqa: E402
-from arc_game_gym_env_tcp import ARCGameGymEnv  # noqa: E402
+from cora.env import GameEnv  # noqa: E402
 
 
 def _sat_budget(gs):
@@ -103,7 +103,7 @@ async def run(rounds, model, exe, unity_port):
 
     # ── Boot the REAL headless Unity game engine over gym-TCP.
     print("[harness] launching headless Unity …")
-    env = ARCGameGymEnv(unity_exe_path=exe, unity_port=unity_port,
+    env = GameEnv(unity_exe_path=exe, unity_port=unity_port,
                         auto_start_unity=True, manual_transfers=True)
     obs, info = env.reset()
     print(f"[harness] Unity up. day={info.get('day')} sat={info.get('satisfaction')} "
@@ -119,7 +119,7 @@ async def run(rounds, model, exe, unity_port):
 
     async def gym_call(req):
         async with gym_lock:
-            return await asyncio.to_thread(env._send_request, req)
+            return await asyncio.to_thread(env.request, req)
 
     # ── The bridge: route the Session's Unity frames into the gym env.
     async def bridge_send(payload):

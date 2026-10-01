@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from arc_game_gym_env_tcp import ARCGameGymEnv
+from cora.env import GameEnv
 
 
 def _now() -> str:
@@ -29,7 +29,7 @@ def main() -> int:
     log_path = Path(args.log)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    env = ARCGameGymEnv(
+    env = GameEnv(
         unity_port=args.port,
         max_episode_steps=args.steps,
         auto_start_unity=False,
