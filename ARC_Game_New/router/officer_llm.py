@@ -21,7 +21,6 @@ throughout; this module translates to/from Anthropic and the text fallback so
 the loop never has to care which provider is behind it.
 """
 import json
-import os
 import re
 from pathlib import Path
 from typing import Optional, List, Dict, Any

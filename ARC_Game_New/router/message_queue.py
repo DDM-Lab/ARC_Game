@@ -19,7 +19,7 @@ Usage:
 
 import time
 import uuid
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 
 class MessageQueue:

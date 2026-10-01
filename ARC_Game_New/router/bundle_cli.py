@@ -195,7 +195,6 @@ def cmd_push(args: argparse.Namespace) -> int:
     url = args.url.rstrip("/") + "/bundles"
     if args.base:
         # a delta bundle: tell the server which config to layer onto
-        import json as _json
         base_name = Path(args.base).stem
         url += "?base=" + urllib.request.quote(base_name)
     url, _extra = _tls_safe(url)

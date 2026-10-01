@@ -19,6 +19,7 @@ import os
 import tempfile
 
 import router.session as router_session
+import routerkit
 from router import plugin_api
 # Reuse the existing hermetic officer harness (no network, no Unity, no LLM).
 from test_reactive_officers import make_session, food_officer, instrument, fake_enumerate
@@ -40,7 +41,7 @@ async def _run_turn(sess, agent, steps_script):
             return steps_script[i]
         return {"content": "done", "tool_calls": []}
 
-    router_session.run_tool_step = fake_run_tool_step
+    routerkit.patch("run_tool_step", fake_run_tool_step)
     await sess._run_continuous_for_message(agent)
     return consumed["n"]
 
@@ -63,7 +64,7 @@ async def test_on_turn_start_injects():
     td = tempfile.mkdtemp()
     cfg, sess = make_session(td, reactive=True)
     instrument(sess)
-    router_session._enumerate_actions = fake_enumerate
+    routerkit.patch("_enumerate_actions", fake_enumerate)
 
     await _run_turn(sess, food_officer(cfg), [_talk(0), {"content": "done", "tool_calls": []}])
     msgs = sess._continuous_transcripts.get("Food Officer") or []
@@ -88,7 +89,7 @@ async def test_on_turn_start_refuses_unsafe_roles():
     td = tempfile.mkdtemp()
     cfg, sess = make_session(td, reactive=True)
     instrument(sess)
-    router_session._enumerate_actions = fake_enumerate
+    routerkit.patch("_enumerate_actions", fake_enumerate)
     await _run_turn(sess, food_officer(cfg), [{"content": "done", "tool_calls": []}])
     msgs = sess._continuous_transcripts.get("Food Officer") or []
     joined = " ".join(str(m.get("content")) for m in msgs)
@@ -112,7 +113,7 @@ async def test_on_step_end_stops_turn():
     td = tempfile.mkdtemp()
     cfg, sess = make_session(td, reactive=True)
     instrument(sess)
-    router_session._enumerate_actions = fake_enumerate
+    routerkit.patch("_enumerate_actions", fake_enumerate)
     # Script THREE talking steps; the hook must halt after the first.
     consumed = await _run_turn(sess, food_officer(cfg), [_talk(0), _talk(1), _talk(2)])
     assert consumed == 1, f"loop did not stop: consumed {consumed} model steps (expected 1)"
@@ -133,7 +134,7 @@ async def test_on_step_end_continue():
     td = tempfile.mkdtemp()
     cfg, sess = make_session(td, reactive=True)
     instrument(sess)
-    router_session._enumerate_actions = fake_enumerate
+    routerkit.patch("_enumerate_actions", fake_enumerate)
     consumed = await _run_turn(sess, food_officer(cfg),
                                [_talk(0), _talk(1), {"content": "done", "tool_calls": []}])
     assert consumed == 3, f"loop stopped early: consumed {consumed} (expected 3)"
@@ -147,7 +148,7 @@ async def test_no_hooks_no_change():
     td = tempfile.mkdtemp()
     cfg, sess = make_session(td, reactive=True)
     instrument(sess)
-    router_session._enumerate_actions = fake_enumerate
+    routerkit.patch("_enumerate_actions", fake_enumerate)
     consumed = await _run_turn(sess, food_officer(cfg),
                                [_talk(0), {"content": "done", "tool_calls": []}])
     assert consumed == 2, f"baseline changed: consumed {consumed} (expected 2)"

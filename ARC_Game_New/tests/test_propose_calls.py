@@ -15,6 +15,7 @@ import os
 import tempfile
 
 import router.session as router_session
+import routerkit
 from router.session import Session
 from router.config import load_config
 
@@ -121,8 +122,8 @@ async def test_outbound_parity():
         sess._send = fake_send
 
         # filter = identity so filtered_actions is the full menu (scope-independent test)
-        router_session.filter_actions = lambda actions, space: list(actions)
-        router_session._enumerate_actions = lambda gs: menu()
+        routerkit.patch("filter_actions", lambda actions, space: list(actions))
+        routerkit.patch("_enumerate_actions", lambda gs: menu())
 
         captured = {}
 
@@ -188,8 +189,8 @@ async def test_all_dropped_errors():
         async def fake_send(payload):
             sent.append(payload)
         sess._send = fake_send
-        router_session.filter_actions = lambda actions, space: list(actions)
-        router_session._enumerate_actions = lambda gs: menu()
+        routerkit.patch("filter_actions", lambda actions, space: list(actions))
+        routerkit.patch("_enumerate_actions", lambda gs: menu())
 
         args = {"reasoning": "x", "packages": [
             {"label": "Bad", "calls": [{"tool": "build", "args": {"type": "kitchen", "site_id": 99}}]},

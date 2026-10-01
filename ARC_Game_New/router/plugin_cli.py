@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib.util
-import sys
 from pathlib import Path
 
 from router import plugin_api

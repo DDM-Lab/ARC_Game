@@ -70,7 +70,6 @@ def load_env_file(path=".env"):
 
 load_env_file()
 
-import router.session as router_session  # noqa: E402
 from router.session import Session  # noqa: E402
 from router.config import load_config  # noqa: E402
 from router.scope import _action_matches_entry  # noqa: E402

@@ -37,8 +37,21 @@ cora/                    SHARED CORE — the only place game-facing Python logic
 bench/                   benchmark (python -m bench): CLI, episode loop, LLM policy, baselines,
                          results, plots, SFT export, per-turn probe
 oracle/                  search: the surrogate, Pareto sweep, MCTS, surrogate validation
-router/                  GUI officers: service, session, officer loop, officer tools, proposals,
-                         standing orders, developer panel API
+router/                  GUI officers (python -m router):
+  service.py             FastAPI app: websocket handshake, keys, contributor/admin endpoints, dev panel API
+  session.py             Session: one connected game (composes the mixins below)
+  unity_io.py            commits actions and task answers to the client; latest game state
+  officer_loop.py        each officer's turn: messages, transcript, roster, hooks
+  officer_tools.py       tool dispatch; action calls through cora.executor; action menu; ledger
+  proposals.py           propose_choices cards and the Director's pick
+  standing_orders.py     add_to_autonomy_list
+  messaging.py           Director <-> officer messages
+  devpanel.py            live prompt edits, officer reset, checkpoint load
+  officer_llm.py         the officers' LLM calls and tool schemas
+  config.py, schema.py, bundles.py   configs and contributor bundles
+  plugin_api.py, plugin_context.py, plugin_store.py   contributor tool/hook plugins
+  cli.py, bundle_cli.py, plugin_cli.py   contributor CLIs (python -m router.cli)
+  harness.py             officers on a headless Unity (no human Director)
 rl/                      trainer-facing glue that is not framework specific
 ops/                     cluster launchers, Talos deploy, build scripts
 tests/                   all tests (pytest; markers: unit, needs_unity, needs_router)
@@ -131,7 +144,7 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 | Search wing: `oracle/` as a package on `cora/` (policy family, records) | done |
 | Surrogate on the new rules (`cora/params`, Unity's score), parity restored | pending |
 | Legacy actors (auto / choices / coach) retired | done |
-| `router/` split | pending |
+| `router/` package (service, session, mixins) | done |
 | `CoraEnv` for RL; thin Verlog adapter | pending |
 | Repo hygiene (scripts, docs, tests) | pending |
 | C# `GameApi` facade, task logic out of the UI | separate branch |

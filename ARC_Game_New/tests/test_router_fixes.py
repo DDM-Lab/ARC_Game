@@ -11,6 +11,7 @@ import os
 import tempfile
 
 import router.session as router_session
+import routerkit
 from router.session import Session
 from router.config import load_config
 from cora.scoring import score_components
@@ -129,7 +130,7 @@ async def _run_retry_cap():
                                         "arguments": {"type": "kitchen", "site_id": 1}}]}
             return {"content": "done", "tool_calls": []}  # finish
 
-        router_session.run_tool_step = fake_step
+        routerkit.patch("run_tool_step", fake_step)
 
         fs = sess._filter_state(_base_state(1), agent)
         fake_actions = [{"action_id": "build_Kitchen_1", "action_type": "construction",
