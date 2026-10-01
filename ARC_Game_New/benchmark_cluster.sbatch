@@ -59,9 +59,11 @@ mkdir -p "$OUT"
 # HISTORY: turns of prior conversation replayed. Each turn adds ~950 prompt tokens, so
 #   h=1 ~3.6k, h=4 ~6.4k, h=16 ~18k, h=32 ~33k -> raise MAX_MODEL_LEN past h=4.
 # TRANSFERS: task_only suppresses standalone transfers (human-faithful); manual enumerates them.
-# SYSTEM_PROMPT: minimal_v6 (default: pure rules + action grammar, zero strategy) | minimal_v2..v5 |
+# SYSTEM_PROMPT: minimal_v6_1 (default: v6 with live numbers + unavailable choices marked) | minimal_v6 | minimal_v2..v5 |
 #   minimal | original. SEED: base seed; episode i uses SEED+i, so arms see identical scenarios.
-FMT=(--action_format tools --obs_encoding compact --system_prompt "${SYSTEM_PROMPT:-minimal_v6}"
+# MAP_CONFIG: map JSON path for every episode, or "none" for the built-in layout (default: the
+#   build's bundled map_config.json). Each episode record carries the map fingerprint it ran.
+FMT=(--obs_encoding compact --system_prompt "${SYSTEM_PROMPT:-minimal_v6_1}"
      --image_mode none --transfers "${TRANSFERS:-task_only}" --history "${HISTORY:-1}")
 
 echo "=== CORA benchmark  mode=$MODE  job=${SLURM_JOB_ID:-local}  node=$(hostname)  $(date)"
@@ -175,7 +177,7 @@ echo "=== models: $MODELS"
 $PY -u benchmark_models.py --models "$MODELS" \
     --episodes "$EPISODES" --rounds "$ROUNDS" --workers "$WORKERS" \
     "${FMT[@]}" "${EXTRA[@]}" \
-    --out "$OUT" --base-port "$BASE_PORT" ${SEED:+--seed "$SEED"}
+    --out "$OUT" --base-port "$BASE_PORT" ${SEED:+--seed "$SEED"} ${MAP_CONFIG:+--map-config "$MAP_CONFIG"}
 RC=$?
 kill "$WATCHDOG" 2>/dev/null
 echo "=== exit=$RC  $(date)"

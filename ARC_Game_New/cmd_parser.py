@@ -42,18 +42,8 @@ class ParserEnv:
         return self.valid_actions
 
 
-# Aliases the model may type for each building type -> canonical enumerator building_type.
-_BUILD_ALIASES = {
-    "kitchen": "Kitchen", "kitchens": "Kitchen",
-    "shelter": "Shelter", "shelters": "Shelter",
-    "casework": "CaseworkSite", "caseworksite": "CaseworkSite",
-    "caseworks": "CaseworkSite", "case": "CaseworkSite",
-}
-
-_TRANSFER_RESOURCE = {
-    "food": "FoodPacks", "foodpacks": "FoodPacks", "foodpack": "FoodPacks", "packs": "FoodPacks",
-    "people": "Population", "population": "Population", "pop": "Population", "persons": "Population",
-}
+# Resolution tables live with the resolver (tool_executor); re-exported for llm_smoke_test.
+from tool_executor import _BUILD_ALIASES, _TRANSFER_RESOURCE, _bundle_indices  # noqa: E402,F401
 
 
 def _action_index(env):
@@ -64,21 +54,6 @@ def _action_index(env):
     return idx
 
 
-def _bundle_indices(candidates, n):
-    """Greedily cover quantity `n` using available (quantity -> index) bundles, largest first.
-    Repeating an index re-executes that bundle (the env executes each listed index in order)."""
-    by_q = sorted(candidates, key=lambda qi: -qi[0])   # [(qty, index), ...] desc
-    out, remaining = [], n
-    while remaining > 0:
-        pick = next((qi for qi in by_q if qi[0] <= remaining), None)
-        if pick is None:
-            pick = by_q[-1] if by_q else None           # smallest bundle, if even that overshoots
-            if pick is None:
-                break
-        out.append(pick[1]); remaining -= pick[0]
-    return out
-
-
 _CMD_RE = re.compile(r"<\s*(build|hire|train|staff|task|deconstruct|transfer)\s*>(.*?)<\s*[\\/]\s*\1\s*>",
                      re.I | re.S)
 
@@ -86,223 +61,33 @@ _CMD_RE = re.compile(r"<\s*(build|hire|train|staff|task|deconstruct|transfer)\s*
 def parse_commands(text, env):
     """Map command tags in `text` to (action_indices, choices) against the round's enumeration.
 
+    A thin front end over tool_executor: each tag becomes the equivalent typed tool call
+    (<staff>Shelter Alpha,</staff> -> staff(site="Shelter Alpha")) and the shared TurnResolver
+    resolves it, so the tag grammar, the typed-tool benchmark, the RL env and the officer router
+    all resolve actions with ONE implementation. Synthesized staff actions are appended to
+    env.valid_actions, as before, so callers keep executing the returned indices against it.
+
     Returns dict: {actions:[idx...], choices:[{taskId,choiceId}...], parsed:[...], errors:[...]}.
-    Pure w.r.t. the env beyond reading its enumerated actions, so it is unit-testable on a snapshot
-    via a stub exposing get_valid_actions()/game_state.
     """
-    idx = _action_index(env)
-    choices, parsed, errors = [], [], []
-
-    # Commonsense execution order: regardless of the order the model writes the tags, we execute
-    # deconstruct -> build -> hire -> train -> staff -> transfer. This makes the obvious plan
-    # "hire, then staff the workers you just hired" work in a single turn (the gym executes the
-    # action list in order). emit() tags each resolved menu index with its category priority;
-    # the final `actions` list is the indices sorted by that priority (stable within a category).
-    _PRIO = {"deconstruct": 0, "build": 1, "hire": 2, "train": 3, "staff": 4, "transfer": 5}
-    act_items = []  # (priority, action_index)
-
-    def emit(cmd_name, *idxs):
-        for i in idxs:
-            act_items.append((_PRIO[cmd_name], i))
-
-    # Simulated free-workforce pool, in WORKFORCE UNITS (trained=2, untrained=1), so a <staff>
-    # issued the same turn as a <hire> can see the newly-hired workers. ActionExecutor creates
-    # hired workers Free (immediately assignable), and TryAssignWorkersToBuilding pulls from the
-    # global free pool, so this models execution faithfully. Staff is resolved AFTER the main
-    # pass (see staff_cmds) once every <hire> has been counted, independent of textual order.
-    gs = env.game_state
-    _wf = gs.get("workforceState", {})
-    sim_wf = (_wf.get("freeTrainedWorkers", 0) or 0) * 2 + (_wf.get("freeUntrainedWorkers", 0) or 0)
-    # building -> remaining workforce need this turn (consumed as we staff, so two <staff> tags to
-    # the same building don't both claim the full need).
-    need = {}
-    for f in gs.get("mapState", {}).get("facilities", []):
-        if f.get("buildingStatus") in ("NeedWorker", "InUse"):
-            rem = (f.get("requiredWorkforce", 4) or 0) - (f.get("assignedWorkforce", 0) or 0)
-            if rem > 0 and f.get("facilityName"):
-                need[f["facilityName"]] = rem
-    staff_cmds = []  # deferred (raw_label, N) resolved after all hires are counted
-
-    def split(body, n):
-        parts = [p.strip() for p in body.replace("\n", " ").split(",")]
-        return parts if len(parts) >= n else None
-
+    import tool_executor
+    from cora_tools import _TOOL_BY_NAME, _param_names
+    calls = []
     for m in _CMD_RE.finditer(text or ""):
-        cmd = m.group(1).lower()
-        body = m.group(2).strip()
-        try:
-            if cmd == "build":
-                p = split(body, 2)
-                if not p:
-                    errors.append(f"build: need TYPE,SITE_ID got '{body}'"); continue
-                btype = _BUILD_ALIASES.get(p[0].lower().replace(" ", ""))
-                site = int(float(p[1]))
-                if not btype:
-                    errors.append(f"build: unknown type '{p[0]}'"); continue
-                hit = next((i for i, a in idx.get("construction", [])
-                            if a["construction"]["building_type"] == btype
-                            and int(a["construction"]["site_id"]) == site), None)
-                if hit is None:
-                    errors.append(f"build: no available {btype} at site {site}"); continue
-                emit("build", hit); parsed.append(f"build {btype}@{site}")
-
-            elif cmd == "hire":
-                p = split(body, 2)
-                if not p:
-                    errors.append(f"hire: need KIND,N got '{body}'"); continue
-                kind = p[0].lower()
-                trained = kind in ("trained", "true", "t", "1", "yes")
-                wat = "hire_trained" if trained else "hire_untrained"
-                n = int(float(p[1]))
-                cands = [(a["worker"]["quantity"], i) for i, a in idx.get("worker", [])
-                         if a["worker"]["worker_action_type"] == wat]
-                got = _bundle_indices(cands, n)
-                if not got:
-                    errors.append(f"hire: no {wat} bundles available"); continue
-                # Count the workers actually hired into the simulated free pool so a same-turn
-                # <staff> can assign them (trained=2 workforce units, untrained=1).
-                qmap = {i: q for q, i in cands}
-                hired = sum(qmap.get(i, 0) for i in got)
-                sim_wf += hired * (2 if trained else 1)
-                emit("hire", *got); parsed.append(f"hire {wat} x{n}->{len(got)}act")
-
-            elif cmd == "train":
-                p = split(body, 1)
-                n = int(float(p[0])) if p else 0
-                cands = [(a["worker"]["quantity"], i) for i, a in idx.get("worker", [])
-                         if a["worker"]["worker_action_type"] == "train_untrained"]
-                got = _bundle_indices(cands, n)
-                if not got:
-                    errors.append("train: no train bundles available"); continue
-                emit("train", *got); parsed.append(f"train x{n}->{len(got)}act")
-
-            elif cmd == "staff":
-                p = split(body, 2)
-                if not p:
-                    errors.append(f"staff: need BUILDING,N got '{body}'"); continue
-                # Defer: resolve after the whole text is scanned so workers hired THIS turn
-                # (in any textual order) are counted into sim_wf before we assign them.
-                # An empty count (the typed tool's count is optional) means "staff fully".
-                staff_cmds.append((p[0], int(float(p[1])) if p[1] else 0))
-
-            elif cmd == "deconstruct":
-                bname = body.strip().lower()
-                hit = next((i for i, a in idx.get("deconstruction", [])
-                            if bname in a["deconstruction"]["building_name"].lower()), None)
-                if hit is None:
-                    errors.append(f"deconstruct: no building matching '{body}'"); continue
-                emit("deconstruct", hit); parsed.append(f"deconstruct {body}")
-
-            elif cmd == "task":
-                p = split(body, 2)
-                if not p:
-                    errors.append(f"task: need TASK_ID,CHOICE_ID got '{body}'"); continue
-                # Accept either the raw integer taskId or a stable identifier like
-                # BUDGET_DAILY / FOOD_C01 / RELOC_C02 — see obs_encoder.stable_task_token.
-                # The stable token is what the model sees in the observation when
-                # ARC_STABLE_TASK_TOKENS=1; the integer form is kept for back-compat
-                # (benchmarks, old checkpoints, human debugging).
-                raw = p[0].strip()
-                try:
-                    task_id = int(float(raw))
-                except ValueError:
-                    from obs_encoder import stable_task_token as _stt
-                    task_id = None
-                    for t in (env.game_state.get("allActiveTasks", []) or []):
-                        if _stt({"title": t.get("taskTitle"),
-                                 "affects": t.get("affectedFacility"),
-                                 "taskId": t.get("taskId")}) == raw:
-                            task_id = int(t["taskId"])
-                            break
-                    if task_id is None:
-                        errors.append(f"task: unknown stable token '{raw}' (not in this turn's tasks)"); continue
-                choices.append({"taskId": task_id, "choiceId": int(float(p[1]))})
-                parsed.append(f"task {raw}/{p[1]}")
-
-            elif cmd == "transfer":
-                # Manual resource transfer (only enumerated when the env runs with manual_transfers).
-                # <transfer>RESOURCE,SOURCE,DEST,QTY</transfer> e.g. food,Community01,Motel,25
-                p = split(body, 4)
-                if not p:
-                    errors.append(f"transfer: need RESOURCE,SOURCE,DEST,QTY got '{body}'"); continue
-                rtype = _TRANSFER_RESOURCE.get(p[0].lower().replace(" ", ""))
-                if not rtype:
-                    errors.append(f"transfer: unknown resource '{p[0]}'"); continue
-                src, dst = p[1].strip().lower(), p[2].strip().lower()
-                qty = int(float(p[3]))
-                cands = [(t["transfer"]["quantity"], i) for i, t in idx.get("resource_transfer", [])
-                         if t["transfer"]["resource_type"] == rtype
-                         and src in t["transfer"]["source_facility"].lower()
-                         and dst in t["transfer"]["destination_facility"].lower()]
-                if not cands:
-                    errors.append(f"transfer: no {rtype} route {p[1]}->{p[2]} "
-                                  f"(needs a free vehicle and a valid facility pair)"); continue
-                # pick the offered quantity closest to the requested amount (ties -> larger)
-                hit = min(cands, key=lambda qi: (abs(qi[0] - qty), -qi[0]))[1]
-                emit("transfer", hit); parsed.append(f"transfer {rtype} {p[1]}->{p[2]} ~{qty}")
-        except (ValueError, KeyError, IndexError) as e:
-            errors.append(f"{cmd}: parse error '{body}' ({e})")
-
-    # Resolve deferred <staff> now that every <hire> this turn is counted into sim_wf. We synthesize
-    # the worker_assignment action directly (Unity's ExecuteAssignment only needs building_name +
-    # quantity-in-workforce-units; it greedily pulls from the free pool and ignores worker_type) and
-    # append it to env.valid_actions so the gym can execute it by index THIS turn. Capping quantity at
-    # the available workforce guarantees TryAssignWorkersToBuilding (all-or-nothing) succeeds rather
-    # than failing and aborting the rest of the turn's plan.
-    for raw_label, n in staff_cmds:
-        bname = raw_label.strip().lower()
-        match = next((nm for nm in need if need[nm] > 0 and bname in nm.lower()), None)
-        if match is None:
-            errors.append(f"staff: '{raw_label}' is not staffable now "
-                          f"(must be a built building still needing workers)")
-            continue
-        # Buildings only run fully staffed and the executor refuses anything else, so a
-        # partial request can never succeed. Say why here, with the fix, instead of converting
-        # it into a worker count the game then rejects with a message about worker counts
-        # (which officers misread as "partial staffing is impossible" and gave up).
-        if 0 < n < need[match]:
-            errors.append(f"staff: {match} needs {need[match]} workforce units (trained = 2, "
-                          f"untrained = 1) and only runs fully staffed; count={n} would be partial. "
-                          f"Leave count out to staff it fully.")
-            continue
-        if 0 < sim_wf < need[match]:
-            errors.append(f"staff: {match} needs {need[match]} workforce units but only {sim_wf} "
-                          f"are free; hire or finish training workers first.")
-            continue
-        want = min(n if n > 0 else need[match], need[match], sim_wf)
-        if want <= 0:
-            errors.append(f"staff: no free workers for '{raw_label}' "
-                          f"(hire workers this turn, or none are available)")
-            continue
-        # UNITS -> WORKER COUNT. `want` is workforce UNITS (need[] and sim_wf both are), but
-        # ActionExecutor.ExecuteAssignment passes assignment.quantity straight to
-        # TryReassignWorkerCountToBuilding, which is documented "EXACTLY p.quantity workers
-        # (count, not workforce points)" and selects TRAINED FIRST. Passing units as a count
-        # therefore over-staffed by up to 2x whenever trained workers were free -- the source
-        # of the `Workers: 8/4` rows in the transcripts -- and could fail outright when the
-        # unit figure exceeded the number of workers that actually exist.
-        #
-        # Convert under the executor's own trained-first ordering: each trained worker
-        # contributes 2 units, each untrained 1.
-        n_tr = (_wf.get("freeTrainedWorkers", 0) or 0)
-        use_tr = min(n_tr, -(-want // 2))            # ceil(want/2) trained, capped by supply
-        rem = max(0, want - use_tr * 2)              # units still uncovered
-        qty = use_tr + rem                           # + one untrained per remaining unit
-        if qty <= 0:
-            errors.append(f"staff: no free workers for '{raw_label}' "
-                          f"(hire workers this turn, or none are available)")
-            continue
-        # worker_type is deliberately omitted: ExecuteAssignment never reads it (it picks
-        # trained-first from the free pool itself), so carrying a value here only invited the
-        # misreading that the caller controls worker type.
-        synth = {"action_id": f"assign_{match}_{qty}", "action_type": "worker_assignment",
-                 "description": f"Assign {qty} worker(s) (~{want} workforce) to {match}", "cost": 0,
-                 "assignment": {"building_name": match, "quantity": qty}}
-        env.valid_actions.append(synth)
-        emit("staff", len(env.valid_actions) - 1)
-        sim_wf -= want
-        need[match] -= want
-        parsed.append(f"staff {match} wf{want}(x{qty})")
-
-    actions = [i for _, i in sorted(act_items, key=lambda kv: kv[0])]
+        cmd, body = m.group(1).lower(), m.group(2).strip()
+        tool = _TOOL_BY_NAME.get(cmd)
+        names = _param_names(tool) if tool else []
+        parts = [p.strip() for p in body.replace("\n", " ").split(",")]
+        args = {n: parts[i] for i, n in enumerate(names) if i < len(parts) and parts[i] != ""}
+        calls.append((cmd, args))
+    results, tr = tool_executor.plan_turn(calls, env)
+    if hasattr(env, "valid_actions"):
+        env.valid_actions = tr.actions
+    actions, choices, parsed, errors = [], [], [], []
+    for r in sorted(results, key=lambda r: tool_executor.ORDER.get(r.tool, 99)):
+        if r.status != "resolved":
+            errors.append(f"{r.tool}: {r.reason}")
+        elif r.choice is not None:
+            choices.append(r.choice); parsed.append(r.summary)
+        else:
+            actions.extend(r.action_indices); parsed.append(r.summary)
     return {"actions": actions, "choices": choices, "parsed": parsed, "errors": errors}

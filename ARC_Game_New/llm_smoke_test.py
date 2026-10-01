@@ -8,7 +8,7 @@ re-exports those names so existing callers keep working:
 
 Real homes:
   * system prompts      -> cora_prompts
-  * command parser      -> cmd_parser
+  * tool execution      -> tool_executor
   * observation adapters-> obs_adapters
   * gateway config      -> llm_gateway
   * the playthrough loop-> llm_playthrough
@@ -16,10 +16,6 @@ Real homes:
 Delete this shim once `benchmark_models.py` and the Verlog fork import from the real
 modules directly. It holds NO logic of its own.
 """
-# SHARED command-grammar parser (source of truth: cmd_parser).
-from cmd_parser import (  # noqa: F401
-    _BUILD_ALIASES, _TRANSFER_RESOURCE, _action_index, _bundle_indices, _CMD_RE, parse_commands,
-)
 # SHARED system prompts (source of truth: cora_prompts).
 from cora_prompts import (  # noqa: F401
     CMD_SYSTEM_PROMPT, CMD_TRANSFER_DOC, CMD_MINIMAL_SYSTEM_PROMPT, CMD_MINIMAL_V2_SYSTEM_PROMPT,

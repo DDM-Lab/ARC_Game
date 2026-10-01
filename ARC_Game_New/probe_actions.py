@@ -29,7 +29,7 @@ WHAT IT MEASURES, per turn
   llm            the shadow's action set, sampled N times to expose sampling variance
   resolvable     did the shadow's tool calls resolve to executable actions (indices in
                  range / valid task+choice ids). This is the ACTION-VALIDITY signal and
-                 needs no execution -- parse_commands resolves against the live env.
+                 needs no execution -- tool_executor.plan_turn resolves against the live env.
   agreement      exact (same action types AND targets) / category (same action types)
 
 THE DISCRIMINATOR

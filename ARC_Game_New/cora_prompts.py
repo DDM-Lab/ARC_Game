@@ -751,6 +751,53 @@ _TOOL_TYPED_HEADER_END = "resolved against the live state:"
 # parser-rejected command never reaches env.step and so never counts in nFail. Measured on the
 # n=32 canonical cell: 1.90 rejections/round for Qwen3-4B, hitting 69.1% of its rounds, vs 0.03
 # for Qwen3.5-4B. Deriving the sentence from the same env var keeps the two from drifting again.
+# ── minimal_v6_1: v6 with every number read from the observation + unavailable choices marked ──
+# v6 hard-coded figures that had drifted from the game: hire untrained $200 (game: costs.hireUntrained
+# 300), train $300 (500), three vehicles (four), communities of 400 (600 in the observation). The
+# `costs` block and facility table already carry the live values, so the prompt contradicted the
+# observation in the agent's own context. v6_1 points at the fields instead of quoting numbers and
+# says that unavailable choices are marked (the observation flags exactly what the player's panel
+# greys out). Tools still return nothing to the model. The BUDGET_DAILY example is dropped: models
+# answered that token on turns where no such task existed. Same rules otherwise; v6 is untouched
+# so its completed runs stay reproducible (prompt_sha 09b23ffd5e31).
+_V61_PREAMBLE_EDITS = [
+    ("- Communities — each holds up to 400 people; residents start here.",
+     "- Communities — residents start here; a community's capacity is its `cap` in the facilities table."),
+    ("- Motel — prebuilt lodging, capacity 3000. Charges",
+     "- Motel — prebuilt lodging; its capacity is its `cap`. Charges"),
+    ("BUILDINGS — each costs `state.costs.build` ($2000) and needs 4 workforce units to operate.",
+     "BUILDINGS — each costs `costs.build` and needs its `needWorkers` workforce units to operate."),
+    ("- shelter    houses up to 100 residents. Once InUse",
+     "- shelter    houses residents up to its `cap`. Once InUse"),
+    ("- kitchen    produces and holds food, up to 200 meals; stock",
+     "- kitchen    produces and holds food up to its capacity; stock"),
+    ("- casework   processes residents so they can return home; capacity 400. A",
+     "- casework   processes residents so they can return home, up to its `cap`. A"),
+    ("- hire untrained — `state.costs.hireUntrained` ($200) each,",
+     "- hire untrained — `costs.hireUntrained` each,"),
+    ("- hire trained — `state.costs.hireTrained` ($1000) each,",
+     "- hire trained — `costs.hireTrained` each,"),
+    ("- train — promotes an untrained worker to trained for `state.costs.train` ($300).",
+     "- train — promotes an untrained worker to trained for `costs.train`."),
+    ("- Workers contribute nothing until staffed to a building. Staffing is counted in WORKFORCE UNITS, so a\n  building needing 4 accepts 4 untrained, or 2 trained, or one of each plus 1.",
+     "- Workers contribute nothing until staffed to a building. Staffing is counted in WORKFORCE UNITS, so a\n  building needing 4 accepts 4 untrained, or 2 trained, or 1 trained plus 2 untrained."),
+    ("- Three delivery vehicles serve the whole map;",
+     "- A fixed fleet of delivery vehicles serves the whole map;"),
+    ("this turn, and re-read them every turn: options are removed as they become infeasible.",
+     "this turn, and re-read them every turn. A choice that cannot be carried out right now is marked\n  UNAVAILABLE with the reason; picking it does nothing."),
+]
+_V61_TASK_ID_LINE = ("Call `task` with the id printed in square brackets for that task, exactly as shown. "
+                     "Ids are stable across turns; only tasks listed this turn can be answered.")
+
+
+def _apply_edits(text: str, edits, what: str) -> str:
+    for find, repl in edits:
+        if find not in text:   # the v6 text moved: fail loudly rather than ship a half-edited prompt
+            raise RuntimeError(f"minimal_v6_1 {what} edit anchor missing: {find[:60]!r}")
+        text = text.replace(find, repl, 1)
+    return text
+
+
 def _task_id_line() -> str:
     import os
     if os.environ.get("ARC_STABLE_TASK_TOKENS", "1").strip() == "1":
@@ -780,7 +827,9 @@ def tool_system_prompt(manual_transfers=False, variant="minimal", wire_format="t
         preamble = base.split(_TOOL_ANCHOR, 1)[0]
     else:
         preamble = base
-    if variant == "minimal_v6":
+    if variant == "minimal_v6_1":
+        how = _TOOL_HOW_TO_ACT_V6
+    elif variant == "minimal_v6":
         how = _TOOL_HOW_TO_ACT_V6
         # Ablation hook: ARC_ABLATE_RULE=Rxx removes the exact text of rule Rxx.
         # Multi-rule ablation: ARC_ABLATE_RULE=R07,R09,R10 removes ALL listed rules
@@ -862,7 +911,7 @@ def tool_system_prompt(manual_transfers=False, variant="minimal", wire_format="t
             raise RuntimeError("tool prompt header anchor missing; hermes variant cannot be built")
         how = _TOOL_HERMES_HEADER + rest
     out = preamble.rstrip() + "\n\n" + how
-    out = out.replace("{TASK_ID_LINE}", _task_id_line())
+    out = out.replace("{TASK_ID_LINE}", _V61_TASK_ID_LINE if variant == "minimal_v6_1" else _task_id_line())
     # Ablation: for minimal_v6 variant, apply every pending (find, replace) pair
     # against the assembled prompt so rules whose text lives in the preamble get
     # stripped/paraphrased as well. Multi-rule sweeps queue several strips here.
@@ -883,6 +932,8 @@ def cmd_system_prompt(manual_transfers=True, variant="original"):
     (manual mode). Keeps the prompt faithful to the actual action surface."""
     if variant == "minimal_v6":
         base = CMD_MINIMAL_V6_SYSTEM_PROMPT
+    elif variant == "minimal_v6_1":
+        base = _apply_edits(CMD_MINIMAL_V6_SYSTEM_PROMPT, _V61_PREAMBLE_EDITS, "preamble")
     elif variant == "minimal_v4":
         base = CMD_MINIMAL_V4_SYSTEM_PROMPT
     elif variant in ("minimal_v3", "minimal_v5"):

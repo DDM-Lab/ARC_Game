@@ -93,6 +93,8 @@ def build_observation(game_state, actions=None, *, new=True, v2=True,
             if show_impacts and c.get("impacts"):
                 # compact: e.g. {"Budget": 5000, "Satisfaction": 10}
                 o["impacts"] = {i["type"]: i["value"] for i in c["impacts"]}
+            if _V61 and c.get("feasible") is False:
+                o["unavailable"] = (c.get("unavailableReason") or "cannot be carried out right now")[:140]
             ch.append(o)
         td = {"taskId": t["taskId"], "type": t["taskType"], "title": t["taskTitle"],
               "roundsLeft": t.get("roundsRemaining"), "choices": ch}
@@ -363,7 +365,7 @@ def _render_facilities(obs, *, v2):
 # the drifting integer taskId Unity assigns each turn. Same title→token across
 # ALL turns so the policy can learn "BUDGET_DAILY = free money" once, rather
 # than re-discovering it every day when its integer id changes. Parser
-# (cmd_parser.parse_commands) accepts either form. ON by default; set
+# (tool_executor.TurnResolver.task) accepts either form. ON by default; set
 # ARC_STABLE_TASK_TOKENS=0 to restore the legacy drifting-integer rendering
 # (e.g. to keep an in-flight benchmark on its original numeric baseline).
 _STABLE_TASK_TOKENS = os.environ.get("ARC_STABLE_TASK_TOKENS", "1").strip() == "1"
@@ -508,6 +510,17 @@ def task_group(t: dict) -> str:
     return _OFFICER_TASK_GROUP.get(task_officer(t), "disaster")
 
 
+# minimal_v6_1 observation addition, off by default so minimal_v6 (and every completed run)
+# renders byte-identically: choices the player's panel greys out are marked unavailable with the
+# game's reason.
+_V61 = False
+
+
+def set_v61(on: bool) -> None:
+    global _V61
+    _V61 = bool(on)
+
+
 def _render_tasks(obs):
     tasks = obs.get("tasks", [])
     if not tasks:
@@ -525,7 +538,8 @@ def _render_tasks(obs):
         for ch in t.get("choices", []):
             imp = ch.get("impacts")
             imps = (" " + " ".join(f"[{k} {v}]" for k, v in imp.items())) if imp else ""
-            L.append(f"    {ch.get('choiceId')}: {ch.get('text')}{imps}")
+            na = f" — UNAVAILABLE now: {ch['unavailable']}" if ch.get("unavailable") else ""
+            L.append(f"    {ch.get('choiceId')}: {ch.get('text')}{imps}{na}")
     return L
 
 
@@ -595,8 +609,8 @@ def render_state_compact(obs, *, v2=True, v3=False):
       - scalars/affordances: key-value lines, decision-relevant fields up top (primacy).
     Lossless w.r.t. what's actionable; only prose and enumerated redundancy are dropped.
     Returns a string ready to drop into the user message in place of json.dumps(obs)."""
-    return "\n".join(_render_scalars(obs) + _render_facilities(obs, v2=v2) + _render_tasks(obs)
-                     + _render_sites(obs, v3=v3) + _render_available(obs, v2=v2))
+    return "\n".join(_render_scalars(obs) + _render_facilities(obs, v2=v2)
+                     + _render_tasks(obs) + _render_sites(obs, v3=v3) + _render_available(obs, v2=v2))
 
 
 def render_state_delta(obs, prev_obs, *, v2=True, v3=False):

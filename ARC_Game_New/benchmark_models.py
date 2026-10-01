@@ -31,6 +31,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from arc_game_gym_env_tcp import ARCGameGymEnv
 import llm_smoke_test as smoke
 import prompt_packs                     # declarative JSON prompt packs (opt-in via --prompt-pack)
+import obs_encoder                      # minimal_v6_1 observation toggle (set_v61)
+import tool_executor                    # typed tool calls -> game actions (no tag round-trip)
 import openai
 
 # Platform-aware headless executable paths. Default to the macOS .app on darwin; on the
@@ -59,6 +61,8 @@ HEADLESS_EXE = os.environ.get("ARC_HEADLESS_EXE") or _HEADLESS_EXE_BY_PLAT[_plat
 RENDER_EXE = os.environ.get("ARC_RENDER_EXE") or _RENDER_EXE_BY_PLAT[_plat_key()]
 MAP_GRID_JSON = "arc_map_grid.json"   # static tile lattice for the synthetic renderer
 BASE_PORT = 9900
+# --map-config / ARC_MAP_CONFIG: map JSON for every episode ("none" = the scene's built-in layout).
+MAP_CONFIG = os.environ.get("ARC_MAP_CONFIG") or None
 
 # Cross-vendor flagships available on the CMU gateway (edit via --models).
 DEFAULT_MODELS = [
@@ -197,91 +201,20 @@ def chat(client, model, messages, max_tokens=2000, reasoning_effort="low", tempe
             else:
                 raise
     m = r.choices[0].message
-    content = m.content or ""
-    # Provider reasoning tokens land in non-standard fields depending on vendor/gateway.
+    return (m.content or ""), *_reasoning_of(r)
+
+
+def _reasoning_of(r):
+    """(reasoning_trace, reasoning_tokens) from a chat completion. Providers put hidden thinking in
+    non-standard fields (vLLM's reasoning parser: reasoning_content; some gateways: reasoning);
+    the token count comes from usage. Both None when the provider exposes neither."""
+    m = r.choices[0].message
     extra = getattr(m, "model_extra", None) or {}
     rtrace = (getattr(m, "reasoning_content", None) or getattr(m, "reasoning", None)
               or extra.get("reasoning_content") or extra.get("reasoning"))
     det = getattr(getattr(r, "usage", None), "completion_tokens_details", None)
     rtok = getattr(det, "reasoning_tokens", None) if det else None
-    return content, (rtrace if isinstance(rtrace, str) else None), rtok
-
-
-def _clean_llm_json(text):
-    """Strip the non-JSON garnish models add: markdown code fences and JS-style // and /* */
-    comments (gemini annotates actions like `1, // Build Shelter, Cost $1000` — those stray
-    numbers would otherwise be scraped as action indices)."""
-    import re
-    t = text or ""
-    t = re.sub(r"```(?:json)?", "", t)            # markdown fences
-    t = re.sub(r"/\*.*?\*/", "", t, flags=re.S)   # block comments
-    t = re.sub(r"//[^\n\r]*", "", t)              # line comments
-    return t
-
-
-def _extract_json_object(text):
-    """Best-effort parse of the FIRST balanced {...} object in `text`. Tolerates code fences,
-    a missing leading brace (gemini sometimes drops it), trailing commas, and literal
-    control chars inside strings (strict=False). Returns the dict or None."""
-    import re
-    text = _clean_llm_json(text)
-    start = text.find("{")
-    if start == -1:                                          # gemini sometimes omits the opening {
-        if '"reasoning"' in text or '"actions"' in text or '"choices"' in text:
-            text = "{" + text; start = 0
-        else:
-            return None
-    depth = 0                                                # brace-balance to the matching close
-    for i in range(start, len(text)):
-        if text[i] == "{":
-            depth += 1
-        elif text[i] == "}":
-            depth -= 1
-            if depth == 0:
-                cand = text[start:i + 1]
-                for c in (cand, re.sub(r",\s*([}\]])", r"\1", cand)):
-                    try:
-                        return json.loads(c, strict=False)
-                    except Exception:
-                        pass
-                break
-    return None
-
-
-def _regex_actions_choices(text):
-    """Last-resort extraction of just the actions[] and choices[] arrays via regex, for when the
-    full object won't parse (malformed entries, prose mixed in). We only need these two to act."""
-    import re
-    text = _clean_llm_json(text)
-    am = re.search(r'"actions"\s*:\s*\[([^\]]*)\]', text, re.S)
-    cm = re.search(r'"choices"\s*:\s*\[(.*?)\]', text, re.S)
-    if not am and not cm:
-        return None
-    actions = [int(x) for x in re.findall(r"-?\d+", am.group(1))] if am else []
-    choices = []
-    if cm:
-        for pair in re.findall(r"\{[^}]*\}", cm.group(1)):
-            t = re.search(r'"taskId"\s*:\s*(\d+)', pair)
-            c = re.search(r'"choiceId"\s*:\s*(\d+)', pair)
-            if t and c:
-                choices.append({"taskId": int(t.group(1)), "choiceId": int(c.group(1))})
-    rm = re.search(r'"reasoning"\s*:\s*"(.*?)"\s*[,}]', text, re.S)
-    return {"choices": choices, "actions": actions,
-            "reasoning": (rm.group(1)[:500] if rm else ""), "note": "regex-fallback"}
-
-
-def _parse_decision(content):
-    """Robustly extract a decision from an LLM response. Models (esp. gemini) wrap JSON in code
-    fences, drop the leading brace, pretty-print across lines, put literal newlines in strings, or
-    add a malformed entry. Try a balanced-brace parse first, then a regex pull of just
-    actions[]/choices[]. A genuinely unusable response degrades to a no-op, never crashes."""
-    obj = _extract_json_object(content)
-    if obj is not None:
-        return obj, True
-    dec = _regex_actions_choices(content)
-    if dec is not None:
-        return dec, True
-    return {"choices": [], "actions": []}, False
+    return (rtrace if isinstance(rtrace, str) else None), rtok
 
 
 # Appended to the system prompt ONLY in the image arms, so the model knows the
@@ -312,70 +245,14 @@ def _user_msg(text, image_b64=None):
         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}}]}
 
 
-# ask() (idx-format decision) removed 2026-08-21 with the idx surface — it was unreachable:
-# the episode dispatch only branches on tools_fmt / cmd_fmt.
-
-def ask_cmd(client, model, state, env, image_b64=None, image_mode="none", reasoning_effort="low",
-            system_variant="original", temperature=None, obs_encoding="json", history=None,
-            prev_state=None, prompt_pack=None):
-    """Command-tag analogue of ask(): state-only obs + the command grammar (no enumerated menu),
-    parsing the emitted <build>/<hire>/<staff>/<task>/... tags into (actions, choices) against the
-    round's enumeration. Returns the same (decision_dict, raw_content, reasoning_trace,
-    reasoning_tokens, parsed_ok) 5-tuple so the episode loop is format-agnostic. parsed_ok is False
-    only when the model produced text but no tag parsed AND the parser flagged errors.
-    obs_encoding {json, compact}: how the state is serialized into the user message. `compact` uses
-    the safe-set tabular/text renderer (~62% fewer tokens, same actionable facts) for trajectory-length
-    reduction; `json` is json.dumps. Identical state dict either way — only the rendering differs.
-
-    history: when a list is passed, the policy becomes history-carrying (K>1). The list holds the
-    prior turns' (user-state, assistant-action) message pairs and is the append-only context the
-    model sees alongside the current state. We send [system] + history + [current state]; after the
-    call we append THIS turn's text-only state (image bytes dropped to keep the cached prefix small
-    and byte-stable) and the model's VISIBLE output (actions, not hidden CoT — the 'actions-only'
-    history BALROG/Verlog use). The caller owns trimming the list to the K window. history=None is
-    the legacy stateless (K=1) path."""
-    import re
-    _mt = getattr(env, "manual_transfers", True)
-    sys_prompt = (prompt_packs.render(prompt_pack, manual_transfers=_mt, has_image=False)
-                  if prompt_pack else smoke.cmd_system_prompt(_mt, system_variant))
-    if obs_encoding == "delta":
-        # facilities diffed vs the previous (in-window) turn; actionable surface stays full.
-        # prev_state=None (round 0, or non-history mode) falls back to the full compact render.
-        rendered = smoke.render_state_delta(state, prev_state)
-    elif obs_encoding == "compact":
-        rendered = smoke.render_state_compact(state)
-    else:
-        rendered = json.dumps(state)
-    user_text = "State:\n" + rendered + "\n\nCommands:"
-    # system first (static => cache-anchored), then the append-only prior turns, then current state.
-    msgs = [{"role": "system", "content": _system_content(sys_prompt, image_b64, image_mode)}]
-    if history:
-        msgs.extend(history)
-    msgs.append(_user_msg(user_text, image_b64))
-    content, rtrace, rtok = chat(client, model, msgs,
-        reasoning_effort=reasoning_effort, temperature=temperature)
-    if history is not None:
-        history.append(_user_msg(user_text, None))            # text-only: keep the prefix light/stable
-        history.append({"role": "assistant", "content": content or ""})
-    pc = smoke.parse_commands(content, env)
-    reason = ""
-    m = re.search(r"REASONING:\s*(.+)", content or "")
-    if m:
-        reason = m.group(1).splitlines()[0].strip()
-    dec = {"choices": pc["choices"], "actions": pc["actions"],
-           "reasoning": reason, "note": " ".join(pc["parsed"])[:120], "errors": pc["errors"]}
-    ok = bool(pc["actions"] or pc["choices"]) or not pc["errors"]
-    return dec, content, rtrace, rtok, ok
-
-
 def ask_tools(client, model, state, env, image_b64=None, image_mode="none", reasoning_effort="low",
               system_variant="minimal", temperature=None, obs_encoding="json", history=None,
               prev_state=None, prompt_pack=None):
-    """Tool-use analogue of ask_cmd(): state-only obs + the TYPED tool schema (cora_tools). The
-    model emits NATIVE tool_calls; cora_tools.translate_tool_calls -> command tags ->
-    smoke.parse_commands, returning the SAME 5-tuple so the episode loop is format-agnostic. This
-    is the benchmark wing of the Phase B unification — the identical tool schema the live officer
-    offers and the RL policy trains on."""
+    """One model call: system prompt + tool schema + the current observation; the model may reason,
+    then emits tool calls. Returns (decision, raw_content, reasoning_trace, reasoning_tokens, None):
+    the calls themselves go to tool_executor in the round loop, which also decides parsed_ok
+    (whether every call was well-formed). The tool schema is cora_tools' — the same one the RL
+    policy trains on and the officer router offers."""
     import re
     import cora_tools
     import cora_prompts
@@ -432,8 +309,7 @@ def ask_tools(client, model, state, env, image_b64=None, image_mode="none", reas
     m = r.choices[0].message
     content = m.content or ""
     raw_tcs = getattr(m, "tool_calls", None) or []
-    tcs = [(tc.function.name, tc.function.arguments) for tc in raw_tcs]
-    tags, tmeta = cora_tools.translate_tool_calls(tcs)
+
     if history is not None:
         history.append(_user_msg(user_text, None))
         # HISTORY SERIALIZATION BUG (fixed): this used to append
@@ -459,18 +335,15 @@ def ask_tools(client, model, state, env, image_b64=None, image_mode="none", reas
                 history.append({"role": "tool", "tool_call_id": tc.id, "content": "ok"})
         else:
             history.append({"role": "assistant", "content": content})
-    pc = smoke.parse_commands(tags, env)
     reason = ""
     mr = re.search(r"REASONING:\s*(.+)", content or "")
     if mr:
         reason = mr.group(1).splitlines()[0].strip()
-    dec = {"choices": pc["choices"], "actions": pc["actions"], "reasoning": reason,
-           "note": " ".join(pc["parsed"])[:120], "errors": pc["errors"], "tool_meta": tmeta}
-    # parsed_ok: at least one action/choice resolved, OR the model emitted well-formed tool calls
-    # (received > 0 with no unknown-name / bad-args) — a clean no-op turn, not a parse failure.
-    ok = bool(pc["actions"] or pc["choices"]) or (
-        tmeta["received"] > 0 and tmeta["bad_args"] == 0 and tmeta["unknown_name"] == 0)
-    return dec, content, None, None, ok
+    # Run by tool_executor.execute_turn in the round loop; nothing is returned to the model.
+    # Zero calls is a deliberate no-op, not a failure.
+    dec = {"tool_calls": list(raw_tcs), "reasoning": reason}
+    rtrace, rtok = _reasoning_of(r)
+    return dec, content, rtrace, rtok, None
 
 
 # ── Non-learning baseline policies (operate on the full env, not the prompt) ──
@@ -1777,8 +1650,54 @@ def _decision_image(image_mode, env, grid, tmp_png):
 
 
 # ── One episode ─────────────────────────────────────────────────────────────
+# Category names for the per-round action mix (actCats); the analysis and plotting scripts read these.
+_ACTION_CATEGORY = {"build": "construction", "hire": "worker", "train": "worker",
+                    "staff": "worker_assignment", "deconstruct": "deconstruction",
+                    "transfer": "resource_transfer"}
+
+
+def _round_record(rnd, reward, total, info, call_results, state, raw, dec, parsed_ok, rtrace, rtok):
+    """One round of an episode record: the score breakdown, what was attempted and what happened
+    to each call, and the full prompt/completion pair (a self-contained finetuning corpus)."""
+    task_type = {t.get("taskId"): t.get("type", "?") for t in (state or {}).get("tasks", [])}
+    act_cats = {}
+    for cr in call_results:
+        if cr.status == "invalid":
+            continue
+        k = (f"choice:{task_type.get(cr.choice['taskId'], '?')}" if cr.choice is not None
+             else _ACTION_CATEGORY.get(cr.tool, cr.tool))
+        act_cats[k] = act_cats.get(k, 0) + max(1, len(cr.action_indices))
+    exres = info.get("execution_results") or []
+    rm = info.get("reward_metrics") or {}
+    return {
+        "r": rnd, "reward": round(reward, 4), "sumR": round(total, 4),
+        "sat": info["satisfaction"], "budget": info["budget"],
+        "satScore": round(info["satisfaction_score"], 4),
+        "costEff": round(info["cost_efficiency"], 4),   # legacy formula only (0.0 under unity)
+        "eff": round(info.get("efficiency", 0.0), 4),   # unity formula: live efficiency / 1000
+        "formula": info.get("score_formula"),
+        # Cumulative-to-date score breakdown, numeric terms only.
+        "comps": {k: round(v, 4) for k, v in (info.get("score_components") or {}).items()
+                  if isinstance(v, (int, float))},
+        "foodFul": rm.get("foodFulfilled"), "foodRes": rm.get("foodResolved"),
+        "lodgFul": rm.get("lodgingFulfilled"), "lodgRes": rm.get("lodgingResolved"),
+        "nSel": sum(1 for cr in call_results if cr.choice is not None and cr.status == "executed"),
+        "nReq": sum(len(cr.action_indices) for cr in call_results),
+        "nFail": sum(1 for r in exres if not r.get("success")),
+        "actCats": act_cats,
+        # Every call and its outcome (executed / refused / invalid, with the reason).
+        "calls": [cr.as_dict() for cr in call_results],
+        "cmdErrors": [f"{cr.tool}: {cr.reason}" for cr in call_results if cr.status == "invalid"],
+        "choiceErrors": [cr.reason for cr in call_results if cr.choice is not None and cr.status == "refused"],
+        "note": "; ".join(cr.summary for cr in call_results if cr.summary)[:300],
+        "reasoning": (dec.get("reasoning") or "")[:1500],
+        "reasoningTokens": rtok,
+        "obs": state, "raw": raw or "", "reasoningTrace": rtrace or None, "parsed_ok": parsed_ok,
+    }
+
+
 def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=None, log_dir=None,
-                show_impacts=True, policy="llm", action_format="tools", image_mode="none",
+                show_impacts=True, policy="llm", image_mode="none",
                 reasoning_effort="low", manual_transfers=True, system_variant="original",
                 temperature=None, obs_encoding="json", history=1, prompt_pack=None,
                 base_seed=None):
@@ -1797,8 +1716,12 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
     # Constant per run; set before any obs is built (summarize()/render read this flag).
     # v3 inherits the v2 ENCODING fixes (Passive label, un-truncated choice text, dead-transfer
     # line dropped, dangling `affects` hidden); only the prompt text differs between v2 and v3.
-    smoke._set_v2(system_variant in ("minimal_v2", "minimal_v3", "minimal_v4", "minimal_v5", "minimal_v6"))
-    smoke._set_v3(system_variant in ("minimal_v3", "minimal_v4", "minimal_v5", "minimal_v6"))
+    smoke._set_v2(system_variant in ("minimal_v2", "minimal_v3", "minimal_v4", "minimal_v5", "minimal_v6",
+                                     "minimal_v6_1"))
+    smoke._set_v3(system_variant in ("minimal_v3", "minimal_v4", "minimal_v5", "minimal_v6", "minimal_v6_1"))
+    # v6_1: unavailable choices marked + last turn's refusals shown (see obs_encoder.set_v61).
+    v61 = system_variant == "minimal_v6_1"
+    obs_encoder.set_v61(v61)
     # Anthropic caps temperature at 1.0; clamp per-model so a shared sweep invocation (e.g. temp=1.5
     # for gemini) doesn't 400 Claude. eff_temp is what's actually sent + logged; temperature is the
     # requested experimental level.
@@ -1808,7 +1731,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
     ulog = None
     if log_dir:
         safe = model.replace("/", "_").replace(":", "_")
-        ulog = str((Path(log_dir) / f"unity_{safe}_ep{ep_idx}_{image_mode}_{action_format}.log").resolve())
+        ulog = str((Path(log_dir) / f"unity_{safe}_ep{ep_idx}_{image_mode}_tools.log").resolve())
     use_image = (image_mode in ("synthetic", "real") and policy == "llm")
     real_img = (image_mode == "real" and policy == "llm")
     env_kwargs = dict(unity_exe_path=RENDER_EXE if real_img else HEADLESS_EXE,
@@ -1820,6 +1743,8 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
     # which is what makes variant comparisons paired.
     if base_seed is not None:
         env_kwargs["seed"] = int(base_seed) + int(ep_idx)
+    if MAP_CONFIG:
+        env_kwargs["map_config"] = MAP_CONFIG
     if real_img:
         # Configure live capture so capture_frame works at decision time. PerStep also
         # auto-captures on advance (we ignore those); base64 off there to save TCP bytes.
@@ -1830,23 +1755,17 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
     grid = MAP_GRID_JSON if (use_image and image_mode == "synthetic") else None
     tmp_png = None
     if use_image and image_mode == "synthetic":
-        tmp_png = str((Path(log_dir or ".") / f".synth_{model.replace('/','_')}_ep{ep_idx}_{action_format}.png").resolve())
-    # Command-tag format only applies to the LLM policy; the non-learning baselines emit action
-    # indices directly and always use the enumerated (idx) observation.
-    cmd_fmt = (action_format == "cmd" and policy == "llm")
-    tools_fmt = (action_format == "tools" and policy == "llm")
-    state_only = cmd_fmt or tools_fmt   # both use state-only obs + a non-idx action surface
+        tmp_png = str((Path(log_dir or ".") / f".synth_{model.replace('/','_')}_ep{ep_idx}_tools.png").resolve())
+    # The LLM acts through typed tool calls on a state-only observation; the non-learning baselines
+    # emit action indices directly and read the enumerated observation.
+    tools_fmt = state_only = (policy == "llm")
     if prompt_pack:
         _base = prompt_packs.render(prompt_pack, manual_transfers=manual_transfers, has_image=False)
     elif tools_fmt:
         import cora_prompts as _cp
         _base = _cp.tool_system_prompt(manual_transfers=manual_transfers, variant=system_variant)
     else:
-        # Non-LLM policies take this branch (cmd_fmt and tools_fmt are both gated on
-        # policy == "llm"). It used to fall through to smoke.idx_system_prompt, which the idx
-        # retirement deleted -- so EVERY --policy run died with AttributeError before its first
-        # episode. The prompt is only recorded for provenance here, never sent to a model, so
-        # fall back to the cmd prompt for the same variant.
+        # Non-LLM policies: the prompt is only recorded for provenance, never sent to a model.
         _base = smoke.cmd_system_prompt(manual_transfers, system_variant)
     _sys_text = _system_content(_base, "x" if use_image else None, image_mode)
     rec = {
@@ -1855,7 +1774,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
         "seed": (int(base_seed) + int(ep_idx)) if base_seed is not None else None,
         "model": model, "episode": ep_idx, "rounds": [], "error": None,
         "show_impacts": show_impacts,
-           "action_format": action_format,
+           "action_format": "tools",
            "obs_encoding": (obs_encoding if state_only else "json"),
            # K = number of turns the policy sees INCLUDING the current one. K=1 is the legacy
            # stateless path; K>1 carries an append-only window of prior (state, action) turns.
@@ -1879,13 +1798,17 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
            "system_prompt": _sys_text}
     try:
         env.reset()
+        # Which scenario this episode actually ran: map fingerprint/source, parameter source and
+        # seed as the GAME reports them (not as requested), so runs on different maps or sheets
+        # are never pooled by accident.
+        rec["scenario"] = (env.game_state or {}).get("scenario")
         total = 0.0
         actions_requested = actions_executed = action_failures = invalid_idx = 0
         min_budget = float("inf")
         built = hired = False
         # Append-only context buffer for history-carrying play (K>1): holds prior (state, action)
-        # message pairs that ask_cmd prepends to each call. None => legacy stateless K=1 path.
-        # max_pairs caps it to the K-1 most-recent prior turns (ask_cmd adds the current turn).
+        # messages that ask_tools prepends to each call. None => stateless K=1 (the default).
+        # max_pairs caps it to the K-1 most-recent prior turns (ask_tools adds the current turn).
         cmd_history = [] if (state_only and history and history > 1) else None
         max_pairs = 2 * (history - 1) if (history and history > 1) else 0
         # Previous round's structured state, fed to render_state_delta when obs_encoding=delta.
@@ -1928,23 +1851,12 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                     rec["images_attached" if img_b64 else "images_missing"] = \
                         rec.get("images_attached" if img_b64 else "images_missing", 0) + 1
                 try:
-                    if tools_fmt:
-                        dec, raw, rtrace, rtok, parsed_ok = ask_tools(
-                            client, model, state, env, img_b64, image_mode, reasoning_effort,
-                            system_variant, eff_temp, obs_encoding, cmd_history,
-                            prev_state if cmd_history is not None else None,
-                            prompt_pack=prompt_pack)
-                    elif cmd_fmt:
-                        dec, raw, rtrace, rtok, parsed_ok = ask_cmd(
-                            client, model, state, env, img_b64, image_mode, reasoning_effort,
-                            system_variant, eff_temp, obs_encoding, cmd_history,
-                            prev_state if cmd_history is not None else None,
-                            prompt_pack=prompt_pack)
-                    else:
-                        dec, raw, rtrace, rtok, parsed_ok = ask(
-                            client, model, state, img_b64, image_mode, reasoning_effort,
-                            system_variant, eff_temp, prompt_pack=prompt_pack)
-                    # Slide the window: ask_cmd just appended this turn's pair; keep only the last
+                    dec, raw, rtrace, rtok, parsed_ok = ask_tools(
+                        client, model, state, env, img_b64, image_mode, reasoning_effort,
+                        system_variant, eff_temp, obs_encoding, cmd_history,
+                        prev_state if cmd_history is not None else None,
+                        prompt_pack=prompt_pack)
+                    # Slide the window: ask_tools just appended this turn's messages; keep only the last
                     # K-1 prior turns so the cached prefix stays bounded (K=32 keeps the whole episode).
                     # Trim on TURN boundaries, not raw message count. Since the tool-call
                     # serialization fix a turn is no longer a fixed 2 messages -- it is
@@ -1963,94 +1875,30 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
                     elif cmd_history is not None:
                         cmd_history.clear()
                     prev_state = state   # next round's delta diffs against this turn's state
-                    if not parsed_ok:
-                        # one unparseable response -> no-op this round, keep playing
-                        rec["parse_failures"] = rec.get("parse_failures", 0) + 1
-                    if state_only and dec.get("errors"):
-                        rec["cmd_errors"] = rec.get("cmd_errors", 0) + len(dec["errors"])
                 except Exception as e:
                     # hard API/network error: end the episode
                     rec["error"] = f"LLM error r{rnd}: {e}"
                     break
-            # task choices
-            nsel = 0
-            for c in dec.get("choices", []):
-                try:
-                    if env.select_task_choice(int(c["taskId"]), int(c["choiceId"])):
-                        nsel += 1
-                except Exception:
-                    pass
-            # actions: count requested / invalid; tally the per-turn category mix
-            # (the model's intended strategy: game-action types + task-choice by task type)
-            req = [int(a) for a in dec.get("actions", []) if str(a).lstrip("-").isdigit()]
-            actions_requested += len(req)
-            # Counted against the live (post-synth) menu for the same reason as actCats above --
-            # the pre-parse n_valid made every resolved <staff> action look like an invalid index.
-            invalid_idx += sum(1 for a in req
-                               if a < 0 or a >= len(getattr(env, "valid_actions", None) or acts_enum))
-            act_cats = {}
-            tmap = {t["taskId"]: t.get("type", "?") for t in state.get("tasks", [])}
-            for c in dec.get("choices", []):
-                try:
-                    cat = "choice:" + str(tmap.get(int(c["taskId"]), "?"))
-                except Exception:
-                    cat = "choice:?"
-                act_cats[cat] = act_cats.get(cat, 0) + 1
-            # Categorize against the POST-PARSE menu. `acts_enum`/`n_valid` were snapshotted before
-            # the model was called, but cmd_parser RESOLVES <staff> by SYNTHESIZING a
-            # worker_assignment action and APPENDING it to env.valid_actions (see cmd_parser's
-            # ParserEnv contract). That synth action therefore sits at an index >= n_valid, so the
-            # old `if 0 <= a < n_valid` test dropped every staff action out of actCats AND counted
-            # it in invalid_idx. Effect: actCats reported worker_assignment == 0 for EVERY model on
-            # EVERY run, while meanInvalidIdx sat at 18-37 per episode -- and the actions had in
-            # fact executed (meanActionFailures 0.56-0.91). Measured: Qwen3.8-27B parsed a staff
-            # command in 651/1024 rounds, Haiku in 580/965. Read the live list instead.
-            acts_live = getattr(env, "valid_actions", None) or acts_enum
-            n_live = len(acts_live)
-            for a in req:
-                if 0 <= a < n_live:
-                    at = acts_live[a].get("action_type") or "?"
-                    act_cats[at] = act_cats.get(at, 0) + 1
-                    if at == "construction": built = True
-                    if at == "worker": hired = True
-            obs, reward, term, trunc, info = env.step(",".join(str(a) for a in req))
+            # ── execute: the model's tool calls, or a baseline's (task choices, action indices) ──
+            if dec.get("tool_calls") is not None:
+                call_results, step = tool_executor.execute_turn(env, dec["tool_calls"])
+                parsed_ok = not any(cr.malformed for cr in call_results)
+                if not parsed_ok:
+                    rec["parse_failures"] = rec.get("parse_failures", 0) + 1
+            else:
+                call_results, step = tool_executor.execute_indices(env, dec.get("choices"), dec.get("actions"))
+            obs, reward, term, trunc, info = step
             total += reward
             exres = info.get("execution_results") or []
+            actions_requested += sum(len(cr.action_indices) for cr in call_results)
             actions_executed += sum(1 for r in exres if r.get("success"))
             action_failures += sum(1 for r in exres if not r.get("success"))
+            invalid_idx += sum(1 for cr in call_results if cr.tool == "action" and cr.status == "invalid")
+            built = built or any(cr.tool == "build" and cr.status == "executed" for cr in call_results)
+            hired = hired or any(cr.tool == "hire" and cr.status == "executed" for cr in call_results)
             min_budget = min(min_budget, info.get("budget", 0.0))
-            rm = info.get("reward_metrics") or {}
-            rec["rounds"].append({
-                "r": rnd, "reward": round(reward, 4), "sumR": round(total, 4),
-                "sat": info["satisfaction"], "budget": info["budget"],
-                "satScore": round(info["satisfaction_score"], 4),
-                "costEff": round(info["cost_efficiency"], 4),   # legacy formula only (0.0 under unity)
-                "eff": round(info.get("efficiency", 0.0), 4),   # unity formula: live efficiency / 1000
-                "formula": info.get("score_formula"),
-                # full reward breakdown (cumulative-to-date) for per-component graphing.
-                # Numeric terms only: the dict also carries "formula" (a string).
-                "comps": {k: round(v, 4) for k, v in (info.get("score_components") or {}).items()
-                          if isinstance(v, (int, float))},
-                "foodFul": rm.get("foodFulfilled"), "foodRes": rm.get("foodResolved"),
-                "lodgFul": rm.get("lodgingFulfilled"), "lodgRes": rm.get("lodgingResolved"),
-                "nSel": nsel, "nReq": len(req), "nFail": sum(1 for r in exres if not r.get("success")),
-                "actCats": act_cats,   # {category: count attempted this turn} — strategy mix
-                # cmd-format diagnostics: the parser's per-command rejection strings this round
-                # (empty for idx). Lets us categorize WHY cmd commands fail (bad format / unknown
-                # building / unaffordable / no available site / nonexistent choice).
-                "cmdErrors": list(dec.get("errors", [])) if state_only else [],
-
-                "note": (dec.get("note") or "")[:80],
-                "reasoning": (dec.get("reasoning") or "")[:1500],   # model's own rationale (JSON field)
-                "reasoningTokens": rtok,   # hidden-thinking tokens spent this round (None if N/A)
-                # Finetuning-complete (prompt -> completion): the FULL observation the
-                # model saw and its FULL untruncated response. obs is the user-message
-                # content (state). parsed_ok flags whether the response was valid JSON.
-                "obs": state,
-                "raw": raw or "",
-                "reasoningTrace": rtrace or None,
-                "parsed_ok": parsed_ok,
-            })
+            rec["rounds"].append(_round_record(rnd, reward, total, info, call_results, state, raw,
+                                               dec, parsed_ok, rtrace, rtok))
             if term or trunc:
                 rec["terminated"] = bool(term)
                 break
@@ -2250,10 +2098,6 @@ def main():
                          "rules-based / rules-based-v2 are deprecated aliases for build-potential "
                          "/ choice-lookahead — the old names implied a version ordering that does "
                          "not exist: they are different algorithms improving opposite halves.")
-    ap.add_argument("--action_format", choices=["cmd", "tools"], default="tools",
-                    help="LLM action interface: idx = enumerated action menu + JSON index list (default); "
-                         "cmd = state-only obs + command tags (<build>/<hire>/<staff>/<task>/...). "
-                         "Switches both the system prompt and the response parser. Ignored for non-llm policies.")
     ap.add_argument("--obs_encoding", choices=["json", "compact", "delta"], default="json",
                     help="cmd-format state serialization: json = json.dumps (default); "
                          "compact = safe-set tabular/text renderer (~62%% fewer tokens, same actionable "
@@ -2292,7 +2136,10 @@ def main():
                          "food/people transfers (idx menu + <transfer> cmd tag) — LLMs coordinate "
                          "micro-logistics directly; task_only suppresses them so transfers happen "
                          "ONLY via task choices, matching the human GUI. LLM-only knob.")
-    ap.add_argument("--system_prompt", choices=["original", "minimal", "minimal_v2", "minimal_v3", "minimal_v4", "minimal_v5", "minimal_v6"], default="original",
+    ap.add_argument("--map-config", default=None,
+                    help="map JSON for every episode, or 'none' for the scene's built-in layout "
+                         "(default: the build's config.json / bundled map_config.json)")
+    ap.add_argument("--system_prompt", choices=["original", "minimal", "minimal_v2", "minimal_v3", "minimal_v4", "minimal_v5", "minimal_v6", "minimal_v6_1"], default="original",
                     help="system-prompt ablation: original (default) = strategy-laden prompt; "
                          "minimal = PIMMUR minimal-control prompt (mechanics + objective only, no "
                          "strategy hints); minimal_v2 = minimal + the prompt/encoding fix layer "
@@ -2301,8 +2148,8 @@ def main():
                          "Logged per episode (system_variant + prompt_sha). LLM-only.")
     ap.add_argument("--prompt-pack", dest="prompt_pack", default=None,
                     help="load the director system prompt from a declarative JSON pack in prompts/ "
-                         "(bare name like 'cmd_minimal' or a path to a .json). Overrides "
-                         "--action_format and --system_prompt from the pack's format/variant, so a "
+                         "(bare name or a path to a .json). Overrides --system_prompt from the "
+                         "pack's variant, so a "
                          "low-code collaborator can A/B a prompt by editing JSON — no Python. "
                          "prompt_sha + the pack name are logged per episode. See prompts/README.md.")
     ap.add_argument("--temperature", type=float, default=None,
@@ -2319,17 +2166,20 @@ def main():
                     help="API key for --base-url. Defaults to the gateway key from env/.env; for a "
                          "local server pass any placeholder (e.g. 'ollama'). LLM-only.")
     args = ap.parse_args()
+    if args.map_config:
+        globals()["MAP_CONFIG"] = args.map_config
 
     # Opt-in declarative prompt pack: load once, and let the pack drive format/variant so the
     # per-episode records stay attributable. Absent --prompt-pack, the built-in path is unchanged.
     args._loaded_pack = None
     if args.prompt_pack:
         args._loaded_pack = prompt_packs.load_pack(args.prompt_pack)
-        args.action_format = args._loaded_pack["format"]
+        if args._loaded_pack.get("format", "tools") != "tools":
+            ap.error(f"prompt pack {args._loaded_pack['name']!r} is for the retired "
+                     f"{args._loaded_pack['format']!r} format; the benchmark acts through tool calls only")
         args.system_prompt = args._loaded_pack.get("variant", args.system_prompt)
         print(f"    prompt-pack:   {args._loaded_pack['name']}  "
-              f"(format={args.action_format}, variant={args.system_prompt}, "
-              f"from {args._loaded_pack['_path']})")
+              f"(variant={args.system_prompt}, from {args._loaded_pack['_path']})")
 
     need_render = (args.image_mode == "real" and args.policy == "llm")
     if not Path(RENDER_EXE if need_render else HEADLESS_EXE).exists():
@@ -2386,8 +2236,7 @@ def main():
     print(f"    models: {models}")
     print(f"    observation choice-impacts: {'SHOWN' if args.impacts else 'HIDDEN (ablation)'}")
     if args.policy == "llm":
-        print(f"    action format: {args.action_format} "
-              f"({'state-only obs + command tags' if args.action_format == 'cmd' else 'enumerated menu + JSON indices'})")
+        print("    actions:       typed tool calls (game actions only; tools return nothing)")
         print(f"    image mode:    {args.image_mode}"
               f"{' (graphics render build)' if need_render else ''}")
         print(f"    reasoning:     effort={args.reasoning_effort} "
@@ -2411,7 +2260,7 @@ def main():
         for model, ep in jobs:
             futs[ex.submit(run_episode, model, ep, args.rounds, None, client,
                            False, port_pool, str(ulog_dir), args.impacts, args.policy,
-                           args.action_format, args.image_mode, args.reasoning_effort,
+                           args.image_mode, args.reasoning_effort,
                            args.transfers == "manual", args.system_prompt,
                            args.temperature, args.obs_encoding, args.history,
                            args._loaded_pack, args.seed)] = (model, ep)
@@ -2431,9 +2280,8 @@ def main():
     print(f"\nPer-episode: {jsonl}\nSummary:     {outdir/'summary.json'}")
 
     if args.wandb:
-        # Encode the experiment cell (image_mode x action_format) into the WandB
-        # condition so each of the 6 cells is its own run group; append the ablation flag.
-        cond = (f"img-{args.image_mode}_{args.action_format}"
+        # Encode the experiment cell into the WandB condition so each cell is its own run group.
+        cond = (f"img-{args.image_mode}_tools"
                 + ("" if args.impacts else "_noimpacts")
                 + ("" if args.reasoning_effort == "low" else f"_eff-{args.reasoning_effort}")
                 + ("" if args.transfers == "manual" else "_xfer-task_only")

@@ -47,7 +47,6 @@ import string
 # router and benchmark use), so the RL policy writes command tags, not integer CSV.
 sys.path.append(str(Path(__file__).parent))
 from action_enumerator import ActionEnumerator
-from cmd_parser import parse_commands, ParserEnv
 
 
 # ── Orphan-Unity registry ─────────────────────────────────────────────────────
@@ -166,6 +165,7 @@ class ARCGameGymEnv(gym.Env):
         max_episode_steps: int = 100,
         render_mode: Optional[str] = None,
         param_config: Optional[str] = None,
+        map_config: Optional[str] = None,
         auto_start_unity: bool = True,
         connection_timeout: float = 30.0,
         unity_log_path: Optional[str] = None,
@@ -255,6 +255,9 @@ class ARCGameGymEnv(gym.Env):
         # Unity process: exported as ARC_PARAM_CONFIG, read by GameConfigLoader before the network and
         # local-copy sources. Lets an RL run vary game parameters without a rebuild.
         self.param_config = param_config
+        # Optional map for this Unity process: a map JSON path, or "none" for the scene's built-in
+        # layout. Exported as ARC_MAP_CONFIG; otherwise the build's config.json decides.
+        self.map_config = map_config
 
         self._reset_count = 0
 
@@ -364,6 +367,9 @@ class ARCGameGymEnv(gym.Env):
             child_env = os.environ.copy()
             if self.param_config:
                 child_env["ARC_PARAM_CONFIG"] = os.path.abspath(self.param_config)
+            if self.map_config:
+                child_env["ARC_MAP_CONFIG"] = (self.map_config if self.map_config.lower() == "none"
+                                               else os.path.abspath(self.map_config))
             self.unity_process = subprocess.Popen(
                 cmd,
                 env=child_env,
@@ -558,53 +564,31 @@ class ARCGameGymEnv(gym.Env):
         return self.game_state, info
 
     def step(
-        self, action: str
+        self, action
     ) -> Tuple[Dict[str, Any], float, bool, bool, Dict[str, Any]]:
         """
-        Execute a turn of command tags and get the next state.
+        Run this turn's game actions, then advance the game one round.
 
         Args:
-            action: command-tag string in the shared grammar, e.g.
-                "<build>Kitchen,1</build>\n<hire>untrained,4</hire>\n<task>FOOD_C01,accept</task>".
-                Tags are resolved against THIS round's enumerated menu by
-                cmd_parser.parse_commands (same parser as the router + benchmark).
-                Unresolved tags are surfaced in info["parse_errors"] and no-op'd —
-                never remapped — mirroring the router's as-chosen semantics.
+            action: indices into self.valid_actions, as a sequence of ints or a comma-separated
+                string ("5,12,3"); empty = do nothing this round. Resolving a model's tool calls
+                into indices (and answering tasks, which are not game actions) is
+                tool_executor's job; it sets self.valid_actions to its resolved list first.
+                Actions run in the given order and stop at the first one the game refuses.
 
         Returns:
             observation: New game state from Unity
-            reward: Satisfaction delta
+            reward: score delta this round
             terminated: Whether the game is over (finalDay complete)
             truncated: Whether episode was cut short (max steps)
             info: Additional information
         """
         self.current_step += 1
 
-        # Resolve command tags against this round's menu. <staff> synthesizes a
-        # worker_assignment and APPENDS it to the shim's valid_actions, so we execute
-        # against shim.valid_actions (the menu + any synth action), not self.valid_actions.
-        shim = ParserEnv(self.valid_actions, self.game_state)
-        parsed = parse_commands(str(action), shim)
-        resolved = [i for i in parsed["actions"] if 0 <= i < len(shim.valid_actions)]
-        actions_to_run = [shim.valid_actions[i] for i in resolved]
-        parse_errors = list(parsed.get("errors", []))
-        task_choices = parsed.get("choices", [])
-        # Back-compat: an integer-index CSV (the benchmark/eval action format, e.g. "5,12,3") is
-        # NOT command-tag grammar, so parse_commands yields nothing. Resolve it against the menu
-        # directly so eval callers execute actions. Command-tag callers (RL policy) are unaffected.
-        if not actions_to_run and not task_choices:
-            _parts = [p.strip() for p in str(action).split(",") if p.strip()]
-            if _parts and all(p.lstrip("-").isdigit() for p in _parts):
-                actions_to_run = [self.valid_actions[int(p)] for p in _parts
-                                  if 0 <= int(p) < len(self.valid_actions)]
-        for e in parse_errors:
-            print(f"⚠️  Unresolved command: {e}")
-
-        if not actions_to_run and not task_choices:
-            # TRUE no-op: no resolvable tag and no task answer must do NOTHING (no
-            # fallback to index 0, which was a real Build Kitchen — passive turns must
-            # not silently build). An all-unresolved turn lands here and just advances.
-            print("ℹ️  No resolvable actions this round — true no-op")
+        parts = action if isinstance(action, (list, tuple)) else \
+            [p for p in str(action or "").split(",") if p.strip()]
+        actions_to_run = [self.valid_actions[int(p)] for p in parts
+                          if 0 <= int(p) < len(self.valid_actions)]
 
         # Execute the resolved actions via Unity (in the parser's commonsense order).
         executed_actions = []
@@ -629,16 +613,6 @@ class ARCGameGymEnv(gym.Env):
             else:
                 print(f"❌ Unexpected response type: {response.get('type')}")
                 break
-
-        # Answer any choice tasks (<task>TOKEN,CHOICE</task>) resolved this turn. These
-        # apply the choice's impacts via the same path the GUI uses — separate from the
-        # GameActions above — so they run before advance_time bakes the round.
-        for ch in task_choices:
-            ok = self.select_task_choice(ch.get("taskId"), ch.get("choiceId"))
-            execution_results.append({"type": "task_choice", "success": ok,
-                                      "taskId": ch.get("taskId"), "choiceId": ch.get("choiceId")})
-            if not ok:
-                print(f"❌ Task choice failed: task {ch.get('taskId')} choice {ch.get('choiceId')}")
 
         # Advance the simulation by one round. All actions for this turn have been
         # executed above; advancing runs the round's dynamics (construction
@@ -741,12 +715,6 @@ class ARCGameGymEnv(gym.Env):
             "executed_actions": [a.get("description", "") for a in executed_actions],
             "execution_results": execution_results,
             "valid_action_count": len(self.valid_actions),
-            # Command-tag resolution diagnostics: what the parser accepted (parsed)
-            # and what it rejected (parse_errors) — the policy signal for a malformed
-            # or infeasible tag, surfaced not hidden.
-            "parsed_commands": parsed.get("parsed", []),
-            "parse_errors": parse_errors,
-            "task_choices": task_choices,
             "step": self.current_step
         }
 
@@ -769,7 +737,12 @@ class ARCGameGymEnv(gym.Env):
             "taskId": int(task_id),
             "choiceId": int(choice_id),
         })
-        return bool(response.get("success", False))
+        ok = bool(response.get("success", False))
+        # The game says WHY a choice was refused (no meals, no shelter space, task already gone);
+        # keep it so callers can log it and show it to the policy. Returning only the bool threw
+        # it away, so a refused answer looked identical to a mistaken one.
+        self.last_choice_error = None if ok else (response.get("error") or "refused (no reason given)")
+        return ok
 
     def _enumerate_valid_actions(self):
         """Enumerate this round's valid actions and apply the transfer-availability policy.

@@ -8,9 +8,8 @@ else is generated from it:
     provider's function-tool shape.
   * `arc_tools_yaml()` — the Verlog RL `arc_tools.yaml` (sglang tool_config), so the RL
     policy trains on the IDENTICAL tool surface the live officer offers.
-  * `translate_tool_calls()` — the shared front-end→resolver bridge: turns a model's typed
-    tool_calls into the cmd-tag text that `cmd_parser.parse_commands` resolves (replacing the
-    Verlog `_synthesize_tags_from_tool_calls` shim and the officer's execute_commands path).
+  * `translate_tool_calls()` — typed calls -> cmd-tag text. Only the officer router still uses
+    it, until it moves to tool_executor (which runs typed calls directly); then it is deleted.
 
 Layering (see docs/three-wing-unification-plan.md):
     tool_calls ──translate_tool_calls──▶ cmd-tags ──cmd_parser──▶ resolved stream ──▶ execute_resolved
