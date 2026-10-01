@@ -5,7 +5,7 @@ Drives a RUNNING router over HTTP the way a collaborator would — this is delib
 hermetic, because the things most likely to break (auth gates, namespacing, warning
 surfacing, capability enforcement) only exist at the HTTP boundary.
 
-    python agent_router.py --port 9876 --admin-port 9877 &
+    python -m router --port 9876 --admin-port 9877 &
     ./.venv/bin/python test_platform_e2e.py
 
 Covers:
@@ -81,7 +81,7 @@ def test_endpoints():
     st, h = call("/health")
     if not check("GET /health -> 200", st == 200, f"got {st}: {h}"):
         print("\n  router not running; start it first:")
-        print("    ./.venv/bin/python agent_router.py --port 9876 --admin-port 9877 &")
+        print("    ./.venv/bin/python -m router --port 9876 --admin-port 9877 &")
         raise SystemExit(1)
 
     st, me = call("/whoami")

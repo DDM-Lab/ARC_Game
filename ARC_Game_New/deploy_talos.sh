@@ -72,15 +72,13 @@ else
 fi
 
 say "4. sanity-check the new code BEFORE swapping the process"
-run "$PY -c 'import agent_router, cora.tools, bundle, agent_config; print(\"  imports OK\")'"
-for t in test_tag_translation.py test_cost_attribution.py; do
-  [ -f "$t" ] && run "$PY '$t' >/dev/null && echo '  $t OK'"
-done
+run "$PY -c 'import router.service, cora.tools; print(\"  imports OK\")'"
 
 say "5. restart the router"
-run "pkill -f 'agent_router.py --port $PORT' || true"
+# Matches the router however it was started (python -m router, or agent_router.py before 2026-10).
+run "pkill -f 'agent_router.py --port $PORT|-m router --port $PORT' || true"
 run "sleep 2"
-run "ARC_LOG_PROMPTS=\${ARC_LOG_PROMPTS:-0} nohup $PY -u agent_router.py \
+run "ARC_LOG_PROMPTS=\${ARC_LOG_PROMPTS:-0} nohup $PY -u -m router \
      --config-dir config --keys-file config/keys.json \
      --port $PORT --admin-port $ADMIN_PORT --log-dir '$LOG_DIR' \
      > logs/router-$STAMP.log 2>&1 &"

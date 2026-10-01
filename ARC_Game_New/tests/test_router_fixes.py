@@ -10,8 +10,8 @@ import json
 import os
 import tempfile
 
-import agent_router
-from agent_router import Session
+import router.session as router_session
+from router.session import Session
 from router.config import load_config
 from cora.scoring import score_components
 from router.episode_log import EpisodeLogger
@@ -129,7 +129,7 @@ async def _run_retry_cap():
                                         "arguments": {"type": "kitchen", "site_id": 1}}]}
             return {"content": "done", "tool_calls": []}  # finish
 
-        agent_router.run_tool_step = fake_step
+        router_session.run_tool_step = fake_step
 
         fs = sess._filter_state(_base_state(1), agent)
         fake_actions = [{"action_id": "build_Kitchen_1", "action_type": "construction",

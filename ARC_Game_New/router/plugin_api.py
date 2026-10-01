@@ -1,6 +1,6 @@
 """cora_ext — the stable extension API for CORA tool/hook plugins.
 
-A plugin module imports ONLY this module (never `agent_router`). It registers **tools**
+A plugin module imports ONLY this module (never the router internals). It registers **tools**
 (LLM-callable, `(ctx, args) -> ToolResult`) and **hooks** (event-driven, `(ctx, event) -> None`)
 via the decorators below. Both reach the running game exclusively through the injected
 `ToolContext` (`ctx`) — the host constructs a concrete `ctx` per call and passes it in. See

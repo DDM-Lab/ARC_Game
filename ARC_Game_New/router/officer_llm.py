@@ -16,7 +16,7 @@ This module owns only two things:
 
 The *loop* — and the binding of each tool name to a real game backend
 (execute action, propose choices, talk to the director) — lives in the router
-(`agent_router.py::_run_continuous`). The router speaks the OpenAI message shape
+(`router.session.Session._run_continuous`). The router speaks the OpenAI message shape
 throughout; this module translates to/from Anthropic and the text fallback so
 the loop never has to care which provider is behind it.
 """
@@ -305,7 +305,7 @@ TOOL_SCHEMAS: Dict[str, dict] = {
     # take; an accepted rule lets it use ONE action tool on those turns, under the condition
     # the Director approved. The Director sees the tool and the condition on a card and can
     # allow, deny, or reword the condition (never the tool). The `tool` enum is narrowed per
-    # officer to the action tools in its own palette (see agent_router._autonomy_tool_schema).
+    # officer to the action tools in its own palette (see Session._autonomy_tool_schema).
     "add_to_autonomy_list": {
         "type": "function",
         "function": {
@@ -367,7 +367,7 @@ TOOL_SCHEMAS: Dict[str, dict] = {
 
 # ── The typed action tools (cora.tools) are the officer's action surface ──
 # The same schema the benchmark and the RL policy use, run through the same executor
-# (agent_router.Session._execute_calls → cora.executor).
+# (router.session.Session._execute_calls → cora.executor).
 for _t in openai_tools(manual_transfers=True):  # include transfer in the officer palette
     TOOL_SCHEMAS[_t["function"]["name"]] = _t
 DEFAULT_TOOLS = list(TOOL_SCHEMAS)

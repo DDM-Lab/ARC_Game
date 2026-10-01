@@ -103,19 +103,19 @@ def test_proposals_not_counted() -> None:
 def test_ledger_shows_spend() -> None:
     """The officer's ledger states the committed spend as a number."""
     print("\n[4] committed-spend line reaches the officer")
-    import agent_router
-
-    s = agent_router.Session.__new__(agent_router.Session)
+    import router.service as router_service
+    import router.session as router_session
+    s = router_session.Session.__new__(router_session.Session)
     s._committed_this_phase = []
     s._committed_spend_this_phase = 0.0
 
     check("no ledger before any commit", s._committed_ledger_text() == "")
 
-    agent_router.Session._record_committed(
+    router_session.Session._record_committed(
         s, {"action_type": "construction", "description": "Build Kitchen", "cost": 1000})
-    agent_router.Session._record_committed(
+    router_session.Session._record_committed(
         s, {"action_type": "worker", "description": "Hire 5 untrained", "cost": 500})
-    txt = agent_router.Session._committed_ledger_text(s)
+    txt = router_session.Session._committed_ledger_text(s)
 
     check("spend tallied", s._committed_spend_this_phase == 1500,
           f"got {s._committed_spend_this_phase}")
@@ -124,19 +124,19 @@ def test_ledger_shows_spend() -> None:
     check("ledger still lists the actions", "Build Kitchen" in txt and "Hire 5" in txt)
 
     # Dedup must not double-count.
-    agent_router.Session._record_committed(
+    router_session.Session._record_committed(
         s, {"action_type": "construction", "description": "Build Kitchen", "cost": 1000})
     check("re-committing the same action does not double-count",
           s._committed_spend_this_phase == 1500, f"got {s._committed_spend_this_phase}")
 
     # A zero-cost phase should not print a misleading "$0" line.
-    s2 = agent_router.Session.__new__(agent_router.Session)
+    s2 = router_session.Session.__new__(router_session.Session)
     s2._committed_this_phase = []
     s2._committed_spend_this_phase = 0.0
-    agent_router.Session._record_committed(
+    router_session.Session._record_committed(
         s2, {"action_type": "task_choice", "description": "answer task", "cost": 0})
     check("no spend line when nothing cost anything",
-          "Committed spend" not in agent_router.Session._committed_ledger_text(s2))
+          "Committed spend" not in router_session.Session._committed_ledger_text(s2))
 
 
 # ── keys-file sanitizer (security regression guard) ─────────────────────────
@@ -149,8 +149,8 @@ def test_annotation_entries_are_not_credentials() -> None:
     comments. `_comment` is guessable by anyone who has seen a JSON config.
     """
     print("\n[5] keys file: annotation entries are not credentials")
-    import agent_router
-    keys = agent_router._keys_from_mapping({
+    import router.service as router_service
+    keys = router_service._keys_from_mapping({
         "_comment": "Generated for the deploy. Public demo restricted to one config.",
         "_note": {"label": "also not a key"},
         "ck_real": {"label": "alice"},

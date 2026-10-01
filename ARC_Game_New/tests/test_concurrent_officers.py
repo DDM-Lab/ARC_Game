@@ -23,8 +23,8 @@ import asyncio
 import os
 import tempfile
 
-import agent_router
-from agent_router import Session
+import router.session as router_session
+from router.session import Session
 from router.config import load_config
 
 
@@ -186,8 +186,8 @@ async def run_dispatch_test():
                 return {"content": f"{name} acting", "tool_calls": calls}
             return {"content": f"{name} done", "tool_calls": []}  # finish (no tool call)
 
-        agent_router.run_tool_step = fake_run_tool_step
-        agent_router._enumerate_actions = fake_enumerate
+        router_session.run_tool_step = fake_run_tool_step
+        router_session._enumerate_actions = fake_enumerate
 
         await sess._handle_begin_round({"type": "begin_round", "day": 1, "segment": 0,
                                         "game_state": base_state(1)})

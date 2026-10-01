@@ -24,8 +24,8 @@ import asyncio
 import os
 import tempfile
 
-import agent_router
-from agent_router import Session
+import router.session as router_session
+from router.session import Session
 from router.config import load_config
 
 
@@ -122,8 +122,8 @@ async def test_unprompted_brief_only():
                         "tool_calls": [{"id": f"{name}-0", "name": "build",
                                         "arguments": {"type": "kitchen", "site_id": 1}}]}
             return {"content": "giving up, briefing instead", "tool_calls": []}
-        agent_router.run_tool_step = fake_run_tool_step
-        agent_router._enumerate_actions = fake_enumerate
+        router_session.run_tool_step = fake_run_tool_step
+        router_session._enumerate_actions = fake_enumerate
 
         await sess._run_continuous_concurrent(food_officer(cfg))
 
@@ -157,8 +157,8 @@ async def test_spoken_to_may_act():
                         "tool_calls": [{"id": f"{name}-0", "name": "build",
                                         "arguments": {"type": "kitchen", "site_id": 1}}]}
             return {"content": "done", "tool_calls": []}
-        agent_router.run_tool_step = fake_run_tool_step
-        agent_router._enumerate_actions = fake_enumerate
+        router_session.run_tool_step = fake_run_tool_step
+        router_session._enumerate_actions = fake_enumerate
 
         await sess._run_continuous_for_message(food_officer(cfg))
 
@@ -188,8 +188,8 @@ async def test_one_message_cap():
             return {"content": f"msg {s}",
                     "tool_calls": [{"id": f"{name}-{s}", "name": "send_message",
                                     "arguments": {"to": "Director", "message": f"brief #{s}"}}]}
-        agent_router.run_tool_step = fake_run_tool_step
-        agent_router._enumerate_actions = fake_enumerate
+        router_session.run_tool_step = fake_run_tool_step
+        router_session._enumerate_actions = fake_enumerate
 
         await sess._run_continuous_concurrent(food_officer(cfg))
 
@@ -215,8 +215,8 @@ async def test_no_director_echo():
                                         "arguments": {"type": "kitchen", "site_id": 1}}]}
             # The officer's OWN words are allowed; the robotic 🔨 echo is not.
             return {"content": "Built the kitchen as ordered.", "tool_calls": []}
-        agent_router.run_tool_step = fake_run_tool_step
-        agent_router._enumerate_actions = fake_enumerate
+        router_session.run_tool_step = fake_run_tool_step
+        router_session._enumerate_actions = fake_enumerate
 
         await sess._run_continuous_for_message(food_officer(cfg))
 
@@ -252,8 +252,8 @@ async def test_telemetry_wired():
                         "tool_calls": [{"id": f"{name}-0", "name": "build",
                                         "arguments": {"type": "kitchen", "site_id": 1}}]}
             return {"content": "Done.", "usage": {"total_tokens": 77}, "tool_calls": []}
-        agent_router.run_tool_step = fake_run_tool_step
-        agent_router._enumerate_actions = fake_enumerate
+        router_session.run_tool_step = fake_run_tool_step
+        router_session._enumerate_actions = fake_enumerate
 
         await sess._run_continuous_for_message(food_officer(cfg))
 
@@ -286,8 +286,8 @@ async def test_emergent_unchanged():
                         "tool_calls": [{"id": f"{name}-0", "name": "build",
                                         "arguments": {"type": "kitchen", "site_id": 1}}]}
             return {"content": "done", "tool_calls": []}
-        agent_router.run_tool_step = fake_run_tool_step
-        agent_router._enumerate_actions = fake_enumerate
+        router_session.run_tool_step = fake_run_tool_step
+        router_session._enumerate_actions = fake_enumerate
 
         await sess._run_continuous_concurrent(food_officer(cfg))
 

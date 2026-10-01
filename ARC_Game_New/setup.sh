@@ -155,7 +155,7 @@ cat <<'EOF'
 Start the router:
 
    env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy \
-     ./.venv/bin/python agent_router.py --port 9876 --config-dir config \
+     ./.venv/bin/python -m router --port 9876 --config-dir config \
      --log-dir logs/sessions --keys-file config/keys.json
 
 (If .env still shows PASTE_YOUR_..., edit it and put your real key in first.)

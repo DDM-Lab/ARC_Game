@@ -35,7 +35,7 @@ else
 fi
 
 echo "[run_router] Port=${PORT} ConfigDir=${CONFIG_DIR} LogDir=${LOG_DIR}"
-exec "${PYTHON}" agent_router.py \
+exec "${PYTHON}" -m router \
   --port "${PORT}" \
   --config-dir "${CONFIG_DIR}" \
   --log-dir "${LOG_DIR}" \

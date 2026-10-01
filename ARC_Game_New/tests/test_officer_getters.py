@@ -8,7 +8,7 @@ import tempfile
 import pytest
 
 from router.config import load_config
-from agent_router import Session
+from router.session import Session
 from cora.actions import enumerate_actions
 
 _FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "game_states.jsonl.gz")

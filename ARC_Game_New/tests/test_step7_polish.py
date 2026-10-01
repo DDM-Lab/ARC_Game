@@ -17,8 +17,8 @@ import asyncio
 import os
 import tempfile
 
-import agent_router
-from agent_router import Session
+import router.session as router_session
+from router.session import Session
 from router.config import load_config
 
 
@@ -78,8 +78,8 @@ async def test_no_action_note():
         # Model does nothing: no tool call, no closing text → executed_total stays 0.
         def fake_run_tool_step(messages, tools, agent_cfg, tool_mode):
             return {"content": "", "tool_calls": []}
-        agent_router.run_tool_step = fake_run_tool_step
-        agent_router.officer_text = lambda s, *a, **k: "STATE"
+        router_session.run_tool_step = fake_run_tool_step
+        router_session.officer_text = lambda s, *a, **k: "STATE"
 
         gs = {"sessionInfo": {}, "satisfactionAndBudget": {}, "allActiveTasks": []}
         await sess._run_continuous_inner(agent, {"tasks": []}, [], gs, [])

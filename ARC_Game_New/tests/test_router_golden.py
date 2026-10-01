@@ -21,9 +21,9 @@ import tempfile
 
 import pytest
 
-import agent_router
+import router.session as router_session
 from router.config import load_config
-from agent_router import Session
+from router.session import Session
 from cora.actions import enumerate_actions
 
 HERE = os.path.dirname(__file__)
@@ -35,7 +35,7 @@ FAIL = {"build_Shelter_9"}                      # Unity refuses these action ids
 
 # Other router tests replace module functions with fakes and do not restore them; captured at
 # collection (before any test runs) and pinned for each recording.
-_REAL = {name: getattr(agent_router, name)
+_REAL = {name: getattr(router_session, name)
          for name in ("_enumerate_actions", "run_tool_step", "filter_actions", "officer_text")}
 
 
@@ -94,7 +94,7 @@ class Harness:
     async def call(self, officer, tool, args, brief_only=False):
         agent = self.officer(officer)
         all_actions = enumerate_actions(self.state)
-        filtered = agent_router.filter_actions(all_actions, agent.subaction_space)
+        filtered = router_session.filter_actions(all_actions, agent.subaction_space)
         text, *_ = await self.sess._dispatch_continuous_tool(
             agent, {"name": tool, "arguments": args}, self.state, all_actions, filtered,
             brief_only=brief_only)
@@ -184,7 +184,7 @@ SCENARIOS = [("build_and_staff", 1, DOMAIN, s_build_and_staff), ("workforce", 2,
 
 async def _record(step, config, fn):
     for name, real in _REAL.items():
-        setattr(agent_router, name, real)
+        setattr(router_session, name, real)
     with tempfile.TemporaryDirectory() as td:
         h = Harness(td, step, config)
         await fn(h)

@@ -19,7 +19,7 @@ echo "[launch_router] OPENAI_API_KEY loaded (len=${#OPENAI_API_KEY})"
 # The gateway is reached directly; proxies would break it.
 exec env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u https_proxy \
          -u HTTP_PROXY -u http_proxy \
-  .venv/bin/python agent_router.py \
+  .venv/bin/python -m router \
     --port 9876 \
     --config-dir config \
     --log-dir logs/sessions \
