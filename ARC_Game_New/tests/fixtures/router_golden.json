@@ -1,0 +1,860 @@
+{
+ "brief_only": {
+  "frames": [
+   {
+    "agent_name": "Food Officer",
+    "content": "Kitchen stock is low.",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "FoodMassCare",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   }
+  ],
+  "results": [
+   {
+    "args": {
+     "site_id": 8,
+     "type": "kitchen"
+    },
+    "officer": "Food Officer",
+    "result": "REFUSED: you have not been directly addressed this turn, so you cannot take actions or send proposals. Brief the director via send_message to the Director (or call finish); they will tell you what to do.",
+    "tool": "build"
+   },
+   {
+    "args": {
+     "message": "Kitchen stock is low.",
+     "to": "Director"
+    },
+    "officer": "Food Officer",
+    "result": "Message delivered to Director.",
+    "tool": "send_message"
+   }
+  ]
+ },
+ "build_and_staff": {
+  "frames": [
+   {
+    "action": {
+     "action_id": "build_Kitchen_11",
+     "action_type": "construction",
+     "construction": {
+      "building_type": "Kitchen",
+      "site_id": 11,
+      "site_name": "AbandonedSite_11"
+     },
+     "cost": 2000,
+     "description": "Build Kitchen at AbandonedSite_11",
+     "effects": {
+      "budget": -2000,
+      "new_building": "Kitchen",
+      "site_occupied": 11
+     },
+     "requirements": {
+      "available_site": true,
+      "budget": 2000
+     }
+    },
+    "type": "execute_action"
+   },
+   {
+    "agent_name": "Food Officer",
+    "content": "Action: Built Kitchen at AbandonedSite_11 for $2,000",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "FoodMassCare",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   },
+   {
+    "action": {
+     "action_id": "assign_Kitchen Alpha_2",
+     "action_type": "worker_assignment",
+     "assignment": {
+      "building_name": "Kitchen Alpha",
+      "quantity": 2
+     },
+     "cost": 0,
+     "description": "Assign 2 worker(s) (4 workforce) to Kitchen Alpha"
+    },
+    "type": "execute_action"
+   },
+   {
+    "agent_name": "Food Officer",
+    "content": "Action: Assigned 2 workers to Kitchen Alpha",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "FoodMassCare",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   },
+   {
+    "action": {
+     "action_id": "assign_Shelter Alpha_2",
+     "action_type": "worker_assignment",
+     "assignment": {
+      "building_name": "Shelter Alpha",
+      "quantity": 2
+     },
+     "cost": 0,
+     "description": "Assign 2 worker(s) (4 workforce) to Shelter Alpha"
+    },
+    "type": "execute_action"
+   },
+   {
+    "agent_name": "Lodging Officer",
+    "content": "Action: Assigned 2 workers to Shelter Alpha",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "LodgingMassCare",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   }
+  ],
+  "results": [
+   {
+    "args": {
+     "site_id": 11,
+     "type": "kitchen"
+    },
+    "officer": "Food Officer",
+    "result": "Ran 1 action(s) from your commands; 1 succeeded.\nResolved: build Kitchen at site 11\n  \u2705 Build Kitchen at AbandonedSite_11\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  BUILD  <build>TYPE,SITE</build>:\n    sites 3-10 (8x AbandonedSite_): Kitchen\n  STAFF  <staff>BUILDING,N</staff>: Kitchen Alpha (up to 4)\n  DECONSTRUCT  <deconstruct>NAME</deconstruct>: Kitchen Alpha\n\n\u26a0\ufe0f ALREADY COMMITTED THIS PHASE \u2014 do NOT pick these again:\n  - [construction] Build Kitchen at AbandonedSite_11",
+    "tool": "build"
+   },
+   {
+    "args": {
+     "site": "Kitchen Alpha"
+    },
+    "officer": "Food Officer",
+    "result": "Ran 1 action(s) from your commands; 1 succeeded.\nResolved: staff Kitchen Alpha (4 units)\n  \u2705 Assign 2 worker(s) (4 workforce) to Kitchen Alpha\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  BUILD  <build>TYPE,SITE</build>:\n    sites 3-10 (8x AbandonedSite_): Kitchen\n  STAFF  <staff>BUILDING,N</staff>: Kitchen Alpha (up to 4)\n  DECONSTRUCT  <deconstruct>NAME</deconstruct>: Kitchen Alpha\n\n\u26a0\ufe0f ALREADY COMMITTED THIS PHASE \u2014 do NOT pick these again:\n  - [construction] Build Kitchen at AbandonedSite_11",
+    "tool": "staff"
+   },
+   {
+    "args": {
+     "site": "Shelter Alpha"
+    },
+    "officer": "Lodging Officer",
+    "result": "Ran 1 action(s) from your commands; 1 succeeded.\nResolved: staff Shelter Alpha (4 units)\n  \u2705 Assign 2 worker(s) (4 workforce) to Shelter Alpha\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  BUILD  <build>TYPE,SITE</build>:\n    sites 3-11 (9x AbandonedSite_): Shelter\n  STAFF  <staff>BUILDING,N</staff>: Shelter Alpha (up to 4)\n  DECONSTRUCT  <deconstruct>NAME</deconstruct>: Shelter Alpha",
+    "tool": "staff"
+   }
+  ]
+ },
+ "deconstruct": {
+  "frames": [
+   {
+    "action": {
+     "action_id": "deconstruct_Shelter Bravo",
+     "action_type": "deconstruction",
+     "cost": 0,
+     "deconstruction": {
+      "building_name": "Shelter Bravo",
+      "frees_site_id": 3
+     },
+     "description": "Deconstruct Shelter Bravo (frees 4 workers and site)",
+     "effects": {
+      "building_removed": "Shelter Bravo",
+      "site_freed": 3,
+      "workers_freed": 4
+     },
+     "requirements": {
+      "is_player_building": true
+     }
+    },
+    "type": "execute_action"
+   },
+   {
+    "agent_name": "Lodging Officer",
+    "content": "Action: Deconstructed Shelter Bravo",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "LodgingMassCare",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   }
+  ],
+  "results": [
+   {
+    "args": {
+     "site": "Shelter Bravo"
+    },
+    "officer": "Lodging Officer",
+    "result": "Ran 1 action(s) from your commands; 1 succeeded.\nResolved: deconstruct Shelter Bravo\n  \u2705 Deconstruct Shelter Bravo (frees 4 workers and site)\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  BUILD  <build>TYPE,SITE</build>:\n    sites 4-11 (8x AbandonedSite_): Shelter\n  DECONSTRUCT  <deconstruct>NAME</deconstruct>: Shelter Alpha\n\n\u26a0\ufe0f ALREADY COMMITTED THIS PHASE \u2014 do NOT pick these again:\n  - [deconstruction] Deconstruct Shelter Bravo (frees 4 workers and site)",
+    "tool": "deconstruct"
+   }
+  ]
+ },
+ "propose": {
+  "frames": [
+   {
+    "agent_name": "Lodging Officer",
+    "available_actions": [
+     {
+      "action_id": "build_Shelter_11",
+      "action_type": "construction",
+      "construction": {
+       "building_type": "Shelter",
+       "site_id": 11,
+       "site_name": "AbandonedSite_11"
+      },
+      "cost": 2000,
+      "description": "Build Shelter at AbandonedSite_11",
+      "effects": {
+       "budget": -2000,
+       "new_building": "Shelter",
+       "site_occupied": 11
+      },
+      "requirements": {
+       "available_site": true,
+       "budget": 2000
+      }
+     },
+     {
+      "action_id": "build_Shelter_10",
+      "action_type": "construction",
+      "construction": {
+       "building_type": "Shelter",
+       "site_id": 10,
+       "site_name": "AbandonedSite_10"
+      },
+      "cost": 2000,
+      "description": "Build Shelter at AbandonedSite_10",
+      "effects": {
+       "budget": -2000,
+       "new_building": "Shelter",
+       "site_occupied": 10
+      },
+      "requirements": {
+       "available_site": true,
+       "budget": 2000
+      }
+     },
+     {
+      "action_id": "build_Shelter_9",
+      "action_type": "construction",
+      "construction": {
+       "building_type": "Shelter",
+       "site_id": 9,
+       "site_name": "AbandonedSite_9"
+      },
+      "cost": 2000,
+      "description": "Build Shelter at AbandonedSite_9",
+      "effects": {
+       "budget": -2000,
+       "new_building": "Shelter",
+       "site_occupied": 9
+      },
+      "requirements": {
+       "available_site": true,
+       "budget": 2000
+      }
+     },
+     {
+      "action_id": "build_Shelter_8",
+      "action_type": "construction",
+      "construction": {
+       "building_type": "Shelter",
+       "site_id": 8,
+       "site_name": "AbandonedSite_8"
+      },
+      "cost": 2000,
+      "description": "Build Shelter at AbandonedSite_8",
+      "effects": {
+       "budget": -2000,
+       "new_building": "Shelter",
+       "site_occupied": 8
+      },
+      "requirements": {
+       "available_site": true,
+       "budget": 2000
+      }
+     },
+     {
+      "action_id": "build_Shelter_7",
+      "action_type": "construction",
+      "construction": {
+       "building_type": "Shelter",
+       "site_id": 7,
+       "site_name": "AbandonedSite_7"
+      },
+      "cost": 2000,
+      "description": "Build Shelter at AbandonedSite_7",
+      "effects": {
+       "budget": -2000,
+       "new_building": "Shelter",
+       "site_occupied": 7
+      },
+      "requirements": {
+       "available_site": true,
+       "budget": 2000
+      }
+     },
+     {
+      "action_id": "build_Shelter_6",
+      "action_type": "construction",
+      "construction": {
+       "building_type": "Shelter",
+       "site_id": 6,
+       "site_name": "AbandonedSite_6"
+      },
+      "cost": 2000,
+      "description": "Build Shelter at AbandonedSite_6",
+      "effects": {
+       "budget": -2000,
+       "new_building": "Shelter",
+       "site_occupied": 6
+      },
+      "requirements": {
+       "available_site": true,
+       "budget": 2000
+      }
+     },
+     {
+      "action_id": "build_Shelter_5",
+      "action_type": "construction",
+      "construction": {
+       "building_type": "Shelter",
+       "site_id": 5,
+       "site_name": "AbandonedSite_5"
+      },
+      "cost": 2000,
+      "description": "Build Shelter at AbandonedSite_5",
+      "effects": {
+       "budget": -2000,
+       "new_building": "Shelter",
+       "site_occupied": 5
+      },
+      "requirements": {
+       "available_site": true,
+       "budget": 2000
+      }
+     },
+     {
+      "action_id": "build_Shelter_4",
+      "action_type": "construction",
+      "construction": {
+       "building_type": "Shelter",
+       "site_id": 4,
+       "site_name": "AbandonedSite_4"
+      },
+      "cost": 2000,
+      "description": "Build Shelter at AbandonedSite_4",
+      "effects": {
+       "budget": -2000,
+       "new_building": "Shelter",
+       "site_occupied": 4
+      },
+      "requirements": {
+       "available_site": true,
+       "budget": 2000
+      }
+     },
+     {
+      "action_id": "deconstruct_Shelter Bravo",
+      "action_type": "deconstruction",
+      "cost": 0,
+      "deconstruction": {
+       "building_name": "Shelter Bravo",
+       "frees_site_id": 3
+      },
+      "description": "Deconstruct Shelter Bravo (frees 4 workers and site)",
+      "effects": {
+       "building_removed": "Shelter Bravo",
+       "site_freed": 3,
+       "workers_freed": 4
+      },
+      "requirements": {
+       "is_player_building": true
+      }
+     },
+     {
+      "action_id": "deconstruct_Shelter Alpha",
+      "action_type": "deconstruction",
+      "cost": 0,
+      "deconstruction": {
+       "building_name": "Shelter Alpha",
+       "frees_site_id": 0
+      },
+      "description": "Deconstruct Shelter Alpha (frees 4 workers and site)",
+      "effects": {
+       "building_removed": "Shelter Alpha",
+       "site_freed": 0,
+       "workers_freed": 4
+      },
+      "requirements": {
+       "is_player_building": true
+      }
+     }
+    ],
+    "content": "Two ways to house the next relocation.",
+    "message_type": "agent_response",
+    "packages": [
+     {
+      "action_indices": [
+       3
+      ],
+      "description": "One more shelter at site 8.",
+      "label": "Build a shelter",
+      "package_index": 0
+     },
+     {
+      "action_indices": [
+       3,
+       1
+      ],
+      "description": "Sites 8 and 10.",
+      "label": "Build two shelters",
+      "package_index": 1
+     }
+    ],
+    "reasoning": "Two ways to house the next relocation.",
+    "round": 0,
+    "talkinghead_endpoint": "LodgingMassCare",
+    "type": "agent_message_with_choices"
+   },
+   {
+    "agent_name": "Lodging Officer",
+    "content": "\ud83d\udd28 construction: Build Shelter at AbandonedSite_8",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "LodgingMassCare",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   }
+  ],
+  "results": [
+   {
+    "args": {
+     "packages": [
+      {
+       "commands": "<build>shelter,8</build>",
+       "description": "One more shelter at site 8.",
+       "label": "Build a shelter"
+      },
+      {
+       "commands": "<build>shelter,8</build> <build>shelter,10</build>",
+       "description": "Sites 8 and 10.",
+       "label": "Build two shelters"
+      }
+     ],
+     "reasoning": "Two ways to house the next relocation."
+    },
+    "officer": "Lodging Officer",
+    "result": "The director selected package 0 (Build a shelter). 1/1 action(s) SUCCEEDED. Engine results:\n  - build_Shelter_8: SUCCESS\nReport ONLY the SUCCESS lines as done. Do NOT claim any FAILED action happened \u2014 treat failures as not executed and adapt.\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  BUILD  <build>TYPE,SITE</build>:\n    sites 4-7 (4x AbandonedSite_): Shelter\n    sites 9-11 (3x AbandonedSite_): Shelter\n  DECONSTRUCT  <deconstruct>NAME</deconstruct>: Shelter Bravo, Shelter Alpha\n\n\u26a0\ufe0f ALREADY COMMITTED THIS PHASE \u2014 do NOT pick these again:\n  - [construction] Build Shelter at AbandonedSite_8",
+    "tool": "propose_choices"
+   }
+  ]
+ },
+ "reads": {
+  "frames": [],
+  "results": [
+   {
+    "args": {},
+    "officer": "Lodging Officer",
+    "result": "day 5 | budget 145500 | satisfaction 476 | roundsLeft 16\nworkers: freeTrained 1 freeUntrained 14 arrivingTrained 0 arrivingUntrained 0 working 9 inTraining 0\nlogistics: vehiclesFree 0 vehicleLoad 100\ncosts: build 2000 hireUntrained 300 hireTrained 1000 train 500\nfacilities [name type status workers/need food pop/cap site]:\n  Shelter Bravo Shelter InUse 4/4 0 73/100 3\n  Casework Alpha CaseworkSite InUse 4/4 0 32/400 2\n  Kitchen Alpha Kitchen InUse 4/4 200 0/0 1\n  Shelter Alpha Shelter InUse 4/4 0 100/100 0\n  Community Charleston Community Passive 0/0 2900 400/600 0\n  Community Amherst Community Passive 0/0 2924 400/600 0\n  Community Trinity Community Passive 0/0 3000 400/600 0\n  Motel Motel Passive 0/0 0 0/3000 0\ntasks [id type \"title\" affects (roundsLeft)]:\n  [RELOC_CCHARLESTON] Demand \"Community Charleston Relocation Request\" Community Charleston (2 left)\n    0: Send to Shelters\n    1: Send to Motel\n  [RELOC_CAMHERST] Demand \"Community Amherst Relocation Request\" Community Amherst (2 left)\n    0: Send to Shelters\n    1: Send to Motel\n  [FLOODRELOC_S3] Emergency \"Shelter Bravo Flood Damage Relocation\"  (2 left)\n    1: Evacuate all to Motel\nincoming (counted against free space): Casework Alpha +27 (27 by vehicle; now 32/400, 341 free)\nopen sites by map distance (closest first): 4: Motel 4 Trinity 5 Amherst 10 Charleston 10; 5: Trinity 4 Motel 4 Charleston 8 Amherst 9; 6: Trinity 5 Charleston 6 Motel 7 Amherst 9; 7: Trinity 9 Motel 11 Amherst 17 Charleston 18; 8: Motel 10 Trinity 11 Amherst 16 Charleston 18; 9: Trinity 12 Motel 15 Amherst 21 Charleston 22; 10: Trinity 6 Motel 8 Amherst 14 Charleston 14; 11: Charleston 3 Amherst 6 Motel 10 Trinity 14",
+    "tool": "read_state"
+   },
+   {
+    "args": {},
+    "officer": "Lodging Officer",
+    "result": "facilities [name type status workers/need food pop/cap site]:\n  Shelter Bravo Shelter InUse 4/4 0 73/100 3\n  Casework Alpha CaseworkSite InUse 4/4 0 32/400 2\n  Kitchen Alpha Kitchen InUse 4/4 200 0/0 1\n  Shelter Alpha Shelter InUse 4/4 0 100/100 0\n  Community Charleston Community Passive 0/0 2900 400/600 0\n  Community Amherst Community Passive 0/0 2924 400/600 0\n  Community Trinity Community Passive 0/0 3000 400/600 0\n  Motel Motel Passive 0/0 0 0/3000 0",
+    "tool": "get_facilities"
+   },
+   {
+    "args": {},
+    "officer": "Lodging Officer",
+    "result": "day 5 | budget 145500 | satisfaction 476 | roundsLeft 16\nworkers: freeTrained 1 freeUntrained 14 arrivingTrained 0 arrivingUntrained 0 working 9 inTraining 0\nlogistics: vehiclesFree 0 vehicleLoad 100\ncosts: build 2000 hireUntrained 300 hireTrained 1000 train 500",
+    "tool": "get_workforce"
+   },
+   {
+    "args": {},
+    "officer": "Lodging Officer",
+    "result": "tasks [id type \"title\" affects (roundsLeft)]:\n  [RELOC_CCHARLESTON] Demand \"Community Charleston Relocation Request\" Community Charleston (2 left)\n    0: Send to Shelters\n    1: Send to Motel\n  [RELOC_CAMHERST] Demand \"Community Amherst Relocation Request\" Community Amherst (2 left)\n    0: Send to Shelters\n    1: Send to Motel\n  [FLOODRELOC_S3] Emergency \"Shelter Bravo Flood Damage Relocation\"  (2 left)\n    1: Evacuate all to Motel",
+    "tool": "get_tasks"
+   },
+   {
+    "args": {},
+    "officer": "Lodging Officer",
+    "result": "available:\n  hire: UNAVAILABLE | trainUntrainedMax 0\n  needStaff: (none)\n  staffNow: (none)\n  buildSites: 4,5,6,7,8,9,10,11",
+    "tool": "get_logistics"
+   }
+  ]
+ },
+ "refused_and_invalid": {
+  "frames": [
+   {
+    "action": {
+     "action_id": "build_Shelter_9",
+     "action_type": "construction",
+     "construction": {
+      "building_type": "Shelter",
+      "site_id": 9,
+      "site_name": "AbandonedSite_9"
+     },
+     "cost": 2000,
+     "description": "Build Shelter at AbandonedSite_9",
+     "effects": {
+      "budget": -2000,
+      "new_building": "Shelter",
+      "site_occupied": 9
+     },
+     "requirements": {
+      "available_site": true,
+      "budget": 2000
+     }
+    },
+    "type": "execute_action"
+   }
+  ],
+  "results": [
+   {
+    "args": {
+     "site_id": 9,
+     "type": "shelter"
+    },
+    "officer": "Lodging Officer",
+    "result": "Ran 1 action(s) from your commands; 0 succeeded.\nResolved: build Shelter at site 9\n  \u274c Build Shelter at AbandonedSite_9 \u2014 Site is not available\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  BUILD  <build>TYPE,SITE</build>:\n    sites 4-11 (8x AbandonedSite_): Shelter\n  DECONSTRUCT  <deconstruct>NAME</deconstruct>: Shelter Bravo, Shelter Alpha",
+    "tool": "build"
+   },
+   {
+    "args": {
+     "site_id": 999,
+     "type": "shelter"
+    },
+    "officer": "Lodging Officer",
+    "result": "Ran 0 action(s) from your commands; 0 succeeded.\nUnresolved commands (NOT executed \u2014 fix and retry, or pick a different move):\n  build: site 999 is not available to build a Shelter this turn\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  BUILD  <build>TYPE,SITE</build>:\n    sites 4-11 (8x AbandonedSite_): Shelter\n  DECONSTRUCT  <deconstruct>NAME</deconstruct>: Shelter Bravo, Shelter Alpha",
+    "tool": "build"
+   },
+   {
+    "args": {
+     "site_id": 8,
+     "type": "kitchen"
+    },
+    "officer": "Lodging Officer",
+    "result": "Ran 0 action(s) from your commands; 0 succeeded.\nUnresolved commands (NOT executed \u2014 fix and retry, or pick a different move):\n  build: site 8 is not available to build a Kitchen this turn\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  BUILD  <build>TYPE,SITE</build>:\n    sites 4-11 (8x AbandonedSite_): Shelter\n  DECONSTRUCT  <deconstruct>NAME</deconstruct>: Shelter Bravo, Shelter Alpha",
+    "tool": "build"
+   },
+   {
+    "args": {
+     "site": "Shelter, Alpha"
+    },
+    "officer": "Lodging Officer",
+    "result": "ERROR: staff.site='Shelter, Alpha' contains ',', which the command grammar uses as a delimiter \u2014 re-issue with a plain value (one facility/id, no commas or angle brackets)",
+    "tool": "staff"
+   }
+  ]
+ },
+ "standing_order": {
+  "frames": [
+   {
+    "agent_name": "Workforce Officer",
+    "args_display": "(kind untrained)",
+    "context": "free workers fall below 4",
+    "proposal_id": "<id>",
+    "reason": "keep staffing ahead of builds",
+    "round": 0,
+    "talkinghead_endpoint": "WorkforceService",
+    "tool": "hire",
+    "type": "autonomy_proposal"
+   },
+   {
+    "context": "free workers fall below 4",
+    "proposal_id": "<id>",
+    "rule_id": "R1",
+    "status": "accepted",
+    "type": "autonomy_update"
+   },
+   {
+    "action": {
+     "action_id": "hire_untrained_2",
+     "action_type": "worker",
+     "cost": 600,
+     "description": "Hire 2 untrained worker(s) ($300 each)",
+     "effects": {
+      "budget": -600,
+      "untrained_workers": 2
+     },
+     "requirements": {
+      "budget": 600
+     },
+     "worker": {
+      "quantity": 2,
+      "worker_action_type": "hire_untrained"
+     }
+    },
+    "type": "execute_action"
+   },
+   {
+    "agent_name": "Workforce Officer",
+    "content": "Standing order R1 \u00b7 Action: Hired 2 untrained workers for $600",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "WorkforceService",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   }
+  ],
+  "results": [
+   {
+    "args": {
+     "args": {
+      "kind": "untrained"
+     },
+     "context": "free workers fall below 4",
+     "reason": "keep staffing ahead of builds",
+     "tool": "hire"
+    },
+    "officer": "Workforce Officer",
+    "result": "ALLOWED: standing order R1 \u2014 hire (kind untrained), when: free workers fall below 4\nFrom now on, at the start of each round, you may use this tool on your own, but only when that condition holds.",
+    "tool": "add_to_autonomy_list"
+   },
+   {
+    "args": {
+     "count": 2,
+     "kind": "untrained"
+    },
+    "officer": "Workforce Officer",
+    "result": "[Standing order R1] Ran 1 action(s) from your commands; 1 succeeded.\nResolved: hire_untrained 2\n  \u2705 Hire 2 untrained worker(s) ($300 each)\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  HIRE  <hire>untrained|trained,N</hire>: untrained up to 5  |  trained up to 5\n  TRAIN  <train>N</train>: up to 10 untrained\n\n\u26a0\ufe0f ALREADY COMMITTED THIS PHASE \u2014 do NOT pick these again:\n  - [worker] Hire 2 untrained worker(s) ($300 each)",
+    "tool": "hire"
+   },
+   {
+    "args": {
+     "count": 1,
+     "kind": "trained"
+    },
+    "officer": "Workforce Officer",
+    "result": "REFUSED: this call is not covered by any of your standing orders (same tool, within its limits). Unprompted, you may only carry out a standing order; for anything else, ask the Director.",
+    "tool": "hire"
+   }
+  ]
+ },
+ "tasks": {
+  "frames": [
+   {
+    "choiceId": 0,
+    "stableId": "Shelter_FoodRequest_First",
+    "taskId": 41,
+    "type": "select_task_choice"
+   },
+   {
+    "agent_name": "Food Mass Care Officer",
+    "content": "Action: Chose \"Fulfill 73 meals for the current round.\" for task \"Shelter Bravo Food Request\"",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "FoodMassCare",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   },
+   {
+    "choiceId": 0,
+    "stableId": "Community_TransportRequest",
+    "taskId": 38,
+    "type": "select_task_choice"
+   },
+   {
+    "agent_name": "Lodging Mass Care Officer",
+    "content": "Action: Chose \"Send to Shelters\" for task \"Community Charleston Relocation Request\"",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "LodgingMassCare",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   },
+   {
+    "choiceId": 0,
+    "stableId": "Budget_Allocation",
+    "taskId": 37,
+    "type": "select_task_choice"
+   },
+   {
+    "agent_name": "External Relationship Officer",
+    "content": "Action: Chose \"Receive $5000 Budget\" for task \"Daily Budget Allocation\"",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "ExternalRelationship",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   }
+  ],
+  "results": [
+   {
+    "args": {
+     "choice_id": 0,
+     "task_id": "FOOD_S3"
+    },
+    "officer": "Food Mass Care Officer",
+    "result": "Ran 0 action(s) from your commands; 0 succeeded.\nResolved: task FOOD_S3 choice 0\nAnswered 1/1 choice-task(s).\n  \u2705 answered task 41 with choice 0\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  TRANSFER  <transfer>food|people,SRC,DST,N</transfer>: people,Shelter Bravo,Casework Alpha (up to 5)  people,Shelter Bravo,Casework Alpha (up to 10)  people,Shelter Bravo,Casework Alpha (up to 20)  people,Shelter Bravo,Community Charleston (up to 5)  people,Shelter Bravo,Community Charleston (up to 10)  people,Shelter Bravo,Community Charleston (up to 20)  people,Shelter Bravo,Community Amherst (up to 5)  people,Shelter Bravo,Community Amherst (up to 10)  people,Shelter Bravo,Community Amherst (up to 20)  people,Shelter Bravo,Community Trinity (up to 5)  people,Shelter Bravo,Community Trinity (up to 10)  people,Shelter Bravo,Community Trinity (up to 20)  people,Shelter Bravo,Motel (up to 5)  people,Shelter Bravo,Motel (up to 10)  people,Shelter Bravo,Motel (up to 20)  people,Casework Alpha,Shelter Bravo (up to 5)  people,Casework Alpha,Shelter Bravo (up to 10)  people,Casework Alpha,Shelter Bravo (up to 20)  people,Casework Alpha,Community Charleston (up to 5)  people,Casework Alpha,Community Charleston (up to 10)  people,Casework Alpha,Community Charleston (up to 20)  people,Casework Alpha,Community Amherst (up to 5)  people,Casework Alpha,Community Amherst (up to 10)  people,Casework Alpha,Community Amherst (up to 20)  people,Casework Alpha,Community Trinity (up to 5)  people,Casework Alpha,Community Trinity (up to 10)  people,Casework Alpha,Community Trinity (up to 20)  people,Casework Alpha,Motel (up to 5)  people,Casework Alpha,Motel (up to 10)  people,Casework Alpha,Motel (up to 20)  food,Kitchen Alpha,Shelter Bravo (up to 10)  food,Kitchen Alpha,Shelter Bravo (up to 25)  food,Kitchen Alpha,Shelter Bravo (up to 50)  food,Kitchen Alpha,Shelter Bravo (up to 100)  food,Kitchen Alpha,Shelter Alpha (up to 10)  food,Kitchen Alpha,Shelter Alpha (up to 25)  food,Kitchen Alpha,Shelter Alpha (up to 50)  food,Kitchen Alpha,Shelter Alpha (up to 100)  food,Kitchen Alpha,Community Charleston (up to 10)  food,Kitchen Alpha,Community Charleston (up to 25)  food,Kitchen Alpha,Community Charleston (up to 50)  food,Kitchen Alpha,Community Charleston (up to 100)  food,Kitchen Alpha,Community Amherst (up to 10)  food,Kitchen Alpha,Community Amherst (up to 25)  food,Kitchen Alpha,Community Amherst (up to 50)  food,Kitchen Alpha,Motel (up to 10)  food,Kitchen Alpha,Motel (up to 25)  food,Kitchen Alpha,Motel (up to 50)  food,Kitchen Alpha,Motel (up to 100)  people,Shelter Alpha,Shelter Bravo (up to 5)  people,Shelter Alpha,Shelter Bravo (up to 10)  people,Shelter Alpha,Shelter Bravo (up to 20)  people,Shelter Alpha,Casework Alpha (up to 5)  people,Shelter Alpha,Casework Alpha (up to 10)  people,Shelter Alpha,Casework Alpha (up to 20)  people,Shelter Alpha,Community Charleston (up to 5)  people,Shelter Alpha,Community Charleston (up to 10)  people,Shelter Alpha,Community Charleston (up to 20)  people,Shelter Alpha,Community Amherst (up to 5)  people,Shelter Alpha,Community Amherst (up to 10)  people,Shelter Alpha,Community Amherst (up to 20)  people,Shelter Alpha,Community Trinity (up to 5)  people,Shelter Alpha,Community Trinity (up to 10)  people,Shelter Alpha,Community Trinity (up to 20)  people,Shelter Alpha,Motel (up to 5)  people,Shelter Alpha,Motel (up to 10)  people,Shelter Alpha,Motel (up to 20)  food,Community Charleston,Shelter Bravo (up to 10)  food,Community Charleston,Shelter Bravo (up to 25)  food,Community Charleston,Shelter Bravo (up to 50)  food,Community Charleston,Shelter Bravo (up to 100)  people,Community Charleston,Shelter Bravo (up to 5)  people,Community Charleston,Shelter Bravo (up to 10)  people,Community Charleston,Shelter Bravo (up to 20)  people,Community Charleston,Casework Alpha (up to 5)  people,Community Charleston,Casework Alpha (up to 10)  people,Community Charleston,Casework Alpha (up to 20)  food,Community Charleston,Shelter Alpha (up to 10)  food,Community Charleston,Shelter Alpha (up to 25)  food,Community Charleston,Shelter Alpha (up to 50)  food,Community Charleston,Shelter Alpha (up to 100)  food,Community Charleston,Community Amherst (up to 10)  food,Community Charleston,Community Amherst (up to 25)  food,Community Charleston,Community Amherst (up to 50)  people,Community Charleston,Community Amherst (up to 5)  people,Community Charleston,Community Amherst (up to 10)  people,Community Charleston,Community Amherst (up to 20)  people,Community Charleston,Community Trinity (up to 5)  people,Community Charleston,Community Trinity (up to 10)  people,Community Charleston,Community Trinity (up to 20)  food,Community Charleston,Motel (up to 10)  food,Community Charleston,Motel (up to 25)  food,Community Charleston,Motel (up to 50)  food,Community Charleston,Motel (up to 100)  people,Community Charleston,Motel (up to 5)  people,Community Charleston,Motel (up to 10)  people,Community Charleston,Motel (up to 20)  food,Community Amherst,Shelter Bravo (up to 10)  food,Community Amherst,Shelter Bravo (up to 25)  food,Community Amherst,Shelter Bravo (up to 50)  food,Community Amherst,Shelter Bravo (up to 100)  people,Community Amherst,Shelter Bravo (up to 5)  people,Community Amherst,Shelter Bravo (up to 10)  people,Community Amherst,Shelter Bravo (up to 20)  people,Community Amherst,Casework Alpha (up to 5)  people,Community Amherst,Casework Alpha (up to 10)  people,Community Amherst,Casework Alpha (up to 20)  food,Community Amherst,Shelter Alpha (up to 10)  food,Community Amherst,Shelter Alpha (up to 25)  food,Community Amherst,Shelter Alpha (up to 50)  food,Community Amherst,Shelter Alpha (up to 100)  food,Community Amherst,Community Charleston (up to 10)  food,Community Amherst,Community Charleston (up to 25)  food,Community Amherst,Community Charleston (up to 50)  food,Community Amherst,Community Charleston (up to 100)  people,Community Amherst,Community Charleston (up to 5)  people,Community Amherst,Community Charleston (up to 10)  people,Community Amherst,Community Charleston (up to 20)  people,Community Amherst,Community Trinity (up to 5)  people,Community Amherst,Community Trinity (up to 10)  people,Community Amherst,Community Trinity (up to 20)  food,Community Amherst,Motel (up to 10)  food,Community Amherst,Motel (up to 25)  food,Community Amherst,Motel (up to 50)  food,Community Amherst,Motel (up to 100)  people,Community Amherst,Motel (up to 5)  people,Community Amherst,Motel (up to 10)  people,Community Amherst,Motel (up to 20)  food,Community Trinity,Shelter Bravo (up to 10)  food,Community Trinity,Shelter Bravo (up to 25)  food,Community Trinity,Shelter Bravo (up to 50)  food,Community Trinity,Shelter Bravo (up to 100)  people,Community Trinity,Shelter Bravo (up to 5)  people,Community Trinity,Shelter Bravo (up to 10)  people,Community Trinity,Shelter Bravo (up to 20)  people,Community Trinity,Casework Alpha (up to 5)  people,Community Trinity,Casework Alpha (up to 10)  people,Community Trinity,Casework Alpha (up to 20)  food,Community Trinity,Shelter Alpha (up to 10)  food,Community Trinity,Shelter Alpha (up to 25)  food,Community Trinity,Shelter Alpha (up to 50)  food,Community Trinity,Shelter Alpha (up to 100)  food,Community Trinity,Community Charleston (up to 10)  food,Community Trinity,Community Charleston (up to 25)  food,Community Trinity,Community Charleston (up to 50)  food,Community Trinity,Community Charleston (up to 100)  people,Community Trinity,Community Charleston (up to 5)  people,Community Trinity,Community Charleston (up to 10)  people,Community Trinity,Community Charleston (up to 20)  food,Community Trinity,Community Amherst (up to 10)  food,Community Trinity,Community Amherst (up to 25)  food,Community Trinity,Community Amherst (up to 50)  people,Community Trinity,Community Amherst (up to 5)  people,Community Trinity,Community Amherst (up to 10)  people,Community Trinity,Community Amherst (up to 20)  food,Community Trinity,Motel (up to 10)  food,Community Trinity,Motel (up to 25)  food,Community Trinity,Motel (up to 50)  food,Community Trinity,Motel (up to 100)  people,Community Trinity,Motel (up to 5)  people,Community Trinity,Motel (up to 10)  people,Community Trinity,Motel (up to 20)\n  TASK  <task>FOOD_S3,CHOICE</task>  \"Shelter Bravo Food Request\": [0] Fulfill 73 meals for the current round.  [1] Deliver 2 x 73 meals.  [2] Rapid Response Vehicle deliver 73 meals immediately ($10/meal).  [3] Rapid Response Vehicle deliver 2x73 meals immediately ($10/meal).\n  TASK  <task>FOOD_S0,CHOICE</task>  \"Shelter Alpha Food Request\": [0] Fulfill 100 meals for the current round.  [1] Deliver 2 x 100 meals.  [2] Rapid Response Vehicle deliver 100 meals immediately ($10/meal).  [3] Rapid Response Vehicle deliver 2x100 meals immediately ($10/meal).\n  TASK  <task>FOOD_CCHARLESTON,CHOICE</task>  \"Community Charleston Food Request\": [0] Request 100 meals from kitchens  [2] Rapid Response Vehicle delivers 100 fast-food meals (immediate).\n  TASK  <task>FOOD_CAMHERST,CHOICE</task>  \"Community Amherst Food Request\": [0] Request 76 meals from kitchens  [2] Rapid Response Vehicle delivers 76 fast-food meals (immediate).",
+    "tool": "task"
+   },
+   {
+    "args": {
+     "choice_id": 0,
+     "task_id": "RELOC_CCHARLESTON"
+    },
+    "officer": "Lodging Mass Care Officer",
+    "result": "Ran 0 action(s) from your commands; 0 succeeded.\nResolved: task RELOC_CCHARLESTON choice 0\nAnswered 1/1 choice-task(s).\n  \u2705 answered task 38 with choice 0\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  BUILD  <build>TYPE,SITE</build>:\n    sites 4-11 (8x AbandonedSite_): CaseworkSite, Kitchen, Shelter\n  TASK  <task>RELOC_CCHARLESTON,CHOICE</task>  \"Community Charleston Relocation Request\": [0] Send to Shelters  [1] Send to Motel\n  TASK  <task>RELOC_CAMHERST,CHOICE</task>  \"Community Amherst Relocation Request\": [0] Send to Shelters  [1] Send to Motel\n  TASK  <task>FLOODRELOC_S3,CHOICE</task>  \"Shelter Bravo Flood Damage Relocation\": [1] Evacuate all to Motel",
+    "tool": "task"
+   },
+   {
+    "args": {
+     "choice_id": 0,
+     "task_id": "BUDGET_DAILY"
+    },
+    "officer": "External Relationship Officer",
+    "result": "Ran 0 action(s) from your commands; 0 succeeded.\nResolved: task BUDGET_DAILY choice 0\nAnswered 1/1 choice-task(s).\n  \u2705 answered task 37 with choice 0\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  TRANSFER  <transfer>food|people,SRC,DST,N</transfer>: people,Shelter Bravo,Casework Alpha (up to 5)  people,Shelter Bravo,Casework Alpha (up to 10)  people,Shelter Bravo,Casework Alpha (up to 20)  people,Shelter Bravo,Community Charleston (up to 5)  people,Shelter Bravo,Community Charleston (up to 10)  people,Shelter Bravo,Community Charleston (up to 20)  people,Shelter Bravo,Community Amherst (up to 5)  people,Shelter Bravo,Community Amherst (up to 10)  people,Shelter Bravo,Community Amherst (up to 20)  people,Shelter Bravo,Community Trinity (up to 5)  people,Shelter Bravo,Community Trinity (up to 10)  people,Shelter Bravo,Community Trinity (up to 20)  people,Shelter Bravo,Motel (up to 5)  people,Shelter Bravo,Motel (up to 10)  people,Shelter Bravo,Motel (up to 20)  people,Casework Alpha,Shelter Bravo (up to 5)  people,Casework Alpha,Shelter Bravo (up to 10)  people,Casework Alpha,Shelter Bravo (up to 20)  people,Casework Alpha,Community Charleston (up to 5)  people,Casework Alpha,Community Charleston (up to 10)  people,Casework Alpha,Community Charleston (up to 20)  people,Casework Alpha,Community Amherst (up to 5)  people,Casework Alpha,Community Amherst (up to 10)  people,Casework Alpha,Community Amherst (up to 20)  people,Casework Alpha,Community Trinity (up to 5)  people,Casework Alpha,Community Trinity (up to 10)  people,Casework Alpha,Community Trinity (up to 20)  people,Casework Alpha,Motel (up to 5)  people,Casework Alpha,Motel (up to 10)  people,Casework Alpha,Motel (up to 20)  food,Kitchen Alpha,Shelter Bravo (up to 10)  food,Kitchen Alpha,Shelter Bravo (up to 25)  food,Kitchen Alpha,Shelter Bravo (up to 50)  food,Kitchen Alpha,Shelter Bravo (up to 100)  food,Kitchen Alpha,Shelter Alpha (up to 10)  food,Kitchen Alpha,Shelter Alpha (up to 25)  food,Kitchen Alpha,Shelter Alpha (up to 50)  food,Kitchen Alpha,Shelter Alpha (up to 100)  food,Kitchen Alpha,Community Charleston (up to 10)  food,Kitchen Alpha,Community Charleston (up to 25)  food,Kitchen Alpha,Community Charleston (up to 50)  food,Kitchen Alpha,Community Charleston (up to 100)  food,Kitchen Alpha,Community Amherst (up to 10)  food,Kitchen Alpha,Community Amherst (up to 25)  food,Kitchen Alpha,Community Amherst (up to 50)  food,Kitchen Alpha,Motel (up to 10)  food,Kitchen Alpha,Motel (up to 25)  food,Kitchen Alpha,Motel (up to 50)  food,Kitchen Alpha,Motel (up to 100)  people,Shelter Alpha,Shelter Bravo (up to 5)  people,Shelter Alpha,Shelter Bravo (up to 10)  people,Shelter Alpha,Shelter Bravo (up to 20)  people,Shelter Alpha,Casework Alpha (up to 5)  people,Shelter Alpha,Casework Alpha (up to 10)  people,Shelter Alpha,Casework Alpha (up to 20)  people,Shelter Alpha,Community Charleston (up to 5)  people,Shelter Alpha,Community Charleston (up to 10)  people,Shelter Alpha,Community Charleston (up to 20)  people,Shelter Alpha,Community Amherst (up to 5)  people,Shelter Alpha,Community Amherst (up to 10)  people,Shelter Alpha,Community Amherst (up to 20)  people,Shelter Alpha,Community Trinity (up to 5)  people,Shelter Alpha,Community Trinity (up to 10)  people,Shelter Alpha,Community Trinity (up to 20)  people,Shelter Alpha,Motel (up to 5)  people,Shelter Alpha,Motel (up to 10)  people,Shelter Alpha,Motel (up to 20)  food,Community Charleston,Shelter Bravo (up to 10)  food,Community Charleston,Shelter Bravo (up to 25)  food,Community Charleston,Shelter Bravo (up to 50)  food,Community Charleston,Shelter Bravo (up to 100)  people,Community Charleston,Shelter Bravo (up to 5)  people,Community Charleston,Shelter Bravo (up to 10)  people,Community Charleston,Shelter Bravo (up to 20)  people,Community Charleston,Casework Alpha (up to 5)  people,Community Charleston,Casework Alpha (up to 10)  people,Community Charleston,Casework Alpha (up to 20)  food,Community Charleston,Shelter Alpha (up to 10)  food,Community Charleston,Shelter Alpha (up to 25)  food,Community Charleston,Shelter Alpha (up to 50)  food,Community Charleston,Shelter Alpha (up to 100)  food,Community Charleston,Community Amherst (up to 10)  food,Community Charleston,Community Amherst (up to 25)  food,Community Charleston,Community Amherst (up to 50)  people,Community Charleston,Community Amherst (up to 5)  people,Community Charleston,Community Amherst (up to 10)  people,Community Charleston,Community Amherst (up to 20)  people,Community Charleston,Community Trinity (up to 5)  people,Community Charleston,Community Trinity (up to 10)  people,Community Charleston,Community Trinity (up to 20)  food,Community Charleston,Motel (up to 10)  food,Community Charleston,Motel (up to 25)  food,Community Charleston,Motel (up to 50)  food,Community Charleston,Motel (up to 100)  people,Community Charleston,Motel (up to 5)  people,Community Charleston,Motel (up to 10)  people,Community Charleston,Motel (up to 20)  food,Community Amherst,Shelter Bravo (up to 10)  food,Community Amherst,Shelter Bravo (up to 25)  food,Community Amherst,Shelter Bravo (up to 50)  food,Community Amherst,Shelter Bravo (up to 100)  people,Community Amherst,Shelter Bravo (up to 5)  people,Community Amherst,Shelter Bravo (up to 10)  people,Community Amherst,Shelter Bravo (up to 20)  people,Community Amherst,Casework Alpha (up to 5)  people,Community Amherst,Casework Alpha (up to 10)  people,Community Amherst,Casework Alpha (up to 20)  food,Community Amherst,Shelter Alpha (up to 10)  food,Community Amherst,Shelter Alpha (up to 25)  food,Community Amherst,Shelter Alpha (up to 50)  food,Community Amherst,Shelter Alpha (up to 100)  food,Community Amherst,Community Charleston (up to 10)  food,Community Amherst,Community Charleston (up to 25)  food,Community Amherst,Community Charleston (up to 50)  food,Community Amherst,Community Charleston (up to 100)  people,Community Amherst,Community Charleston (up to 5)  people,Community Amherst,Community Charleston (up to 10)  people,Community Amherst,Community Charleston (up to 20)  people,Community Amherst,Community Trinity (up to 5)  people,Community Amherst,Community Trinity (up to 10)  people,Community Amherst,Community Trinity (up to 20)  food,Community Amherst,Motel (up to 10)  food,Community Amherst,Motel (up to 25)  food,Community Amherst,Motel (up to 50)  food,Community Amherst,Motel (up to 100)  people,Community Amherst,Motel (up to 5)  people,Community Amherst,Motel (up to 10)  people,Community Amherst,Motel (up to 20)  food,Community Trinity,Shelter Bravo (up to 10)  food,Community Trinity,Shelter Bravo (up to 25)  food,Community Trinity,Shelter Bravo (up to 50)  food,Community Trinity,Shelter Bravo (up to 100)  people,Community Trinity,Shelter Bravo (up to 5)  people,Community Trinity,Shelter Bravo (up to 10)  people,Community Trinity,Shelter Bravo (up to 20)  people,Community Trinity,Casework Alpha (up to 5)  people,Community Trinity,Casework Alpha (up to 10)  people,Community Trinity,Casework Alpha (up to 20)  food,Community Trinity,Shelter Alpha (up to 10)  food,Community Trinity,Shelter Alpha (up to 25)  food,Community Trinity,Shelter Alpha (up to 50)  food,Community Trinity,Shelter Alpha (up to 100)  food,Community Trinity,Community Charleston (up to 10)  food,Community Trinity,Community Charleston (up to 25)  food,Community Trinity,Community Charleston (up to 50)  food,Community Trinity,Community Charleston (up to 100)  people,Community Trinity,Community Charleston (up to 5)  people,Community Trinity,Community Charleston (up to 10)  people,Community Trinity,Community Charleston (up to 20)  food,Community Trinity,Community Amherst (up to 10)  food,Community Trinity,Community Amherst (up to 25)  food,Community Trinity,Community Amherst (up to 50)  people,Community Trinity,Community Amherst (up to 5)  people,Community Trinity,Community Amherst (up to 10)  people,Community Trinity,Community Amherst (up to 20)  food,Community Trinity,Motel (up to 10)  food,Community Trinity,Motel (up to 25)  food,Community Trinity,Motel (up to 50)  food,Community Trinity,Motel (up to 100)  people,Community Trinity,Motel (up to 5)  people,Community Trinity,Motel (up to 10)  people,Community Trinity,Motel (up to 20)\n  TASK  <task>BUDGET_DAILY,CHOICE</task>  \"Daily Budget Allocation\": [0] Receive $5000 Budget",
+    "tool": "task"
+   },
+   {
+    "args": {
+     "choice_id": 0,
+     "task_id": "RELOC_CAMHERST"
+    },
+    "officer": "Food Mass Care Officer",
+    "result": "Ran 0 action(s) from your commands; 0 succeeded.\nResolved: task RELOC_CAMHERST choice 0\nAnswered 0/1 choice-task(s).\n  \u274c task 39: outside your action scope (group lodging) \u2014 not answered\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  TRANSFER  <transfer>food|people,SRC,DST,N</transfer>: people,Shelter Bravo,Casework Alpha (up to 5)  people,Shelter Bravo,Casework Alpha (up to 10)  people,Shelter Bravo,Casework Alpha (up to 20)  people,Shelter Bravo,Community Charleston (up to 5)  people,Shelter Bravo,Community Charleston (up to 10)  people,Shelter Bravo,Community Charleston (up to 20)  people,Shelter Bravo,Community Amherst (up to 5)  people,Shelter Bravo,Community Amherst (up to 10)  people,Shelter Bravo,Community Amherst (up to 20)  people,Shelter Bravo,Community Trinity (up to 5)  people,Shelter Bravo,Community Trinity (up to 10)  people,Shelter Bravo,Community Trinity (up to 20)  people,Shelter Bravo,Motel (up to 5)  people,Shelter Bravo,Motel (up to 10)  people,Shelter Bravo,Motel (up to 20)  people,Casework Alpha,Shelter Bravo (up to 5)  people,Casework Alpha,Shelter Bravo (up to 10)  people,Casework Alpha,Shelter Bravo (up to 20)  people,Casework Alpha,Community Charleston (up to 5)  people,Casework Alpha,Community Charleston (up to 10)  people,Casework Alpha,Community Charleston (up to 20)  people,Casework Alpha,Community Amherst (up to 5)  people,Casework Alpha,Community Amherst (up to 10)  people,Casework Alpha,Community Amherst (up to 20)  people,Casework Alpha,Community Trinity (up to 5)  people,Casework Alpha,Community Trinity (up to 10)  people,Casework Alpha,Community Trinity (up to 20)  people,Casework Alpha,Motel (up to 5)  people,Casework Alpha,Motel (up to 10)  people,Casework Alpha,Motel (up to 20)  food,Kitchen Alpha,Shelter Bravo (up to 10)  food,Kitchen Alpha,Shelter Bravo (up to 25)  food,Kitchen Alpha,Shelter Bravo (up to 50)  food,Kitchen Alpha,Shelter Bravo (up to 100)  food,Kitchen Alpha,Shelter Alpha (up to 10)  food,Kitchen Alpha,Shelter Alpha (up to 25)  food,Kitchen Alpha,Shelter Alpha (up to 50)  food,Kitchen Alpha,Shelter Alpha (up to 100)  food,Kitchen Alpha,Community Charleston (up to 10)  food,Kitchen Alpha,Community Charleston (up to 25)  food,Kitchen Alpha,Community Charleston (up to 50)  food,Kitchen Alpha,Community Charleston (up to 100)  food,Kitchen Alpha,Community Amherst (up to 10)  food,Kitchen Alpha,Community Amherst (up to 25)  food,Kitchen Alpha,Community Amherst (up to 50)  food,Kitchen Alpha,Motel (up to 10)  food,Kitchen Alpha,Motel (up to 25)  food,Kitchen Alpha,Motel (up to 50)  food,Kitchen Alpha,Motel (up to 100)  people,Shelter Alpha,Shelter Bravo (up to 5)  people,Shelter Alpha,Shelter Bravo (up to 10)  people,Shelter Alpha,Shelter Bravo (up to 20)  people,Shelter Alpha,Casework Alpha (up to 5)  people,Shelter Alpha,Casework Alpha (up to 10)  people,Shelter Alpha,Casework Alpha (up to 20)  people,Shelter Alpha,Community Charleston (up to 5)  people,Shelter Alpha,Community Charleston (up to 10)  people,Shelter Alpha,Community Charleston (up to 20)  people,Shelter Alpha,Community Amherst (up to 5)  people,Shelter Alpha,Community Amherst (up to 10)  people,Shelter Alpha,Community Amherst (up to 20)  people,Shelter Alpha,Community Trinity (up to 5)  people,Shelter Alpha,Community Trinity (up to 10)  people,Shelter Alpha,Community Trinity (up to 20)  people,Shelter Alpha,Motel (up to 5)  people,Shelter Alpha,Motel (up to 10)  people,Shelter Alpha,Motel (up to 20)  food,Community Charleston,Shelter Bravo (up to 10)  food,Community Charleston,Shelter Bravo (up to 25)  food,Community Charleston,Shelter Bravo (up to 50)  food,Community Charleston,Shelter Bravo (up to 100)  people,Community Charleston,Shelter Bravo (up to 5)  people,Community Charleston,Shelter Bravo (up to 10)  people,Community Charleston,Shelter Bravo (up to 20)  people,Community Charleston,Casework Alpha (up to 5)  people,Community Charleston,Casework Alpha (up to 10)  people,Community Charleston,Casework Alpha (up to 20)  food,Community Charleston,Shelter Alpha (up to 10)  food,Community Charleston,Shelter Alpha (up to 25)  food,Community Charleston,Shelter Alpha (up to 50)  food,Community Charleston,Shelter Alpha (up to 100)  food,Community Charleston,Community Amherst (up to 10)  food,Community Charleston,Community Amherst (up to 25)  food,Community Charleston,Community Amherst (up to 50)  people,Community Charleston,Community Amherst (up to 5)  people,Community Charleston,Community Amherst (up to 10)  people,Community Charleston,Community Amherst (up to 20)  people,Community Charleston,Community Trinity (up to 5)  people,Community Charleston,Community Trinity (up to 10)  people,Community Charleston,Community Trinity (up to 20)  food,Community Charleston,Motel (up to 10)  food,Community Charleston,Motel (up to 25)  food,Community Charleston,Motel (up to 50)  food,Community Charleston,Motel (up to 100)  people,Community Charleston,Motel (up to 5)  people,Community Charleston,Motel (up to 10)  people,Community Charleston,Motel (up to 20)  food,Community Amherst,Shelter Bravo (up to 10)  food,Community Amherst,Shelter Bravo (up to 25)  food,Community Amherst,Shelter Bravo (up to 50)  food,Community Amherst,Shelter Bravo (up to 100)  people,Community Amherst,Shelter Bravo (up to 5)  people,Community Amherst,Shelter Bravo (up to 10)  people,Community Amherst,Shelter Bravo (up to 20)  people,Community Amherst,Casework Alpha (up to 5)  people,Community Amherst,Casework Alpha (up to 10)  people,Community Amherst,Casework Alpha (up to 20)  food,Community Amherst,Shelter Alpha (up to 10)  food,Community Amherst,Shelter Alpha (up to 25)  food,Community Amherst,Shelter Alpha (up to 50)  food,Community Amherst,Shelter Alpha (up to 100)  food,Community Amherst,Community Charleston (up to 10)  food,Community Amherst,Community Charleston (up to 25)  food,Community Amherst,Community Charleston (up to 50)  food,Community Amherst,Community Charleston (up to 100)  people,Community Amherst,Community Charleston (up to 5)  people,Community Amherst,Community Charleston (up to 10)  people,Community Amherst,Community Charleston (up to 20)  people,Community Amherst,Community Trinity (up to 5)  people,Community Amherst,Community Trinity (up to 10)  people,Community Amherst,Community Trinity (up to 20)  food,Community Amherst,Motel (up to 10)  food,Community Amherst,Motel (up to 25)  food,Community Amherst,Motel (up to 50)  food,Community Amherst,Motel (up to 100)  people,Community Amherst,Motel (up to 5)  people,Community Amherst,Motel (up to 10)  people,Community Amherst,Motel (up to 20)  food,Community Trinity,Shelter Bravo (up to 10)  food,Community Trinity,Shelter Bravo (up to 25)  food,Community Trinity,Shelter Bravo (up to 50)  food,Community Trinity,Shelter Bravo (up to 100)  people,Community Trinity,Shelter Bravo (up to 5)  people,Community Trinity,Shelter Bravo (up to 10)  people,Community Trinity,Shelter Bravo (up to 20)  people,Community Trinity,Casework Alpha (up to 5)  people,Community Trinity,Casework Alpha (up to 10)  people,Community Trinity,Casework Alpha (up to 20)  food,Community Trinity,Shelter Alpha (up to 10)  food,Community Trinity,Shelter Alpha (up to 25)  food,Community Trinity,Shelter Alpha (up to 50)  food,Community Trinity,Shelter Alpha (up to 100)  food,Community Trinity,Community Charleston (up to 10)  food,Community Trinity,Community Charleston (up to 25)  food,Community Trinity,Community Charleston (up to 50)  food,Community Trinity,Community Charleston (up to 100)  people,Community Trinity,Community Charleston (up to 5)  people,Community Trinity,Community Charleston (up to 10)  people,Community Trinity,Community Charleston (up to 20)  food,Community Trinity,Community Amherst (up to 10)  food,Community Trinity,Community Amherst (up to 25)  food,Community Trinity,Community Amherst (up to 50)  people,Community Trinity,Community Amherst (up to 5)  people,Community Trinity,Community Amherst (up to 10)  people,Community Trinity,Community Amherst (up to 20)  food,Community Trinity,Motel (up to 10)  food,Community Trinity,Motel (up to 25)  food,Community Trinity,Motel (up to 50)  food,Community Trinity,Motel (up to 100)  people,Community Trinity,Motel (up to 5)  people,Community Trinity,Motel (up to 10)  people,Community Trinity,Motel (up to 20)\n  TASK  <task>FOOD_S3,CHOICE</task>  \"Shelter Bravo Food Request\": [0] Fulfill 73 meals for the current round.  [1] Deliver 2 x 73 meals.  [2] Rapid Response Vehicle deliver 73 meals immediately ($10/meal).  [3] Rapid Response Vehicle deliver 2x73 meals immediately ($10/meal).\n  TASK  <task>FOOD_S0,CHOICE</task>  \"Shelter Alpha Food Request\": [0] Fulfill 100 meals for the current round.  [1] Deliver 2 x 100 meals.  [2] Rapid Response Vehicle deliver 100 meals immediately ($10/meal).  [3] Rapid Response Vehicle deliver 2x100 meals immediately ($10/meal).\n  TASK  <task>FOOD_CCHARLESTON,CHOICE</task>  \"Community Charleston Food Request\": [0] Request 100 meals from kitchens  [2] Rapid Response Vehicle delivers 100 fast-food meals (immediate).\n  TASK  <task>FOOD_CAMHERST,CHOICE</task>  \"Community Amherst Food Request\": [0] Request 76 meals from kitchens  [2] Rapid Response Vehicle delivers 76 fast-food meals (immediate).",
+    "tool": "task"
+   },
+   {
+    "args": {
+     "choice_id": 0,
+     "task_id": "NO_SUCH_TASK"
+    },
+    "officer": "Food Mass Care Officer",
+    "result": "Ran 0 action(s) from your commands; 0 succeeded.\nUnresolved commands (NOT executed \u2014 fix and retry, or pick a different move):\n  task: no active task 'NO_SUCH_TASK' this turn\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  TRANSFER  <transfer>food|people,SRC,DST,N</transfer>: people,Shelter Bravo,Casework Alpha (up to 5)  people,Shelter Bravo,Casework Alpha (up to 10)  people,Shelter Bravo,Casework Alpha (up to 20)  people,Shelter Bravo,Community Charleston (up to 5)  people,Shelter Bravo,Community Charleston (up to 10)  people,Shelter Bravo,Community Charleston (up to 20)  people,Shelter Bravo,Community Amherst (up to 5)  people,Shelter Bravo,Community Amherst (up to 10)  people,Shelter Bravo,Community Amherst (up to 20)  people,Shelter Bravo,Community Trinity (up to 5)  people,Shelter Bravo,Community Trinity (up to 10)  people,Shelter Bravo,Community Trinity (up to 20)  people,Shelter Bravo,Motel (up to 5)  people,Shelter Bravo,Motel (up to 10)  people,Shelter Bravo,Motel (up to 20)  people,Casework Alpha,Shelter Bravo (up to 5)  people,Casework Alpha,Shelter Bravo (up to 10)  people,Casework Alpha,Shelter Bravo (up to 20)  people,Casework Alpha,Community Charleston (up to 5)  people,Casework Alpha,Community Charleston (up to 10)  people,Casework Alpha,Community Charleston (up to 20)  people,Casework Alpha,Community Amherst (up to 5)  people,Casework Alpha,Community Amherst (up to 10)  people,Casework Alpha,Community Amherst (up to 20)  people,Casework Alpha,Community Trinity (up to 5)  people,Casework Alpha,Community Trinity (up to 10)  people,Casework Alpha,Community Trinity (up to 20)  people,Casework Alpha,Motel (up to 5)  people,Casework Alpha,Motel (up to 10)  people,Casework Alpha,Motel (up to 20)  food,Kitchen Alpha,Shelter Bravo (up to 10)  food,Kitchen Alpha,Shelter Bravo (up to 25)  food,Kitchen Alpha,Shelter Bravo (up to 50)  food,Kitchen Alpha,Shelter Bravo (up to 100)  food,Kitchen Alpha,Shelter Alpha (up to 10)  food,Kitchen Alpha,Shelter Alpha (up to 25)  food,Kitchen Alpha,Shelter Alpha (up to 50)  food,Kitchen Alpha,Shelter Alpha (up to 100)  food,Kitchen Alpha,Community Charleston (up to 10)  food,Kitchen Alpha,Community Charleston (up to 25)  food,Kitchen Alpha,Community Charleston (up to 50)  food,Kitchen Alpha,Community Charleston (up to 100)  food,Kitchen Alpha,Community Amherst (up to 10)  food,Kitchen Alpha,Community Amherst (up to 25)  food,Kitchen Alpha,Community Amherst (up to 50)  food,Kitchen Alpha,Motel (up to 10)  food,Kitchen Alpha,Motel (up to 25)  food,Kitchen Alpha,Motel (up to 50)  food,Kitchen Alpha,Motel (up to 100)  people,Shelter Alpha,Shelter Bravo (up to 5)  people,Shelter Alpha,Shelter Bravo (up to 10)  people,Shelter Alpha,Shelter Bravo (up to 20)  people,Shelter Alpha,Casework Alpha (up to 5)  people,Shelter Alpha,Casework Alpha (up to 10)  people,Shelter Alpha,Casework Alpha (up to 20)  people,Shelter Alpha,Community Charleston (up to 5)  people,Shelter Alpha,Community Charleston (up to 10)  people,Shelter Alpha,Community Charleston (up to 20)  people,Shelter Alpha,Community Amherst (up to 5)  people,Shelter Alpha,Community Amherst (up to 10)  people,Shelter Alpha,Community Amherst (up to 20)  people,Shelter Alpha,Community Trinity (up to 5)  people,Shelter Alpha,Community Trinity (up to 10)  people,Shelter Alpha,Community Trinity (up to 20)  people,Shelter Alpha,Motel (up to 5)  people,Shelter Alpha,Motel (up to 10)  people,Shelter Alpha,Motel (up to 20)  food,Community Charleston,Shelter Bravo (up to 10)  food,Community Charleston,Shelter Bravo (up to 25)  food,Community Charleston,Shelter Bravo (up to 50)  food,Community Charleston,Shelter Bravo (up to 100)  people,Community Charleston,Shelter Bravo (up to 5)  people,Community Charleston,Shelter Bravo (up to 10)  people,Community Charleston,Shelter Bravo (up to 20)  people,Community Charleston,Casework Alpha (up to 5)  people,Community Charleston,Casework Alpha (up to 10)  people,Community Charleston,Casework Alpha (up to 20)  food,Community Charleston,Shelter Alpha (up to 10)  food,Community Charleston,Shelter Alpha (up to 25)  food,Community Charleston,Shelter Alpha (up to 50)  food,Community Charleston,Shelter Alpha (up to 100)  food,Community Charleston,Community Amherst (up to 10)  food,Community Charleston,Community Amherst (up to 25)  food,Community Charleston,Community Amherst (up to 50)  people,Community Charleston,Community Amherst (up to 5)  people,Community Charleston,Community Amherst (up to 10)  people,Community Charleston,Community Amherst (up to 20)  people,Community Charleston,Community Trinity (up to 5)  people,Community Charleston,Community Trinity (up to 10)  people,Community Charleston,Community Trinity (up to 20)  food,Community Charleston,Motel (up to 10)  food,Community Charleston,Motel (up to 25)  food,Community Charleston,Motel (up to 50)  food,Community Charleston,Motel (up to 100)  people,Community Charleston,Motel (up to 5)  people,Community Charleston,Motel (up to 10)  people,Community Charleston,Motel (up to 20)  food,Community Amherst,Shelter Bravo (up to 10)  food,Community Amherst,Shelter Bravo (up to 25)  food,Community Amherst,Shelter Bravo (up to 50)  food,Community Amherst,Shelter Bravo (up to 100)  people,Community Amherst,Shelter Bravo (up to 5)  people,Community Amherst,Shelter Bravo (up to 10)  people,Community Amherst,Shelter Bravo (up to 20)  people,Community Amherst,Casework Alpha (up to 5)  people,Community Amherst,Casework Alpha (up to 10)  people,Community Amherst,Casework Alpha (up to 20)  food,Community Amherst,Shelter Alpha (up to 10)  food,Community Amherst,Shelter Alpha (up to 25)  food,Community Amherst,Shelter Alpha (up to 50)  food,Community Amherst,Shelter Alpha (up to 100)  food,Community Amherst,Community Charleston (up to 10)  food,Community Amherst,Community Charleston (up to 25)  food,Community Amherst,Community Charleston (up to 50)  food,Community Amherst,Community Charleston (up to 100)  people,Community Amherst,Community Charleston (up to 5)  people,Community Amherst,Community Charleston (up to 10)  people,Community Amherst,Community Charleston (up to 20)  people,Community Amherst,Community Trinity (up to 5)  people,Community Amherst,Community Trinity (up to 10)  people,Community Amherst,Community Trinity (up to 20)  food,Community Amherst,Motel (up to 10)  food,Community Amherst,Motel (up to 25)  food,Community Amherst,Motel (up to 50)  food,Community Amherst,Motel (up to 100)  people,Community Amherst,Motel (up to 5)  people,Community Amherst,Motel (up to 10)  people,Community Amherst,Motel (up to 20)  food,Community Trinity,Shelter Bravo (up to 10)  food,Community Trinity,Shelter Bravo (up to 25)  food,Community Trinity,Shelter Bravo (up to 50)  food,Community Trinity,Shelter Bravo (up to 100)  people,Community Trinity,Shelter Bravo (up to 5)  people,Community Trinity,Shelter Bravo (up to 10)  people,Community Trinity,Shelter Bravo (up to 20)  people,Community Trinity,Casework Alpha (up to 5)  people,Community Trinity,Casework Alpha (up to 10)  people,Community Trinity,Casework Alpha (up to 20)  food,Community Trinity,Shelter Alpha (up to 10)  food,Community Trinity,Shelter Alpha (up to 25)  food,Community Trinity,Shelter Alpha (up to 50)  food,Community Trinity,Shelter Alpha (up to 100)  food,Community Trinity,Community Charleston (up to 10)  food,Community Trinity,Community Charleston (up to 25)  food,Community Trinity,Community Charleston (up to 50)  food,Community Trinity,Community Charleston (up to 100)  people,Community Trinity,Community Charleston (up to 5)  people,Community Trinity,Community Charleston (up to 10)  people,Community Trinity,Community Charleston (up to 20)  food,Community Trinity,Community Amherst (up to 10)  food,Community Trinity,Community Amherst (up to 25)  food,Community Trinity,Community Amherst (up to 50)  people,Community Trinity,Community Amherst (up to 5)  people,Community Trinity,Community Amherst (up to 10)  people,Community Trinity,Community Amherst (up to 20)  food,Community Trinity,Motel (up to 10)  food,Community Trinity,Motel (up to 25)  food,Community Trinity,Motel (up to 50)  food,Community Trinity,Motel (up to 100)  people,Community Trinity,Motel (up to 5)  people,Community Trinity,Motel (up to 10)  people,Community Trinity,Motel (up to 20)\n  TASK  <task>FOOD_S3,CHOICE</task>  \"Shelter Bravo Food Request\": [0] Fulfill 73 meals for the current round.  [1] Deliver 2 x 73 meals.  [2] Rapid Response Vehicle deliver 73 meals immediately ($10/meal).  [3] Rapid Response Vehicle deliver 2x73 meals immediately ($10/meal).\n  TASK  <task>FOOD_S0,CHOICE</task>  \"Shelter Alpha Food Request\": [0] Fulfill 100 meals for the current round.  [1] Deliver 2 x 100 meals.  [2] Rapid Response Vehicle deliver 100 meals immediately ($10/meal).  [3] Rapid Response Vehicle deliver 2x100 meals immediately ($10/meal).\n  TASK  <task>FOOD_CCHARLESTON,CHOICE</task>  \"Community Charleston Food Request\": [0] Request 100 meals from kitchens  [2] Rapid Response Vehicle delivers 100 fast-food meals (immediate).\n  TASK  <task>FOOD_CAMHERST,CHOICE</task>  \"Community Amherst Food Request\": [0] Request 76 meals from kitchens  [2] Rapid Response Vehicle delivers 76 fast-food meals (immediate).",
+    "tool": "task"
+   }
+  ]
+ },
+ "workforce": {
+  "frames": [
+   {
+    "action": {
+     "action_id": "hire_untrained_3",
+     "action_type": "worker",
+     "cost": 900,
+     "description": "Hire 3 untrained worker(s) ($300 each)",
+     "effects": {
+      "budget": -900,
+      "untrained_workers": 3
+     },
+     "requirements": {
+      "budget": 900
+     },
+     "worker": {
+      "quantity": 3,
+      "worker_action_type": "hire_untrained"
+     }
+    },
+    "type": "execute_action"
+   },
+   {
+    "agent_name": "Workforce Officer",
+    "content": "Action: Hired 3 untrained workers for $900",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "WorkforceService",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   },
+   {
+    "action": {
+     "action_id": "train_workers_2",
+     "action_type": "worker",
+     "cost": 1000,
+     "description": "Train 2 untrained worker(s) ($500 each, 3 days)",
+     "effects": {
+      "budget": -1000,
+      "untrained_workers": -2,
+      "workers_in_training": 2
+     },
+     "requirements": {
+      "budget": 1000,
+      "untrained_workers": 2
+     },
+     "worker": {
+      "quantity": 2,
+      "worker_action_type": "train_untrained"
+     }
+    },
+    "type": "execute_action"
+   },
+   {
+    "agent_name": "Workforce Officer",
+    "content": "Action: Training 2 untrained workers for $1,000",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "WorkforceService",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   },
+   {
+    "action": {
+     "action_id": "hire_trained_1",
+     "action_type": "worker",
+     "cost": 1000,
+     "description": "Hire 1 trained worker(s) ($1000 each)",
+     "effects": {
+      "budget": -1000,
+      "trained_workers": 1
+     },
+     "requirements": {
+      "budget": 1000
+     },
+     "worker": {
+      "quantity": 1,
+      "worker_action_type": "hire_trained"
+     }
+    },
+    "type": "execute_action"
+   },
+   {
+    "agent_name": "Workforce Officer",
+    "content": "Action: Hired 1 trained worker for $1,000",
+    "message_type": "agent_response",
+    "round": 0,
+    "talkinghead_endpoint": "WorkforceService",
+    "to": "Director",
+    "to_endpoint": "",
+    "type": "agent_message"
+   }
+  ],
+  "results": [
+   {
+    "args": {
+     "count": 3,
+     "kind": "untrained"
+    },
+    "officer": "Workforce Officer",
+    "result": "Ran 1 action(s) from your commands; 1 succeeded.\nResolved: hire_untrained 3\n  \u2705 Hire 3 untrained worker(s) ($300 each)\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  HIRE  <hire>untrained|trained,N</hire>: untrained up to 5  |  trained up to 5\n  TRAIN  <train>N</train>: up to 6 untrained\n\n\u26a0\ufe0f ALREADY COMMITTED THIS PHASE \u2014 do NOT pick these again:\n  - [worker] Hire 3 untrained worker(s) ($300 each)",
+    "tool": "hire"
+   },
+   {
+    "args": {
+     "count": 2
+    },
+    "officer": "Workforce Officer",
+    "result": "Ran 1 action(s) from your commands; 1 succeeded.\nResolved: train 2\n  \u2705 Train 2 untrained worker(s) ($500 each, 3 days)\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  HIRE  <hire>untrained|trained,N</hire>: untrained up to 5  |  trained up to 5\n  TRAIN  <train>N</train>: up to 6 untrained\n\n\u26a0\ufe0f ALREADY COMMITTED THIS PHASE \u2014 do NOT pick these again:\n  - [worker] Hire 3 untrained worker(s) ($300 each)\n  - [worker] Train 2 untrained worker(s) ($500 each, 3 days)",
+    "tool": "train"
+   },
+   {
+    "args": {
+     "count": 1,
+     "kind": "trained"
+    },
+    "officer": "Workforce Officer",
+    "result": "Ran 1 action(s) from your commands; 1 succeeded.\nResolved: hire_trained 1\n  \u2705 Hire 1 trained worker(s) ($1000 each)\n\nUpdated actions:\nWhat you can do now \u2014 write each as a command tag (exact grammar is in the execute_commands tool schema):\n  HIRE  <hire>untrained|trained,N</hire>: untrained up to 5  |  trained up to 5\n  TRAIN  <train>N</train>: up to 6 untrained\n\n\u26a0\ufe0f ALREADY COMMITTED THIS PHASE \u2014 do NOT pick these again:\n  - [worker] Hire 3 untrained worker(s) ($300 each)\n  - [worker] Hire 1 trained worker(s) ($1000 each)\n  - [worker] Train 2 untrained worker(s) ($500 each, 3 days)",
+    "tool": "hire"
+   }
+  ]
+ }
+}
