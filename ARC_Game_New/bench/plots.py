@@ -52,12 +52,6 @@ def main():
 
     # ── 1. Summary bars (2x2) ───────────────────────────────────────────────
     fig, axes = plt.subplots(2, 2, figsize=(13, 9))
-    panels = [
-        ("Mean total reward", lambda s: s["totalReward"], axes[0, 0]),
-        ("Mean final satisfaction", lambda s: s["finalSat"], axes[0, 1]),
-        ("Demand fulfillment rate", None, axes[1, 0]),     # special: food + lodging
-        ("Failure modes (fraction of episodes)", None, axes[1, 1]),
-    ]
     ncond = len(conds)
     x = range(len(models))
     w = 0.8 / max(ncond, 1)

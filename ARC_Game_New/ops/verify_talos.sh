@@ -2,9 +2,9 @@
 #
 # Verify a CORA deployment from OUTSIDE the box — run this from your laptop.
 #
-#   ./verify_talos.sh                                   # public host, no key
-#   CORA_KEY=<key> ./verify_talos.sh                    # include authed checks
-#   ./verify_talos.sh http://localhost:9876             # verify a local router
+#   ops/verify_talos.sh                                   # public host, no key
+#   CORA_KEY=<key> ops/verify_talos.sh                    # include authed checks
+#   ops/verify_talos.sh http://localhost:9876             # verify a local router
 #
 # Exit 0 = every required check passed. Written to be run BEFORE and AFTER a deploy so the
 # delta is obvious: the pre-deploy run should fail exactly the checks the deploy is meant to fix.

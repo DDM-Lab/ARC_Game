@@ -3,7 +3,7 @@
 Drives on_choice_resolved events (as the game would), watches the posterior update, calls the tool,
 then simulates a SECOND session with a NEW context and shows the posterior loaded from the durable
 store — i.e. preferences persist across sessions/restarts. Run:
-  env -u ALL_PROXY -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy ./.venv/bin/python scripts/demo_preference_model.py
+  env -u ALL_PROXY -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy ./.venv/bin/python ops/demo_preference_model.py
 """
 import asyncio
 import importlib.util

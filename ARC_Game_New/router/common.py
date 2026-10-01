@@ -7,17 +7,17 @@ from datetime import datetime, timezone
 
 
 from cora.actions import enumerate_actions
+from cora.observation import task_group
 from cora.tools import TOOLS
+
 # The typed action tools (build/hire/train/staff/deconstruct/task/transfer) the officer emits;
 # Session._execute_calls runs them through cora.executor.
 _CORA_ACTION_TOOLS = {t["name"] for t in TOOLS}
-from cora.observation import task_group
 
 
 def _num(v, default=0):
     """A number for $-formatting; anything else formats as `default`."""
     return v if isinstance(v, (int, float)) else default
-import re
 
 # Action types that are site/target-bound and NOT legitimately repeatable within a
 # planning phase (building a site, demolishing it, assigning workers to a specific

@@ -6,13 +6,12 @@ Run:  env -u ALL_PROXY -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from pydantic import ValidationError
 
 from cora.llm.providers import Provider, resolve, is_valid, valid_names
-from router.schema import CoraConfig, Bundle, BundleManifest
+from router.schema import CoraConfig, BundleManifest
 from router.bundles import load_bundle, BundleError
 from router.config import AgentConfig, load_config
 

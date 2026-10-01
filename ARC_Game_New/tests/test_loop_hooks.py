@@ -15,10 +15,8 @@ Covered here:
 Run: ./.venv/bin/python test_loop_hooks.py
 """
 import asyncio
-import os
 import tempfile
 
-import router.session as router_session
 import routerkit
 from router import plugin_api
 # Reuse the existing hermetic officer harness (no network, no Unity, no LLM).

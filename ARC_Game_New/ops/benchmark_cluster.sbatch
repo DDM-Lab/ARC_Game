@@ -13,8 +13,8 @@
 #   MODE=local  starts `vllm serve $MODEL` on this node, waits for /health, then benchmarks it.
 #
 # USAGE
-#   MODE=api   MODELS="us.anthropic.claude-opus-4-8,gpt-5.5" WORKERS=16 sbatch benchmark_cluster.sbatch
-#   MODE=local MODEL=Qwen/Qwen3-4B WORKERS=8 sbatch benchmark_cluster.sbatch
+#   MODE=api   MODELS="us.anthropic.claude-opus-4-8,gpt-5.5" WORKERS=16 sbatch ops/benchmark_cluster.sbatch
+#   MODE=local MODEL=Qwen/Qwen3-4B WORKERS=8 sbatch ops/benchmark_cluster.sbatch
 #
 #SBATCH --job-name=cora_bench
 #SBATCH --partition=general

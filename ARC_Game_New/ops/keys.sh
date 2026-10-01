@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Admin key management (needs a key with the 'mint' capability, e.g. the dev key locally).
 #
-#   scripts/keys.sh mint <cohort> <config1,config2> [count] [quota] [expires_days]
-#   scripts/keys.sh list [cohort]
-#   scripts/keys.sh revoke <prefix>
+#   ops/keys.sh mint <cohort> <config1,config2> [count] [quota] [expires_days]
+#   ops/keys.sh list [cohort]
+#   ops/keys.sh revoke <prefix>
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"; . "$SCRIPT_DIR/env.sh"; cd "$REPO"
 

@@ -18,7 +18,6 @@ Run: ./.venv/bin/python test_cost_attribution.py
 """
 from __future__ import annotations
 
-import sys
 
 FAILS: list[str] = []
 
@@ -103,7 +102,6 @@ def test_proposals_not_counted() -> None:
 def test_ledger_shows_spend() -> None:
     """The officer's ledger states the committed spend as a number."""
     print("\n[4] committed-spend line reaches the officer")
-    import router.service as router_service
     import router.session as router_session
     s = router_session.Session.__new__(router_session.Session)
     s._committed_this_phase = []

@@ -17,7 +17,7 @@ import sys
 import re
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Tuple
+from typing import List, Dict
 from collections import defaultdict
 import statistics
 

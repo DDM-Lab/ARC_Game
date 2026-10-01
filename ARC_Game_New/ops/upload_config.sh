@@ -2,7 +2,7 @@
 # Upload a config bundle. If a companion plugin accompanies it, validate that too and warn about
 # any tools the config references that no loaded plugin provides.
 #
-#   scripts/upload_config.sh <bundle.json> [companion_plugin.py]
+#   ops/upload_config.sh <bundle.json> [companion_plugin.py]
 #
 # Auto-detects a companion plugin at "<bundle-basename>.py" if you don't pass one.
 set -euo pipefail

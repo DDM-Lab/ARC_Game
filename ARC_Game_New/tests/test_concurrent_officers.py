@@ -23,7 +23,6 @@ import asyncio
 import os
 import tempfile
 
-import router.session as router_session
 import routerkit
 from router.session import Session
 from router.config import load_config
@@ -31,7 +30,6 @@ from router.config import load_config
 
 # ── Fixed action menu spanning every category + building type ────────────────
 def fake_enumerate(game_state):
-    v = game_state.get("_v", 0)  # carry a version so we can detect regressions
     return [
         {"action_id": "build_Kitchen_1", "action_type": "construction", "cost": 1000,
          "description": "Build Kitchen at Site1",

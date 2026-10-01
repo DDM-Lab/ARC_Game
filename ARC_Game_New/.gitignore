@@ -106,7 +106,6 @@ episode_*.json
 *_GUIDE.md
 *_README.md
 *_PLAN.md
-docs/plans/
 
 # Build scripts (temporary)
 build_headless.bat

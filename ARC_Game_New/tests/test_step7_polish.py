@@ -17,7 +17,6 @@ import asyncio
 import os
 import tempfile
 
-import router.session as router_session
 import routerkit
 from router.session import Session
 from router.config import load_config

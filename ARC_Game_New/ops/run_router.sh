@@ -3,8 +3,8 @@
 # Launch the ARC Game multi-tenant agent router (for Janus or any host).
 #
 # Usage:
-#   ./run_router.sh                 # uses defaults below
-#   PORT=9876 ./run_router.sh       # override via env
+#   ops/run_router.sh                 # uses defaults below
+#   PORT=9876 ops/run_router.sh       # override via env
 #
 # Auth: provide real keys in config/keys.json (gitignored). Copy
 # config/keys.example.json to get started. If keys.json is absent and
@@ -16,7 +16,7 @@
 #
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 PORT="${PORT:-9876}"
 CONFIG_DIR="${CONFIG_DIR:-config}"

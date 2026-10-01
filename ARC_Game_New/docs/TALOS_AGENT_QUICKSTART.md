@@ -35,7 +35,7 @@ benchmark.
 - **Benchmark:** `benchmark_models.py` (model tiers, prompt packs via `--prompt-pack`,
   `--base-url/--api-key` for local/OpenAI-compatible endpoints). Logs to W&B (`cpulling/CORA_RL`).
 - **RL gym:** `arc_game_gym_env_tcp.py` (text command-tag action space, same `cmd_parser`).
-- **Unity build** (if needed): `./build_client.sh webgl` — must run **unsandboxed** with the Editor
+- **Unity build** (if needed): `ops/build_client.sh webgl` — must run **unsandboxed** with the Editor
   closed; a large merge can require wiping `Library/Bee` for a clean IL2CPP rebuild.
 
 ## Deployment on Talos (same-origin)

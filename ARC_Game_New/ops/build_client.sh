@@ -3,8 +3,8 @@
 # Build the playable ARC_Game client for distribution.
 #
 # Usage:
-#   ./build_client.sh            # builds macOS (default)
-#   ./build_client.sh windows    # mac | windows | linux | webgl | all
+#   ops/build_client.sh            # builds macOS (default)
+#   ops/build_client.sh windows    # mac | windows | linux | webgl | all
 #
 # IMPORTANT: the Unity Editor must NOT be open on this project while building
 # (Unity allows only one instance per project). Close it first.
@@ -13,7 +13,7 @@
 #   Hub -> Installs -> (gear on 2022.3.62f3) -> Add Modules.
 #
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 UNITY="${UNITY:-/Applications/Unity/Hub/Editor/2022.3.62f3/Unity.app/Contents/MacOS/Unity}"
 TARGET="${1:-mac}"

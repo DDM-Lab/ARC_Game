@@ -22,7 +22,6 @@ pytestmark = pytest.mark.needs_router
 
 
 import json
-import sys
 import urllib.error
 import urllib.parse
 import urllib.request

@@ -17,9 +17,9 @@ Quick start from a template:
 ```bash
 cp templates/config.bundle.json bundles/mylab/mycfg.json     # edit it
 cp templates/tool_plugin.py     plugins/mylab_tools.py        # optional; edit, then it auto-loads on restart
-scripts/upload_config.sh bundles/mylab/mycfg.json            # validate + tool-check + push
-scripts/keys.sh mint study-A dev__mycfg 20 50 30            # 20 keys, quota 50, 30-day expiry
-scripts/get_data.sh                                         # list your cohort's sessions
+ops/upload_config.sh bundles/mylab/mycfg.json            # validate + tool-check + push
+ops/keys.sh mint study-A dev__mycfg 20 50 30            # 20 keys, quota 50, 30-day expiry
+ops/get_data.sh                                         # list your cohort's sessions
 ```
 Note: an uploaded config's name is `<your-label>__<slug>` (e.g. dev key → `dev__mycfg`) — use that
 when minting keys. A newly-added plugin file requires a **router restart** to load.

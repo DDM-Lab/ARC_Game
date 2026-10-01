@@ -1172,7 +1172,7 @@ def main():
     print(f"[router] Starting service on port {args.port}")
     print(f"[router] Config catalog: {service.config_dir} "
           f"({len(service.list_configs())} configs visible)")
-    _store = plugin_store.default_store()
+    plugin_store.default_store()
     key_store.default_store()
     print(f"[router] Plugin persist store: {plugin_store._DEFAULT_PATH} | "
           f"key store: {key_store._DEFAULT_PATH}")

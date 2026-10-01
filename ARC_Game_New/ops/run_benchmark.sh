@@ -2,12 +2,12 @@
 # One-command CORA benchmark for prompt engineering — for collaborators who want to A/B a
 # prompt without touching Python. Edit a JSON prompt pack in prompts/, then:
 #
-#   ./run_benchmark.sh <prompt-pack> <model> [episodes] [-- extra python -m bench args]
+#   ops/run_benchmark.sh <prompt-pack> <model> [episodes] [-- extra python -m bench args]
 #
 # Examples
-#   ./run_benchmark.sh minimal_v6_1 gpt-5-mini 5
-#   ./run_benchmark.sh my_prompt    gpt-5-mini 5 -- --base-url http://localhost:8080/v1 --api-key x
-#   ./run_benchmark.sh minimal_v6   gpt-5.5 10                  # reproduce the Sep 2026 prompt
+#   ops/run_benchmark.sh minimal_v6_1 gpt-5-mini 5
+#   ops/run_benchmark.sh my_prompt    gpt-5-mini 5 -- --base-url http://localhost:8080/v1 --api-key x
+#   ops/run_benchmark.sh minimal_v6   gpt-5.5 10                  # reproduce the Sep 2026 prompt
 #
 # Outputs (under bench_packs/<pack>__<model>/):
 #   episodes.jsonl   full per-decision transcripts (obs, model text, reasoning, each tool call's outcome)
@@ -17,9 +17,9 @@
 # (Build/Headless/<platform>/...) and an OpenAI-compatible model endpoint (--base-url for a
 # local/self-hosted model; default is the CMU gateway).
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
-PACK="${1:?usage: ./run_benchmark.sh <prompt-pack> <model> [episodes] [-- extra args]}"
+PACK="${1:?usage: ops/run_benchmark.sh <prompt-pack> <model> [episodes] [-- extra args]}"
 MODEL="${2:?pass a model id as arg2 (e.g. gpt-5-mini, or a full local model path)}"
 EPISODES="${3:-5}"
 shift $(( $# < 3 ? $# : 3 ))

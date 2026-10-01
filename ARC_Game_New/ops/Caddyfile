@@ -7,14 +7,14 @@
 #   • no CORS      (client and router share an origin)
 #
 # ── Setup ────────────────────────────────────────────────────────────────
-#   1. Build the WebGL client:   ./build_client.sh webgl     -> Build/Client/WebGL
+#   1. Build the WebGL client:   ops/build_client.sh webgl     -> Build/Client/WebGL
 #        In Unity Player Settings → WebGL → Publishing Settings, set
 #        Compression Format = Gzip and enable "Decompression Fallback".
 #        That lets any static host serve the files without special
 #        Content-Encoding headers (simplest, most robust).
-#   2. Run the router on this host:  ./run_router.sh          (listens on :9876)
+#   2. Run the router on this host:  ops/run_router.sh          (listens on :9876)
 #   3. Replace arc.example.edu below with your Janus hostname/domain.
-#   4. Start Caddy from the project dir:  caddy run --config deploy/Caddyfile
+#   4. Start Caddy from the project dir:  caddy run --config ops/Caddyfile
 #
 # ── Local test without a domain (HTTP only) ──────────────────────────────
 #   Replace the site address "arc.example.edu" with ":8080" and browse to

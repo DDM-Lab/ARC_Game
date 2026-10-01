@@ -2,15 +2,15 @@
 #
 # Deploy CORA on the Talos box. RUN THIS ON THE SERVER, not from a laptop.
 #
-#   ./deploy_talos.sh              # pull, restart router, verify
-#   ./deploy_talos.sh --no-pull    # restart only (code already in place)
-#   ./deploy_talos.sh --dry-run    # print what it would do and exit
+#   ops/deploy_talos.sh              # pull, restart router, verify
+#   ops/deploy_talos.sh --no-pull    # restart only (code already in place)
+#   ops/deploy_talos.sh --dry-run    # print what it would do and exit
 #
 # What it does NOT do: touch Apache. The vhost needs root and a human eye, so the required
 # snippet is printed at the end and you apply it yourself. Nothing here is destructive except
 # restarting the router, and it refuses to do that while a game is in progress.
 set -uo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 BRANCH="${BRANCH:-feature/contributor-platform}"
 PORT="${PORT:-9876}"
@@ -120,5 +120,5 @@ cat <<'APACHE'
   Then:  sudo apachectl configtest && sudo systemctl reload apache2
 
   Finally, from your LAPTOP:
-    CORA_KEY=<key> ./verify_talos.sh
+    CORA_KEY=<key> ops/verify_talos.sh
 APACHE

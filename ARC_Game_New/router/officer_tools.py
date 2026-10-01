@@ -16,10 +16,6 @@ from router import plugin_api
 from cora import executor
 from cora.observation import officer_text, task_group, task_token, vehicle_capacity
 
-
-def _num(v, default=0):
-    """A number for $-formatting; anything else formats as `default`."""
-    return v if isinstance(v, (int, float)) else default
 from router.common import _CORA_ACTION_TOOLS, _num, _NON_REPEATABLE_TYPES, _enumerate_actions, _num_free_vehicles
 from router.plugin_context import _SessionToolContext
 

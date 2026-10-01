@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # View or download your own session data (scoped to your key's cohort/label).
 #
-#   scripts/get_data.sh                 # list your sessions
-#   scripts/get_data.sh <session_id>    # download that session's log to <session_id>.jsonl
+#   ops/get_data.sh                 # list your sessions
+#   ops/get_data.sh <session_id>    # download that session's log to <session_id>.jsonl
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"; . "$SCRIPT_DIR/env.sh"; cd "$REPO"
 

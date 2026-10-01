@@ -5,10 +5,10 @@
 #
 # Usage (run from the project root so the relative root path resolves):
 #   ./run_router.sh                      # router on :9876
-#   caddy run --config deploy/Caddyfile.local
+#   caddy run --config ops/Caddyfile.local
 #   open http://localhost:8080
 #
-# This mirrors deploy/Caddyfile (the production one); the only difference is
+# This mirrors ops/Caddyfile (the production one); the only difference is
 # the site address (:8080 vs a real domain) — so a passing local test means
 # the Janus setup is just a hostname swap away.
 

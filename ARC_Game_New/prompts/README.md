@@ -5,7 +5,7 @@ copy a pack, edit its text, and run the benchmark with it — no Python needed:
 
 ```bash
 cp prompts/minimal_v6_1.json prompts/my_prompt.json      # then edit the "sections"
-./run_benchmark.sh my_prompt gpt-5-mini 5
+ops/run_benchmark.sh my_prompt gpt-5-mini 5
 python -m cora.prompts my_prompt                          # print it exactly as the model sees it
 ```
 
