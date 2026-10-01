@@ -193,9 +193,11 @@ class GameEnv(gym.Env):
         self.previous_satisfaction = float(sab.get("satisfaction", 0.0))
         self.previous_score = score_components(self.game_state.get("rewardMetrics"))["score"]
         session = self.game_state.get("sessionInfo", {})
+        comps = score_components(self.game_state.get("rewardMetrics"))
         return self.game_state, {
             "day": session.get("currentDay", 1), "round": session.get("currentRound", 0),
             "budget": sab.get("budget", 0.0), "satisfaction": self.previous_satisfaction,
+            "metrics": _metrics(self.previous_satisfaction, sab, 0.0, 0.0, comps),
             "valid_action_count": len(self.valid_actions), "step": 0}
 
     def step(self, action):
@@ -241,16 +243,7 @@ class GameEnv(gym.Env):
             "satisfaction_delta": satisfaction_delta, "reward": reward, "score": comps["score"],
             "satisfaction_score": comps["satisfaction"], "efficiency": comps["efficiency"],
             "score_components": comps,
-            # Flat scalars for WandB: Verlog averages info["metrics"] over a rollout and the
-            # benchmark logs the same game/* keys, so RL and benchmark runs overlay directly.
-            "metrics": {
-                "game/satisfaction": satisfaction,
-                "game/budget": float(sab.get("budget", 0.0)),
-                "game/satisfaction_delta": satisfaction_delta,
-                "game/reward": reward,
-                "game/satisfaction_score": comps["satisfaction"],
-                **{f"game/{k}": comps[k] for k in COMPONENTS if k != "satisfaction"},
-            },
+            "metrics": _metrics(satisfaction, sab, satisfaction_delta, reward, comps),
             "reward_metrics": self.game_state.get("rewardMetrics"),
             "executed_actions": [a.get("description", "") for a in executed],
             "execution_results": results,
@@ -282,3 +275,17 @@ class GameEnv(gym.Env):
             self.sock = None
         unity_process.stop(self.unity_process)
         self.unity_process = None
+
+
+def _metrics(satisfaction, sab, satisfaction_delta, reward, comps) -> dict:
+    """Flat game/* scalars for WandB, the same keys at reset and on every step: Verlog averages
+    info["metrics"] over a rollout and the benchmark logs the same keys, so RL and benchmark runs
+    overlay directly."""
+    return {
+        "game/satisfaction": satisfaction,
+        "game/budget": float(sab.get("budget", 0.0)),
+        "game/satisfaction_delta": satisfaction_delta,
+        "game/reward": reward,
+        "game/satisfaction_score": comps["satisfaction"],
+        **{f"game/{k}": comps[k] for k in COMPONENTS if k != "satisfaction"},
+    }
