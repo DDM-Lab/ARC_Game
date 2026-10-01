@@ -215,10 +215,9 @@ class TurnResolver:
         try:
             tid = int(float(raw))
         except ValueError:
-            from obs_encoder import stable_task_token
+            from cora.observation import task_token
             for t in tasks:
-                if stable_task_token({"title": t.get("taskTitle"), "affects": t.get("affectedFacility"),
-                                      "taskId": t.get("taskId")}) == raw:
+                if task_token(t) == raw:
                     tid = int(t["taskId"]); break
         if tid is None or not any(int(t.get("taskId", -1)) == tid for t in tasks):
             raise ValueError(f"no active task {raw!r} this turn")

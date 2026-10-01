@@ -181,6 +181,7 @@ public class SessionInfo
     // round (EndGamePanel shows at Day finalDay, Round 4). isGameOver lets the Python
     // env terminate the episode there instead of advancing into meaningless Day 9+.
     public int finalDay;
+    public int roundsPerDay;     // so observers can count the rounds left without assuming 4
     public bool isGameOver;
 }
 

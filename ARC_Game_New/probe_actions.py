@@ -62,8 +62,10 @@ from pathlib import Path
 import openai
 
 import benchmark_models as bm
-import llm_smoke_test as smoke
+import tool_executor
 from arc_game_gym_env_tcp import ARCGameGymEnv
+from cora import prompts
+from cora.observation import observe
 
 
 def action_types_available(acts_enum, state):
@@ -118,7 +120,7 @@ def main():
     ap.add_argument("--api-key", default="ollama")
     ap.add_argument("--max-tokens", type=int, default=6000)
     ap.add_argument("--reasoning-effort", default="none")
-    ap.add_argument("--system-prompt", default="minimal")
+    ap.add_argument("--prompt", default=prompts.DEFAULT_PACK, help="prompt pack name or path")
     ap.add_argument("--transfers", default="task_only", choices=["manual", "task_only"])
     ap.add_argument("--port", type=int, default=9990)
     ap.add_argument("--out", default="probe_out")
@@ -136,6 +138,7 @@ def main():
     client = openai.OpenAI(api_key=a.api_key, base_url=a.base_url)
 
     manual_transfers = (a.transfers == "manual")
+    system_text = prompts.render(prompts.load_pack(a.prompt), manual_transfers=manual_transfers)
     env = ARCGameGymEnv(unity_exe_path=bm.HEADLESS_EXE, unity_port=a.port,
                         auto_start_unity=True, max_episode_steps=a.rounds + 5,
                         unity_log_path=str(outdir / "unity.log"),
@@ -154,7 +157,7 @@ def main():
         env.reset()
         for rnd in range(a.rounds):
             acts_enum = env.get_valid_actions()
-            state = smoke.summarize_commands(env, show_impacts=True, rounds_left=a.rounds - rnd)
+            state = observe(env.game_state, env.get_valid_actions())
             avail = action_types_available(acts_enum, state)
 
             ref_dec = ref_fn(env, rnd)
@@ -165,13 +168,20 @@ def main():
                 for s in range(a.samples):
                     t1 = time.time()
                     try:
-                        dec, raw, _, _, parsed_ok = bm.ask_tools(
-                            client, a.model, state, env, None, "none", a.reasoning_effort,
-                            a.system_prompt, None, enc, None, None)
+                        dec, raw, _, _, _ = bm.ask_tools(
+                            client, a.model, state, env, system_text, None, a.reasoning_effort,
+                            None, enc, None, None)
+                        # Resolve the calls against the live state without executing them.
+                        results, resolver = tool_executor.plan_turn(dec["tool_calls"], env)
+                        parsed_ok = not any(r.malformed for r in results)
+                        dec = {"actions": [i for r in results if r.status == "resolved" for i in r.action_indices],
+                               "choices": [r.choice for r in results if r.status == "resolved" and r.choice],
+                               "errors": [f"{r.tool}: {r.reason}" for r in results if r.status == "invalid"],
+                               "note": "; ".join(r.summary for r in results if r.summary)}
                         err = None
                     except Exception as e:                      # network/API failure only
                         dec, raw, parsed_ok, err = {}, "", False, str(e)[:200]
-                    ex, ct = decision_signature(dec, acts_enum)
+                    ex, ct = decision_signature(dec, resolver.actions if dec.get("actions") else acts_enum)
                     samples.append({
                         "encoding": enc, "sample": s, "secs": round(time.time() - t1, 1),
                         "error": err,

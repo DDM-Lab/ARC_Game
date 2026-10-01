@@ -30,7 +30,7 @@ from pathlib import Path
 # Make imports work when run from repo root
 sys.path.insert(0, str(Path(__file__).parent))
 from arc_game_gym_env_tcp import ARCGameGymEnv  # type: ignore
-import llm_smoke_test as smoke  # type: ignore
+from cora.observation import observe  # type: ignore
 
 
 STEP_TIMEOUT_SEC = 30.0
@@ -55,7 +55,7 @@ def run_one_episode(env, ep_idx):
     total_alerts_seen = 0
     while step_i < MAX_STEPS_PER_EPISODE:
         # Build cmd-style obs dict for a consistent view (matches training)
-        obs_dict = smoke.summarize_commands(env, show_impacts=True)
+        obs_dict = observe(env.game_state, env.get_valid_actions())
         cl = choiceless_tasks(obs_dict)
         if cl:
             alert_turns += 1

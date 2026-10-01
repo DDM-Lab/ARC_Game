@@ -113,7 +113,7 @@ _TOOLS: list[dict] = [
         "description": ("Respond to an active task by selecting one of its offered choices. Tasks and their "
                         "choices are enumerated at the top of each observation."),
         "params": [
-            # The id FORM must track what obs_encoder actually renders (ARC_STABLE_TASK_TOKENS), exactly
+            # The id FORM must track what the observation actually renders, exactly
             # as the system prompt's task line does. This description used to name three stable tokens
             # while the benchmark ran with =0 and rendered integers -- and those three literals came
             # back as the three most-rejected ids in the n=32 cell (RELOC_C02 299, FOOD_C01 287,

@@ -18,7 +18,7 @@ VALID_ROLES = {"subagent", "director"}
 VALID_ACTOR_TYPES = {"auto", "choices", "manual", "llm", "coach", "continuous"}
 VALID_CATEGORIES = {"construction", "deconstruction", "worker",
                     "worker_assignment", "resource_transfer", "task_choice", "all"}
-# Coarse task-group slugs (obs_encoder.task_group) — one per officer domain. Used
+# Coarse task-group slugs (cora.observation.task_group) — one per officer domain. Used
 # both as the {"category":"task_choice","group":<slug>} sub-scope in subaction_space
 # and as the "tasks:<slug>" narrowing in subobservation_space.
 VALID_TASK_GROUPS = {"budget", "workforce", "food", "lodging", "disaster"}

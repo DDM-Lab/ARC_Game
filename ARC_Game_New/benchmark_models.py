@@ -1,8 +1,8 @@
 """
 Flagship-model benchmark for the ARC gym environment.
 
-Runs N full episodes per model with the SAME rules-only prompt + rich observation
-as llm_smoke_test.py, then reports per-model performance and a shared "mistake"
+Runs N full episodes per model with the same prompt pack and observation, then reports
+per-model performance and a shared "mistake"
 profile. The point is to separate three explanations for poor play:
   (a) some models play well and others don't  -> model decision-making differs
   (b) all models fail the SAME way            -> prompt/observation/env issue
@@ -29,9 +29,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, str(Path(__file__).parent))
 from arc_game_gym_env_tcp import ARCGameGymEnv
-import llm_smoke_test as smoke
+from llm_gateway import GATEWAY_BASE, load_env_key
 from cora import prompts as cora_prompts  # prompt packs (prompts/*.json), the single prompt source
-import obs_encoder                      # minimal_v6_1 observation toggle (set_v61)
+from cora.observation import ObsConfig, observe, render as render_obs
 import tool_executor                    # typed tool calls -> game actions (no tag round-trip)
 import openai
 
@@ -238,9 +238,9 @@ def ask_tools(client, model, state, env, system_text, image_b64=None, reasoning_
     import cora_tools
     _mt = getattr(env, "manual_transfers", True)
     if obs_encoding == "delta":
-        rendered = smoke.render_state_delta(state, prev_state)
+        rendered = render_obs(state, prev=prev_state)
     elif obs_encoding == "compact":
-        rendered = smoke.render_state_compact(state)
+        rendered = render_obs(state)
     else:
         rendered = json.dumps(state)
     user_text = "State:\n" + rendered + "\n\nAct by calling the tools."
@@ -1031,7 +1031,7 @@ def _dnpv_map_constants(env, gs, facs):
                     if con.get(k):
                         c["bed"] = max(c["bed"], int(con[k]))
     c["bed_known"] = c["bed"] > 0
-    # Prices come from the RAW state's own fields (same source obs_encoder reads), never literals.
+    # Prices come from the RAW state's own fields (the source the observation reads), never literals.
     cs = gs.get("constructionState") or {}
     wf = gs.get("workforceState") or {}
     costs = {}
@@ -1039,8 +1039,7 @@ def _dnpv_map_constants(env, gs, facs):
                  (wf.get("untrainedWorkerCost"), "hire")):
         if v: costs[k] = float(v)
 
-    # MOTEL RATE: the raw state exposes no per-person-per-day price (obs_encoder synthesises
-    # motelDailyCost from a mirrored constant), so INFER it from what the map actually charges:
+    # MOTEL RATE: older builds exported no per-person-per-day price, so INFER it from what the map actually charges:
     #   d(lodgingSpend) / motel_population, sampled on day boundaries.
     # That makes the policy correct on a map with a different price without touching the code.
     rm = gs.get("rewardMetrics") or {}
@@ -1695,10 +1694,9 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
     # v3 inherits the v2 ENCODING fixes (Passive label, un-truncated choice text, dead-transfer
     # line dropped, dangling `affects` hidden); only the prompt text differs between v2 and v3.
     pack = cora_prompts.load_pack(prompt)
-    smoke._set_v2(True)
-    smoke._set_v3(True)
     # The pack declares the observation features its text relies on (minimal_v6_1: marked choices).
-    obs_encoder.set_v61(bool(pack.observation.get("mark_unavailable_choices")))
+    obs_config = ObsConfig(show_impacts=show_impacts,
+                           mark_unavailable_choices=bool(pack.observation.get("mark_unavailable_choices")))
     # Anthropic caps temperature at 1.0; clamp per-model so a shared sweep invocation (e.g. temp=1.5
     # for gemini) doesn't 400 Claude. eff_temp is what's actually sent + logged; temperature is the
     # requested experimental level.
@@ -1795,10 +1793,7 @@ def run_episode(model, ep_idx, rounds, port, client, validate=False, port_pool=N
             # it rather than from the observation (which omits the menu in cmd format).
             acts_enum = env.get_valid_actions()
             n_valid = len(acts_enum)
-            if state_only:
-                state = smoke.summarize_commands(env, show_impacts=show_impacts, rounds_left=rounds - rnd)
-            else:
-                state = smoke.summarize(env, show_impacts=show_impacts, rounds_left=rounds - rnd)
+            state = observe(env.game_state, acts_enum, obs_config)
             _debug_choice_pipeline(env.game_state or {}, rnd)
             raw = rtrace = None; rtok = None; parsed_ok = None
             if validate or policy == "noop":
@@ -2153,12 +2148,12 @@ def main():
         client = None
     else:
         models = [m.strip() for m in args.models.split(",") if m.strip()]
-        base_url = args.base_url or smoke.GATEWAY_BASE
+        base_url = args.base_url or GATEWAY_BASE
         # ARC_API_KEY lets a non-gateway endpoint (e.g. Anthropic's OpenAI-compatible base URL)
         # supply its key through the environment instead of --api-key. A command-line key is
         # visible in `ps` to every user on a shared node; /proc/<pid>/environ is owner-only.
         api_key = (args.api_key or os.environ.get("ARC_API_KEY")
-                   or (smoke.load_env_key() if args.base_url is None else "local"))
+                   or (load_env_key() if args.base_url is None else "local"))
         # ARC_ANTHROPIC_NATIVE=1 swaps in the native Anthropic SDK for claude-* models. The
         # OpenAI compat layer documents "Prompt caching is not supported", and this workload
         # re-sends ~1,708 tok of system+tools every round (~70% of input); caching needs the

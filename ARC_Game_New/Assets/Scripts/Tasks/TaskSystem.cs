@@ -3138,6 +3138,7 @@ public class TaskSystem : MonoBehaviour
             // clock has already rolled past finalDay.
             int finalDay = GlobalClock.Instance.lastDay;   // the configured horizon (BUG_REPORTS B33)
             info.finalDay = finalDay;
+            info.roundsPerDay = GlobalClock.Instance.roundsPerDay;
             info.isGameOver = info.currentDay > finalDay
                               || (info.currentDay == finalDay && info.currentRound >= GlobalClock.Instance.roundsPerDay);
         }

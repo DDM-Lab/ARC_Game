@@ -79,7 +79,7 @@ async def test_no_action_note():
         def fake_run_tool_step(messages, tools, agent_cfg, tool_mode):
             return {"content": "", "tool_calls": []}
         agent_router.run_tool_step = fake_run_tool_step
-        agent_router.render_state_text = lambda s: "STATE"
+        agent_router.officer_text = lambda s, *a, **k: "STATE"
 
         gs = {"sessionInfo": {}, "satisfactionAndBudget": {}, "allActiveTasks": []}
         await sess._run_continuous_inner(agent, {"tasks": []}, [], gs, [])

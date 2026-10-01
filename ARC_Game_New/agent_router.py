@@ -58,11 +58,12 @@ import cora_ext
 import plugin_store
 import key_store
 from cmd_parser import parse_commands, ParserEnv  # SHARED parser + env shim (benchmark + router + gym)
-from obs_encoder import (
-    render_state_text, _num, task_officer, task_group, stable_task_token,
-    render_facilities_text, render_workforce_text, render_tasks_text,
-    render_logistics_text, _vehicle_capacity,
-)
+from cora.observation import officer_text, task_officer, task_group, task_token, vehicle_capacity
+
+
+def _num(v, default=0):
+    """A number for $-formatting; anything else formats as `default`."""
+    return v if isinstance(v, (int, float)) else default
 from choices_reliability import (
     dedupe_packages,
     enforce_diversity,
@@ -1977,7 +1978,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             qty = int(t.get("quantity") or 0)
         except (TypeError, ValueError):
             return ""
-        load = _vehicle_capacity(game_state)
+        load = vehicle_capacity(game_state)
         if not qty or not load:
             return ""
         trips = -(-qty // int(load))          # ceil
@@ -2396,7 +2397,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 "NOT authorisation to act. If you think their idea is right, put it to the "
                 "director and wait for their word before doing it.")
 
-        state_text = render_state_text(filtered_state)
+        state_text = officer_text(filtered_state)
         action_text = self._render_options_compact(filtered_actions, filtered_state)
         preamble = self._turn_instruction("preamble", "It is your turn. Current situation:",
                                           title=title, capabilities=capabilities)
@@ -2630,7 +2631,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         so nothing the model reads references a volatile integer index that could
         drift or be hallucinated. Two invariants vs the indexed list:
 
-        (a) TASK rows carry the stable task token (obs_encoder.stable_task_token,
+        (a) TASK rows carry the stable task token (cora.observation.task_token,
             computed from the RAW task so it matches what cmd_parser accepts), not a
             turn-to-turn taskId.
         (b) Committed non-repeatable affordances are pulled OUT of the available set
@@ -2694,7 +2695,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 if tid not in tasks:
                     raw = next((x for x in (game_state.get("allActiveTasks") or [])
                                 if x.get("taskId") == tid), None)
-                    tok = (stable_task_token(self._norm_task_for_token(raw))
+                    tok = (task_token(self._norm_task_for_token(raw))
                            if raw else f"TASK_{tid}")
                     tasks[tid] = {"token": tok, "title": tc.get("taskTitle") or "", "choices": []}
                 desc = a.get("description", "")
@@ -2905,7 +2906,7 @@ Respond with ONLY the package index number (0, 1, or 2).
 
     @staticmethod
     def _norm_task_for_token(t: dict) -> dict:
-        """Raw allActiveTasks row → the {title, affects} shape stable_task_token
+        """Raw allActiveTasks row → the {title, affects} shape task_token
         and task_officer read, so a token computed here matches what the agent saw
         in its observation."""
         return {"title": t.get("taskTitle") or t.get("title") or "",
@@ -2926,7 +2927,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 if str(t.get("taskId")) == q:
                     return t
         for t in tasks:            # 2. exact stable token
-            if stable_task_token(self._norm_task_for_token(t)).lower() == ql:
+            if task_token(self._norm_task_for_token(t)).lower() == ql:
                 return t
         for t in tasks:            # 3. title substring
             title = (t.get("taskTitle") or t.get("title") or "").lower()
@@ -2968,7 +2969,7 @@ Respond with ONLY the package index number (0, 1, or 2).
                 return (f"No active task matches {task_q!r}. Check read_state for the "
                         f"current tasks (by token or id), then look it up.\n\n{roster}")
             grp = task_group(t)
-            token = stable_task_token(self._norm_task_for_token(t))
+            token = task_token(self._norm_task_for_token(t))
             title = t.get("taskTitle") or t.get("title") or f"task {t.get('taskId')}"
             probe = {"action_type": "task_choice", "task_choice": {"group": grp}}
             owners = self._owning_agents(probe)
@@ -3127,7 +3128,7 @@ Respond with ONLY the package index number (0, 1, or 2).
             # commit + the per-turn get_game_state pull), so a look-up reflects reality
             # — including the officer's own just-executed actions — not a stale snapshot.
             fresh = self._latest_game_state or game_state
-            return render_state_text(self._filter_state(fresh, agent)), \
+            return officer_text(self._filter_state(fresh, agent)), \
                 game_state, all_actions, filtered_actions, meta
 
         # Granular getters — one slice of the same filtered observation each, so an
@@ -3137,7 +3138,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         if name in ("get_facilities", "get_workforce", "get_tasks", "get_logistics"):
             fs = self._filter_state(self._latest_game_state or game_state, agent)
             if name == "get_logistics":
-                text = render_logistics_text(fs, filtered_actions)
+                text = officer_text(fs, "logistics", filtered_actions)
             else:
                 text = {
                     "get_facilities": render_facilities_text,
@@ -4267,7 +4268,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         # than hand-dumping raw subtrees — this fixes an encoding divergence AND a silent task drop
         # (the old code keyed on "workers"/"tasks", but the filtered state stores them under
         # "workforceState"/"allActiveTasks", so tasks were omitted from the grounding snapshot).
-        payload = render_state_text(filtered_state)
+        payload = officer_text(filtered_state)
         if not payload:
             return ""
 
@@ -4782,7 +4783,7 @@ Respond with ONLY the package index number (0, 1, or 2).
         filtered = filter_observation(game_state, agent.subobservation_space)
         # Tasks obs bug + jurisdiction routing. filter_observation copies keys by
         # name, but the raw game_state key is `allActiveTasks` while configs list the
-        # ENCODED name `tasks` — so tasks were silently dropped and obs_encoder (which
+        # ENCODED name `tasks` — so tasks were silently dropped and the observation (which
         # reads `allActiveTasks`) rendered none. Re-inject under the raw key, narrowed
         # to this agent's jurisdiction so each officer sees only the tasks Unity would
         # route to it (task_officer mirrors the hardcoded Unity assignment). An agent
@@ -5941,10 +5942,10 @@ class _SessionToolContext(cora_ext.ToolContext):
             return self.state
         return self._s._filter_state(self.state, self.agent)
 
-    def get_facilities(self) -> str: return render_facilities_text(self._fs())
-    def get_workforce(self) -> str: return render_workforce_text(self._fs())
-    def get_tasks(self) -> str: return render_tasks_text(self._fs())
-    def get_logistics(self) -> str: return render_logistics_text(self._fs(), self.filtered_actions)
+    def get_facilities(self) -> str: return officer_text(self._fs(), "facilities")
+    def get_workforce(self) -> str: return officer_text(self._fs(), "workforce")
+    def get_tasks(self) -> str: return officer_text(self._fs(), "tasks")
+    def get_logistics(self) -> str: return officer_text(self._fs(), "logistics", self.filtered_actions)
     def enumerate_actions(self) -> list: return list(self.filtered_actions)
 
     def enumerate_choice_packages(self) -> list:

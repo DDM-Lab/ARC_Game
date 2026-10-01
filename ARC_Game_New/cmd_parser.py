@@ -1,22 +1,12 @@
-"""
-Shared command-grammar parser for the ARC game.
+"""Command-tag adapter for the officer router (temporary).
 
-The `<build>/<hire>/<train>/<staff>/<deconstruct>/<task>/<transfer>` command grammar
-resolves natural intent → concrete action indices against a FRESH per-round action
-enumeration (so it dodges stale-index failures). This is the ONE parser: the benchmark
-(`llm_smoke_test.py` / `benchmark_models.py`), the RL harness, and the live agent router
-all import `parse_commands` from here.
+The router still turns officer tool calls into command tags (<build>Kitchen,3</build>) and
+proposal packages carry tag strings. parse_commands turns tags back into typed tool calls and
+resolves them with tool_executor's resolver, so resolution is shared. It is deleted when the
+router calls the executor directly (docs/ARCHITECTURE.md, migration status).
 
-It is env-shaped but env-agnostic: it only needs an object exposing
-  * `get_valid_actions()` -> list[action_dict]   (enumerated menu for the round)
-  * `game_state`          -> dict                (raw game state)
-  * `valid_actions`       -> list                (the underlying action list; <staff>
-                                                  synthesizes a worker_assignment action
-                                                  and appends it so it can be executed
-                                                  by index this turn)
-Both the gym env and a thin router-side shim satisfy this contract, so `parse_commands`
-runs unmodified against either. When the cluster-unified parser lands it replaces this
-file's body and every caller updates together.
+ParserEnv is the minimal env shape the resolver reads: get_valid_actions(), game_state, and
+valid_actions (a private copy that resolved staff actions are appended to).
 """
 import re
 
@@ -40,18 +30,6 @@ class ParserEnv:
 
     def get_valid_actions(self):
         return self.valid_actions
-
-
-# Resolution tables live with the resolver (tool_executor); re-exported for llm_smoke_test.
-from tool_executor import _BUILD_ALIASES, _TRANSFER_RESOURCE, _bundle_indices  # noqa: E402,F401
-
-
-def _action_index(env):
-    """{action_type: [(index, action_dict), ...]} over the round's enumerated actions."""
-    idx = {}
-    for i, a in enumerate(env.get_valid_actions()):
-        idx.setdefault(a.get("action_type"), []).append((i, a))
-    return idx
 
 
 _CMD_RE = re.compile(r"<\s*(build|hire|train|staff|task|deconstruct|transfer)\s*>(.*?)<\s*[\\/]\s*\1\s*>",

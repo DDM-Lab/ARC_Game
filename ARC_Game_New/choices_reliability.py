@@ -20,7 +20,11 @@ from __future__ import annotations
 import re
 from typing import List, Optional
 
-from obs_encoder import build_observation, _num
+from cora.observation import observe
+
+
+def _num(v, default=0):
+    return v if isinstance(v, (int, float)) else default
 
 # Compact caps. The Unity choice card auto-grows to fit (within a max height),
 # so the per-package outcome can be a full phrase; these are just backstops
@@ -198,7 +202,7 @@ def apply_grounded_explanations(packages: List[dict], actions: List[dict],
     Mutates and returns the same list."""
     budget = None
     if game_state is not None:
-        budget = build_observation(game_state).get("budget")
+        budget = observe(game_state).get("budget")
 
     for p in packages:
         idx = p.get("action_indices") or []
@@ -223,7 +227,7 @@ def compose_summary(reasoning: str, packages: List[dict], actions: List[dict],
     """Prepend a compact grounded context clause to the agent's reasoning, e.g.
         "Day 3/8 · budget $4,200 · options $0–$2,400. <reasoning>"
     so the pre-choices summary states real numbers before the model's rationale."""
-    obs = build_observation(game_state)
+    obs = observe(game_state)
     bits = []
     day = obs.get("day")
     if day is not None:
@@ -297,7 +301,7 @@ def build_fallback_packages(existing: List[dict], actions: List[dict], game_stat
       3. Hold / save budget   – empty package ($0), always valid
     Only packages with action_index sets not already present are added.
     """
-    obs = build_observation(game_state)
+    obs = observe(game_state)
     budget = obs.get("budget")
     seen = {frozenset(p.get("action_indices") or []) for p in existing}
     out = list(existing)

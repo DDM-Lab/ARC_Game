@@ -12,7 +12,11 @@ from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 import ollama
 
-from obs_encoder import render_state_text, _num
+from cora.observation import officer_text
+
+
+def _num(v, default=0):
+    return v if isinstance(v, (int, float)) else default
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -150,8 +154,8 @@ def _build_prompt(
             messages.append({"role": role, "content": formatted_content})
 
     # Current state summary — grounded, engine-computed facts (facilities, worker
-    # pools, open tasks with per-choice impacts, spend). See obs_encoder.py.
-    state_text = render_state_text(game_state)
+    # pools, open tasks with per-choice impacts, spend). See cora/observation.py.
+    state_text = officer_text(game_state)
 
     # Action list. NOTE: action dicts use snake_case `action_type` (from
     # ActionEnumerator.to_dict), not `actionType`; the old camelCase read always

@@ -70,12 +70,11 @@ def snapshot(obs, info):
 
 
 def run(args):
-    import llm_smoke_test as smoke
-    import obs_encoder
     import tool_executor
     from arc_game_gym_env_tcp import ARCGameGymEnv
-    smoke._set_v2(True); smoke._set_v3(True)
-    obs_encoder.set_v61(True)   # mark unavailable choices so refusals can be checked against them
+    from cora.observation import ObsConfig, observe
+    # Unavailable choices are marked so refusals can be checked against the marks.
+    obs_config = ObsConfig(mark_unavailable_choices=True)
     env = ARCGameGymEnv(unity_exe_path=args.exe, unity_port=args.port, auto_start_unity=True,
                         max_episode_steps=args.rounds + 5, manual_transfers=False, seed=args.seed,
                         unity_log_path=args.unity_log)
@@ -85,7 +84,7 @@ def run(args):
         env.reset()
         info = None
         for rnd in range(args.rounds):
-            obs = smoke.summarize_commands(env, rounds_left=args.rounds - rnd)
+            obs = observe(env.game_state, env.get_valid_actions(), obs_config)
             if out["first_task_example"] is None and obs.get("tasks"):
                 out["first_task_example"] = obs["tasks"][0]
             calls = script_calls(rnd, obs, built, deconstructed)
@@ -103,7 +102,7 @@ def run(args):
             out["rounds"].append(rec)
             if term or trunc:
                 break
-        out["final"] = snapshot(smoke.summarize_commands(env, rounds_left=0), info)
+        out["final"] = snapshot(observe(env.game_state, env.get_valid_actions(), obs_config), info)
     finally:
         env.close()
     json.dump(out, open(args.out, "w"), indent=1, default=str)
