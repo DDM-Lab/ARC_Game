@@ -44,6 +44,12 @@ public class TaskChoiceBrief
     // Response"), which is right for food and wrong for lodging.
     public bool immediateDelivery;
     public bool triggersDelivery;
+    // Whether the choice can be carried out right now, by the same check that greys it out in
+    // the player's task panel (TaskDetailUI.IsChoiceFeasibleFor): no space, no free vehicle,
+    // every route flooded, no kitchen with food. A player cannot pick an unavailable choice;
+    // without this an agent saw it as an ordinary option and had it refused on confirm.
+    public bool feasible = true;
+    public string unavailableReason;
 }
 
 [System.Serializable]
@@ -78,6 +84,20 @@ public class GameStatePayload
     public List<DailyReportSummary> dailyReports;
     // The motel's per-person daily rate (MotelCostManager), so "cost per bed" is not a guess.
     public float motelCostPerPersonPerDay;
+    // Which scenario this game is: map fingerprint and source, parameter source, RNG seed. A
+    // benchmark or RL record carries it so results from different maps or parameter sheets are
+    // never pooled by accident.
+    public ScenarioInfo scenario;
+}
+
+[System.Serializable]
+public class ScenarioInfo
+{
+    public string mapHash;       // GameConfigLoader.MapHash ("" when the built-in layout is used)
+    public string mapStatus;     // loaded | default | unreachable | invalid
+    public string mapUrl;
+    public string paramSource;   // e.g. the CSV path, or "ARC_PARAM_CONFIG=..."
+    public int seed = -1;        // GymServerManager.ActiveSeed; -1 = unseeded
 }
 
 [System.Serializable]

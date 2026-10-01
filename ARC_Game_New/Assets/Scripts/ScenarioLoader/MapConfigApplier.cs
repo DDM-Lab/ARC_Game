@@ -374,7 +374,15 @@ public class MapConfigApplier : MonoBehaviour
         var loader = GameConfigLoader.Instance;
         if (loader == null) return;
 
-        loader.loadedInitialBudget       = cfg.parameters.initialBudget;
+        // The map supplies the LAYOUT only; every parameter comes from the parameter CSV.
+        // This used to overwrite the starting budget, and whether that landed before or after
+        // the budget was read depended on how fast the map loaded -- the same map started
+        // at $8,000 on one machine and the map's $7,500 on another. None of the map's other
+        // parameters were ever applied outside the instructor scene, so the budget alone
+        // following the map was an accident, not a design. Log it so a differing map shows.
+        if (cfg.parameters.initialBudget != loader.loadedInitialBudget)
+            Debug.Log($"MapConfigApplier: map initialBudget {cfg.parameters.initialBudget} ignored; "
+                      + $"parameter CSV budget {loader.loadedInitialBudget} is in effect.");
         // Initial satisfaction is intentionally never applied from instructor config —
         // it always starts at 0 (see GameConfigLoader.GetInitialSatisfaction).
     }

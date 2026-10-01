@@ -3093,6 +3093,14 @@ public class TaskSystem : MonoBehaviour
         state.dailyReports = GetDailyReportSummaries();
         var motelCost = FindObjectOfType<MotelCostManager>();
         state.motelCostPerPersonPerDay = motelCost != null ? motelCost.costPerPersonPerDay : 0f;
+        state.scenario = new ScenarioInfo
+        {
+            mapHash = GameConfigLoader.MapHash ?? "",
+            mapStatus = GameConfigLoader.MapStatus ?? "",
+            mapUrl = GameConfigLoader.MapUrl ?? "",
+            paramSource = GameConfigLoader.Instance != null ? GameConfigLoader.Instance.ConfigSource : "",
+            seed = GymServerManager.ActiveSeed,
+        };
 
         // Daily Metrics
         state.dailyMetrics = GetDailyMetrics();
@@ -3218,6 +3226,16 @@ public class TaskSystem : MonoBehaviour
                     brief.immediateDelivery = c.immediateDelivery;
                     brief.triggersDelivery = c.triggersDelivery;
                 }
+                // The player's panel greys out a choice that cannot be carried out now; mark it the same way.
+                try
+                {
+                    if (!TaskDetailUI.IsChoiceFeasibleFor(task, c, out string whyNot))
+                    {
+                        brief.feasible = false;
+                        brief.unavailableReason = whyNot;
+                    }
+                }
+                catch (System.Exception e) { Debug.LogWarning($"[TaskSystem] feasibility check failed for task {task.taskId}: {e.Message}"); }
                 choices.Add(brief);
             }
         }

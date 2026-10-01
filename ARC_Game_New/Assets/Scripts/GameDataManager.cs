@@ -111,6 +111,23 @@ public class GameDataManager : MonoBehaviour
 
     IEnumerator LoadAllData()
     {
+        // MainScene's GameDataManager has no configLoader wired (TutorialScene's does). A player
+        // reaches MainScene through the tutorial, so the tutorial's wired copy survives
+        // (DontDestroyOnLoad) and this one is discarded -- but the gym, and any path that skips
+        // the tutorial, starts in MainScene and used to fall through to the hardcoded defaults
+        // below (different daily funding, weather, task counts...). Find the scene's loader.
+        if (useExternalConfig && configLoader == null)
+        {
+            for (int i = 0; i < 10 && configLoader == null; i++)
+            {
+                configLoader = GameConfigLoader.Instance != null
+                    ? GameConfigLoader.Instance : FindObjectOfType<GameConfigLoader>();
+                if (configLoader == null) yield return null;
+            }
+            if (configLoader == null)
+                Debug.LogWarning("GameDataManager: no GameConfigLoader in the scene; using hardcoded defaults.");
+        }
+
         if (useExternalConfig && configLoader != null)
         {
             while (!configLoader.IsConfigLoaded())

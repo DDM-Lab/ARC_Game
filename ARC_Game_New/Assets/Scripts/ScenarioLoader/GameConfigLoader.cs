@@ -482,6 +482,30 @@ public class GameConfigLoader : MonoBehaviour
                 strictMap = cfg != null && cfg.strictMap;
             }
         }
+        // ARC_MAP_CONFIG picks the map for THIS process, the way ARC_PARAM_CONFIG picks the
+        // parameter sheet: a path to a map JSON, or "none" for the scene's built-in layout. It
+        // wins over config.json so a benchmark or RL worker can choose its map without editing
+        // the build. Read at every scene load, so it holds across gym resets.
+        string envMap = System.Environment.GetEnvironmentVariable("ARC_MAP_CONFIG");
+        if (!string.IsNullOrEmpty(envMap))
+        {
+            if (envMap.Trim().Equals("none", System.StringComparison.OrdinalIgnoreCase))
+                mapConfigServerUrl = "";
+            else
+                mapConfigServerUrl = envMap.Contains("://") ? envMap
+                    : "file://" + System.IO.Path.GetFullPath(envMap);
+            Debug.Log($"GameConfigLoader: ARC_MAP_CONFIG='{envMap}' selects the map.");
+        }
+        // A bare file name (no scheme, not root-relative) names a map bundled in StreamingAssets,
+        // e.g. "map_config.json". That pins the map to the build: the scene's default URL is the
+        // live map server, which Auton GPU nodes cannot reach (SSL), so cluster runs silently
+        // played the default layout while desktop and browser runs played the server's map.
+        if (!string.IsNullOrEmpty(mapConfigServerUrl) && !mapConfigServerUrl.Contains("://")
+            && !mapConfigServerUrl.StartsWith("/"))
+        {
+            string rawMap = Application.streamingAssetsPath + "/" + mapConfigServerUrl;
+            mapConfigServerUrl = rawMap.Contains("://") ? rawMap : "file://" + rawMap;
+        }
         MapUrl = mapConfigServerUrl ?? "";
 
         if (string.IsNullOrEmpty(mapConfigServerUrl))
@@ -493,7 +517,8 @@ public class GameConfigLoader : MonoBehaviour
             yield break;
         }
 
-        string urlWithCacheBuster = mapConfigServerUrl + "?t=" + System.DateTime.Now.Ticks;
+        string urlWithCacheBuster = mapConfigServerUrl.StartsWith("file://")
+            ? mapConfigServerUrl : mapConfigServerUrl + "?t=" + System.DateTime.Now.Ticks;
 
         if (showDebugInfo)
             Debug.Log("GameConfigLoader: Fetching map config from server...");

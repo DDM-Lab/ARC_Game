@@ -907,6 +907,11 @@ public class TaskDetailUI : MonoBehaviour
     /// an inline explanation). Immediate/helicopter choices airlift externally and stay valid;
     /// deferred (road/kitchen) choices need the infrastructure + a clear route.</summary>
     bool IsChoiceFeasible(AgentChoice choice, out string reason)
+        => IsChoiceFeasibleFor(currentTask, choice, out reason);
+
+    /// <summary>The same check for any task, without the panel open. The gym exports it per
+    /// choice so an agent sees the choices a player sees disabled.</summary>
+    public static bool IsChoiceFeasibleFor(GameTask currentTask, AgentChoice choice, out string reason)
     {
         reason = "";
         if (!(choice.triggersDelivery || choice.immediateDelivery))
