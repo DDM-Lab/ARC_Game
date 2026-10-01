@@ -732,11 +732,13 @@ public class DeliverySystem : MonoBehaviour
         GameLogPanel.Instance?.LogVehicleEvent($"Completed {completedTask} via {vehicle.GetVehicleName()}");
 
         // NEW: record food actually delivered to a community, for Building Stats / Food Used.
+        // deliveredQuantity (what the destination really accepted, set in Vehicle.UnloadCargo), not the
+        // nominal quantity — any excess a full destination refused went back to the source.
         if (completedTask.cargoType == ResourceType.FoodPacks)
         {
             var destCommunity = completedTask.destinationBuilding as PrebuiltBuilding;
             if (destCommunity != null && destCommunity.GetPrebuiltType() == PrebuiltBuildingType.Community)
-                DailyReportData.Instance?.RecordCommunityFoodUsedToday(destCommunity.name, completedTask.quantity);
+                DailyReportData.Instance?.RecordCommunityFoodUsedToday(destCommunity.name, completedTask.deliveredQuantity);
         }
 
         if (completedTask.cargoType == ResourceType.Population && ClientStayTracker.Instance != null)

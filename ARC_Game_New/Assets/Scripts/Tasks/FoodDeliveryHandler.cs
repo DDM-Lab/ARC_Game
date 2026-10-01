@@ -222,6 +222,12 @@ public class FoodDeliveryHandler : MonoBehaviour
         int requestedQuantity = ResolveQuantity(choice, destination);
         int amount = requestedQuantity > 0 ? requestedQuantity : destStorage.GetAvailableSpace(ResourceType.FoodPacks);
         int added = destStorage.AddResource(ResourceType.FoodPacks, amount);
+
+        // Food actually credited to a community counts as Food Used, same as a vehicle delivery
+        // (DeliverySystem.OnVehicleDeliveryCompleted) — this path never goes through DeliverySystem.
+        if (added > 0 && (destination as PrebuiltBuilding)?.GetPrebuiltType() == PrebuiltBuildingType.Community)
+            DailyReportData.Instance?.RecordCommunityFoodUsedToday(destination.name, added);
+
         if (showDebugInfo)
             Debug.Log($"[FoodDeliveryTaskGenerator] Immediate drop: added {added}/{amount} food to {destination.name}");
         GameLogPanel.Instance?.LogTaskEvent($"Immediate food drop executed for '{parentTask.taskTitle}': delivered {added} meals to {destination.name}");

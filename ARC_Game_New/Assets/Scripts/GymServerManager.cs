@@ -897,8 +897,10 @@ public class GymServerManager : MonoBehaviour
     /// live objects, never from a transcription.
     /// </summary>
     /// <summary>Per-storage consumption settings for the sim_constants export. One global sample
-    /// cannot describe them any more: since the food overhaul a Shelter eats every 2 rounds, the
-    /// Motel every 4, a Community not at all, and only a Kitchen refills to capacity daily.</summary>
+    /// cannot describe them any more: Shelter and Motel both generate a fresh feeding cycle's need
+    /// at Round 1 and Round 3 (BuildingResourceStorage.GenerateFoodNeedIfDue — consumptionRoundInterval
+    /// no longer drives scheduling, only kept here for the export), a Community not at all, and only
+    /// a Kitchen refills to capacity daily.</summary>
     static string StorageConsumptionJson(BuildingResourceStorage st)
     {
         if (st == null) return "";

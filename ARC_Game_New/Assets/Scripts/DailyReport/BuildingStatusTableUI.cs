@@ -5,14 +5,13 @@ using System.Linq;
 public class BuildingStatusTableUI : MonoBehaviour
 {
     [Header("UI References")]
-    public GameObject rowPrefab;      
-    public Transform tableContent;    
+    public GameObject rowPrefab;
+    public Transform tableContent;
 
     [Header("Debug")]
     public bool showDebugInfo = true;
 
     private Dictionary<MonoBehaviour, BuildingStatusRow> rows = new Dictionary<MonoBehaviour, BuildingStatusRow>();
-    private Dictionary<MonoBehaviour, System.Action> storageHandlers = new Dictionary<MonoBehaviour, System.Action>();
 
     public static BuildingStatusTableUI Instance { get; private set; }
 
@@ -30,37 +29,70 @@ public class BuildingStatusTableUI : MonoBehaviour
 
     void Start()
     {
-        // Player-constructed buildings already in the scene
-        foreach (Building b in FindObjectsOfType<Building>())
-        {
-            OnBuildingCreated(b);
-        }
-
-        // Static map fixtures — assumed not to spawn/despawn at runtime
-        foreach (PrebuiltBuilding pb in FindObjectsOfType<PrebuiltBuilding>())
-        {
-            //if (pb.GetPrebuiltType() == PrebuiltBuildingType.Motel) continue; 
-            AddRow(pb);
-        }
+        ScanForUntrackedFacilities();
 
         if (GlobalClock.Instance != null)
             GlobalClock.OnRoundEnd += RefreshAllRows;
+    }
+
+    void ScanForUntrackedFacilities()
+    {
+        foreach (Building b in FindObjectsOfType<Building>())
+        {
+            if (rows.ContainsKey(b)) continue;
+            try { OnBuildingCreated(b); }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[BuildingStatusTableUI] Failed to add row for building '{b.name}': {ex}");
+            }
+        }
+
+        foreach (PrebuiltBuilding pb in FindObjectsOfType<PrebuiltBuilding>())
+        {
+            if (rows.ContainsKey(pb)) continue;
+            try { AddRow(pb); }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[BuildingStatusTableUI] Failed to add row for prebuilt '{pb.name}': {ex}");
+            }
+        }
+    }
+
+    void RefreshAllRows()
+    {
+        ScanForUntrackedFacilities();
+
+        var deadEntries = rows.Where(kvp => kvp.Key == null).ToList();
+        foreach (var kvp in deadEntries)
+        {
+            if (kvp.Value != null)
+                Destroy(kvp.Value.gameObject);
+            rows.Remove(kvp.Key);
+        }
+
+        foreach (var kvp in rows.ToList())
+        {
+            if (kvp.Key == null || kvp.Value == null) continue;
+
+            try { kvp.Value.Refresh(); }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[BuildingStatusTableUI] Row refresh failed for '{kvp.Key.name}' — continuing with the rest of the table. {ex}");
+            }
+
+            if (kvp.Value.IsFacilityGone)
+            {
+                Destroy(kvp.Value.gameObject);
+                rows.Remove(kvp.Key);
+            }
+        }
     }
 
     void OnDestroy()
     {
         if (GlobalClock.Instance != null)
             GlobalClock.OnRoundEnd -= RefreshAllRows;
-
-        foreach (var kvp in storageHandlers.ToList())
-        {
-            if (kvp.Key == null) continue;
-            var storage = kvp.Key.GetComponent<BuildingResourceStorage>();
-            if (storage != null)
-                storage.OnStorageUpdated -= kvp.Value;
-        }
     }
-
 
     public void OnBuildingCreated(Building building)
     {
@@ -75,7 +107,6 @@ public class BuildingStatusTableUI : MonoBehaviour
         if (building == null) return;
         RemoveRow(building);
     }
-
 
     void AddRow(MonoBehaviour facility)
     {
@@ -96,14 +127,6 @@ public class BuildingStatusTableUI : MonoBehaviour
         row.Initialize(facility);
         rows[facility] = row;
 
-        var storage = facility.GetComponent<BuildingResourceStorage>();
-        if (storage != null)
-        {
-            System.Action handler = () => RefreshRow(facility);
-            storageHandlers[facility] = handler;
-            storage.OnStorageUpdated += handler;
-        }
-
         if (showDebugInfo)
             Debug.Log($"[BuildingStatusTableUI] Added row for {facility.name}");
     }
@@ -111,13 +134,6 @@ public class BuildingStatusTableUI : MonoBehaviour
     void RemoveRow(MonoBehaviour facility)
     {
         if (facility == null) return;
-
-        var storage = facility.GetComponent<BuildingResourceStorage>();
-        if (storage != null && storageHandlers.TryGetValue(facility, out System.Action handler))
-        {
-            storage.OnStorageUpdated -= handler;
-            storageHandlers.Remove(facility);
-        }
 
         if (rows.TryGetValue(facility, out BuildingStatusRow row))
         {
@@ -130,29 +146,6 @@ public class BuildingStatusTableUI : MonoBehaviour
         }
     }
 
-    void RefreshRow(MonoBehaviour facility)
-    {
-        if (facility != null && rows.TryGetValue(facility, out BuildingStatusRow row) && row != null)
-            row.Refresh();
-    }
-
-    void RefreshAllRows()
-    {
-        var deadKeys = rows.Keys.Where(f => f == null).ToList();
-        foreach (var dead in deadKeys)
-            rows.Remove(dead);
-
-        foreach (var kvp in rows)
-        {
-            if (kvp.Key != null && kvp.Value != null)
-                kvp.Value.Refresh();
-        }
-    }
-
-    /// <summary>
-    /// Reveal the table (e.g. once the Daily Report has finished displaying its content)
-    /// and refresh every row so it shows current data the moment it becomes visible.
-    /// </summary>
     public void ShowTable()
     {
         gameObject.SetActive(true);
@@ -162,11 +155,6 @@ public class BuildingStatusTableUI : MonoBehaviour
             Debug.Log("[BuildingStatusTableUI] Table shown");
     }
 
-    /// <summary>
-    /// Hide the table (e.g. when the Daily Report is dismissed). Row tracking and
-    /// per-round refreshes keep running while hidden, since those are driven by
-    /// events rather than Unity's Update loop.
-    /// </summary>
     public void HideTable()
     {
         gameObject.SetActive(false);
@@ -176,13 +164,6 @@ public class BuildingStatusTableUI : MonoBehaviour
         GameLogPanel.Instance?.LogUIInteraction("Building status table hidden");
     }
 
-    /// <summary>
-    /// Records every row's current content, in the same top-to-bottom order it
-    /// appears in the UI (i.e. tableContent's child order, not dictionary order).
-    /// Refreshes first so the logged data is current, independent of whether
-    /// ShowTable() has revealed the table yet — this can run before that, since
-    /// data logging must not wait on any visual reveal or animation.
-    /// </summary>
     public void LogTableContents(int day)
     {
         if (tableContent == null) return;

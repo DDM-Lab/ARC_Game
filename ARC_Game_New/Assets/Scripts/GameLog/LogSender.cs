@@ -11,6 +11,19 @@ public class LogSender : MonoBehaviour
     // Leave empty (manual log upload disabled) unless a real endpoint is configured.
     [SerializeField] private string serverUrl = "";
     [SerializeField] private float requestTimeout = 30f;
+    [Tooltip("Only count an upload as successful if the server's reply is an explicit ack — {\"ok\":true,\"bytes\":N} with N equal to the bytes we sent (save_game_logs.py does this). A plain 2xx isn't enough: a server can answer 200 without having saved anything. Turn off only to test against an older server that doesn't send an ack.")]
+    [SerializeField] private bool requireServerAck = true;
+
+    // What save_game_logs.py answers with when it has fully saved an upload.
+    [Serializable]
+    private class ServerAck
+    {
+        public bool ok;
+        public int bytes;      // request body bytes the server received
+        public int messages;   // rows the server saved
+        public string file;
+        public string message;
+    }
 
     public static LogSender Instance { get; private set; }
 
@@ -32,7 +45,16 @@ public class LogSender : MonoBehaviour
         }
     }
 
-    public void SendAllLogs()
+    /// <summary>The end-of-game upload: the whole log, filed by the server as the session's final data.</summary>
+    public void SendAllLogs() => StartUpload("final", 0);
+
+    /// <summary>
+    /// End-of-day insurance: the whole log so far, filed by the server as that day's checkpoint.
+    /// Each checkpoint is cumulative, so if one fails the next day's covers it — no retry needed.
+    /// </summary>
+    public void SendDayCheckpoint(int day) => StartUpload("checkpoint", day);
+
+    void StartUpload(string uploadKind, int checkpointDay)
     {
         if (!GameLogPanel.DataCollectionEnabled)
         {
@@ -52,7 +74,7 @@ public class LogSender : MonoBehaviour
             return;
         }
 
-        string json = GameLogPanel.Instance.GetMessagesAsJson(true);
+        string json = GameLogPanel.Instance.GetMessagesAsJson(true, uploadKind, checkpointDay);
         StartCoroutine(PostLogs(json));
     }
 
@@ -89,9 +111,9 @@ public class LogSender : MonoBehaviour
             ? WebSocketManager.LoadedConfig.logServerUrl
             : serverUrl;
 
-        Debug.Log($"[LogSender] Sending {jsonPayload.Length} bytes to {url}");
-
         byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
+
+        Debug.Log($"[LogSender] Sending {bodyRaw.Length} bytes to {url}");
 
         using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
         {
@@ -102,7 +124,11 @@ public class LogSender : MonoBehaviour
 
             yield return request.SendWebRequest();
 
-            if (request.result == UnityWebRequest.Result.Success)
+            string ackProblem = request.result == UnityWebRequest.Result.Success
+                ? CheckServerAck(request.downloadHandler.text, bodyRaw.Length)
+                : null;
+
+            if (request.result == UnityWebRequest.Result.Success && ackProblem == null)
             {
                 CurrentStatus = SendStatus.Success;
                 LastStatusMessage = $"Logs sent successfully. Server: {request.downloadHandler.text}";
@@ -110,6 +136,16 @@ public class LogSender : MonoBehaviour
 
                 if (GameLogPanel.Instance != null)
                     GameLogPanel.Instance.LogPlayerAction("Logs sent to server successfully");
+            }
+            else if (ackProblem != null)
+            {
+                // The request went through (2xx) but the server didn't confirm it saved our data.
+                CurrentStatus = SendStatus.Failed;
+                LastStatusMessage = $"Failed: server did not confirm the save — {ackProblem}";
+                Debug.LogError($"[LogSender] {LastStatusMessage}");
+
+                if (GameLogPanel.Instance != null)
+                    GameLogPanel.Instance.LogError($"Log send not confirmed by server: {ackProblem}");
             }
             else
             {
@@ -123,5 +159,35 @@ public class LogSender : MonoBehaviour
 
             OnSendComplete?.Invoke(CurrentStatus, LastStatusMessage);
         }
+    }
+
+    /// <summary>Returns null if the server's reply is a valid ack for what we sent, else why not.</summary>
+    string CheckServerAck(string responseText, int sentBytes)
+    {
+        if (!requireServerAck) return null;
+
+        ServerAck ack;
+        try
+        {
+            ack = JsonUtility.FromJson<ServerAck>(responseText);
+        }
+        catch (ArgumentException)
+        {
+            ack = null;   // not JSON at all — e.g. a proxy or login page answering 200
+        }
+
+        if (ack == null || !ack.ok)
+            return $"reply was not an ok ack ({Truncate(responseText, 120)})";
+
+        if (ack.bytes != sentBytes)
+            return $"server received {ack.bytes} bytes but {sentBytes} were sent";
+
+        return null;
+    }
+
+    static string Truncate(string s, int max)
+    {
+        if (string.IsNullOrEmpty(s)) return "empty reply";
+        return s.Length <= max ? s : s.Substring(0, max) + "...";
     }
 }

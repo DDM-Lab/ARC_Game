@@ -209,8 +209,8 @@ public class DailyReportMetrics
     public int cumTrainingWorkerRounds;
     public int cumClientRoundsAwaitingCasework;
     public int cumClientsRequestedCasework;
-    public int cumLodgingNightsConsumed;
-    public int cumLodgingNightsNeeded;
+    public int cumLodgingRoundsConsumed;
+    public int cumLodgingRoundsNeeded;
 
     [Header("Cumulative Cost-Eff")]
     public float cumFoodSpend;
