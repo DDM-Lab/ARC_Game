@@ -69,7 +69,7 @@ EXPECTED_SCOPE = {
 # execute_commands), not an index. These tags each resolve to exactly one
 # in-scope action_id; the reverse map lets us attribute executed frames back to
 # the officer that issued them (the tags path executes via _execute_actions_via_unity,
-# which — unlike _execute_action — carries no officer name).
+# which carries no officer name).
 OFFICER_TAG = {
     "Workforce Officer": ("<hire>untrained,1</hire>", "hire_untrained_1"),
     "Lodging Officer": ("<build>Shelter,2</build>", "build_Shelter_2"),
@@ -94,7 +94,7 @@ def base_state(v=0):
 
 
 async def run_commit_lock_test():
-    """Directly hammer _execute_action from many coroutines; assert no crossing."""
+    """Directly hammer _execute_one_action_via_unity from many coroutines; assert no crossing."""
     cfg = load_config("config/continuous_agents_domain.json")
     with tempfile.TemporaryDirectory() as td:
         sess = Session(cfg, "sess-lock", "test", os.path.join(td, "log.jsonl"), websocket=None)
@@ -124,7 +124,7 @@ async def run_commit_lock_test():
                    for i in range(12)]
 
         async def one(a):
-            result, _ = await sess._execute_action("officer", a)
+            result, _ = await sess._execute_one_action_via_unity(a, base_state(0))
             return a["action_id"], result.get("action_id")
 
         pairs = await asyncio.gather(*[one(a) for a in actions])

@@ -4,6 +4,7 @@ Reads agents_config.json shared between Python router and Unity.
 """
 from __future__ import annotations
 import json
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -15,7 +16,8 @@ from cora.llm.providers import (
 
 
 VALID_ROLES = {"subagent", "director"}
-VALID_ACTOR_TYPES = {"auto", "choices", "manual", "llm", "coach", "continuous"}
+# manual = the human Director; continuous = an LLM officer (the tool-calling loop).
+VALID_ACTOR_TYPES = {"manual", "continuous"}
 VALID_CATEGORIES = {"construction", "deconstruction", "worker",
                     "worker_assignment", "resource_transfer", "task_choice", "all"}
 # Coarse task-group slugs (cora.observation.task_group) — one per officer domain. Used
@@ -40,11 +42,7 @@ VALID_TALKINGHEADS = {
 class AgentConfig:
     subagent_name: str
     role: str                              # "subagent" | "director"
-    actor_type: str                        # "auto" | "choices" | "manual" | "llm" | "coach"
-    num_choices: Optional[int]             # For choices agents: number of packages
-    max_actions_per_package: Optional[int] # For choices/auto: actions per package/turn
-    num_turns: Optional[int]               # For coach agents: number of turn recommendations
-    max_actions_per_turn: Optional[int]    # For coach agents: actions per turn recommendation
+    actor_type: str                        # "manual" (human Director) | "continuous" (LLM officer)
     talkinghead_endpoint: Optional[str]
     subaction_space: list[dict]
     subobservation_space: list[str]
@@ -63,13 +61,6 @@ class AgentConfig:
     # Mutually exclusive with the raw fields. (Kept in the defaults section for dataclass
     # field-ordering; it belongs conceptually with the llm_* fields above.)
     provider: Optional[str] = None
-    # --- Choices-agent reliability + explainability (opt-in; safe defaults) ---
-    choices_max_retries: int = 1           # extra LLM re-queries if a parse underdelivers
-    choices_min_packages: int = 1          # floor below which we retry / fall back
-    choices_fallback: bool = True          # synthesize deterministic packages to fill the set
-    explain_grounded: bool = True          # prepend engine-computed $cost to each package desc
-    explain_summary: bool = True           # prepend grounded context to the pre-choices summary
-    choices_repropose_hint: bool = True    # append "you can ask me to repropose" nudge to the summary
     # --- Continuous-agent (tool-using loop) knobs (opt-in; safe defaults) ---
     # The continuous agent holds the full tool palette every step and picks which
     # tool to use — interaction style is emergent, not imposed. `tools` MAY narrow
@@ -165,7 +156,7 @@ class AgentConfig:
 
     @property
     def is_llm_driven(self) -> bool:
-        return self.actor_type in {"auto", "choices", "llm", "coach", "continuous"}
+        return self.actor_type == "continuous"
 
     @property
     def action_categories(self) -> set[str]:
@@ -209,14 +200,11 @@ class RouterConfig:
         # survives in the hello_ack roster and their messages interleave under it, with no
         # error anywhere. Per-agent validation above only checks each endpoint is a VALID
         # name — it cannot see the collision — so reject it here, loudly, at config load.
-        # Scope: only actors that actually emit agent_message/choices frames to a tab.
-        # "coach" is excluded — it emits a `coach_report` frame instead, so it never
-        # occupies a tab and can legitimately share an endpoint.
         seen: dict[str, str] = {}
         for a in self.agents:
             ep = a.talkinghead_endpoint
-            if not ep or a.actor_type == "coach":
-                continue          # no slot: the director, headless agents, coach reports
+            if not ep:
+                continue          # no slot: the director, headless agents
             if ep in seen:
                 raise ValueError(
                     f"Duplicate talkinghead_endpoint '{ep}': used by both "
@@ -258,10 +246,6 @@ def config_from_dict(data: dict) -> RouterConfig:
             subagent_name=entry["subagent_name"],
             role=entry["role"],
             actor_type=entry["actor_type"],
-            num_choices=entry.get("num_choices"),
-            max_actions_per_package=entry.get("max_actions_per_package"),
-            num_turns=entry.get("num_turns"),
-            max_actions_per_turn=entry.get("max_actions_per_turn"),
             talkinghead_endpoint=entry.get("talkinghead_endpoint"),
             subaction_space=entry.get("subaction_space", []),
             subobservation_space=entry.get("subobservation_space", ["all"]),
@@ -275,12 +259,6 @@ def config_from_dict(data: dict) -> RouterConfig:
             system_prompt=entry.get("system_prompt"),
             use_global_prompt=entry.get("use_global_prompt", True),
             can_address=entry.get("can_address", []),
-            choices_max_retries=entry.get("choices_max_retries", 1),
-            choices_min_packages=entry.get("choices_min_packages", 1),
-            choices_fallback=entry.get("choices_fallback", True),
-            explain_grounded=entry.get("explain_grounded", True),
-            explain_summary=entry.get("explain_summary", True),
-            choices_repropose_hint=entry.get("choices_repropose_hint", True),
             tools=entry.get("tools"),
             max_steps=entry.get("max_steps", 8),
             tool_mode=entry.get("tool_mode", "auto"),
@@ -314,3 +292,59 @@ def config_from_dict(data: dict) -> RouterConfig:
         turn_instructions=(data.get("turn_instructions") or None),
         tool_descriptions=(data.get("tool_descriptions") or None),
     )
+
+
+# ── The server-wide officer prompt (config/global_prompt_config.json) ──
+GLOBAL_PROMPT_CONFIG_PATH = Path(__file__).parent / "config" / "global_prompt_config.json"
+_GLOBAL_PROMPT_CACHE = None
+
+
+def load_global_prompt(config_path: Optional[str] = None) -> str:
+    """
+    Load the global system prompt from config file.
+
+    Args:
+        config_path: Path to global_prompt_config.json. If None, uses default location.
+
+    Returns:
+        Global system prompt string, or empty string if disabled or not found.
+    """
+    global _GLOBAL_PROMPT_CACHE
+
+    # Return cached prompt if available
+    if _GLOBAL_PROMPT_CACHE is not None:
+        return _GLOBAL_PROMPT_CACHE
+
+    # Determine config path
+    if config_path is None:
+        config_path = GLOBAL_PROMPT_CONFIG_PATH
+    else:
+        config_path = Path(config_path)
+
+    # Load config file
+    try:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+
+        # Check if global prompt is enabled
+        if not config.get("enabled", True):
+            print(f"[agent_config] Global prompt disabled in config")
+            _GLOBAL_PROMPT_CACHE = ""
+            return ""
+
+        # Get prompt text
+        global_prompt = config.get("global_system_prompt", "")
+        _GLOBAL_PROMPT_CACHE = global_prompt
+
+        print(f"[agent_config] Loaded global prompt (v{config.get('version', '?')}, "
+              f"{len(global_prompt)} chars)")
+        return global_prompt
+
+    except FileNotFoundError:
+        print(f"[agent_config] Global prompt config not found at {config_path}, using empty prompt")
+        _GLOBAL_PROMPT_CACHE = ""
+        return ""
+    except Exception as e:
+        print(f"[agent_config] Error loading global prompt config: {e}")
+        _GLOBAL_PROMPT_CACHE = ""
+        return ""

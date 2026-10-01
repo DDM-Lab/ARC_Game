@@ -28,7 +28,6 @@ from typing import Optional, List, Dict, Any
 
 from dotenv import load_dotenv
 
-from llm_query import load_global_prompt
 
 load_dotenv(Path(__file__).parent / ".env")
 

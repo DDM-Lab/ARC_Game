@@ -14,12 +14,11 @@ Unity frame — the only reconciliation is: the gym encodes `action` as a JSON s
 and reads new state from a separate `get_game_state`, whereas the router expects the
 action_result to CARRY `game_state`. The bridge does exactly that reconciliation.
 
-Director: the config's manual "Player" is flipped to actor_type="auto" at runtime.
-get_agent_order() excludes directors from the per-round order, so an auto director
-never takes a proactive turn — it acts ONLY reactively, resolving any officer
-`propose_choices` inline (LLM pick → execute via the same bridged frames). Between
-rounds THIS driver is the stub director: it advances the round via `advance_time`
-to roll the world's dynamics, exactly as ending a human director's turn would.
+Director: no human, so the Session gets a director_policy that answers every officer
+`propose_choices` with its first package (executed via the same bridged frames) and
+declines standing-order cards. Between rounds THIS driver is the stub director: it
+advances the round via `advance_time` to roll the world's dynamics, exactly as ending a
+human director's turn would.
 
 Run (clear proxies, venv python; network → unsandboxed):
   env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY \
@@ -83,18 +82,10 @@ def _sat_budget(gs):
     return sb.get("satisfaction"), sb.get("budget")
 
 
-async def run(rounds, model, exe, unity_port):
-    # ── Config: scoped officers as authored; flip the manual director → auto so it
-    #    resolves any propose_choices without a human, and never hangs on _pending_choice.
+async def run(rounds, exe, unity_port):
+    # ── Config: scoped officers as authored. No human Director: the stub policy answers
+    #    proposals (first package), so a turn never hangs on _pending_choice.
     cfg = load_config(CONFIG)
-    director = next(a for a in cfg.agents if a.role == "director")
-    director.actor_type = "auto"
-    director.llm_provider = "openai"
-    director.llm_model = model
-    director.llm_endpoint = "https://ai-gateway.andrew.cmu.edu/v1"
-    director.api_key_env = "OPENAI_API_KEY"
-    if director.num_choices is None:
-        director.num_choices = 3
 
     officers = {a.subagent_name: a for a in cfg.agents if a.role == "subagent"}
     print(f"[harness] officers: {list(officers)}")
@@ -111,7 +102,8 @@ async def run(rounds, model, exe, unity_port):
 
     os.makedirs("logs/sessions", exist_ok=True)
     sess = Session(cfg, "sess-headless", "test",
-                   "logs/sessions/headless_multiagent.jsonl", websocket=None)
+                   "logs/sessions/headless_multiagent.jsonl", websocket=None,
+                   director_policy=lambda packages, game_state, reasoning: 0)
 
     gym_lock = asyncio.Lock()          # single TCP socket ⇒ serialize all gym I/O
     executed = {}                       # agent_name -> [action dicts] (for scope audit)
@@ -242,13 +234,12 @@ async def run(rounds, model, exe, unity_port):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rounds", type=int, default=2)
-    ap.add_argument("--model", default="claude-haiku-4-5-20251001-v1:0")
     ap.add_argument("--exe", default=EXE)
     ap.add_argument("--unity-port", type=int, default=9876,
                     help="gym-TCP port for the headless Unity (use a free port if a "
                          "router is already on 9876)")
     args = ap.parse_args()
-    rc = asyncio.run(run(args.rounds, args.model, args.exe, args.unity_port))
+    rc = asyncio.run(run(args.rounds, args.exe, args.unity_port))
     sys.exit(rc)
 
 

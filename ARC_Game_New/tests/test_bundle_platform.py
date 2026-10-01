@@ -110,9 +110,7 @@ def test_bundle_compose():
 
 
 def _mk(**kw) -> AgentConfig:
-    base = dict(subagent_name="X", role="subagent", actor_type="continuous", num_choices=None,
-                max_actions_per_package=None, num_turns=None, max_actions_per_turn=None,
-                talkinghead_endpoint=None, subaction_space=[], subobservation_space=["all"],
+    base = dict(subagent_name="X", role="subagent", actor_type="continuous", talkinghead_endpoint=None, subaction_space=[], subobservation_space=["all"],
                 llm_provider=None, llm_model=None, llm_endpoint=None, llm_port=None,
                 api_key_env=None, turn_token_budget=None, system_prompt=None)
     base.update(kw)

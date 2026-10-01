@@ -29,7 +29,7 @@ CORA_API_VERSION = "1.0"
 
 # Vocabularies mirrored from agent_config (kept in sync deliberately; see docs/CORA_API_v1.md).
 Role = Literal["subagent", "director"]
-ActorType = Literal["auto", "choices", "manual", "llm", "coach", "continuous"]
+ActorType = Literal["manual", "continuous"]
 Category = Literal["construction", "deconstruction", "worker",
                    "worker_assignment", "resource_transfer", "task_choice", "all"]
 TaskGroup = Literal["budget", "workforce", "food", "lodging", "disaster"]
@@ -65,6 +65,13 @@ class SubActionEntry(BaseModel):
     building_types: Optional[list[str]] = None
 
 
+# Keys of the retired auto / choices / coach actors. Configs and uploaded bundles written before
+# 2026-10 still carry them; they are accepted and dropped so those files keep loading.
+RETIRED_OFFICER_KEYS = ("num_choices", "max_actions_per_package", "num_turns", "max_actions_per_turn",
+                        "choices_max_retries", "choices_min_packages", "choices_fallback",
+                        "explain_grounded", "explain_summary", "choices_repropose_hint")
+
+
 class OfficerConfig(BaseModel):
     """Full, validated officer entry. `extra='forbid'` so a typo'd key is a hard error, not a
     silently-ignored no-op. `provider` (enum) replaces raw llm_provider/llm_endpoint/api_key_env."""
@@ -84,22 +91,11 @@ class OfficerConfig(BaseModel):
     subaction_space: list[SubActionEntry] = Field(default_factory=list)
     subobservation_space: list[str] = Field(default_factory=lambda: ["all"])
 
-    num_choices: Optional[int] = None
-    max_actions_per_package: Optional[int] = None
-    num_turns: Optional[int] = None
-    max_actions_per_turn: Optional[int] = None
     turn_token_budget: Optional[int] = None
 
     system_prompt: Optional[str] = None
     use_global_prompt: bool = True
     can_address: list[str] = Field(default_factory=list)
-
-    choices_max_retries: int = 1
-    choices_min_packages: int = 1
-    choices_fallback: bool = True
-    explain_grounded: bool = True
-    explain_summary: bool = True
-    choices_repropose_hint: bool = True
 
     tools: Optional[list[str]] = None
     max_steps: int = 8
@@ -114,9 +110,16 @@ class OfficerConfig(BaseModel):
             _validate_obs_key(k)
         return v
 
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_retired_keys(cls, data):
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if k not in RETIRED_OFFICER_KEYS}
+        return data
+
     @model_validator(mode="after")
     def _llm_actor_needs_provider(self):
-        if self.actor_type in {"auto", "choices", "llm", "coach", "continuous"} and self.provider is None:
+        if self.actor_type == "continuous" and self.provider is None:
             raise ValueError(
                 f"officer {self.subagent_name!r} has actor_type={self.actor_type!r} but no "
                 f"`provider` (one of {[p.value for p in Provider]})")

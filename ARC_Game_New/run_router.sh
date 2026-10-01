@@ -12,7 +12,7 @@
 # (fine for local testing, NOT for a public endpoint).
 #
 # LLM provider keys (ANTHROPIC_API_KEY / OPENAI_API_KEY / the CMU gateway key)
-# are read from .env in this directory by llm_query.py — keep that out of git.
+# are read from .env in this directory by the officers' LLM clients — keep that out of git.
 #
 set -euo pipefail
 
