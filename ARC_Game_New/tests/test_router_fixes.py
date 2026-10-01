@@ -125,8 +125,8 @@ async def _run_retry_cap():
             if n < 2:
                 # Same failing call twice — the second must be blocked by the cap.
                 return {"content": "try",
-                        "tool_calls": [{"id": f"c{n}", "name": "execute_commands",
-                                        "arguments": {"commands": "<build>Kitchen,1</build>"}}]}
+                        "tool_calls": [{"id": f"c{n}", "name": "build",
+                                        "arguments": {"type": "kitchen", "site_id": 1}}]}
             return {"content": "done", "tool_calls": []}  # finish
 
         agent_router.run_tool_step = fake_step

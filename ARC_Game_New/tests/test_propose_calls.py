@@ -1,25 +1,14 @@
-"""Hermetic test for Step 6: propose_choices under the tags-only vocabulary.
+"""propose_choices packages of typed calls resolve to action_indices INTO filtered_actions.
 
-No Unity, no LLM, no network. Verifies that the model-authored `commands` (command
-tags) on each proposal package are resolved to `action_indices` that point back INTO
-filtered_actions — the exact list the Unity client renders and executes against — so
-the outbound payload stays byte-identical (no client change) and the autonomous path
-resolves the same actions the tags named.
-
-Checks:
-  1. _tags_to_indices maps build/hire/transfer/staff tags onto the right positions
-     in filtered_actions (staff via STRUCTURAL (building,qty) match, since the synth
-     prose diverges from the enumerated prose by construction).
-  2. A package of only unresolvable tags yields [] + a logged reason (never mis-index);
-     a <task> tag is dropped with a reason (tasks are answered via execute_commands).
-  3. _continuous_propose's outbound frame has available_actions == filtered_actions
-     and packages whose action_indices resolve (in filtered_actions) to the tagged
-     actions — i.e. the autonomous [filtered_actions[i] ...] pick == the intended set.
+No Unity, no LLM, no network. Each package's calls resolve (cora.executor) to positions in
+filtered_actions, the exact list the client renders and executes against, so the outbound
+frame keeps its shape. Checks:
+  1. _calls_to_indices maps build/hire/transfer/staff calls onto the right positions (staff via
+     a STRUCTURAL (building, qty) match to the enumerated assignment).
+  2. Unresolvable calls yield [] plus a reason (never a guessed index).
+  3. _continuous_propose's frame has available_actions == filtered_actions and packages whose
+     action_indices resolve to the intended actions.
   4. All-dropped packages return an honest ERROR, not a silent empty proposal.
-
-Run:
-  env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u https_proxy \
-      -u HTTP_PROXY -u http_proxy PYTHONPATH="$(pwd)" ./.venv/bin/python test_propose_tags.py
 """
 import asyncio
 import os
@@ -57,8 +46,8 @@ def menu():
 
 
 def state():
-    # Kitchen Alpha is built + still needing workers, so <staff>Kitchen Alpha</staff>
-    # resolves (need[...] > 0) and the parser synthesizes a worker_assignment.
+    # Kitchen Alpha is built + still needing workers, so staff(site="Kitchen Alpha") resolves
+    # (need > 0) and the executor synthesizes a worker_assignment.
     return {
         "_v": 1,
         "sessionInfo": {"currentDay": 1, "currentSegment": 0},
@@ -80,7 +69,7 @@ def new_session(cfg, td, name):
     return Session(cfg, name, "test", os.path.join(td, "log.jsonl"), websocket=None)
 
 
-def test_tags_to_indices():
+def test_calls_to_indices():
     cfg = load_config("config/continuous_agents_domain.json")
     with tempfile.TemporaryDirectory() as td:
         sess = new_session(cfg, td, "sess-unit")
@@ -88,34 +77,34 @@ def test_tags_to_indices():
         gs = state()
 
         # single-category resolutions
-        idx, reasons = sess._tags_to_indices("<build>Kitchen,1</build>", fa, gs)
+        c2i = sess._calls_to_indices
+        idx, reasons = c2i([("build", {"type": "kitchen", "site_id": 1})], fa, gs)
         assert idx == [0], f"build -> {idx} (reasons={reasons})"
-        idx, _ = sess._tags_to_indices("<hire>untrained,1</hire>", fa, gs)
+        idx, _ = c2i([("hire", {"kind": "untrained", "count": 1})], fa, gs)
         assert idx == [2], f"hire -> {idx}"
-        idx, r = sess._tags_to_indices(
-            "<transfer>food,Kitchen Alpha,Shelter Beta,5</transfer>", fa, gs)
+        idx, r = c2i([("transfer", {"resource": "food", "source": "Kitchen Alpha",
+                                    "dest": "Shelter Beta", "qty": 5})], fa, gs)
         assert idx == [5], f"transfer -> {idx} (reasons={r})"
 
-        # <staff> synth structurally matches the enumerated (building,qty) assignment
-        idx, r = sess._tags_to_indices("<staff>Kitchen Alpha,</staff>", fa, gs)
+        # staff's synthesized assignment structurally matches the enumerated (building, qty) one
+        idx, r = c2i([("staff", {"site": "Kitchen Alpha"})], fa, gs)
         assert idx == [3], f"staff -> {idx} (reasons={r})"
 
         # combined package: a second build on the same site is dropped (the site is taken)
-        idx, r = sess._tags_to_indices(
-            "<build>Kitchen,1</build>\n<hire>untrained,1</hire>\n<build>Kitchen,1</build>",
-            fa, gs)
+        idx, r = c2i([("build", {"type": "kitchen", "site_id": 1}), ("hire", {"kind": "untrained", "count": 1}),
+                      ("build", {"type": "kitchen", "site_id": 1})], fa, gs)
         assert idx == [0, 2], f"combined -> {idx} (reasons={r})"
 
         # all-unresolvable -> [] + a logged reason (never a guessed index)
-        idx, r = sess._tags_to_indices("<build>Kitchen,99</build>", fa, gs)
+        idx, r = c2i([("build", {"type": "kitchen", "site_id": 99})], fa, gs)
         assert idx == [] and r, f"bad-site should drop with reason; got {idx}, {r}"
 
         # a partial staffing count is refused with the reason (buildings only run fully staffed)
-        idx, r = sess._tags_to_indices("<staff>Kitchen Alpha,3</staff>", fa, gs)
+        idx, r = c2i([("staff", {"site": "Kitchen Alpha", "count": 3})], fa, gs)
         assert idx == [] and any("would be partial" in x for x in r), \
             f"partial staffing should drop with reason; got {idx}, {r}"
 
-        print("[1] _tags_to_indices ok: build=0 hire=2 transfer=5 staff=3, "
+        print("[1] _calls_to_indices ok: build=0 hire=2 transfer=5 staff=3, "
               "dedupe+order kept, unresolved dropped-with-reason")
 
 
@@ -154,11 +143,14 @@ async def test_outbound_parity():
             "reasoning": "Two ways to spend today.",
             "packages": [
                 {"label": "Feed", "description": "Build a kitchen and staff it",
-                 "commands": "<build>Kitchen,1</build>\n<staff>Kitchen Alpha,</staff>"},
+                 "calls": [{"tool": "build", "args": {"type": "kitchen", "site_id": 1}},
+                           {"tool": "staff", "args": {"site": "Kitchen Alpha"}}]},
                 {"label": "Grow", "description": "Hire and move food",
-                 "commands": "<hire>untrained,1</hire>\n"
-                             "<transfer>food,Kitchen Alpha,Shelter Beta,5</transfer>"},
-                {"label": "Junk", "description": "unresolvable", "commands": "<build>Kitchen,99</build>"},
+                 "calls": [{"tool": "hire", "args": {"kind": "untrained", "count": 1}},
+                           {"tool": "transfer", "args": {"resource": "food", "source": "Kitchen Alpha",
+                                                         "dest": "Shelter Beta", "qty": 5}}]},
+                {"label": "Junk", "description": "unresolvable",
+                 "calls": [{"tool": "build", "args": {"type": "kitchen", "site_id": 99}}]},
             ],
         }
         body, gs2, all2, fa2, executed, superseded, _rows = await sess._continuous_propose(
@@ -175,7 +167,7 @@ async def test_outbound_parity():
         assert len(pkgs) == 2, f"expected 2 surviving packages, got {len(pkgs)}"
         assert [p["package_index"] for p in pkgs] == [0, 1], "package_index not re-sequenced"
 
-        # autonomous resolution: filtered_actions[i] for each action_index == tagged set
+        # resolution: filtered_actions[i] for each action_index == the intended actions
         feed_ids = [fa[i]["action_id"] for i in pkgs[0]["action_indices"]]
         grow_ids = [fa[i]["action_id"] for i in pkgs[1]["action_indices"]]
         assert feed_ids == ["build_Kitchen_1", "assign_Kitchen Alpha_2"], feed_ids
@@ -200,8 +192,8 @@ async def test_all_dropped_errors():
         agent_router._enumerate_actions = lambda gs: menu()
 
         args = {"reasoning": "x", "packages": [
-            {"label": "Bad", "commands": "<build>Kitchen,99</build>"},
-            {"label": "Empty", "commands": ""},
+            {"label": "Bad", "calls": [{"tool": "build", "args": {"type": "kitchen", "site_id": 99}}]},
+            {"label": "Empty", "calls": []},
         ]}
         body, *_ = await sess._continuous_propose(agent, args, state(), menu(), menu())
         assert body.startswith("ERROR:"), f"all-dropped should ERROR, got: {body[:80]}"
@@ -212,7 +204,7 @@ async def test_all_dropped_errors():
 
 
 async def main():
-    test_tags_to_indices()
+    test_calls_to_indices()
     await test_outbound_parity()
     await test_all_dropped_errors()
     print("\nALL STEP-6 PROPOSE TESTS PASSED ✓")

@@ -55,6 +55,11 @@ except ImportError:
 # ride the already-built execute / choices backends. `open_interaction` (handing
 # a native dialog panel to the human) is Phase 2 and deliberately absent here.
 
+from cora.llm import accepts_temperature, resolve_api_key  # noqa: E402
+from cora.tools import TOOLS, openai_tools  # noqa: E402
+
+ACTION_TOOL_NAMES = [t["name"] for t in TOOLS]
+
 TOOL_SCHEMAS: Dict[str, dict] = {
     "read_state": {
         "type": "function",
@@ -115,7 +120,7 @@ TOOL_SCHEMAS: Dict[str, dict] = {
                 "Return ONLY the logistics/affordance block: open build sites, who "
                 "needs staffing, staff-now options, hire/train capacity, and valid "
                 "resource-transfer endpoints. Use it to see what you can act on right "
-                "now before composing command tags."
+                "now before calling the action tools."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -190,47 +195,6 @@ TOOL_SCHEMAS: Dict[str, dict] = {
             },
         },
     },
-    "execute_commands": {
-        "type": "function",
-        "function": {
-            "name": "execute_commands",
-            "description": (
-                "Execute a batch of game actions by INTENT using command tags, instead "
-                "of raw indices. Each tag is resolved against the current game state, so "
-                "you describe WHAT you want, not menu positions. Actions run in a "
-                "commonsense order (deconstruct → build → hire → train → staff → "
-                "transfer) regardless of the order you write them, so \"hire, then staff "
-                "the workers you just hired\" works in one call. Returns the engine's real "
-                "per-action success/failure plus any commands that couldn't be resolved, "
-                "and a refreshed action list.\n"
-                "Grammar (one tag per action, newline-separated):\n"
-                "  <build>TYPE,SITE_ID</build>        TYPE=Kitchen|Shelter|CaseworkSite\n"
-                "  <hire>KIND,N</hire>                 KIND=trained|untrained, N=count\n"
-                "  <train>N</train>                    train N untrained workers\n"
-                "  <staff>BUILDING,N</staff>           assign N workforce to a built building\n"
-                "  <deconstruct>BUILDING</deconstruct> BUILDING=name substring\n"
-                "  <transfer>RESOURCE,SRC,DEST,QTY</transfer>  RESOURCE=food|people\n"
-                "  <task>TASK,CHOICE_ID</task>        answer a choice-task in your scope;\n"
-                "                                     TASK is the stable token shown in the\n"
-                "                                     options (e.g. FOOD_C01, BUDGET_DAILY)\n"
-                "Example: \"<build>Kitchen,1</build>\\n<hire>untrained,4</hire>\\n<staff>Kitchen,4</staff>\""
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "commands": {
-                        "type": "string",
-                        "description": "The command tags to execute, one per line.",
-                    },
-                    "note": {
-                        "type": "string",
-                        "description": "Optional one-line rationale for the record.",
-                    },
-                },
-                "required": ["commands"],
-            },
-        },
-    },
     "propose_choices": {
         "type": "function",
         "function": {
@@ -254,29 +218,36 @@ TOOL_SCHEMAS: Dict[str, dict] = {
                         "description": "2-4 genuinely distinct strategy packages.",
                         "items": {
                             "type": "object",
-                            # Property order is emission order: label + the
-                            # structured commands come BEFORE the prose description,
-                            # so if a completion is ever truncated it loses (optional)
-                            # description text, never the command tags the package is
-                            # worthless without.
+                            # Property order is emission order: label + the calls come
+                            # BEFORE the prose description, so if a completion is ever
+                            # truncated it loses (optional) description text, never the
+                            # calls the package is worthless without.
                             "properties": {
                                 "label": {"type": "string", "description": "Short name, 2-4 words."},
-                                "commands": {
-                                    "type": "string",
+                                "calls": {
+                                    "type": "array",
                                     "description": (
-                                        "The actions this package bundles, as command tags — "
-                                        "SAME grammar as execute_commands (e.g. "
-                                        "<build>Kitchen,3</build>, <hire>untrained,4</hire>), "
-                                        "one tag per line. The director executes exactly these "
-                                        "if they pick this package. Emit this first."
+                                        "The actions this package bundles, as calls of your action "
+                                        "tools with the SAME arguments you would call them with, e.g. "
+                                        "{\"tool\": \"build\", \"args\": {\"type\": \"kitchen\", "
+                                        "\"site_id\": 3}}. The director executes exactly these if they "
+                                        "pick this package. Emit this first."
                                     ),
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "tool": {"type": "string", "enum": ACTION_TOOL_NAMES},
+                                            "args": {"type": "object"},
+                                        },
+                                        "required": ["tool", "args"],
+                                    },
                                 },
                                 "description": {
                                     "type": "string",
                                     "description": "1-2 sentences: what this package does and why pick it.",
                                 },
                             },
-                            "required": ["label", "commands"],
+                            "required": ["label", "calls"],
                         },
                     },
                 },
@@ -393,20 +364,13 @@ TOOL_SCHEMAS: Dict[str, dict] = {
 }
 
 # Default palette when a config sets no `tools` allowlist: everything.
-DEFAULT_TOOLS: List[str] = list(TOOL_SCHEMAS.keys())
 
-# ── Phase B: typed action tools (canonical schema) become the officer's action surface ──
-# The model now acts via individual TYPED tools (build/hire/train/staff/deconstruct/task),
-# generated from the shared `cora.tools` schema so the live officer and the RL policy serve/
-# train on an IDENTICAL tool surface. `execute_commands` stays defined (its dispatch handler +
-# explicit-allowlist use) but drops OUT of the default palette — typed calls are translated back
-# to command tags and routed through that same execute path in
-# agent_router._dispatch_continuous_tool (ledger/block gate + execute_resolved unchanged).
-from cora.llm import accepts_temperature, resolve_api_key  # noqa: E402
-from cora.tools import openai_tools  # noqa: E402
+# ── The typed action tools (cora.tools) are the officer's action surface ──
+# The same schema the benchmark and the RL policy use, run through the same executor
+# (agent_router.Session._execute_calls → cora.executor).
 for _t in openai_tools(manual_transfers=True):  # include transfer in the officer palette
     TOOL_SCHEMAS[_t["function"]["name"]] = _t
-DEFAULT_TOOLS = [n for n in TOOL_SCHEMAS if n != "execute_commands"]
+DEFAULT_TOOLS = list(TOOL_SCHEMAS)
 
 
 
@@ -427,9 +391,9 @@ def build_tools(allowlist: Optional[List[str]] = None,
     `descriptions` (bundle `tool_descriptions`) rewords a built-in's description — the last
     model-visible string that was not config-overridable, since a tool's description travels
     in the API `tools` argument rather than the prompt. PARAMETERS are deliberately NOT
-    overridable: they feed cmd_parser.tag_for directly, so a renamed param or a widened enum
-    emits tags cmd_parser cannot resolve — silently broken actions across all three wings.
-    Descriptions are inert to that machinery, so they are safe to expose.
+    overridable: cora.executor resolves calls by them, so a renamed param or a widened enum
+    would produce calls the executor cannot resolve. Descriptions are inert to that, so they
+    are safe to expose.
 
     Overrides are applied to a COPY. TOOL_SCHEMAS is module-level and shared by every session
     on the server; mutating it would leak one collaborator's wording into everyone else's runs

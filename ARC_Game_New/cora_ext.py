@@ -170,10 +170,11 @@ class ToolContext:
     """Interface a tool/hook uses to reach the game. The host injects a concrete subclass bound
     to the live Session; `MockToolContext` implements it against a fixture for offline tests.
 
-    Reads are instant (off the latest cached snapshot). `refresh_state`/`emit_commands`/
+    Reads are instant (off the latest cached snapshot). `refresh_state`/`execute`/
     `propose_choices`/`run_blocking` are async and routed through the host. State persists across
     calls at three scopes: `agent_store` (this officer), `session_store` (whole game), `persist`
-    (durable, cross-game). Actions can ONLY be composed via `emit_commands` (canonical cmd tags).
+    (durable, cross-game). Actions are taken ONLY via `execute`: typed calls of the action tools
+    (cora.tools), run through the same executor as the officers' own tool calls.
     """
     agent: Any = None
     participant_id: Optional[str] = None
@@ -198,7 +199,8 @@ class ToolContext:
 
     # --- async: pull / act / offload ---
     async def refresh_state(self) -> dict: raise NotImplementedError
-    async def emit_commands(self, tags: str) -> ToolResult: raise NotImplementedError
+    async def execute(self, calls: list) -> ToolResult: raise NotImplementedError
+    """calls: [(tool, args), ...], e.g. [("hire", {"kind": "untrained", "count": 4})]."""
     async def propose_choices(self, packages: list) -> ToolResult: raise NotImplementedError
 
     async def run_blocking(self, fn: Callable, *args, **kwargs) -> Any:
@@ -229,7 +231,7 @@ class MockToolContext(ToolContext):
         self.persist = _KV()
         self.session_lock = asyncio.Lock()
         # recordings for assertions
-        self.emitted: list[str] = []
+        self.executed: list = []          # every execute() call's calls, in order
         self.proposed: list[list] = []
         self.logs: list[tuple] = []
 
@@ -252,9 +254,9 @@ class MockToolContext(ToolContext):
     async def refresh_state(self) -> dict:
         return self._state
 
-    async def emit_commands(self, tags: str) -> ToolResult:
-        self.emitted.append(tags)
-        return ToolResult(text=f"[mock] emitted: {tags}", executed=1)
+    async def execute(self, calls: list) -> ToolResult:
+        self.executed.append(list(calls))
+        return ToolResult(text=f"[mock] executed {len(calls)} call(s)", executed=len(calls))
 
     async def propose_choices(self, packages: list) -> ToolResult:
         self.proposed.append(packages)

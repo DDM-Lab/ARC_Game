@@ -6,11 +6,11 @@ officers run with opening_mode="reactive" (set on the loaded config in-process; 
 config file is touched). Verifies:
 
   1. UNPROMPTED (begin_round) turn is BRIEF-ONLY: the palette handed to the model
-     has NO acting tools (execute_commands/propose_choices stripped), the turn
+     has NO acting tools (action tools/propose_choices stripped), the turn
      message carries the brief-only closing, and even a model that TRIES to call
-     execute_commands is refused at dispatch — zero execute_action frames reach Unity.
-  2. SPOKEN-TO (director_message) turn MAY ACT: the palette includes execute_commands,
-     the closing says "do exactly what was asked", and a command tag executes for real.
+     an action tool is refused at dispatch — zero execute_action frames reach Unity.
+  2. SPOKEN-TO (director_message) turn MAY ACT: the palette includes the action tools,
+     the closing says "do exactly what was asked", and an action tool call executes for real.
   3. ONE-MESSAGE CAP: a brief-only turn stops after the first send_message even
      if the model would send a second — exactly one director-facing message.
   4. NON-REACTIVE UNCHANGED: an "emergent" officer keeps the full palette on an
@@ -29,13 +29,9 @@ from agent_router import Session
 from agent_config import load_config
 
 
-# The officer's ACTING surface after the typed-tool cutover (B2): the 7 typed action tools
-# plus the legacy execute_commands (still dispatchable) and propose_choices. Asserting on
-# this set rather than the literal "execute_commands" keeps these tests meaningful — the
-# palette now offers typed tools, so a bare `"execute_commands" not in tools` check would
-# pass vacuously and stop catching an acting-tool leak.
+# The officer's ACTING surface: the 7 typed action tools and propose_choices.
 ACTING_TOOLS = {"build", "hire", "train", "staff", "deconstruct", "task", "transfer",
-                "execute_commands", "propose_choices"}
+                "propose_choices"}
 
 
 def fake_enumerate(game_state):
@@ -123,8 +119,8 @@ async def test_unprompted_brief_only():
                 seen_closing[name] = messages[-1]["content"]
                 # A misbehaving model TRIES to act anyway — must be refused, not executed.
                 return {"content": "trying to build",
-                        "tool_calls": [{"id": f"{name}-0", "name": "execute_commands",
-                                        "arguments": {"commands": "<build>Kitchen,1</build>"}}]}
+                        "tool_calls": [{"id": f"{name}-0", "name": "build",
+                                        "arguments": {"type": "kitchen", "site_id": 1}}]}
             return {"content": "giving up, briefing instead", "tool_calls": []}
         agent_router.run_tool_step = fake_run_tool_step
         agent_router._enumerate_actions = fake_enumerate
@@ -158,8 +154,8 @@ async def test_spoken_to_may_act():
                 seen_tools[name] = [t["function"]["name"] for t in tools]
                 seen_closing[name] = messages[-1]["content"]
                 return {"content": "acting on order",
-                        "tool_calls": [{"id": f"{name}-0", "name": "execute_commands",
-                                        "arguments": {"commands": "<build>Kitchen,1</build>"}}]}
+                        "tool_calls": [{"id": f"{name}-0", "name": "build",
+                                        "arguments": {"type": "kitchen", "site_id": 1}}]}
             return {"content": "done", "tool_calls": []}
         agent_router.run_tool_step = fake_run_tool_step
         agent_router._enumerate_actions = fake_enumerate
@@ -203,7 +199,7 @@ async def test_one_message_cap():
 
 
 async def test_no_director_echo():
-    """Executing via execute_commands must NOT post a per-action 🔨 chat bubble."""
+    """Executing an action tool must NOT post a per-action 🔨 chat bubble."""
     with tempfile.TemporaryDirectory() as td:
         cfg, sess = make_session(td, reactive=True)
         executed, responses = instrument(sess)
@@ -215,8 +211,8 @@ async def test_no_director_echo():
             step[name] = s + 1
             if s == 0:
                 return {"content": None,
-                        "tool_calls": [{"id": f"{name}-0", "name": "execute_commands",
-                                        "arguments": {"commands": "<build>Kitchen,1</build>"}}]}
+                        "tool_calls": [{"id": f"{name}-0", "name": "build",
+                                        "arguments": {"type": "kitchen", "site_id": 1}}]}
             # The officer's OWN words are allowed; the robotic 🔨 echo is not.
             return {"content": "Built the kitchen as ordered.", "tool_calls": []}
         agent_router.run_tool_step = fake_run_tool_step
@@ -253,8 +249,8 @@ async def test_telemetry_wired():
             step[name] = s + 1
             if s == 0:
                 return {"content": "acting", "usage": {"total_tokens": 123},
-                        "tool_calls": [{"id": f"{name}-0", "name": "execute_commands",
-                                        "arguments": {"commands": "<build>Kitchen,1</build>"}}]}
+                        "tool_calls": [{"id": f"{name}-0", "name": "build",
+                                        "arguments": {"type": "kitchen", "site_id": 1}}]}
             return {"content": "Done.", "usage": {"total_tokens": 77}, "tool_calls": []}
         agent_router.run_tool_step = fake_run_tool_step
         agent_router._enumerate_actions = fake_enumerate
@@ -265,8 +261,8 @@ async def test_telemetry_wired():
         res = captured["results"]
         assert any(r.get("action_id") == "build_Kitchen_1" and r.get("success")
                    for r in res), f"execution_results missing the build: {res}"
-        assert any(p.get("tool") == "execute_commands" for p in captured["packages"]), \
-            f"attempts missing the execute_commands call: {captured['packages']}"
+        assert any(p.get("tool") == "build" for p in captured["packages"]), \
+            f"attempts missing the build call: {captured['packages']}"
         assert captured["raw"] == "Done.", f"raw should be the officer's final text: {captured['raw']}"
         print(f"[6] TELEMETRY WIRED ok: tokens={captured['tokens']}, "
               f"results={len(res)} rec(s), attempts={len(captured['packages'])}")
@@ -287,8 +283,8 @@ async def test_emergent_unchanged():
             step[name] = s + 1
             if s == 0:
                 return {"content": "acting",
-                        "tool_calls": [{"id": f"{name}-0", "name": "execute_commands",
-                                        "arguments": {"commands": "<build>Kitchen,1</build>"}}]}
+                        "tool_calls": [{"id": f"{name}-0", "name": "build",
+                                        "arguments": {"type": "kitchen", "site_id": 1}}]}
             return {"content": "done", "tool_calls": []}
         agent_router.run_tool_step = fake_run_tool_step
         agent_router._enumerate_actions = fake_enumerate

@@ -190,9 +190,7 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
         # delta renderer falls back to full compact, so delta+K=1 degrades gracefully to compact.
         prev_state = None
         for rnd in range(rounds):
-            # Enumeration is the execution/validation backend for BOTH formats: requested indices
-            # (LLM idx, parsed cmd tags, or baseline output) all index this list, so categorize from
-            # it rather than from the observation (which omits the menu in cmd format).
+            # The round's action menu: every policy's calls resolve to indices into it.
             acts_enum = env.get_valid_actions()
             state = observe(env.game_state, acts_enum, obs_config)
             raw = rtrace = None; rtok = None; parsed_ok = None

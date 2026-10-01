@@ -64,9 +64,7 @@ def run_one_episode(env, ep_idx):
             print(f"  turn {step_i}: day={obs_dict.get('day')} budget={obs_dict.get('budget')} "
                   f"choiceless_tasks={len(cl)} → {samples}")
 
-        # No-op action: empty string parsed by the LLM wrapper as "did nothing this turn"
-        # (verified path: llm_agents_wrapper._actions_at + parse_commands with empty text
-        # returns no actions, env.step still advances the game clock).
+        # No-op action: an empty step runs no game action and still advances the game clock.
         t0 = time.perf_counter()
         try:
             obs, reward, terminated, truncated, info = env.step("")

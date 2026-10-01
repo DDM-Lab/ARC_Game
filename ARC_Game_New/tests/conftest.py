@@ -1,7 +1,7 @@
 """Make the ARC_Game_New package modules importable from tests/.
 
 The tests were written when they sat next to the modules they import
-(`import cmd_parser`, `from cora.env import GameEnv`). They were moved into
+(`import agent_router`, `from cora.env import GameEnv`). They were moved into
 tests/ for repo hygiene; this keeps those imports working without editing each file.
 """
 import os

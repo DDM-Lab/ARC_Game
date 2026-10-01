@@ -121,7 +121,7 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 
 | Area | Status |
 |---|---|
-| Tool-call executor | done in the benchmark (`cora/executor.py`); router and RL pending |
+| Tool-call executor | done in the benchmark and the router (officers' action tools and `propose_choices` packages; command tags retired); RL pending |
 | Headless parameters, pinned map, scenario block | done |
 | Gym steps = human decision points (Day 1 setup, rollover step) | done |
 | `cora/` package | done |
@@ -130,7 +130,8 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 | Baselines act through tool calls (`execute_indices` retired) | done |
 | Search wing: `oracle/` as a package on `cora/` (policy family, records) | done |
 | Surrogate on the new rules (`cora/params`, Unity's score), parity restored | pending |
-| `router/` split, legacy actors retired | pending |
+| Legacy actors (auto / choices / coach) retired | done |
+| `router/` split | pending |
 | `CoraEnv` for RL; thin Verlog adapter | pending |
 | Repo hygiene (scripts, docs, tests) | pending |
 | C# `GameApi` facade, task logic out of the UI | separate branch |

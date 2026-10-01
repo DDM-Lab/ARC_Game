@@ -65,18 +65,16 @@ EXPECTED_SCOPE = {
     "External Relations Officer": {"build_CaseworkSite_3", "xfer_food_1"},
 }
 
-# Under the tags-only vocabulary each officer WRITES a command tag (via
-# execute_commands), not an index. These tags each resolve to exactly one
-# in-scope action_id; the reverse map lets us attribute executed frames back to
-# the officer that issued them (the tags path executes via _execute_actions_via_unity,
-# which carries no officer name).
-OFFICER_TAG = {
-    "Workforce Officer": ("<hire>untrained,1</hire>", "hire_untrained_1"),
-    "Lodging Officer": ("<build>Shelter,2</build>", "build_Shelter_2"),
-    "Food Officer": ("<build>Kitchen,1</build>", "build_Kitchen_1"),
-    "External Relations Officer": ("<build>CaseworkSite,3</build>", "build_CaseworkSite_3"),
+# Each officer calls one typed action tool that resolves to exactly one in-scope action_id; the
+# reverse map attributes executed frames back to the officer that issued them (the
+# execute_action frame carries no officer name).
+OFFICER_CALL = {
+    "Workforce Officer": (("hire", {"kind": "untrained", "count": 1}), "hire_untrained_1"),
+    "Lodging Officer": (("build", {"type": "shelter", "site_id": 2}), "build_Shelter_2"),
+    "Food Officer": (("build", {"type": "kitchen", "site_id": 1}), "build_Kitchen_1"),
+    "External Relations Officer": (("build", {"type": "casework", "site_id": 3}), "build_CaseworkSite_3"),
 }
-ACTIONID_TO_OFFICER = {aid: name for name, (_tag, aid) in OFFICER_TAG.items()}
+ACTIONID_TO_OFFICER = {aid: name for name, (_call, aid) in OFFICER_CALL.items()}
 
 
 def base_state(v=0):
@@ -165,10 +163,8 @@ async def run_dispatch_test():
 
         sess._send = fake_send
 
-        # Scripted officer: step 0 WRITES its in-scope command tag (tags-only
-        # vocabulary; execute_game_action is gone). Food also emits an OUT-OF-SCOPE
-        # <build>Shelter,...> tag — it must NOT resolve against Food's scoped menu,
-        # proving the tags path enforces the same scope the index path did.
+        # Scripted officer: step 0 calls its in-scope action tool. Food also calls an
+        # OUT-OF-SCOPE build(shelter) — it must NOT resolve against Food's scoped menu.
         step_counters = {}
 
         def fake_run_tool_step(messages, tools, agent_cfg, tool_mode):
@@ -182,12 +178,12 @@ async def run_dispatch_test():
                 import time as _t
                 _t.sleep(0.02)  # run_tool_step is called via asyncio.to_thread → real overlap
                 concurrency["cur"] -= 1
-                tag = OFFICER_TAG[name][0]
-                if name == "Food Officer":
-                    tag += "\n<build>Shelter,2</build>"  # peer's action — must be filtered out
-                return {"content": f"{name} acting",
-                        "tool_calls": [{"id": f"{name}-0", "name": "execute_commands",
-                                        "arguments": {"commands": tag, "note": "act"}}]}
+                (tool, args), _aid = OFFICER_CALL[name]
+                calls = [{"id": f"{name}-0", "name": tool, "arguments": args}]
+                if name == "Food Officer":   # peer's action — must be filtered out
+                    calls.append({"id": f"{name}-1", "name": "build",
+                                  "arguments": {"type": "shelter", "site_id": 2}})
+                return {"content": f"{name} acting", "tool_calls": calls}
             return {"content": f"{name} done", "tool_calls": []}  # finish (no tool call)
 
         agent_router.run_tool_step = fake_run_tool_step
@@ -209,7 +205,7 @@ async def run_dispatch_test():
         print(f"[2] CONCURRENT DISPATCH ok: max {concurrency['n']} officers overlapping")
 
         # (3) scoping — each officer executed only in-scope actions. Food's peer
-        # (out-of-scope) <build>Shelter,2</build> tag must NOT have resolved: exactly
+        # (out-of-scope) build(shelter, 2) must NOT have resolved: exactly
         # 4 frames total (one per officer), and no action attributed to a foreign owner.
         assert None not in executed_by_officer, \
             f"an executed action_id had no owner (leak?): {executed_ids}"

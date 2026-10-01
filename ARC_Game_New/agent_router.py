@@ -48,15 +48,15 @@ from continuous_agent import (build_tools, run_tool_step, DEFAULT_TOOLS,
                               known_ctx_limit, _est_prompt_tokens)
 from cora.actions import enumerate_actions
 from cora.tools import TOOLS, TOOL_BY_NAME
-# The typed action tools (build/hire/train/staff/deconstruct/task/transfer) the officer emits.
-# Each is translated to its command tag and routed through the execute_commands path.
+# The typed action tools (build/hire/train/staff/deconstruct/task/transfer) the officer emits;
+# Session._execute_calls runs them through cora.executor.
 _CORA_ACTION_TOOLS = {t["name"] for t in TOOLS}
 import bundle as bundle_mod
 from bundle import load_bundle, BundleError
 import cora_ext
 import plugin_store
 import key_store
-from cmd_parser import parse_commands, translate_tool_calls, ParserEnv  # router-only tag adapter
+from cora import executor
 from cora.scoring import REWARD_WEIGHTS, score_components
 from cora.observation import officer_text, task_officer, task_group, task_token, vehicle_capacity
 
@@ -73,12 +73,6 @@ import re
 # more people — CAN legitimately repeat, so ledger_mode="block" leaves them alone.
 _NON_REPEATABLE_TYPES = {"construction", "deconstruction", "worker_assignment"}
 
-
-# The router's parser shim IS the shared cmd_parser.ParserEnv — one shim across
-# every arm (router, gym, benchmark). Kept as a named alias because call sites and
-# comments reference _CmdParseShim; the isolation semantics (private valid_actions
-# copy so <staff> synth-append never touches the router's real list) live there.
-_CmdParseShim = ParserEnv
 
 
 def _enumerate_actions(game_state: dict) -> list[dict]:
@@ -768,8 +762,8 @@ class Session:
         engine truth, never remapped); execution CONTINUES past failures; game_state is
         refreshed between items so later items see earlier effects (e.g. hire-then-staff).
 
-        Front-ends (tool_calls / cmd-tags / idx) resolve to this ordered stream via the
-        shared resolver (cmd_parser's _PRIO reorder + sim_wf); this method does NOT reorder.
+        Callers resolve calls to this ordered stream with cora.executor (which orders them);
+        this method does NOT reorder.
         `scope_agent` is advisory (actor tag / caller logging); scope filtering is applied
         by the caller BEFORE building the item stream.
         """
@@ -1320,11 +1314,11 @@ class Session:
     # Tools that COMMIT to the world (spend, build, hire, transfer) or seize the
     # director's attention with a proposal. Stripped from the palette on an
     # unprompted "reactive" turn so an officer physically cannot act unbidden.
-    # The typed action tools count as "acting" (build/hire/…) alongside execute_commands and
-    # propose_choices, so the reactive-autonomy guard strips ALL of them on an unprompted turn.
+    # The typed action tools count as "acting" (build/hire/…) alongside propose_choices, so the
+    # reactive-autonomy guard strips ALL of them on an unprompted turn.
     # add_to_autonomy_list counts too: an officer asks for a standing order only when the
     # Director has spoken to it, never on an unprompted turn.
-    _ACTING_TOOLS = frozenset({"execute_commands", "propose_choices", "add_to_autonomy_list"}
+    _ACTING_TOOLS = frozenset({"propose_choices", "add_to_autonomy_list"}
                               | _CORA_ACTION_TOOLS)
 
     async def _run_continuous_inner(
@@ -2354,23 +2348,14 @@ class Session:
         return "\n".join(lines)
 
     def _render_options_compact(self, filtered_actions: List[dict], game_state: dict) -> str:
-        """Compact, tag-oriented affordance view: read-surface == write-surface.
+        """Compact affordance view, grouped by action tool: what the officer can do now and the
+        arguments to call each tool with. Nothing references a volatile menu index.
 
-        Replaces the indexed `_render_action_list` for the tags-only officers. It
-        lists WHAT is available grouped by command (BUILD/HIRE/TRAIN/STAFF/…), and
-        the model composes the exact `<tag>` from the grammar in the tool schema —
-        so nothing the model reads references a volatile integer index that could
-        drift or be hallucinated. Two invariants vs the indexed list:
-
-        (a) TASK rows carry the stable task token (cora.observation.task_token,
-            computed from the RAW task so it matches what cmd_parser accepts), not a
-            turn-to-turn taskId.
-        (b) Committed non-repeatable affordances are pulled OUT of the available set
-            and listed under an ALREADY-COMMITTED footer with the ⚠️ marker,
-            reusing `_action_ledger_key` so the identity matches the ledger block.
-
-        Everything shown round-trips through cmd_parser.parse_commands back to an
-        action in `filtered_actions` (verified hermetically).
+        (a) Task rows carry the stable task token (cora.observation.task_token, from the RAW
+            task, so it matches what the task tool accepts), not a turn-to-turn taskId.
+        (b) Committed non-repeatable affordances are pulled OUT of the available set and listed
+            under an ALREADY-COMMITTED footer, using `_action_ledger_key` so the identity
+            matches the ledger block.
         """
         if not filtered_actions:
             return "(no valid actions available to you)"
@@ -2418,7 +2403,7 @@ class Session:
             elif t == "resource_transfer":
                 tr = a.get("transfer", {})
                 res = "food" if tr.get("resource_type") == "FoodPacks" else "people"
-                transfer.append(f"{res},{tr.get('source_facility')},"
+                transfer.append(f"{res}: {tr.get('source_facility')} -> "
                                 f"{tr.get('destination_facility')} (up to {tr.get('quantity')})")
             elif t == "task_choice":
                 tc = a.get("task_choice", {})
@@ -2434,16 +2419,15 @@ class Session:
                 text = desc.split(marker, 1)[-1] if marker in desc else ""
                 tasks[tid]["choices"].append((cid, text))
 
-        lines = ["What you can do now — write each as a command tag "
-                 "(exact grammar is in the execute_commands tool schema):"]
+        lines = ["What you can do now (call the action tools with these arguments):"]
         if sites:
-            lines.append("  BUILD  <build>TYPE,SITE</build>:")
+            lines.append("  build(type, site_id):")
             # Collapse consecutive sites that offer the SAME building types into one range.
             # A kitchen-scoped officer was shown fifteen lines that differed only by an id —
             # "site 0 (AbandonedSite (1)): Kitchen" repeated down the page — which was the
             # bulk of its per-turn message and buried the parts that actually varied. The
             # site ids are unchanged and still individually addressable; only the rendering
-            # is folded, so nothing the parser accepts is affected.
+            # is folded.
             ordered = sorted(sites, key=lambda s: (s is None, s))
             run: list = []
 
@@ -2476,20 +2460,18 @@ class Session:
         if hire["trained"]:
             hires.append(f"trained up to {hire['trained']}")
         if hires:
-            lines.append("  HIRE  <hire>untrained|trained,N</hire>: " + "  |  ".join(hires))
+            lines.append("  hire(kind, count): " + "  |  ".join(hires))
         if train:
-            lines.append(f"  TRAIN  <train>N</train>: up to {train} untrained")
+            lines.append(f"  train(count): up to {train} untrained")
         if staff:
-            lines.append("  STAFF  <staff>BUILDING,N</staff>: "
-                         + "  ".join(f"{b} (up to {q})" for b, q in staff.items()))
+            lines.append("  staff(site): " + ", ".join(staff))
         if decon:
-            lines.append("  DECONSTRUCT  <deconstruct>NAME</deconstruct>: " + ", ".join(decon))
+            lines.append("  deconstruct(site): " + ", ".join(decon))
         if transfer:
-            lines.append("  TRANSFER  <transfer>food|people,SRC,DST,N</transfer>: "
-                         + "  ".join(transfer))
+            lines.append("  transfer(resource, source, dest, qty): " + "  ".join(transfer))
         for tid, tk in tasks.items():
             opts = "  ".join(f"[{cid}] {txt}" for cid, txt in tk["choices"])
-            lines.append(f'  TASK  <task>{tk["token"]},CHOICE</task>  "{tk["title"]}": {opts}')
+            lines.append(f'  task(task_id="{tk["token"]}", choice_id)  "{tk["title"]}": {opts}')
         if done:
             lines.append("")
             lines.append("⚠️ ALREADY COMMITTED THIS PHASE — do NOT pick these again:")
@@ -2497,46 +2479,26 @@ class Session:
                 lines.append(f"  - [{a.get('action_type', '?')}] {a.get('description', '?')}")
         return "\n".join(lines)
 
-    def _tags_to_indices(
-        self, commands: str, filtered_actions: List[dict], game_state: dict
+    def _calls_to_indices(
+        self, calls: list, filtered_actions: List[dict], game_state: dict
     ) -> Tuple[List[int], List[str]]:
-        """Resolve command tags to indices INTO filtered_actions (for propose_choices).
+        """Resolve a proposal package's typed calls to indices INTO filtered_actions.
 
-        A proposal package bundles `action_indices` that index into filtered_actions
-        — the exact list the Unity client renders and executes against. This maps the
-        tags-only vocabulary onto those indices so proposals need no client change and
-        no separate write-surface. Contrast execute_commands, whose resolved indices
-        may point PAST filtered_actions into the shim's <staff> synth-append; here we
-        must land every kept action back inside filtered_actions.
+        A package's `action_indices` index the exact list the client renders and executes
+        (available_actions = filtered_actions), so every kept action must land back inside it:
 
-        - A non-<staff> tag resolves (via the shared parser) to an index
-          < len(filtered_actions): the shim's valid_actions is a copy, so that IS a
-          position in filtered_actions — keep it.
-        - A <staff> tag makes the parser SYNTHESIZE a worker_assignment action
-          appended at index >= len(filtered_actions) (absent from filtered_actions).
-          Its prose ("Assign workforce N to X") differs BY CONSTRUCTION from the
-          enumerated assignment's prose ("Assign N trained worker(s) to X"), so
-          _action_ledger_key is a guaranteed false-negative here; identity-match
-          it back STRUCTURALLY on (building_name, quantity) instead. Drop-with-
-          reason if no assignment at that quantity is offered this turn (e.g. the
-          request outran the free-worker pool).
-        - <task> tags land in parsed["choices"] (no home in the action-index
-          contract) — dropped with a reason: tasks are answered via execute_commands,
-          not bundled into a proposal.
-        - Parser errors are surfaced as reasons.
+        - Most calls resolve (cora.executor) to an index < len(filtered_actions): keep it.
+          A repeated index encodes quantity (a hire covered by several bundles) and is kept.
+        - staff() makes the executor SYNTHESIZE a worker_assignment appended past the menu; it
+          is matched back structurally on (building_name, quantity) to the enumerated
+          assignment the client can execute, or dropped with a reason if none is offered.
+        - task() answers have no home in the index contract: dropped with a reason (officers
+          answer tasks with the task tool, not inside a proposal).
+        - Calls that do not resolve are dropped with their reason; nothing is guessed.
 
-        Returns (indices, reasons): indices into filtered_actions (deduped,
-        order-preserving); reasons are human-readable drop notes for logging. Never
-        emits an index that mis-points — an unresolved tag is dropped, not guessed.
-        """
-        shim = _CmdParseShim(filtered_actions, game_state)
-        parsed = parse_commands(commands, shim)
+        Returns (indices, reasons)."""
+        resolved, tr = executor.plan_turn(calls, executor.Menu(filtered_actions, game_state))
         n = len(filtered_actions)
-        # Structural index for <staff> synth-match: (building_name, quantity) ->
-        # position in filtered_actions. Prefer the untrained variant (the synth is
-        # always untrained) but fall back to whatever assignment exists at that
-        # (building, quantity). This is the CORRECT identity for worker_assignment
-        # — the two code paths render different prose for the same executable action.
         assign_to_idx: dict = {}
         for i, a in enumerate(filtered_actions):
             if a.get("action_type") == "worker_assignment":
@@ -2546,31 +2508,23 @@ class Session:
                     assign_to_idx[k] = i
         indices: List[int] = []
         reasons: List[str] = []
-        seen: set = set()
-        for i in parsed["actions"]:
-            if 0 <= i < n:
-                idx: Optional[int] = i
-            elif 0 <= i < len(shim.valid_actions):
-                synth = shim.valid_actions[i]
-                asg = synth.get("assignment", {})
+        for r in sorted(resolved, key=lambda r: executor.ORDER.get(r.tool, 99)):
+            if r.status != "resolved":
+                reasons.append(f"{r.tool}: {r.reason}")
+            elif r.choice is not None:
+                reasons.append(f"task {r.choice['taskId']} choice {r.choice['choiceId']} — answer "
+                               "tasks with the task tool, not inside a proposal package")
+            for i in (r.action_indices if r.status == "resolved" else []):
+                if i < n:
+                    indices.append(i)
+                    continue
+                asg = tr.actions[i].get("assignment", {})
                 idx = assign_to_idx.get((asg.get("building_name"), asg.get("quantity")))
                 if idx is None:
-                    reasons.append(
-                        f"staffing {asg.get('quantity')} to "
-                        f"'{asg.get('building_name')}' — not offered at that "
-                        "quantity this turn (check the free-worker pool)")
-                    continue
-            else:
-                continue
-            # Keep duplicate indices: a repeated index encodes quantity (see cmd_parser
-            # ._bundle_indices), matching execute_commands and the RL gym. Deduping here
-            # under-hired/under-built via proposals (e.g. <hire>untrained,10</hire> -> 5).
-            indices.append(idx)
-        for ch in parsed["choices"]:
-            reasons.append(f"task {ch.get('taskId')} choice {ch.get('choiceId')} — "
-                           "answer tasks with execute_commands, not a proposal package")
-        for e in parsed.get("errors", []):
-            reasons.append(str(e))
+                    reasons.append(f"staffing {asg.get('quantity')} to '{asg.get('building_name')}' — "
+                                   "not offered at that quantity this turn (check the free-worker pool)")
+                else:
+                    indices.append(idx)
         return indices, reasons
 
     # ---- role grounding: who owns which action ---------------------------
@@ -2790,38 +2744,15 @@ class Session:
         tool is carried out and the honest result is returned to it.
         """
         name = tool_call.get("name")
-        # Phase B: typed action tools are the officer's action surface. Translate each to its
-        # command tag and route through the SAME execute_commands path (ledger/block gate +
-        # execute_resolved) — so the officer and the RL policy share the identical tool schema
-        # AND execution semantics. A malformed typed call yields an empty tag (honest no-op).
-        # Defined before the _CORA_ACTION_TOOLS branch below, which returns `meta` on its
-        # translator-error path. Assigning it after that branch raised UnboundLocalError,
-        # which escaped the dispatcher and left a tool_calls message with no matching tool
-        # result in the officer's game-long transcript — bricking them for the session.
         meta = {"executed": 0, "finish": False}
-        # The call as the officer made it, before a typed tool is rewritten to
-        # execute_commands below: standing orders are granted per typed tool + arguments.
-        orig_name, orig_args = name, (tool_call.get("arguments") or {})
-        if name in _CORA_ACTION_TOOLS:
-            _tag, _tmeta = translate_tool_calls(
-                [(name, tool_call.get("arguments") or {})])
-            # A call the translator refused (delimiter in an argument, unreadable args) would
-            # otherwise arrive as an empty tag and come back as the opaque "empty commands"
-            # error. Hand the model the actual reason so it can reissue — same honest-result
-            # contract as the rest of this dispatcher.
-            if not _tag and _tmeta.get("errors"):
-                return ("ERROR: " + "; ".join(_tmeta["errors"]),
-                        game_state, all_actions, filtered_actions, meta)
-            tool_call = dict(tool_call, name="execute_commands", arguments={"commands": _tag})
-            name = "execute_commands"
         args = tool_call.get("arguments") or {}
 
         if brief_only and name in self._ACTING_TOOLS:
             # A standing order the Director approved is the one thing an officer may do on
             # a turn nobody asked it to take: that typed tool, within the order's argument
             # limits. It then runs through the normal (non-brief) path, tagged with the rule.
-            rule = (self._autonomy_rule_for(agent, orig_name, orig_args)
-                    if orig_name in _CORA_ACTION_TOOLS else None)
+            rule = (self._autonomy_rule_for(agent, name, args)
+                    if name in _CORA_ACTION_TOOLS else None)
             if rule is not None:
                 return await self._run_under_standing_order(
                     agent, rule, tool_call, game_state, all_actions, filtered_actions,
@@ -2835,6 +2766,11 @@ class Session:
                            "(same tool, within its limits). Unprompted, you may only carry out "
                            "a standing order; for anything else, ask the Director.")
             return (refusal, game_state, all_actions, filtered_actions, meta)
+
+        # The typed action tools (cora.tools) run through the shared executor.
+        if name in _CORA_ACTION_TOOLS:
+            return await self._execute_calls(agent, [(name, args)], game_state, all_actions,
+                                             filtered_actions, meta)
 
         # Plugin tools (cora_ext registry) take precedence — a contributor tool, or one that
         # overrides a built-in by name, dispatches here. Inert when no plugins are loaded.
@@ -2882,235 +2818,11 @@ class Session:
             return self._responsibility_lookup_text(agent, args, game_state), \
                 game_state, all_actions, filtered_actions, meta
 
-        if name == "execute_commands":
-            commands = str(args.get("commands") or "").strip()
-            if not commands:
-                return "ERROR: empty commands.", game_state, all_actions, filtered_actions, meta
-            # Resolve intent tags against the agent's CURRENT menu. The shim isolates
-            # the parser's <staff> synth-append from the router's real action list;
-            # resolved indices point into shim.valid_actions (menu + any synth action).
-            shim = _CmdParseShim(filtered_actions, game_state)
-            parsed = parse_commands(commands, shim)
-            resolved = [i for i in parsed["actions"] if 0 <= i < len(shim.valid_actions)]
-            actions_to_run = [shim.valid_actions[i] for i in resolved]
-            # ledger_mode="block": staleness-style no-op (à la Claude Code's
-            # read-before-edit), ported here from the removed execute_game_action path
-            # so the tags surface enforces it too. A NON-repeatable action already
-            # committed this phase is NOT re-sent to the engine — the frozen
-            # paused-phase state can't reflect the queued action yet, so re-doing it
-            # would just fail engine-side. This is grounding (it IS already queued),
-            # not style-gating; repeatable actions (hire/train/transfer) are never
-            # blocked. The other actions in the same batch still run.
-            blocked = []
-            if getattr(agent, "ledger_mode", "annotate") == "block":
-                committed = set(self._committed_this_phase)
-                keep = []
-                for a in actions_to_run:
-                    if (a.get("action_type") in _NON_REPEATABLE_TYPES
-                            and self._action_ledger_key(a) in committed):
-                        blocked.append(a)
-                    else:
-                        keep.append(a)
-                actions_to_run = keep
-            # Executed as-chosen: a failed action (e.g. "site not available") is an honest
-            # policy signal returned to the agent, NOT auto-remapped or hidden. Mirrors the
-            # continuous-propose stance; no site-conflict resolution here by design.
-            exec_results, game_state = (
-                await self.execute_resolved(
-                    [{"kind": "action", "action": a} for a in actions_to_run],
-                    game_state=game_state, scope_agent=agent)
-                if actions_to_run else ([], game_state)
-            )
-            executed = 0
-            lines = []
-            # Per-action outcome records for the turn telemetry (mirrors the
-            # _log_action ground-truth events, aggregated into the turn record).
-            results: List[dict] = []
-            for a in blocked:
-                self._log_action(
-                    self._actor_for(agent), "game_action", "execute_commands",
-                    {"action": a, "success": False, "error": "blocked_already_committed",
-                     "commands": commands, "note": args.get("note"),
-                     **self._outcome_fields("invalid")},
-                )
-                results.append({"action_id": a.get("action_id"),
-                                "action_type": a.get("action_type"),
-                                "description": a.get("description"),
-                                "cost": a.get("cost") or 0,
-                                "success": False, "error": "blocked_already_committed"})
-                print(f"[router]   ⛔ Blocked re-execution (already committed this "
-                      f"phase): {self._action_ledger_key(a)}")
-                lines.append(f"  ⛔ {a.get('description', '(action)')} — already committed "
-                             f"this phase (queued; re-doing is a no-op)")
-            for action, r in zip(actions_to_run, exec_results):
-                success = bool(r.get("success"))
-                err = r.get("error_message") or ""
-                results.append({"action_id": action.get("action_id"),
-                                "action_type": action.get("action_type"),
-                                "description": action.get("description"),
-                                "cost": action.get("cost") or 0,
-                                "success": success, "error": err})
-                # Deltas aren't per-action-attributable inside a batched Unity
-                # commit, so log engine-truth outcome only (ok/rejected). The
-                # single-action execute_game_action path carries the deltas.
-                self._log_action(
-                    self._actor_for(agent), "game_action", "execute_commands",
-                    {"action": action, "success": success, "error": err,
-                     "commands": commands, "note": args.get("note"),
-                     **self._outcome_fields("ok" if success else "rejected")},
-                )
-                desc = action.get("description", "(action)")
-                if success:
-                    executed += 1
-                    self._record_committed(action)
-                    await self._fire_hooks(
-                        "on_action_executed",
-                        {"actor": agent.subagent_name, "source": "officer",
-                         "is_human": False, "action": action}, agent=agent)
-                    # Director-facing commit bubble: one plain-English past-tense
-                    # line per committed action ("Action: Built Shelter at
-                    # Riverside for $2,000") — no emojis, no command-tag syntax.
-                    # This is a distinct, log-style confirmation channel; the
-                    # officer still speaks to the director in its own words via
-                    # send_message. Also ground-truth logged via _log_action
-                    # above and surfaced to the MODEL in `lines` below.
-                    await self._send_agent_response(
-                        agent, "Action: " + self._humanize_committed_action(action),
-                        "agent_response", origin="router_action_receipt")
-                    lines.append(f"  ✅ {desc}"
-                                 + (self._transfer_trip_note(action, game_state)
-                                    if action.get("action_type") == "resource_transfer" else ""))
-                else:
-                    lines.append(f"  ❌ {desc}" + (f" — {err}" if err else ""))
-            # Answer any choice tasks (<task>ID,choiceId</task>). Scope is enforced
-            # via the SAME subaction_space filter as every action (_may_answer_task):
-            # an officer may only answer tasks whose coarse group its config admits —
-            # an out-of-scope pick is an honest policy signal, NOT silently executed.
-            # Same as-chosen stance as actions: no auto-remap, failures returned.
-            choice_lines = []
-            answered = 0
-            by_id = {t.get("taskId"): t for t in (game_state.get("allActiveTasks") or [])}
-            for ch in parsed["choices"]:
-                tid, cid = ch.get("taskId"), ch.get("choiceId")
-                task = by_id.get(tid)
-                if task is None:
-                    # Model named a task that isn't active — action-space error.
-                    self._log_action(
-                        self._actor_for(agent), "game_action", "select_task_choice",
-                        {"taskId": tid, "choiceId": cid, "success": False,
-                         "error": "no_such_active_task", "commands": commands,
-                         "note": args.get("note"), **self._outcome_fields("invalid")},
-                    )
-                    choice_lines.append(f"  ❌ task {tid}: no such active task")
-                    continue
-                if not self._may_answer_task(agent, task):
-                    # Answered a task outside this officer's scope — action-space error.
-                    self._log_action(
-                        self._actor_for(agent), "game_action", "select_task_choice",
-                        {"taskId": tid, "choiceId": cid, "success": False,
-                         "error": "out_of_scope", "group": task_group(task),
-                         "commands": commands, "note": args.get("note"),
-                         **self._outcome_fields("invalid")},
-                    )
-                    choice_lines.append(
-                        f"  ❌ task {tid}: outside your action scope "
-                        f"(group {task_group(task)}) — not answered")
-                    continue
-                if not self._task_choice_supported:
-                    choice_lines.append(
-                        f"  ⏸ task {tid} choice {cid}: task-choice execution "
-                        f"unavailable on this transport yet")
-                    continue
-                before = self._state_metrics(game_state)
-                r, game_state = await self._execute_choice_via_unity(tid, cid, game_state)
-                ok = bool(r.get("success"))
-                err = r.get("error_message") or ""
-                self._log_action(
-                    self._actor_for(agent), "game_action", "select_task_choice",
-                    {"taskId": tid, "choiceId": cid, "success": ok,
-                     "error": err, "commands": commands, "note": args.get("note"),
-                     **self._outcome_fields(
-                         "ok" if ok else "rejected", before,
-                         self._state_metrics(game_state), is_choice=True, tid=tid)},
-                )
-                results.append({"kind": "task_choice", "taskId": tid, "choiceId": cid,
-                                "success": ok, "error": err})
-                if ok:
-                    # Fire the choice-resolved hook (e.g. a Bayesian preference elicitor). Inert
-                    # when no hooks are registered. NOTE: this is an OFFICER answering a task
-                    # choice; the director's package-selection is a separate future hook point.
-                    await self._fire_hooks(
-                        "on_choice_resolved",
-                        {"kind": "task_choice", "actor": agent.subagent_name,
-                         "source": "officer", "is_human": False,
-                         "taskId": tid, "choiceId": cid, "choice": cid,
-                         "group": task_group(task), "officer": agent.subagent_name},
-                        agent=agent)
-                if ok:
-                    answered += 1
-                    # Director-facing commit bubble for an answered task:
-                    # 'Action: Chose "Send the airlift" for task "Food shortfall
-                    # in Riverside"'. Resolve the human-readable choice text +
-                    # task title from the task dict; fall back to ids if absent.
-                    title = task.get("taskTitle") or task.get("title") or f"task {tid}"
-                    choice_text = next(
-                        (c.get("choiceText") or c.get("text") or "")
-                        for c in (task.get("choices") or [])
-                        if c.get("choiceId") == cid
-                    ) if any(c.get("choiceId") == cid for c in (task.get("choices") or [])) else ""
-                    choice_text = (choice_text or f"choice {cid}").strip()
-                    await self._send_agent_response(
-                        agent, f'Action: Chose "{choice_text}" for task "{title}"',
-                        "agent_response", origin="router_action_receipt")
-                    choice_lines.append(f"  ✅ answered task {tid} with choice {cid}")
-                else:
-                    choice_lines.append(
-                        f"  ❌ task {tid} choice {cid}" + (f" — {err}" if err else ""))
-            # Refresh the menu after mutating the world.
-            all_actions = _enumerate_actions(game_state)
-            filtered_actions = filter_actions(all_actions, agent.subaction_space)
-            meta["executed"] = executed
-            summary = f"Ran {len(actions_to_run)} action(s) from your commands; {executed} succeeded."
-            if blocked:
-                summary += (f" {len(blocked)} already-committed action(s) were skipped "
-                            f"(queued from earlier this phase).")
-            parts = [summary]
-            if parsed["parsed"]:
-                parts.append("Resolved: " + "; ".join(parsed["parsed"]))
-            if lines:
-                parts.append("\n".join(lines))
-            if parsed["choices"]:
-                parts.append(f"Answered {answered}/{len(parsed['choices'])} choice-task(s).")
-            if choice_lines:
-                parts.append("\n".join(choice_lines))
-            if parsed["errors"]:
-                # A command that didn't resolve to any real action/task is the
-                # execute_commands analog of an out-of-range index: an action-space
-                # error. Log each so "can't-execute" stays measurable on this path.
-                for e in parsed["errors"]:
-                    self._log_action(
-                        self._actor_for(agent), "game_action", "execute_commands",
-                        {"success": False, "error": "unresolved_command",
-                         "detail": e, "commands": commands, "note": args.get("note"),
-                         **self._outcome_fields("invalid")},
-                    )
-                    results.append({"success": False, "error": "unresolved_command",
-                                    "detail": e})
-                parts.append("Unresolved commands (NOT executed — fix and retry, or pick a "
-                             "different move):\n  " + "\n  ".join(parsed["errors"]))
-            if (not actions_to_run and not blocked
-                    and not parsed["choices"] and not parsed["errors"]):
-                parts.append("No command tags recognized. Use e.g. <build>Kitchen,1</build>.")
-            body = "\n".join(parts)
-            body += "\n\nUpdated actions:\n" + self._render_options_compact(filtered_actions, game_state)
-            meta["results"] = results
-            return body, game_state, all_actions, filtered_actions, meta
-
         if name == "propose_choices":
             result_text, game_state, all_actions, filtered_actions, executed, superseded, result_rows = \
                 await self._continuous_propose(agent, args, game_state, all_actions, filtered_actions)
             meta["executed"] = executed
-            # Surface the REAL per-action rows (execute_commands shape) so the logger
+            # Surface the REAL per-action rows (the action tools' shape) so the logger
             # tallies genuine attempts/successes; an empty list (nothing selected /
             # superseded) correctly contributes zero attempted actions.
             meta["results"] = result_rows
@@ -3172,6 +2884,179 @@ class Session:
 
         return f"ERROR: unknown tool {name!r}.", game_state, all_actions, filtered_actions, meta
 
+    async def _execute_calls(self, agent: AgentConfig, calls: list, game_state: dict,
+                             all_actions: List[dict], filtered_actions: List[dict], meta: dict):
+        """Run an officer's typed action calls through cora.executor, the same resolver the
+        benchmark and RL use: calls resolve against the officer's scoped menu (so out-of-scope
+        targets are invalid), resolved game actions are committed to Unity in the executor's
+        ORDER, and task answers are sent one by one. Every outcome is logged and reported back to
+        the officer honestly; nothing is remapped.
+
+        Returns (result_text, game_state, all_actions, filtered_actions, meta)."""
+        resolved, tr = executor.plan_turn(calls, executor.Menu(filtered_actions, game_state))
+        ordered = sorted(resolved, key=lambda r: executor.ORDER.get(r.tool, 99))
+        to_run, choices, errors, summaries = [], [], [], []       # to_run: (action, CallResult)
+        for r in ordered:
+            if r.status != "resolved":
+                errors.append(r)
+            elif r.choice is not None:
+                choices.append(r)
+                summaries.append(r.summary)
+            else:
+                to_run.extend((tr.actions[i], r) for i in r.action_indices)
+                summaries.append(r.summary)
+
+        def call_of(r):
+            return {"tool": r.tool, "args": r.args}
+
+        # ledger_mode="block": a NON-repeatable action already committed this phase is not re-sent
+        # (the paused-phase state cannot show the queued action yet, so redoing it would just fail
+        # engine-side). Grounding, not style-gating: hire/train/transfer are never blocked, and the
+        # rest of the batch still runs.
+        blocked = []
+        if getattr(agent, "ledger_mode", "annotate") == "block":
+            committed = set(self._committed_this_phase)
+            keep = []
+            for a, r in to_run:
+                if a.get("action_type") in _NON_REPEATABLE_TYPES and self._action_ledger_key(a) in committed:
+                    blocked.append((a, r))
+                else:
+                    keep.append((a, r))
+            to_run = keep
+        exec_results, game_state = (
+            await self.execute_resolved([{"kind": "action", "action": a} for a, _ in to_run],
+                                        game_state=game_state, scope_agent=agent)
+            if to_run else ([], game_state))
+        executed, lines, results = 0, [], []
+        for a, r in blocked:
+            self._log_action(self._actor_for(agent), "game_action", r.tool,
+                             {"action": a, "success": False, "error": "blocked_already_committed",
+                              "call": call_of(r), **self._outcome_fields("invalid")})
+            results.append({"action_id": a.get("action_id"), "action_type": a.get("action_type"),
+                            "description": a.get("description"), "cost": a.get("cost") or 0,
+                            "success": False, "error": "blocked_already_committed"})
+            print(f"[router]   ⛔ Blocked re-execution (already committed this phase): "
+                  f"{self._action_ledger_key(a)}")
+            lines.append(f"  ⛔ {a.get('description', '(action)')} — already committed "
+                         f"this phase (queued; re-doing is a no-op)")
+        for (action, r), res in zip(to_run, exec_results):
+            success = bool(res.get("success"))
+            err = res.get("error_message") or ""
+            results.append({"action_id": action.get("action_id"), "action_type": action.get("action_type"),
+                            "description": action.get("description"), "cost": action.get("cost") or 0,
+                            "success": success, "error": err})
+            # Deltas aren't per-action-attributable inside a batched Unity commit, so log the
+            # engine-truth outcome only (ok/rejected).
+            self._log_action(self._actor_for(agent), "game_action", r.tool,
+                             {"action": action, "success": success, "error": err, "call": call_of(r),
+                              **self._outcome_fields("ok" if success else "rejected")})
+            desc = action.get("description", "(action)")
+            if success:
+                executed += 1
+                self._record_committed(action)
+                await self._fire_hooks(
+                    "on_action_executed",
+                    {"actor": agent.subagent_name, "source": "officer",
+                     "is_human": False, "action": action}, agent=agent)
+                # Director-facing commit bubble: one plain-English past-tense line per committed
+                # action ("Action: Built Shelter at Riverside for $2,000"); the officer still
+                # speaks to the director in its own words via send_message.
+                await self._send_agent_response(
+                    agent, "Action: " + self._humanize_committed_action(action),
+                    "agent_response", origin="router_action_receipt")
+                lines.append(f"  ✅ {desc}"
+                             + (self._transfer_trip_note(action, game_state)
+                                if action.get("action_type") == "resource_transfer" else ""))
+            else:
+                lines.append(f"  ❌ {desc}" + (f" — {err}" if err else ""))
+        # Task answers. Scope is enforced through the SAME subaction_space filter as every action
+        # (_may_answer_task): an out-of-scope pick is an honest policy signal, not executed.
+        choice_lines, answered = [], 0
+        by_id = {t.get("taskId"): t for t in (game_state.get("allActiveTasks") or [])}
+        for r in choices:
+            tid, cid = r.choice["taskId"], r.choice["choiceId"]
+            task = by_id.get(tid)
+            if task is None:
+                self._log_action(self._actor_for(agent), "game_action", "select_task_choice",
+                                 {"taskId": tid, "choiceId": cid, "success": False,
+                                  "error": "no_such_active_task", "call": call_of(r),
+                                  **self._outcome_fields("invalid")})
+                choice_lines.append(f"  ❌ task {tid}: no such active task")
+                continue
+            if not self._may_answer_task(agent, task):
+                self._log_action(self._actor_for(agent), "game_action", "select_task_choice",
+                                 {"taskId": tid, "choiceId": cid, "success": False,
+                                  "error": "out_of_scope", "group": task_group(task), "call": call_of(r),
+                                  **self._outcome_fields("invalid")})
+                choice_lines.append(f"  ❌ task {tid}: outside your action scope "
+                                    f"(group {task_group(task)}) — not answered")
+                continue
+            if not self._task_choice_supported:
+                choice_lines.append(f"  ⏸ task {tid} choice {cid}: task-choice execution "
+                                    f"unavailable on this transport yet")
+                continue
+            before = self._state_metrics(game_state)
+            res, game_state = await self._execute_choice_via_unity(tid, cid, game_state)
+            ok = bool(res.get("success"))
+            err = res.get("error_message") or ""
+            self._log_action(self._actor_for(agent), "game_action", "select_task_choice",
+                             {"taskId": tid, "choiceId": cid, "success": ok, "error": err,
+                              "call": call_of(r),
+                              **self._outcome_fields("ok" if ok else "rejected", before,
+                                                     self._state_metrics(game_state),
+                                                     is_choice=True, tid=tid)})
+            results.append({"kind": "task_choice", "taskId": tid, "choiceId": cid,
+                            "success": ok, "error": err})
+            if ok:
+                answered += 1
+                await self._fire_hooks(
+                    "on_choice_resolved",
+                    {"kind": "task_choice", "actor": agent.subagent_name, "source": "officer",
+                     "is_human": False, "taskId": tid, "choiceId": cid, "choice": cid,
+                     "group": task_group(task), "officer": agent.subagent_name},
+                    agent=agent)
+                # Director-facing commit bubble: 'Action: Chose "<choice>" for task "<title>"'.
+                title = task.get("taskTitle") or task.get("title") or f"task {tid}"
+                choice_text = next(((c.get("choiceText") or c.get("text") or "")
+                                    for c in (task.get("choices") or []) if c.get("choiceId") == cid), "")
+                choice_text = (choice_text or f"choice {cid}").strip()
+                await self._send_agent_response(
+                    agent, f'Action: Chose "{choice_text}" for task "{title}"',
+                    "agent_response", origin="router_action_receipt")
+                choice_lines.append(f"  ✅ answered task {tid} with choice {cid}")
+            else:
+                choice_lines.append(f"  ❌ task {tid} choice {cid}" + (f" — {err}" if err else ""))
+        for r in errors:
+            # A call that resolves to nothing the officer can do now is an action-space error;
+            # logged so "can't-execute" stays measurable.
+            self._log_action(self._actor_for(agent), "game_action", r.tool,
+                             {"success": False, "error": "invalid_call", "detail": r.reason,
+                              "call": call_of(r), **self._outcome_fields("invalid")})
+            results.append({"success": False, "error": "invalid_call", "detail": f"{r.tool}: {r.reason}"})
+        # Refresh the menu after mutating the world.
+        all_actions = _enumerate_actions(game_state)
+        filtered_actions = filter_actions(all_actions, agent.subaction_space)
+        meta["executed"] = executed
+        meta["results"] = results
+        parts = [f"Ran {len(to_run)} action(s); {executed} succeeded."]
+        if blocked:
+            parts[0] += (f" {len(blocked)} already-committed action(s) were skipped "
+                         f"(queued from earlier this phase).")
+        if summaries:
+            parts.append("Resolved: " + "; ".join(summaries))
+        if lines:
+            parts.append("\n".join(lines))
+        if choices:
+            parts.append(f"Answered {answered}/{len(choices)} choice-task(s).")
+        if choice_lines:
+            parts.append("\n".join(choice_lines))
+        if errors:
+            parts.append("Not executed (fix and retry, or pick a different move):\n  "
+                         + "\n  ".join(f"{r.tool}: {r.reason}" for r in errors))
+        body = "\n".join(parts)
+        body += "\n\nUpdated actions:\n" + self._render_options_compact(filtered_actions, game_state)
+        return body, game_state, all_actions, filtered_actions, meta
+
     async def _continuous_propose(
         self,
         agent: AgentConfig,
@@ -3188,24 +3073,22 @@ class Session:
         raw_packages = args.get("packages") or []
         reasoning = str(args.get("reasoning") or "").strip()
 
-        # Sanitize the model-authored packages into the shape the client renders.
-        # The model emits command tags (uniform vocabulary with execute_commands);
-        # _tags_to_indices maps each package's tags onto positions in filtered_actions,
-        # producing the same action_indices the client already consumes — so the
-        # outbound payload and _await_director_choice stay byte-identical (no Unity
-        # change). A package that resolves to zero actions is dropped with a reason;
-        # never mis-index.
+        # Sanitize the model-authored packages into the shape the client renders: each
+        # package's typed calls resolve (_calls_to_indices) to positions in filtered_actions,
+        # the action_indices the client consumes. A package that resolves to zero actions is
+        # dropped with a reason; never mis-index.
         packages: List[dict] = []
         drop_notes: List[str] = []
         for p in raw_packages:
             if not isinstance(p, dict):
                 continue
             label = str(p.get("label") or f"Option {len(packages) + 1}")
-            commands = str(p.get("commands") or "").strip()
-            if commands:
-                indices, reasons = self._tags_to_indices(commands, filtered_actions, game_state)
+            calls = [(c.get("tool"), c.get("args") or {}) for c in (p.get("calls") or [])
+                     if isinstance(c, dict)]
+            if calls:
+                indices, reasons = self._calls_to_indices(calls, filtered_actions, game_state)
             else:
-                indices, reasons = [], ["empty commands"]
+                indices, reasons = [], ["no calls"]
             for r in reasons:
                 print(f"[router]   ⤷ propose_choices: package '{label}': {r}")
             if not indices:
@@ -3220,8 +3103,8 @@ class Session:
                 "action_indices": indices,
             })
         if not packages:
-            msg = ("ERROR: no valid packages — each package's `commands` must contain "
-                   "command tags that resolve to actions you can take now.")
+            msg = ("ERROR: no valid packages — each package's `calls` must contain action tool "
+                   "calls that resolve to actions you can take now.")
             if drop_notes:
                 msg += " " + " ".join(drop_notes)
             return (msg, game_state, all_actions, filtered_actions, 0, False, [])
@@ -3249,7 +3132,7 @@ class Session:
         filtered_actions = filter_actions(all_actions, agent.subaction_space)
 
         executed = sum(1 for r in exec_results if (r or {}).get("success"))
-        # Real per-action execution rows in the SAME shape execute_commands emits
+        # Real per-action execution rows in the SAME shape the action tools emit
         # (action_id/action_type/description/success/error) so the turn logger
         # counts these as genuine action attempts — not a single opaque
         # propose_choices summary that reads as 1 attempted / 0 successful.
@@ -3294,7 +3177,7 @@ class Session:
                         committed = proposed_actions[ai]
                         self._record_committed(committed)
                         # Per-action visibility parity with execute_game_action /
-                        # execute_commands: narrate each executed action (esp. a build)
+                        # the action tools: narrate each executed action (esp. a build)
                         # to the director so a chosen package's effects show up in the
                         # chat timeline as they land — not only in the agent's summary.
                         await self._send_agent_response(
@@ -4580,7 +4463,7 @@ class _SessionToolContext(cora_ext.ToolContext):
     """Live ToolContext backed by a Session — the concrete `ctx` handed to plugin tools/hooks.
 
     Reads route to the session's filtered latest snapshot; the three store scopes and the
-    session lock live on the Session. Acting (`emit_commands`/`propose_choices`) is wired in a
+    session lock live on the Session. Acting (`execute`/`propose_choices`) is wired in a
     follow-up slice (the built-in execute path is extracted into a reusable helper there).
     """
     def __init__(self, session: "Session", agent: AgentConfig,
@@ -4622,16 +4505,15 @@ class _SessionToolContext(cora_ext.ToolContext):
     async def refresh_state(self) -> dict:
         return await self._s._fetch_fresh_state()
 
-    async def emit_commands(self, tags: str) -> cora_ext.ToolResult:
-        """Execute command tags through the SAME built-in path as the execute_commands tool
-        (parse → validate → Unity), reusing all its ledger/scope logic. `_skip_registry` avoids
-        re-entering the plugin registry (no recursion if a plugin overrides execute_commands)."""
+    async def execute(self, calls: list) -> cora_ext.ToolResult:
+        """Run typed action calls through the SAME path as the officer's own action tools
+        (cora.executor → Unity), with all its ledger/scope logic."""
         if self.agent is None:
-            raise RuntimeError("emit_commands requires an officer context (not a session hook)")
-        tc = {"name": "execute_commands", "arguments": {"commands": tags}}
-        text, gs, all_a, filt, meta = await self._s._dispatch_continuous_tool(
-            self.agent, tc, self._game_state, self.all_actions, self.filtered_actions,
-            _skip_registry=True)
+            raise RuntimeError("execute requires an officer context (not a session hook)")
+        calls = [(c["tool"], c.get("args") or {}) if isinstance(c, dict) else tuple(c) for c in calls]
+        text, gs, all_a, filt, meta = await self._s._execute_calls(
+            self.agent, calls, self._game_state, self.all_actions, self.filtered_actions,
+            {"executed": 0, "finish": False})
         self._game_state, self.all_actions, self.filtered_actions = gs, all_a, filt
         return cora_ext.ToolResult(text=text, executed=meta.get("executed", 0),
                                    finish=meta.get("finish", False))

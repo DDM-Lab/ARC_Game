@@ -140,7 +140,7 @@ def observe(ctx, ev):
     ctx.log("preference_update", {"n": m["n"]})                        # into the session log
 ```
 `ctx` gives you: reads (`ctx.state`, `get_facilities/...`, `await ctx.refresh_state()`), acting
-(`await ctx.emit_commands("<hire>untrained,4</hire>")`, `await ctx.propose_choices([...])`),
+(`await ctx.execute([("hire", {"kind": "untrained", "count": 4})])`, `await ctx.propose_choices([...])`),
 three store scopes (`agent_store`, `session_store`, durable `persist`), `session_lock`, `log`,
 and `run_blocking` (offload heavy math). See `examples/plugins/example_tools.py` and
 `docs/phase2-plugin-spec.md`.

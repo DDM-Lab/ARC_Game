@@ -170,9 +170,10 @@ async def s_standing_order(h):
 # The proposal as the officer writes it (the tool's package format).
 PROPOSAL = {"reasoning": "Two ways to house the next relocation.",
             "packages": [{"label": "Build a shelter", "description": "One more shelter at site 8.",
-                          "commands": "<build>shelter,8</build>"},
+                          "calls": [{"tool": "build", "args": {"type": "shelter", "site_id": 8}}]},
                          {"label": "Build two shelters", "description": "Sites 8 and 10.",
-                          "commands": "<build>shelter,8</build> <build>shelter,10</build>"}]}
+                          "calls": [{"tool": "build", "args": {"type": "shelter", "site_id": 8}},
+                                    {"tool": "build", "args": {"type": "shelter", "site_id": 10}}]}]}
 
 SCENARIOS = [("build_and_staff", 1, DOMAIN, s_build_and_staff), ("workforce", 2, DOMAIN, s_workforce),
              ("refused_and_invalid", 17, DOMAIN, s_refused_and_invalid), ("tasks", 17, ALL_OFFICERS, s_tasks),

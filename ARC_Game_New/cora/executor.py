@@ -288,10 +288,22 @@ def _unpack(call, k):
 
 
 def plan_turn(calls, env):
-    """Resolve without executing: (results, resolver). Used by execute_turn and by the command-tag
-    front end (cmd_parser), which hands the resolved indices to its own caller."""
+    """Resolve without executing: (results, resolver). execute_turn runs the result through the gym;
+    the officer router (Menu) commits it over the websocket. Resolved indices point into
+    resolver.actions (the menu plus any synthesized staff actions)."""
     tr = TurnResolver(env)
     return tr.resolve(calls), tr
+
+
+class Menu:
+    """An explicit action menu + game state in the shape plan_turn reads (the router plans against
+    each officer's scoped menu rather than an env)."""
+
+    def __init__(self, actions, game_state):
+        self.valid_actions, self.game_state = list(actions), game_state
+
+    def get_valid_actions(self):
+        return self.valid_actions
 
 
 def execute_turn(env, calls):
