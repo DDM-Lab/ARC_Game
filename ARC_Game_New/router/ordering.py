@@ -6,7 +6,7 @@ the same signature as _order_sequential() and add it to _ORDER_RULES.
 The router calls get_agent_order() — nothing else needs to change.
 """
 import random as _random
-from agent_config import AgentConfig
+from router.config import AgentConfig
 
 
 def _order_sequential(

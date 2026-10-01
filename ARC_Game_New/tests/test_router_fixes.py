@@ -12,9 +12,9 @@ import tempfile
 
 import agent_router
 from agent_router import Session
-from agent_config import load_config
+from router.config import load_config
 from cora.scoring import score_components
-from episode_logger import EpisodeLogger
+from router.episode_log import EpisodeLogger
 
 
 def _base_state(v=0):

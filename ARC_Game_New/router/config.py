@@ -295,7 +295,7 @@ def config_from_dict(data: dict) -> RouterConfig:
 
 
 # ── The server-wide officer prompt (config/global_prompt_config.json) ──
-GLOBAL_PROMPT_CONFIG_PATH = Path(__file__).parent / "config" / "global_prompt_config.json"
+GLOBAL_PROMPT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "global_prompt_config.json"
 _GLOBAL_PROMPT_CACHE = None
 
 

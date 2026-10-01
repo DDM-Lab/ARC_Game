@@ -27,7 +27,7 @@ from typing import Any, Optional
 
 
 class SqliteKV:
-    """Thread-safe JSON KV over SQLite. Implements the same interface as cora_ext._KV."""
+    """Thread-safe JSON KV over SQLite. Implements the same interface as plugin_api._KV."""
 
     def __init__(self, db_path: "str | Path"):
         self._lock = threading.Lock()

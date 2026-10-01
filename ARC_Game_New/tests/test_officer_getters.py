@@ -7,7 +7,7 @@ import tempfile
 
 import pytest
 
-from agent_config import load_config
+from router.config import load_config
 from agent_router import Session
 from cora.actions import enumerate_actions
 

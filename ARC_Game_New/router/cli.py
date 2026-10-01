@@ -3,16 +3,16 @@
 
 Run it bare for a guided menu, or use a subcommand directly:
 
-    python cora.py                      # interactive menu
-    python cora.py doctor               # is my setup working?
-    python cora.py new  yourlab/terse   # scaffold an experiment
-    python cora.py check bundles/...    # validate + authoring warnings
-    python cora.py push  bundles/...    # upload to the server
-    python cora.py data                 # list / download your sessions
-    python cora.py sft   corpus.tar.gz  # corpus -> SFT pairs
+    python -m router.cli                      # interactive menu
+    python -m router.cli doctor               # is my setup working?
+    python -m router.cli new  yourlab/terse   # scaffold an experiment
+    python -m router.cli check bundles/...    # validate + authoring warnings
+    python -m router.cli push  bundles/...    # upload to the server
+    python -m router.cli data                 # list / download your sessions
+    python -m router.cli sft   corpus.tar.gz  # corpus -> SFT pairs
 
 This is a THIN front-end. Validation is bundle.load_bundle + bundle.config_warnings, the same
-functions the upload endpoint runs; plugin checks shell out to cora_plugin.py; SFT conversion
+functions the upload endpoint runs; plugin checks shell out to router.plugin_cli; SFT conversion
 to bench/export_sft.py. Nothing here reimplements a rule, so the CLI and the server can never
 disagree about whether a bundle is acceptable.
 
@@ -32,8 +32,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from bundle import BundleError, config_warnings, load_bundle
-from cora_bundle import _tls_safe
+from router.bundles import BundleError, config_warnings, load_bundle
+from router.bundle_cli import _tls_safe
 
 DEFAULT_URL = os.environ.get("CORA_URL", "http://localhost:9876")
 DEFAULT_KEY = os.environ.get("CORA_KEY", "dev-local-key")
@@ -100,7 +100,7 @@ def cmd_doctor(args) -> int:
     st, health = api("/health", url, key)
     if st == 0:
         print(bad("  ✗ server unreachable") + f"  {health}")
-        print(dim("    start one locally:  python agent_router.py --port 9876"))
+        print(dim("    start one locally:  python -m router --port 9876"))
         return 1
     if st != 200:
         print(bad(f"  ✗ /health returned {st}") + f"  {health}")
@@ -144,15 +144,15 @@ def cmd_doctor(args) -> int:
         if len(names) > 8:
             print(dim(f"      … and {len(names) - 8} more"))
     print()
-    print(ok("Ready.") + dim("  next:  python cora.py new yourlab/my-experiment"))
+    print(ok("Ready.") + dim("  next:  python -m router.cli new yourlab/my-experiment"))
     return 0
 
 
 # ── bundle lifecycle (delegates to cora_bundle) ─────────────────────────────
 def _run(argv: list[str]) -> int:
     """Invoke another project CLI in-process so exceptions and exit codes behave."""
-    import cora_bundle
-    return cora_bundle.main(argv)
+    from router import bundle_cli
+    return bundle_cli.main(argv)
 
 
 def cmd_new(args) -> int:
@@ -170,8 +170,8 @@ def cmd_new(args) -> int:
         print()
         print(bold("next:"))
         print(f"  1. edit   {path}")
-        print(f"  2. check  python cora.py check {path}")
-        print(f"  3. push   python cora.py push  {path}")
+        print(f"  2. check  python -m router.cli check {path}")
+        print(f"  3. push   python -m router.cli push  {path}")
     return rc
 
 
@@ -197,7 +197,7 @@ def cmd_push(args) -> int:
 
 def cmd_plugin(args) -> int:
     """Offline plugin check, then optional upload (staged, not activated)."""
-    rc = subprocess.call([sys.executable, "cora_plugin.py", "check", args.file])
+    rc = subprocess.call([sys.executable, "-m", "router.plugin_cli", "check", args.file])
     if rc != 0 or not args.upload:
         return rc
     name = Path(args.file).stem
@@ -236,7 +236,7 @@ def cmd_data(args) -> int:
         out = Path(args.out or "corpus.tar.gz")
         out.write_bytes(blob)
         print(ok(f"wrote {out}") + dim(f"  ({len(blob):,} bytes)"))
-        print(dim(f"  -> python cora.py sft {out}"))
+        print(dim(f"  -> python -m router.cli sft {out}"))
         return 0
 
     st, resp = api("/my/sessions", args.url, args.key)
@@ -251,8 +251,8 @@ def cmd_data(args) -> int:
         print(dim(f"  … and {len(sessions) - 25} more"))
     if sessions:
         print()
-        print(dim("  one:  python cora.py data --session <id>"))
-        print(dim("  all:  python cora.py data --export"))
+        print(dim("  one:  python -m router.cli data --session <id>"))
+        print(dim("  all:  python -m router.cli data --export"))
     return 0
 
 

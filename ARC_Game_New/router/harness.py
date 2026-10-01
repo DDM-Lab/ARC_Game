@@ -72,8 +72,8 @@ load_env_file()
 
 import agent_router  # noqa: E402
 from agent_router import Session  # noqa: E402
-from agent_config import load_config  # noqa: E402
-from agent_filters import _action_matches_entry  # noqa: E402
+from router.config import load_config  # noqa: E402
+from router.scope import _action_matches_entry  # noqa: E402
 from cora.env import GameEnv  # noqa: E402
 
 

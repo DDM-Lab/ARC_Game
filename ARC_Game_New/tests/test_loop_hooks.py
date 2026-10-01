@@ -19,13 +19,13 @@ import os
 import tempfile
 
 import agent_router
-import cora_ext
+from router import plugin_api
 # Reuse the existing hermetic officer harness (no network, no Unity, no LLM).
 from test_reactive_officers import make_session, food_officer, instrument, fake_enumerate
 
 
 def _reset_hooks():
-    cora_ext.clear_registry()
+    plugin_api.clear_registry()
 
 
 async def _run_turn(sess, agent, steps_script):
@@ -55,7 +55,7 @@ async def test_on_turn_start_injects():
     _reset_hooks()
     seen = {}
 
-    @cora_ext.register_hook("on_turn_start")
+    @plugin_api.register_hook("on_turn_start")
     def inject(ctx, ev):
         seen["ev"] = ev
         return "INJECTED-SCRATCHPAD"
@@ -77,7 +77,7 @@ async def test_on_turn_start_injects():
 async def test_on_turn_start_refuses_unsafe_roles():
     _reset_hooks()
 
-    @cora_ext.register_hook("on_turn_start")
+    @plugin_api.register_hook("on_turn_start")
     def inject_bad(ctx, ev):
         # assistant/tool roles would corrupt the strict tool_call_id pairing the providers
         # require — the harness must drop them.
@@ -103,7 +103,7 @@ async def test_on_step_end_stops_turn():
     _reset_hooks()
     calls = {"n": 0}
 
-    @cora_ext.register_hook("on_step_end")
+    @plugin_api.register_hook("on_step_end")
     def stop_immediately(ctx, ev):
         calls["n"] += 1
         assert "step" in ev and "executed_total" in ev, f"bad ev: {ev}"
@@ -125,7 +125,7 @@ async def test_on_step_end_continue():
     _reset_hooks()
     calls = {"n": 0}
 
-    @cora_ext.register_hook("on_step_end")
+    @plugin_api.register_hook("on_step_end")
     def keep_going(ctx, ev):
         calls["n"] += 1
         return None

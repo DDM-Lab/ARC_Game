@@ -8,7 +8,7 @@ time budget. Catches the everyday bugs (import errors, missing deps, bad schema,
 infinite loops) in seconds with no Unity/LLM/network. See docs/phase2-plugin-spec.md.
 
 Usage:
-  python cora_plugin.py check plugins/example_tools.py
+  python -m router.plugin_cli check plugins/example_tools.py
 """
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import cora_ext
-from cora_ext import MockToolContext, run_tool, run_hooks
+from router import plugin_api
+from router.plugin_api import MockToolContext, run_tool, run_hooks
 
 
 def _load_module(path: str):
@@ -30,7 +30,7 @@ def _load_module(path: str):
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    cora_ext.clear_registry()
+    plugin_api.clear_registry()
     print(f"checking {args.plugin} ...")
     problems: list[str] = []
 
@@ -43,8 +43,8 @@ def cmd_check(args: argparse.Namespace) -> int:
     print("  ok    import")
 
     # 2. registration
-    tools = cora_ext.all_tools()
-    hook_counts = {e: len(cora_ext.get_hooks(e)) for e in cora_ext.HOOK_EVENTS}
+    tools = plugin_api.all_tools()
+    hook_counts = {e: len(plugin_api.get_hooks(e)) for e in plugin_api.HOOK_EVENTS}
     n_hooks = sum(hook_counts.values())
     if not tools and not n_hooks:
         print("  FAIL  registered no tools or hooks")

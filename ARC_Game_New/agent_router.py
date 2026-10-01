@@ -38,24 +38,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
 import uvicorn
 
-import agent_config
-from agent_config import AgentConfig, RouterConfig, load_config
-from agent_filters import filter_observation, filter_actions
-from agent_ordering import get_agent_order
-from episode_logger import EpisodeLogger
-from agent_config import load_global_prompt
-from continuous_agent import (build_tools, run_tool_step, DEFAULT_TOOLS,
+from router import config as router_config
+from router.config import AgentConfig, RouterConfig, load_config
+from router.scope import filter_observation, filter_actions
+from router.ordering import get_agent_order
+from router.episode_log import EpisodeLogger
+from router.config import load_global_prompt
+from router.officer_llm import (build_tools, run_tool_step, DEFAULT_TOOLS,
                               known_ctx_limit, _est_prompt_tokens)
 from cora.actions import enumerate_actions
 from cora.tools import TOOLS, TOOL_BY_NAME
 # The typed action tools (build/hire/train/staff/deconstruct/task/transfer) the officer emits;
 # Session._execute_calls runs them through cora.executor.
 _CORA_ACTION_TOOLS = {t["name"] for t in TOOLS}
-import bundle as bundle_mod
-from bundle import load_bundle, BundleError
-import cora_ext
-import plugin_store
-import key_store
+from router import bundles
+from router.bundles import load_bundle, BundleError
+from router import plugin_api
+from router import plugin_store
+from router import key_store
 from cora import executor
 from cora.scoring import REWARD_WEIGHTS, score_components
 from cora.observation import officer_text, task_officer, task_group, task_token, vehicle_capacity
@@ -64,7 +64,7 @@ from cora.observation import officer_text, task_officer, task_group, task_token,
 def _num(v, default=0):
     """A number for $-formatting; anything else formats as `default`."""
     return v if isinstance(v, (int, float)) else default
-from message_queue import MessageQueue
+from router.message_queue import MessageQueue
 import re
 
 # Action types that are site/target-bound and NOT legitimately repeatable within a
@@ -1366,11 +1366,11 @@ class Session:
             ordered = {r["tool"] for r in self._autonomy_rules.get(agent.subagent_name, [])}
             tools = build_tools([t for t in base
                                  if (t not in self._ACTING_TOOLS or t in ordered)
-                                 and cora_ext.get_tool(t) is None],
+                                 and plugin_api.get_tool(t) is None],
                                 descriptions=_tdesc,
                                 recipients=self._recipients_for(agent))
         else:
-            _builtins = ([t for t in agent.tools if cora_ext.get_tool(t) is None]
+            _builtins = ([t for t in agent.tools if plugin_api.get_tool(t) is None]
                          if agent.tools else None)
             tools = build_tools(_builtins, descriptions=_tdesc,
                                 recipients=self._recipients_for(agent))
@@ -2682,20 +2682,20 @@ class Session:
         """Fire cora_ext hooks for a game event. Inert (no ctx built) when nothing is registered.
         `agent` is None for session-level events (round start, human choice); the hook ctx then
         uses the shared session store and unfiltered state."""
-        if not cora_ext.get_hooks(event):
+        if not plugin_api.get_hooks(event):
             return
         ctx = _SessionToolContext(self, agent, self._latest_game_state or {}, [], [])
-        await cora_ext.run_hooks(event, ctx, event_obj)
+        await plugin_api.run_hooks(event, ctx, event_obj)
 
     async def _fire_hooks_collect(self, event: str, event_obj: dict,
                                   agent: Optional[AgentConfig] = None) -> list:
         """Fire loop-shaping hooks and RETURN their values. Inert (and free) when none are
         registered, so the built-in loop pays nothing for the extension point."""
-        if not cora_ext.get_hooks(event):
+        if not plugin_api.get_hooks(event):
             return []
         ctx = _SessionToolContext(self, agent, self._latest_game_state or {},
                                   self._latest_all_actions or [], [])
-        return await cora_ext.run_hooks_collect(event, ctx, event_obj)
+        return await plugin_api.run_hooks_collect(event, ctx, event_obj)
 
     @staticmethod
     def _hook_context_messages(results: list) -> List[dict]:
@@ -2775,7 +2775,7 @@ class Session:
         # Plugin tools (cora_ext registry) take precedence — a contributor tool, or one that
         # overrides a built-in by name, dispatches here. Inert when no plugins are loaded.
         # Acting plugin tools obey the same reactive brief-only gate as built-in acting tools.
-        _plugin_spec = None if _skip_registry else cora_ext.get_tool(name)
+        _plugin_spec = None if _skip_registry else plugin_api.get_tool(name)
         if _plugin_spec is not None:
             if brief_only and _plugin_spec.acting:
                 return (
@@ -2784,7 +2784,7 @@ class Session:
                     game_state, all_actions, filtered_actions, meta,
                 )
             _ctx = _SessionToolContext(self, agent, game_state, all_actions, filtered_actions)
-            _res = await cora_ext.run_tool(_plugin_spec, _ctx, args)
+            _res = await plugin_api.run_tool(_plugin_spec, _ctx, args)
             meta["executed"] = _res.executed
             meta["finish"] = _res.finish
             return (_res.text, self._latest_game_state or game_state,
@@ -3317,7 +3317,7 @@ class Session:
                     "for one (\"whenever...\", \"from now on...\"). You can suggest it to them "
                     "with send_message instead.", False, False)
         palette = self._autonomy_allowed_tools(build_tools(
-            [t for t in (agent.tools or DEFAULT_TOOLS) if cora_ext.get_tool(t) is None]))
+            [t for t in (agent.tools or DEFAULT_TOOLS) if plugin_api.get_tool(t) is None]))
         tool = str(args.get("tool") or "").strip().lower()
         if tool not in palette:
             return (f"ERROR: {tool or '(none)'!r} is not one of your action tools. Choose one "
@@ -4448,7 +4448,7 @@ def _plugin_tool_schemas_for(agent: AgentConfig, brief_only: bool,
     allow = set(agent.tools) if getattr(agent, "tools", None) else None
     have = {_tool_schema_name(t) for t in existing}
     out: List[dict] = []
-    for name, spec in cora_ext.all_tools().items():
+    for name, spec in plugin_api.all_tools().items():
         if allow is not None and name not in allow:
             continue
         if brief_only and spec.acting:
@@ -4459,7 +4459,7 @@ def _plugin_tool_schemas_for(agent: AgentConfig, brief_only: bool,
     return out
 
 
-class _SessionToolContext(cora_ext.ToolContext):
+class _SessionToolContext(plugin_api.ToolContext):
     """Live ToolContext backed by a Session — the concrete `ctx` handed to plugin tools/hooks.
 
     Reads route to the session's filtered latest snapshot; the three store scopes and the
@@ -4505,7 +4505,7 @@ class _SessionToolContext(cora_ext.ToolContext):
     async def refresh_state(self) -> dict:
         return await self._s._fetch_fresh_state()
 
-    async def execute(self, calls: list) -> cora_ext.ToolResult:
+    async def execute(self, calls: list) -> plugin_api.ToolResult:
         """Run typed action calls through the SAME path as the officer's own action tools
         (cora.executor → Unity), with all its ledger/scope logic."""
         if self.agent is None:
@@ -4515,10 +4515,10 @@ class _SessionToolContext(cora_ext.ToolContext):
             self.agent, calls, self._game_state, self.all_actions, self.filtered_actions,
             {"executed": 0, "finish": False})
         self._game_state, self.all_actions, self.filtered_actions = gs, all_a, filt
-        return cora_ext.ToolResult(text=text, executed=meta.get("executed", 0),
+        return plugin_api.ToolResult(text=text, executed=meta.get("executed", 0),
                                    finish=meta.get("finish", False))
 
-    async def propose_choices(self, packages: list) -> cora_ext.ToolResult:
+    async def propose_choices(self, packages: list) -> plugin_api.ToolResult:
         """Send the director a choice set via the SAME path as the propose_choices tool."""
         if self.agent is None:
             raise RuntimeError("propose_choices requires an officer context")
@@ -4526,7 +4526,7 @@ class _SessionToolContext(cora_ext.ToolContext):
             self.agent, {"packages": packages}, self._game_state, self.all_actions,
             self.filtered_actions)
         self._game_state, self.all_actions, self.filtered_actions = gs, all_a, filt
-        return cora_ext.ToolResult(text=text, executed=executed, finish=bool(superseded))
+        return plugin_api.ToolResult(text=text, executed=executed, finish=bool(superseded))
 
     def log(self, event_type: str, payload: Optional[dict] = None) -> None:
         """Emit a plugin event through the session chokepoint (Session._emit).
@@ -4654,7 +4654,7 @@ async def upload_bundle(request: Request,
     # combination meant such a bundle uploaded 200 and then broke the session of whoever
     # selected it. Enforce both here so an unusable config is refused at upload, not at play.
     try:
-        agent_config.config_from_dict(cfg)
+        router_config.config_from_dict(cfg)
     except Exception as e:
         raise HTTPException(status_code=422,
                             detail=f"config is schema-valid but not runnable: {e}")
@@ -4679,7 +4679,7 @@ def _bundle_warnings(cfg: dict) -> List[str]:
     bundle.py so the CLI (`cora-bundle validate`) and this endpoint report the SAME problems.
     Previously this logic lived only here, so validating locally gave a clean "OK" for a config
     that could not work in the UI."""
-    return bundle_mod.config_warnings(cfg)
+    return bundles.config_warnings(cfg)
 
 
 def _require_cap(authorization: Optional[str], cap: str) -> dict:
@@ -4833,10 +4833,10 @@ async def list_plugins(authorization: Optional[str] = Header(default=None)):
     staged = sorted(p.name for p in _PLUGINS_STAGED_DIR.glob("*.py")) \
         if _PLUGINS_STAGED_DIR.exists() else []
     return {"staged_inactive": staged,
-            "active_tools": list(cora_ext.all_tools()),
-            "active_hooks": {e: len(cora_ext.get_hooks(e)) for e in cora_ext.HOOK_EVENTS
-                             if cora_ext.get_hooks(e)},
-            "load_errors": cora_ext.load_errors()}
+            "active_tools": list(plugin_api.all_tools()),
+            "active_hooks": {e: len(plugin_api.get_hooks(e)) for e in plugin_api.HOOK_EVENTS
+                             if plugin_api.get_hooks(e)},
+            "load_errors": plugin_api.load_errors()}
 
 
 @admin_app.post("/admin/plugins/reload")
@@ -4849,13 +4849,13 @@ async def reload_plugins(authorization: Optional[str] = Header(default=None)):
     error (exception isolation), never a crash. A plugin with a syntax/import error is skipped and
     reported, not fatal."""
     _require_cap(authorization, "upload_code")
-    cora_ext.clear_registry()
-    loaded = cora_ext.load_plugins(["plugins", str(_PLUGINS_STAGED_DIR)])
+    plugin_api.clear_registry()
+    loaded = plugin_api.load_plugins(["plugins", str(_PLUGINS_STAGED_DIR)])
     return {"reloaded_modules": loaded,
-            "load_errors": cora_ext.load_errors(),          # files that failed to import
-            "tools": list(cora_ext.all_tools()),
-            "hooks": {e: len(cora_ext.get_hooks(e)) for e in cora_ext.HOOK_EVENTS
-                      if cora_ext.get_hooks(e)}}
+            "load_errors": plugin_api.load_errors(),          # files that failed to import
+            "tools": list(plugin_api.all_tools()),
+            "hooks": {e: len(plugin_api.get_hooks(e)) for e in plugin_api.HOOK_EVENTS
+                      if plugin_api.get_hooks(e)}}
 
 
 @admin_app.get("/admin/plugins/errors")
@@ -4863,8 +4863,8 @@ async def plugin_errors(limit: int = 50, authorization: Optional[str] = Header(d
     """Recent plugin diagnostics (requires 'upload_code'): load-time import failures + a ring
     buffer of the most recent tool/hook runtime exceptions, each with a full traceback."""
     _require_cap(authorization, "upload_code")
-    return {"load_errors": cora_ext.load_errors(),
-            "runtime_errors": cora_ext.recent_errors(limit)}
+    return {"load_errors": plugin_api.load_errors(),
+            "runtime_errors": plugin_api.recent_errors(limit)}
 
 
 @app.get("/my/sessions")
@@ -5385,10 +5385,10 @@ def main():
     key_store.default_store()
     print(f"[router] Plugin persist store: {plugin_store._DEFAULT_PATH} | "
           f"key store: {key_store._DEFAULT_PATH}")
-    _loaded_plugins = cora_ext.load_plugins(["plugins"])
+    _loaded_plugins = plugin_api.load_plugins(["plugins"])
     if _loaded_plugins:
         print(f"[router] Loaded {len(_loaded_plugins)} plugin module(s): {_loaded_plugins} "
-              f"| tools={list(cora_ext.all_tools())}")
+              f"| tools={list(plugin_api.all_tools())}")
     print(f"[router] Authorized keys: {[m.get('label') for m in keys.values()]}")
     print(f"[router] Session logs: {service.log_dir}")
     print(f"[router] Clients connect to ws://localhost:{args.port}/ws "

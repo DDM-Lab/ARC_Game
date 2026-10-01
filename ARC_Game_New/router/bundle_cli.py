@@ -15,9 +15,9 @@ that wiring (docs/contributor-platform-design.md, Phase 1). Until then, `render`
 composed config that path will consume.
 
 Usage:
-  python cora_bundle.py new cmu-lab/food-terse --author "Morgan" [--delta]
-  python cora_bundle.py validate bundles/cmu-lab/food-terse.json [--base config/continuous_all_officers_ddmlab.json]
-  python cora_bundle.py render   bundles/cmu-lab/food-terse.json --base config/... [-o out.json]
+  python -m router.bundle_cli new cmu-lab/food-terse --author "Morgan" [--delta]
+  python -m router.bundle_cli validate bundles/cmu-lab/food-terse.json [--base config/continuous_all_officers_ddmlab.json]
+  python -m router.bundle_cli render   bundles/cmu-lab/food-terse.json --base config/... [-o out.json]
 """
 from __future__ import annotations
 
@@ -28,8 +28,8 @@ from pathlib import Path
 
 import urllib.parse
 
-from bundle import BundleError, config_warnings, load_bundle
-from cora_schema import CORA_API_VERSION, Bundle
+from router.bundles import BundleError, config_warnings, load_bundle
+from router.schema import CORA_API_VERSION, Bundle
 from cora.llm.providers import valid_names
 
 

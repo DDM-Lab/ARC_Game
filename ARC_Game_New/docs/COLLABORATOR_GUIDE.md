@@ -19,7 +19,7 @@ python3 -m venv .venv
 export CORA_URL=https://cora_game_llm.dev.ddmlab.com
 export CORA_KEY=<the key you were given>
 
-./.venv/bin/python cora.py doctor      # ← confirms everything above worked
+./.venv/bin/python -m router.cli doctor      # ← confirms everything above worked
 ```
 
 `doctor` printing `✓ key valid` means you are done setting up.
@@ -39,23 +39,23 @@ git checkout -b yourlab/experiment-name
 
 ## Quickstart — one script
 
-`cora.py` is the only command you need. Run it bare for a guided menu, or drive it directly:
+`python -m router.cli` is the only command you need. Run it bare for a guided menu, or drive it directly:
 
 ```bash
-python cora.py                          # interactive menu
-python cora.py doctor                   # ← ALWAYS START HERE
-python cora.py new    yourlab/terse     # scaffold an experiment
-python cora.py check  bundles/yourlab/terse.json
-python cora.py push   bundles/yourlab/terse.json
-python cora.py data   --export          # download your cohort
-python cora.py sft    corpus.tar.gz     # -> SFT training pairs
+python -m router.cli                          # interactive menu
+python -m router.cli doctor                   # ← ALWAYS START HERE
+python -m router.cli new    yourlab/terse     # scaffold an experiment
+python -m router.cli check  bundles/yourlab/terse.json
+python -m router.cli push   bundles/yourlab/terse.json
+python -m router.cli data   --export          # download your cohort
+python -m router.cli sft    corpus.tar.gz     # -> SFT training pairs
 ```
 
 `doctor` tells you in one shot whether the server is reachable, whether your key works, and
 exactly which capabilities it carries — run it first, and whenever something behaves oddly:
 
 ```
-$ python cora.py doctor
+$ python -m router.cli doctor
   ✓ server reachable  (0 live session(s), 14 configs)
   ✓ key valid  label=yourlab  role=collaborator
     upload configs  : yes
@@ -64,7 +64,7 @@ $ python cora.py doctor
 ```
 
 The rest of this guide explains what you put *in* the files. Every command below is also
-available through `cora.py`; the underlying CLIs (`cora_bundle.py`, `cora_plugin.py`) still work
+available through `router.cli`; the underlying CLIs (`router.bundle_cli`, `router.plugin_cli`) still work
 if you prefer them.
 
 ---
@@ -74,7 +74,7 @@ if you prefer them.
 ### A. A config bundle — prompts / personas / rosters  ✅  (no code)
 A single JSON file. Scaffold one:
 ```bash
-python cora.py new yourlab/terse-food --author "You"
+python -m router.cli new yourlab/terse-food --author "You"
 # edits go in bundles/yourlab/terse-food.json
 ```
 It looks like:
@@ -106,7 +106,7 @@ Rules the validator enforces: `provider` is a fixed enum (`anthropic`, `anthropi
 keys are rejected; exactly one director. A **delta** bundle (override just a few fields of a base
 config) is also supported — see `docs/CORA_API_v1.md`.
 
-> **Three fields decide whether your officer looks alive.** `cora.py check` warns about all
+> **Three fields decide whether your officer looks alive.** `router.cli check` warns about all
 > three, but they cause most first-run confusion:
 > - **`talkinghead_endpoint`** — the GUI has exactly **5 fixed slots**
 >   (`DisasterOfficer`, `FoodMassCare`, `LodgingMassCare`, `WorkforceService`,
@@ -159,9 +159,9 @@ and `run_blocking` (offload heavy math). See `examples/plugins/example_tools.py`
 
 ### Configs  ✅
 ```bash
-python cora.py check bundles/yourlab/terse-food.json    # offline: schema + authoring warnings
-python cora.py push  bundles/yourlab/terse-food.json    # -> stored privately to you
-python cora.py doctor                                   # lists your catalog
+python -m router.cli check bundles/yourlab/terse-food.json    # offline: schema + authoring warnings
+python -m router.cli push  bundles/yourlab/terse-food.json    # -> stored privately to you
+python -m router.cli doctor                                   # lists your catalog
 ```
 Your uploaded config is **private to your key** and selectable in the game's config picker.
 
@@ -290,7 +290,7 @@ manual too. The legacy `{"global_system_prompt": ...}` whole-blob shape is still
 **Sharp edges, deliberately exposed.** `tool_policy` is the *mechanical* contract. Rewriting it
 is allowed — you are assumed to know what you are doing — but dropping its key clauses reliably
 produces officers that narrate actions they never took or act outside their remit, and makes
-your runs non-comparable with other arms. `cora.py check` names the specific clause you dropped.
+your runs non-comparable with other arms. `router.cli check` names the specific clause you dropped.
 
 **What you cannot change:** a tool's **parameters and enums**, and the generated observation
 text. Parameters feed the command grammar directly, so a renamed field or a widened enum emits
@@ -314,7 +314,7 @@ to your cohort and their data lands in your namespace.
   # -> returns 50 scoped participant keys (shown once; stored hashed)
   ```
   Keys are hashed at rest, scoped to your configs, quota/expiry-bounded, and revocable instantly.
-  `python cora.py doctor` shows whether your own key carries `mint`.
+  `python -m router.cli doctor` shows whether your own key carries `mint`.
 - **✅ Also supported** — the maintainer adds static keys to `config/keys.json` (gitignored):
   ```jsonc
   {
@@ -374,7 +374,7 @@ test game, browse/download logs).
 
 | Step | Status |
 |---|---|
-| One-script workflow + self-diagnosis (`cora.py`, `doctor`) | ✅ |
+| One-script workflow + self-diagnosis (`router.cli`, `doctor`) | ✅ |
 | Config/prompt bundle upload (`/bundles`, `cora-bundle`) | ✅ |
 | Full prompt override (behavior/manual, tool policy, turn text, tool descriptions) | ✅ |
 | Per-officer tool allowlist + action scoping | ✅ |

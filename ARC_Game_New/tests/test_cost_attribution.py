@@ -32,11 +32,12 @@ def emit(results, budget_before=5000, budget_after=5000):
     """
     # tempfile, not a fixed path: this test also runs on the deploy box as a pre-flight
     # check, where a developer's local scratch directory does not exist.
-    import json, os, tempfile, episode_logger
+    import json, os, tempfile
+    from router import episode_log
     path = os.path.join(tempfile.mkdtemp(prefix="cora-cost-"), "cost_turn.jsonl")
-    lg = episode_logger.EpisodeLogger.__new__(episode_logger.EpisodeLogger)
+    lg = episode_log.EpisodeLogger.__new__(episode_log.EpisodeLogger)
     lg.log_path = path
-    episode_logger.EpisodeLogger.log_turn(
+    episode_log.EpisodeLogger.log_turn(
         lg, episode_id="e", round_num=1, day=1, segment=0,
         agent_name="Food", role="subagent", actor_type="continuous",
         subobservation={}, subactions_available=len(results), proposed_packages=[],

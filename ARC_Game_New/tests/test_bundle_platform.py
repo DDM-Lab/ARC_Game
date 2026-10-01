@@ -12,9 +12,9 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from cora.llm.providers import Provider, resolve, is_valid, valid_names
-from cora_schema import CoraConfig, Bundle, BundleManifest
-from bundle import load_bundle, BundleError
-from agent_config import AgentConfig, load_config
+from router.schema import CoraConfig, Bundle, BundleManifest
+from router.bundles import load_bundle, BundleError
+from router.config import AgentConfig, load_config
 
 _FAILS: list[str] = []
 

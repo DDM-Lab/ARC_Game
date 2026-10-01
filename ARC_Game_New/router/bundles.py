@@ -8,7 +8,7 @@ A bundle is either:
 
 `load_bundle` returns a plain dict that is a valid `CoraConfig` (provider named by enum). Handing
 that dict to the runtime (`agent_config.load_config`) happens after the provider-enum migration
-(see docs/contributor-platform-design.md, Phase 1 wiring); bundle.py itself stays runtime-agnostic
+(see docs/contributor-platform-design.md, Phase 1 wiring); this module itself stays runtime-agnostic
 and fully unit-testable.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import Optional, Union
 
 from pydantic import ValidationError
 
-from cora_schema import CORA_API_VERSION, Bundle, CoraConfig
+from router.schema import CORA_API_VERSION, Bundle, CoraConfig
 
 Src = Union[str, Path, dict]
 
@@ -145,13 +145,13 @@ def _attach_global_prompt(cfg: dict, bundle) -> None:
 def _known_tool_names() -> Optional[set]:
     """Built-in tool names, or None if the runtime isn't importable here.
 
-    Lazy + guarded on purpose: bundle.py is deliberately runtime-agnostic and unit-testable
-    without the provider SDKs continuous_agent pulls in. When the import isn't available we
+    Lazy + guarded on purpose: this module is deliberately runtime-agnostic and unit-testable
+    without the provider SDKs router.officer_llm pulls in. When the import isn't available we
     skip the tool-name check rather than fail the whole warning pass; the router, which always
     has the runtime, still performs it.
     """
     try:
-        from continuous_agent import TOOL_SCHEMAS
+        from router.officer_llm import TOOL_SCHEMAS
         return set(TOOL_SCHEMAS)
     except Exception:
         return None

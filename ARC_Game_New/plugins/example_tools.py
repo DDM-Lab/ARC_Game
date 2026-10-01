@@ -9,7 +9,7 @@ Demonstrates the full pattern with NO heavy deps:
 A tool/hook reaches the game ONLY through `ctx` — it never imports agent_router. Swap the toy
 counting model for a real Bayesian model (numpy/pymc) to get the elicitation use case.
 """
-from cora_ext import register_tool, register_hook, ToolResult
+from router.plugin_api import register_tool, register_hook, ToolResult
 
 
 def _facilities(state: dict) -> list:

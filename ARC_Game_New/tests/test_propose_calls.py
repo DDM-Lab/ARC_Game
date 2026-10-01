@@ -16,7 +16,7 @@ import tempfile
 
 import agent_router
 from agent_router import Session
-from agent_config import load_config
+from router.config import load_config
 
 
 def menu():

@@ -9,7 +9,7 @@ The `on_choice_resolved` hook differentiates human vs AI via `event["is_human"]`
 weighted by the director's own revealed preferences. Dirichlet-categorical, Dirichlet(1) prior.
 Durable (SQLite) so it persists across sessions/restarts.
 """
-from cora_ext import register_tool, register_hook, ToolResult
+from router.plugin_api import register_tool, register_hook, ToolResult
 
 
 def _human_key(ctx):
