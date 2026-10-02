@@ -239,8 +239,12 @@ def _workforce_ok(t, ctx):
 
 
 def _facility_status_ok(t, ctx):
+    """FacilityStatusTrigger: constructed buildings (FindObjectsOfType<Building>, so never a
+    prebuilt) in the required status; the type filter applies only when specificOnly is set."""
     n = sum(1 for f in ctx.facilities
-            if f.get("type") == t["facilityType"] and f.get("status") == t["requiredStatus"])
+            if not f.get("prebuilt")
+            and (not t.get("specificOnly") or f.get("type") == t["facilityType"])
+            and f.get("status") == t["requiredStatus"])
     return n >= t["minimumCount"]
 
 

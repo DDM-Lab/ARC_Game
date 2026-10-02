@@ -36,7 +36,7 @@ Segment 3 is skipped deliberately in TaskSystem.OnRoundChanged; it is not an off
 from __future__ import annotations
 
 from .clients import ClientTracker
-from .economy import C as _ECON_C, Economy, step_round as economy_step
+from .economy import C as _ECON_C, Economy
 from .flood import FloodState, update_flood
 from .floodmap import FloodMap
 from . import roads
@@ -1354,8 +1354,10 @@ def _incomplete_penalties(w: World, expired) -> None:
 
 
 def _round_end(w: World, marks) -> None:
-    """GlobalClock.OnRoundEnd -> ClientRelocationHandler.HandleRoundEnd: walks land and their
-    groups register with the tracker."""
+    """GlobalClock.OnRoundEnd, in subscriber order: funding lands (BudgetAllocationManager),
+    walks land and register with the tracker (ClientRelocationHandler), DailyReportData
+    accumulates the round, then buildings advance construction/deconstruction."""
+    w.economy.arrive_funding()
     _n = len(w.pending_arrivals)
     tick_walks(w)
     for count, facility in w.pending_arrivals[_n:]:
@@ -1367,6 +1369,7 @@ def _round_end(w: World, marks) -> None:
                    if g.with_need > 0 and not g.departed and g.gid in e.report.casework_groups)
     e.report.round_end(e, e.free_trained + e.free_untrained, e.working_trained + e.working_untrained,
                        len(e.in_training), e.total_workers(), awaiting)
+    e.tick_construction()
 
 
 def _segment_invoke(w: World, marks, rolls, day_changed) -> None:
@@ -1534,6 +1537,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         # Unity stamps arrivalRound at the DELIVERY instant, which is still pre-advance.
         w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
 
+    w.economy.accumulate()            # EndSimulation: metrics, then OnRoundEnd
     _round_end(w, marks)              # OnRoundEnd precedes AdvanceTimeSegment
     w.segment += 1
     # Reaching segment 4 fires no OnTimeSegmentChanged: AdvanceTimeSegment returns first.
@@ -1618,7 +1622,6 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # flood draws -> task:resolved. Expiring before the walks land killed a relocation the
     # round its own people arrived, so Unity credited lodgingFulfilled 100 and the port 0.
     _incomplete_penalties(w, w.tasks.expire(w.economy.counters))
-    economy_step(w.economy, False, w.day)   # day-end already run above
     w.round_index += 1
 
 

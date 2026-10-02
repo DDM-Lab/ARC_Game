@@ -35,7 +35,7 @@ def main():
     kept, _ = prune([_staff(idx)], econ=e, budget=e.budget)
     during = len(kept)
     for _ in range(4):
-        e.on_round_end()
+        e.accumulate(); e.tick_construction()
     kept_after, _ = prune([_staff(idx)], econ=e, budget=e.budget)
     prebuilt, _ = prune([_staff(0)], econ=e, budget=e.budget)
     good = during == 0 and len(kept_after) == 1 and len(prebuilt) == 0

@@ -27,6 +27,7 @@ import json as _json
 
 from . import corpus_paths as _corpus
 from .report import Report
+from .rng import f32
 
 _CONST_PATH = _corpus.CONSTANTS
 
@@ -68,6 +69,10 @@ STATUS_IN_USE = "InUse"
 REQUIRED_WORKFORCE = 4
 BUDGET_MIN, BUDGET_MAX = -999999, 999999      # SatisfactionAndBudget, MainScene
 WORKFORCE_VALUE = {"trained": 2, "untrained": 1}
+
+_PHONETIC = ("Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India",
+             "Juliet", "Kilo", "Lima", "Mike", "November", "Oscar", "Papa", "Quebec", "Romeo",
+             "Sierra", "Tango", "Uniform", "Victor", "Whiskey", "X-ray", "Yankee", "Zulu")
 
 COUNTERS = ("foodResolved", "foodFulfilled", "lodgingResolved", "lodgingFulfilled",
             "caseworkRequested", "caseworkProcessed", "cumWorkingWorkers",
@@ -257,10 +262,9 @@ class Economy:
         self.pending_budget = []     # [rounds_remaining, amount] approved-but-not-arrived funding
         self.used_sites = set()      # site ids already built on -- a rebuild there is a no-op
         self.efficiency = 0.0
+        # (RecordInitialWorkerImputedCost runs in DailyReportData.Start, before GameDataManager
+        # has loaded, so the starting roster is imputed at $0 -- the log never shows its message.)
         self.report = Report(_cost_minimums())
-        # RecordInitialWorkerImputedCost: the starting roster is charged as if requested.
-        self.report.worker_requested(self, free_trained * C["trained_cost"]
-                                     + free_untrained * C["untrained_cost"])
         self.counters["totalWorkers"] = self.total_workers()
 
     def apply_choice(self, task_tag: str, impacts, budget_delay_rounds: int = 0,
@@ -326,10 +330,8 @@ class Economy:
 
     # ── budget ──────────────────────────────────────────────────────────────────────
     def add_satisfaction(self, delta: float) -> None:
-        """SatisfactionAndBudget.AddSatisfaction. Clamped to [0, 100] on the old build; the
-        bench-v6 build leaves it unclamped (ledger D13, an open design question)."""
-        s = self.satisfaction + float(delta)
-        self.satisfaction = s
+        """SatisfactionAndBudget.AddSatisfaction: unclamped on this build (ledger D13)."""
+        self.satisfaction = f32(self.satisfaction + float(delta))       # stored as float32, as in Unity
 
     def bill_motel(self, residents: int) -> None:
         """MotelCostManager: residents x the nightly rate, a lodging cost."""
@@ -396,7 +398,10 @@ class Economy:
         prefab = (C.get("storage_by_type") or {}).get(building_type, {})
         cap = {"foodPacks": prefab.get("foodCapacity") or 0,
                "population": prefab.get("populationCapacity") or 0}
-        name = f"{building_type}_{len(self.buildings)}"
+        # BuildingSystem.GenerateBuildingName: a per-type phonetic counter ("Kitchen Alpha",
+        # "Casework Bravo"), never reused -- a deconstructed building keeps its slot.
+        n = sum(1 for b in self.buildings if b["type"] == building_type)
+        name = f"{'Casework' if building_type == 'CaseworkSite' else building_type} {_PHONETIC[n % len(_PHONETIC)]}"
         self.buildings.append({"name": name, "type": building_type,
                                "status": STATUS_UNDER_CONSTRUCTION, "assigned": 0,
                                "trained": 0, "untrained": 0,
@@ -499,17 +504,26 @@ class Economy:
             self.report.food(self, needed=need)
             _reconcile_food(self, b)
 
-    def on_round_end(self) -> None:
-        """RewardMetricsTracker.OnRoundEnded.
-
-        The accumulators are the one DENSE part of the score: they move every round
-        regardless of whether any task resolves, which is why worker utilisation is the
-        only signal a short-horizon planner can see before round ~14."""
+    def accumulate(self) -> None:
+        """RewardMetricsTracker's per-round accumulators, in EndSimulation before OnRoundEnd
+        (so not on Day 1, whose rounds only fire OnRoundEnd)."""
         self.counters["roundsCompleted"] += 1
         self.counters["cumWorkingWorkers"] += self.working_trained + self.working_untrained
         self.counters["cumTrainingWorkers"] += len(self.in_training)
         self.counters["cumIdleWorkers"] += self.free_trained + self.free_untrained
         self.counters["totalWorkers"] = self.total_workers()
+
+    def arrive_funding(self) -> None:
+        """BudgetAllocationManager.OnRoundEnd: approved funding counts down and lands."""
+        for entry in self.pending_budget:
+            entry[0] -= 1
+        arrived = [x for x in self.pending_budget if x[0] <= 0]
+        self.pending_budget = [x for x in self.pending_budget if x[0] > 0]
+        for _rounds, amount in arrived:
+            self.budget = max(BUDGET_MIN, min(BUDGET_MAX, self.budget + amount))   # AddBudget, clamped
+
+    def tick_construction(self) -> None:
+        """Building.OnConstructionRoundEnd / OnDeconstructionRoundEnd (GlobalClock.OnRoundEnd)."""
         for entry in self.under_construction:
             entry[0] -= 1
         finished = [e for e in self.under_construction if e[0] <= 0]
@@ -895,35 +909,6 @@ def action_from_id(action_id: str, cost: int = 0) -> dict:
                 "transfer": {"resource_type": "Population", "quantity": _trailing_int(aid),
                              "source_facility": parts[2], "destination_facility": parts[3]}}
     return {"action_type": aid.split("_")[0] if aid else None, "action_id": aid, "cost": cost}
-
-
-def step_round(econ: Economy, day_changed: bool = False, new_day: int = 0) -> None:
-    """One round of economy bookkeeping, in Unity's phase order.
-
-    THE ORDER IS THE MECHANIC, and each step of it was pinned against a capture:
-
-      1. day rollover first, if this round crosses one -- motel billing reads the occupancy
-         from BEFORE this round's transfers land, and worker arrivals complete here;
-      2. then the round accumulators, which is why newly-arrived workers are counted as
-         idle in the very round they arrive (cumIdleWorkers 52 vs 50 over five rounds);
-      3. then pending transfers land, which is why they are billed from the NEXT day.
-
-    Getting 1 and 2 the other way round costs two idle-worker units per arrival; getting 1
-    and 3 the other way round over-bills the motel by a full day on every transfer."""
-    if day_changed:
-        econ.on_day_end(new_day)
-    econ.on_round_end()
-    for entry in econ.pending_budget:
-        entry[0] -= 1
-    arrived = [e for e in econ.pending_budget if e[0] <= 0]
-    econ.pending_budget = [e for e in econ.pending_budget if e[0] > 0]
-    for _rounds, amount in arrived:
-        econ.budget = max(BUDGET_MIN, min(BUDGET_MAX, econ.budget + amount))   # AddBudget: funding, clamped
-
-    for _src, dst, qty in econ.pending_transfers:
-        if "motel" in dst.lower():
-            econ.motel_pop += qty
-    econ.pending_transfers = []
 
 
 def _trailing_int(action_id, default=1):

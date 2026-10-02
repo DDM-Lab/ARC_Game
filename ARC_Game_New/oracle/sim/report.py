@@ -15,9 +15,15 @@ scores Unity with.
 """
 from __future__ import annotations
 
+from .rng import f32
+
+# Unity stores every value as float32 but evaluates each expression at higher precision,
+# rounding only when a result is stored (a return, a field, a local). The port does the same:
+# compute in double, f32() at each store. The exported satisfaction is truncated to an int, so
+# a value one ulp low (15.999998 where Unity holds 16.0) reads one point low.
 SCORE_SCALE = 1000.0
-SAT_W = 0.2
-EFF_W = 1.0 / 3.0
+SAT_W = f32(0.2)
+EFF_W = f32(1.0 / 3.0)
 
 _SAT = ("food", "lodging", "worker", "casework")
 _EFF = ("food", "lodging", "worker")
@@ -25,6 +31,11 @@ _EFF = ("food", "lodging", "worker")
 
 def _clamp01(x: float) -> float:
     return 0.0 if x < 0 else 1.0 if x > 1 else x
+
+
+def _div(a, b) -> float:
+    """(float)a / b, stored."""
+    return f32(a / b)
 
 
 class Report:
@@ -55,30 +66,32 @@ class Report:
 
     # ── the component ratios (DailyReportData.S_* / C_*) ──
     def s_food(self):
-        return _clamp01(self.food_consumed / self.food_needed) if self.food_needed > 0 else 0.0
+        return _clamp01(_div(self.food_consumed, self.food_needed)) if self.food_needed > 0 else 0.0
 
     def s_lodging(self):
-        return _clamp01(self.lodging_satisfied / self.lodging_requested) if self.lodging_requested > 0 else 0.0
+        return _clamp01(_div(self.lodging_satisfied, self.lodging_requested)) if self.lodging_requested > 0 else 0.0
 
     def s_worker(self):
         active = self.idle_rounds + self.working_rounds + self.training_rounds
-        return _clamp01(1.0 - self.idle_rounds / active) if active > 0 else 0.0
+        return f32(_clamp01(1.0 - self.idle_rounds / active)) if active > 0 else 0.0
 
     def s_waste(self):
         total = self.food_consumed + self.food_wasted
-        return 1.0 - self.food_wasted / total if total > 0 else 0.0
+        return f32(1.0 - self.food_wasted / total) if total > 0 else 0.0
 
     def s_casework(self):
         if self.casework_available <= 0:
             return 0.0
-        return _clamp01(1.0 - self.awaiting_casework / self.casework_available)
+        return f32(_clamp01(1.0 - self.awaiting_casework / self.casework_available))
 
     def _cost(self, spend, units, minimum):
         if units <= 0:
             return 0.0
         if not minimum:
             return 1.0
-        return _clamp01(1.0 - (spend / units - minimum) / (49.0 * minimum))
+        minimum = f32(minimum)
+        raw = _div(spend, units)
+        return f32(_clamp01(1.0 - (raw - minimum) / (49.0 * minimum)))
 
     def c_food(self):
         return self._cost(self.food_spend, self.food_consumed, self.mins.get("food"))
@@ -94,18 +107,19 @@ class Report:
     def _apply(self, econ, part, sat=True):
         if sat:
             new = {"food": self.s_food, "lodging": self.s_lodging, "worker": self.s_worker,
-                   "casework": self.s_casework}[part]() * SAT_W * SCORE_SCALE
-            delta = new - self.applied_sat[part]
+                   "casework": self.s_casework}[part]()
+            new = f32(new * SAT_W * SCORE_SCALE)
+            delta = f32(new - self.applied_sat[part])
             if abs(delta) >= 0.001:
                 self.applied_sat[part] = new
                 econ.add_satisfaction(delta)
         else:
-            new = {"food": self.c_food, "lodging": self.c_lodging, "worker": self.c_worker}[part]() \
-                * EFF_W * SCORE_SCALE
-            delta = new - self.applied_eff[part]
+            new = f32({"food": self.c_food, "lodging": self.c_lodging,
+                       "worker": self.c_worker}[part]() * EFF_W * SCORE_SCALE)
+            delta = f32(new - self.applied_eff[part])
             if abs(delta) >= 0.001:
                 self.applied_eff[part] = new
-                econ.efficiency += delta
+                econ.efficiency = f32(econ.efficiency + delta)
 
     # ── the events that feed it ──
     def food(self, econ, consumed=0, needed=0):
