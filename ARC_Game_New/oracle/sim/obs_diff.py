@@ -51,6 +51,18 @@ STOCHASTIC = {"board", "walks", "fac.pop", "fac.food", "counters.caseworkRequest
               "counters.foodFulfilled", "counters.lodgingResolved"}
 
 
+# DailyReportData's ledger (RewardMetricsTracker export): every input of the score.
+_LEDGER = ("foodPacksConsumed", "foodPacksNeeded", "foodPacksWasted", "lodgingNightsConsumed",
+           "lodgingNightsNeeded", "clientRoundsAwaitingCasework", "clientsRequestedCasework",
+           "idleWorkerRounds", "workingWorkerRounds", "trainingWorkerRounds")
+
+
+def _ledger(rm: dict) -> dict:
+    out = {k: rm.get(k) for k in _LEDGER}
+    out["efficiency"] = round(float(rm.get("liveEfficiency") or 0.0), 2)
+    return out
+
+
 def _fac_key(btype, site, display):
     return display if btype in ("Community", "Motel") else f"{btype}@{site}"
 
@@ -60,7 +72,8 @@ def project_unity(after: dict) -> dict:
     out = {"budget": (after.get("satisfactionAndBudget") or {}).get("budget"),
            "satisfaction": (after.get("satisfactionAndBudget") or {}).get("satisfaction"),
            "fac": {}, "workers": {}, "board": [], "walks": [], "counters": {},
-           "score": round(score_components(after.get("rewardMetrics"))["score"], 4)}
+           "score": round(score_components(after.get("rewardMetrics"))["score"], 4),
+           "ledger": _ledger(after.get("rewardMetrics") or {})}
     for f in (after.get("mapState") or {}).get("facilities") or []:
         res = f.get("resources") or {}
         key = _fac_key(f.get("buildingType"), f.get("originalSiteId"), f.get("facilityName"))
@@ -111,7 +124,8 @@ def project_port(w) -> dict:
     # (int) in the export: truncation, not rounding.
     out = {"budget": e.budget, "satisfaction": int(e.satisfaction),
            "fac": {}, "workers": {}, "board": [], "walks": [], "counters": {},
-           "score": round(score_components(e.metrics())["score"], 4)}
+           "score": round(score_components(e.metrics())["score"], 4),
+           "ledger": _ledger(e.metrics())}
     names = {}                    # display name -> key (Unity names built ones <Type>_<site>)
     for b in e.buildings:
         res = b.get("resources") or {}
@@ -168,6 +182,10 @@ def diff(u: dict, p: dict) -> list:
     for k in _COUNTERS:
         if u["counters"].get(k) != p["counters"].get(k):
             out.append((f"counters.{k}", u["counters"].get(k), p["counters"].get(k)))
+    for k, a in (u.get("ledger") or {}).items():
+        b = (p.get("ledger") or {}).get(k)
+        if a != b:
+            out.append((f"ledger.{k}", a, b))
     return out
 
 

@@ -1006,6 +1006,53 @@ def tick_walks(w) -> None:
             w.tasks.awaiting.pop(task_id, None)       # its last walk is in
 
 
+def _sweep_stale_tasks(w: World) -> None:
+    """TaskSystem.SweepStalePopulationTasks (OnRoundEnd) -> RefreshTaskAgainstLiveState, for
+    every task still awaiting an answer. A population choice re-reads the live headcount (the
+    group's casework need for a casework task, else the facility's population): nobody left
+    auto-resolves the task (no metrics, no penalty), otherwise its Clients impact becomes that
+    headcount -- which is what DailyReportData's nights-needed reads. A population-based food
+    choice at a facility that eats auto-resolves the task once its outstanding need is met."""
+    by_type = _ECON_C.get("storage_by_type") or {}
+    for tid in list(w.tasks.active):
+        task = w.tasks.active[tid]
+        entry = w.generated_specs.get(tid)
+        if task.resolved or not entry or not entry[1]:
+            continue
+        def_id, fac, spec = entry
+        b = w.economy.facility(fac)
+        if b is None:
+            continue
+        for c in spec.get("choices") or []:
+            if not (c.get("triggersDelivery") or c.get("immediateDelivery")):
+                continue
+            if c.get("deliveryCargoType") == 0:
+                if spec.get("_gid") is not None:
+                    g = w.clients.group(spec["_gid"])
+                    people = g.with_need if g is not None else 0
+                else:
+                    people = (b.get("resources") or {}).get("population") or 0
+                if people <= 0:
+                    _auto_resolve(w, tid, task)
+                    break
+                impacts = spec.get("taskImpacts") or []
+                if any(i.get("type") == "Clients" and i.get("value") != people for i in impacts):
+                    spec = dict(spec, taskImpacts=[dict(i, value=people) if i.get("type") == "Clients" else i
+                                                   for i in impacts])
+                    w.generated_specs[tid] = (def_id, fac, spec)
+            elif (c.get("deliveryCargoType") == 1 and c.get("quantityType") == "PopulationBased"
+                  and (by_type.get(b["type"]) or {}).get("consumptionEnabled")
+                  and not (b.get("outstanding_need") or 0)):
+                _auto_resolve(w, tid, task)
+                break
+
+
+def _auto_resolve(w: World, tid, task) -> None:
+    """ResolveTaskClientsAlreadyRelocated: off the board, Completed, no RecordTaskResolution."""
+    w.tasks.active.pop(tid, None)
+    task.resolved = True
+
+
 def _departure_alert(w, facility) -> None:
     """ClientStayTracker.ShowDepartureAlert: a "Clients Departed" Alert straight through
     TaskSystem.CreateTask. The tracker runs before TaskSystem's ageing on the same invoke, so it
@@ -1395,6 +1442,7 @@ def _round_end(w: World, marks) -> None:
                    if g.with_need > 0 and not g.departed and g.gid in e.report.casework_groups)
     e.report.round_end(e, e.free_trained + e.free_untrained, e.working_trained + e.working_untrained,
                        len(e.in_training), e.total_workers(), awaiting)
+    _sweep_stale_tasks(w)
     e.tick_construction()
 
 
@@ -1435,6 +1483,7 @@ def _day1_skip(w: World, marks, on_flood_enter) -> None:
     if on_flood_enter is not None:
         on_flood_enter(w)
     update_flood(w.flood, w.fmap, w.rng, w.weather, RAIN_INTENSITY[w.weather], marks)
+    _end_of_day_waste(w)
     w.generated = []
     w.round_index += 1
 
@@ -1456,13 +1505,29 @@ def _day_rollover(w: World, marks) -> None:
 def _lodging_nights(w: World) -> None:
     """DailyReportData.OnDayChangedForLodgingNights: everyone the tracker holds slept somewhere
     tonight; what open lodging tasks still ask for (their authored Clients impact) did not."""
-    housed = sum(g.count for g in w.clients.groups if not g.departed)
+    # The tracker drops a group once it is empty, or departed with no casework need left.
+    housed = sum(g.count for g in w.clients.groups
+                 if g.count > 0 and not (g.departed and g.with_need == 0))
     waiting = 0
     for live_id, (_def, _fac, sp) in w.generated_specs.items():
-        if live_id in w.tasks.active and sp.get("taskTag") == "Lodging":
+        task = w.tasks.active.get(live_id) or w.tasks.awaiting.get(live_id)
+        if task is not None and not task.resolved and sp.get("taskTag") == "Lodging":
             waiting += sum(int(i.get("value") or 0) for i in sp.get("taskImpacts") or []
                            if i.get("type") == "Clients")
     w.economy.report.nights(w.economy, housed, waiting)
+
+
+def _end_of_day_waste(w: World) -> None:
+    """BuildingResourceStorage.OnSimulationEndedCheckEndOfDayWaste: when the day's last round
+    ends, every non-community storage that wastes records what it still holds (the day reset
+    removes it). Recorded only -- it feeds S_Waste, which the live score does not apply."""
+    by_type = _ECON_C.get("storage_by_type") or {}
+    for b in w.economy.buildings:
+        if b["type"] == "Community" or not (by_type.get(b["type"]) or {}).get("enableFoodWaste"):
+            continue
+        left = (b.get("resources") or {}).get("foodPacks") or 0
+        if left > 0:
+            w.economy.report.food_wasted += left
 
 
 def _daily_report(w: World) -> None:
@@ -1596,6 +1661,8 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # so dispatch routed against water that was already stale by the time vehicles moved.
     update_flood(w.flood, w.fmap, w.rng, w.weather,
                  RAIN_INTENSITY[w.weather], marks)
+    if w.segment >= ROUNDS_PER_DAY:
+        _end_of_day_waste(w)          # OnSimulationEnded, after the flood update
 
     # Deterministic bookkeeping runs after the stochastic phases: deliveries land, tasks
     # age and expire, and the economy accumulates. None of this draws, so its position
