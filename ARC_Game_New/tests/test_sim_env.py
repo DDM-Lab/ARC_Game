@@ -71,11 +71,11 @@ def _load(path):
 
 def _worlds(fixture):
     """The port's world at the start of each decision of a parity fixture's replay."""
-    from oracle.sim.diag_lockstep import replay_step
-    from oracle.sim.evolve import fresh_world
+    from oracle.sim.lockstep import replay_step
+    from oracle.sim.sim import new_world
     from oracle.sim.floodmap import FloodMap
     import oracle.sim.sim as S
-    w = fresh_world(tuple(fixture["seed_state"]), FloodMap.load())
+    w = new_world(tuple(fixture["seed_state"]), FloodMap.load())
     for step in fixture["steps"]:
         yield w
         w = w.clone()

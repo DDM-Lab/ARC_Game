@@ -459,6 +459,18 @@ class World:
         return w
 
 
+def new_world(state, fmap=None, weather=None) -> World:
+    """A fresh game at its first decision, from the RNG state Unity starts it with
+    (rng.game_start(seed), or a capture's logged state). Day 1's weather comes from the
+    parameter sheet (initialState.weather)."""
+    from .rng import UnityRandom
+    if weather is None:
+        weather = (_ECON_C.get("initial_state") or {}).get("weather") or "Sunny"
+    w = World(rng=UnityRandom(state=state), weather=weather, fmap=fmap)
+    w.use_generation = True
+    return w
+
+
 def _occupies_slot(w, live_id):
     """Is this task still holding its facility's slot, as Unity's activeTasks would be?
 

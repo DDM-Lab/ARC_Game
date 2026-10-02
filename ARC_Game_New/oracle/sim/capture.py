@@ -3,7 +3,7 @@
 Plays one game through rl.CoraEnv -- the same prompt-free tool-call path the benchmark and RL
 use, resolved and executed by cora.executor -- with Unity's draw instrumentation on
 (ARC_SNAPSHOT_DEBUG=1: [RNGMARK] / [RNGCTX] lines in the log), and writes the trace the
-lockstep tools read (obs_diff, debug_lockstep, diag_marks):
+lockstep tools read (oracle/sim/lockstep.py, obs_diff, parity):
 
     <out>/staff_<seed>.json        one entry per decision: before / taken / after / calls
     <out>/staff_<seed>.log         the Unity log with the draw stream

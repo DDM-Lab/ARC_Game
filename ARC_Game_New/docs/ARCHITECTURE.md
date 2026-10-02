@@ -143,7 +143,7 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 | `bench/` split | done |
 | Baselines act through tool calls (`execute_indices` retired) | done |
 | Search wing: `oracle/` as a package on `cora/` (policy family, records) | done |
-| Surrogate on the new rules (`cora/params`, Unity's score), parity restored | pending |
+| Surrogate on the new rules (`cora/params`, Unity's score), parity restored | done: `oracle/sim`, exact on every captured game (tests/test_surrogate_parity.py, tests/test_sim_env.py); `oracle/arc_surrogate` and its drivers still to retire |
 | Legacy actors (auto / choices / coach) retired | done |
 | `router/` package (service, session, mixins) | done |
 | `CoraEnv` (rl/); the benchmark plays through it | done |

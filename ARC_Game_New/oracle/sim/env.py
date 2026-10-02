@@ -25,7 +25,6 @@ from cora.env.game import _metrics            # the same game/* keys as the Unit
 from cora.scoring import score_components
 
 import oracle.sim.sim as S
-from .evolve import fresh_world
 from .export import game_state
 from .floodmap import FloodMap
 from .rng import game_start
@@ -73,7 +72,7 @@ class SimEnv:
         if self.seed_value is None:
             raise ValueError("SimEnv needs a seed (the surrogate has no unseeded mode)")
         self.active_seed = int(self.seed_value)
-        self.world = fresh_world(game_start(self.active_seed).get_state(), self._fmap)
+        self.world = S.new_world(game_start(self.active_seed).get_state(), self._fmap)
         self.current_step = 0
         self._read_state()
         sab = self.game_state["satisfactionAndBudget"]

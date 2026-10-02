@@ -1,5 +1,7 @@
 """Search: traditional algorithms over game policies, on a fast surrogate of the game.
 
+    sim/                   the EXACT surrogate (oracle/sim/README.md): matches the headless game
+                           decision for decision; SimEnv plays it through cora.executor
     arc_surrogate.py       the seeded surrogate (fast, flat Python; validated against Unity)
     plans.py               playing plans on it: one rollout loop, macro expansion, Pareto front
     pareto_sweep.py        the score-vs-budget frontier over cora.policy_family

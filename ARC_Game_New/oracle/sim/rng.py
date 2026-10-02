@@ -29,7 +29,6 @@ draw. The exact raw->float mapping is pinned by test_rng_semantics against Unity
 from __future__ import annotations
 
 import struct as _st
-from struct import pack as _pk, unpack as _up
 
 M32 = 0xFFFFFFFF
 

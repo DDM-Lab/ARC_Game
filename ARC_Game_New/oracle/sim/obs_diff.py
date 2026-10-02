@@ -1,8 +1,8 @@
 """Observation diff: the port's end-of-round STATE against Unity's, field by field, per step.
 
-    python -m oracle.sim.obs_diff oracle/sim/runs/merge_v4 5503            # one line per step
-    python -m oracle.sim.obs_diff oracle/sim/runs/merge_v4 5503 --step 9   # every differing field
-    python -m oracle.sim.obs_diff oracle/sim/runs/merge_v4 5503 --all      # full dump of each diff step
+    python -m oracle.sim.obs_diff oracle/sim/runs/v6_explore05 5501            # one line per decision
+    python -m oracle.sim.obs_diff oracle/sim/runs/v6_explore05 5501 --step 9   # every differing field
+    python -m oracle.sim.obs_diff oracle/sim/runs/v6_explore05 5501 --all      # every diff step in full
 
 WHY THIS AND NOT THE DRAW-STREAM DIFF. The surrogate is a leaf evaluator for search. What
 search needs is that the same state and the same actions give the same observation at the
@@ -31,7 +31,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from cora.scoring import score_components                     # noqa: E402
 import oracle.sim.sim as S                                    # noqa: E402
-from oracle.sim.debug_lockstep import Session                 # noqa: E402
+from oracle.sim.lockstep import Session                       # noqa: E402
 
 # Unity GameObject name -> display name, for the prebuilts (tasks name the GameObject, the
 # facility list names the display). Positions from a capture: Community01 (1.3, 7.1) is
@@ -196,19 +196,6 @@ def category(field: str) -> str:
     return "stochastic" if base in STOCHASTIC else "deterministic"
 
 
-def rng_divergence_step(sess: Session):
-    """The port step in which the concatenated draw streams first part, or None."""
-    if sess.draw_div is None or sess.draw_div[0] is None:
-        return None
-    k = sess.draw_div[0]
-    seen = 0
-    for i, ms in enumerate(sess.marks):
-        seen += len(ms)
-        if k < seen:
-            return i
-    return len(sess.marks) - 1
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("capture_dir")
@@ -217,8 +204,8 @@ def main():
     ap.add_argument("--all", action="store_true", help="dump every differing field for every diff step")
     args = ap.parse_args()
 
-    sess = Session(args.seed, validate_dir=args.capture_dir)
-    div = rng_divergence_step(sess)
+    sess = Session(args.seed, args.capture_dir)
+    div = sess.rng_div
     meta_path = os.path.join(args.capture_dir, f"staff_{args.seed}.meta.json")
     if os.path.exists(meta_path):
         meta = json.load(open(meta_path))
@@ -231,14 +218,14 @@ def main():
             print(f"WARNING: capture is from build {meta['buildGUID'][:8]}, corpus from {here[:8]} -- different games")
 
     print(f"seed {args.seed}: {len(sess.trace)} steps; RNG streams "
-          + ("aligned for the whole capture" if div is None else f"part inside step {div} (draw {sess.draw_div[0]})"))
+          + ("aligned for the whole capture" if div is None else f"part inside step {div}"))
     first_det = None
     hist = {"deterministic": 0, "stochastic": 0}
     for i, step in enumerate(sess.trace):
         u, p = project_unity(step["after"]), project_port(sess.after[i])
         d = diff(u, p)
         w = sess.after[i]
-        tag = f"s{i + (sess.s0 or 1)}"
+        tag = f"s{i + 1}"
         rng = "ok " if div is None or i < div else "DIV"
         cats = [category(f) for f, _a, _b in d]
         n_det, n_sto = cats.count("deterministic"), cats.count("stochastic")

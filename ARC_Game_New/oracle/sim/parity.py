@@ -25,56 +25,28 @@ FIXTURES = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.
                         "tests", "fixtures", "sim_parity")
 
 
-def _rng_states(log_path) -> dict:
-    out = {}
-    for line in open(log_path, errors="ignore"):
-        m = re.search(r"\[RNGCTX\] s(\d+)\S* round:advance (\{.*?\})", line)
-        if m:
-            st = json.loads(m.group(2))
-            out.setdefault(int(m.group(1)), [st[k] & 0xFFFFFFFF for k in ("s0", "s1", "s2", "s3")])
-    return out
-
-
-def _with_facility(step) -> list:
-    """`taken` with each task answer's facility, and a task id for tasks built in code (no
-    TaskData: casework requests, repairs), mapped by title as the port names them."""
-    from oracle.sim.sim import CODE_BUILT_TASKS
-    tasks = {t.get("taskId"): t for t in (step.get("before") or {}).get("allActiveTasks") or []}
-
-    def fill(a):
-        t = tasks.get(a.get("taskId")) or {}
-        sid = a.get("stableTaskId") or CODE_BUILT_TASKS.get(str(t.get("taskTitle")), "")
-        out = dict(a, facility=a.get("facility", str(t.get("affectedFacility") or "")), stableTaskId=sid)
-        desc = str(t.get("taskDescription") or "")
-        if "|CLIENT_GROUP_ID:" in desc:          # a casework task names its client group
-            out["group"] = int(desc.split("|CLIENT_GROUP_ID:", 1)[1])
-        return out
-    return [fill(a) if a.get("kind") == "choice" else a for a in step.get("taken") or []]
-
-
 def make_fixture(capture_json: str) -> dict:
+    from oracle.sim.lockstep import rng_states, seed_state, with_facility
     from oracle.sim.obs_diff import project_unity
-    from oracle.sim.test_replay_forward import seed_state
     log = capture_json.replace(".json", ".log")
     trace = json.load(open(capture_json))
-    rng = _rng_states(log)
+    rng = rng_states(log)
     meta_path = capture_json.replace(".json", ".meta.json")
     meta = json.load(open(meta_path)) if os.path.exists(meta_path) else {}
     return {"seed": meta.get("seed"), "source": meta.get("source"), "buildGUID": meta.get("buildGUID"),
             "seed_state": list(seed_state(log)),
-            "steps": [{"taken": _with_facility(s)} for s in trace],
+            "steps": [{"taken": with_facility(s)} for s in trace],
             "rng": [rng.get(i + 1) for i in range(len(trace))],
             "expected": [project_unity(s["after"]) for s in trace]}
 
 
 def replay(fixture: dict):
     """Play a fixture on the port: (per-decision RNG states at decision start, projections)."""
-    from oracle.sim.diag_lockstep import replay_step
-    from oracle.sim.evolve import fresh_world
     from oracle.sim.floodmap import FloodMap
+    from oracle.sim.lockstep import replay_step
     from oracle.sim.obs_diff import project_port
     import oracle.sim.sim as S
-    w = fresh_world(tuple(fixture["seed_state"]), FloodMap.load())
+    w = S.new_world(tuple(fixture["seed_state"]), FloodMap.load())
     states, got = [], []
     for step in fixture["steps"]:
         states.append(list(w.rng.get_state()))

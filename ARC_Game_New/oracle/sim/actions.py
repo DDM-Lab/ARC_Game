@@ -35,6 +35,8 @@ been replayed exactly.
 """
 from __future__ import annotations
 
+from cora.scoring import score_components
+
 from .economy import (REQUIRED_WORKFORCE, STATUS_IN_USE, STATUS_NEED_WORKER, action_from_id, apply_action,
                       basket_order)
 from .pruning import prune
@@ -49,13 +51,12 @@ STAFF_ALL = "staff_all"                 # symbolic: staff whatever needs workers
 
 
 def _score(world):
-    import reward_scoring
-    return reward_scoring.compute_score(world.economy.metrics())[2]
+    """Unity's score (cora.scoring, from the DailyReportData ledger the port keeps)."""
+    return score_components(world.economy.metrics())["score"]
 
 
 def _components(world):
-    import reward_scoring
-    return reward_scoring.compute_score_components(world.economy.metrics())
+    return score_components(world.economy.metrics())
 
 
 class CoraActions(ActionModel):

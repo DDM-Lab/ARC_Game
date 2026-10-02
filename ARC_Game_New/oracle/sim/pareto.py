@@ -1,13 +1,13 @@
 """Upper bounds, Pareto frontier, and strategy clusters from an evolve.py log.
 
-The game's score is satisfaction MINUS cost_efficiency (reward_scoring.compute_score), so
-cost_efficiency is a penalty and the default frontier minimises it.
+The game's score is satisfaction PLUS efficiency (cora.scoring: Unity's DailyReportData
+components), both higher-is-better, so the default frontier maximises both.
 
-    python -m oracle.sim.pareto oracle/sim/runs/evo.jsonl [--k 5] [--objectives satisfaction cost_efficiency]
+    python -m oracle.sim.pareto oracle/sim/runs/evo.jsonl [--k 5] [--objectives satisfaction efficiency]
 
 Upper bound: the best score found per seed (what the search proved reachable; the true
 optimum is at least this). Frontier: trajectories no other trajectory beats on every
-objective (default: the game's two headline components -- satisfaction and cost
+objective (default: the game's two headline components -- satisfaction and
 efficiency -- higher is better for both). Clusters: k-means on standardised strategy
 features (what the plan did: build counts and timing, hiring, training) so that runs with
 the same shape land together regardless of score; each cluster is described by its centroid
@@ -87,7 +87,7 @@ def reevaluate(plans, seeds, rounds=32):
     mean/min, not the score on the seed it was evolved for."""
     import random
     from oracle.sim.actions import CoraActions
-    from oracle.sim.evolve import fresh_world
+    from oracle.sim.sim import new_world
     from oracle.sim.floodmap import FloodMap
     import oracle.sim.sim as S
     fmap = FloodMap.load()
@@ -96,7 +96,7 @@ def reevaluate(plans, seeds, rounds=32):
         m = CoraActions(random.Random(0))
         scores = []
         for _, st in seeds:
-            w = fresh_world(st, fmap)
+            w = new_world(st, fmap)
             for g in plan[:rounds]:
                 m.apply(w, ("turn", g)); S.step(w)
             scores.append(m.value(w))
@@ -108,9 +108,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("log")
     ap.add_argument("--k", type=int, default=5)
-    ap.add_argument("--objectives", nargs="+", default=["satisfaction", "cost_efficiency"])
-    ap.add_argument("--minimize", nargs="*", default=["cost_efficiency"],
-                    help="objectives where lower is better (the game's score is satisfaction - cost_efficiency)")
+    ap.add_argument("--objectives", nargs="+", default=["satisfaction", "efficiency"])
+    ap.add_argument("--minimize", nargs="*", default=[],
+                    help="objectives where lower is better (none of Unity's score terms)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--reeval-n", type=int, default=30)
     ap.add_argument("--reeval", action="store_true",
@@ -148,8 +148,8 @@ def main():
               f" hire={f['hire_untrained']}+{f['hire_trained']}t train={f['train']}")
 
     if args.reeval:
-        from oracle.sim.evolve import captured_seeds
-        seeds = captured_seeds()
+        from oracle.sim.evolve import start_states
+        seeds = start_states()
         cand = front[:args.reeval_n]
         print(f"\nCROSS-SEED RE-EVALUATION: top {len(cand)} frontier plans on all {len(seeds)} captured seeds")
         ev = reevaluate([r["plan"] for r in cand], seeds)

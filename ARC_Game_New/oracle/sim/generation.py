@@ -26,7 +26,7 @@ export, never from the source file.
 """
 from __future__ import annotations
 
-from .triggers import INVENTORY, roll_pass
+from .triggers import INVENTORY
 
 
 def _compare(kind: str, value, target) -> bool:

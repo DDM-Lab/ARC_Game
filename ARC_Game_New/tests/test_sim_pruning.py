@@ -5,13 +5,8 @@ the planner could have used, and then nobody notices because the ceiling just qu
 So every rule is tested in both directions: the dead action IS removed, and the live action
 next to it SURVIVES.
 """
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from oracle.sim.economy import Economy, action_from_id                  # noqa: E402
-from oracle.sim.pruning import prune                                    # noqa: E402
+from oracle.sim.economy import Economy, action_from_id
+from oracle.sim.pruning import prune
 
 
 def _staff(index, untrained=4):
@@ -20,8 +15,7 @@ def _staff(index, untrained=4):
                        "untrained": untrained}}
 
 
-def main():
-    print("oracle.sim.pruning")
+def test_pruning_rules():
     ok = True
 
     # 1. A building under construction cannot be staffed; once it finishes, it can.
@@ -84,9 +78,4 @@ def main():
     print(f"  expensive but effective       : {'kept' if good else 'PRUNED  <-- WRONG'}")
     ok &= good
 
-    print("\nRESULT:", "ALL PASS" if ok else "FAILURES PRESENT")
-    return 0 if ok else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    assert ok

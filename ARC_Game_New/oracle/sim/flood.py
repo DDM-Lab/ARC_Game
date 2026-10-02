@@ -22,7 +22,7 @@ THREE THINGS THAT ARE EASY TO GET WRONG, ALL VERIFIED AGAINST THE C#:
 from __future__ import annotations
 
 from .floodmap import FloodMap, pack, unpack
-from .rng import f32, f32add, f32mul, threshold_for, threshold_le_for
+from .rng import f32add, f32mul, threshold_for, threshold_le_for
 
 # CONSTANTS COME FROM THE RUNNING GAME, NEVER FROM THE C# SOURCE.
 #

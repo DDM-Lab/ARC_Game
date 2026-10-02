@@ -25,39 +25,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from oracle.sim.actions import CoraActions          # noqa: E402
 from oracle.sim.floodmap import FloodMap            # noqa: E402
-from oracle.sim.rng import UnityRandom              # noqa: E402
+from oracle.sim.rng import game_start              # noqa: E402
 from oracle.sim.search import RHEA                  # noqa: E402
 import oracle.sim.sim as S
-from .economy import C as _ECON_C                          # noqa: E402
 
-_CAPTURES = os.environ.get("STAFF_TRACES") or (
-    "/private/tmp/claude-501/-Users-cpulling-Work-CORA/b762a1aa-9f0c-4053-9897-bfd6aeeb9623/"
-    "scratchpad/cap32{b,_fresh}/staff_*.json")
-
-
-def captured_seeds():
-    """(unity_seed, xorshift state) for every captured episode: the only states the headless
-    server can actually be started on, so every trajectory here is replayable for real."""
-    import glob
-    from oracle.sim.test_replay_forward import seed_state
-    out = []
-    for pat in _CAPTURES.replace("{b,_fresh}", "\0").split("\0") if "{" not in _CAPTURES else \
-            [_CAPTURES.replace("{b,_fresh}", x) for x in ("b", "_fresh")]:
-        for p in sorted(glob.glob(pat)):
-            st = seed_state(p.replace(".json", ".log"))
-            if st:
-                out.append((int(os.path.basename(p)[6:-5]), st))
-    return out
-
-
-def fresh_world(state, fmap, weather=None):
-    # Day 1's weather comes from the parameter sheet (initialState.weather). Hardcoding Sunny
-    # against a HeavyRain sheet loses the whole first-round flood spawn.
-    if weather is None:
-        weather = (_ECON_C.get("initial_state") or {}).get("weather") or "Sunny"
-    w = S.World(rng=UnityRandom(state=state), weather=weather, fmap=fmap)
-    w.use_generation = True
-    return w
+def start_states(n=14, first=5501):
+    """(unity_seed, xorshift state) for n consecutive Unity seeds: the state a headless game
+    started with -seed <s> begins its first decision with (rng.game_start), so every
+    trajectory found here can be replayed on Unity."""
+    return [(sd, game_start(sd).get_state()) for sd in range(first, first + n)]
 
 
 def features(executed, world, comps):
@@ -88,9 +64,8 @@ def features(executed, world, comps):
         f[k] = m.get(k, 0)
     f["final_budget"] = world.economy.budget
     f["motel_population"] = world.economy.motel_population
-    for k in ("sat_food", "sat_lodging", "sat_worker_use", "casework_processing_sat",
-              "cost_food", "cost_lodging", "cost_worker", "casework_efficiency",
-              "satisfaction", "cost_efficiency", "score"):
+    from cora.scoring import COMPONENTS                  # Unity's score terms
+    for k in COMPONENTS:
         f[k] = comps.get(k, 0.0)
     return f
 
@@ -142,7 +117,7 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     t0 = time.time(); total = 0
     with open(args.out, "a") as sink:
-        seeds = captured_seeds()[:args.seeds or None]
+        seeds = start_states(args.seeds or 14)
         for i, (unity_seed, state) in enumerate(seeds):
             model = LoggingActions(random.Random(args.search_seed + i), sink=sink, seed_state=state,
                                    unity_seed=unity_seed, max_menu=args.menu)
@@ -150,7 +125,7 @@ def main():
                                  generations=args.generations, elites=args.elites,
                                  mutation_rate=args.mutation, crossover=args.crossover,
                                  rng=random.Random(args.search_seed * 1000 + i))
-            plan, fit = search.plan(fresh_world(state, fmap), seed_plan=CoraActions.baseline_plan(args.rounds))
+            plan, fit = search.plan(S.new_world(state, fmap), seed_plan=CoraActions.baseline_plan(args.rounds))
             total += search.rollouts
             print(f"  seed {unity_seed}: best {fit:.4f} after {search.rollouts} rollouts "
                   f"({total / (time.time() - t0):.0f}/s cumulative)", flush=True)
