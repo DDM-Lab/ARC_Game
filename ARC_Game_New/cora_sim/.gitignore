@@ -1,0 +1,6 @@
+runs/
+
+# Cython build artifacts (see setup_fast.py) -- a .so shadows the .py beside it
+*.so
+*.c
+build/
