@@ -18,12 +18,12 @@ TWO THINGS THAT ARE NOT WHAT THEY LOOK LIKE:
 from __future__ import annotations
 
 import json as _json
-import os as _os
+
+from . import corpus_paths as _corpus
 
 from .rng import f32add
 
-_CONST_PATH = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
-                            "corpus", "sim_constants.json")
+_CONST_PATH = _corpus.CONSTANTS
 
 # WeatherSystem.GetRainIntensity(). Not exported by sim_constants because it is a switch in
 # code rather than serialized data -- if that ever changes, export it and delete this.

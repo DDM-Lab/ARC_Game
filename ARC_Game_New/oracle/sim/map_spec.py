@@ -66,7 +66,8 @@ class MapSpec:
 
     @classmethod
     def default(cls):
-        return cls.load("default")
+        from . import corpus_paths
+        return cls.load(corpus_paths.MAP)
 
     def __repr__(self):
         return (f"<MapSpec {self.name}: {len(self.road_cells)} road cells, "

@@ -31,12 +31,12 @@ see PLAN.md for why the C# is not being silently sorted.
 from __future__ import annotations
 
 import json as _json
-import os as _os
+
+from . import corpus_paths as _corpus
 
 from .rng import range01_threshold_lt
 
-_CONST_PATH = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
-                            "corpus", "sim_constants.json")
+_CONST_PATH = _corpus.CONSTANTS
 
 
 def load_inventory(path=None):

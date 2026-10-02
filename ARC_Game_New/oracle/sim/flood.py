@@ -36,10 +36,10 @@ from .rng import f32, f32add, f32mul, threshold_for, threshold_le_for
 # oracle/sim/corpus/sim_constants.json is exported by the `sim_constants` RPC. Regenerate it
 # whenever the scene changes -- the same rule as the RNG golden corpus.
 import json as _json
-import os as _os
 
-_CONST_PATH = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
-                            "corpus", "sim_constants.json")
+from . import corpus_paths as _corpus
+
+_CONST_PATH = _corpus.CONSTANTS
 
 
 def load_constants(path=None):

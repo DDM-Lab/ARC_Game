@@ -199,8 +199,8 @@ def main():
     if os.path.exists(meta_path):
         meta = json.load(open(meta_path))
         try:
-            from oracle.sim.economy import C as _C
-            here = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "corpus", "sim_constants.json"))).get("buildGUID")
+            from oracle.sim import corpus_paths
+            here = corpus_paths.constants().get("buildGUID")
         except Exception:
             here = None
         if meta.get("buildGUID") and here and meta["buildGUID"] != here:

@@ -12,7 +12,6 @@ after this session's determinism fixes.
 from __future__ import annotations
 
 import json
-import os
 
 # Offset chosen to keep every packed value non-negative and order-preserving for the
 # actual map bounds (xMin=-16, yMin=-12, 31x22). 512 leaves enormous headroom.
@@ -22,10 +21,9 @@ _SHIFT = 10
 # blockingRadius comes from the RUNNING GAME: the scene overrides the C# initialiser
 # (source says 1, runtime is 5). See oracle/sim/flood.py for the full note.
 def _blocking_radius():
-    import json as _j, os as _o
-    p = _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "corpus", "sim_constants.json")
+    from . import corpus_paths
     try:
-        return int(_j.load(open(p))["flood"]["blockingRadius"])
+        return int(corpus_paths.constants()["flood"]["blockingRadius"])
     except Exception:
         return 1
 
@@ -105,8 +103,8 @@ class FloodMap:
 
     @classmethod
     def load(cls, path=None):
-        path = path or os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                    "corpus", "map_grid.json")
+        from . import corpus_paths
+        path = path or corpus_paths.MAP_GRID
         return cls(json.load(open(path)))
 
     def neighbours(self, p: int):

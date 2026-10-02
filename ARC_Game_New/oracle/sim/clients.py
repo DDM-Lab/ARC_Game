@@ -21,15 +21,15 @@ against 40 in the .cs initialiser.
 from __future__ import annotations
 
 import json as _json
-import os as _os
+
+from . import corpus_paths as _corpus
 
 from .rng import f32, f32mul, threshold_for
 
 # GameTask roundsRemaining for the generated BackToHome task (TaskSystem.CreateTask).
 _CASEWORK_ROUNDS = 3
 
-_CONST_PATH = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
-                            "corpus", "sim_constants.json")
+_CONST_PATH = _corpus.CONSTANTS
 
 
 def load_client_constants(path=None):

@@ -24,10 +24,10 @@ silently.
 from __future__ import annotations
 
 import json as _json
-import os as _os
 
-_CONST_PATH = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
-                            "corpus", "sim_constants.json")
+from . import corpus_paths as _corpus
+
+_CONST_PATH = _corpus.CONSTANTS
 
 # BuildingSystem's spend category per building type. Kitchens are food-service spend,
 # shelters lodging, casework sites casework -- so the same $2000 lands in a different
