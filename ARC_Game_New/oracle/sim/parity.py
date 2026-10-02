@@ -81,7 +81,10 @@ def check(fixture: dict) -> list:
 
 
 def _label(source: str) -> str:
-    """'policy:combined+explore(eps=0.05,seed=3)' -> 'combined-explore05'; 'noop' -> 'noop'."""
+    """'policy:combined+explore(eps=0.05,seed=3)' -> 'combined-explore05'; 'noop' -> 'noop';
+    a --calls plan '.../mcts_5503.json' -> 'plan-mcts'."""
+    if source.endswith(".json"):
+        return "plan-" + re.sub(r"_\d+$", "", os.path.basename(source)[:-5])
     m = re.match(r"policy:([\w-]+)(?:\+explore\(eps=([\d.]+))?", source)
     if not m:
         return re.sub(r"\W+", "-", source).strip("-") or "capture"

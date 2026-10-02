@@ -133,6 +133,25 @@ def test_native_play_matches_capture(name):
     assert round(score_components(env.game_state["rewardMetrics"])["score"], 4) == fixture["expected"][-1]["score"]
 
 
+
+def test_clone_is_independent():
+    """A clone plays forward exactly as the original would, and playing it leaves the original as it was."""
+    from oracle.rollout import play
+    from oracle.sim.env import SimEnv
+    from bench.baselines.common import tool_calls
+    from bench.baselines import POLICIES
+    from cora import executor
+    env = SimEnv(seed=5503, max_episode_steps=40, manual_transfers=False)
+    env.reset()
+    for i in range(10):
+        executor.execute_turn(env, tool_calls(env, POLICIES["combined"](env, i, 36)))
+    before = digest(env.game_state)
+    a, b = env.clone(), env.clone()
+    ra, rb = play({"name": "combined"}, 5503, env=a), play({"name": "combined"}, 5503, env=b)
+    assert (ra.score, ra.calls) == (rb.score, rb.calls)
+    assert digest(env.game_state) == before and env.current_step == 10
+    assert play({"name": "combined"}, 5503, env=env).score == ra.score
+
 def build(dirs):
     """sim_env fixtures from captures: per decision, digest() of Unity's own state."""
     from oracle.sim.parity import _label

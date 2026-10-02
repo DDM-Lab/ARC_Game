@@ -30,6 +30,17 @@ from .floodmap import FloodMap
 from .rng import game_start
 
 
+_FMAP = None
+
+
+def _flood_map() -> FloodMap:
+    """The terrain is immutable and shared (World.clone shares it too); load it once."""
+    global _FMAP
+    if _FMAP is None:
+        _FMAP = FloodMap.load()
+    return _FMAP
+
+
 class SimEnv:
     def __init__(self, seed: Optional[int] = None, max_episode_steps: int = 100,
                  manual_transfers: bool = True, **_ignored):
@@ -46,7 +57,7 @@ class SimEnv:
         self.previous_score = 0.0
         self.last_choice_error = None
         self.active_seed = -1
-        self._fmap = FloodMap.load()
+        self._fmap = _flood_map()
 
     # ── state ──
     def _read_state(self) -> dict:
@@ -132,6 +143,15 @@ class SimEnv:
             "step": self.current_step,
         }
         return self.game_state, reward, terminated, truncated, info
+
+    def clone(self) -> "SimEnv":
+        """An independent copy at the same decision, for search to branch from: the world is
+        cloned (World.clone); the state and menu are shared until the next step re-reads them,
+        which is safe because both are replaced, never mutated, by step()."""
+        e = SimEnv.__new__(SimEnv)
+        e.__dict__.update(self.__dict__)
+        e.world = self.world.clone()
+        return e
 
     def request(self, payload: dict) -> dict:
         """The gym protocol's reads, for callers that use it directly."""

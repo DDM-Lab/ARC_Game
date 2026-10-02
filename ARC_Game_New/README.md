@@ -17,12 +17,13 @@ results are comparable; the search wing shares the policy family and episode rec
 | GUI officers | `python -m router` (`router/`) | the WebGL/desktop game over a websocket, with a human Director |
 | Benchmark | `python -m bench` (`bench/`) | a headless Unity build over TCP, one process per episode |
 | RL | `rl.cora_env.CoraEnv` (`rl/`) | the same headless build; the Verlog fork (separate repo) wraps it in a thin adapter |
-| Search | `oracle/` | `oracle/arc_surrogate.py`, a Python surrogate of the game |
+| Search | `python -m oracle.rollout`, `oracle.pareto_sweep`, `oracle.mcts` | `oracle/sim`, an exact Python port of the headless build |
 
 The GUI, benchmark and RL wings act through the same seven tools (`build`, `hire`, `train`,
 `staff`, `deconstruct`, `task`, and `transfer` when manual transfers are on), defined in
 `cora/tools.py` and executed by `cora/executor.py`; `cora.tools.arc_tools_yaml()` emits the same
-schema as Verlog's tool config. The search wing plans in per-round macros over its surrogate.
+schema as Verlog's tool config. The search wing runs the same policies and tools on its
+surrogate (`oracle.sim.env.SimEnv`), so any plan it finds replays on Unity to the same score.
 
 ## Repository map
 
@@ -31,7 +32,7 @@ schema as Verlog's tool config. The search wing plans in per-round macros over i
 | `cora/` | shared core: `observation`, `prompts`, `prompt_ablation`, `tools`, `actions` (the action menu), `executor`, `scoring`, `params`, `policy_family`, `records`, `llm/` (providers, `client_for`), `env/` (`GameEnv` TCP client, `unity_process`) |
 | `bench/` | the benchmark CLI, episode loop, LLM policy, results, plots, SFT export; `bench/baselines/` holds the non-LLM policies `greedy`, `build-potential`, `combined`, `pareto` |
 | `rl/` | `CoraEnv`, the turn contract as a framework-neutral tool-call environment |
-| `oracle/` | search: surrogate, plans, Pareto sweep, MCTS, policy comparison, surrogate validation. The surrogate still models the older game rules and scores with `oracle/legacy_score.py` until it is ported and re-validated (see `oracle/arc_surrogate.py`) |
+| `oracle/` | search: `sim/` (the exact surrogate and its Unity parity tooling, [oracle/sim/README.md](oracle/sim/README.md)), `rollout` (policies on the surrogate, with random-basket exploration), `pareto_sweep` (the policy-family frontier), `mcts` (per-decision UCT) |
 | `router/` | the LLM-officer service: FastAPI app, sessions, officer loop and tools, proposals, standing orders, configs, bundles, plugins, keys, dev panel, headless harness |
 | `config/` | officer configs (`continuous_*.json`), `global_prompt_config.json`, `keys.example.json` |
 | `prompts/` | system-prompt packs for the benchmark and RL ([prompts/README.md](prompts/README.md)) |

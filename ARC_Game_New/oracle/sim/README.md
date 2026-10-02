@@ -60,6 +60,8 @@ C#, never a fitted constant. Captures live under `runs/` (untracked).
 
 ## Search
 
-`search.py` (RHEA), `evolve.py` (population search logging every rollout), `pareto.py`
-(frontier and strategy clusters) and `pruning.py` plan over the surrogate's action model
-(`actions.py`).
+The drivers live one level up and all play through `SimEnv`: `oracle.rollout` (any bench
+baseline, optionally with random baskets on a fraction of decisions, over many seeds in
+parallel), `oracle.pareto_sweep` (the `cora.policy_family` frontier) and `oracle.mcts` (UCT
+over per-decision candidates). Each writes per-decision tool calls that `capture.py --calls`
+replays on Unity to the same score.

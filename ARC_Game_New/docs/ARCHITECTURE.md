@@ -8,7 +8,7 @@ player use the **same game through the same interface**:
 | **Benchmark** (`bench/`) | outside LLMs (API or self-hosted), baseline policies | headless Unity over TCP (the "gym") |
 | **RL** (`rl/` + a thin trainer adapter) | policies being trained | headless Unity over TCP |
 | **GUI with LLM officers** (`router/`) | a human Director plus LLM officers | the WebGL/desktop game over a websocket |
-| **Search** (`oracle/`) | traditional search over policies (Pareto sweep, MCTS) | a fast Python surrogate of the game, validated against seeded Unity runs |
+| **Search** (`oracle/`) | traditional search over policies (rollouts with exploration, Pareto sweep, MCTS) | `oracle/sim`, an exact Python port of the headless build (`SimEnv`), lockstep with seeded Unity captures |
 
 The point of the platform is that results from all of them are comparable: same game rules,
 same observation, same tools, same execution semantics, same logs. Anything game-facing is
@@ -36,7 +36,7 @@ cora/                    SHARED CORE — the only place game-facing Python logic
   records.py             reading episode records (episodes.jsonl)
 bench/                   benchmark (python -m bench): CLI, episode loop, LLM policy, baselines,
                          results, plots, SFT export, per-turn probe
-oracle/                  search: the surrogate, Pareto sweep, MCTS, surrogate validation
+oracle/                  search: sim/ (exact surrogate + parity tooling), rollout, pareto_sweep, mcts
 router/                  GUI officers (python -m router):
   service.py             FastAPI app: websocket handshake, keys, contributor/admin endpoints, dev panel API
   session.py             Session: one connected game (composes the mixins below)
@@ -143,7 +143,7 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 | `bench/` split | done |
 | Baselines act through tool calls (`execute_indices` retired) | done |
 | Search wing: `oracle/` as a package on `cora/` (policy family, records) | done |
-| Surrogate on the new rules (`cora/params`, Unity's score), parity restored | done: `oracle/sim`, exact on every captured game (tests/test_surrogate_parity.py, tests/test_sim_env.py); `oracle/arc_surrogate` and its drivers still to retire |
+| Surrogate on the new rules (`cora/params`, Unity's score), parity restored | done: `oracle/sim`, exact on every captured game (tests/test_surrogate_parity.py, tests/test_sim_env.py); search drivers (`oracle.rollout`, `pareto_sweep`, `mcts`) run on `SimEnv`, the old surrogate retired |
 | Legacy actors (auto / choices / coach) retired | done |
 | `router/` package (service, session, mixins) | done |
 | `CoraEnv` (rl/); the benchmark plays through it | done |

@@ -7,7 +7,7 @@ from cora import policy_family
 
 
 # ── pareto policy ───────────────────────────────────────────────────────────────────────────
-# The strategy the calibrated surrogate's Pareto frontier converges on. Every one of the nine
+# The strategy the (pre-v6) surrogate's Pareto frontier converged on. Every one of the nine
 # non-dominated policies shares these invariants (the rest -- kitchen count, casework count, food
 # rule -- only trade score against banked budget):
 #     6 shelters · build from round 0 · one building per round · relocations to SHELTERS

@@ -1,17 +1,16 @@
 """The pareto policy family: standing commitments shared by the surrogate search and the game.
 
-The surrogate searches this family (oracle/pareto_sweep.py) and the benchmark's pareto baseline
-plays a member of it in Unity (bench/baselines/pareto.py). Both read the family from here, so an
-engine-vs-engine comparison measures the two engines rather than two implementations of the
-policy.
+The benchmark's pareto baseline (bench/baselines/pareto.py) plays a member of it; oracle/pareto_sweep.py
+searches the family by playing that same baseline on the exact surrogate (oracle.sim.env.SimEnv), so a
+member's sweep score is its game score.
 
 A member is nine knobs:
     n_shelter, n_kitchen, n_casework   how many of each to build
-    start, spacing                     first build round, and rounds between builds
+    start, spacing                     first build decision, and decisions between builds
     food       "kitchen10" haul from a kitchen  | "paid" buy the immediate option
     reloc      "shelter" route to shelters      | "motel" route to the motel
     answer_cw  take offered casework actions (0/1)
-    switch     round at which food and reloc both flip to the other rule (None = never)
+    switch     decision at which food and reloc both flip to the other rule (None = never)
 
 Build order is casework -> shelters -> kitchens, one building per scheduled round: casework has the
 longest chain to payoff (build, staff, then requests mature once residents have been housed a
@@ -27,9 +26,9 @@ import os
 DEFAULT = dict(n_shelter=6, n_kitchen=2, n_casework=3, start=0, spacing=1,
                food="kitchen10", reloc="shelter", answer_cw=1, switch=None)
 
-# The map ships 15 AbandonedSite objects (Scenes/MainScene.unity), one building each; a plan that
-# asks for more is not buildable.
-MAX_SITES = 15
+# The pinned map config (StreamingAssets/map_config.json) places 12 AbandonedSite objects, one
+# building each; a plan that asks for more is not buildable.
+MAX_SITES = 12
 
 GRID = dict(
     n_shelter=[0, 1, 2, 3, 4, 5, 6, 7, 8],
@@ -61,7 +60,7 @@ def grid_members() -> list:
 
 
 def rules(cfg: dict, rnd: int) -> tuple:
-    """(food rule, relocation rule) in force at round `rnd`, applying `switch`."""
+    """(food rule, relocation rule) in force at decision `rnd`, applying `switch`."""
     food, reloc = cfg["food"], cfg["reloc"]
     if cfg.get("switch") is not None and rnd >= cfg["switch"]:
         food = "paid" if food == "kitchen10" else "kitchen10"
@@ -70,28 +69,16 @@ def rules(cfg: dict, rnd: int) -> tuple:
 
 
 def build_schedule(cfg: dict) -> dict:
-    """round -> building type to start that round."""
+    """decision -> building type to start at that decision."""
     order = (["CaseworkSite"] * cfg["n_casework"] + ["Shelter"] * cfg["n_shelter"]
              + ["Kitchen"] * cfg["n_kitchen"])
     return {cfg["start"] + i * cfg["spacing"]: b for i, b in enumerate(order)}
 
 
-def macro(cfg: dict):
-    """The member as a per-round macro for the surrogate:
-    rnd -> (building or None, workers to hire, food rule, relocation rule, answer_cw)."""
-    sched = build_schedule(cfg)
-
-    def at(rnd):
-        b = sched.get(rnd)
-        food, reloc = rules(cfg, rnd)
-        return (b, 4 if b else 0, food, reloc, cfg["answer_cw"])
-    return at
-
-
 # The two guards a member applies before acting on its rules, in both engines: a rule is only
 # followed when the game can carry it out this round; otherwise the member falls back to the
 # motel / the paid option (Unity refuses a shelter relocation without beds and a kitchen haul
-# without stock, while a naive surrogate would silently succeed).
+# without stock).
 def route_to_shelter(cfg: dict, rnd: int, free_beds: int, group: int) -> bool:
     """Send a relocation group to shelters: the rule says so and operational shelters have free
     beds for the whole group."""
