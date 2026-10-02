@@ -421,7 +421,7 @@ class Fleet:
         return landed
 
 
-    def run_round(self, pending, flooded=frozenset(), load=None):
+    def run_round(self, pending, flooded=frozenset(), load=None, source_pos=None):
         """One simulated round, FRAME BY FRAME. Returns (landed, still_pending, dropped).
 
         Everything here is calibrated against the delivery marks of eleven 32-round captures
@@ -479,7 +479,8 @@ class Fleet:
                          and not self.damaged[i]]
                 while queue and ready:
                     seq, payload, src, dst, qty = queue[0]
-                    v = self._closest(ready, src, qty)
+                    v = self._closest(ready, src, qty,
+                                      src_pos=source_pos(payload) if source_pos else None)
                     if self.trip[v] is not None and self.trip[v].get("race_ready") == self.frame:
                         # THE RACE: two coroutines advance one shared currentPathIndex. The
                         # source leg is skipped, the destination leg runs at two cells a
@@ -489,7 +490,7 @@ class Fleet:
                         leg2 = path_length(self.pos[v], dst, flooded, self.spec)
                         if leg2 is None:
                             self.damaged[v] = True
-                            dropped.append((payload, True))      # loaded at the source
+                            dropped.append((payload, qty))       # loaded at the source: packs aboard
                             self.trip[v] = None
                             ready.remove(v)
                             queue.pop(0)
@@ -498,7 +499,8 @@ class Fleet:
                         # f308 and unloaded "nominal 100, actual 100" from Community01 at
                         # f317, with Community01 down 100. LoadCargo ran, so the source is
                         # debited here, on the race frame (there is no source leg).
-                        if load is not None and load(payload, qty) <= 0:
+                        got = load(payload, qty) if load is not None else qty
+                        if got <= 0:
                             self.trip[v] = {"race_ready": self.frame + 1}
                             self.aborted.append(payload)
                             if self.events is not None: self.events.append((self.frame, "abort", v, payload[0]))
@@ -506,7 +508,8 @@ class Fleet:
                             queue.pop(0)
                             continue
                         self.trip[v] = {"payload": payload, "src": src, "dst": dst, "qty": qty,
-                                        "phase": "to_dst", "left": max(1, -(-leg2 // 2)) + 1}
+                                        "phase": "to_dst", "left": max(1, -(-leg2 // 2)) + 1,
+                                        "aboard": got}
                         self.carrying[v] = payload
                         if self.events is not None: self.events.append((self.frame, "race", v, payload[0], leg2))
                         ready.remove(v)
@@ -517,7 +520,7 @@ class Fleet:
                     if leg1 is None:
                         # No flood-free path to the source: blocked on the dispatch frame.
                         self.damaged[v] = True
-                        dropped.append((payload, False))     # never reached the source
+                        dropped.append((payload, 0))         # never reached the source: nothing aboard
                         ready.remove(v)
                         queue.pop(0)
                         continue
@@ -559,7 +562,7 @@ class Fleet:
                         if 0 < idx < len(path) and path[idx] in flooded:
                             self.pos[v] = path[idx]
                             self.damaged[v] = True
-                            dropped.append((t["payload"], t["phase"] == "to_dst"))
+                            dropped.append((t["payload"], t.get("aboard", t["qty"]) if t["phase"] == "to_dst" else 0))
                             self.carrying[v] = None
                             self.trip[v] = None
                             if self.events is not None: self.events.append((self.frame, "collision", v, t["payload"][0], path[idx]))
@@ -574,7 +577,8 @@ class Fleet:
                     # single frame is what decides the race (see the pass).
                     self.pos[v] = t["src"]
                     if self.events is not None: self.events.append((self.frame, "at_src", v, t["payload"][0]))
-                    if load is not None and load(t["payload"], t["qty"]) <= 0:
+                    got = load(t["payload"], t["qty"]) if load is not None else t["qty"]
+                    if got <= 0:
                         # Idle from this frame; the aborted ExecuteDeliveryTask only resumes
                         # next frame. A pass on that next frame that hands this vehicle a task
                         # first wakes the old coroutine into the race; otherwise it exits and
@@ -585,14 +589,14 @@ class Fleet:
                         self.aborted.append(t["payload"])
                         if self.events is not None: self.events.append((self.frame, "abort", v, t["payload"][0]))
                         continue
-                    t["phase"], t["left"] = "boarding", 1
+                    t["phase"], t["left"], t["aboard"] = "boarding", 1, got
                 elif ph == "boarding":
                     leg2 = path_length(t["src"], t["dst"], flooded, self.spec)
                     if leg2 is None:
                         # No flood-free path for the destination leg: StopVehicleDueToFlood
                         # -> HandleDeliveryFailure. Damaged, order gone.
                         self.damaged[v] = True
-                        dropped.append((t["payload"], True))     # loaded, no destination leg
+                        dropped.append((t["payload"], t.get("aboard", t["qty"])))     # loaded, no destination leg
                         self.trip[v] = None
                         continue
                     t["phase"], t["left"] = "to_dst", max(1, leg2)
@@ -662,7 +666,7 @@ class Fleet:
                     leg2 = path_length(t["src"], t["dst"], flooded, self.spec)
                     if leg2 is None:
                         self.damaged[v] = True
-                        dropped.append((t["payload"], True))     # loaded, no destination leg
+                        dropped.append((t["payload"], t.get("aboard", t["qty"])))     # loaded, no destination leg
                         self.trip[v] = None
                         continue
                     # A leg started in a paused frame makes no movement until the next
@@ -689,8 +693,10 @@ class Fleet:
             self.busy_seconds[v] = (t["left"] * self.spec.fixed_delta) if (t and "left" in t) else 0.0
         return landed, dropped
 
-    def _closest(self, candidates, src_cell, quantity=0, capacity=100.0):
-        """CalculateVehicleSuitability among a set of already-free vehicles."""
+    def _closest(self, candidates, src_cell, quantity=0, capacity=100.0, src_pos=None):
+        """CalculateVehicleSuitability among a set of already-free vehicles. `src_pos` is the
+        source building's transform when the caller knows it (a building constructed this
+        episode, which the map dump's building_pos does not carry)."""
         best, best_score = candidates[0], -1.0
         # SCORE AGAINST THE BUILDING TRANSFORM, NOT THE ROAD CELL. Unity scores
         # Vector3.Distance(vehicle.transform.position, task.GetSourcePosition()), and
@@ -701,7 +707,7 @@ class Fleet:
         # ~1.6 units apart on this map, which is decisive when two vehicles are a similar
         # distance out. Falls back to the road cell for buildings placed mid-episode, whose
         # transform the map dump does not carry.
-        sx, sy = self.spec.building_pos.get(
+        sx, sy = src_pos or self.spec.building_pos.get(
             _building_at(src_cell, self.spec), cell_to_world(src_cell, self.spec))
         for i in candidates:
             vx, vy = cell_to_world(self.pos[i], self.spec)

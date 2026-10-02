@@ -194,6 +194,7 @@ class World:
         # A food delivery that reaches an empty kitchen does not fail -- LoadCargo aborts
         # and the trip runs again once the kitchen restocks at the day reset.
         self.tasks.retry_if_unsourced = self._can_source
+        self.tasks.source_transform = self._built_transform
         self.tasks.on_blocked = self._blocked_delivery
         self._sourced_now = {}      # task -> packs already pulled this round
         self._pop_loaded = {}       # (task, qty, dest) -> [people aboard, per trip, load order]
@@ -266,9 +267,17 @@ class World:
 
     def _blocked_delivery(self, payload, loaded, task, was_open):
         """StopVehicleDueToFlood's task side. `task` is the parent (already off the board),
-        `loaded` whether the cargo was aboard, `was_open` whether HandleDeliveryFailure found
-        it InProgress). HandleDeliveryFailure applies no satisfaction penalty on this build."""
-        if loaded and not str(payload[2] or "").startswith("__food__"):
+        `loaded` the cargo aboard (0 if not loaded), `was_open` whether HandleDeliveryFailure
+        found it InProgress). HandleDeliveryFailure applies no satisfaction penalty on this build."""
+        if str(payload[2] or "").startswith("__food__"):
+            # FloodTaskGenerator.CreateRoadBlockageTask, food: DiscardVehicleCargo (the meals
+            # aboard are wasted: RecordFoodWasted) and ShowFoodBlockageAlert -- an Alert filed
+            # under the destination, no choices, no task to answer.
+            if loaded:
+                self.economy.report.food_wasted += loaded
+            _food_blockage_alert(self, payload)
+            return
+        if loaded:
             # StopVehicleDueToFlood -> ReturnCargoToSource: the people go back where they
             # were loaded from (they left the source at LoadCargo, see _can_source).
             source = (task.source if task is not None else "") or self.tasks._sources.get(payload[0], "")
@@ -325,6 +334,19 @@ class World:
                     out[b["name"]] = _SITE_POS[sid]
         self._pos_cache = (n, out)
         return out
+
+    def _built_transform(self, name):
+        """A building constructed this episode -> its site's transform; None for anything the
+        map dump already places (Fleet scores those against building_pos). DeliverySystem
+        scores a vehicle by its distance to the source TRANSFORM, which for a built building
+        sits a cell off its road connection (site 3: (1.5, 2.5) vs road (1.5, 3.5)); scored
+        against the road cell, 5504's MCTS plan sent Vehicle 4 where Unity sent Vehicle 1."""
+        global _SITE_POS
+        if _SITE_POS is None:
+            _SITE_POS = _site_positions()
+        b = self.economy.facility(name)
+        sid = b.get("site_id") if b else None
+        return _SITE_POS.get(sid) if sid is not None else None
 
     def _facility_cell(self, name):
         """Facility name -> its road-network cell, resolved geometrically.
@@ -451,6 +473,7 @@ class World:
         # world without mutating it, which is why an isolation test cannot catch it. A
         # search rollout on a clone scored 1.39 where a fresh world scored 2.50.
         for owner, attr in ((w.tasks, "retry_if_unsourced"), (w.tasks, "cell_for"),
+                            (w.tasks, "source_transform"),
                             (w.tasks, "has_supplier"), (w, "facilities_for"),
                             (w.tasks, "on_blocked")):
             fn = getattr(owner, attr, None)
@@ -717,7 +740,7 @@ def cancel_overnight_food(w) -> None:
     for i, load in enumerate(fleet.carrying):
         if load is not None and str(load[2] or "").startswith("__food__"):
             victims.add(load[0])
-            fleet.carrying[i] = None
+            _return_cargo(w, fleet, i)
     # A TRIP STILL DRIVING TO THE KITCHEN COUNTS TOO. Unity cancels the DELIVERY TASK
     # ("Cancelled active delivery task: Task 3: 100 FoodPacks from Kitchen_0 to Motel"),
     # which is live from CreateDeliveryTask onward -- whether or not LoadCargo has run yet.
@@ -729,8 +752,7 @@ def cancel_overnight_food(w) -> None:
         payload = trip.get("payload")
         if payload is not None and str(payload[2] or "").startswith("__food__"):
             victims.add(payload[0])
-            fleet.carrying[i] = None
-            fleet.trip[i] = None
+            _return_cargo(w, fleet, i)
     for task_id in victims:
         task = board.awaiting.pop(task_id, None) or board.active.pop(task_id, None)
         if task is None or task.delivered > 0:
@@ -898,7 +920,64 @@ def apply_menu_action(w: World, action: dict) -> bool:
     if ok and kind in ("deconstruct", "deconstruction"):
         name = (action.get("deconstruction") or {}).get("building_name")
         w.clients.groups = [g for g in w.clients.groups if g.facility != name]
+        _cancel_deliveries_involving(w, name)
     return ok
+
+
+def _cancel_deliveries_involving(w, name) -> None:
+    """DeliverySystem.CancelAllDeliveriesInvolving, which Building.StartDeconstruction calls the
+    moment the building starts coming down (not when it is destroyed): every delivery to or from
+    it, queued or under way, is dropped. A queued one simply leaves the queue -- no event, so
+    its parent task stays answered and its reserved stock is free again at the source (5504
+    MCTS plan, s17: Kitchen_5 keeps the 200 packs promised to the shelter)."""
+    def involves(payload):
+        tag = str(payload[2] or "")
+        if tag.startswith("__food__"):
+            return name in tag[len("__food__"):].split("|", 1)
+        return tag in (name, "Shelter:" + name)
+    board = w.tasks
+    board.pending = [e for e in board.pending if not involves(e[1])]
+    fleet = board.fleet
+    for i, trip in enumerate(fleet.trip):
+        payload = (trip or {}).get("payload") or fleet.carrying[i]
+        if payload is not None and involves(payload):
+            _return_cargo(w, fleet, i)
+
+
+def _return_cargo(w, fleet, i) -> None:
+    """Vehicle.CancelCurrentTask -> AbortDelivery -> ReturnAllCargoToSource: a cancelled
+    delivery is not credited, and whatever the vehicle has aboard goes back into its source
+    (AddResource, so only what fits). 5509 MCTS plan, s15: the end-of-day cancel caught 81
+    meals on their way from Kitchen_3; Unity put them back and wasted them overnight. Frees
+    the vehicle."""
+    trip = fleet.trip[i] or {}
+    payload = trip.get("payload") or fleet.carrying[i]
+    aboard = trip.get("aboard", 0) if trip.get("phase") in ("boarding", "to_dst") else 0
+    # StopAllCoroutines leaves the vehicle where it stood: mid-route, not back at the leg's
+    # start (5513 MCTS plan: Vehicle 3 cancelled at path index 13 of 18 overnight, so the next
+    # day's suitability scoring sees it there).
+    path = trip.get("path")
+    if path and trip.get("phase") in ("to_src", "to_dst"):
+        idx = len(path) - trip.get("left", len(path))
+        if 0 <= idx < len(path):
+            fleet.pos[i] = path[idx]
+    fleet.carrying[i] = None
+    fleet.trip[i] = None
+    if payload is None or aboard <= 0:
+        return
+    tag = str(payload[2] or "")
+    if tag.startswith("__food__"):
+        if "|" in tag:
+            w.economy.add_food(tag.split("|", 1)[1], aboard)
+        return
+    source = w.tasks._sources.get(payload[0], "")
+    task = w.tasks.active.get(payload[0]) or w.tasks.awaiting.get(payload[0])
+    source = source or (getattr(task, "source", "") if task is not None else "")
+    back = _take_loaded(w, tuple(payload[:3]), 0)
+    if back and source:
+        w.economy.move_population(source, back)
+        if source == "Motel":
+            w.economy.motel_pop = w.economy.motel_population
 
 
 def queue_menu_transfer(w, source, destination, quantity) -> bool:
@@ -1112,6 +1191,33 @@ def _create_casework_task(w, gid, facility, with_need):
     w.tasks.add(t)
     w.generated_specs[t.task_id] = (CASEWORK_SPEC_ID, str(facility), spec)
     w._casework_live[t.task_id] = gid
+
+
+def _restore_vehicles(w, before) -> None:
+    """FloodTaskGenerator.OnFloodTileRemoved -> RestoreVehiclesClearOfFlood: the paid repair
+    task is gone on this build (CreateVehicleRepairTask does nothing), so a flood-damaged
+    vehicle comes back when a flood tile is removed and the cell it stands on is dry.
+    `before` is the tile set ahead of the update (None when no vehicle was damaged). Unity
+    checks at each removal, mid-update; this checks once against the updated set."""
+    if before is None or not (before - w.flood.tiles):
+        return
+    fleet = w.tasks.fleet
+    flooded = w.flooded_road_cells()
+    for v, dmg in enumerate(fleet.damaged):
+        if dmg and fleet.pos[v] not in flooded:
+            fleet.repair(v)
+
+
+def _food_blockage_alert(w, payload):
+    """FloodTaskGenerator.ShowFoodBlockageAlert: TaskSystem.CreateTask("Delivery Blocked by
+    Flood", Alert, <destination>) -- it draws nothing but takes a task id."""
+    dest = str(payload[2] or "")[len("__food__"):].split("|")[0]
+    title = "Delivery Blocked by Flood"
+    w.tasks.add(Task(w.tasks.next_id, "None", 0, _ALERT_ROUNDS, task_type="Alert"))
+    w.generated_specs[w.tasks.next_id] = (
+        title, dest, {"taskId": "", "taskTitle": title, "taskType": "Alert", "taskTag": "None",
+                      "choices": []})
+    w.tasks.next_id += 1
 
 
 def _create_blockage_task(w, payload, loaded, parent):
@@ -1507,7 +1613,9 @@ def _day1_skip(w: World, marks, on_flood_enter) -> None:
     cancel_overnight_food(w)
     if on_flood_enter is not None:
         on_flood_enter(w)
+    _before = set(w.flood.tiles) if any(w.tasks.fleet.damaged) else None
     update_flood(w.flood, w.fmap, w.rng, w.weather, RAIN_INTENSITY[w.weather], marks)
+    _restore_vehicles(w, _before)
     _end_of_day_waste(w)
     _destroy_pending(w)
     w.generated = []
@@ -1693,8 +1801,10 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     #
     # The port had this backwards: it snapshotted before generation and before the update,
     # so dispatch routed against water that was already stale by the time vehicles moved.
+    _before = set(w.flood.tiles) if any(w.tasks.fleet.damaged) else None
     update_flood(w.flood, w.fmap, w.rng, w.weather,
                  RAIN_INTENSITY[w.weather], marks)
+    _restore_vehicles(w, _before)
     if w.segment >= ROUNDS_PER_DAY:
         _end_of_day_waste(w)          # OnSimulationEnded, after the flood update
     _destroy_pending(w)
@@ -1858,6 +1968,13 @@ def answer(w: World, task_id, choice_id) -> bool:
         task.chosen_id = choice_id
         facility = str(_facility)
         if immediate:
+            # FoodDeliveryHandler.ExecuteImmediate adds only what fits; when nothing fits it
+            # returns 0 and ExecuteFoodDelivery fails the answer -- no impacts, the task stays
+            # on the board (5508 MCTS plan, s5: Community Amherst at 3000/3000, "added 0/100").
+            res = (w.economy.facility(facility) or {}).get("resources") or {}
+            cap = res.get("foodPacksCapacity")
+            if cap is not None and cap - (res.get("foodPacks") or 0) <= 0:
+                return False
             w.tasks.answer(task_id, demanded, immediate=True, destination="__food__" + facility,
                            counters=w.economy.counters, destination_facility=facility)
             _land_now("food", demanded, facility)
