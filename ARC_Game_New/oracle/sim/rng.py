@@ -65,16 +65,13 @@ class UnityRandom:
         self.draws = 0          # draw counter, for mark-sequence equality checks
 
     def init_state(self, seed: int) -> None:
-        """Mirror of Random.InitState(seed).
-
-        NOTE: Unity's seeding routine is NOT yet pinned empirically. Until it is, construct
-        streams from a captured state (which IS pinned) rather than from a seed, and treat
-        seed-based construction as unverified. test_rng_semantics asserts this.
-        """
-        raise NotImplementedError(
-            "Random.InitState seeding is not yet pinned against Unity. Build the stream "
-            "from a captured state instead: UnityRandom(state=(s0,s1,s2,s3))."
-        )
+        """Random.InitState(seed): xorshift128 seeded Mersenne-style, s[i+1] = s[i] * 1812433253 + 1.
+        Pinned against the headless build: from this state, scene load takes LOAD_DRAWS draws
+        before the first decision's round:advance on every captured seed."""
+        self.s0 = seed & M32
+        self.s1 = (self.s0 * 1812433253 + 1) & M32
+        self.s2 = (self.s1 * 1812433253 + 1) & M32
+        self.s3 = (self.s2 * 1812433253 + 1) & M32
 
     def get_state(self):
         return (self.s0, self.s1, self.s2, self.s3)
@@ -271,3 +268,18 @@ def range01_threshold_lt(chance: float) -> int:
         else:
             lo = mid + 1
     return lo
+
+
+# Draws the game takes while loading the scene, between EpisodeSeed's Random.InitState and the
+# first decision (the state oracle.sim captures start from). Constant: 48 on every captured seed.
+LOAD_DRAWS = 48
+
+
+def game_start(seed: int) -> "UnityRandom":
+    """The stream a headless game seeded with `seed` (-seed / ARC_SEED) begins its first
+    decision with -- no capture needed."""
+    r = UnityRandom(seed=seed)
+    for _ in range(LOAD_DRAWS):
+        r.next_uint()
+    r.draws = 0
+    return r
