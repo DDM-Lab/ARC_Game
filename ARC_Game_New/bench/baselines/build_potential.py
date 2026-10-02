@@ -2,6 +2,8 @@
 kitchens, one casework site), hiring to staff them, and filling built shelters."""
 from __future__ import annotations
 
+from cora.env.game import DECISIONS
+
 from bench.baselines.common import fill_shelters, impacts_dict
 from bench.baselines.greedy import greedy
 
@@ -26,7 +28,7 @@ _POT_SHELTER_COVERAGE = 1e9  # θ: route lodging to free shelter only when space
                              # default. Lower (e.g. 1.0) to re-enable the cost-vs-fulfillment trade.
 
 
-def build_potential(env, rnd=0, rounds_total=32):
+def build_potential(env, rnd=0, rounds_total=DECISIONS):
     gs = env.game_state or {}
     va = env.valid_actions or []
     facs = gs.get("mapState", {}).get("facilities", []) or []

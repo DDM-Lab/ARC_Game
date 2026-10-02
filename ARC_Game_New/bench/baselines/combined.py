@@ -2,6 +2,8 @@
 with build_potential's building and staffing."""
 from __future__ import annotations
 
+from cora.env.game import DECISIONS
+
 from bench.baselines.build_potential import _POT_KITCHEN_TARGET, build_potential
 from bench.baselines.common import (CHOICE_COST_WEIGHT, fill_shelters, impacts_dict, motel_rate,
                                     rounds_per_day, shelter_beds, workforce_per_building)
@@ -81,7 +83,7 @@ def _lt_choice_value(c, demand, rounds_left, gs):
     return (v, acting and demand, is_shelter)
 
 
-def choice_lookahead(env, rnd=0, rounds_total=32):
+def choice_lookahead(env, rnd=0, rounds_total=DECISIONS):
     gs = env.game_state or {}
     va = env.valid_actions or []
     ms = gs.get("mapState", {}) or {}
@@ -245,7 +247,7 @@ def choice_lookahead(env, rnd=0, rounds_total=32):
                           f"unstaffed={unstaffed} opBuf={int(op_buffer)} rl={rounds_left}")}
 
 
-def combined(env, rnd=0, rounds_total=32):
+def combined(env, rnd=0, rounds_total=DECISIONS):
     """Both hand-written strategies at once.
 
     The two rules-based policies improve OPPOSITE halves of a turn and neither touches the

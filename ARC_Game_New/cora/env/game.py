@@ -32,6 +32,11 @@ from cora.actions import enumerate_actions
 from cora.env import unity_process
 from cora.scoring import COMPONENTS, score_components
 
+# The length of a game in decisions: the Day-1 setup decision, then per day a rollover decision
+# and four round decisions (7 days). A game ends itself after the last; step caps (bench --rounds,
+# CoraEnv max_steps) only guard against a game that does not.
+DECISIONS = 36
+
 
 class GameEnv(gym.Env):
     metadata = {"render_modes": []}

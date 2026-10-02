@@ -24,7 +24,8 @@ import sys
 from dataclasses import asdict, dataclass, field
 from multiprocessing import Pool
 
-DECISIONS = 36
+from cora.env.game import DECISIONS  # the game's length; the drivers import it from here
+
 FIRST_SEED = 5501
 
 

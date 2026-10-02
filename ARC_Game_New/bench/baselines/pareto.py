@@ -1,6 +1,8 @@
 """pareto: the strategy the surrogate's Pareto frontier converges on, played in the game."""
 from __future__ import annotations
 
+from cora.env.game import DECISIONS
+
 from bench.baselines.common import fill_shelters, impacts_dict
 from bench.baselines.greedy import greedy
 from cora import policy_family
@@ -23,7 +25,7 @@ from cora import policy_family
 #               than the fleet can drain just stall on a full store.
 #   casework  ~ sized to the request backlog; its cost term is ~0.001, so it is nearly free score.
 
-def pareto(env, rnd=0, rounds_total=32, cfg=None):
+def pareto(env, rnd=0, rounds_total=DECISIONS, cfg=None):
     """A member of the shared policy family (cora.policy_family; default: the frontier plan)."""
     cfg = cfg or policy_family.from_env()
     food_rule, reloc_rule = policy_family.rules(cfg, rnd)

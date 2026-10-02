@@ -15,6 +15,7 @@ from bench.images import MAP_GRID_JSON, decision_image
 from bench.llm import ANTHROPIC_TEMP_MAX, LocalOptions, ask_tools, is_anthropic
 from rl.cora_env import CoraEnv, CoraEnvConfig
 from cora import prompts as cora_prompts
+from cora.env.game import DECISIONS
 from cora.scoring import REWARD_WEIGHTS
 
 
@@ -175,7 +176,8 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
                 dec = {"tool_calls": []}
             elif policy in POLICIES:
                 # A baseline picks from the menu; it acts through the same tool calls as a model.
-                dec = POLICIES[policy](env, rnd, rounds); raw = json.dumps(dec)
+                # It plans against the game's length, not the decision cap.
+                dec = POLICIES[policy](env, rnd, DECISIONS); raw = json.dumps(dec)
                 dec["tool_calls"] = tool_calls(env, dec)
             else:                                               # llm
                 img_b64 = decision_image(image_mode, env, grid, tmp_png) if use_image else None

@@ -63,7 +63,7 @@ from bench.baselines import POLICIES
 from bench.baselines.common import tool_calls
 from bench.llm import LocalOptions, ask_tools
 from cora import executor
-from cora.env import GameEnv
+from cora.env import DECISIONS, GameEnv
 from cora.env.unity_process import default_exe
 from cora import prompts
 from cora.observation import observe, user_message
@@ -146,7 +146,7 @@ def main():
                         manual_transfers=manual_transfers)
     # The same policy the episode benchmark scores under that name.
     policy = POLICIES[a.reference]
-    ref_fn = lambda e, r: policy(e, r, a.rounds)
+    ref_fn = lambda e, r: policy(e, r, DECISIONS)       # the game's length, not the cap
 
     turns_path = outdir / "turns.jsonl"
     fout = open(turns_path, "w")

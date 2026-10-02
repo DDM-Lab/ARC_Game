@@ -1,10 +1,12 @@
 """greedy: myopic, reward-mirrored task answers plus staffing; never builds, hires or trains."""
 from __future__ import annotations
 
+from cora.env.game import DECISIONS
+
 from bench.baselines.common import CHOICE_COST_WEIGHT, impacts_dict
 
 
-def greedy(env, rnd=0, rounds_total=32):
+def greedy(env, rnd=0, rounds_total=DECISIONS):
     """Myopic, reward-mirrored greedy baseline (no learning, no API).
 
     Choices: per task pick the choice maximizing a reward-mirrored value built from
