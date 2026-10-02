@@ -126,10 +126,17 @@ def replay_step(w, step):
     # type for different communities are different tasks.
     from oracle.sim.parity import _with_facility
     taken = _with_facility(step) if step.get("before") else (step.get("taken") or [])
+    import re as _re
+    by_site = {(b["type"], b.get("site_id")): b["name"] for b in w.economy.buildings}
+
+    def _port_name(fac):
+        """Unity names a built building's GameObject <Type>_<site>; the port by display name."""
+        m = _re.fullmatch(r"(\w+?)_(\d+)", fac or "")
+        return by_site.get((m.group(1), int(m.group(2))), fac) if m else (fac or "")
     queues = {}
     for a in taken:
         if a.get("kind") == "choice":
-            queues.setdefault((a.get("stableTaskId") or "", a.get("facility") or ""), []).append(a.get("choiceId"))
+            queues.setdefault((a.get("stableTaskId") or "", _port_name(a.get("facility"))), []).append(a.get("choiceId"))
     offered = {}
     for tid, cid in S.open_choices(w):
         offered.setdefault(tid, []).append(cid)

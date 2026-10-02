@@ -393,10 +393,12 @@ class World:
         """Everything the trigger conditions read, from the port's own state."""
         free = self.economy.free_trained + self.economy.free_untrained
         total = max(1, self.economy.total_workers())
+        # GetTotalAvailableWorkforce: workforce UNITS (a trained worker is 2), not heads.
+        workforce = 2 * self.economy.free_trained + self.economy.free_untrained
         return TriggerContext(
             day=self.day, segment=self.segment, weather=self.weather,
             flood_tiles=len(self.flood.tiles), budget=self.economy.budget,
-            satisfaction=self.economy.satisfaction, free_workforce=free,
+            satisfaction=self.economy.satisfaction, free_workforce=workforce,
             idle_ratio=100.0 * free / total, facilities=self.economy.facilities(),
             # WorkerSystem.GetTrainedWorkersCount/GetUntrainedWorkersCount count EVERY
             # Worker object of the type, and StartWorkerRequest creates the hire at once as
@@ -812,6 +814,8 @@ def _tracker(w, marks):
         # and then raised a shelter food request Unity never did.
         w.economy.move_population(facility, -count)
         w.economy.motel_pop = w.economy.motel_population
+        if count > 0:
+            _departure_alert(w, facility)
     for gid, facility, with_need in generated:
         _create_casework_task(w, gid, facility, with_need)
         w.economy.report.casework_requested(w.economy, gid, with_need)   # OnCaseworkRequested
@@ -1000,6 +1004,17 @@ def tick_walks(w) -> None:
             w.pending_arrivals.append((delivered, dest))
         if task is not None and not any(e[4] == task_id for e in w.walks):
             w.tasks.awaiting.pop(task_id, None)       # its last walk is in
+
+
+def _departure_alert(w, facility) -> None:
+    """ClientStayTracker.ShowDepartureAlert: a "Clients Departed" Alert straight through
+    TaskSystem.CreateTask. The tracker runs before TaskSystem's ageing on the same invoke, so it
+    is aged at birth (as the casework task is)."""
+    w.tasks.add(Task(w.tasks.next_id, "None", 0, _ALERT_ROUNDS - 1, task_type="Alert"))
+    w.generated_specs[w.tasks.next_id] = (
+        "Clients Departed", facility, {"taskId": "", "taskTitle": "Clients Departed",
+                                       "taskType": "Alert", "taskTag": "None", "choices": []})
+    w.tasks.next_id += 1
 
 
 def _create_casework_task(w, gid, facility, with_need):
