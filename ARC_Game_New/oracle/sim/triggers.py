@@ -31,6 +31,7 @@ see PLAN.md for why the C# is not being silently sorted.
 from __future__ import annotations
 
 import json as _json
+import os as _os
 
 from . import corpus_paths as _corpus
 
@@ -46,7 +47,27 @@ def load_inventory(path=None):
     if rows is None:
         raise KeyError("sim_constants.json has no 'taskTriggers' block -- re-export it "
                        "from a build that includes the trigger inventory")
-    return [_configured(t, d) for t in rows if t]
+    return [_with_asset_fields(_configured(t, d)) for t in rows if t]
+
+
+def _with_asset_fields(task):
+    """Merge the per-choice fields the RPC does not export (corpus task_assets.json, from
+    oracle/sim/export_assets.py) into the task's choices. Absent on the old corpus."""
+    path = _os.path.join(_corpus.DIR, "task_assets.json")
+    if not _os.path.exists(path):
+        return task
+    global _ASSETS
+    if _ASSETS is None:
+        _ASSETS = _json.load(open(path))
+    extra = _ASSETS.get(task.get("taskId")) or {}
+    if not extra:
+        return task
+    task = dict(task)
+    task["choices"] = [dict(c, **extra.get(str(c.get("choiceId")), {})) for c in task.get("choices") or []]
+    return task
+
+
+_ASSETS = None
 
 
 def _configured(task, consts):

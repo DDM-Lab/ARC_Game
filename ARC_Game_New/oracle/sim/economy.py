@@ -151,6 +151,18 @@ def _storage_by_type(d):
     return out
 
 
+def _reconcile_food(b) -> None:
+    """BuildingResourceStorage.ReconcileFoodAgainstOutstandingNeed: stock pays the outstanding
+    need, capped at what is owed; food beyond it stays in storage."""
+    owed = b.get("outstanding_need") or 0
+    res = b.setdefault("resources", {})
+    stock = res.get("foodPacks") or 0
+    credit = min(owed, stock)
+    if credit > 0:
+        res["foodPacks"] = stock - credit
+        b["outstanding_need"] = owed - credit
+
+
 def _consumes(cfg, glob) -> bool:
     """Whether a building type runs population-based consumption at all. Per-building when
     the export has it, the old single global flag when it does not (a stale corpus)."""
@@ -406,6 +418,8 @@ class Economy:
         for b in self.buildings:
             res = b.setdefault("resources", {})
             cfg = by_type.get(b["type"], {})
+            if _corpus.V6:
+                b["outstanding_need"] = 0     # a day's unpaid need is not carried over
             # v6: communities keep their stock overnight (HandleDailyReset skips them).
             if cfg.get("enableFoodWaste") and not (_corpus.V6 and b["type"] == "Community"):
                 res["foodPacks"] = 0
@@ -448,6 +462,27 @@ class Economy:
             have = res.get("foodPacks") or 0
             room = max(0, (cap if cap is not None else 10**9) - have)
             res["foodPacks"] = have + min(room, int(cfg.get("amountPerRound", 0)))
+
+    def food_need_tick(self, day: int, segment: int) -> None:
+        """bench-v6 BuildingResourceStorage.OnRoundChanged -> GenerateFoodNeedIfDue: a storage
+        that eats starts a feeding cycle at rounds 1 and 3 (segments 0 and 2) from day 2 on --
+        outstanding need SET (not added) to people x rate -- and pays it from what it holds."""
+        if segment not in (0, 2) or day < 2:
+            return
+        by_type = C.get("storage_by_type") or {}
+        for b in self.buildings:
+            cfg = by_type.get(b.get("type"), {})
+            if not cfg.get("consumptionEnabled"):
+                continue
+            res = b.get("resources") or {}
+            people = res.get("population") or 0
+            if cfg.get("workersConsumeFoodToo"):
+                people += (b.get("trained") or 0) + (b.get("untrained") or 0)   # mouths (B27)
+            need = people * int(cfg.get("foodPerPersonPerNRounds") or 1)
+            if need <= 0:
+                continue
+            b["outstanding_need"] = need
+            _reconcile_food(b)
 
     def consumption_tick(self, round_key=None) -> None:
         """BuildingResourceStorage.OnRoundChanged -> HandlePopulationConsumptionCycle, once
@@ -645,7 +680,9 @@ class Economy:
         room = amount if cap is None else max(0, cap - (res.get("foodPacks") or 0))
         moved = min(amount, room)
         res["foodPacks"] = (res.get("foodPacks") or 0) + moved
-        if moved > 0:
+        if moved > 0 and _corpus.V6:
+            _reconcile_food(b)              # every arrival pays the outstanding need down
+        elif moved > 0:
             cfg = (C.get("storage_by_type") or {}).get(b.get("type"), {})
             glob = C.get("consumption") or {}
             if _consumes(cfg, glob) and self._consume_one(b, cfg, glob, round_key):
@@ -670,7 +707,8 @@ class Economy:
             out.append({"name": b.get("name"), "type": b["type"],
                         "prebuilt": prebuilt, "status": b["status"],
                         "operational": prebuilt or b["status"] == STATUS_IN_USE,
-                        "resources": b.get("resources") or {}})
+                        "resources": b.get("resources") or {},
+                        "outstanding_need": b.get("outstanding_need") or 0})
         return out
 
     def can_staff(self, index: int) -> bool:

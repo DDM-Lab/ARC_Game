@@ -172,6 +172,9 @@ def _resource_ok(t, ctx, facility=None):
 def _food_need(f) -> int:
     """BuildingResourceStorage.GetFoodNeed for one facility dict."""
     from .economy import C as _C
+    from . import corpus_paths
+    if corpus_paths.V6:
+        return int(f.get("outstanding_need") or 0)   # v6: GetFoodNeed() => outstandingFoodNeed
     cfg = (_C.get("storage_by_type") or {}).get(f.get("type"), {})
     glob = _C.get("consumption") or {}
     # NO CONSUMPTION GATE. BuildingResourceStorage.GetFoodNeed() is population x rate minus

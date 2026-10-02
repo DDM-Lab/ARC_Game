@@ -531,7 +531,8 @@ def _admits(w: World, spec, facility) -> bool:
     # Unity logs "[Limit] Skipping Storm Funding Advisory: Max external-relation contacts
     # reached (5)" three times on seed 5901; the port had no cap, generated the extras and
     # paid itself their +5 satisfaction.
-    if (spec.get("taskOfficer") == "ExternalRelationship"
+    if (not CLOCK_V6                  # v6 removed the cap (TaskSystem, ledger D6)
+            and spec.get("taskOfficer") == "ExternalRelationship"
             and spec.get("taskId") != "Budget_Allocation"
             and w._external_count >= _NUM_EXTERNAL_RELATION_TASKS):
         return False
@@ -540,10 +541,13 @@ def _admits(w: World, spec, facility) -> bool:
         if w._emergency_count >= _NUM_EMERGENCY_TASKS:
             return False
         interval = max(2, (_FINAL_DAY * ROUNDS_PER_DAY) // max(1, _NUM_EMERGENCY_TASKS))
-        if w.round_index < w._last_emergency_round + interval:
+        # v6 measures the spacing on the clock, (day - 1) x roundsPerDay + segment; the old
+        # build counted elapsed rounds, which the port tracks as round_index.
+        now = (w.day - 1) * ROUNDS_PER_DAY + w.segment if CLOCK_V6 else w.round_index
+        if now < w._last_emergency_round + interval:
             return False
         w._emergency_count += 1
-        w._last_emergency_round = w.round_index
+        w._last_emergency_round = now
         # Evict only once this emergency is actually being created. Doing it before the cap
         # and spacing gates threw away a lodging task for an emergency that was then
         # rejected, which is a strictly worse error than not evicting at all.
@@ -782,13 +786,22 @@ def _spec_id(w, task_id):
 _BUDGET_ALLOCATION_SPEC_ID = "Budget_Allocation"
 
 
-def _configured_impacts(def_id, impacts):
+def _configured_impacts(def_id, impacts, choice=None, food_qty=None):
     """TaskSystem.ApplyConfiguredAllocation (BUG_REPORTS B35).
 
     The Daily Budget Allocation's grant comes from the sheet
     (initialDailyBudgetAdditions), rewritten onto the TASK INSTANCE at creation and never
     onto the asset -- so the exported TaskData still says the authored 5000 while the game
     hands out 2000. Reading the export verbatim credits 3000 a day the game never gave."""
+    if CLOCK_V6:
+        # bench-v6: ApplyConfiguredAllocation is disabled (the asset's grant stands), and a
+        # priced FoodPacks choice charges costPerUnit x the resolved quantity
+        # (AgentChoice.ChargedBudget) in place of its authored cost.
+        cpu = float((choice or {}).get("costPerUnit") or 0)
+        if cpu > 0 and food_qty is not None:
+            return [dict(i, value=-(cpu * food_qty)) if i.get("type") == "Budget" and float(i.get("value") or 0) < 0
+                    else i for i in (impacts or [])]
+        return impacts
     if def_id != _BUDGET_ALLOCATION_SPEC_ID:
         return impacts
     amount = int((_ECON_C.get("initial_state") or {}).get("dailyBudgetAddition") or 0)
@@ -1512,8 +1525,11 @@ def _segment_invoke(w: World, marks, rolls, day_changed) -> None:
     if CLOCK_V6 and w.segment == 0:
         _daily_report(w)              # WeatherReportSystem.OnTimeSegmentChanged, after generation
     community_depletion(w, marks)
-    w.economy.production_tick()
-    w.economy.consumption_tick(round_key=w.day * 100 + w.segment)
+    if CLOCK_V6:
+        w.economy.food_need_tick(w.day, w.segment)
+    else:
+        w.economy.production_tick()
+        w.economy.consumption_tick(round_key=w.day * 100 + w.segment)
 
 
 def step(w: World, marks=None, on_flood_enter=None) -> None:
@@ -1921,7 +1937,7 @@ def answer(w: World, task_id, choice_id) -> bool:
             w.tasks.answer(task_id, demanded, immediate=True, destination="__food__" + facility,
                            counters=w.economy.counters, destination_facility=facility)
             _land_now("food", demanded, facility)
-            w.economy.apply_choice(task.tag, _configured_impacts(_def_id, choice.get("impacts")),
+            w.economy.apply_choice(task.tag, _configured_impacts(_def_id, choice.get("impacts"), choice, demanded),
                                    choice.get("budgetDelayRounds", 0) or 0, "", 0)
             return True
         # THE KITCHEN ORDER IS A MULTI-DELIVERY (choices 0/1: enableMultipleDeliveries), so
@@ -1972,13 +1988,13 @@ def answer(w: World, task_id, choice_id) -> bool:
         if not legs:
             if not choice.get("enableMultipleDeliveries"):
                 return False
-            w.economy.apply_choice(task.tag, _configured_impacts(_def_id, choice.get("impacts")),
+            w.economy.apply_choice(task.tag, _configured_impacts(_def_id, choice.get("impacts"), choice, demanded),
                                    choice.get("budgetDelayRounds", 0) or 0, "", 0)
             return _park_blocked(w, task_id, task, choice_id)
         task.source = legs[0][3].split("|")[1]
         w.tasks.flooded = flooded
         w.tasks.answer_legs(task_id, legs)
-        w.economy.apply_choice(task.tag, _configured_impacts(_def_id, choice.get("impacts")),
+        w.economy.apply_choice(task.tag, _configured_impacts(_def_id, choice.get("impacts"), choice, demanded),
                                choice.get("budgetDelayRounds", 0) or 0, "", 0)
         return True
     if _def_id == ROAD_BLOCKAGE_SPEC_ID and spec.get("_cargo") == "food":
