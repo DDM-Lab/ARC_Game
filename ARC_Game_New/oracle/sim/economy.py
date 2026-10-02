@@ -26,6 +26,7 @@ from __future__ import annotations
 import json as _json
 
 from . import corpus_paths as _corpus
+from .report import Report
 
 _CONST_PATH = _corpus.CONSTANTS
 
@@ -135,6 +136,20 @@ _STORAGE_KEYS = (("startingFoodPacks", "startingFoodPacks", 0),
                  ("populationCapacity", "populationCapacity", None))
 
 
+def _cost_minimums() -> dict:
+    """DailyReportData's cost-efficiency minimums: a kitchen's cost over its packs for the
+    productive days, a shelter's over its nights, an untrained worker's over the productive
+    rounds (GetFoodCostMin / GetLodgingCostMin / GetWorkerCostMin)."""
+    init = C.get("initial_state") or {}
+    days = max(1, int(init.get("days", 8)) - 1)
+    store = C.get("storage_by_type") or {}
+    kitchen = int((store.get("Kitchen") or {}).get("foodCapacity") or 0)
+    shelter = int((store.get("Shelter") or {}).get("populationCapacity") or 0)
+    return {"food": C["build_cost"]["Kitchen"] / (kitchen * days) if kitchen else None,
+            "lodging": C["build_cost"]["Shelter"] / (shelter * days) if shelter else None,
+            "worker": C["untrained_cost"] / (days * int(init.get("roundsPerDay", 4)))}
+
+
 def _storage_by_type(d):
     """{building type -> storage settings}, from the two export blocks.
 
@@ -151,7 +166,7 @@ def _storage_by_type(d):
     return out
 
 
-def _reconcile_food(b) -> None:
+def _reconcile_food(econ, b) -> None:
     """BuildingResourceStorage.ReconcileFoodAgainstOutstandingNeed: stock pays the outstanding
     need, capped at what is owed; food beyond it stays in storage."""
     owed = b.get("outstanding_need") or 0
@@ -161,6 +176,7 @@ def _reconcile_food(b) -> None:
     if credit > 0:
         res["foodPacks"] = stock - credit
         b["outstanding_need"] = owed - credit
+        econ.report.food(econ, consumed=credit)
 
 
 C = load_economy_constants()
@@ -172,7 +188,7 @@ class Economy:
     __slots__ = ("rounds_since_consumption", "budget", "satisfaction", "counters",
                  "free_trained", "free_untrained", "working_trained", "working_untrained",
                  "in_training", "arriving", "under_construction", "buildings", "motel_pop",
-                 "pending_transfers", "pending_budget", "used_sites")
+                 "pending_transfers", "pending_budget", "used_sites", "efficiency", "report")
 
     @staticmethod
     def default_prebuilts():
@@ -240,6 +256,11 @@ class Economy:
         self.pending_transfers = []  # population moves that land at the END of the round
         self.pending_budget = []     # [rounds_remaining, amount] approved-but-not-arrived funding
         self.used_sites = set()      # site ids already built on -- a rebuild there is a no-op
+        self.efficiency = 0.0
+        self.report = Report(_cost_minimums())
+        # RecordInitialWorkerImputedCost: the starting roster is charged as if requested.
+        self.report.worker_requested(self, free_trained * C["trained_cost"]
+                                     + free_untrained * C["untrained_cost"])
         self.counters["totalWorkers"] = self.total_workers()
 
     def apply_choice(self, task_tag: str, impacts, budget_delay_rounds: int = 0,
@@ -260,6 +281,13 @@ class Economy:
             if kind == "Budget":
                 if value < 0:
                     self.spend(-int(value), TAG_CATEGORY.get(task_tag, "other"))
+                    # Cost efficiency: a population choice's cost is transport, not lodging;
+                    # otherwise the task's tag decides (TaskDetailUI.ApplyChoiceImpacts).
+                    if destination not in ("Shelter", "Motel", "CaseworkSite"):
+                        if task_tag == "Food":
+                            self.report.food_spent(self, -value)
+                        elif task_tag == "Lodging":
+                            self.report.lodging_spent(self, -value)
                 elif value > 0:
                     self.pending_budget.append([int(budget_delay_rounds), int(value)])
             elif kind == "Satisfaction":
@@ -291,6 +319,8 @@ class Economy:
         e.rounds_since_consumption = self.rounds_since_consumption
         e.pending_transfers = list(self.pending_transfers)
         e.pending_budget = [list(x) for x in self.pending_budget]
+        e.efficiency = self.efficiency
+        e.report = self.report.clone()
         e.used_sites = set(self.used_sites)
         return e
 
@@ -300,6 +330,12 @@ class Economy:
         bench-v6 build leaves it unclamped (ledger D13, an open design question)."""
         s = self.satisfaction + float(delta)
         self.satisfaction = s
+
+    def bill_motel(self, residents: int) -> None:
+        """MotelCostManager: residents x the nightly rate, a lodging cost."""
+        cost = int(residents * C["motel_per_person_per_day"])
+        self.spend(cost, "lodging")
+        self.report.lodging_spent(self, cost)
 
     def spend(self, amount: int, category: str) -> None:
         """SatisfactionAndBudget.RemoveBudget(amount, SpendCategory).
@@ -343,6 +379,10 @@ class Economy:
         if site_id is not None:
             self.used_sites.add(site_id)
         self.spend(cost, SPEND_CATEGORY.get(building_type, "other"))
+        if building_type == "Kitchen":
+            self.report.food_spent(self, cost)
+        elif building_type == "Shelter":
+            self.report.lodging_spent(self, cost)
         # site_id rides along so the finished building knows WHERE it is: delivery time
         # is the drive to it, and without a location it falls back to a fitted constant.
         # The building EXISTS from this round -- Unity's facility list carries it as
@@ -353,7 +393,9 @@ class Economy:
         # (corpus "capacities"). A Shelter holds 100 people, not 400: with 400 the port
         # kept offering "Send to Shelters" on a shelter Unity had already filled, and a
         # plan that took that phantom option scored 2.79 here against 2.39 in the game.
-        cap = (C.get("capacities") or {}).get(building_type, {})
+        prefab = (C.get("storage_by_type") or {}).get(building_type, {})
+        cap = {"foodPacks": prefab.get("foodCapacity") or 0,
+               "population": prefab.get("populationCapacity") or 0}
         name = f"{building_type}_{len(self.buildings)}"
         self.buildings.append({"name": name, "type": building_type,
                                "status": STATUS_UNDER_CONSTRUCTION, "assigned": 0,
@@ -377,6 +419,7 @@ class Economy:
             return False
         cost = quantity * C["trained_cost" if kind == "trained" else "untrained_cost"]
         self.spend(cost, "worker")
+        self.report.worker_requested(self, cost)
         days = C["trained_arrival_days"] if kind == "trained" else C["untrained_arrival_days"]
         self.arriving += [[days, kind]] * quantity
         return True
@@ -389,6 +432,7 @@ class Economy:
         if quantity <= 0 or self.free_untrained < quantity:
             return False
         self.spend(quantity * C["training_cost"], "worker")   # same rule as hire, B21
+        self.report.worker_trained(self, quantity * C["training_cost"])
         self.free_untrained -= quantity
         self.in_training += [C["training_days"]] * quantity
         return True
@@ -452,7 +496,8 @@ class Economy:
             if need <= 0:
                 continue
             b["outstanding_need"] = need
-            _reconcile_food(b)
+            self.report.food(self, needed=need)
+            _reconcile_food(self, b)
 
     def on_round_end(self) -> None:
         """RewardMetricsTracker.OnRoundEnded.
@@ -503,7 +548,7 @@ class Economy:
         # because an empty motel makes the left operand falsy rather than absent.
         residents = self.motel_population
         if residents > 0:
-            self.spend(int(residents * C["motel_per_person_per_day"]), "lodging")
+            self.bill_motel(residents)
         for entry in self.arriving:
             entry[0] -= 1
         for days, kind in [e for e in self.arriving if e[0] <= 0]:
@@ -591,7 +636,9 @@ class Economy:
         moved = min(amount, room)
         res["foodPacks"] = (res.get("foodPacks") or 0) + moved
         if moved > 0:
-            _reconcile_food(b)
+            if b.get("type") == "Community":
+                self.report.food(self, consumed=moved)     # RecordCommunityFoodUsedToday
+            _reconcile_food(self, b)
         return moved
 
     @property
@@ -708,8 +755,11 @@ class Economy:
                 + self.free_trained + self.free_untrained)
 
     def metrics(self) -> dict:
+        """rewardMetrics as Unity exports it: the counters plus DailyReportData's score fields,
+        so cora.scoring.score_components reads the surrogate exactly as it reads the game."""
         m = dict(self.counters)
         m["totalWorkers"] = self.total_workers()
+        m.update(self.report.reward_metrics(self))
         return m
 
 

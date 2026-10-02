@@ -2,53 +2,63 @@
  "Budget_Advisory": {
   "0": {
    "costPerUnit": 0,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   },
   "1": {
    "costPerUnit": 0,
+   "deliveryCargoType": 0,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   }
  },
  "Budget_Allocation": {
   "0": {
+   "deliveryCargoType": 0,
    "enableMultipleDeliveries": 0
   }
  },
  "Budget_Emergency": {
   "0": {
    "costPerUnit": 0,
+   "deliveryCargoType": 0,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   },
   "1": {
    "costPerUnit": 0,
+   "deliveryCargoType": 0,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   },
   "2": {
    "costPerUnit": 0,
+   "deliveryCargoType": 0,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   }
  },
  "Community_Flood_Damge": {
   "0": {
+   "deliveryCargoType": 0,
    "enableMultipleDeliveries": 1
   },
   "1": {
+   "deliveryCargoType": 0,
    "enableMultipleDeliveries": 1
   }
  },
  "Community_FoodRequest": {
   "0": {
    "costPerUnit": 0,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 1,
    "requireFullQuantity": 0
   },
   "2": {
    "costPerUnit": 10,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   }
@@ -56,11 +66,13 @@
  "Community_TransportRequest": {
   "0": {
    "costPerUnit": 0,
+   "deliveryCargoType": 0,
    "enableMultipleDeliveries": 1,
    "requireFullQuantity": 0
   },
   "1": {
    "costPerUnit": 0,
+   "deliveryCargoType": 0,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   }
@@ -68,21 +80,25 @@
  "Motel_FoodRequest_First": {
   "0": {
    "costPerUnit": 0,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 1,
    "requireFullQuantity": 0
   },
   "1": {
    "costPerUnit": 0,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 1,
    "requireFullQuantity": 1
   },
   "2": {
    "costPerUnit": 10,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   },
   "3": {
    "costPerUnit": 10,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   }
@@ -90,41 +106,49 @@
  "Motel_FoodRequest_Second": {
   "0": {
    "costPerUnit": 0,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 1,
    "requireFullQuantity": 0
   },
   "2": {
    "costPerUnit": 10,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   }
  },
  "Shelter_Flood_Damage": {
   "0": {
+   "deliveryCargoType": 0,
    "enableMultipleDeliveries": 1
   },
   "1": {
+   "deliveryCargoType": 0,
    "enableMultipleDeliveries": 0
   }
  },
  "Shelter_FoodRequest_First": {
   "0": {
    "costPerUnit": 0,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 1,
    "requireFullQuantity": 0
   },
   "1": {
    "costPerUnit": 0,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 1,
    "requireFullQuantity": 1
   },
   "2": {
    "costPerUnit": 10,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   },
   "3": {
    "costPerUnit": 10,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   }
@@ -132,11 +156,13 @@
  "Shelter_FoodRequest_Second": {
   "0": {
    "costPerUnit": 0,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 1,
    "requireFullQuantity": 0
   },
   "2": {
    "costPerUnit": 10,
+   "deliveryCargoType": 1,
    "enableMultipleDeliveries": 0,
    "requireFullQuantity": 0
   }

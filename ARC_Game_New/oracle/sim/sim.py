@@ -528,8 +528,9 @@ def _admits(w: World, spec, facility) -> bool:
                 if (live_id in w.tasks.active and fac == facility
                         and sp.get("taskTag") == "Lodging"
                         and sp.get("taskType") != "Emergency"):
-                    # Removed from activeTasks with no RecordTaskResolution: never resolved,
-                    # never counted, silently gone.
+                    # SupersedeTask: removed with no RecordTaskResolution, and its recorded
+                    # lodging demand is reversed (ReverseLodgingRequested).
+                    w.economy.report.lodging(w.economy, requested=-_requested_clients(sp))
                     w.tasks.active.pop(live_id, None)
                     w.tasks.awaiting.pop(live_id, None)
                     w.tasks.pending = [x for x in w.tasks.pending if x[1][0] != live_id]
@@ -656,6 +657,7 @@ def _community_depletion_v6(w, chance, amount):
         res = b.setdefault("resources", {})
         cap = res.get("foodPacksCapacity") or 0
         if w.rng.value() < chance:
+            w.economy.report.food(w.economy, needed=amount)     # RecordCommunityFoodDemand
             available = res.get("foodPacks") or 0
             if available > 0:
                 lost = min(amount, available)
@@ -812,6 +814,7 @@ def _tracker(w, marks):
         w.economy.motel_pop = w.economy.motel_population
     for gid, facility, with_need in generated:
         _create_casework_task(w, gid, facility, with_need)
+        w.economy.report.casework_requested(w.economy, gid, with_need)   # OnCaseworkRequested
 
 
 def _walk_destinations(w, source, include_shelters, include_motels):
@@ -976,6 +979,8 @@ def tick_walks(w) -> None:
         # HandleSelfWalkArrival registers a group only at a LODGING building; people who
         # walk to a casework site are already off the tracker (departure processed them).
         d = w.economy.facility(dest)
+        if delivered > 0 and d is not None and d.get("type") != "CaseworkSite":
+            w.economy.report.lodging(w.economy, satisfied=delivered)   # RecordLodgingSatisfiedToday
         if delivered > 0 and d is not None and d.get("type") in ("Shelter", "Motel"):
             w.pending_arrivals.append((delivered, dest))
         if task is not None and not task.resolved and not any(e[4] == task_id for e in w.walks):
@@ -1176,6 +1181,15 @@ def _create_tasks(w, rolls, day_changed):
         w.tasks.next_id += 1
         w.tasks.add(t)
         w.generated_specs[t.task_id] = (task_id, facility, spec)
+        if tag == "Lodging":                                     # RecordLodgingRequestedToday
+            w.economy.report.lodging(w.economy, requested=_requested_clients(spec))
+
+
+def _requested_clients(spec) -> int:
+    """The live requested count of a lodging task: its first Population-cargo choice's
+    resolved quantity (TaskSystem.CreateTaskFromData)."""
+    c = next((c for c in spec.get("choices") or [] if c.get("deliveryCargoType") == 0), None)
+    return int((c or {}).get("deliveryQuantity") or 0)
 
 
 _POSITIONS = {}
@@ -1347,6 +1361,12 @@ def _round_end(w: World, marks) -> None:
     for count, facility in w.pending_arrivals[_n:]:
         w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
     del w.pending_arrivals[_n:]
+    # DailyReportData.AccumulateRoundMetrics, the next OnRoundEnd subscriber.
+    e = w.economy
+    awaiting = sum(g.with_need for g in w.clients.groups
+                   if g.with_need > 0 and not g.departed and g.gid in e.report.casework_groups)
+    e.report.round_end(e, e.free_trained + e.free_untrained, e.working_trained + e.working_untrained,
+                       len(e.in_training), e.total_workers(), awaiting)
 
 
 def _segment_invoke(w: World, marks, rolls, day_changed) -> None:
@@ -1397,10 +1417,23 @@ def _day_rollover(w: World, marks) -> None:
     w.segment = 0
     w.weather = generate_weather(w.rng, marks=marks)
     w.economy.on_day_end(w.day)
+    _lodging_nights(w)
     rolls = []
     _segment_invoke(w, marks, rolls, True)
     w.generated = rolls
     _incomplete_penalties(w, w.tasks.expire(w.economy.counters))
+
+
+def _lodging_nights(w: World) -> None:
+    """DailyReportData.OnDayChangedForLodgingNights: everyone the tracker holds slept somewhere
+    tonight; what open lodging tasks still ask for (their authored Clients impact) did not."""
+    housed = sum(g.count for g in w.clients.groups if not g.departed)
+    waiting = 0
+    for live_id, (_def, _fac, sp) in w.generated_specs.items():
+        if live_id in w.tasks.active and sp.get("taskTag") == "Lodging":
+            waiting += sum(int(i.get("value") or 0) for i in sp.get("taskImpacts") or []
+                           if i.get("type") == "Clients")
+    w.economy.report.nights(w.economy, housed, waiting)
 
 
 def _daily_report(w: World) -> None:
@@ -1579,7 +1612,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     if w.day >= _FINAL_DAY and w.segment >= ROUNDS_PER_DAY:
         residents = w.economy.motel_population        # never the legacy `motel_pop` shadow
         if residents > 0:
-            w.economy.spend(int(residents * _ECON_C["motel_per_person_per_day"]), "lodging")
+            w.economy.bill_motel(residents)
     # CheckExpiredTasks runs on the UPDATE AFTER the round, which is after OnRoundEnd and
     # after the flood: merge_v4 s7 reads ... endSim:afterOnRoundEnd -> flood:enter -> the
     # flood draws -> task:resolved. Expiring before the walks land killed a relocation the
@@ -1873,6 +1906,8 @@ def answer(w: World, task_id, choice_id) -> bool:
         if target:
             w.economy.move_population(str(_facility), -qty)
             moved = w.economy.move_population(target, qty)
+            if moved:
+                w.economy.report.lodging(w.economy, satisfied=moved)
             # ClientRelocationHandler does the same double-registration, calling
             # RegisterClientArrival and HandlePopulationDelivery back to back on one transfer.
             if moved:

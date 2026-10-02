@@ -29,6 +29,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from cora.scoring import score_components                     # noqa: E402
 import oracle.sim.sim as S                                    # noqa: E402
 from oracle.sim.debug_lockstep import Session                 # noqa: E402
 
@@ -58,7 +59,8 @@ def project_unity(after: dict) -> dict:
     """Unity's get_game_state -> the canonical observation."""
     out = {"budget": (after.get("satisfactionAndBudget") or {}).get("budget"),
            "satisfaction": (after.get("satisfactionAndBudget") or {}).get("satisfaction"),
-           "fac": {}, "workers": {}, "board": [], "walks": [], "counters": {}}
+           "fac": {}, "workers": {}, "board": [], "walks": [], "counters": {},
+           "score": round(score_components(after.get("rewardMetrics"))["score"], 4)}
     for f in (after.get("mapState") or {}).get("facilities") or []:
         res = f.get("resources") or {}
         key = _fac_key(f.get("buildingType"), f.get("originalSiteId"), f.get("facilityName"))
@@ -106,8 +108,10 @@ def _norm_fac(name: str) -> str:
 def project_port(w) -> dict:
     """The World -> the same canonical observation."""
     e = w.economy
-    out = {"budget": e.budget, "satisfaction": int(round(e.satisfaction)),
-           "fac": {}, "workers": {}, "board": [], "walks": [], "counters": {}}
+    # (int) in the export: truncation, not rounding.
+    out = {"budget": e.budget, "satisfaction": int(e.satisfaction),
+           "fac": {}, "workers": {}, "board": [], "walks": [], "counters": {},
+           "score": round(score_components(e.metrics())["score"], 4)}
     names = {}
     for b in e.buildings:
         res = b.get("resources") or {}
@@ -141,7 +145,7 @@ def project_port(w) -> dict:
 def diff(u: dict, p: dict) -> list:
     """[(field, unity, port)] for every differing field; field names double as categories."""
     out = []
-    for k in ("budget", "satisfaction"):
+    for k in ("budget", "satisfaction", "score"):
         if u[k] != p[k]:
             out.append((k, u[k], p[k]))
     for key in sorted(set(u["fac"]) | set(p["fac"])):

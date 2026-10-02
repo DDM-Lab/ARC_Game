@@ -1,6 +1,6 @@
 """Per-choice TaskData fields the `sim_constants` RPC does not export, read from the assets.
 
-    python -m oracle.sim.export_assets v6        # -> oracle/sim/corpus/v6/task_assets.json
+    python -m oracle.sim.export_assets           # -> oracle/sim/corpus/task_assets.json
 
 The RPC exports each choice's impacts, quantities and destinations but not these three, which
 the bench-v6 build reads at answer time:
@@ -8,6 +8,7 @@ the bench-v6 build reads at answer time:
                             quantity (AgentChoice.ChargedBudget)
   enableMultipleDeliveries  SingleSourceMultiDest / MultiSourceSingleDest routing
   requireFullQuantity       a queued food choice needs kitchens that cover the whole quantity
+  deliveryCargoType         0 = Population, 1 = FoodPacks (which choices move people)
 Generated, never hand-edited: re-run it whenever a TaskData asset changes (the same rule as the
 RPC exports in the corpus directory).
 """
@@ -15,11 +16,10 @@ import glob
 import json
 import os
 import re
-import sys
 
 from oracle.sim import paths as P
 
-FIELDS = ("costPerUnit", "enableMultipleDeliveries", "requireFullQuantity")
+FIELDS = ("costPerUnit", "enableMultipleDeliveries", "requireFullQuantity", "deliveryCargoType")
 
 
 def read_asset(path) -> tuple:
@@ -41,13 +41,12 @@ def read_asset(path) -> tuple:
 
 
 def main():
-    corpus = sys.argv[1] if len(sys.argv) > 1 else "v6"
     out = {}
     for path in sorted(glob.glob(os.path.join(P.ROOT, "Assets/Scripts/Tasks/TaskData/*.asset"))):
         task_id, choices = read_asset(path)
         if task_id and choices:
             out[task_id] = {str(k): v for k, v in sorted(choices.items())}
-    dest = os.path.join(P.PKG, "corpus", corpus, "task_assets.json")
+    dest = os.path.join(P.PKG, "corpus", "task_assets.json")
     json.dump(out, open(dest, "w"), indent=1, sort_keys=True)
     print(f"wrote {dest}: {len(out)} tasks")
 
