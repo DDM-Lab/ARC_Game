@@ -169,6 +169,8 @@ class ClientTracker:
                 # the rest of the episode: measured at 160,000 against Unity's 100,000,
                 # exactly 300 residents x $200 that had already gone home.
                 departures.append((leaving, group.facility))
+                if generated is not None:
+                    generated.append(("departure", leaving, group.facility))
             # THE FLAG RE-ARMS ON AN EVENT, NOT A TIMER. ClientStayTracker subscribes to
             # BOTH OnTaskCompleted and OnTaskExpired and clears caseworkRequestGenerated in
             # the handler (OnCaseworkTaskFinished), so a group resumes drawing the moment its
@@ -192,7 +194,7 @@ class ClientTracker:
                     # GenerateCaseworkTask: the task asks for the NEEDY count, credits the
                     # WHOLE group, and belongs to this group's facility.
                     if generated is not None:
-                        generated.append((group.gid, group.facility, group.with_need))
+                        generated.append(("casework", group.gid, group.facility, group.with_need))
         return departures
 
     def process_home(self, facility, quantity, counters, gid=-1, credit=True):

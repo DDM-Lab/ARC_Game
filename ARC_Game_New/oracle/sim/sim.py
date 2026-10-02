@@ -617,13 +617,21 @@ def _community_food_pending(w, name) -> bool:
 
 
 def _food_inbound(w, name) -> int:
-    """DeliverySystem.GetReservedIncomingQuantity(community, FoodPacks): food queued or aboard
-    for this facility."""
+    """DeliverySystem.GetReservedIncomingQuantity(facility, FoodPacks): food on every live
+    delivery to it -- queued, assigned to a vehicle still driving to load, or aboard."""
     def ours(tag):
         tag = str(tag or "")
         return tag == name or (tag.startswith("__food__") and tag[8:].split("|")[0] == name)
     total = sum(qty for _seq, payload, _s, _d, qty in w.tasks.pending if ours(payload[2]))
-    return total + sum(load[1] for load in w.tasks.fleet.carrying if load is not None and ours(load[2]))
+    f = w.tasks.fleet
+    for i, load in enumerate(f.carrying):
+        trip = f.trip[i]
+        if trip is not None and "payload" in trip and trip.get("phase") != "complete":
+            if ours(trip["payload"][2]):          # assigned: driving to load, or loaded
+                total += trip["payload"][1]
+        elif load is not None and ours(load[2]):
+            total += load[1]
+    return total
 
 
 def _community_food_follow_up(w, name) -> None:
@@ -798,9 +806,17 @@ def _tracker(w, marks):
     # Segment 4 IS an invoke since the A1 clock fix: Unity's s8 on merge_v4 (d2r4) rolls
     # caseworkGen for the group that walked in at d2r3, then lands the next walk. The old
     # early return here was the pre-fix clock (no segment-4 invoke at all).
-    generated = []
-    for count, facility in w.clients.update(w.rng, _unity_round(w), w.economy.counters, marks,
-                                            generated=generated):
+    # CheckClientStayDurations handles one group at a time -- its departure, then its casework
+    # roll -- so departure alerts and casework tasks take task ids in group order.
+    events = []
+    w.clients.update(w.rng, _unity_round(w), w.economy.counters, marks, generated=events)
+    for ev in events:
+        if ev[0] == "casework":
+            _kind, gid, facility, with_need = ev
+            _create_casework_task(w, gid, facility, with_need)
+            w.economy.report.casework_requested(w.economy, gid, with_need)   # OnCaseworkRequested
+            continue
+        _kind, count, facility = ev
         # DEPARTURES DO NOT FREE THE FACILITY. TriggerNonCaseworkDeparture mutates tracker
         # state only; OnCaseworklessClientsDeparted has no subscribers, and Motel Population
         # storage only ever drops via a vehicle LoadCargo. Unity's lodgingSpend therefore steps
@@ -816,9 +832,6 @@ def _tracker(w, marks):
         w.economy.motel_pop = w.economy.motel_population
         if count > 0:
             _departure_alert(w, facility)
-    for gid, facility, with_need in generated:
-        _create_casework_task(w, gid, facility, with_need)
-        w.economy.report.casework_requested(w.economy, gid, with_need)   # OnCaseworkRequested
 
 
 def _walk_destinations(w, source, include_shelters, include_motels):
@@ -1782,6 +1795,13 @@ def answer(w: World, task_id, choice_id) -> bool:
                    if c.get("choiceId") == choice_id), None)
     if choice is None:
         return False
+    # A delivering choice starts from TaskSystem.FindTriggeringFacility: an OPERATIONAL building
+    # whose GameObject name contains the task's affectedFacility (or a prebuilt). A demolished,
+    # deconstructing or idle building is "Destination not found" and the answer is refused.
+    if _facility and (choice.get("triggersDelivery") or choice.get("immediateDelivery")):
+        from .export import _object_name, _trigger
+        if _trigger(w, _object_name(w, _facility)) is None:
+            return False
     # DEMANDED vs SENDABLE. ClientRelocationHandler:
     #     int available = GetPopulation(source);
     #     int toSend    = requestedQuantity > 0 ? Mathf.Min(requestedQuantity, available)
@@ -1814,6 +1834,10 @@ def answer(w: World, task_id, choice_id) -> bool:
         elif kind == "people":
             w.economy.move_population(where, amount)
 
+    if (choice.get("deliveryCargoType") == 1
+            and (choice.get("triggersDelivery") or choice.get("immediateDelivery"))
+            and not _food_can_execute(w, choice, str(_facility), demanded)):
+        return False
     if task.tag == "Food" and demanded > 0:
         # Food lands at the requester, so its `FoodPacks Empty` condition stops holding --
         # which is how Unity's food requests for that community stop.
@@ -2032,6 +2056,35 @@ def answer(w: World, task_id, choice_id) -> bool:
             w.pending_arrivals.append((qty, target))
             w.economy.motel_pop = w.economy.motel_population
     return True
+
+
+def _food_can_execute(w: World, choice, facility, requested) -> bool:
+    """FoodDeliveryHandler.CanExecute, which gates an agent's food answer (immediate or not):
+    refused when food already inbound covers the request; a kitchen delivery also needs a
+    reachable operational kitchen, unreserved stock, and -- for requireFullQuantity -- enough
+    unreserved stock across all kitchens for the whole remaining need."""
+    need = max(0, requested - _food_inbound(w, facility))
+    if need <= 0:
+        return False
+    if choice.get("immediateDelivery"):
+        return True
+    dst = w._facility_cell(facility)
+    flooded = w.flooded_road_cells()
+    outbound = w.tasks.outbound_by_kitchen()
+    reachable, total_reachable, total = False, 0, 0
+    for k in w.economy.buildings:
+        if k["type"] != "Kitchen" or k["status"] != "InUse":
+            continue
+        free = max(0, ((k.get("resources") or {}).get("foodPacks") or 0) - outbound.get(k["name"], 0))
+        total += free
+        src = w._facility_cell(k["name"])
+        if src is None or dst is None or roads.path_length(src, dst, flooded) is None:
+            continue
+        reachable = True
+        total_reachable += free
+    if not reachable or total_reachable <= 0:
+        return False
+    return not (choice.get("requireFullQuantity") and total < need)
 
 
 def _answer_casework(w: World, task_id, task, choice, choice_id, facility, demanded) -> bool:

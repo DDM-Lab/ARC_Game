@@ -892,7 +892,12 @@ def apply_action(econ: Economy, action: dict) -> bool:
     if kind in ("deconstruct", "deconstruction"):
         name = (action.get("deconstruction") or {}).get("building_name")
         idx = next((i for i, b in enumerate(econ.buildings) if b.get("name") == name), None)
-        return econ.deconstruct(idx) if idx is not None else False
+        if idx is None:
+            return False
+        # ActionExecutor.ExecuteDeconstruction reports success for any existing building, even
+        # when StartDeconstruction ignores it (under construction, already coming down).
+        econ.deconstruct(idx)
+        return True
     if kind == "resource_transfer":
         tr = action.get("transfer") or {}
         if tr.get("resource_type") == "FoodPacks":

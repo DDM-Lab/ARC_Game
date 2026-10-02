@@ -14,9 +14,8 @@ from __future__ import annotations
 
 import glob
 import os
-import re
 
-from . import corpus_paths, paths as P
+from . import paths as P
 import oracle.sim.sim as S
 from .economy import C as _C, REQUIRED_WORKFORCE
 
@@ -67,6 +66,23 @@ def _object_name(w, display) -> str:
     if built:
         return f"{built[0]}_{built[1]}"
     return display
+
+
+def _trigger(w, affected):
+    """TaskSystem.FindTriggeringFacility(task): the first constructed building (FindObjectsOfType
+    order, newest first) that is OPERATIONAL and whose GameObject name CONTAINS the task's
+    affectedFacility -- a substring match, so "Shelter_1" also finds "Shelter_10" -- else the first
+    prebuilt whose name contains it. None when nothing matches (a demolished or idle building)."""
+    if not affected:
+        return None
+    built, pre = _built(w)
+    for b in built:
+        if affected in f"{b['type']}_{b['site_id']}" and b["status"] == "InUse":
+            return b
+    for b in pre:
+        if affected in b["name"]:
+            return b
+    return None
 
 
 # ── facilities, sites, workforce, logistics ────────────────────────────────────────────
@@ -169,14 +185,13 @@ def _space(w, b) -> int:
                - w.tasks.inbound_to(b["name"]) - S._walking_to(w, b["name"]))
 
 
-def _has_destination_space(w, source, to_shelter, to_motel) -> bool:
-    """ClientRelocationHandler.HasDestinationSpace: the source still has people and some
-    operational shelter / the motel has effective space."""
-    src = w.economy.facility(source)
+def _has_destination_space(w, src, to_shelter, to_motel) -> bool:
+    """ClientRelocationHandler.HasDestinationSpace: the source (the task's triggering facility)
+    still has people and some operational shelter / the motel has effective space."""
     if src is None or ((src.get("resources") or {}).get("population") or 0) <= 0:
         return False
     for b in w.economy.buildings:
-        if b["name"] == source or b.get("destroyed"):
+        if b is src or b.get("destroyed"):
             continue
         if (to_shelter and b["type"] == "Shelter" and b["status"] == "InUse") or (to_motel and b["type"] == "Motel"):
             if _space(w, b) > 0:
@@ -184,9 +199,8 @@ def _has_destination_space(w, source, to_shelter, to_motel) -> bool:
     return False
 
 
-def _food_storage(w, facility):
+def _food_storage(b):
     """TaskSystem.PopulationFoodStorage: the facility's storage if it eats, else None."""
-    b = w.economy.facility(facility)
     if b is None:
         return None
     cfg = (_C.get("storage_by_type") or {}).get(b["type"]) or {}
@@ -215,10 +229,14 @@ def _task(w, tid, task):
     title, desc, choices = spec.get("taskTitle") or "", asset.get("description") or "", []
     has_pop_food = any(c.get("deliveryCargoType") == 1 and c.get("quantityType") == "PopulationBased"
                        for c in spec.get("choices") or [])
-    store = _food_storage(w, facility) if (has_pop_food and facility) else None
+    trig = _trigger(w, affected) if facility else None
+    store = _food_storage(trig) if has_pop_food else None
     live_food = int(store.get("outstanding_need") or 0) if store is not None else None
-    food_amount = live_food if live_food is not None else next(
-        (int(c.get("deliveryQuantity") or 0) for c in spec.get("choices") or [] if c.get("deliveryCargoType") == 1), 0)
+    # foodAmount set at creation is not kept by the port; the largest authored food quantity
+    # stands in when there is no live need to read (facility gone).
+    gone = trig is None
+    food_amount = live_food if live_food is not None else max(
+        [int(c.get("deliveryQuantity") or 0) for c in spec.get("choices") or [] if c.get("deliveryCargoType") == 1] or [0])
     pop_amount = next((int(c.get("deliveryQuantity") or 0) for c in spec.get("choices") or []
                        if c.get("deliveryCargoType") == 0), 0)
 
@@ -226,8 +244,11 @@ def _task(w, tid, task):
         # GenerateCaseworkTask builds ONE choice (send to casework); the port's spec also holds a
         # non-delivering choice 2 that Unity never offers. populationAmount is the group's live
         # casework need (RefreshTaskAgainstLiveState).
+        # With the facility unreachable Unity keeps the last refreshed value; the group's
+        # current need stands in for it (it only moves when casework is processed).
         g = w.clients.group(spec.get("_gid"))
-        pop_amount = g.with_need if g is not None else pop_amount
+        c1 = next((c for c in spec.get("choices") or [] if c.get("choiceId") == 1), {})
+        pop_amount = g.with_need if g is not None else int(c1.get("deliveryQuantity") or 0)
         title = "Casework Request"
         desc = (f"Clients have been in shelter for {facility} rounds and are requesting casework "
                 f"assistance.|CLIENT_GROUP_ID:{spec.get('_gid')}")
@@ -240,7 +261,7 @@ def _task(w, tid, task):
         delivers = bool(c.get("triggersDelivery") or c.get("immediateDelivery"))
         cat = c.get("destinationCategory") or ""
         if (delivers and c.get("deliveryCargoType") == 0 and cat != "CaseworkSite"
-                and not _has_destination_space(w, facility, cat != "Motel", cat == "Motel")):
+                and not _has_destination_space(w, trig, cat != "Motel", cat == "Motel")):
             continue                                     # B5/D5: no room anywhere for these people
         a_choice = (asset.get("choices") or {}).get(c.get("choiceId")) or {}
         text = c.get("choiceText") or a_choice.get("choiceText") or ""
@@ -249,9 +270,8 @@ def _task(w, tid, task):
         qty = 0
         if delivers:
             qty = int(c.get("deliveryQuantity") or 0)
-            if c.get("quantityType") == "PopulationBased":
-                b = w.economy.facility(facility)
-                need = int((b or {}).get("outstanding_need") or 0)
+            if c.get("quantityType") == "PopulationBased" and not gone:
+                need = int(trig.get("outstanding_need") or 0)
                 pct = float(c.get("deliveryPercentage") or 0) or 100.0
                 qty = int(round(need * pct / 100.0))
         choices.append({
@@ -323,8 +343,6 @@ def game_state(w) -> dict:
         "rewardMetrics": e.metrics(),
         "pendingEffects": [], "dailyReports": [],
         "motelCostPerPersonPerDay": float(_C["motel_per_person_per_day"]),
-        "scenario": {"seed": getattr(w, "seed", -1), "mapStatus": "surrogate"},
+        "scenario": {"seed": -1, "mapStatus": "surrogate"},
     }
 
-
-_ = (re, corpus_paths)
