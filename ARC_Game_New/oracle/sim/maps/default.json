@@ -1,12 +1,29 @@
 {
  "name": "bench_v6",
- "description": "dumped from a running build on port 21061",
+ "description": "The bench-v6 scene with its pinned map config (hash 5366b6a17d03), dumped from the running game.",
  "anchor": 0.5,
- "move_speed": 8.0,
+ "move_speed": 5.0,
  "simulation_duration": 10.0,
  "time_speed": 1,
  "fixed_delta": 0.3,
- "depots": [],
+ "depots": [
+  [
+   -3,
+   3
+  ],
+  [
+   -4,
+   -3
+  ],
+  [
+   11,
+   -3
+  ],
+  [
+   8,
+   7
+  ]
+ ],
  "road_cells": [
   [
    -14,

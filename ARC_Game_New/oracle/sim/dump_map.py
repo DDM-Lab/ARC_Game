@@ -65,7 +65,7 @@ def main():
         "simulation_duration": float(clock["simulationDuration"]),
         "time_speed": int(clock["timeSpeed"]),
         "fixed_delta": float(clock["fixedDelta"]),
-        "depots": [],                      # filled from observed first legs, see note below
+        "depots": vehicles_from_map_config(_MAP_CONFIG) if os.path.exists(_MAP_CONFIG) else [],
         "road_cells": (roads_from_map_config(_MAP_CONFIG) if os.path.exists(_MAP_CONFIG)
                        else sorted([list(c) for c in dump["cells"]])),
         "building_cell": dict(sorted(conns.items())),
@@ -80,9 +80,8 @@ def main():
     print(f"wrote {out}: {len(spec['road_cells'])} cells, "
           f"{len(spec['building_cell'])} buildings, {len(spec['site_cell'])} sites, "
           f"moveSpeed {speed}")
-    print("NOTE: fill `depots` from the first leg each vehicle drives (a capture with deliveries); "
-          "a facility whose road:connection did not fire here can be added with "
-          "add_connections(<map>, <capture log>).")
+    print("NOTE: a facility whose road:connection did not fire here (and every site's road cell) "
+          "is added with add_connections(<map>, <capture log>); move_speed needs a delivery:leg.")
     return 0
 
 
@@ -94,6 +93,25 @@ def roads_from_map_config(path) -> list:
     d = json.load(open(path))
     w = d["gridWidth"]
     return sorted([i % w - 14, i // w - 10] for i, v in enumerate(d["roadLayer"]) if v)
+
+
+# MapConfigApplier.gridOrigin as the scene serializes it (the .cs initialiser says -14.5): the
+# value under which every spawned community and vehicle lands where the game reports it.
+_GRID_ORIGIN = (-13.5, -9.5)
+
+
+def vehicles_from_map_config(path) -> list:
+    """Each Vehicle object's spawn cell, in spawn order (MapConfigApplier.SpawnVehicle: the
+    footprint centre, 0.5 down)."""
+    from math import floor
+    d = json.load(open(path))
+    out = []
+    for o in d["objects"]:
+        if o.get("type") == 3:                                    # PlacedObjectType.Vehicle
+            x = _GRID_ORIGIN[0] + o["gridX"] + o.get("width", 1) * 0.5
+            y = _GRID_ORIGIN[1] + o["gridY"] + o.get("height", 1) * 0.5 - 0.5
+            out.append([floor(x), floor(y)])
+    return out
 
 
 def connections(text):

@@ -285,14 +285,15 @@ class Fleet:
     def __init__(self, spec=None):
         self.spec = spec or DEFAULT_MAP
         self.pos = [nearest_road(c, self.spec) for c in self.spec.depots]
-        self.busy_seconds = [0.0, 0.0, 0.0]
-        self.carrying = [None, None, None]
+        n = len(self.pos)                    # one vehicle per depot (MapConfigApplier spawns them)
+        self.busy_seconds = [0.0] * n
+        self.carrying = [None] * n
         # Flood does not merely delay a vehicle, it DISABLES it: StopVehicleDueToFlood sets
         # isDamaged and the status to Damaged, and IsAvailable() is `status == Idle`, so the
         # vehicle leaves the fleet until RepairVehicle() runs -- which only happens if the
         # player answers the repair task StopVehicleDueToFlood spawns. A flood that cuts one
-        # route therefore costs a third of the delivery capacity indefinitely.
-        self.damaged = [False, False, False]
+        # route therefore costs that vehicle's share of the delivery capacity indefinitely.
+        self.damaged = [False] * n
         self.frame = 0                       # cumulative SIM frames since the game began
         # DIAGNOSTIC ONLY (validation harness): Unity's per-round PAUSED planning frames,
         # popped one per round. Time.time advances through the pause, so AssignPendingTasks
@@ -300,7 +301,7 @@ class Fleet:
         # depends on how long the pause was -- which is agent latency, not game state. Left
         # empty in normal use, where the counter simply advances 34 a round.
         self.pauses = None
-        self.trip = [None, None, None]       # per-vehicle in-flight state, see run_round
+        self.trip = [None] * n               # per-vehicle in-flight state, see run_round
         self.events = None                   # set to a list to record (frame, kind, veh, id)
         self.aborted = []                    # payloads abandoned by an empty-source load this round
 

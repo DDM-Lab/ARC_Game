@@ -960,8 +960,11 @@ def queue_walks(w, task_id, task, facility, demanded,
         remaining -= removed
         any_created = True
     if any_created:
-        # SetTaskInProgress: off the board, still alive, resolved when the walk lands.
+        # Execute completes the parent at once (CompleteTask: resolved, nothing delivered
+        # yet); each walk that lands credits its people late (FinalizeRelocation ->
+        # AddLateDelivery). Kept in `awaiting`, resolved, so the landing can find it.
         w.tasks.active.pop(task_id, None)
+        w.tasks.resolve(task, fulfilled=True, counters=w.economy.counters)
         w.tasks.awaiting[task_id] = task
     return any_created
 
@@ -972,7 +975,8 @@ def tick_walks(w) -> None:
     Capture merge_v2: queued at s5 (d2r1), landed at s7 (d2r3) -- two rounds -- and the
     arriving group registers with the tracker in the SAME step, immediately before the
     `relocation:arrive` mark, not on the next one as a vehicle unload does. Overflow goes
-    back to the source; the parent task resolves once its last walk has landed."""
+    back to the source. The parent was resolved when the walk was queued; landing people
+    credit it late (AddLateDelivery)."""
     if not w.walks:
         return
     for entry in w.walks:
@@ -985,14 +989,8 @@ def tick_walks(w) -> None:
             w.economy.move_population(source, qty - delivered)
         task = w.tasks.awaiting.get(task_id) or w.tasks.active.get(task_id)
         if task is not None and delivered > 0:
-            # deliveredQuantity always grows, but NOTHING is credited unless the task is
-            # still alive to be completed. FinalizeRelocation has no AddLateDelivery call --
-            # that is the VEHICLE path (OnVehicleDeliveryCompleted). A relocation carries
-            # roundsRemaining 2 and its people need 2 rounds, so it usually expires
-            # Incomplete with delivered 0 the round before they land, and Unity's
-            # lodgingFulfilled stays 0 (merge_v4: 700 resolved, 100 fulfilled, and the one
-            # credit is a task that was still InProgress when its walk arrived).
             task.delivered += delivered
+            w.tasks.late_delivery(task, delivered, w.economy.counters)     # AddLateDelivery
         # HandleSelfWalkArrival registers a group only at a LODGING building; people who
         # walk to a casework site are already off the tracker (departure processed them).
         d = w.economy.facility(dest)
@@ -1000,12 +998,8 @@ def tick_walks(w) -> None:
             w.economy.report.lodging(w.economy, satisfied=delivered)   # RecordLodgingSatisfiedToday
         if delivered > 0 and d is not None and d.get("type") in ("Shelter", "Motel"):
             w.pending_arrivals.append((delivered, dest))
-        if task is not None and not task.resolved and not any(e[4] == task_id for e in w.walks):
-            # CompleteTask only if the parent is still InProgress; one that already expired
-            # Incomplete is not resolved a second time.
-            w.tasks.awaiting.pop(task_id, None)
-            w.tasks.active.pop(task_id, None)
-            w.tasks.resolve(task, fulfilled=delivered > 0, counters=w.economy.counters)
+        if task is not None and not any(e[4] == task_id for e in w.walks):
+            w.tasks.awaiting.pop(task_id, None)       # its last walk is in
 
 
 def _create_casework_task(w, gid, facility, with_need):
