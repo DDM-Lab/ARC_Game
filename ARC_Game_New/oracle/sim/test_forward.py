@@ -70,7 +70,7 @@ def port_samples(n=40, rounds=24, seed=7):
                     continue
                 seen.add(tid)
                 S.answer(w, tid, cid)
-            S.step_round(w)
+            S.step(w)
         m = w.economy.metrics()
         row = {k: m[k] for k in METRICS if k != "score"}
         row["score"] = compute_score_components(m)["score"]

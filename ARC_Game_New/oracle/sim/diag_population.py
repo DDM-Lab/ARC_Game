@@ -54,7 +54,7 @@ def main(path=None):
                 continue
             seen.add(tid)
             S.answer(w, tid, cid)
-        S.step_round(w)
+        S.step(w)
 
         unity = {f["facilityName"]: (f.get("resources") or {}).get("population")
                  for f in ((step["after"].get("mapState") or {}).get("facilities") or [])}

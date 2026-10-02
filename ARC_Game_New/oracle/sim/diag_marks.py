@@ -92,7 +92,7 @@ def replay_steps(trace_path, log_path, marks_out=None):
             seen.add(tid)
             S.answer(w, tid, cid)
         marks = []
-        S.step_round(w, marks=marks)
+        S.step(w, marks=marks)
         if marks_out is not None:
             marks_out[step["round"] + 1] = marks
         yield step, w

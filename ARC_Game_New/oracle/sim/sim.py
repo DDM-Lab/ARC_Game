@@ -106,6 +106,18 @@ _TASK_SPEC[ROAD_BLOCKAGE_SPEC_ID] = {
 _INCOMPLETE_PENALTY = {k: v for k, v in (_ECON_C.get("incompletePenalty") or {}).items() if not k.startswith("_")}
 from .triggers import roll_pass
 from .weather import RAIN_INTENSITY, generate_weather
+from . import corpus_paths as _corpus
+
+# THE CLOCK OF THE BUILD THE CORPUS CAME FROM. The bench-v6 build (corpus "v6") changed
+# GlobalClock in three ways the step has to follow, read off its [RNGCTX] marks:
+#   * a gym step is a DECISION: Day 1 is one decision (Day1SkipCoroutine: four rounds with time
+#     frozen, only OnRoundEnd fires, then OnSimulationEnded), and every day rollover is a
+#     decision of its own (OnDayChanged then OnTimeSegmentChanged(0), nothing simulates), so a
+#     game is 1 + 7 x (1 + 4) = 36 decisions;
+#   * EndSimulation runs OnRoundEnd BEFORE AdvanceTimeSegment;
+#   * reaching segment 4 fires no OnTimeSegmentChanged (the A1 last-round tick is gone).
+# The merge-sep15 corpus keeps the old clock, so its captures still replay.
+CLOCK_V6 = _corpus.V6
 
 ROUNDS_PER_DAY = 4
 
@@ -613,11 +625,13 @@ def community_depletion(w, marks=None):
     if (w.segment + 1) > int(cfg.get("lastEligibleRound", 3) or 3):
         return []
     amount = int(cfg.get("amount", 100) or 100)
+    if CLOCK_V6:
+        return _community_depletion_v6(w, chance, amount)
     hits = []
     for b in w.economy.buildings:
         if b.get("type") != "Community":
             continue
-        if marks is not None:
+        if marks is not None and not CLOCK_V6:    # v6 still draws here but no longer marks it
             marks.append("draw:CommunityFoodDepletion")
         if w.rng.value() >= chance:
             continue
@@ -642,6 +656,73 @@ def community_depletion(w, marks=None):
         res["foodPacks"] = available - lost
         _create_community_food_task(w, b["name"], lost)
         hits.append((b["name"], lost))
+    return hits
+
+
+def _community_food_pending(w, name) -> bool:
+    """A live (Active or InProgress) Community_FoodRequest for this community."""
+    return any(spec_id == COMMUNITY_FOOD_SPEC_ID and fac == name and not task.resolved
+               for live, (spec_id, fac, _sp) in w.generated_specs.items()
+               for task in (w.tasks.active.get(live) or w.tasks.awaiting.get(live),)
+               if task is not None)
+
+
+def _food_inbound(w, name) -> int:
+    """DeliverySystem.GetReservedIncomingQuantity(community, FoodPacks): food queued or aboard
+    for this facility."""
+    def ours(tag):
+        tag = str(tag or "")
+        return tag == name or (tag.startswith("__food__") and tag[8:].split("|")[0] == name)
+    total = sum(qty for _seq, payload, _s, _d, qty in w.tasks.pending if ours(payload[2]))
+    return total + sum(load[1] for load in w.tasks.fleet.carrying if load is not None and ours(load[2]))
+
+
+def _community_food_follow_up(w, name) -> None:
+    """CommunityFoodDepletionManager.HandleCommunityFoodRequestEnded: a community food request
+    that ends Incomplete is re-raised at once for the current shortfall, inside the same
+    day/round window the depletion rolls use."""
+    cfg = _ECON_C.get("community_depletion") or {}
+    if w.day < int(cfg.get("firstEligibleDay", 2) or 2):
+        return
+    if (w.segment + 1) > int(cfg.get("lastEligibleRound", 3) or 3):
+        return
+    if _community_food_pending(w, name):
+        return
+    b = w.economy.facility(name)
+    res = (b or {}).get("resources") or {}
+    space = (res.get("foodPacksCapacity") or 0) - (res.get("foodPacks") or 0)
+    if space > 0:
+        _create_community_food_task(w, name, space)
+
+
+def _community_depletion_v6(w, chance, amount):
+    """CommunityFoodDepletionManager.OnRoundChanged on the bench-v6 build, per community in
+    FindObjectsOfType order: TryDeplete, then TopUpShortfall.
+
+    TryDeplete draws unconditionally; on a hit the community loses min(amount, stock) EVEN
+    with a request pending, and only a community with nothing pending gets a new request,
+    sized to refill it (its free space). TopUpShortfall then asks for the current shortfall if
+    nothing pending or inbound covers it."""
+    hits = []
+    for b in w.economy.buildings:
+        if b.get("type") != "Community":
+            continue
+        res = b.setdefault("resources", {})
+        cap = res.get("foodPacksCapacity") or 0
+        if w.rng.value() < chance:
+            available = res.get("foodPacks") or 0
+            if available > 0:
+                lost = min(amount, available)
+                res["foodPacks"] = available - lost
+                hits.append((b["name"], lost))
+                if not _community_food_pending(w, b["name"]):
+                    space = cap - res["foodPacks"] if cap > 0 else lost
+                    _create_community_food_task(w, b["name"], space)
+        if _community_food_pending(w, b["name"]):
+            continue
+        space = cap - (res.get("foodPacks") or 0)
+        if space > 0 and _food_inbound(w, b["name"]) <= 0:
+            _create_community_food_task(w, b["name"], space)
     return hits
 
 
@@ -1324,6 +1405,16 @@ def _incomplete_penalties(w: World, expired) -> None:
         # delivery never landed.
         if not answered and entry[2].get("taskType") not in ("Emergency", "Demand"):
             continue
+        if CLOCK_V6:
+            # bench-v6: ExpireTask and SetTaskIncomplete no longer call ApplyTaskPenalties
+            # (ledger D22, an open design question left off). Only a stranded population
+            # blockage's direct -30 abandonment (FloodTaskGenerator.OnAnyTaskCompleted) remains.
+            if entry[0] == ROAD_BLOCKAGE_SPEC_ID and entry[2].get("_loaded") \
+                    and entry[2].get("_cargo") != "food":
+                w.economy.satisfaction = max(0.0, w.economy.satisfaction - _BLOCKAGE_ABANDON_PENALTY)
+            elif entry[0] == COMMUNITY_FOOD_SPEC_ID:
+                _community_food_follow_up(w, entry[1])
+            continue
         if entry[0] == ROAD_BLOCKAGE_SPEC_ID:
             # SIGN. FloodTaskGenerator adds TaskImpact(Satisfaction, -20) to the task, and
             # ApplyTaskPenalties REMOVES each impact -- RemoveSatisfaction(-20) is +20, which is
@@ -1395,6 +1486,86 @@ def _rollover_pass(w, i, marks, rolls):
     if i > 0:
         w.economy.production_tick()
         w.economy.consumption_tick(round_key=w.day * 100 + w.segment)
+
+def _round_end(w: World, marks) -> None:
+    """GlobalClock.OnRoundEnd -> ClientRelocationHandler.HandleRoundEnd: walks land and their
+    groups register with the tracker."""
+    _n = len(w.pending_arrivals)
+    tick_walks(w)
+    for count, facility in w.pending_arrivals[_n:]:
+        w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
+    del w.pending_arrivals[_n:]
+
+
+def _segment_invoke(w: World, marks, rolls, day_changed) -> None:
+    """One OnTimeSegmentChanged invoke at the current segment: ageing, the client tracker,
+    the generation pass (segments that run one), community depletion, then storage."""
+    w.tasks.age()
+    _tracker(w, marks)
+    if w.segment in _GENERATION_SEGMENTS or (CLOCK_V6 and day_changed):
+        _r = [r + (w.segment,) for r in _pass(w, marks)]
+        rolls += _r
+        if w.use_generation:
+            _create_tasks(w, _r, day_changed)
+    if CLOCK_V6 and w.segment == 0:
+        _daily_report(w)              # WeatherReportSystem.OnTimeSegmentChanged, after generation
+    community_depletion(w, marks)
+    w.economy.production_tick()
+    w.economy.consumption_tick(round_key=w.day * 100 + w.segment)
+
+
+def step(w: World, marks=None, on_flood_enter=None) -> None:
+    """Advance to the next decision point. On the old clock a decision is a round
+    (step_round); on the v6 clock it is the Day-1 setup, a day rollover, or a round."""
+    if not CLOCK_V6:
+        return step_round(w, marks=marks, on_flood_enter=on_flood_enter)
+    if w.day == 1 and w.segment == 0:
+        return _day1_skip(w, marks, on_flood_enter)
+    if w.segment >= ROUNDS_PER_DAY:
+        return _day_rollover(w, marks)
+    return step_round(w, marks=marks, on_flood_enter=on_flood_enter)
+
+
+def _day1_skip(w: World, marks, on_flood_enter) -> None:
+    """Day1SkipCoroutine: the day's four rounds with time frozen -- nothing drives, no segment
+    invoke, no per-round metrics; only OnRoundEnd fires each round -- then the clock parks at
+    segment 4 and OnSimulationEnded runs once (the flood update among it)."""
+    for rnd in range(ROUNDS_PER_DAY):
+        w.segment = rnd
+        _round_end(w, marks)
+    w.segment = ROUNDS_PER_DAY
+    cancel_overnight_food(w)
+    if on_flood_enter is not None:
+        on_flood_enter(w)
+    update_flood(w.flood, w.fmap, w.rng, w.weather, RAIN_INTENSITY[w.weather], marks)
+    w.generated = []
+    w.round_index += 1
+
+
+def _day_rollover(w: World, marks) -> None:
+    """GlobalClock.ProceedToNextDay at "End Today": OnDayChanged, then one OnTimeSegmentChanged
+    at segment 0. Nothing simulates: no driving, no flood, no round-end."""
+    w.day += 1
+    w.segment = 0
+    w.weather = generate_weather(w.rng, marks=marks)
+    w.economy.on_day_end(w.day)
+    rolls = []
+    _segment_invoke(w, marks, rolls, True)
+    w.generated = rolls
+    _incomplete_penalties(w, w.tasks.expire(w.economy.counters))
+
+
+def _daily_report(w: World) -> None:
+    """WeatherReportSystem's "Day N Morning Report": an Alert created straight through
+    TaskSystem.CreateTask, filed under the "Weather Report" facility. It draws nothing but
+    consumes a task id."""
+    title = f"Day {w.day} Morning Report"
+    w.tasks.add(Task(w.tasks.next_id, "None", 0, _ALERT_ROUNDS, task_type="Alert"))
+    w.generated_specs[w.tasks.next_id] = (
+        title, "Weather Report", {"taskId": "", "taskTitle": title,
+                                  "taskType": "Alert", "taskTag": "None", "choices": []})
+    w.tasks.next_id += 1
+
 
 def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     """Advance one round: segment bookkeeping, then generation, then flood.
@@ -1548,6 +1719,8 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         _rollover_pass(w, 1, marks, rolls)
         w.segment = 1
     else:
+        if CLOCK_V6:
+            _round_end(w, marks)          # OnRoundEnd precedes AdvanceTimeSegment
         w.segment += 1
         # SEGMENT 4 HAS NO INVOKE. GlobalClock.AdvanceTimeSegment returns early once the
         # segment reaches roundsPerDay, before OnTimeSegmentChanged fires, so a day's invokes
@@ -1559,16 +1732,8 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         # gate, BuildingResourceStorage.OnRoundChanged consumes for newRound <=
         # roundsPerDay, and CheckExpiredTasks runs on the Update after. Only the generation
         # pass stays off segments 3 and 4.
-        w.tasks.age()
-        _tracker(w, marks)
-        if w.segment in _GENERATION_SEGMENTS:
-            _r = [r + (w.segment,) for r in _pass(w, marks)]
-            rolls += _r
-            if w.use_generation:
-                _create_tasks(w, _r, day_changed)
-        community_depletion(w, marks)
-        w.economy.production_tick()
-        w.economy.consumption_tick(round_key=w.day * 100 + w.segment)
+        if not (CLOCK_V6 and w.segment >= ROUNDS_PER_DAY):
+            _segment_invoke(w, marks, rolls, day_changed)
     w.generated = rolls
     # THE JOIN THAT MAKES THE SURROGATE SELF-DRIVING. generation_pass decides WHICH tasks
     # fire; without this the port produced a list of ids and created nothing, so it could
@@ -1582,11 +1747,8 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # before this round's water moves.
     if w.segment >= ROUNDS_PER_DAY:
         cancel_overnight_food(w)          # food cannot be delivered overnight
-    _n = len(w.pending_arrivals)
-    tick_walks(w)
-    for count, facility in w.pending_arrivals[_n:]:
-        w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
-    del w.pending_arrivals[_n:]
+    if not CLOCK_V6:
+        _round_end(w, marks)
 
     if on_flood_enter is not None:
         on_flood_enter(w)

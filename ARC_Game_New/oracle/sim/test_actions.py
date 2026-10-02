@@ -57,7 +57,7 @@ def test_apply_answers_every_open_task_and_spends():
     w = _world()
     for _ in range(5):
         m.apply(w, ("turn", {"choices": {}, "menu": ()}))
-        S.step_round(w)
+        S.step(w)
     assert S.open_choices(w), "expected open tasks by round 5"
     b0 = w.economy.budget
     m.apply(w, ("turn", {"choices": {}, "menu": ("hire_untrained_2",)}))
@@ -84,7 +84,7 @@ def test_search_never_below_baseline_and_is_reproducible():
     plan0 = CoraActions.baseline_plan(12)
     for a in plan0:
         m.apply(base, a)
-        S.step_round(base)
+        S.step(base)
     baseline = m.value(base)
     results = []
     for _ in range(2):
@@ -105,8 +105,8 @@ def test_clone_is_a_faithful_independent_copy():
     a, b = _world(), _world()
     c = b.clone()
     for g in plan:
-        m.apply(a, g); S.step_round(a)
-        m.apply(c, g); S.step_round(c)
+        m.apply(a, g); S.step(a)
+        m.apply(c, g); S.step(c)
     assert a.economy.metrics() == c.economy.metrics(), (a.economy.metrics(), c.economy.metrics())
     assert a.economy.budget == c.economy.budget
     assert b.economy.metrics()["roundsCompleted"] == 0, "stepping the clone touched the original"

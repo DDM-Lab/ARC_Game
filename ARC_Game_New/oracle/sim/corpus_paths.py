@@ -17,6 +17,9 @@ DIR = os.path.join(PKG, "corpus", NAME) if NAME else os.path.join(PKG, "corpus")
 CONSTANTS = os.path.join(DIR, "sim_constants.json")
 MAP_GRID = os.path.join(DIR, "map_grid.json")
 MAP = NAME or "default"                          # oracle/sim/maps/<MAP>.json
+# The rules generation: the v6 corpus is the bench-v6 build, whose clock and food rules differ
+# from the merge-sep15 build the default corpus came from.
+V6 = NAME == "v6"
 
 _constants = None
 

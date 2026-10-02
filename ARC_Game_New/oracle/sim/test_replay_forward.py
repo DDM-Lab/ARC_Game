@@ -102,7 +102,7 @@ def main():
                     continue
                 seen.add(tid)
                 S.answer(w, tid, cid)
-            S.step_round(w)
+            S.step(w)
 
             truth = step["after"].get("rewardMetrics") or {}
             got = w.economy.metrics()

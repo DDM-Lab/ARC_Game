@@ -108,6 +108,10 @@ def load_economy_constants(path=None):
         # refills to capacity daily. `buildingWorkforce` covers the prebuilts that exist at
         # reset; `storagePrefabs` covers the types that only exist once built.
         "storage_by_type": _storage_by_type(d),
+        # The prebuilts in the order the export lists them (FindObjectsOfType order, which
+        # task facility selection iterates).
+        "prebuilt_order": [(b.get("name"), b.get("type")) for b in (d.get("buildingWorkforce") or [])
+                           if b.get("prebuilt")],
         # CommunityFoodDepletionManager: communities no longer consume, a per-community
         # per-round draw takes a fixed chunk and asks for exactly that back.
         "community_depletion": d.get("communityDepletion") or {},
@@ -186,14 +190,18 @@ class Economy:
             "assigned": 0, "trained": 0, "untrained": 0,
             "resources": {"foodPacks": c_cap, "foodPacksCapacity": c_cap,
                           "population": c_pop, "populationCapacity": c_pop}}
+        motel = {"name": "Motel", "type": "Motel", "status": STATUS_PREBUILT,
+                 "assigned": 0, "trained": 0, "untrained": 0,
+                 "resources": {"foodPacks": 0, "foodPacksCapacity": m_cap,
+                               "population": 0, "populationCapacity": m_pop}}
+        order = C.get("prebuilt_order") if _corpus.V6 else None
+        if order:
+            return [motel if kind == "Motel" else community(name) for name, kind in order]
         return [
             community("Community Charleston"),
             community("Community Trinity"),
             community("Community Amherst"),
-            {"name": "Motel", "type": "Motel", "status": STATUS_PREBUILT,
-             "assigned": 0, "trained": 0, "untrained": 0,
-             "resources": {"foodPacks": 0, "foodPacksCapacity": m_cap,
-                           "population": 0, "populationCapacity": m_pop}},
+            motel,
         ]
 
     def __init__(self, budget=None, satisfaction=None, free_trained=None, free_untrained=None,
@@ -392,7 +400,8 @@ class Economy:
         for b in self.buildings:
             res = b.setdefault("resources", {})
             cfg = by_type.get(b["type"], {})
-            if cfg.get("enableFoodWaste"):
+            # v6: communities keep their stock overnight (HandleDailyReset skips them).
+            if cfg.get("enableFoodWaste") and not (_corpus.V6 and b["type"] == "Community"):
                 res["foodPacks"] = 0
             if cfg.get("fillFoodToCapacityDaily") and b.get("status") == STATUS_IN_USE:
                 # Kitchens no longer produce per round; the day reset tops them straight up

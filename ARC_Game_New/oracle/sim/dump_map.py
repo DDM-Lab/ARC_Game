@@ -44,10 +44,7 @@ def main():
     dump = json.loads(m.group(1))
     anchor = float(re.search(r"\(([\d.]+),", dump["anchor"]).group(1))
 
-    conns = {}
-    for mm in re.finditer(r"road:connection \{.*?\} (\{.*?\})\n", text):
-        j = json.loads(mm.group(1))
-        conns[j["building"]] = list(j["cell"])
+    conns, positions = connections(text)
 
     rl = re.search(r"round:length \{.*?\} (\{.*?\})\n", text)
     clock = json.loads(rl.group(1)) if rl else {"simulationDuration": 10, "timeSpeed": 1,
@@ -67,19 +64,55 @@ def main():
         "depots": [],                      # filled from observed first legs, see note below
         "road_cells": sorted([list(c) for c in dump["cells"]]),
         "building_cell": dict(sorted(conns.items())),
-        "facility_cell": {},               # display-name table, resolved geometrically
+        "facility_cell": dict(sorted(conns.items())),     # buildings are keyed by display name
+        "building_pos": dict(sorted(positions.items())),
         "site_cell": {str(n["site_id"]): [n["x"], n["y"]] for n in nodes
                       if n.get("kind") == "site"},
     }
+    resolve_sites(spec)
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "maps", name + ".json")
     json.dump(spec, open(out, "w"), indent=1)
     print(f"wrote {out}: {len(spec['road_cells'])} cells, "
           f"{len(spec['building_cell'])} buildings, {len(spec['site_cell'])} sites, "
           f"moveSpeed {speed}")
-    print("NOTE: site/facility coordinates are WORLD positions here; resolve them through "
-          "roads.nearest_road(world_to_cell(x, y)) as the default map's were, and fill "
-          "`depots` from the first leg each vehicle drives.")
+    print("NOTE: fill `depots` from the first leg each vehicle drives (a capture with deliveries); "
+          "a facility whose road:connection did not fire here can be added with "
+          "add_connections(<map>, <capture log>).")
     return 0
+
+
+def connections(text):
+    """{facility: road cell}, {facility: transform} from RoadConnection's road:connection marks.
+    The game emits one per facility the first time it is routed to, keyed by display name."""
+    conns, positions = {}, {}
+    for mm in re.finditer(r"road:connection \{.*?\} (\{.*?\})\n", text):
+        j = json.loads(mm.group(1))
+        conns[j["building"]] = list(j["cell"])
+        if j.get("pos"):
+            positions[j["building"]] = [float(x) for x in j["pos"]]
+    return conns, positions
+
+
+def resolve_sites(spec):
+    """AbandonedSite world positions -> their road cells, the way RoadConnection resolves a
+    building on that site: nearest_road(world_to_cell(x, y))."""
+    from oracle.sim.map_spec import MapSpec
+    from oracle.sim import roads
+    m = MapSpec(dict(spec, depots=spec.get("depots") or [], building_pos=spec.get("building_pos") or {}))
+    spec["site_cell"] = {k: list(roads.nearest_road(roads.world_to_cell(*v), m)) if any(
+        isinstance(x, float) and x != int(x) for x in v) else v for k, v in spec["site_cell"].items()}
+
+
+def add_connections(map_path, log_path):
+    """Merge road:connection marks from a capture log into a map spec (facilities the dump run
+    never routed to)."""
+    spec = json.load(open(map_path))
+    conns, positions = connections(open(log_path, errors="ignore").read())
+    for key, table in (("building_cell", conns), ("facility_cell", conns), ("building_pos", positions)):
+        spec.setdefault(key, {}).update(table)
+        spec[key] = dict(sorted(spec[key].items()))
+    resolve_sites(spec)
+    json.dump(spec, open(map_path, "w"), indent=1)
 
 
 if __name__ == "__main__":

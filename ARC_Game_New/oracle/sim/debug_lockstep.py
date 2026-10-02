@@ -28,7 +28,7 @@ import oracle.sim.diag_marks as D                             # noqa: E402
 from oracle.sim.actions import CoraActions                    # noqa: E402
 from oracle.sim.evolve import fresh_world                     # noqa: E402
 from oracle.sim.floodmap import FloodMap                      # noqa: E402
-from oracle.sim.diag_lockstep import best_row, drive_step, _KEYS   # noqa: E402
+from oracle.sim.diag_lockstep import best_row, drive_step, replay_step, _KEYS   # noqa: E402
 from oracle.sim.diag_casework import unity_events             # noqa: E402
 from oracle.sim.diag_board import board                       # noqa: E402
 from oracle.sim.test_replay_forward import seed_state         # noqa: E402
@@ -79,6 +79,7 @@ class Session:
         # no evolved plan; the older evo14-driven captures fall back to their gene.
         meta = self.trace_path.replace(".json", ".meta.json")
         tool_calls = os.path.exists(meta) and "source" in json.load(open(meta))
+        self.tool_calls = tool_calls
         self.row = {"plan": []} if tool_calls else best_row(evo_log, seed)
         self.um = D.unity_marks(self.log_path)
         self.s0 = D.seed_step(self.log_path)
@@ -109,10 +110,10 @@ class Session:
         for i, step in enumerate(self.trace):
             gene = self.row["plan"][i] if i < len(self.row["plan"]) else {"choices": {}, "menu": []}
             self.before.append(w.clone())
-            drive_step(w, m, step, gene)
+            replay_step(w, step) if self.tool_calls else drive_step(w, m, step, gene)
             w.tasks.fleet.events = []
             marks = []
-            S.step_round(w, marks=marks)
+            S.step(w, marks=marks)
             self.fleet.append(list(w.tasks.fleet.events)); w.tasks.fleet.events = None
             self.marks.append(marks)
             self.after.append(w.clone())

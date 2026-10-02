@@ -45,7 +45,7 @@ def main():
             print("   unity:", [f"{x.get('taskId')} {x.get('stableTaskId') or x.get('taskTitle')}@{x.get('facilityName') or x.get('affectedFacility')} "
                                 f"{x.get('status')} r={x.get('roundsRemaining')}" for x in (step["before"].get("allActiveTasks") or [])])
             print("   unity taken:", [(x.get("kind"), x.get("stableTaskId") or x.get("action_id"), x.get("choiceId")) for x in step["taken"]])
-        drive_step(w, m, step, gene); S.step_round(w)
+        drive_step(w, m, step, gene); S.step(w)
     return 0
 
 

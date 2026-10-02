@@ -91,7 +91,7 @@ def main():
         if a.fleet:
             w.tasks.fleet.events = []
             port.append("port pending: " + str([(p[0], p[1]) for p in w.tasks.pending]))
-        S.step_round(w)
+        S.step(w)
         if a.fleet:
             for ev in w.tasks.fleet.events:
                 port.append("port fleet: " + str(ev))

@@ -158,7 +158,7 @@ def play(row, port, out_dir, rounds=32, replay=None):
             run(a, "menu")
 
         # 3. advance both, compare
-        S.step_round(w)
+        S.step(w)
         env.advance_round()
         after = env._game_state_dict()
         trace.append({"round": i, "before": before, "taken": taken, "after": after})

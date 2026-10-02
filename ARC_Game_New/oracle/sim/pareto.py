@@ -98,7 +98,7 @@ def reevaluate(plans, seeds, rounds=32):
         for _, st in seeds:
             w = fresh_world(st, fmap)
             for g in plan[:rounds]:
-                m.apply(w, ("turn", g)); S.step_round(w)
+                m.apply(w, ("turn", g)); S.step(w)
             scores.append(m.value(w))
         out.append((float(np.mean(scores)), float(np.min(scores)), scores))
     return out

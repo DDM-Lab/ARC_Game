@@ -80,7 +80,7 @@ def main(path=None):
             tag = w.tasks.active[tid].tag if tid in w.tasks.active else "?"
             port.append((tid, cid, tag))
             S.answer(w, tid, cid)
-        S.step_round(w)
+        S.step(w)
 
         if unity or port:
             print(f"\nround {step['round']}  unity board={len(board)}  port board={len(port)}")

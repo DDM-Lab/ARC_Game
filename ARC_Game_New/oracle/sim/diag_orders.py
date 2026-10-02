@@ -92,7 +92,7 @@ def _port(path, trace):
                     continue
                 seen.add(tid)
                 S.answer(w, tid, cid)
-            S.step_round(w)
+            S.step(w)
     finally:
         roads.Fleet.run_round = orig_run
     return rows
