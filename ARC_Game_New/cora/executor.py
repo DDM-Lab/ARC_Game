@@ -336,7 +336,10 @@ def _run(env, results, actions):
     env.valid_actions = actions
     owners = [(r, i) for r in ordered if r.choice is None for i in r.action_indices]
     step = env.step(",".join(str(i) for _, i in owners))
-    exres = (step[4] or {}).get("execution_results") or []
+    info = step[4] if isinstance(step[4], dict) else {}
+    # The game actions sent, in order (exact Unity payloads): what a replay must send again.
+    info["dispatched"] = [actions[i] for _, i in owners]
+    exres = info.get("execution_results") or []
     for r in ordered:
         if r.choice is None:
             r.status = "executed"

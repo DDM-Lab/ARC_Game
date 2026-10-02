@@ -75,7 +75,11 @@ class Session:
         self.trace_path = os.path.join(str(validate_dir or P.VALIDATE), f"staff_{seed}.json")
         self.log_path = self.trace_path.replace(".json", ".log")
         self.trace = json.load(open(self.trace_path))
-        self.row = best_row(evo_log, seed)
+        # A capture taken through rl.CoraEnv (capture.py) records every answer it sent, so it needs
+        # no evolved plan; the older evo14-driven captures fall back to their gene.
+        meta = self.trace_path.replace(".json", ".meta.json")
+        tool_calls = os.path.exists(meta) and "source" in json.load(open(meta))
+        self.row = {"plan": []} if tool_calls else best_row(evo_log, seed)
         self.um = D.unity_marks(self.log_path)
         self.s0 = D.seed_step(self.log_path)
         self.uev = unity_events(self.log_path)
