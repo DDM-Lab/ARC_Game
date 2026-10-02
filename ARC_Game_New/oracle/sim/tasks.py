@@ -583,6 +583,10 @@ class TaskBoard:
         if quantity <= 0:
             return
         if task.tag == "Food":
+            # OnDeliveryTaskCompleted credits a closed food task only once ALL its linked
+            # deliveries are complete -- i.e. on the landing of its last trip.
+            if self._trips_outstanding(task.task_id):
+                return
             counters["foodFulfilled"] = min(counters["foodResolved"],
                                             counters["foodFulfilled"] + 1)
         elif task.tag == "Lodging":

@@ -2051,19 +2051,29 @@ def _answer_casework(w: World, task_id, task, choice, choice_id, facility, deman
     impacts are applied first, as CompleteTaskAction does)."""
     src_cell = w._facility_cell(facility)
     flooded = w.flooded_road_cells()
+    # IsValidDeliveryDestination: room (effective space) for the whole requested quantity,
+    # min(requested, the source's population); then nearest by TRANSFORM distance
+    # (prioritizeNearestDestination defaults on), ties to FindObjectsOfType order (newest first).
+    src_b = w.economy.facility(facility)
+    src_pop = ((src_b or {}).get("resources") or {}).get("population") or 0
+    required = max(1, min(demanded, src_pop) if demanded > 0 else src_pop)
+    pos = w._positions()
+    here = pos.get(facility)
     best = None
-    for b in w.economy.buildings:
+    for b in w.economy.buildings[::-1]:
         if b["type"] != "CaseworkSite" or b["status"] != "InUse" or b["name"] == facility:
             continue
         res = b.get("resources") or {}
         cap = res.get("populationCapacity")
         space = 10 ** 9 if cap is None else cap - (res.get("population") or 0) - _walking_to(w, b["name"])
-        if space <= 0:
+        if space < required:
             continue
         dst_cell = w._facility_cell(b["name"])
         if src_cell is None or dst_cell is None:
             continue
-        dist = ((dst_cell[0] - src_cell[0]) ** 2 + (dst_cell[1] - src_cell[1]) ** 2) ** 0.5
+        there = pos.get(b["name"])
+        dist = (((there[0] - here[0]) ** 2 + (there[1] - here[1]) ** 2) ** 0.5
+                if there is not None and here is not None else 0.0)
         if best is None or dist < best[0]:
             best = (dist, b["name"], space, dst_cell)
     if best is None:
