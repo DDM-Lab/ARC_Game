@@ -11,31 +11,28 @@ The motion constants are read from the game rather than from the .cs files on pu
 scene value has overridden a field initialiser seven times in this port, moveSpeed most
 recently (8, where Vehicle.cs says `= 5f`).
 
-    ARC_SNAPSHOT_DEBUG=1 ./.venv/bin/python -m oracle.sim.dump_map <port> [name]
+    ./.venv/bin/python -m oracle.sim.dump_map <port> [name]
 """
 import json
 import os
 import re
 import sys
 
-EXE = ("Build/Headless/macOS/ARC_Headless.app/Contents/MacOS/"
-       "Collaborative Operations And Resource Management with Agentic AI")
-
-
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9899
     name = sys.argv[2] if len(sys.argv) > 2 else "dumped"
-    sys.path.insert(0, os.getcwd())
-    from oracle.sim.searchable_env import SearchableEnv
-
+    from cora.env import GameEnv
+    from cora.env.unity_process import default_exe
+    os.environ["ARC_SNAPSHOT_DEBUG"] = "1"
     log = os.path.abspath(f"dump_map_{name}.log")
-    env = SearchableEnv(unity_exe_path=EXE, unity_port=port, seed=1, auto_start_unity=True,
-                        connection_timeout=120, unity_log_path=log)
+    env = GameEnv(unity_exe_path=default_exe(), unity_port=port, seed=1, unity_log_path=log)
     env.reset()
-    matrix = env._send_request({"type": "pathfind_matrix"})
-    # One round so GlobalClock emits round:length and a vehicle emits a leg.
+    matrix = env.request({"type": "pathfind_matrix"})
+    # Decisions until GlobalClock emits round:length and a vehicle drives a leg (Day 1's setup
+    # decision advances no simulated round).
     try:
-        env.advance_round()
+        for _ in range(3):
+            env.step([])
     except Exception:
         pass
     env.close()
