@@ -9,8 +9,10 @@ the bench-v6 build reads at answer time:
   enableMultipleDeliveries  SingleSourceMultiDest / MultiSourceSingleDest routing
   requireFullQuantity       a queued food choice needs kitchens that cover the whole quantity
   deliveryCargoType         0 = Population, 1 = FoodPacks (which choices move people)
-Generated, never hand-edited: re-run it whenever a TaskData asset changes (the same rule as the
-RPC exports in the corpus directory).
+It also writes corpus/prefab_fields.json: BuildingResourceStorage fields of the building prefabs
+the RPC does not export either (caseworkDeparturesPerRound: clients leaving a casework site
+each round). Generated, never hand-edited: re-run it whenever a TaskData asset or building
+prefab changes (the same rule as the RPC exports in the corpus directory).
 """
 import glob
 import json
@@ -40,6 +42,19 @@ def read_asset(path) -> tuple:
     return task_id, choices
 
 
+PREFABS = {"CaseworkSite": "Casework.prefab", "Shelter": "Shelter.prefab", "Kitchen": "Kitchen.prefab"}
+PREFAB_FIELDS = ("caseworkDeparturesPerRound",)
+
+
+def read_prefab(path) -> dict:
+    out = {}
+    for line in open(path, errors="ignore"):
+        m = re.match(r"\s+(\w+): (-?[\d.]+)\s*$", line)
+        if m and m.group(1) in PREFAB_FIELDS:
+            out[m.group(1)] = float(m.group(2)) if "." in m.group(2) else int(m.group(2))
+    return out
+
+
 def main():
     out = {}
     for path in sorted(glob.glob(os.path.join(P.ROOT, "Assets/Scripts/Tasks/TaskData/*.asset"))):
@@ -49,6 +64,10 @@ def main():
     dest = os.path.join(P.PKG, "corpus", "task_assets.json")
     json.dump(out, open(dest, "w"), indent=1, sort_keys=True)
     print(f"wrote {dest}: {len(out)} tasks")
+    prefabs = {kind: read_prefab(os.path.join(P.ROOT, "Assets/Prefabs", f)) for kind, f in PREFABS.items()}
+    dest = os.path.join(P.PKG, "corpus", "prefab_fields.json")
+    json.dump(prefabs, open(dest, "w"), indent=1, sort_keys=True)
+    print(f"wrote {dest}: {prefabs}")
 
 
 if __name__ == "__main__":

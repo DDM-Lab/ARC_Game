@@ -126,7 +126,9 @@ def project_port(w) -> dict:
            "fac": {}, "workers": {}, "board": [], "walks": [], "counters": {},
            "score": round(score_components(e.metrics())["score"], 4),
            "ledger": _ledger(e.metrics())}
-    names = {}                    # display name -> key (Unity names built ones <Type>_<site>)
+    # display name -> key (Unity names built ones <Type>_<site>), including buildings since
+    # destroyed: a task can outlive the building it was raised for.
+    names = {n: _fac_key(t, site, n) for n, (t, site) in getattr(e, "built", {}).items()}
     for b in e.buildings:
         res = b.get("resources") or {}
         key = _fac_key(b["type"], b.get("site_id"), b.get("name"))

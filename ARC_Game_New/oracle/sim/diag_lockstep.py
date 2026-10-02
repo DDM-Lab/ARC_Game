@@ -136,14 +136,16 @@ def replay_step(w, step):
     queues = {}
     for a in taken:
         if a.get("kind") == "choice":
-            queues.setdefault((a.get("stableTaskId") or "", _port_name(a.get("facility"))), []).append(a.get("choiceId"))
+            where = f"group:{a['group']}" if a.get("group") is not None else _port_name(a.get("facility"))
+            queues.setdefault((a.get("stableTaskId") or "", where), []).append(a.get("choiceId"))
     offered = {}
     for tid, cid in S.open_choices(w):
         offered.setdefault(tid, []).append(cid)
     for tid, cids in offered.items():
-        spec = w.generated_specs.get(tid) or ("", "")
+        spec = w.generated_specs.get(tid) or ("", "", {})
         key = "Repair" if tid in w.tasks.repair_for else spec[0]
-        q = queues.get((key, str(spec[1] or "")))
+        gid = (spec[2] or {}).get("_gid")
+        q = queues.get((key, f"group:{gid}" if gid is not None else str(spec[1] or "")))
         if not q and not spec[1]:   # global tasks: Unity reports a facility type, the port none
             q = next((v for (k, _f), v in queues.items() if k == key and v), None)
         if q:

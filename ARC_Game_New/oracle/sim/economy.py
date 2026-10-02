@@ -24,6 +24,7 @@ silently.
 from __future__ import annotations
 
 import json as _json
+import os as _os
 
 from . import corpus_paths as _corpus
 from .report import Report
@@ -168,6 +169,10 @@ def _storage_by_type(d):
         out[name] = {k: cfg.get(src, dflt) for k, src, dflt in _STORAGE_KEYS}
     for b in (d.get("buildingWorkforce") or []):
         out[b.get("type")] = {k: b.get(src, dflt) for k, src, dflt in _STORAGE_KEYS}
+    extra = _corpus.DIR + "/prefab_fields.json"          # oracle/sim/export_assets.py
+    if _os.path.exists(extra):
+        for kind, fields in _json.load(open(extra)).items():
+            out.setdefault(kind, {}).update(fields)
     return out
 
 
@@ -194,7 +199,7 @@ class Economy:
                  "free_trained", "free_untrained", "working_trained", "working_untrained",
                  "in_training", "arriving", "under_construction", "buildings", "motel_pop",
                  "pending_transfers", "pending_budget", "used_sites", "efficiency", "report",
-                 "name_counts")
+                 "name_counts", "built")
 
     @staticmethod
     def default_prebuilts():
@@ -264,6 +269,7 @@ class Economy:
         self.used_sites = set()      # site ids already built on -- a rebuild there is a no-op
         self.efficiency = 0.0
         self.name_counts = {}        # BuildingSystem.buildingNameCounters: per type, never reused
+        self.built = {}              # every building ever built: name -> (type, site)
         # (RecordInitialWorkerImputedCost runs in DailyReportData.Start, before GameDataManager
         # has loaded, so the starting roster is imputed at $0 -- the log never shows its message.)
         self.report = Report(_cost_minimums())
@@ -327,6 +333,7 @@ class Economy:
         e.pending_budget = [list(x) for x in self.pending_budget]
         e.efficiency = self.efficiency
         e.name_counts = dict(self.name_counts)
+        e.built = self.built         # append-only by name, so sharing it is safe
         e.report = self.report.clone()
         e.used_sites = set(self.used_sites)
         return e
@@ -415,6 +422,7 @@ class Economy:
                                              "populationCapacity": cap.get("population", 0)},
                                "site_id": site_id})
         self.under_construction.append([C["construction_rounds"], building_type, site_id, name])
+        self.built = dict(self.built, **{name: (building_type, site_id)})
         return True
 
     def hire(self, kind: str, quantity: int, advertised_cost: int = 0) -> bool:
@@ -486,16 +494,22 @@ class Economy:
                 room = start if cap is None else max(0, cap - (res.get("foodPacks") or 0))
                 res["foodPacks"] = (res.get("foodPacks") or 0) + min(start, room)
 
-    def food_need_tick(self, day: int, segment: int) -> None:
-        """bench-v6 BuildingResourceStorage.OnRoundChanged -> GenerateFoodNeedIfDue: a storage
-        that eats starts a feeding cycle at rounds 1 and 3 (segments 0 and 2) from day 2 on --
-        outstanding need SET (not added) to people x rate -- and pays it from what it holds."""
-        if segment not in (0, 2) or day < 2:
-            return
+    def storage_tick(self, day: int, segment: int) -> None:
+        """BuildingResourceStorage.OnRoundChanged, per storage: GenerateFoodNeedIfDue, then
+        HandleCaseworkDepartures.
+
+        A storage that eats starts a feeding cycle at rounds 1 and 3 (segments 0 and 2) from
+        day 2 on -- outstanding need SET (not added) to people x rate -- and pays it from what it
+        holds. A casework site then loses caseworkDeparturesPerRound clients, who leave the
+        system (no destination, no tracker change)."""
         by_type = C.get("storage_by_type") or {}
         for b in self.buildings:
             cfg = by_type.get(b.get("type"), {})
-            if not cfg.get("consumptionEnabled"):
+            leave = int(cfg.get("caseworkDeparturesPerRound") or 0)
+            if leave > 0:
+                res = b.setdefault("resources", {})
+                res["population"] = max(0, (res.get("population") or 0) - leave)
+            if segment not in (0, 2) or day < 2 or not cfg.get("consumptionEnabled"):
                 continue
             res = b.get("resources") or {}
             people = res.get("population") or 0
@@ -551,7 +565,7 @@ class Economy:
         for b in gone:
             b["destroyed"] = True       # Destroy() lands at the end of the frame: see destroy_pending
 
-    def destroy_pending(self) -> None:
+    def destroy_pending(self) -> list:
         """End of the frame a deconstruction completed in: the building is gone and its site an
         AbandonedSite again. Until then it still answers that frame's events (a storage that
         starts a feeding cycle on the same segment advance, a generation pass that finds it)."""
@@ -559,6 +573,7 @@ class Economy:
         for b in gone:
             self.buildings.remove(b)
             self.used_sites.discard(b.get("site_id"))
+        return [b["name"] for b in gone]
 
     def on_day_end(self, day: int) -> None:
         """Day rollover: motel billing, worker arrivals, training completion.

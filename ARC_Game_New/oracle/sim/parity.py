@@ -44,7 +44,11 @@ def _with_facility(step) -> list:
     def fill(a):
         t = tasks.get(a.get("taskId")) or {}
         sid = a.get("stableTaskId") or CODE_BUILT_TASKS.get(str(t.get("taskTitle")), "")
-        return dict(a, facility=a.get("facility", str(t.get("affectedFacility") or "")), stableTaskId=sid)
+        out = dict(a, facility=a.get("facility", str(t.get("affectedFacility") or "")), stableTaskId=sid)
+        desc = str(t.get("taskDescription") or "")
+        if "|CLIENT_GROUP_ID:" in desc:          # a casework task names its client group
+            out["group"] = int(desc.split("|CLIENT_GROUP_ID:", 1)[1])
+        return out
     return [fill(a) if a.get("kind") == "choice" else a for a in step.get("taken") or []]
 
 

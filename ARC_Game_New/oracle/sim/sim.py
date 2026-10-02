@@ -1459,7 +1459,7 @@ def _segment_invoke(w: World, marks, rolls, day_changed) -> None:
     if w.segment == 0:
         _daily_report(w)              # WeatherReportSystem.OnTimeSegmentChanged, after generation
     community_depletion(w, marks)
-    w.economy.food_need_tick(w.day, w.segment)
+    w.economy.storage_tick(w.day, w.segment)
 
 
 def step(w: World, marks=None, on_flood_enter=None) -> None:
@@ -1484,7 +1484,7 @@ def _day1_skip(w: World, marks, on_flood_enter) -> None:
         on_flood_enter(w)
     update_flood(w.flood, w.fmap, w.rng, w.weather, RAIN_INTENSITY[w.weather], marks)
     _end_of_day_waste(w)
-    w.economy.destroy_pending()
+    _destroy_pending(w)
     w.generated = []
     w.round_index += 1
 
@@ -1516,6 +1516,14 @@ def _lodging_nights(w: World) -> None:
             waiting += sum(int(i.get("value") or 0) for i in sp.get("taskImpacts") or []
                            if i.get("type") == "Clients")
     w.economy.report.nights(w.economy, housed, waiting)
+
+
+def _destroy_pending(w: World) -> None:
+    """End of the frame: completed deconstructions are destroyed, and Building.OnDestroy ->
+    ClientStayTracker.HandleFacilityDestroyed drops every client group still housed there."""
+    gone = set(w.economy.destroy_pending())
+    if gone:
+        w.clients.groups = [g for g in w.clients.groups if g.facility not in gone]
 
 
 def _end_of_day_waste(w: World) -> None:
@@ -1664,7 +1672,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
                  RAIN_INTENSITY[w.weather], marks)
     if w.segment >= ROUNDS_PER_DAY:
         _end_of_day_waste(w)          # OnSimulationEnded, after the flood update
-    w.economy.destroy_pending()
+    _destroy_pending(w)
 
     # Deterministic bookkeeping runs after the stochastic phases: deliveries land, tasks
     # age and expire, and the economy accumulates. None of this draws, so its position
