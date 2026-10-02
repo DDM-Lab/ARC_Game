@@ -820,18 +820,20 @@ def _tracker(w, marks):
 def _walk_destinations(w, source, include_shelters, include_motels):
     """ClientRelocationHandler.GetDestinationsSorted(filterByPath: true).
 
-    Operational shelters and/or the motel, each with the space it has LEFT after what is
-    already walking towards it, and only those a road path can reach -- a walk is
-    flood-aware even though it uses no vehicle. Order is the game's: nearest first."""
+    Operational shelters (FindObjectsOfType order: newest first) and/or the motel, each with the
+    space it has LEFT after what is already walking towards it, kept only if a road path reaches
+    it (a walk is flood-aware though it uses no vehicle), then ordered by that space, largest
+    first (a stable sort, so ties keep the find order)."""
     src_cell = w._facility_cell(str(source))
     flooded = w.flooded_road_cells()
+    found = []
+    if include_shelters:
+        found += [b for b in w.economy.buildings[::-1] if b["type"] == "Shelter" and b["status"] == "InUse"]
+    if include_motels:
+        found += [b for b in w.economy.buildings if b["type"] == "Motel"]
     out = []
-    for b in w.economy.buildings:
-        if b["type"] == "Shelter" and include_shelters and b["status"] == "InUse":
-            pass
-        elif b["type"] == "Motel" and include_motels:
-            pass
-        else:
+    for b in found:
+        if b["name"] == str(source):
             continue
         res = b.get("resources") or {}
         cap = res.get("populationCapacity")
@@ -840,19 +842,34 @@ def _walk_destinations(w, source, include_shelters, include_motels):
         if space <= 0:
             continue
         dst_cell = w._facility_cell(b["name"])
-        if src_cell is None or dst_cell is None:
+        if src_cell is None or dst_cell is None or roads.path_length(src_cell, dst_cell, flooded) is None:
             continue
-        dist = roads.path_length(src_cell, dst_cell, flooded)
-        if dist is None:
-            continue
-        out.append((dist, b["name"], space))
-    out.sort(key=lambda r: r[0])
-    return [(name, space) for _d, name, space in out]
+        out.append((b["name"], space))
+    out.sort(key=lambda r: -r[1])
+    return out
 
 
 def _walking_to(w, destination) -> int:
     """People already on foot towards this destination (effectiveSpace's inbound term)."""
     return sum(x[3] for x in w.walks if x[2] == destination)
+
+
+def apply_menu_action(w: World, action: dict) -> bool:
+    """One game action from Unity's menu, against the whole world: a population transfer is a
+    self-walk (queue_menu_transfer); a deconstruction also drops the clients housed there from
+    the tracker (Building.ReleaseClientGroups); everything else is economy-only."""
+    from .economy import apply_action
+    kind = action.get("action_type")
+    if kind == "resource_transfer":
+        tr = action.get("transfer") or {}
+        if tr.get("resource_type", "Population") == "Population":
+            return queue_menu_transfer(w, tr.get("source_facility"), tr.get("destination_facility"),
+                                       tr.get("quantity", 0))
+    ok = apply_action(w.economy, action)
+    if ok and kind in ("deconstruct", "deconstruction"):
+        name = (action.get("deconstruction") or {}).get("building_name")
+        w.clients.groups = [g for g in w.clients.groups if g.facility != name]
+    return ok
 
 
 def queue_menu_transfer(w, source, destination, quantity) -> bool:

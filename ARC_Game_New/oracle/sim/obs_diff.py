@@ -112,9 +112,11 @@ def project_port(w) -> dict:
     out = {"budget": e.budget, "satisfaction": int(e.satisfaction),
            "fac": {}, "workers": {}, "board": [], "walks": [], "counters": {},
            "score": round(score_components(e.metrics())["score"], 4)}
+    names = {}                    # display name -> key (Unity names built ones <Type>_<site>)
     for b in e.buildings:
         res = b.get("resources") or {}
         key = _fac_key(b["type"], b.get("site_id"), b.get("name"))
+        names[b.get("name")] = key
         out["fac"][key] = {"status": b["status"], "pop": res.get("population"), "food": res.get("foodPacks"),
                            "workforce": b.get("assigned", 0),
                            "operational": b["status"] in ("Prebuilt", "InUse")}
@@ -131,10 +133,10 @@ def project_port(w) -> dict:
             continue                      # off Unity's activeTasks; the port just never swept it
         entry = w.generated_specs.get(tid) or ("Repair" if tid in w.tasks.repair_for else "?", None, {})
         fac = entry[1]
-        out["board"].append((entry[0], fac or "", t.rounds_remaining))
+        out["board"].append((entry[0], names.get(fac, fac) if fac else "", t.rounds_remaining))
     out["board"].sort()
     for rounds, src, dst, qty, _tid in w.walks:
-        out["walks"].append((src, dst, qty, rounds))
+        out["walks"].append((names.get(src, src), names.get(dst, dst), qty, rounds))
     out["walks"].sort()
     out["counters"] = {k: e.metrics().get(k) for k in _COUNTERS}
     return out

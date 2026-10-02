@@ -193,7 +193,8 @@ class Economy:
     __slots__ = ("rounds_since_consumption", "budget", "satisfaction", "counters",
                  "free_trained", "free_untrained", "working_trained", "working_untrained",
                  "in_training", "arriving", "under_construction", "buildings", "motel_pop",
-                 "pending_transfers", "pending_budget", "used_sites", "efficiency", "report")
+                 "pending_transfers", "pending_budget", "used_sites", "efficiency", "report",
+                 "name_counts")
 
     @staticmethod
     def default_prebuilts():
@@ -262,6 +263,7 @@ class Economy:
         self.pending_budget = []     # [rounds_remaining, amount] approved-but-not-arrived funding
         self.used_sites = set()      # site ids already built on -- a rebuild there is a no-op
         self.efficiency = 0.0
+        self.name_counts = {}        # BuildingSystem.buildingNameCounters: per type, never reused
         # (RecordInitialWorkerImputedCost runs in DailyReportData.Start, before GameDataManager
         # has loaded, so the starting roster is imputed at $0 -- the log never shows its message.)
         self.report = Report(_cost_minimums())
@@ -324,6 +326,7 @@ class Economy:
         e.pending_transfers = list(self.pending_transfers)
         e.pending_budget = [list(x) for x in self.pending_budget]
         e.efficiency = self.efficiency
+        e.name_counts = dict(self.name_counts)
         e.report = self.report.clone()
         e.used_sites = set(self.used_sites)
         return e
@@ -400,7 +403,8 @@ class Economy:
                "population": prefab.get("populationCapacity") or 0}
         # BuildingSystem.GenerateBuildingName: a per-type phonetic counter ("Kitchen Alpha",
         # "Casework Bravo"), never reused -- a deconstructed building keeps its slot.
-        n = sum(1 for b in self.buildings if b["type"] == building_type)
+        n = self.name_counts.get(building_type, 0)
+        self.name_counts[building_type] = n + 1
         name = f"{'Casework' if building_type == 'CaseworkSite' else building_type} {_PHONETIC[n % len(_PHONETIC)]}"
         self.buildings.append({"name": name, "type": building_type,
                                "status": STATUS_UNDER_CONSTRUCTION, "assigned": 0,
@@ -536,17 +540,17 @@ class Economy:
             b = self.facility(name)
             if b is not None and b["status"] == STATUS_UNDER_CONSTRUCTION:
                 b["status"] = STATUS_NEED_WORKER
-        # Deconstruction runs on the same round clock as construction.
+        # Deconstruction runs on the same round clock as construction; completing it destroys
+        # the building and reverts its site to an AbandonedSite (BuildingSystem.DeconstructBuilding).
+        gone = []
         for b in self.buildings:
             if b.get("deconstruct_rounds"):
                 b["deconstruct_rounds"] -= 1
                 if b["deconstruct_rounds"] <= 0:
-                    b["status"] = STATUS_DISABLED
-                    self.free_trained += b["trained"]
-                    self.free_untrained += b["untrained"]
-                    self.working_trained -= b["trained"]
-                    self.working_untrained -= b["untrained"]
-                    b["trained"] = b["untrained"] = b["assigned"] = 0
+                    gone.append(b)
+        for b in gone:
+            self.buildings.remove(b)
+            self.used_sites.discard(b.get("site_id"))
 
     def on_day_end(self, day: int) -> None:
         """Day rollover: motel billing, worker arrivals, training completion.
@@ -594,14 +598,21 @@ class Economy:
             STATUS_PREBUILT, STATUS_DECONSTRUCTING, STATUS_DISABLED)
 
     def deconstruct(self, index: int) -> bool:
-        """Begin tearing a building down. Takes `deconstructionTimeDays` and frees its
-        workers only when it COMPLETES -- until then the workers stay committed and the
-        building is neither operational nor available."""
+        """Building.StartDeconstruction: ignored while under construction or already coming
+        down; otherwise its workers are released at once (ReleaseAllWorkers) and it comes down
+        over deconstructionRounds round-ends. Client groups and deliveries involving it are the
+        world's to clear (sim.deconstruct)."""
         if not (0 <= index < len(self.buildings)):
             return False
         b = self.buildings[index]
-        if b["status"] in (STATUS_PREBUILT, STATUS_DECONSTRUCTING, STATUS_DISABLED):
+        if b["status"] in (STATUS_PREBUILT, STATUS_DECONSTRUCTING, STATUS_DISABLED,
+                           STATUS_UNDER_CONSTRUCTION):
             return False
+        self.free_trained += b["trained"]
+        self.free_untrained += b["untrained"]
+        self.working_trained -= b["trained"]
+        self.working_untrained -= b["untrained"]
+        b["trained"] = b["untrained"] = b["assigned"] = 0
         b["status"] = STATUS_DECONSTRUCTING
         # BuildingSystem.RequestDeconstruction passes its own inspector value to
         # Building.StartDeconstruction (main-bugfixes 48a2582f); it is 2, not the 3 the port
@@ -855,7 +866,7 @@ def apply_action(econ: Economy, action: dict) -> bool:
         w = action.get("worker") or {}
         return econ.staff(int(w.get("building_index", -1)),
                           count=int(w.get("quantity") or w.get("count") or 0))
-    if kind == "deconstruct":
+    if kind in ("deconstruct", "deconstruction"):
         name = (action.get("deconstruction") or {}).get("building_name")
         idx = next((i for i, b in enumerate(econ.buildings) if b.get("name") == name), None)
         return econ.deconstruct(idx) if idx is not None else False

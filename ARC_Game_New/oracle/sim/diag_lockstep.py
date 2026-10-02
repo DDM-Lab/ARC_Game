@@ -122,30 +122,30 @@ def replay_step(w, step):
     type in offer order, then the game actions Unity accepted, in the order they were sent.
     Nothing else -- a task the policy left alone stays unanswered (declining is a move), and
     nothing is staffed that the policy did not staff."""
-    from oracle.sim.economy import apply_action
+    # Answers match the port's open tasks by (task type, facility): two open requests of one
+    # type for different communities are different tasks.
+    from oracle.sim.parity import _with_facility
+    taken = _with_facility(step) if step.get("before") else (step.get("taken") or [])
     queues = {}
-    for a in step.get("taken") or []:
+    for a in taken:
         if a.get("kind") == "choice":
-            queues.setdefault(a.get("stableTaskId") or "", []).append(a.get("choiceId"))
+            queues.setdefault((a.get("stableTaskId") or "", a.get("facility") or ""), []).append(a.get("choiceId"))
     offered = {}
     for tid, cid in S.open_choices(w):
         offered.setdefault(tid, []).append(cid)
     for tid, cids in offered.items():
-        key = "Repair" if tid in w.tasks.repair_for else (w.generated_specs.get(tid) or ("",))[0]
-        q = queues.get(key)
+        spec = w.generated_specs.get(tid) or ("", "")
+        key = "Repair" if tid in w.tasks.repair_for else spec[0]
+        q = queues.get((key, str(spec[1] or "")))
+        if not q and not spec[1]:   # global tasks: Unity reports a facility type, the port none
+            q = next((v for (k, _f), v in queues.items() if k == key and v), None)
         if q:
             want = q.pop(0)
             S.answer(w, tid, want if want in cids else cids[0])
-    for a in step.get("taken") or []:
+    for a in taken:
         if a.get("kind") not in ("menu", "staff") or not a.get("ok"):
             continue
-        act = a.get("payload") or {}
-        if act.get("action_type") == "resource_transfer":
-            tr = act.get("transfer") or {}
-            S.queue_menu_transfer(w, tr.get("source_facility"), tr.get("destination_facility"),
-                                  tr.get("quantity", 0))
-        else:
-            apply_action(w.economy, act)
+        S.apply_menu_action(w, a.get("payload") or {})
 
 
 if __name__ == "__main__":

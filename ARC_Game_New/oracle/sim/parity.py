@@ -10,7 +10,7 @@ A capture (oracle/sim/capture.py) is ~2 MB of raw state and log. A fixture keeps
 so tests/test_surrogate_parity.py can replay every fixture in seconds with no Unity.
 
     python -m oracle.sim.parity oracle/sim/runs/v6_explore05 [more capture dirs ...]
-        -> tests/fixtures/sim_parity/<dir>_<seed>.json.gz
+        -> tests/fixtures/sim_parity/<policy>_<seed>.json.gz
 """
 from __future__ import annotations
 
@@ -35,6 +35,14 @@ def _rng_states(log_path) -> dict:
     return out
 
 
+def _with_facility(step) -> list:
+    """`taken` with each task answer's facility (captures before it was recorded)."""
+    where = {t.get("taskId"): str(t.get("affectedFacility") or "")
+             for t in (step.get("before") or {}).get("allActiveTasks") or []}
+    return [dict(a, facility=a.get("facility", where.get(a.get("taskId"), ""))) if a.get("kind") == "choice" else a
+            for a in step.get("taken") or []]
+
+
 def make_fixture(capture_json: str) -> dict:
     from oracle.sim.obs_diff import project_unity
     from oracle.sim.test_replay_forward import seed_state
@@ -45,7 +53,7 @@ def make_fixture(capture_json: str) -> dict:
     meta = json.load(open(meta_path)) if os.path.exists(meta_path) else {}
     return {"seed": meta.get("seed"), "source": meta.get("source"), "buildGUID": meta.get("buildGUID"),
             "seed_state": list(seed_state(log)),
-            "steps": [{"taken": s["taken"]} for s in trace],
+            "steps": [{"taken": _with_facility(s)} for s in trace],
             "rng": [rng.get(i + 1) for i in range(len(trace))],
             "expected": [project_unity(s["after"]) for s in trace]}
 
@@ -91,6 +99,15 @@ def check(fixture: dict) -> list:
     return out
 
 
+def _label(source: str) -> str:
+    """'policy:combined+explore(eps=0.05,seed=3)' -> 'combined-explore05'; 'noop' -> 'noop'."""
+    m = re.match(r"policy:([\w-]+)(?:\+explore\(eps=([\d.]+))?", source)
+    if not m:
+        return re.sub(r"\W+", "-", source).strip("-") or "capture"
+    eps = m.group(2)
+    return m.group(1) + (f"-explore{round(float(eps) * 100):02d}" if eps else "")
+
+
 def main(argv):
     os.makedirs(FIXTURES, exist_ok=True)
     for d in argv:
@@ -98,7 +115,7 @@ def main(argv):
             if path.endswith(".meta.json"):
                 continue
             fx = make_fixture(path)
-            name = f"{os.path.basename(os.path.normpath(d))}_{fx['seed']}.json.gz"
+            name = f"{_label(fx.get('source') or '')}_{fx['seed']}.json.gz"
             with gzip.open(os.path.join(FIXTURES, name), "wt") as f:
                 json.dump(fx, f, separators=(",", ":"))
             print(f"{name}: {len(fx['steps'])} decisions, {len(check(fx))} differing")

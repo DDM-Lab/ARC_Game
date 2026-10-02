@@ -18,6 +18,10 @@ import os
 import re
 import sys
 
+# The map the headless build loads (GameConfigLoader, StreamingAssets).
+_MAP_CONFIG = "Build/Headless/macOS/ARC_Headless.app/Contents/Resources/Data/StreamingAssets/map_config.json"
+
+
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9899
     name = sys.argv[2] if len(sys.argv) > 2 else "dumped"
@@ -62,7 +66,8 @@ def main():
         "time_speed": int(clock["timeSpeed"]),
         "fixed_delta": float(clock["fixedDelta"]),
         "depots": [],                      # filled from observed first legs, see note below
-        "road_cells": sorted([list(c) for c in dump["cells"]]),
+        "road_cells": (roads_from_map_config(_MAP_CONFIG) if os.path.exists(_MAP_CONFIG)
+                       else sorted([list(c) for c in dump["cells"]])),
         "building_cell": dict(sorted(conns.items())),
         "facility_cell": dict(sorted(conns.items())),     # buildings are keyed by display name
         "building_pos": dict(sorted(positions.items())),
@@ -81,16 +86,41 @@ def main():
     return 0
 
 
+def roads_from_map_config(path) -> list:
+    """Road cells from a map config's roadLayer (row-major gridWidth x gridHeight, cell
+    (gx - 14, gy - 10)). [ROADDUMP] fires before GameConfigLoader applies the config, so on a
+    build that loads one it lists the scene's built-in roads, not the ones the game drives on;
+    the offset is the one under which every observed road:connection cell is a road."""
+    d = json.load(open(path))
+    w = d["gridWidth"]
+    return sorted([i % w - 14, i // w - 10] for i, v in enumerate(d["roadLayer"]) if v)
+
+
 def connections(text):
     """{facility: road cell}, {facility: transform} from RoadConnection's road:connection marks.
     The game emits one per facility the first time it is routed to, keyed by display name."""
     conns, positions = {}, {}
     for mm in re.finditer(r"road:connection \{.*?\} (\{.*?\})\n", text):
         j = json.loads(mm.group(1))
+        if re.fullmatch(r"[A-Za-z]+_\d+", j["building"]):
+            continue                    # a built building (<Type>_<site>): see site_connections
         conns[j["building"]] = list(j["cell"])
         if j.get("pos"):
             positions[j["building"]] = [float(x) for x in j["pos"]]
     return conns, positions
+
+
+def site_connections(text) -> dict:
+    """{site id: road cell} from the road:connection marks of buildings built this episode
+    (GameObject name <Type>_<site>). RoadConnection's own pick, which a nearest-road search
+    from the site's transform does not reproduce."""
+    out = {}
+    for mm in re.finditer(r"road:connection \{.*?\} (\{.*?\})\n", text):
+        j = json.loads(mm.group(1))
+        m = re.fullmatch(r"[A-Za-z]+_(\d+)", j["building"])
+        if m:
+            out[m.group(1)] = list(j["cell"])
+    return out
 
 
 def resolve_sites(spec):
@@ -104,14 +134,16 @@ def resolve_sites(spec):
 
 
 def add_connections(map_path, log_path):
-    """Merge road:connection marks from a capture log into a map spec (facilities the dump run
-    never routed to)."""
+    """Merge road:connection marks from a capture log into a map spec: facilities the dump run
+    never routed to, and the road cell of every site something was built on."""
     spec = json.load(open(map_path))
-    conns, positions = connections(open(log_path, errors="ignore").read())
+    text = open(log_path, errors="ignore").read()
+    conns, positions = connections(text)
     for key, table in (("building_cell", conns), ("facility_cell", conns), ("building_pos", positions)):
         spec.setdefault(key, {}).update(table)
         spec[key] = dict(sorted(spec[key].items()))
     resolve_sites(spec)
+    spec["site_cell"].update(site_connections(text))      # observed beats resolved
     json.dump(spec, open(map_path, "w"), indent=1)
 
 

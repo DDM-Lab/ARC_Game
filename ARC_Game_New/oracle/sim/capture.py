@@ -48,11 +48,13 @@ def _plan(args) -> list:
 
 def _taken(before: dict, info: dict) -> list:
     stable = {t.get("taskId"): t.get("stableTaskId") or "" for t in before.get("allActiveTasks") or []}
+    where = {t.get("taskId"): str(t.get("affectedFacility") or "") for t in before.get("allActiveTasks") or []}
     taken = []
     for r in info.get("call_results") or []:          # task answers are committed first
         if r.choice is not None and r.status == "executed":
             taken.append({"kind": "choice", "taskId": r.choice["taskId"], "choiceId": r.choice["choiceId"],
-                          "stableTaskId": stable.get(r.choice["taskId"], "")})
+                          "stableTaskId": stable.get(r.choice["taskId"], ""),
+                          "facility": where.get(r.choice["taskId"], "")})
     results = info.get("execution_results") or []
     for k, a in enumerate(info.get("dispatched") or []):
         res = results[k] if k < len(results) else None

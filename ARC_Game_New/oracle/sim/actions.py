@@ -274,17 +274,8 @@ class CoraActions(ActionModel):
                 continue                      # not legal in this state: the game ignores it
             if self.no_debt and _true_cost(a) > world.economy.budget:
                 continue
-            if a.get("action_type") == "resource_transfer":
-                # A population transfer is a SELF-WALK against world state (walks, the client
-                # tracker, an adoptable lodging task), none of which the economy-only
-                # apply_action can reach -- see sim.queue_menu_transfer.
-                tr = a.get("transfer") or {}
-                if S.queue_menu_transfer(world, tr.get("source_facility"),
-                                         tr.get("destination_facility"),
-                                         tr.get("quantity", 0)):
-                    done.append(aid)
-                continue
-            apply_action(world.economy, a); done.append(aid)
+            if S.apply_menu_action(world, a):
+                done.append(aid)
         return done
 
     def value(self, world):
