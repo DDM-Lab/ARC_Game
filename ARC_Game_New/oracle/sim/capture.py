@@ -19,6 +19,8 @@ Plans:
     python -m oracle.sim.capture 5503 --episode benchmark_results/x/episodes.jsonl --index 0
                                                                    # replay a recorded episode's calls
     python -m oracle.sim.capture 5503 --policy combined           # a benchmark baseline, live
+    python -m oracle.sim.capture 5503 --policy combined --epsilon 0.05 --explore-seed 1
+                                        # ... with a random basket on 5% of decisions
 
 Needs the headless build (cora.env.unity_process.default_exe) and an unsandboxed shell.
 """
@@ -107,6 +109,9 @@ def main():
     src.add_argument("--episode")
     src.add_argument("--policy", help="a bench.baselines policy (greedy, combined, ...)")
     ap.add_argument("--index", type=int, default=0, help="episode line in --episode")
+    ap.add_argument("--epsilon", type=float, default=0.0,
+                    help="with --policy: play a random basket on this fraction of decisions")
+    ap.add_argument("--explore-seed", type=int, default=0)
     ap.add_argument("--out", default=P.CAPTURES)
     ap.add_argument("--port", type=int, default=21050)
     a = ap.parse_args()
@@ -114,8 +119,12 @@ def main():
         from bench.baselines import POLICIES
         from bench.baselines.common import tool_calls
         policy = POLICIES[a.policy]
-        plan = lambda game, i: tool_calls(game, policy(game, i, 36))
         source = f"policy:{a.policy}"
+        if a.epsilon > 0:
+            from bench.baselines.explore import explore
+            policy = explore(policy, a.epsilon, a.explore_seed)
+            source += f"+explore(eps={a.epsilon},seed={a.explore_seed})"
+        plan = lambda game, i: tool_calls(game, policy(game, i, 36))
     else:
         plan = _plan(a)
         source = "noop" if a.noop else (a.calls or f"{a.episode}#{a.index}")
