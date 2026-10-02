@@ -9,6 +9,7 @@ the bench-v6 build reads at answer time:
   enableMultipleDeliveries  SingleSourceMultiDest / MultiSourceSingleDest routing
   requireFullQuantity       a queued food choice needs kitchens that cover the whole quantity
   deliveryCargoType         0 = Population, 1 = FoodPacks (which choices move people)
+  prioritizeNearestSource   kitchens by distance (else by stock) for a food order
 It also writes corpus/prefab_fields.json: BuildingResourceStorage fields of the building prefabs
 the RPC does not export either (caseworkDeparturesPerRound: clients leaving a casework site
 each round). Generated, never hand-edited: re-run it whenever a TaskData asset or building
@@ -21,7 +22,8 @@ import re
 
 from oracle.sim import paths as P
 
-FIELDS = ("costPerUnit", "enableMultipleDeliveries", "requireFullQuantity", "deliveryCargoType")
+FIELDS = ("costPerUnit", "enableMultipleDeliveries", "requireFullQuantity", "deliveryCargoType",
+          "prioritizeNearestSource")
 
 
 def read_asset(path) -> tuple:

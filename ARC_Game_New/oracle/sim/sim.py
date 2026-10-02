@@ -1848,8 +1848,13 @@ def answer(w: World, task_id, choice_id) -> bool:
         dst = w._facility_cell(facility)
         flooded = w.flooded_road_cells()
         outbound = w.tasks.outbound_by_kitchen()
+        # FoodDeliveryHandler.GetKitchensSorted: operational kitchens with effective stock, in
+        # FindObjectsOfType order (newest first), then by transform distance to the destination
+        # when the choice prioritizes the nearest source, else by effective stock, largest first.
+        pos = w._positions()
+        here = pos.get(facility)
         kitchens = []
-        for k in w.economy.buildings:
+        for k in w.economy.buildings[::-1]:
             if k["type"] != "Kitchen" or k["status"] != "InUse":
                 continue
             stock = ((k.get("resources") or {}).get("foodPacks") or 0) - outbound.get(k["name"], 0)
@@ -1858,8 +1863,14 @@ def answer(w: World, task_id, choice_id) -> bool:
             src = w._facility_cell(k["name"])
             if src is None or dst is None:
                 continue
-            kitchens.append((((src[0] - dst[0]) ** 2 + (src[1] - dst[1]) ** 2) ** 0.5, k["name"], src, stock))
-        kitchens.sort(key=lambda r: r[0])
+            there = pos.get(k["name"])
+            dist = (((there[0] - here[0]) ** 2 + (there[1] - here[1]) ** 2) ** 0.5
+                    if there is not None and here is not None else 0.0)
+            kitchens.append((dist, k["name"], src, stock))
+        if choice.get("prioritizeNearestSource"):
+            kitchens.sort(key=lambda r: r[0])
+        else:
+            kitchens.sort(key=lambda r: -r[3])
         legs = []
         remaining = demanded
         for _d, kname, src, stock in kitchens:
