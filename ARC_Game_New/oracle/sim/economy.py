@@ -549,6 +549,14 @@ class Economy:
                 if b["deconstruct_rounds"] <= 0:
                     gone.append(b)
         for b in gone:
+            b["destroyed"] = True       # Destroy() lands at the end of the frame: see destroy_pending
+
+    def destroy_pending(self) -> None:
+        """End of the frame a deconstruction completed in: the building is gone and its site an
+        AbandonedSite again. Until then it still answers that frame's events (a storage that
+        starts a feeding cycle on the same segment advance, a generation pass that finds it)."""
+        gone = [b for b in self.buildings if b.get("destroyed")]
+        for b in gone:
             self.buildings.remove(b)
             self.used_sites.discard(b.get("site_id"))
 

@@ -1484,6 +1484,7 @@ def _day1_skip(w: World, marks, on_flood_enter) -> None:
         on_flood_enter(w)
     update_flood(w.flood, w.fmap, w.rng, w.weather, RAIN_INTENSITY[w.weather], marks)
     _end_of_day_waste(w)
+    w.economy.destroy_pending()
     w.generated = []
     w.round_index += 1
 
@@ -1663,6 +1664,7 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
                  RAIN_INTENSITY[w.weather], marks)
     if w.segment >= ROUNDS_PER_DAY:
         _end_of_day_waste(w)          # OnSimulationEnded, after the flood update
+    w.economy.destroy_pending()
 
     # Deterministic bookkeeping runs after the stochastic phases: deliveries land, tasks
     # age and expire, and the economy accumulates. None of this draws, so its position

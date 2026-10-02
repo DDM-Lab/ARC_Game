@@ -36,11 +36,16 @@ def _rng_states(log_path) -> dict:
 
 
 def _with_facility(step) -> list:
-    """`taken` with each task answer's facility (captures before it was recorded)."""
-    where = {t.get("taskId"): str(t.get("affectedFacility") or "")
-             for t in (step.get("before") or {}).get("allActiveTasks") or []}
-    return [dict(a, facility=a.get("facility", where.get(a.get("taskId"), ""))) if a.get("kind") == "choice" else a
-            for a in step.get("taken") or []]
+    """`taken` with each task answer's facility, and a task id for tasks built in code (no
+    TaskData: casework requests, repairs), mapped by title as the port names them."""
+    from oracle.sim.sim import CODE_BUILT_TASKS
+    tasks = {t.get("taskId"): t for t in (step.get("before") or {}).get("allActiveTasks") or []}
+
+    def fill(a):
+        t = tasks.get(a.get("taskId")) or {}
+        sid = a.get("stableTaskId") or CODE_BUILT_TASKS.get(str(t.get("taskTitle")), "")
+        return dict(a, facility=a.get("facility", str(t.get("affectedFacility") or "")), stableTaskId=sid)
+    return [fill(a) if a.get("kind") == "choice" else a for a in step.get("taken") or []]
 
 
 def make_fixture(capture_json: str) -> dict:
