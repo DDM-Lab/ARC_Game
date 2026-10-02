@@ -288,7 +288,8 @@ class World:
             _entry = self.generated_specs.get(payload[0])
             if _entry:
                 _pen = float(_entry[2].get("deliveryFailurePenalty", _pen) or 0)
-            self.economy.satisfaction = max(0.0, min(100.0, self.economy.satisfaction - _pen))
+            if not _corpus.V6:          # v6: HandleDeliveryFailure applies no penalty
+                self.economy.add_satisfaction(-_pen)
         if loaded and not str(payload[2] or "").startswith("__food__"):
             # StopVehicleDueToFlood -> ReturnCargoToSource: the people go back where they
             # were loaded from (they left the source at LoadCargo, see _can_source).
@@ -768,7 +769,8 @@ def cancel_overnight_food(w) -> None:
         board.resolve(task, fulfilled=False, counters=w.economy.counters)
         spec = (w.generated_specs.get(task_id) or (None, None, {}))[2]
         pen = spec.get("deliveryFailurePenalty", _DELIVERY_FAILURE_PENALTY)
-        w.economy.satisfaction = max(0.0, w.economy.satisfaction - float(pen or 0))
+        if not CLOCK_V6:                # v6: HandleDeliveryFailure applies no penalty
+            w.economy.satisfaction = max(0.0, w.economy.satisfaction - float(pen or 0))
 
 
 def _spec_id(w, task_id):
@@ -1411,7 +1413,7 @@ def _incomplete_penalties(w: World, expired) -> None:
             # blockage's direct -30 abandonment (FloodTaskGenerator.OnAnyTaskCompleted) remains.
             if entry[0] == ROAD_BLOCKAGE_SPEC_ID and entry[2].get("_loaded") \
                     and entry[2].get("_cargo") != "food":
-                w.economy.satisfaction = max(0.0, w.economy.satisfaction - _BLOCKAGE_ABANDON_PENALTY)
+                w.economy.add_satisfaction(-_BLOCKAGE_ABANDON_PENALTY)
             elif entry[0] == COMMUNITY_FOOD_SPEC_ID:
                 _community_food_follow_up(w, entry[1])
             continue
@@ -1861,8 +1863,10 @@ def answer(w: World, task_id, choice_id) -> bool:
         if repaired:
             w.economy.spend(w.tasks.REPAIR_COST, "other")
         else:
-            w.economy.satisfaction = max(
-                0, w.economy.satisfaction + w.tasks.REPAIR_DELAY_SATISFACTION)
+            if CLOCK_V6:
+                w.economy.add_satisfaction(w.tasks.REPAIR_DELAY_SATISFACTION)
+            else:
+                w.economy.satisfaction = max(0, w.economy.satisfaction + w.tasks.REPAIR_DELAY_SATISFACTION)
         return True
 
     entry = w.generated_specs.get(task_id)

@@ -18,6 +18,7 @@ Plans:
     python -m oracle.sim.capture 5503 --calls plan.json          # [[ [tool, args], ... ], ...] per decision
     python -m oracle.sim.capture 5503 --episode benchmark_results/x/episodes.jsonl --index 0
                                                                    # replay a recorded episode's calls
+    python -m oracle.sim.capture 5503 --policy combined           # a benchmark baseline, live
 
 Needs the headless build (cora.env.unity_process.default_exe) and an unsandboxed shell.
 """
@@ -60,7 +61,8 @@ def _taken(before: dict, info: dict) -> list:
     return taken
 
 
-def capture(seed: int, plan: list, out_dir: str, port: int, source: str, max_steps: int = 40) -> str:
+def capture(seed: int, plan, out_dir: str, port: int, source: str, max_steps: int = 40) -> str:
+    """`plan` is per-decision lists of (tool, args), or a callable(game, decision) -> calls."""
     from rl import CoraEnv, CoraEnvConfig
     os.makedirs(out_dir, exist_ok=True)
     out = os.path.abspath(os.path.join(out_dir, f"staff_{seed}.json"))
@@ -75,7 +77,7 @@ def capture(seed: int, plan: list, out_dir: str, port: int, source: str, max_ste
         i = 0
         while True:
             before = copy.deepcopy(env.game.game_state)
-            calls = plan[i] if i < len(plan) else []
+            calls = plan(env.game, i) if callable(plan) else (plan[i] if i < len(plan) else [])
             _, reward, terminated, truncated, info = env.step(calls)
             trace.append({"round": i, "before": before, "taken": _taken(before, info),
                           "after": copy.deepcopy(env.game.game_state), "calls": info["calls"],
@@ -103,12 +105,21 @@ def main():
     src.add_argument("--noop", action="store_true")
     src.add_argument("--calls")
     src.add_argument("--episode")
+    src.add_argument("--policy", help="a bench.baselines policy (greedy, combined, ...)")
     ap.add_argument("--index", type=int, default=0, help="episode line in --episode")
     ap.add_argument("--out", default=P.CAPTURES)
     ap.add_argument("--port", type=int, default=21050)
     a = ap.parse_args()
-    source = "noop" if a.noop else (a.calls or f"{a.episode}#{a.index}")
-    capture(a.seed, _plan(a), a.out, a.port, source)
+    if a.policy:
+        from bench.baselines import POLICIES
+        from bench.baselines.common import tool_calls
+        policy = POLICIES[a.policy]
+        plan = lambda game, i: tool_calls(game, policy(game, i, 36))
+        source = f"policy:{a.policy}"
+    else:
+        plan = _plan(a)
+        source = "noop" if a.noop else (a.calls or f"{a.episode}#{a.index}")
+    capture(a.seed, plan, a.out, a.port, source)
     return 0
 
 

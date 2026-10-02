@@ -258,7 +258,7 @@ class Economy:
                 elif value > 0:
                     self.pending_budget.append([int(budget_delay_rounds), int(value)])
             elif kind == "Satisfaction":
-                self.satisfaction = max(0.0, min(100.0, self.satisfaction + float(value)))
+                self.add_satisfaction(float(value))
 
         # A choice that routes people to the Motel is the single largest cost driver in the
         # game, and it does NOT show up in the choice's own impacts: the money arrives later
@@ -290,6 +290,12 @@ class Economy:
         return e
 
     # ── budget ──────────────────────────────────────────────────────────────────────
+    def add_satisfaction(self, delta: float) -> None:
+        """SatisfactionAndBudget.AddSatisfaction. Clamped to [0, 100] on the old build; the
+        bench-v6 build leaves it unclamped (ledger D13, an open design question)."""
+        s = self.satisfaction + float(delta)
+        self.satisfaction = s if _corpus.V6 else max(0.0, min(100.0, s))
+
     def spend(self, amount: int, category: str) -> None:
         """SatisfactionAndBudget.RemoveBudget(amount, SpendCategory).
 
@@ -563,7 +569,7 @@ class Economy:
         if done:
             per = float((C.get("initial_state") or {}).get("satisfactionPerTrainedWorker", 0) or 0)
             if per:
-                self.satisfaction = max(0.0, min(100.0, self.satisfaction + done * per))
+                self.add_satisfaction(done * per)
         self.free_trained += done
         self.in_training = [d for d in self.in_training if d > 0]
         self.counters["daysCompleted"] = day
