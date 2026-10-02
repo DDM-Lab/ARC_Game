@@ -36,7 +36,7 @@ Segment 3 is skipped deliberately in TaskSystem.OnRoundChanged; it is not an off
 from __future__ import annotations
 
 from .clients import ClientTracker
-from .economy import BUDGET_MAX, BUDGET_MIN, C as _ECON_C, Economy, step_round as economy_step
+from .economy import C as _ECON_C, Economy, step_round as economy_step
 from .flood import FloodState, update_flood
 from .floodmap import FloodMap
 from . import roads
@@ -84,7 +84,6 @@ ROAD_BLOCKAGE_SPEC_ID = "Road_Blockage"
 # CommunityFoodDepletionManager spawns this one directly (its own triggers are empty), so it
 # is never produced by a generation pass.
 COMMUNITY_FOOD_SPEC_ID = "Community_FoodRequest"
-_BLOCKAGE_FAILURE_PENALTY = 10.0      # GameTask.deliveryFailureSatisfactionPenalty default
 _BLOCKAGE_ABANDON_PENALTY = 30.0      # FloodTaskGenerator.OnAnyTaskCompleted, loaded clients
 _TASK_SPEC[ROAD_BLOCKAGE_SPEC_ID] = {
     "taskId": ROAD_BLOCKAGE_SPEC_ID, "taskTitle": "Road Blockage Emergency", "taskType": "Emergency",
@@ -103,21 +102,14 @@ _TASK_SPEC[ROAD_BLOCKAGE_SPEC_ID] = {
          "budgetDelayRounds": 0, "destinationCategory": "", "enableMultipleDeliveries": False,
          "impacts": [{"type": "Satisfaction", "value": -30}]},
     ]}
-_INCOMPLETE_PENALTY = {k: v for k, v in (_ECON_C.get("incompletePenalty") or {}).items() if not k.startswith("_")}
 from .triggers import roll_pass
 from .weather import RAIN_INTENSITY, generate_weather
-from . import corpus_paths as _corpus
 
-# THE CLOCK OF THE BUILD THE CORPUS CAME FROM. The bench-v6 build (corpus "v6") changed
-# GlobalClock in three ways the step has to follow, read off its [RNGCTX] marks:
-#   * a gym step is a DECISION: Day 1 is one decision (Day1SkipCoroutine: four rounds with time
-#     frozen, only OnRoundEnd fires, then OnSimulationEnded), and every day rollover is a
-#     decision of its own (OnDayChanged then OnTimeSegmentChanged(0), nothing simulates), so a
-#     game is 1 + 7 x (1 + 4) = 36 decisions;
-#   * EndSimulation runs OnRoundEnd BEFORE AdvanceTimeSegment;
-#   * reaching segment 4 fires no OnTimeSegmentChanged (the A1 last-round tick is gone).
-# The merge-sep15 corpus keeps the old clock, so its captures still replay.
-CLOCK_V6 = _corpus.V6
+# The clock (bench-v6 GlobalClock): a gym step is a DECISION. Day 1 is one decision
+# (Day1SkipCoroutine: four rounds with time frozen, only OnRoundEnd, then OnSimulationEnded);
+# each day rollover is a decision (OnDayChanged, then OnTimeSegmentChanged(0)); each round is a
+# decision whose EndSimulation runs OnRoundEnd BEFORE AdvanceTimeSegment, and reaching segment 4
+# fires no OnTimeSegmentChanged. A game is 1 + 7 x (1 + 4) = 36 decisions.
 
 ROUNDS_PER_DAY = 4
 
@@ -147,15 +139,12 @@ _GENERATION_SEGMENTS = (1, 2)
 # consequence: Unity expires an Emergency Budget Crisis at s17 for satisfaction +1 / budget -1,
 # a task the port could not create. Reading the export keeps this correct when the sheet changes.
 _NUM_EMERGENCY_TASKS = int((_ECON_C.get("initial_state") or {}).get("emergencyTotal", 0) or 0)
-_NUM_EXTERNAL_RELATION_TASKS = int((_ECON_C.get("initial_state") or {}).get("externalRelationTotal", 0) or 0)
 
 _FINAL_DAY = 8
-_ROLLOVER_PASSES = 2
 # TaskSystem.CreateTask's per-type defaults: Emergency 1, Demand 2, Advisory 3, Alert 2.
 _ALERT_ROUNDS = 2
 # GameTask.deliveryFailureSatisfactionPenalty, the field default. Not exported per task, so a
 # TaskData asset that overrides it is not modelled -- flagged rather than guessed.
-_DELIVERY_FAILURE_PENALTY = 10.0      # fallback only; the per-task value is exported
 
 
 class World:
@@ -168,7 +157,7 @@ class World:
     __slots__ = ("walks", "rng", "flood", "fmap", "weather", "day", "segment",
                  "facilities_for", "generated", "clients", "economy", "tasks",
                  "round_index", "_trigger_memory", "use_generation",
-                 "pending_arrivals", "pending_removals", "_casework_live", "generated_specs", "_alerts_shown", "_external_count", "_pos_cache",
+                 "pending_arrivals", "pending_removals", "_casework_live", "generated_specs", "_alerts_shown", "_pos_cache",
                  "_emergency_count", "_last_emergency_round", "_sourced_now", "_pop_loaded",
                  "_food_reserved")
 
@@ -220,7 +209,6 @@ class World:
         self.generated_specs = {}       # live task id -> (definition id, facility, spec)
         self._alerts_shown = set()      # Alert tasks fire once per GAME
         self._emergency_count = 0
-        self._external_count = 0
         self._pos_cache = None
         # TaskSystem initialises lastEmergencyTaskRound to 0, NOT to "long ago". The gate
         # is `currentRound < lastEmergencyTaskRound + dynamicInterval`, so with an interval
@@ -279,17 +267,7 @@ class World:
     def _blocked_delivery(self, payload, loaded, task, was_open):
         """StopVehicleDueToFlood's task side. `task` is the parent (already off the board),
         `loaded` whether the cargo was aboard, `was_open` whether HandleDeliveryFailure found
-        it InProgress (then it charges the failure penalty)."""
-        if was_open:
-            # Vehicle.StopVehicleDueToFlood -> HandleDeliveryFailure charges the PARENT TASK's
-            # own deliveryFailureSatisfactionPenalty, which is 15 on a food request and 10 on a
-            # relocation -- not one constant. Seed 5504 step 9: Unity -15, the port -10.
-            _pen = _BLOCKAGE_FAILURE_PENALTY
-            _entry = self.generated_specs.get(payload[0])
-            if _entry:
-                _pen = float(_entry[2].get("deliveryFailurePenalty", _pen) or 0)
-            if not _corpus.V6:          # v6: HandleDeliveryFailure applies no penalty
-                self.economy.add_satisfaction(-_pen)
+        it InProgress). HandleDeliveryFailure applies no satisfaction penalty on this build."""
         if loaded and not str(payload[2] or "").startswith("__food__"):
             # StopVehicleDueToFlood -> ReturnCargoToSource: the people go back where they
             # were loaded from (they left the source at LoadCargo, see _can_source).
@@ -460,7 +438,6 @@ class World:
         w._pop_loaded = {k: list(v) for k, v in self._pop_loaded.items()}
         w._food_reserved = self._food_reserved
         w._emergency_count = self._emergency_count
-        w._external_count = self._external_count
         w._pos_cache = self._pos_cache
         w._last_emergency_round = self._last_emergency_round
         w.use_generation = self.use_generation
@@ -531,19 +508,14 @@ def _admits(w: World, spec, facility) -> bool:
     # Unity logs "[Limit] Skipping Storm Funding Advisory: Max external-relation contacts
     # reached (5)" three times on seed 5901; the port had no cap, generated the extras and
     # paid itself their +5 satisfaction.
-    if (not CLOCK_V6                  # v6 removed the cap (TaskSystem, ledger D6)
-            and spec.get("taskOfficer") == "ExternalRelationship"
-            and spec.get("taskId") != "Budget_Allocation"
-            and w._external_count >= _NUM_EXTERNAL_RELATION_TASKS):
-        return False
+    # (No external-relation cap: TaskSystem removed it, ledger D6.)
     kind = spec.get("taskType")
     if kind == "Emergency":
         if w._emergency_count >= _NUM_EMERGENCY_TASKS:
             return False
         interval = max(2, (_FINAL_DAY * ROUNDS_PER_DAY) // max(1, _NUM_EMERGENCY_TASKS))
-        # v6 measures the spacing on the clock, (day - 1) x roundsPerDay + segment; the old
-        # build counted elapsed rounds, which the port tracks as round_index.
-        now = (w.day - 1) * ROUNDS_PER_DAY + w.segment if CLOCK_V6 else w.round_index
+        # The spacing is measured on the clock: (day - 1) x roundsPerDay + segment.
+        now = (w.day - 1) * ROUNDS_PER_DAY + w.segment
         if now < w._last_emergency_round + interval:
             return False
         w._emergency_count += 1
@@ -630,38 +602,7 @@ def community_depletion(w, marks=None):
     if (w.segment + 1) > int(cfg.get("lastEligibleRound", 3) or 3):
         return []
     amount = int(cfg.get("amount", 100) or 100)
-    if CLOCK_V6:
-        return _community_depletion_v6(w, chance, amount)
-    hits = []
-    for b in w.economy.buildings:
-        if b.get("type") != "Community":
-            continue
-        if marks is not None and not CLOCK_V6:    # v6 still draws here but no longer marks it
-            marks.append("draw:CommunityFoodDepletion")
-        if w.rng.value() >= chance:
-            continue
-        res = b.setdefault("resources", {})
-        available = res.get("foodPacks") or 0
-        if available <= 0:
-            continue
-        # "Don't stack a second request while one is already pending for this community":
-        # TaskSystem.GetAllActiveTasks, so only a LIVE task blocks -- generated_specs keeps
-        # its entry after the task resolves, and matching on that silenced a community for
-        # the rest of the episode.
-        # GetAllActiveTasks() holds tasks that are Active or InProgress; a task the port has
-        # already RESOLVED (an immediate delivery resolves at answer time and then sits in
-        # `awaiting` with resolved=True) is not one of them. Counting it blocked Amherst's
-        # next request for the rest of merge_v4 -- its food stayed at 400 against Unity's 300.
-        if any(spec_id == COMMUNITY_FOOD_SPEC_ID and fac == b["name"] and not _task.resolved
-               for live, (spec_id, fac, _sp) in w.generated_specs.items()
-               for _task in (w.tasks.active.get(live) or w.tasks.awaiting.get(live),)
-               if _task is not None):
-            continue
-        lost = min(amount, available)
-        res["foodPacks"] = available - lost
-        _create_community_food_task(w, b["name"], lost)
-        hits.append((b["name"], lost))
-    return hits
+    return _community_depletion_v6(w, chance, amount)
 
 
 def _community_food_pending(w, name) -> bool:
@@ -771,10 +712,7 @@ def cancel_overnight_food(w) -> None:
         if task is None or task.delivered > 0:
             continue
         board.resolve(task, fulfilled=False, counters=w.economy.counters)
-        spec = (w.generated_specs.get(task_id) or (None, None, {}))[2]
-        pen = spec.get("deliveryFailurePenalty", _DELIVERY_FAILURE_PENALTY)
-        if not CLOCK_V6:                # v6: HandleDeliveryFailure applies no penalty
-            w.economy.satisfaction = max(0.0, w.economy.satisfaction - float(pen or 0))
+        # (HandleDeliveryFailure applies no satisfaction penalty on this build.)
 
 
 def _spec_id(w, task_id):
@@ -787,28 +725,15 @@ _BUDGET_ALLOCATION_SPEC_ID = "Budget_Allocation"
 
 
 def _configured_impacts(def_id, impacts, choice=None, food_qty=None):
-    """TaskSystem.ApplyConfiguredAllocation (BUG_REPORTS B35).
-
-    The Daily Budget Allocation's grant comes from the sheet
-    (initialDailyBudgetAdditions), rewritten onto the TASK INSTANCE at creation and never
-    onto the asset -- so the exported TaskData still says the authored 5000 while the game
-    hands out 2000. Reading the export verbatim credits 3000 a day the game never gave."""
-    if CLOCK_V6:
-        # bench-v6: ApplyConfiguredAllocation is disabled (the asset's grant stands), and a
-        # priced FoodPacks choice charges costPerUnit x the resolved quantity
-        # (AgentChoice.ChargedBudget) in place of its authored cost.
-        cpu = float((choice or {}).get("costPerUnit") or 0)
-        if cpu > 0 and food_qty is not None:
-            return [dict(i, value=-(cpu * food_qty)) if i.get("type") == "Budget" and float(i.get("value") or 0) < 0
-                    else i for i in (impacts or [])]
-        return impacts
-    if def_id != _BUDGET_ALLOCATION_SPEC_ID:
-        return impacts
-    amount = int((_ECON_C.get("initial_state") or {}).get("dailyBudgetAddition") or 0)
-    if amount <= 0:
-        return impacts
-    return [dict(i, value=amount) if i.get("type") == "Budget" else i
-            for i in (impacts or [])]
+    """The Budget/Satisfaction impacts a choice applies. A priced FoodPacks choice charges
+    costPerUnit x the resolved quantity (AgentChoice.ChargedBudget) in place of its authored
+    cost; everything else is applied as authored (ApplyConfiguredAllocation is disabled on this
+    build, so the Daily Budget Allocation keeps the asset's grant)."""
+    cpu = float((choice or {}).get("costPerUnit") or 0)
+    if cpu > 0 and food_qty is not None:
+        return [dict(i, value=-(cpu * food_qty)) if i.get("type") == "Budget" and float(i.get("value") or 0) < 0
+                else i for i in (impacts or [])]
+    return impacts
 
 
 def _resolve_quantity(w, choice, facility) -> int:
@@ -1225,9 +1150,6 @@ def _create_tasks(w, rolls, day_changed):
         spec = _TASK_SPEC.get(task_id)
         if spec is None or not _admits(w, spec, facility):
             continue
-        if (spec.get("taskOfficer") == "ExternalRelationship"
-                and spec.get("taskId") != "Budget_Allocation"):
-            w._external_count += 1
         spec = _sized_for(w, spec, facility)
         state = {"choices": spec.get("choices") or []}
         tag = spec.get("taskTag") or "None"
@@ -1402,105 +1324,20 @@ def _land(w, _task_id, quantity, destination):
 
 
 def _incomplete_penalties(w: World, expired) -> None:
-    """ApplyTaskPenalties: an overdue Emergency/Demand task (ExpireTask -> Incomplete, or an
-    InProgress one via SetTaskIncomplete) applies the task's own impact list. The values
-    are MEASURED from the headless logs (corpus "incompletePenalty"): every incomplete
-    community food request is "Recorded budget change: 1" and satisfaction -1, 108 of 108
-    across the captures; a relocation costs satisfaction only. The TaskData assets in the
-    working tree list other impacts than the build applies, so the log is the source."""
-    table = _INCOMPLETE_PENALTY
-    for tid, answered in expired:
+    """What an overdue task still costs. ExpireTask and SetTaskIncomplete no longer call
+    ApplyTaskPenalties (ledger D22), so only two things happen: a stranded population blockage
+    pays FloodTaskGenerator's direct -30 abandonment, and a community food request that ended
+    Incomplete is re-raised (CommunityFoodDepletionManager.HandleCommunityFoodRequestEnded)."""
+    for tid, _answered in expired:
         entry = w.generated_specs.get(tid)
         if not entry:
             continue
-        # THE TYPE FILTER BELONGS TO ExpireTask ONLY. CheckExpiredTasks routes an InProgress
-        # task to SetTaskIncomplete, which calls ApplyTaskPenalties unconditionally, while
-        # ExpireTask applies it only when the status became Incomplete -- Emergency or
-        # Demand. Filtering both under-penalised every answered task of another type whose
-        # delivery never landed.
-        if not answered and entry[2].get("taskType") not in ("Emergency", "Demand"):
-            continue
-        if CLOCK_V6:
-            # bench-v6: ExpireTask and SetTaskIncomplete no longer call ApplyTaskPenalties
-            # (ledger D22, an open design question left off). Only a stranded population
-            # blockage's direct -30 abandonment (FloodTaskGenerator.OnAnyTaskCompleted) remains.
-            if entry[0] == ROAD_BLOCKAGE_SPEC_ID and entry[2].get("_loaded") \
-                    and entry[2].get("_cargo") != "food":
-                w.economy.add_satisfaction(-_BLOCKAGE_ABANDON_PENALTY)
-            elif entry[0] == COMMUNITY_FOOD_SPEC_ID:
-                _community_food_follow_up(w, entry[1])
-            continue
-        if entry[0] == ROAD_BLOCKAGE_SPEC_ID:
-            # SIGN. FloodTaskGenerator adds TaskImpact(Satisfaction, -20) to the task, and
-            # ApplyTaskPenalties REMOVES each impact -- RemoveSatisfaction(-20) is +20, which is
-            # what the log says: "Satisfaction: 84.0 -> 100.0 (+20.0) - Task Incomplete Penalty
-            # from [Road Blockage Emergency]". The abandonment penalty is a direct
-            # RemoveSatisfaction(30) and really is -30, so a blockage that stranded clients nets
-            # -10 and one that did not nets +20. The port subtracted both.
-            # FloodTaskGenerator.OnAnyTaskCompleted bails unless the task id is in
-            # `blockageTaskLoadedState`, and CreateRoadBlockageTask only records that for
-            # ResourceType.Population -- so a FOOD blockage never pays the -30 abandonment,
-            # loaded or not. The port charged it on both and handed a food blockage +50.
-            abandoned = (entry[2].get("_loaded") and entry[2].get("_cargo") != "food")
-            delta = -20.0 - (_BLOCKAGE_ABANDON_PENALTY if abandoned else 0.0)
-            w.economy.satisfaction = max(0.0, min(100.0, w.economy.satisfaction - delta))
-            continue
-        # The task's own impact list, when the export carries it (taskImpacts): Unity's
-        # ApplyTaskPenalties REMOVES each Budget/Satisfaction value, so a Budget impact of
-        # -1 on every food request is the "+1 on expiry" the old captures measured. The
-        # measured table is only the fallback for a corpus exported before this existed.
-        impacts = entry[2].get("taskImpacts")
-        if impacts is not None:
-            for imp in impacts:
-                v = float(imp.get("value") or 0)
-                if imp.get("type") == "Budget":
-                    w.economy.budget = max(BUDGET_MIN, min(BUDGET_MAX, w.economy.budget - int(v)))
-                elif imp.get("type") == "Satisfaction":
-                    w.economy.satisfaction = max(0.0, min(100.0, w.economy.satisfaction - v))
-            continue
-        pen = table.get(entry[0])
-        if not pen:
-            continue
-        if pen.get("budget"):
-            w.economy.budget = max(BUDGET_MIN, min(BUDGET_MAX, w.economy.budget + int(pen["budget"])))
-        if pen.get("satisfaction"):
-            w.economy.satisfaction = max(0.0, min(100.0, w.economy.satisfaction + float(pen["satisfaction"])))
+        if entry[0] == ROAD_BLOCKAGE_SPEC_ID and entry[2].get("_loaded") \
+                and entry[2].get("_cargo") != "food":
+            w.economy.add_satisfaction(-_BLOCKAGE_ABANDON_PENALTY)
+        elif entry[0] == COMMUNITY_FOOD_SPEC_ID:
+            _community_food_follow_up(w, entry[1])
 
-
-
-def _rollover_pass(w, i, marks, rolls):
-    """One of the two OnTimeSegmentChanged invokes of a day change (segment 0, then 1).
-    The order INSIDE the pass is calibrated; do not reorder it."""
-    w.segment = i
-    # Pass 0 is OnDayStarted: TaskSystem and the depletion manager subscribe to it, the
-    # clock's per-advance subscribers (ageing, tracker, storage, expiry) do not. Pass 1 is
-    # the segment-1 advance and runs all of them. (Pre-A1 the rollover fired two segment
-    # invokes, 0 and 1, and a rounds=2 task aged out inside the step; it no longer does.)
-    if i > 0:
-        w.tasks.age()
-    # The day-start pass is OnDayStarted, not OnTimeSegmentChanged, and the tracker only
-    # subscribes to the latter: merge_v4 s9 shows no caseworkGen between afterOnDayChanged
-    # and afterOnTimeSegmentChanged, and the two tracker draws only after endSim:afterMetrics
-    # -- the segment-1 advance. So pass 0 generates without the tracker; pass 1 runs it.
-    if i > 0:
-        _tracker(w, marks)
-    _r = [r + (i,) for r in _pass(w, marks)]
-    rolls += _r
-    if w.use_generation:
-        _create_tasks(w, _r, True)
-    # CommunityFoodDepletionManager subscribed AFTER TaskSystem, so its draws land after the
-    # generation pass on the same invoke -- capture merge_v2 d2r0: Weather.select,
-    # TaskTrigger.probability x3, CommunityFoodDepletion x3, in that order.
-    community_depletion(w, marks)
-    # BuildingResourceStorage.OnRoundChanged is subscribed after TaskSystem's, so on
-    # the same invoke consumption runs AFTER the generation pass: at the rollover's
-    # segment 0 the pass sees pre-consumption stock, and segment 1's sees the drained
-    # communities. That split is why Unity requests food for one community at pass 0
-    # and the other two at pass 1 -- and the queue order that follows from it decides
-    # which vehicle is left for a stranded assignment three rounds later.
-    if i > 0:
-        w.economy.production_tick()
-        w.economy.consumption_tick(round_key=w.day * 100 + w.segment)
 
 def _round_end(w: World, marks) -> None:
     """GlobalClock.OnRoundEnd -> ClientRelocationHandler.HandleRoundEnd: walks land and their
@@ -1517,26 +1354,19 @@ def _segment_invoke(w: World, marks, rolls, day_changed) -> None:
     the generation pass (segments that run one), community depletion, then storage."""
     w.tasks.age()
     _tracker(w, marks)
-    if w.segment in _GENERATION_SEGMENTS or (CLOCK_V6 and day_changed):
+    if w.segment in _GENERATION_SEGMENTS or day_changed:
         _r = [r + (w.segment,) for r in _pass(w, marks)]
         rolls += _r
         if w.use_generation:
             _create_tasks(w, _r, day_changed)
-    if CLOCK_V6 and w.segment == 0:
+    if w.segment == 0:
         _daily_report(w)              # WeatherReportSystem.OnTimeSegmentChanged, after generation
     community_depletion(w, marks)
-    if CLOCK_V6:
-        w.economy.food_need_tick(w.day, w.segment)
-    else:
-        w.economy.production_tick()
-        w.economy.consumption_tick(round_key=w.day * 100 + w.segment)
+    w.economy.food_need_tick(w.day, w.segment)
 
 
 def step(w: World, marks=None, on_flood_enter=None) -> None:
-    """Advance to the next decision point. On the old clock a decision is a round
-    (step_round); on the v6 clock it is the Day-1 setup, a day rollover, or a round."""
-    if not CLOCK_V6:
-        return step_round(w, marks=marks, on_flood_enter=on_flood_enter)
+    """Advance to the next decision point: the Day-1 setup, a day rollover, or a round."""
     if w.day == 1 and w.segment == 0:
         return _day1_skip(w, marks, on_flood_enter)
     if w.segment >= ROUNDS_PER_DAY:
@@ -1614,14 +1444,6 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     The per-person granularity is load-bearing: a 300-person relocation advances the stream
     301 places, so getting it wrong makes every later draw in the round read someone else's
     randoms."""
-    # THE DAY ROLLOVER'S FIRST PASS PRECEDES THE DRIVING. Every validation log puts
-    # `gen:pass dNr0` on the same frame as that step's `round:length`, i.e. GlobalClock
-    # advances 4 -> day+1/0 when the step begins, and the tracker, ageing, generation,
-    # production/consumption and expiry of that invoke all run BEFORE the vehicles move;
-    # the second invoke (segment 1) fires at the end of the driving, where a normal step's
-    # advance does. 5501 step 16: Unity's tracker sends 78 caseworkless clients home at
-    # f750, the casework vehicle lands at f755 and finds a group of 20 (credit 20); the
-    # port landed first and removed 22 twice (44). Pass 1 still runs after the ticks.
     # PLANNING-PHASE ARRIVALS DRAW BEFORE THE ROLLOVER'S FIRST PASS. An immediate
     # relocation answered in the planning phase registers its two client groups at the
     # choice (5503 s16 f751: choice:at, caseworkNeed x63, stayDuration, x63, stayDuration),
@@ -1632,59 +1454,6 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
     w.pending_arrivals = []
     rolls = []
-    day_changed = w.segment >= ROUNDS_PER_DAY
-    if day_changed:
-        w.day += 1
-        # Unity's marks run d1r0..d1r4, d2r0, d2r1 -- there IS a segment 0 on every day,
-        # and tasks gated on `round: targetRound 0` fire there. Daily Budget Allocation is
-        # one, and it grants +5000 budget a day: Unity has it on the board at round 5 and
-        # the port did not, because the port jumped segment 4 -> 1 and never visited 0
-        # again after day 1.
-        #
-        # But segment 0 is NOT a fifth player round. Its frame span is 5-7 against 34 for a
-        # real round, so it is the rollover instant, which the port already models as
-        # _ROLLOVER_PASSES. Making it a separate segment added a round per day and broke
-        # the draw census at d2r2 -- and that census, chaining the RNG state from round to
-        # round, is the strongest equivalence signal available. So the rollover EVALUATES
-        # as segment 0 for trigger purposes and then settles on 1, which fires the round-0
-        # tasks without inventing a round.
-        w.segment = 0
-        w.weather = generate_weather(w.rng, marks=marks)
-        # The two rollover passes are not the same instant. Unity's day change fires the
-        # round-0 tasks (Daily Budget Allocation: `targetRound 0, exactMatch`) and then the
-        # first round's tasks (the advisories: `targetRound 1, exactMatch False`, i.e.
-        # round >= 1). Running BOTH passes at segment 0 meant the second class could never
-        # fire at all -- Training Recommendation Alert and Workforce Optimization Alert
-        # never appeared, which is two of the three tasks missing from the port's round-5
-        # board. So pass 1 evaluates as segment 0 and pass 2 as segment 1.
-        # Worker arrivals complete AT the day change, and the rollover's task generation
-        # reads the post-arrival counts: Unity's totalWorkers is 10 through turn 3 and 35
-        # at turn 4, and Training Recommendation Alert needs trained/untrained < 1, which
-        # only holds once the hires land (5/30 = 0.17, against 5/5 = 1.0 before). The port
-        # generated first and settled the economy afterwards, so it evaluated that trigger
-        # against a ratio of exactly 1.0 and the task never fired.
-        #
-        # on_day_end is hoisted here rather than reordered inside economy.step_round, whose
-        # phase order is pinned against captures: day-end must precede the round
-        # accumulators (or arrivals lose two idle-worker units) and must precede this
-        # round's transfers landing (or the motel is over-billed by a day). Generation runs
-        # before both, so calling it here keeps both invariants and economy_step is told the
-        # day is already handled.
-        w.economy.on_day_end(w.day)
-        # WeatherReportSystem.OnTimeSegmentChanged fires GenerateDailyReport when the new
-        # round is 0, creating "Day N Start of Day Report" straight through
-        # TaskSystem.CreateTask -- not through the trigger inventory, which is why no amount
-        # of trigger work could produce it. TaskType.Alert, so roundsRemaining is 2, and it
-        # carries no choices, so it cannot move a counter. It DOES consume a task id, and
-        # task identity is what the exact-replay suite cannot otherwise align. It draws no
-        # randoms, so the census is untouched.
-        w.tasks.add(Task(w.tasks.next_id, "None", 0, _ALERT_ROUNDS, task_type="Alert"))
-        w.generated_specs[w.tasks.next_id] = (
-            "Daily_Report", None, {"taskId": "Daily_Report",
-                                   "taskTitle": f"Day {w.day} Start of Day Report",
-                                   "taskType": "Alert", "taskTag": "None", "choices": []})
-        w.tasks.next_id += 1
-        _rollover_pass(w, 0, marks, rolls)
     # DELIVERIES SIMULATE AT THE HEAD OF THE STEP, BEFORE THE SEGMENT ADVANCE.
     # The draw-for-draw mark diff settles this. Unity's step 6 on seed 5901 reads
     #   caseworkNeed x100, stayDuration, caseworkNeed x100, stayDuration, caseworkGen x2,
@@ -1732,26 +1501,11 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
         # Unity stamps arrivalRound at the DELIVERY instant, which is still pre-advance.
         w.clients.register_arrival(w.rng, count, _unity_round(w), facility, marks)
 
-    if day_changed:
-        # PASS 0 ALREADY RAN, before the vehicles drove (see the top of this function).
-        _rollover_pass(w, 1, marks, rolls)
-        w.segment = 1
-    else:
-        if CLOCK_V6:
-            _round_end(w, marks)          # OnRoundEnd precedes AdvanceTimeSegment
-        w.segment += 1
-        # SEGMENT 4 HAS NO INVOKE. GlobalClock.AdvanceTimeSegment returns early once the
-        # segment reaches roundsPerDay, before OnTimeSegmentChanged fires, so a day's invokes
-        # are 0, 1, 2, 3: nothing subscribed to the clock -- ageing, the tracker, generation,
-        # consumption -- runs on the last round of a day. The port aged and expired tasks
-        # there, one decrement per day too many.
-        # Every advance is an invoke since the A1 clock fix, segment 4 included:
-        # TaskSystem.OnTimeSegmentAdvanced decrements roundsRemaining with no segment
-        # gate, BuildingResourceStorage.OnRoundChanged consumes for newRound <=
-        # roundsPerDay, and CheckExpiredTasks runs on the Update after. Only the generation
-        # pass stays off segments 3 and 4.
-        if not (CLOCK_V6 and w.segment >= ROUNDS_PER_DAY):
-            _segment_invoke(w, marks, rolls, day_changed)
+    _round_end(w, marks)              # OnRoundEnd precedes AdvanceTimeSegment
+    w.segment += 1
+    # Reaching segment 4 fires no OnTimeSegmentChanged: AdvanceTimeSegment returns first.
+    if w.segment < ROUNDS_PER_DAY:
+        _segment_invoke(w, marks, rolls, False)
     w.generated = rolls
     # THE JOIN THAT MAKES THE SURROGATE SELF-DRIVING. generation_pass decides WHICH tasks
     # fire; without this the port produced a list of ids and created nothing, so it could
@@ -1765,8 +1519,6 @@ def step_round(w: World, marks=None, on_flood_enter=None, arrivals=()) -> None:
     # before this round's water moves.
     if w.segment >= ROUNDS_PER_DAY:
         cancel_overnight_food(w)          # food cannot be delivered overnight
-    if not CLOCK_V6:
-        _round_end(w, marks)
 
     if on_flood_enter is not None:
         on_flood_enter(w)
@@ -1879,10 +1631,7 @@ def answer(w: World, task_id, choice_id) -> bool:
         if repaired:
             w.economy.spend(w.tasks.REPAIR_COST, "other")
         else:
-            if CLOCK_V6:
-                w.economy.add_satisfaction(w.tasks.REPAIR_DELAY_SATISFACTION)
-            else:
-                w.economy.satisfaction = max(0, w.economy.satisfaction + w.tasks.REPAIR_DELAY_SATISFACTION)
+            w.economy.add_satisfaction(w.tasks.REPAIR_DELAY_SATISFACTION)
         return True
 
     entry = w.generated_specs.get(task_id)

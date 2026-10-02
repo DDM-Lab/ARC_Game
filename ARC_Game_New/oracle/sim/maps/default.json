@@ -1,25 +1,12 @@
 {
- "name": "default",
- "description": "The shipped CORA scene, dumped from the running game.",
+ "name": "bench_v6",
+ "description": "dumped from a running build on port 21061",
  "anchor": 0.5,
  "move_speed": 8.0,
  "simulation_duration": 10.0,
  "time_speed": 1,
  "fixed_delta": 0.3,
- "depots": [
-  [
-   -4,
-   -4
-  ],
-  [
-   2,
-   -4
-  ],
-  [
-   3,
-   5
-  ]
- ],
+ "depots": [],
  "road_cells": [
   [
    -14,
@@ -447,131 +434,107 @@
   ]
  ],
  "building_cell": {
-  "Community01": [
-   1,
-   5
+  "Community Amherst": [
+   -7,
+   -5
   ],
-  "Community02": [
+  "Community Charleston": [
    -10,
-   -3
+   -4
   ],
-  "Community03": [
-   9,
-   3
-  ],
-  "Kitchen_0": [
-   -8,
-   -3
+  "Community Trinity": [
+   -4,
+   4
   ],
   "Motel": [
-   -5,
-   4
+   -4,
+   -3
   ]
  },
  "facility_cell": {
   "Community Amherst": [
-   -10,
-   -3
+   -7,
+   -5
   ],
   "Community Charleston": [
-   1,
-   5
+   -10,
+   -4
   ],
   "Community Trinity": [
-   9,
-   3
-  ],
-  "Kitchen Alpha": [
-   -8,
-   -3
+   -4,
+   4
   ],
   "Motel": [
-   -5,
-   4
+   -4,
+   -3
   ]
  },
  "site_cell": {
-  "0": [
-   -8,
-   -3
-  ],
-  "1": [
-   4,
-   5
-  ],
-  "2": [
-   9,
-   3
-  ],
-  "3": [
-   -5,
-   -2
-  ],
-  "4": [
-   -6,
-   4
-  ],
-  "5": [
-   2,
-   5
-  ],
-  "6": [
-   3,
-   -4
-  ],
-  "7": [
-   -2,
-   -4
-  ],
-  "8": [
-   -2,
-   -4
-  ],
-  "9": [
-   -6,
+  "11": [
+   -12,
    -3
   ],
   "10": [
-   6,
-   -7
+   2,
+   5
   ],
-  "11": [
+  "9": [
+   11,
+   6
+  ],
+  "8": [
+   7,
+   3
+  ],
+  "7": [
+   4,
+   5
+  ],
+  "6": [
+   -7,
+   4
+  ],
+  "5": [
    -5,
-   -5
+   2
   ],
-  "12": [
+  "4": [
+   -3,
+   4
+  ],
+  "3": [
    1,
    5
   ],
-  "13": [
-   4,
-   -3
+  "2": [
+   10,
+   3
   ],
-  "14": [
-   -1,
-   5
+  "1": [
+   1,
+   -4
+  ],
+  "0": [
+   -2,
+   -4
   ]
  },
  "building_pos": {
-  "Community01": [
-   1.34,
-   7.09
+  "Community Amherst": [
+   -6.0,
+   -5.5
   ],
-  "Community02": [
-   -9.62,
-   -0.9
+  "Community Charleston": [
+   -10.0,
+   -1.5
   ],
-  "Community03": [
-   9.29,
-   2.8
-  ],
-  "Kitchen_0": [
-   -7.86,
-   -3.8956
+  "Community Trinity": [
+   -3.0,
+   6.5
   ],
   "Motel": [
-   -4.44,
-   6.17
+   -1.5,
+   -1.5
   ]
  }
 }

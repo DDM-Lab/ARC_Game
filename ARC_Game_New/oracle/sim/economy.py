@@ -163,13 +163,6 @@ def _reconcile_food(b) -> None:
         b["outstanding_need"] = owed - credit
 
 
-def _consumes(cfg, glob) -> bool:
-    """Whether a building type runs population-based consumption at all. Per-building when
-    the export has it, the old single global flag when it does not (a stale corpus)."""
-    enabled = cfg.get("consumptionEnabled")
-    return bool(glob.get("enabled", True)) if enabled is None else bool(enabled)
-
-
 C = load_economy_constants()
 
 
@@ -206,7 +199,7 @@ class Economy:
                  "assigned": 0, "trained": 0, "untrained": 0,
                  "resources": {"foodPacks": 0, "foodPacksCapacity": m_cap,
                                "population": 0, "populationCapacity": m_pop}}
-        order = C.get("prebuilt_order") if _corpus.V6 else None
+        order = C.get("prebuilt_order")
         if order:
             return [motel if kind == "Motel" else community(name) for name, kind in order]
         return [
@@ -306,7 +299,7 @@ class Economy:
         """SatisfactionAndBudget.AddSatisfaction. Clamped to [0, 100] on the old build; the
         bench-v6 build leaves it unclamped (ledger D13, an open design question)."""
         s = self.satisfaction + float(delta)
-        self.satisfaction = s if _corpus.V6 else max(0.0, min(100.0, s))
+        self.satisfaction = s
 
     def spend(self, amount: int, category: str) -> None:
         """SatisfactionAndBudget.RemoveBudget(amount, SpendCategory).
@@ -418,10 +411,9 @@ class Economy:
         for b in self.buildings:
             res = b.setdefault("resources", {})
             cfg = by_type.get(b["type"], {})
-            if _corpus.V6:
-                b["outstanding_need"] = 0     # a day's unpaid need is not carried over
+            b["outstanding_need"] = 0     # a day's unpaid need is not carried over
             # v6: communities keep their stock overnight (HandleDailyReset skips them).
-            if cfg.get("enableFoodWaste") and not (_corpus.V6 and b["type"] == "Community"):
+            if cfg.get("enableFoodWaste") and b["type"] != "Community":
                 res["foodPacks"] = 0
             if cfg.get("fillFoodToCapacityDaily") and b.get("status") == STATUS_IN_USE:
                 # Kitchens no longer produce per round; the day reset tops them straight up
@@ -440,28 +432,6 @@ class Economy:
                 cap = res.get("foodPacksCapacity")
                 room = start if cap is None else max(0, cap - (res.get("foodPacks") or 0))
                 res["foodPacks"] = (res.get("foodPacks") or 0) + min(start, room)
-
-    def production_tick(self) -> None:
-        """BuildingResourceStorage.HandleRoundProduction, once per clock invoke, BEFORE the
-        consumption cycle on that same invoke. Kitchen.prefab: roundProduction FoodPacks
-        amountPerRound 100, maxCapacity 200, enableFoodWaste 1, startingFoodPacks 0. So a
-        kitchen is wasted to nothing at the day change and refilled by the rollover's two
-        invokes (0 -> 100 -> 200), and tops back up to 200 the invoke after any 100-pack
-        load -- which is the 200/100/200 the captures show. Only operational buildings
-        produce. The port used to restock to 200 once a day and let the kitchen sit empty
-        in between, so second and third food orders found nothing to load."""
-        prod = C.get("production") or {}
-        for b in self.buildings:
-            cfg = prod.get(b.get("type"))
-            if not cfg or b.get("status") != STATUS_IN_USE:
-                continue
-            res = b.setdefault("resources", {})
-            cap = res.get("foodPacksCapacity")
-            if cap is None:
-                cap = cfg.get("maxCapacity")
-            have = res.get("foodPacks") or 0
-            room = max(0, (cap if cap is not None else 10**9) - have)
-            res["foodPacks"] = have + min(room, int(cfg.get("amountPerRound", 0)))
 
     def food_need_tick(self, day: int, segment: int) -> None:
         """bench-v6 BuildingResourceStorage.OnRoundChanged -> GenerateFoodNeedIfDue: a storage
@@ -483,60 +453,6 @@ class Economy:
                 continue
             b["outstanding_need"] = need
             _reconcile_food(b)
-
-    def consumption_tick(self, round_key=None) -> None:
-        """BuildingResourceStorage.OnRoundChanged -> HandlePopulationConsumptionCycle, once
-        per clock INVOKE, PER BUILDING.
-
-        Since the food overhaul each storage runs its own counter against its OWN interval
-        (Shelter 2, Motel 4, Community disabled), so there is no single global cadence any
-        more. `round_key` is Unity's `day*100 + segment` guard: a building eats at most once
-        per round however many times it is asked (round tick, or a delivery landing)."""
-        by_type = C.get("storage_by_type") or {}
-        glob = C.get("consumption") or {}
-        for b in self.buildings:
-            cfg = by_type.get(b.get("type"), {})
-            if not _consumes(cfg, glob):
-                continue
-            interval = int(cfg.get("consumptionRoundInterval")
-                           or glob.get("roundInterval", 4) or 4)
-            b["rounds_since_consumption"] = (b.get("rounds_since_consumption") or 0) + 1
-            if b["rounds_since_consumption"] >= interval:
-                # Unity resets the counter only when consumption actually RAN: a delivery
-                # that already fed this building this round leaves the counter standing, so
-                # the cycle's phase shifts with delivery timing (BUG_REPORTS E.3).
-                if self._consume_one(b, cfg, glob, round_key):
-                    b["rounds_since_consumption"] = 0
-
-    def _consume_one(self, b, cfg, glob, round_key) -> bool:
-        """ConsumeFoodForPopulationOncePerRound for one building. Returns whether it ran."""
-        if round_key is not None and b.get("last_consumption_round_key") == round_key:
-            return False
-        b["last_consumption_round_key"] = round_key
-        res = b.setdefault("resources", {})
-        people = res.get("population") or 0
-        if cfg.get("workersConsumeFoodToo", glob.get("workersConsumeFoodToo", True)):
-            # Mouths, not workforce points (BUG_REPORTS B27).
-            people += (b.get("trained") or 0) + (b.get("untrained") or 0)
-        per_person = int(cfg.get("foodPerPersonPerNRounds")
-                         or glob.get("foodPerPersonPerNRounds", 1) or 1)
-        need = people * per_person
-        if need > 0:
-            res["foodPacks"] = max(0, (res.get("foodPacks") or 0) - need)
-        return True
-
-    def consume_food(self, rounds_elapsed) -> None:
-        """Back-compat shim: the old whole-map tick, expressed through the per-building one.
-        Kept because tests and diagnostics call it directly with a round count."""
-        interval = int((C.get("consumption") or {}).get("roundInterval", 4) or 4)
-        if interval <= 0 or rounds_elapsed % interval:
-            return
-        by_type = C.get("storage_by_type") or {}
-        glob = C.get("consumption") or {}
-        for b in self.buildings:
-            cfg = by_type.get(b.get("type"), {})
-            if _consumes(cfg, glob):
-                self._consume_one(b, cfg, glob, None)
 
     def on_round_end(self) -> None:
         """RewardMetricsTracker.OnRoundEnded.
@@ -663,15 +579,9 @@ class Economy:
         return delta
 
     def add_food(self, name, amount, round_key=None) -> int:
-        """Deliver food packs. A facility holding food stops satisfying the `NeedsFood`
-        condition, which is what makes Unity's food requests STOP -- a port with static
-        storage asks forever.
-
-        Since the food overhaul the arrival ITSELF feeds the population
-        (`BuildingResourceStorage.AddResource` -> ConsumeFoodForPopulationOncePerRound), so
-        a delivery that lands is eaten in the same round rather than sitting until the next
-        tick. Pass `round_key` (day*100 + segment) so several drop-offs answering one
-        request do not each re-feed the building."""
+        """Deliver food packs (BuildingResourceStorage.AddResource): stored up to capacity, and
+        every arrival pays the facility's outstanding feeding-cycle need down at once
+        (ReconcileFoodAgainstOutstandingNeed). Returns the packs stored."""
         b = self.facility(name)
         if b is None or amount <= 0:
             return 0
@@ -680,13 +590,8 @@ class Economy:
         room = amount if cap is None else max(0, cap - (res.get("foodPacks") or 0))
         moved = min(amount, room)
         res["foodPacks"] = (res.get("foodPacks") or 0) + moved
-        if moved > 0 and _corpus.V6:
-            _reconcile_food(b)              # every arrival pays the outstanding need down
-        elif moved > 0:
-            cfg = (C.get("storage_by_type") or {}).get(b.get("type"), {})
-            glob = C.get("consumption") or {}
-            if _consumes(cfg, glob) and self._consume_one(b, cfg, glob, round_key):
-                b["rounds_since_consumption"] = 0
+        if moved > 0:
+            _reconcile_food(b)
         return moved
 
     @property

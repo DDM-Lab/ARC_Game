@@ -171,22 +171,7 @@ def _resource_ok(t, ctx, facility=None):
 
 def _food_need(f) -> int:
     """BuildingResourceStorage.GetFoodNeed for one facility dict."""
-    from .economy import C as _C
-    from . import corpus_paths
-    if corpus_paths.V6:
-        return int(f.get("outstanding_need") or 0)   # v6: GetFoodNeed() => outstandingFoodNeed
-    cfg = (_C.get("storage_by_type") or {}).get(f.get("type"), {})
-    glob = _C.get("consumption") or {}
-    # NO CONSUMPTION GATE. BuildingResourceStorage.GetFoodNeed() is population x rate minus
-    # stock and never looks at enablePopulationBasedConsumption, so a facility that does not
-    # eat still REPORTS a need and still raises its NeedsFood-gated food request. Gating here
-    # cost the port every Motel_FoodRequest_Second on the merged build.
-    res = f.get("resources") or {}
-    people = res.get("population") or 0
-    if cfg.get("workersConsumeFoodToo", glob.get("workersConsumeFoodToo", True)):
-        people += (f.get("trained") or 0) + (f.get("untrained") or 0)
-    per = int(cfg.get("foodPerPersonPerNRounds") or glob.get("foodPerPersonPerNRounds", 1) or 1)
-    return max(0, people * per - (res.get("foodPacks") or 0))
+    return int(f.get("outstanding_need") or 0)       # GetFoodNeed() => outstandingFoodNeed
 
 
 def _stateful(kind, current, target, comparison, key, ctx):
