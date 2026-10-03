@@ -77,7 +77,8 @@ def run(args):
     obs_config = ObsConfig(mark_unavailable_choices=True)
     env = GameEnv(unity_exe_path=args.exe, unity_port=args.port, auto_start_unity=True,
                         max_episode_steps=args.rounds + 5, manual_transfers=False, seed=args.seed,
-                        unity_log_path=args.unity_log)
+                        unity_log_path=args.unity_log,
+                        skip_end_of_day=False)   # every Unity stop, comparable with older dumps
     out = {"exe": args.exe, "seed": args.seed, "rounds": [], "first_task_example": None}
     built, deconstructed = set(), False
     states = gzip.open(args.states, "wt") if args.states else None

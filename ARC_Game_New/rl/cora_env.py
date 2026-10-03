@@ -41,7 +41,8 @@ class CoraEnvConfig:
     show_impacts: bool = True
     obs_encoding: str = "compact"         # compact | json | delta
     history: int = 1                      # turns the policy sees; delta diffs only when > 1
-    max_steps: int = 40                   # decision cap; a full game is 36 decisions and ends itself
+    max_steps: int = 40                   # decision cap; a full game is cora.env.DECISIONS (29) and ends itself
+    skip_end_of_day: bool = True          # roll through the end-of-day report stop (GameEnv)
     seed: Optional[int] = None
     map_config: Optional[str] = None      # map JSON, or "none" for the scene's built-in layout
     param_config: Optional[str] = None    # parameter CSV (default: the build's bundled sheet)
@@ -87,7 +88,8 @@ class CoraEnv:
                                 unity_port=c.port, max_episode_steps=c.max_steps, seed=c.seed,
                                 map_config=c.map_config, param_config=c.param_config,
                                 unity_log_path=c.unity_log, manual_transfers=c.manual_transfers,
-                                frame_capture=c.frame_capture, frame_dir=c.frame_dir)
+                                frame_capture=c.frame_capture, frame_dir=c.frame_dir,
+                                skip_end_of_day=c.skip_end_of_day)
         self.observation = None
         _, info = self.game.reset(seed=seed)
         info = dict(info, scenario=(self.game.game_state or {}).get("scenario"),

@@ -48,7 +48,7 @@ def parse_args(argv=None):
     ap.add_argument("--models", default=",".join(DEFAULT_MODELS))
     ap.add_argument("--episodes", type=int, default=20)
     ap.add_argument("--rounds", type=int, default=40,
-                    help="decision cap per game; a full game is 36 decisions and ends on its own")
+                    help="decision cap per game; a full game is 29 decisions and ends on its own")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--seed", type=int, default=None,
                     help="base seed; episode i plays seed+i, so two runs with one --seed play the same "

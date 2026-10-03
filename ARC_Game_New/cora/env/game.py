@@ -1,7 +1,7 @@
 """GameEnv: the game as a Gymnasium environment over the Unity gym server's TCP protocol.
 
 One step is one human decision point (see docs/ARCHITECTURE.md, turn contract): the actions run,
-then the game advances to the next decision. A full game is 36 steps.
+then the game advances to the next decision. A full game is DECISIONS (29) steps.
 
     observation  the game state dict Unity exports (GameStatePayload)
     action       indices into get_valid_actions() (cora.actions' menu for this state), as a list
@@ -32,10 +32,21 @@ from cora.actions import enumerate_actions
 from cora.env import unity_process
 from cora.scoring import COMPONENTS, score_components
 
-# The length of a game in decisions: the Day-1 setup decision, then per day a rollover decision
-# and four round decisions (7 days). A game ends itself after the last; step caps (bench --rounds,
-# CoraEnv max_steps) only guard against a game that does not.
-DECISIONS = 36
+# The length of a game in decisions: the Day-1 setup decision, then four round decisions on each of
+# days 2-8. The Unity clock also stops at the end of days 1-7 (after round 4, before "End Today"),
+# but in the GUI that stop is the end-of-day report -- the player takes no actions there -- so the
+# env rolls straight through it (skip_end_of_day). UNITY_STOPS counts every stop, which is what the
+# surrogate's lockstep and the Unity captures record. A game ends itself after the last decision;
+# step caps (bench --rounds, CoraEnv max_steps) only guard against a game that does not.
+DECISIONS = 29
+UNITY_STOPS = 36
+
+
+def at_end_of_day(game_state) -> bool:
+    """The clock is parked after a day's last round, before the rollover (and the game is not over)."""
+    s = (game_state or {}).get("sessionInfo") or {}
+    return (not s.get("isGameOver") and s.get("roundsPerDay") is not None
+            and int(s.get("currentRound", 0)) >= int(s["roundsPerDay"]))
 
 
 class GameEnv(gym.Env):
@@ -57,6 +68,7 @@ class GameEnv(gym.Env):
         frame_include_base64: bool = False,
         manual_transfers: bool = True,
         seed: Optional[int] = None,
+        skip_end_of_day: bool = True,
     ):
         """
         unity_exe_path      headless build to launch (None: connect to a running server)
@@ -75,6 +87,9 @@ class GameEnv(gym.Env):
                             human GUI's rule: transfers happen only through task choices.
         seed                scenario seed: the launch uses it, and each later reset uses
                             seed + reset count, so a run is a reproducible sequence of scenarios
+        skip_end_of_day     roll through the end-of-day stop (the GUI's report screen, no actions)
+                            into the next day's first round: DECISIONS steps a game. False steps at
+                            every Unity stop (UNITY_STOPS), as the parity captures do.
         """
         super().__init__()
         self.max_episode_steps = max_episode_steps
@@ -86,6 +101,7 @@ class GameEnv(gym.Env):
         self.frame_include_base64 = frame_include_base64
         self.manual_transfers = manual_transfers
         self.seed_value = seed
+        self.skip_end_of_day = skip_end_of_day
 
         self.game_state: Optional[dict] = None
         self.valid_actions: List[dict] = []
@@ -227,10 +243,9 @@ class GameEnv(gym.Env):
 
         # advance_time returns "game_over" (with the unchanged terminal state) when the game
         # has already ended; both carry a valid state.
-        resp = self.request({"type": "advance_time"})
-        if resp.get("type") not in ("game_state", "game_over"):
-            raise RuntimeError(f"advance_time failed: {resp.get('type')}")
-        self._read_state(resp)
+        resp = self._advance()
+        if self.skip_end_of_day and at_end_of_day(self.game_state):
+            resp = self._advance()                # the rollover; its reward folds into this step
 
         sab = self.game_state.get("satisfactionAndBudget", {})
         satisfaction = float(sab.get("satisfaction", 0.0))
@@ -259,6 +274,13 @@ class GameEnv(gym.Env):
             if resp.get(key):
                 info[key] = resp[key]
         return self.game_state, reward, terminated, truncated, info
+
+    def _advance(self) -> dict:
+        resp = self.request({"type": "advance_time"})
+        if resp.get("type") not in ("game_state", "game_over"):
+            raise RuntimeError(f"advance_time failed: {resp.get('type')}")
+        self._read_state(resp)
+        return resp
 
     def select_task_choice(self, task_id: int, choice_id: int) -> bool:
         """Answer a choice task the way the UI does (impacts + delivery). On refusal the game's

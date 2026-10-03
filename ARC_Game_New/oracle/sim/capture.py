@@ -5,13 +5,18 @@ use, resolved and executed by cora.executor -- with Unity's draw instrumentation
 (ARC_SNAPSHOT_DEBUG=1: [RNGMARK] / [RNGCTX] lines in the log), and writes the trace the
 lockstep tools read (oracle/sim/lockstep.py, obs_diff, parity):
 
-    <out>/staff_<seed>.json        one entry per decision: before / taken / after / calls
+    <out>/staff_<seed>.json        one entry per Unity clock stop: before / taken / after / calls
     <out>/staff_<seed>.log         the Unity log with the draw stream
     <out>/staff_<seed>.meta.json   build GUID, seed, decisions, plan source
 
 `taken` lists what the game was actually sent, in the order it was sent: task answers
 ({"kind": "choice", taskId, choiceId, stableTaskId}) and game actions ({"kind": "menu" | "staff",
 action_id, action_type, cost, ok, payload}). The surrogate replays exactly that.
+
+The trace records EVERY stop of the Unity clock (cora.env.UNITY_STOPS), including the end-of-day
+report stops the env normally rolls through, because the lockstep replays stop by stop. Plans and
+policies are per DECISION (cora.env.DECISIONS, the env's steps): at an end-of-day stop nothing is
+sent and the plan does not advance, which is exactly what the env's skip_end_of_day does.
 
 Plans:
     python -m oracle.sim.capture 5503 --noop
@@ -67,23 +72,29 @@ def _taken(before: dict, info: dict) -> list:
 
 def capture(seed: int, plan, out_dir: str, port: int, source: str, max_steps: int = 40) -> str:
     """`plan` is per-decision lists of (tool, args), or a callable(game, decision) -> calls."""
+    from cora.env import at_end_of_day
     from rl import CoraEnv, CoraEnvConfig
     os.makedirs(out_dir, exist_ok=True)
     out = os.path.abspath(os.path.join(out_dir, f"staff_{seed}.json"))
     if os.path.exists(out):
         raise SystemExit(f"refusing to overwrite {out}")
     os.environ["ARC_SNAPSHOT_DEBUG"] = "1"            # Unity reads it at startup
-    env = CoraEnv(CoraEnvConfig(seed=seed, port=port, max_steps=max_steps,
+    env = CoraEnv(CoraEnvConfig(seed=seed, port=port, max_steps=max_steps, skip_end_of_day=False,
                                 unity_log=out.replace(".json", ".log")))
     trace = []
     try:
         env.reset()
-        i = 0
+        i = d = 0                                     # Unity stop, decision
         while True:
             before = copy.deepcopy(env.game.game_state)
-            calls = plan(env.game, i) if callable(plan) else (plan[i] if i < len(plan) else [])
+            if at_end_of_day(before):                 # the report stop: no decision
+                decision, calls = None, []
+            else:
+                decision, d = d, d + 1
+                calls = plan(env.game, decision) if callable(plan) else \
+                    (plan[decision] if decision < len(plan) else [])
             _, reward, terminated, truncated, info = env.step(calls)
-            trace.append({"round": i, "before": before, "taken": _taken(before, info),
+            trace.append({"round": i, "decision": decision, "before": before, "taken": _taken(before, info),
                           "after": copy.deepcopy(env.game.game_state), "calls": info["calls"],
                           "reward": reward})
             sab = env.game.game_state.get("satisfactionAndBudget") or {}
@@ -96,9 +107,9 @@ def capture(seed: int, plan, out_dir: str, port: int, source: str, max_steps: in
     finally:
         env.close()
     json.dump(trace, open(out, "w"))
-    json.dump({"buildGUID": consts.get("buildGUID"), "seed": seed, "decisions": len(trace),
+    json.dump({"buildGUID": consts.get("buildGUID"), "seed": seed, "decisions": d, "stops": len(trace),
                "source": source}, open(out.replace(".json", ".meta.json"), "w"))
-    print(f"wrote {out} ({len(trace)} decisions)")
+    print(f"wrote {out} ({d} decisions, {len(trace)} Unity stops)")
     return out
 
 
@@ -126,7 +137,8 @@ def main():
             from bench.baselines.explore import explore
             policy = explore(policy, a.epsilon, a.explore_seed)
             source += f"+explore(eps={a.epsilon},seed={a.explore_seed})"
-        plan = lambda game, i: tool_calls(game, policy(game, i, 36))
+        from cora.env import DECISIONS
+        plan = lambda game, i: tool_calls(game, policy(game, i, DECISIONS))
     else:
         plan = _plan(a)
         source = "noop" if a.noop else (a.calls or f"{a.episode}#{a.index}")

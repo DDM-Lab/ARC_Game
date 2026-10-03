@@ -35,7 +35,11 @@ def make_fixture(capture_json: str) -> dict:
     meta = json.load(open(meta_path)) if os.path.exists(meta_path) else {}
     return {"seed": meta.get("seed"), "source": meta.get("source"), "buildGUID": meta.get("buildGUID"),
             "seed_state": list(seed_state(log)),
-            "steps": [{"taken": with_facility(s)} for s in trace],
+            # "decision" (captures since the env skips the end-of-day stop): the env decision a
+            # stop was, None at an end-of-day stop. Older captures acted at every stop.
+            "clock": "decisions" if trace and "decision" in trace[0] else "stops",
+            "steps": [{"taken": with_facility(s), **({"decision": s["decision"]} if "decision" in s else {})}
+                      for s in trace],
             "rng": [rng.get(i + 1) for i in range(len(trace))],
             "expected": [project_unity(s["after"]) for s in trace]}
 
@@ -92,6 +96,12 @@ def _label(source: str) -> str:
     return m.group(1) + (f"-explore{round(float(eps) * 100):02d}" if eps else "")
 
 
+def fixture_name(source, seed, clock) -> str:
+    """The fixture name both builders use. Captures on the env's decision clock are tagged -29;
+    older ones acted at all 36 Unity stops."""
+    return f"{_label(source or '')}{'-29' if clock == 'decisions' else ''}_{seed}"
+
+
 def main(argv):
     os.makedirs(FIXTURES, exist_ok=True)
     for d in argv:
@@ -99,10 +109,10 @@ def main(argv):
             if path.endswith(".meta.json"):
                 continue
             fx = make_fixture(path)
-            name = f"{_label(fx.get('source') or '')}_{fx['seed']}.json.gz"
+            name = fixture_name(fx.get("source"), fx["seed"], fx["clock"]) + ".json.gz"
             with gzip.open(os.path.join(FIXTURES, name), "wt") as f:
                 json.dump(fx, f, separators=(",", ":"))
-            print(f"{name}: {len(fx['steps'])} decisions, {len(check(fx))} differing")
+            print(f"{name}: {len(fx['steps'])} Unity stops, {len(check(fx))} differing")
     return 0
 
 

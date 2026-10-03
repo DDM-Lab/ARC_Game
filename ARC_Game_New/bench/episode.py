@@ -23,7 +23,7 @@ from cora.scoring import REWARD_WEIGHTS
 class RunConfig:
     """Everything an episode's settings depend on (one per benchmark invocation)."""
     policy: str = "llm"                 # "llm", "noop" or a baseline in bench.baselines.POLICIES
-    rounds: int = 40                    # decision cap; a full game is 36 decisions and ends itself
+    rounds: int = 40                    # decision cap; a full game is 29 decisions and ends itself
     prompt: str = cora_prompts.DEFAULT_PACK
     ablation: str = ""
     show_impacts: bool = True

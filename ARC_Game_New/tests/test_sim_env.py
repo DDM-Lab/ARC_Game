@@ -108,17 +108,28 @@ def test_export_matches_unity(name):
 @pytest.mark.parametrize("name", [n for n in NAMES
                                   if _policy(_load(os.path.join(PARITY, n + ".json.gz")).get("source"))])
 def test_native_play_matches_capture(name):
+    """The policy a capture recorded, playing the surrogate through SimEnv, takes Unity's actions
+    and ends on Unity's score. Captures on the decision clock are played as the env plays (the
+    end-of-day stop rolled through); older ones acted at every Unity stop."""
     from bench.baselines.common import tool_calls
     from cora import executor
+    from cora.env import DECISIONS, UNITY_STOPS
     from cora.scoring import score_components
     from oracle.sim.env import SimEnv
     fixture = _load(os.path.join(PARITY, name + ".json.gz"))
     policy = _policy(fixture["source"])
-    env = SimEnv(seed=fixture["seed"], max_episode_steps=40, manual_transfers=False)
+    by_decision = fixture.get("clock") == "decisions"
+    steps = ([s for s in fixture["steps"] if s.get("decision") is not None] if by_decision
+             else fixture["steps"])
+    if by_decision:      # an end-of-day stop sends nothing
+        assert all(not s["taken"] for s in fixture["steps"] if s.get("decision") is None)
+    env = SimEnv(seed=fixture["seed"], max_episode_steps=40, manual_transfers=False,
+                 skip_end_of_day=by_decision)
     env.reset()
+    total = DECISIONS if by_decision else UNITY_STOPS
     bad = []
-    for i, step in enumerate(fixture["steps"]):
-        results, (_, _r, term, trunc, info) = executor.execute_turn(env, tool_calls(env, policy(env, i, 36)))
+    for i, step in enumerate(steps):
+        results, (_, _r, term, trunc, info) = executor.execute_turn(env, tool_calls(env, policy(env, i, total)))
         mine = (sorted([r.choice["taskId"], r.choice["choiceId"]] for r in results
                        if r.choice is not None and r.status == "executed"),
                 [a.get("action_id") for a, res in zip(info.get("dispatched") or [], info.get("execution_results") or [])
@@ -133,7 +144,6 @@ def test_native_play_matches_capture(name):
     assert round(score_components(env.game_state["rewardMetrics"])["score"], 4) == fixture["expected"][-1]["score"]
 
 
-
 def test_clone_is_independent():
     """A clone plays forward exactly as the original would, and playing it leaves the original as it was."""
     from oracle.rollout import play
@@ -141,10 +151,11 @@ def test_clone_is_independent():
     from bench.baselines.common import tool_calls
     from bench.baselines import POLICIES
     from cora import executor
+    from cora.env import DECISIONS
     env = SimEnv(seed=5503, max_episode_steps=40, manual_transfers=False)
     env.reset()
     for i in range(10):
-        executor.execute_turn(env, tool_calls(env, POLICIES["combined"](env, i, 36)))
+        executor.execute_turn(env, tool_calls(env, POLICIES["combined"](env, i, DECISIONS)))
     before = digest(env.game_state)
     a, b = env.clone(), env.clone()
     ra, rb = play({"name": "combined"}, 5503, env=a), play({"name": "combined"}, 5503, env=b)
@@ -154,7 +165,7 @@ def test_clone_is_independent():
 
 def build(dirs):
     """sim_env fixtures from captures: per decision, digest() of Unity's own state."""
-    from oracle.sim.parity import _label
+    from oracle.sim.parity import fixture_name
     os.makedirs(ENV, exist_ok=True)
     for d in dirs:
         for path in sorted(glob.glob(os.path.join(d, "staff_*.json"))):
@@ -162,7 +173,8 @@ def build(dirs):
                 continue
             meta = json.load(open(path.replace(".json", ".meta.json")))
             trace = json.load(open(path))
-            name = f"{_label(meta.get('source') or '')}_{meta['seed']}"
+            name = fixture_name(meta.get("source"), meta["seed"],
+                                "decisions" if trace and "decision" in trace[0] else "stops")
             with gzip.open(os.path.join(ENV, name + ".json.gz"), "wt") as f:
                 json.dump({"seed": meta["seed"], "decisions": [digest(s["before"]) for s in trace]},
                           f, separators=(",", ":"))

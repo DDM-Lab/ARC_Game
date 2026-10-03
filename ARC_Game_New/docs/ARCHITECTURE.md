@@ -109,11 +109,13 @@ and every benchmark/RL record stores it.
 - **The map** comes from `StreamingAssets/map_config.json` (or `ARC_MAP_CONFIG`; `none` = the
   scene's built-in layout). It supplies layout only.
 - **The seed** seeds Unity's global RNG before the scene loads.
-- **Decision points:** a step ends wherever a human could next act. Day 1 is one decision, then
-  the GUI's frozen four-round setup step, then the "End Today" decision. Every later day has a
-  decision at the start of each of its four rounds (Round 1 shows the new day's tasks before it
-  simulates) and one at "End Today"; the day rollover is its own step with no simulation. A full
-  game is 36 decisions and 29 simulated rounds, in the GUI and in the gym alike.
+- **Decision points:** a step ends wherever a human acts. Day 1 is one decision, then the GUI's
+  frozen four-round setup. Every later day has a decision at the start of each of its four rounds
+  (Round 1 shows the new day's tasks before it simulates). After a day's last round the Unity
+  clock also stops for the end-of-day report, where the GUI player takes no actions; the env rolls
+  through that stop and the day rollover (`skip_end_of_day`, no simulation) into the next day's
+  Round 1. A full game is 29 decisions (`cora.env.DECISIONS`) over 36 Unity clock stops
+  (`UNITY_STOPS`); the surrogate's lockstep and the parity captures record every stop.
 
 Parity is checked with `analysis/diag_action_coverage.py`: a scripted, seeded game that uses
 every tool; `--compare a.json b.json` checks two runs round by round.
@@ -137,7 +139,7 @@ every tool; `--compare a.json b.json` checks two runs round by round.
 |---|---|
 | Tool-call executor | done in the benchmark and the router (officers' action tools and `propose_choices` packages; command tags retired); RL through CoraEnv |
 | Headless parameters, pinned map, scenario block | done |
-| Gym steps = human decision points (Day 1 setup, rollover step) | done |
+| Gym steps = human decision points (Day 1 setup; the end-of-day report stop rolled through) | done |
 | `cora/` package | done |
 | One turn record for every front end | benchmark and RL share CoraEnv's step info (calls with outcomes, game/* metrics); the router's turn log (router/episode_log.py) keeps its own shape, since an officer turn spans several tool steps and messages |
 | `bench/` split | done |

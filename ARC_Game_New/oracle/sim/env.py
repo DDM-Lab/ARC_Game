@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from cora import actions as _menu
-from cora.env.game import _metrics            # the same game/* keys as the Unity env
+from cora.env.game import _metrics, at_end_of_day   # the same game/* keys as the Unity env
 from cora.scoring import score_components
 
 import oracle.sim.sim as S
@@ -43,12 +43,13 @@ def _flood_map() -> FloodMap:
 
 class SimEnv:
     def __init__(self, seed: Optional[int] = None, max_episode_steps: int = 100,
-                 manual_transfers: bool = True, **_ignored):
+                 manual_transfers: bool = True, skip_end_of_day: bool = True, **_ignored):
         """seed: the Unity seed to play (-seed / ARC_SEED); reset(seed) overrides it.
         Unity-only GameEnv options (exe path, port, logs, frame capture) are accepted and ignored."""
         self.seed_value = seed
         self.max_episode_steps = max_episode_steps
         self.manual_transfers = manual_transfers
+        self.skip_end_of_day = skip_end_of_day       # GameEnv's: roll through the end-of-day stop
         self.world = None
         self.game_state: Dict[str, Any] = {}
         self.valid_actions: List[dict] = []
@@ -119,6 +120,9 @@ class SimEnv:
             executed.append(a)
         S.step(self.world)
         self._read_state()
+        if self.skip_end_of_day and at_end_of_day(self.game_state):
+            S.step(self.world)                        # the rollover, as GameEnv does
+            self._read_state()
 
         sab = self.game_state["satisfactionAndBudget"]
         satisfaction = float(sab["satisfaction"])
