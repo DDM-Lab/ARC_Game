@@ -31,6 +31,8 @@ ARC=${ARC_GAME_PATH:-/zfsauton/scratch/$USER/CORA/ARC_Game/ARC_Game_New}
 export ARC_GAME_PATH="$ARC"
 export ARC_HEADLESS_EXE="${ARC_HEADLESS_EXE:-$ARC/Build/Headless/Linux/ARC_Headless.x86_64}"
 export PYTHONUNBUFFERED=1
+# Model weights live in the scratch Hugging Face cache; compute nodes read it offline.
+export HF_HOME="${HF_HOME:-/zfsauton/scratch/$USER/.cache/huggingface}" HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 mkdir -p "/zfsauton/scratch/$USER/CORA/logs/bench"
 cd "$ARC"
 
@@ -49,8 +51,10 @@ ROUNDS=${ROUNDS:-40}   # decision cap; a full game is 36 decisions and ends itse
 # One Unity headless process per worker, each on its own TCP port (see run_episode's port_pool).
 # Unity is the CPU bottleneck for API models, so WORKERS ~ cpus-per-task is the right scale.
 WORKERS=${WORKERS:-8}
-# Job-unique base port so concurrent jobs on one node never collide.
-BASE_PORT=${BASE_PORT:-$(( 20000 + (${SLURM_JOB_ID:-0} * 64) % 40000 ))}
+# Job-unique base port so concurrent jobs on one node never collide. Kept in 20000-32767 (vLLM
+# takes BASE_PORT+900): above Ray's worker ports, below Linux's ephemeral range (32768-60999), where
+# outgoing connections take ports first and a Unity bind fails with "Address already in use".
+BASE_PORT=${BASE_PORT:-$(( 20000 + (${SLURM_JOB_ID:-0} % 180) * 64 ))}
 TAG=${TAG:-$(date +%m%d_%H%M)}
 OUT=${OUT:-benchmark_results/cluster_${MODE}_${TAG}}
 mkdir -p "$OUT"
@@ -113,9 +117,11 @@ if [ "$MODE" = "local" ]; then
   export VLLM_USE_FLASHINFER_SAMPLER=0 VLLM_WORKER_MULTIPROC_METHOD=spawn
   # Tool-call parser by family: Qwen2.5/Qwen3 emit JSON-in-<tool_call> (hermes); Qwen3.5 and later
   # emit the XML form (qwen3_xml), and hermes silently parses nothing. Those also need the qwen3
-  # reasoning parser, or </think> leaks into content.
+  # reasoning parser, or </think> leaks into content. gpt-oss speaks harmony: vLLM's `openai`
+  # tool parser (hermes would parse nothing); its reasoning channel is split off by vLLM itself.
   case "$MODEL" in
     *Qwen3.[5-9]*|*Qwen3.[1-9][0-9]*) : "${TOOL_PARSER:=qwen3_xml}"; REASONING=(--reasoning-parser qwen3) ;;
+    *gpt-oss*) : "${TOOL_PARSER:=openai}"; REASONING=() ;;
     *) : "${TOOL_PARSER:=hermes}"; REASONING=() ;;
   esac
   vllm serve "$MODEL" --port "$PORT" --max-model-len ${MAX_MODEL_LEN:-12288} \

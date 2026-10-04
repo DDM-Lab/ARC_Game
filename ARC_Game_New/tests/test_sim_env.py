@@ -163,6 +163,31 @@ def test_clone_is_independent():
     assert digest(env.game_state) == before and env.current_step == 10
     assert play({"name": "combined"}, 5503, env=env).score == ra.score
 
+
+@pytest.mark.parametrize("skip", [True, False])
+def test_rewards_sum_to_final_score(skip):
+    """An episode's step rewards sum to its final score (the end-of-day rollover's change folds into
+    the step that triggered it), and a game ends on its own after DECISIONS (or UNITY_STOPS) steps."""
+    from bench.baselines import POLICIES
+    from bench.baselines.common import tool_calls
+    from bench.baselines.explore import explore
+    from cora import executor
+    from cora.env import DECISIONS, UNITY_STOPS
+    from cora.scoring import score_components
+    from oracle.sim.env import SimEnv
+    for seed in (5501, 5502, 5503):
+        policy = explore(POLICIES["combined"], 0.25, seed)
+        env = SimEnv(seed=seed, max_episode_steps=40, manual_transfers=False, skip_end_of_day=skip)
+        env.reset()
+        total, steps = 0.0, 0
+        while True:
+            _, (_, reward, term, trunc, _i) = executor.execute_turn(env, tool_calls(env, policy(env, steps, DECISIONS)))
+            total += reward; steps += 1
+            if term or trunc:
+                break
+        assert term and steps == (DECISIONS if skip else UNITY_STOPS)
+        assert abs(total - score_components(env.game_state["rewardMetrics"])["score"]) < 1e-9
+
 def build(dirs):
     """sim_env fixtures from captures: per decision, digest() of Unity's own state."""
     from oracle.sim.parity import fixture_name
