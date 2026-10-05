@@ -48,6 +48,18 @@ def test_questions_are_well_formed_and_calls_execute():
     assert "executed" in statuses
 
 
+def test_reads_clef_answer_shapes():
+    """The exact shapes Clef's systemone() returns (joint_schema_model.systemone_answer): a noul is
+    {"noul": P(true)}, a score's probabilities are keyed by level string. Run 73566 read every noul
+    as false (the key was unknown) and so never staffed a building."""
+    decode = {"staff_0": ("staff", "Kitchen Alpha"), "hire_trained": ("hire", "trained")}
+    answers = {"staff_0": {"type": "noul", "noul": 0.83},
+               "hire_trained": {"type": "score", "score": 2.9, "confidence": 0.6,
+                                "probabilities": {"0": 0.05, "1": 0.05, "2": 0.1, "3": 0.6, "4": 0.1, "5": 0.1}}}
+    assert decision.tool_calls(answers, decode) == [("staff", {"site": "Kitchen Alpha"}),
+                                                    ("hire", {"kind": "trained", "count": 3})]
+
+
 def test_argmax_reads_each_answer_shape():
     decode = {"task_FOOD_X": ("task", "FOOD_X"), "build": ("build", None), "hire_trained": ("hire", "trained"),
               "train": ("train", None), "staff_0": ("staff", "Shelter Alpha")}

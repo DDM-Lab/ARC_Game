@@ -112,7 +112,8 @@ def _score(ans: dict, mode: str, rng) -> int:
 
 
 def _noul(ans: dict, mode: str, rng) -> bool:
-    for key in ("probability", "p_true", "true"):
+    # Clef's systemone answers a noul as {"type": "noul", "noul": P(true)}; other servers vary.
+    for key in ("noul", "probability", "p_true", "true"):
         if isinstance(ans.get(key), (int, float)):
             p = float(ans[key]); break
     else:
