@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from bench import decision
 from bench.baselines import POLICIES
 from bench.baselines.common import tool_calls
 from bench.images import MAP_GRID_JSON, decision_image
@@ -174,6 +175,16 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
             raw = rtrace = None; rtok = None; parsed_ok = None
             if policy == "noop":
                 dec = {"tool_calls": []}
+            elif policy == "decision":
+                # A decision model answers the turn's typed questions in one forward pass
+                # (bench.decision); its answers become the same tool calls an LLM would make.
+                try:
+                    calls, resp = decision.act(state, model, client)
+                except Exception as e:
+                    rec["error"] = f"decision model error r{rnd}: {e}"
+                    break
+                dec = {"tool_calls": calls}; raw = json.dumps(resp.get("answers") or {})
+                rtok = (resp.get("usage") or {}).get("total_tokens"); parsed_ok = True
             elif policy in POLICIES:
                 # A baseline picks from the menu; it acts through the same tool calls as a model.
                 # It plans against the game's length, not the decision cap.

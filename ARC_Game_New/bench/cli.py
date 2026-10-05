@@ -42,7 +42,7 @@ DEFAULT_MODELS = [
 
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(prog="python -m bench", description=__doc__.split("\n\n")[0])
-    ap.add_argument("--policy", choices=["llm", "noop", *POLICIES], default="llm",
+    ap.add_argument("--policy", choices=["llm", "decision", "noop", *POLICIES], default="llm",
                     help="llm = benchmark the --models; otherwise a baseline (no API): "
                          + ", ".join(POLICIES) + "; noop does nothing")
     ap.add_argument("--models", default=",".join(DEFAULT_MODELS))
@@ -103,6 +103,11 @@ def parse_args(argv=None):
 def _client(args):
     """The LLM client (None for baselines). ARC_ANTHROPIC_NATIVE=1 uses the native Anthropic SDK,
     which supports prompt caching."""
+    if args.policy == "decision":            # a /v1/systemone decision-model server (bench.decision)
+        from bench.decision import Client
+        if not args.base_url:
+            sys.exit("--policy decision needs --base-url (the decision model's /v1/systemone server)")
+        return Client(args.base_url, args.api_key or os.environ.get("ARC_API_KEY"))
     if args.policy != "llm":
         return None
     api_key = args.api_key or os.environ.get("ARC_API_KEY")
@@ -156,7 +161,7 @@ def main(argv=None):
         return
 
     client = _client(args)
-    models = ([m.strip() for m in args.models.split(",") if m.strip()] if args.policy == "llm"
+    models = ([m.strip() for m in args.models.split(",") if m.strip()] if args.policy in ("llm", "decision")
               else [args.policy])
     jobs = [(m, e) for m in models for e in range(args.episodes)]
     print(f"=== Benchmark: {len(models)} model(s) x {args.episodes} episodes = {len(jobs)} games, "
