@@ -18,6 +18,8 @@ ARC=${ARC_GAME_PATH:-/zfsauton/scratch/$USER/ARC_Game_ddm/ARC_Game_New}
 cd "$ARC"
 export ARC_GAME_PATH="$ARC" PYTHONUNBUFFERED=1 HF_HUB_OFFLINE=1
 PY=${PY:-/zfsauton/scratch/$USER/conda_envs/vllm027/bin/python}
+# The model server needs accelerate; the qwen35 env has it, with the torch (2.11) Clef was tested on.
+SERVER_PY=${SERVER_PY:-/zfsauton/scratch/$USER/conda_envs/qwen35/bin/python}
 MODEL_NAME=${MODEL_NAME:-clef-flash}
 CKPT=${CKPT:-/zfsauton/scratch/$USER/models/decision/Cloudflare__clef-flash}
 EPISODES=${EPISODES:-10}; SEED=${SEED:-5501}; WORKERS=${WORKERS:-4}
@@ -25,7 +27,7 @@ BP=$(( 20000 + (${SLURM_JOB_ID:-0} % 180) * 64 )); PORT=$((BP + 900))
 OUT=${OUT:-benchmark_results/decision_${MODEL_NAME}_${SLURM_JOB_ID:-local}}
 mkdir -p "$OUT"
 echo "=== $MODEL_NAME  job=${SLURM_JOB_ID:-local} node=$(hostname) $(git log --oneline -1) $(date)"
-$PY ops/serve_clef.py "$CKPT" --port $PORT --name "$MODEL_NAME" > "$OUT/server.log" 2>&1 &
+$SERVER_PY ops/serve_clef.py "$CKPT" --port $PORT --name "$MODEL_NAME" > "$OUT/server.log" 2>&1 &
 SRV=$!
 trap 'kill $SRV 2>/dev/null' EXIT
 for i in $(seq 1 90); do
