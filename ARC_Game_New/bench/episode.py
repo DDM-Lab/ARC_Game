@@ -34,6 +34,7 @@ class RunConfig:
     image_mode: str = "none"            # none | synthetic | real
     temperature: Optional[float] = None
     local: Optional[LocalOptions] = None
+    decision_rules: bool = True         # decision models get the system prompt as rules in the state
     base_seed: Optional[int] = None     # episode i plays seed base_seed + i
     map_config: Optional[str] = None
     log_dir: Optional[str] = None
@@ -179,7 +180,8 @@ def run_episode(model, ep_idx, cfg: RunConfig, client, port_pool):
                 # A decision model answers the turn's typed questions in one forward pass
                 # (bench.decision); its answers become the same tool calls an LLM would make.
                 try:
-                    calls, resp = decision.act(state, model, client)
+                    calls, resp = decision.act(state, model, client,
+                                               rules=cenv.system_prompt if cfg.decision_rules else None)
                 except Exception as e:
                     rec["error"] = f"decision model error r{rnd}: {e}"
                     break

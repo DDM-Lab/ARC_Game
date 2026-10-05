@@ -46,6 +46,8 @@ def parse_args(argv=None):
                     help="llm = benchmark the --models; otherwise a baseline (no API): "
                          + ", ".join(POLICIES) + "; noop does nothing")
     ap.add_argument("--models", default=",".join(DEFAULT_MODELS))
+    ap.add_argument("--decision-no-rules", action="store_true",
+                    help="--policy decision: give the model only the observation, not the rules text")
     ap.add_argument("--episodes", type=int, default=20)
     ap.add_argument("--rounds", type=int, default=40,
                     help="decision cap per game; a full game is 29 decisions and ends on its own")
@@ -150,7 +152,7 @@ def main(argv=None):
                     prompt=args.prompt, ablation=args.ablate, show_impacts=args.impacts,
                     manual_transfers=args.transfers == "manual", obs_encoding=args.obs_encoding,
                     history=args.history, image_mode=args.image_mode, temperature=args.temperature,
-                    local=local, base_seed=args.seed, map_config=args.map_config, log_dir=str(ulog_dir))
+                    local=local, decision_rules=not args.decision_no_rules, base_seed=args.seed, map_config=args.map_config, log_dir=str(ulog_dir))
     port_pool = queue.Queue()
     for w in range(args.workers):
         port_pool.put(args.base_port + w)

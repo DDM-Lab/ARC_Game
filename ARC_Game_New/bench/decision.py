@@ -8,8 +8,10 @@ pass, on the `POST /v1/systemone` request/response shape the TypeSafe Jev API de
     request   {"model", "state", "questions": {qid: {"type", "instructions", "criteria"}}}
     response  {"answers": {qid: {"choice" | "score" | ..., "probabilities": ...}}, "usage"}
 
-One turn becomes one request. The state is the observation the LLM arms see (cora.observation);
-the questions are the turn's action menu:
+One turn becomes one request. The state is the observation the LLM arms see (cora.observation),
+together with the game's rules -- the same system prompt the LLM arms get, so both arms decide on the
+same information (without it Clef-Flash staffed nothing: buildings only run when fully staffed, and
+nothing told it so). The questions are the turn's action menu:
 
     task_<TOKEN>       choice   one per open task with an available choice: its choices, or "skip"
     build              choice   none / shelter / kitchen / casework
@@ -56,8 +58,10 @@ def _task_questions(obs: dict) -> tuple[dict, dict]:
     return questions, decode
 
 
-def build_request(obs: dict, model: str) -> tuple[dict, dict]:
-    """(SystemOne request body, decode map qid -> how its answer becomes a tool call)."""
+def build_request(obs: dict, model: str, rules: Optional[str] = None) -> tuple[dict, dict]:
+    """(SystemOne request body, decode map qid -> how its answer becomes a tool call). `rules`, when
+    given, is the game's rules text (the LLM arms' system prompt) placed in the state beside the
+    observation."""
     questions, decode = _task_questions(obs)
     avail = obs.get("available") or {}
     sites = list(avail.get("buildSites") or [])
@@ -84,7 +88,8 @@ def build_request(obs: dict, model: str) -> tuple[dict, dict]:
         qid = f"staff_{i}"
         questions[qid] = {"type": "noul", "instructions": f"Staff '{name}' fully from the free workers now?"}
         decode[qid] = ("staff", name)
-    return {"model": model, "state": obs, "questions": questions}, decode
+    state = {"rules": rules, "observation": obs} if rules else obs
+    return {"model": model, "state": state, "questions": questions}, decode
 
 
 def _pick(options: list, probs: list, mode: str, rng: random.Random):
@@ -173,9 +178,10 @@ class Client:
             return json.load(r)
 
 
-def act(obs: dict, model: str, client, mode: str = "argmax", rng=None) -> tuple[list, dict]:
+def act(obs: dict, model: str, client, mode: str = "argmax", rng=None,
+        rules: Optional[str] = None) -> tuple[list, dict]:
     """One turn: (tool calls, the raw response) for the observation `obs`."""
-    body, decode = build_request(obs, model)
+    body, decode = build_request(obs, model, rules)
     if not body["questions"]:
         return [], {"answers": {}, "note": "nothing to decide"}
     resp = client(body)
