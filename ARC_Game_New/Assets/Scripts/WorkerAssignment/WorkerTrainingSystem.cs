@@ -11,7 +11,6 @@ public class WorkerTrainingSystem : MonoBehaviour
     [Header("Training Settings")]
     public int trainingCostPerWorker = 500;
     public int trainingDurationDays = 1;
-    public int satisfactionPerTrainedWorker = 2;
 
     [Header("System References")]
     public TaskSystem taskSystem;
@@ -125,6 +124,9 @@ public class WorkerTrainingSystem : MonoBehaviour
         
         trainingTask.roundsRemaining = 5;
         trainingTask.taskOfficer = TaskOfficer.WorkforceService;
+        // Same gap as WorkerAssignmentHandler: CreateTask never sets stableTaskId, so the
+        // TaskGenerated event below would record task_id: null without this.
+        trainingTask.stableTaskId = "uid-" + trainingTask.uid;
         
         trainingTask.agentMessages.Add(new AgentMessage(
             "Our workers are enthusiastic—but untrained. That might be enough for now, but if you want to make the most out of your limited resources, training is essential.",
@@ -153,6 +155,15 @@ public class WorkerTrainingSystem : MonoBehaviour
         workerCountInput.customDescription = $"Select how many untrained workers to train (${trainingCostPerWorker} per worker, {trainingDurationDays} {(trainingDurationDays == 1 ? "day" : "days")})";
 
         trainingTask.numericalInputs.Add(workerCountInput);
+
+        // Same gap as WorkerAssignmentHandler: this task type is created directly, never through
+        // CreateTaskFromData, so it never produced a TaskGenerated event, and had no CSV row at
+        // all until opened or resolved — found via the CSV completeness audit.
+        int seq = GameLogPanel.Instance?.LogSystemEvent("TaskGenerated",
+            new JsonObj().Add("task_id", trainingTask.stableTaskId).Add("facility", (string)null),
+            TaskSystem.BuildTaskContentJson(trainingTask)) ?? -1;
+        GameLogPanel.Instance?.LogWorkerAction(
+            $"Generated task: Responder Training Program ({maxTrainable} untrained workers eligible)", seq, trainingTask.stableTaskId);
 
         currentTrainingTask = trainingTask;
         
@@ -291,18 +302,9 @@ public class WorkerTrainingSystem : MonoBehaviour
         training.isCompleted = true;
         Debug.Log($"Completed training for {successfullyTrained} workers");
 
-        if (SatisfactionAndBudget.Instance != null && successfullyTrained > 0)
-        {
-            SatisfactionAndBudget.Instance.AddSatisfaction(successfullyTrained * satisfactionPerTrainedWorker,
-                "Completed training " + successfullyTrained + " workers");
-
-            ToastManager.ShowToast("Training complete! " + successfullyTrained + " workers are now trained and available. " + "Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion", ToastType.Info, true);
-            GameLogPanel.Instance?.LogMetricsChange("Satisfaction increased by " + (successfullyTrained * satisfactionPerTrainedWorker) + " for training completion");
-        }
-        else
-        {
-            ToastManager.ShowToast("Training complete! " + successfullyTrained + " workers are now trained and available", ToastType.Success, true);
-        }
+        // No flat satisfaction bonus for completing training: satisfaction comes only from the
+        // scoring formula (training rounds count as active in S_WorkerUse).
+        ToastManager.ShowToast("Training complete! " + successfullyTrained + " workers are now trained and available", ToastType.Success, true);
         GameLogPanel.Instance.LogWorkerAction("Training complete: " + successfullyTrained + " workers now trained and free");
     }
     

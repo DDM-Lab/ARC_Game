@@ -42,6 +42,7 @@ public class ClientRelocationHandler : MonoBehaviour
     // In-flight self-walk relocations, keyed by nothing (small list, scanned linearly).
     public class PendingRelocation
     {
+        public int walkId;
         public GameTask parentTask;
         public MonoBehaviour source;
         public MonoBehaviour destination;
@@ -56,6 +57,12 @@ public class ClientRelocationHandler : MonoBehaviour
     public event Action<PendingRelocation> OnRelocationArrived;
 
     private readonly List<PendingRelocation> pendingRelocations = new List<PendingRelocation>();
+
+    // Walk ids are stable for the life of a walk and never reused, so a state delta can refer
+    // to "walk 7" unambiguously. Restores bump the counter past any id they bring back.
+    static int nextWalkIdCounter = 1;
+    static int NextWalkId() => nextWalkIdCounter++;
+    static void ReserveWalkId(int id) { if (id >= nextWalkIdCounter) nextWalkIdCounter = id + 1; }
 
     /// <summary>Snapshot of all clients currently self-walking (departed, not yet arrived). For UI display.</summary>
     public List<PendingRelocation> GetPendingRelocations() => new List<PendingRelocation>(pendingRelocations);
@@ -77,6 +84,7 @@ public class ClientRelocationHandler : MonoBehaviour
         [System.Serializable]
         public class Walk
         {
+            public int walkId;
             public int parentTaskId = -1;
             public string sourceName;
             public string destinationName;
@@ -95,6 +103,7 @@ public class ClientRelocationHandler : MonoBehaviour
             if (r == null) continue;
             s.walks.Add(new Snapshot.Walk
             {
+                walkId          = r.walkId,
                 parentTaskId    = r.parentTask != null ? r.parentTask.taskId : -1,
                 sourceName      = r.source != null ? r.source.name : null,
                 destinationName = r.destination != null ? r.destination.name : null,
@@ -125,8 +134,10 @@ public class ClientRelocationHandler : MonoBehaviour
                                + $"to missing destination '{w.destinationName}'");
                 continue;
             }
+            ReserveWalkId(w.walkId);
             pendingRelocations.Add(new PendingRelocation
             {
+                walkId          = w.walkId > 0 ? w.walkId : NextWalkId(),
                 parentTask      = w.parentTaskId >= 0 && TaskSystem.Instance != null
                                     ? TaskSystem.Instance.GetTaskById(w.parentTaskId) : null,
                 source          = src,
@@ -402,6 +413,7 @@ public class ClientRelocationHandler : MonoBehaviour
 
         PendingRelocation relocation = new PendingRelocation
         {
+            walkId          = NextWalkId(),
             parentTask      = parentTask,
             source          = source,
             destination     = destination,
@@ -415,7 +427,13 @@ public class ClientRelocationHandler : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"[ClientRelocationHandler] {quantity} clients departing {source.name} → {destination.name} on foot, arriving in {relocationDelayRounds} round(s)");
-        GameLogPanel.Instance?.LogTaskEvent($"Client relocation for task '{parentTask?.taskTitle ?? "manual transfer"}': {quantity} clients departing {source.name} -> {destination.name}, arriving in {relocationDelayRounds} round(s)");
+        int relocQueuedSeq = GameLogPanel.Instance?.LogSystemEvent("RelocationQueued",
+            new JsonObj().Add("task_id", parentTask != null ? parentTask.stableTaskId : "manual"),
+            new JsonObj().Add("source", source.name).Add("destination", destination.name)
+                         .Add("quantity", quantity).Add("delayRounds", relocationDelayRounds)) ?? -1;
+        GameLogPanel.Instance?.LogTaskEvent(
+            $"Client relocation for task '{parentTask?.taskTitle ?? "manual transfer"}': {quantity} clients departing {source.name} -> {destination.name}, arriving in {relocationDelayRounds} round(s)",
+            relocQueuedSeq, parentTask?.stableTaskId);
 
         OnRelocationQueued?.Invoke(relocation);
     }
@@ -476,7 +494,12 @@ public class ClientRelocationHandler : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"[ClientRelocationHandler] {delivered} clients arrived on foot at {r.destination.name}");
-        GameLogPanel.Instance?.LogTaskEvent($"Client relocation for task '{r.parentTask?.taskTitle}': {delivered} clients arrived at {r.destination.name}");
+        int relocArrivedSeq = GameLogPanel.Instance?.LogSystemEvent("RelocationArrived",
+            new JsonObj().Add("task_id", r.parentTask != null ? r.parentTask.stableTaskId : "manual"),
+            new JsonObj().Add("destination", r.destination.name).Add("delivered", delivered)) ?? -1;
+        GameLogPanel.Instance?.LogTaskEvent(
+            $"Client relocation for task '{r.parentTask?.taskTitle}': {delivered} clients arrived at {r.destination.name}",
+            relocArrivedSeq, r.parentTask?.stableTaskId);
         ToastManager.ShowToast($"{delivered} clients arrived at {GetDisplayName(r.destination)}", ToastType.Info, true);
 
         OnRelocationArrived?.Invoke(r);
@@ -587,7 +610,12 @@ public class ClientRelocationHandler : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log($"[ClientRelocationHandler] Immediate {delivered} clients {source.name} → {dest.name}");
-            GameLogPanel.Instance?.LogTaskEvent($"Client relocation (immediate) for task '{parentTask.taskTitle}': {delivered} clients {source.name} -> {dest.name}");
+            int immediateArrivedSeq = GameLogPanel.Instance?.LogSystemEvent("RelocationArrived",
+                new JsonObj().Add("task_id", parentTask.stableTaskId),
+                new JsonObj().Add("source", source.name).Add("destination", dest.name).Add("delivered", delivered)) ?? -1;
+            GameLogPanel.Instance?.LogTaskEvent(
+                $"Client relocation (immediate) for task '{parentTask.taskTitle}': {delivered} clients {source.name} -> {dest.name}",
+                immediateArrivedSeq, parentTask.stableTaskId);
         }
 
         // People-based fulfillment accounting (B2): record how many actually moved.
