@@ -205,9 +205,23 @@ public class BuildingSelectionUI : MonoBehaviour
         UpdateBuildingInfo(buildingType);
 
         Debug.Log($"Showing confirmation panel for: {buildingType}");
-        GameLogPanel.Instance?.LogUIInteraction($"Building confirmation panel shown for: {buildingType}");
+        GameLogPanel.Instance?.LogUIInteraction($"Building confirmation panel shown for: {buildingType} | {lastShownBuildingInfo}");
     }
     
+    /// <summary>
+    /// The capacity a newly built facility of this type actually gets: the value authored on the
+    /// prefab BuildingSystem instantiates (sheet/GameDataManager capacities are not applied to
+    /// buildings — parity ledger D20). Read live so this panel can't drift from the prefab again.
+    /// </summary>
+    static int GetPrefabCapacity(GameObject prefab, ResourceType type, int fallback)
+    {
+        var storage = prefab != null ? prefab.GetComponentInChildren<BuildingResourceStorage>(true) : null;
+        if (storage == null) return fallback;
+        foreach (var c in storage.resourceCapacities)
+            if (c.resourceType == type) return c.maxCapacity;
+        return fallback;
+    }
+
     void UpdateBuildingInfo(BuildingType buildingType)
     {
         string buildingName = "";
@@ -220,17 +234,17 @@ public class BuildingSelectionUI : MonoBehaviour
         {
             case BuildingType.Kitchen:
                 buildingName = "Kitchen";
-                buildingDescription = "Provides food for clients.\nCapacity: 100 meals\n" + $"<color=#00FF00>Opening Time: {openingRounds} {roundLabel}</color>\n" +
+                buildingDescription = $"Provides food for clients.\nCapacity: {GetPrefabCapacity(buildingSystem.kitchenPrefab, ResourceType.FoodPacks, 200)} meals\n" + $"<color=#00FF00>Opening Time: {openingRounds} {roundLabel}</color>\n" +
                                         $"<color=#00FF00>Setup Cost: ${buildingSystem.kitchenConstructionCost}</color>";
                 break;
             case BuildingType.Shelter:
                 buildingName = "Shelter";
-                buildingDescription = "Provides lodging for clients.\nCapacity: 100 people\n" + $"<color=#00FF00>Opening Time: {openingRounds} {roundLabel}</color>\n" +
+                buildingDescription = $"Provides lodging for clients.\nCapacity: {GetPrefabCapacity(buildingSystem.shelterPrefab, ResourceType.Population, 100)} people\n" + $"<color=#00FF00>Opening Time: {openingRounds} {roundLabel}</color>\n" +
                                         $"<color=#00FF00>Setup Cost: ${buildingSystem.shelterConstructionCost}</color>";
                 break;
             case BuildingType.CaseworkSite:
                 buildingName = "Casework Site";
-                buildingDescription = "Handles administrative tasks.\nCapacity: 400 cases\n" + $"<color=#00FF00>Opening Time: {openingRounds} {roundLabel}</color>\n" +
+                buildingDescription = $"Handles administrative tasks.\nCapacity: {GetPrefabCapacity(buildingSystem.caseworkSitePrefab, ResourceType.Population, 50)} clients\n" + $"<color=#00FF00>Opening Time: {openingRounds} {roundLabel}</color>\n" +
                                         $"<color=#00FF00>Setup Cost: ${buildingSystem.caseworkSiteConstructionCost}</color>";
                 break;
         }
@@ -240,7 +254,13 @@ public class BuildingSelectionUI : MonoBehaviour
             
         if (buildingDescriptionText != null)
             buildingDescriptionText.text = buildingDescription;
+
+        // Plain-text copy of what the panel shows (rich-text tags stripped, one line), for the game log.
+        lastShownBuildingInfo = System.Text.RegularExpressions.Regex.Replace(buildingDescription, "<[^>]+>", "")
+            .Replace("\n", " | ");
     }
+
+    private string lastShownBuildingInfo = "";
     
     void OnConfirmBuild()
     {
