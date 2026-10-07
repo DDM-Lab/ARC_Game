@@ -106,7 +106,7 @@ MonoBehaviour:
     deliveryQuantity: 100
     deliveryPercentage: 0
     deliverAll: 0
-    costPerUnit: 10
+    costPerUnit: 72
     requireFullQuantity: 0
     sourceType: 1
     sourceBuilding: 0

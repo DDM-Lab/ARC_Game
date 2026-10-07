@@ -36,17 +36,17 @@ public class PlacedObjectData
 public class ScenarioParameters
 {
     // Economy
-    public int   initialBudget          = 15000; // have
-    public float dailyBudgetAllocation  = 2000f; // have
+    public int   initialBudget          = 8000; // have
+    public float dailyBudgetAllocation  = 5000f; // have
     public float foodCostPerPerson      = 10f;
     public float shelterCostPerPerson   = 5f;
     public float workerTrainingCost     = 500f;
 
     // Population & Satisfaction
-    public int   initialSatisfaction    = 80; // have
-    public int   totalPopulation        = 200; 
+    public int   initialSatisfaction    = 0; // have
+    public int   totalPopulation        = 1800; 
     public int   numberOfCommunities    = 3; // have
-    public int   residentsPerCommunity  = 40; // new
+    public int   residentsPerCommunity  = 600; // new
 
     // Workers
     public int   initialWorkerCount             = 10;
@@ -64,8 +64,8 @@ public class ScenarioParameters
 
     // Buildings
     public int kitchenCapacity    = 10; // new
-    public int shelterCapacity    = 10; // new
-    public int caseworkCapacity   = 10; // new
+    public int shelterCapacity    = 100; // new
+    public int caseworkCapacity   = 50; // new
     public int initialERVCount           = 3; // new
 
     // Tasks

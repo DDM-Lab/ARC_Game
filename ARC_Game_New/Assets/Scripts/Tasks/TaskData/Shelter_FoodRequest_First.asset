@@ -129,7 +129,7 @@ MonoBehaviour:
     prioritizeNearestSource: 1
     prioritizeNearestDestination: 0
   - choiceId: 2
-    choiceText: Rapid Response Vehicle deliver [food_amount] meals immediately ($10/meal).
+    choiceText: Rapid Response Vehicle deliver [food_amount] meals immediately ($72/meal).
     agentReasoning: 
     choiceImpacts:
     - impactType: 1
@@ -146,7 +146,7 @@ MonoBehaviour:
     deliveryQuantity: 100
     deliveryPercentage: 100
     deliverAll: 0
-    costPerUnit: 10
+    costPerUnit: 72
     requireFullQuantity: 0
     sourceType: 1
     sourceBuilding: 0
@@ -161,7 +161,7 @@ MonoBehaviour:
     prioritizeNearestDestination: 0
   - choiceId: 3
     choiceText: Rapid Response Vehicle deliver 2x[food_amount] meals immediately
-      ($10/meal).
+      ($72/meal).
     agentReasoning: 
     choiceImpacts:
     - impactType: 1
@@ -178,7 +178,7 @@ MonoBehaviour:
     deliveryQuantity: 100
     deliveryPercentage: 200
     deliverAll: 0
-    costPerUnit: 10
+    costPerUnit: 72
     requireFullQuantity: 0
     sourceType: 1
     sourceBuilding: 0

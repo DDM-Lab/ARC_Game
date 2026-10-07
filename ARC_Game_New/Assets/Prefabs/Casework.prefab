@@ -778,7 +778,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   resourceCapacities:
   - resourceType: 0
-    maxCapacity: 400
+    maxCapacity: 50
   startingResources: []
   startingFoodPacks: 0
   enableFoodWaste: 1
