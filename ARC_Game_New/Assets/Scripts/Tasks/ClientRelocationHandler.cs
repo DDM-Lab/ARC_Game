@@ -699,8 +699,11 @@ public class ClientRelocationHandler : MonoBehaviour
     /// <summary>
     /// Clients already walking toward this destination (departed but not yet arrived).
     /// Prevents over-booking a shelter/motel while multiple self-walk relocations are in flight.
+    /// Public so UI (FacilityInfoPanel) can show the same count it's already reserving space
+    /// against, for a destination (e.g. a CaseworkSite) whose only inbound path is this self-walk
+    /// one rather than a DeliverySystem-tracked delivery.
     /// </summary>
-    int GetPendingIncomingQuantity(MonoBehaviour destination)
+    public int GetPendingIncomingQuantity(MonoBehaviour destination)
     {
         int total = 0;
         foreach (var r in pendingRelocations)

@@ -700,13 +700,38 @@ public class FacilityInfoPanel : MonoBehaviour
     }
     void UpdateExpectedDeliveries(MonoBehaviour facility)
     {
-        // Kitchens are a food SOURCE (they don't receive deliveries) and CaseworkSite's
-        // population departs by self-walk, not a tracked delivery — "expected deliveries" has
-        // nothing meaningful to show for either, so hide it instead of displaying "0 expected".
+        // Kitchens are a food SOURCE (they don't receive deliveries), so "expected deliveries"
+        // has nothing meaningful to show there — hide it instead of displaying "0 expected".
         BuildingType? buildingType = facility.GetComponent<Building>()?.GetBuildingType();
-        if (buildingType == BuildingType.Kitchen || buildingType == BuildingType.CaseworkSite)
+        if (buildingType == BuildingType.Kitchen)
         {
             HideField(expectedDeliveriesText);
+            return;
+        }
+
+        // CaseworkSite's inbound clients arrive by self-walk (Shelter/Motel -> CaseworkSite),
+        // which never shows up as a DeliverySystem task, so it needs its own source. Reuses the
+        // exact count ClientRelocationHandler already reserves destination space against
+        // (GetEffectiveSpace), so this can never disagree with what capacity is actually held.
+        if (buildingType == BuildingType.CaseworkSite)
+        {
+            int walking = ClientRelocationHandler.Instance != null
+                ? ClientRelocationHandler.Instance.GetPendingIncomingQuantity(facility) : 0;
+
+            if (expectedDeliveriesText == null) return;
+
+            if (walking <= 0)
+            {
+                expectedDeliveriesText.gameObject.SetActive(true);
+                expectedDeliveriesText.text = "No clients currently on the way";
+                expectedDeliveriesText.color = normalColor;
+            }
+            else
+            {
+                expectedDeliveriesText.gameObject.SetActive(true);
+                expectedDeliveriesText.text = $"{walking} client(s) on the way — space is reserved for them";
+                expectedDeliveriesText.color = warningColor;
+            }
             return;
         }
 
