@@ -42,9 +42,11 @@ public class GuiInteractionRecorder : MonoBehaviour
 
     void Update()
     {
-        var ws = WebSocketManager.Instance;
-        if (ws == null || !ws.isConnected) return;           // nothing to log when offline
-
+        // Previously gated on WebSocketManager being connected ("nothing to log when offline"),
+        // which meant a standalone human-study build — no router, never connected — recorded
+        // ZERO clicks. Replayability is now a core requirement, and the player's raw click
+        // stream is part of the granular action record regardless of whether a router happens
+        // to be listening, so this no longer early-returns on connection state.
         for (int button = 0; button <= 1; button++)          // 0 = left, 1 = right
         {
             if (!Input.GetMouseButtonDown(button)) continue;
@@ -101,11 +103,22 @@ public class GuiInteractionRecorder : MonoBehaviour
             }
         }
 
-        WebSocketManager.Instance.SendGuiEvent(
+        // Null-safe now that this runs without a router connection (WebSocketManager.Instance
+        // can be entirely absent, not just disconnected, in a standalone build); the call is a
+        // no-op either way since every WebSocketManager send method gates on isConnected itself.
+        WebSocketManager.Instance?.SendGuiEvent(
             LastClickSeq, button,
             screenPos.x, screenPos.y, sw, sh, nx, ny,
             canvasName, clx, cly,
             hitName, hitType, hitPath);
+
+        GameLogPanel.Instance?.LogAction("Click",
+            new JsonObj().Add("element", hitName).Add("elementPath", hitPath).Add("elementType", hitType),
+            new JsonObj().Add("button", button == 0 ? "left" : "right")
+                         .Add("screenX", screenPos.x).Add("screenY", screenPos.y)
+                         .Add("normalizedX", nx).Add("normalizedY", ny)
+                         .Add("canvas", canvasName),
+            captureState: false); // a click changes no game state, so it carries no state delta
     }
 
     static string ComponentTypeName(GameObject go)
