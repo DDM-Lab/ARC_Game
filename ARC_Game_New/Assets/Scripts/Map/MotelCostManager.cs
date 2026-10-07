@@ -2,40 +2,38 @@ using UnityEngine;
 using System.Collections;
 
 /// <summary>
-/// Charges the 
-/// 's daily housing cost at the start of each new day.
+/// Charges the Motel's housing cost once per ROUND (GlobalClock.OnRoundEnd), at
+/// costPerPersonPerDay / roundsPerDay for every resident present at that round's end.
+/// A resident who stays a full day is therefore charged exactly costPerPersonPerDay,
+/// the same as the old once-per-day charge, but a resident who only stays part of a day
+/// is charged only for the rounds they were actually there.
 /// Attach to any persistent GameObject in MainScene (e.g. the Motel itself
 /// or a dedicated "Managers" object).
 ///
 /// Inspector:
-///   costPerPersonPerDay – dollars charged per motel resident per day (default $200)
+///   costPerPersonPerDay – dollars charged per motel resident per day (default $200),
+///                         split evenly across the day's rounds
 ///   motel               – drag the Motel PrebuiltBuilding here, or leave null
 ///                         to auto-find by name on Start
 /// </summary>
 public class MotelCostManager : MonoBehaviour
 {
     [Header("Cost Settings")]
-    [Tooltip("Dollars charged per motel resident per day")]
+    [Tooltip("Dollars charged per motel resident per day (billed in equal per-round installments)")]
     public float costPerPersonPerDay = 200f;
 
     [Header("References (auto-found if blank)")]
     public PrebuiltBuilding motel;
 
+    // The budget only takes whole dollars, so a per-round share that isn't a whole number
+    // (e.g. $250/day over 4 rounds = $62.50) carries its fraction into the next round's
+    // deduction instead of being truncated away — keeps the budget's total equal to the exact
+    // per-day figure. The lodging cost-efficiency score is fed the exact float amount directly.
+    private float unbilledFraction = 0f;
+
     void Start()
     {
-        if (GlobalClock.Instance != null)
-        {
-            GlobalClock.Instance.OnDayChanged += OnDayChanged;
-            GlobalClock.Instance.OnSimulationEnded += OnSimulationEnded;
-        }
-    }
-
-    // The last day never rolls over, so its lodging was never billed (BUG_REPORTS B28).
-    void OnSimulationEnded()
-    {
-        GlobalClock c = GlobalClock.Instance;
-        if (c != null && c.GetCurrentDay() == c.lastDay && c.GetCurrentTimeSegment() >= c.roundsPerDay)
-            ChargeMotelCost();
+        GlobalClock.OnRoundEnd += OnRoundEnd;
     }
 
     void EnsureMotelReference()
@@ -53,20 +51,22 @@ public class MotelCostManager : MonoBehaviour
 
     void OnDestroy()
     {
-        if (GlobalClock.Instance != null)
-        {
-            GlobalClock.Instance.OnDayChanged -= OnDayChanged;
-            GlobalClock.Instance.OnSimulationEnded -= OnSimulationEnded;
-        }
+        GlobalClock.OnRoundEnd -= OnRoundEnd;
     }
 
-    void OnDayChanged(int newDay)
+    void OnRoundEnd()
     {
-        // Don't charge on the very first day transition (day 1 → 2 means day 1 costs apply)
-        // OnDayChanged fires after ProceedToNextDay so newDay is already the new day number.
-        // We charge for the day that just ended (newDay - 1).
         ChargeMotelCost();
     }
+
+    int GetRoundsPerDay()
+    {
+        int rounds = GlobalClock.Instance != null ? GlobalClock.Instance.roundsPerDay : 4;
+        return Mathf.Max(1, rounds);
+    }
+
+    /// <summary>Per-person charge for a single round.</summary>
+    public float GetCostPerPersonPerRound() => costPerPersonPerDay / GetRoundsPerDay();
 
     void ChargeMotelCost()
     {
@@ -76,29 +76,33 @@ public class MotelCostManager : MonoBehaviour
         int residents = motel.GetCurrentPopulation();
         if (residents <= 0) return;
 
-        float totalCost = residents * costPerPersonPerDay;
+        float costPerRound = GetCostPerPersonPerRound();
+        float totalCost = residents * costPerRound;
 
-        SatisfactionAndBudget.Instance.RemoveBudget(
-            (int)totalCost,
-            SatisfactionAndBudget.SpendCategory.Lodging,
-            $"Motel housing: {residents} residents × ${costPerPersonPerDay:F0}/day");
-            
+        float owed = totalCost + unbilledFraction;
+        int billed = Mathf.FloorToInt(owed);
+        unbilledFraction = owed - billed;
+
+        if (billed > 0)
+        {
+            SatisfactionAndBudget.Instance.RemoveBudget(
+                billed,
+                SatisfactionAndBudget.SpendCategory.Lodging,
+                $"Motel housing: {residents} residents × ${costPerRound:0.##}/round");
+        }
+
         if (DailyReportData.Instance != null)
         {
             DailyReportData.Instance.RecordLodgingSpendCumulative(totalCost);
             DailyReportData.Instance.RecordLodgingCostToday(totalCost);
         }
-        // Toast notification
-        //ToastManager.ShowToast(
-        //    $"Motel cost: {residents} residents × ${costPerPersonPerDay:F0} = ${totalCost:F0} deducted",
-        //    ToastType.Info, true);
 
         // Game log
         GameLogPanel.Instance?.LogMetricsChange(
-            $"Motel daily cost charged: ${totalCost:F0} ({residents} residents × ${costPerPersonPerDay:F0}/person)");
+            $"Motel round cost charged: ${totalCost:0.##} ({residents} residents × ${costPerRound:0.##}/person/round)");
 
-        Debug.Log($"[MotelCostManager] Charged ${totalCost:F0} for {residents} motel residents.");
-        StartCoroutine(ShowToastDelayed(residents, totalCost));
+        Debug.Log($"[MotelCostManager] Charged ${totalCost:0.##} for {residents} motel residents this round.");
+        StartCoroutine(ShowToastDelayed(residents, costPerRound, totalCost));
     }
 
     /// <summary>Returns the cost that would be charged right now (for display in FacilityInfoPanel).</summary>
@@ -109,14 +113,14 @@ public class MotelCostManager : MonoBehaviour
         return motel.GetCurrentPopulation() * costPerPersonPerDay;
     }
 
-    private IEnumerator ShowToastDelayed(int residents, float totalCost)
+    private IEnumerator ShowToastDelayed(int residents, float costPerRound, float totalCost)
     {
-        // Wait until the end of the frame (or yield return null) 
+        // Wait until the end of the frame (or yield return null)
         // to let ToastManager finish clearing the old turn's elements.
         yield return new WaitForEndOfFrame();
 
         ToastManager.ShowToast(
-            $"Motel cost: {residents} residents × ${costPerPersonPerDay:F0} = ${totalCost:F0} deducted",
+            $"Motel cost: {residents} residents × ${costPerRound:0.##} = ${totalCost:0.##} deducted",
             ToastType.Info, true);
     }
 }
