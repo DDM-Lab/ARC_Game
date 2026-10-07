@@ -4,15 +4,25 @@ using UnityEngine;
 [System.Serializable]
 public class PendingAllocation
 {
+    // Stable identity for state deltas (see CanonicalState). Restored from snapshots, never reused.
+    public int allocId;
     public int amount;
     public int roundsRemaining;
     public string label; // for logging/UI
 
+    static int nextAllocId = 1;
+
     public PendingAllocation(int amount, int delayRounds, string label)
+        : this(nextAllocId++, amount, delayRounds, label) { }
+
+    public PendingAllocation(int allocId, int amount, int delayRounds, string label)
     {
+        // Snapshots written before ids existed carry 0; give those a fresh id rather than sharing 0.
+        this.allocId = allocId > 0 ? allocId : nextAllocId++;
         this.amount = amount;
         this.roundsRemaining = delayRounds;
         this.label = label;
+        if (this.allocId >= nextAllocId) nextAllocId = this.allocId + 1;
     }
 }
  
@@ -40,7 +50,7 @@ public class BudgetAllocationManager : MonoBehaviour
     {
         var s = new Snapshot();
         foreach (var p in pending)
-            if (p != null) s.pending.Add(new PendingAllocation(p.amount, p.roundsRemaining, p.label));
+            if (p != null) s.pending.Add(new PendingAllocation(p.allocId, p.amount, p.roundsRemaining, p.label));
         return s;
     }
 
@@ -49,7 +59,7 @@ public class BudgetAllocationManager : MonoBehaviour
         pending.Clear();
         if (s == null || s.pending == null) return;
         foreach (var p in s.pending)
-            if (p != null) pending.Add(new PendingAllocation(p.amount, p.roundsRemaining, p.label));
+            if (p != null) pending.Add(new PendingAllocation(p.allocId, p.amount, p.roundsRemaining, p.label));
     }
 
     void Awake()
