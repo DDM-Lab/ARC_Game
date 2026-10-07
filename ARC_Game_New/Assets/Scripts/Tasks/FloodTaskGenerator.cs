@@ -277,9 +277,9 @@ public class FloodTaskGenerator : MonoBehaviour
 
         if (wasLoaded && (task.status == TaskStatus.Expired || task.status == TaskStatus.Incomplete))
         {
-            SatisfactionAndBudget.Instance?.RemoveSatisfaction(30, "Abandoned Clients");
+            // No flat satisfaction penalty — satisfaction comes only from the scoring formula.
             ToastManager.ShowToast(
-                "Clients gave up waiting and returned to their origin. Satisfaction severely impacted.",
+                "Clients gave up waiting and returned to their origin.",
                 ToastType.Warning, true);
             GameLogPanel.Instance?.LogPlayerAction(
                 "Flood blockage: clients returned to origin due to inaction.");

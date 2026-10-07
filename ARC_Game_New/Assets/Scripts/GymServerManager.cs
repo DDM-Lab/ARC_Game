@@ -1323,9 +1323,9 @@ public class GymServerManager : MonoBehaviour
                           .Append(",\"shelterFloodComparison\":\"").Append(gdm.InitialShelterFloodComparison).Append('"')
                           .Append(",\"shelterFloodThreshold\":").Append(gdm.InitialShelterFloodThreshold)
                           .Append(",\"shelterFloodRadius\":").Append(gdm.InitialShelterFloodRadius)
-                          .Append(",\"satisfactionPerTrainedWorker\":")
-                          .Append(FindObjectOfType<WorkerTrainingSystem>() != null
-                                  ? FindObjectOfType<WorkerTrainingSystem>().satisfactionPerTrainedWorker : 0)
+                          // Flat training bonus removed (satisfaction comes only from the scoring
+                          // formula); key kept at 0 so consumers of this payload don't break.
+                          .Append(",\"satisfactionPerTrainedWorker\":0")
                           .Append('}');
                     }
                     // EVENT ORDER + BUILD IDENTITY. Which build produced this export, so a
