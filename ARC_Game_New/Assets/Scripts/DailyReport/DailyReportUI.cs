@@ -68,6 +68,10 @@ public class DailyReportUI : MonoBehaviour
     public SectionElement workerUsageSummary;
     public SectionElement workerEfficiencyScore;
 
+    [Header("Casework Efficiency Section")]
+    [Tooltip("Row for Casework Cost Efficiency. Leave empty to have it cloned at runtime from the Worker Cost Efficiency row and appended to the same layout group.")]
+    public SectionElement caseworkUtilizationTotal;
+
     //NEW
     [Header("Assumed Based on Scores Doc")]
     public int assumedTotalWorkerPoolSize = 200;
@@ -180,6 +184,7 @@ public class DailyReportUI : MonoBehaviour
 
     void Start()
     {
+        EnsureCaseworkEfficiencyRow();
         InitializeElements();
 
         // Hide final animation sections initially
@@ -223,6 +228,7 @@ public class DailyReportUI : MonoBehaviour
         InitializeSectionElement(workerUtilizationTotal);
         InitializeSectionElement(workerUsageSummary);
         InitializeSectionElement(workerEfficiencyScore);
+        InitializeSectionElement(caseworkUtilizationTotal);
         InitializeSectionElement(workerTotal);
         // worker satisfaction subscores
         InitializeSectionElement(workerStatus);
@@ -281,12 +287,64 @@ public class DailyReportUI : MonoBehaviour
         element.canvasGroup.alpha = 0f;
     }
 
+    /// <summary>
+    /// The scene's efficiency panel was authored with three rows (food, lodging, worker). If no
+    /// casework row is assigned in the Inspector, clone the worker row, append it to the same
+    /// layout group, and wire the clone's matching number/label/canvas components. Idempotent —
+    /// called from every entry point, since the report object may be activated (and Start run)
+    /// only after the first display call.
+    /// </summary>
+    void EnsureCaseworkEfficiencyRow()
+    {
+        if (caseworkUtilizationTotal != null && caseworkUtilizationTotal.layoutObject != null) return;
+
+        var template = workerUtilizationTotal;
+        if (template == null || template.layoutObject == null) return;
+
+        Transform src = template.layoutObject.transform;
+        GameObject clone = Instantiate(template.layoutObject, src.parent);
+        clone.name = "CaseworkCostEfficiency";
+        clone.transform.SetAsLastSibling();
+
+        caseworkUtilizationTotal = new SectionElement
+        {
+            layoutObject = clone,
+            numberText = FindCloneCounterpart(template.numberText, src, clone.transform),
+            labelText = FindCloneCounterpart(template.labelText, src, clone.transform),
+            sentenceText = FindCloneCounterpart(template.sentenceText, src, clone.transform),
+            canvasGroup = FindCloneCounterpart(template.canvasGroup, src, clone.transform),
+            progressBar = FindCloneCounterpart(template.progressBar, src, clone.transform),
+        };
+        if (caseworkUtilizationTotal.labelText != null)
+            caseworkUtilizationTotal.labelText.text = "Casework Cost Efficiency";
+
+        InitializeSectionElement(caseworkUtilizationTotal);
+    }
+
+    /// <summary>The component in a cloned hierarchy at the same relative path as `original` in the source.</summary>
+    static T FindCloneCounterpart<T>(T original, Transform sourceRoot, Transform cloneRoot) where T : Component
+    {
+        if (original == null) return null;
+
+        Transform t = original.transform;
+        if (t == sourceRoot) return cloneRoot.GetComponent<T>();
+        if (!t.IsChildOf(sourceRoot)) return null; // template references something outside its row
+
+        string path = t.name;
+        for (Transform p = t.parent; p != null && p != sourceRoot; p = p.parent)
+            path = p.name + "/" + path;
+
+        Transform match = cloneRoot.Find(path);
+        return match != null ? match.GetComponent<T>() : null;
+    }
+
     // =========================================================================
     // PUBLIC API
     // =========================================================================
 
     public void DisplayDailyReport(DailyReportMetrics metrics)
     {
+        EnsureCaseworkEfficiencyRow();
         currentMetrics = metrics;
         currentDayDisplay.text = GlobalClock.Instance.currentDay.ToString();
 
@@ -319,6 +377,7 @@ public class DailyReportUI : MonoBehaviour
         // Stop any running animations (safe - report was already saved at animation start)
         StopAllCoroutines();
         IsAnimatingReport = false;
+        EnsureCaseworkEfficiencyRow();
 
         currentMetrics = metrics;
         
@@ -492,7 +551,7 @@ public class DailyReportUI : MonoBehaviour
         Row("Food Waste Satisfaction", Score(m.satWasteScore));
         Row("Waste Status", $"{m.cumFoodPacksWasted} of {m.cumFoodPacksConsumedByClients + m.cumFoodPacksWasted} food packs requested went to waste (cumulative).");
         Row("Casework Satisfaction", Score(m.satCaseworkScore));
-        Row("Casework Status", $"{m.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework, out of {m.cumClientsRequestedCasework} clients who requested it.");
+        Row("Casework Status", $"{m.cumClientsCaseworkSatisfied} of {m.cumClientsRequestedCasework} clients who requested casework have been addressed (cumulative).");
 
         // --- Efficiency Panel (order matches DisplayEfficiencySections) ---
         Row("Food Cost Efficiency", Score(m.costFoodScore));
@@ -501,6 +560,8 @@ public class DailyReportUI : MonoBehaviour
         Row("Lodging Usage Summary", $"${m.cumLodgingSpend:F0} spent, {m.cumLodgingRoundsConsumed} bed-rounds used (cumulative).");
         Row("Worker Cost Efficiency", Score(m.costWorkerScore));
         Row("Worker Usage Summary", $"${(m.cumWorkerRequestCost + m.cumWorkerTrainingCost):F0} spent over {m.cumWorkingWorkerRounds} working-rounds.");
+        Row("Casework Cost Efficiency", Score(m.costCaseworkScore));
+        Row("Casework Usage Summary", $"${m.cumCaseworkSpend:F0} spent, {m.cumClientsCaseworkSatisfied} clients delivered to casework (cumulative).");
 
         // --- Receipt (order matches DisplayReceiptSection) ---
         Row("Opened Kitchen", Cost(m.todayKitchenOpenCost));
@@ -599,30 +660,32 @@ public class DailyReportUI : MonoBehaviour
         //F($"Food Waste Penalty = (food packs wasted / (consumed+wasted)) x 20% weight x 1000 | wasted={wasted}, consumed={foodConsumed} => score={currentMetrics.satWasteScore:F1}");
         F($"Food Waste Satisfaction = (1 - food packs wasted / (consumed+wasted)) x 20% weight x 1000 | wasted={wasted}, consumed={foodConsumed} => score={currentMetrics.satWasteScore:F1}");
 
-        //int caseworkAwaiting = d.GetCumulativeClientRoundsAwaitingCasework();
-        //int caseworkRequested = d.GetCumulativeClientsRequestedCasework();
-        //F($"Casework Satisfaction = (1 - client-rounds awaiting / total possible rounds) x 20% weight x 1000 | awaiting={caseworkAwaiting}, requested={caseworkRequested} => score={currentMetrics.satCaseworkScore:F1}");
-        int caseworkAwaiting = d.GetCumulativeClientRoundsAwaitingCasework();
+        int caseworkSatisfied = d.GetCumulativeClientsCaseworkSatisfied();
         int caseworkRequested = d.GetCumulativeClientsRequestedCasework();
-        int caseworkAvailableRounds = d.GetCumulativeCaseworkAvailableRounds();
-        F($"Casework Satisfaction = (1 - client-rounds awaiting / rounds remaining at each request's request-time, summed) x 20% weight x 1000 | awaiting={caseworkAwaiting}, requested={caseworkRequested}, available_rounds={caseworkAvailableRounds} => score={currentMetrics.satCaseworkScore:F1}");
+        F($"Casework Satisfaction = (clients addressed / clients who ever requested casework) x 20% weight x 1000 | satisfied={caseworkSatisfied}, requested={caseworkRequested} => score={currentMetrics.satCaseworkScore:F1}");
 
         float satTotal = currentMetrics.satFoodScore + currentMetrics.satLodgingScore + currentMetrics.satWorkerScore + currentMetrics.satWasteScore + currentMetrics.satCaseworkScore;
         F($"Satisfaction Total (this calculation) = Food+Lodging+Worker+Waste+Casework = {currentMetrics.satFoodScore:F1}+{currentMetrics.satLodgingScore:F1}+{currentMetrics.satWorkerScore:F1}+{currentMetrics.satWasteScore:F1}+{currentMetrics.satCaseworkScore:F1} = {satTotal:F1}");
 
-        // ── Cost-efficiency subscores (cumulative $/unit, each weighted 1/3 of 1000) ──
+        // ── Cost-efficiency subscores (cumulative $/unit, each weighted 1/4 of 1000) ──
+        // normalized(raw) = clamp01(1 - (raw - min) / (49 x min)): 1.0 at or below min, 0 at 50x min.
+        static string Min(float? m) => m.HasValue ? $"${m.Value:F3}" : "undefined";
+
         float foodSpend = d.GetCumulativeFoodSpend();
-        F($"Food Cost Efficiency = normalized($ spent / packs consumed) x 1/3 weight x 1000 | spent=${foodSpend:F0}, consumed={foodConsumed} (of which community delivered={communityFoodUsed}) => score={currentMetrics.costFoodScore:F1}");
+        F($"Food Cost Efficiency = normalized($ spent / packs consumed) x 1/4 weight x 1000 | spent=${foodSpend:F0} (kitchen builds + food-task costs incl. fast food), consumed={foodConsumed} (of which community delivered={communityFoodUsed}), min={Min(d.GetFoodCostMin())}/pack => score={currentMetrics.costFoodScore:F1}");
 
         float lodgingSpend = d.GetCumulativeLodgingSpend();
-        F($"Lodging Cost Efficiency = normalized($ spent / bed-rounds consumed) x 1/3 weight x 1000 | spent=${lodgingSpend:F0}, bed-rounds consumed={lodgingConsumed} => score={currentMetrics.costLodgingScore:F1}");
+        F($"Lodging Cost Efficiency = normalized($ spent / bed-rounds consumed) x 1/4 weight x 1000 | spent=${lodgingSpend:F0} (shelter builds + lodging-task costs + motel billed per round), bed-rounds consumed={lodgingConsumed}, min={Min(d.GetLodgingCostMin())}/bed-round => score={currentMetrics.costLodgingScore:F1}");
 
         float workerReqCost = d.GetCumulativeWorkerRequestCost();
         float workerTrainCost = d.GetCumulativeWorkerTrainingCost();
-        F($"Worker Cost Efficiency = normalized($ spent / working-rounds) x 1/3 weight x 1000 | request cost=${workerReqCost:F0}, training cost=${workerTrainCost:F0}, working_rounds={workingRounds} => score={currentMetrics.costWorkerScore:F1}");
+        F($"Worker Cost Efficiency = normalized($ spent / working-rounds) x 1/4 weight x 1000 | request cost=${workerReqCost:F0} (incl. starting roster), training cost=${workerTrainCost:F0}, working_rounds={workingRounds}, min={Min(d.GetWorkerCostMin())}/worker-round => score={currentMetrics.costWorkerScore:F1}");
 
-        float costTotal = currentMetrics.costFoodScore + currentMetrics.costLodgingScore + currentMetrics.costWorkerScore;
-        F($"Cost Efficiency Total (this calculation) = Food+Lodging+Worker = {currentMetrics.costFoodScore:F1}+{currentMetrics.costLodgingScore:F1}+{currentMetrics.costWorkerScore:F1} = {costTotal:F1}");
+        float caseworkSpend = d.GetCumulativeCaseworkSpend();
+        F($"Casework Cost Efficiency = normalized($ spent / clients delivered to casework) x 1/4 weight x 1000 | spent=${caseworkSpend:F0} (casework site builds), clients delivered={caseworkSatisfied}, min={Min(d.GetCaseworkCostMin())}/client => score={currentMetrics.costCaseworkScore:F1}");
+
+        float costTotal = currentMetrics.costFoodScore + currentMetrics.costLodgingScore + currentMetrics.costWorkerScore + currentMetrics.costCaseworkScore;
+        F($"Cost Efficiency Total (this calculation) = Food+Lodging+Worker+Casework = {currentMetrics.costFoodScore:F1}+{currentMetrics.costLodgingScore:F1}+{currentMetrics.costWorkerScore:F1}+{currentMetrics.costCaseworkScore:F1} = {costTotal:F1}");
 
         // ── Per-category Efficiency Scores — today-only (not cumulative), not currently rendered on screen ──
         F($"Kitchen Efficiency Score = 5.0 - (food packs in storage x 0.05) | food_in_storage={currentMetrics.currentFoodInStorage} => score={currentMetrics.kitchenEfficiencyScore:F1}");
@@ -689,22 +752,24 @@ public class DailyReportUI : MonoBehaviour
 
         yield return StartCoroutine(AnimateSectionElement(caseworkTotal, currentMetrics.satCaseworkScore, "Casework Satisfaction", 200f));
         yield return StartCoroutine(AnimateSectionElement(caseworkStatus,
-            $"{currentMetrics.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework, out of {currentMetrics.cumClientsRequestedCasework} clients who requested it."));
+            $"{currentMetrics.cumClientsCaseworkSatisfied} of {currentMetrics.cumClientsRequestedCasework} clients who requested casework have been addressed (cumulative)."));
     }
 
     IEnumerator DisplayEfficiencySections()
     {
-        yield return StartCoroutine(AnimateSectionElement(foodUtilizationTotal, currentMetrics.costFoodScore, "Food Cost Efficiency", 1000f / 3f));
+        yield return StartCoroutine(AnimateSectionElement(foodUtilizationTotal, currentMetrics.costFoodScore, "Food Cost Efficiency", 250f));
         yield return StartCoroutine(AnimateSectionElement(foodUsageSummary,
             $"${currentMetrics.cumFoodSpend:F0} spent, {currentMetrics.cumFoodPacksConsumedByClients} packs consumed (cumulative)."));
 
-        yield return StartCoroutine(AnimateSectionElement(shelterUtilizationTotal, currentMetrics.costLodgingScore, "Lodging Cost Efficiency", 1000f / 3f));
+        yield return StartCoroutine(AnimateSectionElement(shelterUtilizationTotal, currentMetrics.costLodgingScore, "Lodging Cost Efficiency", 250f));
         yield return StartCoroutine(AnimateSectionElement(shelterUsageSummary,
             $"${currentMetrics.cumLodgingSpend:F0} spent, {currentMetrics.cumLodgingRoundsConsumed} bed-rounds used (cumulative)."));
 
-        yield return StartCoroutine(AnimateSectionElement(workerUtilizationTotal, currentMetrics.costWorkerScore, "Worker Cost Efficiency", 1000f / 3f));
+        yield return StartCoroutine(AnimateSectionElement(workerUtilizationTotal, currentMetrics.costWorkerScore, "Worker Cost Efficiency", 250f));
         yield return StartCoroutine(AnimateSectionElement(workerUsageSummary,
             $"${(currentMetrics.cumWorkerRequestCost + currentMetrics.cumWorkerTrainingCost):F0} spent over {currentMetrics.cumWorkingWorkerRounds} working-rounds."));
+
+        yield return StartCoroutine(AnimateSectionElement(caseworkUtilizationTotal, currentMetrics.costCaseworkScore, "Casework Cost Efficiency", 250f));
     }
 
     //IEnumerator DisplayEfficiencySections()
@@ -1149,9 +1214,10 @@ public class DailyReportUI : MonoBehaviour
         currentMetrics.workerWorkingSatScore = workingScore;
         currentMetrics.workerTrainingSatScore = trainingScore;
 
-        currentMetrics.costFoodScore = d.C_Food() * (1f / 3f) * 1000f;
-        currentMetrics.costLodgingScore = d.C_Lodging() * (1f / 3f) * 1000f;
-        currentMetrics.costWorkerScore = d.C_Worker() * (1f / 3f) * 1000f;
+        currentMetrics.costFoodScore = d.C_Food() * 0.25f * 1000f;
+        currentMetrics.costLodgingScore = d.C_Lodging() * 0.25f * 1000f;
+        currentMetrics.costWorkerScore = d.C_Worker() * 0.25f * 1000f;
+        currentMetrics.costCaseworkScore = d.C_Casework() * 0.25f * 1000f;
 
         currentMetrics.finalSatisfactionValue = SatisfactionAndBudget.Instance.GetCurrentSatisfaction();
         currentMetrics.finalEfficiencyValue = SatisfactionAndBudget.Instance.GetCurrentEfficiency();   
@@ -1167,14 +1233,15 @@ public class DailyReportUI : MonoBehaviour
         currentMetrics.cumIdleWorkerRounds = d.GetCumulativeIdleWorkerRounds();
         currentMetrics.cumWorkingWorkerRounds = d.GetCumulativeWorkingWorkerRounds();
         currentMetrics.cumTrainingWorkerRounds = d.GetCumulativeTrainingWorkerRounds();
-        currentMetrics.cumClientRoundsAwaitingCasework = d.GetCumulativeClientRoundsAwaitingCasework();
         currentMetrics.cumClientsRequestedCasework = d.GetCumulativeClientsRequestedCasework();
+        currentMetrics.cumClientsCaseworkSatisfied = d.GetCumulativeClientsCaseworkSatisfied();
         currentMetrics.cumLodgingRoundsConsumed = d.GetCumulativeLodgingRoundsConsumed();
         currentMetrics.cumLodgingRoundsNeeded = d.GetCumulativeLodgingRoundsNeeded();
         currentMetrics.cumFoodSpend = d.GetCumulativeFoodSpend();
         currentMetrics.cumLodgingSpend = d.GetCumulativeLodgingSpend();
         currentMetrics.cumWorkerRequestCost = d.GetCumulativeWorkerRequestCost();
         currentMetrics.cumWorkerTrainingCost = d.GetCumulativeWorkerTrainingCost();
+        currentMetrics.cumCaseworkSpend = d.GetCumulativeCaseworkSpend();
 
         currentMetrics.foodSatisfaction = CalculateFoodSatisfactionTotal();
         currentMetrics.lodgingSatisfaction = CalculateLodgingSatisfactionTotal();
@@ -1219,23 +1286,25 @@ public class DailyReportUI : MonoBehaviour
         SetSectionSentence(wasteStatus, $"{metrics.cumFoodPacksWasted} of {metrics.cumFoodPacksConsumedByClients + metrics.cumFoodPacksWasted} food packs requested went to waste (cumulative).");
 
         SetSectionValueFormatted(caseworkTotal, metrics.satCaseworkScore, 200);
-        // SetSectionSentence(caseworkStatus, $"{metrics.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework.");
-        SetSectionSentence(caseworkStatus, $"{metrics.cumClientRoundsAwaitingCasework} client-rounds still awaiting casework, out of {metrics.cumClientsRequestedCasework} clients who requested it.");
+        SetSectionSentence(caseworkStatus, $"{metrics.cumClientsCaseworkSatisfied} of {metrics.cumClientsRequestedCasework} clients who requested casework have been addressed (cumulative).");
 
         SetSectionValueFormatted(foodUtilizationTotal, metrics.costFoodScore);
         SetSectionSentence(foodUsageSummary, $"${metrics.cumFoodSpend:F0} spent, {metrics.cumFoodPacksConsumedByClients} packs consumed.");
-        SetSectionValueFormatted(kitchenEfficiencyScore, metrics.costFoodScore, 333);
+        SetSectionValueFormatted(kitchenEfficiencyScore, metrics.costFoodScore, 250);
 
         SetSectionValueFormatted(shelterUtilizationTotal, metrics.costLodgingScore);
         SetSectionSentence(shelterUsageSummary, $"${metrics.cumLodgingSpend:F0} spent, {metrics.cumLodgingRoundsConsumed} bed-rounds used.");
-        SetSectionValueFormatted(shelterEfficiencyScore, metrics.costLodgingScore, 333);
+        SetSectionValueFormatted(shelterEfficiencyScore, metrics.costLodgingScore, 250);
 
-        SetSectionValueFormatted(workerUtilizationTotal, metrics.costWorkerScore, 333);
+        SetSectionValueFormatted(workerUtilizationTotal, metrics.costWorkerScore, 250);
         // SetSectionSentence(workerUsageSummary, $"${(metrics.cumWorkerRequestCost + metrics.cumWorkerTrainingCost):F0} spent over {metrics.cumWorkingWorkerRounds} working-rounds.");
         SetSectionSentence(workerStatus, $"Idle: {metrics.cumIdleWorkerRounds} | Working: {metrics.cumWorkingWorkerRounds} | Training: {metrics.cumTrainingWorkerRounds}");
-        SetSectionValueFormatted(workerEfficiencyScore, metrics.costWorkerScore, 333);
+        SetSectionValueFormatted(workerEfficiencyScore, metrics.costWorkerScore, 250);
 
-        float totalCostEff = metrics.costFoodScore + metrics.costLodgingScore + metrics.costWorkerScore;
+        SetSectionValueFormatted(caseworkUtilizationTotal, metrics.costCaseworkScore, 250);
+        if (caseworkUtilizationTotal?.labelText != null) caseworkUtilizationTotal.labelText.text = "Casework Cost Efficiency";
+
+        float totalCostEff = metrics.costFoodScore + metrics.costLodgingScore + metrics.costWorkerScore + metrics.costCaseworkScore;
         SetSectionValueFormatted(budgetEfficiencyTotal, totalCostEff);
         if (budgetUsageSummary?.layoutObject != null) budgetUsageSummary.layoutObject.SetActive(false);
         if (budgetEfficiencyScore?.layoutObject != null) budgetEfficiencyScore.layoutObject.SetActive(false);
@@ -1466,6 +1535,7 @@ public class DailyReportUI : MonoBehaviour
         ShowSectionElement(workerUtilizationTotal);
         ShowSectionElement(workerUsageSummary);
         ShowSectionElement(workerEfficiencyScore);
+        ShowSectionElement(caseworkUtilizationTotal);
 
         ShowSectionElement(budgetEfficiencyTotal);
         ShowSectionElement(budgetUsageSummary);
@@ -1752,6 +1822,7 @@ public class DailyReportUI : MonoBehaviour
         ResetSectionElement(workerUtilizationTotal);
         ResetSectionElement(workerUsageSummary);
         ResetSectionElement(workerEfficiencyScore);
+        ResetSectionElement(caseworkUtilizationTotal);
 
         ResetSectionElement(budgetEfficiencyTotal);
         ResetSectionElement(budgetUsageSummary);
