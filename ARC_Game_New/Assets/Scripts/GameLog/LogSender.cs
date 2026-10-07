@@ -31,6 +31,15 @@ public class LogSender : MonoBehaviour
     public SendStatus CurrentStatus { get; private set; } = SendStatus.Idle;
     public string LastStatusMessage { get; private set; } = "";
 
+    // True only after the server has acknowledged the end-of-game ("final") upload. A day
+    // checkpoint succeeding does not count: the survey hand-off waits on this, not on CurrentStatus.
+    public bool FinalUploadConfirmed { get; private set; }
+
+    // Identifies the newest end-of-game upload. Only the ack of that upload can set
+    // FinalUploadConfirmed, so an older request (e.g. a debug send, or one still in flight when
+    // the end of game starts) cannot confirm the end-of-game save.
+    int finalUploadId;
+
     public static event Action<SendStatus, string> OnSendComplete;
 
     private void Awake()
@@ -56,6 +65,16 @@ public class LogSender : MonoBehaviour
 
     void StartUpload(string uploadKind, int checkpointDay)
     {
+        // A new end-of-game upload supersedes any earlier one, even if this call ends up not
+        // posting (already sending): an earlier confirmation must not count for it. Done before
+        // any early return so FinalUploadConfirmed can never be left stale.
+        bool isFinal = uploadKind == "final";
+        if (isFinal)
+        {
+            FinalUploadConfirmed = false;
+            finalUploadId++;
+        }
+
         if (!GameLogPanel.DataCollectionEnabled)
         {
             Debug.Log("[LogSender] Data collection disabled (config.json) - skipping send.");
@@ -75,7 +94,7 @@ public class LogSender : MonoBehaviour
         }
 
         string json = GameLogPanel.Instance.GetMessagesAsJson(true, uploadKind, checkpointDay);
-        StartCoroutine(PostLogs(json));
+        StartCoroutine(PostLogs(json, uploadKind, isFinal ? finalUploadId : 0));
     }
 
     public void SendCurrentRoundLogs()
@@ -99,10 +118,10 @@ public class LogSender : MonoBehaviour
         }
 
         string json = GameLogPanel.Instance.GetMessagesAsJson(false);
-        StartCoroutine(PostLogs(json));
+        StartCoroutine(PostLogs(json, "round", 0));
     }
 
-    IEnumerator PostLogs(string jsonPayload)
+    IEnumerator PostLogs(string jsonPayload, string uploadKind, int finalId)
     {
         CurrentStatus = SendStatus.Sending;
         LastStatusMessage = "Sending logs...";
@@ -131,6 +150,7 @@ public class LogSender : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success && ackProblem == null)
             {
                 CurrentStatus = SendStatus.Success;
+                if (uploadKind == "final" && finalId == finalUploadId) FinalUploadConfirmed = true;
                 LastStatusMessage = $"Logs sent successfully. Server: {request.downloadHandler.text}";
                 Debug.Log($"[LogSender] {LastStatusMessage}");
 
