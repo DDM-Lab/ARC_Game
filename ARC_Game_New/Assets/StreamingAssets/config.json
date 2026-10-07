@@ -3,5 +3,6 @@
   "mapConfigUrl": "",
   "logServerUrl": "https://cora_game.dev.ddmlab.com/cgi-bin/save_game_logs.py",
   "followUpSurveyUrl": "https://cmu.ca1.qualtrics.com/jfe/form/SV_37V90liCPHEBYkC/?uid={uid}",
-  "dataCollectionEnabled": true
+  "dataCollectionEnabled": true,
+  "enableSaveLoadButtons": false
 }
