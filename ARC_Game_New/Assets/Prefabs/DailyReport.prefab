@@ -18843,9 +18843,9 @@ MonoBehaviour:
   m_fontSize: 36
   m_fontSizeBase: 36
   m_fontWeight: 400
-  m_enableAutoSizing: 0
+  m_enableAutoSizing: 1
   m_fontSizeMin: 18
-  m_fontSizeMax: 72
+  m_fontSizeMax: 36
   m_fontStyle: 0
   m_HorizontalAlignment: 1
   m_VerticalAlignment: 256
@@ -23952,6 +23952,13 @@ MonoBehaviour:
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
     progressBar: {fileID: 0}
+  caseworkUtilizationTotal:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   assumedTotalWorkerPoolSize: 200
   maxBudget: 999999
   budgetEfficiencyTotal:
@@ -24214,8 +24221,12 @@ MonoBehaviour:
   reminderText: {fileID: 8008729281893557113}
   continueButton: {fileID: 7312406774084636636}
   followUpSurveyUrlTemplate: https://cmu.ca1.qualtrics.com/jfe/form/SV_37V90liCPHEBYkC/?uid={uid}
-  uploadRetryDelaySeconds: 5
+  retryDelaysSeconds:
+  - 5
+  - 10
+  - 20
   savingDataIndicator: {fileID: 6288008014782788618}
+  savingDataText: {fileID: 4631537887975920693}
 --- !u!1 &7953762950033356776
 GameObject:
   m_ObjectHideFlags: 0

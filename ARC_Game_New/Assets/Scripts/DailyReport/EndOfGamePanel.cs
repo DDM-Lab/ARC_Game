@@ -17,8 +17,13 @@ using TMPro;
 /// The hand-off to the Qualtrics follow-up survey (carrying the participant ID captured at
 /// session start — see PlayerSession) happens only through the continue button. That button
 /// is hidden until the server has confirmed the end-of-game save (LogSender.FinalUploadConfirmed),
-/// so the participant cannot reach the survey before their data is on the server. Until then the
-/// upload is re-sent on a retry interval; there is no timeout that lets the participant through.
+/// so the participant cannot reach the survey before their data is on the server. The upload is
+/// retried a bounded number of times (retryDelaysSeconds) rather than forever — an earlier version
+/// retried indefinitely with no cap, which meant a payload that reliably fails (e.g. the server's
+/// hard size cap, or a genuinely slow upload/server) left the participant on a silent spinner
+/// forever with no way through. Once retries are exhausted, or the server reports a failure no
+/// retry could fix (413 Payload Too Large), saveFailedIndicator is shown instead and the continue
+/// button stays hidden — unconfirmed data must not silently pass through.
 /// </summary>
 public class EndOfGamePanel : MonoBehaviour
 {
@@ -44,10 +49,12 @@ public class EndOfGamePanel : MonoBehaviour
     public string followUpSurveyUrlTemplate = "https://xxxx.qualtrics.com/jfe/form/xxxx/?uid={uid}";
 
     [Header("Saving Before Continue")]
-    [Tooltip("Seconds to wait before sending the end-of-game log again after a failed or unconfirmed upload. Unlike the old redirect there is no time limit: the continue button stays hidden until the server confirms the save.")]
-    public float uploadRetryDelaySeconds = 5f;
+    [Tooltip("Delay before each retry after a failed/unconfirmed upload attempt. The first attempt is immediate; after that, one retry follows each delay in this list in order (3 entries = 3 retries = 4 total attempts). If the server reports an error no retry could fix (413 Payload Too Large), the remaining delays are skipped and the save is given up on immediately. Once the list is exhausted without confirmation, the failure message below is shown and the continue button stays hidden.")]
+    public float[] retryDelaysSeconds = { 5f, 10f, 20f };
     [Tooltip("Optional. A scene object (e.g. a 'Saving your data...' text) shown from the start of the end-of-game save until the server confirms it. Hidden at Start. If left empty, a toast is shown instead.")]
     public GameObject savingDataIndicator;
+    [Tooltip("Optional. The text component already shown on savingDataIndicator (e.g. \"Saving your data, please wait. We will soon redirect you to the post-game survey.\"). If assigned, its wording is replaced in place with the failure message instead of popping up a separate object when the save could not be confirmed after all retries. If left empty (but savingDataIndicator isn't), the indicator is hidden and a toast is shown instead, since there would be no way to update its wording.")]
+    public TextMeshProUGUI savingDataText;
 
     public static EndOfGamePanel Instance { get; private set; }
 
@@ -186,18 +193,28 @@ public class EndOfGamePanel : MonoBehaviour
     /// That starts the end-of-game upload (LogSender, "final" kind). This waits until LogSender
     /// reports the server's ack for that final upload, then shows the continue button.
     ///
-    /// Failed and unconfirmed uploads are re-sent every uploadRetryDelaySeconds. A day checkpoint
-    /// still in flight is waited for first, so it cannot block the final upload.
-    /// The button is shown only after the server has confirmed the final upload, and the saving
-    /// text is hidden at the same time. If saving is not possible (data collection off, or no log
-    /// system in the scene), the button stays hidden and the error is logged.
+    /// Failed and unconfirmed uploads are re-sent on the schedule in retryDelaysSeconds — bounded,
+    /// not forever: a payload that fails will fail the same way every retry (a hard size cap, or a
+    /// slow upload/server that reliably exceeds the request timeout), so retrying indefinitely
+    /// would just leave the participant on a silent spinner forever with no way through. A day
+    /// checkpoint still in flight is waited for first, so it cannot block the final upload.
+    ///
+    /// The continue button is shown only after the server has confirmed the final upload. If
+    /// retries run out, or the server reports an error no retry could fix (413 Payload Too Large),
+    /// the "saving" text/indicator is repurposed to tell the participant to contact the researcher
+    /// instead (see ShowSaveFailed) and the continue button stays hidden — unconfirmed data must
+    /// not silently pass through. If saving is not possible at all (data collection off,
+    /// or no log system in the scene), the wait continues indefinitely and the error is logged
+    /// once; that is a build/config problem rather than an upload failure, so there is nothing a
+    /// give-up message would add.
     /// </summary>
     IEnumerator WaitForConfirmedSaveThenShowContinue()
     {
         ShowSavingIndicator(true);
 
-        float nextAttemptAt = 0f; // first attempt right away
         bool reportedCannotSave = false;
+        int attempt = 0; // number of SendAllLogs() calls issued so far
+        float nextAttemptAt = 0f; // first attempt right away
         while (true)
         {
             LogSender sender = LogSender.Instance;
@@ -224,13 +241,33 @@ public class EndOfGamePanel : MonoBehaviour
                 continue;
             }
 
+            // An attempt has just finished (or none has started yet) without confirmation.
+            if (attempt > 0 && sender.LastFailureIsUnrecoverable)
+            {
+                // Retrying would resend the identical payload into the identical rejection — stop
+                // immediately instead of burning the remaining retry budget on a guaranteed repeat.
+                Debug.LogError($"[EndOfGamePanel] End-of-game save failed with an unrecoverable error (HTTP {sender.LastHttpResponseCode}: {sender.LastStatusMessage}). Giving up without further retries.");
+                ShowSaveFailed(sender.LastStatusMessage);
+                yield break;
+            }
+
+            if (attempt >= retryDelaysSeconds.Length + 1)
+            {
+                Debug.LogError($"[EndOfGamePanel] End-of-game save not confirmed after {attempt} attempts ({sender.LastStatusMessage}). Giving up.");
+                ShowSaveFailed(sender.LastStatusMessage);
+                yield break;
+            }
+
             if (Time.unscaledTime >= nextAttemptAt)
             {
-                if (sender.CurrentStatus == LogSender.SendStatus.Failed)
-                    Debug.LogWarning($"[EndOfGamePanel] End-of-game save not confirmed ({sender.LastStatusMessage}). Sending again.");
+                if (attempt > 0)
+                    Debug.LogWarning($"[EndOfGamePanel] End-of-game save not confirmed ({sender.LastStatusMessage}). Retry {attempt} of {retryDelaysSeconds.Length}.");
 
                 sender.SendAllLogs();
-                nextAttemptAt = Time.unscaledTime + uploadRetryDelaySeconds;
+                attempt++;
+                nextAttemptAt = attempt <= retryDelaysSeconds.Length
+                    ? Time.unscaledTime + retryDelaysSeconds[attempt - 1]
+                    : Time.unscaledTime; // unreachable (the exhaustion check above catches this first) — kept safe regardless
             }
 
             yield return null;
@@ -246,6 +283,37 @@ public class EndOfGamePanel : MonoBehaviour
             savingDataIndicator.SetActive(show);
         else if (show)
             ToastManager.ShowToast("Saving your game data — please wait a moment...", ToastType.Info);
+    }
+
+    /// <summary>
+    /// The end-of-game save could not be confirmed after exhausting retries (or failed with an
+    /// error no retry could fix). The continue button is deliberately NOT shown here: unconfirmed
+    /// data must not silently pass through. Any separate completion-code UI this scene has
+    /// (showQualtricsInfoPanel/reminderText) is unaffected — ShowPanel() already reveals that
+    /// independently of this save-confirmation wait.
+    /// </summary>
+    void ShowSaveFailed(string reason)
+    {
+        const string fallbackMessage = "We couldn't confirm that your data was saved. Please contact the researcher before closing this window.";
+
+        if (savingDataText != null)
+        {
+            // Reuse the same "Saving your data..." text already on screen — swapping its wording
+            // in place reads more naturally than hiding it and popping up a second object, and
+            // needs no extra scene setup.
+            savingDataText.text = fallbackMessage;
+            if (savingDataIndicator != null)
+                savingDataIndicator.SetActive(true);
+        }
+        else
+        {
+            // No text to update, so leaving the stale "still saving" indicator up would be
+            // misleading — hide it and say so with a toast instead.
+            ShowSavingIndicator(false);
+            ToastManager.ShowToast(fallbackMessage, ToastType.Warning, true);
+        }
+
+        GameLogPanel.Instance?.LogError($"End-of-game save could not be confirmed, giving up: {reason}");
     }
 
     void ShowContinueButton()
