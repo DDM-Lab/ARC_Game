@@ -6,5 +6,6 @@
   "followUpSurveyUrl": "https://cmu.ca1.qualtrics.com/jfe/form/SV_37V90liCPHEBYkC/?uid={uid}",
   "dataCollectionEnabled": true,
   "showLauncher": false,
-  "testMode": true
+  "testMode": true,
+  "enableSaveLoadButtons": false
 }

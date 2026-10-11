@@ -301,9 +301,14 @@ public class IndividualBuildingManageUI : MonoBehaviour
 
         if (success)
         {
+            int assignSeq = GameLogPanel.Instance?.LogAction("AssignWorker",
+                new JsonObj().Add("facility_id", currentBuilding.GetOriginalSiteId()),
+                new JsonObj().Add("beforeTrained", originalTrainedWorkers).Add("beforeUntrained", originalUntrainedWorkers)
+                             .Add("afterTrained", tempTrainedWorkers).Add("afterUntrained", tempUntrainedWorkers)) ?? -1;
             // Human direct game action (worker assignment via the UI).
             GameLogPanel.Instance?.LogUIInteraction("game_action", "worker_assignment",
-                $"building={currentBuilding.name} | trained={tempTrainedWorkers} untrained={tempUntrainedWorkers}");
+                $"building={currentBuilding.name} | trained={tempTrainedWorkers} untrained={tempUntrainedWorkers}",
+                assignSeq);
 
             // Update original values to reflect new state
             originalTrainedWorkers = tempTrainedWorkers;

@@ -211,7 +211,11 @@ public class WeatherSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Weather changed from {previousWeather} to {currentWeather}");
-        GameLogPanel.Instance.LogEnvironmentChange($"The weather has changed from {previousWeather} to {currentWeather}.");
+        int weatherSeq = GameLogPanel.Instance?.LogSystemEvent("WeatherChanged",
+            new JsonObj().Add("map", "global"),
+            new JsonObj().Add("before", previousWeather.ToString()).Add("after", currentWeather.ToString())) ?? -1;
+        GameLogPanel.Instance.LogEnvironmentChange(
+            $"The weather has changed from {previousWeather} to {currentWeather}.", weatherSeq);
     }
     
     void UpdateWeatherIcon()

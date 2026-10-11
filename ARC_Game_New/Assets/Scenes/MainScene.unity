@@ -7056,7 +7056,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2276051763940070735, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 19.119995
+      value: 19.12
       objectReference: {fileID: 0}
     - target: {fileID: 2276051763940070735, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -7316,7 +7316,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2870716837470064789, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 17.654999
+      value: 17.655
       objectReference: {fileID: 0}
     - target: {fileID: 2870716837470064789, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -8564,7 +8564,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5912188907453573419, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 19.119995
+      value: 19.12
       objectReference: {fileID: 0}
     - target: {fileID: 5912188907453573419, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -8748,7 +8748,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6205993510032976655, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 19.119995
+      value: 19.12
       objectReference: {fileID: 0}
     - target: {fileID: 6205993510032976655, guid: e361437e5ef494ea39373e5b3b41eb13, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -11564,13 +11564,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c8b4689f159b8f944bdfc591307053b6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  currentSatisfaction: 50
+  currentSatisfaction: 0
   maxSatisfaction: 100
   minSatisfaction: 0
   currentEfficiency: 0
   minEfficiency: 0
   maxEfficiency: 1000
-  currentBudget: 10000
+  currentBudget: 8000
   maxBudget: 999999
   minBudget: -999999
   allowNegativeBudget: 1
@@ -63064,21 +63064,21 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   useExternalConfig: 1
   configLoader: {fileID: 0}
-  defaultBudget: 10000
-  defaultSatisfaction: 50
+  defaultBudget: 8000
+  defaultSatisfaction: 0
   defaultCommunityNumber: 3
-  defaultResidentsPerCommunity: 40
+  defaultResidentsPerCommunity: 600
   defaultGameDays: 8
   defaultRoundsPerDay: 4
   defaultTrainedVolunteerCount: 5
   defaultUntrainedVolunteerCount: 5
-  defaultDailyBudgetAllocs: 3000
+  defaultDailyBudgetAllocs: 5000
   defaultInitialWeather: 0
   defaultKitchenCapacity: 10
-  defaultShelterCapacity: 10
-  defaultCaseworkCapacity: 10
+  defaultShelterCapacity: 100
+  defaultCaseworkCapacity: 50
   defaultKitchenFoodCapacity: 200
-  defaultShelterFoodCapacity: 100
+  defaultShelterFoodCapacity: 400
   defaultRequiredWorkersPerLoc: 4
   defaultSunnyExpansionRate: 0
   defaultSunnySpreadChanceMultiplier: 0.5
@@ -67304,7 +67304,6 @@ MonoBehaviour:
   trainWorkerButton: {fileID: 1864253045}
   trainingCostPerWorker: 500
   trainingDurationDays: 1
-  satisfactionPerTrainedWorker: 2
   taskSystem: {fileID: 978748996}
   workerSystem: {fileID: 550057045}
   taskDetailUI: {fileID: 978748999}
@@ -112645,6 +112644,13 @@ MonoBehaviour:
     sentenceText: {fileID: 0}
     canvasGroup: {fileID: 0}
     progressBar: {fileID: 0}
+  caseworkUtilizationTotal:
+    layoutObject: {fileID: 0}
+    numberText: {fileID: 0}
+    labelText: {fileID: 0}
+    sentenceText: {fileID: 0}
+    canvasGroup: {fileID: 0}
+    progressBar: {fileID: 0}
   assumedTotalWorkerPoolSize: 200
   maxBudget: 999999
   budgetEfficiencyTotal:
@@ -113583,21 +113589,21 @@ MonoBehaviour:
   mapConfigTimeout: 5
   disableLoader: 1
   showDebugInfo: 1
-  loadedInitialBudget: 5000
-  loadedInitialSatisfaction: 50
+  loadedInitialBudget: 8000
+  loadedInitialSatisfaction: 0
   loadedInitialCommunityNumber: 3
-  loadedInitialCommunityResidents: 40
+  loadedInitialCommunityResidents: 600
   loadedInitialGameDays: 8
   loadedInitialGameRounds: 4
   loadedInitialTrainedVols: 5
   loadedInitialUntrainedVols: 5
-  loadedInitialBudgetDailyAllocs: 3000
+  loadedInitialBudgetDailyAllocs: 5000
   loadedInitialWeather: 0
-  loadedInitialShelterCapacity: 10
+  loadedInitialShelterCapacity: 100
   loadedInitialKitchenCapacity: 10
-  loadedInitialCaseworkCapacity: 10
+  loadedInitialCaseworkCapacity: 50
   loadedInitialKitchenFoodCapacity: 200
-  loadedInitialShelterFoodCapacity: 100
+  loadedInitialShelterFoodCapacity: 400
   loadedInitialRequiredWorkers: 4
   loadedInitialSunnyExpansionRate: 0
   loadedInitialSunnySpreadChanceMultiplier: 0.5
@@ -113612,7 +113618,7 @@ MonoBehaviour:
   loadedInitialFoodDemandFrequency: -1
   loadedInitialShelterFloodThreshold: 2
   loadedInitialShelterFloodRadius: 5
-  loadedInitialShelterFloodComparison: 0
+  loadedInitialShelterFloodComparison: 1
   loadedInitialERV: 3
   loadedInitialExternalRelationFrequency: 3
   loadedInitialEmergencyTaskFrequency: 4

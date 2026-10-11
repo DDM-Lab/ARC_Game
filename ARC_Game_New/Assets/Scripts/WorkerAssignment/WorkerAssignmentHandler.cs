@@ -154,6 +154,10 @@ public class WorkerAssignmentHandler : MonoBehaviour
         task.roundsRemaining = 10;
         task.taskOfficer     = TaskOfficer.WorkforceService;
         task.isGlobalTask    = true;
+        // CreateTask (unlike CreateTaskFromData) never sets stableTaskId, which left the
+        // TaskGenerated event below recording task_id: null. uid is globally unique and never
+        // reassigned (TaskSystem.GameTask.NewUid), so it is a stable id for this task type too.
+        task.stableTaskId = "uid-" + task.uid;
 
         Sprite icon = TaskSystem.Instance.workforceServiceSprite;
 
@@ -228,6 +232,16 @@ public class WorkerAssignmentHandler : MonoBehaviour
         untrainedInput.customDescription = $"1 workforce pt each — {availableUntrained} available";
         if (hasWorkers) untrainedInput.currentValue = currentUntrained;
         task.numericalInputs.Add(untrainedInput);
+
+        // This task type never went through CreateTaskFromData/database generation, so it never
+        // got a TaskGenerated event at all despite being one of the most common player-facing
+        // tasks in the game — found via the Day 1 cross-check. It also had no CSV row at all until
+        // the task was opened or resolved — found via the CSV completeness audit.
+        int seq = GameLogPanel.Instance?.LogSystemEvent("TaskGenerated",
+            new JsonObj().Add("task_id", task.stableTaskId).Add("facility", building.GetDisplayName()),
+            TaskSystem.BuildTaskContentJson(task)) ?? -1;
+        GameLogPanel.Instance?.LogTaskEvent(
+            $"Generated task: {title} (Worker Management) for {building.GetDisplayName()}", seq, task.stableTaskId);
 
         return task;
     }
@@ -370,6 +384,42 @@ public class WorkerAssignmentHandler : MonoBehaviour
             return false;
         }
 
+        return true;
+    }
+
+    /// <summary>
+    /// Release-adjusted availability for a worker-reassignment task: the building's own currently
+    /// assigned workers are added back on top of the global free pool, because ApplyAssignment
+    /// releases them before reassigning (same math as BuildTask/RefreshTaskMaxValues, which is
+    /// what the input's own maxValue is already built from). TaskDetailUI's live per-keystroke
+    /// validator used the raw global free count instead and rejected in-range values — e.g. 4
+    /// untrained assigned to a building left only 1 free globally, so typing "2" failed against
+    /// "only 1 available" even though the input's own maxValue correctly allowed up to 5.
+    /// Returns false (caller should fall back to the raw global count) if this task isn't one of
+    /// ours.
+    /// </summary>
+    public bool TryGetAvailableForTask(GameTask task, out int availableTrained, out int availableUntrained)
+    {
+        availableTrained = 0;
+        availableUntrained = 0;
+
+        int buildingId = -1;
+        foreach (var kvp in pendingTasks)
+        {
+            if (kvp.Value == task) { buildingId = kvp.Key; break; }
+        }
+        if (buildingId == -1) return false;
+
+        WorkerSystem ws = WorkerSystem.Instance ?? FindObjectOfType<WorkerSystem>();
+        if (ws == null) return false;
+
+        List<Worker> current = ws.GetWorkersByBuildingId(buildingId);
+        int currentTrained   = current.Count(w => w.Type == WorkerType.Trained);
+        int currentUntrained = current.Count(w => w.Type == WorkerType.Untrained);
+
+        WorkerStatistics stats = ws.GetWorkerStatistics();
+        availableTrained   = stats.trainedFree   + currentTrained;
+        availableUntrained = stats.untrainedFree + currentUntrained;
         return true;
     }
 

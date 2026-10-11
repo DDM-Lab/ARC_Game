@@ -54,9 +54,17 @@ public class CoraSaveLoad : MonoBehaviour
                 + "or use the on-screen buttons (top right).");
     }
 
+    /// <summary>True only once config.json (WebSocketManager.LoadedConfig) explicitly opts in —
+    /// false while it's still loading, if it fails to load at all, or if it simply omits the key.
+    /// Fails safe: a human-testing deployment that forgets to set this (or whose config.json
+    /// request hiccups) gets no save/load buttons, never an accidental cheat/reload path. Read
+    /// live rather than cached at install time, since config.json loads asynchronously, after
+    /// CoraSaveLoad has already installed itself.</summary>
+    static bool EnabledByConfig => WebSocketManager.LoadedConfig?.enableSaveLoadButtons ?? false;
+
     void OnGUI()
     {
-        if (!showButtons || RuntimeConfig.TestMode) return;
+        if (!showButtons || !EnabledByConfig || RuntimeConfig.TestMode) return;
         // Nothing to save outside a running game. The build boots into TitleScene and passes
         // through Info/Tutorial before MainScene, and this component is DontDestroyOnLoad, so
         // without this the fallback buttons sit in the corner of the title and tutorial
@@ -86,7 +94,8 @@ public class CoraSaveLoad : MonoBehaviour
     {
         // testMode (participant deployments): F9/F10 and Ctrl/Cmd+S/O do nothing. Loading
         // rebuilds the scene mid-session, which a participant must never trigger by accident.
-        if (!hotkeysEnabled || RuntimeConfig.TestMode) return;
+        // enableSaveLoadButtons (config.json, off by default) must also opt in.
+        if (!hotkeysEnabled || !EnabledByConfig || RuntimeConfig.TestMode) return;
         CheckFunctionKeys();
         if (busy) return;
         bool mod = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)
@@ -110,7 +119,7 @@ public class CoraSaveLoad : MonoBehaviour
     /// <summary>Capture the current position and hand the player a `.cora` download.</summary>
     public void SaveToFile(string note = "")
     {
-        if (busy) return;
+        if (busy || !EnabledByConfig) return;
         try
         {
             CoraFile file = CoraFileIO.Capture(note);
@@ -132,7 +141,7 @@ public class CoraSaveLoad : MonoBehaviour
     /// <summary>Ask the player for a `.cora` file and load it.</summary>
     public void LoadFromFile()
     {
-        if (busy) return;
+        if (busy || !EnabledByConfig) return;
         FileIOBridge b = Bridge();
         b.OnFileImported -= OnPicked;
         b.OnFileImported += OnPicked;

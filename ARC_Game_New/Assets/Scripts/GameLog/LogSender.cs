@@ -10,7 +10,17 @@ public class LogSender : MonoBehaviour
     // janus is decommissioned; game logging is handled server-side by the router now.
     // Leave empty (manual log upload disabled) unless a real endpoint is configured.
     [SerializeField] private string serverUrl = "";
-    [SerializeField] private float requestTimeout = 30f;
+    // 30s was unnecessarily aggressive: save_game_logs.py is a CGI script (per-request process
+    // start-up, synchronous JSON parse, and a full replay-chain verification pass over the whole
+    // ledger before it answers), so processing time grows with session length on top of whatever
+    // the upload itself takes on a slow connection. 120s gives real but slow uploads room to
+    // finish instead of being misreported as failed.
+    [SerializeField] private float requestTimeout = 120f;
+
+    // save_game_logs.py's own hard cap (MAX_BODY_BYTES) — kept here only to log how close a
+    // payload is getting, not to pre-empt the request client-side (Apache/nginx may enforce a
+    // smaller limit in front of the script, which isn't visible to either side here).
+    const long ServerMaxBodyBytesKnown = 50L * 1024 * 1024;
     [Tooltip("Only count an upload as successful if the server's reply is an explicit ack — {\"ok\":true,\"bytes\":N} with N equal to the bytes we sent (save_game_logs.py does this). A plain 2xx isn't enough: a server can answer 200 without having saved anything. Turn off only to test against an older server that doesn't send an ack.")]
     [SerializeField] private bool requireServerAck = true;
 
@@ -30,6 +40,23 @@ public class LogSender : MonoBehaviour
     public enum SendStatus { Idle, Sending, Success, Failed }
     public SendStatus CurrentStatus { get; private set; } = SendStatus.Idle;
     public string LastStatusMessage { get; private set; } = "";
+
+    // True only after the server has acknowledged the end-of-game ("final") upload. A day
+    // checkpoint succeeding does not count: the survey hand-off waits on this, not on CurrentStatus.
+    public bool FinalUploadConfirmed { get; private set; }
+
+    // Identifies the newest end-of-game upload. Only the ack of that upload can set
+    // FinalUploadConfirmed, so an older request (e.g. a debug send, or one still in flight when
+    // the end of game starts) cannot confirm the end-of-game save.
+    int finalUploadId;
+
+    // The HTTP status of the most recently completed request, and whether that specific failure
+    // is one retrying the identical payload could never fix (currently: 413 Payload Too Large —
+    // the server's hard size cap, see save_game_logs.py's MAX_BODY_BYTES). A caller that retries
+    // on failure should stop immediately when this is true instead of burning its retry budget
+    // on a guaranteed repeat of the same rejection.
+    public long LastHttpResponseCode { get; private set; }
+    public bool LastFailureIsUnrecoverable { get; private set; }
 
     public static event Action<SendStatus, string> OnSendComplete;
 
@@ -73,6 +100,16 @@ public class LogSender : MonoBehaviour
 
     void StartUpload(string uploadKind, int checkpointDay, int checkpointRound)
     {
+        // A new end-of-game upload supersedes any earlier one, even if this call ends up not
+        // posting (already sending): an earlier confirmation must not count for it. Done before
+        // any early return so FinalUploadConfirmed can never be left stale.
+        bool isFinal = uploadKind == "final";
+        if (isFinal)
+        {
+            FinalUploadConfirmed = false;
+            finalUploadId++;
+        }
+
         // Headless runs (gym, benchmark, parity harness) must never upload into the human-study
         // log store: they are machine episodes, and 32-round benchmarks reach the day-8 report
         // that auto-sends. Opt in explicitly with ARC_UPLOAD_LOGS=1 if a headless run should
@@ -110,7 +147,7 @@ public class LogSender : MonoBehaviour
         // whole log up to the moment it is sent.
         currentIsRoundCheckpoint = uploadKind == "checkpoint" && checkpointRound > 0;
         string json = GameLogPanel.Instance.GetMessagesAsJson(true, uploadKind, checkpointDay, checkpointRound);
-        StartCoroutine(PostLogs(json));
+        StartCoroutine(PostLogs(json, uploadKind, isFinal ? finalUploadId : 0));
     }
 
     /// <summary>Start the queued upload, if any. Called in the same frame the previous upload
@@ -158,10 +195,10 @@ public class LogSender : MonoBehaviour
         }
 
         string json = GameLogPanel.Instance.GetMessagesAsJson(false);
-        StartCoroutine(PostLogs(json));
+        StartCoroutine(PostLogs(json, "round", 0));
     }
 
-    IEnumerator PostLogs(string jsonPayload)
+    IEnumerator PostLogs(string jsonPayload, string uploadKind, int finalId)
     {
         CurrentStatus = SendStatus.Sending;
         LastStatusMessage = "Sending logs...";
@@ -177,7 +214,14 @@ public class LogSender : MonoBehaviour
 
         byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
 
-        Debug.Log($"[LogSender] Sending {bodyRaw.Length} bytes to {url}");
+        double pctOfServerCap = 100.0 * bodyRaw.Length / ServerMaxBodyBytesKnown;
+        Debug.Log($"[LogSender] Sending {bodyRaw.Length} bytes to {url} ({pctOfServerCap:F1}% of the server's known {ServerMaxBodyBytesKnown:N0}-byte cap)");
+        // Recorded into the log itself (not just the Unity console) so payload size over the
+        // course of a session — and across participants, once uploaded — can be reviewed from
+        // the exported data alone, to tell whether real sessions are approaching the server's
+        // size cap before deciding whether incremental uploads are worth building.
+        GameLogPanel.Instance?.LogMetricsChange(
+            $"Upload attempt: kind={uploadKind}, size={bodyRaw.Length} bytes ({pctOfServerCap:F1}% of server cap)");
 
         using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
         {
@@ -188,6 +232,12 @@ public class LogSender : MonoBehaviour
 
             yield return request.SendWebRequest();
 
+            LastHttpResponseCode = request.responseCode;
+            // 413 Payload Too Large (save_game_logs.py's MAX_BODY_BYTES, or a reverse-proxy limit
+            // in front of it) means the identical payload will be rejected identically every time
+            // — there is nothing a caller's retry can do about it without a smaller payload.
+            LastFailureIsUnrecoverable = request.responseCode == 413;
+
             string ackProblem = request.result == UnityWebRequest.Result.Success
                 ? CheckServerAck(request.downloadHandler.text, bodyRaw.Length)
                 : null;
@@ -195,6 +245,7 @@ public class LogSender : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success && ackProblem == null)
             {
                 CurrentStatus = SendStatus.Success;
+                if (uploadKind == "final" && finalId == finalUploadId) FinalUploadConfirmed = true;
                 LastStatusMessage = $"Logs sent successfully. Server: {request.downloadHandler.text}";
                 Debug.Log($"[LogSender] {LastStatusMessage}");
 

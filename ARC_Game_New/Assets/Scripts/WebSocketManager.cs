@@ -36,6 +36,13 @@ public class AppConfig
     /// checkpoint save/load hotkeys are off and the "Save JSON Checkpoint" button is hidden.
     /// FALSE/absent: the developer and LLM conveniences stay available. See RuntimeConfig.</summary>
     public bool testMode;
+    /// <summary>Shows CoraSaveLoad's on-screen Save/Load buttons and enables its hotkeys
+    /// (Ctrl/Cmd+S, Ctrl/Cmd+O, F9, F10). FALSE BY DEFAULT — including when config.json is
+    /// missing, unreachable, or simply omits this key — so the buttons stay hidden unless a
+    /// deployment opts in explicitly. Letting a human-testing participant save/reload an
+    /// arbitrary snapshot mid-session would undermine the study, so "fails safe" here matters
+    /// more than defaulting to on the way most other config.json flags do.</summary>
+    public bool enableSaveLoadButtons;
 }
 
 public class WebSocketManager : MonoBehaviour

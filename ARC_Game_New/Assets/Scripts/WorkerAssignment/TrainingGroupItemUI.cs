@@ -16,7 +16,6 @@ public class TrainingGroupItemUI : MonoBehaviour
     public Color completedBackgroundColor = new Color(0.3f, 0.3f, 0.3f, 0.5f);
 
     private int trainingCostPerWorker = 500; // Default value, will be updated
-    private int satisfactionPerWorker = 2; // Default value, will be updated
 
     private WorkerTrainingSystem.TrainingTask trainingTask;
     
@@ -25,7 +24,6 @@ public class TrainingGroupItemUI : MonoBehaviour
         trainingTask = training;
         UpdateDisplay();
         trainingCostPerWorker = WorkerTrainingSystem.Instance.trainingCostPerWorker;
-        satisfactionPerWorker = WorkerTrainingSystem.Instance.satisfactionPerTrainedWorker;
     }
     
     void UpdateDisplay()
@@ -75,15 +73,10 @@ public class TrainingGroupItemUI : MonoBehaviour
             
         }
         
-        // Satisfaction reward
+        // No flat satisfaction reward for training any more (satisfaction comes only from the
+        // scoring formula), so the reward line is hidden rather than promising a bonus.
         if (satisfactionRewardText != null)
-        {
-            int satisfactionGain = trainingTask.workerCount * satisfactionPerWorker;
-            satisfactionRewardText.text = isCompleted ? 
-                $"Satisfaction gained: +{satisfactionGain}" : 
-                $"+{satisfactionGain} satisfaction on complete";
-
-        }
+            satisfactionRewardText.gameObject.SetActive(false);
         
         // Background color
         if (backgroundImage != null && isCompleted)

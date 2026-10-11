@@ -207,12 +207,19 @@ public class BuildingListItem : MonoBehaviour
     void UpdateManageButtonState()
     {
         if (manageButton == null || assignedBuilding == null) return;
-        
-        // Enable manage button for buildings that are not under construction
-        bool shouldEnable = assignedBuilding.GetCurrentStatus() != BuildingStatus.UnderConstruction;
+
+        // Once a round passes after workers are assigned, composition is frozen for the rest of
+        // the game (WorkerAssignmentTracker.IsLockedForRelease) — the button is disabled rather
+        // than left open to a swap-only edit, so there is no interaction left to attempt here.
+        bool isLocked = WorkerAssignmentTracker.Instance != null
+            && WorkerAssignmentTracker.Instance.IsLockedForRelease(assignedBuilding.GetOriginalSiteId());
+
+        // Enable manage button for buildings that are not under construction and not locked
+        bool shouldEnable = assignedBuilding.GetCurrentStatus() != BuildingStatus.UnderConstruction && !isLocked;
         manageButton.interactable = shouldEnable;
-        
-        // Update button text based on building status
+
+        // Update button text based on building status (text is left unchanged when locked —
+        // only interactable above reflects the lock; "Locked" read as confusing in practice)
         TextMeshProUGUI buttonText = manageButton.GetComponentInChildren<TextMeshProUGUI>();
         if (buttonText != null)
         {

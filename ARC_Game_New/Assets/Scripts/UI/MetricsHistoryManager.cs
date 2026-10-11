@@ -41,8 +41,8 @@ public enum MetricsTab
 }
 
 // Must subscribe to GlobalClock.OnDayChanged before any other listener that records a cost/score
-// change against "the new day" — e.g. MotelCostManager, which charges its daily lodging cost from
-// the same event. OnDayChanged() below replaces currentDayHistory with a fresh, empty list for the
+// change against "the new day" (MotelCostManager used to charge its daily lodging cost from the
+// same event; it now charges per round on GlobalClock.OnRoundEnd). OnDayChanged() below replaces currentDayHistory with a fresh, empty list for the
 // new day; the history panel only ever displays that current list, never past days. If a cost
 // handler with no execution order of its own (default 0) fires first, its entry gets recorded into
 // the OLD day's list a moment before that list becomes permanently inaccessible — the score updates
