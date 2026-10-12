@@ -1,0 +1,77 @@
+{
+  "formatVersion": 1,
+  "createdUtc": "2026-10-06T09:00:00.0000000Z",
+  "seed": 4242,
+  "rng": { "unityRandomStateJson": "{\"s0\":1,\"s1\":2,\"s2\":3,\"s3\":4}", "captured": true },
+  "clock": { "currentDay": 2, "currentTimeSegment": 1, "lastDay": 8, "roundsPerDay": 4, "isWaitingForReport": false },
+  "economy": { "currentSatisfaction": 0.0000015, "currentEfficiency": 12.5, "currentBudget": 9500 },
+  "buildings": [
+    { "originalSiteId": 40, "buildingType": "Kitchen", "buildingName": "Kitchen B", "status": "Operational",
+      "constructionRoundsTotal": 2, "constructionRoundsElapsed": 2, "deconstructionRoundsTotal": 0, "deconstructionRoundsElapsed": 0,
+      "constructionProgress": 1, "deconstructionProgress": 0, "capacity": 300, "requiredWorkforce": 2,
+      "operationalEfficiency": 0.75, "storage": { "resourceTypes": ["Food"], "resourceAmounts": [120] } },
+    { "originalSiteId": 12, "buildingType": "Shelter", "buildingName": "Shelter A", "status": "UnderConstruction",
+      "constructionRoundsTotal": 3, "constructionRoundsElapsed": 1, "deconstructionRoundsTotal": 0, "deconstructionRoundsElapsed": 0,
+      "constructionProgress": 0.333333, "deconstructionProgress": 0, "capacity": 80, "requiredWorkforce": 1,
+      "operationalEfficiency": 0, "storage": { "resourceTypes": [], "resourceAmounts": [] } }
+  ],
+  "prebuilt": [
+    { "buildingName": "Motel", "storage": { "resourceTypes": ["Food"], "resourceAmounts": [40] } },
+    { "buildingName": "Community 1", "storage": { "resourceTypes": [], "resourceAmounts": [] } }
+  ],
+  "workforce": {
+    "workers": [
+      { "workerId": 10, "workerType": "Trained", "assignedBuildingId": 40, "trainedStatus": "Working", "untrainedStatus": "Free" },
+      { "workerId": 2, "workerType": "Untrained", "assignedBuildingId": -1, "trainedStatus": "Free", "untrainedStatus": "Free" },
+      { "workerId": 1, "workerType": "Untrained", "assignedBuildingId": -1, "trainedStatus": "Free", "untrainedStatus": "Working" }
+    ],
+    "nextWorkerId": 11,
+    "newWorkersHiredToday": 0,
+    "hiredDays": [1],
+    "hiredCounts": [2]
+  },
+  "tasks": {
+    "activeTasks": [
+      { "uid": 9, "taskId": 1, "stableTaskId": "flood-2", "title": "Flood report", "roundsRemaining": 2, "selectedChoiceId": -1 },
+      { "uid": 5, "taskId": 2, "stableTaskId": "food-1", "title": "Food request", "roundsRemaining": 1, "selectedChoiceId": 0 }
+    ],
+    "completedTasks": [],
+    "nextTaskId": 3,
+    "deliveryIds": [4],
+    "deliveryTaskIds": [4],
+    "shownAlertIds": ["alert.flood"],
+    "currEmergencyTaskCount": 1,
+    "lastEmergencyTaskRound": 5,
+    "currExternalRelationCount": 0
+  },
+  "weather": { "current": "Rain", "start": "Clear" },
+  "flood": { "tileX": [3, 4], "tileY": [7, 7], "tileZ": [0, 0], "previousFloodCount": 2, "floodChangeThisRound": 0, "lastWeatherType": "Rain" },
+  "deliveries": {
+    "active": [ { "taskId": 4, "sourceName": "Warehouse", "destinationName": "Shelter A", "cargoType": "Food", "quantity": 30, "priority": 1, "isUrgent": false, "timeCreated": 12.5, "estimatedTimeSeconds": 40 } ],
+    "completed": [],
+    "pending": [ { "taskId": 6, "sourceName": "Kitchen B", "destinationName": "Motel", "cargoType": "Food", "quantity": 10, "priority": 0, "isUrgent": true, "timeCreated": 30, "estimatedTimeSeconds": 0 } ],
+    "nextTaskId": 7
+  },
+  "clients": {
+    "groups": [
+      { "groupId": 3, "groupName": "Group C", "clientCount": 4, "clientsWithCaseworkNeed": 1, "clientsWithoutCaseworkNeed": 3, "facilityName": "Shelter A", "arrivalRound": 5, "assignedDepartureRound": 9, "overstayRounds": 0, "arrivalTime": 0.5, "caseworkRequestGenerated": false, "isOverstaying": false, "hasDeparted": false }
+    ],
+    "nextGroupId": 4
+  },
+  "rewardMetrics": { "foodResolved": 1, "foodFulfilled": 1, "lodgingResolved": 0, "lodgingFulfilled": 0, "caseworkRequested": 0, "caseworkProcessed": 0, "cumWorking": 3, "cumTraining": 0, "cumIdle": 1, "roundsCompleted": 4 },
+  "spend": { "food": 100, "lodging": 0, "worker": 6500, "casework": 0 },
+  "dailyReport": { "dayStartBudget": 10000, "dayStartSatisfaction": 0, "dayStartEfficiency": 0, "dayStartPopulation": 1800, "roundsElapsed": 4, "foodPacksWasted": 3.5 },
+  "vehicles": [
+    { "vehicleName": "Vehicle 2", "position": { "x": 1.5, "y": 0, "z": -0.25 }, "status": "Delivering", "isDamaged": false, "currentTaskId": 4, "onDelivery": true, "step": 2, "cargoTypes": ["Food"], "cargoAmounts": [30] },
+    { "vehicleName": "Vehicle 1", "position": { "x": 0, "y": 0, "z": 0 }, "status": "Idle", "isDamaged": false, "currentTaskId": -1, "onDelivery": false, "step": 1, "cargoTypes": [], "cargoAmounts": [] }
+  ],
+  "relocations": {
+    "walks": [ { "walkId": 3, "parentTaskId": -1, "sourceName": "Shelter A", "destinationName": "Motel", "quantity": 2, "roundsRemaining": 1, "groupName": "Group C" } ]
+  },
+  "budgetAllocations": {
+    "pending": [
+      { "allocId": 7, "amount": 500, "delayRounds": 2, "label": "Shelter expansion" },
+      { "allocId": 2, "amount": 250, "delayRounds": 1, "label": "Training" }
+    ]
+  }
+}
