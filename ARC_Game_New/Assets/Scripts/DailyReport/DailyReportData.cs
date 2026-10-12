@@ -121,17 +121,15 @@ public class DailyReportData : MonoBehaviour
     
 
     [Header("Cumulative - Casework")]
-    private int cumulativeClientRoundsAwaitingCasework = 0; // here
-    private int cumulativeClientsRequestedCasework = 0; //here
-    private int cumulativeCaseworkAvailableRounds = 0;
-    // Maps each requested group to a FROZEN snapshot of its requested size at request time — not
-    // group.clientsWithCaseworkNeed itself, which is a LIVE counter that ClientStayTracker
-    // decrements as people are actually processed home (RemoveClientsByQuantity). The per-round
-    // denominator accrual below must keep using the original size after resolution, or it freezes
-    // in lockstep with the numerator the instant the group is resolved and the score can never
-    // recover — the entire point of pacing the denominator out is that it keeps growing for the
-    // rest of the game after resolution while the numerator stays frozen.
-    private Dictionary<ClientGroup, int> caseworkRequestedGroups = new Dictionary<ClientGroup, int>();
+    // S_Casework is a plain success rate: clients actually delivered to casework / clients who
+    // ever requested it. Deliberately has no per-round accrual and no time component — "requested"
+    // only grows when a new request happens, "satisfied" only grows when someone is actually
+    // delivered to a casework site (RecordCaseworkSatisfiedToday). A resolved request's
+    // contribution is therefore permanent the moment it's resolved: nothing about either counter
+    // changes just because more rounds pass with no new activity, unlike the earlier round-paced
+    // design this replaced.
+    private int cumulativeClientsRequestedCasework = 0;
+    private int cumulativeClientsCaseworkSatisfied = 0;
 
     // Mainly Cost-eff
     [Header("Cumulative - Cost-Efficiency Spend")] //record all
@@ -139,6 +137,9 @@ public class DailyReportData : MonoBehaviour
     private float cumulativeLodgingSpend = 0f;
     private float cumulativeWorkerRequestCost = 0f;
     private float cumulativeWorkerTrainingCost = 0f;
+    // C_Casework's numerator: every dollar spent opening casework sites (BuildingSystem). Its
+    // denominator is cumulativeClientsCaseworkSatisfied — clients actually delivered to a site.
+    private float cumulativeCaseworkSpend = 0f;
     //END NEW
 
     // Guards RecordInitialWorkerImputedCost() to once per game (see that method) — not part of
@@ -172,24 +173,26 @@ public class DailyReportData : MonoBehaviour
     }
 
     /// <summary>
-    /// Logs the cost-per-unit minimums C_Food/C_Lodging/C_Worker will score against this session,
-    /// once at game start, so a session's log documents which formula/parameters produced its
-    /// scores — without this, only the resulting score was visible (via
+    /// Logs the cost-per-unit minimums C_Food/C_Lodging/C_Worker/C_Casework will score against this
+    /// session, once at game start, so a session's log documents which formula/parameters produced
+    /// its scores — without this, only the resulting score was visible (via
     /// DailyReportUI.LogDailyReportScoreFormulas' per-day lines), not what it was scored against.
-    /// Reads GetFoodCostMin/GetLodgingCostMin/GetWorkerCostMin — the exact values the scores use —
-    /// so this can never drift out of sync with the formulas themselves.
+    /// Reads GetFoodCostMin/GetLodgingCostMin/GetWorkerCostMin/GetCaseworkCostMin — the exact values
+    /// the scores use — so this can never drift out of sync with the formulas themselves.
     /// </summary>
     void LogCostEfficiencyMinimums()
     {
         float? foodMin = GetFoodCostMin();
         float? lodgingMin = GetLodgingCostMin();
         float? workerMin = GetWorkerCostMin();
+        float? caseworkMin = GetCaseworkCostMin();
 
         static string Fmt(float? m) => m.HasValue ? $"${m.Value:F3}" : "undefined (missing config — that score returns max)";
 
         string message = $"Cost efficiency minimums for this session: food={Fmt(foodMin)}/pack, " +
-                         $"lodging={Fmt(lodgingMin)}/night, worker={Fmt(workerMin)}/worker-round " +
-                         $"(score = 0 at 50x minimum, 1.0 at or below minimum).";
+                         $"lodging={Fmt(lodgingMin)}/bed-round, worker={Fmt(workerMin)}/worker-round, " +
+                         $"casework={Fmt(caseworkMin)}/client " +
+                         $"(each subscore = 0 at 50x minimum, 1.0 at or below minimum; four subscores weighted 1/4 each).";
         GameLogPanel.Instance?.LogMetricsChange(message);
         Debug.Log($"[DailyReportData] {message}");
     }
@@ -528,33 +531,6 @@ public class DailyReportData : MonoBehaviour
 
         cumulativeRoundsElapsed++;
 
-        if (ClientStayTracker.Instance != null)
-        {
-            foreach (var group in ClientStayTracker.Instance.clientGroups)
-            {
-                if (group.clientsWithCaseworkNeed > 0 && !group.hasDeparted && caseworkRequestedGroups.ContainsKey(group))
-                    cumulativeClientRoundsAwaitingCasework += group.clientsWithCaseworkNeed;
-            }
-        }
-
-        // Paces the casework denominator out one round at a time, the same cadence the numerator
-        // above already uses — instead of OnCaseworkRequested crediting a whole game's worth of
-        // future "available" time the instant a request is made (which let a brand-new, completely
-        // unaddressed request instantly raise the score, since the denominator jumped before the
-        // numerator had any chance to catch up). Every group that has EVER requested casework
-        // contributes its FROZEN requested size (caseworkRequestedGroups' value — never the live,
-        // decrementing group.clientsWithCaseworkNeed — see OnCaseworkRequested and the field
-        // comment) once per round, resolved or not, for the rest of the game: a request made on day X
-        // naturally accrues for exactly (totalRounds - roundsElapsedAtRequestTime) rounds, because
-        // every group's accrual ends at the same final round regardless of when it started — so the
-        // game-end total is identical to the old lump sum, only the timing changes. A still-open
-        // request now adds to both awaiting and available every round (net-neutral, pinned at its
-        // worst ratio, never inflating the score) instead of just available; a resolved request's
-        // awaiting side freezes while available keeps accruing, so its score improves gradually as
-        // the rest of the game plays out, instead of being credited all at once up front.
-        foreach (var requestedSize in caseworkRequestedGroups.Values)
-            cumulativeCaseworkAvailableRounds += requestedSize;
-
         // Lodging occupancy for cost efficiency (C_Lodging: $ spent per bed-round), sampled once
         // per ROUND here rather than once per day — same reasoning as the casework fix above: a
         // once-per-day snapshot can miss or misrepresent occupancy that only existed for part of a
@@ -586,17 +562,6 @@ public class DailyReportData : MonoBehaviour
     {
         cumulativeClientsRequestedCasework += group.clientsWithCaseworkNeed;
         todayCaseworkRequestedNew += group.clientsWithCaseworkNeed; // NEW
-        // Freeze this request's size now, before RemoveClientsByQuantity can start decrementing
-        // group.clientsWithCaseworkNeed as it's resolved — see the field comment. A group can
-        // re-request (its own flag resets on expiry), in which case this adds to its existing
-        // frozen total rather than overwriting it, matching cumulativeClientsRequestedCasework's
-        // own additive handling of re-requests above.
-        if (caseworkRequestedGroups.ContainsKey(group))
-            caseworkRequestedGroups[group] += group.clientsWithCaseworkNeed;
-        else
-            caseworkRequestedGroups[group] = group.clientsWithCaseworkNeed;
-        // No longer credits cumulativeCaseworkAvailableRounds here — see AccumulateRoundMetrics,
-        // which now paces that same total out one round at a time instead of all at once.
         RecalcCaseworkSatisfaction();
     }
 
@@ -637,6 +602,12 @@ public class DailyReportData : MonoBehaviour
     {
         cumulativeWorkerTrainingCost += amount;
         RecalcWorkerEfficiency();
+    }
+
+    public void RecordCaseworkSpendCumulative(float amount)
+    {
+        cumulativeCaseworkSpend += amount;
+        RecalcCaseworkEfficiency();
     }
 
 
@@ -722,7 +693,13 @@ public class DailyReportData : MonoBehaviour
     public int GetCumulativeLodgingRequested() => cumulativeLodgingRequested;
     public int GetCumulativeLodgingSatisfied() => cumulativeLodgingSatisfied;
 
-    public void RecordCaseworkSatisfiedToday(int amount) => todayCaseworkSatisfied += amount;
+    public void RecordCaseworkSatisfiedToday(int amount)
+    {
+        todayCaseworkSatisfied += amount;
+        cumulativeClientsCaseworkSatisfied += amount;
+        RecalcCaseworkSatisfaction();
+        RecalcCaseworkEfficiency(); // same counter is C_Casework's denominator
+    }
     public int GetTodayCaseworkRequestedNew() => todayCaseworkRequestedNew;
     public int GetTodayCaseworkSatisfied() => todayCaseworkSatisfied;
 
@@ -735,13 +712,13 @@ public class DailyReportData : MonoBehaviour
     public int GetCumulativeWorkingWorkerRounds() => cumulativeWorkingWorkerRounds;
     public int GetCumulativeTrainingWorkerRounds() => cumulativeTrainingWorkerRounds;
     public int GetCumulativeWorkerPoolRounds() => cumulativeWorkerPoolRounds;
-    public int GetCumulativeClientRoundsAwaitingCasework() => cumulativeClientRoundsAwaitingCasework;
     public int GetCumulativeClientsRequestedCasework() => cumulativeClientsRequestedCasework;
-    public int GetCumulativeCaseworkAvailableRounds() => cumulativeCaseworkAvailableRounds;
+    public int GetCumulativeClientsCaseworkSatisfied() => cumulativeClientsCaseworkSatisfied;
     public float GetCumulativeFoodSpend() => cumulativeFoodSpend;
     public float GetCumulativeLodgingSpend() => cumulativeLodgingSpend;
     public float GetCumulativeWorkerRequestCost() => cumulativeWorkerRequestCost;
     public float GetCumulativeWorkerTrainingCost() => cumulativeWorkerTrainingCost;
+    public float GetCumulativeCaseworkSpend() => cumulativeCaseworkSpend;
 
     public int GetCumulativeLodgingRoundsConsumed() => cumulativeLodgingRoundsConsumed;
     public int GetCumulativeLodgingRoundsNeeded() => cumulativeLodgingRoundsNeeded;
@@ -1005,22 +982,16 @@ public class DailyReportData : MonoBehaviour
         return 1f-(float)wasted / requested;
     }
 
-    //public float S_Casework()
-    //{
-    //    var d = this;
-    //    int requested = d.GetCumulativeClientsRequestedCasework();
-    //    if (requested <= 0 || GameDataManager.Instance == null) return 0f;
-    //    int denom = GameDataManager.Instance.InitialGameDays * GameDataManager.Instance.InitialRoundsPerDay * requested;
-    //    if (denom <= 0) return 0f;
-
-    //    return Mathf.Clamp01(1f - ((float)d.GetCumulativeClientRoundsAwaitingCasework() / denom));
-    //}
-
+    // Plain success rate: clients actually delivered to casework / clients who ever requested
+    // it. No time component at all — resolving a request is a permanent, one-time credit, and
+    // an unresolved/expired request permanently drags the ratio down. See the field comment on
+    // cumulativeClientsRequestedCasework for why this replaced the earlier round-paced design.
     public float S_Casework()
     {
         var d = this;
-        if (d.cumulativeCaseworkAvailableRounds <= 0) return 0f;
-        return Mathf.Clamp01(1f - ((float)d.GetCumulativeClientRoundsAwaitingCasework() / d.cumulativeCaseworkAvailableRounds));
+        int requested = d.GetCumulativeClientsRequestedCasework();
+        if (requested <= 0) return 0f;
+        return Mathf.Clamp01((float)d.GetCumulativeClientsCaseworkSatisfied() / requested);
     }
 
     public float CalculateLiveSatisfactionScore()
@@ -1058,7 +1029,7 @@ public class DailyReportData : MonoBehaviour
     /// LogCostEfficiencyMinimums() logs the exact value the score uses — never a second copy that
     /// could drift from it.
     /// </summary>
-    float? GetFoodCostMin()
+    public float? GetFoodCostMin()
     {
         var gdm = GameDataManager.Instance;
         var bs = FindObjectOfType<BuildingSystem>();
@@ -1098,7 +1069,7 @@ public class DailyReportData : MonoBehaviour
     /// produce would compute a minimum lower than shelters could ever reach, unfairly lowering every
     /// lodging cost-efficiency score. See GetFoodCostMin() for why this is extracted.
     /// </summary>
-    float? GetLodgingCostMin()
+    public float? GetLodgingCostMin()
     {
         var gdm = GameDataManager.Instance;
         var bs = FindObjectOfType<BuildingSystem>();
@@ -1134,7 +1105,7 @@ public class DailyReportData : MonoBehaviour
     /// same value hires are charged at), not hard-coded. See GetFoodCostMin() for why this is
     /// extracted.
     /// </summary>
-    float? GetWorkerCostMin()
+    public float? GetWorkerCostMin()
     {
         var wrs = FindObjectOfType<WorkerRequestSystem>();
         var gdm = GameDataManager.Instance;
@@ -1142,6 +1113,69 @@ public class DailyReportData : MonoBehaviour
 
         int productiveRounds = Mathf.Max(1, (gdm.InitialGameDays - 1) * gdm.InitialRoundsPerDay);
         float min = (float)wrs.untrainedWorkerCost / productiveRounds;
+        return min > 0f ? min : (float?)null;
+    }
+
+    /// <summary>
+    /// Casework cost efficiency: cumulative dollars spent opening casework sites, per client
+    /// cumulatively delivered to one (the same counter S_Casework's numerator uses). Normalized the
+    /// same way as the other three: 1.0 at or below GetCaseworkCostMin(), 0 at 50x it.
+    /// </summary>
+    public float C_Casework()
+    {
+        int clientsServed = GetCumulativeClientsCaseworkSatisfied();
+        if (clientsServed <= 0) return 0f;
+
+        float raw = GetCumulativeCaseworkSpend() / clientsServed;
+
+        float? min = GetCaseworkCostMin();
+        if (min == null) return 1f;
+
+        return Mathf.Clamp01(1f - (raw - min.Value) / (49f * min.Value));
+    }
+
+    /// <summary>
+    /// Best-case cost per client: one site's construction cost spread over the most clients a
+    /// single site can serve (= have arrive, which is when S_Casework/C_Casework credit them)
+    /// across the productive rounds R = (days - 1) x roundsPerDay, with self-walk time w
+    /// (ClientRelocationHandler.relocationDelayRounds):
+    ///   - clients must first walk to a shelter (requested Day 2 Round 1, arrive end of round w),
+    ///     so the first casework dispatch is round w + 1 and the first arrivals land at end of 2w;
+    ///   - the site fills once (capacity), then every departure tick (caseworkDeparturesPerRound,
+    ///     one tick after every round) frees places that are re-sent next round and arrive w later;
+    ///   - only ticks after rounds 2w .. R - w are useful: earlier the site is still empty, later
+    ///     the refill can't arrive before the game ends -> R - 3w + 1 useful ticks.
+    ///   max clients per site = capacity + departures x (R - 3w + 1)
+    /// With the current values: 50 + 10 x (28 - 6 + 1) = 280, so $2,000 / 280 = $7.14 per client.
+    /// A site built on Day 1 is open by Day 2 Round 1 (Day 1's rounds run construction), so
+    /// construction time does not bind before the clients do.
+    /// </summary>
+    public float? GetCaseworkCostMin()
+    {
+        var gdm = GameDataManager.Instance;
+        var bs = FindObjectOfType<BuildingSystem>();
+        if (gdm == null || bs == null) return null;
+
+        int productiveRounds = Mathf.Max(1, gdm.InitialGameDays - 1) * Mathf.Max(1, gdm.InitialRoundsPerDay);
+        var prefabStorage = bs.caseworkSitePrefab != null
+            ? bs.caseworkSitePrefab.GetComponentInChildren<BuildingResourceStorage>(true)
+            : null;
+        int departuresPerTick = prefabStorage != null ? Mathf.Max(0, prefabStorage.caseworkDeparturesPerRound) : 0;
+
+        // Capacity as built (the prefab), falling back to the configured value.
+        int capacity = gdm.InitialCaseworkCapacity;
+        if (prefabStorage != null)
+            foreach (var c in prefabStorage.resourceCapacities)
+                if (c.resourceType == ResourceType.Population) { capacity = c.maxCapacity; break; }
+
+        int walkRounds = ClientRelocationHandler.Instance != null
+            ? Mathf.Max(1, ClientRelocationHandler.Instance.relocationDelayRounds) : 2;
+        int usefulTicks = Mathf.Max(0, productiveRounds - 3 * walkRounds + 1);
+
+        int maxClientsPerSite = capacity + departuresPerTick * usefulTicks;
+        if (maxClientsPerSite <= 0) return null;
+
+        float min = (float)bs.caseworkSiteConstructionCost / maxClientsPerSite;
         return min > 0f ? min : (float?)null;
     }
     //public float C_Food()
@@ -1209,8 +1243,8 @@ public class DailyReportData : MonoBehaviour
 
     public float CalculateLiveCostEfficiencyScore()
     {
-        const float wFood = 1f / 3f, wLodging = 1f / 3f, wWorker = 1f / 3f;
-        return C_Food() * wFood + C_Lodging() * wLodging + C_Worker() * wWorker;
+        const float wFood = 0.25f, wLodging = 0.25f, wWorker = 0.25f, wCasework = 0.25f;
+        return C_Food() * wFood + C_Lodging() * wLodging + C_Worker() * wWorker + C_Casework() * wCasework;
     }
 
 
@@ -1239,11 +1273,12 @@ public class DailyReportData : MonoBehaviour
         public int lodgingRoundsConsumed, lodgingRoundsNeeded;
         public int lodgingRequested, lodgingSatisfied;
         public int idleWorkerRounds, workingWorkerRounds, trainingWorkerRounds, workerPoolRounds;
-        public int clientRoundsAwaitingCasework, clientsRequestedCasework, caseworkAvailableRounds;
+        public int clientsRequestedCasework, clientsCaseworkSatisfied;
         public float foodSpend, lodgingSpend, workerRequestCost, workerTrainingCost;
+        public float caseworkSpend;
 
         public float appliedFoodSat, appliedLodgingSat, appliedWorkerSat, appliedCaseworkSat;
-        public float appliedFoodEff, appliedLodgingEff, appliedWorkerEff;
+        public float appliedFoodEff, appliedLodgingEff, appliedWorkerEff, appliedCaseworkEff;
     }
 
     public Snapshot CaptureState() => new Snapshot
@@ -1266,13 +1301,13 @@ public class DailyReportData : MonoBehaviour
         workingWorkerRounds = cumulativeWorkingWorkerRounds,
         trainingWorkerRounds = cumulativeTrainingWorkerRounds,
         workerPoolRounds = cumulativeWorkerPoolRounds,
-        clientRoundsAwaitingCasework = cumulativeClientRoundsAwaitingCasework,
         clientsRequestedCasework = cumulativeClientsRequestedCasework,
-        caseworkAvailableRounds = cumulativeCaseworkAvailableRounds,
+        clientsCaseworkSatisfied = cumulativeClientsCaseworkSatisfied,
         foodSpend = cumulativeFoodSpend,
         lodgingSpend = cumulativeLodgingSpend,
         workerRequestCost = cumulativeWorkerRequestCost,
         workerTrainingCost = cumulativeWorkerTrainingCost,
+        caseworkSpend = cumulativeCaseworkSpend,
         appliedFoodSat = appliedFoodSat,
         appliedLodgingSat = appliedLodgingSat,
         appliedWorkerSat = appliedWorkerSat,
@@ -1280,6 +1315,7 @@ public class DailyReportData : MonoBehaviour
         appliedFoodEff = appliedFoodEff,
         appliedLodgingEff = appliedLodgingEff,
         appliedWorkerEff = appliedWorkerEff,
+        appliedCaseworkEff = appliedCaseworkEff,
     };
 
     public void RestoreState(Snapshot s)
@@ -1303,13 +1339,13 @@ public class DailyReportData : MonoBehaviour
         cumulativeWorkingWorkerRounds = s.workingWorkerRounds;
         cumulativeTrainingWorkerRounds = s.trainingWorkerRounds;
         cumulativeWorkerPoolRounds = s.workerPoolRounds;
-        cumulativeClientRoundsAwaitingCasework = s.clientRoundsAwaitingCasework;
         cumulativeClientsRequestedCasework = s.clientsRequestedCasework;
-        cumulativeCaseworkAvailableRounds = s.caseworkAvailableRounds;
+        cumulativeClientsCaseworkSatisfied = s.clientsCaseworkSatisfied;
         cumulativeFoodSpend = s.foodSpend;
         cumulativeLodgingSpend = s.lodgingSpend;
         cumulativeWorkerRequestCost = s.workerRequestCost;
         cumulativeWorkerTrainingCost = s.workerTrainingCost;
+        cumulativeCaseworkSpend = s.caseworkSpend;
         appliedFoodSat = s.appliedFoodSat;
         appliedLodgingSat = s.appliedLodgingSat;
         appliedWorkerSat = s.appliedWorkerSat;
@@ -1317,10 +1353,11 @@ public class DailyReportData : MonoBehaviour
         appliedFoodEff = s.appliedFoodEff;
         appliedLodgingEff = s.appliedLodgingEff;
         appliedWorkerEff = s.appliedWorkerEff;
+        appliedCaseworkEff = s.appliedCaseworkEff;
     }
 
     private float appliedFoodSat, appliedLodgingSat, appliedWorkerSat, appliedCaseworkSat;
-    private float appliedFoodEff, appliedLodgingEff, appliedWorkerEff;
+    private float appliedFoodEff, appliedLodgingEff, appliedWorkerEff, appliedCaseworkEff;
 
     // PARITY BUILD (ledger D2): 1000f, matching upstream, NOT the correct 100f.
     // Our fix is right and upstream's value is wrong -- the five satisfaction weights sum to 1,
@@ -1330,7 +1367,7 @@ public class DailyReportData : MonoBehaviour
     // score fix into it would answer a different question.
     const float SCORE_SCALE = 1000f;
     const float SAT_W = 0.2f;
-    const float EFF_W = 1f / 3f;
+    const float EFF_W = 0.25f; // four cost-efficiency subscores (food, lodging, worker, casework)
 
     /// <summary>
     /// Push the change in one component's score into the AUTHORITATIVE satisfaction/efficiency
@@ -1375,6 +1412,9 @@ public class DailyReportData : MonoBehaviour
     public void RecalcWorkerEfficiency(string reason = "Worker cost efficiency")
         => ApplyDelta(ref appliedWorkerEff, C_Worker() * EFF_W * SCORE_SCALE, true, reason);
 
+    public void RecalcCaseworkEfficiency(string reason = "Casework cost efficiency")
+        => ApplyDelta(ref appliedCaseworkEff, C_Casework() * EFF_W * SCORE_SCALE, true, reason);
+
 
     // Read what's already been applied, for DailyReportUI's end-of-day display
     public float GetAppliedFoodSat() => appliedFoodSat;
@@ -1384,6 +1424,7 @@ public class DailyReportData : MonoBehaviour
     public float GetAppliedFoodEff() => appliedFoodEff;
     public float GetAppliedLodgingEff() => appliedLodgingEff;
     public float GetAppliedWorkerEff() => appliedWorkerEff;
+    public float GetAppliedCaseworkEff() => appliedCaseworkEff;
 
     public void SyncAppliedScoresToFresh()
     {
@@ -1395,13 +1436,14 @@ public class DailyReportData : MonoBehaviour
         appliedFoodEff = C_Food() * EFF_W * SCORE_SCALE;
         appliedLodgingEff = C_Lodging() * EFF_W * SCORE_SCALE;
         appliedWorkerEff = C_Worker() * EFF_W * SCORE_SCALE;
+        appliedCaseworkEff = C_Casework() * EFF_W * SCORE_SCALE;
     }
 
     public float ComputeFreshSatisfactionTotal()
     => (S_Food() + S_Lodging() + S_WorkerUse() + S_Waste() + S_Casework()) * SAT_W * SCORE_SCALE;
 
     public float ComputeFreshEfficiencyTotal()
-        => (C_Food() + C_Lodging() + C_Worker()) * EFF_W * SCORE_SCALE;
+        => (C_Food() + C_Lodging() + C_Worker() + C_Casework()) * EFF_W * SCORE_SCALE;
     //END NEW
 
     //score move end //

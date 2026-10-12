@@ -19,6 +19,13 @@ public class AppConfig
     /// run instead of silently falling back to the default scene layout (which would quietly
     /// change the experimental condition). Off by default for casual/dev play.</summary>
     public bool strictMap;
+    /// <summary>Shows CoraSaveLoad's on-screen Save/Load buttons and enables its hotkeys
+    /// (Ctrl/Cmd+S, Ctrl/Cmd+O, F9, F10). FALSE BY DEFAULT — including when config.json is
+    /// missing, unreachable, or simply omits this key — so the buttons stay hidden unless a
+    /// deployment opts in explicitly. Letting a human-testing participant save/reload an
+    /// arbitrary snapshot mid-session would undermine the study, so "fails safe" here matters
+    /// more than defaulting to on the way most other config.json flags do.</summary>
+    public bool enableSaveLoadButtons;
 }
 
 public class WebSocketManager : MonoBehaviour

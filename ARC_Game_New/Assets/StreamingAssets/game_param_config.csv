@@ -12,7 +12,7 @@ initialExternalRelationFrequency,5,task,"BudgetAdvisory, BudgetEmergency SOs",0,
 initialEmergencyTaskFrequency,2,task,"BudgetEmergency, CommunityFloodDamage, ShelterFloodDamage SOs",0,2,5,,"How many times in total players are given an ""emergency"" task. These fall in three categories: Budget emergency when an option for accepting additional budget is triggered during severe weather, community flood damage when the flood has reached a community and the player must relocate residents, and shelter flood damage when the flood has reached a shelter and the player must relocate residents"
 initialWeather,HeavyRain,,,,Sunny,,"Sunny, SmallRain, MediumRain, HeavyRain, Storm","The weather that Day 1, Round 1 of the game starts with."
 initialShelterCapacity,100,,,5,10,40,,The max number of people a shelter can host at once.
-initialCaseworkCapacity,400,,,5,40,40,,The max number of clients a casework site can hold at once.
+initialCaseworkCapacity,50,,,5,40,40,,The max number of clients a casework site can hold at once.
 initialWorkerUnitsNeededPerLocation,4,,,2,4,,UI reflection,"Worker units needed for a kitchen, shelter or casework site to operate (untrained = 1 unit, trained = 2)."
 initialFoodDemandFrequency,0.2,task,"CommunityFoodReq, ShelterFoodReq SOs",0,0.2,0.5,,Probability per generation pass that a shelter with no food raises a Food Request (Shelter_FoodRequest). Community requests are not probabilistic.
 initialERVCount,5,,,1,3,20,,"How many vehicles available on Day 1, Round 1 of the game to start."

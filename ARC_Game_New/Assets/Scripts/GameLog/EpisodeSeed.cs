@@ -2,14 +2,16 @@ using System;
 using UnityEngine;
 
 /// <summary>
-/// Optional, opt-in control of the random seed an episode starts from — the companion to
-/// <see cref="EpisodeReproLog"/>, which records the seed but deliberately never sets it.
-/// Together they close the loop: the log tells you which episode a tester played, this lets
-/// you play it again.
+/// Controls the random seed every episode starts from — the companion to
+/// <see cref="EpisodeReproLog"/>, which records the seed but never sets it itself.
+/// Together they close the loop: the log tells you which episode a participant played, this
+/// lets you play it again.
 ///
-/// DOES NOTHING UNLESS A SEED IS GIVEN. With no seed supplied, not one line below runs and
-/// the build behaves exactly as it did before — same unseeded startup, same draws. That is
-/// the whole design constraint: a reproducibility tool must not change the thing it measures.
+/// EVERY EPISODE IS SEEDED. An explicit seed (-seed / ARC_SEED / ?seed=) is used if supplied;
+/// otherwise one is generated and logged with source "auto". Replayability is a core
+/// requirement for this build, so there is no unseeded path left — the alternative (leaving a
+/// run's starting state unrecorded) would make that run's RNG stream permanently
+/// unreproducible, no matter what else the log captures.
 ///
 /// TIMING IS THE SUBSTANCE, AND IT IS WHY THIS IS NOT INSIDE EpisodeReproLog.
 /// The flood layout and the opening task roll are decided in MainScene's Awake/Start chain, so
@@ -45,7 +47,16 @@ public static class EpisodeSeed
     static void Apply()
     {
         int seed = Resolve(out string source);
-        if (seed < 0) return;                 // no seed given -> behave exactly as before
+        if (seed < 0)
+        {
+            // Replayability is now a core requirement (not just an opt-in diagnostic), so every
+            // episode gets a seed — auto-generated when nothing was explicitly supplied, rather
+            // than leaving the run on Unity's own non-reproducible default state. This also
+            // cascades to NextSystemRandom() and ParityPolicy's tie-break stream, both of which
+            // already check IsSeeded and only fall back to clock-seeded randomness when it's false.
+            seed = unchecked(Guid.NewGuid().GetHashCode() & 0x7FFFFFFF);
+            source = "auto";
+        }
 
         Seed = seed;
         Source = source;

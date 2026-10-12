@@ -54,9 +54,17 @@ public class CoraSaveLoad : MonoBehaviour
                 + "or use the on-screen buttons (top right).");
     }
 
+    /// <summary>True only once config.json (WebSocketManager.LoadedConfig) explicitly opts in —
+    /// false while it's still loading, if it fails to load at all, or if it simply omits the key.
+    /// Fails safe: a human-testing deployment that forgets to set this (or whose config.json
+    /// request hiccups) gets no save/load buttons, never an accidental cheat/reload path. Read
+    /// live rather than cached at install time, since config.json loads asynchronously, after
+    /// CoraSaveLoad has already installed itself.</summary>
+    static bool EnabledByConfig => WebSocketManager.LoadedConfig?.enableSaveLoadButtons ?? false;
+
     void OnGUI()
     {
-        if (!showButtons) return;
+        if (!showButtons || !EnabledByConfig) return;
         const float w = 92f, h = 24f, pad = 8f;
         float x = Screen.width - (w * 2 + pad * 2);
         // Depth far in front of the game UI; OnGUI is drawn over the scene regardless, but
@@ -77,7 +85,7 @@ public class CoraSaveLoad : MonoBehaviour
 
     void Update()
     {
-        if (!hotkeysEnabled) return;
+        if (!hotkeysEnabled || !EnabledByConfig) return;
         CheckFunctionKeys();
         if (busy) return;
         bool mod = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)
@@ -101,7 +109,7 @@ public class CoraSaveLoad : MonoBehaviour
     /// <summary>Capture the current position and hand the player a `.cora` download.</summary>
     public void SaveToFile(string note = "")
     {
-        if (busy) return;
+        if (busy || !EnabledByConfig) return;
         try
         {
             CoraFile file = CoraFileIO.Capture(note);
@@ -123,7 +131,7 @@ public class CoraSaveLoad : MonoBehaviour
     /// <summary>Ask the player for a `.cora` file and load it.</summary>
     public void LoadFromFile()
     {
-        if (busy) return;
+        if (busy || !EnabledByConfig) return;
         FileIOBridge b = Bridge();
         b.OnFileImported -= OnPicked;
         b.OnFileImported += OnPicked;

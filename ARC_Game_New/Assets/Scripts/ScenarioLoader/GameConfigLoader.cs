@@ -26,21 +26,21 @@ public class GameConfigLoader : MonoBehaviour
     public bool showDebugInfo = true;
 
     // Loaded config 
-    public int loadedInitialBudget=10000;
+    public int loadedInitialBudget=8000;
     public int loadedInitialSatisfaction=0;
     public int loadedInitialCommunityNumber=3;
-    public int loadedInitialCommunityResidents=40;
+    public int loadedInitialCommunityResidents=600;
     public int loadedInitialGameDays=8;
     public int loadedInitialGameRounds=4;
     public int loadedInitialTrainedVols=5;
     public int loadedInitialUntrainedVols=5;
-    public int loadedInitialBudgetDailyAllocs=3000;
+    public int loadedInitialBudgetDailyAllocs=5000;
     public WeatherType loadedInitialWeather = WeatherType.Sunny;
-    public int loadedInitialShelterCapacity = 10;
+    public int loadedInitialShelterCapacity = 100;
     public int loadedInitialKitchenCapacity = 10;
-    public int loadedInitialCaseworkCapacity = 10;
+    public int loadedInitialCaseworkCapacity = 50;
     public int loadedInitialKitchenFoodCapacity = 200;   // FoodPacks a kitchen can hold (prefab value)
-    public int loadedInitialShelterFoodCapacity = 100;   // FoodPacks a shelter can hold (prefab value)
+    public int loadedInitialShelterFoodCapacity = 400;   // FoodPacks a shelter can hold (prefab value)
     /// <summary>Which source the parameters in effect came from (BUG_REPORTS B35).</summary>
     public string ConfigSource { get; private set; } = "fallbacks";
     public int loadedInitialRequiredWorkers = 4;
@@ -59,7 +59,7 @@ public class GameConfigLoader : MonoBehaviour
     // for struct abv
     public int loadedInitialShelterFloodThreshold = 2;
     public int loadedInitialShelterFloodRadius = 5;
-    public FloodedFacilityTrigger.ComparisonType loadedInitialShelterFloodComparison;
+    public FloodedFacilityTrigger.ComparisonType loadedInitialShelterFloodComparison = FloodedFacilityTrigger.ComparisonType.AtLeast;
     // end
 
     public int loadedInitialERV = 3;

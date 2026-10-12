@@ -14,19 +14,23 @@ using TMPro;
 /// logging flow in DailyReportUI/DailyReportManager. Gated by showQualtricsInfoPanel
 /// (default OFF) — see that field's tooltip for why.
 ///
-/// Also redirects the browser to the Qualtrics follow-up survey (carrying the
-/// same participant ID captured at session start — see PlayerSession) once the
-/// game is considered finished, regardless of the panel setting above. The redirect
-/// waits for the end-of-game log upload (LogSender) to finish or time out first —
-/// navigating away cancels an in-flight upload, which used to drop participants' data.
+/// The hand-off to the Qualtrics follow-up survey (carrying the participant ID captured at
+/// session start — see PlayerSession) happens only through the continue button ("Back to
+/// Survey"). That button is hidden until the end-of-game save has an outcome. While the upload
+/// runs, savingDataText shows its progress, retries and a request to keep the window open, and
+/// uploadProgressSlider (if assigned) fills up. If the server confirms the save
+/// (LogSender.FinalUploadConfirmed), savingDataText shows the success message in successTextColor.
+/// LogSender retries a bounded number of times (its finalRetryDelaysSeconds); if it gives up,
+/// savingDataText shows the failure message with the participant's ID in failureTextColor. The
+/// button appears in both cases.
 /// </summary>
 public class EndOfGamePanel : MonoBehaviour
 {
     [Header("UI References")]
     [Tooltip("Whether to show the manual completion-code panel/reminder at all. Default OFF: now " +
              "that the game auto-redirects to the follow-up survey (with the participant ID already " +
-             "attached), this manual code panel is no longer needed for that flow. The redirect below " +
-             "still fires regardless of this setting — this only controls the panel/reminder UI. Turn " +
+             "attached), this manual code panel is no longer needed for that flow. The survey hand-off " +
+             "still happens only through the continue button — this only controls the panel/reminder UI. Turn " +
              "on to bring it back (e.g. as a visual fallback, or for a deployment without redirect).")]
     public bool showQualtricsInfoPanel = false;
     [Tooltip("The panel GameObject to show/hide. Should NOT be a full-screen raycast blocker — the player must be able to keep reading the Daily Report underneath.")]
@@ -35,21 +39,34 @@ public class EndOfGamePanel : MonoBehaviour
     [Tooltip("Only revealed once the panel above is closed, so the code stays visible while reviewing the rest of the Day 8 report. Text is predefined in the scene — this script only shows/hides it.")]
     public TextMeshProUGUI reminderText;
 
+    [Header("Continue to Survey")]
+    [Tooltip("Scene button that takes the participant to the Qualtrics follow-up survey (\"Back to Survey\"). Hidden at Start. It is shown once the end-of-game save has an outcome — confirmed, or given up on (alongside the failure message) — and clicking it opens the survey. Label and styling are authored in the scene.")]
+    public Button continueButton;
+
     [Header("Qualtrics Follow-up Redirect")]
     [Tooltip("Follow-up Qualtrics survey URL. {uid} is replaced with the participant's ID (PlayerSession.PlayerName) before redirecting. Leave empty to disable the redirect. If StreamingAssets/config.json sets a valid followUpSurveyUrl (http(s), containing {uid}), that link is used INSTEAD of this one — this is only the fallback.")]
     public string followUpSurveyUrlTemplate = "https://xxxx.qualtrics.com/jfe/form/xxxx/?uid={uid}";
 
-    [Header("Log Upload Before Redirect")]
-    [Tooltip("Max seconds to wait for the end-of-game log upload to finish before redirecting anyway, so a slow or failing upload can never strand the participant. Should be at least LogSender's request timeout (30s) to let a slow upload report failure.")]
-    public float maxUploadWaitSeconds = 30f;
-    [Tooltip("How many times to re-send the log if an attempt fails inside the wait window.")]
-    public int uploadRetries = 1;
-    [Tooltip("Optional. A scene object (e.g. a 'Saving your data...' text) shown while the redirect is waiting on the log upload, and hidden again once the wait ends. Hidden at Start. If left empty, a toast is shown instead.")]
+    [Header("Saving Before Continue")]
+    // Retries are LogSender's (finalRetryDelaysSeconds): it owns the upload, and the same policy
+    // applies to the day checkpoints.
+    [Tooltip("Optional. A scene object (e.g. a 'Saving your data...' text) shown from the start of the end-of-game save until the server confirms it. Hidden at Start. If left empty, a toast is shown instead.")]
     public GameObject savingDataIndicator;
+    [Tooltip("Optional. The text component already shown on savingDataIndicator (e.g. \"Saving your data, please wait. We will soon redirect you to the post-game survey.\"). If assigned, its wording is replaced while the upload runs (progress, retries, a request to keep the window open), then by the success message (successTextColor) or the failure message with the participant's ID (failureTextColor), which stays on screen. If left empty (but savingDataIndicator isn't), the indicator is hidden and toasts are shown instead.")]
+    public TextMeshProUGUI savingDataText;
+    [Tooltip("Optional. A Slider used as the end-of-game upload's progress bar (made non-interactable). Hidden at Start; shown and filled while the upload runs; left full on success; hidden if the save cannot be confirmed.")]
+    public Slider uploadProgressSlider;
+    [Tooltip("savingDataText's color for the success message.")]
+    public Color successTextColor = new Color(0f, 100f / 255f, 0f);    // dark green, #006400
+    [Tooltip("savingDataText's color for the failure message.")]
+    public Color failureTextColor = new Color(139f / 255f, 0f, 0f);    // dark red, #8B0000
+
+    const string SuccessMessage = "Data Upload Success. You can go back to the survey now.";
 
     public static EndOfGamePanel Instance { get; private set; }
 
-    private bool isRedirecting;
+    private bool waitingForSave;   // the wait-for-confirmation coroutine has been started
+    private bool isRedirecting;    // the survey has been opened (guards double clicks)
 
     // followUpSurveyUrl from config.json once it has loaded and passed validation; empty until then
     // (and forever if config.json is unreachable, has no such key, or the value is unusable), in
@@ -79,6 +96,12 @@ public class EndOfGamePanel : MonoBehaviour
         if (closeButton != null)
             closeButton.onClick.AddListener(ClosePanel);
 
+        if (continueButton != null)
+        {
+            continueButton.onClick.AddListener(OnContinueClicked);
+            continueButton.gameObject.SetActive(false);
+        }
+
         if (panel != null)
             panel.SetActive(false);
 
@@ -87,6 +110,12 @@ public class EndOfGamePanel : MonoBehaviour
 
         if (savingDataIndicator != null)
             savingDataIndicator.SetActive(false);
+
+        if (uploadProgressSlider != null)
+        {
+            uploadProgressSlider.interactable = false;   // a display, not a control
+            uploadProgressSlider.gameObject.SetActive(false);
+        }
 
         StartCoroutine(LoadFollowUpSurveyUrlFromConfig());
     }
@@ -149,8 +178,9 @@ public class EndOfGamePanel : MonoBehaviour
     }
 
     /// <summary>
-    /// Reveals the panel. Safe to call more than once (e.g. if the Day 8 report
-    /// is re-shown) — it just re-displays.
+    /// Reveals the panel (if enabled) and starts waiting for the outcome of the end-of-game save.
+    /// The continue button appears only once there is one. Safe to call more than once (e.g. if the
+    /// Day 8 report is re-shown): the wait is started once.
     /// </summary>
     public void ShowPanel()
     {
@@ -162,65 +192,225 @@ public class EndOfGamePanel : MonoBehaviour
             GameLogPanel.Instance?.LogUIInteraction($"Qualtrics code panel shown | session_id={PlayerSession.SessionId}");
         }
 
-        // Only one wait-then-redirect at a time (this method is documented as safe to call twice).
-        if (isRedirecting) return;
-        isRedirecting = true;
+        if (waitingForSave) return;
+        waitingForSave = true;
 
         if (isActiveAndEnabled)
-            StartCoroutine(WaitForLogUploadThenRedirect());
+            StartCoroutine(WaitForConfirmedSaveThenShowContinue());
         else
-            RedirectToFollowUpSurvey(); // can't run a coroutine — never lose the redirect itself
+            Debug.LogError("[EndOfGamePanel] Inactive, so it cannot wait for the save. The continue button will not be shown.");
     }
 
     /// <summary>
     /// DailyReportManager calls GameLogPanel.TriggerEndGameLogSend() immediately before ShowPanel().
-    /// That starts an asynchronous upload (LogSender.PostLogs), and LogSender flips CurrentStatus to
-    /// Sending synchronously before its first yield — so an upload in flight is already visible here.
-    /// Navigating to Qualtrics while it's still running aborts the request, so hold the redirect
-    /// until it succeeds, fails out of retries, or maxUploadWaitSeconds runs out. If there is no
-    /// upload in flight (collection disabled, no LogSender) there is nothing to wait for.
+    /// That starts the end-of-game upload (LogSender, "final" kind), which retries on its own. This
+    /// shows its progress and waits for the outcome, then shows the success message (ShowSaveSucceeded)
+    /// or, if LogSender gives up, the failure message (ShowSaveFailed); the continue button appears
+    /// in both cases. If no end-of-game upload is running (the trigger was skipped), it starts one.
+    ///
+    /// If saving is not possible at all (data collection off, or no log system in the scene), the
+    /// wait continues indefinitely and the error is logged once; that is a build/config problem
+    /// rather than an upload failure, so there is no outcome to show.
     /// </summary>
-    IEnumerator WaitForLogUploadThenRedirect()
+    IEnumerator WaitForConfirmedSaveThenShowContinue()
     {
-        LogSender sender = LogSender.Instance;
+        ShowSavingIndicator(true);
+        SetProgress(0f, true);
 
-        if (sender != null && sender.CurrentStatus == LogSender.SendStatus.Sending)
+        bool startRequested = false;
+        bool reportedCannotSave = false;
+        while (true)
         {
-            if (savingDataIndicator != null)
-                savingDataIndicator.SetActive(true);
-            else
-                ToastManager.ShowToast("Saving your game data — please wait a moment...", ToastType.Info);
-
-            float deadline = Time.unscaledTime + maxUploadWaitSeconds;
-            int retriesLeft = uploadRetries;
-
-            while (Time.unscaledTime < deadline)
+            LogSender sender = LogSender.Instance;
+            if (sender != null)
             {
-                if (sender.CurrentStatus == LogSender.SendStatus.Sending)
+                if (sender.FinalUploadConfirmed)
+                    break;
+
+                if (sender.FinalUploadGaveUp)
                 {
-                    yield return null;
-                    continue;
+                    Debug.LogError($"[EndOfGamePanel] End-of-game save not confirmed ({sender.LastFailureReason}).");
+                    ShowSaveFailed(sender.LastFailureReason);
+                    yield break;
                 }
 
-                if (sender.CurrentStatus == LogSender.SendStatus.Failed && retriesLeft > 0)
+                if (!sender.FinalUploadInProgress && !startRequested)
                 {
-                    retriesLeft--;
-                    Debug.LogWarning($"[EndOfGamePanel] Log upload failed ({sender.LastStatusMessage}) — retrying ({retriesLeft} retries left after this).");
+                    startRequested = true;
                     sender.SendAllLogs();
                     continue;
                 }
-
-                break; // Success, or failed with no retries left
             }
 
-            if (sender.CurrentStatus != LogSender.SendStatus.Success)
-                Debug.LogWarning($"[EndOfGamePanel] Redirecting without a confirmed log upload (status={sender.CurrentStatus}): {sender.LastStatusMessage}");
+            // The button must not appear without a confirmed save, so if saving is not possible at
+            // all the wait simply continues (and says why, once). It never falls through to the button.
+            if (sender == null || !sender.FinalUploadInProgress)
+            {
+                if (!reportedCannotSave)
+                {
+                    Debug.LogError("[EndOfGamePanel] Cannot save the end-of-game log (no LogSender, no GameLogPanel, or data collection is disabled). The continue button stays hidden.");
+                    reportedCannotSave = true;
+                }
+            }
+            else
+            {
+                ShowUploadStatus(sender);
+            }
 
-            // Upload is done (or given up on) — hide the wait message. Matters outside WebGL
-            // (Application.OpenURL leaves this page open); in WebGL the page is about to navigate.
-            if (savingDataIndicator != null)
-                savingDataIndicator.SetActive(false);
+            yield return null;
         }
+
+        ShowSaveSucceeded();
+    }
+
+    const string KeepOpen = "Please keep this window open.";
+
+    /// <summary>Shows the end-of-game upload's progress on the slider and in savingDataText.</summary>
+    void ShowUploadStatus(LogSender sender)
+    {
+        // Full once the body is sent (only the server's confirmation is left); empty while preparing
+        // and while waiting to retry, since a retry starts the upload over.
+        SetProgress(sender.Phase == LogSender.UploadPhase.Uploading && sender.BytesTotal > 0
+                ? (float)sender.BytesSent / sender.BytesTotal
+                : sender.Phase == LogSender.UploadPhase.WaitingForServer ? 1f : 0f,
+            true);
+
+        if (savingDataText == null) return;
+
+        string text;
+        switch (sender.Phase)
+        {
+            case LogSender.UploadPhase.Uploading:
+                long total = sender.BytesTotal;
+                int percent = total > 0 ? Mathf.Clamp(Mathf.FloorToInt(100f * sender.BytesSent / total), 0, 100) : 0;
+                text = $"Uploading your game data: {percent}% ({FormatMegabytes(sender.BytesSent)} of {FormatMegabytes(total)}).\n" +
+                       $"{KeepOpen} On a slow connection this can take a few minutes.";
+                break;
+            case LogSender.UploadPhase.WaitingForServer:
+                text = $"Upload finished. Waiting for the server to confirm your data.\n{KeepOpen}";
+                break;
+            case LogSender.UploadPhase.WaitingToRetry:
+                text = $"The upload did not go through ({sender.LastFailureReason}).\n" +
+                       $"Trying again in {Mathf.CeilToInt(sender.SecondsUntilRetry)} s (attempt {sender.Attempt + 1} of {sender.MaxAttempts}). {KeepOpen}";
+                break;
+            default:
+                text = $"Saving your game data.\n{KeepOpen}";
+                break;
+        }
+
+        if (sender.Attempt > 1 && sender.Phase != LogSender.UploadPhase.WaitingToRetry)
+            text += $" (Attempt {sender.Attempt} of {sender.MaxAttempts}.)";
+
+        if (savingDataText.text != text)
+            savingDataText.text = text;
+    }
+
+    static string FormatMegabytes(long bytes) =>
+        (bytes / (1024f * 1024f)).ToString(bytes < 10L * 1024 * 1024 ? "0.0" : "0", System.Globalization.CultureInfo.InvariantCulture) + " MB";
+
+    void SetProgress(float fraction, bool visible)
+    {
+        if (uploadProgressSlider == null) return;
+        uploadProgressSlider.normalizedValue = Mathf.Clamp01(fraction);
+        if (uploadProgressSlider.gameObject.activeSelf != visible)
+            uploadProgressSlider.gameObject.SetActive(visible);
+    }
+
+    /// <summary>The end-of-game save is confirmed: the success message, then the continue button.</summary>
+    void ShowSaveSucceeded()
+    {
+        SetProgress(1f, true);
+
+        if (savingDataText != null)
+        {
+            savingDataText.color = successTextColor;
+            savingDataText.text = SuccessMessage;
+            if (savingDataIndicator != null)
+                savingDataIndicator.SetActive(true);
+        }
+        else
+        {
+            ShowSavingIndicator(false);
+            ToastManager.ShowToast(SuccessMessage, ToastType.Success);
+        }
+
+        ShowContinueButton("confirmed");
+    }
+
+    void ShowSavingIndicator(bool show)
+    {
+        if (savingDataIndicator != null)
+            savingDataIndicator.SetActive(show);
+        else if (show)
+            ToastManager.ShowToast("Saving your game data — please wait a moment...", ToastType.Info);
+    }
+
+    /// <summary>
+    /// The end-of-game save could not be confirmed after exhausting retries (or failed with an
+    /// error no retry could fix). The failure message gives the participant their ID to pass on to
+    /// the researcher, and the continue button still appears so they can go back to the survey. Any
+    /// separate completion-code UI this scene has (showQualtricsInfoPanel/reminderText) is
+    /// unaffected — ShowPanel() already reveals that independently of this save-confirmation wait.
+    /// </summary>
+    void ShowSaveFailed(string reason)
+    {
+        // The ID is what the researcher needs to find (or recover) this participant's data.
+        string message = "We couldn't confirm that your game data was saved. Please contact the researcher for assistance. " +
+                         ParticipantIdSentence();
+
+        // A partly filled bar next to the failure message would be misleading.
+        SetProgress(0f, false);
+
+        if (savingDataText != null)
+        {
+            // Reuse the same "Saving your data..." text already on screen — swapping its wording
+            // in place reads more naturally than hiding it and popping up a second object, and
+            // needs no extra scene setup.
+            savingDataText.color = failureTextColor;
+            savingDataText.text = message;
+            if (savingDataIndicator != null)
+                savingDataIndicator.SetActive(true);
+        }
+        else
+        {
+            // No text to update, so leaving the stale "still saving" indicator up would be
+            // misleading — hide it and say so with a toast instead.
+            ShowSavingIndicator(false);
+            ToastManager.ShowToast(message, ToastType.Warning, true);
+        }
+
+        GameLogPanel.Instance?.LogError($"End-of-game save could not be confirmed, giving up: {reason}");
+        ShowContinueButton("not confirmed");
+    }
+
+    static string ParticipantIdSentence()
+    {
+        string id = PlayerSession.PlayerName;
+        if (!string.IsNullOrEmpty(id) && id != "Unknown")
+            return $"Your participant ID is {id}.";
+        // No participant ID (none in the URL and none entered): the session ID still identifies
+        // this participant's files on the server.
+        return $"Your session ID is {PlayerSession.SessionId}.";
+    }
+
+    void ShowContinueButton(string saveOutcome)
+    {
+        if (continueButton == null)
+        {
+            // Without a button the participant has no way to reach the survey, so this must be visible.
+            Debug.LogError($"[EndOfGamePanel] End-of-game save {saveOutcome}, but no continueButton is assigned. The participant cannot reach the survey.");
+            return;
+        }
+
+        continueButton.gameObject.SetActive(true);
+        Debug.Log($"[EndOfGamePanel] End-of-game save {saveOutcome}. Continue button shown.");
+    }
+
+    /// <summary>Wired to the continue button. Opens the follow-up survey once.</summary>
+    public void OnContinueClicked()
+    {
+        if (isRedirecting) return;
+        isRedirecting = true;
 
         RedirectToFollowUpSurvey();
     }

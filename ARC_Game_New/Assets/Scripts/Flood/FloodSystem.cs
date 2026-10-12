@@ -3,6 +3,7 @@ using UnityEngine.Tilemaps;
 using System.Collections.Generic;
 using System.Collections;
 using System;
+using System.Linq;
 
 public class FloodSystem : MonoBehaviour
 {
@@ -387,6 +388,9 @@ public class FloodSystem : MonoBehaviour
     {
         Debug.Log("=== FLOOD UPDATE STARTED ===");
         int floodCountBefore = currentFloodTiles.Count;
+        // Copy, not reference — currentFloodTiles is mutated in place below, so this is the
+        // only way to diff "before" against "after" rather than just counting them.
+        var tilesBefore = new HashSet<Vector3Int>(currentFloodTiles);
         Debug.Log($"Current flood tiles count: {floodCountBefore}");
         
         if (WeatherSystem.Instance == null) 
@@ -452,7 +456,21 @@ public class FloodSystem : MonoBehaviour
         int floodCountAfter = currentFloodTiles.Count;
         int floodChange = floodCountAfter - floodCountBefore;
         GameLogPanel.Instance.LogEnvironmentChange($"Current weather: {currentWeather}, Rain intensity: {rainIntensity:F2}");
-        GameLogPanel.Instance.LogEnvironmentChange($"Flood tiles changed. Before: {floodCountBefore}, after: {floodCountAfter}, change: {floodChange}");
+        // Which specific tiles changed, not just how many — a before/after count can't tell a
+        // researcher WHERE the flood moved. day/round/weather + this delta is the complete,
+        // structured record of this one change; the periodic per-round GameSnapshot (FloodSystem.
+        // Snapshot) separately gives the full absolute tile set at each round boundary, so the
+        // two together cover both "what changed just now" and "what the map looked like then".
+        var addedTiles = currentFloodTiles.Where(t => !tilesBefore.Contains(t));
+        var removedTiles = tilesBefore.Where(t => !currentFloodTiles.Contains(t));
+        int floodSeq = GameLogPanel.Instance?.LogSystemEvent("FloodChanged",
+            new JsonObj().Add("map", "global"),
+            new JsonObj().Add("before", floodCountBefore).Add("after", floodCountAfter)
+                         .Add("change", floodChange).Add("weather", currentWeather.ToString())
+                         .AddRaw("addedTiles", JsonArray.Of(addedTiles.Select(t => new JsonObj().Add("x", t.x).Add("y", t.y))))
+                         .AddRaw("removedTiles", JsonArray.Of(removedTiles.Select(t => new JsonObj().Add("x", t.x).Add("y", t.y))))) ?? -1;
+        GameLogPanel.Instance.LogEnvironmentChange(
+            $"Flood tiles changed. Before: {floodCountBefore}, after: {floodCountAfter}, change: {floodChange}", floodSeq);
         Debug.Log($"Flood tiles before: {floodCountBefore}, after: {floodCountAfter}, change: {floodChange}");
         
         // NEW: Track and trigger flood change events

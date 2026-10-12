@@ -11,22 +11,22 @@ public class GameDataManager : MonoBehaviour
     public GameConfigLoader configLoader;
 
     [Header("Defaults")]
-    public int defaultBudget = 10000; //initialBudget
+    public int defaultBudget = 8000; //initialBudget
     [Range(0f, 100f)]
     public float defaultSatisfaction = 0f; // initialSatisfaction
     public int defaultCommunityNumber= 3; // numberOfCommunities
-    public int defaultResidentsPerCommunity = 40; // done
+    public int defaultResidentsPerCommunity = 600; // done
     public int defaultGameDays = 8; // gameDurationDays
     public int defaultRoundsPerDay = 4; // done
     public int defaultTrainedVolunteerCount = 5; // done
     public int defaultUntrainedVolunteerCount = 5; // done
-    public int defaultDailyBudgetAllocs = 3000; // dailyBudgetAllocation
+    public int defaultDailyBudgetAllocs = 5000; // dailyBudgetAllocation
     public WeatherType defaultInitialWeather = WeatherType.Sunny; // done
     public int defaultKitchenCapacity = 10; // done
-    public int defaultShelterCapacity = 10; // done
-    public int defaultCaseworkCapacity = 10; // done
+    public int defaultShelterCapacity = 100; // done
+    public int defaultCaseworkCapacity = 50; // done
     public int defaultKitchenFoodCapacity = 200;
-    public int defaultShelterFoodCapacity = 100;
+    public int defaultShelterFoodCapacity = 400;
     public int defaultRequiredWorkersPerLoc = 4; // done
     public float defaultSunnyExpansionRate = 0f;
     public float defaultSunnySpreadChanceMultiplier = 0.5f;
@@ -290,7 +290,7 @@ public class GameDataManager : MonoBehaviour
         InitialCaseworkCapacity = defaultCaseworkCapacity;
         // PARITY BUILD (ledger D11): these two ARE still set, unlike the rest of D11. Upstream
         // has no such properties at all and its kitchens and shelters take their food capacity
-        // from the PREFAB; `defaultKitchenFoodCapacity = 200` / `defaultShelterFoodCapacity = 100`
+        // from the PREFAB; `defaultKitchenFoodCapacity = 200` / `defaultShelterFoodCapacity = 400`
         // are those same prefab values. Removing the assignments does not reproduce upstream, it
         // leaves BuildingResourceStorage setting a capacity of ZERO — a divergence introduced by
         // the revert itself. Keeping them is what matches upstream's behaviour.

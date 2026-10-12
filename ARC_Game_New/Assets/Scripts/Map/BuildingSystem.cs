@@ -131,6 +131,9 @@ public class BuildingSystem : MonoBehaviour
             // Human direct game action (bypasses ActionExecutor / the agent path).
             GameLogPanel.Instance?.LogUIInteraction("game_action", "construction",
                 $"building={buildingType} | site={siteName}");
+            // The Build ledger entry is written inside PerformConstruction, once the effects have
+            // been applied. The first-construction path defers construction to a popup callback,
+            // so logging here would record the decision before its effects existed.
             selectedSite.SetSelected(false); // Clear highlight
             selectedSite = null;
         }
@@ -140,7 +143,17 @@ public class BuildingSystem : MonoBehaviour
     public void RequestDeconstruction(Building building)
     {
         if (building == null) return;
-        building.StartDeconstruction(deconstructionRounds); 
+        // Logged after StartDeconstruction so a state delta attached to this entry includes the change.
+        int siteId = building.GetOriginalSiteId();
+        string buildingType = building.GetBuildingType().ToString();
+        building.StartDeconstruction(deconstructionRounds);
+        // This had a ledger entry but no CSV row at all until completion — found via the CSV
+        // completeness audit (the mirror image of Build, which has both at the one point it fires).
+        int seq = GameLogPanel.Instance?.LogAction("Deconstruct",
+            new JsonObj().Add("facility_id", siteId),
+            new JsonObj().Add("buildingType", buildingType).Add("rounds", deconstructionRounds)) ?? -1;
+        GameLogPanel.Instance?.LogPlayerAction(
+            $"Deconstruction started for {buildingType} at AbandonedSite_{siteId} ({deconstructionRounds} round(s))", seq);
     }
 
     /// <summary>Returns whether construction actually STARTED: a build at a site already
@@ -270,6 +283,7 @@ public class BuildingSystem : MonoBehaviour
                         }
                         else if (buildingType == BuildingType.CaseworkSite)
                         {
+                            DailyReportData.Instance.RecordCaseworkSpendCumulative(constructionCost);
                             DailyReportData.Instance.RecordCaseworkOpenCostToday(constructionCost);
                         }
                     }
@@ -293,7 +307,11 @@ public class BuildingSystem : MonoBehaviour
             site.ConvertToBuilding();
 
             Debug.Log($"You created {buildingType} at AbandonedSite_{site.GetId()} - construction started");
-            GameLogPanel.Instance.LogPlayerAction($"You created {buildingType} at AbandonedSite_{site.GetId()} - construction started");
+            int buildSeq = GameLogPanel.Instance?.LogAction("Build",
+                new JsonObj().Add("facility_id", site.GetId()),
+                new JsonObj().Add("buildingType", buildingType.ToString()).Add("started", true)) ?? -1;
+            GameLogPanel.Instance.LogPlayerAction(
+                $"You created {buildingType} at AbandonedSite_{site.GetId()} - construction started", buildSeq);
             return true;
         }
         else
@@ -495,11 +513,18 @@ public class BuildingSystem : MonoBehaviour
         
         // Destroy the building
         string buildingName = building.name;
+        string buildingType = building.GetBuildingType().ToString(); // read before Destroy() below
         Destroy(building.gameObject);
-        
+
         Debug.Log($"Deconstructed {buildingName} at site {siteId}");
-        GameLogPanel.Instance.LogPlayerAction($"Deconstructed {buildingName}, site restored");
-        
+        // RequestDeconstruction above logs the ledger entry for the START of deconstruction; this
+        // is the completion, N rounds later, and had no ledger entry at all until now — found via
+        // the CSV completeness audit.
+        int seq = GameLogPanel.Instance?.LogSystemEvent("DeconstructComplete",
+            new JsonObj().Add("facility_id", siteId),
+            new JsonObj().Add("buildingType", buildingType)) ?? -1;
+        GameLogPanel.Instance.LogPlayerAction($"Deconstructed {buildingName}, site restored", seq);
+
         return true;
     }
 

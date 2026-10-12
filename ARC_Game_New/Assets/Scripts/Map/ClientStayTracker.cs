@@ -354,7 +354,12 @@ public class ClientStayTracker : MonoBehaviour
         if (showDebugInfo)
             Debug.Log($"Registered {clientCount} clients at {facility.name} (Group: {groupName}, Round: {currentRound})");
 
-        GameLogPanel.Instance.LogBuildingStatus($"Registered {clientCount} clients at {facility.name} (Group: {groupName}, Round: {currentRound})");
+        int clientArrivedSeq = GameLogPanel.Instance?.LogSystemEvent("ClientArrived",
+            new JsonObj().Add("group_id", newGroup.groupId),
+            new JsonObj().Add("facility", facility.name).Add("clientCount", clientCount)
+                         .Add("caseworkNeed", newGroup.clientsWithCaseworkNeed)) ?? -1;
+        GameLogPanel.Instance.LogBuildingStatus(
+            $"Registered {clientCount} clients at {facility.name} (Group: {groupName}, Round: {currentRound})", clientArrivedSeq);
         DailyReportData.Instance?.RecordNewArrival(clientCount);
 
         return newGroup;
@@ -463,7 +468,11 @@ public class ClientStayTracker : MonoBehaviour
         if (departing > 0)
         {
             string facilityDisplayName = GetFacilityDisplayName(group.currentFacility);
-            GameLogPanel.Instance.LogBuildingStatus($"{departing} clients departed voluntarily from {facilityDisplayName} (no casework needed)");
+            int departedSeq = GameLogPanel.Instance?.LogSystemEvent("ClientDeparted",
+                new JsonObj().Add("group_id", group.groupId),
+                new JsonObj().Add("facility", facilityDisplayName).Add("count", departing).Add("voluntary", true)) ?? -1;
+            GameLogPanel.Instance.LogBuildingStatus(
+                $"{departing} clients departed voluntarily from {facilityDisplayName} (no casework needed)", departedSeq);
             ShowDepartureAlert(group, departing, facilityDisplayName);
         }
 
@@ -712,6 +721,10 @@ public class ClientStayTracker : MonoBehaviour
         caseworkTask.taskOfficer = TaskOfficer.LodgingMassCare;
         caseworkTask.taskTag = TaskTag.BackToHome;
         caseworkTask.roundsRemaining = 3;
+        // Same CreateTask gap as WorkerAssignmentHandler/WorkerTrainingSystem: stableTaskId is
+        // never set by this overload, which would otherwise leave this task's CSV/ledger rows
+        // unjoinable by id.
+        caseworkTask.stableTaskId = "uid-" + caseworkTask.uid;
 
         // only for clients w/ casework needs
         int caseworkClientCount = group.clientsWithCaseworkNeed;
@@ -750,7 +763,12 @@ public class ClientStayTracker : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"ClientStayTracker generated casework task for {caseworkClientCount} clients at {facilityDisplayName}");
-        GameLogPanel.Instance.LogTaskEvent($"ClientStayTracker generated casework task for {caseworkClientCount} clients at {facilityDisplayName}");
+        int caseworkSeq = GameLogPanel.Instance?.LogSystemEvent("CaseworkRequested",
+            new JsonObj().Add("group_id", group.groupId),
+            new JsonObj().Add("facility", facilityDisplayName).Add("clientCount", caseworkClientCount)) ?? -1;
+        GameLogPanel.Instance.LogTaskEvent(
+            $"ClientStayTracker generated casework task for {caseworkClientCount} clients at {facilityDisplayName}",
+            caseworkSeq, caseworkTask.stableTaskId);
     }
 
     string GetFacilityDisplayName(MonoBehaviour facility)

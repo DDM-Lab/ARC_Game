@@ -315,6 +315,12 @@ public class BuildingUIOverlay : MonoBehaviour
             if (currentStatus == BuildingStatus.UnderConstruction && buildingUIMap.ContainsKey(building))
                 UpdateConstructionText(buildingUIMap[building], building.GetRoundsRemaining());
 
+            // Freeze the Manage button once a round has passed since worker assignment —
+            // composition is locked for the rest of the game at that point, so there is no
+            // swap-only edit left to offer (WorkerAssignmentTracker.IsLockedForRelease).
+            if (buildingUIMap.ContainsKey(building))
+                UpdateWorkerButtonLockState(building, buildingUIMap[building]);
+
             previousStatus = currentStatus;
 
             // Update UI position in case building moved
@@ -464,6 +470,27 @@ public class BuildingUIOverlay : MonoBehaviour
             $"Building overlay UI changed | facility={building.GetDisplayName()} | WorkerButton text=\"Manage\" | DeconstructButton shown");
     }
     
+    private void UpdateWorkerButtonLockState(Building building, GameObject uiOverlay)
+    {
+        Transform workerButton = uiOverlay.transform.Find("WorkerButton");
+        if (workerButton == null)
+        {
+            workerButton = uiOverlay.transform.Find("Worker Button");
+            if (workerButton == null)
+                workerButton = uiOverlay.transform.Find("AssignButton");
+        }
+        if (workerButton == null || !workerButton.gameObject.activeSelf) return;
+
+        bool isLocked = WorkerAssignmentTracker.Instance != null
+            && WorkerAssignmentTracker.Instance.IsLockedForRelease(building.GetOriginalSiteId());
+
+        // Text is left unchanged when locked — only interactable reflects the lock; a "Locked"
+        // label read as confusing in practice.
+        Button btnComponent = workerButton.GetComponent<Button>();
+        if (btnComponent != null)
+            btnComponent.interactable = !isLocked;
+    }
+
     private void OnDeconstructionStarted(Building building)
     {
         if (!buildingUIMap.ContainsKey(building)) return;

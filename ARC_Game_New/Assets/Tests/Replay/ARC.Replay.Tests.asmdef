@@ -1,0 +1,22 @@
+{
+    "name": "ARC.Replay.Tests",
+    "rootNamespace": "ARC.Replay.Tests",
+    "references": [
+        "ARC.Replay"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

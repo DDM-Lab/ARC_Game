@@ -330,6 +330,12 @@ public class DailyReportManager : MonoBehaviour
             message: "Are you sure you want to proceed to the next day?",
             onConfirm: () => {
                 GameLogPanel.Instance?.LogUIInteraction("Player clicked Next Day on daily report — confirmed");
+                // Explicit end-of-day checkpoint: every management/report action for this day
+                // (worker assignment, training, reading the report) is done by this point, but
+                // the management/report phase is never itself a simulated round, so
+                // GlobalClock.OnRoundEnd never fires for it and the last round-end checkpoint
+                // misses all of it. Captured here, before FadeOutAndProceed advances the day.
+                GameLogPanel.Instance?.CaptureCheckpoint("EndOfDay");
                 StartCoroutine(FadeOutAndProceed());
             },
             title: "Proceed to Next Day?"

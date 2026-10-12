@@ -1,0 +1,277 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CoraUpload harness</title>
+<script>
+// ── Minimal stand-ins for the Emscripten runtime that CoraUpload.jslib uses ─────────────────────
+// A real WebGL build provides these; here the "heap" is a plain Uint8Array and _malloc a bump
+// allocator that is reset before each scenario.
+var HEAPU8 = new Uint8Array(256 * 1024 * 1024);
+var heapTop = 8;
+function _malloc(n) { var p = heapTop; heapTop += n + 8; return p; }
+function _free() { }
+var utf8Encoder = new TextEncoder(), utf8Decoder = new TextDecoder();
+function lengthBytesUTF8(s) { return utf8Encoder.encode(s).length; }
+function stringToUTF8(s, ptr, max) {
+    var b = utf8Encoder.encode(s).subarray(0, max - 1);
+    HEAPU8.set(b, ptr);
+    HEAPU8[ptr + b.length] = 0;
+}
+function UTF8ToString(ptr) {
+    var end = ptr;
+    while (HEAPU8[end]) end++;
+    return utf8Decoder.decode(HEAPU8.subarray(ptr, end));
+}
+var LibraryManager = { library: {} };
+function mergeInto(target, source) { for (var k in source) target[k] = source[k]; }
+</script>
+<script src="/CoraUpload.jslib"></script>
+<script>
+// Emscripten emits each "$name" library entry as a global "name".
+var L = LibraryManager.library;
+var CoraUploads = L.$CoraUploads;
+
+var STATE = { PREPARING: 0, SENDING: 1, WAITING: 2, DONE: 3, FAILED: 4 };
+var RUN = Math.random().toString(16).slice(2, 10);
+var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+function allocString(s) {
+    var size = lengthBytesUTF8(s) + 1, p = _malloc(size);
+    stringToUTF8(s, p, size);
+    return p;
+}
+
+function jsonBytes(obj) { return utf8Encoder.encode(JSON.stringify(obj)); }
+
+// Game-like payload: repetitive log rows plus JSON-in-JSON replay deltas, ~ the shape the game sends.
+function realisticPayload(session, rows) {
+    var messages = [], ledger = [];
+    for (var i = 0; i < rows; i++) {
+        messages.push({
+            timestamp: 100 + i * 0.37, realTime: "2026-10-09 13:" + (10 + (i % 50)) + ":0" + (i % 10),
+            day: 1 + Math.floor(i / 700), round: 1 + (i % 4), budget: 8000 - (i % 300) * 7,
+            satisfaction: 55.5 + (i % 17), efficiency: 61.25 + (i % 11), activeTaskCount: i % 6,
+            stateSummary: i % 9 ? "" : "facilities=[Kitchen Alpha:food=" + (i % 200) + ",clients=0/0,status=InUse;" +
+                "Shelter Beta:food=" + (i % 90) + ",clients=" + (i % 40) + "/100,status=InUse;Motel:food=0,clients=" +
+                (i % 30) + "/80] | selfWalking=" + (i % 3) + " | foodDeliveries=" + (i % 2) +
+                " | tasks=[Food Request;Lodging Request] | workers=4i/6w/0t | flood=" + (i % 25) + " | weather=HeavyRain",
+            category: ["Player", "System", "Metrics", "Task"][i % 4], messageType: "Normal",
+            content: "Vehicle " + (1 + i % 3) + " delivered " + (i % 50) + " food packs to Shelter Beta (task " + i + ")",
+            ledgerSeq: i % 3 ? -1 : i, taskDecisionId: i % 5 ? "" : "task-" + (i % 40)
+        });
+        if (i % 3 === 0) ledger.push({
+            seq: i, source: "player", type: "AssignWorker", captured: true,
+            stateDeltaJson: JSON.stringify({ baseSeq: i - 3, baseHash: "a" + i, resultHash: "b" + i, ops: [
+                { op: "replace", path: "/economy/currentBudget", value: 8000 - i },
+                { op: "replace", path: "/buildings/" + (i % 15) + "/assignedWorkers", value: i % 8 }] })
+        });
+    }
+    return { sessionId: session, playerName: "browser", gameVersion: "harness", uploadKind: "final",
+             totalMessages: messages.length, messages: messages, ledger: ledger };
+}
+
+// A payload that gzip cannot shrink, so the bytes on the wire are predictable.
+function randomPayload(session, size) {
+    var raw = new Uint8Array(Math.ceil(size * 3 / 4));
+    for (var i = 0; i < raw.length; i += 65536) crypto.getRandomValues(raw.subarray(i, Math.min(i + 65536, raw.length)));
+    var s = "";
+    for (var j = 0; j < raw.length; j += 32768) s += String.fromCharCode.apply(null, raw.subarray(j, j + 32768));
+    return { sessionId: session, playerName: "browser", uploadKind: "final", totalMessages: 1,
+             messages: [{ content: btoa(s) }] };
+}
+
+// Runs one upload exactly as LogSender does: copy into the heap, start, poll, read, release.
+async function upload(opts) {
+    heapTop = 8;
+    var urlPtr = allocString(opts.url);
+    var dataPtr = _malloc(opts.bytes.length);
+    HEAPU8.set(opts.bytes, dataPtr);
+    var t0 = performance.now();
+    var h = L.CoraUploadStart(urlPtr, dataPtr, opts.bytes.length, opts.gzip ? 1 : 0,
+                              opts.stallMs || 3000, opts.hardLimitMs || 30000);
+    // LogSender's byte[] may move once the call returns: wipe the heap copy to prove the plugin copied it.
+    HEAPU8.fill(0, dataPtr, dataPtr + opts.bytes.length);
+    var samples = [], states = [];
+    while (true) {
+        var st = L.CoraUploadState(h);
+        if (!states.length || states[states.length - 1] !== st) states.push(st);
+        samples.push([Math.round(performance.now() - t0), L.CoraUploadSentBytes(h), L.CoraUploadTotalBytes(h), st]);
+        if (opts.abortAfterMs && performance.now() - t0 > opts.abortAfterMs) { L.CoraUploadAbort(h); opts.abortAfterMs = 0; }
+        if (st >= STATE.DONE || st < 0) break;
+        await sleep(100);
+    }
+    var result = JSON.parse(UTF8ToString(L.CoraUploadResult(h)));
+    L.CoraUploadRelease(h);
+    var ack = null;
+    try { ack = JSON.parse(result.response); } catch (e) { }
+    var sentValues = [];
+    samples.forEach(function (s) { if (s[3] === STATE.SENDING && sentValues.indexOf(s[1]) < 0) sentValues.push(s[1]); });
+    return { handle: h, result: result, ack: ack, states: states, ms: Math.round(performance.now() - t0),
+             distinctProgress: sentValues.length, stateAfterRelease: L.CoraUploadState(h),
+             payloadBytes: opts.bytes.length, lastSamples: samples.slice(-3) };
+}
+
+function check(problems, cond, what) { if (!cond) problems.push(what); }
+
+var scenarios = [];
+function scenario(name, fn) { scenarios.push({ name: name, fn: fn }); }
+function save(query) { return "/save?run=" + RUN + "&" + query; }
+
+var realistic = jsonBytes(realisticPayload("gz" + RUN, 12000));
+
+scenario("gzip upload is compressed, saved and acked with the compressed size", async function (p) {
+    var r = await upload({ url: save("uploadId=dup" + RUN + "&attempt=1"), bytes: realistic, gzip: true });
+    check(p, r.result.state === STATE.DONE && r.result.status === 200, "expected HTTP 200, got " + JSON.stringify(r.result).slice(0, 300));
+    check(p, r.result.compressed === true, "body was not compressed");
+    check(p, r.ack && r.ack.ok === true && r.ack.result === "saved", "ack not ok/saved: " + r.result.response.slice(0, 200));
+    check(p, r.ack && r.ack.bytes === r.result.bodyBytes, "ack bytes != compressed bytes sent");
+    check(p, r.ack && r.ack.payload_bytes === r.payloadBytes, "ack payload_bytes != JSON size");
+    check(p, r.result.bodyBytes < r.payloadBytes / 3, "compressed body is not much smaller");
+    check(p, r.stateAfterRelease === -1, "handle still known after release");
+    r.ratio = (r.payloadBytes / r.result.bodyBytes).toFixed(1);
+    return r;
+});
+
+scenario("identical resend is acked as a duplicate", async function (p) {
+    var r = await upload({ url: save("uploadId=dup" + RUN + "&attempt=2"), bytes: realistic, gzip: true });
+    check(p, r.result.status === 200 && r.ack && r.ack.ok && r.ack.duplicate === true, "not acked as duplicate: " + r.result.response.slice(0, 200));
+    return r;
+});
+
+scenario("plain upload when gzip is off", async function (p) {
+    var bytes = jsonBytes(realisticPayload("plain" + RUN, 500));
+    var r = await upload({ url: save("uploadId=plain"), bytes: bytes, gzip: false });
+    check(p, r.result.status === 200 && r.ack && r.ack.ok, "not saved: " + r.result.response.slice(0, 200));
+    check(p, r.result.compressed === false && r.ack && r.ack.compressed === false, "unexpectedly compressed");
+    check(p, r.ack && r.ack.bytes === bytes.length, "ack bytes != payload size");
+    return r;
+});
+
+scenario("no CompressionStream: falls back to plain JSON", async function (p) {
+    var saved = window.CompressionStream;
+    window.CompressionStream = undefined;
+    try {
+        check(p, L.CoraUploadCanCompress() === 0, "CanCompress still says yes");
+        var bytes = jsonBytes(realisticPayload("nocs" + RUN, 500));
+        var r = await upload({ url: save("uploadId=nocs"), bytes: bytes, gzip: true });
+        check(p, r.result.status === 200 && r.ack && r.ack.ok, "not saved: " + r.result.response.slice(0, 200));
+        check(p, r.result.compressed === false, "claims to be compressed");
+        return r;
+    } finally {
+        window.CompressionStream = saved;
+        check(p, L.CoraUploadCanCompress() === 1, "CanCompress says no with CompressionStream back");
+    }
+});
+
+scenario("slow upload keeps going and reports progress", async function (p) {
+    var bytes = jsonBytes(randomPayload("slow" + RUN, 3 * 1024 * 1024));
+    var r = await upload({ url: save("uploadId=slow&fault=slow&rate=400000"), bytes: bytes, gzip: false, stallMs: 3000 });
+    check(p, r.result.status === 200 && r.ack && r.ack.ok, "slow upload failed: " + JSON.stringify(r.result).slice(0, 300));
+    check(p, r.ms > 3000, "finished too fast to be throttled (" + r.ms + " ms)");
+    check(p, r.distinctProgress >= 5, "only " + r.distinctProgress + " progress values while sending");
+    return r;
+});
+
+scenario("stalled upload is abandoned after stallMs", async function (p) {
+    var bytes = jsonBytes(randomPayload("stall" + RUN, 8 * 1024 * 1024));
+    var r = await upload({ url: save("uploadId=stall&fault=stall&after=262144"), bytes: bytes, gzip: false, stallMs: 3000 });
+    check(p, r.result.state === STATE.FAILED && r.result.error === "stalled", "expected error 'stalled', got " + r.result.error + " / state " + r.result.state);
+    check(p, r.result.sentBytes < r.result.bodyBytes, "everything was sent");
+    check(p, r.ms >= 3000 && r.ms < 12000, "gave up after " + r.ms + " ms");
+    return r;
+});
+
+scenario("no reply after the body is sent is abandoned after stallMs", async function (p) {
+    var bytes = jsonBytes(randomPayload("hang" + RUN, 256 * 1024));
+    var r = await upload({ url: save("uploadId=hang&fault=hang"), bytes: bytes, gzip: false, stallMs: 3000 });
+    check(p, r.result.state === STATE.FAILED && r.result.error === "no_response", "expected 'no_response', got " + r.result.error);
+    check(p, r.result.sentBytes === r.result.bodyBytes, "body not fully sent (" + r.result.sentBytes + "/" + r.result.bodyBytes + ")");
+    check(p, r.ms >= 3000 && r.ms < 8000, "gave up after " + r.ms + " ms");
+    return r;
+});
+
+scenario("hard limit stops an upload that is still moving", async function (p) {
+    var bytes = jsonBytes(randomPayload("hard" + RUN, 4 * 1024 * 1024));
+    var r = await upload({ url: save("uploadId=hard&fault=slow&rate=300000"), bytes: bytes, gzip: false, stallMs: 3000, hardLimitMs: 5000 });
+    check(p, r.result.state === STATE.FAILED && r.result.error === "hard_limit", "expected 'hard_limit', got " + r.result.error);
+    check(p, r.ms >= 5000 && r.ms < 8000, "gave up after " + r.ms + " ms");
+    check(p, r.distinctProgress >= 3, "progress did not keep moving");
+    return r;
+});
+
+scenario("HTTP error is reported with its status and body", async function (p) {
+    var r = await upload({ url: save("uploadId=err&fault=status&code=503"), bytes: jsonBytes({ messages: [{}] }), gzip: true });
+    check(p, r.result.state === STATE.DONE && r.result.status === 503, "expected DONE/503, got " + r.result.state + "/" + r.result.status);
+    check(p, r.ack && r.ack.ok === false, "error body not passed through");
+    return r;
+});
+
+scenario("dropped connection is a network error", async function (p) {
+    var bytes = jsonBytes(randomPayload("reset" + RUN, 8 * 1024 * 1024));
+    var r = await upload({ url: save("uploadId=reset&fault=reset&after=131072"), bytes: bytes, gzip: false, stallMs: 5000 });
+    check(p, r.result.state === STATE.FAILED && r.result.error === "network", "expected 'network', got " + r.result.error + " / " + r.result.status);
+    check(p, r.ms < 5000, "took " + r.ms + " ms (should fail at once, not by stall timeout)");
+    return r;
+});
+
+scenario("abort stops an upload at once", async function (p) {
+    var bytes = jsonBytes(randomPayload("abort" + RUN, 4 * 1024 * 1024));
+    var r = await upload({ url: save("uploadId=abort&fault=slow&rate=200000"), bytes: bytes, gzip: false, abortAfterMs: 1000 });
+    check(p, r.result.state === STATE.FAILED && r.result.error === "aborted", "expected 'aborted', got " + r.result.error);
+    check(p, r.ms < 2500, "took " + r.ms + " ms");
+    return r;
+});
+
+scenario("wrong ack byte count is passed through for C# to reject", async function (p) {
+    var r = await upload({ url: save("uploadId=badack&fault=bad_ack"), bytes: jsonBytes({ messages: [{}] }), gzip: true });
+    check(p, r.result.status === 200 && r.ack && r.ack.bytes === r.result.bodyBytes + 1, "unexpected: " + r.result.response);
+    return r;
+});
+
+scenario("pre-gzip server refusing gzip is reported as its 400", async function (p) {
+    var r = await upload({ url: save("uploadId=old&fault=old_server"), bytes: jsonBytes(realisticPayload("old" + RUN, 50)), gzip: true });
+    check(p, r.result.status === 400 && /UTF-8/.test(r.result.response), "unexpected: " + r.result.status + " " + r.result.response);
+    return r;
+});
+
+scenario("leave warning on and off", async function (p) {
+    function prevented() {
+        var e = new Event("beforeunload", { cancelable: true });
+        window.dispatchEvent(e);
+        return e.defaultPrevented;
+    }
+    L.CoraUploadSetLeaveWarning(1);
+    L.CoraUploadSetLeaveWarning(1);   // idempotent
+    check(p, prevented() === true, "beforeunload not intercepted when on");
+    L.CoraUploadSetLeaveWarning(0);
+    check(p, prevented() === false, "beforeunload still intercepted when off");
+    return {};
+});
+
+scenario("unknown handle", async function (p) {
+    check(p, L.CoraUploadState(987654) === -1, "state of unknown handle is not -1");
+    var res = JSON.parse(UTF8ToString(L.CoraUploadResult(987654)));
+    check(p, res.state === -1, "result of unknown handle: " + JSON.stringify(res));
+    L.CoraUploadAbort(987654);
+    L.CoraUploadRelease(987654);
+    return {};
+});
+
+async function runAll() {
+    var results = [];
+    for (var i = 0; i < scenarios.length; i++) {
+        var problems = [], detail = null;
+        try { detail = await scenarios[i].fn(problems); }
+        catch (e) { problems.push("threw: " + e); }
+        results.push({ name: scenarios[i].name, pass: problems.length === 0, problems: problems, detail: detail });
+        document.body.insertAdjacentHTML("beforeend", "<div>" + (problems.length ? "FAIL " : "ok ") + scenarios[i].name + "</div>");
+    }
+    await fetch("/report", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run: RUN, userAgent: navigator.userAgent, results: results }) });
+}
+window.addEventListener("load", runAll);
+</script>
+</head>
+<body></body>
+</html>

@@ -41,6 +41,27 @@ using UnityEngine;
 ///   Final Efficiency = previous + change (unclamped)
 ///   
 /// ^^OLD------------------------------------------------------------------------------------------
+///
+/// CURRENT SCORING (DailyReportData; every input is cumulative over the whole game):
+///   Satisfaction (0-1000) = 5 subscores x 0.2 weight x 1000
+///     S_Food      = packs consumed / packs needed (shelter/motel feeding cycles + community demand)
+///     S_Lodging   = clients relocated / clients requested by Lodging tasks
+///     S_WorkerUse = 1 - idle worker-rounds / (idle + working + training worker-rounds)
+///     S_Waste     = 1 - packs wasted / (packs consumed + packs wasted)
+///     S_Casework  = clients delivered to casework / clients who requested casework
+///   Efficiency (0-1000) = 4 subscores x 0.25 weight x 1000
+///     each C_x = clamp01(1 - (raw - min) / (49 x min))  -> 1.0 at or below min, 0 at 50x min
+///     C_Food      raw = food $ (kitchen builds + food-task costs) / packs consumed
+///                 min = kitchen cost / (kitchen food capacity x (days - 1))
+///     C_Lodging   raw = lodging $ (shelter builds + lodging-task costs + motel, billed per round) / bed-rounds
+///                 min = shelter cost / (shelter capacity x (days - 1) x rounds per day)
+///     C_Worker    raw = (worker request + training $, incl. starting roster) / working worker-rounds
+///                 min = untrained worker cost / ((days - 1) x rounds per day)
+///     C_Casework  raw = casework site build $ / clients delivered to casework
+///                 min = casework site cost / (casework capacity + departures per round x (R - 3w + 1))
+///                       R = (days - 1) x rounds per day, w = self-walk rounds (walk to shelter, then to
+///                       casework, and the last w rounds' sends never arrive) -> currently 50 + 10 x 23 = 280
+///   A subscore with an empty denominator scores 0.
 /// 
 /// ============================================================================
 
@@ -207,8 +228,8 @@ public class DailyReportMetrics
     public int cumIdleWorkerRounds;
     public int cumWorkingWorkerRounds;
     public int cumTrainingWorkerRounds;
-    public int cumClientRoundsAwaitingCasework;
     public int cumClientsRequestedCasework;
+    public int cumClientsCaseworkSatisfied;
     public int cumLodgingRoundsConsumed;
     public int cumLodgingRoundsNeeded;
 
@@ -217,6 +238,7 @@ public class DailyReportMetrics
     public float cumLodgingSpend;
     public float cumWorkerRequestCost;
     public float cumWorkerTrainingCost;
+    public float cumCaseworkSpend;
 
 
     [Header("Live Score (0-1, before ×10,000 scale)")]
@@ -224,7 +246,7 @@ public class DailyReportMetrics
     public float liveCostEfficiencyScore;
     public float satFoodScore, satLodgingScore, satWorkerScore, satWasteScore, satCaseworkScore;
     public float workerIdleSatScore, workerTrainingSatScore, workerWorkingSatScore;
-    public float costFoodScore, costLodgingScore, costWorkerScore;
+    public float costFoodScore, costLodgingScore, costWorkerScore, costCaseworkScore;
     public float costEfficiencyChangeCalculated;
 
 } 

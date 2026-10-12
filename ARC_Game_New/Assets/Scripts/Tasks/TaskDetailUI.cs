@@ -179,7 +179,8 @@ public class TaskDetailUI : MonoBehaviour
             if (showDebugInfo)
                 Debug.Log($"Showing task detail for: {task.taskTitle} (First time: {isFirstTimeShowing})");
 
-            GameLogPanel.Instance?.LogUIInteraction($"Opened task: [{currentTask.taskType}] {currentTask.taskTitle} at {currentTask.affectedFacility}");
+            GameLogPanel.Instance?.LogUIInteraction($"Opened task: [{currentTask.taskType}] {currentTask.taskTitle} at {currentTask.affectedFacility}",
+                ledgerSeq: -1, taskDecisionId: currentTask.stableTaskId);
             GameLogPanel.Instance?.LogTaskEvent(SerializeTaskContent(currentTask));
 
             // Make the repropose affordance discoverable on the choices proposal.
@@ -483,20 +484,25 @@ public class TaskDetailUI : MonoBehaviour
         // Clear existing impact items
         ClearImpactItems();
 
+        // Satisfaction impacts are not shown: satisfaction comes only from the cumulative scoring
+        // formula (DailyReportData), so a task-level "Satisfaction Up/Down" would promise a change
+        // that never happens.
+        var shownImpacts = currentTask.impacts.Where(imp => imp.impactType != ImpactType.Satisfaction).ToList();
+
         // Create impact items and put them in the correct layout
-        for (int i = 0; i < currentTask.impacts.Count; i++)
+        for (int i = 0; i < shownImpacts.Count; i++)
         {
-            TaskImpact impact = currentTask.impacts[i];
+            TaskImpact impact = shownImpacts[i];
             Transform layout = (i % 2 == 0) ? ImpactHorizontalchoiceLayout1 : ImpactHorizontalchoiceLayout2;
             bool useLongPrefab = (i % 2 == 0) ? false : true;
-            if (currentTask.impacts.Count == 2)
+            if (shownImpacts.Count == 2)
             {
                 useLongPrefab = true;
-            }else if (currentTask.impacts.Count == 4)
+            }else if (shownImpacts.Count == 4)
             {
                 useLongPrefab = false;
             }
-            else if (currentTask.impacts.Count == 1)
+            else if (shownImpacts.Count == 1)
             {
                 useLongPrefab = true;
             }
@@ -1043,7 +1049,8 @@ public class TaskDetailUI : MonoBehaviour
             isSwitch ? "choice_switched" : "choice_selected",
             isSwitch
                 ? $"task={currentTask?.taskTitle} | from=[{previous.choiceId}] {previous.choiceText} | to=[{choice.choiceId}] {choice.choiceText}"
-                : $"task={currentTask?.taskTitle} | choice=[{choice.choiceId}] {choice.choiceText}");
+                : $"task={currentTask?.taskTitle} | choice=[{choice.choiceId}] {choice.choiceText}",
+            ledgerSeq: -1, taskDecisionId: currentTask?.stableTaskId);
     }
 
     void UpdateActionButtons()
@@ -1128,7 +1135,8 @@ public class TaskDetailUI : MonoBehaviour
         GameLogPanel.Instance?.LogUIInteraction("choice", "choice_confirm_clicked",
             selectedChoice != null
                 ? $"task={currentTask.taskTitle} | choice=[{selectedChoice.choiceId}] {selectedChoice.choiceText}"
-                : $"task={currentTask.taskTitle} | choice=none");
+                : $"task={currentTask.taskTitle} | choice=none",
+            ledgerSeq: -1, taskDecisionId: currentTask.stableTaskId);
 
         string validationError;
         if (!ValidateBeforeConfirm(currentTask, selectedChoice, out validationError))
@@ -1201,7 +1209,63 @@ private bool CompleteTaskAction()
 
 // Returns true if the action took effect. On false NOTHING was applied (no impacts, no status
 // change) and failReason says why.
+// Resolution = the player's decision for this task. Its ledger entries are written only after
+// CompleteTaskActionCore has applied the effects, so a state delta attached to them includes
+// what the decision did. Records are built BEFORE the core runs, because the core closes the
+// panel and clears the selection this reads from.
 private bool CompleteTaskAction(out string failReason)
+{
+    var resolution = BuildResolutionRecords();
+    // Captured before Core runs: it closes the panel and clears currentTask/selectedChoice.
+    string taskDecisionId = currentTask?.stableTaskId;
+    bool applied = CompleteTaskActionCore(out failReason);
+    if (applied)
+        foreach (var r in resolution)
+        {
+            // One call writes the structured ledger entry (with its state delta); the seq it
+            // returns links the CSV row below to that entry, and taskDecisionId links the CSV
+            // row to the "Opened task"/"choice selected"/"confirmed" rows for the same decision.
+            int seq = GameLogPanel.Instance?.LogAction(r.type, r.target, r.parameters) ?? -1;
+            GameLogPanel.Instance?.LogTaskEvent(r.summary, seq, taskDecisionId);
+        }
+    return applied;
+}
+
+private List<(string type, JsonObj target, JsonObj parameters, string summary)> BuildResolutionRecords()
+{
+    var records = new List<(string, JsonObj, JsonObj, string)>();
+    if (currentTask == null) return records;
+    // Multi-agent proposals resolve through HandleMultiAgentChoiceSelection, which has its own path.
+    if (currentTask.taskId == -1 && currentTask.multiAgentProposal != null) return records;
+
+    // Numerical-input tasks (worker assignment, training) resolve here with selectedChoice == null
+    // (OnConfirmButtonClicked calls this once ValidateNumericalInputs passes, choice or not).
+    if (currentTask.numericalInputs != null && currentTask.numericalInputs.Count > 0)
+    {
+        var inputList = currentTask.numericalInputs;
+        var inputs = inputList.Select(i => new JsonObj()
+            .Add("inputId", i.inputId).Add("label", i.inputLabel).Add("value", i.currentValue)
+            .Add("min", i.minValue).Add("max", i.maxValue));
+        string inputsSummary = string.Join(", ", inputList.Select(i => $"{i.inputLabel}={i.currentValue}"));
+        records.Add(("TaskNumericalInput",
+            new JsonObj().Add("task_id", currentTask.stableTaskId),
+            new JsonObj().AddRaw("inputs", JsonArray.Of(inputs)),
+            $"Resolved task '{currentTask.taskTitle}': {inputsSummary}"));
+    }
+
+    // Full task content (title/description/every choice) was logged once at TaskGenerated; this
+    // records WHICH choice was picked. Join on task_id to see what was being chosen between.
+    if (selectedChoice != null)
+    {
+        records.Add(("TaskChoice",
+            new JsonObj().Add("task_id", currentTask.stableTaskId),
+            new JsonObj().Add("choiceId", selectedChoice.choiceId).Add("choiceText", selectedChoice.choiceText),
+            $"Resolved task '{currentTask.taskTitle}': chose [{selectedChoice.choiceId}] {selectedChoice.choiceText}"));
+    }
+    return records;
+}
+
+private bool CompleteTaskActionCore(out string failReason)
 {
     failReason = null;
     Debug.Log("Complete task action called!");
@@ -1729,8 +1793,16 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                         break;
                     }
                     
-                    // Default: validate worker availability
-                    int availableUntrainedDefault = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
+                    // Default: validate worker availability. For a worker-reassignment task
+                    // (Assign Workers / Change Worker Composition), this building's own currently
+                    // assigned workers are released back to the pool when the task resolves, so
+                    // the raw global free count under-counts what's actually available here.
+                    int availableUntrainedDefault;
+                    if (WorkerAssignmentHandler.Instance == null ||
+                        !WorkerAssignmentHandler.Instance.TryGetAvailableForTask(currentTask, out _, out availableUntrainedDefault))
+                    {
+                        availableUntrainedDefault = WorkerSystem.Instance.GetAvailableUntrainedWorkers();
+                    }
                     if (value > availableUntrainedDefault)
                     {
                         return $"Not enough untrained workers. You requested {value} but only have {availableUntrainedDefault} available.";
@@ -1758,8 +1830,15 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                         break;
                     }
                     
-                    // For TRAINING tasks, validate worker availability
-                    int availableTrained = WorkerSystem.Instance.GetAvailableTrainedWorkers();
+                    // Validate worker availability. Same release-adjustment as the Untrained
+                    // case above: a worker-reassignment task returns this building's currently
+                    // assigned trained workers to the pool before reapplying the new count.
+                    int availableTrained;
+                    if (WorkerAssignmentHandler.Instance == null ||
+                        !WorkerAssignmentHandler.Instance.TryGetAvailableForTask(currentTask, out availableTrained, out _))
+                    {
+                        availableTrained = WorkerSystem.Instance.GetAvailableTrainedWorkers();
+                    }
                     if (value > availableTrained)
                     {
                         return $"Not enough trained workers. You requested {value} but only have {availableTrained} available.";
@@ -3148,19 +3227,9 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
             switch (impact.impactType)
             {
                 case ImpactType.Satisfaction:
-                    if (SatisfactionAndBudget.Instance != null)
-                    {
-                        if (impact.value > 0)
-                        {
-                            SatisfactionAndBudget.Instance.AddSatisfaction(impact.value, $"Task [{resolvedTaskTitle}] satisfaction impact");
-                            ToastManager.ShowToast($"Satisfaction increased by {impact.value} due to task completion of [{resolvedTaskTitle}]", ToastType.Info, true);
-                        }
-                        else
-                        {
-                            SatisfactionAndBudget.Instance.RemoveSatisfaction(-impact.value, $"Task [{resolvedTaskTitle}] satisfaction impact");
-                            ToastManager.ShowToast($"Satisfaction decreased by {-impact.value} due to task completion of [{resolvedTaskTitle}]", ToastType.Info, true);
-                        }
-                    }
+                    // No flat satisfaction from task choices: satisfaction comes only from the
+                    // cumulative scoring formula (DailyReportData.S_*), which already credits the
+                    // outcome this choice produces (food consumed, clients relocated, etc.).
                     break;
 
                 case ImpactType.Budget:
@@ -3199,9 +3268,14 @@ bool ExecuteFoodDelivery(AgentChoice choice, bool immediate)
                             var choiceCat = currentTask.taskTag == TaskTag.Food ? SatisfactionAndBudget.SpendCategory.Food
                                           : currentTask.taskTag == TaskTag.Lodging ? SatisfactionAndBudget.SpendCategory.Lodging
                                           : SatisfactionAndBudget.SpendCategory.Other;
+                            // Per-unit priced choices (e.g. fast food) log their unit price x quantity,
+                            // so the budget log shows how the charge was computed, not just its total.
+                            string costDetail = choice.costPerUnit > 0 && resolvedDeliveryQuantity.HasValue
+                                ? $" ({resolvedDeliveryQuantity.Value} x ${choice.costPerUnit:0.##}/unit)"
+                                : "";
                             SatisfactionAndBudget.Instance.RemoveBudget(
                                 -(int)impactValue,
-                                $"Task [{resolvedTaskTitle}] cost");
+                                $"Task [{resolvedTaskTitle}] cost{costDetail}");
                             if (DailyReportData.Instance != null)
                             {
                                 float costToday = -impactValue;

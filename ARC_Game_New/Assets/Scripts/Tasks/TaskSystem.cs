@@ -183,8 +183,17 @@ public class GameTask
         }
     }
 
+    // Stable, never-reused identity. taskId is reassigned every round for recurring tasks and
+    // stableTaskId is not guaranteed unique (tasks created directly by the worker systems), so
+    // state deltas key tasks by uid. Restored tasks keep theirs; see TaskSystem.RestoreState.
+    public int uid;
+    static int nextUidCounter = 1;
+    public static int NewUid() => nextUidCounter++;
+    public static void ReserveUid(int id) { if (id >= nextUidCounter) nextUidCounter = id + 1; }
+
     public GameTask(int id, string title, TaskType type, string facility)
     {
+        uid = NewUid();
         taskId = id;
         taskTitle = title;
         taskType = type;
@@ -494,11 +503,21 @@ public class TaskSystem : MonoBehaviour
         return s;
     }
 
+    static void EnsureUid(GameTask t)
+    {
+        if (t.uid > 0) GameTask.ReserveUid(t.uid);
+        else t.uid = GameTask.NewUid();
+    }
+
     public void RestoreState(Snapshot s)
     {
         if (s == null) return;
         activeTasks.Clear(); activeTasks.AddRange(s.activeTasks);
         completedTasks.Clear(); completedTasks.AddRange(s.completedTasks);
+        // Snapshots from before uids existed carry 0 for every task; give each one a fresh uid so
+        // none share one. Restored uids keep their values and push the counter past them.
+        foreach (var t in activeTasks) if (t != null) EnsureUid(t);
+        foreach (var t in completedTasks) if (t != null) EnsureUid(t);
         nextTaskId = s.nextTaskId;
         currEmergencyTaskCount = s.currEmergencyTaskCount;
         lastEmergencyTaskRound = s.lastEmergencyTaskRound;
@@ -1620,7 +1639,10 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Auto-resolved task (clients already relocated): {task.taskTitle}");
-        GameLogPanel.Instance.LogTaskEvent($"Auto-resolved task '{task.taskTitle}': {reason}");
+        int autoResolvedSeq = GameLogPanel.Instance?.LogSystemEvent("TaskAutoResolved",
+            new JsonObj().Add("task_id", task.stableTaskId),
+            new JsonObj().Add("reason", reason)) ?? -1;
+        GameLogPanel.Instance.LogTaskEvent($"Auto-resolved task '{task.taskTitle}': {reason}", autoResolvedSeq, task.stableTaskId);
 
         if (TaskResultManager.Instance != null && (task.taskType != TaskType.Alert) && (task.taskType != TaskType.Other))
         {
@@ -1850,7 +1872,10 @@ public class TaskSystem : MonoBehaviour
 
             if (showDebugInfo)
                 Debug.Log($"Expired task: {task.taskTitle} (Status: {task.status})");
-            GameLogPanel.Instance.LogTaskEvent($"Expired task: {task.taskTitle} (Status: {task.status})");
+            int expiredSeq = GameLogPanel.Instance?.LogSystemEvent("TaskExpired",
+                new JsonObj().Add("task_id", task.stableTaskId),
+                new JsonObj().Add("status", task.status.ToString())) ?? -1;
+            GameLogPanel.Instance.LogTaskEvent($"Expired task: {task.taskTitle} (Status: {task.status})", expiredSeq, task.stableTaskId);
             //ToastManager.ShowToast($"Expired task: {task.taskTitle} (Status: {task.status})", ToastType.Warning, true);
 
             // Show task result popup
@@ -1881,10 +1906,8 @@ public class TaskSystem : MonoBehaviour
             switch (impact.impactType)
             {
                 case ImpactType.Satisfaction:
-                    if (SatisfactionAndBudget.Instance != null)
-                        SatisfactionAndBudget.Instance.RemoveSatisfaction(impact.value, $"Task Incomplete Penalty from [{resolvedTaskTitle}]");
-                    ToastManager.ShowToast($"Removed satisfaction: {impact.value} from task: {resolvedTaskTitle} due to incomplete task", ToastType.Warning, true);
-                    GameLogPanel.Instance.LogTaskEvent($"Removed satisfaction: {impact.value} from task: {resolvedTaskTitle} due to incomplete task");
+                    // No flat penalty: an unmet need already lowers the cumulative scoring formula
+                    // (its demand stays in the denominator), so satisfaction comes only from there.
                     break;
                 case ImpactType.Budget:
                     if (SatisfactionAndBudget.Instance != null)
@@ -2050,6 +2073,38 @@ public class TaskSystem : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Full content of a task as displayed to the player — title, description, every agent
+    /// message, and every available choice (not just the one eventually selected) with its own
+    /// text and reasoning. Logged once at generation (this content doesn't change afterward
+    /// except foodAmount/populationAmount, which are live-refreshed display numbers, not part
+    /// of the decision itself) so a replay/analysis pass can show exactly what the participant
+    /// saw on screen, not just which choiceId they picked.
+    /// </summary>
+    public static JsonObj BuildTaskContentJson(GameTask task)
+    {
+        var choices = task.agentChoices.Select(c => new JsonObj()
+            .Add("choiceId", c.choiceId)
+            .Add("choiceText", c.choiceText)
+            .Add("agentReasoning", c.agentReasoning));
+        var messages = task.agentMessages.Select(m => new JsonObj().Add("text", m.messageText));
+        // Numerical inputs' DEFINITIONS (label/range), not their value — value is set later by
+        // the player and belongs on the resolution event (TaskDetailUI's TaskNumericalInput
+        // action), not here. Without this, a task like "Assign Workers: X" logged no content at
+        // all, since it has no agentChoices — found via the Day 1 cross-check.
+        var inputDefs = task.numericalInputs.Select(i => new JsonObj()
+            .Add("inputId", i.inputId).Add("label", i.inputLabel)
+            .Add("min", i.minValue).Add("max", i.maxValue).Add("step", i.stepSize));
+        return new JsonObj()
+            .Add("title", task.taskTitle)
+            .Add("description", task.description)
+            .Add("taskType", task.taskType.ToString())
+            .Add("taskTag", task.taskTag.ToString())
+            .AddRaw("agentMessages", JsonArray.Of(messages))
+            .AddRaw("choices", JsonArray.Of(choices))
+            .AddRaw("numericalInputs", JsonArray.Of(inputDefs));
+    }
+
     public GameTask CreateTaskFromData(TaskData taskData, MonoBehaviour facility = null)
     {
         GameTask newTask = new GameTask(nextTaskId++, taskData.taskTitle, taskData.taskType, taskData.targetFacilityType.ToString());
@@ -2188,7 +2243,10 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
-        GameLogPanel.Instance.LogTaskEvent($"Created task from data: {taskData.taskTitle} ({taskData.taskType})");
+        int taskGeneratedSeq1 = GameLogPanel.Instance?.LogSystemEvent("TaskGenerated",
+            new JsonObj().Add("task_id", newTask.stableTaskId).Add("facility", facility?.name),
+            BuildTaskContentJson(newTask)) ?? -1;
+        GameLogPanel.Instance.LogTaskEvent($"Created task from data: {taskData.taskTitle} ({taskData.taskType})", taskGeneratedSeq1, newTask.stableTaskId);
         // Don't show alert tasks as toasts
         /*if (taskData.taskType != TaskType.Alert)
             ToastManager.ShowToast($"New task: {taskData.taskTitle} ({taskData.taskType})", ToastType.Info, true);*/
@@ -2582,7 +2640,10 @@ public class TaskSystem : MonoBehaviour
 
         if (showDebugInfo)
             Debug.Log($"Generated task from database: {taskData.taskId} for facility {facilityName}");
-        GameLogPanel.Instance.LogTaskEvent($"Generated task from database: {taskData.taskId} for facility {facilityName}");
+        int taskGeneratedSeq2 = GameLogPanel.Instance?.LogSystemEvent("TaskGenerated",
+            new JsonObj().Add("task_id", newTask.stableTaskId).Add("facility", facilityName),
+            BuildTaskContentJson(newTask)) ?? -1;
+        GameLogPanel.Instance.LogTaskEvent($"Generated task from database: {taskData.taskId} for facility {facilityName}", taskGeneratedSeq2, newTask.stableTaskId);
         return newTask;
     }
 
